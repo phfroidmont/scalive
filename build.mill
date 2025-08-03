@@ -1,0 +1,6 @@
+package build
+import mill.*, scalalib.*
+
+object core extends ScalaModule:
+  def scalaVersion = "3.7.2"
+  def scalacOptions = Seq("-Wunused:all")

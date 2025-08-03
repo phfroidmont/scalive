@@ -1,0 +1,6 @@
+.bsp
+.direnv
+.metals
+.scala-build
+secrets.env
+out

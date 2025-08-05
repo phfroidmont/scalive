@@ -1,41 +1,71 @@
 import scala.collection.immutable.ArraySeq
+import zio.json.*
+import zio.json.ast.*
+import scala.collection.mutable.ListBuffer
 
 @main
 def main =
-  val temlate = Template(TestLiveView.render)
-  println(temlate.init(MyModel("Initial title")))
-  println(temlate.update(MyModel("Updated title")))
+  val r = TestLiveView.render(MyModel("Initial title"))
+  println(JsonWriter.toJson(r.buildClientStateInit))
+  r.update(MyModel("Updated title"))
+  println(JsonWriter.toJson(r.buildClientStateDiff))
+  r.update(MyModel("Updated title"))
+  println(JsonWriter.toJson(r.buildClientStateDiff))
 
 trait LiveView[Model]:
-  val model = Dyn[Model, Model](identity)
-  def render: HtmlTag[Model]
+  val model: Dyn[Model, Model] = Dyn.id
+  def view: HtmlTag[Model]
 
 final case class MyModel(title: String)
 
 object TestLiveView extends LiveView[MyModel]:
-  def render: HtmlTag[MyModel] =
+  val view: HtmlTag[MyModel] =
     div(
-      div("some text"),
-      model(_.title)
+      div("before"),
+      model(_.title),
+      div("after")
     )
 
-class Dyn[I, O](f: I => O):
-  private var last: Option[O] = None
+object JsonWriter:
+  def toJson(init: ClientState.Init): String =
+    Json
+      .Obj("s" -> Json.Arr(init.static.map(Json.Str(_))*))
+      .merge(
+        Json.Obj(
+          init.dynamic.zipWithIndex.map((v, i) => i.toString -> Json.Str(v))*
+        )
+      )
+      .toJsonPretty
+  def toJson(diff: ClientState.Diff): String =
+    Json
+      .Obj(
+        "diff" ->
+          Json.Obj(
+            diff.dynamic.map((i, v) => i.toString -> Json.Str(v))*
+          )
+      )
+      .toJsonPretty
 
-  def apply[O2](f2: O => O2): Dyn[I, O2] = Dyn(f.andThen(f2))
+class RenderedDyn[I, O](d: Dyn[I, O], init: I):
+  private var value: O = d.run(init)
+  private var updated: Boolean = false
 
-  def forceUpate(v: I): O =
-    val newValue = f(v)
-    last = Some(newValue)
-    newValue
+  def wasUpdated: Boolean = updated
+  def currentValue: O = value
 
-  def update(v: I): Option[O] =
-    val newValue = f(v)
-    last match
-      case Some(lastValue) if lastValue == newValue => None
-      case _ =>
-        last = Some(newValue)
-        last
+  def update(v: I): Unit =
+    val newValue = d.run(v)
+    if value == newValue then updated = false
+    else
+      value = newValue
+      updated = true
+
+opaque type Dyn[I, O] = I => O
+extension [I, O](d: Dyn[I, O])
+  def apply[O2](f: O => O2): Dyn[I, O2] = d.andThen(f)
+  def run(v: I): O = d(v)
+object Dyn:
+  def id[T]: Dyn[T, T] = identity
 
 enum Mod[T]:
   case Tag(v: HtmlTag[T])
@@ -46,43 +76,68 @@ given [T]: Conversion[HtmlTag[T], Mod[T]] = Mod.Tag(_)
 given [T]: Conversion[String, Mod[T]] = Mod.Text(_)
 given [T]: Conversion[Dyn[T, String], Mod[T]] = Mod.DynText(_)
 
-class Template[Model](
-    private val static: ArraySeq[String],
-    private val dynamic: ArraySeq[Dyn[Model, String]]
-):
-  def init(model: Model): Template.InitialState =
-    Template.InitialState(
-      static,
-      dynamic.map(_.forceUpate(model))
-    )
-  def update(model: Model): Template.Diff =
-    Template.Diff(
-      dynamic.zipWithIndex.flatMap((dyn, i) => dyn.update(model).map(i -> _))
-    )
-object Template:
-  final case class InitialState(static: Seq[String], dynamic: Seq[String])
+object ClientState:
+  final case class Init(static: Seq[String], dynamic: Seq[String])
   final case class Diff(dynamic: Seq[(Int, String)])
-  def apply[Model](tag: HtmlTag[Model]) =
-    val (static, dynamic) = buildTag(tag)
-    new Template(static.to(ArraySeq), dynamic.to(ArraySeq))
 
-def buildMod[Model](mod: Mod[Model]): (List[String], List[Dyn[Model, String]]) =
-  mod match
-    case Mod.Tag(v)            => buildTag(v)
-    case Mod.Text(v)           => (List(v), List.empty)
-    case Mod.DynText[Model](v) => (List.empty, List(v))
+extension [Model](lv: LiveView[Model])
+  def render(model: Model): RenderedLiveView[Model] =
+    RenderedLiveView(lv.view, model)
 
-def buildTag[Model](
-    tag: HtmlTag[Model]
-): (List[String], List[Dyn[Model, String]]) =
-  val modsBuilt: List[(List[String], List[Dyn[Model, String]])] =
-    tag.mods.map(buildMod)
-  val static =
-    List(s"<${tag.name}>") ++
-      modsBuilt.flatMap(_._1) ++
-      List(s"</${tag.name}>")
-  val dynamic = modsBuilt.flatMap(_._2)
-  (static, dynamic)
+class RenderedLiveView[Model] private (
+    private val static: ArraySeq[String],
+    private val dynamic: ArraySeq[
+      RenderedDyn[Model, String] // | RenderedLiveView[Model]
+    ]
+):
+  def update(model: Model): Unit =
+    dynamic.foreach(_.update(model))
+
+  def buildClientStateInit: ClientState.Init =
+    ClientState.Init(
+      static,
+      dynamic.map(_.currentValue)
+    )
+  def buildClientStateDiff: ClientState.Diff =
+    ClientState.Diff(
+      dynamic.zipWithIndex.collect {
+        case (dyn, i) if dyn.wasUpdated => i -> dyn.currentValue
+      }
+    )
+
+object RenderedLiveView:
+  def apply[Model](tag: HtmlTag[Model], model: Model) =
+    val static = ListBuffer.empty[String]
+    val dynamic = ListBuffer.empty[RenderedDyn[Model, String]]
+
+    var staticFragment = ""
+    for elem <- buildTag(tag, model) do
+      elem match
+        case s: String =>
+          staticFragment += s
+        case d: Dyn[Model, String] =>
+          static.append(staticFragment)
+          staticFragment = ""
+          dynamic.append(RenderedDyn(d, model))
+    if staticFragment.nonEmpty then static.append(staticFragment)
+    new RenderedLiveView(static.to(ArraySeq), dynamic.to(ArraySeq))
+
+  private def buildTag[Model](
+      tag: HtmlTag[Model],
+      model: Model
+  ): List[String | Dyn[Model, String]] =
+    (s"<${tag.name}>"
+      :: tag.mods.flatMap(buildMod(_, model))) :+
+      (s"</${tag.name}>")
+
+  private def buildMod[Model](
+      mod: Mod[Model],
+      model: Model
+  ): List[String | Dyn[Model, String]] =
+    mod match
+      case Mod.Tag(v)            => buildTag(v, model)
+      case Mod.Text(v)           => List(v)
+      case Mod.DynText[Model](v) => List(v)
 
 trait HtmlTag[Model]:
   def name: String

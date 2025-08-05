@@ -42,6 +42,7 @@
             mill
             pkgs.scalafmt
           ];
+          shellHook = "mill --bsp-install";
         };
       }
     );

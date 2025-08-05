@@ -4,3 +4,4 @@ import mill.*, scalalib.*
 object core extends ScalaModule:
   def scalaVersion = "3.7.2"
   def scalacOptions = Seq("-Wunused:all")
+  def mvnDeps = Seq(mvn"dev.zio::zio-json:0.7.44")

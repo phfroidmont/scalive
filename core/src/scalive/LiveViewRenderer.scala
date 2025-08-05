@@ -4,20 +4,21 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.immutable.ArraySeq
 import zio.json.ast.Json
 
+class RenderedLiveView[Model] private[scalive] (
+    val static: ArraySeq[String],
+    val dynamic: ArraySeq[RenderedMod[Model]]
+):
+  def update(model: Model): Unit =
+    dynamic.foreach(_.update(model))
+  def wasUpdated: Boolean = dynamic.exists(_.wasUpdated)
+  def buildInitJson: Json = JsonAstBuilder.buildInit(static, dynamic)
+  def buildDiffJson: Json = JsonAstBuilder.buildDiff(dynamic)
+
 sealed trait RenderedMod[Model]:
   def update(model: Model): Unit
   def wasUpdated: Boolean
 
 object RenderedMod:
-  class Tag[Model] private[scalive] (
-      val static: ArraySeq[String],
-      val dynamic: ArraySeq[RenderedMod[Model]]
-  ) extends RenderedMod[Model]:
-    def update(model: Model): Unit =
-      dynamic.foreach(_.update(model))
-    def wasUpdated: Boolean = dynamic.exists(_.wasUpdated)
-    def buildInitJson: Json = JsonAstBuilder.buildInit(static, dynamic)
-    def buildDiffJson: Json = JsonAstBuilder.buildDiff(dynamic)
 
   class Dynamic[I, O](d: Dyn[I, O], init: I) extends RenderedMod[I]:
     private var value: O = d.run(init)
@@ -33,7 +34,7 @@ object RenderedMod:
 
   class When[Model](
       val dynCond: Dynamic[Model, Boolean],
-      val nested: Tag[Model]
+      val nested: RenderedLiveView[Model]
   ) extends RenderedMod[Model]:
     def displayed: Boolean = dynCond.currentValue
     def wasUpdated: Boolean = dynCond.wasUpdated || nested.wasUpdated
@@ -43,13 +44,16 @@ object RenderedMod:
 
 object LiveViewRenderer:
 
-  def render[Model](lv: LiveView[Model], model: Model): RenderedMod.Tag[Model] =
+  def render[Model](
+      lv: LiveView[Model],
+      model: Model
+  ): RenderedLiveView[Model] =
     render(lv.view, model)
 
   private def render[Model](
       tag: HtmlTag[Model],
       model: Model
-  ): RenderedMod.Tag[Model] =
+  ): RenderedLiveView[Model] =
     val static = ListBuffer.empty[String]
     val dynamic = ListBuffer.empty[RenderedMod[Model]]
 
@@ -63,7 +67,7 @@ object LiveViewRenderer:
           staticFragment = ""
           dynamic.append(d)
     if staticFragment.nonEmpty then static.append(staticFragment)
-    new RenderedMod.Tag(static.to(ArraySeq), dynamic.to(ArraySeq))
+    new RenderedLiveView(static.to(ArraySeq), dynamic.to(ArraySeq))
 
   private def renderTag[Model](
       tag: HtmlTag[Model],

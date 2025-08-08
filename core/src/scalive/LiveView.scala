@@ -7,7 +7,10 @@ trait LiveView[Model]:
 opaque type Dyn[I, O] = I => O
 extension [I, O](d: Dyn[I, O])
   def apply[O2](f: O => O2): Dyn[I, O2] = d.andThen(f)
-  def when(f: O => Boolean)(tag: HtmlTag[I]) = Mod.When(d.andThen(f), tag)
+  def when(f: O => Boolean)(tag: HtmlTag[I]): Mod.When[I] =
+    Mod.When(d.andThen(f), tag)
+  inline def whenNot(f: O => Boolean)(tag: HtmlTag[I]): Mod.When[I] =
+    when(f.andThen(!_))(tag)
   def run(v: I): O = d(v)
 object Dyn:
   def id[T]: Dyn[T, T] = identity

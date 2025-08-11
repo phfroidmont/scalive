@@ -7,27 +7,69 @@ def main =
   val r =
     LiveViewRenderer.render(
       TestLiveView,
-      MyModel("Initial string", true, "nested init")
+      MyModel(
+        List(
+          NestedModel("a", 10),
+          NestedModel("b", 15),
+          NestedModel("c", 20)
+        )
+      )
     )
   println(r.buildInitJson.toJsonPretty)
-  r.update(MyModel("Updated string", true, "nested updated"))
+  println("Edit first and last")
+  r.update(
+    MyModel(
+      List(
+        NestedModel("x", 10),
+        NestedModel("b", 15),
+        NestedModel("c", 99)
+      )
+    )
+  )
   println(r.buildDiffJson.toJsonPretty)
-  r.update(MyModel("Updated string", false, "nested updated"))
+  println("Add one")
+  r.update(
+    MyModel(
+      List(
+        NestedModel("x", 10),
+        NestedModel("b", 15),
+        NestedModel("c", 99),
+        NestedModel("d", 35)
+      )
+    )
+  )
   println(r.buildDiffJson.toJsonPretty)
-  r.update(MyModel("Updated string", true, "nested displayed again"))
+  println("Remove first")
+  r.update(
+    MyModel(
+      List(
+        NestedModel("b", 15),
+        NestedModel("c", 99),
+        NestedModel("d", 35)
+      )
+    )
+  )
   println(r.buildDiffJson.toJsonPretty)
-  r.update(MyModel("Updated string", true, "nested updated"))
+  println("Remove all")
+  r.update(
+    MyModel(List.empty)
+  )
   println(r.buildDiffJson.toJsonPretty)
 
-final case class MyModel(title: String, bool: Boolean, nestedTitle: String)
+final case class MyModel(elems: List[NestedModel])
+final case class NestedModel(name: String, age: Int)
 
 object TestLiveView extends LiveView[MyModel]:
   val view: HtmlTag[MyModel] =
     div(
-      div("Static string 1"),
-      model(_.title),
-      div("Static string 2"),
-      model.when(_.bool)(
-        div("maybe rendered", model(_.nestedTitle))
+      ul(
+        model.splitByIndex(_.elems)(elem =>
+          li(
+            "Nom: ",
+            elem(_.name),
+            " Age: ",
+            elem(_.age.toString)
+          )
+        )
       )
     )

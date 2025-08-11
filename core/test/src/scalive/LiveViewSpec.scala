@@ -9,8 +9,10 @@ object LiveViewSpec extends TestSuite:
   final case class TestModel(
       title: String = "title value",
       bool: Boolean = false,
-      nestedTitle: String = "nested title value"
+      nestedTitle: String = "nested title value",
+      items: List[NestedModel] = List.empty
   )
+  final case class NestedModel(name: String, age: Int)
 
   def assertEqualsJson(actual: Json, expected: Json) =
     assert(actual.toJsonPretty == expected.toJsonPretty)
@@ -143,15 +145,162 @@ object LiveViewSpec extends TestSuite:
         )
       }
     }
-  }
 
-object TestLiveView extends LiveView[MyModel]:
-  val view: HtmlTag[MyModel] =
-    div(
-      div("Static string 1"),
-      model(_.title),
-      div("Static string 2"),
-      model.when(_.bool)(
-        div("maybe rendered", model(_.nestedTitle))
-      )
-    )
+    test("splitByIndex mod") {
+      val initModel =
+        TestModel(
+          items = List(
+            NestedModel("a", 10),
+            NestedModel("b", 15),
+            NestedModel("c", 20)
+          )
+        )
+      val lv =
+        LiveViewRenderer.render(
+          new LiveView[TestModel]:
+            val view: HtmlTag[TestModel] =
+              div(
+                ul(
+                  model.splitByIndex(_.items)(elem =>
+                    li(
+                      "Nom: ",
+                      elem(_.name),
+                      " Age: ",
+                      elem(_.age.toString)
+                    )
+                  )
+                )
+              )
+          ,
+          initModel
+        )
+      test("init") {
+        assertEqualsJson(
+          lv.buildInitJson,
+          Json
+            .Obj(
+              "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
+              "0" -> Json.Obj(
+                "s" -> Json.Arr(
+                  Json.Str("<li>Nom: "),
+                  Json.Str(" Age: "),
+                  Json.Str("</li>")
+                ),
+                "d" -> Json.Obj(
+                  "0" -> Json.Obj(
+                    "0" -> Json.Str("a"),
+                    "1" -> Json.Str("10")
+                  ),
+                  "1" -> Json.Obj(
+                    "0" -> Json.Str("b"),
+                    "1" -> Json.Str("15")
+                  ),
+                  "2" -> Json.Obj(
+                    "0" -> Json.Str("c"),
+                    "1" -> Json.Str("20")
+                  )
+                )
+              )
+            )
+        )
+      }
+      test("diff no update") {
+        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+      }
+      test("diff with unrelated update") {
+        lv.update(initModel.copy(title = "title updated"))
+        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+      }
+      test("diff with item changed") {
+        lv.update(
+          initModel.copy(items =
+            initModel.items.updated(2, NestedModel("c", 99))
+          )
+        )
+        assertEqualsJson(
+          lv.buildDiffJson,
+          Json.Obj(
+            "diff" -> Json.Obj(
+              "0" ->
+                Json
+                  .Obj(
+                    "d" -> Json.Obj(
+                      "2" -> Json.Obj(
+                        "1" -> Json.Str("99")
+                      )
+                    )
+                  )
+            )
+          )
+        )
+      }
+      test("diff with item added") {
+        lv.update(
+          initModel.copy(items = initModel.items.appended(NestedModel("d", 35)))
+        )
+        assertEqualsJson(
+          lv.buildDiffJson,
+          Json.Obj(
+            "diff" -> Json.Obj(
+              "0" ->
+                Json
+                  .Obj(
+                    "d" -> Json.Obj(
+                      "3" -> Json.Obj(
+                        "0" -> Json.Str("d"),
+                        "1" -> Json.Str("35")
+                      )
+                    )
+                  )
+            )
+          )
+        )
+      }
+      test("diff with first item removed") {
+        lv.update(
+          initModel.copy(items = initModel.items.tail)
+        )
+        assertEqualsJson(
+          lv.buildDiffJson,
+          Json.Obj(
+            "diff" -> Json.Obj(
+              "0" ->
+                Json
+                  .Obj(
+                    "d" -> Json.Obj(
+                      "0" -> Json.Obj(
+                        "0" -> Json.Str("b"),
+                        "1" -> Json.Str("15")
+                      ),
+                      "1" -> Json.Obj(
+                        "0" -> Json.Str("c"),
+                        "1" -> Json.Str("20")
+                      ),
+                      "2" -> Json.Bool(false)
+                    )
+                  )
+            )
+          )
+        )
+      }
+      test("diff all removed") {
+        lv.update(initModel.copy(items = List.empty))
+        assertEqualsJson(
+          lv.buildDiffJson,
+          Json.Obj(
+            "diff" -> Json.Obj(
+              "0" ->
+                Json
+                  .Obj(
+                    "d" -> Json.Obj(
+                      "0" -> Json.Bool(false),
+                      "1" -> Json.Bool(false),
+                      "2" -> Json.Bool(false)
+                    )
+                  )
+            )
+          )
+        )
+      }
+    }
+  }

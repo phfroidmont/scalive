@@ -21,9 +21,32 @@ object JsonAstBuilder:
           i.toString -> Json.Str(v.currentValue.toString)
         case (v: RenderedMod.When[?], i) =>
           if v.displayed then
-            if includeUnchanged || v.dynCond.wasUpdated then
+            if includeUnchanged || v.cond.wasUpdated then
               i.toString -> v.nested.buildInitJson
-            else i.toString -> buildDiffValue(v.nested.dynamic)
+            else
+              i.toString -> buildDiffValue(v.nested.dynamic, includeUnchanged)
           else i.toString -> Json.Bool(false)
+        case (v: RenderedMod.Split[?, ?], i) =>
+          i.toString ->
+            Json
+              .Obj(
+                (Option
+                  .when(includeUnchanged)(
+                    "s" -> Json.Arr(v.static.map(Json.Str(_))*)
+                  )
+                  .toList ++
+                  List(
+                    "d" ->
+                      Json.Obj(
+                        (v.dynamic.toList.zipWithIndex
+                          .filter(includeUnchanged || _._1.exists(_.wasUpdated))
+                          .map((mods, i) =>
+                            i.toString -> buildDiffValue(mods, includeUnchanged)
+                          ) ++
+                          v.removedIndexes
+                            .map(i => i.toString -> Json.Bool(false)))*
+                      )
+                  ))*
+              )
       }*
     )

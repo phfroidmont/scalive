@@ -3,6 +3,10 @@ package scalive
 import scala.collection.mutable.ListBuffer
 import scala.collection.immutable.ArraySeq
 import zio.json.ast.Json
+import scala.collection.mutable.ArrayBuffer
+import scalive.LiveViewRenderer.buildStatic
+import scalive.LiveViewRenderer.buildDynamic
+import scala.annotation.nowarn
 
 class RenderedLiveView[Model] private[scalive] (
     val static: ArraySeq[String],
@@ -20,9 +24,10 @@ sealed trait RenderedMod[Model]:
 
 object RenderedMod:
 
-  class Dynamic[I, O](d: Dyn[I, O], init: I) extends RenderedMod[I]:
+  class Dynamic[I, O](d: Dyn[I, O], init: I, startsUpdated: Boolean = false)
+      extends RenderedMod[I]:
     private var value: O = d.run(init)
-    private var updated: Boolean = false
+    private var updated: Boolean = startsUpdated
     def wasUpdated: Boolean = updated
     def currentValue: O = value
     def update(v: I): Unit =
@@ -33,14 +38,43 @@ object RenderedMod:
         updated = true
 
   class When[Model](
-      val dynCond: Dynamic[Model, Boolean],
-      val nested: RenderedLiveView[Model]
+      dynCond: Dyn[Model, Boolean],
+      tag: HtmlTag[Model],
+      init: Model
   ) extends RenderedMod[Model]:
-    def displayed: Boolean = dynCond.currentValue
-    def wasUpdated: Boolean = dynCond.wasUpdated || nested.wasUpdated
+    val cond = RenderedMod.Dynamic(dynCond, init)
+    val nested = LiveViewRenderer.render(tag, init)
+    def displayed: Boolean = cond.currentValue
+    def wasUpdated: Boolean = cond.wasUpdated || nested.wasUpdated
     def update(model: Model): Unit =
-      dynCond.update(model)
+      cond.update(model)
       nested.update(model)
+
+  class Split[Model, Item](
+      dynList: Dyn[Model, List[Item]],
+      project: Dyn[Item, Item] => HtmlTag[Item],
+      init: Model
+  ) extends RenderedMod[Model]:
+    private val tag = project(Dyn.id)
+    val static: ArraySeq[String] = buildStatic(tag)
+    val dynamic: ArrayBuffer[ArraySeq[RenderedMod[Item]]] =
+      dynList.run(init).map(buildDynamic(tag, _)).to(ArrayBuffer)
+    var removedIndexes: Seq[Int] = Seq.empty
+
+    def wasUpdated: Boolean =
+      removedIndexes.nonEmpty || dynamic.exists(_.exists(_.wasUpdated))
+
+    def update(model: Model): Unit =
+      val items = dynList.run(model)
+      removedIndexes =
+        if items.size < dynamic.size then items.size until dynamic.size
+        else Seq.empty
+      dynamic.takeInPlace(items.size)
+      items.zipWithIndex.map((item, i) =>
+        if i >= dynamic.size then
+          dynamic.append(buildDynamic(tag, item, startsUpdated = true))
+        else dynamic(i).foreach(_.update(item))
+      )
 
 object LiveViewRenderer:
 
@@ -50,46 +84,59 @@ object LiveViewRenderer:
   ): RenderedLiveView[Model] =
     render(lv.view, model)
 
-  private def render[Model](
+  def buildStatic[Model](tag: HtmlTag[Model]): ArraySeq[String] =
+    buildNestedStatic(tag).flatten.to(ArraySeq)
+
+  private def buildNestedStatic[Model](
+      tag: HtmlTag[Model]
+  ): Seq[Option[String]] =
+    val static = ListBuffer.empty[Option[String]]
+    var staticFragment = s"<${tag.name}>"
+    for mod <- tag.mods.flatMap(buildStatic) do
+      mod match
+        case Some(s) =>
+          staticFragment += s
+        case None =>
+          static.append(Some(staticFragment))
+          static.append(None)
+          staticFragment = ""
+    staticFragment += s"</${tag.name}>"
+    static.append(Some(staticFragment))
+    static.toSeq
+
+  def buildStatic[Model](mod: Mod[Model]): Seq[Option[String]] =
+    mod match
+      case Mod.Tag(tag)    => buildNestedStatic(tag)
+      case Mod.Text(text)  => List(Some(text))
+      case Mod.DynText(_)  => List(None)
+      case Mod.When(_, _)  => List(None)
+      case Mod.Split(_, _) => List(None)
+
+  def buildDynamic[Model](
+      tag: HtmlTag[Model],
+      model: Model,
+      startsUpdated: Boolean = false
+  ): ArraySeq[RenderedMod[Model]] =
+    tag.mods.flatMap(buildDynamic(_, model, startsUpdated)).to(ArraySeq)
+
+  @nowarn("cat=unchecked")
+  def buildDynamic[Model](
+      mod: Mod[Model],
+      model: Model,
+      startsUpdated: Boolean
+  ): Seq[RenderedMod[Model]] =
+    mod match
+      case Mod.Tag(tag)   => buildDynamic(tag, model, startsUpdated)
+      case Mod.Text(text) => List.empty
+      case Mod.DynText[Model](dynText) =>
+        List(RenderedMod.Dynamic(dynText, model, startsUpdated))
+      case Mod.When[Model](dynCond, tag) =>
+        List(RenderedMod.When(dynCond, tag, model))
+      case Mod.Split[Model, Any](dynList, project) =>
+        List(RenderedMod.Split(dynList, project, model))
+
+  def render[Model](
       tag: HtmlTag[Model],
       model: Model
   ): RenderedLiveView[Model] =
-    val static = ListBuffer.empty[String]
-    val dynamic = ListBuffer.empty[RenderedMod[Model]]
-
-    var staticFragment = ""
-    for elem <- renderTag(tag, model) do
-      elem match
-        case s: String =>
-          staticFragment += s
-        case d: RenderedMod[Model] =>
-          static.append(staticFragment)
-          staticFragment = ""
-          dynamic.append(d)
-    if staticFragment.nonEmpty then static.append(staticFragment)
-    new RenderedLiveView(static.to(ArraySeq), dynamic.to(ArraySeq))
-
-  private def renderTag[Model](
-      tag: HtmlTag[Model],
-      model: Model
-  ): List[String | RenderedMod[Model]] =
-    (s"<${tag.name}>"
-      :: tag.mods.flatMap(renderMod(_, model))) :+
-      (s"</${tag.name}>")
-
-  private def renderMod[Model](
-      mod: Mod[Model],
-      model: Model
-  ): List[String | RenderedMod[Model]] =
-    mod match
-      case Mod.Tag(tag)   => renderTag(tag, model)
-      case Mod.Text(text) => List(text)
-      case Mod.DynText[Model](dynText) =>
-        List(RenderedMod.Dynamic(dynText, model))
-      case Mod.When[Model](dynCond, tag) =>
-        List(
-          RenderedMod.When(
-            RenderedMod.Dynamic(dynCond, model),
-            LiveViewRenderer.render(tag, model)
-          )
-        )
+    new RenderedLiveView(buildStatic(tag), buildDynamic(tag, model))

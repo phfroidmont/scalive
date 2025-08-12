@@ -15,7 +15,7 @@ def main =
         )
       )
     )
-  println(r.buildInitJson.toJsonPretty)
+  println(DiffEngine.buildInitJson(r).toJsonPretty)
   println("Edit first and last")
   r.update(
     MyModel(
@@ -26,7 +26,7 @@ def main =
       )
     )
   )
-  println(r.buildDiffJson.toJsonPretty)
+  println(DiffEngine.buildDiffJson(r).toJsonPretty)
   println("Add one")
   r.update(
     MyModel(
@@ -38,7 +38,7 @@ def main =
       )
     )
   )
-  println(r.buildDiffJson.toJsonPretty)
+  println(DiffEngine.buildDiffJson(r).toJsonPretty)
   println("Remove first")
   r.update(
     MyModel(
@@ -49,12 +49,12 @@ def main =
       )
     )
   )
-  println(r.buildDiffJson.toJsonPretty)
+  println(DiffEngine.buildDiffJson(r).toJsonPretty)
   println("Remove all")
   r.update(
     MyModel(List.empty)
   )
-  println(r.buildDiffJson.toJsonPretty)
+  println(DiffEngine.buildDiffJson(r).toJsonPretty)
 
 final case class MyModel(elems: List[NestedModel])
 final case class NestedModel(name: String, age: Int)

@@ -1,12 +1,12 @@
 package scalive
 
-import scala.collection.mutable.ListBuffer
-import scala.collection.immutable.ArraySeq
-import zio.json.ast.Json
-import scala.collection.mutable.ArrayBuffer
-import scalive.LiveViewRenderer.buildStatic
 import scalive.LiveViewRenderer.buildDynamic
+import scalive.LiveViewRenderer.buildStatic
+
 import scala.annotation.nowarn
+import scala.collection.immutable.ArraySeq
+import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.ListBuffer
 
 class RenderedLiveView[Model] private[scalive] (
     val static: ArraySeq[String],
@@ -15,8 +15,6 @@ class RenderedLiveView[Model] private[scalive] (
   def update(model: Model): Unit =
     dynamic.foreach(_.update(model))
   def wasUpdated: Boolean = dynamic.exists(_.wasUpdated)
-  def buildInitJson: Json = JsonAstBuilder.buildInit(static, dynamic)
-  def buildDiffJson: Json = JsonAstBuilder.buildDiff(dynamic)
 
 sealed trait RenderedMod[Model]:
   def update(model: Model): Unit

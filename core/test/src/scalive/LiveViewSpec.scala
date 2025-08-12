@@ -32,14 +32,14 @@ object LiveViewSpec extends TestSuite:
         )
       test("init") {
         assertEqualsJson(
-          lv.buildInitJson,
+          DiffEngine.buildInitJson(lv),
           Json.Obj(
             "s" -> Json.Arr(Json.Str("<div>Static string</div>"))
           )
         )
       }
       test("diff") {
-        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
       }
     }
 
@@ -54,7 +54,7 @@ object LiveViewSpec extends TestSuite:
         )
       test("init") {
         assertEqualsJson(
-          lv.buildInitJson,
+          DiffEngine.buildInitJson(lv),
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
@@ -63,12 +63,12 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
       }
       test("diff with update") {
         lv.update(TestModel(title = "title updated"))
         assertEqualsJson(
-          lv.buildDiffJson,
+          DiffEngine.buildDiffJson(lv),
           Json.Obj(
             "diff" -> Json.Obj("0" -> Json.Str("title updated"))
           )
@@ -77,7 +77,7 @@ object LiveViewSpec extends TestSuite:
       test("diff with update and no change") {
         lv.update(TestModel(title = "title updated"))
         lv.update(TestModel(title = "title updated"))
-        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
       }
     }
 
@@ -96,7 +96,7 @@ object LiveViewSpec extends TestSuite:
         )
       test("init") {
         assertEqualsJson(
-          lv.buildInitJson,
+          DiffEngine.buildInitJson(lv),
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
@@ -105,16 +105,16 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
       }
       test("diff with unrelated update") {
         lv.update(TestModel(title = "title updated"))
-        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
       }
       test("diff when true") {
         lv.update(TestModel(bool = true))
         assertEqualsJson(
-          lv.buildDiffJson,
+          DiffEngine.buildDiffJson(lv),
           Json.Obj(
             "diff" -> Json.Obj(
               "0" ->
@@ -132,7 +132,7 @@ object LiveViewSpec extends TestSuite:
         lv.update(TestModel(bool = true))
         lv.update(TestModel(bool = true, nestedTitle = "nested title updated"))
         assertEqualsJson(
-          lv.buildDiffJson,
+          DiffEngine.buildDiffJson(lv),
           Json.Obj(
             "diff" -> Json.Obj(
               "0" ->
@@ -176,7 +176,7 @@ object LiveViewSpec extends TestSuite:
         )
       test("init") {
         assertEqualsJson(
-          lv.buildInitJson,
+          DiffEngine.buildInitJson(lv),
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
@@ -205,11 +205,11 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
       }
       test("diff with unrelated update") {
         lv.update(initModel.copy(title = "title updated"))
-        assertEqualsJson(lv.buildDiffJson, emptyDiff)
+        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
       }
       test("diff with item changed") {
         lv.update(
@@ -218,7 +218,7 @@ object LiveViewSpec extends TestSuite:
           )
         )
         assertEqualsJson(
-          lv.buildDiffJson,
+          DiffEngine.buildDiffJson(lv),
           Json.Obj(
             "diff" -> Json.Obj(
               "0" ->
@@ -239,7 +239,7 @@ object LiveViewSpec extends TestSuite:
           initModel.copy(items = initModel.items.appended(NestedModel("d", 35)))
         )
         assertEqualsJson(
-          lv.buildDiffJson,
+          DiffEngine.buildDiffJson(lv),
           Json.Obj(
             "diff" -> Json.Obj(
               "0" ->
@@ -261,7 +261,7 @@ object LiveViewSpec extends TestSuite:
           initModel.copy(items = initModel.items.tail)
         )
         assertEqualsJson(
-          lv.buildDiffJson,
+          DiffEngine.buildDiffJson(lv),
           Json.Obj(
             "diff" -> Json.Obj(
               "0" ->
@@ -286,7 +286,7 @@ object LiveViewSpec extends TestSuite:
       test("diff all removed") {
         lv.update(initModel.copy(items = List.empty))
         assertEqualsJson(
-          lv.buildDiffJson,
+          DiffEngine.buildDiffJson(lv),
           Json.Obj(
             "diff" -> Json.Obj(
               "0" ->

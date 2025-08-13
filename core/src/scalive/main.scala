@@ -17,6 +17,8 @@ def main =
     )
   println(lv.fullDiff.toJsonPretty)
 
+  println(HtmlBuilder.build(lv))
+
   println("Edit first and last")
   lv.update(
     MyModel(

@@ -14,17 +14,17 @@ object LiveViewSpec extends TestSuite:
   )
   final case class NestedModel(name: String, age: Int)
 
-  def assertEqualsJson(actual: Json, expected: Json) =
+  def assertEqualsJson(actual: Diff, expected: Json) =
     assert(actual.toJsonPretty == expected.toJsonPretty)
 
-  val emptyDiff = Json.Obj("diff" -> Json.Obj.empty)
+  val emptyDiff = Json.Obj.empty
 
   val tests = Tests {
 
     test("Static only") {
       val lv =
-        LiveViewRenderer.render(
-          new LiveView[Unit]:
+        LiveView(
+          new View[Unit]:
             val view: HtmlTag[Unit] =
               div("Static string")
           ,
@@ -32,21 +32,21 @@ object LiveViewSpec extends TestSuite:
         )
       test("init") {
         assertEqualsJson(
-          DiffEngine.buildInitJson(lv),
+          lv.fullDiff,
           Json.Obj(
             "s" -> Json.Arr(Json.Str("<div>Static string</div>"))
           )
         )
       }
       test("diff") {
-        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
+        assertEqualsJson(lv.diff, emptyDiff)
       }
     }
 
     test("Dynamic string") {
       val lv =
-        LiveViewRenderer.render(
-          new LiveView[TestModel]:
+        LiveView(
+          new View[TestModel]:
             val view: HtmlTag[TestModel] =
               div(model(_.title))
           ,
@@ -54,7 +54,7 @@ object LiveViewSpec extends TestSuite:
         )
       test("init") {
         assertEqualsJson(
-          DiffEngine.buildInitJson(lv),
+          lv.fullDiff,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
@@ -63,28 +63,26 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
+        assertEqualsJson(lv.diff, emptyDiff)
       }
       test("diff with update") {
         lv.update(TestModel(title = "title updated"))
         assertEqualsJson(
-          DiffEngine.buildDiffJson(lv),
-          Json.Obj(
-            "diff" -> Json.Obj("0" -> Json.Str("title updated"))
-          )
+          lv.diff,
+          Json.Obj("0" -> Json.Str("title updated"))
         )
       }
       test("diff with update and no change") {
         lv.update(TestModel(title = "title updated"))
         lv.update(TestModel(title = "title updated"))
-        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
+        assertEqualsJson(lv.diff, emptyDiff)
       }
     }
 
     test("when mod") {
       val lv =
-        LiveViewRenderer.render(
-          new LiveView[TestModel]:
+        LiveView(
+          new View[TestModel]:
             val view: HtmlTag[TestModel] =
               div(
                 model.when(_.bool)(
@@ -96,7 +94,7 @@ object LiveViewSpec extends TestSuite:
         )
       test("init") {
         assertEqualsJson(
-          DiffEngine.buildInitJson(lv),
+          lv.fullDiff,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
@@ -105,26 +103,24 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
+        assertEqualsJson(lv.diff, emptyDiff)
       }
       test("diff with unrelated update") {
         lv.update(TestModel(title = "title updated"))
-        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
+        assertEqualsJson(lv.diff, emptyDiff)
       }
       test("diff when true") {
         lv.update(TestModel(bool = true))
         assertEqualsJson(
-          DiffEngine.buildDiffJson(lv),
+          lv.diff,
           Json.Obj(
-            "diff" -> Json.Obj(
-              "0" ->
-                Json
-                  .Obj(
-                    "s" -> Json
-                      .Arr(Json.Str("<div>static string"), Json.Str("</div>")),
-                    "0" -> Json.Str("nested title value")
-                  )
-            )
+            "0" ->
+              Json
+                .Obj(
+                  "s" -> Json
+                    .Arr(Json.Str("<div>static string"), Json.Str("</div>")),
+                  "0" -> Json.Str("nested title value")
+                )
           )
         )
       }
@@ -132,15 +128,13 @@ object LiveViewSpec extends TestSuite:
         lv.update(TestModel(bool = true))
         lv.update(TestModel(bool = true, nestedTitle = "nested title updated"))
         assertEqualsJson(
-          DiffEngine.buildDiffJson(lv),
+          lv.diff,
           Json.Obj(
-            "diff" -> Json.Obj(
-              "0" ->
-                Json
-                  .Obj(
-                    "0" -> Json.Str("nested title updated")
-                  )
-            )
+            "0" ->
+              Json
+                .Obj(
+                  "0" -> Json.Str("nested title updated")
+                )
           )
         )
       }
@@ -156,8 +150,8 @@ object LiveViewSpec extends TestSuite:
           )
         )
       val lv =
-        LiveViewRenderer.render(
-          new LiveView[TestModel]:
+        LiveView(
+          new View[TestModel]:
             val view: HtmlTag[TestModel] =
               div(
                 ul(
@@ -176,7 +170,7 @@ object LiveViewSpec extends TestSuite:
         )
       test("init") {
         assertEqualsJson(
-          DiffEngine.buildInitJson(lv),
+          lv.fullDiff,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
@@ -205,11 +199,11 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
+        assertEqualsJson(lv.diff, emptyDiff)
       }
       test("diff with unrelated update") {
         lv.update(initModel.copy(title = "title updated"))
-        assertEqualsJson(DiffEngine.buildDiffJson(lv), emptyDiff)
+        assertEqualsJson(lv.diff, emptyDiff)
       }
       test("diff with item changed") {
         lv.update(
@@ -218,19 +212,17 @@ object LiveViewSpec extends TestSuite:
           )
         )
         assertEqualsJson(
-          DiffEngine.buildDiffJson(lv),
+          lv.diff,
           Json.Obj(
-            "diff" -> Json.Obj(
-              "0" ->
-                Json
-                  .Obj(
-                    "d" -> Json.Obj(
-                      "2" -> Json.Obj(
-                        "1" -> Json.Str("99")
-                      )
+            "0" ->
+              Json
+                .Obj(
+                  "d" -> Json.Obj(
+                    "2" -> Json.Obj(
+                      "1" -> Json.Str("99")
                     )
                   )
-            )
+                )
           )
         )
       }
@@ -239,20 +231,18 @@ object LiveViewSpec extends TestSuite:
           initModel.copy(items = initModel.items.appended(NestedModel("d", 35)))
         )
         assertEqualsJson(
-          DiffEngine.buildDiffJson(lv),
+          lv.diff,
           Json.Obj(
-            "diff" -> Json.Obj(
-              "0" ->
-                Json
-                  .Obj(
-                    "d" -> Json.Obj(
-                      "3" -> Json.Obj(
-                        "0" -> Json.Str("d"),
-                        "1" -> Json.Str("35")
-                      )
+            "0" ->
+              Json
+                .Obj(
+                  "d" -> Json.Obj(
+                    "3" -> Json.Obj(
+                      "0" -> Json.Str("d"),
+                      "1" -> Json.Str("35")
                     )
                   )
-            )
+                )
           )
         )
       }
@@ -261,46 +251,43 @@ object LiveViewSpec extends TestSuite:
           initModel.copy(items = initModel.items.tail)
         )
         assertEqualsJson(
-          DiffEngine.buildDiffJson(lv),
+          lv.diff,
           Json.Obj(
-            "diff" -> Json.Obj(
-              "0" ->
-                Json
-                  .Obj(
-                    "d" -> Json.Obj(
-                      "0" -> Json.Obj(
-                        "0" -> Json.Str("b"),
-                        "1" -> Json.Str("15")
-                      ),
-                      "1" -> Json.Obj(
-                        "0" -> Json.Str("c"),
-                        "1" -> Json.Str("20")
-                      ),
-                      "2" -> Json.Bool(false)
-                    )
+            "0" ->
+              Json
+                .Obj(
+                  "d" -> Json.Obj(
+                    "0" -> Json.Obj(
+                      "0" -> Json.Str("b"),
+                      "1" -> Json.Str("15")
+                    ),
+                    "1" -> Json.Obj(
+                      "0" -> Json.Str("c"),
+                      "1" -> Json.Str("20")
+                    ),
+                    "2" -> Json.Bool(false)
                   )
-            )
+                )
           )
         )
       }
       test("diff all removed") {
         lv.update(initModel.copy(items = List.empty))
         assertEqualsJson(
-          DiffEngine.buildDiffJson(lv),
+          lv.diff,
           Json.Obj(
-            "diff" -> Json.Obj(
-              "0" ->
-                Json
-                  .Obj(
-                    "d" -> Json.Obj(
-                      "0" -> Json.Bool(false),
-                      "1" -> Json.Bool(false),
-                      "2" -> Json.Bool(false)
-                    )
+            "0" ->
+              Json
+                .Obj(
+                  "d" -> Json.Obj(
+                    "0" -> Json.Bool(false),
+                    "1" -> Json.Bool(false),
+                    "2" -> Json.Bool(false)
                   )
-            )
+                )
           )
         )
+
       }
     }
   }

@@ -4,9 +4,9 @@ import zio.json.*
 
 @main
 def main =
-  val r =
-    LiveViewRenderer.render(
-      TestLiveView,
+  val lv =
+    LiveView(
+      TestView,
       MyModel(
         List(
           NestedModel("a", 10),
@@ -15,9 +15,10 @@ def main =
         )
       )
     )
-  println(DiffEngine.buildInitJson(r).toJsonPretty)
+  println(lv.fullDiff.toJsonPretty)
+
   println("Edit first and last")
-  r.update(
+  lv.update(
     MyModel(
       List(
         NestedModel("x", 10),
@@ -26,9 +27,10 @@ def main =
       )
     )
   )
-  println(DiffEngine.buildDiffJson(r).toJsonPretty)
+  println(lv.diff.toJsonPretty)
+
   println("Add one")
-  r.update(
+  lv.update(
     MyModel(
       List(
         NestedModel("x", 10),
@@ -38,9 +40,10 @@ def main =
       )
     )
   )
-  println(DiffEngine.buildDiffJson(r).toJsonPretty)
+  println(lv.diff.toJsonPretty)
+
   println("Remove first")
-  r.update(
+  lv.update(
     MyModel(
       List(
         NestedModel("b", 15),
@@ -49,17 +52,18 @@ def main =
       )
     )
   )
-  println(DiffEngine.buildDiffJson(r).toJsonPretty)
+  println(lv.diff.toJsonPretty)
+
   println("Remove all")
-  r.update(
+  lv.update(
     MyModel(List.empty)
   )
-  println(DiffEngine.buildDiffJson(r).toJsonPretty)
+  println(lv.diff.toJsonPretty)
 
 final case class MyModel(elems: List[NestedModel])
 final case class NestedModel(name: String, age: Int)
 
-object TestLiveView extends LiveView[MyModel]:
+object TestView extends View[MyModel]:
   val view: HtmlTag[MyModel] =
     div(
       ul(

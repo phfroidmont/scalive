@@ -1,50 +1,85 @@
 package scalive
 
-trait LiveView[Model]:
-  val model: Dyn[Model, Model] = Dyn.id
-  def view: HtmlTag[Model]
+import scala.annotation.nowarn
+import scala.collection.immutable.ArraySeq
+import scala.collection.mutable.ListBuffer
 
-opaque type Dyn[I, O] = I => O
-extension [I, O](d: Dyn[I, O])
-  def apply[O2](f: O => O2): Dyn[I, O2] = d.andThen(f)
+class LiveView[Model] private (
+    val static: ArraySeq[String],
+    val dynamic: ArraySeq[LiveMod[Model]]
+):
+  def update(model: Model): Unit =
+    dynamic.foreach(_.update(model))
 
-  def when(f: O => Boolean)(tag: HtmlTag[I]): Mod.When[I] =
-    Mod.When(d.andThen(f), tag)
+  def wasUpdated: Boolean = dynamic.exists(_.wasUpdated)
 
-  inline def whenNot(f: O => Boolean)(tag: HtmlTag[I]): Mod.When[I] =
-    when(f.andThen(!_))(tag)
+  def fullDiff: Diff =
+    DiffBuilder.build(static, dynamic, includeUnchanged = true)
 
-  def splitByIndex[O2](f: O => List[O2])(
-      project: Dyn[O2, O2] => HtmlTag[O2]
-  ): Mod.Split[I, O2] =
-    Mod.Split(d.andThen(f), project)
+  def diff: Diff =
+    DiffBuilder.build(static = Seq.empty, dynamic)
 
-  def run(v: I): O = d(v)
+object LiveView:
 
-object Dyn:
-  def id[T]: Dyn[T, T] = identity
+  def apply[Model](
+      lv: View[Model],
+      model: Model
+  ): LiveView[Model] =
+    render(lv.view, model)
 
-enum Mod[T]:
-  case Tag(tag: HtmlTag[T])
-  case Text(text: String)
-  case DynText(dynText: Dyn[T, String])
-  case When(dynCond: Dyn[T, Boolean], tag: HtmlTag[T])
-  case Split[T, O](
-      dynList: Dyn[T, List[O]],
-      project: Dyn[O, O] => HtmlTag[O]
-  ) extends Mod[T]
+  def buildStatic[Model](tag: HtmlTag[Model]): ArraySeq[String] =
+    buildNestedStatic(tag).flatten.to(ArraySeq)
 
-given [T]: Conversion[HtmlTag[T], Mod[T]] = Mod.Tag(_)
-given [T]: Conversion[String, Mod[T]] = Mod.Text(_)
-given [T]: Conversion[Dyn[T, String], Mod[T]] = Mod.DynText(_)
+  private def buildNestedStatic[Model](
+      tag: HtmlTag[Model]
+  ): Seq[Option[String]] =
+    val static = ListBuffer.empty[Option[String]]
+    var staticFragment = s"<${tag.name}>"
+    for mod <- tag.mods.flatMap(buildStatic) do
+      mod match
+        case Some(s) =>
+          staticFragment += s
+        case None =>
+          static.append(Some(staticFragment))
+          static.append(None)
+          staticFragment = ""
+    staticFragment += s"</${tag.name}>"
+    static.append(Some(staticFragment))
+    static.toSeq
 
-trait HtmlTag[Model](val name: String):
-  def mods: List[Mod[Model]]
+  def buildStatic[Model](mod: Mod[Model]): Seq[Option[String]] =
+    mod match
+      case Mod.Tag(tag)    => buildNestedStatic(tag)
+      case Mod.Text(text)  => List(Some(text))
+      case Mod.DynText(_)  => List(None)
+      case Mod.When(_, _)  => List(None)
+      case Mod.Split(_, _) => List(None)
 
-class Div[Model](val mods: List[Mod[Model]]) extends HtmlTag[Model]("div")
-class Ul[Model](val mods: List[Mod[Model]]) extends HtmlTag[Model]("ul")
-class Li[Model](val mods: List[Mod[Model]]) extends HtmlTag[Model]("li")
+  def buildDynamic[Model](
+      tag: HtmlTag[Model],
+      model: Model,
+      startsUpdated: Boolean = false
+  ): ArraySeq[LiveMod[Model]] =
+    tag.mods.flatMap(buildDynamic(_, model, startsUpdated)).to(ArraySeq)
 
-def div[Model](mods: Mod[Model]*): Div[Model] = Div(mods.toList)
-def ul[Model](mods: Mod[Model]*): Ul[Model] = Ul(mods.toList)
-def li[Model](mods: Mod[Model]*): Li[Model] = Li(mods.toList)
+  @nowarn("cat=unchecked")
+  def buildDynamic[Model](
+      mod: Mod[Model],
+      model: Model,
+      startsUpdated: Boolean
+  ): Seq[LiveMod[Model]] =
+    mod match
+      case Mod.Tag(tag)   => buildDynamic(tag, model, startsUpdated)
+      case Mod.Text(text) => List.empty
+      case Mod.DynText[Model](dynText) =>
+        List(LiveMod.Dynamic(dynText, model, startsUpdated))
+      case Mod.When[Model](dynCond, tag) =>
+        List(LiveMod.When(dynCond, tag, model))
+      case Mod.Split[Model, Any](dynList, project) =>
+        List(LiveMod.Split(dynList, project, model))
+
+  def render[Model](
+      tag: HtmlTag[Model],
+      model: Model
+  ): LiveView[Model] =
+    new LiveView(buildStatic(tag), buildDynamic(tag, model))

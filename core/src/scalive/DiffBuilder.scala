@@ -3,7 +3,7 @@ package scalive
 object DiffBuilder:
   def build(
       static: Seq[String],
-      dynamic: Seq[LiveMod[?]],
+      dynamic: Seq[LiveDyn[?]],
       includeUnchanged: Boolean = false
   ): Diff.Tag =
     Diff.Tag(
@@ -11,16 +11,16 @@ object DiffBuilder:
       dynamic = dynamic.zipWithIndex
         .filter(includeUnchanged || _._1.wasUpdated)
         .map {
-          case (v: LiveMod.Dynamic[?, ?], i) =>
+          case (v: LiveDyn.Value[?, ?], i) =>
             Diff.Dynamic(i, Diff.Static(v.currentValue.toString))
-          case (v: LiveMod.When[?], i) => build(v, i, includeUnchanged)
-          case (v: LiveMod.Split[?, ?], i) =>
+          case (v: LiveDyn.When[?], i) => build(v, i, includeUnchanged)
+          case (v: LiveDyn.Split[?, ?], i) =>
             Diff.Dynamic(i, build(v, includeUnchanged))
         }
     )
 
   private def build(
-      mod: LiveMod.When[?],
+      mod: LiveDyn.When[?],
       index: Int,
       includeUnchanged: Boolean
   ): Diff.Dynamic =
@@ -46,7 +46,7 @@ object DiffBuilder:
     else Diff.Dynamic(index, Diff.Deleted)
 
   private def build(
-      mod: LiveMod.Split[?, ?],
+      mod: LiveDyn.Split[?, ?],
       includeUnchanged: Boolean
   ): Diff.Split =
     Diff.Split(

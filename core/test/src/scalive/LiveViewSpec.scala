@@ -25,7 +25,7 @@ object LiveViewSpec extends TestSuite:
       val lv =
         LiveView(
           new View[Unit]:
-            val view: HtmlTag[Unit] =
+            val root: HtmlElement[Unit] =
               div("Static string")
           ,
           ()
@@ -47,7 +47,7 @@ object LiveViewSpec extends TestSuite:
       val lv =
         LiveView(
           new View[TestModel]:
-            val view: HtmlTag[TestModel] =
+            val root: HtmlElement[TestModel] =
               div(model(_.title))
           ,
           TestModel()
@@ -83,7 +83,7 @@ object LiveViewSpec extends TestSuite:
       val lv =
         LiveView(
           new View[TestModel]:
-            val view: HtmlTag[TestModel] =
+            val root: HtmlElement[TestModel] =
               div(
                 model.when(_.bool)(
                   div("static string", model(_.nestedTitle))
@@ -152,7 +152,7 @@ object LiveViewSpec extends TestSuite:
       val lv =
         LiveView(
           new View[TestModel]:
-            val view: HtmlTag[TestModel] =
+            val root: HtmlElement[TestModel] =
               div(
                 ul(
                   model.splitByIndex(_.items)(elem =>

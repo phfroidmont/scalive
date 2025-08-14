@@ -3,14 +3,14 @@ package scalive
 import scala.collection.immutable.ArraySeq
 import scala.collection.mutable.ArrayBuffer
 
-sealed trait LiveMod[Model]:
+sealed trait LiveDyn[Model]:
   def update(model: Model): Unit
   def wasUpdated: Boolean
 
-object LiveMod:
+object LiveDyn:
 
-  class Dynamic[I, O](d: Dyn[I, O], init: I, startsUpdated: Boolean = false)
-      extends LiveMod[I]:
+  class Value[I, O](d: Dyn[I, O], init: I, startsUpdated: Boolean = false)
+      extends LiveDyn[I]:
     private var value: O = d.run(init)
     private var updated: Boolean = startsUpdated
     def wasUpdated: Boolean = updated
@@ -24,11 +24,11 @@ object LiveMod:
 
   class When[Model](
       dynCond: Dyn[Model, Boolean],
-      tag: HtmlTag[Model],
+      el: HtmlElement[Model],
       init: Model
-  ) extends LiveMod[Model]:
-    val cond = LiveMod.Dynamic(dynCond, init)
-    val nested = LiveView.render(tag, init)
+  ) extends LiveDyn[Model]:
+    val cond = LiveDyn.Value(dynCond, init)
+    val nested = LiveView.render(el, init)
     def displayed: Boolean = cond.currentValue
     def wasUpdated: Boolean = cond.wasUpdated || nested.wasUpdated
     def update(model: Model): Unit =
@@ -37,13 +37,16 @@ object LiveMod:
 
   class Split[Model, Item](
       dynList: Dyn[Model, List[Item]],
-      project: Dyn[Item, Item] => HtmlTag[Item],
+      project: Dyn[Item, Item] => HtmlElement[Item],
       init: Model
-  ) extends LiveMod[Model]:
-    private val tag = project(Dyn.id)
-    val static: ArraySeq[String] = LiveView.buildStatic(tag)
-    val dynamic: ArrayBuffer[ArraySeq[LiveMod[Item]]] =
-      dynList.run(init).map(LiveView.buildDynamic(tag, _)).to(ArrayBuffer)
+  ) extends LiveDyn[Model]:
+    private val el = project(Dyn.id)
+    val static: ArraySeq[String] = LiveView.buildStatic(el)
+    val dynamic: ArrayBuffer[ArraySeq[LiveDyn[Item]]] =
+      dynList
+        .run(init)
+        .map(LiveView.buildDynamic(el, _).to(ArraySeq))
+        .to(ArrayBuffer)
     var removedIndexes: Seq[Int] = Seq.empty
 
     def wasUpdated: Boolean =
@@ -57,6 +60,8 @@ object LiveMod:
       dynamic.takeInPlace(items.size)
       items.zipWithIndex.map((item, i) =>
         if i >= dynamic.size then
-          dynamic.append(LiveView.buildDynamic(tag, item, startsUpdated = true))
+          dynamic.append(
+            LiveView.buildDynamic(el, item, startsUpdated = true).to(ArraySeq)
+          )
         else dynamic(i).foreach(_.update(item))
       )

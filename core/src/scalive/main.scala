@@ -66,8 +66,9 @@ final case class MyModel(elems: List[NestedModel])
 final case class NestedModel(name: String, age: Int)
 
 object TestView extends View[MyModel]:
-  val view: HtmlTag[MyModel] =
+  val root: HtmlElement[MyModel] =
     div(
+      idAttr := "42",
       ul(
         model.splitByIndex(_.elems)(elem =>
           li(

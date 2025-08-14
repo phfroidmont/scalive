@@ -26,6 +26,7 @@ object Dyn:
 
 enum Mod[T]:
   case StaticAttr(attr: HtmlAttr, value: String)
+  case DynAttr(attr: HtmlAttr, value: Dyn[T, String])
   case Tag(el: HtmlElement[T])
   case Text(text: String)
   case DynText(dynText: Dyn[T, String])
@@ -51,5 +52,7 @@ val li = HtmlTag("li")
 
 class HtmlAttr(val name: String):
   def :=[T](value: String): Mod.StaticAttr[T] = Mod.StaticAttr(this, value)
+  def :=[T](value: Dyn[T, String]): Mod.DynAttr[T] = Mod.DynAttr(this, value)
 
 val idAttr = HtmlAttr("id")
+val cls = HtmlAttr("class")

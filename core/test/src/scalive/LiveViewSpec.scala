@@ -10,6 +10,7 @@ object LiveViewSpec extends TestSuite:
       title: String = "title value",
       bool: Boolean = false,
       nestedTitle: String = "nested title value",
+      cls: String = "text-sm",
       items: List[NestedModel] = List.empty
   )
   final case class NestedModel(name: String, age: Int)
@@ -75,6 +76,43 @@ object LiveViewSpec extends TestSuite:
       test("diff with update and no change") {
         lv.update(TestModel(title = "title updated"))
         lv.update(TestModel(title = "title updated"))
+        assertEqualsJson(lv.diff, emptyDiff)
+      }
+    }
+
+    test("Dynamic attribute") {
+      val lv =
+        LiveView(
+          new View[TestModel]:
+            val root: HtmlElement[TestModel] =
+              div(cls := model(_.cls))
+          ,
+          TestModel()
+        )
+      test("init") {
+        assertEqualsJson(
+          lv.fullDiff,
+          Json
+            .Obj(
+              "s" -> Json
+                .Arr(Json.Str("<div class=\""), Json.Str("\"></div>")),
+              "0" -> Json.Str("text-sm")
+            )
+        )
+      }
+      test("diff no update") {
+        assertEqualsJson(lv.diff, emptyDiff)
+      }
+      test("diff with update") {
+        lv.update(TestModel(cls = "text-md"))
+        assertEqualsJson(
+          lv.diff,
+          Json.Obj("0" -> Json.Str("text-md"))
+        )
+      }
+      test("diff with update and no change") {
+        lv.update(TestModel(cls = "text-md"))
+        lv.update(TestModel(cls = "text-md"))
         assertEqualsJson(lv.diff, emptyDiff)
       }
     }

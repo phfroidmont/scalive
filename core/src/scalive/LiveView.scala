@@ -8,6 +8,10 @@ class LiveView[Model] private (
     val static: ArraySeq[String],
     val dynamic: ArraySeq[LiveDyn[Model]]
 ):
+  assert(
+    static.size == dynamic.size + 1,
+    s"Static size : ${static.size}, Dynamic size : ${dynamic.size}"
+  )
   def update(model: Model): Unit =
     dynamic.foreach(_.update(model))
 
@@ -70,6 +74,8 @@ object LiveView:
     val (attrs, children) = el.mods.partitionMap {
       case Mod.StaticAttr(attr, value) =>
         Left(List(Some(s""" ${attr.name}="$value"""")))
+      case Mod.DynAttr(attr, _) =>
+        Left(List(Some(s""" ${attr.name}=""""), None, Some('"'.toString)))
       case Mod.Tag(el)                 => Right(buildStaticFragments(el))
       case Mod.Text(text)              => Right(List(Some(text)))
       case Mod.DynText[Model](_)       => Right(List(None))
@@ -85,8 +91,10 @@ object LiveView:
       startsUpdated: Boolean = false
   ): Seq[LiveDyn[Model]] =
     val (attrs, children) = el.mods.partitionMap {
-      case Mod.StaticAttr(_, _) => Left(List.empty)
       case Mod.Text(_)          => Right(List.empty)
+      case Mod.StaticAttr(_, _) => Left(List.empty)
+      case Mod.DynAttr(_, value) =>
+        Right(List(LiveDyn.Value(value, model, startsUpdated)))
       case Mod.Tag(el) =>
         Right(buildDynamic(el, model, startsUpdated))
       case Mod.DynText[Model](dynText) =>

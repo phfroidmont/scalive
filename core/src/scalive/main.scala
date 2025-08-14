@@ -58,17 +58,18 @@ def main =
 
   println("Remove all")
   lv.update(
-    MyModel(List.empty)
+    MyModel(List.empty, "text-lg")
   )
   println(lv.diff.toJsonPretty)
 
-final case class MyModel(elems: List[NestedModel])
+final case class MyModel(elems: List[NestedModel], cls: String = "text-xs")
 final case class NestedModel(name: String, age: Int)
 
 object TestView extends View[MyModel]:
   val root: HtmlElement[MyModel] =
     div(
       idAttr := "42",
+      cls := model(_.cls),
       ul(
         model.splitByIndex(_.elems)(elem =>
           li(

@@ -1,11 +1,16 @@
 package build
 import mill.*, scalalib.*
 
-object core extends ScalaModule:
+trait Common extends ScalaModule:
   def scalaVersion = "3.7.2"
   def scalacOptions = Seq("-Wunused:all")
+
+object core extends Common:
   def mvnDeps = Seq(mvn"dev.zio::zio-json:0.7.44")
 
   object test extends ScalaTests with TestModule.Utest:
     def utestVersion = "0.9.0"
 
+object zio extends Common:
+  def mvnDeps = Seq(mvn"dev.zio::zio-http:3.4.0")
+  override def moduleDeps = Seq(core)

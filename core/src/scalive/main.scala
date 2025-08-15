@@ -16,7 +16,6 @@ def main =
       )
     )
   println(lv.fullDiff.toJsonPretty)
-
   println(HtmlBuilder.build(lv))
 
   println("Edit first and last")
@@ -30,6 +29,7 @@ def main =
     )
   )
   println(lv.diff.toJsonPretty)
+  println(HtmlBuilder.build(lv))
 
   println("Add one")
   lv.update(
@@ -43,6 +43,7 @@ def main =
     )
   )
   println(lv.diff.toJsonPretty)
+  println(HtmlBuilder.build(lv))
 
   println("Remove first")
   lv.update(
@@ -55,12 +56,14 @@ def main =
     )
   )
   println(lv.diff.toJsonPretty)
+  println(HtmlBuilder.build(lv))
 
   println("Remove all")
   lv.update(
     MyModel(List.empty, "text-lg")
   )
   println(lv.diff.toJsonPretty)
+  println(HtmlBuilder.build(lv))
 
 final case class MyModel(elems: List[NestedModel], cls: String = "text-xs")
 final case class NestedModel(name: String, age: Int)

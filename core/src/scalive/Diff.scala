@@ -6,13 +6,11 @@ import zio.json.ast.Json
 
 enum Diff:
   case Tag(
-      static: Seq[String] = Seq.empty,
-      dynamic: Seq[Diff.Dynamic] = Seq.empty
-  )
+    static: Seq[String] = Seq.empty,
+    dynamic: Seq[Diff.Dynamic] = Seq.empty)
   case Split(
-      static: Seq[String] = Seq.empty,
-      entries: Seq[Diff.Dynamic] = Seq.empty
-  )
+    static: Seq[String] = Seq.empty,
+    entries: Seq[Diff.Dynamic] = Seq.empty)
   case Static(value: String)
   case Dynamic(index: Int, diff: Diff)
   case Deleted
@@ -45,7 +43,8 @@ object Diff:
               )
             )
         )
-      case Diff.Static(value) => Json.Str(value)
+      case Diff.Static(value)        => Json.Str(value)
       case Diff.Dynamic(index, diff) =>
         Json.Obj(index.toString -> toJson(diff))
       case Diff.Deleted => Json.Bool(false)
+end Diff

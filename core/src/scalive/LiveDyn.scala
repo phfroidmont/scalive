@@ -9,13 +9,12 @@ sealed trait LiveDyn[Model]:
 
 object LiveDyn:
 
-  class Value[I, O](d: Dyn[I, O], init: I, startsUpdated: Boolean = false)
-      extends LiveDyn[I]:
-    private var value: O = d.run(init)
+  class Value[I, O](d: Dyn[I, O], init: I, startsUpdated: Boolean = false) extends LiveDyn[I]:
+    private var value: O         = d.run(init)
     private var updated: Boolean = startsUpdated
-    def wasUpdated: Boolean = updated
-    def currentValue: O = value
-    def update(v: I): Unit =
+    def wasUpdated: Boolean      = updated
+    def currentValue: O          = value
+    def update(v: I): Unit       =
       val newValue = d.run(v)
       if value == newValue then updated = false
       else
@@ -23,25 +22,25 @@ object LiveDyn:
         updated = true
 
   class When[Model](
-      dynCond: Dyn[Model, Boolean],
-      el: HtmlElement[Model],
-      init: Model
-  ) extends LiveDyn[Model]:
-    val cond = LiveDyn.Value(dynCond, init)
-    val nested = LiveView.render(el, init)
-    def displayed: Boolean = cond.currentValue
-    def wasUpdated: Boolean = cond.wasUpdated || nested.wasUpdated
+    dynCond: Dyn[Model, Boolean],
+    el: HtmlElement[Model],
+    init: Model)
+      extends LiveDyn[Model]:
+    val cond                       = LiveDyn.Value(dynCond, init)
+    val nested                     = LiveView.render(el, init)
+    def displayed: Boolean         = cond.currentValue
+    def wasUpdated: Boolean        = cond.wasUpdated || nested.wasUpdated
     def update(model: Model): Unit =
       cond.update(model)
       nested.update(model)
 
   class Split[Model, Item](
-      dynList: Dyn[Model, List[Item]],
-      project: Dyn[Item, Item] => HtmlElement[Item],
-      init: Model
-  ) extends LiveDyn[Model]:
-    private val el = project(Dyn.id)
-    val static: ArraySeq[String] = LiveView.buildStatic(el)
+    dynList: Dyn[Model, List[Item]],
+    project: Dyn[Item, Item] => HtmlElement[Item],
+    init: Model)
+      extends LiveDyn[Model]:
+    private val el                                    = project(Dyn.id)
+    val static: ArraySeq[String]                      = LiveView.buildStatic(el)
     val dynamic: ArrayBuffer[ArraySeq[LiveDyn[Item]]] =
       dynList
         .run(init)
@@ -65,3 +64,5 @@ object LiveDyn:
           )
         else dynamic(i).foreach(_.update(item))
       )
+  end Split
+end LiveDyn

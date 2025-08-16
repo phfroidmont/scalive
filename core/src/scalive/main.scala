@@ -60,19 +60,22 @@ def main =
 
   println("Remove all")
   lv.update(
-    MyModel(List.empty, "text-lg")
+    MyModel(List.empty, "text-lg", bool = false)
   )
   println(lv.diff.toJsonPretty)
   println(HtmlBuilder.build(lv))
+end main
 
-final case class MyModel(elems: List[NestedModel], cls: String = "text-xs")
+final case class MyModel(elems: List[NestedModel], cls: String = "text-xs", bool: Boolean = true)
 final case class NestedModel(name: String, age: Int)
 
 object TestView extends View[MyModel]:
   val root: HtmlElement[MyModel] =
     div(
-      idAttr := "42",
-      cls := model(_.cls),
+      idAttr    := "42",
+      cls       := model(_.cls),
+      draggable := model(_.bool),
+      disabled  := model(_.bool),
       ul(
         model.splitByIndex(_.elems)(elem =>
           li(

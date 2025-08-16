@@ -7,12 +7,11 @@ import zio.json.ast.Json
 object LiveViewSpec extends TestSuite:
 
   final case class TestModel(
-      title: String = "title value",
-      bool: Boolean = false,
-      nestedTitle: String = "nested title value",
-      cls: String = "text-sm",
-      items: List[NestedModel] = List.empty
-  )
+    title: String = "title value",
+    bool: Boolean = false,
+    nestedTitle: String = "nested title value",
+    cls: String = "text-sm",
+    items: List[NestedModel] = List.empty)
   final case class NestedModel(name: String, age: Int)
 
   def assertEqualsJson(actual: Diff, expected: Json) =
@@ -245,9 +244,7 @@ object LiveViewSpec extends TestSuite:
       }
       test("diff with item changed") {
         lv.update(
-          initModel.copy(items =
-            initModel.items.updated(2, NestedModel("c", 99))
-          )
+          initModel.copy(items = initModel.items.updated(2, NestedModel("c", 99)))
         )
         assertEqualsJson(
           lv.diff,
@@ -329,3 +326,4 @@ object LiveViewSpec extends TestSuite:
       }
     }
   }
+end LiveViewSpec

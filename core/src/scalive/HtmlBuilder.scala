@@ -10,9 +10,9 @@ object HtmlBuilder:
     strw.toString()
 
   private def build(
-      static: Seq[String],
-      dynamic: Seq[LiveDyn[?]],
-      strw: StringWriter
+    static: Seq[String],
+    dynamic: Seq[LiveDyn[?]],
+    strw: StringWriter
   ): Unit =
     for i <- dynamic.indices do
       strw.append(static(i))

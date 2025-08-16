@@ -1,0 +1,155 @@
+package build
+
+import com.raquo.domtypes.codegen.*
+import com.raquo.domtypes.codegen.DefType.LazyVal
+import com.raquo.domtypes.defs.styles.StyleTraitDefs
+import com.raquo.domtypes.codegen.generators.*
+import com.raquo.domtypes.common.*
+import com.raquo.domtypes.defs.reflectedAttrs.ReflectedHtmlAttrDefs
+
+class DomDefsGenerator(baseOutputDirectoryPath: String):
+
+  private object generator
+      extends CanonicalGenerator(
+        baseOutputDirectoryPath = baseOutputDirectoryPath,
+        basePackagePath = "scalive",
+        standardTraitCommentLines = List(
+          "#NOTE: GENERATED CODE",
+          s" - This file is generated at compile time from the data in Scala DOM Types",
+          " - See `DomDefsGenerator.mill` for code generation params",
+          " - Contribute to https://github.com/raquo/scala-dom-types to add missing tags / attrs / props / etc."
+        ),
+        format = CodeFormatting()
+      ):
+
+    override def settersPackagePath: String      = basePackagePath + ".modifiers.KeySetter"
+    override def scalaJsElementTypeParam: String = "Ref"
+    override def scalaJsDomImport: String        = ""
+    override def tagKeysPackagePath: String      = "scalive"
+    override def keysPackagePath: String         = "scalive"
+    override def generateTagsTrait(
+      tagType: TagType,
+      defGroups: List[(String, List[TagDef])],
+      printDefGroupComments: Boolean,
+      traitCommentLines: List[String],
+      traitModifiers: List[String],
+      traitName: String,
+      keyKind: String,
+      baseImplDefComments: List[String],
+      keyImplName: String,
+      defType: DefType
+    ): String =
+      val (defs, defGroupComments) = defsAndGroupComments(defGroups, printDefGroupComments)
+
+      val baseImplDef =
+        if tagType == HtmlTagType then
+          List(
+            s"def $keyImplName($keyImplNameArgName: String, void: Boolean = false): $keyKind = ${keyKindConstructor(keyKind)}($keyImplNameArgName, void)"
+          )
+        else
+          List(
+            s"def $keyImplName($keyImplNameArgName: String): $keyKind = ${keyKindConstructor(keyKind)}($keyImplNameArgName)"
+          )
+
+      val headerLines = List(
+        s"package $tagDefsPackagePath",
+        "",
+        tagKeyTypeImport(keyKind),
+        scalaJsDomImport,
+        ""
+      ) ++ standardTraitCommentLines.map("// " + _)
+
+      new TagsTraitGenerator(
+        defs = defs,
+        defGroupComments = defGroupComments,
+        headerLines = headerLines,
+        traitCommentLines = traitCommentLines,
+        traitModifiers = traitModifiers,
+        traitName = traitName,
+        traitExtends = Nil,
+        traitThisType = None,
+        defType = _ => defType,
+        keyType = tag => keyKind,
+        keyImplName = _ => keyImplName,
+        keyImplNameArgName = keyImplNameArgName,
+        baseImplDefComments = baseImplDefComments,
+        baseImplDef = baseImplDef,
+        outputImplDefs = true,
+        format = format
+      ).printTrait().getOutput()
+    end generateTagsTrait
+  end generator
+
+  def generate(): Unit =
+    val defGroups = new CanonicalDefGroups()
+
+    // -- HTML tags --
+
+    {
+      val traitName = "HtmlTags"
+
+      val fileContent = generator.generateTagsTrait(
+        tagType = HtmlTagType,
+        defGroups = defGroups.htmlTagsDefGroups,
+        printDefGroupComments = true,
+        traitCommentLines = Nil,
+        traitModifiers = Nil,
+        traitName = traitName,
+        keyKind = "HtmlTag",
+        baseImplDefComments = List(
+          "Create HTML tag",
+          "",
+          "Note: this simply creates an instance of HtmlTag.",
+          " - This does not create the element (to do that, call .apply() on the returned tag instance)",
+          "",
+          "@param name - e.g. \"div\" or \"mwc-input\""
+        ),
+        keyImplName = "htmlTag",
+        defType = LazyVal
+      )
+
+      generator.writeToFile(
+        packagePath = generator.tagDefsPackagePath,
+        fileName = traitName,
+        fileContent = fileContent
+      )
+    }
+
+    // -- HTML attributes --
+
+    {
+      val traitName = "HtmlAttrs"
+
+      val fileContent = generator.generateAttrsTrait(
+        defGroups = defGroups.htmlAttrDefGroups.appended(
+          "Reflected Attributes" -> ReflectedHtmlAttrDefs.defs.map(_.toAttrDef)
+        ),
+        printDefGroupComments = false,
+        traitCommentLines = Nil,
+        traitModifiers = Nil,
+        traitName = traitName,
+        keyKind = "HtmlAttr",
+        implNameSuffix = "HtmlAttr",
+        baseImplDefComments = List(
+          "Create HTML attribute (Note: for SVG attrs, use L.svg.svgAttr)",
+          "",
+          "@param name  - name of the attribute, e.g. \"value\"",
+          "@param codec - used to encode V into String, e.g. StringAsIsCodec",
+          "",
+          "@tparam V    - value type for this attr in Scala"
+        ),
+        baseImplName = "htmlAttr",
+        namespaceImports = Nil,
+        namespaceImpl = _ => ???,
+        transformAttrDomName = identity,
+        defType = LazyVal
+      )
+
+      generator.writeToFile(
+        packagePath = generator.attrDefsPackagePath,
+        fileName = traitName,
+        fileContent = fileContent
+      )
+    }
+  end generate
+end DomDefsGenerator

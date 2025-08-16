@@ -2,9 +2,9 @@ package scalive
 
 object DiffBuilder:
   def build(
-      static: Seq[String],
-      dynamic: Seq[LiveDyn[?]],
-      includeUnchanged: Boolean = false
+    static: Seq[String],
+    dynamic: Seq[LiveDyn[?]],
+    includeUnchanged: Boolean = false
   ): Diff.Tag =
     Diff.Tag(
       static = static,
@@ -13,16 +13,16 @@ object DiffBuilder:
         .map {
           case (v: LiveDyn.Value[?, ?], i) =>
             Diff.Dynamic(i, Diff.Static(v.currentValue.toString))
-          case (v: LiveDyn.When[?], i) => build(v, i, includeUnchanged)
+          case (v: LiveDyn.When[?], i)     => build(v, i, includeUnchanged)
           case (v: LiveDyn.Split[?, ?], i) =>
             Diff.Dynamic(i, build(v, includeUnchanged))
         }
     )
 
   private def build(
-      mod: LiveDyn.When[?],
-      index: Int,
-      includeUnchanged: Boolean
+    mod: LiveDyn.When[?],
+    index: Int,
+    includeUnchanged: Boolean
   ): Diff.Dynamic =
     if mod.displayed then
       if includeUnchanged || mod.cond.wasUpdated then
@@ -46,8 +46,8 @@ object DiffBuilder:
     else Diff.Dynamic(index, Diff.Deleted)
 
   private def build(
-      mod: LiveDyn.Split[?, ?],
-      includeUnchanged: Boolean
+    mod: LiveDyn.Split[?, ?],
+    includeUnchanged: Boolean
   ): Diff.Split =
     Diff.Split(
       static = if includeUnchanged then mod.static else Seq.empty,
@@ -68,3 +68,4 @@ object DiffBuilder:
             .map(i => Diff.Dynamic(i, Diff.Deleted))
         )
     )
+end DiffBuilder

@@ -3,11 +3,11 @@ package scalive
 import scala.annotation.nowarn
 import scala.collection.immutable.ArraySeq
 import scala.collection.mutable.ListBuffer
+import scalive.codecs.BooleanAsAttrPresenceCodec
 
 class LiveView[Model] private (
-    val static: ArraySeq[String],
-    val dynamic: ArraySeq[LiveDyn[Model]]
-):
+  val static: ArraySeq[String],
+  val dynamic: ArraySeq[LiveDyn[Model]]):
   assert(
     static.size == dynamic.size + 1,
     s"Static size : ${static.size}, Dynamic size : ${dynamic.size}"
@@ -26,14 +26,14 @@ class LiveView[Model] private (
 object LiveView:
 
   inline def apply[Model](
-      lv: View[Model],
-      model: Model
+    lv: View[Model],
+    model: Model
   ): LiveView[Model] =
     render(lv.root, model)
 
   def render[Model](
-      tag: HtmlElement[Model],
-      model: Model
+    tag: HtmlElement[Model],
+    model: Model
   ): LiveView[Model] =
     new LiveView(buildStatic(tag), buildDynamic(tag, model).to(ArraySeq))
 
@@ -41,11 +41,11 @@ object LiveView:
     buildStaticFragments(el).flatten.to(ArraySeq)
 
   private def buildStaticFragments[Model](
-      el: HtmlElement[Model]
+    el: HtmlElement[Model]
   ): Seq[Option[String]] =
     val (attrs, children) = buildStaticFragmentsByType(el)
-    val static = ListBuffer.empty[Option[String]]
-    var staticFragment = s"<${el.tag.name}"
+    val static            = ListBuffer.empty[Option[String]]
+    var staticFragment    = s"<${el.tag.name}"
     for attr <- attrs do
       attr match
         case Some(s) =>
@@ -54,7 +54,7 @@ object LiveView:
           static.append(Some(staticFragment))
           static.append(None)
           staticFragment = ""
-    staticFragment += s">"
+    staticFragment += (if el.tag.void then "/>" else ">")
     for child <- children do
       child match
         case Some(s) =>
@@ -63,19 +63,22 @@ object LiveView:
           static.append(Some(staticFragment))
           static.append(None)
           staticFragment = ""
-    staticFragment += s"</${el.tag.name}>"
+    staticFragment += (if el.tag.void then "" else s"</${el.tag.name}>")
     static.append(Some(staticFragment))
     static.toSeq
 
   @nowarn("cat=unchecked")
   private def buildStaticFragmentsByType[Model](
-      el: HtmlElement[Model]
+    el: HtmlElement[Model]
   ): (attrs: Seq[Option[String]], children: Seq[Option[String]]) =
     val (attrs, children) = el.mods.partitionMap {
-      case Mod.StaticAttr(attr, value) =>
-        Left(List(Some(s""" ${attr.name}="$value"""")))
-      case Mod.DynAttr(attr, _) =>
+      case Mod.StaticAttr(attr, value) => Left(List(Some(s""" ${attr.name}="$value"""")))
+      case Mod.StaticAttrValueAsPresence(attr, true)  => Left(List(Some(s" ${attr.name}")))
+      case Mod.StaticAttrValueAsPresence(attr, false) => Left(List.empty)
+      case Mod.DynAttr(attr, _)                       =>
         Left(List(Some(s""" ${attr.name}=""""), None, Some('"'.toString)))
+      case Mod.DynAttrValueAsPresence(attr, _) =>
+        Left(List(Some(""), None, Some("")))
       case Mod.Tag(el)                 => Right(buildStaticFragments(el))
       case Mod.Text(text)              => Right(List(Some(text)))
       case Mod.DynText[Model](_)       => Right(List(None))
@@ -86,15 +89,18 @@ object LiveView:
 
   @nowarn("cat=unchecked")
   def buildDynamic[Model](
-      el: HtmlElement[Model],
-      model: Model,
-      startsUpdated: Boolean = false
+    el: HtmlElement[Model],
+    model: Model,
+    startsUpdated: Boolean = false
   ): Seq[LiveDyn[Model]] =
     val (attrs, children) = el.mods.partitionMap {
-      case Mod.Text(_)          => Right(List.empty)
-      case Mod.StaticAttr(_, _) => Left(List.empty)
-      case Mod.DynAttr(_, value) =>
-        Right(List(LiveDyn.Value(value, model, startsUpdated)))
+      case Mod.Text(_)                         => Right(List.empty)
+      case Mod.StaticAttr(_, _)                => Left(List.empty)
+      case Mod.StaticAttrValueAsPresence(_, _) => Left(List.empty)
+      case Mod.DynAttr(attr, value)            =>
+        Right(List(LiveDyn.Value(value(attr.codec.encode), model, startsUpdated)))
+      case Mod.DynAttrValueAsPresence(attr, value) =>
+        Right(List(LiveDyn.Value(value(if _ then s" ${attr.name}" else ""), model, startsUpdated)))
       case Mod.Tag(el) =>
         Right(buildDynamic(el, model, startsUpdated))
       case Mod.DynText[Model](dynText) =>
@@ -105,3 +111,4 @@ object LiveView:
         Right(List(LiveDyn.Split(dynList, project, model)))
     }
     attrs.flatten ++ children.flatten
+end LiveView

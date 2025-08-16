@@ -1,18 +1,13 @@
 package scalive
 
-import zio._
+import zio.*
 
-import zio.http.ChannelEvent.{
-  ExceptionCaught,
-  Read,
-  UserEvent,
-  UserEventTriggered
-}
-import zio.http._
+import zio.http.ChannelEvent.{ExceptionCaught, Read, UserEvent, UserEventTriggered}
+import zio.http.*
 import zio.http.codec.PathCodec.string
 import zio.http.template.Html
 
-object Example extends ZIOAppDefault {
+object Example extends ZIOAppDefault:
 
   val lv =
     LiveView(
@@ -77,7 +72,7 @@ object Example extends ZIOAppDefault {
     )
 
   override val run = Server.serve(routes).provide(Server.default)
-}
+end Example
 
 final case class MyModel(elems: List[NestedModel], cls: String = "text-xs")
 final case class NestedModel(name: String, age: Int)
@@ -86,7 +81,7 @@ object TestView extends View[MyModel]:
   val root: HtmlElement[MyModel] =
     div(
       idAttr := "42",
-      cls := model(_.cls),
+      cls    := model(_.cls),
       ul(
         model.splitByIndex(_.elems)(elem =>
           li(

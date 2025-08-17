@@ -41,10 +41,6 @@ enum Mod:
     dynList: Dyn[List[T]],
     project: Dyn[T] => HtmlElement)
 
-given [T]: Conversion[HtmlElement, Mod] = Mod.Tag(_)
-given [T]: Conversion[String, Mod]      = Mod.Text(_)
-given [T]: Conversion[Dyn[String], Mod] = Mod.DynText(_)
-
 final case class Dyn[T](key: LiveState.Key, f: key.Type => T):
   def render(state: LiveState, trackUpdates: Boolean): Option[T] =
     val entry = state(key)

@@ -9,9 +9,10 @@ import zio.http.template.Html
 
 object Example extends ZIOAppDefault:
 
-  val lv =
-    LiveView(
-      TestView,
+  val s = Socket(
+    TestView,
+    LiveState.empty.set(
+      TestView.model,
       MyModel(
         List(
           NestedModel("a", 10),
@@ -20,6 +21,7 @@ object Example extends ZIOAppDefault:
         )
       )
     )
+  )
 
   val socketApp: WebSocketApp[Any] =
     Handler.webSocket { channel =>
@@ -66,7 +68,7 @@ object Example extends ZIOAppDefault:
   val routes: Routes[Any, Response] =
     Routes(
       Method.GET / "" -> handler { (_: Request) =>
-        Response.html(Html.raw(HtmlBuilder.build(lv)))
+        Response.html(Html.raw(s.renderHtml))
       },
       Method.GET / "live" / "ws" -> handler(socketApp.toResponse)
     )
@@ -77,13 +79,14 @@ end Example
 final case class MyModel(elems: List[NestedModel], cls: String = "text-xs")
 final case class NestedModel(name: String, age: Int)
 
-object TestView extends View[MyModel]:
-  val root: HtmlElement[MyModel] =
+object TestView extends LiveView:
+  val model  = LiveState.Key[MyModel]
+  val render =
     div(
       idAttr := "42",
       cls    := model(_.cls),
       ul(
-        model.splitByIndex(_.elems)(elem =>
+        model(_.elems).splitByIndex(elem =>
           li(
             "Nom: ",
             elem(_.name),

@@ -4,27 +4,25 @@ import java.io.StringWriter
 
 object HtmlBuilder:
 
-  def build(lv: LiveView[?]): String =
+  def build(rendered: Rendered, isRoot: Boolean = false): String =
     val strw = new StringWriter()
-    build(lv.static, lv.dynamic, strw)
+    if isRoot then strw.append("<!doctype html>")
+    build(rendered.static, rendered.dynamic, strw)
     strw.toString()
 
   private def build(
     static: Seq[String],
-    dynamic: Seq[LiveDyn[?]],
+    dynamic: Seq[Boolean => RenderedDyn],
     strw: StringWriter
   ): Unit =
     for i <- dynamic.indices do
       strw.append(static(i))
-      dynamic(i) match
-        case mod: LiveDyn.Value[?, ?] =>
-          strw.append(mod.currentValue.toString)
-        case mod: LiveDyn.When[?]     => build(mod, strw)
-        case mod: LiveDyn.Split[?, ?] => build(mod, strw)
+      dynamic(i)(false).foreach {
+        case s: String        => strw.append(s)
+        case r: Rendered      => build(r)
+        case c: Comprehension => build(c, strw)
+      }
     strw.append(static.last)
 
-  private def build(mod: LiveDyn.When[?], strw: StringWriter): Unit =
-    if mod.displayed then build(mod.nested.static, mod.nested.dynamic, strw)
-
-  private def build(mod: LiveDyn.Split[?, ?], strw: StringWriter): Unit =
-    mod.dynamic.foreach(entry => build(mod.static, entry, strw))
+  private def build(comp: Comprehension, strw: StringWriter): Unit =
+    comp.entries.foreach(entry => build(comp.static, entry(false).map(d => _ => d), strw))

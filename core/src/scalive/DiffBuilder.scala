@@ -1,71 +1,53 @@
 package scalive
 
+import zio.Chunk
+import zio.json.ast.Json
+
 object DiffBuilder:
-  def build(
-    static: Seq[String],
-    dynamic: Seq[LiveDyn[?]],
-    includeUnchanged: Boolean = false
-  ): Diff.Tag =
-    Diff.Tag(
-      static = static,
-      dynamic = dynamic.zipWithIndex
-        .filter(includeUnchanged || _._1.wasUpdated)
-        .map {
-          case (v: LiveDyn.Value[?, ?], i) =>
-            Diff.Dynamic(i, Diff.Static(v.currentValue.toString))
-          case (v: LiveDyn.When[?], i)     => build(v, i, includeUnchanged)
-          case (v: LiveDyn.Split[?, ?], i) =>
-            Diff.Dynamic(i, build(v, includeUnchanged))
-        }
-    )
-
-  private def build(
-    mod: LiveDyn.When[?],
-    index: Int,
-    includeUnchanged: Boolean
-  ): Diff.Dynamic =
-    if mod.displayed then
-      if includeUnchanged || mod.cond.wasUpdated then
-        Diff.Dynamic(
-          index,
-          build(
-            mod.nested.static,
-            mod.nested.dynamic,
-            includeUnchanged = true
-          )
+  def build(rendered: Rendered, fingerprint: Fingerprint): Json =
+    val nestedFingerprintIter = fingerprint.nested.iterator
+    Json.Obj(
+      Option
+        .when(rendered.static.nonEmpty && fingerprint.value != rendered.fingerprint)(
+          "s" -> Json.Arr(rendered.static.map(Json.Str(_))*)
         )
-      else
-        Diff.Dynamic(
-          index,
-          build(
-            static = Seq.empty,
-            mod.nested.dynamic,
-            includeUnchanged
-          )
-        )
-    else Diff.Dynamic(index, Diff.Deleted)
-
-  private def build(
-    mod: LiveDyn.Split[?, ?],
-    includeUnchanged: Boolean
-  ): Diff.Split =
-    Diff.Split(
-      static = if includeUnchanged then mod.static else Seq.empty,
-      entries = mod.dynamic.toList.zipWithIndex
-        .filter(includeUnchanged || _._1.exists(_.wasUpdated))
-        .map[Diff.Dynamic]((mods, i) =>
-          Diff.Dynamic(
-            i,
-            build(
-              static = Seq.empty,
-              dynamic = mods,
-              includeUnchanged
-            )
-          )
-        )
+        .to(Chunk)
         .appendedAll(
-          mod.removedIndexes
-            .map(i => Diff.Dynamic(i, Diff.Deleted))
+          rendered.dynamic.zipWithIndex
+            .map((render, index) => index.toString -> build(render(true), nestedFingerprintIter))
+        ).filterNot(_._2 == Json.Obj.empty)
+    )
+
+  private def build(comp: Comprehension, fingerprint: Fingerprint): Json =
+    val nestedFingerprintIter = fingerprint.nested.iterator
+    Json.Obj(
+      Option
+        .when(comp.static.nonEmpty && fingerprint.value != comp.fingerprint)(
+          "s" -> Json.Arr(comp.static.map(Json.Str(_))*)
+        )
+        .to(Chunk)
+        .appendedAll(
+          Option.when(comp.entries.nonEmpty)(
+            "d" ->
+              Json.Arr(
+                comp.entries.map(render =>
+                  Json.Obj(
+                    render(true).zipWithIndex
+                      .map((dyn, index) =>
+                        index.toString -> build(dyn, nestedFingerprintIter)
+                      ).filterNot(_._2 == Json.Obj.empty)*
+                  )
+                )*
+              )
+          )
         )
     )
+
+  private def build(dyn: RenderedDyn, fingerprintIter: Iterator[Fingerprint]): Json =
+    dyn match
+      case Some(s: String)   => Json.Str(s)
+      case Some(r: Rendered) => build(r, fingerprintIter.nextOption.getOrElse(Fingerprint.empty))
+      case Some(c: Comprehension) =>
+        build(c, fingerprintIter.nextOption.getOrElse(Fingerprint.empty))
+      case None => Json.Obj.empty
 end DiffBuilder

@@ -6,9 +6,9 @@ final case class Elem(name: String, age: Int)
 class TestView extends LiveView[TestView.Cmd]:
   import TestView.Cmd.*
 
-  private val textCls  = LiveState.Key[String]
-  private val someBool = LiveState.Key[Boolean]
-  private val elems    = LiveState.Key[List[Elem]]
+  private val textCls  = Dyn[String]
+  private val someBool = Dyn[Boolean]
+  private val elems    = Dyn[List[Elem]]
 
   def mount(state: LiveState): LiveState =
     state

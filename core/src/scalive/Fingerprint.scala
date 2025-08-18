@@ -40,7 +40,7 @@ object Fingerprint:
       case Mod.DynAttrValueAsPresence(_, _)    => md.update(Fingerprint.dynAttrValueAsPresence)
       case Mod.DynText(_)                      => md.update(Fingerprint.dynText)
       case Mod.When(_, _)                      => md.update(Fingerprint.dynWhen)
-      case Mod.Split(_, project)               => md.update(digest(project(Dyn.dummy)))
+      case Mod.Split(_, project)               => md.update(digest(project(Dyn.apply)))
       case Mod.Tag(el)                         => Right(digest(el))
     }
     md.digest()

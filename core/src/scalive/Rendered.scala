@@ -41,14 +41,14 @@ object Rendered:
         .render(state, trackUpdates)
         .collect {
           case items if items.nonEmpty =>
-            val el = mod.project(Dyn.dummy)
+            val el = mod.project(Dyn.apply)
             Comprehension(
               Fingerprint.apply(el),
               el.static,
               items.map(item =>
-                val localKey   = LiveState.Key[Any]
-                val localState = LiveState.empty.set(localKey, item)
-                val localElem  = mod.project(localKey.id)
+                val localDyn   = Dyn[Any]
+                val localState = LiveState.empty.set(localDyn, item)
+                val localElem  = mod.project(localDyn)
                 trackElemUpdates =>
                   buildDynamicRendered(localElem, localState).map(_(trackElemUpdates))
               )

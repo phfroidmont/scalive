@@ -3,9 +3,10 @@ package scalive
 final case class LiveState private (val data: Map[LiveState.Key, LiveState.Entry[Any]]):
   def get(k: LiveState.Key): Option[LiveState.Entry[k.Type]] =
     data.get(k).asInstanceOf[Option[LiveState.Entry[k.Type]]]
-  def set(k: LiveState.Key, v: k.Type): LiveState =
-    copy(data = data.updated(k, LiveState.Entry(true, v)))
-  def apply(k: LiveState.Key): LiveState.Entry[k.Type]              = get(k).get
+  def set[T](k: Dyn[T], v: T): LiveState =
+    copy(data = data.updated(k.key, LiveState.Entry(true, v)))
+  def apply(k: LiveState.Key): LiveState.Entry[k.Type] =
+    get(k).getOrElse(throw new IllegalArgumentException("An assign of type"))
   def update(k: LiveState.Key, update: k.Type => k.Type): LiveState =
     copy(data =
       data.updatedWith(k)(
@@ -24,8 +25,8 @@ object LiveState:
 
   class Key:
     type Type
-    def id: Dyn[Type]                  = Dyn(this, identity)
-    def apply[T](f: Type => T): Dyn[T] = Dyn(this, f)
+    def toDyn: Dyn[Type]               = Dyn(this, identity)
+    def toDyn[T](f: Type => T): Dyn[T] = Dyn(this, f)
   object Key:
     def apply[T] = new Key:
       type Type = T

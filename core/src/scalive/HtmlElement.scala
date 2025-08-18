@@ -41,7 +41,7 @@ enum Mod:
     dynList: Dyn[List[T]],
     project: Dyn[T] => HtmlElement)
 
-final case class Dyn[T](key: LiveState.Key, f: key.Type => T):
+final case class Dyn[T] private[scalive] (key: LiveState.Key, f: key.Type => T):
   def render(state: LiveState, trackUpdates: Boolean): Option[T] =
     val entry = state(key)
     if !trackUpdates | entry.changed then Some(f(entry.value))
@@ -61,4 +61,4 @@ extension [T](dyn: Dyn[List[T]])
     Mod.Split(dyn, project)
 
 object Dyn:
-  def dummy[T] = Dyn(LiveState.Key[T], identity)
+  def apply[T]: Dyn[T] = Dyn(LiveState.Key[T], identity)

@@ -1,41 +1,27 @@
 import scalive.*
 
-final case class MyModel(cls: String = "text-xs", bool: Boolean = true)
+final case class MyModel(
+  cls: String = "text-xs",
+  bool: Boolean = true,
+  elems: List[Elem] = List.empty)
 final case class Elem(name: String, age: Int)
 
-class TestView extends LiveView[TestView.Cmd]:
+class TestView(initialModel: MyModel) extends LiveView[TestView.Cmd]:
   import TestView.Cmd.*
 
-  private val textCls  = Dyn[String]
-  private val someBool = Dyn[Boolean]
-  private val elems    = Dyn[List[Elem]]
+  private val modelVar = Var[MyModel](initialModel)
 
-  def mount(state: LiveState): LiveState =
-    state
-      .set(textCls, "text-xs")
-      .set(someBool, true)
-      .set(
-        elems,
-        List(
-          Elem("a", 10),
-          Elem("b", 15),
-          Elem("c", 20)
-        )
-      )
+  def handleCommand(cmd: TestView.Cmd): Unit =
+    cmd match
+      case UpdateModel(f) => modelVar.update(f)
 
-  def handleCommand(cmd: TestView.Cmd, state: LiveState): LiveState = cmd match
-    case UpdateElems(es)    => state.set(elems, es)
-    case UpdateBool(b)      => state.set(someBool, b)
-    case UpdateTextCls(cls) => state.set(textCls, cls)
-
-  val render =
+  val el: HtmlElement =
     div(
-      idAttr    := "42",
-      cls       := textCls,
-      draggable := someBool,
-      disabled  := someBool,
+      idAttr   := "42",
+      cls      := modelVar(_.cls),
+      disabled := modelVar(_.bool),
       ul(
-        elems.splitByIndex(elem =>
+        modelVar(_.elems).splitByIndex((_, elem) =>
           li(
             "Nom: ",
             elem(_.name),
@@ -45,10 +31,7 @@ class TestView extends LiveView[TestView.Cmd]:
         )
       )
     )
-end TestView
 
 object TestView:
   enum Cmd:
-    case UpdateElems(es: List[Elem])
-    case UpdateBool(b: Boolean)
-    case UpdateTextCls(cls: String)
+    case UpdateModel(f: MyModel => MyModel)

@@ -1,53 +1,62 @@
 package scalive
 
-import zio.Chunk
-import zio.json.ast.Json
+import scalive.Mod.Attr
+import scalive.Mod.Content
 
 object DiffBuilder:
-  def build(rendered: Rendered, fingerprint: Fingerprint): Json =
-    val nestedFingerprintIter = fingerprint.nested.iterator
-    Json.Obj(
-      Option
-        .when(rendered.static.nonEmpty && fingerprint.value != rendered.fingerprint)(
-          "s" -> Json.Arr(rendered.static.map(Json.Str(_))*)
-        )
-        .to(Chunk)
-        .appendedAll(
-          rendered.dynamic.zipWithIndex
-            .map((render, index) => index.toString -> build(render(true), nestedFingerprintIter))
-        ).filterNot(_._2 == Json.Obj.empty)
+  def build(el: HtmlElement, trackUpdates: Boolean = true): Diff =
+    build(
+      static = if trackUpdates then Seq.empty else el.static,
+      dynamicMods = el.dynamicMods,
+      trackUpdates = trackUpdates
     )
 
-  private def build(comp: Comprehension, fingerprint: Fingerprint): Json =
-    val nestedFingerprintIter = fingerprint.nested.iterator
-    Json.Obj(
-      Option
-        .when(comp.static.nonEmpty && fingerprint.value != comp.fingerprint)(
-          "s" -> Json.Arr(comp.static.map(Json.Str(_))*)
-        )
-        .to(Chunk)
-        .appendedAll(
-          Option.when(comp.entries.nonEmpty)(
-            "d" ->
-              Json.Arr(
-                comp.entries.map(render =>
-                  Json.Obj(
-                    render(true).zipWithIndex
-                      .map((dyn, index) =>
-                        index.toString -> build(dyn, nestedFingerprintIter)
-                      ).filterNot(_._2 == Json.Obj.empty)*
-                  )
-                )*
+  private def build(static: Seq[String], dynamicMods: Seq[DynamicMod], trackUpdates: Boolean)
+    : Diff =
+    Diff.Tag(
+      static = static,
+      dynamic =
+        buildDynamic(dynamicMods, trackUpdates).zipWithIndex.collect { case (Some(diff), index) =>
+          Diff.Dynamic(index.toString, diff)
+        }
+    )
+
+  private def buildDynamic(dynamicMods: Seq[DynamicMod], trackUpdates: Boolean): Seq[Option[Diff]] =
+    dynamicMods.flatMap {
+      case Attr.Dyn(attr, value) =>
+        List(value.render(trackUpdates).map(v => Diff.Value(v.toString)))
+      case Attr.DynValueAsPresence(attr, value) =>
+        List(value.render(trackUpdates).map(v => Diff.Value(if v then s" ${attr.name}" else "")))
+      case Content.Tag(el)               => buildDynamic(el.dynamicMods, trackUpdates)
+      case Content.DynText(dyn)          => List(dyn.render(trackUpdates).map(Diff.Value(_)))
+      case Content.DynElement(dyn)       => ???
+      case Content.DynOptionElement(dyn) =>
+        List(dyn.render(trackUpdates) match
+          // Element is added
+          case Some(Some(el)) => Some(build(el, trackUpdates = false))
+          // Element is removed
+          case Some(None) => Some(Diff.Deleted)
+          // Element is updated if present
+          case None => dyn.currentValue.map(build(_, trackUpdates)))
+      case Content.DynElementColl(dyn) => ???
+      case Content.DynSplit(splitVar)  =>
+        val entries = splitVar.render(trackUpdates)
+        if entries.isEmpty then List.empty
+        else
+          val static =
+            entries.collectFirst { case (_, Some(el)) => el.static }.getOrElse(List.empty)
+          List(
+            Some(
+              Diff.Split(
+                static = if trackUpdates then Seq.empty else static,
+                entries = entries.map {
+                  case (key, Some(el)) =>
+                    Diff.Dynamic(key.toString, build(Seq.empty, el.dynamicMods, trackUpdates))
+                  case (key, None) => Diff.Dynamic(key.toString, Diff.Deleted)
+                }
               )
+            )
           )
-        )
-    )
+    }
 
-  private def build(dyn: RenderedDyn, fingerprintIter: Iterator[Fingerprint]): Json =
-    dyn match
-      case Some(s: String)   => Json.Str(s)
-      case Some(r: Rendered) => build(r, fingerprintIter.nextOption.getOrElse(Fingerprint.empty))
-      case Some(c: Comprehension) =>
-        build(c, fingerprintIter.nextOption.getOrElse(Fingerprint.empty))
-      case None => Json.Obj.empty
 end DiffBuilder

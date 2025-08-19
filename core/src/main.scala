@@ -2,61 +2,82 @@ import scalive.*
 
 @main
 def main =
-  val s = Socket(TestView())
+  val initModel = MyModel(elems =
+    List(
+      Elem("a", 10),
+      Elem("b", 15),
+      Elem("c", 30)
+    )
+  )
+  val s = Socket(TestView(initModel))
   println("Init")
   println(s.renderHtml)
   s.syncClient
   s.syncClient
 
-  println("Edit first and last")
+  println("Edit class attribue")
   s.receiveCommand(
-    TestView.Cmd.UpdateTextCls("text-lg")
+    TestView.Cmd.UpdateModel(_.copy(cls = "text-lg"))
   )
   s.syncClient
 
   println("Edit first and last")
   s.receiveCommand(
-    TestView.Cmd.UpdateElems(
-      List(
-        Elem("x", 10),
-        Elem("b", 15),
-        Elem("c", 99)
+    TestView.Cmd.UpdateModel(
+      _.copy(elems =
+        List(
+          Elem("x", 10),
+          Elem("b", 15),
+          Elem("c", 99)
+        )
       )
     )
   )
   s.syncClient
+  println(s.renderHtml)
 
   println("Add one")
   s.receiveCommand(
-    TestView.Cmd.UpdateElems(
-      List(
-        Elem("x", 10),
-        Elem("b", 15),
-        Elem("c", 99),
-        Elem("d", 35)
+    TestView.Cmd.UpdateModel(
+      _.copy(elems =
+        List(
+          Elem("x", 10),
+          Elem("b", 15),
+          Elem("c", 99),
+          Elem("d", 35)
+        )
       )
     )
   )
   s.syncClient
+  println(s.renderHtml)
 
-  //
-  // println("Remove first")
-  // lv.update(
-  //   MyModel(
-  //     List(
-  //       NestedModel("b", 15),
-  //       NestedModel("c", 99),
-  //       NestedModel("d", 35)
-  //     )
-  //   )
-  // )
-  // println(lv.diff.toJsonPretty)
-  // println(HtmlBuilder.build(lv))
-  //
-  // println("Remove all")
-  // lv.update(
-  //   MyModel(List.empty, "text-lg", bool = false)
-  // )
-  // println(lv.diff.toJsonPretty)
-  // println(HtmlBuilder.build(lv))
+  println("Remove first")
+  s.receiveCommand(
+    TestView.Cmd.UpdateModel(
+      _.copy(elems =
+        List(
+          Elem("b", 15),
+          Elem("c", 99),
+          Elem("d", 35)
+        )
+      )
+    )
+  )
+  s.syncClient
+  println(s.renderHtml)
+
+  println("Remove all")
+  s.receiveCommand(
+    TestView.Cmd.UpdateModel(
+      _.copy(
+        cls = "text-lg",
+        bool = false,
+        elems = List.empty
+      )
+    )
+  )
+  s.syncClient
+  s.syncClient
+  println(s.renderHtml)
 end main

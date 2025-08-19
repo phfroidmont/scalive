@@ -3,18 +3,21 @@ package scalive
 import zio.json.*
 
 final case class Socket[Cmd](lv: LiveView[Cmd]):
-  private var state: LiveState         = lv.mount(LiveState.empty)
-  private var fingerprint: Fingerprint = Fingerprint.empty
-  val id: String                       = "scl-123"
+
+  lv.el.syncAll()
+
+  private var clientInitialized = false
+  val id: String                = "scl-123"
 
   def receiveCommand(cmd: Cmd): Unit =
-    state = lv.handleCommand(cmd, state)
+    lv.handleCommand(cmd)
 
   def renderHtml: String =
-    HtmlBuilder.build(Rendered.render(lv.render, state), isRoot = true)
+    lv.el.syncAll()
+    HtmlBuilder.build(lv.el, isRoot = true)
 
   def syncClient: Unit =
-    val r = Rendered.render(lv.render, state)
-    println(DiffBuilder.build(r, fingerprint).toJsonPretty)
-    fingerprint = Fingerprint(r)
-    state = state.setAllUnchanged
+    lv.el.syncAll()
+    println(DiffBuilder.build(lv.el, trackUpdates = clientInitialized).toJsonPretty)
+    clientInitialized = true
+    lv.el.setAllUnchanged()

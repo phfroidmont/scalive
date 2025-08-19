@@ -2,9 +2,27 @@ package scalive
 
 import scalive.codecs.BooleanAsAttrPresenceCodec
 import scalive.codecs.Codec
+import scalive.Mod.Attr
+import scalive.Mod.Content
 
 class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
-  lazy val static = Rendered.buildStatic(this)
+  def static: Seq[String]     = StaticBuilder.build(this)
+  def attrMods: Seq[Mod.Attr] =
+    mods.collect { case mod: Mod.Attr => mod }
+  def contentMods: Seq[Mod.Content] =
+    mods.collect { case mod: Mod.Content => mod }
+  def dynamicMods: Seq[(Mod.Attr | Mod.Content) & DynamicMod] =
+    dynamicAttrMods ++ dynamicContentMods.flatMap {
+      case Content.Tag(el) => el.dynamicMods
+      case mod             => List(mod)
+
+    }
+  def dynamicAttrMods: Seq[Mod.Attr & DynamicMod] =
+    mods.collect { case mod: (Mod.Attr & DynamicMod) => mod }
+  def dynamicContentMods: Seq[Mod.Content & DynamicMod] =
+    mods.collect { case mod: (Mod.Content & DynamicMod) => mod }
+  private[scalive] def syncAll(): Unit         = mods.foreach(_.syncAll())
+  private[scalive] def setAllUnchanged(): Unit = dynamicMods.foreach(_.setAllUnchanged())
 
 class HtmlTag(val name: String, val void: Boolean = false):
   def apply(mods: Mod*): HtmlElement = HtmlElement(this, mods.toVector)
@@ -12,53 +30,87 @@ class HtmlTag(val name: String, val void: Boolean = false):
 class HtmlAttr[V](val name: String, val codec: Codec[V, String]):
   private inline def isBooleanAsAttrPresence = codec == BooleanAsAttrPresenceCodec
 
-  def :=(value: V): Mod =
+  def :=(value: V): Mod.Attr =
     if isBooleanAsAttrPresence then
-      Mod.StaticAttrValueAsPresence(
+      Mod.Attr.StaticValueAsPresence(
         this.asInstanceOf[HtmlAttr[Boolean]],
         value.asInstanceOf[Boolean]
       )
-    else Mod.StaticAttr(this, codec.encode(value))
+    else Mod.Attr.Static(this, codec.encode(value))
 
-  def :=(value: Dyn[V]): Mod =
+  def :=(value: Dyn[V]): Mod.Attr =
     if isBooleanAsAttrPresence then
-      Mod.DynAttrValueAsPresence(
+      Mod.Attr.DynValueAsPresence(
         this.asInstanceOf[HtmlAttr[Boolean]],
         value.asInstanceOf[Dyn[Boolean]]
       )
-    else Mod.DynAttr(this, value)
+    else Mod.Attr.Dyn(this, value)
 
-enum Mod:
-  case Text(text: String)
-  case StaticAttr(attr: HtmlAttr[?], value: String)
-  case StaticAttrValueAsPresence(attr: HtmlAttr[Boolean], value: Boolean)
-  case DynAttr[T](attr: HtmlAttr[T], value: Dyn[T])
-  case DynAttrValueAsPresence(attr: HtmlAttr[Boolean], value: Dyn[Boolean])
-  case Tag(el: HtmlElement)
-  case DynText(dyn: Dyn[String])
-  case When(dyn: Dyn[Boolean], el: HtmlElement)
-  case Split[T](
-    dynList: Dyn[List[T]],
-    project: Dyn[T] => HtmlElement)
+sealed trait Mod
+sealed trait StaticMod  extends Mod
+sealed trait DynamicMod extends Mod
 
-final case class Dyn[T] private[scalive] (key: LiveState.Key, f: key.Type => T):
-  def render(state: LiveState, trackUpdates: Boolean): Option[T] =
-    val entry = state(key)
-    if !trackUpdates | entry.changed then Some(f(entry.value))
-    else None
+object Mod:
+  enum Attr extends Mod:
+    case Static(attr: HtmlAttr[?], value: String)                       extends Attr with StaticMod
+    case StaticValueAsPresence(attr: HtmlAttr[Boolean], value: Boolean) extends Attr with StaticMod
+    case Dyn[T](attr: HtmlAttr[T], value: scalive.Dyn[T])               extends Attr with DynamicMod
+    case DynValueAsPresence(attr: HtmlAttr[Boolean], value: scalive.Dyn[Boolean])
+        extends Attr
+        with DynamicMod
 
-  def map[T2](f2: T => T2): Dyn[T2] = Dyn(key, f.andThen(f2))
+  enum Content extends Mod:
+    case Text(text: String)                extends Content with StaticMod
+    case Tag(el: HtmlElement)              extends Content with StaticMod with DynamicMod
+    case DynText(dyn: Dyn[String])         extends Content with DynamicMod
+    case DynElement(dyn: Dyn[HtmlElement]) extends Content with DynamicMod
+    // TODO support arbitrary collection
+    case DynOptionElement(dyn: Dyn[Option[HtmlElement]]) extends Content with DynamicMod
+    case DynElementColl(dyn: Dyn[Iterable[HtmlElement]]) extends Content with DynamicMod
+    case DynSplit(v: SplitVar[?, HtmlElement, ?])        extends Content with DynamicMod
 
-  inline def apply[T2](f2: T => T2): Dyn[T2] = map(f2)
+extension (mod: Mod)
+  private[scalive] def setAllUnchanged(): Unit =
+    mod match
+      case Attr.Static(_, _)                    => ()
+      case Attr.StaticValueAsPresence(_, _)     => ()
+      case Attr.Dyn(_, value)                   => value.setUnchanged()
+      case Attr.DynValueAsPresence(attr, value) => value.setUnchanged()
+      case Content.Text(text)                   => ()
+      case Content.Tag(el)                      => el.setAllUnchanged()
+      case Content.DynText(dyn)                 => dyn.setUnchanged()
+      case Content.DynElement(dyn)              =>
+        dyn.setUnchanged()
+        dyn.callOnEveryChild(_.setAllUnchanged())
+      case Content.DynOptionElement(dyn) =>
+        dyn.setUnchanged()
+        dyn.callOnEveryChild(_.foreach(_.setAllUnchanged()))
+      case Content.DynElementColl(dyn) =>
+        dyn.setUnchanged()
+        dyn.callOnEveryChild(_.foreach(_.setAllUnchanged()))
+      case Content.DynSplit(v) =>
+        v.setUnchanged()
+        v.callOnEveryChild(_.setAllUnchanged())
 
-  def when(f2: T => Boolean)(el: HtmlElement): Mod.When = Mod.When(map(f2), el)
-
-  inline def whenNot(f2: T => Boolean)(el: HtmlElement): Mod.When =
-    when(f2.andThen(!_))(el)
-
-extension [T](dyn: Dyn[List[T]])
-  def splitByIndex(project: Dyn[T] => HtmlElement): Mod.Split[T] =
-    Mod.Split(dyn, project)
-
-object Dyn:
-  def apply[T]: Dyn[T] = Dyn(LiveState.Key[T], identity)
+  private[scalive] def syncAll(): Unit =
+    mod match
+      case Attr.Static(_, _)                    => ()
+      case Attr.StaticValueAsPresence(_, _)     => ()
+      case Attr.Dyn(_, value)                   => value.sync()
+      case Attr.DynValueAsPresence(attr, value) => value.sync()
+      case Content.Text(text)                   => ()
+      case Content.Tag(el)                      => el.syncAll()
+      case Content.DynText(dyn)                 => dyn.sync()
+      case Content.DynElement(dyn)              =>
+        dyn.sync()
+        dyn.callOnEveryChild(_.syncAll())
+      case Content.DynOptionElement(dyn) =>
+        dyn.sync()
+        dyn.callOnEveryChild(_.foreach(_.syncAll()))
+      case Content.DynElementColl(dyn) =>
+        dyn.sync()
+        dyn.callOnEveryChild(_.foreach(_.syncAll()))
+      case Content.DynSplit(v) =>
+        v.sync()
+        v.callOnEveryChild(_.syncAll())
+end extension

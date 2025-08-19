@@ -4,24 +4,11 @@ import zio.*
 
 import zio.http.ChannelEvent.{ExceptionCaught, Read, UserEvent, UserEventTriggered}
 import zio.http.*
-import zio.http.codec.PathCodec.string
 import zio.http.template.Html
 
 object Example extends ZIOAppDefault:
 
-  val s = Socket(
-    TestView,
-    LiveState.empty.set(
-      TestView.model,
-      MyModel(
-        List(
-          NestedModel("a", 10),
-          NestedModel("b", 15),
-          NestedModel("c", 20)
-        )
-      )
-    )
-  )
+  val s = Socket(new TestView())
 
   val socketApp: WebSocketApp[Any] =
     Handler.webSocket { channel =>
@@ -79,14 +66,26 @@ end Example
 final case class MyModel(elems: List[NestedModel], cls: String = "text-xs")
 final case class NestedModel(name: String, age: Int)
 
-object TestView extends LiveView:
-  val model  = LiveState.Key[MyModel]
-  val render =
+class TestView extends LiveView[Nothing]:
+
+  val model = Var(
+    MyModel(
+      List(
+        NestedModel("a", 10),
+        NestedModel("b", 15),
+        NestedModel("c", 20)
+      )
+    )
+  )
+
+  def handleCommand(cmd: Nothing): Unit = ()
+
+  val el =
     div(
       idAttr := "42",
       cls    := model(_.cls),
       ul(
-        model(_.elems).splitByIndex(elem =>
+        model(_.elems).splitByIndex((_, elem) =>
           li(
             "Nom: ",
             elem(_.name),

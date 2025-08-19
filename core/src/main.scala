@@ -11,7 +11,7 @@ def main =
   )
   val s = Socket(TestView(initModel))
   println("Init")
-  println(s.renderHtml)
+  println(s.renderHtml())
   s.syncClient
   s.syncClient
 
@@ -34,7 +34,7 @@ def main =
     )
   )
   s.syncClient
-  println(s.renderHtml)
+  println(s.renderHtml())
 
   println("Add one")
   s.receiveCommand(
@@ -50,7 +50,7 @@ def main =
     )
   )
   s.syncClient
-  println(s.renderHtml)
+  println(s.renderHtml())
 
   println("Remove first")
   s.receiveCommand(
@@ -65,7 +65,7 @@ def main =
     )
   )
   s.syncClient
-  println(s.renderHtml)
+  println(s.renderHtml())
 
   println("Remove all")
   s.receiveCommand(
@@ -79,5 +79,5 @@ def main =
   )
   s.syncClient
   s.syncClient
-  println(s.renderHtml)
+  println(s.renderHtml())
 end main

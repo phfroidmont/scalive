@@ -12,9 +12,9 @@ final case class Socket[Cmd](lv: LiveView[Cmd]):
   def receiveCommand(cmd: Cmd): Unit =
     lv.handleCommand(cmd)
 
-  def renderHtml: String =
+  def renderHtml(rootLayout: HtmlElement => HtmlElement = identity): String =
     lv.el.syncAll()
-    HtmlBuilder.build(lv.el, isRoot = true)
+    HtmlBuilder.build(rootLayout(lv.el))
 
   def syncClient: Unit =
     lv.el.syncAll()

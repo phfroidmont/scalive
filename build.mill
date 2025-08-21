@@ -2,10 +2,10 @@
 
 package build
 
-import mill.*, scalalib.*
+import mill.*, scalalib.*, javascriptlib.*
 import mill.api.Task.Simple
 
-trait Common extends ScalaModule:
+trait ScalaCommon extends ScalaModule:
   def scalaVersion  = "3.7.2"
   def scalacOptions = Seq(
     "-Wunused:all",
@@ -15,7 +15,12 @@ trait Common extends ScalaModule:
     "-Wvalue-discard"
   )
 
-object core extends Common:
+object js extends TypeScriptModule:
+  def npmDeps      = Seq("morphdom@2.7.7")
+  def mainFileName = "index.ts"
+
+object core extends ScalaCommon:
+  // Replace with ujson, core shouldn't depend on ZIO
   def mvnDeps = Seq(mvn"dev.zio::zio-json:0.7.44")
 
   def generatedSources = Task {
@@ -23,9 +28,22 @@ object core extends Common:
     super.generatedSources() ++ Seq(PathRef(Task.dest))
   }
 
-  object test extends ScalaTests with TestModule.Utest:
+  def jsBundle = Task {
+    val bundleDest = Task.dest / "static" / "scalive.js"
+    os.copy(
+      from = js.bundle().path,
+      to = bundleDest
+    )
+    PathRef(Task.dest)
+  }
+
+  def resources = Task {
+    super.resources() ++ Seq(jsBundle())
+  }
+
+  object test extends ScalaTests with scalalib.TestModule.Utest:
     def utestVersion = "0.9.0"
 
-object zio extends Common:
+object zio extends ScalaCommon:
   def mvnDeps             = Seq(mvn"dev.zio::zio-http:3.4.0")
   override def moduleDeps = Seq(core)

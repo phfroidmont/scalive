@@ -8,4 +8,4 @@ el2.className = 'bar';
 
 morphdom(el1, el2);
 
-console.log("ok");
+export const scalive = "scalive"

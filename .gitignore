@@ -4,3 +4,5 @@
 .scala-build
 secrets.env
 out
+
+node_modules

@@ -5,7 +5,8 @@ object RootLayout:
     htmlRootTag(
       lang := "en",
       headTag(
-        metaTag(charset := "utf-8")
+        metaTag(charset := "utf-8"),
+        scriptTag(defer := true, typ := "text/javascript", src := "/static/app.js")
       ),
       bodyTag(
         content

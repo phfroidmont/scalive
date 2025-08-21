@@ -4,6 +4,10 @@ package build
 
 import mill.*, scalalib.*, javascriptlib.*
 import mill.api.Task.Simple
+import java.net.URI
+import java.nio.file.*
+import java.nio.file.attribute.BasicFileAttributes
+import java.util
 
 trait ScalaCommon extends ScalaModule:
   def scalaVersion  = "3.7.2"
@@ -14,10 +18,6 @@ trait ScalaCommon extends ScalaModule:
     "-language:implicitConversions",
     "-Wvalue-discard"
   )
-
-object js extends TypeScriptModule:
-  def npmDeps      = Seq("morphdom@2.7.7")
-  def mainFileName = "index.ts"
 
 object core extends ScalaCommon:
   // Replace with ujson, core shouldn't depend on ZIO
@@ -44,9 +44,30 @@ object core extends ScalaCommon:
   object test extends ScalaTests with scalalib.TestModule.Utest:
     def utestVersion = "0.9.0"
 
+  object js extends TypeScriptModule:
+    def npmDeps      = Seq("morphdom@2.7.7")
+    def mainFileName = "index.ts"
+
 object zio extends ScalaCommon:
   def mvnDeps    = Seq(mvn"dev.zio::zio-http:3.4.0")
   def moduleDeps = Seq(core)
 
 object example extends ScalaCommon:
   def moduleDeps = Seq(zio)
+
+  def scaliveBundle = Task {
+    os.copy(
+      from = example.js.bundle().path,
+      to = Task.dest / "public" / "app.js",
+      createFolders = true
+    )
+    PathRef(Task.dest)
+  }
+
+  def resources = Task {
+    super.resources() ++ Seq(scaliveBundle())
+  }
+
+  object js extends TypeScriptModule:
+    def mainFileName = "app.ts"
+    def moduleDeps   = Seq(core.js)

@@ -17,4 +17,6 @@ object Example extends ZIOAppDefault:
       )
     )
 
-  override val run = Server.serve(liveRouter.routes).provide(Server.default)
+  val routes = liveRouter.routes @@ Middleware.serveResources(Path.empty / "static", "public")
+
+  override val run = Server.serve(routes).provide(Server.default)

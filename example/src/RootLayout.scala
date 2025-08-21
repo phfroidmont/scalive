@@ -1,6 +1,4 @@
-package scalive
-
-import scalive.HtmlElement
+import scalive.*
 
 object RootLayout:
   def apply(content: HtmlElement): HtmlElement =

@@ -24,6 +24,9 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
   private[scalive] def syncAll(): Unit         = mods.foreach(_.syncAll())
   private[scalive] def setAllUnchanged(): Unit = dynamicMods.foreach(_.setAllUnchanged())
 
+  def prepended(mod: Mod*): HtmlElement = HtmlElement(tag, mods.prependedAll(mod))
+  def apended(mod: Mod*): HtmlElement   = HtmlElement(tag, mods.appendedAll(mod))
+
 class HtmlTag(val name: String, val void: Boolean = false):
   def apply(mods: Mod*): HtmlElement = HtmlElement(this, mods.toVector)
 

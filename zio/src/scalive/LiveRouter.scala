@@ -5,7 +5,8 @@ import zio.http.*
 import zio.http.ChannelEvent.Read
 import zio.http.codec.PathCodec
 import zio.http.template.Html
-import zio.json.JsonCodec
+import zio.json.*
+import zio.json.ast.Json
 
 final case class LiveRoute[A, Cmd](
   path: PathCodec[A],
@@ -17,19 +18,17 @@ final case class LiveRoute[A, Cmd](
       Response.html(Html.raw(s.renderHtml(rootLayout)))
     }
 
-// 1 Request to live route
-// 2 Create live view with stateless token containing user id if connected, http params, live view id
-// 3 Response with HTML and token
-// 4 Websocket connection with token
-// 5 Recreate exact same liveview as before using token data
 class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRoute[?, ?]]):
 
   private val socketApp: WebSocketApp[Any] =
     Handler.webSocket { channel =>
       channel.receiveAll {
         case Read(WebSocketFrame.Text(content)) =>
-          // content.fromJson[SocketMessage]
-          channel.send(Read(WebSocketFrame.text("bar")))
+          for
+            _ <-
+              content.fromJson[SocketMessage].fold(m => ZIO.logError(m), m => ZIO.log(m.toString))
+            _ <- channel.send(Read(WebSocketFrame.text("bar")))
+          yield ()
         case _ => ZIO.unit
       }
     }
@@ -37,8 +36,9 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
   val routes: Routes[Any, Response] =
     Routes.fromIterable(
       liveRoutes
-        .map(route => route.toZioRoute(rootLayout)).prepended(
-          Method.GET / "live" / "ws" -> handler(socketApp.toResponse)
+        .map(route => route.toZioRoute(rootLayout))
+        .prepended(
+          Method.GET / "live" / "websocket" -> handler(socketApp.toResponse)
         )
     )
 
@@ -49,5 +49,47 @@ final case class SocketMessage(
   messageRef: Int,
   // LiveView instance id
   topic: String,
-  payload: String)
-    derives JsonCodec
+  eventType: String,
+  payload: SocketMessage.Payload)
+object SocketMessage:
+  given JsonCodec[SocketMessage] = JsonCodec[Json].transformOrFail(
+    {
+      case Json.Arr(
+            Chunk(joinRef, Json.Str(messageRef), Json.Str(topic), Json.Str(eventType), payload)
+          ) =>
+        val payloadParsed = eventType match
+          case "phx_join" => payload.as[Payload.Join]
+          case s          => Left(s"Unknown event type : $s")
+
+        payloadParsed.map(
+          SocketMessage(
+            joinRef.asString.map(_.toInt),
+            messageRef.toInt,
+            topic,
+            eventType,
+            _
+          )
+        )
+      case v => Left(s"Could not parse socket message ${v.toJson}")
+    },
+    m =>
+      Json.Arr(
+        m.joinRef.map(Json.Num(_)).getOrElse(Json.Null),
+        Json.Num(m.messageRef),
+        Json.Str(m.topic),
+        Json.Str(m.eventType),
+        m.payload.match
+          case p: Payload.Join => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+      )
+  )
+
+  enum Payload:
+    case Join(
+      url: String,
+      // params: Map[String, String],
+      session: String,
+      static: Option[String],
+      sticky: Boolean)
+  object Payload:
+    given JsonCodec[Payload.Join] = JsonCodec.derived
+end SocketMessage

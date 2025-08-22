@@ -20,7 +20,7 @@ trait ScalaCommon extends ScalaModule:
   )
 
 object core extends ScalaCommon:
-  // Replace with ujson, core shouldn't depend on ZIO
+  // TODO Replace with ujson, core shouldn't depend on ZIO
   def mvnDeps = Seq(mvn"dev.zio::zio-json:0.7.44")
 
   def generatedSources = Task {
@@ -28,25 +28,8 @@ object core extends ScalaCommon:
     super.generatedSources() ++ Seq(PathRef(Task.dest))
   }
 
-  def jsBundle = Task {
-    os.copy(
-      from = js.bundle().path,
-      to = Task.dest / "static" / "scalive.js",
-      createFolders = true
-    )
-    PathRef(Task.dest)
-  }
-
-  def resources = Task {
-    super.resources() ++ Seq(jsBundle())
-  }
-
   object test extends ScalaTests with scalalib.TestModule.Utest:
     def utestVersion = "0.9.0"
-
-  object js extends TypeScriptModule:
-    def npmDeps      = Seq("morphdom@2.7.7")
-    def mainFileName = "index.ts"
 
 object zio extends ScalaCommon:
   def mvnDeps    = Seq(mvn"dev.zio::zio-http:3.4.0")
@@ -70,4 +53,4 @@ object example extends ScalaCommon:
 
   object js extends TypeScriptModule:
     def mainFileName = "app.ts"
-    def moduleDeps   = Seq(core.js)
+    def npmDeps      = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8")

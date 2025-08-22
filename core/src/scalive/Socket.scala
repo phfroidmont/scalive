@@ -2,22 +2,27 @@ package scalive
 
 import zio.json.*
 
+import java.util.Base64
+import scala.util.Random
+
 final case class Socket[Cmd](lv: LiveView[Cmd]):
 
-  lv.el.syncAll()
-
   private var clientInitialized = false
-  val id: String                = "scl-123"
+  val id: String      = s"phx-${Base64.getEncoder().encodeToString(Random().nextBytes(8))}"
+  private val token   = Token.sign("secret", id, "")
+  private val element = lv.el.prepended(idAttr := id, dataAttr("phx-session") := token)
+
+  element.syncAll()
 
   def receiveCommand(cmd: Cmd): Unit =
     lv.handleCommand(cmd)
 
   def renderHtml(rootLayout: HtmlElement => HtmlElement = identity): String =
-    lv.el.syncAll()
-    HtmlBuilder.build(rootLayout(lv.el))
+    element.syncAll()
+    HtmlBuilder.build(rootLayout(element))
 
   def syncClient: Unit =
-    lv.el.syncAll()
-    println(DiffBuilder.build(lv.el, trackUpdates = clientInitialized).toJsonPretty)
+    element.syncAll()
+    println(DiffBuilder.build(element, trackUpdates = clientInitialized).toJsonPretty)
     clientInitialized = true
-    lv.el.setAllUnchanged()
+    element.setAllUnchanged()

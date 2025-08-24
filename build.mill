@@ -52,5 +52,5 @@ object example extends ScalaCommon:
   }
 
   object js extends TypeScriptModule:
-    def mainFileName = "app.ts"
+    def mainFileName = "app.js"
     def npmDeps      = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8")

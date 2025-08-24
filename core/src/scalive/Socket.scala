@@ -26,3 +26,10 @@ final case class Socket[Cmd](lv: LiveView[Cmd]):
     println(DiffBuilder.build(element, trackUpdates = clientInitialized).toJsonPretty)
     clientInitialized = true
     element.setAllUnchanged()
+
+  def diff: Diff =
+    element.syncAll()
+    val diff = DiffBuilder.build(element, trackUpdates = clientInitialized)
+    clientInitialized = true
+    element.setAllUnchanged()
+    diff

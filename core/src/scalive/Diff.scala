@@ -8,7 +8,7 @@ enum Diff:
   case Tag(
     static: Seq[String] = Seq.empty,
     dynamic: Seq[Diff.Dynamic] = Seq.empty)
-  case Split(
+  case Comprehension(
     static: Seq[String] = Seq.empty,
     entries: Seq[Diff.Dynamic] = Seq.empty)
   case Value(value: String)
@@ -16,7 +16,7 @@ enum Diff:
   case Deleted
 
 object Diff:
-  given JsonEncoder[Diff] = JsonEncoder[Json].contramap(toJson)
+  given JsonEncoder[Diff] = JsonEncoder[Json].contramap(toJson(_))
 
   private def toJson(diff: Diff): Json =
     diff match
@@ -29,17 +29,18 @@ object Diff:
               dynamic.map(d => d.key -> toJson(d.diff))
             )
         )
-      case Diff.Split(static, entries) =>
+      case Diff.Comprehension(static, entries) =>
         Json.Obj(
           Option
             .when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*))
             .to(Chunk)
             .appendedAll(
               Option.when(entries.nonEmpty)(
-                "d" ->
-                  Json.Obj(
-                    entries.map(d => d.key -> toJson(d.diff))*
-                  )
+                "k" ->
+                  Json
+                    .Obj(
+                      entries.map(d => d.key -> toJson(d.diff))*
+                    ).add("kc", Json.Num(entries.length))
               )
             )
         )

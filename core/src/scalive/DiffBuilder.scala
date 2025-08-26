@@ -47,7 +47,7 @@ object DiffBuilder:
             entries.collectFirst { case (_, Some(el)) => el.static }.getOrElse(List.empty)
           List(
             Some(
-              Diff.Split(
+              Diff.Comprehension(
                 static = if trackUpdates then Seq.empty else static,
                 entries = entries.map {
                   case (key, Some(el)) =>

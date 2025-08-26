@@ -8,28 +8,37 @@ import scala.util.Random
 final case class Socket[Cmd](lv: LiveView[Cmd]):
 
   private var clientInitialized = false
-  val id: String      = s"phx-${Base64.getEncoder().encodeToString(Random().nextBytes(8))}"
-  private val token   = Token.sign("secret", id, "")
-  private val element = lv.el.prepended(idAttr := id, dataAttr("phx-session") := token)
+  val id: String                =
+    s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(8))}"
+  private val token = Token.sign("secret", id, "")
 
-  element.syncAll()
+  lv.el.syncAll()
 
   def receiveCommand(cmd: Cmd): Unit =
     lv.handleCommand(cmd)
 
   def renderHtml(rootLayout: HtmlElement => HtmlElement = identity): String =
-    element.syncAll()
-    HtmlBuilder.build(rootLayout(element))
+    lv.el.syncAll()
+    HtmlBuilder.build(
+      rootLayout(
+        div(
+          idAttr                  := id,
+          dataAttr("phx-session") := token,
+          lv.el
+        )
+      )
+    )
 
   def syncClient: Unit =
-    element.syncAll()
-    println(DiffBuilder.build(element, trackUpdates = clientInitialized).toJsonPretty)
+    lv.el.syncAll()
+    println(DiffBuilder.build(lv.el, trackUpdates = clientInitialized).toJsonPretty)
     clientInitialized = true
-    element.setAllUnchanged()
+    lv.el.setAllUnchanged()
 
   def diff: Diff =
-    element.syncAll()
-    val diff = DiffBuilder.build(element, trackUpdates = clientInitialized)
+    lv.el.syncAll()
+    val diff = DiffBuilder.build(lv.el, trackUpdates = clientInitialized)
     clientInitialized = true
-    element.setAllUnchanged()
+    lv.el.setAllUnchanged()
     diff
+end Socket

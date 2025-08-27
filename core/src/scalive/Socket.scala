@@ -2,28 +2,23 @@ package scalive
 
 import zio.json.*
 
-import java.util.Base64
-import scala.util.Random
-
-final case class Socket[Cmd](lv: LiveView[Cmd]):
+final case class Socket[CliEvt: JsonCodec, SrvEvt](
+  id: String,
+  token: String,
+  lv: LiveView[CliEvt, SrvEvt]):
+  val clientEventCodec = JsonCodec[CliEvt]
 
   private var clientInitialized = false
-  val id: String                =
-    s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(8))}"
-  private val token = Token.sign("secret", id, "")
 
   lv.el.syncAll()
-
-  def receiveCommand(cmd: Cmd): Unit =
-    lv.handleCommand(cmd)
 
   def renderHtml(rootLayout: HtmlElement => HtmlElement = identity): String =
     lv.el.syncAll()
     HtmlBuilder.build(
       rootLayout(
         div(
-          idAttr                  := id,
-          dataAttr("phx-session") := token,
+          idAttr      := id,
+          phx.session := token,
           lv.el
         )
       )

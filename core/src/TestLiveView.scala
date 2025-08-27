@@ -6,13 +6,13 @@ final case class MyModel(
   elems: List[Elem] = List.empty)
 final case class Elem(name: String, age: Int)
 
-class TestView(initialModel: MyModel) extends LiveView[TestView.Cmd]:
-  import TestView.Cmd.*
+class TestView(initialModel: MyModel) extends LiveView[String, TestView.Event]:
+  import TestView.Event.*
 
   private val modelVar = Var[MyModel](initialModel)
 
-  def handleCommand(cmd: TestView.Cmd): Unit =
-    cmd match
+  override def handleServerEvent(e: TestView.Event): Unit =
+    e match
       case UpdateModel(f) => modelVar.update(f)
 
   val el: HtmlElement =
@@ -33,5 +33,5 @@ class TestView(initialModel: MyModel) extends LiveView[TestView.Cmd]:
     )
 
 object TestView:
-  enum Cmd:
+  enum Event:
     case UpdateModel(f: MyModel => MyModel)

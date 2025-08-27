@@ -1,5 +1,6 @@
 package scalive
 
-trait LiveView[Cmd]:
-  def handleCommand(cmd: Cmd): Unit
+trait LiveView[ClientEvt, ServerEvent]:
+  def handleClientEvent(evt: ClientEvt): Unit   = ()
+  def handleServerEvent(evt: ServerEvent): Unit = ()
   val el: HtmlElement

@@ -20,11 +20,11 @@ object HtmlBuilder:
     for i <- dynamic.indices do
       strw.write(static(i))
       dynamic(i) match
-        case Attr.Dyn(attr, value) =>
-          strw.write(value.render(false).map(attr.codec.encode).getOrElse(""))
-        case Attr.DynValueAsPresence(attr, value) =>
+        case Attr.Dyn(name, value, isJson) =>
+          strw.write(value.render(false).getOrElse(""))
+        case Attr.DynValueAsPresence(name, value) =>
           strw.write(
-            value.render(false).map(if _ then s" ${attr.name}" else "").getOrElse("")
+            value.render(false).map(if _ then s" $name" else "").getOrElse("")
           )
         case Content.Tag(el)               => build(el.static, el.dynamicMods, strw)
         case Content.DynText(dyn)          => strw.write(dyn.render(false).getOrElse(""))
@@ -33,8 +33,8 @@ object HtmlBuilder:
           dyn.render(false).foreach(_.foreach(el => build(el.static, el.dynamicMods, strw)))
         case Content.DynElementColl(dyn) => ???
         case Content.DynSplit(splitVar)  =>
-          val entries   = splitVar.render(false)
-          val staticOpt = entries.collectFirst { case (_, Some(el)) => el.static }
+          val (entries, _) = splitVar.render(false).getOrElse(List.empty -> 0)
+          val staticOpt    = entries.collectFirst { case (_, Some(el)) => el.static }
           entries.foreach {
             case (_, Some(entryEl)) =>
               build(staticOpt.getOrElse(Nil), entryEl.dynamicMods, strw)

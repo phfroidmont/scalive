@@ -12,10 +12,14 @@ object StaticBuilder:
 
   private def buildStaticFragments(el: HtmlElement): Seq[Option[String]] =
     val attrs = el.attrMods.flatMap {
-      case Attr.Static(attr, value)                => List(Some(s""" ${attr.name}="$value""""))
-      case Attr.StaticValueAsPresence(attr, value) => List(Some(s" ${attr.name}"))
-      case Attr.Dyn(attr, value) => List(Some(s""" ${attr.name}=""""), None, Some('"'.toString))
-      case Attr.DynValueAsPresence(attr, value) => List(Some(""), None, Some(""))
+      case Attr.Static(name, value, isJson) =>
+        if isJson then List(Some(s" $name='$value'"))
+        else List(Some(s""" $name="$value""""))
+      case Attr.StaticValueAsPresence(name, value) => List(Some(s" $name"))
+      case Attr.Dyn(name, value, isJson)           =>
+        if isJson then List(Some(s" $name='"), None, Some("'"))
+        else List(Some(s""" $name=""""), None, Some('"'.toString))
+      case Attr.DynValueAsPresence(_, value) => List(Some(""), None, Some(""))
     }
     val children = el.contentMods.flatMap {
       case Content.Text(text)          => List(Some(text))

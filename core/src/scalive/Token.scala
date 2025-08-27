@@ -35,10 +35,10 @@ object Token:
     mac.doFinal(value)
 
   private def base64Encode(value: Array[Byte]): String =
-    Base64.getEncoder().encodeToString(value)
+    Base64.getUrlEncoder().withoutPadding().encodeToString(value)
 
   private def base64Decode(value: String): Array[Byte] =
-    Base64.getDecoder().decode(value)
+    Base64.getUrlDecoder().decode(value)
 
   def verify[T: JsonCodec](secret: String, token: String, maxAge: Duration)
     : Either[String, (liveViewId: String, payload: T)] =

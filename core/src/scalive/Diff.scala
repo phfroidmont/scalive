@@ -10,7 +10,8 @@ enum Diff:
     dynamic: Seq[Diff.Dynamic] = Seq.empty)
   case Comprehension(
     static: Seq[String] = Seq.empty,
-    entries: Seq[Diff.Dynamic] = Seq.empty)
+    entries: Seq[Diff.Dynamic] = Seq.empty,
+    count: Int = 0)
   case Value(value: String)
   case Dynamic(key: String, diff: Diff)
   case Deleted
@@ -29,19 +30,17 @@ object Diff:
               dynamic.map(d => d.key -> toJson(d.diff))
             )
         )
-      case Diff.Comprehension(static, entries) =>
+      case Diff.Comprehension(static, entries, count) =>
         Json.Obj(
           Option
             .when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*))
             .to(Chunk)
-            .appendedAll(
-              Option.when(entries.nonEmpty)(
-                "k" ->
-                  Json
-                    .Obj(
-                      entries.map(d => d.key -> toJson(d.diff))*
-                    ).add("kc", Json.Num(entries.length))
-              )
+            .appended(
+              "k" ->
+                Json
+                  .Obj(
+                    entries.map(d => d.key -> toJson(d.diff))*
+                  ).add("kc", Json.Num(count))
             )
         )
       case Diff.Value(value)         => Json.Str(value)

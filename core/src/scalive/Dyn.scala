@@ -94,7 +94,7 @@ class SplitVar[I, O, Key](
   project: (Key, Dyn[I]) => O):
 
   // Deleted elements have value none
-  private val memoized: mutable.Map[Key, Option[(Var[I], O)]] =
+  private val memoized: mutable.Map[Key, (Var[I], O)] =
     mutable.Map.empty
 
   private[scalive] def sync(): Unit =
@@ -107,30 +107,38 @@ class SplitVar[I, O, Key](
         nextKeys += entryKey
         memoized.updateWith(entryKey) {
           // Update matching key
-          case varAndOutput @ Some(Some((entryVar, _))) =>
+          case varAndOutput @ Some((entryVar, _)) =>
             entryVar.set(input)
             varAndOutput
           // Create new item
-          case Some(None) | None =>
+          case None =>
             val newVar = Var(input)
-            Some(Some(newVar, project(entryKey, newVar)))
+            Some(newVar, project(entryKey, newVar))
         }
       )
-      memoized.keys.foreach(k => if !nextKeys.contains(k) then memoized.update(k, None))
+      memoized.keys.foreach(k =>
+        if !nextKeys.contains(k) then
+          val _ = memoized.remove(k)
+      )
 
-  private[scalive] def render(trackUpdates: Boolean): List[(Key, Option[O])] =
-    memoized.collect {
-      case (k, Some(entryVar, output)) if !trackUpdates || entryVar.changed => (k, Some(output))
-      case (k, None)                                                        => (k, None)
-    }.toList
+  private[scalive] def render(trackUpdates: Boolean)
+    : Option[(changeList: List[(Key, Option[O])], keysCount: Int)] =
+    if parent.changed || !trackUpdates then
+      Some(
+        (
+          memoized.collect {
+            case (k, (entryVar, output)) if !trackUpdates || entryVar.changed => (k, Some(output))
+          }.toList,
+          memoized.size
+        )
+      )
+    else None
 
   private[scalive] def setUnchanged(): Unit =
     parent.setUnchanged()
-    // Remove previously deleted
-    memoized.filterInPlace((_, v) => v.nonEmpty)
 
   // Usefull to call setUnchanged when the output is an HtmlElement as only the caller can know the type
   private[scalive] def callOnEveryChild(f: O => Unit): Unit =
-    memoized.values.foreach(_.foreach((_, output) => f(output)))
+    memoized.values.foreach((_, output) => f(output))
 
 end SplitVar

@@ -1,4 +1,5 @@
 import scalive.*
+import zio.json.JsonCodec
 
 @main
 def main =
@@ -9,21 +10,21 @@ def main =
       Elem("c", 30)
     )
   )
-  val s = Socket(TestView(initModel))
+  val s = Socket("", "", TestView(initModel))
   println("Init")
   println(s.renderHtml())
   s.syncClient
   s.syncClient
 
   println("Edit class attribue")
-  s.receiveCommand(
-    TestView.Cmd.UpdateModel(_.copy(cls = "text-lg"))
+  s.lv.handleServerEvent(
+    TestView.Event.UpdateModel(_.copy(cls = "text-lg"))
   )
   s.syncClient
 
   println("Edit first and last")
-  s.receiveCommand(
-    TestView.Cmd.UpdateModel(
+  s.lv.handleServerEvent(
+    TestView.Event.UpdateModel(
       _.copy(elems =
         List(
           Elem("x", 10),
@@ -37,8 +38,8 @@ def main =
   println(s.renderHtml())
 
   println("Add one")
-  s.receiveCommand(
-    TestView.Cmd.UpdateModel(
+  s.lv.handleServerEvent(
+    TestView.Event.UpdateModel(
       _.copy(elems =
         List(
           Elem("x", 10),
@@ -53,8 +54,8 @@ def main =
   println(s.renderHtml())
 
   println("Remove first")
-  s.receiveCommand(
-    TestView.Cmd.UpdateModel(
+  s.lv.handleServerEvent(
+    TestView.Event.UpdateModel(
       _.copy(elems =
         List(
           Elem("b", 15),
@@ -68,8 +69,8 @@ def main =
   println(s.renderHtml())
 
   println("Remove all")
-  s.receiveCommand(
-    TestView.Cmd.UpdateModel(
+  s.lv.handleServerEvent(
+    TestView.Event.UpdateModel(
       _.copy(
         cls = "text-lg",
         bool = false,

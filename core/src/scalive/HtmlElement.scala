@@ -1,9 +1,10 @@
 package scalive
 
-import scalive.codecs.BooleanAsAttrPresenceCodec
-import scalive.codecs.Codec
 import scalive.Mod.Attr
 import scalive.Mod.Content
+import scalive.codecs.BooleanAsAttrPresenceCodec
+import scalive.codecs.Codec
+import zio.json.*
 
 class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
   def static: Seq[String]     = StaticBuilder.build(this)
@@ -36,18 +37,26 @@ class HtmlAttr[V](val name: String, val codec: Codec[V, String]):
   def :=(value: V): Mod.Attr =
     if isBooleanAsAttrPresence then
       Mod.Attr.StaticValueAsPresence(
-        this.asInstanceOf[HtmlAttr[Boolean]],
+        name,
         value.asInstanceOf[Boolean]
       )
-    else Mod.Attr.Static(this, codec.encode(value))
+    else Mod.Attr.Static(name, codec.encode(value))
 
   def :=(value: Dyn[V]): Mod.Attr =
     if isBooleanAsAttrPresence then
       Mod.Attr.DynValueAsPresence(
-        this.asInstanceOf[HtmlAttr[Boolean]],
+        name,
         value.asInstanceOf[Dyn[Boolean]]
       )
-    else Mod.Attr.Dyn(this, value)
+    else Mod.Attr.Dyn(name, value(codec.encode))
+
+class HtmlAttrJsonValue(val name: String):
+
+  def :=[V: JsonCodec](value: V): Mod.Attr =
+    Mod.Attr.Static(name, value.toJson, isJson = true)
+
+  def :=[V: JsonCodec](value: Dyn[V]): Mod.Attr =
+    Mod.Attr.Dyn(name, value(_.toJson), isJson = true)
 
 sealed trait Mod
 sealed trait StaticMod  extends Mod
@@ -55,12 +64,12 @@ sealed trait DynamicMod extends Mod
 
 object Mod:
   enum Attr extends Mod:
-    case Static(attr: HtmlAttr[?], value: String)                       extends Attr with StaticMod
-    case StaticValueAsPresence(attr: HtmlAttr[Boolean], value: Boolean) extends Attr with StaticMod
-    case Dyn[T](attr: HtmlAttr[T], value: scalive.Dyn[T])               extends Attr with DynamicMod
-    case DynValueAsPresence(attr: HtmlAttr[Boolean], value: scalive.Dyn[Boolean])
+    case Static(name: String, value: String, isJson: Boolean = false) extends Attr with StaticMod
+    case StaticValueAsPresence(name: String, value: Boolean)          extends Attr with StaticMod
+    case Dyn(name: String, value: scalive.Dyn[String], isJson: Boolean = false)
         extends Attr
         with DynamicMod
+    case DynValueAsPresence(name: String, value: scalive.Dyn[Boolean]) extends Attr with DynamicMod
 
   enum Content extends Mod:
     case Text(text: String)                extends Content with StaticMod
@@ -75,14 +84,14 @@ object Mod:
 extension (mod: Mod)
   private[scalive] def setAllUnchanged(): Unit =
     mod match
-      case Attr.Static(_, _)                    => ()
-      case Attr.StaticValueAsPresence(_, _)     => ()
-      case Attr.Dyn(_, value)                   => value.setUnchanged()
-      case Attr.DynValueAsPresence(attr, value) => value.setUnchanged()
-      case Content.Text(text)                   => ()
-      case Content.Tag(el)                      => el.setAllUnchanged()
-      case Content.DynText(dyn)                 => dyn.setUnchanged()
-      case Content.DynElement(dyn)              =>
+      case Attr.Static(_, _, _)              => ()
+      case Attr.StaticValueAsPresence(_, _)  => ()
+      case Attr.Dyn(_, value, _)             => value.setUnchanged()
+      case Attr.DynValueAsPresence(_, value) => value.setUnchanged()
+      case Content.Text(text)                => ()
+      case Content.Tag(el)                   => el.setAllUnchanged()
+      case Content.DynText(dyn)              => dyn.setUnchanged()
+      case Content.DynElement(dyn)           =>
         dyn.setUnchanged()
         dyn.callOnEveryChild(_.setAllUnchanged())
       case Content.DynOptionElement(dyn) =>
@@ -97,14 +106,14 @@ extension (mod: Mod)
 
   private[scalive] def syncAll(): Unit =
     mod match
-      case Attr.Static(_, _)                    => ()
-      case Attr.StaticValueAsPresence(_, _)     => ()
-      case Attr.Dyn(_, value)                   => value.sync()
-      case Attr.DynValueAsPresence(attr, value) => value.sync()
-      case Content.Text(text)                   => ()
-      case Content.Tag(el)                      => el.syncAll()
-      case Content.DynText(dyn)                 => dyn.sync()
-      case Content.DynElement(dyn)              =>
+      case Attr.Static(_, _, _)              => ()
+      case Attr.StaticValueAsPresence(_, _)  => ()
+      case Attr.Dyn(_, value, _)             => value.sync()
+      case Attr.DynValueAsPresence(_, value) => value.sync()
+      case Content.Text(text)                => ()
+      case Content.Tag(el)                   => el.syncAll()
+      case Content.DynText(dyn)              => dyn.sync()
+      case Content.DynElement(dyn)           =>
         dyn.sync()
         dyn.callOnEveryChild(_.syncAll())
       case Content.DynOptionElement(dyn) =>

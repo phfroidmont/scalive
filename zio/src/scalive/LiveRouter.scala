@@ -2,6 +2,7 @@ package scalive
 
 import scalive.SocketMessage.LiveResponse
 import scalive.SocketMessage.Payload
+import scalive.SocketMessage.Payload.EventType
 import zio.*
 import zio.http.*
 import zio.http.ChannelEvent.Read
@@ -10,19 +11,60 @@ import zio.http.template.Html
 import zio.json.*
 import zio.json.ast.Json
 
-final case class LiveRoute[A, Cmd](
+import java.util.Base64
+import scala.collection.mutable
+import scala.util.Random
+
+final case class LiveRoute[A, ClientEvt: JsonCodec, ServerEvt](
   path: PathCodec[A],
-  liveviewBuilder: (A, Request) => LiveView[Cmd]):
+  liveviewBuilder: (A, Request) => LiveView[ClientEvt, ServerEvt]):
+  val clientEventCodec = JsonCodec[ClientEvt]
 
   def toZioRoute(rootLayout: HtmlElement => HtmlElement): Route[Any, Nothing] =
     Method.GET / path -> handler { (params: A, req: Request) =>
-      val s = Socket(liveviewBuilder(params, req))
-      Response.html(Html.raw(s.renderHtml(rootLayout)))
+      val lv         = liveviewBuilder(params, req)
+      val id: String =
+        s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
+      val token = Token.sign("secret", id, "")
+      lv.el.syncAll()
+      Response.html(
+        Html.raw(
+          HtmlBuilder.build(
+            rootLayout(
+              div(
+                idAttr      := id,
+                phx.session := token,
+                lv.el
+              )
+            )
+          )
+        )
+      )
     }
 
-class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRoute[?, ?]]):
+class LiveChannel():
+  // TODO not thread safe
+  private val sockets: mutable.Map[String, Socket[?, ?]] = mutable.Map.empty
+
+  // TODO should check id isn't already present
+  def join[ClientEvt: JsonCodec](id: String, token: String, lv: LiveView[ClientEvt, ?]): Diff =
+    val socket = Socket(id, token, lv)
+    sockets.addOne(id, socket)
+    socket.diff
+
+  // TODO handle missing id
+  def event(id: String, value: String): Diff =
+    val s = sockets(id)
+    s.lv.handleClientEvent(
+      value
+        .fromJson(using s.clientEventCodec.decoder).getOrElse(throw new IllegalArgumentException())
+    )
+    s.diff
+
+class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRoute[?, ?, ?]]):
 
   private val socketApp: WebSocketApp[Any] =
+    val liveChannel = new LiveChannel()
     Handler.webSocket { channel =>
       channel
         .receiveAll {
@@ -31,18 +73,17 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
               message <- ZIO
                            .fromEither(content.fromJson[SocketMessage])
                            .mapError(new IllegalArgumentException(_))
-              reply <- handleMessage(message)
+              reply <- handleMessage(message, liveChannel)
               _     <- channel.send(Read(WebSocketFrame.text(reply.toJson)))
             yield ()
           case _ => ZIO.unit
         }.tapErrorCause(ZIO.logErrorCause(_))
     }
 
-  def handleMessage(message: SocketMessage): Task[SocketMessage] =
+  private def handleMessage(message: SocketMessage, liveChannel: LiveChannel): Task[SocketMessage] =
     val reply = message.payload match
       case Payload.Heartbeat => ZIO.succeed(Payload.Reply("ok", LiveResponse.Empty))
       case Payload.Join(url, session, static, sticky) =>
-        // TODO very rough handling
         ZIO
           .fromEither(URL.decode(url)).map(url =>
             val req = Request(url = url)
@@ -50,11 +91,15 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
               .collectFirst { route =>
                 val pathParams = route.path.decode(req.path).getOrElse(???)
                 val lv         = route.liveviewBuilder(pathParams, req)
-                val s          = Socket(lv)
-                Payload.Reply("ok", LiveResponse.InitDiff(s.diff))
+                val diff       =
+                  liveChannel.join(message.topic, session, lv)(using route.clientEventCodec)
+                Payload.Reply("ok", LiveResponse.InitDiff(diff))
 
               }.getOrElse(???)
           )
+      case Payload.Event(_, event, _) =>
+        val diff = liveChannel.event(message.topic, event)
+        ZIO.succeed(Payload.Reply("ok", LiveResponse.Diff(diff)))
       case Payload.Reply(_, _) => ZIO.die(new IllegalArgumentException())
 
     reply.map(SocketMessage(message.joinRef, message.messageRef, message.topic, "phx_reply", _))
@@ -87,6 +132,7 @@ object SocketMessage:
         val payloadParsed = eventType match
           case "heartbeat" => Right(Payload.Heartbeat)
           case "phx_join"  => payload.as[Payload.Join]
+          case "event"     => payload.as[Payload.Event]
           case s           => Left(s"Unknown event type : $s")
 
         payloadParsed.map(
@@ -110,6 +156,7 @@ object SocketMessage:
           case Payload.Heartbeat => Json.Obj.empty
           case p: Payload.Join   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case p: Payload.Reply  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case p: Payload.Event  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
       )
   )
 
@@ -122,13 +169,29 @@ object SocketMessage:
       static: Option[String],
       sticky: Boolean)
     case Reply(status: String, response: LiveResponse)
+    case Event(`type`: Payload.EventType, event: String, value: Map[String, String])
   object Payload:
     given JsonCodec[Payload.Join]    = JsonCodec.derived
     given JsonEncoder[Payload.Reply] = JsonEncoder.derived
+    given JsonCodec[Payload.Event]   = JsonCodec.derived
+
+    enum EventType:
+      case Click
+    object EventType:
+      given JsonCodec[EventType] = JsonCodec[String].transformOrFail(
+        {
+          case "click" => Right(Click)
+          case s       => Left(s"Unsupported event type: $s")
+        },
+        { case Click =>
+          "click"
+        }
+      )
 
   enum LiveResponse:
     case Empty
     case InitDiff(rendered: scalive.Diff)
+    case Diff(diff: scalive.Diff)
   object LiveResponse:
     given JsonEncoder[LiveResponse] =
       JsonEncoder[Json].contramap {
@@ -137,6 +200,10 @@ object SocketMessage:
           Json.Obj(
             "liveview_version" -> Json.Str("1.1.8"),
             "rendered"         -> rendered.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          )
+        case Diff(diff) =>
+          Json.Obj(
+            "diff" -> diff.toJsonAST.getOrElse(throw new IllegalArgumentException())
           )
       }
 end SocketMessage

@@ -5,8 +5,10 @@ object RootLayout:
     htmlRootTag(
       lang := "en",
       headTag(
-        metaTag(charset := "utf-8"),
-        scriptTag(defer := true, typ := "text/javascript", src := "/static/app.js")
+        metaTag(charset  := "utf-8"),
+        metaTag(nameAttr := "viewport", contentAttr := "width=device-width, initial-scale=1"),
+        scriptTag(defer  := true, typ               := "text/javascript", src := "/static/app.js"),
+        titleTag("Scalive Example")
       ),
       bodyTag(
         content

@@ -33,6 +33,7 @@ final case class LiveRoute[A, ClientEvt: JsonCodec, ServerEvt](
             rootLayout(
               div(
                 idAttr      := id,
+                phx.main    := true,
                 phx.session := token,
                 lv.el
               )

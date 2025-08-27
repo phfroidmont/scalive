@@ -1,3 +1,4 @@
+import scalive.codecs.BooleanAsAttrPresenceCodec
 import scalive.codecs.StringAsIsCodec
 import scalive.defs.attrs.HtmlAttrs
 import scalive.defs.complex.ComplexHtmlKeys
@@ -5,7 +6,7 @@ import scalive.defs.tags.HtmlTags
 
 package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys:
 
-  lazy val defer = htmlAttr("defer", codecs.BooleanAsOnOffStringCodec)
+  lazy val defer = htmlAttr("defer", codecs.BooleanAsAttrPresenceCodec)
 
   object phx:
     private def phxAttr(suffix: String): HtmlAttr[String] =
@@ -13,9 +14,10 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys:
     private def phxAttrJson(suffix: String): HtmlAttrJsonValue =
       new HtmlAttrJsonValue(s"phx-$suffix")
     private def dataPhxAttr(suffix: String): HtmlAttr[String] =
-      new HtmlAttr(s"data-phx-$suffix", StringAsIsCodec)
+      dataAttr(s"phx-$suffix")
 
     private[scalive] lazy val session = dataPhxAttr("session")
+    private[scalive] lazy val main    = htmlAttr("data-phx-main", BooleanAsAttrPresenceCodec)
     lazy val click                    = phxAttrJson("click")
     def value(key: String)            = phxAttr(s"value-$key")
 

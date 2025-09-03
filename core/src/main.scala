@@ -1,5 +1,12 @@
+package scalive
+package playground
+
 import scalive.*
-import zio.json.JsonCodec
+import zio.json.*
+
+extension (lv: LiveView[?])
+  def renderHtml: String =
+    HtmlBuilder.build(lv.el)
 
 @main
 def main =
@@ -10,20 +17,19 @@ def main =
       Elem("c", 30)
     )
   )
-  val s = Socket("", "", TestView(initModel))
+  val lv = TestView(initModel)
   println("Init")
-  println(s.renderHtml())
-  s.syncClient
-  s.syncClient
+  println(lv.renderHtml)
+  println(lv.diff().toJsonPretty)
 
   println("Edit class attribue")
-  s.lv.handleServerEvent(
+  lv.handleEvent(
     TestView.Event.UpdateModel(_.copy(cls = "text-lg"))
   )
-  s.syncClient
+  println(lv.diff().toJsonPretty)
 
   println("Edit first and last")
-  s.lv.handleServerEvent(
+  lv.handleEvent(
     TestView.Event.UpdateModel(
       _.copy(elems =
         List(
@@ -34,11 +40,11 @@ def main =
       )
     )
   )
-  s.syncClient
-  println(s.renderHtml())
+  println(lv.diff().toJsonPretty)
+  println(lv.diff().toJsonPretty)
 
   println("Add one")
-  s.lv.handleServerEvent(
+  lv.handleEvent(
     TestView.Event.UpdateModel(
       _.copy(elems =
         List(
@@ -50,11 +56,11 @@ def main =
       )
     )
   )
-  s.syncClient
-  println(s.renderHtml())
+  println(lv.diff().toJsonPretty)
+  println(lv.renderHtml)
 
   println("Remove first")
-  s.lv.handleServerEvent(
+  lv.handleEvent(
     TestView.Event.UpdateModel(
       _.copy(elems =
         List(
@@ -65,11 +71,11 @@ def main =
       )
     )
   )
-  s.syncClient
-  println(s.renderHtml())
+  println(lv.diff().toJsonPretty)
+  println(lv.renderHtml)
 
   println("Remove all")
-  s.lv.handleServerEvent(
+  lv.handleEvent(
     TestView.Event.UpdateModel(
       _.copy(
         cls = "text-lg",
@@ -78,7 +84,7 @@ def main =
       )
     )
   )
-  s.syncClient
-  s.syncClient
-  println(s.renderHtml())
+  println(lv.diff().toJsonPretty)
+  println(lv.diff().toJsonPretty)
+  println(lv.renderHtml)
 end main

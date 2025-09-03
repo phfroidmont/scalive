@@ -1,4 +1,4 @@
-import ExampleLiveView.Evt
+import ExampleLiveView.Event
 import monocle.syntax.all.*
 import scalive.*
 import zio.json.*
@@ -6,7 +6,7 @@ import zio.json.*
 final case class ExampleModel(elems: List[NestedModel], cls: String = "text-xs")
 final case class NestedModel(name: String, age: Int)
 
-class ExampleLiveView(someParam: String) extends LiveView[Evt, String]:
+class ExampleLiveView(someParam: String) extends LiveView[Event]:
 
   val model = Var(
     ExampleModel(
@@ -18,10 +18,9 @@ class ExampleLiveView(someParam: String) extends LiveView[Evt, String]:
     )
   )
 
-  override def handleClientEvent(evt: Evt): Unit =
-    evt match
-      case Evt.IncAge(value) =>
-        model.update(_.focus(_.elems.index(2).age).modify(_ + value))
+  def handleEvent =
+    case Event.Event(value) =>
+      model.update(_.focus(_.elems.index(2).age).modify(_ + value))
 
   val el =
     div(
@@ -40,12 +39,12 @@ class ExampleLiveView(someParam: String) extends LiveView[Evt, String]:
         )
       ),
       button(
-        phx.click := Evt.IncAge(1),
+        phx.click := Event.Event(1),
         "Inc age"
       )
     )
 end ExampleLiveView
 
 object ExampleLiveView:
-  enum Evt derives JsonCodec:
-    case IncAge(value: Int)
+  enum Event derives JsonCodec:
+    case Event(value: Int)

@@ -15,8 +15,15 @@ final case class WebSocketMessage(
   // LiveView instance id
   topic: String,
   eventType: String,
-  payload: WebSocketMessage.Payload)
+  payload: WebSocketMessage.Payload):
+  val meta = WebSocketMessage.Meta(joinRef, messageRef, topic)
 object WebSocketMessage:
+
+  final case class Meta(
+    joinRef: Option[Int],
+    messageRef: Int,
+    topic: String)
+
   given JsonCodec[WebSocketMessage] = JsonCodec[Json].transformOrFail(
     {
       case Json.Arr(

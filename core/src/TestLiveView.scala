@@ -1,3 +1,6 @@
+package scalive
+package playground
+
 import scalive.*
 
 final case class MyModel(
@@ -6,14 +9,13 @@ final case class MyModel(
   elems: List[Elem] = List.empty)
 final case class Elem(name: String, age: Int)
 
-class TestView(initialModel: MyModel) extends LiveView[String, TestView.Event]:
+class TestView(initialModel: MyModel) extends LiveView[TestView.Event]:
   import TestView.Event.*
 
   private val modelVar = Var[MyModel](initialModel)
 
-  override def handleServerEvent(e: TestView.Event): Unit =
-    e match
-      case UpdateModel(f) => modelVar.update(f)
+  def handleEvent =
+    case UpdateModel(f) => modelVar.update(f)
 
   val el: HtmlElement =
     div(

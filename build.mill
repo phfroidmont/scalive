@@ -16,7 +16,8 @@ trait ScalaCommon extends ScalaModule:
     "-preview",
     "-feature",
     "-language:implicitConversions",
-    "-Wvalue-discard"
+    "-Wvalue-discard",
+    "-Wnonunit-statement"
   )
 
 object core extends ScalaCommon:

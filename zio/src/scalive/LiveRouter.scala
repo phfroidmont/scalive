@@ -44,14 +44,11 @@ final case class LiveRoute[A, Event: JsonCodec](
     }
 
 class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?]]]):
-  def diffsStream: ZStream[Any, Nothing, (Diff, Meta)] =
+  def diffsStream: ZStream[Any, Nothing, (LiveResponse, Meta)] =
     sockets.changes
       .map(m =>
         ZStream
-          .mergeAllUnbounded()(
-            m.values
-              .map(_.outbox).map(ZStream.fromHub(_)).toList*
-          )
+          .mergeAllUnbounded()(m.values.map(_.outbox).toList*)
       ).flatMapParSwitch(1, 1)(identity)
 
   def join[Event: JsonCodec](
@@ -75,7 +72,7 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?]]]):
     }
 
   def event(id: String, value: String, meta: WebSocketMessage.Meta): UIO[Unit] =
-    sockets.get.map { m =>
+    sockets.get.flatMap { m =>
       m.get(id) match
         case Some(socket) =>
           socket.inbox
@@ -84,9 +81,9 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?]]]):
                 .fromJson(using socket.clientEventCodec.decoder)
                 .getOrElse(throw new IllegalArgumentException())
                 -> meta
-            )
+            ).unit
         case None => ZIO.unit
-    }.unit
+    }
 
 end LiveChannel
 
@@ -110,7 +107,7 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
                          meta.messageRef,
                          meta.topic,
                          "phx_reply",
-                         Payload.Reply("OK", LiveResponse.Diff(diff))
+                         Payload.Reply("ok", diff)
                        ).toJson
                      )
                    )
@@ -169,7 +166,6 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
           .map(_ => None)
       case Payload.Reply(_, _) => ZIO.die(new IllegalArgumentException())
     end match
-
   end handleMessage
 
   val routes: Routes[Any, Response] =

@@ -46,5 +46,5 @@ object Diff:
       case Diff.Value(value)         => Json.Str(value)
       case Diff.Dynamic(index, diff) =>
         Json.Obj(index.toString -> toJson(diff))
-      case Diff.Deleted => Json.Bool(false)
+      case Diff.Deleted => Json.Str("")
 end Diff

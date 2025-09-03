@@ -4,87 +4,78 @@ package playground
 import scalive.*
 import zio.json.*
 
-extension (lv: LiveView[?])
-  def renderHtml: String =
-    HtmlBuilder.build(lv.el)
+extension (el: HtmlElement) def html: String = HtmlBuilder.build(el)
 
+import TestView.*
 @main
 def main =
-  val initModel = MyModel(elems =
+  val initModel = Model(elems =
     List(
       Elem("a", 10),
       Elem("b", 15),
       Elem("c", 30)
     )
   )
-  val lv = TestView(initModel)
+  val modelVar = Var(initModel)
+  val lv       = TestView()
+  val el       = lv.view(modelVar)
   println("Init")
-  println(lv.renderHtml)
-  println(lv.diff().toJsonPretty)
+  println(el.html)
+  println(el.diff().toJsonPretty)
 
   println("Edit class attribue")
-  lv.handleEvent(
-    TestView.Event.UpdateModel(_.copy(cls = "text-lg"))
-  )
-  println(lv.diff().toJsonPretty)
+  modelVar.update(_.copy(cls = "text-lg"))
+  println(el.diff().toJsonPretty)
 
   println("Edit first and last")
-  lv.handleEvent(
-    TestView.Event.UpdateModel(
-      _.copy(elems =
-        List(
-          Elem("x", 10),
-          Elem("b", 15),
-          Elem("c", 99)
-        )
+  modelVar.update(
+    _.copy(elems =
+      List(
+        Elem("x", 10),
+        Elem("b", 15),
+        Elem("c", 99)
       )
     )
   )
-  println(lv.diff().toJsonPretty)
-  println(lv.diff().toJsonPretty)
+  println(el.diff().toJsonPretty)
+  println(el.diff().toJsonPretty)
 
   println("Add one")
-  lv.handleEvent(
-    TestView.Event.UpdateModel(
-      _.copy(elems =
-        List(
-          Elem("x", 10),
-          Elem("b", 15),
-          Elem("c", 99),
-          Elem("d", 35)
-        )
+  modelVar.update(
+    _.copy(elems =
+      List(
+        Elem("x", 10),
+        Elem("b", 15),
+        Elem("c", 99),
+        Elem("d", 35)
       )
     )
   )
-  println(lv.diff().toJsonPretty)
-  println(lv.renderHtml)
+  println(el.diff().toJsonPretty)
+  println(el.html)
 
   println("Remove first")
-  lv.handleEvent(
-    TestView.Event.UpdateModel(
-      _.copy(elems =
-        List(
-          Elem("b", 15),
-          Elem("c", 99),
-          Elem("d", 35)
-        )
+  modelVar.update(
+    _.copy(elems =
+      List(
+        Elem("b", 15),
+        Elem("c", 99),
+        Elem("d", 35)
       )
     )
   )
-  println(lv.diff().toJsonPretty)
-  println(lv.renderHtml)
+  println(el.diff().toJsonPretty)
+  println(el.html)
 
   println("Remove all")
-  lv.handleEvent(
-    TestView.Event.UpdateModel(
-      _.copy(
-        cls = "text-lg",
-        bool = false,
-        elems = List.empty
-      )
+  modelVar.update(
+    _.copy(
+      cls = "text-lg",
+      bool = false,
+      elems = List.empty
     )
   )
-  println(lv.diff().toJsonPretty)
-  println(lv.diff().toJsonPretty)
-  println(lv.renderHtml)
+  println(el.diff().toJsonPretty)
+  println(el.diff().toJsonPretty)
+  println(el.html)
 end main

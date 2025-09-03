@@ -1,16 +1,16 @@
-import ExampleLiveView.Event
 import monocle.syntax.all.*
 import scalive.*
+import zio.*
 import zio.json.*
 
-final case class ExampleModel(elems: List[NestedModel], cls: String = "text-xs")
-final case class NestedModel(name: String, age: Int)
+import ExampleLiveView.*
+class ExampleLiveView(someParam: String) extends LiveView[Msg, Model]:
 
-class ExampleLiveView(someParam: String) extends LiveView[Event]:
-
-  val model = Var(
-    ExampleModel(
-      List(
+  def init = ZIO.succeed(
+    Model(
+      isVisible = true,
+      counter = 0,
+      elems = List(
         NestedModel("a", 10),
         NestedModel("b", 15),
         NestedModel("c", 20)
@@ -18,11 +18,17 @@ class ExampleLiveView(someParam: String) extends LiveView[Event]:
     )
   )
 
-  def handleEvent =
-    case Event.Event(value) =>
-      model.update(_.focus(_.elems.index(2).age).modify(_ + value))
+  def update(model: Model) =
+    case Msg.IncAge(value) =>
+      ZIO.succeed(model.focus(_.elems.index(2).age).modify(_ + value))
+    case Msg.ToggleCounter =>
+      ZIO.succeed(model.focus(_.isVisible).modify(!_))
+    case Msg.IncCounter =>
+      ZIO.succeed(model.focus(_.counter).modify(_ + 1))
+    case Msg.DecCounter =>
+      ZIO.succeed(model.focus(_.counter).modify(_ - 1))
 
-  val el =
+  def view(model: Dyn[Model]) =
     div(
       h1(someParam),
       h2(model(_.cls)),
@@ -39,12 +45,39 @@ class ExampleLiveView(someParam: String) extends LiveView[Event]:
         )
       ),
       button(
-        phx.click := Event.Event(1),
+        phx.click := Msg.IncAge(1),
         "Inc age"
+      ),
+      br(),
+      br(),
+      br(),
+      button(
+        phx.click := Msg.ToggleCounter,
+        model(_.isVisible match
+          case true  => "Hide counter"
+          case false => "Show counter")
+      ),
+      model.when(_.isVisible)(
+        div(
+          button(phx.click := Msg.DecCounter, "-"),
+          div(model(_.counter.toString)),
+          button(phx.click := Msg.IncCounter, "+")
+        )
       )
     )
 end ExampleLiveView
 
 object ExampleLiveView:
-  enum Event derives JsonCodec:
-    case Event(value: Int)
+
+  enum Msg derives JsonCodec:
+    case IncAge(value: Int)
+    case ToggleCounter
+    case IncCounter
+    case DecCounter
+
+  final case class Model(
+    isVisible: Boolean,
+    counter: Int,
+    elems: List[NestedModel],
+    cls: String = "text-xs")
+  final case class NestedModel(name: String, age: Int)

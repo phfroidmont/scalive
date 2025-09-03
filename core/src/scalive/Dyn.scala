@@ -46,7 +46,7 @@ extension [T](parent: Dyn[List[T]])
       )
     )
 
-class Var[T] private (initial: T) extends Dyn[T]:
+private class Var[T] private (initial: T) extends Dyn[T]:
   private[scalive] var currentValue: T  = initial
   private[scalive] var changed: Boolean = true
   def set(value: T): Unit               =
@@ -61,10 +61,10 @@ class Var[T] private (initial: T) extends Dyn[T]:
   private[scalive] def setUnchanged(): Unit                 = changed = false
   private[scalive] inline def sync(): Unit                  = ()
   private[scalive] def callOnEveryChild(f: T => Unit): Unit = f(currentValue)
-object Var:
+private object Var:
   def apply[T](initial: T): Var[T] = new Var(initial)
 
-class DerivedVar[I, O] private[scalive] (parent: Var[I], f: I => O) extends Dyn[O]:
+private class DerivedVar[I, O] private[scalive] (parent: Var[I], f: I => O) extends Dyn[O]:
   private[scalive] var currentValue: O  = f(parent.currentValue)
   private[scalive] var changed: Boolean = true
 
@@ -88,7 +88,7 @@ class DerivedVar[I, O] private[scalive] (parent: Var[I], f: I => O) extends Dyn[
 
   private[scalive] def callOnEveryChild(f: O => Unit): Unit = f(currentValue)
 
-class SplitVar[I, O, Key](
+private class SplitVar[I, O, Key](
   parent: Dyn[List[I]],
   key: I => Key,
   project: (Key, Dyn[I]) => O):

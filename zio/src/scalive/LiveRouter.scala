@@ -15,19 +15,22 @@ import zio.stream.ZStream
 import java.util.Base64
 import scala.util.Random
 
-final case class LiveRoute[A, Event: JsonCodec](
+final case class LiveRoute[A, Msg: JsonCodec, Model](
   path: PathCodec[A],
-  liveviewBuilder: (A, Request) => LiveView[Event]):
-  val eventCodec = JsonCodec[Event]
+  liveviewBuilder: (A, Request) => LiveView[Msg, Model]):
+  val messageCodec = JsonCodec[Msg]
 
-  def toZioRoute(rootLayout: HtmlElement => HtmlElement): Route[Any, Nothing] =
+  def toZioRoute(rootLayout: HtmlElement => HtmlElement): Route[Any, Throwable] =
     Method.GET / path -> handler { (params: A, req: Request) =>
       val lv         = liveviewBuilder(params, req)
       val id: String =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val token = Token.sign("secret", id, "")
-      lv.el.syncAll()
-      Response.html(
+      for
+        initModel <- lv.init
+        el = lv.view(Var(initModel))
+        _  = el.syncAll()
+      yield Response.html(
         Html.raw(
           HtmlBuilder.build(
             rootLayout(
@@ -35,15 +38,16 @@ final case class LiveRoute[A, Event: JsonCodec](
                 idAttr      := id,
                 phx.main    := true,
                 phx.session := token,
-                lv.el
+                el
               )
             )
           )
         )
       )
     }
+end LiveRoute
 
-class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?]]]):
+class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]]):
   def diffsStream: ZStream[Any, Nothing, (LiveResponse, Meta)] =
     sockets.changes
       .map(m =>
@@ -51,12 +55,12 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?]]]):
           .mergeAllUnbounded()(m.values.map(_.outbox).toList*)
       ).flatMapParSwitch(1, 1)(identity)
 
-  def join[Event: JsonCodec](
+  def join[Msg: JsonCodec, Model](
     id: String,
     token: String,
-    lv: LiveView[Event],
+    lv: LiveView[Msg, Model],
     meta: WebSocketMessage.Meta
-  ): URIO[Scope, Unit] =
+  ): RIO[Scope, Unit] =
     sockets.updateZIO { m =>
       m.get(id) match
         case Some(socket) =>
@@ -78,7 +82,7 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?]]]):
           socket.inbox
             .offer(
               value
-                .fromJson(using socket.clientEventCodec.decoder)
+                .fromJson(using socket.messageCodec.decoder)
                 .getOrElse(throw new IllegalArgumentException())
                 -> meta
             ).unit
@@ -91,7 +95,7 @@ object LiveChannel:
   def make(): UIO[LiveChannel] =
     SubscriptionRef.make(Map.empty).map(new LiveChannel(_))
 
-class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRoute[?, ?]]):
+class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRoute[?, ?, ?]]):
 
   private val socketApp: WebSocketApp[Any] =
     Handler.webSocket { channel =>
@@ -155,7 +159,7 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
                 val pathParams = route.path.decode(req.path).getOrElse(???)
                 val lv         = route.liveviewBuilder(pathParams, req)
                 liveChannel
-                  .join(message.topic, session, lv, message.meta)(using route.eventCodec)
+                  .join(message.topic, session, lv, message.meta)(using route.messageCodec)
                   .map(_ => None)
 
               }.getOrElse(ZIO.succeed(None))
@@ -168,12 +172,15 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
     end match
   end handleMessage
 
-  val routes: Routes[Any, Response] =
-    Routes.fromIterable(
-      liveRoutes
-        .map(route => route.toZioRoute(rootLayout))
-        .prepended(
-          Method.GET / "live" / "websocket" -> handler(socketApp.toResponse)
-        )
-    )
+  val routes: Routes[Any, Nothing] =
+    Routes
+      .fromIterable(
+        liveRoutes
+          .map(route => route.toZioRoute(rootLayout))
+          .prepended(
+            Method.GET / "live" / "websocket" -> handler(socketApp.toResponse)
+          )
+      ).handleErrorZIO(e =>
+        ZIO.logErrorCause(Cause.die(e)).as(Response(status = Status.InternalServerError))
+      )
 end LiveRouter

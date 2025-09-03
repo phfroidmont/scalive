@@ -14,7 +14,6 @@ object LiveViewSpec extends TestSuite:
     cls: String = "text-sm",
     items: List[NestedModel] = List.empty)
   final case class NestedModel(name: String, age: Int)
-  final case class UpdateEvent(f: TestModel => TestModel)
 
   def assertEqualsDiff(el: HtmlElement, expected: Json, trackChanges: Boolean = true) =
     el.syncAll()
@@ -26,15 +25,12 @@ object LiveViewSpec extends TestSuite:
   val tests = Tests {
 
     test("Static only") {
-      val lv =
-        new LiveView[Nothing]:
-          val el          = div("Static string")
-          def handleEvent = _ => ()
-      lv.el.syncAll()
+      val el = div("Static string")
+      el.syncAll()
 
       test("init") {
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj(
             "s" -> Json.Arr(Json.Str("<div>Static string</div>"))
           ),
@@ -42,27 +38,24 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff") {
-        assertEqualsDiff(lv.el, emptyDiff)
+        assertEqualsDiff(el, emptyDiff)
       }
     }
 
     test("Dynamic string") {
-      val lv =
-        new LiveView[UpdateEvent]:
-          val model = Var(TestModel())
-          val el    =
-            div(
-              h1(model(_.title)),
-              p(model(_.otherString))
-            )
-          def handleEvent = evt => model.update(evt.f)
+      val model = Var(TestModel())
+      val el    =
+        div(
+          h1(model(_.title)),
+          p(model(_.otherString))
+        )
 
-      lv.el.syncAll()
-      lv.el.setAllUnchanged()
+      el.syncAll()
+      el.setAllUnchanged()
 
       test("init") {
         assertEqualsDiff(
-          lv.el,
+          el,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div><h1>"), Json.Str("</h1><p>"), Json.Str("</p></div>")),
@@ -73,24 +66,24 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsDiff(lv.el, emptyDiff)
+        assertEqualsDiff(el, emptyDiff)
       }
       test("diff with update") {
-        lv.handleEvent(UpdateEvent(_.copy(title = "title updated")))
+        model.update(_.copy(title = "title updated"))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj("0" -> Json.Str("title updated"))
         )
       }
       test("diff with update and no change") {
-        lv.handleEvent(UpdateEvent(_.copy(title = "title value")))
-        assertEqualsDiff(lv.el, emptyDiff)
+        model.update(_.copy(title = "title value"))
+        assertEqualsDiff(el, emptyDiff)
       }
       test("diff with update in multiple commands") {
-        lv.handleEvent(UpdateEvent(_.copy(title = "title updated")))
-        lv.handleEvent(UpdateEvent(_.copy(otherString = "other string updated")))
+        model.update(_.copy(title = "title updated"))
+        model.update(_.copy(otherString = "other string updated"))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json
             .Obj(
               "0" -> Json.Str("title updated"),
@@ -101,19 +94,16 @@ object LiveViewSpec extends TestSuite:
     }
 
     test("Dynamic attribute") {
-      val lv =
-        new LiveView[UpdateEvent]:
-          val model = Var(TestModel())
-          val el    =
-            div(cls := model(_.cls))
-          def handleEvent = evt => model.update(evt.f)
+      val model = Var(TestModel())
+      val el    =
+        div(cls := model(_.cls))
 
-      lv.el.syncAll()
-      lv.el.setAllUnchanged()
+      el.syncAll()
+      el.setAllUnchanged()
 
       test("init") {
         assertEqualsDiff(
-          lv.el,
+          el,
           Json
             .Obj(
               "s" -> Json
@@ -124,35 +114,32 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsDiff(lv.el, emptyDiff)
+        assertEqualsDiff(el, emptyDiff)
       }
       test("diff with update") {
-        lv.handleEvent(UpdateEvent(_.copy(cls = "text-md")))
+        model.update(_.copy(cls = "text-md"))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj("0" -> Json.Str("text-md"))
         )
       }
     }
 
     test("when mod") {
-      val lv =
-        new LiveView[UpdateEvent]:
-          val model = Var(TestModel())
-          val el    =
-            div(
-              model.when(_.bool)(
-                div("static string", model(_.nestedTitle))
-              )
-            )
-          def handleEvent = evt => model.update(evt.f)
+      val model = Var(TestModel())
+      val el    =
+        div(
+          model.when(_.bool)(
+            div("static string", model(_.nestedTitle))
+          )
+        )
 
-      lv.el.syncAll()
-      lv.el.setAllUnchanged()
+      el.syncAll()
+      el.setAllUnchanged()
 
       test("init") {
         assertEqualsDiff(
-          lv.el,
+          el,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
@@ -162,16 +149,16 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsDiff(lv.el, emptyDiff)
+        assertEqualsDiff(el, emptyDiff)
       }
       test("diff with unrelated update") {
-        lv.handleEvent(UpdateEvent(_.copy(title = "title updated")))
-        assertEqualsDiff(lv.el, emptyDiff)
+        model.update(_.copy(title = "title updated"))
+        assertEqualsDiff(el, emptyDiff)
       }
       test("diff when true and nested update") {
-        lv.handleEvent(UpdateEvent(_.copy(bool = true)))
+        model.update(_.copy(bool = true))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj(
             "0" ->
               Json
@@ -184,12 +171,12 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff when nested change") {
-        lv.handleEvent(UpdateEvent(_.copy(bool = true)))
-        lv.el.syncAll()
-        lv.el.setAllUnchanged()
-        lv.handleEvent(UpdateEvent(_.copy(bool = true, nestedTitle = "nested title updated")))
+        model.update(_.copy(bool = true))
+        el.syncAll()
+        el.setAllUnchanged()
+        model.update(_.copy(bool = true, nestedTitle = "nested title updated"))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj(
             "0" ->
               Json
@@ -209,30 +196,27 @@ object LiveViewSpec extends TestSuite:
           NestedModel("c", 20)
         )
       )
-      val lv =
-        new LiveView[UpdateEvent]:
-          val model = Var(initModel)
-          val el    =
-            div(
-              ul(
-                model(_.items).splitByIndex((_, elem) =>
-                  li(
-                    "Nom: ",
-                    elem(_.name),
-                    " Age: ",
-                    elem(_.age.toString)
-                  )
-                )
+      val model = Var(initModel)
+      val el    =
+        div(
+          ul(
+            model(_.items).splitByIndex((_, elem) =>
+              li(
+                "Nom: ",
+                elem(_.name),
+                " Age: ",
+                elem(_.age.toString)
               )
             )
-          def handleEvent = evt => model.update(evt.f)
+          )
+        )
 
-      lv.el.syncAll()
-      lv.el.setAllUnchanged()
+      el.syncAll()
+      el.setAllUnchanged()
 
       test("init") {
         assertEqualsDiff(
-          lv.el,
+          el,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
@@ -263,18 +247,16 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff no update") {
-        assertEqualsDiff(lv.el, emptyDiff)
+        assertEqualsDiff(el, emptyDiff)
       }
       test("diff with unrelated update") {
-        lv.handleEvent(UpdateEvent(_.copy(title = "title updated")))
-        assertEqualsDiff(lv.el, emptyDiff)
+        model.update(_.copy(title = "title updated"))
+        assertEqualsDiff(el, emptyDiff)
       }
       test("diff with item changed") {
-        lv.handleEvent(
-          UpdateEvent(_.copy(items = initModel.items.updated(2, NestedModel("c", 99))))
-        )
+        model.update(_.copy(items = initModel.items.updated(2, NestedModel("c", 99))))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj(
             "0" ->
               Json
@@ -290,13 +272,9 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff with item added") {
-        lv.handleEvent(
-          UpdateEvent(
-            _.copy(items = initModel.items.appended(NestedModel("d", 35)))
-          )
-        )
+        model.update(_.copy(items = initModel.items.appended(NestedModel("d", 35))))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj(
             "0" ->
               Json
@@ -313,13 +291,9 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff with first item removed") {
-        lv.handleEvent(
-          UpdateEvent(
-            _.copy(items = initModel.items.tail)
-          )
-        )
+        model.update(_.copy(items = initModel.items.tail))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj(
             "0" ->
               Json
@@ -340,9 +314,9 @@ object LiveViewSpec extends TestSuite:
         )
       }
       test("diff all removed") {
-        lv.handleEvent(UpdateEvent(_.copy(items = List.empty)))
+        model.update(_.copy(items = List.empty))
         assertEqualsDiff(
-          lv.el,
+          el,
           Json.Obj(
             "0" ->
               Json

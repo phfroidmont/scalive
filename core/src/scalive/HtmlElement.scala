@@ -22,11 +22,17 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
     mods.collect { case mod: (Mod.Attr & DynamicMod) => mod }
   def dynamicContentMods: Seq[Mod.Content & DynamicMod] =
     mods.collect { case mod: (Mod.Content & DynamicMod) => mod }
-  private[scalive] def syncAll(): Unit         = mods.foreach(_.syncAll())
-  private[scalive] def setAllUnchanged(): Unit = dynamicMods.foreach(_.setAllUnchanged())
 
   def prepended(mod: Mod*): HtmlElement = HtmlElement(tag, mods.prependedAll(mod))
   def apended(mod: Mod*): HtmlElement   = HtmlElement(tag, mods.appendedAll(mod))
+
+  private[scalive] def syncAll(): Unit         = mods.foreach(_.syncAll())
+  private[scalive] def setAllUnchanged(): Unit = dynamicMods.foreach(_.setAllUnchanged())
+  private[scalive] def diff(trackUpdates: Boolean = true): Diff =
+    syncAll()
+    val diff = DiffBuilder.build(this, trackUpdates = trackUpdates)
+    setAllUnchanged()
+    diff
 
 class HtmlTag(val name: String, val void: Boolean = false):
   def apply(mods: Mod*): HtmlElement = HtmlElement(this, mods.toVector)

@@ -2,28 +2,23 @@ package scalive
 package playground
 
 import scalive.*
+import zio.*
 
-final case class MyModel(
-  cls: String = "text-xs",
-  bool: Boolean = true,
-  elems: List[Elem] = List.empty)
-final case class Elem(name: String, age: Int)
+import TestView.*
+class TestView extends LiveView[Msg, Model]:
 
-class TestView(initialModel: MyModel) extends LiveView[TestView.Event]:
-  import TestView.Event.*
+  def init = ZIO.succeed(Model())
 
-  private val modelVar = Var[MyModel](initialModel)
+  def update(model: Model) =
+    case Msg.UpdateModel(f) => ZIO.succeed(f(model))
 
-  def handleEvent =
-    case UpdateModel(f) => modelVar.update(f)
-
-  val el: HtmlElement =
+  def view(model: Dyn[Model]) =
     div(
       idAttr   := "42",
-      cls      := modelVar(_.cls),
-      disabled := modelVar(_.bool),
+      cls      := model(_.cls),
+      disabled := model(_.bool),
       ul(
-        modelVar(_.elems).splitByIndex((_, elem) =>
+        model(_.elems).splitByIndex((_, elem) =>
           li(
             "Nom: ",
             elem(_.name),
@@ -35,5 +30,12 @@ class TestView(initialModel: MyModel) extends LiveView[TestView.Event]:
     )
 
 object TestView:
-  enum Event:
-    case UpdateModel(f: MyModel => MyModel)
+
+  enum Msg:
+    case UpdateModel(f: Model => Model)
+
+  final case class Model(
+    cls: String = "text-xs",
+    bool: Boolean = true,
+    elems: List[Elem] = List.empty)
+  final case class Elem(name: String, age: Int)

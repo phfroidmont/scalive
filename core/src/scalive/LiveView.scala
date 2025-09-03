@@ -1,11 +1,9 @@
 package scalive
 
-trait LiveView[Event]:
-  def handleEvent: Event => Unit
-  val el: HtmlElement
+import zio.*
 
-  private[scalive] def diff(trackUpdates: Boolean = true): Diff =
-    el.syncAll()
-    val diff = DiffBuilder.build(el, trackUpdates = trackUpdates)
-    el.setAllUnchanged()
-    diff
+trait LiveView[Msg, Model]:
+  def init: Task[Model]
+  def update(model: Model): Msg => Task[Model]
+  def view(model: Dyn[Model]): HtmlElement
+  // def subscriptions(model: Model): ZStream[Any, Nothing, Msg]

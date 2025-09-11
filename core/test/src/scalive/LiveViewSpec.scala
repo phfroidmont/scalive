@@ -143,7 +143,7 @@ object LiveViewSpec extends TestSuite:
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
-              "0" -> Json.Bool(false)
+              "0" -> Json.Str("")
             ),
           trackChanges = false
         )

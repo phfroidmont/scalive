@@ -31,38 +31,66 @@ class ExampleLiveView(someParam: String) extends LiveView[Msg, Model]:
 
   def view(model: Dyn[Model]) =
     div(
-      h1(someParam),
-      h2(model(_.cls)),
+      h1(
+        cls := "text-2xl font-semibold tracking-tight text-gray-900",
+        someParam
+      ),
+      cls    := "max-w-2xl mx-auto bg-white shadow rounded-2xl p-6 space-y-6",
       idAttr := "42",
-      cls    := model(_.cls),
       ul(
+        cls := "divide-y divide-gray-200",
         model(_.elems).splitByIndex((_, elem) =>
           li(
-            "Nom: ",
-            elem(_.name),
-            " Age: ",
-            elem(_.age.toString)
+            cls := "py-3 flex flex-wrap items-center justify-between gap-2",
+            span(
+              cls := "text-gray-700",
+              "Nom: ",
+              span(cls := "font-medium", elem(_.name))
+            ),
+            span(
+              cls := "text-sm text-gray-500",
+              "Age: ",
+              span(cls := "font-semibold text-gray-700", elem(_.age.toString))
+            )
           )
         )
       ),
-      button(
-        phx.click := Msg.IncAge(1),
-        "Inc age"
-      ),
-      br(),
-      br(),
-      br(),
-      button(
-        phx.click := Msg.ToggleCounter,
-        model(_.isVisible match
-          case true  => "Hide counter"
-          case false => "Show counter")
+      div(
+        cls := "flex flex-wrap items-center gap-3",
+        button(
+          cls := "inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium bg-gray-900 text-white shadow hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-gray-900/30",
+          phx.click := Msg.IncAge(1),
+          "Inc age"
+        ),
+        span(cls := "grow"),
+        button(
+          cls := "inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-inset ring-gray-300 text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400/30",
+          phx.click := Msg.ToggleCounter,
+          model(_.isVisible match
+            case true  => "Hide counter"
+            case false => "Show counter")
+        )
       ),
       model.when(_.isVisible)(
         div(
-          button(phx.click := Msg.DecCounter, "-"),
-          div(model(_.counter.toString)),
-          button(phx.click := Msg.IncCounter, "+")
+          cls := "rounded-xl border border-gray-200 p-4 bg-gray-50",
+          div(
+            cls := "flex items-center justify-center gap-4",
+            button(
+              cls := "inline-flex items-center justify-center h-9 w-9 rounded-lg ring-1 ring-inset ring-gray-300 text-gray-700 hover:bg-white focus:outline-none focus:ring-2 focus:ring-gray-400/30",
+              phx.click := Msg.DecCounter,
+              "-"
+            ),
+            div(
+              cls := "min-w-[4rem] text-center text-lg font-semibold text-gray-900",
+              model(_.counter.toString)
+            ),
+            button(
+              cls := "inline-flex items-center justify-center h-9 w-9 rounded-lg bg-gray-900 text-white shadow hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-gray-900/30",
+              phx.click := Msg.IncCounter,
+              "+"
+            )
+          )
         )
       )
     )
@@ -83,6 +111,5 @@ object ExampleLiveView:
   final case class Model(
     isVisible: Boolean,
     counter: Int,
-    elems: List[NestedModel],
-    cls: String = "text-xs")
+    elems: List[NestedModel])
   final case class NestedModel(name: String, age: Int)

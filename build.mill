@@ -49,10 +49,32 @@ object example extends ScalaCommon:
     PathRef(Task.dest)
   }
 
+  def tailwindConfig = Task.Source(moduleDir / "tailwind.css")
+
+  def generateCss = Task {
+    sources()
+    os.proc(
+      "tailwindcss",
+      "--minify",
+      "--input",
+      tailwindConfig().path
+    ).call().out.text()
+  }
+
+  def cssResources = Task {
+    os.write(
+      target = Task.dest / "public" / "app.css",
+      data = generateCss(),
+      createFolders = true
+    )
+    PathRef(Task.dest)
+  }
+
   def resources = Task {
-    super.resources() ++ Seq(scaliveBundle())
+    super.resources() :+ scaliveBundle() :+ cssResources()
   }
 
   object js extends TypeScriptModule:
     def mainFileName = "app.js"
     def npmDeps      = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8", "topbar@3.0.0")
+end example

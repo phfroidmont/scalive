@@ -3,6 +3,7 @@ package playground
 
 import scalive.*
 import zio.*
+import zio.stream.ZStream
 
 import TestView.*
 class TestView extends LiveView[Msg, Model]:
@@ -28,6 +29,8 @@ class TestView extends LiveView[Msg, Model]:
         )
       )
     )
+
+  def subscriptions(model: Model) = ZStream.empty
 
 object TestView:
 

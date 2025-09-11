@@ -1,9 +1,10 @@
+import ExampleLiveView.*
 import monocle.syntax.all.*
 import scalive.*
 import zio.*
 import zio.json.*
+import zio.stream.ZStream
 
-import ExampleLiveView.*
 class ExampleLiveView(someParam: String) extends LiveView[Msg, Model]:
 
   def init = ZIO.succeed(
@@ -65,6 +66,10 @@ class ExampleLiveView(someParam: String) extends LiveView[Msg, Model]:
         )
       )
     )
+
+  def subscriptions(model: Model) =
+    ZStream.tick(1.second).map(_ => Msg.IncCounter).drop(1)
+
 end ExampleLiveView
 
 object ExampleLiveView:

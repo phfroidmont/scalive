@@ -16,6 +16,14 @@ enum Diff:
   case Dynamic(key: String, diff: Diff)
   case Deleted
 
+extension (diff: Diff)
+  def isEmpty: Boolean = diff match
+    case Diff.Tag(static, dynamic) => static.isEmpty && dynamic.isEmpty
+    case _: Diff.Comprehension     => false
+    case _: Diff.Value             => false
+    case _: Diff.Dynamic           => false
+    case Diff.Deleted              => false
+
 object Diff:
   given JsonEncoder[Diff] = JsonEncoder[Json].contramap(toJson(_))
 

@@ -48,12 +48,12 @@ final case class LiveRoute[A, Msg: JsonCodec, Model](
 end LiveRoute
 
 class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]]):
-  def diffsStream: ZStream[Any, Nothing, (LiveResponse, Meta)] =
+  def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
     sockets.changes
       .map(m =>
         ZStream
           .mergeAllUnbounded()(m.values.map(_.outbox).toList*)
-      ).flatMapParSwitch(1, 1)(identity)
+      ).flatMapParSwitch(1)(identity)
 
   def join[Msg: JsonCodec, Model](
     id: String,
@@ -102,21 +102,27 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
       ZIO.scoped(for
         liveChannel <- LiveChannel.make()
         _           <- liveChannel.diffsStream
-               .foreach((diff, meta) =>
-                 channel.send(
-                   Read(
-                     WebSocketFrame.text(
-                       WebSocketMessage(
-                         meta.joinRef,
-                         meta.messageRef,
-                         meta.topic,
-                         "phx_reply",
-                         Payload.Reply("ok", diff)
-                       ).toJson
+               .runForeach((payload, meta) =>
+                 channel
+                   .send(
+                     Read(
+                       WebSocketFrame.text(
+                         WebSocketMessage(
+                           meta.joinRef,
+                           meta.messageRef,
+                           meta.topic,
+                           payload match
+                             case Payload.Diff(_) => "diff"
+                             case _               => "phx_reply",
+                           payload
+                         ).toJson
+                       )
                      )
                    )
-                 )
-               ).fork
+               )
+               .tapErrorCause(c => ZIO.logErrorCause("diffsStream pipeline failed", c))
+               .ensuring(ZIO.logWarning("WS out fiber terminated"))
+               .fork
         _ <- channel
                .receiveAll {
                  case Read(WebSocketFrame.Text(content)) =>
@@ -169,6 +175,7 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
           .event(message.topic, event, message.meta)
           .map(_ => None)
       case Payload.Reply(_, _) => ZIO.die(new IllegalArgumentException())
+      case Payload.Diff(_)     => ZIO.die(new IllegalArgumentException())
     end match
   end handleMessage
 

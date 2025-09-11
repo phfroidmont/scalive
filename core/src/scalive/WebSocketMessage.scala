@@ -11,18 +11,19 @@ final case class WebSocketMessage(
   // Live session ID, auto increment defined by the client on join
   joinRef: Option[Int],
   // Message ID, global auto increment defined by the client on every message
-  messageRef: Int,
+  messageRef: Option[Int],
   // LiveView instance id
   topic: String,
   eventType: String,
   payload: WebSocketMessage.Payload):
-  val meta = WebSocketMessage.Meta(joinRef, messageRef, topic)
+  val meta = WebSocketMessage.Meta(joinRef, messageRef, topic, eventType)
 object WebSocketMessage:
 
   final case class Meta(
     joinRef: Option[Int],
-    messageRef: Int,
-    topic: String)
+    messageRef: Option[Int],
+    topic: String,
+    eventType: String)
 
   given JsonCodec[WebSocketMessage] = JsonCodec[Json].transformOrFail(
     {
@@ -38,7 +39,7 @@ object WebSocketMessage:
         payloadParsed.map(
           WebSocketMessage(
             joinRef.asString.map(_.toInt),
-            messageRef.toInt,
+            Some(messageRef.toInt),
             topic,
             eventType,
             _
@@ -49,14 +50,15 @@ object WebSocketMessage:
     m =>
       Json.Arr(
         m.joinRef.map(ref => Json.Str(ref.toString)).getOrElse(Json.Null),
-        Json.Str(m.messageRef.toString),
+        m.messageRef.map(ref => Json.Str(ref.toString)).getOrElse(Json.Null),
         Json.Str(m.topic),
         Json.Str(m.eventType),
-        m.payload.match
+        m.payload match
           case Payload.Heartbeat => Json.Obj.empty
           case p: Payload.Join   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case p: Payload.Reply  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case p: Payload.Event  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case p: Payload.Diff   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
       )
   )
 
@@ -69,11 +71,16 @@ object WebSocketMessage:
       static: Option[String],
       sticky: Boolean)
     case Reply(status: String, response: LiveResponse)
+    case Diff(diff: scalive.Diff)
     case Event(`type`: Payload.EventType, event: String, value: Map[String, String])
   object Payload:
     given JsonCodec[Payload.Join]    = JsonCodec.derived
     given JsonEncoder[Payload.Reply] = JsonEncoder.derived
     given JsonCodec[Payload.Event]   = JsonCodec.derived
+    given JsonEncoder[Payload.Diff]  = JsonEncoder[scalive.Diff].contramap(_.diff)
+
+    def okReply(response: LiveResponse) =
+      Payload.Reply("ok", response)
 
     enum EventType:
       case Click

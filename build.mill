@@ -38,7 +38,7 @@ object zio extends ScalaCommon:
 
 object example extends ScalaCommon:
   def moduleDeps = Seq(zio)
-  def mvnDeps    = Seq(mvn"dev.optics::monocle-core:3.1.0")
+  def mvnDeps    = Seq(mvn"dev.optics::monocle-core:3.1.0", mvn"dev.zio::zio-logging:2.5.1")
 
   def scaliveBundle = Task {
     os.copy(

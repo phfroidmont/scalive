@@ -61,19 +61,19 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
     lv: LiveView[Msg, Model],
     meta: WebSocketMessage.Meta
   ): RIO[Scope, Unit] =
-    sockets.updateZIO { m =>
-      m.get(id) match
-        case Some(socket) =>
-          socket.shutdown *>
+    sockets
+      .updateZIO { m =>
+        m.get(id) match
+          case Some(socket) =>
+            socket.shutdown *>
+              Socket
+                .start(id, token, lv, meta)
+                .map(m.updated(id, _))
+          case None =>
             Socket
               .start(id, token, lv, meta)
               .map(m.updated(id, _))
-        case None =>
-          Socket
-            .start(id, token, lv, meta)
-            .map(m.updated(id, _))
-
-    }
+      }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
 
   def event(id: String, value: String, meta: WebSocketMessage.Meta): UIO[Unit] =
     sockets.get.flatMap { m =>
@@ -99,45 +99,47 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
 
   private val socketApp: WebSocketApp[Any] =
     Handler.webSocket { channel =>
-      ZIO.scoped(for
-        liveChannel <- LiveChannel.make()
-        _           <- liveChannel.diffsStream
-               .runForeach((payload, meta) =>
-                 channel
-                   .send(
-                     Read(
-                       WebSocketFrame.text(
-                         WebSocketMessage(
-                           meta.joinRef,
-                           meta.messageRef,
-                           meta.topic,
-                           payload match
-                             case Payload.Diff(_) => "diff"
-                             case _               => "phx_reply",
-                           payload
-                         ).toJson
+      ZIO
+        .scoped(for
+          liveChannel <- LiveChannel.make()
+          _           <- liveChannel.diffsStream
+                 .runForeach((payload, meta) =>
+                   channel
+                     .send(
+                       Read(
+                         WebSocketFrame.text(
+                           WebSocketMessage(
+                             meta.joinRef,
+                             meta.messageRef,
+                             meta.topic,
+                             payload match
+                               case Payload.Diff(_) => "diff"
+                               case _               => "phx_reply",
+                             payload
+                           ).toJson
+                         )
                        )
                      )
-                   )
-               )
-               .tapErrorCause(c => ZIO.logErrorCause("diffsStream pipeline failed", c))
-               .ensuring(ZIO.logWarning("WS out fiber terminated"))
-               .fork
-        _ <- channel
-               .receiveAll {
-                 case Read(WebSocketFrame.Text(content)) =>
-                   for
-                     message <- ZIO
-                                  .fromEither(content.fromJson[WebSocketMessage])
-                                  .mapError(new IllegalArgumentException(_))
-                     reply <- handleMessage(message, liveChannel)
-                     _     <- reply match
-                            case Some(r) => channel.send(Read(WebSocketFrame.text(r.toJson)))
-                            case None    => ZIO.unit
-                   yield ()
-                 case _ => ZIO.unit
-               }.tapErrorCause(ZIO.logErrorCause(_))
-      yield ())
+                 )
+                 .tapErrorCause(c => ZIO.logErrorCause("diffsStream pipeline failed", c))
+                 .ensuring(ZIO.logWarning("WS out fiber terminated"))
+                 .fork
+          _ <- channel
+                 .receiveAll {
+                   case Read(WebSocketFrame.Close) => ZIO.logDebug("WS connection closed by client")
+                   case Read(WebSocketFrame.Text(content)) =>
+                     for
+                       message <- ZIO
+                                    .fromEither(content.fromJson[WebSocketMessage])
+                                    .mapError(new IllegalArgumentException(_))
+                       reply <- handleMessage(message, liveChannel)
+                       _     <- reply match
+                              case Some(r) => channel.send(Read(WebSocketFrame.text(r.toJson)))
+                              case None    => ZIO.unit
+                     yield ()
+                   case _ => ZIO.unit
+                 }
+        yield ()).tapErrorCause(ZIO.logErrorCause(_))
 
     }
 
@@ -160,15 +162,21 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
         ZIO
           .fromEither(URL.decode(url)).flatMap(url =>
             val req = Request(url = url)
-            liveRoutes
-              .collectFirst { route =>
-                val pathParams = route.path.decode(req.path).getOrElse(???)
-                val lv         = route.liveviewBuilder(pathParams, req)
-                liveChannel
-                  .join(message.topic, session, lv, message.meta)(using route.messageCodec)
-                  .map(_ => None)
-
-              }.getOrElse(ZIO.succeed(None))
+            liveRoutes.iterator
+              .map(route =>
+                route.path
+                  .decode(req.path)
+                  .toOption
+                  .map(route.liveviewBuilder(_, req))
+                  .map(
+                    ZIO.logDebug(s"Joining live view ${route.path.toString} ${message.topic}") *>
+                      liveChannel.join(message.topic, session, _, message.meta)(
+                        using route.messageCodec
+                      )
+                  )
+              )
+              .collectFirst { case Some(join) => join.map(_ => None) }
+              .getOrElse(ZIO.succeed(None))
           )
       case Payload.Event(_, event, _) =>
         liveChannel

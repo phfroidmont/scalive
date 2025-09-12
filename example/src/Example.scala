@@ -26,6 +26,10 @@ object Example extends ZIOAppDefault:
       RootLayout(_),
       List(
         LiveRoute(
+          Root,
+          (_, _) => HomeLiveView()
+        ),
+        LiveRoute(
           Root / "counter",
           (_, _) => CounterLiveView()
         ),

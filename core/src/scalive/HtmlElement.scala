@@ -35,7 +35,13 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
     diff
 
 class HtmlTag(val name: String, val void: Boolean = false):
-  def apply(mods: Mod*): HtmlElement = HtmlElement(this, mods.toVector)
+  def apply(mods: (Mod | IterableOnce[Mod])*): HtmlElement = HtmlElement(
+    this,
+    mods.toVector.flatMap {
+      case m: Mod                => Some(m)
+      case ms: IterableOnce[Mod] => ms
+    }
+  )
 
 class HtmlAttr[V](val name: String, val codec: Codec[V, String]):
   private inline def isBooleanAsAttrPresence = codec == BooleanAsAttrPresenceCodec
@@ -83,9 +89,9 @@ object Mod:
     case DynText(dyn: Dyn[String])         extends Content with DynamicMod
     case DynElement(dyn: Dyn[HtmlElement]) extends Content with DynamicMod
     // TODO support arbitrary collection
-    case DynOptionElement(dyn: Dyn[Option[HtmlElement]]) extends Content with DynamicMod
-    case DynElementColl(dyn: Dyn[Iterable[HtmlElement]]) extends Content with DynamicMod
-    case DynSplit(v: SplitVar[?, HtmlElement, ?])        extends Content with DynamicMod
+    case DynOptionElement(dyn: Dyn[Option[HtmlElement]])     extends Content with DynamicMod
+    case DynElementColl(dyn: Dyn[IterableOnce[HtmlElement]]) extends Content with DynamicMod
+    case DynSplit(v: SplitVar[?, HtmlElement, ?])            extends Content with DynamicMod
 
 extension (mod: Mod)
   private[scalive] def setAllUnchanged(): Unit =

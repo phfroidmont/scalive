@@ -64,7 +64,11 @@ object Socket:
                          yield ()
                        }.fork
         stop =
-          inbox.shutdown *> outHub.shutdown *> clientFiber.interrupt.unit *> serverFiber.interrupt.unit
+          outHub.publish(Payload.Close -> meta) *>
+            inbox.shutdown *>
+            outHub.shutdown *>
+            clientFiber.interrupt.unit *>
+            serverFiber.interrupt.unit
         outbox =
           ZStream.succeed(
             Payload.okReply(LiveResponse.InitDiff(initDiff)) -> meta

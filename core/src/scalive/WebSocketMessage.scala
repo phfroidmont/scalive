@@ -16,7 +16,15 @@ final case class WebSocketMessage(
   topic: String,
   eventType: String,
   payload: WebSocketMessage.Payload):
-  val meta = WebSocketMessage.Meta(joinRef, messageRef, topic, eventType)
+  val meta    = WebSocketMessage.Meta(joinRef, messageRef, topic, eventType)
+  def okReply =
+    WebSocketMessage(
+      joinRef,
+      messageRef,
+      topic,
+      "phx_reply",
+      Payload.Reply("ok", LiveResponse.Empty)
+    )
 object WebSocketMessage:
 
   final case class Meta(
@@ -33,6 +41,8 @@ object WebSocketMessage:
         val payloadParsed = eventType match
           case "heartbeat" => Right(Payload.Heartbeat)
           case "phx_join"  => payload.as[Payload.Join]
+          case "phx_leave" => Right(Payload.Leave)
+          case "phx_close" => Right(Payload.Close)
           case "event"     => payload.as[Payload.Event]
           case s           => Left(s"Unknown event type : $s")
 
@@ -56,6 +66,8 @@ object WebSocketMessage:
         m.payload match
           case Payload.Heartbeat => Json.Obj.empty
           case p: Payload.Join   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case Payload.Leave     => Json.Obj.empty
+          case Payload.Close     => Json.Obj.empty
           case p: Payload.Reply  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case p: Payload.Event  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case p: Payload.Diff   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
@@ -65,11 +77,14 @@ object WebSocketMessage:
   enum Payload:
     case Heartbeat
     case Join(
-      url: String,
+      url: Option[String],
+      redirect: Option[String],
       // params: Map[String, String],
       session: String,
       static: Option[String],
       sticky: Boolean)
+    case Leave
+    case Close
     case Reply(status: String, response: LiveResponse)
     case Diff(diff: scalive.Diff)
     case Event(`type`: Payload.EventType, event: String, value: Map[String, String])

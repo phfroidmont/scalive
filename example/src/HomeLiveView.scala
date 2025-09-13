@@ -17,8 +17,8 @@ class HomeLiveView() extends LiveView[String, Unit]:
       cls := "space-y-2",
       links.map((path, name) =>
         li(
-          a(
-            href := path,
+          link.navigate(
+            path,
             cls := "block px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-gray-900 font-medium transition",
             name
           )

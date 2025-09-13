@@ -1,6 +1,5 @@
 package scalive
 
-import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
 import zio.*
@@ -75,6 +74,18 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
               .map(m.updated(id, _))
       }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
 
+  def leave(id: String): UIO[Unit] =
+    sockets.updateZIO { m =>
+      m.get(id) match
+        case Some(socket) =>
+          for
+            _ <- socket.shutdown
+            _ <- ZIO.logDebug(s"Left LiveView $id")
+          yield m.removed(id)
+        case None =>
+          ZIO.logWarning(s"Tried to leave LiveView $id which doesn't exist").as(m)
+    }
+
   def event(id: String, value: String, meta: WebSocketMessage.Meta): UIO[Unit] =
     sockets.get.flatMap { m =>
       m.get(id) match
@@ -109,13 +120,16 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
                        Read(
                          WebSocketFrame.text(
                            WebSocketMessage(
-                             meta.joinRef,
-                             meta.messageRef,
-                             meta.topic,
-                             payload match
+                             joinRef = meta.joinRef,
+                             messageRef = payload match
+                               case Payload.Close => meta.joinRef
+                               case _             => meta.messageRef,
+                             topic = meta.topic,
+                             eventType = payload match
                                case Payload.Diff(_) => "diff"
+                               case Payload.Close   => "phx_close"
                                case _               => "phx_reply",
-                             payload
+                             payload = payload
                            ).toJson
                          )
                        )
@@ -146,21 +160,10 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
   private def handleMessage(message: WebSocketMessage, liveChannel: LiveChannel)
     : RIO[Scope, Option[WebSocketMessage]] =
     message.payload match
-      case Payload.Heartbeat =>
-        ZIO.succeed(
-          Some(
-            WebSocketMessage(
-              message.joinRef,
-              message.messageRef,
-              message.topic,
-              "phx_reply",
-              Payload.Reply("ok", LiveResponse.Empty)
-            )
-          )
-        )
-      case Payload.Join(url, session, static, sticky) =>
+      case Payload.Heartbeat => ZIO.succeed(Some(message.okReply))
+      case Payload.Join(url, redirect, session, static, sticky) =>
         ZIO
-          .fromEither(URL.decode(url)).flatMap(url =>
+          .fromEither(URL.decode(url.orElse(redirect).getOrElse(???))).flatMap(url =>
             val req = Request(url = url)
             liveRoutes.iterator
               .map(route =>
@@ -169,7 +172,7 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
                   .toOption
                   .map(route.liveviewBuilder(_, req))
                   .map(
-                    ZIO.logDebug(s"Joining live view ${route.path.toString} ${message.topic}") *>
+                    ZIO.logDebug(s"Joining LiveView ${route.path.toString} ${message.topic}") *>
                       liveChannel.join(message.topic, session, _, message.meta)(
                         using route.messageCodec
                       )
@@ -178,12 +181,17 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
               .collectFirst { case Some(join) => join.map(_ => None) }
               .getOrElse(ZIO.succeed(None))
           )
+      case Payload.Leave =>
+        liveChannel
+          .leave(message.topic)
+          .as(Some(message.okReply))
       case Payload.Event(_, event, _) =>
         liveChannel
           .event(message.topic, event, message.meta)
           .map(_ => None)
       case Payload.Reply(_, _) => ZIO.die(new IllegalArgumentException())
       case Payload.Diff(_)     => ZIO.die(new IllegalArgumentException())
+      case Payload.Close       => ZIO.die(new IllegalArgumentException())
     end match
   end handleMessage
 

@@ -26,6 +26,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys:
     private[scalive] lazy val linkState = dataPhxAttr("link-state")
     lazy val click                      = phxAttrJson("click")
     def value(key: String)              = phxAttr(s"value-$key")
+    lazy val trackStatic                = htmlAttr("phx-track-static", BooleanAsAttrPresenceCodec)
 
   implicit def stringToMod(v: String): Mod            = Mod.Content.Text(v)
   implicit def htmlElementToMod(el: HtmlElement): Mod = Mod.Content.Tag(el)

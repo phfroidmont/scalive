@@ -7,8 +7,13 @@ object RootLayout:
       headTag(
         metaTag(charset  := "utf-8"),
         metaTag(nameAttr := "viewport", contentAttr := "width=device-width, initial-scale=1"),
-        scriptTag(defer  := true, typ               := "text/javascript", src := "/static/app.js"),
-        linkTag(rel      := "stylesheet", href      := "/static/app.css"),
+        scriptTag(
+          defer           := true,
+          phx.trackStatic := true,
+          typ             := "text/javascript",
+          src             := "/static/app.js"
+        ),
+        linkTag(phx.trackStatic := true, rel := "stylesheet", href := "/static/app.css"),
         titleTag("Scalive Example")
       ),
       bodyTag(

@@ -4,8 +4,8 @@ import zio.stream.ZStream
 
 class HomeLiveView() extends LiveView[String, Unit]:
   val links = List(
-    "/counter" -> "Counter",
-    "/list"    -> "List"
+    "/counter"     -> "Counter",
+    "/list?q=test" -> "List"
   )
 
   def init = ZIO.succeed(())

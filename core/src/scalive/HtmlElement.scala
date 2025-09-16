@@ -64,10 +64,10 @@ class HtmlAttr[V](val name: String, val codec: Codec[V, String]):
 
 class HtmlAttrJsonValue(val name: String):
 
-  def :=[V: JsonCodec](value: V): Mod.Attr =
+  def :=[V: JsonEncoder](value: V): Mod.Attr =
     Mod.Attr.Static(name, value.toJson, isJson = true)
 
-  def :=[V: JsonCodec](value: Dyn[V]): Mod.Attr =
+  def :=[V: JsonEncoder](value: Dyn[V]): Mod.Attr =
     Mod.Attr.Dyn(name, value(_.toJson), isJson = true)
 
 sealed trait Mod

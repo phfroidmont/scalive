@@ -54,7 +54,11 @@ class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
           phx.click := Msg.IncAge(1),
           "Inc age"
         ),
-        span(cls := "grow")
+        span(cls := "grow"),
+        button(
+          phx.click := JS.toggleClass("bg-red-500 border-5"),
+          "Toggle color"
+        )
       )
     )
 

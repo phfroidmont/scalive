@@ -100,7 +100,21 @@ object JSCommands:
     def popFocus() =
       ops.addOp("pop_focus", Json.Obj.empty)
 
-    def push() = ???
+    def push[A: JsonEncoder](
+      event: A,
+      target: String = "",
+      loading: String = "",
+      pageLoading: Boolean = false
+    ) =
+      ops.addOp(
+        "push",
+        Args.Push(
+          event.toJson,
+          Option.when(target.nonEmpty)(target),
+          Option.when(loading.nonEmpty)(loading),
+          Option.when(!pageLoading)(pageLoading)
+        )
+      )
 
     def pushFocus(to: String = "") =
       ops.addOp("push_focus", Args.To(Option.when(to.nonEmpty)(to)))
@@ -256,6 +270,12 @@ object JSCommands:
       to: Option[String],
       time: Option[Int],
       blocking: Option[Boolean])
+        derives JsonEncoder
+    final case class Push(
+      event: String,
+      target: Option[String],
+      loading: Option[String],
+      pageLoading: Option[Boolean])
         derives JsonEncoder
   end Args
 

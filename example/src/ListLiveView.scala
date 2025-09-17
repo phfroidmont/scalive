@@ -55,7 +55,7 @@ class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
           span(cls := "grow"),
           button(
             cls       := "btn btn-neutral",
-            phx.click := JS.toggleClass("btn-neutral btn-accent"),
+            phx.click := JS.toggleClass("btn-neutral btn-accent").push(Msg.IncAge(-5)),
             "Toggle color"
           )
         )

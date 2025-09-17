@@ -3,7 +3,8 @@ import scalive.*
 object RootLayout:
   def apply(content: HtmlElement): HtmlElement =
     htmlRootTag(
-      lang := "en",
+      lang              := "en",
+      dataAttr("theme") := "business",
       headTag(
         metaTag(charset  := "utf-8"),
         metaTag(nameAttr := "viewport", contentAttr := "width=device-width, initial-scale=1"),

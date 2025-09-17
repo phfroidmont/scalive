@@ -14,14 +14,10 @@ class HomeLiveView() extends LiveView[String, Unit]:
 
   def view(model: Dyn[Unit]) =
     ul(
-      cls := "space-y-2",
+      cls := "mx-auto menu bg-base-100 rounded-box shadow-xl w-56",
       links.map((path, name) =>
         li(
-          link.navigate(
-            path,
-            cls := "block px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-gray-900 font-medium transition",
-            name
-          )
+          link.navigate(path, name)
         )
       )
     )

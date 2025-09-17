@@ -21,7 +21,6 @@ trait ScalaCommon extends ScalaModule:
   )
 
 object core extends ScalaCommon:
-  // TODO Replace with ujson, core shouldn't depend on ZIO
   def mvnDeps = Seq(mvn"dev.zio::zio-json:0.7.44")
 
   def generatedSources = Task {
@@ -76,5 +75,6 @@ object example extends ScalaCommon:
 
   object js extends TypeScriptModule:
     def mainFileName = "app.js"
-    def npmDeps      = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8", "topbar@3.0.0")
+    def npmDeps = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8", "topbar@3.0.0", "daisyui@5.1.12")
+    def bundleFlags = super.bundleFlags() ++ Map("minify" -> ujson.Bool(false))
 end example

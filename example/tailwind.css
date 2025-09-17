@@ -5,3 +5,6 @@
 @plugin '@tailwindcss/aspect-ratio';
 
 @source './src/**/*.scala';
+@plugin "daisyui" {
+  themes: business;
+}

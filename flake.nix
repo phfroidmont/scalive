@@ -11,10 +11,10 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         mill = pkgs.mill.overrideAttrs (old: rec {
-          version = "1.0.4";
+          version = "1.0.5";
           src = pkgs.fetchurl {
             url = "https://repo1.maven.org/maven2/com/lihaoyi/mill-dist-native-linux-amd64/${version}/mill-dist-native-linux-amd64-${version}.exe";
-            hash = "sha256-rgAqlTCZc8nedUU2D+Klo3KY0z9sI0KJczdaugM3//8=";
+            hash = "sha256-xxQMCJ659b/RrSzGKYvXdTcXS9F3TZRGTAbcAc7yF3o=";
           };
           buildInputs = [ pkgs.zlib ];
           nativeBuildInputs = [

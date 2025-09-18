@@ -2,8 +2,8 @@ package scalive
 
 import scalive.Mod.Attr
 import scalive.Mod.Content
-import scalive.codecs.BooleanAsAttrPresenceCodec
-import scalive.codecs.Codec
+import scalive.codecs.BooleanAsAttrPresenceEncoder
+import scalive.codecs.Encoder
 import zio.json.*
 
 class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
@@ -43,8 +43,8 @@ class HtmlTag(val name: String, val void: Boolean = false):
     }
   )
 
-class HtmlAttr[V](val name: String, val codec: Codec[V, String]):
-  private inline def isBooleanAsAttrPresence = codec == BooleanAsAttrPresenceCodec
+class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
+  private inline def isBooleanAsAttrPresence = codec == BooleanAsAttrPresenceEncoder
 
   def :=(value: V): Mod.Attr =
     if isBooleanAsAttrPresence then

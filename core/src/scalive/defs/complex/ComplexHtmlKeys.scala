@@ -12,7 +12,7 @@ trait ComplexHtmlKeys:
     * select and access specific elements via the class selectors or functions like the DOM method
     * document.getElementsByClassName
     */
-  val className: HtmlAttr[String] = new HtmlAttr("class", StringAsIsCodec)
+  val className: HtmlAttr[String] = new HtmlAttr("class", StringAsIsEncoder)
 
   val cls: HtmlAttr[String] = className
 
@@ -22,7 +22,7 @@ trait ComplexHtmlKeys:
     * stylesheet, and the href attribute is set to the URL of an external style sheet to format the
     * page.
     */
-  lazy val rel: HtmlAttr[String] = new HtmlAttr("rel", StringAsIsCodec)
+  lazy val rel: HtmlAttr[String] = new HtmlAttr("rel", StringAsIsEncoder)
 
   /** The attribute describes the role(s) the current element plays in the context of the document.
     * This can be used, for example, by applications and assistive technologies to determine the
@@ -35,7 +35,7 @@ trait ComplexHtmlKeys:
     *
     * See: [[http://www.w3.org/TR/role-attribute/#s_role_module_attributes]]
     */
-  lazy val role: HtmlAttr[String] = new HtmlAttr("role", StringAsIsCodec)
+  lazy val role: HtmlAttr[String] = new HtmlAttr("role", StringAsIsEncoder)
 
   /** This class of attributes, called custom data attributes, allows proprietary information to be
     * exchanged between the HTML and its DOM representation that may be used by scripts. All such
@@ -51,13 +51,13 @@ trait ComplexHtmlKeys:
     * attribute data-test-value will be accessible via HTMLElement.dataset.testValue as any dash
     * (U+002D) is replaced by the capitalization of the next letter (camelcase).
     */
-  def dataAttr(suffix: String): HtmlAttr[String] = new HtmlAttr(s"data-$suffix", StringAsIsCodec)
+  def dataAttr(suffix: String): HtmlAttr[String] = new HtmlAttr(s"data-$suffix", StringAsIsEncoder)
 
   /** This attribute contains CSS styling declarations to be applied to the element. Note that it is
     * recommended for styles to be defined in a separate file or files. This attribute and the style
     * element have mainly the purpose of allowing for quick styling, for example for testing
     * purposes.
     */
-  lazy val styleAttr: HtmlAttr[String] = new HtmlAttr("style", StringAsIsCodec)
+  lazy val styleAttr: HtmlAttr[String] = new HtmlAttr("style", StringAsIsEncoder)
 
 end ComplexHtmlKeys

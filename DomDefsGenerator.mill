@@ -78,6 +78,70 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
         format = format
       ).printTrait().getOutput()
     end generateTagsTrait
+
+    override def generateAttrsTrait(
+      defGroups: List[(String, List[AttrDef])],
+      printDefGroupComments: Boolean,
+      traitCommentLines: List[String],
+      traitModifiers: List[String],
+      traitName: String,
+      keyKind: String,
+      implNameSuffix: String,
+      baseImplDefComments: List[String],
+      baseImplName: String,
+      namespaceImports: List[String],
+      namespaceImpl: String => String,
+      transformAttrDomName: String => String,
+      defType: DefType
+    ): String =
+      val (defs, defGroupComments) = defsAndGroupComments(defGroups, printDefGroupComments)
+
+      val tagTypes = defs.foldLeft(List[TagType]())((acc, k) => (acc :+ k.tagType).distinct)
+      if tagTypes.size > 1 then
+        throw new Exception(
+          "Sorry, generateAttrsTrait does not support mixing attrs of different types in one call. You can contribute a PR (please contact us first), or bypass this limitation by calling AttrsTraitGenerator manually."
+        )
+      val tagType = tagTypes.head
+
+      val baseImplDef =
+        if tagType == SvgTagType then
+          List(
+            s"def $baseImplName[V]($keyImplNameArgName: String, encoder: Encoder[V, String], namespace: Option[String]): $keyKind[V] = ${keyKindConstructor(keyKind)}($keyImplNameArgName, encoder, namespace)"
+          )
+        else
+          List(
+            s"def $baseImplName[V]($keyImplNameArgName: String, encoder: Encoder[V, String]): $keyKind[V] = ${keyKindConstructor(keyKind)}($keyImplNameArgName, encoder)"
+          )
+
+      val headerLines = List(
+        s"package $attrDefsPackagePath",
+        "",
+        keyTypeImport(keyKind),
+        codecsImport
+      ) ++ namespaceImports ++ List("") ++ standardTraitCommentLines.map("// " + _)
+
+      new AttrsTraitGenerator(
+        defs = defs.map(d => d.copy(domName = transformAttrDomName(d.domName))),
+        defGroupComments = defGroupComments,
+        headerLines = headerLines,
+        traitCommentLines = traitCommentLines,
+        traitModifiers = traitModifiers,
+        traitName = traitName,
+        traitExtends = Nil,
+        traitThisType = None,
+        defType = _ => defType,
+        keyKind = keyKind,
+        keyImplName = attr => attrImplName(attr.codec, implNameSuffix),
+        keyImplNameArgName = keyImplNameArgName,
+        baseImplDefComments = baseImplDefComments,
+        baseImplName = baseImplName,
+        baseImplDef = baseImplDef,
+        transformCodecName = _ + "Encoder",
+        namespaceImpl = namespaceImpl,
+        outputImplDefs = true,
+        format = format
+      ).printTrait().getOutput()
+    end generateAttrsTrait
   end generator
 
   def generate(): Unit =
@@ -134,7 +198,7 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
           "Create HTML attribute (Note: for SVG attrs, use L.svg.svgAttr)",
           "",
           "@param name  - name of the attribute, e.g. \"value\"",
-          "@param codec - used to encode V into String, e.g. StringAsIsCodec",
+          "@param codec - used to encode V into String, e.g. StringAsIsEncoder",
           "",
           "@tparam V    - value type for this attr in Scala"
         ),

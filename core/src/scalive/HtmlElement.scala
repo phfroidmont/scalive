@@ -1,10 +1,14 @@
 package scalive
 
+import scalive.JSCommands.JSCommand
 import scalive.Mod.Attr
 import scalive.Mod.Content
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 import scalive.codecs.Encoder
 import zio.json.*
+
+import java.util.Base64
+import scala.util.Random
 
 class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
   def static: Seq[String]     = StaticBuilder.build(this)
@@ -25,6 +29,8 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
 
   def prepended(mod: Mod*): HtmlElement = HtmlElement(tag, mods.prependedAll(mod))
   def apended(mod: Mod*): HtmlElement   = HtmlElement(tag, mods.appendedAll(mod))
+  def findBinding[Msg](id: String): Option[Map[String, String] => Msg] =
+    mods.iterator.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
 
   private[scalive] def syncAll(): Unit         = mods.foreach(_.syncAll())
   private[scalive] def setAllUnchanged(): Unit = dynamicMods.foreach(_.setAllUnchanged())
@@ -62,13 +68,30 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
       )
     else Mod.Attr.Dyn(name, value(codec.encode))
 
-class HtmlAttrJsonValue(val name: String):
+class HtmlAttrBinding(val name: String):
+  def apply(cmd: JSCommand): Mod.Attr =
+    Mod.Attr.JsBinding(name, cmd.toJson, cmd.bindings)
 
-  def :=[V: JsonEncoder](value: V): Mod.Attr =
-    Mod.Attr.Static(name, value.toJson, isJson = true)
+  def apply[Msg](msg: Msg): Mod.Attr =
+    apply(_ => msg)
 
-  def :=[V: JsonEncoder](value: Dyn[V]): Mod.Attr =
-    Mod.Attr.Dyn(name, value(_.toJson), isJson = true)
+  def apply[Msg](f: Map[String, String] => Msg): Mod.Attr =
+    Mod.Attr.Binding(
+      name,
+      Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12)),
+      f
+    )
+  def withValue[Msg](f: String => Msg): Mod.Attr =
+    apply(m => f(m("value")))
+
+trait BindingAdapter[F, Msg]:
+  def createMessage(f: F): Map[String, String] => Msg
+object BindingAdapter:
+  given fromString[Msg]: BindingAdapter[String => Msg, Msg]           = f => m => f(m("value"))
+  given fromMap[Msg]: BindingAdapter[Map[String, String] => Msg, Msg] = f => f
+
+final case class BindingParams(params: Map[String, String]):
+  def apply(key: String) = params.apply(key)
 
 sealed trait Mod
 sealed trait StaticMod  extends Mod
@@ -76,8 +99,12 @@ sealed trait DynamicMod extends Mod
 
 object Mod:
   enum Attr extends Mod:
-    case Static(name: String, value: String, isJson: Boolean = false) extends Attr with StaticMod
-    case StaticValueAsPresence(name: String, value: Boolean)          extends Attr with StaticMod
+    case Static(name: String, value: String)                            extends Attr with StaticMod
+    case StaticValueAsPresence(name: String, value: Boolean)            extends Attr with StaticMod
+    case Binding(name: String, id: String, f: Map[String, String] => ?) extends Attr with StaticMod
+    case JsBinding(name: String, jsonValue: String, bindings: Map[String, ?])
+        extends Attr
+        with StaticMod
     case Dyn(name: String, value: scalive.Dyn[String], isJson: Boolean = false)
         extends Attr
         with DynamicMod
@@ -96,7 +123,9 @@ object Mod:
 extension (mod: Mod)
   private[scalive] def setAllUnchanged(): Unit =
     mod match
-      case Attr.Static(_, _, _)              => ()
+      case Attr.Static(_, _)                 => ()
+      case Attr.Binding(_, _, _)             => ()
+      case Attr.JsBinding(_, _, _)           => ()
       case Attr.StaticValueAsPresence(_, _)  => ()
       case Attr.Dyn(_, value, _)             => value.setUnchanged()
       case Attr.DynValueAsPresence(_, value) => value.setUnchanged()
@@ -118,8 +147,10 @@ extension (mod: Mod)
 
   private[scalive] def syncAll(): Unit =
     mod match
-      case Attr.Static(_, _, _)              => ()
+      case Attr.Static(_, _)                 => ()
       case Attr.StaticValueAsPresence(_, _)  => ()
+      case Attr.Binding(_, _, _)             => ()
+      case Attr.JsBinding(_, _, _)           => ()
       case Attr.Dyn(_, value, _)             => value.sync()
       case Attr.DynValueAsPresence(_, value) => value.sync()
       case Content.Text(text)                => ()
@@ -137,4 +168,25 @@ extension (mod: Mod)
       case Content.DynSplit(v) =>
         v.sync()
         v.callOnEveryChild(_.syncAll())
+
+  private[scalive] def findBinding[Msg](id: String): Option[Map[String, String] => Msg] =
+    mod match
+      case Attr.Static(_, _)                => None
+      case Attr.StaticValueAsPresence(_, _) => None
+      case Attr.Binding(_, eventId, f)      =>
+        if id == eventId then Some(f.asInstanceOf[Map[String, String] => Msg])
+        else None
+      case Attr.JsBinding(_, _, bindings) =>
+        bindings.get(id).map(msg => _ => msg.asInstanceOf[Msg])
+      case Attr.Dyn(_, value, _)             => None
+      case Attr.DynValueAsPresence(_, value) => None
+      case Content.Text(text)                => None
+      case Content.Tag(el)                   => el.findBinding(id)
+      case Content.DynText(dyn)              => None
+      case Content.DynElement(dyn)           => dyn.currentValue.findBinding(id)
+      case Content.DynOptionElement(dyn)     => dyn.currentValue.flatMap(_.findBinding(id))
+      case Content.DynElementColl(dyn)       =>
+        dyn.currentValue.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
+      case Content.DynSplit(v) =>
+        v.currentValues.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
 end extension

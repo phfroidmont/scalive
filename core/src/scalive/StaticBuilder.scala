@@ -12,10 +12,10 @@ object StaticBuilder:
 
   private def buildStaticFragments(el: HtmlElement): Seq[Option[String]] =
     val attrs = el.attrMods.flatMap {
-      case Attr.Static(name, value, isJson) =>
-        if isJson then List(Some(s" $name='$value'"))
-        else List(Some(s""" $name="$value""""))
+      case Attr.Static(name, value)                => List(Some(s" $name='$value'"))
       case Attr.StaticValueAsPresence(name, value) => List(Some(s" $name"))
+      case Attr.Binding(name, id, _)               => List(Some(s""" $name="$id""""))
+      case Attr.JsBinding(name, json, _)           => List(Some(s" $name='$json'"))
       case Attr.Dyn(name, value, isJson)           =>
         if isJson then List(Some(s" $name='"), None, Some("'"))
         else List(Some(s""" $name=""""), None, Some('"'.toString))

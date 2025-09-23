@@ -2,7 +2,6 @@ import CounterLiveView.*
 import monocle.syntax.all.*
 import scalive.*
 import zio.*
-import zio.json.*
 import zio.stream.ZStream
 
 class CounterLiveView() extends LiveView[Msg, Model]:
@@ -34,8 +33,8 @@ class CounterLiveView() extends LiveView[Msg, Model]:
         div(
           cls := "flex flex-wrap items-center gap-3",
           button(
-            cls       := "btn btn-default",
-            phx.click := Msg.ToggleCounter,
+            cls := "btn btn-default",
+            phx.onClick(Msg.ToggleCounter),
             model(_.isVisible match
               case true  => "Hide counter"
               case false => "Show counter")
@@ -45,8 +44,8 @@ class CounterLiveView() extends LiveView[Msg, Model]:
           div(
             cls := "flex items-center justify-center gap-4",
             button(
-              cls       := "btn btn-neutral",
-              phx.click := Msg.DecCounter,
+              cls := "btn btn-neutral",
+              phx.onClick(Msg.DecCounter),
               "-"
             ),
             div(
@@ -54,8 +53,8 @@ class CounterLiveView() extends LiveView[Msg, Model]:
               model(_.counter.toString)
             ),
             button(
-              cls       := "btn btn-neutral",
-              phx.click := Msg.IncCounter,
+              cls := "btn btn-neutral",
+              phx.onClick(Msg.IncCounter),
               "+"
             )
           )
@@ -70,7 +69,7 @@ end CounterLiveView
 
 object CounterLiveView:
 
-  enum Msg derives JsonCodec:
+  enum Msg:
     case ToggleCounter
     case IncCounter
     case DecCounter

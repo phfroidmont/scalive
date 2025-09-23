@@ -1,23 +1,21 @@
 package scalive
 
 import scalive.WebSocketMessage.LiveResponse
+import scalive.WebSocketMessage.Payload
 import zio.*
 import zio.Queue
-import zio.json.*
-import zio.stream.ZStream
 import zio.stream.SubscriptionRef
-import scalive.WebSocketMessage.Payload
+import zio.stream.ZStream
 
-final case class Socket[Msg: JsonCodec, Model] private (
+final case class Socket[Msg, Model] private (
   id: String,
   token: String,
-  inbox: Queue[(Msg, WebSocketMessage.Meta)],
+  inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
   outbox: ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)],
-  shutdown: UIO[Unit]):
-  val messageCodec = JsonCodec[Msg]
+  shutdown: UIO[Unit])
 
 object Socket:
-  def start[Msg: JsonCodec, Model](
+  def start[Msg, Model](
     id: String,
     token: String,
     lv: LiveView[Msg, Model],
@@ -25,7 +23,7 @@ object Socket:
   ): RIO[Scope, Socket[Msg, Model]] =
     ZIO.logAnnotate("lv", id) {
       for
-        inbox  <- Queue.bounded[(Msg, WebSocketMessage.Meta)](4)
+        inbox  <- Queue.bounded[(Payload.Event, WebSocketMessage.Meta)](4)
         outHub <- Hub.unbounded[(Payload, WebSocketMessage.Meta)]
 
         initModel <- lv.init
@@ -42,10 +40,18 @@ object Socket:
                             .flatMapParSwitch(1, 1)(identity)
                             .map(_ -> meta.copy(messageRef = None, eventType = "diff"))
 
-        clientFiber <- clientMsgStream.runForeach { (msg, meta) =>
+        clientFiber <- clientMsgStream.runForeach { (event, meta) =>
                          for
                            (modelVar, el) <- ref.get
-                           updatedModel   <- lv.update(modelVar.currentValue)(msg)
+                           f              <-
+                             ZIO
+                               .succeed(el.findBinding(event.event))
+                               .someOrFail(
+                                 new IllegalArgumentException(
+                                   s"No binding found for event ID ${event.event}"
+                                 )
+                               )
+                           updatedModel <- lv.update(modelVar.currentValue)(f(event.params))
                            _ = modelVar.set(updatedModel)
                            _ <- lvStreamRef.set(lv.subscriptions(updatedModel))
                            diff    = el.diff()

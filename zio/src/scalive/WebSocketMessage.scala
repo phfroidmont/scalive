@@ -2,8 +2,8 @@ package scalive
 
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
-import scalive.WebSocketMessage.Payload.EventType
 import zio.Chunk
+import zio.http.QueryParams
 import zio.json.*
 import zio.json.ast.Json
 
@@ -87,28 +87,27 @@ object WebSocketMessage:
     case Close
     case Reply(status: String, response: LiveResponse)
     case Diff(diff: scalive.Diff)
-    case Event(`type`: Payload.EventType, event: String, value: Map[String, String])
+    case Event(`type`: String, event: String, value: Json)
+
   object Payload:
     given JsonCodec[Payload.Join]    = JsonCodec.derived
     given JsonEncoder[Payload.Reply] = JsonEncoder.derived
     given JsonCodec[Payload.Event]   = JsonCodec.derived
     given JsonEncoder[Payload.Diff]  = JsonEncoder[scalive.Diff].contramap(_.diff)
 
+    extension (p: Payload.Event)
+      def params: Map[String, String] =
+        p.`type` match
+          case "form" =>
+            QueryParams
+              .decode(
+                p.value.asString.getOrElse(throw new IllegalArgumentException())
+              ).map.view.mapValues(_.head).toMap
+
+          case _ => p.value.as[Map[String, String]].getOrElse(throw new IllegalArgumentException())
+
     def okReply(response: LiveResponse) =
       Payload.Reply("ok", response)
-
-    enum EventType:
-      case Click
-    object EventType:
-      given JsonCodec[EventType] = JsonCodec[String].transformOrFail(
-        {
-          case "click" => Right(Click)
-          case s       => Left(s"Unsupported event type: $s")
-        },
-        { case Click =>
-          "click"
-        }
-      )
 
   enum LiveResponse:
     case Empty

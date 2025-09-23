@@ -3,16 +3,21 @@ package scalive
 import zio.json.*
 import zio.json.ast.Json
 
+import java.util.Base64
+import scala.util.Random
+
 val JS: JSCommands.JSCommand = JSCommands.empty
 
 object JSCommands:
-  opaque type JSCommand = List[Json]
+  opaque type JSCommand = List[(Json, Option[Binding[?]])]
+
+  final case class Binding[Msg](id: String, msg: Msg)
 
   def empty: JSCommand = List.empty
 
   object JSCommand:
     given JsonEncoder[JSCommand] =
-      JsonEncoder[Json].contramap(ops => Json.Arr(ops.reverse*))
+      JsonEncoder[Json].contramap(ops => Json.Arr(ops.map(_._1).reverse*))
 
   private def classNames(names: String): Seq[String] = names.split("\\s+")
   private def transitionClasses(names: String | (String, String, String))
@@ -24,7 +29,15 @@ object JSCommands:
 
   extension (ops: JSCommand)
     private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand =
-      (kind, args).toJsonAST.fold(e => throw new IllegalArgumentException(e), identity) :: ops
+      (kind, args).toJsonAST.fold(e => throw new IllegalArgumentException(e), (_, None)) :: ops
+
+    private def addOp[A: JsonEncoder, Msg](kind: String, args: A, binding: Binding[Msg])
+      : JSCommand =
+      (kind, args).toJsonAST
+        .fold(e => throw new IllegalArgumentException(e), (_, Some(binding))) :: ops
+
+    private[scalive] def bindings: Map[String, ?] =
+      ops.flatMap(_._2).map(b => (b.id, b.msg)).toMap
 
     def addClass    = ClassOp("add_class", ops)
     def toggleClass = ClassOp("toggle_class", ops)
@@ -100,20 +113,22 @@ object JSCommands:
     def popFocus() =
       ops.addOp("pop_focus", Json.Obj.empty)
 
-    def push[A: JsonEncoder](
-      event: A,
+    def push[Msg](
+      event: Msg,
       target: String = "",
       loading: String = "",
       pageLoading: Boolean = false
     ) =
+      val bindingId = Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))
       ops.addOp(
         "push",
         Args.Push(
-          event.toJson,
+          bindingId,
           Option.when(target.nonEmpty)(target),
           Option.when(loading.nonEmpty)(loading),
           Option.when(!pageLoading)(pageLoading)
-        )
+        ),
+        Binding(bindingId, event)
       )
 
     def pushFocus(to: String = "") =

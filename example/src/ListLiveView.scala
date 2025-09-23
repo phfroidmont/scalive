@@ -2,7 +2,6 @@ import ListLiveView.*
 import monocle.syntax.all.*
 import scalive.*
 import zio.*
-import zio.json.*
 import zio.stream.ZStream
 
 class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
@@ -48,14 +47,14 @@ class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
         div(
           cls := "card-actions",
           button(
-            cls       := "btn btn-default",
-            phx.click := Msg.IncAge(1),
+            cls := "btn btn-default",
+            phx.onClick(Msg.IncAge(1)),
             "Inc age"
           ),
           span(cls := "grow"),
           button(
-            cls       := "btn btn-neutral",
-            phx.click := JS.toggleClass("btn-neutral btn-accent").push(Msg.IncAge(-5)),
+            cls := "btn btn-neutral",
+            phx.onClick(JS.toggleClass("btn-neutral btn-accent").push(Msg.IncAge(-5))),
             "Toggle color"
           )
         )
@@ -68,7 +67,7 @@ end ListLiveView
 
 object ListLiveView:
 
-  enum Msg derives JsonCodec:
+  enum Msg:
     case IncAge(value: Int)
 
   final case class Model(

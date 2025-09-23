@@ -14,10 +14,9 @@ import zio.stream.ZStream
 import java.util.Base64
 import scala.util.Random
 
-final case class LiveRoute[A, Msg: JsonCodec, Model](
+final case class LiveRoute[A, Msg, Model](
   path: PathCodec[A],
   liveviewBuilder: (A, Request) => LiveView[Msg, Model]):
-  val messageCodec = JsonCodec[Msg]
 
   def toZioRoute(rootLayout: HtmlElement => HtmlElement): Route[Any, Throwable] =
     Method.GET / path -> handler { (params: A, req: Request) =>
@@ -44,7 +43,6 @@ final case class LiveRoute[A, Msg: JsonCodec, Model](
         )
       )
     }
-end LiveRoute
 
 class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]]):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
@@ -54,7 +52,7 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
           .mergeAllUnbounded()(m.values.map(_.outbox).toList*)
       ).flatMapParSwitch(1)(identity)
 
-  def join[Msg: JsonCodec, Model](
+  def join[Msg, Model](
     id: String,
     token: String,
     lv: LiveView[Msg, Model],
@@ -86,17 +84,11 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
           ZIO.logWarning(s"Tried to leave LiveView $id which doesn't exist").as(m)
     }
 
-  def event(id: String, value: String, meta: WebSocketMessage.Meta): UIO[Unit] =
+  def event(id: String, event: Payload.Event, meta: WebSocketMessage.Meta): UIO[Unit] =
     sockets.get.flatMap { m =>
       m.get(id) match
         case Some(socket) =>
-          socket.inbox
-            .offer(
-              value
-                .fromJson(using socket.messageCodec.decoder)
-                .getOrElse(throw new IllegalArgumentException())
-                -> meta
-            ).unit
+          socket.inbox.offer(event -> meta).unit
         case None => ZIO.unit
     }
 
@@ -173,9 +165,7 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
                   .map(route.liveviewBuilder(_, req))
                   .map(
                     ZIO.logDebug(s"Joining LiveView ${route.path.toString} ${message.topic}") *>
-                      liveChannel.join(message.topic, session, _, message.meta)(
-                        using route.messageCodec
-                      )
+                      liveChannel.join(message.topic, session, _, message.meta)
                   )
               )
               .collectFirst { case Some(join) => join.map(_ => None) }
@@ -185,7 +175,7 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
         liveChannel
           .leave(message.topic)
           .as(Some(message.okReply))
-      case Payload.Event(_, event, _) =>
+      case event: Payload.Event =>
         liveChannel
           .event(message.topic, event, message.meta)
           .map(_ => None)

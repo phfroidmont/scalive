@@ -22,8 +22,8 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys:
       new HtmlAttr(s"phx-$suffix", BooleanAsTrueFalseStringEncoder)
     private def phxAttrInt(suffix: String): HtmlAttr[Int] =
       new HtmlAttr(s"phx-$suffix", IntAsStringEncoder)
-    private def phxAttrJson(suffix: String): HtmlAttrJsonValue =
-      new HtmlAttrJsonValue(s"phx-$suffix")
+    private def phxAttrBinding(suffix: String): HtmlAttrBinding =
+      new HtmlAttrBinding(s"phx-$suffix")
     private def dataPhxAttr(suffix: String): HtmlAttr[String] =
       dataAttr(s"phx-$suffix")
 
@@ -33,41 +33,44 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys:
     private[scalive] lazy val linkState = dataPhxAttr("link-state")
 
     // Click
-    lazy val click     = phxAttrJson("click")
-    lazy val clickAway = phxAttrJson("click-away")
+    lazy val onClick     = phxAttrBinding("click")
+    lazy val onClickAway = phxAttrBinding("click-away")
+
     // Focus
-    lazy val blur       = phxAttrJson("blur")
-    lazy val focus      = phxAttrJson("focus")
-    lazy val windowBlur = phxAttrJson("window-blur")
+    lazy val onBlur       = phxAttrBinding("blur")
+    lazy val onFocus      = phxAttrBinding("focus")
+    lazy val onWindowBlur = phxAttrBinding("window-blur")
 
     // Keyboard
-    lazy val keydown       = phxAttrJson("keydown")
-    lazy val keyup         = phxAttrJson("keyup")
-    lazy val windowKeydown = phxAttrJson("window-keydown")
-    lazy val windowKeyup   = phxAttrJson("window-keyup")
-    lazy val key           = phxAttr("key")
+    lazy val onKeydown       = phxAttrBinding("keydown")
+    lazy val onKeyup         = phxAttrBinding("keyup")
+    lazy val onWindowKeydown = phxAttrBinding("window-keydown")
+    lazy val onWindowKeyup   = phxAttrBinding("window-keyup")
+    // For accepted values, see https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values
+    lazy val key = phxAttr("key")
 
     // Scroll
-    lazy val viewportTop    = phxAttrJson("viewport-top")
-    lazy val viewportBottom = phxAttrJson("viewport-bottom")
+    lazy val onViewportTop    = phxAttrBinding("viewport-top")
+    lazy val onViewportBottom = phxAttrBinding("viewport-bottom")
 
     // Form
-    lazy val change        = phxAttrJson("change")
-    lazy val submit        = phxAttrJson("submit")
-    lazy val autoRecover   = phxAttrJson("auto-recover")
+    lazy val onChange      = phxAttrBinding("change")
+    lazy val onSubmit      = phxAttrBinding("submit")
+    lazy val autoRecover   = phxAttrBinding("auto-recover")
     lazy val triggerAction = phxAttrBool("trigger-action")
 
     // Button
     lazy val disableWith = phxAttr("disable-with")
 
     // Socket connection lifecycle
-    lazy val connected    = phxAttrJson("connected")
-    lazy val disconnected = phxAttrJson("disconnected")
+    lazy val onConnected    = phxAttrBinding("connected")
+    lazy val onDisconnected = phxAttrBinding("disconnected")
 
     // DOM element lifecycle
-    lazy val mounted = phxAttrJson("mounted")
-    lazy val remove  = phxAttrJson("remove")
-    lazy val update = new HtmlAttr["update" | "stream" | "ignore"](s"phx-update", Encoder(identity))
+    lazy val onMounted = phxAttrBinding("mounted")
+    lazy val onRemove  = phxAttrBinding("remove")
+    lazy val onUpdate  =
+      new HtmlAttr["update" | "stream" | "ignore"](s"phx-update", Encoder(identity))
 
     // Client hooks
     lazy val hook = phxAttr("hook")

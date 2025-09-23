@@ -15,6 +15,9 @@ lazy val DoubleAsIsEncoder: Encoder[Double, Double] = AsIsEncoder()
 lazy val DoubleAsStringEncoder: Encoder[Double, String] =
   Encoder[Double, String](_.toString)
 
+lazy val BooleanAsStringEncoder: Encoder[Boolean, String] =
+  Encoder[Boolean, String](_.toString)
+
 val BooleanAsIsEncoder: Encoder[Boolean, Boolean] = AsIsEncoder()
 
 lazy val BooleanAsAttrPresenceEncoder: Encoder[Boolean, String] =

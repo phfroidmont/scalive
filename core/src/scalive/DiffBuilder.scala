@@ -44,10 +44,11 @@ object DiffBuilder:
           case Some((entries, keysCount)) =>
             val static =
               entries.collectFirst { case (_, Some(el)) => el.static }.getOrElse(List.empty)
+            val includeStatic = !trackUpdates || keysCount == entries.count(_._2.isDefined)
             List(
               Some(
                 Diff.Comprehension(
-                  static = if trackUpdates then Seq.empty else static,
+                  static = if includeStatic then static else Seq.empty,
                   entries = entries.map {
                     case (key, Some(el)) =>
                       Diff.Dynamic(key.toString, build(Seq.empty, el.dynamicMods, trackUpdates))
@@ -58,7 +59,6 @@ object DiffBuilder:
               )
             )
           case None => List(None)
-
     }
 
 end DiffBuilder

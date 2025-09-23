@@ -27,6 +27,7 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
     override def scalaJsDomImport: String        = ""
     override def tagKeysPackagePath: String      = "scalive"
     override def keysPackagePath: String         = "scalive"
+
     override def generateTagsTrait(
       tagType: TagType,
       defGroups: List[(String, List[TagDef])],
@@ -186,7 +187,14 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
 
       val fileContent = generator.generateAttrsTrait(
         defGroups = defGroups.htmlAttrDefGroups.appended(
-          "Reflected Attributes" -> ReflectedHtmlAttrDefs.defs.map(_.toAttrDef)
+          "Reflected Attributes" -> ReflectedHtmlAttrDefs.defs
+            .map(d =>
+              d.scalaName match
+                case "defaultChecked"  => d.copy(scalaName = "checked")
+                case "defaultSelected" => d.copy(scalaName = "selected")
+                case "defaultValue"    => d.copy(scalaName = "value")
+                case _                 => d
+            ).map(_.toAttrDef)
         ),
         printDefGroupComments = false,
         traitCommentLines = Nil,

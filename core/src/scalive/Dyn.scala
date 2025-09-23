@@ -37,14 +37,17 @@ sealed trait Dyn[T]:
   private[scalive] def callOnEveryChild(f: T => Unit): Unit
 
 extension [T](parent: Dyn[List[T]])
-  def splitByIndex(project: (Int, Dyn[T]) => HtmlElement): Mod =
+  // TODO fix
+  def splitBy[Key](key: T => Key)(project: (Key, Dyn[T]) => HtmlElement): Mod =
     Mod.Content.DynSplit(
       new SplitVar(
-        parent.apply(_.zipWithIndex),
-        key = _._2,
-        project = (index, v) => project(index, v(_._1))
+        parent,
+        key = key,
+        project = (k, v) => project(k, v)
       )
     )
+  def splitByIndex(project: (Int, Dyn[T]) => HtmlElement): Mod =
+    parent(_.zipWithIndex).splitBy(_._2)((index, v) => project(index, v(_._1)))
 
 private class Var[T] private (initial: T) extends Dyn[T]:
   private[scalive] var currentValue: T  = initial
@@ -93,7 +96,6 @@ private class SplitVar[I, O, Key](
   key: I => Key,
   project: (Key, Dyn[I]) => O):
 
-  // Deleted elements have value none
   private val memoized: mutable.Map[Key, (Var[I], O)] =
     mutable.Map.empty
 
@@ -140,5 +142,7 @@ private class SplitVar[I, O, Key](
   // Usefull to call setUnchanged when the output is an HtmlElement as only the caller can know the type
   private[scalive] def callOnEveryChild(f: O => Unit): Unit =
     memoized.values.foreach((_, output) => f(output))
+
+  private[scalive] def currentValues: Iterable[O] = memoized.values.map(_._2)
 
 end SplitVar

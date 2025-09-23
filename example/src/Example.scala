@@ -38,6 +38,10 @@ object Example extends ZIOAppDefault:
           (_, req) =>
             val q = req.queryParam("q").map("Param : " ++ _).getOrElse("No param")
             ListLiveView(q)
+        ),
+        LiveRoute(
+          Root / "todo",
+          (_, _) => TodoLiveView()
         )
       )
     )

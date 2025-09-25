@@ -33,13 +33,11 @@ object HtmlBuilder:
           dyn.render(false).foreach(_.foreach(el => build(el.static, el.dynamicMods, strw)))
         case Content.DynElementColl(dyn) => ???
         case Content.DynSplit(splitVar)  =>
-          val (entries, _) = splitVar.render(false).getOrElse(List.empty -> 0)
-          val staticOpt    = entries.collectFirst { case (_, Some(el)) => el.static }
-          entries.foreach {
-            case (_, Some(entryEl)) =>
-              build(staticOpt.getOrElse(Nil), entryEl.dynamicMods, strw)
-            case _ => ()
-          }
+          val (entries, _, _) = splitVar.render(false).getOrElse((List.empty, 0, true))
+          val staticOpt       = entries.collectFirst { case (_, el) => el.static }
+          entries.foreach((_, entryEl) =>
+            build(staticOpt.getOrElse(Nil), entryEl.dynamicMods, strw)
+          )
     strw.write(static.last)
 
 end HtmlBuilder

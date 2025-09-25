@@ -290,6 +290,48 @@ object LiveViewSpec extends TestSuite:
           )
         )
       }
+      test("diff add one to empty list") {
+        val model = Var(TestModel(items = List.empty))
+        val el    =
+          div(
+            ul(
+              model(_.items).splitByIndex((_, elem) =>
+                li(
+                  "Nom: ",
+                  elem(_.name),
+                  " Age: ",
+                  elem(_.age.toString)
+                )
+              )
+            )
+          )
+        el.syncAll()
+        el.setAllUnchanged()
+
+        model.update(_.copy(items = List(NestedModel("a", 20))))
+
+        assertEqualsDiff(
+          el,
+          Json.Obj(
+            "0" ->
+              Json
+                .Obj(
+                  "s" -> Json.Arr(
+                    Json.Str("<li>Nom: "),
+                    Json.Str(" Age: "),
+                    Json.Str("</li>")
+                  ),
+                  "k" -> Json.Obj(
+                    "0" -> Json.Obj(
+                      "0" -> Json.Str("a"),
+                      "1" -> Json.Str("20")
+                    ),
+                    "kc" -> Json.Num(1)
+                  )
+                )
+          )
+        )
+      }
       test("diff with first item removed") {
         model.update(_.copy(items = initModel.items.tail))
         assertEqualsDiff(

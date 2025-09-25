@@ -41,19 +41,18 @@ object DiffBuilder:
       case Content.DynElementColl(dyn) => ???
       case Content.DynSplit(splitVar)  =>
         splitVar.render(trackUpdates) match
-          case Some((entries, keysCount)) =>
+          case Some((entries, keysCount, includeStatics)) =>
             val static =
-              entries.collectFirst { case (_, Some(el)) => el.static }.getOrElse(List.empty)
-            val includeStatic = !trackUpdates || keysCount == entries.count(_._2.isDefined)
+              if !trackUpdates || includeStatics then
+                entries.collectFirst { case (_, el) => el.static }.getOrElse(List.empty)
+              else List.empty
             List(
               Some(
                 Diff.Comprehension(
-                  static = if includeStatic then static else Seq.empty,
-                  entries = entries.map {
-                    case (key, Some(el)) =>
-                      Diff.Dynamic(key.toString, build(Seq.empty, el.dynamicMods, trackUpdates))
-                    case (key, None) => Diff.Dynamic(key.toString, Diff.Deleted)
-                  },
+                  static = static,
+                  entries = entries.map((key, el) =>
+                    Diff.Dynamic(key.toString, build(Seq.empty, el.dynamicMods, trackUpdates))
+                  ),
                   count = keysCount
                 )
               )

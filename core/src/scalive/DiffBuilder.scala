@@ -23,6 +23,9 @@ object DiffBuilder:
 
   private def buildDynamic(dynamicMods: Seq[DynamicMod], trackUpdates: Boolean): Seq[Option[Diff]] =
     dynamicMods.flatMap {
+      case Attr.Binding(_, id, _)          => List(id.render(trackUpdates).map(Diff.Value(_)))
+      case Attr.JsBinding(_, jsonValue, _) =>
+        List(jsonValue.render(trackUpdates).map(Diff.Value(_)))
       case Attr.Dyn(name, value, _) =>
         List(value.render(trackUpdates).map(v => Diff.Value(v.toString)))
       case Attr.DynValueAsPresence(name, value) =>

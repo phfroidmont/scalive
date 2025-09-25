@@ -14,9 +14,9 @@ object StaticBuilder:
     val attrs = el.attrMods.flatMap {
       case Attr.Static(name, value)                => List(Some(s" $name='$value'"))
       case Attr.StaticValueAsPresence(name, value) => List(Some(s" $name"))
-      case Attr.Binding(name, id, _)               => List(Some(s""" $name="$id""""))
-      case Attr.JsBinding(name, json, _)           => List(Some(s" $name='$json'"))
-      case Attr.Dyn(name, value, isJson)           =>
+      case Attr.Binding(name, _, _)      => List(Some(s""" $name=""""), None, Some('"'.toString))
+      case Attr.JsBinding(name, _, _)    => List(Some(s" $name='"), None, Some("'"))
+      case Attr.Dyn(name, value, isJson) =>
         if isJson then List(Some(s" $name='"), None, Some("'"))
         else List(Some(s""" $name=""""), None, Some('"'.toString))
       case Attr.DynValueAsPresence(_, value) => List(Some(""), None, Some(""))

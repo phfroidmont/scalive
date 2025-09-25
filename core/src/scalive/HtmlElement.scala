@@ -70,7 +70,7 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
 
 class HtmlAttrBinding(val name: String):
   def apply(cmd: JSCommand): Mod.Attr =
-    Mod.Attr.JsBinding(name, cmd.toJson, cmd.bindings)
+    Mod.Attr.JsBinding(name, Var(cmd.toJson), cmd.bindings)
 
   def apply[Msg](msg: Msg): Mod.Attr =
     apply(_ => msg)
@@ -78,11 +78,18 @@ class HtmlAttrBinding(val name: String):
   def apply[Msg](f: Map[String, String] => Msg): Mod.Attr =
     Mod.Attr.Binding(
       name,
-      Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12)),
+      Var(Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))),
       f
     )
   def withValue[Msg](f: String => Msg): Mod.Attr =
     apply(m => f(m("value")))
+
+  def withBoolValue[Msg](f: Boolean => Msg): Mod.Attr =
+    apply(m =>
+      f(m("value") match
+        case "on" | "yes" | "true"  => true
+        case "off" | "no" | "false" => false)
+    )
 
 trait BindingAdapter[F, Msg]:
   def createMessage(f: F): Map[String, String] => Msg
@@ -99,12 +106,14 @@ sealed trait DynamicMod extends Mod
 
 object Mod:
   enum Attr extends Mod:
-    case Static(name: String, value: String)                            extends Attr with StaticMod
-    case StaticValueAsPresence(name: String, value: Boolean)            extends Attr with StaticMod
-    case Binding(name: String, id: String, f: Map[String, String] => ?) extends Attr with StaticMod
-    case JsBinding(name: String, jsonValue: String, bindings: Map[String, ?])
+    case Static(name: String, value: String)                 extends Attr with StaticMod
+    case StaticValueAsPresence(name: String, value: Boolean) extends Attr with StaticMod
+    case Binding(name: String, id: scalive.Dyn[String], f: Map[String, String] => ?)
         extends Attr
-        with StaticMod
+        with DynamicMod
+    case JsBinding(name: String, jsonValue: scalive.Dyn[String], bindings: Map[String, ?])
+        extends Attr
+        with DynamicMod
     case Dyn(name: String, value: scalive.Dyn[String], isJson: Boolean = false)
         extends Attr
         with DynamicMod
@@ -124,8 +133,8 @@ extension (mod: Mod)
   private[scalive] def setAllUnchanged(): Unit =
     mod match
       case Attr.Static(_, _)                 => ()
-      case Attr.Binding(_, _, _)             => ()
-      case Attr.JsBinding(_, _, _)           => ()
+      case Attr.Binding(_, id, _)            => id.setUnchanged()
+      case Attr.JsBinding(_, json, _)        => json.setUnchanged()
       case Attr.StaticValueAsPresence(_, _)  => ()
       case Attr.Dyn(_, value, _)             => value.setUnchanged()
       case Attr.DynValueAsPresence(_, value) => value.setUnchanged()
@@ -149,8 +158,8 @@ extension (mod: Mod)
     mod match
       case Attr.Static(_, _)                 => ()
       case Attr.StaticValueAsPresence(_, _)  => ()
-      case Attr.Binding(_, _, _)             => ()
-      case Attr.JsBinding(_, _, _)           => ()
+      case Attr.Binding(_, id, _)            => id.sync()
+      case Attr.JsBinding(_, json, _)        => json.sync()
       case Attr.Dyn(_, value, _)             => value.sync()
       case Attr.DynValueAsPresence(_, value) => value.sync()
       case Content.Text(text)                => ()
@@ -174,7 +183,7 @@ extension (mod: Mod)
       case Attr.Static(_, _)                => None
       case Attr.StaticValueAsPresence(_, _) => None
       case Attr.Binding(_, eventId, f)      =>
-        if id == eventId then Some(f.asInstanceOf[Map[String, String] => Msg])
+        if id == eventId.currentValue then Some(f.asInstanceOf[Map[String, String] => Msg])
         else None
       case Attr.JsBinding(_, _, bindings) =>
         bindings.get(id).map(msg => _ => msg.asInstanceOf[Msg])

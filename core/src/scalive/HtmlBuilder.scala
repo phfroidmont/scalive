@@ -20,7 +20,9 @@ object HtmlBuilder:
     for i <- dynamic.indices do
       strw.write(static(i))
       dynamic(i) match
-        case Attr.Dyn(name, value, isJson) =>
+        case Attr.Binding(_, id, _)          => strw.write(id.render(false).getOrElse(""))
+        case Attr.JsBinding(_, jsonValue, _) => strw.write(jsonValue.render(false).getOrElse(""))
+        case Attr.Dyn(name, value, isJson)   =>
           strw.write(value.render(false).getOrElse(""))
         case Attr.DynValueAsPresence(name, value) =>
           strw.write(

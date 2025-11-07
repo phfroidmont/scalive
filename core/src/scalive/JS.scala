@@ -1,10 +1,10 @@
 package scalive
 
-import zio.json.*
-import zio.json.ast.Json
-
 import java.util.Base64
 import scala.util.Random
+
+import zio.json.*
+import zio.json.ast.Json
 
 val JS: JSCommands.JSCommand = JSCommands.empty
 

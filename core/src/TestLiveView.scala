@@ -1,11 +1,12 @@
 package scalive
 package playground
 
-import scalive.*
 import zio.*
 import zio.stream.ZStream
 
-import TestView.*
+import scalive.*
+import scalive.playground.TestView.*
+
 class TestView extends LiveView[Msg, Model]:
 
   def init = Model()

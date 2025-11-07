@@ -1,4 +1,3 @@
-import scalive.{label as _, *}
 import zio.*
 import zio.http.*
 import zio.logging.ConsoleLoggerConfig
@@ -6,6 +5,8 @@ import zio.logging.LogColor
 import zio.logging.LogFilter
 import zio.logging.LogFormat.*
 import zio.logging.consoleLogger
+
+import scalive.{label as _, *}
 
 object Example extends ZIOAppDefault:
 

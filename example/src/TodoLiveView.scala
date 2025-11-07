@@ -1,7 +1,8 @@
 import TodoLiveView.*
-import scalive.*
 import zio.*
 import zio.stream.ZStream
+
+import scalive.*
 
 class TodoLiveView() extends LiveView[Msg, Model]:
 

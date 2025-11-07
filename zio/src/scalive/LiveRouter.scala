@@ -1,7 +1,8 @@
 package scalive
 
-import scalive.WebSocketMessage.Meta
-import scalive.WebSocketMessage.Payload
+import java.util.Base64
+import scala.util.Random
+
 import zio.*
 import zio.http.*
 import zio.http.ChannelEvent.Read
@@ -11,8 +12,8 @@ import zio.json.*
 import zio.stream.SubscriptionRef
 import zio.stream.ZStream
 
-import java.util.Base64
-import scala.util.Random
+import scalive.WebSocketMessage.Meta
+import scalive.WebSocketMessage.Payload
 
 final case class LiveRoute[A, Msg, Model](
   path: PathCodec[A],

@@ -1,8 +1,9 @@
 package scalive
 package playground
 
-import scalive.*
 import zio.json.*
+
+import scalive.*
 
 extension (el: HtmlElement) def html: String = HtmlBuilder.build(el)
 

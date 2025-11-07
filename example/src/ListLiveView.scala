@@ -1,8 +1,9 @@
 import ListLiveView.*
 import monocle.syntax.all.*
-import scalive.*
 import zio.*
 import zio.stream.ZStream
+
+import scalive.*
 
 class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
 

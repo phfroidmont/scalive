@@ -1,13 +1,13 @@
 package scalive
 
-import zio.json.*
-
 import java.time.Instant
 import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import scala.concurrent.duration.Duration
 import scala.util.Random
+
+import zio.json.*
 
 final case class Token[T] private (
   version: Int,

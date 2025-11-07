@@ -1,14 +1,15 @@
 package scalive
 
+import java.util.Base64
+import scala.util.Random
+
+import zio.json.*
+
 import scalive.JSCommands.JSCommand
 import scalive.Mod.Attr
 import scalive.Mod.Content
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 import scalive.codecs.Encoder
-import zio.json.*
-
-import java.util.Base64
-import scala.util.Random
 
 class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
   def static: Seq[String]     = StaticBuilder.build(this)

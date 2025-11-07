@@ -1,8 +1,9 @@
 import CounterLiveView.*
 import monocle.syntax.all.*
-import scalive.*
 import zio.*
 import zio.stream.ZStream
+
+import scalive.*
 
 class CounterLiveView() extends LiveView[Msg, Model]:
 

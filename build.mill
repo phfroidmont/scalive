@@ -1,15 +1,19 @@
-//| mvnDeps : ["com.raquo::domtypes:18.1.0"]
+//| mvnDeps:
+//| - com.raquo::domtypes:18.1.0
+//| - com.goyeau::mill-scalafix::0.6.0
 
 package build
 
 import mill.*, scalalib.*, javascriptlib.*
+import mill.scalalib.scalafmt.ScalafmtModule
 import mill.api.Task.Simple
 import java.net.URI
 import java.nio.file.*
 import java.nio.file.attribute.BasicFileAttributes
 import java.util
+import com.goyeau.mill.scalafix.ScalafixModule
 
-trait ScalaCommon extends ScalaModule:
+trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
   def scalaVersion  = "3.7.2"
   def scalacOptions = Seq(
     "-Wunused:all",

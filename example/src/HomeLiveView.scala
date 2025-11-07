@@ -1,6 +1,7 @@
-import scalive.*
 import zio.*
 import zio.stream.ZStream
+
+import scalive.*
 
 class HomeLiveView() extends LiveView[String, Unit]:
   val links = List(

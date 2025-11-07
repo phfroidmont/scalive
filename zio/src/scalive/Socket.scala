@@ -1,11 +1,12 @@
 package scalive
 
-import scalive.WebSocketMessage.LiveResponse
-import scalive.WebSocketMessage.Payload
 import zio.*
 import zio.Queue
 import zio.stream.SubscriptionRef
 import zio.stream.ZStream
+
+import scalive.WebSocketMessage.LiveResponse
+import scalive.WebSocketMessage.Payload
 
 final case class Socket[Msg, Model] private (
   id: String,

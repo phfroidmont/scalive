@@ -1,11 +1,12 @@
 package scalive
 
-import scalive.WebSocketMessage.LiveResponse
-import scalive.WebSocketMessage.Payload
 import zio.Chunk
 import zio.http.QueryParams
 import zio.json.*
 import zio.json.ast.Json
+
+import scalive.WebSocketMessage.LiveResponse
+import scalive.WebSocketMessage.Payload
 
 final case class WebSocketMessage(
   // Live session ID, auto increment defined by the client on join

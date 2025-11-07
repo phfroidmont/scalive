@@ -36,10 +36,8 @@ object HtmlBuilder:
         case Content.DynElementColl(dyn) => ???
         case Content.DynSplit(splitVar)  =>
           val (entries, _, _) = splitVar.render(false).getOrElse((List.empty, 0, true))
-          val staticOpt       = entries.collectFirst { case (_, el) => el.static }
-          entries.foreach((_, entryEl) =>
-            build(staticOpt.getOrElse(Nil), entryEl.dynamicMods, strw)
-          )
+          val staticOpt       = entries.collectFirst { case (value = el) => el.static }
+          entries.foreach(entry => build(staticOpt.getOrElse(Nil), entry.value.dynamicMods, strw))
     strw.write(static.last)
 
 end HtmlBuilder

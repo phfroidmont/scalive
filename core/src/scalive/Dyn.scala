@@ -99,11 +99,14 @@ private class SplitVar[I, O, Key](
   private val memoized: mutable.Map[Key, (Var[I], O)] =
     mutable.Map.empty
 
+  private var previousKeysToIndex: Map[Key, Int] = Map.empty
+
   private var nonEmptySyncCount = 0
 
   private[scalive] def sync(): Unit =
     parent.sync()
     if parent.changed then
+      previousKeysToIndex = memoized.keys.zipWithIndex.toMap
       // We keep track of the keys to remove deleted ones afterwards
       val nextKeys = mutable.HashSet.empty[Key]
       parent.currentValue.foreach(input =>
@@ -126,15 +129,25 @@ private class SplitVar[I, O, Key](
       )
     if memoized.nonEmpty then nonEmptySyncCount += 1
 
-  private[scalive] def render(trackUpdates: Boolean)
-    : Option[(changeList: List[(Int, O)], keysCount: Int, includeStatics: Boolean)] =
+  private[scalive] def render(trackUpdates: Boolean): Option[
+    (
+      changeList: List[(index: Int, previousIndex: Option[Int], value: O)],
+      keysCount: Int,
+      includeStatics: Boolean
+    )
+  ] =
     if parent.changed || !trackUpdates then
       Some(
         (
-          changeList = memoized.values.zipWithIndex.collect {
-            case ((entryVar, output), index) if !trackUpdates || entryVar.changed =>
-              (index, output)
-          }.toList,
+          changeList = memoized.zipWithIndex
+            .map { case ((key, (entryVar, output)), index) =>
+              (index, previousKeysToIndex.get(key).filterNot(_ == index), entryVar, output)
+            }
+            .collect {
+              case (index, previousIndex, entryVar, output)
+                  if !trackUpdates || entryVar.changed || previousIndex.isDefined =>
+                (index, previousIndex, output)
+            }.toList,
           keysCount = memoized.size,
           includeStatics = nonEmptySyncCount == 1
         )

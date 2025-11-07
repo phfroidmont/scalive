@@ -10,10 +10,10 @@ enum Diff:
     dynamic: Seq[Diff.Dynamic] = Seq.empty)
   case Comprehension(
     static: Seq[String] = Seq.empty,
-    entries: Seq[Diff.Dynamic] = Seq.empty,
+    entries: Seq[Diff.Dynamic | Diff.IndexChange] = Seq.empty,
     count: Int = 0)
   case Value(value: String)
-  case Dynamic(key: String, diff: Diff)
+  case Dynamic(index: Int, diff: Diff)
   case Deleted
 
 extension (diff: Diff)
@@ -27,6 +27,8 @@ extension (diff: Diff)
 object Diff:
   given JsonEncoder[Diff] = JsonEncoder[Json].contramap(toJson(_))
 
+  final case class IndexChange(index: Int, previousIndex: Int)
+
   private def toJson(diff: Diff): Json =
     diff match
       case Diff.Tag(static, dynamic) =>
@@ -35,7 +37,7 @@ object Diff:
             .when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*))
             .to(Chunk)
             .appendedAll(
-              dynamic.map(d => d.key -> toJson(d.diff))
+              dynamic.map(d => d.index.toString -> toJson(d.diff))
             )
         )
       case Diff.Comprehension(static, entries, count) =>
@@ -47,7 +49,12 @@ object Diff:
               "k" ->
                 Json
                   .Obj(
-                    entries.map(d => d.key -> toJson(d.diff))*
+                    entries.map {
+                      case Diff.Dynamic(index, diff) =>
+                        index.toString -> toJson(diff)
+                      case Diff.IndexChange(index, previousIndex) =>
+                        index.toString -> Json.Num(previousIndex)
+                    }*
                   ).add("kc", Json.Num(count))
             )
         )

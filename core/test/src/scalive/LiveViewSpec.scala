@@ -372,5 +372,183 @@ object LiveViewSpec extends TestSuite:
       }
     }
 
+    test("splitById mod") {
+      val initModel = TestModel(
+        items = List(
+          NestedModel("a", 10),
+          NestedModel("b", 15),
+          NestedModel("c", 20)
+        )
+      )
+      val model = Var(initModel)
+      val el    =
+        div(
+          ul(
+            model(_.items).splitBy(_.name)((_, elem) =>
+              li(
+                "Nom: ",
+                elem(_.name),
+                " Age: ",
+                elem(_.age.toString)
+              )
+            )
+          )
+        )
+
+      el.syncAll()
+      el.setAllUnchanged()
+
+      test("init") {
+        assertEqualsDiff(
+          el,
+          Json
+            .Obj(
+              "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
+              "0" -> Json.Obj(
+                "s" -> Json.Arr(
+                  Json.Str("<li>Nom: "),
+                  Json.Str(" Age: "),
+                  Json.Str("</li>")
+                ),
+                "k" -> Json.Obj(
+                  "0" -> Json.Obj(
+                    "0" -> Json.Str("a"),
+                    "1" -> Json.Str("10")
+                  ),
+                  "1" -> Json.Obj(
+                    "0" -> Json.Str("b"),
+                    "1" -> Json.Str("15")
+                  ),
+                  "2" -> Json.Obj(
+                    "0" -> Json.Str("c"),
+                    "1" -> Json.Str("20")
+                  ),
+                  "kc" -> Json.Num(3)
+                )
+              )
+            ),
+          trackChanges = false
+        )
+      }
+      test("diff no update") {
+        assertEqualsDiff(el, emptyDiff)
+      }
+      test("diff with unrelated update") {
+        model.update(_.copy(title = "title updated"))
+        assertEqualsDiff(el, emptyDiff)
+      }
+      test("diff with item changed") {
+        model.update(_.copy(items = initModel.items.updated(2, NestedModel("c", 99))))
+        assertEqualsDiff(
+          el,
+          Json.Obj(
+            "0" ->
+              Json
+                .Obj(
+                  "k" -> Json.Obj(
+                    "2" -> Json.Obj(
+                      "1" -> Json.Str("99")
+                    ),
+                    "kc" -> Json.Num(3)
+                  )
+                )
+          )
+        )
+      }
+      test("diff with item added") {
+        model.update(_.copy(items = initModel.items.appended(NestedModel("d", 35))))
+        assertEqualsDiff(
+          el,
+          Json.Obj(
+            "0" ->
+              Json
+                .Obj(
+                  "k" -> Json.Obj(
+                    "3" -> Json.Obj(
+                      "0" -> Json.Str("d"),
+                      "1" -> Json.Str("35")
+                    ),
+                    "kc" -> Json.Num(4)
+                  )
+                )
+          )
+        )
+      }
+      test("diff add one to empty list") {
+        val model = Var(TestModel(items = List.empty))
+        val el    =
+          div(
+            ul(
+              model(_.items).splitByIndex((_, elem) =>
+                li(
+                  "Nom: ",
+                  elem(_.name),
+                  " Age: ",
+                  elem(_.age.toString)
+                )
+              )
+            )
+          )
+        el.syncAll()
+        el.setAllUnchanged()
+
+        model.update(_.copy(items = List(NestedModel("a", 20))))
+
+        assertEqualsDiff(
+          el,
+          Json.Obj(
+            "0" ->
+              Json
+                .Obj(
+                  "s" -> Json.Arr(
+                    Json.Str("<li>Nom: "),
+                    Json.Str(" Age: "),
+                    Json.Str("</li>")
+                  ),
+                  "k" -> Json.Obj(
+                    "0" -> Json.Obj(
+                      "0" -> Json.Str("a"),
+                      "1" -> Json.Str("20")
+                    ),
+                    "kc" -> Json.Num(1)
+                  )
+                )
+          )
+        )
+      }
+      test("diff with first item removed") {
+        model.update(_.copy(items = initModel.items.tail))
+        assertEqualsDiff(
+          el,
+          Json.Obj(
+            "0" ->
+              Json
+                .Obj(
+                  "k" -> Json.Obj(
+                    "0"  -> Json.Num(1),
+                    "1"  -> Json.Num(2),
+                    "kc" -> Json.Num(2)
+                  )
+                )
+          )
+        )
+      }
+      test("diff all removed") {
+        model.update(_.copy(items = List.empty))
+        assertEqualsDiff(
+          el,
+          Json.Obj(
+            "0" ->
+              Json
+                .Obj(
+                  "k" -> Json.Obj(
+                    "kc" -> Json.Num(0)
+                  )
+                )
+          )
+        )
+      }
+    }
+
   }
 end LiveViewSpec

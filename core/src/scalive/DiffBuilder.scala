@@ -17,7 +17,7 @@ object DiffBuilder:
       static = static,
       dynamic =
         buildDynamic(dynamicMods, trackUpdates).zipWithIndex.collect { case (Some(diff), index) =>
-          Diff.Dynamic(index.toString, diff)
+          Diff.Dynamic(index, diff)
         }
     )
 
@@ -47,15 +47,24 @@ object DiffBuilder:
           case Some((entries, keysCount, includeStatics)) =>
             val static =
               if !trackUpdates || includeStatics then
-                entries.collectFirst { case (_, el) => el.static }.getOrElse(List.empty)
+                entries.collectFirst { case (_, _, el) => el.static }.getOrElse(List.empty)
               else List.empty
             List(
               Some(
                 Diff.Comprehension(
                   static = static,
-                  entries = entries.map((key, el) =>
-                    Diff.Dynamic(key.toString, build(Seq.empty, el.dynamicMods, trackUpdates))
-                  ),
+                  entries = entries.map {
+                    case entry @ (previousIndex = None) =>
+                      Diff.Dynamic(
+                        entry.index,
+                        build(Seq.empty, entry.value.dynamicMods, trackUpdates)
+                      )
+                    case (index, Some(previousIndex), _) =>
+                      Diff.IndexChange(
+                        index,
+                        previousIndex
+                      )
+                  },
                   count = keysCount
                 )
               )

@@ -37,7 +37,6 @@ sealed trait Dyn[T]:
   private[scalive] def callOnEveryChild(f: T => Unit): Unit
 
 extension [T](parent: Dyn[List[T]])
-  // TODO fix
   def splitBy[Key](key: T => Key)(project: (Key, Dyn[T]) => HtmlElement): Mod =
     Mod.Content.DynSplit(
       new SplitVar(

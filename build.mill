@@ -4,7 +4,7 @@
 
 package build
 
-import mill.*, scalalib.*, javascriptlib.*
+import mill.*, scalalib.*, javascriptlib.TypeScriptModule, publish.*
 import mill.scalalib.scalafmt.ScalafmtModule
 import mill.api.Task.Simple
 import java.net.URI
@@ -14,7 +14,7 @@ import java.util
 import com.goyeau.mill.scalafix.ScalafixModule
 
 trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
-  def scalaVersion  = "3.7.2"
+  def scalaVersion  = "3.7.3"
   def scalacOptions = Seq(
     "-Wunused:all",
     "-preview",
@@ -24,23 +24,36 @@ trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
     "-Wnonunit-statement"
   )
 
-object core extends ScalaCommon:
-  def mvnDeps = Seq(mvn"dev.zio::zio-json:0.7.44")
+trait PublishCommon extends PublishModule:
+  def publishVersion = "0.0.1"
+  def pomSettings    = PomSettings(
+    description = artifactName(),
+    organization = "phfroidmont",
+    url = "https://github.com/phfroidmont/scalive",
+    licenses = Seq(License.MIT),
+    versionControl = VersionControl.github("phfroidmont", "scalive"),
+    developers =
+      Seq(Developer("phfroidmont", "Paul-Henri Froidmont", "https://github.com/phfroidmont"))
+  )
 
-  def generatedSources = Task {
-    new DomDefsGenerator((Task.dest / "core/src/scalive").toString).generate()
-    super.generatedSources() ++ Seq(PathRef(Task.dest))
-  }
+object scalive extends Module:
+  object core extends ScalaCommon with PublishCommon:
+    def mvnDeps = Seq(mvn"dev.zio::zio-json:0.7.44")
 
-  object test extends ScalaTests with scalalib.TestModule.Utest:
-    def utestVersion = "0.9.0"
+    def generatedSources = Task {
+      new DomDefsGenerator((Task.dest / "core/src/scalive").toString).generate()
+      super.generatedSources() ++ Seq(PathRef(Task.dest))
+    }
 
-object zio extends ScalaCommon:
-  def mvnDeps    = Seq(mvn"dev.zio::zio-http:3.4.0")
-  def moduleDeps = Seq(core)
+    object test extends ScalaTests with scalalib.TestModule.Utest:
+      def utestVersion = "0.9.0"
+
+  object zio extends ScalaCommon with PublishCommon:
+    def mvnDeps    = Seq(mvn"dev.zio::zio-http:3.4.0")
+    def moduleDeps = Seq(core)
 
 object example extends ScalaCommon:
-  def moduleDeps = Seq(zio)
+  def moduleDeps = Seq(scalive.zio)
   def mvnDeps    = Seq(mvn"dev.optics::monocle-core:3.1.0", mvn"dev.zio::zio-logging:2.5.1")
 
   def scaliveBundle = Task {

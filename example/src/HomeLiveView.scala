@@ -9,9 +9,9 @@ class HomeLiveView() extends LiveView[String, Unit]:
     "/todo"        -> "Todo"
   )
 
-  def init = ZIO.succeed(())
+  def init = ()
 
-  def update(model: Unit) = _ => ZIO.succeed(model)
+  def update(model: Unit) = _ => model
 
   def view(model: Dyn[Unit]) =
     ul(

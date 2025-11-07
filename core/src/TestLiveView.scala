@@ -8,10 +8,10 @@ import zio.stream.ZStream
 import TestView.*
 class TestView extends LiveView[Msg, Model]:
 
-  def init = ZIO.succeed(Model())
+  def init = Model()
 
   def update(model: Model) =
-    case Msg.UpdateModel(f) => ZIO.succeed(f(model))
+    case Msg.UpdateModel(f) => f(model)
 
   def view(model: Dyn[Model]) =
     div(

@@ -6,30 +6,24 @@ import zio.stream.ZStream
 
 class TodoLiveView() extends LiveView[Msg, Model]:
 
-  def init = ZIO.succeed(Model(List(Todo(99, "some task"))))
+  def init = Model(List(Todo(99, "Buy eggs")))
 
   def update(model: Model) =
     case Msg.Add(text) =>
       val nextId = model.todos.maxByOption(_.id).map(_.id).getOrElse(1) + 1
-      ZIO.succeed(
-        model
-          .focus(_.todos)
-          .modify(_.appended(Todo(nextId, text)))
-      )
+      model
+        .focus(_.todos)
+        .modify(_.appended(Todo(nextId, text)))
     case Msg.Remove(id) =>
-      ZIO.succeed(
-        model
-          .focus(_.todos)
-          .modify(_.filterNot(_.id == id))
-      )
+      model
+        .focus(_.todos)
+        .modify(_.filterNot(_.id == id))
     case Msg.ToggleCompletion(id) =>
-      ZIO.succeed(
-        model
-          .focus(_.todos)
-          .modify(
-            _.map(todo => if todo.id == id then todo.copy(completed = todo.completed) else todo)
-          )
-      )
+      model
+        .focus(_.todos)
+        .modify(
+          _.map(todo => if todo.id == id then todo.copy(completed = todo.completed) else todo)
+        )
 
   def view(model: Dyn[Model]) =
     div(

@@ -6,20 +6,19 @@ import zio.stream.ZStream
 
 class CounterLiveView() extends LiveView[Msg, Model]:
 
-  def init = ZIO.succeed(
+  def init =
     Model(
       isVisible = true,
       counter = 0
     )
-  )
 
   def update(model: Model) =
     case Msg.ToggleCounter =>
-      ZIO.succeed(model.focus(_.isVisible).modify(!_))
+      model.focus(_.isVisible).modify(!_)
     case Msg.IncCounter =>
-      ZIO.succeed(model.focus(_.counter).modify(_ + 1))
+      model.focus(_.counter).modify(_ + 1)
     case Msg.DecCounter =>
-      ZIO.succeed(model.focus(_.counter).modify(_ - 1))
+      model.focus(_.counter).modify(_ - 1)
 
   def view(model: Dyn[Model]) =
     div(

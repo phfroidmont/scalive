@@ -6,7 +6,7 @@ import zio.stream.ZStream
 
 class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
 
-  def init = ZIO.succeed(
+  def init =
     Model(
       elems = List(
         NestedModel("a", 10),
@@ -14,11 +14,10 @@ class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
         NestedModel("c", 20)
       )
     )
-  )
 
   def update(model: Model) =
     case Msg.IncAge(value) =>
-      ZIO.succeed(model.focus(_.elems.index(2).age).modify(_ + value))
+      model.focus(_.elems.index(2).age).modify(_ + value)
 
   def view(model: Dyn[Model]) =
     div(

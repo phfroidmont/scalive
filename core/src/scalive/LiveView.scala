@@ -8,3 +8,5 @@ trait LiveView[Msg, Model]:
   def update(model: Model): Msg => Task[Model]
   def view(model: Dyn[Model]): HtmlElement
   def subscriptions(model: Model): ZStream[Any, Nothing, Msg]
+
+  given [T]: Conversion[T, Task[T]] = ZIO.succeed(_)

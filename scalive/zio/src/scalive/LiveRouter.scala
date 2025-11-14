@@ -26,7 +26,7 @@ final case class LiveRoute[A, Msg, Model](
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val token = Token.sign("secret", id, "")
       for
-        initModel <- lv.init
+        initModel <- normalize(lv.init)
         el = lv.view(Var(initModel))
         _  = el.syncAll()
       yield Response.html(

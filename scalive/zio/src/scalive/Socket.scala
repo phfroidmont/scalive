@@ -27,7 +27,7 @@ object Socket:
         inbox  <- Queue.bounded[(Payload.Event, WebSocketMessage.Meta)](4)
         outHub <- Hub.unbounded[(Payload, WebSocketMessage.Meta)]
 
-        initModel <- lv.init
+        initModel <- normalize(lv.init)
         modelVar = Var(initModel)
         el       = lv.view(modelVar)
         ref <- Ref.make((modelVar, el))
@@ -52,7 +52,8 @@ object Socket:
                                    s"No binding found for event ID ${event.event}"
                                  )
                                )
-                           updatedModel <- lv.update(modelVar.currentValue)(f(event.params))
+                           updatedModel <-
+                             normalize(lv.update(modelVar.currentValue)(f(event.params)))
                            _ = modelVar.set(updatedModel)
                            _ <- lvStreamRef.set(lv.subscriptions(updatedModel))
                            diff    = el.diff()
@@ -63,7 +64,7 @@ object Socket:
         serverFiber <- serverMsgStream.runForeach { (msg, meta) =>
                          for
                            (modelVar, el) <- ref.get
-                           updatedModel   <- lv.update(modelVar.currentValue)(msg)
+                           updatedModel   <- normalize(lv.update(modelVar.currentValue)(msg))
                            _       = modelVar.set(updatedModel)
                            diff    = el.diff()
                            payload = Payload.Diff(diff)

@@ -37,7 +37,7 @@ sealed trait Dyn[T]:
   private[scalive] def callOnEveryChild(f: T => Unit): Unit
 
 extension [T](parent: Dyn[List[T]])
-  def splitBy[Key](key: T => Key)(project: (Key, Dyn[T]) => HtmlElement): Mod =
+  def splitBy[Key: Ordering](key: T => Key)(project: (Key, Dyn[T]) => HtmlElement): Mod =
     Mod.Content.DynSplit(
       new SplitVar(
         parent,
@@ -90,13 +90,13 @@ private class DerivedVar[I, O] private[scalive] (parent: Var[I], f: I => O) exte
 
   private[scalive] def callOnEveryChild(f: O => Unit): Unit = f(currentValue)
 
-private class SplitVar[I, O, Key](
+private class SplitVar[I, O, Key: Ordering](
   parent: Dyn[List[I]],
   key: I => Key,
   project: (Key, Dyn[I]) => O):
 
   private val memoized: mutable.Map[Key, (Var[I], O)] =
-    mutable.Map.empty
+    mutable.TreeMap.empty
 
   private var previousKeysToIndex: Map[Key, Int] = Map.empty
 

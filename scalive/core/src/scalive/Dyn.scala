@@ -37,7 +37,7 @@ sealed trait Dyn[T]:
   private[scalive] def callOnEveryChild(f: T => Unit): Unit
 
 extension [T](parent: Dyn[List[T]])
-  def splitBy[Key: Ordering](key: T => Key)(project: (Key, Dyn[T]) => HtmlElement): Mod =
+  def splitBy[Key](key: T => Key)(project: (Key, Dyn[T]) => HtmlElement): Mod =
     Mod.Content.DynSplit(
       new SplitVar(
         parent,
@@ -90,13 +90,15 @@ private class DerivedVar[I, O] private[scalive] (parent: Var[I], f: I => O) exte
 
   private[scalive] def callOnEveryChild(f: O => Unit): Unit = f(currentValue)
 
-private class SplitVar[I, O, Key: Ordering](
+private class SplitVar[I, O, Key](
   parent: Dyn[List[I]],
   key: I => Key,
   project: (Key, Dyn[I]) => O):
 
   private val memoized: mutable.Map[Key, (Var[I], O)] =
-    mutable.TreeMap.empty
+    mutable.Map.empty
+
+  private var orderedKeys = List.empty[Key]
 
   private var previousKeysToIndex: Map[Key, Int] = Map.empty
 
@@ -105,9 +107,10 @@ private class SplitVar[I, O, Key: Ordering](
   private[scalive] def sync(): Unit =
     parent.sync()
     if parent.changed then
-      previousKeysToIndex = memoized.keys.zipWithIndex.toMap
+      previousKeysToIndex = orderedKeys.zipWithIndex.toMap
       // We keep track of the keys to remove deleted ones afterwards
       val nextKeys = mutable.HashSet.empty[Key]
+      orderedKeys = parent.currentValue.map(key)
       parent.currentValue.foreach(input =>
         val entryKey = key(input)
         nextKeys += entryKey
@@ -138,7 +141,8 @@ private class SplitVar[I, O, Key: Ordering](
     if parent.changed || !trackUpdates then
       Some(
         (
-          changeList = memoized.zipWithIndex
+          changeList = orderedKeys
+            .map(k => (k, memoized(k))).zipWithIndex
             .map { case ((key, (entryVar, output)), index) =>
               (index, previousKeysToIndex.get(key).filterNot(_ == index), entryVar, output)
             }

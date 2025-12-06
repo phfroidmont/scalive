@@ -550,5 +550,91 @@ object LiveViewSpec extends TestSuite:
       }
     }
 
+    test("splitBy ordering") {
+      val initModel = TestModel(
+        items = List(
+          NestedModel("c", 20),
+          NestedModel("a", 10),
+          NestedModel("b", 15)
+        )
+      )
+      val model = Var(initModel)
+      val el    =
+        div(
+          ul(
+            model(_.items).splitBy(_.name)((_, elem) =>
+              li(
+                "Nom: ",
+                elem(_.name),
+                " Age: ",
+                elem(_.age.toString)
+              )
+            )
+          )
+        )
+
+      el.syncAll()
+      el.setAllUnchanged()
+
+      test("init should preserve list order") {
+        assertEqualsDiff(
+          el,
+          Json
+            .Obj(
+              "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
+              "0" -> Json.Obj(
+                "s" -> Json.Arr(
+                  Json.Str("<li>Nom: "),
+                  Json.Str(" Age: "),
+                  Json.Str("</li>")
+                ),
+                "k" -> Json.Obj(
+                  "0" -> Json.Obj(
+                    "0" -> Json.Str("c"),
+                    "1" -> Json.Str("20")
+                  ),
+                  "1" -> Json.Obj(
+                    "0" -> Json.Str("a"),
+                    "1" -> Json.Str("10")
+                  ),
+                  "2" -> Json.Obj(
+                    "0" -> Json.Str("b"),
+                    "1" -> Json.Str("15")
+                  ),
+                  "kc" -> Json.Num(3)
+                )
+              )
+            ),
+          trackChanges = false
+        )
+      }
+
+      test("reorder items") {
+        model.update(
+          _.copy(items =
+            List(
+              NestedModel("b", 15), // Should be at index 0
+              NestedModel("a", 10), // Should be at index 1
+              NestedModel("c", 20)  // Should be at index 2
+            )
+          )
+        )
+        assertEqualsDiff(
+          el,
+          Json.Obj(
+            "0" ->
+              Json
+                .Obj(
+                  "k" -> Json.Obj(
+                    "0"  -> Json.Num(2),
+                    "2"  -> Json.Num(0),
+                    "kc" -> Json.Num(3)
+                  )
+                )
+          )
+        )
+      }
+    }
+
   }
 end LiveViewSpec

@@ -19,7 +19,7 @@ object JSCommands:
     given JsonEncoder[JSCommand] =
       JsonEncoder[Json].contramap(ops => Json.Arr(ops.map(_._1).reverse*))
 
-  private def classNames(names: String): Seq[String] = names.split("\\s+")
+  private def classNames(names: String): Seq[String] = names.split("\\s+").toSeq
   private def transitionClasses(names: String | (String, String, String))
     : Option[Seq[Seq[String]]] =
     names match

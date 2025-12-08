@@ -150,7 +150,7 @@ extension (mod: Mod)
         dyn.callOnEveryChild(_.foreach(_.setAllUnchanged()))
       case Content.DynElementColl(dyn) =>
         dyn.setUnchanged()
-        dyn.callOnEveryChild(_.foreach(_.setAllUnchanged()))
+        dyn.callOnEveryChild(_.iterator.foreach(_.setAllUnchanged()))
       case Content.DynSplit(v) =>
         v.setUnchanged()
         v.callOnEveryChild(_.setAllUnchanged())
@@ -174,7 +174,7 @@ extension (mod: Mod)
         dyn.callOnEveryChild(_.foreach(_.syncAll()))
       case Content.DynElementColl(dyn) =>
         dyn.sync()
-        dyn.callOnEveryChild(_.foreach(_.syncAll()))
+        dyn.callOnEveryChild(_.iterator.foreach(_.syncAll()))
       case Content.DynSplit(v) =>
         v.sync()
         v.callOnEveryChild(_.syncAll())

@@ -9,7 +9,8 @@ import scalive.defs.tags.HtmlTags
 
 package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys:
 
-  lazy val defer = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
+  lazy val defer            = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
+  def rawHtml(html: String) = Mod.Content.Text(html, raw = true)
 
   object link:
     def navigate(path: String, mods: Mod*): HtmlElement =

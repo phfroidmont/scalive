@@ -121,10 +121,10 @@ object Mod:
     case DynValueAsPresence(name: String, value: scalive.Dyn[Boolean]) extends Attr with DynamicMod
 
   enum Content extends Mod:
-    case Text(text: String)                extends Content with StaticMod
-    case Tag(el: HtmlElement)              extends Content with StaticMod with DynamicMod
-    case DynText(dyn: Dyn[String])         extends Content with DynamicMod
-    case DynElement(dyn: Dyn[HtmlElement]) extends Content with DynamicMod
+    case Text(text: String, raw: Boolean = false) extends Content with StaticMod
+    case Tag(el: HtmlElement)                     extends Content with StaticMod with DynamicMod
+    case DynText(dyn: Dyn[String])                extends Content with DynamicMod
+    case DynElement(dyn: Dyn[HtmlElement])        extends Content with DynamicMod
     // TODO support arbitrary collection
     case DynOptionElement(dyn: Dyn[Option[HtmlElement]])     extends Content with DynamicMod
     case DynElementColl(dyn: Dyn[IterableOnce[HtmlElement]]) extends Content with DynamicMod
@@ -139,7 +139,7 @@ extension (mod: Mod)
       case Attr.StaticValueAsPresence(_, _)  => ()
       case Attr.Dyn(_, value, _)             => value.setUnchanged()
       case Attr.DynValueAsPresence(_, value) => value.setUnchanged()
-      case Content.Text(text)                => ()
+      case Content.Text(text, _)             => ()
       case Content.Tag(el)                   => el.setAllUnchanged()
       case Content.DynText(dyn)              => dyn.setUnchanged()
       case Content.DynElement(dyn)           =>
@@ -163,7 +163,7 @@ extension (mod: Mod)
       case Attr.JsBinding(_, json, _)        => json.sync()
       case Attr.Dyn(_, value, _)             => value.sync()
       case Attr.DynValueAsPresence(_, value) => value.sync()
-      case Content.Text(text)                => ()
+      case Content.Text(text, _)             => ()
       case Content.Tag(el)                   => el.syncAll()
       case Content.DynText(dyn)              => dyn.sync()
       case Content.DynElement(dyn)           =>
@@ -190,7 +190,7 @@ extension (mod: Mod)
         bindings.get(id).map(msg => _ => msg.asInstanceOf[Msg])
       case Attr.Dyn(_, value, _)             => None
       case Attr.DynValueAsPresence(_, value) => None
-      case Content.Text(text)                => None
+      case Content.Text(text, _)             => None
       case Content.Tag(el)                   => el.findBinding(id)
       case Content.DynText(dyn)              => None
       case Content.DynElement(dyn)           => dyn.currentValue.findBinding(id)

@@ -24,13 +24,14 @@ object HtmlBuilder:
         case Attr.Binding(_, id, _)          => strw.write(id.render(false).getOrElse(""))
         case Attr.JsBinding(_, jsonValue, _) => strw.write(jsonValue.render(false).getOrElse(""))
         case Attr.Dyn(name, value, isJson)   =>
-          strw.write(value.render(false).getOrElse(""))
+          if isJson then strw.write(value.render(false).getOrElse(""))
+          else strw.writeEscaped(value.render(false).getOrElse(""))
         case Attr.DynValueAsPresence(name, value) =>
           strw.write(
             value.render(false).map(if _ then s" $name" else "").getOrElse("")
           )
         case Content.Tag(el)               => build(el.static, el.dynamicMods, strw)
-        case Content.DynText(dyn)          => strw.write(dyn.render(false).getOrElse(""))
+        case Content.DynText(dyn)          => strw.writeEscaped(dyn.render(false).getOrElse(""))
         case Content.DynElement(dyn)       => ???
         case Content.DynOptionElement(dyn) =>
           dyn.render(false).foreach(_.foreach(el => build(el.static, el.dynamicMods, strw)))

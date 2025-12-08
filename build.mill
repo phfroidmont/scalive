@@ -21,7 +21,8 @@ trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
     "-feature",
     "-language:implicitConversions",
     "-Wvalue-discard",
-    "-Wnonunit-statement"
+    "-Wnonunit-statement",
+    "-deprecation"
   )
 
 trait PublishCommon extends PublishModule:

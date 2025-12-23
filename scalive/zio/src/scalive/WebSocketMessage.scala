@@ -82,7 +82,8 @@ object WebSocketMessage:
       redirect: Option[String],
       // params: Map[String, String],
       session: String,
-      static: Option[String],
+      static: Option[List[String]],
+      params: Option[Map[String, Json]],
       sticky: Boolean)
     case Leave
     case Close

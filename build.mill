@@ -53,6 +53,9 @@ object scalive extends Module:
     def mvnDeps    = Seq(mvn"dev.zio::zio-http:3.4.0")
     def moduleDeps = Seq(core)
 
+    object test extends ScalaTests with scalalib.TestModule.ZioTest:
+      def zioTestVersion = "2.1.23"
+
 object example extends ScalaCommon:
   def moduleDeps = Seq(scalive.zio)
   def mvnDeps    = Seq(mvn"dev.optics::monocle-core:3.1.0", mvn"dev.zio::zio-logging:2.5.1")

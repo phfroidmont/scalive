@@ -12,6 +12,7 @@ import zio.json.*
 import zio.stream.SubscriptionRef
 import zio.stream.ZStream
 
+import scalive.*
 import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
 
@@ -25,8 +26,9 @@ final case class LiveRoute[A, Msg, Model](
       val id: String =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val token = Token.sign("secret", id, "")
+      val ctx   = LiveContext(staticChanged = false)
       for
-        initModel <- normalize(lv.init)
+        initModel <- normalize(lv.init, ctx)
         el = lv.view(Var(initModel))
         _  = el.syncAll()
       yield Response.html(
@@ -57,6 +59,7 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
     id: String,
     token: String,
     lv: LiveView[Msg, Model],
+    ctx: LiveContext,
     meta: WebSocketMessage.Meta
   ): RIO[Scope, Unit] =
     sockets
@@ -65,11 +68,11 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
           case Some(socket) =>
             socket.shutdown *>
               Socket
-                .start(id, token, lv, meta)
+                .start(id, token, lv, ctx, meta)
                 .map(m.updated(id, _))
           case None =>
             Socket
-              .start(id, token, lv, meta)
+              .start(id, token, lv, ctx, meta)
               .map(m.updated(id, _))
       }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
 
@@ -100,6 +103,8 @@ object LiveChannel:
     SubscriptionRef.make(Map.empty).map(new LiveChannel(_))
 
 class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRoute[?, ?, ?]]):
+
+  private val trackedStatic = StaticTracking.collect(rootLayout(div()))
 
   private val socketApp: WebSocketApp[Any] =
     Handler.webSocket { channel =>
@@ -154,7 +159,9 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
     : RIO[Scope, Option[WebSocketMessage]] =
     message.payload match
       case Payload.Heartbeat => ZIO.succeed(Some(message.okReply))
-      case Payload.Join(url, redirect, session, static, sticky) =>
+      case Payload.Join(url, redirect, session, static, params, sticky) =>
+        val clientStatics = static.orElse(StaticTracking.clientListFromParams(params))
+        val ctx           = LiveContext(StaticTracking.staticChanged(clientStatics, trackedStatic))
         ZIO
           .fromEither(URL.decode(url.orElse(redirect).getOrElse(???))).flatMap(url =>
             val req = Request(url = url)
@@ -164,9 +171,9 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
                   .decode(req.path)
                   .toOption
                   .map(route.liveviewBuilder(_, req))
-                  .map(
+                  .map(lv =>
                     ZIO.logDebug(s"Joining LiveView ${route.path.toString} ${message.topic}") *>
-                      liveChannel.join(message.topic, session, _, message.meta)
+                      liveChannel.join(message.topic, session, lv, ctx, message.meta)
                   )
               )
               .collectFirst { case Some(join) => join.map(_ => None) }

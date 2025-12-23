@@ -20,6 +20,7 @@ object Socket:
     id: String,
     token: String,
     lv: LiveView[Msg, Model],
+    ctx: LiveContext,
     meta: WebSocketMessage.Meta
   ): RIO[Scope, Socket[Msg, Model]] =
     ZIO.logAnnotate("lv", id) {
@@ -27,14 +28,15 @@ object Socket:
         inbox  <- Queue.bounded[(Payload.Event, WebSocketMessage.Meta)](4)
         outHub <- Hub.unbounded[(Payload, WebSocketMessage.Meta)]
 
-        initModel <- normalize(lv.init)
+        initModel <- normalize(lv.init, ctx)
         modelVar = Var(initModel)
         el       = lv.view(modelVar)
         ref <- Ref.make((modelVar, el))
 
         initDiff = el.diff(trackUpdates = false)
 
-        lvStreamRef <- SubscriptionRef.make(lv.subscriptions(initModel))
+        lvStreamRef <-
+          SubscriptionRef.make(lv.subscriptions(initModel).provideLayer(ZLayer.succeed(ctx)))
 
         clientMsgStream = ZStream.fromQueue(inbox)
         serverMsgStream = (ZStream.fromZIO(lvStreamRef.get) ++ lvStreamRef.changes)
@@ -53,9 +55,11 @@ object Socket:
                                  )
                                )
                            updatedModel <-
-                             normalize(lv.update(modelVar.currentValue)(f(event.params)))
+                             normalize(lv.update(modelVar.currentValue)(f(event.params)), ctx)
                            _ = modelVar.set(updatedModel)
-                           _ <- lvStreamRef.set(lv.subscriptions(updatedModel))
+                           _ <- lvStreamRef.set(
+                                  lv.subscriptions(updatedModel).provideLayer(ZLayer.succeed(ctx))
+                                )
                            diff    = el.diff()
                            payload = Payload.okReply(LiveResponse.Diff(diff))
                            _ <- outHub.publish(payload -> meta)
@@ -64,7 +68,7 @@ object Socket:
         serverFiber <- serverMsgStream.runForeach { (msg, meta) =>
                          for
                            (modelVar, el) <- ref.get
-                           updatedModel   <- normalize(lv.update(modelVar.currentValue)(msg))
+                           updatedModel   <- normalize(lv.update(modelVar.currentValue)(msg), ctx)
                            _       = modelVar.set(updatedModel)
                            diff    = el.diff()
                            payload = Payload.Diff(diff)

@@ -1,5 +1,6 @@
 import zio.*
 import zio.http.*
+import zio.http.codec.PathCodec
 import zio.logging.ConsoleLoggerConfig
 import zio.logging.LogColor
 import zio.logging.LogFilter
@@ -47,7 +48,9 @@ object Example extends ZIOAppDefault:
       )
     )
 
-  val routes = liveRouter.routes @@ Middleware.serveResources(Path.empty / "static", "public")
+  val routes =
+    liveRouter.routes @@
+      ServeHashedResourcesMiddleware(Path.empty / "static", "public")
 
   override val run = Server.serve(routes).provide(Server.default)
 end Example

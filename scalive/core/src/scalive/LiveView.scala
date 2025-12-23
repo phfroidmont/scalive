@@ -3,6 +3,7 @@ package scalive
 import zio.*
 import zio.stream.*
 
+// TODO implement all LiveView functions
 final case class LiveContext(staticChanged: Boolean)
 object LiveContext:
   def staticChanged: URIO[LiveContext, Boolean] = ZIO.serviceWith[LiveContext](_.staticChanged)

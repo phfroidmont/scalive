@@ -60,15 +60,6 @@ object example extends ScalaCommon:
   def moduleDeps = Seq(scalive.zio)
   def mvnDeps    = Seq(mvn"dev.optics::monocle-core:3.1.0", mvn"dev.zio::zio-logging:2.5.1")
 
-  def scaliveBundle = Task {
-    os.copy(
-      from = example.js.bundle().path,
-      to = Task.dest / "public" / "app.js",
-      createFolders = true
-    )
-    PathRef(Task.dest)
-  }
-
   def tailwindConfig = Task.Source(moduleDir / "tailwind.css")
 
   def generateCss = Task {
@@ -81,17 +72,22 @@ object example extends ScalaCommon:
     ).call().out.text()
   }
 
-  def cssResources = Task {
+  def customResources = Task {
     os.write(
       target = Task.dest / "public" / "app.css",
       data = generateCss(),
+      createFolders = true
+    )
+    os.copy(
+      from = example.js.bundle().path,
+      to = Task.dest / "public" / "app.js",
       createFolders = true
     )
     PathRef(Task.dest)
   }
 
   def resources = Task {
-    super.resources() :+ scaliveBundle() :+ cssResources()
+    super.resources() :+ customResources()
   }
 
   object js extends TypeScriptModule:

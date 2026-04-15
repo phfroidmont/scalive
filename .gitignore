@@ -6,3 +6,4 @@ secrets.env
 out
 
 node_modules
+opencode.json

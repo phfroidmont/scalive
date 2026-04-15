@@ -1,6 +1,7 @@
 //| mvnDeps:
 //| - com.raquo::domtypes:18.1.0
 //| - com.goyeau::mill-scalafix::0.6.0
+//| mill-jvm-version: system
 
 package build
 

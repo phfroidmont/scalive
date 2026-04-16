@@ -11,6 +11,14 @@ import scalive.{label as _, *}
 
 object Example extends ZIOAppDefault:
 
+  private val defaultPort = 8080
+
+  private val serverPort =
+    sys.env
+      .get("SCALIVE_SERVER_PORT")
+      .flatMap(_.toIntOption)
+      .getOrElse(defaultPort)
+
   private val logFormat =
     label("timestamp", timestamp.fixed(32)).color(LogColor.BLUE) |-|
       label("level", level.fixed(5)).highlight |-|
@@ -52,5 +60,5 @@ object Example extends ZIOAppDefault:
     liveRouter.routes @@
       ServeHashedResourcesMiddleware(Path.empty / "static", "public")
 
-  override val run = Server.serve(routes).provide(Server.default)
+  override val run = Server.serve(routes).provide(Server.defaultWithPort(serverPort))
 end Example

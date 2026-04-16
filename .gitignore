@@ -7,3 +7,6 @@ out
 
 node_modules
 opencode.json
+.e2e-upstream
+test-results
+monocart-report

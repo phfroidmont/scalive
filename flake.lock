@@ -18,6 +18,23 @@
         "type": "github"
       }
     },
+    "liveview-upstream": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1755682353,
+        "narHash": "sha256-GQwLQ+NZA88msT2fGl1DDFmzhSrOVNSPZ/a4JFH2xn4=",
+        "owner": "phoenixframework",
+        "repo": "phoenix_live_view",
+        "rev": "48386116c3bfe18592aaa3dcc3238aaaf1524d3b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "phoenixframework",
+        "ref": "v1.1.8",
+        "repo": "phoenix_live_view",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1776169885,
@@ -37,6 +54,7 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "liveview-upstream": "liveview-upstream",
         "nixpkgs": "nixpkgs"
       }
     },

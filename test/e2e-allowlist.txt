@@ -1,0 +1,6 @@
+# Upstream Playwright specs that are currently expected to be most portable.
+# Paths are relative to phoenix_live_view/test/e2e/tests/
+
+navigation.spec.js
+keyed-comprehension.spec.js
+select.spec.js

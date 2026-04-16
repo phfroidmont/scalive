@@ -4,3 +4,4 @@
 navigation.spec.js
 keyed-comprehension.spec.js
 select.spec.js
+components.spec.js

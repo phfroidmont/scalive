@@ -4,10 +4,11 @@ import scalive.codecs.Encoder
 import scalive.codecs.IntAsStringEncoder
 import scalive.codecs.StringAsIsEncoder
 import scalive.defs.attrs.HtmlAttrs
+import scalive.defs.components.Components
 import scalive.defs.complex.ComplexHtmlKeys
 import scalive.defs.tags.HtmlTags
 
-package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys:
+package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with Components:
 
   lazy val defer            = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
   def rawHtml(html: String) = Mod.Content.Text(html, raw = true)

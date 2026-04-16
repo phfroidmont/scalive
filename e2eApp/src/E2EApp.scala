@@ -67,6 +67,12 @@ object E2EApp extends ZIOAppDefault:
         LiveRoute(
           Root / "stream",
           (_, _) => StreamLiveView()
+        ),
+        LiveRoute(
+          Root / "components",
+          (_, req) =>
+            val tab = req.url.queryParams.getAll("tab").headOption.getOrElse("focus_wrap")
+            ComponentsLiveView(tab)
         )
       )
     )
@@ -74,6 +80,7 @@ object E2EApp extends ZIOAppDefault:
   private val healthRoutes =
     Routes(
       Method.GET / "health" -> handler(Response.text("OK")),
+      Method.GET / "favicon.ico" -> handler(Response(status = Status.NoContent)),
       Method.GET / "navigation" / "dead" -> handler {
         Response.html(
           Html.raw(

@@ -3,8 +3,7 @@ package scalive.defs.complex
 import scalive.HtmlAttr
 import scalive.codecs.*
 
-// TODO implement composite keys
-trait ComplexHtmlKeys:
+trait ComplexHtmlKeys extends NamespacedHtmlKeys:
 
   // #Note: we use attrs instead of props here because of https://github.com/raquo/Laminar/issues/136
 

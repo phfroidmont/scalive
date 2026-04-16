@@ -9,6 +9,79 @@ import com.raquo.domtypes.defs.reflectedAttrs.ReflectedHtmlAttrDefs
 
 class DomDefsGenerator(baseOutputDirectoryPath: String):
 
+  private final case class NamespacedAttrDef(
+    scalaName: String,
+    attrSuffix: String,
+    valueType: String)
+
+  private def generateNamespacedHtmlKeysTrait(
+    traitName: String,
+    namespaces: List[(String, List[NamespacedAttrDef])]
+  ): String =
+    val headerLines = List(
+      "package scalive.defs.complex",
+      "",
+      "import scalive.HtmlAttr",
+      "import scalive.codecs._",
+      "",
+      "// #NOTE: GENERATED CODE",
+      "//  - This file is generated at compile time from the data in Scala DOM Types",
+      "//  - See `DomDefsGenerator.mill` for code generation params",
+      "//  - Contribute to https://github.com/raquo/scala-dom-types to add missing tags / attrs / props / etc.",
+      ""
+    )
+
+    val bodyLines = namespaces.flatMap { (namespaceName, defs) =>
+      val nsHeader = List(
+        s"  object ${namespaceName}:",
+        s"    private inline def attrName(suffix: String) = \"${namespaceName}-\" + suffix",
+        ""
+      )
+
+      val valueHelpers = defs
+        .map(_.valueType)
+        .distinct
+        .flatMap {
+          case "Boolean" =>
+            List(
+              "    private inline def boolAttr(suffix: String): HtmlAttr[Boolean] = new HtmlAttr(attrName(suffix), BooleanAsTrueFalseStringEncoder)",
+              ""
+            )
+          case "String" =>
+            List(
+              "    private inline def stringAttr(suffix: String): HtmlAttr[String] = new HtmlAttr(attrName(suffix), StringAsIsEncoder)",
+              ""
+            )
+          case "Int" =>
+            List(
+              "    private inline def intAttr(suffix: String): HtmlAttr[Int] = new HtmlAttr(attrName(suffix), IntAsStringEncoder)",
+              ""
+            )
+          case "Double" =>
+            List(
+              "    private inline def doubleAttr(suffix: String): HtmlAttr[Double] = new HtmlAttr(attrName(suffix), DoubleAsStringEncoder)",
+              ""
+            )
+          case unsupported =>
+            throw new IllegalArgumentException(s"Unsupported value type for namespaced attr generation: $unsupported")
+        }
+
+      val attrDefs = defs.map { d =>
+        val helper = d.valueType match
+          case "Boolean" => "boolAttr"
+          case "String"  => "stringAttr"
+          case "Int"     => "intAttr"
+          case "Double"  => "doubleAttr"
+          case _           => throw new IllegalArgumentException(s"Unsupported value type: ${d.valueType}")
+
+        s"    lazy val ${d.scalaName}: HtmlAttr[${d.valueType}] = $helper(\"${d.attrSuffix}\")"
+      }
+
+      nsHeader ++ valueHelpers ++ attrDefs ++ List("", "")
+    }
+
+    (headerLines ++ List(s"trait $traitName:", "") ++ bodyLines).mkString("\n")
+
   private object generator
       extends CanonicalGenerator(
         baseOutputDirectoryPath = baseOutputDirectoryPath,
@@ -219,6 +292,65 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
 
       generator.writeToFile(
         packagePath = generator.attrDefsPackagePath,
+        fileName = traitName,
+        fileContent = fileContent
+      )
+    }
+
+    // -- Namespaced HTML attributes (composite keys) --
+
+    {
+      val traitName = "NamespacedHtmlKeys"
+
+      val namespacedAttrs = List(
+        "aria" -> List(
+          NamespacedAttrDef("activedescendant", "activedescendant", "String"),
+          NamespacedAttrDef("atomic", "atomic", "Boolean"),
+          NamespacedAttrDef("autocomplete", "autocomplete", "String"),
+          NamespacedAttrDef("busy", "busy", "Boolean"),
+          NamespacedAttrDef("checked", "checked", "String"),
+          NamespacedAttrDef("controls", "controls", "String"),
+          NamespacedAttrDef("current", "current", "String"),
+          NamespacedAttrDef("describedby", "describedby", "String"),
+          NamespacedAttrDef("details", "details", "String"),
+          NamespacedAttrDef("disabled", "disabled", "Boolean"),
+          NamespacedAttrDef("errormessage", "errormessage", "String"),
+          NamespacedAttrDef("expanded", "expanded", "Boolean"),
+          NamespacedAttrDef("haspopup", "haspopup", "String"),
+          NamespacedAttrDef("hidden", "hidden", "Boolean"),
+          NamespacedAttrDef("invalid", "invalid", "String"),
+          NamespacedAttrDef("keyshortcuts", "keyshortcuts", "String"),
+          NamespacedAttrDef("label", "label", "String"),
+          NamespacedAttrDef("labelledby", "labelledby", "String"),
+          NamespacedAttrDef("level", "level", "Int"),
+          NamespacedAttrDef("live", "live", "String"),
+          NamespacedAttrDef("modal", "modal", "Boolean"),
+          NamespacedAttrDef("multiline", "multiline", "Boolean"),
+          NamespacedAttrDef("multiselectable", "multiselectable", "Boolean"),
+          NamespacedAttrDef("orientation", "orientation", "String"),
+          NamespacedAttrDef("owns", "owns", "String"),
+          NamespacedAttrDef("placeholder", "placeholder", "String"),
+          NamespacedAttrDef("pressed", "pressed", "String"),
+          NamespacedAttrDef("readonly", "readonly", "Boolean"),
+          NamespacedAttrDef("required", "required", "Boolean"),
+          NamespacedAttrDef("roledescription", "roledescription", "String"),
+          NamespacedAttrDef("selected", "selected", "Boolean"),
+          NamespacedAttrDef("sort", "sort", "String"),
+          NamespacedAttrDef("valuemax", "valuemax", "Double"),
+          NamespacedAttrDef("valuemin", "valuemin", "Double"),
+          NamespacedAttrDef("valuenow", "valuenow", "Double"),
+          NamespacedAttrDef("valuetext", "valuetext", "String")
+        ),
+        "xlink" -> List(
+          NamespacedAttrDef("href", "href", "String"),
+          NamespacedAttrDef("title", "title", "String")
+        )
+      )
+
+      val fileContent = generateNamespacedHtmlKeysTrait(traitName, namespacedAttrs)
+
+      generator.writeToFile(
+        packagePath = "scalive.defs.complex",
         fileName = traitName,
         fileContent = fileContent
       )

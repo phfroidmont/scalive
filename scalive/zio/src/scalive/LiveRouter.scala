@@ -187,6 +187,8 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
         liveChannel
           .event(message.topic, event, message.meta)
           .map(_ => None)
+      case Payload.LivePatch(_) =>
+        ZIO.succeed(Some(message.okReply))
       case Payload.Reply(_, _) => ZIO.die(new IllegalArgumentException())
       case Payload.Diff(_)     => ZIO.die(new IllegalArgumentException())
       case Payload.Close       => ZIO.die(new IllegalArgumentException())

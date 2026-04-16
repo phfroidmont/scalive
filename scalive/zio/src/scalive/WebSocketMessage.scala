@@ -45,6 +45,7 @@ object WebSocketMessage:
           case "phx_leave" => Right(Payload.Leave)
           case "phx_close" => Right(Payload.Close)
           case "event"     => payload.as[Payload.Event]
+          case "live_patch" => payload.as[Payload.LivePatch]
           case s           => Left(s"Unknown event type : $s")
 
         payloadParsed.map(
@@ -69,6 +70,7 @@ object WebSocketMessage:
           case p: Payload.Join   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case Payload.Leave     => Json.Obj.empty
           case Payload.Close     => Json.Obj.empty
+          case p: Payload.LivePatch => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case p: Payload.Reply  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case p: Payload.Event  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
           case p: Payload.Diff   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
@@ -87,12 +89,14 @@ object WebSocketMessage:
       sticky: Boolean)
     case Leave
     case Close
+    case LivePatch(url: String)
     case Reply(status: String, response: LiveResponse)
     case Diff(diff: scalive.Diff)
     case Event(`type`: String, event: String, value: Json)
 
   object Payload:
     given JsonCodec[Payload.Join]    = JsonCodec.derived
+    given JsonCodec[Payload.LivePatch] = JsonCodec.derived
     given JsonEncoder[Payload.Reply] = JsonEncoder.derived
     given JsonCodec[Payload.Event]   = JsonCodec.derived
     given JsonEncoder[Payload.Diff]  = JsonEncoder[scalive.Diff].contramap(_.diff)

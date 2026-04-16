@@ -20,15 +20,23 @@ object NavigationLayout:
             styleAttr := "margin-bottom: 1rem; font-size: 1.125rem; line-height: 1.75rem;",
             "Navigation"
           ),
-          a(href := "/navigation/a", styleAttr := "background-color: #f1f5f9; padding: 0.5rem;", "LiveView A"),
-          a(href := "/navigation/b", styleAttr := "background-color: #f1f5f9; padding: 0.5rem;", "LiveView B"),
-          a(
-            href      := "/stream",
+          link.navigate(
+            "/navigation/a",
+            styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
+            "LiveView A"
+          ),
+          link.navigate(
+            "/navigation/b",
+            styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
+            "LiveView B"
+          ),
+          link.navigate(
+            "/stream",
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "LiveView (other session)"
           ),
-          a(
-            href      := "/navigation/dead",
+          link.navigate(
+            "/navigation/dead",
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "Dead View"
           )

@@ -9,8 +9,6 @@ class NavigationALiveView(initialParam: Option[String]) extends LiveView[Msg, Mo
   def init = Model(paramCurrent = initialParam, paramNext = 1)
 
   def update(model: Model) =
-    case Msg.NextParam =>
-      model.copy(paramCurrent = Some(model.paramNext.toString), paramNext = model.paramNext + 1)
     case _ => model
 
   def view(model: Dyn[Model]) =
@@ -18,21 +16,19 @@ class NavigationALiveView(initialParam: Option[String]) extends LiveView[Msg, Mo
       div(
         h1("This is page A"),
         p("Current param: ", model(_.paramCurrent.getOrElse(""))),
-        a(
-          href := model(m => s"/navigation/a?param=${m.paramNext}"),
-          phx.onClick(Msg.NextParam),
+        link.patch(
+          model(m => s"/navigation/a?param=${m.paramNext}"),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch this LiveView"
         ),
-        a(
-          href := model(m => s"/navigation/a?param=${m.paramNext}"),
-          phx.onClick(Msg.NextParam),
+        link.patchReplace(
+          model(m => s"/navigation/a?param=${m.paramNext}"),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch (Replace)"
         ),
-        a(
-          href := "/navigation/b#items-item-42",
-          cls  := "inline-flex rounded bg-slate-200 px-4 py-2",
+        link.navigate(
+          "/navigation/b#items-item-42",
+          cls := "inline-flex rounded bg-slate-200 px-4 py-2",
           "Navigate to 42"
         )
       )
@@ -73,8 +69,8 @@ class NavigationBLiveView(withContainer: Boolean) extends LiveView[Msg, Model]:
               li(
                 idAttr    := item(i => s"items-${i.id}"),
                 styleAttr := "padding: 0.5rem; border-bottom: 1px solid #e2e8f0;",
-                a(
-                  href := item(i => s"/navigation/b/${i.id}"),
+                link.patch(
+                  item(i => s"/navigation/b/${i.id}"),
                   "Item ",
                   item(_.name.toString)
                 )
@@ -104,9 +100,8 @@ class RedirectLoopLiveView(loop: Boolean) extends LiveView[Msg, Model]:
             model(_.message.getOrElse(""))
           )
         ),
-        a(
-          href := "/navigation/redirectloop?loop=true",
-          phx.onClick(Msg.TriggerLoop),
+        link.patch(
+          "/navigation/redirectloop?loop=true",
           "Redirect Loop"
         )
       )
@@ -117,7 +112,6 @@ class RedirectLoopLiveView(loop: Boolean) extends LiveView[Msg, Model]:
 object NavigationLiveViews:
 
   enum Msg:
-    case NextParam
     case TriggerLoop
     case Noop
 
@@ -129,4 +123,3 @@ object NavigationLiveViews:
     withContainer: Boolean = false,
     shouldLoop: Boolean = false,
     message: Option[String] = None)
-end NavigationLiveViews

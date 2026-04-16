@@ -17,6 +17,21 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def navigate(path: String, mods: Mod*): HtmlElement =
       a(href := path, phx.link := "redirect", phx.linkState := "push", mods)
 
+    def navigate(path: Dyn[String], mods: Mod*): HtmlElement =
+      a(href := path, phx.link := "redirect", phx.linkState := "push", mods)
+
+    def patch(path: String, mods: Mod*): HtmlElement =
+      a(href := path, phx.link := "patch", phx.linkState := "push", mods)
+
+    def patch(path: Dyn[String], mods: Mod*): HtmlElement =
+      a(href := path, phx.link := "patch", phx.linkState := "push", mods)
+
+    def patchReplace(path: String, mods: Mod*): HtmlElement =
+      a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
+
+    def patchReplace(path: Dyn[String], mods: Mod*): HtmlElement =
+      a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
+
   object phx:
     private def phxAttr(suffix: String): HtmlAttr[String] =
       new HtmlAttr(s"phx-$suffix", StringAsIsEncoder)

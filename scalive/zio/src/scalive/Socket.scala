@@ -16,6 +16,17 @@ final case class Socket[Msg, Model] private (
   shutdown: UIO[Unit])
 
 object Socket:
+
+  final private case class RuntimeState[Msg, Model](
+    lv: LiveView[Msg, Model],
+    ctx: LiveContext,
+    meta: WebSocketMessage.Meta,
+    inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
+    outHub: Hub[(Payload, WebSocketMessage.Meta)],
+    ref: Ref[(Var[Model], HtmlElement)],
+    lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],
+    initDiff: Diff)
+
   def start[Msg, Model](
     id: String,
     token: String,
@@ -25,71 +36,178 @@ object Socket:
   ): RIO[Scope, Socket[Msg, Model]] =
     ZIO.logAnnotate("lv", id) {
       for
-        inbox  <- Queue.bounded[(Payload.Event, WebSocketMessage.Meta)](4)
-        outHub <- Hub.unbounded[(Payload, WebSocketMessage.Meta)]
-
-        initModel <- normalize(lv.init, ctx)
-        modelVar = Var(initModel)
-        el       = lv.view(modelVar)
-        ref <- Ref.make((modelVar, el))
-
-        initDiff = el.diff(trackUpdates = false)
-
-        lvStreamRef <-
-          SubscriptionRef.make(lv.subscriptions(initModel).provideLayer(ZLayer.succeed(ctx)))
-
-        clientMsgStream = ZStream.fromQueue(inbox)
-        serverMsgStream = (ZStream.fromZIO(lvStreamRef.get) ++ lvStreamRef.changes)
-                            .flatMapParSwitch(1, 1)(identity)
-                            .map(_ -> meta.copy(messageRef = None, eventType = "diff"))
-
-        clientFiber <- clientMsgStream.runForeach { (event, meta) =>
-                         for
-                           (modelVar, el) <- ref.get
-                           f              <-
-                             ZIO
-                               .succeed(el.findBinding(event.event))
-                               .someOrFail(
-                                 new IllegalArgumentException(
-                                   s"No binding found for event ID ${event.event}"
-                                 )
-                               )
-                           updatedModel <-
-                             normalize(lv.update(modelVar.currentValue)(f(event.params)), ctx)
-                           _ = modelVar.set(updatedModel)
-                           _ <- lvStreamRef.set(
-                                  lv.subscriptions(updatedModel).provideLayer(ZLayer.succeed(ctx))
-                                )
-                           diff    = el.diff()
-                           payload = Payload.okReply(LiveResponse.Diff(diff))
-                           _ <- outHub.publish(payload -> meta)
-                         yield ()
-                       }.fork
-        serverFiber <- serverMsgStream.runForeach { (msg, meta) =>
-                         for
-                           (modelVar, el) <- ref.get
-                           updatedModel   <- normalize(lv.update(modelVar.currentValue)(msg), ctx)
-                           _       = modelVar.set(updatedModel)
-                           diff    = el.diff()
-                           payload = Payload.Diff(diff)
-                           _ <- outHub.publish(payload -> meta)
-                         yield ()
-                       }.fork
-        stop =
-          outHub.publish(Payload.Close -> meta) *>
-            inbox.shutdown *>
-            outHub.shutdown *>
-            clientFiber.interrupt.unit *>
-            serverFiber.interrupt.unit
-        outbox =
-          ZStream.succeed(
-            Payload.okReply(LiveResponse.InitDiff(initDiff)) -> meta
-          ) ++ ZStream
-            .unwrapScoped(ZStream.fromHubScoped(outHub)).filterNot {
-              case (Payload.Diff(diff), _) => diff.isEmpty
-              case _                       => false
-            }
-      yield Socket[Msg, Model](id, token, inbox, outbox, stop)
+        state       <- initializeRuntime(lv, ctx, meta)
+        clientFiber <- startClientFiber(state)
+        serverFiber <- startServerFiber(state)
+        outbox = buildOutbox(state)
+        stop   = buildShutdown(state, clientFiber, serverFiber)
+      yield Socket[Msg, Model](id, token, state.inbox, outbox, stop)
     }
-  end start
+
+  private def initializeRuntime[Msg, Model](
+    lv: LiveView[Msg, Model],
+    ctx: LiveContext,
+    meta: WebSocketMessage.Meta
+  ): Task[RuntimeState[Msg, Model]] =
+    for
+      inbox     <- Queue.bounded[(Payload.Event, WebSocketMessage.Meta)](4)
+      outHub    <- Hub.unbounded[(Payload, WebSocketMessage.Meta)]
+      initModel <- normalize(lv.init, ctx)
+      modelVar = Var(initModel)
+      el       = lv.view(modelVar)
+      ref <- Ref.make((modelVar, el))
+      initDiff = el.diff(trackUpdates = false)
+      lvStreamRef <-
+        SubscriptionRef.make(lv.subscriptions(initModel).provideLayer(ZLayer.succeed(ctx)))
+    yield RuntimeState(
+      lv = lv,
+      ctx = ctx,
+      meta = meta,
+      inbox = inbox,
+      outHub = outHub,
+      ref = ref,
+      lvStreamRef = lvStreamRef,
+      initDiff = initDiff
+    )
+
+  private def startClientFiber[Msg, Model](
+    state: RuntimeState[Msg, Model]
+  ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
+    ZStream
+      .fromQueue(state.inbox)
+      .runForeach((event, meta) => handleClientEvent(event, meta, state))
+      .fork
+
+  private def handleClientEvent[Msg, Model](
+    event: Payload.Event,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    for
+      (modelVar, el) <- state.ref.get
+      hookResult     <- normalize(
+                      state.lv.handleHook(modelVar.currentValue, event.event, event.value),
+                      state.ctx
+                    )
+      _ <- hookResult match
+             case HookResult.Halt(hookModel, reply) =>
+               applyHookHalt(modelVar, el, hookModel, reply, meta, state)
+             case HookResult.Continue(hookModel) =>
+               applyBoundEvent(modelVar, el, hookModel, event, meta, state)
+    yield ()
+
+  private def applyHookHalt[Msg, Model](
+    modelVar: Var[Model],
+    el: HtmlElement,
+    hookModel: Model,
+    reply: Option[zio.json.ast.Json],
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    for
+      diff <- updateModelAndSubscriptions(modelVar, el, hookModel, state)
+      payload = hookReplyPayload(reply, diff)
+      _ <- publishPayload(payload, meta, state)
+    yield ()
+
+  private def applyBoundEvent[Msg, Model](
+    modelVar: Var[Model],
+    el: HtmlElement,
+    hookModel: Model,
+    event: Payload.Event,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    for
+      binding <-
+        ZIO
+          .succeed(el.findBinding(event.event))
+          .someOrFail(
+            new IllegalArgumentException(
+              s"No binding found for event ID ${event.event}"
+            )
+          )
+      updatedModel <- normalize(state.lv.update(hookModel)(binding(event.params)), state.ctx)
+      diff         <- updateModelAndSubscriptions(modelVar, el, updatedModel, state)
+      _            <- publishPayload(Payload.okReply(LiveResponse.Diff(diff)), meta, state)
+    yield ()
+
+  private def updateModelAndSubscriptions[Msg, Model](
+    modelVar: Var[Model],
+    el: HtmlElement,
+    model: Model,
+    state: RuntimeState[Msg, Model]
+  ): Task[Diff] =
+    for
+      _ = modelVar.set(model)
+      _ <- state.lvStreamRef.set(
+             state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
+           )
+      diff = el.diff()
+    yield diff
+
+  private def hookReplyPayload(
+    reply: Option[zio.json.ast.Json],
+    diff: Diff
+  ): Payload =
+    reply match
+      case Some(replyValue) =>
+        Payload.okReply(LiveResponse.HookReply(replyValue, Option.when(!diff.isEmpty)(diff)))
+      case None if !diff.isEmpty =>
+        Payload.okReply(LiveResponse.Diff(diff))
+      case None =>
+        Payload.okReply(LiveResponse.Empty)
+
+  private def startServerFiber[Msg, Model](
+    state: RuntimeState[Msg, Model]
+  ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
+    serverMsgStream(state).runForeach((msg, meta) => handleServerMsg(msg, meta, state)).fork
+
+  private def serverMsgStream[Msg, Model](
+    state: RuntimeState[Msg, Model]
+  ): ZStream[Any, Nothing, (Msg, WebSocketMessage.Meta)] =
+    (ZStream.fromZIO(state.lvStreamRef.get) ++ state.lvStreamRef.changes)
+      .flatMapParSwitch(1, 1)(identity)
+      .map(_ -> state.meta.copy(messageRef = None, eventType = "diff"))
+
+  private def handleServerMsg[Msg, Model](
+    msg: Msg,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    for
+      (modelVar, el) <- state.ref.get
+      updatedModel   <- normalize(state.lv.update(modelVar.currentValue)(msg), state.ctx)
+      diff           <- updateModelAndSubscriptions(modelVar, el, updatedModel, state)
+      _              <- publishPayload(Payload.Diff(diff), meta, state)
+    yield ()
+
+  private def publishPayload[Msg, Model](
+    payload: Payload,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): UIO[Unit] =
+    state.outHub.publish(payload -> meta).unit
+
+  private def buildOutbox[Msg, Model](
+    state: RuntimeState[Msg, Model]
+  ): ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)] =
+    ZStream.succeed(
+      Payload.okReply(LiveResponse.InitDiff(state.initDiff)) -> state.meta
+    ) ++ ZStream
+      .unwrapScoped(ZStream.fromHubScoped(state.outHub)).filterNot {
+        case (Payload.Diff(diff), _) => diff.isEmpty
+        case _                       => false
+      }
+
+  private def buildShutdown[Msg, Model](
+    state: RuntimeState[Msg, Model],
+    clientFiber: Fiber.Runtime[Throwable, Unit],
+    serverFiber: Fiber.Runtime[Throwable, Unit]
+  ): UIO[Unit] =
+    state.outHub.publish(Payload.Close -> state.meta) *>
+      state.inbox.shutdown *>
+      state.outHub.shutdown *>
+      clientFiber.interrupt.unit *>
+      serverFiber.interrupt.unit
 end Socket

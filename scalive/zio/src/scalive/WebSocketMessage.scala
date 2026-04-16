@@ -115,6 +115,7 @@ object WebSocketMessage:
     case Empty
     case InitDiff(rendered: scalive.Diff)
     case Diff(diff: scalive.Diff)
+    case HookReply(reply: Json, diff: Option[scalive.Diff] = None)
   object LiveResponse:
     given JsonEncoder[LiveResponse] =
       JsonEncoder[Json].contramap {
@@ -127,6 +128,15 @@ object WebSocketMessage:
         case Diff(diff) =>
           Json.Obj(
             "diff" -> diff.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          )
+        case HookReply(reply, diff) =>
+          val mergedDiff =
+            diff
+              .flatMap(_.toJsonAST.toOption)
+              .collect { case obj: Json.Obj => obj }
+              .getOrElse(Json.Obj.empty)
+          Json.Obj(
+            "diff" -> mergedDiff.add("r", reply)
           )
       }
 end WebSocketMessage

@@ -1,6 +1,7 @@
 package scalive
 
 import zio.*
+import zio.json.ast.Json
 import zio.stream.*
 
 // TODO implement all LiveView functions
@@ -13,3 +14,16 @@ trait LiveView[Msg, Model]:
   def update(model: Model): Msg => Model | RIO[LiveContext, Model]
   def view(model: Dyn[Model]): HtmlElement
   def subscriptions(model: Model): ZStream[LiveContext, Nothing, Msg]
+  def handleHook(model: Model, _event: String, _value: Json)
+    : HookResult[Model] | RIO[LiveContext, HookResult[Model]] =
+    HookResult.cont(model)
+
+enum HookResult[Model]:
+  case Continue(model: Model)
+  case Halt(model: Model, reply: Option[Json])
+
+object HookResult:
+  def cont[Model](model: Model): HookResult[Model]                   = HookResult.Continue(model)
+  def halt[Model](model: Model): HookResult[Model]                   = HookResult.Halt(model, None)
+  def haltReply[Model](model: Model, value: Json): HookResult[Model] =
+    HookResult.Halt(model, Some(value))

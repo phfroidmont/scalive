@@ -1,6 +1,7 @@
 import scala.util.Random
 
 import zio.stream.ZStream
+import zio.json.ast.Json
 
 import scalive.*
 
@@ -27,9 +28,21 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
         navTag(
           role := "tablist",
           cls  := "tabs tabs-border",
-          a(cls := model(m => tabClass(m.activeTab, "all_keyed")), href := "/keyed-comprehension?tab=all_keyed", "All keyed"),
-          a(cls := model(m => tabClass(m.activeTab, "rows_keyed")), href := "/keyed-comprehension?tab=rows_keyed", "Rows keyed"),
-          a(cls := model(m => tabClass(m.activeTab, "no_keyed")), href := "/keyed-comprehension?tab=no_keyed", "No keyed")
+          a(
+            cls  := model(m => tabClass(m.activeTab, "all_keyed")),
+            href := "/keyed-comprehension?tab=all_keyed",
+            "All keyed"
+          ),
+          a(
+            cls  := model(m => tabClass(m.activeTab, "rows_keyed")),
+            href := "/keyed-comprehension?tab=rows_keyed",
+            "Rows keyed"
+          ),
+          a(
+            cls  := model(m => tabClass(m.activeTab, "no_keyed")),
+            href := "/keyed-comprehension?tab=no_keyed",
+            "No keyed"
+          )
         )
       ),
       button(cls := "btn", phx.onClick(Msg.Randomize), "randomize"),
@@ -63,16 +76,18 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
                   td(
                     cls := "py-4 px-3 text-sm whitespace-nowrap",
                     span(
-                      "Count: ",
+                      " Count: ",
                       model(_.count.toString),
                       " Name: ",
                       item(_.entry.foo.bar),
-                      s" $i"
+                      s" $i "
                     )
                   ),
                   td(
                     cls := "py-4 px-3 text-sm whitespace-nowrap",
-                    model(_.count.toString)
+                    " ",
+                    model(_.count.toString),
+                    " "
                   )
                 )
               }
@@ -84,10 +99,13 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
 
   def subscriptions(model: Model) = ZStream.empty
 
+  override def handleHook(model: Model, event: String, value: Json) =
+    E2ESandboxEval.handle(model, event, value)
+
   private def normalizeTab(tab: String): String =
     tab match
       case "all_keyed" | "rows_keyed" | "no_keyed" => tab
-      case _                                           => "all_keyed"
+      case _                                       => "all_keyed"
 
   private def tabClass(activeTab: String, tab: String): String =
     if activeTab == tab then "tab tab-active" else "tab"
@@ -98,9 +116,10 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
       .map(id =>
         Item(
           id = id,
-          entry = Entry(Foo(s"item-${id}"))
+          entry = Entry(Foo(s"item-$id"))
         )
       )
+end KeyedComprehensionLiveView
 
 object KeyedComprehensionLiveView:
 

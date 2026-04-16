@@ -98,8 +98,14 @@ object JSCommands:
         )
       )
 
-    def ignoreAttributes(to: String = "") =
-      ops.addOp("ignore_attributes", Args.To(Option.when(to.nonEmpty)(to)))
+    def ignoreAttributes(attrs: Seq[String] = Seq.empty, to: String = "") =
+      ops.addOp(
+        "ignore_attrs",
+        Args.IgnoreAttributes(
+          Option.when(attrs.nonEmpty)(attrs),
+          Option.when(to.nonEmpty)(to)
+        )
+      )
 
     def navigate(href: String, replace: Boolean = false) =
       ops.addOp("navigate", Args.Href(href, Option.when(replace)(replace)))
@@ -136,7 +142,7 @@ object JSCommands:
 
     def removeAttribute(attr: String, to: String = "") =
       ops.addOp(
-        "remove_attribute",
+        "remove_attr",
         Args.Attr(
           attr,
           Option.when(to.nonEmpty)(to)
@@ -144,7 +150,7 @@ object JSCommands:
       )
 
     def setAttribute(arg: (String, String), to: String = "") =
-      ops.addOp("set_attribute", Args.SetAttribute(arg, Option.when(to.nonEmpty)(to)))
+      ops.addOp("set_attr", Args.SetAttribute(attr = arg, to = Option.when(to.nonEmpty)(to)))
 
     def show(
       to: String = "",
@@ -176,8 +182,8 @@ object JSCommands:
         "toggle",
         Args.Toggle(
           Option.when(to.nonEmpty)(to),
-          transitionClasses(in),
-          transitionClasses(out),
+          ins = transitionClasses(in),
+          outs = transitionClasses(out),
           Option.when(time != 200)(time),
           Option.when(!blocking)(blocking),
           Option.when(display != "block")(display)
@@ -191,9 +197,9 @@ object JSCommands:
       to: String = ""
     ) =
       ops.addOp(
-        "toggle_attribute",
+        "toggle_attr",
         Args.ToggleAttribute(
-          Seq(name, value).appendedAll(Option.when(altValue.nonEmpty)(altValue)),
+          attr = Seq(name, value).appendedAll(Option.when(altValue.nonEmpty)(altValue)),
           Option.when(to.nonEmpty)(to)
         )
       )
@@ -253,6 +259,7 @@ object JSCommands:
         derives JsonEncoder
     final case class Attr(attr: String, to: Option[String]) derives JsonEncoder
     final case class To(to: Option[String]) derives JsonEncoder
+    final case class IgnoreAttributes(attrs: Option[Seq[String]], to: Option[String]) derives JsonEncoder
     final case class Hide(
       to: Option[String],
       transition: Option[Seq[Seq[String]]],
@@ -260,7 +267,7 @@ object JSCommands:
       blocking: Option[Boolean])
         derives JsonEncoder
     final case class SetAttribute(
-      arg: (String, String),
+      attr: (String, String),
       to: Option[String])
         derives JsonEncoder
     final case class Href(href: String, replace: Option[Boolean]) derives JsonEncoder
@@ -273,13 +280,13 @@ object JSCommands:
         derives JsonEncoder
     final case class Toggle(
       to: Option[String],
-      in: Option[Seq[Seq[String]]],
-      out: Option[Seq[Seq[String]]],
+      ins: Option[Seq[Seq[String]]],
+      outs: Option[Seq[Seq[String]]],
       time: Option[Int],
       blocking: Option[Boolean],
       display: Option[String])
         derives JsonEncoder
-    final case class ToggleAttribute(arg: Seq[String], to: Option[String]) derives JsonEncoder
+    final case class ToggleAttribute(attr: Seq[String], to: Option[String]) derives JsonEncoder
     final case class Transition(
       transition: Seq[Seq[String]],
       to: Option[String],

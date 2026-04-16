@@ -73,6 +73,10 @@ object E2EApp extends ZIOAppDefault:
           (_, req) =>
             val tab = req.url.queryParams.getAll("tab").headOption.getOrElse("focus_wrap")
             ComponentsLiveView(tab)
+        ),
+        LiveRoute(
+          Root / "js",
+          (_, _) => JsLiveView()
         )
       )
     )

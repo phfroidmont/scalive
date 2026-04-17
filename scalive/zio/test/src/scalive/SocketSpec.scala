@@ -6,6 +6,7 @@ import zio.test.*
 
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
+import scalive.WebSocketMessage.ReplyStatus
 
 object SocketSpec extends ZIOSpecDefault:
 
@@ -49,8 +50,8 @@ object SocketSpec extends ZIOSpecDefault:
       yield assertTrue(
         msgs.size == 1,
         msgs.head._1 match
-          case Payload.Reply("ok", LiveResponse.InitDiff(_)) => true
-          case _                                             => false
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(_)) => true
+          case _                                                       => false
         ,
         msgs.head._2 == meta
       )

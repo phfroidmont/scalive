@@ -1,5 +1,6 @@
 package scalive
 
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
 import javax.crypto.Mac
@@ -43,15 +44,15 @@ object Token:
   def verify[T: JsonCodec](secret: String, token: String, maxAge: Duration)
     : Either[String, (liveViewId: String, payload: T)] =
     val tokenBase64 = token.takeWhile(_ != '.')
-    val hashBase64  = token.drop(tokenBase64.length)
+    val hashBase64  = token.drop(tokenBase64.length + 1)
     val tokenBytes  = base64Decode(tokenBase64)
-    val tokenValue  = String.valueOf(tokenBytes).fromJson[Token[T]]
+    val tokenValue  = new String(tokenBytes).fromJson[Token[T]]
 
     val currentHash = hash(secret, tokenBytes)
 
-    if base64Decode(hashBase64) == currentHash then
+    if MessageDigest.isEqual(base64Decode(hashBase64), currentHash) then
       tokenValue.flatMap(t =>
-        if (t.issuedAt + maxAge.toMillis) > Instant.now().toEpochMilli() then Left("Token expired")
+        if (t.issuedAt + maxAge.toMillis) < Instant.now().toEpochMilli() then Left("Token expired")
         else Right(t.liveViewId, t.payload)
       )
     else Left("Invalid signature")

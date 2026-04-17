@@ -259,7 +259,8 @@ object JSCommands:
         derives JsonEncoder
     final case class Attr(attr: String, to: Option[String]) derives JsonEncoder
     final case class To(to: Option[String]) derives JsonEncoder
-    final case class IgnoreAttributes(attrs: Option[Seq[String]], to: Option[String]) derives JsonEncoder
+    final case class IgnoreAttributes(attrs: Option[Seq[String]], to: Option[String])
+        derives JsonEncoder
     final case class Hide(
       to: Option[String],
       transition: Option[Seq[Seq[String]]],

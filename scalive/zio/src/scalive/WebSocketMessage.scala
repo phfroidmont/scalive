@@ -7,6 +7,7 @@ import zio.json.ast.Json
 
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
+import scalive.WebSocketMessage.ReplyStatus
 
 final case class WebSocketMessage(
   // Live session ID, auto increment defined by the client on join
@@ -24,7 +25,7 @@ final case class WebSocketMessage(
       messageRef,
       topic,
       "phx_reply",
-      Payload.Reply("ok", LiveResponse.Empty)
+      Payload.Reply(ReplyStatus.Ok, LiveResponse.Empty)
     )
 object WebSocketMessage:
 
@@ -40,13 +41,13 @@ object WebSocketMessage:
             Chunk(joinRef, Json.Str(messageRef), Json.Str(topic), Json.Str(eventType), payload)
           ) =>
         val payloadParsed = eventType match
-          case "heartbeat" => Right(Payload.Heartbeat)
-          case "phx_join"  => payload.as[Payload.Join]
-          case "phx_leave" => Right(Payload.Leave)
-          case "phx_close" => Right(Payload.Close)
-          case "event"     => payload.as[Payload.Event]
+          case "heartbeat"  => Right(Payload.Heartbeat)
+          case "phx_join"   => payload.as[Payload.Join]
+          case "phx_leave"  => Right(Payload.Leave)
+          case "phx_close"  => Right(Payload.Close)
+          case "event"      => payload.as[Payload.Event]
           case "live_patch" => payload.as[Payload.LivePatch]
-          case s           => Left(s"Unknown event type : $s")
+          case s            => Left(s"Unknown event type : $s")
 
         payloadParsed.map(
           WebSocketMessage(
@@ -66,14 +67,14 @@ object WebSocketMessage:
         Json.Str(m.topic),
         Json.Str(m.eventType),
         m.payload match
-          case Payload.Heartbeat => Json.Obj.empty
-          case p: Payload.Join   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case Payload.Leave     => Json.Obj.empty
-          case Payload.Close     => Json.Obj.empty
+          case Payload.Heartbeat    => Json.Obj.empty
+          case p: Payload.Join      => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case Payload.Leave        => Json.Obj.empty
+          case Payload.Close        => Json.Obj.empty
           case p: Payload.LivePatch => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Reply  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Event  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Diff   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case p: Payload.Reply     => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case p: Payload.Event     => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case p: Payload.Diff      => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
       )
   )
 
@@ -90,16 +91,16 @@ object WebSocketMessage:
     case Leave
     case Close
     case LivePatch(url: String)
-    case Reply(status: String, response: LiveResponse)
+    case Reply(status: ReplyStatus, response: LiveResponse)
     case Diff(diff: scalive.Diff)
     case Event(`type`: String, event: String, value: Json)
 
   object Payload:
-    given JsonCodec[Payload.Join]    = JsonCodec.derived
+    given JsonCodec[Payload.Join]      = JsonCodec.derived
     given JsonCodec[Payload.LivePatch] = JsonCodec.derived
-    given JsonEncoder[Payload.Reply] = JsonEncoder.derived
-    given JsonCodec[Payload.Event]   = JsonCodec.derived
-    given JsonEncoder[Payload.Diff]  = JsonEncoder[scalive.Diff].contramap(_.diff)
+    given JsonEncoder[Payload.Reply]   = JsonEncoder.derived
+    given JsonCodec[Payload.Event]     = JsonCodec.derived
+    given JsonEncoder[Payload.Diff]    = JsonEncoder[scalive.Diff].contramap(_.diff)
 
     extension (p: Payload.Event)
       def params: Map[String, String] =
@@ -113,13 +114,31 @@ object WebSocketMessage:
           case _ => p.value.as[Map[String, String]].getOrElse(throw new IllegalArgumentException())
 
     def okReply(response: LiveResponse) =
-      Payload.Reply("ok", response)
+      Payload.Reply(ReplyStatus.Ok, response)
+
+    def errorReply(response: LiveResponse) =
+      Payload.Reply(ReplyStatus.Error, response)
+
+  enum ReplyStatus:
+    case Ok
+    case Error
+  object ReplyStatus:
+    given JsonEncoder[ReplyStatus] =
+      JsonEncoder[String].contramap {
+        case ReplyStatus.Ok    => "ok"
+        case ReplyStatus.Error => "error"
+      }
+
+  enum JoinErrorReason:
+    case Unauthorized
+    case Stale
 
   enum LiveResponse:
     case Empty
     case InitDiff(rendered: scalive.Diff)
     case Diff(diff: scalive.Diff)
     case HookReply(reply: Json, diff: Option[scalive.Diff] = None)
+    case JoinError(reason: JoinErrorReason)
   object LiveResponse:
     given JsonEncoder[LiveResponse] =
       JsonEncoder[Json].contramap {
@@ -142,5 +161,11 @@ object WebSocketMessage:
           Json.Obj(
             "diff" -> mergedDiff.add("r", reply)
           )
+        case JoinError(reason) =>
+          val reasonString =
+            reason match
+              case JoinErrorReason.Unauthorized => "unauthorized"
+              case JoinErrorReason.Stale        => "stale"
+          Json.Obj("reason" -> Json.Str(reasonString))
       }
 end WebSocketMessage

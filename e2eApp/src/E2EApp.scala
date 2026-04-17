@@ -1,5 +1,6 @@
 import zio.*
 import zio.http.*
+import zio.http.template.Html
 import zio.logging.ConsoleLoggerConfig
 import zio.logging.LogColor
 import zio.logging.LogFilter
@@ -7,7 +8,6 @@ import zio.logging.LogFormat.*
 import zio.logging.consoleLogger
 
 import scalive.{label as _, *}
-import zio.http.template.Html
 
 object E2EApp extends ZIOAppDefault:
 
@@ -51,18 +51,24 @@ object E2EApp extends ZIOAppDefault:
           (_, req) =>
             val param = req.url.queryParams.getAll("param").headOption
             NavigationALiveView(param)
+          ,
+          "navigation"
         ),
         LiveRoute(
           Root / "navigation" / "b",
           (_, req) =>
             val container = req.url.queryParams.getAll("container").headOption.contains("1")
             NavigationBLiveView(container)
+          ,
+          "navigation"
         ),
         LiveRoute(
           Root / "navigation" / "redirectloop",
           (_, req) =>
             val loop = req.url.queryParams.getAll("loop").headOption.contains("true")
             RedirectLoopLiveView(loop)
+          ,
+          "navigation"
         ),
         LiveRoute(
           Root / "stream",
@@ -83,8 +89,8 @@ object E2EApp extends ZIOAppDefault:
 
   private val healthRoutes =
     Routes(
-      Method.GET / "health" -> handler(Response.text("OK")),
-      Method.GET / "favicon.ico" -> handler(Response(status = Status.NoContent)),
+      Method.GET / "health"              -> handler(Response.text("OK")),
+      Method.GET / "favicon.ico"         -> handler(Response(status = Status.NoContent)),
       Method.GET / "navigation" / "dead" -> handler {
         Response.html(
           Html.raw(

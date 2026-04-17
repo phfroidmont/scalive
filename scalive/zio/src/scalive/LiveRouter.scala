@@ -101,6 +101,13 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
         case None => ZIO.unit
     }
 
+  def livePatch(id: String, url: String, meta: WebSocketMessage.Meta): UIO[Unit] =
+    sockets.get.flatMap { m =>
+      m.get(id) match
+        case Some(socket) => socket.livePatch(url, meta).ignore
+        case None         => ZIO.unit
+    }
+
 end LiveChannel
 
 object LiveChannel:
@@ -129,9 +136,11 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
                                case _             => meta.messageRef,
                              topic = meta.topic,
                              eventType = payload match
-                               case Payload.Diff(_) => "diff"
-                               case Payload.Close   => "phx_close"
-                               case _               => "phx_reply",
+                               case Payload.Diff(_)              => "diff"
+                               case Payload.Close                => "phx_close"
+                               case Payload.LiveNavigation(_, _) => "live_patch"
+                               case Payload.Error                => "phx_error"
+                               case _                            => "phx_reply",
                              payload = payload
                            ).toJson
                          )
@@ -205,11 +214,13 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
         liveChannel
           .event(message.topic, event, message.meta)
           .map(_ => None)
-      case Payload.LivePatch(_) =>
-        ZIO.succeed(Some(message.okReply))
-      case Payload.Reply(_, _) => ZIO.die(new IllegalArgumentException())
-      case Payload.Diff(_)     => ZIO.die(new IllegalArgumentException())
-      case Payload.Close       => ZIO.die(new IllegalArgumentException())
+      case Payload.LivePatch(url) =>
+        liveChannel.livePatch(message.topic, url, message.meta).as(Some(message.okReply))
+      case Payload.LiveNavigation(_, _) => ZIO.die(new IllegalArgumentException())
+      case Payload.Error                => ZIO.die(new IllegalArgumentException())
+      case Payload.Reply(_, _)          => ZIO.die(new IllegalArgumentException())
+      case Payload.Diff(_)              => ZIO.die(new IllegalArgumentException())
+      case Payload.Close                => ZIO.die(new IllegalArgumentException())
     end match
   end handleMessage
 

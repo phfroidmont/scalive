@@ -72,9 +72,12 @@ object WebSocketMessage:
           case Payload.Leave        => Json.Obj.empty
           case Payload.Close        => Json.Obj.empty
           case p: Payload.LivePatch => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Reply     => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Event     => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Diff      => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case p: Payload.LiveNavigation =>
+            p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case Payload.Error    => Json.Obj.empty
+          case p: Payload.Reply => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case p: Payload.Event => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+          case p: Payload.Diff  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
       )
   )
 
@@ -91,16 +94,29 @@ object WebSocketMessage:
     case Leave
     case Close
     case LivePatch(url: String)
+    case LiveNavigation(to: String, kind: LivePatchKind)
+    case Error
     case Reply(status: ReplyStatus, response: LiveResponse)
     case Diff(diff: scalive.Diff)
     case Event(`type`: String, event: String, value: Json)
 
   object Payload:
-    given JsonCodec[Payload.Join]      = JsonCodec.derived
-    given JsonCodec[Payload.LivePatch] = JsonCodec.derived
-    given JsonEncoder[Payload.Reply]   = JsonEncoder.derived
-    given JsonCodec[Payload.Event]     = JsonCodec.derived
-    given JsonEncoder[Payload.Diff]    = JsonEncoder[scalive.Diff].contramap(_.diff)
+    given JsonCodec[Payload.Join]             = JsonCodec.derived
+    given JsonCodec[Payload.LivePatch]        = JsonCodec.derived
+    given JsonEncoder[Payload.LiveNavigation] =
+      JsonEncoder[Json].contramap { navigation =>
+        Json.Obj(
+          "to"   -> Json.Str(navigation.to),
+          "kind" -> Json.Str(
+            navigation.kind match
+              case LivePatchKind.Push    => "push"
+              case LivePatchKind.Replace => "replace"
+          )
+        )
+      }
+    given JsonEncoder[Payload.Reply] = JsonEncoder.derived
+    given JsonCodec[Payload.Event]   = JsonCodec.derived
+    given JsonEncoder[Payload.Diff]  = JsonEncoder[scalive.Diff].contramap(_.diff)
 
     extension (p: Payload.Event)
       def params: Map[String, String] =
@@ -118,6 +134,7 @@ object WebSocketMessage:
 
     def errorReply(response: LiveResponse) =
       Payload.Reply(ReplyStatus.Error, response)
+  end Payload
 
   enum ReplyStatus:
     case Ok
@@ -128,6 +145,10 @@ object WebSocketMessage:
         case ReplyStatus.Ok    => "ok"
         case ReplyStatus.Error => "error"
       }
+
+  enum LivePatchKind:
+    case Push
+    case Replace
 
   enum JoinErrorReason:
     case Unauthorized

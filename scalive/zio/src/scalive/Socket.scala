@@ -1,10 +1,14 @@
 package scalive
 
+import java.net.URI
+
 import zio.*
 import zio.Queue
+import zio.http.QueryParams
 import zio.stream.SubscriptionRef
 import zio.stream.ZStream
 
+import scalive.WebSocketMessage.LivePatchKind
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 
@@ -12,6 +16,7 @@ final case class Socket[Msg, Model] private (
   id: String,
   token: String,
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
+  livePatch: (String, WebSocketMessage.Meta) => Task[Unit],
   outbox: ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)],
   shutdown: UIO[Unit])
 
@@ -25,6 +30,7 @@ object Socket:
     outHub: Hub[(Payload, WebSocketMessage.Meta)],
     ref: Ref[(Var[Model], HtmlElement)],
     lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],
+    patchRedirectCountRef: Ref[Int],
     initDiff: Diff)
 
   def start[Msg, Model](
@@ -39,9 +45,11 @@ object Socket:
         state       <- initializeRuntime(lv, ctx, meta)
         clientFiber <- startClientFiber(state)
         serverFiber <- startServerFiber(state)
+        livePatch =
+          (url: String, patchMeta: WebSocketMessage.Meta) => handleLivePatch(url, patchMeta, state)
         outbox = buildOutbox(state)
         stop   = buildShutdown(state, clientFiber, serverFiber)
-      yield Socket[Msg, Model](id, token, state.inbox, outbox, stop)
+      yield Socket[Msg, Model](id, token, state.inbox, livePatch, outbox, stop)
     }
 
   private def initializeRuntime[Msg, Model](
@@ -59,6 +67,7 @@ object Socket:
       initDiff = el.diff(trackUpdates = false)
       lvStreamRef <-
         SubscriptionRef.make(lv.subscriptions(initModel).provideLayer(ZLayer.succeed(ctx)))
+      patchRedirectCountRef <- Ref.make(0)
     yield RuntimeState(
       lv = lv,
       ctx = ctx,
@@ -67,6 +76,7 @@ object Socket:
       outHub = outHub,
       ref = ref,
       lvStreamRef = lvStreamRef,
+      patchRedirectCountRef = patchRedirectCountRef,
       initDiff = initDiff
     )
 
@@ -94,6 +104,78 @@ object Socket:
                applyHookHalt(modelVar, el, hookModel, reply, meta, state)
              case HookResult.Continue(hookModel) =>
                applyBoundEvent(modelVar, el, hookModel, event, meta, state)
+    yield ()
+
+  private def handleLivePatch[Msg, Model](
+    url: String,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    for
+      (modelVar, el) <- state.ref.get
+      parsedUri      <- ZIO.attempt(URI.create(url))
+      params = QueryParams
+                 .decode(Option(parsedUri.getRawQuery).getOrElse(""))
+                 .map
+                 .iterator
+                 .map { case (key, values) =>
+                   key -> values.lastOption.getOrElse("")
+                 }
+                 .toMap
+      result <-
+        normalize(state.lv.handleParams(modelVar.currentValue, params, parsedUri), state.ctx)
+      _ <- result match
+             case ParamsResult.Continue(model) =>
+               for
+                 _    <- state.patchRedirectCountRef.set(0)
+                 diff <- updateModelAndSubscriptions(modelVar, el, model, state)
+                 _    <- ZIO.when(!diff.isEmpty)(
+                        publishPayload(Payload.Diff(diff), meta.copy(messageRef = None), state)
+                      )
+               yield ()
+             case ParamsResult.PushPatch(model, to) =>
+               handleLivePatchRedirect(
+                 modelVar,
+                 el,
+                 model,
+                 to,
+                 LivePatchKind.Push,
+                 meta,
+                 state
+               )
+             case ParamsResult.ReplacePatch(model, to) =>
+               handleLivePatchRedirect(
+                 modelVar,
+                 el,
+                 model,
+                 to,
+                 LivePatchKind.Replace,
+                 meta,
+                 state
+               )
+    yield ()
+
+  private def handleLivePatchRedirect[Msg, Model](
+    modelVar: Var[Model],
+    el: HtmlElement,
+    model: Model,
+    to: String,
+    kind: LivePatchKind,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    for
+      redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
+      _             <- updateModelAndSubscriptions(modelVar, el, model, state)
+      _             <-
+        if redirectCount > 20 then
+          publishPayload(Payload.Error, meta.copy(messageRef = None), state)
+        else
+          publishPayload(
+            Payload.LiveNavigation(to, kind),
+            meta.copy(messageRef = None),
+            state
+          ) *> handleLivePatch(to, meta, state)
     yield ()
 
   private def applyHookHalt[Msg, Model](

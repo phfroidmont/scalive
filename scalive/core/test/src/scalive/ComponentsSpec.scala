@@ -60,7 +60,7 @@ object ComponentsSpec extends TestSuite:
       )
     }
 
-    test("upload.liveFileInput helper") {
+    test("liveFileInput helper") {
       test("does not render auto upload marker when disabled") {
         val uploadVar = Var(
           liveUpload(
@@ -69,7 +69,7 @@ object ComponentsSpec extends TestSuite:
             entries = Nil
           )
         )
-        val el        = upload.liveFileInput(uploadVar(identity))
+        val el        = liveFileInput(uploadVar(identity))
         el.syncAll()
 
         val result = HtmlBuilder.build(el)
@@ -96,7 +96,7 @@ object ComponentsSpec extends TestSuite:
             )
           )
         )
-        val el        = upload.liveFileInput(uploadVar(identity))
+        val el        = liveFileInput(uploadVar(identity))
         el.syncAll()
 
         val result = HtmlBuilder.build(el)

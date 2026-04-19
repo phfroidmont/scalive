@@ -41,7 +41,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
         idAttr := "upload-form",
         phx.onSubmit(Msg.Save),
         phx.onChange(_ => Msg.Validate),
-        upload.liveFileInput(
+        liveFileInput(
           model(_.upload),
           phx.onProgress(_ => Msg.Progress)
         ),
@@ -69,8 +69,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
                 ariaLabel        := "cancel",
                 "x"
               ),
-              upload
-                .errors(entry)(_.filterNot(_ == LiveUploadError.TooManyFiles))
+              uploadErrors(entry)(_.filterNot(_ == LiveUploadError.TooManyFiles))
                 .splitBy(_.toString) { (_, error) =>
                   p(
                     cls := "alert alert-danger",
@@ -79,7 +78,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
                 }
             )
           },
-          upload.errors(model(_.upload)).splitBy(_.toString) { (_, error) =>
+          uploadErrors(model(_.upload)).splitBy(_.toString) { (_, error) =>
             p(
               cls := "alert alert-danger",
               error(errorToString)

@@ -1,8 +1,7 @@
+import JsLiveView.*
 import zio.stream.ZStream
 
 import scalive.*
-
-import JsLiveView.*
 
 class JsLiveView extends LiveView[Msg, Model]:
 

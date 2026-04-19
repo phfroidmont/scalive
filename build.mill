@@ -38,27 +38,22 @@ trait PublishCommon extends PublishModule:
       Seq(Developer("phfroidmont", "Paul-Henri Froidmont", "https://github.com/phfroidmont"))
   )
 
-object scalive extends Module:
-  object core extends ScalaCommon with PublishCommon:
-    def mvnDeps = Seq(mvn"dev.zio::zio-json:0.7.44")
+object scalive extends ScalaCommon with PublishCommon:
+  def mvnDeps = Seq(
+    mvn"dev.zio::zio-json:0.7.44",
+    mvn"dev.zio::zio-http:3.10.1"
+  )
 
-    def generatedSources = Task {
-      new DomDefsGenerator((Task.dest / "core/src/scalive").toString).generate()
-      super.generatedSources() ++ Seq(PathRef(Task.dest))
-    }
+  def generatedSources = Task {
+    new DomDefsGenerator((Task.dest / "src/scalive").toString).generate()
+    super.generatedSources() ++ Seq(PathRef(Task.dest))
+  }
 
-    object test extends ScalaTests with scalalib.TestModule.Utest:
-      def utestVersion = "0.9.0"
-
-  object zio extends ScalaCommon with PublishCommon:
-    def mvnDeps    = Seq(mvn"dev.zio::zio-http:3.10.1")
-    def moduleDeps = Seq(core)
-
-    object test extends ScalaTests with scalalib.TestModule.ZioTest:
-      def zioTestVersion = "2.1.25"
+  object test extends ScalaTests with scalalib.TestModule.ZioTest:
+    def zioTestVersion = "2.1.25"
 
 object example extends ScalaCommon:
-  def moduleDeps = Seq(scalive.zio)
+  def moduleDeps = Seq(scalive)
   def mvnDeps    = Seq(mvn"dev.optics::monocle-core:3.1.0", mvn"dev.zio::zio-logging:2.5.1")
 
   def tailwindConfig = Task.Source(moduleDir / "tailwind.css")
@@ -98,7 +93,7 @@ object example extends ScalaCommon:
 end example
 
 object e2eApp extends ScalaCommon:
-  def moduleDeps = Seq(scalive.zio)
+  def moduleDeps = Seq(scalive)
   def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.1")
 
   def baseCss = Task.Source(moduleDir / "app.css")

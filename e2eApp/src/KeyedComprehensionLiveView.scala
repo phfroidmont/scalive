@@ -1,11 +1,10 @@
 import scala.util.Random
 
-import zio.stream.ZStream
+import KeyedComprehensionLiveView.*
 import zio.json.ast.Json
+import zio.stream.ZStream
 
 import scalive.*
-
-import KeyedComprehensionLiveView.*
 
 class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model]:
 

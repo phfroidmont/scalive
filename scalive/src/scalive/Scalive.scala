@@ -4,8 +4,8 @@ import scalive.codecs.Encoder
 import scalive.codecs.IntAsStringEncoder
 import scalive.codecs.StringAsIsEncoder
 import scalive.defs.attrs.HtmlAttrs
-import scalive.defs.components.Components
 import scalive.defs.complex.ComplexHtmlKeys
+import scalive.defs.components.Components
 import scalive.defs.tags.HtmlTags
 
 package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with Components:

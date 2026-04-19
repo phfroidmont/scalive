@@ -1,8 +1,7 @@
+import SelectLiveView.*
 import zio.stream.ZStream
 
 import scalive.*
-
-import SelectLiveView.*
 
 class SelectLiveView extends LiveView[Msg, Model]:
 

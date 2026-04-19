@@ -1,8 +1,10 @@
-package scalive
+package scalive.defs.components
 
-import utest.*
+import scalive.*
 
-object ComponentsSpec extends TestSuite:
+import zio.test.*
+
+object ComponentsSpec extends ZIOSpecDefault:
 
   private def uploadEntry(
     ref: String,
@@ -45,7 +47,7 @@ object ComponentsSpec extends TestSuite:
       errors = Nil
     )
 
-  val tests = Tests {
+  override def spec = suite("ComponentsSpec")(
     test("focusWrap helper") {
       val el = focusWrap("dialog", cls := "wrapper")(
         button("Save"),
@@ -54,13 +56,12 @@ object ComponentsSpec extends TestSuite:
 
       val result = HtmlBuilder.build(el)
 
-      assert(
+      assertTrue(
         result ==
           "<div id=\"dialog\" phx-hook=\"Phoenix.FocusWrap\" class=\"wrapper\"><span id=\"dialog-start\" tabindex=\"0\" aria-hidden=\"true\"></span><button>Save</button><button>Cancel</button><span id=\"dialog-end\" tabindex=\"0\" aria-hidden=\"true\"></span></div>"
       )
-    }
-
-    test("liveFileInput helper") {
+    },
+    suite("liveFileInput helper")(
       test("does not render auto upload marker when disabled") {
         val uploadVar = Var(
           liveUpload(
@@ -74,15 +75,14 @@ object ComponentsSpec extends TestSuite:
 
         val result = HtmlBuilder.build(el)
 
-        assert(
+        assertTrue(
           result.contains("id=\"phx-upload-ref\""),
           result.contains("accept=\".jpg,.png\""),
           result.contains("data-phx-hook=\"Phoenix.LiveFileUpload\""),
           !result.contains("data-phx-auto-upload"),
           !result.contains(" multiple")
         )
-      }
-
+      },
       test("renders computed refs and presence attrs") {
         val uploadVar = Var(
           liveUpload(
@@ -101,7 +101,7 @@ object ComponentsSpec extends TestSuite:
 
         val result = HtmlBuilder.build(el)
 
-        assert(
+        assertTrue(
           result.contains("data-phx-active-refs=\"entry-a,entry-c,entry-d\""),
           result.contains("data-phx-done-refs=\"entry-c\""),
           result.contains("data-phx-preflighted-refs=\"entry-c,entry-d\""),
@@ -110,5 +110,5 @@ object ComponentsSpec extends TestSuite:
           result.contains(" multiple")
         )
       }
-    }
-  }
+    )
+  )

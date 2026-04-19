@@ -1,8 +1,7 @@
+import ComponentsLiveView.*
 import zio.stream.ZStream
 
 import scalive.*
-
-import ComponentsLiveView.*
 
 class ComponentsLiveView(initialTab: String) extends LiveView[Msg, Model]:
 

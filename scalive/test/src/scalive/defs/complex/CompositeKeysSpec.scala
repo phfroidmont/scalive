@@ -1,10 +1,12 @@
-package scalive
+package scalive.defs.complex
 
-import utest.*
+import scalive.*
 
-object CompositeKeysSpec extends TestSuite:
+import zio.test.*
 
-  val tests = Tests {
+object CompositeKeysSpec extends ZIOSpecDefault:
+
+  override def spec = suite("CompositeKeysSpec")(
     test("aria namespace") {
       val el = div(
         aria.hidden := true,
@@ -13,9 +15,8 @@ object CompositeKeysSpec extends TestSuite:
 
       val result = HtmlBuilder.build(el)
 
-      assert(result == "<div aria-hidden=\"true\" aria-label=\"Dialog\"></div>")
-    }
-
+      assertTrue(result == "<div aria-hidden=\"true\" aria-label=\"Dialog\"></div>")
+    },
     test("xlink namespace") {
       val el = div(
         a(
@@ -26,6 +27,6 @@ object CompositeKeysSpec extends TestSuite:
 
       val result = HtmlBuilder.build(el)
 
-      assert(result == "<div><a xlink-href=\"#marker\" xlink-title=\"Marker\"></a></div>")
+      assertTrue(result == "<div><a xlink-href=\"#marker\" xlink-title=\"Marker\"></a></div>")
     }
-  }
+  )

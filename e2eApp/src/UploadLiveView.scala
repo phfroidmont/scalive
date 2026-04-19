@@ -5,13 +5,12 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.UUID
 
+import UploadLiveView.*
 import zio.*
 import zio.stream.ZStream
 
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
-
-import UploadLiveView.*
 
 class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
 

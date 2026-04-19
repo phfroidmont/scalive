@@ -1,4 +1,6 @@
-package scalive
+package scalive.socket
+
+import scalive.*
 
 import zio.*
 import zio.json.*

@@ -1,10 +1,10 @@
 package scalive
 
-import utest.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.test.*
 
-object LiveViewSpec extends TestSuite:
+object LiveViewSpec extends ZIOSpecDefault:
 
   final case class TestModel(
     title: String = "title value",
@@ -15,20 +15,138 @@ object LiveViewSpec extends TestSuite:
     items: List[NestedModel] = List.empty)
   final case class NestedModel(name: String, age: Int)
 
-  def assertEqualsDiff(el: HtmlElement, expected: Json, trackChanges: Boolean = true) =
+  private final case class ListFixture(initModel: TestModel, model: Var[TestModel], el: HtmlElement)
+
+  private def assertEqualsDiff(el: HtmlElement, expected: Json, trackChanges: Boolean = true): TestResult =
     el.syncAll()
     val actual = DiffBuilder.build(el, trackUpdates = trackChanges)
-    assert(actual.toJsonPretty == expected.toJsonPretty)
+    assertTrue(actual.toJsonPretty == expected.toJsonPretty)
 
-  val emptyDiff = Json.Obj.empty
+  private val emptyDiff = Json.Obj.empty
 
-  val tests = Tests {
+  private def staticOnlyFixture(): HtmlElement =
+    val el = div("Static string")
+    el.syncAll()
+    el
 
-    test("Static only") {
-      val el = div("Static string")
-      el.syncAll()
+  private def dynamicStringFixture(): (Var[TestModel], HtmlElement) =
+    val model = Var(TestModel())
+    val el    =
+      div(
+        h1(model(_.title)),
+        p(model(_.otherString))
+      )
 
+    el.syncAll()
+    el.setAllUnchanged()
+    (model, el)
+
+  private def dynamicAttributeFixture(): (Var[TestModel], HtmlElement) =
+    val model = Var(TestModel())
+    val el    = div(cls := model(_.cls))
+
+    el.syncAll()
+    el.setAllUnchanged()
+    (model, el)
+
+  private def whenModFixture(): (Var[TestModel], HtmlElement) =
+    val model = Var(TestModel())
+    val el    =
+      div(
+        model.when(_.bool)(
+          div("static string", model(_.nestedTitle))
+        )
+      )
+
+    el.syncAll()
+    el.setAllUnchanged()
+    (model, el)
+
+  private def splitByIndexFixture(): ListFixture =
+    val initModel = TestModel(
+      items = List(
+        NestedModel("a", 10),
+        NestedModel("b", 15),
+        NestedModel("c", 20)
+      )
+    )
+    val model     = Var(initModel)
+    val el        =
+      div(
+        ul(
+          model(_.items).splitByIndex((_, elem) =>
+            li(
+              "Nom: ",
+              elem(_.name),
+              " Age: ",
+              elem(_.age.toString)
+            )
+          )
+        )
+      )
+
+    el.syncAll()
+    el.setAllUnchanged()
+    ListFixture(initModel, model, el)
+
+  private def splitByIdFixture(): ListFixture =
+    val initModel = TestModel(
+      items = List(
+        NestedModel("a", 10),
+        NestedModel("b", 15),
+        NestedModel("c", 20)
+      )
+    )
+    val model     = Var(initModel)
+    val el        =
+      div(
+        ul(
+          model(_.items).splitBy(_.name)((_, elem) =>
+            li(
+              "Nom: ",
+              elem(_.name),
+              " Age: ",
+              elem(_.age.toString)
+            )
+          )
+        )
+      )
+
+    el.syncAll()
+    el.setAllUnchanged()
+    ListFixture(initModel, model, el)
+
+  private def splitByOrderingFixture(): ListFixture =
+    val initModel = TestModel(
+      items = List(
+        NestedModel("c", 20),
+        NestedModel("a", 10),
+        NestedModel("b", 15)
+      )
+    )
+    val model     = Var(initModel)
+    val el        =
+      div(
+        ul(
+          model(_.items).splitBy(_.name)((_, elem) =>
+            li(
+              "Nom: ",
+              elem(_.name),
+              " Age: ",
+              elem(_.age.toString)
+            )
+          )
+        )
+      )
+
+    el.syncAll()
+    el.setAllUnchanged()
+    ListFixture(initModel, model, el)
+
+  override def spec = suite("LiveViewSpec")(
+    suite("Static only")(
       test("init") {
+        val el = staticOnlyFixture()
         assertEqualsDiff(
           el,
           Json.Obj(
@@ -36,24 +154,15 @@ object LiveViewSpec extends TestSuite:
           ),
           trackChanges = false
         )
-      }
+      },
       test("diff") {
+        val el = staticOnlyFixture()
         assertEqualsDiff(el, emptyDiff)
       }
-    }
-
-    test("Dynamic string") {
-      val model = Var(TestModel())
-      val el    =
-        div(
-          h1(model(_.title)),
-          p(model(_.otherString))
-        )
-
-      el.syncAll()
-      el.setAllUnchanged()
-
+    ),
+    suite("Dynamic string")(
       test("init") {
+        val (_, el) = dynamicStringFixture()
         assertEqualsDiff(
           el,
           Json
@@ -64,22 +173,26 @@ object LiveViewSpec extends TestSuite:
             ),
           trackChanges = false
         )
-      }
+      },
       test("diff no update") {
+        val (_, el) = dynamicStringFixture()
         assertEqualsDiff(el, emptyDiff)
-      }
+      },
       test("diff with update") {
+        val (model, el) = dynamicStringFixture()
         model.update(_.copy(title = "title updated"))
         assertEqualsDiff(
           el,
           Json.Obj("0" -> Json.Str("title updated"))
         )
-      }
+      },
       test("diff with update and no change") {
+        val (model, el) = dynamicStringFixture()
         model.update(_.copy(title = "title value"))
         assertEqualsDiff(el, emptyDiff)
-      }
+      },
       test("diff with update in multiple commands") {
+        val (model, el) = dynamicStringFixture()
         model.update(_.copy(title = "title updated"))
         model.update(_.copy(otherString = "other string updated"))
         assertEqualsDiff(
@@ -91,17 +204,10 @@ object LiveViewSpec extends TestSuite:
             )
         )
       }
-    }
-
-    test("Dynamic attribute") {
-      val model = Var(TestModel())
-      val el    =
-        div(cls := model(_.cls))
-
-      el.syncAll()
-      el.setAllUnchanged()
-
+    ),
+    suite("Dynamic attribute")(
       test("init") {
+        val (_, el) = dynamicAttributeFixture()
         assertEqualsDiff(
           el,
           Json
@@ -112,32 +218,23 @@ object LiveViewSpec extends TestSuite:
             ),
           trackChanges = false
         )
-      }
+      },
       test("diff no update") {
+        val (_, el) = dynamicAttributeFixture()
         assertEqualsDiff(el, emptyDiff)
-      }
+      },
       test("diff with update") {
+        val (model, el) = dynamicAttributeFixture()
         model.update(_.copy(cls = "text-md"))
         assertEqualsDiff(
           el,
           Json.Obj("0" -> Json.Str("text-md"))
         )
       }
-    }
-
-    test("when mod") {
-      val model = Var(TestModel())
-      val el    =
-        div(
-          model.when(_.bool)(
-            div("static string", model(_.nestedTitle))
-          )
-        )
-
-      el.syncAll()
-      el.setAllUnchanged()
-
+    ),
+    suite("when mod")(
       test("init") {
+        val (_, el) = whenModFixture()
         assertEqualsDiff(
           el,
           Json
@@ -147,15 +244,18 @@ object LiveViewSpec extends TestSuite:
             ),
           trackChanges = false
         )
-      }
+      },
       test("diff no update") {
+        val (_, el) = whenModFixture()
         assertEqualsDiff(el, emptyDiff)
-      }
+      },
       test("diff with unrelated update") {
+        val (model, el) = whenModFixture()
         model.update(_.copy(title = "title updated"))
         assertEqualsDiff(el, emptyDiff)
-      }
+      },
       test("diff when true and nested update") {
+        val (model, el) = whenModFixture()
         model.update(_.copy(bool = true))
         assertEqualsDiff(
           el,
@@ -169,8 +269,9 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff when nested change") {
+        val (model, el) = whenModFixture()
         model.update(_.copy(bool = true))
         el.syncAll()
         el.setAllUnchanged()
@@ -186,37 +287,12 @@ object LiveViewSpec extends TestSuite:
           )
         )
       }
-    }
-
-    test("splitByIndex mod") {
-      val initModel = TestModel(
-        items = List(
-          NestedModel("a", 10),
-          NestedModel("b", 15),
-          NestedModel("c", 20)
-        )
-      )
-      val model = Var(initModel)
-      val el    =
-        div(
-          ul(
-            model(_.items).splitByIndex((_, elem) =>
-              li(
-                "Nom: ",
-                elem(_.name),
-                " Age: ",
-                elem(_.age.toString)
-              )
-            )
-          )
-        )
-
-      el.syncAll()
-      el.setAllUnchanged()
-
+    ),
+    suite("splitByIndex mod")(
       test("init") {
+        val fixture = splitByIndexFixture()
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
@@ -245,18 +321,21 @@ object LiveViewSpec extends TestSuite:
             ),
           trackChanges = false
         )
-      }
+      },
       test("diff no update") {
-        assertEqualsDiff(el, emptyDiff)
-      }
+        val fixture = splitByIndexFixture()
+        assertEqualsDiff(fixture.el, emptyDiff)
+      },
       test("diff with unrelated update") {
-        model.update(_.copy(title = "title updated"))
-        assertEqualsDiff(el, emptyDiff)
-      }
+        val fixture = splitByIndexFixture()
+        fixture.model.update(_.copy(title = "title updated"))
+        assertEqualsDiff(fixture.el, emptyDiff)
+      },
       test("diff with item changed") {
-        model.update(_.copy(items = initModel.items.updated(2, NestedModel("c", 99))))
+        val fixture = splitByIndexFixture()
+        fixture.model.update(_.copy(items = fixture.initModel.items.updated(2, NestedModel("c", 99))))
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -270,11 +349,12 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff with item added") {
-        model.update(_.copy(items = initModel.items.appended(NestedModel("d", 35))))
+        val fixture = splitByIndexFixture()
+        fixture.model.update(_.copy(items = fixture.initModel.items.appended(NestedModel("d", 35))))
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -289,7 +369,7 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff add one to empty list") {
         val model = Var(TestModel(items = List.empty))
         val el    =
@@ -331,11 +411,12 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff with first item removed") {
-        model.update(_.copy(items = initModel.items.tail))
+        val fixture = splitByIndexFixture()
+        fixture.model.update(_.copy(items = fixture.initModel.items.tail))
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -354,11 +435,12 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff all removed") {
-        model.update(_.copy(items = List.empty))
+        val fixture = splitByIndexFixture()
+        fixture.model.update(_.copy(items = List.empty))
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -370,37 +452,12 @@ object LiveViewSpec extends TestSuite:
           )
         )
       }
-    }
-
-    test("splitById mod") {
-      val initModel = TestModel(
-        items = List(
-          NestedModel("a", 10),
-          NestedModel("b", 15),
-          NestedModel("c", 20)
-        )
-      )
-      val model = Var(initModel)
-      val el    =
-        div(
-          ul(
-            model(_.items).splitBy(_.name)((_, elem) =>
-              li(
-                "Nom: ",
-                elem(_.name),
-                " Age: ",
-                elem(_.age.toString)
-              )
-            )
-          )
-        )
-
-      el.syncAll()
-      el.setAllUnchanged()
-
+    ),
+    suite("splitById mod")(
       test("init") {
+        val fixture = splitByIdFixture()
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
@@ -429,18 +486,21 @@ object LiveViewSpec extends TestSuite:
             ),
           trackChanges = false
         )
-      }
+      },
       test("diff no update") {
-        assertEqualsDiff(el, emptyDiff)
-      }
+        val fixture = splitByIdFixture()
+        assertEqualsDiff(fixture.el, emptyDiff)
+      },
       test("diff with unrelated update") {
-        model.update(_.copy(title = "title updated"))
-        assertEqualsDiff(el, emptyDiff)
-      }
+        val fixture = splitByIdFixture()
+        fixture.model.update(_.copy(title = "title updated"))
+        assertEqualsDiff(fixture.el, emptyDiff)
+      },
       test("diff with item changed") {
-        model.update(_.copy(items = initModel.items.updated(2, NestedModel("c", 99))))
+        val fixture = splitByIdFixture()
+        fixture.model.update(_.copy(items = fixture.initModel.items.updated(2, NestedModel("c", 99))))
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -454,11 +514,12 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff with item added") {
-        model.update(_.copy(items = initModel.items.appended(NestedModel("d", 35))))
+        val fixture = splitByIdFixture()
+        fixture.model.update(_.copy(items = fixture.initModel.items.appended(NestedModel("d", 35))))
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -473,7 +534,7 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff add one to empty list") {
         val model = Var(TestModel(items = List.empty))
         val el    =
@@ -515,11 +576,12 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff with first item removed") {
-        model.update(_.copy(items = initModel.items.tail))
+        val fixture = splitByIdFixture()
+        fixture.model.update(_.copy(items = fixture.initModel.items.tail))
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -532,11 +594,12 @@ object LiveViewSpec extends TestSuite:
                 )
           )
         )
-      }
+      },
       test("diff all removed") {
-        model.update(_.copy(items = List.empty))
+        val fixture = splitByIdFixture()
+        fixture.model.update(_.copy(items = List.empty))
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -548,37 +611,12 @@ object LiveViewSpec extends TestSuite:
           )
         )
       }
-    }
-
-    test("splitBy ordering") {
-      val initModel = TestModel(
-        items = List(
-          NestedModel("c", 20),
-          NestedModel("a", 10),
-          NestedModel("b", 15)
-        )
-      )
-      val model = Var(initModel)
-      val el    =
-        div(
-          ul(
-            model(_.items).splitBy(_.name)((_, elem) =>
-              li(
-                "Nom: ",
-                elem(_.name),
-                " Age: ",
-                elem(_.age.toString)
-              )
-            )
-          )
-        )
-
-      el.syncAll()
-      el.setAllUnchanged()
-
+    ),
+    suite("splitBy ordering")(
       test("init should preserve list order") {
+        val fixture = splitByOrderingFixture()
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json
             .Obj(
               "s" -> Json.Arr(Json.Str("<div><ul>"), Json.Str("</ul></div>")),
@@ -607,20 +645,20 @@ object LiveViewSpec extends TestSuite:
             ),
           trackChanges = false
         )
-      }
-
+      },
       test("reorder items") {
-        model.update(
+        val fixture = splitByOrderingFixture()
+        fixture.model.update(
           _.copy(items =
             List(
-              NestedModel("b", 15), // Should be at index 0
-              NestedModel("a", 10), // Should be at index 1
-              NestedModel("c", 20)  // Should be at index 2
+              NestedModel("b", 15),
+              NestedModel("a", 10),
+              NestedModel("c", 20)
             )
           )
         )
         assertEqualsDiff(
-          el,
+          fixture.el,
           Json.Obj(
             "0" ->
               Json
@@ -634,7 +672,6 @@ object LiveViewSpec extends TestSuite:
           )
         )
       }
-    }
-
-  }
+    )
+  )
 end LiveViewSpec

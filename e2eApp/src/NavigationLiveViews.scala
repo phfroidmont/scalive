@@ -1,10 +1,9 @@
 import java.net.URI
 
+import NavigationLiveViews.*
 import zio.stream.ZStream
 
 import scalive.*
-
-import NavigationLiveViews.*
 
 class NavigationALiveView(initialParam: Option[String]) extends LiveView[Msg, Model]:
 

@@ -11,7 +11,7 @@ import scalive.*
 import scalive.WebSocketMessage.LivePatchKind
 import scalive.WebSocketMessage.Payload
 
-private[scalive] object SocketClientOps:
+private[scalive] object SocketInbound:
   def startClientFiber[Msg, Model](
     state: RuntimeState[Msg, Model]
   ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
@@ -42,9 +42,9 @@ private[scalive] object SocketClientOps:
              case ParamsResult.Continue(model) =>
                for
                  _    <- state.patchRedirectCountRef.set(0)
-                 diff <- SocketModelOps.updateModelAndSubscriptions(modelVar, el, model, state)
+                 diff <- SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, model, state)
                  _    <- ZIO.when(!diff.isEmpty)(
-                        SocketModelOps.publishPayload(
+                        SocketModelRuntime.publishPayload(
                           Payload.Diff(diff),
                           meta.copy(messageRef = None),
                           state
@@ -87,9 +87,9 @@ private[scalive] object SocketClientOps:
                     )
       _ <- hookResult match
              case HookResult.Halt(hookModel, reply) =>
-               SocketModelOps.applyHookHalt(modelVar, el, hookModel, reply, meta, state)
+               SocketModelRuntime.applyHookHalt(modelVar, el, hookModel, reply, meta, state)
              case HookResult.Continue(hookModel) =>
-               SocketModelOps.applyBoundEvent(modelVar, el, hookModel, event, meta, state)
+               SocketModelRuntime.applyBoundEvent(modelVar, el, hookModel, event, meta, state)
     yield ()
 
   private def handleLivePatchRedirect[Msg, Model](
@@ -103,15 +103,15 @@ private[scalive] object SocketClientOps:
   ): Task[Unit] =
     for
       redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
-      _             <- SocketModelOps.updateModelAndSubscriptions(modelVar, el, model, state)
+      _             <- SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, model, state)
       _             <-
         if redirectCount > 20 then
-          SocketModelOps.publishPayload(Payload.Error, meta.copy(messageRef = None), state)
+          SocketModelRuntime.publishPayload(Payload.Error, meta.copy(messageRef = None), state)
         else
-          SocketModelOps.publishPayload(
+          SocketModelRuntime.publishPayload(
             Payload.LiveNavigation(to, kind),
             meta.copy(messageRef = None),
             state
           ) *> handleLivePatch(to, meta, state)
     yield ()
-end SocketClientOps
+end SocketInbound

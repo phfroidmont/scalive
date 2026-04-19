@@ -1,9 +1,7 @@
 package scalive
 package socket
 
-import java.util.Base64
 import scala.concurrent.duration.*
-import scala.util.Random
 import scala.util.Try
 
 import zio.*
@@ -19,8 +17,6 @@ import scalive.WebSocketMessage.UploadJoinErrorReason
 import scalive.WebSocketMessage.UploadJoinToken
 
 private[scalive] object SocketUploadProtocol:
-  private val UploadRefLength = 12
-
   def handleAllowUpload[Msg, Model](
     payload: Payload.AllowUpload,
     state: RuntimeState[Msg, Model]
@@ -84,7 +80,9 @@ private[scalive] object SocketUploadProtocol:
                                         config.options.external match
                                           case Some(uploader) =>
                                             uploader
-                                              .preflight(toExternalUploadEntry(entryState))
+                                              .preflight(
+                                                SocketUploadShared.toExternalUploadEntry(entryState)
+                                              )
                                               .provide(ZLayer.succeed(state.ctx))
                                               .either
                                               .map {
@@ -197,7 +195,10 @@ private[scalive] object SocketUploadProtocol:
                                 )
                                 val updateEffect =
                                   if normalized >= 100 then
-                                    closeWriter(next, LiveUploadWriterCloseReason.Done)
+                                    SocketUploadShared.closeWriter(
+                                      next,
+                                      LiveUploadWriterCloseReason.Done
+                                    )
                                   else ZIO.succeed(next)
 
                                 updateEffect.flatMap { updated =>
@@ -214,17 +215,20 @@ private[scalive] object SocketUploadProtocol:
                                     .collectFirst { case ("error", Json.Str(reason)) =>
                                       Json.Str(reason)
                                     }.getOrElse(obj)
-                                closeWriter(
-                                  entry.copy(valid = false, errors = List(errorJson)),
-                                  LiveUploadWriterCloseReason.Error(progressToParamValue(errorJson))
-                                ).flatMap { updated =>
-                                  state.uploadRef
-                                    .update { st =>
-                                      st.copy(entries =
-                                        st.entries.updated(payload.entry_ref, updated)
-                                      )
-                                    }.as(Some(updated))
-                                }
+                                SocketUploadShared
+                                  .closeWriter(
+                                    entry.copy(valid = false, errors = List(errorJson)),
+                                    LiveUploadWriterCloseReason.Error(
+                                      progressToParamValue(errorJson)
+                                    )
+                                  ).flatMap { updated =>
+                                    state.uploadRef
+                                      .update { st =>
+                                        st.copy(entries =
+                                          st.entries.updated(payload.entry_ref, updated)
+                                        )
+                                      }.as(Some(updated))
+                                  }
                               case _ => ZIO.none
                           case _ => ZIO.none
                       }
@@ -274,7 +278,7 @@ private[scalive] object SocketUploadProtocol:
                              )
                            )
                          else
-                           ensureWriterState(entry).either.flatMap {
+                           SocketUploadShared.ensureWriterState(entry).either.flatMap {
                              case Right(withWriter) =>
                                state.uploadRef
                                  .update { st =>
@@ -334,7 +338,7 @@ private[scalive] object SocketUploadProtocol:
                        )
                      )
                    else
-                     ensureWriterState(entry).either.flatMap {
+                     SocketUploadShared.ensureWriterState(entry).either.flatMap {
                        case Right(withWriter) =>
                          withWriter.writer
                            .writeChunk(bytes, withWriter.writerState.getOrElse(()))
@@ -350,24 +354,25 @@ private[scalive] object SocketUploadProtocol:
                                    st.copy(entries = st.entries.updated(entryRef, updatedEntry))
                                  }.as(Payload.okReply(LiveResponse.Empty))
                              case Left(_) =>
-                               closeWriter(
-                                 withWriter.copy(
-                                   valid = false,
-                                   errors = List(Json.Str("writer_error"))
-                                 ),
-                                 LiveUploadWriterCloseReason.Error("writer_error")
-                               ).flatMap { errored =>
-                                 state.uploadRef
-                                   .update { st =>
-                                     st.copy(entries = st.entries.updated(entryRef, errored))
-                                   }.as(
-                                     Payload.errorReply(
-                                       LiveResponse.UploadChunkError(
-                                         UploadChunkErrorReason.WriterError
+                               SocketUploadShared
+                                 .closeWriter(
+                                   withWriter.copy(
+                                     valid = false,
+                                     errors = List(Json.Str("writer_error"))
+                                   ),
+                                   LiveUploadWriterCloseReason.Error("writer_error")
+                                 ).flatMap { errored =>
+                                   state.uploadRef
+                                     .update { st =>
+                                       st.copy(entries = st.entries.updated(entryRef, errored))
+                                     }.as(
+                                       Payload.errorReply(
+                                         LiveResponse.UploadChunkError(
+                                           UploadChunkErrorReason.WriterError
+                                         )
                                        )
                                      )
-                                   )
-                               }
+                                 }
                            }
                        case Left(_) =>
                          ZIO.succeed(
@@ -462,72 +467,6 @@ private[scalive] object SocketUploadProtocol:
       case None =>
         ZIO.unit
 
-  private[socket] def validateUploadOptions(
-    name: String,
-    options: LiveUploadOptions
-  ): Task[LiveUploadOptions] =
-    if name.isEmpty then ZIO.fail(new IllegalArgumentException("Upload name must not be empty"))
-    else if options.maxEntries <= 0 then
-      ZIO.fail(new IllegalArgumentException(s"Upload $name maxEntries must be > 0"))
-    else if options.maxFileSize <= 0 then
-      ZIO.fail(new IllegalArgumentException(s"Upload $name maxFileSize must be > 0"))
-    else if options.chunkSize <= 0 then
-      ZIO.fail(new IllegalArgumentException(s"Upload $name chunkSize must be > 0"))
-    else if options.chunkTimeout <= 0 then
-      ZIO.fail(new IllegalArgumentException(s"Upload $name chunkTimeout must be > 0"))
-    else
-      options.accept match
-        case LiveUploadAccept.Exactly(values) if values.isEmpty =>
-          ZIO.fail(new IllegalArgumentException(s"Upload $name accept list must not be empty"))
-        case _ =>
-          ZIO.succeed(options)
-
-  private[socket] def randomUploadRef(length: Int = UploadRefLength): String =
-    val bytes   = Random.nextBytes(length)
-    val encoded = Base64
-      .getUrlEncoder()
-      .withoutPadding()
-      .encodeToString(bytes)
-    if encoded.length >= length then encoded.take(length)
-    else encoded
-
-  private[socket] def buildLiveUpload(
-    state: UploadRuntimeState,
-    config: UploadConfigState
-  ): LiveUpload =
-    LiveUpload(
-      name = config.name,
-      ref = config.ref,
-      accept = config.options.accept,
-      maxEntries = config.options.maxEntries,
-      maxFileSize = config.options.maxFileSize,
-      chunkSize = config.options.chunkSize,
-      chunkTimeout = config.options.chunkTimeout,
-      autoUpload = config.options.autoUpload,
-      external = config.options.external.nonEmpty,
-      entries = config.entryOrder.flatMap(state.entries.get).map(toLiveUploadEntry).toList,
-      errors = config.errors.map(_._2).map(LiveUploadError.fromJson)
-    )
-
-  private[socket] def consumeEntry(
-    uploadRef: Ref[UploadRuntimeState],
-    entryRef: String
-  ): UIO[Option[LiveUploadedEntry]] =
-    uploadRef.modify { current =>
-      current.entries.get(entryRef) match
-        case Some(entry) if isUploadEntryDone(entry) && entry.valid && !entry.cancelled =>
-          val uploadedEntry = LiveUploadedEntry(
-            ref = entry.ref,
-            name = entry.name,
-            contentType = entry.contentType,
-            bytes = entry.bytes,
-            meta = entry.externalMeta.orElse(entry.writerMeta).getOrElse(Json.Obj.empty)
-          )
-          Some(uploadedEntry) -> current.removeEntry(entryRef)
-        case _ =>
-          None -> current
-    }
-
   private def applyUploadProgressBinding[Msg, Model](
     eventRef: String,
     payload: Payload.Progress,
@@ -545,7 +484,7 @@ private[scalive] object SocketUploadProtocol:
                          state.ctx
                        )
                      diff <-
-                       SocketModelOps.updateModelAndSubscriptions(
+                       SocketModelRuntime.updateModelAndSubscriptions(
                          modelVar,
                          el,
                          updatedModel,
@@ -619,48 +558,6 @@ private[scalive] object SocketUploadProtocol:
       case _                             => false
     }
 
-  private def toExternalUploadEntry(entry: UploadEntryState): LiveExternalUploadEntry =
-    LiveExternalUploadEntry(
-      ref = entry.ref,
-      name = entry.name,
-      relativePath = entry.relativePath,
-      size = entry.size,
-      contentType = entry.contentType,
-      lastModified = entry.lastModified,
-      clientMeta = entry.clientMeta
-    )
-
-  private def ensureWriterState(entry: UploadEntryState): Task[UploadEntryState] =
-    entry.writerState match
-      case Some(_) => ZIO.succeed(entry)
-      case None    =>
-        entry.writer
-          .init(entry.uploadName, toExternalUploadEntry(entry))
-          .map(state => entry.copy(writerState = Some(state)))
-
-  private[socket] def closeWriter(
-    entry: UploadEntryState,
-    reason: LiveUploadWriterCloseReason
-  ): Task[UploadEntryState] =
-    if entry.writerClosed then ZIO.succeed(entry)
-    else
-      entry.writerState match
-        case Some(state) =>
-          entry.writer
-            .close(state, reason)
-            .either
-            .map {
-              case Right(closedState) =>
-                entry.copy(
-                  writerState = Some(closedState),
-                  writerMeta = Some(entry.writer.meta(closedState)),
-                  writerClosed = true
-                )
-              case Left(_) =>
-                entry.copy(writerClosed = true)
-            }
-        case None => ZIO.succeed(entry.copy(writerClosed = true))
-
   private def runUploadProgressCallback[Msg, Model](
     uploadRef: String,
     entry: UploadEntryState,
@@ -673,29 +570,9 @@ private[scalive] object SocketUploadProtocol:
              .flatMap(_.options.progress)
              .map(callback =>
                callback
-                 .onProgress(entry.uploadName, toLiveUploadEntry(entry))
+                 .onProgress(entry.uploadName, SocketUploadShared.toLiveUploadEntry(entry))
                  .provide(ZLayer.succeed(state.ctx))
              )
              .getOrElse(ZIO.unit)
     yield ()
-
-  private[socket] def isUploadEntryDone(entry: UploadEntryState): Boolean =
-    entry.progress >= 100 || entry.bytes.length == entry.size
-
-  private def toLiveUploadEntry(entry: UploadEntryState): LiveUploadEntry =
-    LiveUploadEntry(
-      ref = entry.ref,
-      clientName = entry.name,
-      clientRelativePath = entry.relativePath,
-      clientSize = entry.size,
-      clientType = entry.contentType,
-      clientLastModified = entry.lastModified,
-      progress = entry.progress,
-      preflighted = entry.preflighted,
-      done = isUploadEntryDone(entry),
-      cancelled = entry.cancelled,
-      valid = entry.valid && entry.errors.isEmpty,
-      errors = entry.errors.map(LiveUploadError.fromJson),
-      meta = entry.externalMeta.orElse(entry.writerMeta)
-    )
 end SocketUploadProtocol

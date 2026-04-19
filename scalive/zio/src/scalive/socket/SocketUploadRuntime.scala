@@ -12,8 +12,8 @@ final private[scalive] class SocketUploadRuntime(
     extends UploadRuntime:
   def allow(name: String, options: LiveUploadOptions): Task[LiveUpload] =
     for
-      validatedOptions <- SocketUploadProtocol.validateUploadOptions(name, options)
-      ref              <- ZIO.succeed(SocketUploadProtocol.randomUploadRef())
+      validatedOptions <- SocketUploadShared.validateUploadOptions(name, options)
+      ref              <- ZIO.succeed(SocketUploadShared.randomUploadRef())
       result           <- uploadRef.modify { current =>
                   current.configs.get(name) match
                     case Some(existing) if existing.entryOrder.nonEmpty =>
@@ -33,7 +33,7 @@ final private[scalive] class SocketUploadRuntime(
                         configs = base.configs.updated(name, config),
                         refsToNames = base.refsToNames.updated(ref, name)
                       )
-                      Right(SocketUploadProtocol.buildLiveUpload(next, config)) -> next
+                      Right(SocketUploadShared.buildLiveUpload(next, config)) -> next
                 }
       upload <- ZIO.fromEither(result)
     yield upload
@@ -60,7 +60,7 @@ final private[scalive] class SocketUploadRuntime(
 
   def get(name: String): UIO[Option[LiveUpload]] =
     uploadRef.get.map(state =>
-      state.configs.get(name).map(config => SocketUploadProtocol.buildLiveUpload(state, config))
+      state.configs.get(name).map(config => SocketUploadShared.buildLiveUpload(state, config))
     )
 
   def cancel(name: String, entryRef: String): Task[Unit] =
@@ -81,7 +81,7 @@ final private[scalive] class SocketUploadRuntime(
             )
           )
         else
-          SocketUploadProtocol.closeWriter(entry, LiveUploadWriterCloseReason.Cancel).ignore *>
+          SocketUploadShared.closeWriter(entry, LiveUploadWriterCloseReason.Cancel).ignore *>
             uploadRef.update { current =>
               val removed = current.removeEntry(entryRef)
               removed.configs.get(name) match
@@ -115,19 +115,19 @@ final private[scalive] class SocketUploadRuntime(
                .get(name)
                .map(_.entryOrder)
                .getOrElse(Vector.empty)
-               .filter(ref => state.entries.get(ref).exists(SocketUploadProtocol.isUploadEntryDone))
-      consumed <- ZIO.foreach(refs)(SocketUploadProtocol.consumeEntry(uploadRef, _))
+               .filter(ref => state.entries.get(ref).exists(SocketUploadShared.isUploadEntryDone))
+      consumed <- ZIO.foreach(refs)(SocketUploadShared.consumeEntry(uploadRef, _))
     yield consumed.flatten.toList
 
   def consume(entryRef: String): UIO[Option[LiveUploadedEntry]] =
-    SocketUploadProtocol.consumeEntry(uploadRef, entryRef)
+    SocketUploadShared.consumeEntry(uploadRef, entryRef)
 
   def drop(entryRef: String): UIO[Unit] =
     for
       state <- uploadRef.get
       _     <- state.entries.get(entryRef) match
              case Some(entry) =>
-               SocketUploadProtocol.closeWriter(entry, LiveUploadWriterCloseReason.Cancel).ignore
+               SocketUploadShared.closeWriter(entry, LiveUploadWriterCloseReason.Cancel).ignore
              case None => ZIO.unit
       _ <- uploadRef.update(_.removeEntry(entryRef)).unit
     yield ()

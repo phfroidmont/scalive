@@ -6,7 +6,7 @@ import zio.stream.SubscriptionRef
 
 import scalive.*
 
-private[scalive] object SocketInit:
+private[scalive] object SocketBootstrap:
   def initializeRuntime[Msg, Model](
     lv: LiveView[Msg, Model],
     ctx: LiveContext,
@@ -37,4 +37,4 @@ private[scalive] object SocketInit:
       patchRedirectCountRef = patchRedirectCountRef,
       initDiff = initDiff
     )
-end SocketInit
+end SocketBootstrap

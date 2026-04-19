@@ -5,9 +5,9 @@ import zio.Queue
 import zio.stream.ZStream
 
 import scalive.WebSocketMessage.Payload
-import scalive.socket.SocketClientOps
-import scalive.socket.SocketInit
-import scalive.socket.SocketServerOps
+import scalive.socket.SocketBootstrap
+import scalive.socket.SocketInbound
+import scalive.socket.SocketOutbound
 import scalive.socket.SocketUploadProtocol
 
 final case class Socket[Msg, Model] private (
@@ -32,12 +32,12 @@ object Socket:
   ): RIO[Scope, Socket[Msg, Model]] =
     ZIO.logAnnotate("lv", id) {
       for
-        state       <- SocketInit.initializeRuntime(lv, ctx, meta)
-        clientFiber <- SocketClientOps.startClientFiber(state)
-        serverFiber <- SocketServerOps.startServerFiber(state)
+        state       <- SocketBootstrap.initializeRuntime(lv, ctx, meta)
+        clientFiber <- SocketInbound.startClientFiber(state)
+        serverFiber <- SocketOutbound.startServerFiber(state)
         livePatch =
           (url: String, patchMeta: WebSocketMessage.Meta) =>
-            SocketClientOps.handleLivePatch(url, patchMeta, state)
+            SocketInbound.handleLivePatch(url, patchMeta, state)
         allowUpload =
           (payload: Payload.AllowUpload) => SocketUploadProtocol.handleAllowUpload(payload, state)
         progressUpload =
@@ -46,8 +46,8 @@ object Socket:
                        SocketUploadProtocol.handleUploadJoin(uploadTopic, uploadToken, state)
         uploadChunk = (uploadTopic: String, bytes: Chunk[Byte]) =>
                         SocketUploadProtocol.handleUploadChunk(uploadTopic, bytes, state)
-        outbox = SocketServerOps.buildOutbox(state)
-        stop   = SocketServerOps.buildShutdown(state, clientFiber, serverFiber)
+        outbox = SocketOutbound.buildOutbox(state)
+        stop   = SocketOutbound.buildShutdown(state, clientFiber, serverFiber)
       yield Socket[Msg, Model](
         id,
         token,

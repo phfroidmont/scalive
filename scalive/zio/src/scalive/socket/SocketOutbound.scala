@@ -8,7 +8,7 @@ import scalive.*
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 
-private[scalive] object SocketServerOps:
+private[scalive] object SocketOutbound:
   def startServerFiber[Msg, Model](
     state: RuntimeState[Msg, Model]
   ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
@@ -51,7 +51,7 @@ private[scalive] object SocketServerOps:
     for
       (modelVar, el) <- state.ref.get
       updatedModel   <- normalize(state.lv.update(modelVar.currentValue)(msg), state.ctx)
-      diff <- SocketModelOps.updateModelAndSubscriptions(modelVar, el, updatedModel, state)
-      _    <- SocketModelOps.publishPayload(Payload.Diff(diff), meta, state)
+      diff <- SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, updatedModel, state)
+      _    <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
     yield ()
-end SocketServerOps
+end SocketOutbound

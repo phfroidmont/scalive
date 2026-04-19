@@ -8,7 +8,7 @@ import scalive.*
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 
-private[scalive] object SocketModelOps:
+private[scalive] object SocketModelRuntime:
   def applyHookHalt[Msg, Model](
     modelVar: Var[Model],
     el: HtmlElement,
@@ -74,4 +74,4 @@ private[scalive] object SocketModelOps:
         Payload.okReply(LiveResponse.Diff(diff))
       case None =>
         Payload.okReply(LiveResponse.Empty)
-end SocketModelOps
+end SocketModelRuntime

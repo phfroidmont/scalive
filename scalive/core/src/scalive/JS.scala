@@ -1,23 +1,25 @@
 package scalive
 
-import java.util.Base64
-import scala.util.Random
-
 import zio.json.*
 import zio.json.ast.Json
 
 val JS: JSCommands.JSCommand = JSCommands.empty
 
 object JSCommands:
-  opaque type JSCommand = List[(Json, Option[Binding[?]])]
+  opaque type JSCommand = List[Op[?]]
 
-  final case class Binding[Msg](id: String, msg: Msg)
+  final private case class Op[Msg](renderJson: () => Json, binding: Option[Binding[Msg]])
+
+  final case class Binding[Msg](id: Var[String], msg: Msg)
 
   def empty: JSCommand = List.empty
 
   object JSCommand:
     given JsonEncoder[JSCommand] =
-      JsonEncoder[Json].contramap(ops => Json.Arr(ops.map(_._1).reverse*))
+      JsonEncoder[Json].contramap(ops => Json.Arr(ops.map(_.renderJson()).reverse*))
+
+  private def encodeOp[A: JsonEncoder](kind: String, args: A): Json =
+    (kind, args).toJsonAST.fold(e => throw new IllegalArgumentException(e), identity)
 
   private def classNames(names: String): Seq[String] = names.split("\\s+").toSeq
   private def transitionClasses(names: String | (String, String, String))
@@ -29,15 +31,16 @@ object JSCommands:
 
   extension (ops: JSCommand)
     private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand =
-      (kind, args).toJsonAST.fold(e => throw new IllegalArgumentException(e), (_, None)) :: ops
-
-    private def addOp[A: JsonEncoder, Msg](kind: String, args: A, binding: Binding[Msg])
-      : JSCommand =
-      (kind, args).toJsonAST
-        .fold(e => throw new IllegalArgumentException(e), (_, Some(binding))) :: ops
+      Op(() => encodeOp(kind, args), None) :: ops
 
     private[scalive] def bindings: Map[String, ?] =
-      ops.flatMap(_._2).map(b => (b.id, b.msg)).toMap
+      ops.flatMap(_.binding).map(binding => (binding.id.currentValue, binding.msg)).toMap
+
+    private[scalive] def assignPendingBindingIds(nextId: () => String): Unit =
+      ops
+        .flatMap(_.binding).foreach(binding =>
+          if BindingId.isPending(binding.id.currentValue) then binding.id.set(nextId())
+        )
 
     def addClass    = ClassOp("add_class", ops)
     def toggleClass = ClassOp("toggle_class", ops)
@@ -124,18 +127,23 @@ object JSCommands:
       target: String = "",
       loading: String = "",
       pageLoading: Boolean = false
-    ) =
-      val bindingId = Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))
-      ops.addOp(
-        "push",
-        Args.Push(
-          bindingId,
-          Option.when(target.nonEmpty)(target),
-          Option.when(loading.nonEmpty)(loading),
-          Option.when(!pageLoading)(pageLoading)
-        ),
-        Binding(bindingId, event)
+    ): JSCommand =
+      val bindingId = Var(BindingId.pending())
+      val binding   = Binding(bindingId, event)
+      Op(
+        () =>
+          encodeOp(
+            "push",
+            Args.Push(
+              bindingId.currentValue,
+              Option.when(target.nonEmpty)(target),
+              Option.when(loading.nonEmpty)(loading),
+              Option.when(!pageLoading)(pageLoading)
+            )
+          ),
+        Some(binding)
       )
+        :: ops
 
     def pushFocus(to: String = "") =
       ops.addOp("push_focus", Args.To(Option.when(to.nonEmpty)(to)))

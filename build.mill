@@ -51,11 +51,11 @@ object scalive extends Module:
       def utestVersion = "0.9.0"
 
   object zio extends ScalaCommon with PublishCommon:
-    def mvnDeps    = Seq(mvn"dev.zio::zio-http:3.4.0")
+    def mvnDeps    = Seq(mvn"dev.zio::zio-http:3.10.1")
     def moduleDeps = Seq(core)
 
     object test extends ScalaTests with scalalib.TestModule.ZioTest:
-      def zioTestVersion = "2.1.23"
+      def zioTestVersion = "2.1.25"
 
 object example extends ScalaCommon:
   def moduleDeps = Seq(scalive.zio)
@@ -140,6 +140,6 @@ object e2eApp extends ScalaCommon:
 
   object js extends TypeScriptModule:
     def mainFileName = "app.js"
-    def npmDeps = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8", "daisyui@5.1.12")
-    def bundleFlags = super.bundleFlags() ++ Map("minify" -> ujson.Bool(false))
+    def npmDeps      = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8", "daisyui@5.1.12")
+    def bundleFlags  = super.bundleFlags() ++ Map("minify" -> ujson.Bool(false))
 end e2eApp

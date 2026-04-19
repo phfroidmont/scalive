@@ -1,8 +1,5 @@
 package scalive
 
-import java.util.Base64
-import scala.util.Random
-
 import zio.json.*
 
 import scalive.JSCommands.JSCommand
@@ -12,6 +9,9 @@ import scalive.codecs.BooleanAsAttrPresenceEncoder
 import scalive.codecs.Encoder
 
 class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
+  // Binding IDs are allocated per render tree so newly created bindings remain unique across diffs.
+  private var nextBindingId: Long = 0L
+
   def static: Seq[String]     = StaticBuilder.build(this)
   def attrMods: Seq[Mod.Attr] =
     mods.collect { case mod: Mod.Attr => mod }
@@ -33,13 +33,18 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
   def findBinding[Msg](id: String): Option[Map[String, String] => Msg] =
     mods.iterator.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
 
-  private[scalive] def syncAll(): Unit         = mods.foreach(_.syncAll())
-  private[scalive] def setAllUnchanged(): Unit = dynamicMods.foreach(_.setAllUnchanged())
+  private[scalive] def syncAll(): Unit                   = mods.foreach(_.syncAll())
+  private[scalive] def setAllUnchanged(): Unit           = dynamicMods.foreach(_.setAllUnchanged())
+  private[scalive] def allocatePendingBindingIds(): Unit =
+    nextBindingId = BindingId.assignPending(this, nextBindingId)
+
   private[scalive] def diff(trackUpdates: Boolean = true): Diff =
     syncAll()
+    allocatePendingBindingIds()
     val diff = DiffBuilder.build(this, trackUpdates = trackUpdates)
     setAllUnchanged()
     diff
+end HtmlElement
 
 class HtmlTag(val name: String, val void: Boolean = false):
   def apply(mods: (Mod | IterableOnce[Mod])*): HtmlElement = HtmlElement(
@@ -71,7 +76,7 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
 
 class HtmlAttrBinding(val name: String):
   def apply(cmd: JSCommand): Mod.Attr =
-    Mod.Attr.JsBinding(name, Var(cmd.toJson), cmd.bindings)
+    Mod.Attr.JsBinding(name, Var(cmd.toJson), cmd)
 
   def apply[Msg](msg: Msg): Mod.Attr =
     apply(_ => msg)
@@ -79,7 +84,7 @@ class HtmlAttrBinding(val name: String):
   def apply[Msg](f: Map[String, String] => Msg): Mod.Attr =
     Mod.Attr.Binding(
       name,
-      Var(Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))),
+      Var(BindingId.pending()),
       f
     )
   def withValue[Msg](f: String => Msg): Mod.Attr =
@@ -112,7 +117,7 @@ object Mod:
     case Binding(name: String, id: scalive.Dyn[String], f: Map[String, String] => ?)
         extends Attr
         with DynamicMod
-    case JsBinding(name: String, jsonValue: scalive.Dyn[String], bindings: Map[String, ?])
+    case JsBinding(name: String, jsonValue: Var[String], command: JSCommand)
         extends Attr
         with DynamicMod
     case Dyn(name: String, value: scalive.Dyn[String], isJson: Boolean = false)
@@ -157,10 +162,12 @@ extension (mod: Mod)
 
   private[scalive] def syncAll(): Unit =
     mod match
-      case Attr.Static(_, _)                 => ()
-      case Attr.StaticValueAsPresence(_, _)  => ()
-      case Attr.Binding(_, id, _)            => id.sync()
-      case Attr.JsBinding(_, json, _)        => json.sync()
+      case Attr.Static(_, _)                => ()
+      case Attr.StaticValueAsPresence(_, _) => ()
+      case Attr.Binding(_, id, _)           => id.sync()
+      case Attr.JsBinding(_, json, command) =>
+        json.set(command.toJson)
+        json.sync()
       case Attr.Dyn(_, value, _)             => value.sync()
       case Attr.DynValueAsPresence(_, value) => value.sync()
       case Content.Text(text, _)             => ()
@@ -186,8 +193,8 @@ extension (mod: Mod)
       case Attr.Binding(_, eventId, f)      =>
         if id == eventId.currentValue then Some(f.asInstanceOf[Map[String, String] => Msg])
         else None
-      case Attr.JsBinding(_, _, bindings) =>
-        bindings.get(id).map(msg => _ => msg.asInstanceOf[Msg])
+      case Attr.JsBinding(_, _, command) =>
+        command.bindings.get(id).map(msg => _ => msg.asInstanceOf[Msg])
       case Attr.Dyn(_, value, _)             => None
       case Attr.DynValueAsPresence(_, value) => None
       case Content.Text(text, _)             => None

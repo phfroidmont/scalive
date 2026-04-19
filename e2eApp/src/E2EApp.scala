@@ -83,13 +83,37 @@ object E2EApp extends ZIOAppDefault:
         LiveRoute(
           Root / "js",
           (_, _) => JsLiveView()
+        ),
+        LiveRoute(
+          Root / "upload",
+          (_, req) =>
+            val autoUpload = req.url.queryParams.getAll("auto_upload").headOption.contains("1")
+            new UploadLiveView(autoUpload)
         )
       )
     )
 
   private val healthRoutes =
     Routes(
-      Method.GET / "health"              -> handler(Response.text("OK")),
+      Method.GET / "health"   -> handler(Response.text("OK")),
+      Method.GET / "download" -> handler { (req: Request) =>
+        val maybeFile = req.url.queryParams.getAll("file").headOption
+        maybeFile.flatMap(UploadLiveView.resolveUploadPath) match
+          case Some(path) if java.nio.file.Files.exists(path) =>
+            ZIO
+              .attemptBlocking(java.nio.file.Files.readAllBytes(path))
+              .map(bytes =>
+                Response(
+                  status = Status.Ok,
+                  headers = Headers(
+                    Header.ContentDisposition.attachment(path.getFileName.toString)
+                  ),
+                  body = Body.fromArray(bytes)
+                )
+              )
+              .catchAll(_ => ZIO.succeed(Response.notFound))
+          case _ => ZIO.succeed(Response.notFound)
+      },
       Method.GET / "favicon.ico"         -> handler(Response(status = Status.NoContent)),
       Method.GET / "navigation" / "dead" -> handler {
         Response.html(

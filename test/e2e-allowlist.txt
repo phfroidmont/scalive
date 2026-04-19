@@ -6,3 +6,4 @@ keyed-comprehension.spec.js
 select.spec.js
 components.spec.js
 js.spec.js
+uploads.spec.js

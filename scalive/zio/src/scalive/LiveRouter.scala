@@ -35,6 +35,7 @@ final case class LiveRoute[A, Msg, Model](
         initModel <- normalize(lv.init, ctx)
         el = lv.view(Var(initModel))
         _  = el.syncAll()
+        _  = el.allocatePendingBindingIds()
       yield Response.html(
         Html.raw(
           HtmlBuilder.build(
@@ -52,7 +53,9 @@ final case class LiveRoute[A, Msg, Model](
     }
 end LiveRoute
 
-class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]]):
+class LiveChannel(
+  private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
+  private val uploadOwners: Ref[Map[String, String]]):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
     sockets.changes
       .map(m =>
@@ -82,16 +85,19 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
       }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
 
   def leave(id: String): UIO[Unit] =
-    sockets.updateZIO { m =>
-      m.get(id) match
-        case Some(socket) =>
-          for
-            _ <- socket.shutdown
-            _ <- ZIO.logDebug(s"Left LiveView $id")
-          yield m.removed(id)
-        case None =>
-          ZIO.logWarning(s"Tried to leave LiveView $id which doesn't exist").as(m)
-    }
+    for
+      _ <- uploadOwners.update(_.filterNot { case (_, ownerId) => ownerId == id })
+      _ <- sockets.updateZIO { m =>
+             m.get(id) match
+               case Some(socket) =>
+                 for
+                   _ <- socket.shutdown
+                   _ <- ZIO.logDebug(s"Left LiveView $id")
+                 yield m.removed(id)
+               case None =>
+                 ZIO.logDebug(s"Ignoring leave for unknown LiveView $id").as(m)
+           }
+    yield ()
 
   def event(id: String, event: Payload.Event, meta: WebSocketMessage.Meta): UIO[Unit] =
     sockets.get.flatMap { m =>
@@ -108,11 +114,83 @@ class LiveChannel(private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]
         case None         => ZIO.unit
     }
 
+  def allowUpload(id: String, payload: Payload.AllowUpload): Task[Payload.Reply] =
+    sockets.get.flatMap { m =>
+      m.get(id) match
+        case Some(socket) =>
+          socket.allowUpload(payload).tap {
+            case Payload.Reply(_, LiveResponse.UploadPreflightSuccess(_, _, entries, _)) =>
+              uploadOwners
+                .update(current => current ++ entries.keys.map(entryRef => s"lvu:$entryRef" -> id))
+            case _ => ZIO.unit
+          }
+        case None =>
+          ZIO.succeed(
+            Payload.okReply(LiveResponse.UploadPreflightFailure(payload.ref, List.empty))
+          )
+    }
+
+  def progressUpload(id: String, payload: Payload.Progress): Task[Payload.Reply] =
+    sockets.get.flatMap { m =>
+      m.get(id) match
+        case Some(socket) => socket.progressUpload(payload)
+        case None         => ZIO.succeed(Payload.okReply(LiveResponse.Empty))
+    }
+
+  def uploadJoin(uploadTopic: String, token: String): Task[Payload.Reply] =
+    uploadOwners.get.flatMap { owners =>
+      owners.get(uploadTopic) match
+        case Some(ownerId) =>
+          sockets.get.flatMap { socketMap =>
+            socketMap.get(ownerId) match
+              case Some(socket) => socket.uploadJoin(uploadTopic, token)
+              case None         =>
+                ZIO.succeed(
+                  Payload.errorReply(
+                    LiveResponse.UploadJoinError(WebSocketMessage.UploadJoinErrorReason.Disallowed)
+                  )
+                )
+          }
+        case None =>
+          ZIO.succeed(
+            Payload.errorReply(
+              LiveResponse.UploadJoinError(WebSocketMessage.UploadJoinErrorReason.InvalidToken)
+            )
+          )
+    }
+
+  def uploadChunk(uploadTopic: String, bytes: Chunk[Byte]): Task[Payload.Reply] =
+    uploadOwners.get.flatMap { owners =>
+      owners.get(uploadTopic) match
+        case Some(ownerId) =>
+          sockets.get.flatMap { socketMap =>
+            socketMap.get(ownerId) match
+              case Some(socket) => socket.uploadChunk(uploadTopic, bytes)
+              case None         =>
+                ZIO.succeed(
+                  Payload.errorReply(
+                    LiveResponse.UploadChunkError(
+                      WebSocketMessage.UploadChunkErrorReason.Disallowed
+                    )
+                  )
+                )
+          }
+        case None =>
+          ZIO.succeed(
+            Payload.errorReply(
+              LiveResponse.UploadChunkError(WebSocketMessage.UploadChunkErrorReason.Disallowed)
+            )
+          )
+    }
+
 end LiveChannel
 
 object LiveChannel:
   def make(): UIO[LiveChannel] =
-    SubscriptionRef.make(Map.empty).map(new LiveChannel(_))
+    for
+      sockets      <- SubscriptionRef.make(Map.empty[String, Socket[?, ?]])
+      uploadOwners <- Ref.make(Map.empty[String, String])
+    yield new LiveChannel(sockets, uploadOwners)
 
 class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRoute[?, ?, ?]]):
 
@@ -163,6 +241,16 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
                               case Some(r) => channel.send(Read(WebSocketFrame.text(r.toJson)))
                               case None    => ZIO.unit
                      yield ()
+                   case Read(WebSocketFrame.Binary(bytes)) =>
+                     for
+                       message <- ZIO
+                                    .fromEither(WebSocketMessage.decodeBinaryPush(bytes))
+                                    .mapError(new IllegalArgumentException(_))
+                       reply <- handleMessage(message, liveChannel)
+                       _     <- reply match
+                              case Some(r) => channel.send(Read(WebSocketFrame.text(r.toJson)))
+                              case None    => ZIO.unit
+                     yield ()
                    case _ => ZIO.unit
                  }
         yield ()).tapErrorCause(ZIO.logErrorCause(_))
@@ -207,15 +295,102 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
               .getOrElse(ZIO.succeed(None))
           )
       case Payload.Leave =>
-        liveChannel
-          .leave(message.topic)
-          .as(Some(message.okReply))
+        if message.topic.startsWith("lv:") && message.topic.length > 3 then
+          liveChannel
+            .leave(message.topic)
+            .as(Some(message.okReply))
+        else
+          ZIO
+            .logDebug(s"Ignoring leave for non-liveview topic ${message.topic}")
+            .as(Some(message.okReply))
       case event: Payload.Event =>
         liveChannel
           .event(message.topic, event, message.meta)
           .map(_ => None)
+      case allowUpload: Payload.AllowUpload =>
+        liveChannel
+          .allowUpload(message.topic, allowUpload).map(reply =>
+            Some(
+              WebSocketMessage(
+                message.joinRef,
+                message.messageRef,
+                message.topic,
+                "phx_reply",
+                reply
+              )
+            )
+          )
+      case progress: Payload.Progress =>
+        liveChannel
+          .progressUpload(message.topic, progress).map(reply =>
+            Some(
+              WebSocketMessage(
+                message.joinRef,
+                message.messageRef,
+                message.topic,
+                "phx_reply",
+                reply
+              )
+            )
+          )
       case Payload.LivePatch(url) =>
         liveChannel.livePatch(message.topic, url, message.meta).as(Some(message.okReply))
+      case Payload.UploadJoin(token) =>
+        if message.topic.startsWith("lvu:") then
+          liveChannel
+            .uploadJoin(message.topic, token).map(reply =>
+              Some(
+                WebSocketMessage(
+                  message.joinRef,
+                  message.messageRef,
+                  message.topic,
+                  "phx_reply",
+                  reply
+                )
+              )
+            )
+        else
+          ZIO.succeed(
+            Some(
+              WebSocketMessage(
+                message.joinRef,
+                message.messageRef,
+                message.topic,
+                "phx_reply",
+                Payload.errorReply(
+                  LiveResponse.UploadJoinError(WebSocketMessage.UploadJoinErrorReason.Disallowed)
+                )
+              )
+            )
+          )
+      case Payload.UploadChunk(bytes) =>
+        if message.topic.startsWith("lvu:") then
+          liveChannel
+            .uploadChunk(message.topic, bytes).map(reply =>
+              Some(
+                WebSocketMessage(
+                  message.joinRef,
+                  message.messageRef,
+                  message.topic,
+                  "phx_reply",
+                  reply
+                )
+              )
+            )
+        else
+          ZIO.succeed(
+            Some(
+              WebSocketMessage(
+                message.joinRef,
+                message.messageRef,
+                message.topic,
+                "phx_reply",
+                Payload.errorReply(
+                  LiveResponse.UploadChunkError(WebSocketMessage.UploadChunkErrorReason.Disallowed)
+                )
+              )
+            )
+          )
       case Payload.LiveNavigation(_, _) => ZIO.die(new IllegalArgumentException())
       case Payload.Error                => ZIO.die(new IllegalArgumentException())
       case Payload.Reply(_, _)          => ZIO.die(new IllegalArgumentException())

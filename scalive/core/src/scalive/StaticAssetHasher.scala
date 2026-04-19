@@ -12,7 +12,7 @@ object StaticAssetHasher:
   private val defaultRoot: Path = Paths.get("public")
 
   private def key(root: Path, rel: String): String =
-    s"${root.toAbsolutePath.normalize().toString}::${rel}"
+    s"${root.toAbsolutePath.normalize().toString}::$rel"
 
   private def hex(bytes: Array[Byte]): String =
     bytes.map(b => f"$b%02x").mkString
@@ -27,10 +27,10 @@ object StaticAssetHasher:
       if !Files.exists(path) || !Files.isRegularFile(path) then
         throw new IllegalArgumentException(s"Static asset not found: $path")
 
-      val attrs      = Files.readAttributes(path, classOf[java.nio.file.attribute.BasicFileAttributes])
-      val lastMod    = attrs.lastModifiedTime().toMillis
-      val size       = attrs.size()
-      val cached     = Option(cache.get(keyStr))
+      val attrs   = Files.readAttributes(path, classOf[java.nio.file.attribute.BasicFileAttributes])
+      val lastMod = attrs.lastModifiedTime().toMillis
+      val size    = attrs.size()
+      val cached  = Option(cache.get(keyStr))
       val cachedHash = cached.collect { case (h, lm, sz) if lm == lastMod && sz == size => h }
 
       val hashedName = cachedHash.getOrElse {

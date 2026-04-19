@@ -1,6 +1,9 @@
 package scalive.defs.components
 
+import scala.annotation.targetName
+
 import scalive.*
+import scalive.codecs.BooleanAsAttrPresenceEncoder
 
 trait Components:
   def focusWrap(id: String, mods: Mod*)(content: Mod*): HtmlElement =
@@ -14,3 +17,42 @@ trait Components:
         content ++
         Vector(Mod.Content.Tag(endSentinel))
     )
+
+  object upload:
+    private val dataPhxAutoUpload = htmlAttr("data-phx-auto-upload", BooleanAsAttrPresenceEncoder)
+
+    def liveFileInput(upload: Dyn[LiveUpload], mods: Mod*): HtmlElement =
+      input(
+        idAttr                      := upload(_.ref),
+        typ                         := "file",
+        nameAttr                    := upload(_.name),
+        accept                      := upload(_.accept.toHtmlValue),
+        dataAttr("phx-hook")        := "Phoenix.LiveFileUpload",
+        dataAttr("phx-update")      := "ignore",
+        dataAttr("phx-upload-ref")  := upload(_.ref),
+        dataAttr("phx-active-refs") := upload(u =>
+          u.entries.filterNot(_.cancelled).map(_.ref).mkString(",")
+        ),
+        dataAttr("phx-done-refs") := upload(u => u.entries.filter(_.done).map(_.ref).mkString(",")),
+        dataAttr("phx-preflighted-refs") := upload(u =>
+          u.entries.filter(entry => entry.preflighted || entry.done).map(_.ref).mkString(",")
+        ),
+        dataPhxAutoUpload := upload(_.autoUpload),
+        multiple          := upload(_.maxEntries > 1),
+        mods
+      )
+
+    def errors(upload: LiveUpload): List[LiveUploadError] = upload.errors
+
+    def errors(upload: LiveUpload, entry: LiveUploadEntry): List[LiveUploadError] =
+      entry.errors
+
+    @targetName("errorsDynUpload")
+    def errors(upload: Dyn[LiveUpload]): Dyn[List[LiveUploadError]] =
+      upload(_.errors)
+
+    @targetName("errorsDynEntry")
+    def errors(entry: Dyn[LiveUploadEntry]): Dyn[List[LiveUploadError]] =
+      entry(_.errors)
+  end upload
+end Components

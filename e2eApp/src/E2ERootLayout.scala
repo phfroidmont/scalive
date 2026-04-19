@@ -15,8 +15,8 @@ object E2ERootLayout:
       runtime.unsafe.run(StaticAssetHasher.hashedPath(rel, resourceRoot)).getOrThrowFiberFailure()
     }
 
-  private val hashedJs  = s"/static/${hashOrDie("app.js")}"
-  private val hashedCss = s"/static/${hashOrDie("app.css")}"
+  private val hashedJs       = s"/static/${hashOrDie("app.js")}"
+  private val hashedCss      = s"/static/${hashOrDie("app.css")}"
   private val hashedDaisyCss = s"/static/${hashOrDie("daisy.css")}"
 
   val daisyCssHref: String = hashedDaisyCss

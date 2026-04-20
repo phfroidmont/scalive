@@ -2,43 +2,47 @@ package scalive
 
 import java.net.URI
 
-import zio.*
 import zio.json.ast.Json
 import zio.stream.*
 
 trait LiveView[Msg, Model]:
-  def init: Model | RIO[LiveContext, Model]
-  def update(model: Model): Msg => Model | RIO[LiveContext, Model]
+  import LiveView.*
+
+  def init: LiveIO[InitContext, Model]
+  def update(model: Model): Msg => LiveIO[UpdateContext, Model]
   def view(model: Dyn[Model]): HtmlElement
-  def subscriptions(model: Model): ZStream[LiveContext, Nothing, Msg]
+  def subscriptions(model: Model): ZStream[SubscriptionsContext, Nothing, Msg]
+
   def handleParams(model: Model, _params: Map[String, String], _uri: URI)
-    : ParamsResult[Model] | RIO[LiveContext, ParamsResult[Model]] =
-    ParamsResult.cont(model)
-  def handleHook(model: Model, _event: String, _value: Json)
-    : HookResult[Model] | RIO[LiveContext, HookResult[Model]] =
-    HookResult.cont(model)
+    : LiveIO[ParamsContext, Model] =
+    val _ = (_params, _uri)
+    model
 
-enum ParamsResult[Model]:
-  case Continue(model: Model)
-  case PushPatch(model: Model, to: String)
-  case ReplacePatch(model: Model, to: String)
+  def interceptEvent(model: Model, _event: String, _value: Json)
+    : LiveIO[InterceptContext, InterceptResult[Model]] =
+    val _ = (_event, _value)
+    InterceptResult.cont(model)
 
-object ParamsResult:
-  def cont[Model](model: Model): ParamsResult[Model] =
-    ParamsResult.Continue(model)
+object LiveView:
+  type BaseContext       = LiveContext.BaseCapabilities
+  type NavigationContext = LiveContext.NavigationCapabilities
 
-  def pushPatch[Model](model: Model, to: String): ParamsResult[Model] =
-    ParamsResult.PushPatch(model, to)
+  type InitContext          = BaseContext
+  type SubscriptionsContext = BaseContext
+  type UpdateContext        = NavigationContext
+  type ParamsContext        = NavigationContext
+  type InterceptContext     = NavigationContext
 
-  def replacePatch[Model](model: Model, to: String): ParamsResult[Model] =
-    ParamsResult.ReplacePatch(model, to)
-
-enum HookResult[Model]:
+enum InterceptResult[Model]:
   case Continue(model: Model)
   case Halt(model: Model, reply: Option[Json])
 
-object HookResult:
-  def cont[Model](model: Model): HookResult[Model]                   = HookResult.Continue(model)
-  def halt[Model](model: Model): HookResult[Model]                   = HookResult.Halt(model, None)
-  def haltReply[Model](model: Model, value: Json): HookResult[Model] =
-    HookResult.Halt(model, Some(value))
+object InterceptResult:
+  def cont[Model](model: Model): InterceptResult[Model] =
+    InterceptResult.Continue(model)
+
+  def halt[Model](model: Model): InterceptResult[Model] =
+    InterceptResult.Halt(model, None)
+
+  def haltReply[Model](model: Model, value: Json): InterceptResult[Model] =
+    InterceptResult.Halt(model, Some(value))

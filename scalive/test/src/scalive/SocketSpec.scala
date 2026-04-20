@@ -18,12 +18,12 @@ object SocketSpec extends ZIOSpecDefault:
 
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
 
-  private def makeLiveView(serverStream: ZStream[LiveContext, Nothing, Msg]) =
+  private def makeLiveView(serverStream: ZStream[LiveView.SubscriptionsContext, Nothing, Msg]) =
     new LiveView[Msg, Model]:
-      def init: Model | RIO[LiveContext, Model] =
+      def init =
         LiveContext.staticChanged.map(flag => Model(staticFlag = Some(flag)))
 
-      def update(model: Model): Msg => Model | RIO[LiveContext, Model] = {
+      def update(model: Model) = {
         case Msg.FromClient => ZIO.succeed(model.copy(counter = model.counter + 1))
         case Msg.FromServer => ZIO.succeed(model.copy(counter = model.counter + 10))
       }
@@ -35,7 +35,7 @@ object SocketSpec extends ZIOSpecDefault:
           model(_.counter.toString)
         )
 
-      def subscriptions(model: Model): ZStream[LiveContext, Nothing, Msg] = serverStream
+      def subscriptions(model: Model) = serverStream
 
   private def makeSocket(ctx: LiveContext, lv: LiveView[Msg, Model]) =
     Socket.start("id", "token", lv, ctx, meta)

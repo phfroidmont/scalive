@@ -95,6 +95,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   outHub: Hub[(Payload, WebSocketMessage.Meta)],
   ref: Ref[(Var[Model], HtmlElement)],
   lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],
+  navigationRef: Ref[Option[LiveNavigationCommand]],
   uploadRef: Ref[UploadRuntimeState],
   patchRedirectCountRef: Ref[Int],
   initDiff: Diff)

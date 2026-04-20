@@ -6,28 +6,50 @@ import scalive.upload.*
 
 final case class LiveContext(
   staticChanged: Boolean,
-  uploads: UploadRuntime = UploadRuntime.Disabled)
+  uploads: UploadRuntime = UploadRuntime.Disabled,
+  navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled)
+    extends LiveContext.NavigationCapabilities
 
 object LiveContext:
-  def staticChanged: URIO[LiveContext, Boolean] = ZIO.serviceWith[LiveContext](_.staticChanged)
+  trait HasStaticChanged:
+    def staticChanged: Boolean
 
-  def allowUpload(name: String, options: LiveUploadOptions): RIO[LiveContext, LiveUpload] =
-    ZIO.serviceWithZIO[LiveContext](_.uploads.allow(name, options))
+  trait HasUploads:
+    def uploads: UploadRuntime
 
-  def disallowUpload(name: String): RIO[LiveContext, Unit] =
-    ZIO.serviceWithZIO[LiveContext](_.uploads.disallow(name))
+  trait HasNavigation:
+    private[scalive] def navigation: LiveNavigationRuntime
 
-  def upload(name: String): URIO[LiveContext, Option[LiveUpload]] =
-    ZIO.serviceWithZIO[LiveContext](_.uploads.get(name))
+  trait BaseCapabilities       extends HasStaticChanged with HasUploads
+  trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
-  def cancelUpload(name: String, entryRef: String): RIO[LiveContext, Unit] =
-    ZIO.serviceWithZIO[LiveContext](_.uploads.cancel(name, entryRef))
+  def staticChanged: URIO[HasStaticChanged, Boolean] =
+    ZIO.serviceWith[HasStaticChanged](_.staticChanged)
 
-  def consumeUploadedEntries(name: String): URIO[LiveContext, List[LiveUploadedEntry]] =
-    ZIO.serviceWithZIO[LiveContext](_.uploads.consumeCompleted(name))
+  def allowUpload(name: String, options: LiveUploadOptions): RIO[HasUploads, LiveUpload] =
+    ZIO.serviceWithZIO[HasUploads](_.uploads.allow(name, options))
 
-  def consumeUploadedEntry(entryRef: String): URIO[LiveContext, Option[LiveUploadedEntry]] =
-    ZIO.serviceWithZIO[LiveContext](_.uploads.consume(entryRef))
+  def disallowUpload(name: String): RIO[HasUploads, Unit] =
+    ZIO.serviceWithZIO[HasUploads](_.uploads.disallow(name))
 
-  def dropUploadedEntry(entryRef: String): URIO[LiveContext, Unit] =
-    ZIO.serviceWithZIO[LiveContext](_.uploads.drop(entryRef))
+  def upload(name: String): URIO[HasUploads, Option[LiveUpload]] =
+    ZIO.serviceWithZIO[HasUploads](_.uploads.get(name))
+
+  def cancelUpload(name: String, entryRef: String): RIO[HasUploads, Unit] =
+    ZIO.serviceWithZIO[HasUploads](_.uploads.cancel(name, entryRef))
+
+  def consumeUploadedEntries(name: String): URIO[HasUploads, List[LiveUploadedEntry]] =
+    ZIO.serviceWithZIO[HasUploads](_.uploads.consumeCompleted(name))
+
+  def consumeUploadedEntry(entryRef: String): URIO[HasUploads, Option[LiveUploadedEntry]] =
+    ZIO.serviceWithZIO[HasUploads](_.uploads.consume(entryRef))
+
+  def dropUploadedEntry(entryRef: String): URIO[HasUploads, Unit] =
+    ZIO.serviceWithZIO[HasUploads](_.uploads.drop(entryRef))
+
+  def pushPatch(to: String): RIO[HasNavigation, Unit] =
+    ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.PushPatch(to)))
+
+  def replacePatch(to: String): RIO[HasNavigation, Unit] =
+    ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.ReplacePatch(to)))
+end LiveContext

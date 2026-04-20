@@ -32,7 +32,7 @@ final case class LiveRoute[A, Msg, Model](
       val token = Token.sign("secret", id, sessionName)
       val ctx   = LiveContext(staticChanged = false)
       for
-        initModel <- normalize(lv.init, ctx)
+        initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(ctx))
         el = lv.view(Var(initModel))
         _  = el.syncAll()
         _  = el.allocatePendingBindingIds()

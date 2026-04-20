@@ -49,9 +49,29 @@ private[scalive] object SocketOutbound:
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     for
-      (modelVar, el) <- state.ref.get
-      updatedModel   <- normalize(state.lv.update(modelVar.currentValue)(msg), state.ctx)
-      diff <- SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, updatedModel, state)
-      _    <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+      (modelVar, el)             <- state.ref.get
+      (updatedModel, navigation) <-
+        SocketModelRuntime.captureNavigation(state)(
+          LiveIO
+            .toZIO(state.lv.update(modelVar.currentValue)(msg))
+            .provide(ZLayer.succeed(state.ctx))
+        )
+      _ <- navigation match
+             case Some(command) =>
+               state.patchRedirectCountRef.set(0) *>
+                 SocketInbound.handleNavigationCommand(
+                   modelVar,
+                   el,
+                   updatedModel,
+                   command,
+                   meta,
+                   state
+                 )
+             case None =>
+               for
+                 diff <-
+                   SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, updatedModel, state)
+                 _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+               yield ()
     yield ()
 end SocketOutbound

@@ -98,7 +98,7 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
 
   def subscriptions(model: Model) = ZStream.empty
 
-  override def handleHook(model: Model, event: String, value: Json) =
+  override def interceptEvent(model: Model, event: String, value: Json) =
     E2ESandboxEval.handle(model, event, value)
 
   private def normalizeTab(tab: String): String =

@@ -58,11 +58,9 @@ class NavigationBLiveView(withContainer: Boolean) extends LiveView[Msg, Model]:
           case same if same == path => None
           case id                   => Some(id)
       else None
-    ParamsResult.cont(
-      model.copy(
-        withContainer = withContainer,
-        selectedItem = selectedItem
-      )
+    model.copy(
+      withContainer = withContainer,
+      selectedItem = selectedItem
     )
 
   def view(model: Dyn[Model]) =
@@ -124,8 +122,8 @@ class RedirectLoopLiveView(loop: Boolean) extends LiveView[Msg, Model]:
       val path  = Option(uri.getPath).getOrElse("")
       val query = Option(uri.getRawQuery).getOrElse("")
       val to    = if query.isEmpty then path else s"$path?$query"
-      ParamsResult.pushPatch(model, to)
-    else ParamsResult.cont(model)
+      LiveContext.pushPatch(to).as(model)
+    else model
 
   def view(model: Dyn[Model]) =
     NavigationLayout(

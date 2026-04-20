@@ -477,22 +477,39 @@ private[scalive] object SocketUploadProtocol:
       reply          <- el.findBinding(eventRef) match
                  case Some(binding) =>
                    for
-                     params = progressPayloadToParams(payload)
-                     updatedModel <-
-                       normalize(
-                         state.lv.update(modelVar.currentValue)(binding(params)),
-                         state.ctx
+                     params                     <- ZIO.succeed(progressPayloadToParams(payload))
+                     (updatedModel, navigation) <-
+                       SocketModelRuntime.captureNavigation(state)(
+                         LiveIO
+                           .toZIO(state.lv.update(modelVar.currentValue)(binding(params)))
+                           .provide(ZLayer.succeed(state.ctx))
                        )
-                     diff <-
-                       SocketModelRuntime.updateModelAndSubscriptions(
-                         modelVar,
-                         el,
-                         updatedModel,
-                         state
-                       )
-                   yield
-                     if diff.isEmpty then Payload.okReply(LiveResponse.Empty)
-                     else Payload.okReply(LiveResponse.Diff(diff))
+                     reply <- navigation match
+                                case Some(command) =>
+                                  state.patchRedirectCountRef.set(0) *>
+                                    SocketInbound
+                                      .handleNavigationCommand(
+                                        modelVar,
+                                        el,
+                                        updatedModel,
+                                        command,
+                                        state.meta,
+                                        state
+                                      )
+                                      .as(Payload.okReply(LiveResponse.Empty))
+                                case None =>
+                                  SocketModelRuntime
+                                    .updateModelAndSubscriptions(
+                                      modelVar,
+                                      el,
+                                      updatedModel,
+                                      state
+                                    )
+                                    .map(diff =>
+                                      if diff.isEmpty then Payload.okReply(LiveResponse.Empty)
+                                      else Payload.okReply(LiveResponse.Diff(diff))
+                                    )
+                   yield reply
                  case None =>
                    ZIO.logWarning(
                      s"upload_progress binding missing for ref=$eventRef"

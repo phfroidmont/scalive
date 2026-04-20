@@ -36,10 +36,16 @@ private[scalive] object SocketInbound:
                    key -> values.lastOption.getOrElse("")
                  }
                  .toMap
-      result <-
-        normalize(state.lv.handleParams(modelVar.currentValue, params, parsedUri), state.ctx)
-      _ <- result match
-             case ParamsResult.Continue(model) =>
+      (model, navigation) <-
+        SocketModelRuntime.captureNavigation(state)(
+          LiveIO
+            .toZIO(state.lv.handleParams(modelVar.currentValue, params, parsedUri))
+            .provide(ZLayer.succeed(state.ctx))
+        )
+      _ <- navigation match
+             case Some(command) =>
+               handleNavigationCommand(modelVar, el, model, command, meta, state)
+             case None =>
                for
                  _    <- state.patchRedirectCountRef.set(0)
                  diff <- SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, model, state)
@@ -51,26 +57,6 @@ private[scalive] object SocketInbound:
                         )
                       )
                yield ()
-             case ParamsResult.PushPatch(model, to) =>
-               handleLivePatchRedirect(
-                 modelVar,
-                 el,
-                 model,
-                 to,
-                 LivePatchKind.Push,
-                 meta,
-                 state
-               )
-             case ParamsResult.ReplacePatch(model, to) =>
-               handleLivePatchRedirect(
-                 modelVar,
-                 el,
-                 model,
-                 to,
-                 LivePatchKind.Replace,
-                 meta,
-                 state
-               )
     yield ()
 
   private def handleClientEvent[Msg, Model](
@@ -79,28 +65,50 @@ private[scalive] object SocketInbound:
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     for
-      _              <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)
-      (modelVar, el) <- state.ref.get
-      hookResult     <- normalize(
-                      state.lv.handleHook(modelVar.currentValue, event.event, event.value),
-                      state.ctx
-                    )
-      _ <- hookResult match
-             case HookResult.Halt(hookModel, reply) =>
-               SocketModelRuntime.applyHookHalt(modelVar, el, hookModel, reply, meta, state)
-             case HookResult.Continue(hookModel) =>
-               SocketModelRuntime.applyBoundEvent(modelVar, el, hookModel, event, meta, state)
+      _                             <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)
+      (modelVar, el)                <- state.ref.get
+      (interceptResult, navigation) <-
+        SocketModelRuntime.captureNavigation(state)(
+          LiveIO
+            .toZIO(state.lv.interceptEvent(modelVar.currentValue, event.event, event.value))
+            .provide(ZLayer.succeed(state.ctx))
+        )
+      _ <- interceptResult match
+             case InterceptResult.Halt(interceptModel, reply) =>
+               SocketModelRuntime.applyInterceptHalt(
+                 modelVar,
+                 el,
+                 interceptModel,
+                 reply,
+                 navigation,
+                 meta,
+                 state
+               )
+             case InterceptResult.Continue(interceptModel) =>
+               SocketModelRuntime.applyBoundEvent(
+                 modelVar,
+                 el,
+                 interceptModel,
+                 event,
+                 navigation,
+                 meta,
+                 state
+               )
     yield ()
 
-  private def handleLivePatchRedirect[Msg, Model](
+  def handleNavigationCommand[Msg, Model](
     modelVar: Var[Model],
     el: HtmlElement,
     model: Model,
-    to: String,
-    kind: LivePatchKind,
+    command: LiveNavigationCommand,
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
+    val (to, kind) =
+      command match
+        case LiveNavigationCommand.PushPatch(value)    => value -> LivePatchKind.Push
+        case LiveNavigationCommand.ReplacePatch(value) => value -> LivePatchKind.Replace
+
     for
       redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
       _             <- SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, model, state)

@@ -16,7 +16,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
 
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 
-  def init: RIO[LiveContext, Model] =
+  def init =
     LiveContext
       .allowUpload(UploadName, uploadOptions)
       .map(upload => Model(upload = upload))
@@ -99,7 +99,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
 
   def subscriptions(model: Model) = ZStream.empty
 
-  private def refreshUpload(model: Model): RIO[LiveContext, Model] =
+  private def refreshUpload(model: Model): RIO[LiveContext.HasUploads, Model] =
     LiveContext.upload(UploadName).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
@@ -129,7 +129,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
       errors = Nil
     )
 
-  private def saveCompletedEntries(model: Model): RIO[LiveContext, Model] =
+  private def saveCompletedEntries(model: Model): RIO[LiveContext.HasUploads, Model] =
     for
       consumed  <- LiveContext.consumeUploadedEntries(UploadName)
       persisted <- ZIO.foreach(consumed) { entry =>

@@ -37,36 +37,37 @@ object SocketUploadSpec extends ZIOSpecDefault:
     snapshots: Queue[Option[LiveUpload]]
   ) =
     new LiveView[Unit, Unit]:
-      def init: Unit | RIO[LiveContext, Unit] =
+      def init =
         for
           upload <- LiveContext.allowUpload(uploadName, options)
           _      <- allowedUploadPromise.succeed(upload).ignore
         yield ()
 
-      def update(model: Unit): Unit => Unit | RIO[LiveContext, Unit] = _ => ZIO.succeed(model)
+      def update(model: Unit) = _ => model
 
       def view(model: Dyn[Unit]): HtmlElement =
         div("upload")
 
-      def subscriptions(model: Unit): ZStream[LiveContext, Nothing, Unit] = ZStream.empty
+      def subscriptions(model: Unit) = ZStream.empty
 
-      override def handleHook(model: Unit, event: String, value: Json)
-        : HookResult[Unit] | RIO[LiveContext, HookResult[Unit]] =
+      override def interceptEvent(model: Unit, event: String, value: Json) =
         event match
           case "capture" =>
-            LiveContext.upload(uploadName).flatMap(upload => snapshots.offer(upload)).as(HookResult.halt(model))
+            LiveContext.upload(uploadName)
+              .flatMap(upload => snapshots.offer(upload))
+              .as(InterceptResult.halt(model))
           case "cancel"  =>
             entryRefFromHookValue(value) match
               case Some(entryRef) =>
                 (LiveContext.cancelUpload(uploadName, entryRef) *> LiveContext.upload(uploadName))
                   .flatMap(upload => snapshots.offer(upload))
-                  .as(HookResult.halt(model))
+                  .as(InterceptResult.halt(model))
               case None           =>
                 LiveContext.upload(uploadName)
                   .flatMap(upload => snapshots.offer(upload))
-                  .as(HookResult.halt(model))
+                  .as(InterceptResult.halt(model))
           case _         =>
-            ZIO.succeed(HookResult.cont(model))
+            ZIO.succeed(InterceptResult.cont(model))
 
   private def entryRefFromHookValue(value: Json): Option[String] =
     value match

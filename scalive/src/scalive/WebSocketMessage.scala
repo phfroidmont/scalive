@@ -254,7 +254,7 @@ object WebSocketMessage:
     case Empty
     case InitDiff(rendered: scalive.Diff)
     case Diff(diff: scalive.Diff)
-    case HookReply(reply: Json, diff: Option[scalive.Diff] = None)
+    case InterceptReply(reply: Json, diff: Option[scalive.Diff] = None)
     case JoinError(reason: JoinErrorReason)
     case UploadJoinError(reason: UploadJoinErrorReason)
     case UploadChunkError(reason: UploadChunkErrorReason, limit: Option[Long] = None)
@@ -277,7 +277,7 @@ object WebSocketMessage:
           Json.Obj(
             "diff" -> diff.toJsonAST.getOrElse(throw new IllegalArgumentException())
           )
-        case HookReply(reply, diff) =>
+        case InterceptReply(reply, diff) =>
           val mergedDiff =
             diff
               .flatMap(_.toJsonAST.toOption)

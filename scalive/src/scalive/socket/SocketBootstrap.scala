@@ -13,11 +13,15 @@ private[scalive] object SocketBootstrap:
     meta: WebSocketMessage.Meta
   ): Task[RuntimeState[Msg, Model]] =
     for
-      inbox     <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
-      outHub    <- Hub.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
-      uploadRef <- Ref.make(UploadRuntimeState.empty)
-      runtimeCtx = ctx.copy(uploads = new SocketUploadRuntime(uploadRef))
-      initModel <- normalize(lv.init, runtimeCtx)
+      inbox         <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
+      outHub        <- Hub.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
+      uploadRef     <- Ref.make(UploadRuntimeState.empty)
+      navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
+      runtimeCtx = ctx.copy(
+                     uploads = new SocketUploadRuntime(uploadRef),
+                     navigation = new SocketNavigationRuntime(navigationRef)
+                   )
+      initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(runtimeCtx))
       modelVar = Var(initModel)
       el       = lv.view(modelVar)
       ref <- Ref.make((modelVar, el))
@@ -33,6 +37,7 @@ private[scalive] object SocketBootstrap:
       outHub = outHub,
       ref = ref,
       lvStreamRef = lvStreamRef,
+      navigationRef = navigationRef,
       uploadRef = uploadRef,
       patchRedirectCountRef = patchRedirectCountRef,
       initDiff = initDiff

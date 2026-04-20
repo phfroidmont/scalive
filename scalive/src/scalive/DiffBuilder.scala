@@ -44,7 +44,7 @@ object DiffBuilder:
       case Content.DynElementColl(dyn) => ???
       case Content.DynSplit(splitVar)  =>
         splitVar.render(trackUpdates) match
-          case Some((entries, keysCount, includeStatics)) =>
+          case Some((entries, keysCount, includeStatics, streamPatch)) =>
             val static =
               if !trackUpdates || includeStatics then
                 entries.collectFirst { case (_, _, el) => el.static }.getOrElse(List.empty)
@@ -65,7 +65,31 @@ object DiffBuilder:
                         previousIndex
                       )
                   },
-                  count = keysCount
+                  count = keysCount,
+                  stream = streamPatch
+                )
+              )
+            )
+          case None => List(None)
+      case Content.DynStream(streamVar) =>
+        streamVar.render(trackUpdates) match
+          case Some((entries, keysCount, includeStatics, streamPatch)) =>
+            val static =
+              if !trackUpdates || includeStatics then
+                entries.collectFirst { case (_, _, el) => el.static }.getOrElse(List.empty)
+              else List.empty
+            List(
+              Some(
+                Diff.Comprehension(
+                  static = static,
+                  entries = entries.map { case (index, _, value) =>
+                    Diff.Dynamic(
+                      index,
+                      build(Seq.empty, value.dynamicMods, trackUpdates = false)
+                    )
+                  },
+                  count = keysCount,
+                  stream = streamPatch
                 )
               )
             )

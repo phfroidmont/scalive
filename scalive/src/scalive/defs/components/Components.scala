@@ -44,6 +44,7 @@ trait Components:
   def uploadErrors(upload: LiveUpload): List[LiveUploadError] = upload.errors
 
   def uploadErrors(upload: LiveUpload, entry: LiveUploadEntry): List[LiveUploadError] =
+    val _ = upload
     entry.errors
 
   @targetName("uploadErrorsDynUpload")

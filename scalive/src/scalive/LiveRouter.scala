@@ -18,6 +18,8 @@ import scalive.WebSocketMessage.JoinErrorReason
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
+import scalive.socket.SocketStreamRuntime
+import scalive.socket.StreamRuntimeState
 
 final case class LiveRoute[A, Msg, Model](
   path: PathCodec[A],
@@ -30,8 +32,12 @@ final case class LiveRoute[A, Msg, Model](
       val id: String =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val token = Token.sign("secret", id, sessionName)
-      val ctx   = LiveContext(staticChanged = false)
       for
+        streamRef <- Ref.make(StreamRuntimeState.empty)
+        ctx = LiveContext(
+                staticChanged = false,
+                streams = new SocketStreamRuntime(streamRef)
+              )
         initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(ctx))
         el = lv.view(Var(initModel))
         _  = el.syncAll()

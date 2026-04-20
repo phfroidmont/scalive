@@ -11,7 +11,8 @@ enum Diff:
   case Comprehension(
     static: Seq[String] = Seq.empty,
     entries: Seq[Diff.Dynamic | Diff.IndexChange] = Seq.empty,
-    count: Int = 0)
+    count: Int = 0,
+    stream: Option[Diff.Stream] = None)
   case Value(value: String)
   case Dynamic(index: Int, diff: Diff)
   case Deleted
@@ -29,6 +30,18 @@ object Diff:
 
   final case class IndexChange(index: Int, previousIndex: Int)
 
+  final case class StreamInsert(
+    domId: String,
+    at: Int,
+    limit: Option[Int],
+    updateOnly: Option[Boolean])
+
+  final case class Stream(
+    ref: String,
+    inserts: Seq[StreamInsert],
+    deleteIds: Seq[String],
+    reset: Boolean)
+
   private def toJson(diff: Diff): Json =
     diff match
       case Diff.Tag(static, dynamic) =>
@@ -40,23 +53,48 @@ object Diff:
               dynamic.map(d => d.index.toString -> toJson(d.diff))
             )
         )
-      case Diff.Comprehension(static, entries, count) =>
+      case Diff.Comprehension(static, entries, count, stream) =>
+        val keyedEntries =
+          Json
+            .Obj(
+              entries.map {
+                case Diff.Dynamic(index, diff) =>
+                  index.toString -> toJson(diff)
+                case Diff.IndexChange(index, previousIndex) =>
+                  index.toString -> Json.Num(previousIndex)
+              }*
+            ).add("kc", Json.Num(count))
+
+        val streamJson =
+          stream.map { streamPatch =>
+            val inserts = streamPatch.inserts.map { insert =>
+              Json.Arr(
+                Json.Str(insert.domId),
+                Json.Num(insert.at),
+                insert.limit.map(value => Json.Num(value)).getOrElse(Json.Null),
+                insert.updateOnly.map(value => Json.Bool(value)).getOrElse(Json.Null)
+              )
+            }
+
+            val base = Chunk(
+              Json.Str(streamPatch.ref),
+              Json.Arr(inserts*),
+              Json.Arr(streamPatch.deleteIds.map(Json.Str(_))*)
+            )
+
+            val withReset =
+              if streamPatch.reset then base.appended(Json.Bool(true))
+              else base
+
+            Json.Arr(withReset*)
+          }
+
         Json.Obj(
           Option
             .when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*))
             .to(Chunk)
-            .appended(
-              "k" ->
-                Json
-                  .Obj(
-                    entries.map {
-                      case Diff.Dynamic(index, diff) =>
-                        index.toString -> toJson(diff)
-                      case Diff.IndexChange(index, previousIndex) =>
-                        index.toString -> Json.Num(previousIndex)
-                    }*
-                  ).add("kc", Json.Num(count))
-            )
+            .appended("k" -> keyedEntries)
+            .appendedAll(streamJson.map(json => "stream" -> json))
         )
       case Diff.Value(value)         => Json.Str(value)
       case Diff.Dynamic(index, diff) =>

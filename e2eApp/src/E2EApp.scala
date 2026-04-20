@@ -72,7 +72,39 @@ object E2EApp extends ZIOAppDefault:
         ),
         LiveRoute(
           Root / "stream",
-          (_, _) => StreamLiveView()
+          (_, req) =>
+            val extraItemWithId = req.url.queryParams.getAll("empty_item").headOption.nonEmpty
+            StreamLiveView(extraItemWithId)
+        ),
+        LiveRoute(
+          Root / "stream" / "reset",
+          (_, req) =>
+            val usePhxRemove = req.url.queryParams.getAll("phx-remove").headOption.nonEmpty
+            StreamResetLiveView(usePhxRemove)
+        ),
+        LiveRoute(
+          Root / "stream" / "reset-lc",
+          (_, _) => StreamResetLCLiveView()
+        ),
+        LiveRoute(
+          Root / "stream" / "limit",
+          (_, _) => StreamLimitLiveView()
+        ),
+        LiveRoute(
+          Root / "stream" / "nested-component-reset",
+          (_, _) => StreamNestedComponentResetLiveView()
+        ),
+        LiveRoute(
+          Root / "stream" / "inside-for",
+          (_, _) => StreamInsideForLiveView()
+        ),
+        LiveRoute(
+          Root / "healthy" / "fruits",
+          (_, _) => HealthyLiveView("fruits")
+        ),
+        LiveRoute(
+          Root / "healthy" / "veggies",
+          (_, _) => HealthyLiveView("veggies")
         ),
         LiveRoute(
           Root / "components",
@@ -88,7 +120,7 @@ object E2EApp extends ZIOAppDefault:
           Root / "upload",
           (_, req) =>
             val autoUpload = req.url.queryParams.getAll("auto_upload").headOption.contains("1")
-            new UploadLiveView(autoUpload)
+            UploadLiveView(autoUpload)
         )
       )
     )

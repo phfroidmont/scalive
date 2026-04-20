@@ -53,5 +53,7 @@ private[scalive] object BindingId:
         dyn.currentValue.iterator.foreach(assignInElement(_, allocator))
       case Mod.Content.DynSplit(splitVar) =>
         splitVar.currentValues.iterator.foreach(assignInElement(_, allocator))
+      case Mod.Content.DynStream(streamVar) =>
+        streamVar.currentValues.iterator.foreach(assignInElement(_, allocator))
       case _ => ()
 end BindingId

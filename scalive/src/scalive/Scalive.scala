@@ -10,6 +10,7 @@ import scalive.defs.tags.HtmlTags
 
 package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with Components:
 
+  export _root_.scalive.streams.api.*
   export _root_.scalive.upload.api.*
 
   lazy val defer            = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)

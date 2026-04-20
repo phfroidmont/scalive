@@ -87,6 +87,29 @@ private[scalive] object UploadRuntimeState:
   val empty: UploadRuntimeState =
     UploadRuntimeState(Map.empty, Map.empty, Map.empty, Map.empty)
 
+final private[scalive] case class StreamInsertState(
+  domId: String,
+  at: Int,
+  item: Any,
+  limit: Option[Int],
+  updateOnly: Option[Boolean])
+
+final private[scalive] case class StreamState(
+  name: String,
+  ref: String,
+  domId: Any => String,
+  inserts: List[StreamInsertState],
+  deleteIds: List[String],
+  reset: Boolean)
+
+final private[scalive] case class StreamRuntimeState(
+  streams: Map[String, StreamState],
+  nextRef: Long)
+
+private[scalive] object StreamRuntimeState:
+  val empty: StreamRuntimeState =
+    StreamRuntimeState(Map.empty, 0L)
+
 final private[scalive] case class RuntimeState[Msg, Model](
   lv: LiveView[Msg, Model],
   ctx: LiveContext,
@@ -97,5 +120,6 @@ final private[scalive] case class RuntimeState[Msg, Model](
   lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],
   navigationRef: Ref[Option[LiveNavigationCommand]],
   uploadRef: Ref[UploadRuntimeState],
+  streamRef: Ref[StreamRuntimeState],
   patchRedirectCountRef: Ref[Int],
   initDiff: Diff)

@@ -30,6 +30,7 @@ object StaticBuilder:
       case Content.DynOptionElement(_) => List(None)
       case Content.DynElementColl(_)   => List(None)
       case Content.DynSplit(_)         => List(None)
+      case Content.DynStream(_)        => List(None)
     }
     val static         = ListBuffer.empty[Option[String]]
     var staticFragment = s"<${el.tag.name}"

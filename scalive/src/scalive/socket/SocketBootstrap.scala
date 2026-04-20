@@ -16,9 +16,11 @@ private[scalive] object SocketBootstrap:
       inbox         <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
       outHub        <- Hub.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
       uploadRef     <- Ref.make(UploadRuntimeState.empty)
+      streamRef     <- Ref.make(StreamRuntimeState.empty)
       navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
       runtimeCtx = ctx.copy(
                      uploads = new SocketUploadRuntime(uploadRef),
+                     streams = new SocketStreamRuntime(streamRef),
                      navigation = new SocketNavigationRuntime(navigationRef)
                    )
       initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(runtimeCtx))
@@ -26,6 +28,7 @@ private[scalive] object SocketBootstrap:
       el       = lv.view(modelVar)
       ref <- Ref.make((modelVar, el))
       initDiff = el.diff(trackUpdates = false)
+      _           <- SocketStreamRuntime.prune(streamRef)
       lvStreamRef <-
         SubscriptionRef.make(lv.subscriptions(initModel).provideLayer(ZLayer.succeed(runtimeCtx)))
       patchRedirectCountRef <- Ref.make(0)
@@ -39,6 +42,7 @@ private[scalive] object SocketBootstrap:
       lvStreamRef = lvStreamRef,
       navigationRef = navigationRef,
       uploadRef = uploadRef,
+      streamRef = streamRef,
       patchRedirectCountRef = patchRedirectCountRef,
       initDiff = initDiff
     )

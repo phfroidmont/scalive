@@ -116,6 +116,7 @@ private[scalive] object SocketModelRuntime:
              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
       diff = el.diff()
+      _ <- SocketStreamRuntime.prune(state.streamRef)
     yield diff
 
   def publishPayload[Msg, Model](

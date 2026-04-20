@@ -48,6 +48,12 @@ extension [T](parent: Dyn[List[T]])
   def splitByIndex(project: (Int, Dyn[T]) => HtmlElement): Mod =
     parent(_.zipWithIndex).splitBy(_._2)((index, v) => project(index, v(_._1)))
 
+extension [T](parent: Dyn[streams.LiveStream[T]])
+  def stream(
+    project: (Dyn[String], Dyn[T]) => HtmlElement
+  ): Mod =
+    Mod.Content.DynStream(new StreamSplitVar(parent, project))
+
 private class Var[T] private (initial: T) extends Dyn[T]:
   private[scalive] var currentValue: T  = initial
   private[scalive] var changed: Boolean = true
@@ -135,7 +141,8 @@ private class SplitVar[I, O, Key](
     (
       changeList: List[(index: Int, previousIndex: Option[Int], value: O)],
       keysCount: Int,
-      includeStatics: Boolean
+      includeStatics: Boolean,
+      stream: Option[Diff.Stream]
     )
   ] =
     if parent.changed || !trackUpdates then
@@ -152,7 +159,8 @@ private class SplitVar[I, O, Key](
                 (index, previousIndex, output)
             }.toList,
           keysCount = memoized.size,
-          includeStatics = nonEmptySyncCount == 1
+          includeStatics = nonEmptySyncCount == 1,
+          stream = None
         )
       )
     else None
@@ -167,3 +175,129 @@ private class SplitVar[I, O, Key](
   private[scalive] def currentValues: Iterable[O] = memoized.values.map(_._2)
 
 end SplitVar
+
+private class StreamSplitVar[I, O](
+  parent: Dyn[streams.LiveStream[I]],
+  project: (Dyn[String], Dyn[I]) => O):
+
+  final private case class Row(
+    domId: String,
+    domIdVar: Var[String],
+    entryVar: Var[I],
+    output: O)
+
+  private var rows: Vector[Row] = Vector.empty
+
+  private var renderRows: Vector[Row] = Vector.empty
+
+  private var nonEmptySyncCount = 0
+
+  private[scalive] def sync(): Unit =
+    parent.sync()
+    if parent.changed then
+      val liveStream = parent.currentValue
+
+      var nextRows =
+        if liveStream.reset then Vector.empty
+        else rows
+
+      if liveStream.deleteIds.nonEmpty then
+        val deleteIds = liveStream.deleteIds.toSet
+        nextRows = nextRows.filterNot(row => deleteIds.contains(row.domId))
+
+      val insertsByDomId = liveStream.inserts.iterator.map(insert => insert.domId -> insert).toMap
+
+      liveStream.entries.foreach { entry =>
+        nextRows.find(_.domId == entry.domId) match
+          case Some(existingRow) =>
+            existingRow.entryVar.set(entry.value)
+          case None =>
+            val insertMeta = insertsByDomId.get(entry.domId)
+            val updateOnly = insertMeta.flatMap(_.updateOnly).contains(true)
+
+            if !updateOnly then
+              val newRow = createRow(entry.domId, entry.value)
+              nextRows = insertAt(nextRows, newRow, insertMeta.map(_.at).getOrElse(-1))
+      }
+
+      rows = nextRows
+
+      val rowsByDomId = rows.iterator.map(row => row.domId -> row).toMap
+      renderRows = liveStream.entries.map(entry =>
+        rowsByDomId.getOrElse(entry.domId, createRow(entry.domId, entry.value))
+      )
+    end if
+
+    if rows.nonEmpty then nonEmptySyncCount += 1
+  end sync
+
+  private def createRow(domId: String, value: I): Row =
+    val domIdVar = Var(domId)
+    val entryVar = Var(value)
+    Row(
+      domId = domId,
+      domIdVar = domIdVar,
+      entryVar = entryVar,
+      output = project(domIdVar, entryVar)
+    )
+
+  private def insertAt(rows: Vector[Row], row: Row, at: Int): Vector[Row] =
+    if at == -1 || at >= rows.length then rows :+ row
+    else if at <= 0 then row +: rows
+    else rows.patch(at, Seq(row), 0)
+
+  private[scalive] def render(trackUpdates: Boolean): Option[
+    (
+      changeList: List[(index: Int, previousIndex: Option[Int], value: O)],
+      keysCount: Int,
+      includeStatics: Boolean,
+      stream: Option[Diff.Stream]
+    )
+  ] =
+    if parent.changed || !trackUpdates then
+      val liveStream = parent.currentValue
+      val sourceRows =
+        if trackUpdates then renderRows
+        else rows
+      val streamPatch =
+        Option.when(
+          liveStream.inserts.nonEmpty || liveStream.deleteIds.nonEmpty || liveStream.reset
+        )(
+          Diff.Stream(
+            ref = liveStream.ref,
+            inserts = liveStream.inserts.map(insert =>
+              Diff.StreamInsert(
+                domId = insert.domId,
+                at = insert.at,
+                limit = insert.limit,
+                updateOnly = insert.updateOnly
+              )
+            ),
+            deleteIds = liveStream.deleteIds,
+            reset = liveStream.reset
+          )
+        )
+
+      Some(
+        (
+          changeList = sourceRows.zipWithIndex.map { case (row, index) =>
+            (index, None, row.output)
+          }.toList,
+          keysCount = sourceRows.length,
+          includeStatics = nonEmptySyncCount == 1,
+          stream = streamPatch
+        )
+      )
+    else None
+
+  private[scalive] def setUnchanged(): Unit =
+    parent.setUnchanged()
+
+  private[scalive] def callOnEveryChild(f: O => Unit): Unit =
+    rows.foreach(row => f(row.output))
+    renderRows.foreach(row => f(row.output))
+
+  private[scalive] def currentValues: Iterable[O] =
+    rows.map(_.output) ++ renderRows.map(_.output)
+
+end StreamSplitVar

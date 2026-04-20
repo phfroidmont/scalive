@@ -2,11 +2,13 @@ package scalive
 
 import zio.*
 
+import scalive.streams.*
 import scalive.upload.*
 
 final case class LiveContext(
   staticChanged: Boolean,
   uploads: UploadRuntime = UploadRuntime.Disabled,
+  streams: StreamRuntime = StreamRuntime.Disabled,
   navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
@@ -17,10 +19,13 @@ object LiveContext:
   trait HasUploads:
     def uploads: UploadRuntime
 
+  trait HasStreams:
+    def streams: StreamRuntime
+
   trait HasNavigation:
     private[scalive] def navigation: LiveNavigationRuntime
 
-  trait BaseCapabilities       extends HasStaticChanged with HasUploads
+  trait BaseCapabilities       extends HasStaticChanged with HasUploads with HasStreams
   trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =
@@ -46,6 +51,41 @@ object LiveContext:
 
   def dropUploadedEntry(entryRef: String): URIO[HasUploads, Unit] =
     ZIO.serviceWithZIO[HasUploads](_.uploads.drop(entryRef))
+
+  def stream[A](
+    definition: LiveStreamDef[A],
+    items: Iterable[A],
+    at: StreamAt = StreamAt.Last,
+    reset: Boolean = false,
+    limit: Option[StreamLimit] = None
+  ): RIO[HasStreams, LiveStream[A]] =
+    ZIO.serviceWithZIO[HasStreams](_.streams.stream(definition, items, at, reset, limit))
+
+  def streamInsert[A](
+    definition: LiveStreamDef[A],
+    item: A,
+    at: StreamAt = StreamAt.Last,
+    limit: Option[StreamLimit] = None,
+    updateOnly: Boolean = false
+  ): RIO[HasStreams, LiveStream[A]] =
+    ZIO.serviceWithZIO[HasStreams](_.streams.insert(definition, item, at, limit, updateOnly))
+
+  def streamDelete[A](
+    definition: LiveStreamDef[A],
+    item: A
+  ): RIO[HasStreams, LiveStream[A]] =
+    ZIO.serviceWithZIO[HasStreams](_.streams.delete(definition, item))
+
+  def streamDeleteByDomId[A](
+    definition: LiveStreamDef[A],
+    domId: String
+  ): RIO[HasStreams, LiveStream[A]] =
+    ZIO.serviceWithZIO[HasStreams](_.streams.deleteByDomId(definition, domId))
+
+  def streamState[A](
+    definition: LiveStreamDef[A]
+  ): URIO[HasStreams, Option[LiveStream[A]]] =
+    ZIO.serviceWithZIO[HasStreams](_.streams.get(definition))
 
   def pushPatch(to: String): RIO[HasNavigation, Unit] =
     ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.PushPatch(to)))

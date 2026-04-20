@@ -121,5 +121,6 @@ final private[scalive] case class RuntimeState[Msg, Model](
   navigationRef: Ref[Option[LiveNavigationCommand]],
   uploadRef: Ref[UploadRuntimeState],
   streamRef: Ref[StreamRuntimeState],
+  clientEventsRef: Ref[Vector[Diff.Event]],
   patchRedirectCountRef: Ref[Int],
   initDiff: Diff)

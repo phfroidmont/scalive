@@ -1,6 +1,7 @@
 package scalive
 
 import zio.*
+import zio.json.*
 
 import scalive.streams.*
 import scalive.upload.*
@@ -9,6 +10,7 @@ final case class LiveContext(
   staticChanged: Boolean,
   uploads: UploadRuntime = UploadRuntime.Disabled,
   streams: StreamRuntime = StreamRuntime.Disabled,
+  clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
   navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
@@ -22,10 +24,17 @@ object LiveContext:
   trait HasStreams:
     def streams: StreamRuntime
 
+  trait HasClientEvents:
+    def clientEvents: ClientEventRuntime
+
   trait HasNavigation:
     private[scalive] def navigation: LiveNavigationRuntime
 
-  trait BaseCapabilities       extends HasStaticChanged with HasUploads with HasStreams
+  trait BaseCapabilities
+      extends HasStaticChanged
+      with HasUploads
+      with HasStreams
+      with HasClientEvents
   trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =
@@ -86,6 +95,20 @@ object LiveContext:
     definition: LiveStreamDef[A]
   ): URIO[HasStreams, Option[LiveStream[A]]] =
     ZIO.serviceWithZIO[HasStreams](_.streams.get(definition))
+
+  def pushEvent[A: JsonEncoder](
+    name: String,
+    payload: A
+  ): URIO[HasClientEvents, Unit] =
+    val encoded =
+      payload.toJsonAST.fold(error => throw new IllegalArgumentException(error), identity)
+    ZIO.serviceWithZIO[HasClientEvents](_.clientEvents.push(name, encoded))
+
+  final private case class PushJsPayload(cmd: String) derives JsonEncoder
+
+  def pushJs(command: JSCommands.JSCommand): URIO[HasClientEvents, Unit] =
+    import JSCommands.JSCommand.given
+    pushEvent("js:exec", PushJsPayload(command.toJson))
 
   def pushPatch(to: String): RIO[HasNavigation, Unit] =
     ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.PushPatch(to)))

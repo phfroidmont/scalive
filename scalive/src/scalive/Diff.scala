@@ -7,7 +7,8 @@ import zio.json.ast.Json
 enum Diff:
   case Tag(
     static: Seq[String] = Seq.empty,
-    dynamic: Seq[Diff.Dynamic] = Seq.empty)
+    dynamic: Seq[Diff.Dynamic] = Seq.empty,
+    events: Seq[Diff.Event] = Seq.empty)
   case Comprehension(
     static: Seq[String] = Seq.empty,
     entries: Seq[Diff.Dynamic | Diff.IndexChange] = Seq.empty,
@@ -19,16 +20,19 @@ enum Diff:
 
 extension (diff: Diff)
   def isEmpty: Boolean = diff match
-    case Diff.Tag(static, dynamic) => static.isEmpty && dynamic.isEmpty
-    case _: Diff.Comprehension     => false
-    case _: Diff.Value             => false
-    case _: Diff.Dynamic           => false
-    case Diff.Deleted              => false
+    case Diff.Tag(static, dynamic, events) =>
+      static.isEmpty && dynamic.isEmpty && events.isEmpty
+    case _: Diff.Comprehension => false
+    case _: Diff.Value         => false
+    case _: Diff.Dynamic       => false
+    case Diff.Deleted          => false
 
 object Diff:
   given JsonEncoder[Diff] = JsonEncoder[Json].contramap(toJson(_))
 
   final case class IndexChange(index: Int, previousIndex: Int)
+
+  final case class Event(name: String, payload: Json)
 
   final case class StreamInsert(
     domId: String,
@@ -44,7 +48,12 @@ object Diff:
 
   private def toJson(diff: Diff): Json =
     diff match
-      case Diff.Tag(static, dynamic) =>
+      case Diff.Tag(static, dynamic, events) =>
+        val eventsJson =
+          Option.when(events.nonEmpty)(
+            "e" -> Json.Arr(events.map(event => Json.Arr(Json.Str(event.name), event.payload))*)
+          )
+
         Json.Obj(
           Option
             .when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*))
@@ -52,6 +61,7 @@ object Diff:
             .appendedAll(
               dynamic.map(d => d.index.toString -> toJson(d.diff))
             )
+            .appendedAll(eventsJson)
         )
       case Diff.Comprehension(static, entries, count, stream) =>
         val keyedEntries =

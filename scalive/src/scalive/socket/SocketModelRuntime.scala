@@ -116,8 +116,9 @@ private[scalive] object SocketModelRuntime:
              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
       diff = el.diff()
-      _ <- SocketStreamRuntime.prune(state.streamRef)
-    yield diff
+      events <- SocketClientEventRuntime.drain(state.clientEventsRef)
+      _      <- SocketStreamRuntime.prune(state.streamRef)
+    yield withClientEvents(diff, events)
 
   def publishPayload[Msg, Model](
     payload: Payload,
@@ -137,4 +138,11 @@ private[scalive] object SocketModelRuntime:
         Payload.okReply(LiveResponse.Diff(diff))
       case None =>
         Payload.okReply(LiveResponse.Empty)
+
+  private[socket] def withClientEvents(diff: Diff, events: Seq[Diff.Event]): Diff =
+    diff match
+      case Diff.Tag(static, dynamic, existingEvents) if events.nonEmpty =>
+        Diff.Tag(static = static, dynamic = dynamic, events = existingEvents ++ events)
+      case _ =>
+        diff
 end SocketModelRuntime

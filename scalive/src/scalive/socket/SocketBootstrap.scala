@@ -13,21 +13,25 @@ private[scalive] object SocketBootstrap:
     meta: WebSocketMessage.Meta
   ): Task[RuntimeState[Msg, Model]] =
     for
-      inbox         <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
-      outHub        <- Hub.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
-      uploadRef     <- Ref.make(UploadRuntimeState.empty)
-      streamRef     <- Ref.make(StreamRuntimeState.empty)
-      navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
+      inbox           <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
+      outHub          <- Hub.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
+      uploadRef       <- Ref.make(UploadRuntimeState.empty)
+      streamRef       <- Ref.make(StreamRuntimeState.empty)
+      clientEventsRef <- Ref.make(Vector.empty[Diff.Event])
+      navigationRef   <- Ref.make(Option.empty[LiveNavigationCommand])
       runtimeCtx = ctx.copy(
                      uploads = new SocketUploadRuntime(uploadRef),
                      streams = new SocketStreamRuntime(streamRef),
+                     clientEvents = new SocketClientEventRuntime(clientEventsRef),
                      navigation = new SocketNavigationRuntime(navigationRef)
                    )
       initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(runtimeCtx))
       modelVar = Var(initModel)
       el       = lv.view(modelVar)
       ref <- Ref.make((modelVar, el))
-      initDiff = el.diff(trackUpdates = false)
+      rawInitDiff = el.diff(trackUpdates = false)
+      initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
+      initDiff = SocketModelRuntime.withClientEvents(rawInitDiff, initEvents)
       _           <- SocketStreamRuntime.prune(streamRef)
       lvStreamRef <-
         SubscriptionRef.make(lv.subscriptions(initModel).provideLayer(ZLayer.succeed(runtimeCtx)))
@@ -43,6 +47,7 @@ private[scalive] object SocketBootstrap:
       navigationRef = navigationRef,
       uploadRef = uploadRef,
       streamRef = streamRef,
+      clientEventsRef = clientEventsRef,
       patchRedirectCountRef = patchRedirectCountRef,
       initDiff = initDiff
     )

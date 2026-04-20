@@ -117,6 +117,10 @@ object E2EApp extends ZIOAppDefault:
           (_, _) => JsLiveView()
         ),
         LiveRoute(
+          Root / "colocated",
+          (_, _) => ColocatedLiveView()
+        ),
+        LiveRoute(
           Root / "upload",
           (_, req) =>
             val autoUpload = req.url.queryParams.getAll("auto_upload").headOption.contains("1")

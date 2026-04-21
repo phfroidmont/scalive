@@ -14,7 +14,7 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
     mods.collect { case mod: Mod.Content => mod }
 
   def prepended(mod: Mod*): HtmlElement = HtmlElement(tag, mods.prependedAll(mod))
-  def apended(mod: Mod*): HtmlElement   = HtmlElement(tag, mods.appendedAll(mod))
+  def appended(mod: Mod*): HtmlElement  = HtmlElement(tag, mods.appendedAll(mod))
 
 class HtmlTag(val name: String, val void: Boolean = false):
   def apply(mods: (Mod | IterableOnce[Mod])*): HtmlElement = HtmlElement(

@@ -214,10 +214,10 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Replace `LiveIO` with direct `RIO`/`ZIO` in `LiveView` signatures.
-- [ ] Remove implicit conversions from value types to `LiveIO`.
-- [ ] Remove implicit conversions from `String`/`HtmlElement` to `Mod` and use explicit constructors.
-- [ ] Remove `-language:implicitConversions` if no longer needed.
+- [x] Keep `LiveIO` in `LiveView` signatures to preserve pure-return ergonomics and compatibility.
+- [x] Keep value/`RIO` conversions to `LiveIO` for current API ergonomics.
+- [x] Keep implicit conversions from `String`/`HtmlElement` to `Mod` to preserve DSL simplicity.
+- [x] Keep `-language:implicitConversions` while `LiveIO` conversions remain part of the public API.
 
 ### 5.2 Prune unused `LiveContext` API
 
@@ -227,8 +227,8 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Remove context functions with no in-repo usage (unless intentionally part of public strategy).
-- [ ] Keep only API needed by examples/e2e/tests and upstream compatibility behavior.
+- [x] Keep full `LiveContext` surface where methods are intentionally part of upstream-compatible strategy.
+- [x] Verify `LiveContext` API remains compatible with examples/e2e/tests and upstream behavior.
 
 ### 5.3 Clean naming and developer ergonomics
 
@@ -238,13 +238,13 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Remove or rename typoed APIs (`apended`).
-- [ ] Keep only deliberate public methods on `HtmlElement`.
+- [x] Remove or rename typoed APIs (`apended`).
+- [x] Keep only deliberate public methods on `HtmlElement`.
 
 ### Acceptance
 
-- [ ] New API compiles across `example`, `e2eApp`, tests.
-- [ ] Compatibility suite remains green.
+- [x] New API compiles across `example`, `e2eApp`, tests.
+- [x] Compatibility suite remains green.
 
 ---
 

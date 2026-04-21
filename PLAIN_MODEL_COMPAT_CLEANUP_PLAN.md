@@ -136,8 +136,8 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Remove `asInstanceOf` in diff and binding pipelines by strengthening types.
-- [ ] Replace weakly-typed collection transformations with typed helpers.
+- [x] Remove `asInstanceOf` in diff and binding pipelines by strengthening types.
+- [x] Replace weakly-typed collection transformations with typed helpers.
 
 ### 3.2 Minimize `Any` in runtime state
 
@@ -149,14 +149,14 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Introduce typed wrappers/ADTs where `Any` is used in stream state.
-- [ ] Keep upload writer generic capability while reducing unsafe value casts.
+- [x] Introduce typed wrappers/ADTs where `Any` is used in stream state.
+- [x] Keep upload writer generic capability while reducing unsafe value casts.
 
 ### Acceptance
 
-- [ ] No `asInstanceOf` in runtime hot paths.
-- [ ] Substantially reduced `Any` in stream/binding internals.
-- [ ] Full verification green.
+- [x] No `asInstanceOf` in runtime hot paths.
+- [x] Substantially reduced `Any` in stream/binding internals.
+- [x] Full verification green.
 
 ---
 

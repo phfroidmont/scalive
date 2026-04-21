@@ -6,13 +6,13 @@ import zio.json.ast.Json
 val JS: JSCommands.JSCommand = JSCommands.empty
 
 object JSCommands:
-  opaque type JSCommand = List[Op[?]]
+  opaque type JSCommand = List[Op]
 
-  final private case class Op[Msg](
+  final private case class Op(
     renderJson: Option[String] => Json,
-    binding: Option[Binding[Msg]])
+    binding: Option[Binding])
 
-  final case class Binding[Msg](msg: Msg)
+  final case class Binding(msg: Any)
 
   def empty: JSCommand = List.empty
 
@@ -35,21 +35,21 @@ object JSCommands:
     private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand =
       Op(_ => encodeOp(kind, args), None) :: ops
 
-    private def resolved[Msg](scope: String): Vector[(Json, Option[(String, Msg)])] =
+    private def resolved(scope: String): Vector[(Json, Option[(String, Any)])] =
       ops.reverse.zipWithIndex.map { case (op, pushIndex) =>
         val resolvedId =
           if op.binding.isDefined then Some(BindingId.jsPushBindingId(scope, pushIndex)) else None
         val json    = op.renderJson(resolvedId)
         val binding =
-          op.binding.map(binding => resolvedId.get -> binding.msg.asInstanceOf[Msg])
+          op.binding.map(binding => resolvedId.get -> binding.msg)
         (json, binding)
       }.toVector
 
     private[scalive] def renderJson(scope: String): String =
-      Json.Arr(resolved[Any](scope).map(_._1)*).toJson
+      Json.Arr(resolved(scope).map(_._1)*).toJson
 
-    private[scalive] def bindings[Msg](scope: String): Map[String, Msg] =
-      resolved[Msg](scope).flatMap(_._2).toMap
+    private[scalive] def bindings(scope: String): Map[String, Any] =
+      resolved(scope).flatMap(_._2).toMap
 
     def addClass    = ClassOp("add_class", ops)
     def toggleClass = ClassOp("toggle_class", ops)

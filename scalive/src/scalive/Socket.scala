@@ -1,5 +1,7 @@
 package scalive
 
+import scala.reflect.ClassTag
+
 import zio.*
 import zio.Queue
 import zio.stream.ZStream
@@ -23,7 +25,7 @@ final case class Socket[Msg, Model] private (
   shutdown: UIO[Unit])
 
 object Socket:
-  def start[Msg, Model](
+  def start[Msg: ClassTag, Model](
     id: String,
     token: String,
     lv: LiveView[Msg, Model],

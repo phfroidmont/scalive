@@ -1,6 +1,7 @@
 package scalive
 
 import java.util.Base64
+import scala.reflect.ClassTag
 import scala.util.Random
 
 import zio.*
@@ -23,7 +24,8 @@ import scalive.socket.StreamRuntimeState
 final case class LiveRoute[A, Msg, Model](
   path: PathCodec[A],
   liveviewBuilder: (A, Request) => LiveView[Msg, Model],
-  sessionName: String = "default"):
+  sessionName: String = "default"
+)(using val msgClassTag: ClassTag[Msg]):
 
   def toZioRoute(
     rootLayout: HtmlElement => HtmlElement,
@@ -76,6 +78,7 @@ class LiveChannel(
     lv: LiveView[Msg, Model],
     ctx: LiveContext,
     meta: WebSocketMessage.Meta
+  )(using ClassTag[Msg]
   ): RIO[Scope, Unit] =
     sockets
       .updateZIO { m =>
@@ -298,7 +301,11 @@ class LiveRouter(
                           ZIO.logDebug(
                             s"Joining LiveView ${route.path.toString} ${message.topic}"
                           ) *>
-                            liveChannel.join(message.topic, session, lv, ctx, message.meta).as(None)
+                            liveChannel
+                              .join(message.topic, session, lv, ctx, message.meta)(
+                                using route.msgClassTag
+                              )
+                              .as(None)
                         else
                           ZIO.succeed(
                             Some(joinErrorReply(message, JoinErrorReason.Unauthorized))

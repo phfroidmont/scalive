@@ -108,30 +108,42 @@ enum LiveUploadWriterCloseReason:
   case Cancel
   case Error(reason: String)
 
+final case class LiveUploadWriterState private[scalive] (value: Any)
+
 trait LiveUploadWriter:
-  def init(uploadName: String, entry: LiveExternalUploadEntry): Task[Any]
-  def meta(state: Any): Json.Obj
-  def writeChunk(data: Chunk[Byte], state: Any): Task[Any]
-  def close(state: Any, reason: LiveUploadWriterCloseReason): Task[Any]
+  def init(uploadName: String, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState]
+  def meta(state: LiveUploadWriterState): Json.Obj
+  def writeChunk(data: Chunk[Byte], state: LiveUploadWriterState): Task[LiveUploadWriterState]
+  def close(
+    state: LiveUploadWriterState,
+    reason: LiveUploadWriterCloseReason
+  ): Task[LiveUploadWriterState]
 
 object LiveUploadWriter:
   final private[scalive] case class InMemoryState(bytes: Chunk[Byte])
 
   val InMemory: LiveUploadWriter = new LiveUploadWriter:
-    def init(uploadName: String, entry: LiveExternalUploadEntry): Task[Any] =
-      ZIO.succeed(InMemoryState(Chunk.empty))
+    def init(uploadName: String, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState] =
+      val _ = (uploadName, entry)
+      ZIO.succeed(LiveUploadWriterState(InMemoryState(Chunk.empty)))
 
-    def meta(state: Any): Json.Obj =
-      state match
+    def meta(state: LiveUploadWriterState): Json.Obj =
+      state.value match
         case InMemoryState(bytes) => Json.Obj("bytes" -> Json.Num(BigDecimal(bytes.length.toLong)))
         case _                    => Json.Obj.empty
 
-    def writeChunk(data: Chunk[Byte], state: Any): Task[Any] =
-      state match
-        case current: InMemoryState => ZIO.succeed(current.copy(bytes = current.bytes ++ data))
-        case _                      => ZIO.succeed(InMemoryState(data))
+    def writeChunk(data: Chunk[Byte], state: LiveUploadWriterState): Task[LiveUploadWriterState] =
+      state.value match
+        case current: InMemoryState =>
+          ZIO.succeed(LiveUploadWriterState(current.copy(bytes = current.bytes ++ data)))
+        case _ =>
+          ZIO.succeed(LiveUploadWriterState(InMemoryState(data)))
 
-    def close(state: Any, reason: LiveUploadWriterCloseReason): Task[Any] =
+    def close(
+      state: LiveUploadWriterState,
+      reason: LiveUploadWriterCloseReason
+    ): Task[LiveUploadWriterState] =
+      val _ = reason
       ZIO.succeed(state)
 
 trait LiveUploadProgress:
@@ -161,5 +173,6 @@ object api:
     LiveUploadOptions,
     LiveUploadProgress,
     LiveUploadWriter,
+    LiveUploadWriterState,
     LiveUploadWriterCloseReason
   }

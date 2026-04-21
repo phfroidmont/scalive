@@ -334,40 +334,48 @@ private[scalive] object SocketUploadProtocol:
                    else
                      SocketUploadShared.ensureWriterState(entry).either.flatMap {
                        case Right(withWriter) =>
-                         withWriter.writer
-                           .writeChunk(bytes, withWriter.writerState.getOrElse(()))
-                           .either
-                           .flatMap {
-                             case Right(nextWriterState) =>
-                               val updatedEntry = withWriter.copy(
-                                 bytes = withWriter.bytes ++ bytes,
-                                 writerState = Some(nextWriterState)
-                               )
-                               state.uploadRef
-                                 .update { st =>
-                                   st.copy(entries = st.entries.updated(entryRef, updatedEntry))
-                                 }.as(Payload.okReply(LiveResponse.Empty))
-                             case Left(_) =>
-                               SocketUploadShared
-                                 .closeWriter(
-                                   withWriter.copy(
-                                     valid = false,
-                                     errors = List(Json.Str("writer_error"))
-                                   ),
-                                   LiveUploadWriterCloseReason.Error("writer_error")
-                                 ).flatMap { errored =>
+                         withWriter.writerState match
+                           case Some(writerState) =>
+                             withWriter.writer
+                               .writeChunk(bytes, writerState)
+                               .either
+                               .flatMap {
+                                 case Right(nextWriterState) =>
+                                   val updatedEntry = withWriter.copy(
+                                     bytes = withWriter.bytes ++ bytes,
+                                     writerState = Some(nextWriterState)
+                                   )
                                    state.uploadRef
                                      .update { st =>
-                                       st.copy(entries = st.entries.updated(entryRef, errored))
-                                     }.as(
-                                       Payload.errorReply(
-                                         LiveResponse.UploadChunkError(
-                                           UploadChunkErrorReason.WriterError
+                                       st.copy(entries = st.entries.updated(entryRef, updatedEntry))
+                                     }.as(Payload.okReply(LiveResponse.Empty))
+                                 case Left(_) =>
+                                   SocketUploadShared
+                                     .closeWriter(
+                                       withWriter.copy(
+                                         valid = false,
+                                         errors = List(Json.Str("writer_error"))
+                                       ),
+                                       LiveUploadWriterCloseReason.Error("writer_error")
+                                     ).flatMap { errored =>
+                                       state.uploadRef
+                                         .update { st =>
+                                           st.copy(entries = st.entries.updated(entryRef, errored))
+                                         }.as(
+                                           Payload.errorReply(
+                                             LiveResponse.UploadChunkError(
+                                               UploadChunkErrorReason.WriterError
+                                             )
+                                           )
                                          )
-                                       )
-                                     )
-                                 }
-                           }
+                                     }
+                               }
+                           case None =>
+                             ZIO.succeed(
+                               Payload.errorReply(
+                                 LiveResponse.UploadChunkError(UploadChunkErrorReason.WriterError)
+                               )
+                             )
                        case Left(_) =>
                          ZIO.succeed(
                            Payload.errorReply(
@@ -469,38 +477,44 @@ private[scalive] object SocketUploadProtocol:
       (currentModel, rendered) <- state.ref.get
       reply                    <- rendered.bindings.get(eventRef) match
                  case Some(binding) =>
-                   for
-                     params                     <- ZIO.succeed(progressPayloadToParams(payload))
-                     (updatedModel, navigation) <-
-                       SocketModelRuntime.captureNavigation(state)(
-                         LiveIO
-                           .toZIO(state.lv.update(currentModel)(binding(params)))
-                           .provide(ZLayer.succeed(state.ctx))
-                       )
-                     reply <- navigation match
-                                case Some(command) =>
-                                  state.patchRedirectCountRef.set(0) *>
-                                    SocketInbound
-                                      .handleNavigationCommand(
-                                        rendered,
-                                        updatedModel,
-                                        command,
-                                        state.meta,
-                                        state
-                                      )
-                                      .as(Payload.okReply(LiveResponse.Empty))
-                                case None =>
-                                  SocketModelRuntime
-                                    .updateModelAndSubscriptions(
-                                      rendered,
-                                      updatedModel,
-                                      state
-                                    )
-                                    .map(diff =>
-                                      if diff.isEmpty then Payload.okReply(LiveResponse.Empty)
-                                      else Payload.okReply(LiveResponse.Diff(diff))
-                                    )
-                   yield reply
+                   binding(progressPayloadToParams(payload)) match
+                     case Right(message) =>
+                       for
+                         (updatedModel, navigation) <-
+                           SocketModelRuntime.captureNavigation(state)(
+                             LiveIO
+                               .toZIO(state.lv.update(currentModel)(message))
+                               .provide(ZLayer.succeed(state.ctx))
+                           )
+                         reply <- navigation match
+                                    case Some(command) =>
+                                      state.patchRedirectCountRef.set(0) *>
+                                        SocketInbound
+                                          .handleNavigationCommand(
+                                            rendered,
+                                            updatedModel,
+                                            command,
+                                            state.meta,
+                                            state
+                                          )
+                                          .as(Payload.okReply(LiveResponse.Empty))
+                                    case None =>
+                                      SocketModelRuntime
+                                        .updateModelAndSubscriptions(
+                                          rendered,
+                                          updatedModel,
+                                          state
+                                        )
+                                        .map(diff =>
+                                          if diff.isEmpty then Payload.okReply(LiveResponse.Empty)
+                                          else Payload.okReply(LiveResponse.Diff(diff))
+                                        )
+                       yield reply
+                     case Left(error) =>
+                       ZIO.logWarning(
+                         s"upload_progress binding type mismatch for ref=$eventRef: $error"
+                       ) *>
+                         ZIO.succeed(Payload.okReply(LiveResponse.Empty))
                  case None =>
                    ZIO.logWarning(
                      s"upload_progress binding missing for ref=$eventRef"

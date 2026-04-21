@@ -59,45 +59,52 @@ private[scalive] object SocketModelRuntime:
   ): Task[Unit] =
     rendered.bindings.get(event.event) match
       case Some(binding) =>
-        for
-          (updatedModel, navigation) <-
-            captureNavigation(state, carriedNavigation)(
-              LiveIO
-                .toZIO(state.lv.update(interceptModel)(binding(event.params)))
-                .provide(ZLayer.succeed(state.ctx))
+        binding(event.params) match
+          case Right(message) =>
+            for
+              (updatedModel, navigation) <-
+                captureNavigation(state, carriedNavigation)(
+                  LiveIO
+                    .toZIO(state.lv.update(interceptModel)(message))
+                    .provide(ZLayer.succeed(state.ctx))
+                )
+              _ <- navigation match
+                     case Some(command) =>
+                       publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
+                         state.patchRedirectCountRef.set(0) *>
+                         SocketInbound.handleNavigationCommand(
+                           rendered,
+                           updatedModel,
+                           command,
+                           meta,
+                           state
+                         )
+                     case None =>
+                       for
+                         diff <- updateModelAndSubscriptions(rendered, updatedModel, state)
+                         _ <- publishPayload(Payload.okReply(LiveResponse.Diff(diff)), meta, state)
+                       yield ()
+            yield ()
+          case Left(error) =>
+            handleInvalidOrMissingBinding(
+              rendered,
+              event.event,
+              Some(error),
+              interceptModel,
+              carriedNavigation,
+              meta,
+              state
             )
-          _ <- navigation match
-                 case Some(command) =>
-                   publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
-                     state.patchRedirectCountRef.set(0) *>
-                     SocketInbound.handleNavigationCommand(
-                       rendered,
-                       updatedModel,
-                       command,
-                       meta,
-                       state
-                     )
-                 case None =>
-                   for
-                     diff <- updateModelAndSubscriptions(rendered, updatedModel, state)
-                     _    <- publishPayload(Payload.okReply(LiveResponse.Diff(diff)), meta, state)
-                   yield ()
-        yield ()
       case None =>
-        carriedNavigation match
-          case Some(command) =>
-            publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
-              state.patchRedirectCountRef.set(0) *>
-              SocketInbound.handleNavigationCommand(
-                rendered,
-                interceptModel,
-                command,
-                meta,
-                state
-              )
-          case None =>
-            ZIO.logWarning(s"Ignoring unknown binding ID ${event.event}") *>
-              publishPayload(Payload.okReply(LiveResponse.Empty), meta, state)
+        handleInvalidOrMissingBinding(
+          rendered,
+          event.event,
+          None,
+          interceptModel,
+          carriedNavigation,
+          meta,
+          state
+        )
 
   def updateModelAndSubscriptions[Msg, Model](
     rendered: RenderedView[Msg],
@@ -112,7 +119,7 @@ private[scalive] object SocketModelRuntime:
       diff         = TreeDiff.diff(rendered.el, nextEl)
       nextRendered = RenderedView(
                        el = nextEl,
-                       bindings = BindingRegistry.collect[Msg](nextEl)
+                       bindings = BindingRegistry.collect[Msg](nextEl)(using state.msgClassTag)
                      )
       _      <- state.ref.set((model, nextRendered))
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)
@@ -146,6 +153,31 @@ private[scalive] object SocketModelRuntime:
         Payload.okReply(LiveResponse.Diff(diff))
       case None =>
         Payload.okReply(LiveResponse.Empty)
+
+  private def handleInvalidOrMissingBinding[Msg, Model](
+    rendered: RenderedView[Msg],
+    bindingId: String,
+    error: Option[String],
+    model: Model,
+    carriedNavigation: Option[LiveNavigationCommand],
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    carriedNavigation match
+      case Some(command) =>
+        publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
+          state.patchRedirectCountRef.set(0) *>
+          SocketInbound.handleNavigationCommand(
+            rendered = rendered,
+            model = model,
+            command = command,
+            meta = meta,
+            state = state
+          )
+      case None =>
+        val detail = error.getOrElse("unknown binding id")
+        ZIO.logWarning(s"Ignoring binding '$bindingId': $detail") *>
+          publishPayload(Payload.okReply(LiveResponse.Empty), meta, state)
 
   private[socket] def withClientEvents(diff: Diff, events: Seq[Diff.Event]): Diff =
     diff match

@@ -192,7 +192,7 @@ private[scalive] object TreeDiff:
           val dynamic: Vector[Diff.Dynamic] = right.slots.zipWithIndex.flatMap {
             case (slot, index) =>
               diffSlot(left.slots(index), slot)
-                .map(diff => Diff.Dynamic(index, diff).asInstanceOf[Diff.Dynamic])
+                .map(diff => Diff.Dynamic(index, diff))
           }
           Option.when(dynamic.nonEmpty)(
             Diff.Tag(
@@ -231,7 +231,7 @@ private[scalive] object TreeDiff:
         Diff.Tag(
           static = if includeStatic then tag.static else Vector.empty,
           dynamic = tag.slots.zipWithIndex.map { case (slot, index) =>
-            Diff.Dynamic(index, fullSlot(slot)).asInstanceOf[Diff.Dynamic]
+            Diff.Dynamic(index, fullSlot(slot))
           },
           root = tag.root
         )
@@ -259,7 +259,6 @@ private[scalive] object TreeDiff:
       val includeEntryStatic = sharedStatic.isEmpty
       Diff
         .Dynamic(index, fullNode(entry.node, includeStatic = includeEntryStatic))
-        .asInstanceOf[Diff.Dynamic]
     }
 
     Diff.Comprehension(
@@ -296,12 +295,10 @@ private[scalive] object TreeDiff:
               Some(
                 Diff
                   .Dynamic(index, fullNode(entry.node, includeStatic = includeStaticInEntry))
-                  .asInstanceOf[Diff.Dynamic]
               )
             case Some((previousIndex, previousNode)) =>
               val maybeDiff = diffNode(previousNode, entry.node)
-              if previousIndex == index then
-                maybeDiff.map(diff => Diff.Dynamic(index, diff).asInstanceOf[Diff.Dynamic])
+              if previousIndex == index then maybeDiff.map(diff => Diff.Dynamic(index, diff))
               else
                 maybeDiff match
                   case Some(diff) => Some(Diff.IndexMerge(index, previousIndex, diff))
@@ -491,12 +488,15 @@ private[scalive] object TreeDiff:
                 )
               case other => other
 
-          val rewritten = rewrite(tag).asInstanceOf[Diff.Tag]
-          rewritten.copy(
-            templates = rewritten.templates ++ refs.toSeq.map { case (static, ref) =>
-              ref -> static
-            }
-          )
+          rewrite(tag) match
+            case rewritten: Diff.Tag =>
+              rewritten.copy(
+                templates = rewritten.templates ++ refs.toSeq.map { case (static, ref) =>
+                  ref -> static
+                }
+              )
+            case _ =>
+              tag
         end if
       case other => other
 

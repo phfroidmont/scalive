@@ -11,8 +11,12 @@ object BindingRegistrySpec extends ZIOSpecDefault:
       }
     )
 
-  private def messageToId(bindings: Map[String, Map[String, String] => String]): Map[String, String] =
-    bindings.map { case (id, handler) => handler(Map.empty) -> id }
+  private def messageToId(
+    bindings: Map[String, Map[String, String] => Either[String, String]]
+  ): Map[String, String] =
+    bindings.flatMap { case (id, handler) =>
+      handler(Map.empty).toOption.map(message => message -> id)
+    }
 
   override def spec = suite("BindingRegistrySpec")(
     test("keyed bindings keep stable IDs across reorder") {
@@ -35,7 +39,7 @@ object BindingRegistrySpec extends ZIOSpecDefault:
 
       assertTrue(
         first.keySet == second.keySet,
-        first.values.map(_(Map.empty)).toSet == Set("one", "two")
+        first.values.flatMap(_(Map.empty).toOption).toSet == Set("one", "two")
       )
     }
   )

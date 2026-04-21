@@ -1,6 +1,8 @@
 package scalive
 package socket
 
+import scala.reflect.ClassTag
+
 import zio.*
 import zio.json.ast.Json
 import zio.stream.SubscriptionRef
@@ -36,7 +38,7 @@ final private[scalive] case class UploadEntryState(
   errors: List[Json],
   externalMeta: Option[Json.Obj],
   writer: LiveUploadWriter,
-  writerState: Option[Any],
+  writerState: Option[LiveUploadWriterState],
   writerMeta: Option[Json.Obj],
   writerClosed: Boolean)
 
@@ -84,21 +86,22 @@ private[scalive] object UploadRuntimeState:
   val empty: UploadRuntimeState =
     UploadRuntimeState(Map.empty, Map.empty, Map.empty)
 
+final private[scalive] case class StreamItem(value: Any)
+
 final private[scalive] case class StreamInsertState(
   domId: String,
   at: Int,
-  item: Any,
+  item: StreamItem,
   limit: Option[Int],
   updateOnly: Option[Boolean])
 
 final private[scalive] case class StreamEntryState(
   domId: String,
-  item: Any)
+  item: StreamItem)
 
 final private[scalive] case class StreamState(
   name: String,
   ref: String,
-  domId: Any => String,
   inserts: List[StreamInsertState],
   deleteIds: List[String],
   reset: Boolean,
@@ -114,10 +117,11 @@ private[scalive] object StreamRuntimeState:
 
 final private[scalive] case class RenderedView[Msg](
   el: HtmlElement,
-  bindings: Map[String, Map[String, String] => Msg])
+  bindings: Map[String, Map[String, String] => Either[String, Msg]])
 
 final private[scalive] case class RuntimeState[Msg, Model](
   lv: LiveView[Msg, Model],
+  msgClassTag: ClassTag[Msg],
   ctx: LiveContext,
   meta: WebSocketMessage.Meta,
   tokenConfig: TokenConfig,

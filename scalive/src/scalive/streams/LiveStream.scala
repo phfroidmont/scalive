@@ -1,6 +1,8 @@
 package scalive
 package streams
 
+import scala.reflect.ClassTag
+
 enum StreamAt:
   case First
   case Last
@@ -23,10 +25,16 @@ object StreamLimit:
       case StreamLimit.KeepFirst(count) => count
       case StreamLimit.KeepLast(count)  => -count
 
-final case class LiveStreamDef[A](name: String, domId: A => String)
+final case class LiveStreamDef[A](
+  name: String,
+  domId: A => String
+)(using
+  private val itemClassTag: ClassTag[A]):
+  private[scalive] def decode(value: Any): Option[A] =
+    itemClassTag.unapply(value)
 
 object LiveStreamDef:
-  def byId[A, Id](name: String)(id: A => Id): LiveStreamDef[A] =
+  def byId[A: ClassTag, Id](name: String)(id: A => Id): LiveStreamDef[A] =
     LiveStreamDef(name, value => s"$name-${id(value)}")
 
 final case class LiveStreamEntry[+A](domId: String, value: A)

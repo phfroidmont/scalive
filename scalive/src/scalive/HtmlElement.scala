@@ -32,7 +32,7 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
     if isBooleanAsAttrPresence then
       Mod.Attr.StaticValueAsPresence(
         name,
-        value.asInstanceOf[Boolean]
+        codec.encode(value) != null
       )
     else Mod.Attr.Static(name, codec.encode(value))
 

@@ -1,14 +1,15 @@
 package scalive
 
 import scala.collection.mutable
+import scala.reflect.ClassTag
 
 import scalive.Mod.Attr
 import scalive.Mod.Content
 
 private[scalive] object BindingRegistry:
-  type Handler[Msg] = Map[String, String] => Msg
+  type Handler[Msg] = Map[String, String] => Either[String, Msg]
 
-  def collect[Msg](root: HtmlElement): Map[String, Handler[Msg]] =
+  def collect[Msg: ClassTag](root: HtmlElement): Map[String, Handler[Msg]] =
     val acc = mutable.LinkedHashMap.empty[String, Handler[Msg]]
 
     def collectElement(el: HtmlElement, path: BindingId.Path): Unit =
@@ -16,11 +17,11 @@ private[scalive] object BindingRegistry:
         attr match
           case Attr.Binding(_, f) =>
             val id = BindingId.attrBindingId(path, attrIndex)
-            acc.update(id, f.asInstanceOf[Handler[Msg]])
+            acc.update(id, params => toMessage(id, f(params)))
           case Attr.JsBinding(_, command) =>
             val scope = BindingId.jsBindingScope(path, attrIndex)
-            command.bindings[Msg](scope).foreach { case (id, msg) =>
-              acc.update(id, _ => msg)
+            command.bindings(scope).foreach { case (id, msg) =>
+              acc.update(id, _ => toMessage(id, msg))
             }
           case _ => ()
       }
@@ -49,4 +50,18 @@ private[scalive] object BindingRegistry:
     collectElement(root, BindingId.rootPath(root.tag.name))
     acc.toMap
   end collect
+
+  private def toMessage[Msg](
+    bindingId: String,
+    value: Any
+  )(using
+    tag: ClassTag[Msg]
+  ): Either[String, Msg] =
+    tag
+      .unapply(value).toRight(
+        s"Binding '$bindingId' produced ${valueType(value)}, expected ${tag.runtimeClass.getName}"
+      )
+
+  private def valueType(value: Any): String =
+    Option(value).map(_.getClass.getName).getOrElse("null")
 end BindingRegistry

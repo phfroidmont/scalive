@@ -1,13 +1,15 @@
 package scalive
 package socket
 
+import scala.reflect.ClassTag
+
 import zio.*
 import zio.stream.SubscriptionRef
 
 import scalive.*
 
 private[scalive] object SocketBootstrap:
-  def initializeRuntime[Msg, Model](
+  def initializeRuntime[Msg: ClassTag, Model](
     lv: LiveView[Msg, Model],
     ctx: LiveContext,
     meta: WebSocketMessage.Meta,
@@ -53,6 +55,7 @@ private[scalive] object SocketBootstrap:
       patchRedirectCountRef <- Ref.make(0)
     yield RuntimeState(
       lv = lv,
+      msgClassTag = summon[ClassTag[Msg]],
       ctx = runtimeCtx,
       meta = meta,
       tokenConfig = tokenConfig,

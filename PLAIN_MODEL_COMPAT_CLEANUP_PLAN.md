@@ -292,8 +292,8 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Break large `handleMessage` match into composable handlers by payload type.
-- [ ] Introduce helper for reply envelope creation to remove repetition.
+- [x] Break large `handleMessage` match into composable handlers by payload type.
+- [x] Introduce helper for reply envelope creation to remove repetition.
 
 ### 7.2 Keep protocol model strict and explicit
 
@@ -303,13 +303,13 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Keep decode/encode explicit, total, and non-throwing.
-- [ ] Move protocol constants (e.g. liveview version string) to central config/constants.
+- [x] Keep decode/encode explicit, total, and non-throwing.
+- [x] Move protocol constants (e.g. liveview version string) to central config/constants.
 
 ### Acceptance
 
-- [ ] Router module easier to audit and test.
-- [ ] Full verification green.
+- [x] Router module easier to audit and test.
+- [x] Full verification green.
 
 ---
 

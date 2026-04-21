@@ -26,7 +26,7 @@ final case class WebSocketMessage(
       joinRef,
       messageRef,
       topic,
-      "phx_reply",
+      WebSocketMessage.Protocol.EventReply,
       Payload.Reply(ReplyStatus.Ok, LiveResponse.Empty)
     )
 object WebSocketMessage:
@@ -37,42 +37,73 @@ object WebSocketMessage:
     topic: String,
     eventType: String)
 
-  given JsonCodec[WebSocketMessage] = JsonCodec[Json].transformOrFail(
-    {
-      case Json.Arr(
-            Chunk(joinRef, Json.Str(messageRef), Json.Str(topic), Json.Str(eventType), payload)
-          ) =>
-        val payloadParsed = eventType match
-          case "heartbeat"    => Right(Payload.Heartbeat)
-          case "phx_join"     => decodeJoinPayload(payload)
-          case "phx_leave"    => Right(Payload.Leave)
-          case "phx_close"    => Right(Payload.Close)
-          case "event"        => payload.as[Payload.Event]
-          case "live_patch"   => payload.as[Payload.LivePatch]
-          case "allow_upload" => payload.as[Payload.AllowUpload]
-          case "progress"     => payload.as[Payload.Progress]
-          case s              => Left(s"Unknown event type : $s")
+  object Protocol:
+    val EventHeartbeat   = "heartbeat"
+    val EventJoin        = "phx_join"
+    val EventLeave       = "phx_leave"
+    val EventClose       = "phx_close"
+    val EventEvent       = "event"
+    val EventLivePatch   = "live_patch"
+    val EventAllowUpload = "allow_upload"
+    val EventProgress    = "progress"
+    val EventReply       = "phx_reply"
+    val EventError       = "phx_error"
+    val EventDiff        = "diff"
+    val BinaryChunkEvent = "chunk"
+    val LiveViewVersion  = "1.1.8"
 
-        payloadParsed.map(
-          WebSocketMessage(
-            joinRef.asString.map(_.toInt),
-            Some(messageRef.toInt),
-            topic,
-            eventType,
-            _
-          )
-        )
-      case v => Left(s"Could not parse socket message ${v.toJson}")
-    },
-    m =>
-      Json.Arr(
-        m.joinRef.map(ref => Json.Str(ref.toString)).getOrElse(Json.Null),
-        m.messageRef.map(ref => Json.Str(ref.toString)).getOrElse(Json.Null),
-        Json.Str(m.topic),
-        Json.Str(m.eventType),
-        encodePayload(m.payload)
-      )
+  given JsonCodec[WebSocketMessage] = JsonCodec[Json].transformOrFail(
+    decodeSocketMessage,
+    encodeSocketMessage
   )
+
+  private def decodeSocketMessage(value: Json): Either[String, WebSocketMessage] =
+    value match
+      case Json.Arr(parts) if parts.length == 5 =>
+        for
+          joinRef    <- decodeOptionalRef(parts(0), "join_ref")
+          messageRef <- decodeOptionalRef(parts(1), "ref")
+          topic      <- decodeRequiredString(parts(2), "topic")
+          eventType  <- decodeRequiredString(parts(3), "event")
+          payload    <- decodePayload(eventType, parts(4))
+        yield WebSocketMessage(joinRef, messageRef, topic, eventType, payload)
+      case other =>
+        Left(s"Could not parse socket message ${other.toJson}")
+
+  private def encodeSocketMessage(m: WebSocketMessage): Json =
+    Json.Arr(
+      m.joinRef.map(ref => Json.Str(ref.toString)).getOrElse(Json.Null),
+      m.messageRef.map(ref => Json.Str(ref.toString)).getOrElse(Json.Null),
+      Json.Str(m.topic),
+      Json.Str(m.eventType),
+      encodePayload(m.payload)
+    )
+
+  private def decodeOptionalRef(value: Json, field: String): Either[String, Option[Int]] =
+    value match
+      case Json.Null   => Right(None)
+      case Json.Str(v) =>
+        if v.isEmpty then Right(None)
+        else v.toIntOption.toRight(s"Invalid $field: $v").map(Some(_))
+      case other =>
+        Left(s"Expected $field as string or null, got ${other.toJson}")
+
+  private def decodeRequiredString(value: Json, field: String): Either[String, String] =
+    value match
+      case Json.Str(v) => Right(v)
+      case other       => Left(s"Expected $field as string, got ${other.toJson}")
+
+  private def decodePayload(eventType: String, payload: Json): Either[String, Payload] =
+    eventType match
+      case Protocol.EventHeartbeat   => Right(Payload.Heartbeat)
+      case Protocol.EventJoin        => decodeJoinPayload(payload)
+      case Protocol.EventLeave       => Right(Payload.Leave)
+      case Protocol.EventClose       => Right(Payload.Close)
+      case Protocol.EventEvent       => payload.as[Payload.Event]
+      case Protocol.EventLivePatch   => payload.as[Payload.LivePatch]
+      case Protocol.EventAllowUpload => payload.as[Payload.AllowUpload]
+      case Protocol.EventProgress    => payload.as[Payload.Progress]
+      case other                     => Left(s"Unknown event type: $other")
 
   private def encodePayload(payload: Payload): Json =
     payload match
@@ -281,7 +312,7 @@ object WebSocketMessage:
         case Raw(value)         => value
         case InitDiff(rendered) =>
           Json.Obj(
-            "liveview_version" -> Json.Str("1.1.8"),
+            "liveview_version" -> Json.Str(Protocol.LiveViewVersion),
             "rendered"         -> encodeJsonOrFallback(rendered, Json.Obj.empty)
           )
         case Diff(diff) =>
@@ -392,8 +423,8 @@ object WebSocketMessage:
             parsedJoinRef    <- joinRef
             parsedMessageRef <- messageRef
             payload          <- eventType match
-                         case "chunk" => Right(Payload.UploadChunk(payloadBytes))
-                         case other   => Left(s"Unsupported binary event type: $other")
+                         case Protocol.BinaryChunkEvent => Right(Payload.UploadChunk(payloadBytes))
+                         case other => Left(s"Unsupported binary event type: $other")
           yield WebSocketMessage(
             joinRef = parsedJoinRef,
             messageRef = parsedMessageRef,

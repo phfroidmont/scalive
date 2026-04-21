@@ -18,6 +18,7 @@ import scalive.WebSocketMessage.JoinErrorReason
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
+import scalive.WebSocketMessage.Protocol
 import scalive.socket.SocketStreamRuntime
 import scalive.socket.StreamRuntimeState
 
@@ -226,12 +227,7 @@ class LiveRouter(
                                case Payload.Close => meta.joinRef
                                case _             => meta.messageRef,
                              topic = meta.topic,
-                             eventType = payload match
-                               case Payload.Diff(_)              => "diff"
-                               case Payload.Close                => "phx_close"
-                               case Payload.LiveNavigation(_, _) => "live_patch"
-                               case Payload.Error                => "phx_error"
-                               case _                            => "phx_reply",
+                             eventType = outgoingEventType(payload),
                              payload = payload
                            ).toJson
                          )
@@ -273,190 +269,199 @@ class LiveRouter(
   private def handleMessage(message: WebSocketMessage, liveChannel: LiveChannel)
     : RIO[Scope, Option[WebSocketMessage]] =
     message.payload match
-      case Payload.Heartbeat => ZIO.succeed(Some(message.okReply))
-      case Payload.Join(url, redirect, session, static, params, sticky) =>
-        val clientStatics = static.orElse(StaticTracking.clientListFromParams(params))
-        val ctx           = LiveContext(StaticTracking.staticChanged(clientStatics, trackedStatic))
-        url
-          .orElse(redirect)
-          .toRight("Join payload must contain url or redirect") match
-          case Left(error) =>
-            ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
-          case Right(rawUrl) =>
-            URL.decode(rawUrl) match
-              case Left(error) =>
-                ZIO
-                  .logWarning(s"Could not decode join URL '$rawUrl': $error")
-                  .as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
-              case Right(decodedUrl) =>
-                val req = Request(url = decodedUrl)
-                liveRoutes.iterator
-                  .map(route =>
-                    route.path
-                      .decode(req.path)
-                      .toOption
-                      .map(pathParams =>
-                        if isAuthorizedJoin(route.sessionName, message.topic, session) then
-                          val lv = route.liveviewBuilder(pathParams, req)
-                          ZIO.logDebug(
-                            s"Joining LiveView ${route.path.toString} ${message.topic}"
-                          ) *>
-                            liveChannel
-                              .join(message.topic, session, lv, ctx, message.meta)(
-                                using route.msgClassTag
-                              )
-                              .as(None)
-                        else
-                          ZIO.succeed(
-                            Some(joinErrorReply(message, JoinErrorReason.Unauthorized))
-                          )
-                      )
-                  )
-                  .collectFirst { case Some(join) => join }
-                  .getOrElse(ZIO.succeed(None))
-        end match
-      case Payload.Leave =>
-        if message.topic.startsWith("lv:") && message.topic.length > 3 then
-          liveChannel
-            .leave(message.topic)
-            .as(Some(message.okReply))
-        else
-          ZIO
-            .logDebug(s"Ignoring leave for non-liveview topic ${message.topic}")
-            .as(Some(message.okReply))
-      case event: Payload.Event =>
-        liveChannel
-          .event(message.topic, event, message.meta)
-          .map(_ => None)
-      case allowUpload: Payload.AllowUpload =>
-        liveChannel
-          .allowUpload(message.topic, allowUpload).map(reply =>
-            Some(
-              WebSocketMessage(
-                message.joinRef,
-                message.messageRef,
-                message.topic,
-                "phx_reply",
-                reply
-              )
-            )
-          )
-      case progress: Payload.Progress =>
-        liveChannel
-          .progressUpload(message.topic, progress).map(reply =>
-            Some(
-              WebSocketMessage(
-                message.joinRef,
-                message.messageRef,
-                message.topic,
-                "phx_reply",
-                reply
-              )
-            )
-          )
-      case Payload.LivePatch(url) =>
-        liveChannel.livePatch(message.topic, url, message.meta).as(Some(message.okReply))
-      case Payload.UploadJoin(token) =>
-        if message.topic.startsWith("lvu:") then
-          liveChannel
-            .uploadJoin(message.topic, token).map(reply =>
-              Some(
-                WebSocketMessage(
-                  message.joinRef,
-                  message.messageRef,
-                  message.topic,
-                  "phx_reply",
-                  reply
-                )
-              )
-            )
-        else
-          ZIO.succeed(
-            Some(
-              WebSocketMessage(
-                message.joinRef,
-                message.messageRef,
-                message.topic,
-                "phx_reply",
-                Payload.errorReply(
-                  LiveResponse.UploadJoinError(WebSocketMessage.UploadJoinErrorReason.Disallowed)
-                )
-              )
-            )
-          )
-      case Payload.UploadChunk(bytes) =>
-        if message.topic.startsWith("lvu:") then
-          liveChannel
-            .uploadChunk(message.topic, bytes).map(reply =>
-              Some(
-                WebSocketMessage(
-                  message.joinRef,
-                  message.messageRef,
-                  message.topic,
-                  "phx_reply",
-                  reply
-                )
-              )
-            )
-        else
-          ZIO.succeed(
-            Some(
-              WebSocketMessage(
-                message.joinRef,
-                message.messageRef,
-                message.topic,
-                "phx_reply",
-                Payload.errorReply(
-                  LiveResponse.UploadChunkError(WebSocketMessage.UploadChunkErrorReason.Disallowed)
-                )
-              )
-            )
-          )
+      case Payload.Heartbeat            => handleHeartbeat(message)
+      case join: Payload.Join           => handleJoin(message, join, liveChannel)
+      case Payload.Leave                => handleLeave(message, liveChannel)
+      case event: Payload.Event         => handleEvent(message, event, liveChannel)
+      case allow: Payload.AllowUpload   => handleAllowUpload(message, allow, liveChannel)
+      case progress: Payload.Progress   => handleProgress(message, progress, liveChannel)
+      case patch: Payload.LivePatch     => handleLivePatch(message, patch, liveChannel)
+      case join: Payload.UploadJoin     => handleUploadJoin(message, join, liveChannel)
+      case chunk: Payload.UploadChunk   => handleUploadChunk(message, chunk, liveChannel)
       case Payload.LiveNavigation(_, _) =>
-        unexpectedClientPayload(message, "live_navigation")
-      case Payload.Error =>
-        unexpectedClientPayload(message, "error")
-      case Payload.Reply(_, _) =>
-        unexpectedClientPayload(message, "reply")
-      case Payload.Diff(_) =>
-        unexpectedClientPayload(message, "diff")
-      case Payload.Close =>
-        if message.topic.startsWith("lv:") && message.topic.length > 3 then
-          liveChannel.leave(message.topic).as(Some(message.okReply))
-        else
-          ZIO
-            .logDebug(s"Ignoring close for non-liveview topic ${message.topic}").as(
-              Some(message.okReply)
-            )
+        handleUnexpectedPayload(message, Protocol.EventLivePatch)
+      case Payload.Error       => handleUnexpectedPayload(message, Protocol.EventError)
+      case Payload.Reply(_, _) => handleUnexpectedPayload(message, Protocol.EventReply)
+      case Payload.Diff(_)     => handleUnexpectedPayload(message, Protocol.EventDiff)
+      case Payload.Close       => handleClose(message, liveChannel)
     end match
-  end handleMessage
 
-  private def joinErrorReply(message: WebSocketMessage, reason: JoinErrorReason): WebSocketMessage =
-    WebSocketMessage(
-      message.joinRef,
-      message.messageRef,
-      message.topic,
-      "phx_reply",
-      Payload.errorReply(LiveResponse.JoinError(reason))
-    )
+  private def handleHeartbeat(message: WebSocketMessage): UIO[Option[WebSocketMessage]] =
+    ZIO.succeed(Some(message.okReply))
 
-  private def unexpectedClientPayload(
+  private def handleJoin(
+    message: WebSocketMessage,
+    join: Payload.Join,
+    liveChannel: LiveChannel
+  ): RIO[Scope, Option[WebSocketMessage]] =
+    val clientStatics = join.static.orElse(StaticTracking.clientListFromParams(join.params))
+    val ctx           = LiveContext(StaticTracking.staticChanged(clientStatics, trackedStatic))
+
+    decodeJoinUrl(join) match
+      case Left(error) =>
+        ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+      case Right(decodedUrl) =>
+        val req = Request(url = decodedUrl)
+        liveRoutes.iterator
+          .map(route =>
+            route.path
+              .decode(req.path)
+              .toOption
+              .map(pathParams =>
+                if isAuthorizedJoin(route.sessionName, message.topic, join.session) then
+                  val lv = route.liveviewBuilder(pathParams, req)
+                  ZIO.logDebug(s"Joining LiveView ${route.path.toString} ${message.topic}") *>
+                    liveChannel
+                      .join(message.topic, join.session, lv, ctx, message.meta)(
+                        using route.msgClassTag
+                      )
+                      .as(None)
+                else ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+              )
+          )
+          .collectFirst { case Some(joinAction) => joinAction }
+          .getOrElse(ZIO.succeed(None))
+  end handleJoin
+
+  private def handleLeave(
+    message: WebSocketMessage,
+    liveChannel: LiveChannel
+  ): UIO[Option[WebSocketMessage]] =
+    if isLiveViewTopic(message.topic) then
+      liveChannel.leave(message.topic).as(Some(message.okReply))
+    else
+      ZIO.logDebug(s"Ignoring leave for non-liveview topic ${message.topic}") *>
+        ZIO.succeed(Some(message.okReply))
+
+  private def handleClose(
+    message: WebSocketMessage,
+    liveChannel: LiveChannel
+  ): UIO[Option[WebSocketMessage]] =
+    if isLiveViewTopic(message.topic) then
+      liveChannel.leave(message.topic).as(Some(message.okReply))
+    else
+      ZIO.logDebug(s"Ignoring close for non-liveview topic ${message.topic}") *>
+        ZIO.succeed(Some(message.okReply))
+
+  private def handleEvent(
+    message: WebSocketMessage,
+    event: Payload.Event,
+    liveChannel: LiveChannel
+  ): UIO[Option[WebSocketMessage]] =
+    liveChannel.event(message.topic, event, message.meta).as(None)
+
+  private def handleAllowUpload(
+    message: WebSocketMessage,
+    payload: Payload.AllowUpload,
+    liveChannel: LiveChannel
+  ): Task[Option[WebSocketMessage]] =
+    wrapReply(message)(liveChannel.allowUpload(message.topic, payload))
+
+  private def handleProgress(
+    message: WebSocketMessage,
+    payload: Payload.Progress,
+    liveChannel: LiveChannel
+  ): Task[Option[WebSocketMessage]] =
+    wrapReply(message)(liveChannel.progressUpload(message.topic, payload))
+
+  private def handleLivePatch(
+    message: WebSocketMessage,
+    payload: Payload.LivePatch,
+    liveChannel: LiveChannel
+  ): Task[Option[WebSocketMessage]] =
+    liveChannel.livePatch(message.topic, payload.url, message.meta).as(Some(message.okReply))
+
+  private def handleUploadJoin(
+    message: WebSocketMessage,
+    payload: Payload.UploadJoin,
+    liveChannel: LiveChannel
+  ): Task[Option[WebSocketMessage]] =
+    if isUploadTopic(message.topic) then
+      wrapReply(message)(liveChannel.uploadJoin(message.topic, payload.token))
+    else
+      ZIO.succeed(
+        Some(
+          errorReply(
+            message,
+            LiveResponse.UploadJoinError(WebSocketMessage.UploadJoinErrorReason.Disallowed)
+          )
+        )
+      )
+
+  private def handleUploadChunk(
+    message: WebSocketMessage,
+    payload: Payload.UploadChunk,
+    liveChannel: LiveChannel
+  ): Task[Option[WebSocketMessage]] =
+    if isUploadTopic(message.topic) then
+      wrapReply(message)(liveChannel.uploadChunk(message.topic, payload.bytes))
+    else
+      ZIO.succeed(
+        Some(
+          errorReply(
+            message,
+            LiveResponse.UploadChunkError(WebSocketMessage.UploadChunkErrorReason.Disallowed)
+          )
+        )
+      )
+
+  private def handleUnexpectedPayload(
     message: WebSocketMessage,
     payloadType: String
   ): UIO[Option[WebSocketMessage]] =
     ZIO
       .logWarning(s"Ignoring unexpected client payload type $payloadType on topic ${message.topic}")
-      .as(
-        Some(
-          WebSocketMessage(
-            message.joinRef,
-            message.messageRef,
-            message.topic,
-            "phx_reply",
-            Payload.errorReply(LiveResponse.Empty)
-          )
-        )
+      .as(Some(errorReply(message, LiveResponse.Empty)))
+
+  private def decodeJoinUrl(join: Payload.Join): Either[String, URL] =
+    join.url
+      .orElse(join.redirect)
+      .toRight("Join payload must contain url or redirect")
+      .flatMap(rawUrl =>
+        URL.decode(rawUrl).left.map(error => s"Could not decode join URL '$rawUrl': $error")
       )
+
+  private def wrapReply(
+    message: WebSocketMessage
+  )(
+    effect: Task[Payload.Reply]
+  ): Task[Option[WebSocketMessage]] =
+    effect.map(reply => Some(replyEnvelope(message, reply)))
+
+  private def replyEnvelope(
+    message: WebSocketMessage,
+    reply: Payload.Reply
+  ): WebSocketMessage =
+    WebSocketMessage(
+      message.joinRef,
+      message.messageRef,
+      message.topic,
+      Protocol.EventReply,
+      reply
+    )
+
+  private def errorReply(
+    message: WebSocketMessage,
+    response: LiveResponse
+  ): WebSocketMessage =
+    replyEnvelope(message, Payload.errorReply(response))
+
+  private def joinErrorReply(message: WebSocketMessage, reason: JoinErrorReason): WebSocketMessage =
+    errorReply(message, LiveResponse.JoinError(reason))
+
+  private def outgoingEventType(payload: Payload): String =
+    payload match
+      case Payload.Diff(_)              => Protocol.EventDiff
+      case Payload.Close                => Protocol.EventClose
+      case Payload.LiveNavigation(_, _) => Protocol.EventLivePatch
+      case Payload.Error                => Protocol.EventError
+      case _                            => Protocol.EventReply
+
+  private def isLiveViewTopic(topic: String): Boolean =
+    topic.startsWith("lv:") && topic.length > 3
+
+  private def isUploadTopic(topic: String): Boolean =
+    topic.startsWith("lvu:")
 
   private def isAuthorizedJoin(expectedSession: String, topic: String, sessionToken: String)
     : Boolean =

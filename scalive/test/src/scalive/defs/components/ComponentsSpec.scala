@@ -9,8 +9,7 @@ object ComponentsSpec extends ZIOSpecDefault:
   private def uploadEntry(
     ref: String,
     preflighted: Boolean = false,
-    done: Boolean = false,
-    cancelled: Boolean = false
+    done: Boolean = false
   ): LiveUploadEntry =
     LiveUploadEntry(
       ref = ref,
@@ -22,7 +21,7 @@ object ComponentsSpec extends ZIOSpecDefault:
       progress = if done then 100 else 0,
       preflighted = preflighted,
       done = done,
-      cancelled = cancelled,
+      cancelled = false,
       valid = true,
       errors = Nil,
       meta = None
@@ -86,7 +85,7 @@ object ComponentsSpec extends ZIOSpecDefault:
           maxEntries = 2,
           entries = List(
             uploadEntry("entry-a"),
-            uploadEntry("entry-b", cancelled = true),
+            uploadEntry("entry-b"),
             uploadEntry("entry-c", done = true),
             uploadEntry("entry-d", preflighted = true)
           )
@@ -96,7 +95,7 @@ object ComponentsSpec extends ZIOSpecDefault:
         val result = HtmlBuilder.build(el)
 
         assertTrue(
-          result.contains("data-phx-active-refs=\"entry-a,entry-c,entry-d\""),
+          result.contains("data-phx-active-refs=\"entry-a,entry-b,entry-c,entry-d\""),
           result.contains("data-phx-done-refs=\"entry-c\""),
           result.contains("data-phx-preflighted-refs=\"entry-c,entry-d\""),
           result.contains("data-phx-auto-upload"),

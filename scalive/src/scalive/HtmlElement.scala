@@ -55,15 +55,6 @@ class HtmlAttrBinding(val name: String):
         case "off" | "no" | "false" => false)
     )
 
-trait BindingAdapter[F, Msg]:
-  def createMessage(f: F): Map[String, String] => Msg
-object BindingAdapter:
-  given fromString[Msg]: BindingAdapter[String => Msg, Msg]           = f => m => f(m("value"))
-  given fromMap[Msg]: BindingAdapter[Map[String, String] => Msg, Msg] = f => f
-
-final case class BindingParams(params: Map[String, String]):
-  def apply(key: String) = params.apply(key)
-
 sealed trait Mod
 
 object Mod:

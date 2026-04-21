@@ -87,9 +87,9 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Remove unused `tokens` map from upload runtime state if it remains unread.
-- [ ] Either fully wire `cancelled` semantics end-to-end or remove field and rely on `cancelledRefs`/entry removal only.
-- [ ] Ensure `active/done/preflighted` refs derive from one authoritative source.
+- [x] Remove unused `tokens` map from upload runtime state if it remains unread.
+- [x] Either fully wire `cancelled` semantics end-to-end or remove field and rely on `cancelledRefs`/entry removal only.
+- [x] Ensure `active/done/preflighted` refs derive from one authoritative source.
 
 ### 2.2 Remove unused helper surface
 
@@ -100,8 +100,8 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Remove stale `BindingAdapter` and `BindingParams` if unused.
-- [ ] Remove no-op upload helper overloads (e.g. overloads that ignore arguments).
+- [x] Remove stale `BindingAdapter` and `BindingParams` if unused.
+- [x] Remove no-op upload helper overloads (e.g. overloads that ignore arguments).
 
 ### 2.3 Remove playground code from core module
 
@@ -112,13 +112,13 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Move playground/demo logic to dedicated example/test location or delete.
+- [x] Move playground/demo logic to dedicated example/test location or delete.
 
 ### Acceptance
 
-- [ ] Dead fields/helpers removed.
-- [ ] No functionality loss in compatibility suite.
-- [ ] Full verification green.
+- [x] Dead fields/helpers removed.
+- [x] No functionality loss in compatibility suite.
+- [x] Full verification green.
 
 ---
 

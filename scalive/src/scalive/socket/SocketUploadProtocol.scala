@@ -54,7 +54,6 @@ private[scalive] object SocketUploadProtocol:
                        bytes = Chunk.empty,
                        progress = 0,
                        preflighted = true,
-                       cancelled = false,
                        valid = true,
                        errors = Nil,
                        externalMeta = None,
@@ -136,9 +135,6 @@ private[scalive] object SocketUploadProtocol:
                        entriesMap.values.collect {
                          case entry if entry.errors.nonEmpty => entry.ref -> entry.errors
                        }.toMap
-                     tokenToRef =
-                       entriesMap.values
-                         .flatMap(entry => entry.token.map(token => token -> entry.ref)).toMap
                      globalErrors =
                        Option
                          .when(activeEntries.length > config.options.maxEntries)(
@@ -153,8 +149,7 @@ private[scalive] object SocketUploadProtocol:
                                    configs = baseState.configs.updated(config.name, nextConfig),
                                    refsToNames =
                                      baseState.refsToNames.updated(config.ref, config.name),
-                                   entries = baseState.entries ++ entriesMap,
-                                   tokens = baseState.tokens ++ tokenToRef
+                                   entries = baseState.entries ++ entriesMap
                                  )
                      _ <- state.uploadRef.set(nextState)
                    yield Payload.okReply(
@@ -434,7 +429,6 @@ private[scalive] object SocketUploadProtocol:
                             bytes = Chunk.empty,
                             progress = 0,
                             preflighted = false,
-                            cancelled = false,
                             valid = validationErrors.get(entry.ref).isEmpty,
                             errors = validationErrors.getOrElse(entry.ref, Nil),
                             externalMeta = None,

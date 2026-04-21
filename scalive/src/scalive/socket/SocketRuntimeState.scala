@@ -32,7 +32,6 @@ final private[scalive] case class UploadEntryState(
   bytes: Chunk[Byte],
   progress: Int,
   preflighted: Boolean,
-  cancelled: Boolean,
   valid: Boolean,
   errors: List[Json],
   externalMeta: Option[Json.Obj],
@@ -44,8 +43,7 @@ final private[scalive] case class UploadEntryState(
 final private[scalive] case class UploadRuntimeState(
   configs: Map[String, UploadConfigState],
   refsToNames: Map[String, String],
-  entries: Map[String, UploadEntryState],
-  tokens: Map[String, String]):
+  entries: Map[String, UploadEntryState]):
   def configByRef(ref: String): Option[UploadConfigState] =
     refsToNames.get(ref).flatMap(configs.get)
 
@@ -78,14 +76,13 @@ final private[scalive] case class UploadRuntimeState(
       UploadRuntimeState(
         configs = nextConfigs,
         refsToNames = refsToNames,
-        entries = entries -- entryRefs,
-        tokens = tokens.filterNot { case (_, ref) => entryRefs.contains(ref) }
+        entries = entries -- entryRefs
       )
 end UploadRuntimeState
 
 private[scalive] object UploadRuntimeState:
   val empty: UploadRuntimeState =
-    UploadRuntimeState(Map.empty, Map.empty, Map.empty, Map.empty)
+    UploadRuntimeState(Map.empty, Map.empty, Map.empty)
 
 final private[scalive] case class StreamInsertState(
   domId: String,

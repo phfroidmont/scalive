@@ -65,7 +65,7 @@ private[socket] object SocketUploadShared:
   ): UIO[Option[LiveUploadedEntry]] =
     uploadRef.modify { current =>
       current.entries.get(entryRef) match
-        case Some(entry) if isUploadEntryDone(entry) && entry.valid && !entry.cancelled =>
+        case Some(entry) if isUploadEntryDone(entry) && entry.valid =>
           val uploadedEntry = LiveUploadedEntry(
             ref = entry.ref,
             name = entry.name,
@@ -134,7 +134,7 @@ private[socket] object SocketUploadShared:
       progress = entry.progress,
       preflighted = entry.preflighted,
       done = isUploadEntryDone(entry),
-      cancelled = entry.cancelled,
+      cancelled = false,
       valid = entry.valid && entry.errors.isEmpty,
       errors = entry.errors.map(LiveUploadError.fromJson),
       meta = entry.externalMeta.orElse(entry.writerMeta)

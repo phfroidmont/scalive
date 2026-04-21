@@ -10,7 +10,7 @@ class SelectLiveView extends LiveView[Msg, Model]:
   def update(model: Model) =
     case Msg.ChangeSelected(value) => model.copy(selected = value, validated = true)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       styleAttr := "padding: 20px; max-width: 500px; font-family: sans-serif;",
       styleTag(

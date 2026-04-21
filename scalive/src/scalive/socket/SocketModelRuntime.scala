@@ -115,7 +115,9 @@ private[scalive] object SocketModelRuntime:
       _ <- state.lvStreamRef.set(
              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
-      diff = el.diff()
+      nextEl = state.lv.view(model)
+      diff   = TreeDiff.diff(el, nextEl)
+      _      <- state.ref.set((modelVar, nextEl))
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)
       _      <- SocketStreamRuntime.prune(state.streamRef)
     yield withClientEvents(diff, events)
@@ -141,8 +143,26 @@ private[scalive] object SocketModelRuntime:
 
   private[socket] def withClientEvents(diff: Diff, events: Seq[Diff.Event]): Diff =
     diff match
-      case Diff.Tag(static, dynamic, existingEvents) if events.nonEmpty =>
-        Diff.Tag(static = static, dynamic = dynamic, events = existingEvents ++ events)
+      case Diff.Tag(
+            static,
+            dynamic,
+            existingEvents,
+            root,
+            title,
+            components,
+            templates,
+            templateRef
+          ) if events.nonEmpty =>
+        Diff.Tag(
+          static = static,
+          dynamic = dynamic,
+          events = existingEvents ++ events,
+          root = root,
+          title = title,
+          components = components,
+          templates = templates,
+          templateRef = templateRef
+        )
       case _ =>
         diff
 end SocketModelRuntime

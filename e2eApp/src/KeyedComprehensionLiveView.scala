@@ -18,7 +18,7 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
   def update(model: Model) =
     case Msg.Randomize => model.copy(items = randomItems(model.items.size))
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       linkTag(rel := "stylesheet", typ := "text/css", href := E2ERootLayout.daisyCssHref),
       cls := "p-8",
@@ -53,7 +53,7 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
       (1 to 2).map(i => renderTable(i, model))
     )
 
-  private def renderTable(i: Int, model: Dyn[Model]) =
+  private def renderTable(i: Int, model: Model) =
     div(
       cls := "mt-8 flow-root",
       div(

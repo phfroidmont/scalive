@@ -2,6 +2,8 @@ package scalive
 
 import zio.json.EncoderOps
 
+import scala.util.hashing.MurmurHash3
+
 /** Binding IDs are internal server-side routing keys used to map client events back to handlers.
   *
   * IDs are intentionally stored on the binding node itself (`Mod.Attr.Binding` and JS push
@@ -33,27 +35,49 @@ private[scalive] object BindingId:
     allocator.nextId
 
   private def assignInElement(el: HtmlElement, allocator: Allocator): Unit =
-    el.mods.foreach(assignInMod(_, allocator))
+    assignInElement(el, allocator, () => allocator.allocate())
 
-  private def assignInMod(mod: Mod, allocator: Allocator): Unit =
+  private def assignInElement(
+    el: HtmlElement,
+    allocator: Allocator,
+    nextId: () => String
+  ): Unit =
+    el.mods.foreach(assignInMod(_, allocator, nextId))
+
+  private def assignInMod(mod: Mod, allocator: Allocator, nextId: () => String): Unit =
     mod match
       case Mod.Attr.Binding(_, id, _) =>
         id match
           case idVar: Var[String] if isPending(idVar.currentValue) =>
-            idVar.set(allocator.allocate())
+            idVar.set(nextId())
           case _ => ()
       case Mod.Attr.JsBinding(_, jsonValue, command) =>
-        command.assignPendingBindingIds(() => allocator.allocate())
+        command.assignPendingBindingIds(nextId)
         jsonValue.set(command.toJson)
-      case Mod.Content.Tag(child)            => assignInElement(child, allocator)
-      case Mod.Content.DynElement(dyn)       => assignInElement(dyn.currentValue, allocator)
+      case Mod.Content.Tag(child)            => assignInElement(child, allocator, nextId)
+      case Mod.Content.DynElement(dyn)       => assignInElement(dyn.currentValue, allocator, nextId)
       case Mod.Content.DynOptionElement(dyn) =>
-        dyn.currentValue.foreach(assignInElement(_, allocator))
+        dyn.currentValue.foreach(assignInElement(_, allocator, nextId))
       case Mod.Content.DynElementColl(dyn) =>
-        dyn.currentValue.iterator.foreach(assignInElement(_, allocator))
+        dyn.currentValue.iterator.foreach(assignInElement(_, allocator, nextId))
       case Mod.Content.DynSplit(splitVar) =>
-        splitVar.currentValues.iterator.foreach(assignInElement(_, allocator))
+        splitVar.currentValues.iterator.foreach(assignInElement(_, allocator, nextId))
       case Mod.Content.DynStream(streamVar) =>
-        streamVar.currentValues.iterator.foreach(assignInElement(_, allocator))
+        streamVar.currentValues.iterator.foreach(assignInElement(_, allocator, nextId))
+      case Mod.Content.Keyed(entries, _, allEntries) =>
+        val keyedEntries = allEntries.getOrElse(entries)
+        val groupSalt    = allocator.allocate().drop(1)
+        keyedEntries.foreach { entry =>
+          var localIndex  = 0
+          val keyPrefix   = stableKeyPrefix(entry.key)
+          val keyedNextId = () =>
+            val id = s"b${groupSalt}_${keyPrefix}_$localIndex"
+            localIndex = localIndex + 1
+            id
+          assignInElement(entry.element, allocator, keyedNextId)
+        }
       case _ => ()
+
+  private def stableKeyPrefix(key: Any): String =
+    Integer.toUnsignedString(MurmurHash3.stringHash(String.valueOf(key)), 36)
 end BindingId

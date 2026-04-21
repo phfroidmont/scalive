@@ -135,6 +135,15 @@ object Mod:
     case DynElementColl(dyn: Dyn[IterableOnce[HtmlElement]]) extends Content with DynamicMod
     case DynSplit(v: SplitVar[?, HtmlElement, ?])            extends Content with DynamicMod
     case DynStream(v: StreamSplitVar[?, HtmlElement])        extends Content with DynamicMod
+    case Keyed(
+      entries: Vector[Content.Keyed.Entry],
+      stream: Option[Diff.Stream] = None,
+      allEntries: Option[Vector[Content.Keyed.Entry]] = None) extends Content with DynamicMod
+
+  object Content:
+    object Keyed:
+      final case class Entry(key: Any, element: HtmlElement)
+end Mod
 
 extension (mod: Mod)
   private[scalive] def setAllUnchanged(): Unit =
@@ -163,6 +172,8 @@ extension (mod: Mod)
       case Content.DynStream(v) =>
         v.setUnchanged()
         v.callOnEveryChild(_.setAllUnchanged())
+      case Content.Keyed(entries, _, allEntries) =>
+        allEntries.getOrElse(entries).foreach(_.element.setAllUnchanged())
 
   private[scalive] def syncAll(): Unit =
     mod match
@@ -192,6 +203,8 @@ extension (mod: Mod)
       case Content.DynStream(v) =>
         v.sync()
         v.callOnEveryChild(_.syncAll())
+      case Content.Keyed(entries, _, allEntries) =>
+        allEntries.getOrElse(entries).foreach(_.element.syncAll())
 
   private[scalive] def findBinding[Msg](id: String): Option[Map[String, String] => Msg] =
     mod match
@@ -215,4 +228,10 @@ extension (mod: Mod)
         v.currentValues.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
       case Content.DynStream(v) =>
         v.currentValues.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
+      case Content.Keyed(entries, _, allEntries) =>
+        allEntries
+          .getOrElse(entries)
+          .iterator
+          .map(_.element.findBinding(id))
+          .collectFirst { case Some(f) => f }
 end extension

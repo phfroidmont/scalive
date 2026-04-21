@@ -25,8 +25,8 @@ object ClientEventsSpec extends ZIOSpecDefault:
 
   private def eventsFromDiff(diff: Diff): Vector[Diff.Event] =
     diff match
-      case Diff.Tag(_, _, events) => events.toVector
-      case _                      => Vector.empty
+      case Diff.Tag(_, _, events, _, _, _, _, _) => events.toVector
+      case _                                      => Vector.empty
 
   private def encodedEventsFromDiff(diff: Diff): Vector[(String, Json)] =
     summon[JsonEncoder[Diff]]
@@ -50,7 +50,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
           case Msg.EmitJs    => ZIO.succeed(model)
         }
 
-        def view(model: Dyn[Model]): HtmlElement =
+        def view(model: Model): HtmlElement =
           div(idAttr := "root", "ready")
 
         def subscriptions(model: Model) = ZStream.empty
@@ -83,7 +83,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
           case Msg.EmitJs    => ZIO.succeed(model)
         }
 
-        def view(model: Dyn[Model]): HtmlElement =
+        def view(model: Model): HtmlElement =
           div(idAttr := "root", "constant")
 
         def subscriptions(model: Model) = ZStream.succeed(Msg.EmitEvent)
@@ -118,7 +118,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
             LiveContext.pushJs(JS.show(to = "#modal")).as(model)
         }
 
-        def view(model: Dyn[Model]): HtmlElement =
+        def view(model: Model): HtmlElement =
           div(idAttr := "root", "constant")
 
         def subscriptions(model: Model) = ZStream.succeed(Msg.EmitJs)

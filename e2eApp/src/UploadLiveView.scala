@@ -32,7 +32,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
     case Msg.Save =>
       saveCompletedEntries(model)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       styleAttr := "padding: 1rem;",
       h1("Uploads"),

@@ -11,7 +11,7 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
     case Msg.SubmitPhone(phone) => model.copy(phone = phone)
     case Msg.PushJs             => LiveContext.pushJs(JS.toggle(to = "#hello")).as(model)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       form(
         phx.onSubmit(params => Msg.SubmitPhone(params.getOrElse("user[phone_number]", ""))),

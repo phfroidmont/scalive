@@ -94,13 +94,18 @@ final private[scalive] case class StreamInsertState(
   limit: Option[Int],
   updateOnly: Option[Boolean])
 
+final private[scalive] case class StreamEntryState(
+  domId: String,
+  item: Any)
+
 final private[scalive] case class StreamState(
   name: String,
   ref: String,
   domId: Any => String,
   inserts: List[StreamInsertState],
   deleteIds: List[String],
-  reset: Boolean)
+  reset: Boolean,
+  entries: Vector[StreamEntryState])
 
 final private[scalive] case class StreamRuntimeState(
   streams: Map[String, StreamState],

@@ -10,7 +10,7 @@ trait LiveView[Msg, Model]:
 
   def init: LiveIO[InitContext, Model]
   def update(model: Model): Msg => LiveIO[UpdateContext, Model]
-  def view(model: Dyn[Model]): HtmlElement
+  def view(model: Model): HtmlElement
   def subscriptions(model: Model): ZStream[SubscriptionsContext, Nothing, Msg]
 
   def handleParams(model: Model, _params: Map[String, String], _uri: URI)

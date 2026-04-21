@@ -28,7 +28,7 @@ object SocketSpec extends ZIOSpecDefault:
         case Msg.FromServer => ZIO.succeed(model.copy(counter = model.counter + 10))
       }
 
-      def view(model: Dyn[Model]): HtmlElement =
+      def view(model: Model): HtmlElement =
         div(
           idAttr := "root",
           phx.onClick(Msg.FromClient),

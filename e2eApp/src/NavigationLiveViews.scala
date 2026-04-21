@@ -12,7 +12,7 @@ class NavigationALiveView(initialParam: Option[String]) extends LiveView[Msg, Mo
   def update(model: Model) =
     case _ => model
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     NavigationLayout(
       div(
         h1("This is page A"),
@@ -63,7 +63,7 @@ class NavigationBLiveView(withContainer: Boolean) extends LiveView[Msg, Model]:
       selectedItem = selectedItem
     )
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     NavigationLayout(
       div(
         h1("This is page B"),
@@ -125,7 +125,7 @@ class RedirectLoopLiveView(loop: Boolean) extends LiveView[Msg, Model]:
       LiveContext.pushPatch(to).as(model)
     else model
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     NavigationLayout(
       div(
         model.when(_.message.nonEmpty)(

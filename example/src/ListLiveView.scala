@@ -20,7 +20,7 @@ class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
     case Msg.IncAge(value) =>
       model.focus(_.elems.index(2).age).modify(_ + value)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       cls := "mx-auto card bg-base-100 max-w-2xl shadow-xl space-y-6",
       div(

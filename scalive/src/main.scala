@@ -17,20 +17,27 @@ def main =
       Elem("c", 30)
     )
   )
-  val modelVar = Var(initModel)
   val lv       = TestView()
-  val el       = lv.view(modelVar)
+  var model    = initModel
+  var previous = lv.view(model)
+
+  def renderUpdate(next: Model): Unit =
+    val current = lv.view(next)
+    println(TreeDiff.diff(previous, current).toJsonPretty)
+    println(current.html)
+    previous = current
+    model = next
+
   println("Init")
-  println(el.html)
-  println(el.diff().toJsonPretty)
+  println(previous.html)
+  println(TreeDiff.initial(previous).toJsonPretty)
 
   println("Edit class attribue")
-  modelVar.update(_.copy(cls = "text-lg"))
-  println(el.diff().toJsonPretty)
+  renderUpdate(model.copy(cls = "text-lg"))
 
   println("Edit first and last")
-  modelVar.update(
-    _.copy(elems =
+  renderUpdate(
+    model.copy(elems =
       List(
         Elem("x", 10),
         Elem("b", 15),
@@ -38,12 +45,10 @@ def main =
       )
     )
   )
-  println(el.diff().toJsonPretty)
-  println(el.diff().toJsonPretty)
 
   println("Add one")
-  modelVar.update(
-    _.copy(elems =
+  renderUpdate(
+    model.copy(elems =
       List(
         Elem("x", 10),
         Elem("b", 15),
@@ -52,12 +57,10 @@ def main =
       )
     )
   )
-  println(el.diff().toJsonPretty)
-  println(el.html)
 
   println("Remove first")
-  modelVar.update(
-    _.copy(elems =
+  renderUpdate(
+    model.copy(elems =
       List(
         Elem("b", 15),
         Elem("c", 99),
@@ -65,18 +68,13 @@ def main =
       )
     )
   )
-  println(el.diff().toJsonPretty)
-  println(el.html)
 
   println("Remove all")
-  modelVar.update(
-    _.copy(
+  renderUpdate(
+    model.copy(
       cls = "text-lg",
       bool = false,
       elems = List.empty
     )
   )
-  println(el.diff().toJsonPretty)
-  println(el.diff().toJsonPretty)
-  println(el.html)
 end main

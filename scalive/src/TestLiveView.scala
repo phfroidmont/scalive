@@ -14,7 +14,7 @@ class TestView extends LiveView[Msg, Model]:
   def update(model: Model) =
     case Msg.UpdateModel(f) => f(model)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       idAttr   := "42",
       cls      := model(_.cls),

@@ -54,10 +54,10 @@ object DiffBuilder:
                 Diff.Comprehension(
                   static = static,
                   entries = entries.map {
-                    case entry @ (previousIndex = None) =>
+                    case (index, None, value) =>
                       Diff.Dynamic(
-                        entry.index,
-                        build(Seq.empty, entry.value.dynamicMods, trackUpdates)
+                        index,
+                        build(Seq.empty, value.dynamicMods, trackUpdates)
                       )
                     case (index, Some(previousIndex), _) =>
                       Diff.IndexChange(
@@ -94,6 +94,24 @@ object DiffBuilder:
               )
             )
           case None => List(None)
+      case Content.Keyed(entries, streamPatch, _) =>
+        val static =
+          entries.headOption.map(_.element.static).getOrElse(List.empty)
+        List(
+          Some(
+            Diff.Comprehension(
+              static = static,
+              entries = entries.zipWithIndex.map { case (entry, index) =>
+                Diff.Dynamic(
+                  index,
+                  build(Seq.empty, entry.element.dynamicMods, trackUpdates = false)
+                )
+              },
+              count = entries.length,
+              stream = streamPatch
+            )
+          )
+        )
     }
 
 end DiffBuilder

@@ -30,7 +30,7 @@ class TodoLiveView() extends LiveView[Msg, Model]:
     case Msg.RemoveCompleted =>
       model.copy(items = model.items.filterNot(_.completed))
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       cls := "mx-auto card bg-base-100 max-w-2xl shadow-xl space-y-6 p-6",
       div(

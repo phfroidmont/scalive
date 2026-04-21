@@ -14,7 +14,8 @@ object StaticBuilder:
   private def buildStaticFragments(el: HtmlElement): Seq[Option[String]] =
     val attrs = el.attrMods.flatMap {
       case Attr.Static(name, value) => List(Some(s""" $name="${Escaping.escape(value)}""""))
-      case Attr.StaticValueAsPresence(name, value) => List(Some(s" $name"))
+      case Attr.StaticValueAsPresence(name, value) =>
+        List(Some(if value then s" $name" else ""))
       case Attr.Binding(name, _, _)      => List(Some(s""" $name=""""), None, Some('"'.toString))
       case Attr.JsBinding(name, _, _)    => List(Some(s" $name='"), None, Some("'"))
       case Attr.Dyn(name, value, isJson) =>
@@ -31,6 +32,7 @@ object StaticBuilder:
       case Content.DynElementColl(_)   => List(None)
       case Content.DynSplit(_)         => List(None)
       case Content.DynStream(_)        => List(None)
+      case Content.Keyed(_, _, _)      => List(None)
     }
     val static         = ListBuffer.empty[Option[String]]
     var staticFragment = s"<${el.tag.name}"

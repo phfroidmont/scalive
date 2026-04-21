@@ -25,13 +25,25 @@ final private[scalive] class SocketStreamRuntime(
       next      <- streamRef.modify { current =>
                 current.streams.get(definition.name) match
                   case Some(existing) =>
-                    val base = if reset then existing.copy(reset = true) else existing
+                    val base =
+                      if reset then
+                        existing.copy(
+                          inserts = Nil,
+                          deleteIds = Nil,
+                          reset = true,
+                          entries = Vector.empty
+                        )
+                      else existing
                     collectInserts(items, atWire, limitWire, updateOnly = None)(item =>
                       safeDomId(definition.name)(existing.domId(item))
                     ) match
                       case Left(error)       => Left(error) -> current
                       case Right(newInserts) =>
-                        val updated = base.copy(inserts = newInserts ++ base.inserts)
+                        val dedupedInserts = dedupeInserts(newInserts)
+                        val updated        = base.copy(
+                          inserts = newInserts ++ base.inserts,
+                          entries = applyInserts(base.entries, dedupedInserts)
+                        )
                         Right(toLiveStream[A](updated)) ->
                           current.copy(streams = current.streams.updated(definition.name, updated))
 
@@ -42,13 +54,15 @@ final private[scalive] class SocketStreamRuntime(
                     ) match
                       case Left(error)       => Left(error) -> current
                       case Right(newInserts) =>
-                        val state = StreamState(
+                        val dedupedInserts = dedupeInserts(newInserts)
+                        val state          = StreamState(
                           name = definition.name,
                           ref = ref,
                           domId = value => definition.domId(value.asInstanceOf[A]),
                           inserts = newInserts,
                           deleteIds = Nil,
-                          reset = false
+                          reset = false,
+                          entries = applyInserts(Vector.empty, dedupedInserts)
                         )
                         Right(toLiveStream[A](state)) ->
                           current.copy(
@@ -89,7 +103,10 @@ final private[scalive] class SocketStreamRuntime(
                           limit = limitWire,
                           updateOnly = Some(updateOnly)
                         )
-                        val updated = existing.copy(inserts = insert :: existing.inserts)
+                        val updated = existing.copy(
+                          inserts = insert :: existing.inserts,
+                          entries = applyInsert(existing.entries, insert)
+                        )
                         Right(toLiveStream[A](updated)) ->
                           current.copy(streams = current.streams.updated(definition.name, updated))
               }
@@ -111,7 +128,10 @@ final private[scalive] class SocketStreamRuntime(
                     safeDomId(definition.name)(existing.domId(item)) match
                       case Left(error)  => Left(error) -> current
                       case Right(domId) =>
-                        val updated = existing.copy(deleteIds = domId :: existing.deleteIds)
+                        val updated = existing.copy(
+                          deleteIds = domId :: existing.deleteIds,
+                          entries = existing.entries.filterNot(_.domId == domId)
+                        )
                         Right(toLiveStream[A](updated)) ->
                           current.copy(streams = current.streams.updated(definition.name, updated))
               }
@@ -134,7 +154,10 @@ final private[scalive] class SocketStreamRuntime(
                       )
                     ) -> current
                   case Some(existing) =>
-                    val updated = existing.copy(deleteIds = domId :: existing.deleteIds)
+                    val updated = existing.copy(
+                      deleteIds = domId :: existing.deleteIds,
+                      entries = existing.entries.filterNot(_.domId == domId)
+                    )
                     Right(toLiveStream[A](updated)) ->
                       current.copy(streams = current.streams.updated(definition.name, updated))
               }
@@ -196,6 +219,46 @@ final private[scalive] class SocketStreamRuntime(
       ) :: inserts
     }
 
+  private def applyInserts(
+    entries: Vector[StreamEntryState],
+    inserts: List[StreamInsertState]
+  ): Vector[StreamEntryState] =
+    inserts.foldLeft(entries)((acc, insert) => applyInsert(acc, insert))
+
+  private def applyInsert(
+    entries: Vector[StreamEntryState],
+    insert: StreamInsertState
+  ): Vector[StreamEntryState] =
+    val updatedEntry = StreamEntryState(insert.domId, insert.item)
+    entries.indexWhere(_.domId == insert.domId) match
+      case existingIndex if existingIndex >= 0 =>
+        applyLimit(entries.updated(existingIndex, updatedEntry), insert.limit)
+      case _ if insert.updateOnly.contains(true) =>
+        entries
+      case _ =>
+        applyLimit(insertEntry(entries, updatedEntry, insert.at), insert.limit)
+
+  private def insertEntry(
+    entries: Vector[StreamEntryState],
+    entry: StreamEntryState,
+    at: Int
+  ): Vector[StreamEntryState] =
+    if at == -1 || at >= entries.length then entries :+ entry
+    else if at <= 0 then entry +: entries
+    else entries.patch(at, Seq(entry), 0)
+
+  private def applyLimit(
+    entries: Vector[StreamEntryState],
+    limit: Option[Int]
+  ): Vector[StreamEntryState] =
+    limit match
+      case Some(value) if value > 0 && entries.length > value =>
+        entries.take(value)
+      case Some(value) if value < 0 && entries.length > -value =>
+        entries.takeRight(-value)
+      case _ =>
+        entries
+
   private def toLiveStream[A](stream: StreamState): LiveStream[A] =
     val dedupedInserts = dedupeInserts(stream.inserts)
 
@@ -203,6 +266,8 @@ final private[scalive] class SocketStreamRuntime(
       name = stream.name,
       entries = dedupedInserts
         .map(insert => LiveStreamEntry(insert.domId, insert.item.asInstanceOf[A])).toVector,
+      allEntries = stream.entries
+        .map(entry => LiveStreamEntry(entry.domId, entry.item.asInstanceOf[A])),
       ref = stream.ref,
       inserts = dedupedInserts
         .map(insert =>

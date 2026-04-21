@@ -42,7 +42,7 @@ class StreamLiveView(extraItemWithId: Boolean = false)
         case _ =>
           ZIO.succeed(E2ESandboxEval.handle(model, event, value))
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       div(
         idAttr       := "users",
@@ -386,7 +386,7 @@ class HealthyLiveView(initialCategory: String)
       )
       .map(items => model.copy(category = category, items = items))
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       p(
         link.patch(
@@ -543,7 +543,7 @@ class StreamResetLiveView(usePhxRemove: Boolean = false)
         .map(items => model.copy(items = items))
   end update
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       model.when(_.usePhxRemove)(
         streamList(model, withPhxRemove = true)
@@ -568,7 +568,7 @@ class StreamResetLiveView(usePhxRemove: Boolean = false)
 
   def subscriptions(model: Model) = ZStream.empty
 
-  private def streamList(model: Dyn[Model], withPhxRemove: Boolean): HtmlElement =
+  private def streamList(model: Model, withPhxRemove: Boolean): HtmlElement =
     ul(
       idAttr       := "thelist",
       phx.onUpdate := "stream",
@@ -649,7 +649,7 @@ class StreamResetLCLiveView
         .stream(ItemsStreamDef, ReorderedItems, reset = true)
         .map(items => model.copy(items = items))
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       ul(
         idAttr       := "thelist",
@@ -755,7 +755,7 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         .map(nextItems => model.copy(items = nextItems, lastId = 0))
   end update
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       form(
         phx.onSubmit(params =>
@@ -854,7 +854,7 @@ class StreamNestedComponentResetLiveView
     case Msg.ReorderParents =>
       reorderParents(model)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       ul(
         idAttr       := "thelist",
@@ -981,7 +981,7 @@ class StreamInsideForLiveView
 
   def update(model: Model) = _ => model
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       List(1).map(_ =>
         ul(

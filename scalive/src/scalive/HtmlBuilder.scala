@@ -40,12 +40,20 @@ object HtmlBuilder:
           val (entries, _, _, _) =
             splitVar.render(false).getOrElse((List.empty, 0, true, None))
           val staticOpt = entries.collectFirst { case (value = el) => el.static }
-          entries.foreach(entry => build(staticOpt.getOrElse(Nil), entry.value.dynamicMods, strw))
+          entries.foreach { case (_, _, value) =>
+            build(staticOpt.getOrElse(Nil), value.dynamicMods, strw)
+          }
         case Content.DynStream(streamVar) =>
           val (entries, _, _, _) =
             streamVar.render(false).getOrElse((List.empty, 0, true, None))
           val staticOpt = entries.collectFirst { case (value = el) => el.static }
-          entries.foreach(entry => build(staticOpt.getOrElse(Nil), entry.value.dynamicMods, strw))
+          entries.foreach { case (_, _, value) =>
+            build(staticOpt.getOrElse(Nil), value.dynamicMods, strw)
+          }
+        case Content.Keyed(entries, _, _) =>
+          entries.foreach(entry => build(entry.element.static, entry.element.dynamicMods, strw))
+      end match
+    end for
     strw.write(static.last)
   end build
 

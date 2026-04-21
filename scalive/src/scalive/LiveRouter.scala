@@ -39,7 +39,7 @@ final case class LiveRoute[A, Msg, Model](
                 streams = new SocketStreamRuntime(streamRef)
               )
         initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(ctx))
-        el = lv.view(Var(initModel))
+        el = lv.view(initModel)
         _  = el.syncAll()
         _  = el.allocatePendingBindingIds()
       yield Response.html(

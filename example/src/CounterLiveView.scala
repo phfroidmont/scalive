@@ -21,7 +21,7 @@ class CounterLiveView() extends LiveView[Msg, Model]:
     case Msg.DecCounter =>
       model.focus(_.counter).modify(_ - 1)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       cls := "mx-auto card bg-base-100 max-w-2xl shadow-xl space-y-6",
       div(

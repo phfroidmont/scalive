@@ -8,10 +8,15 @@ enum Diff:
   case Tag(
     static: Seq[String] = Seq.empty,
     dynamic: Seq[Diff.Dynamic] = Seq.empty,
-    events: Seq[Diff.Event] = Seq.empty)
+    events: Seq[Diff.Event] = Seq.empty,
+    root: Boolean = false,
+    title: Option[String] = None,
+    components: Map[Int, Diff] = Map.empty,
+    templates: Map[Int, Seq[String]] = Map.empty,
+    templateRef: Option[Int] = None)
   case Comprehension(
     static: Seq[String] = Seq.empty,
-    entries: Seq[Diff.Dynamic | Diff.IndexChange] = Seq.empty,
+    entries: Seq[Diff.Dynamic | Diff.IndexChange | Diff.IndexMerge] = Seq.empty,
     count: Int = 0,
     stream: Option[Diff.Stream] = None)
   case Value(value: String)
@@ -20,8 +25,8 @@ enum Diff:
 
 extension (diff: Diff)
   def isEmpty: Boolean = diff match
-    case Diff.Tag(static, dynamic, events) =>
-      static.isEmpty && dynamic.isEmpty && events.isEmpty
+    case Diff.Tag(static, dynamic, events, root, title, components, templates, templateRef) =>
+      static.isEmpty && dynamic.isEmpty && events.isEmpty && !root && title.isEmpty && components.isEmpty && templates.isEmpty && templateRef.isEmpty
     case _: Diff.Comprehension => false
     case _: Diff.Value         => false
     case _: Diff.Dynamic       => false
@@ -31,6 +36,8 @@ object Diff:
   given JsonEncoder[Diff] = JsonEncoder[Json].contramap(toJson(_))
 
   final case class IndexChange(index: Int, previousIndex: Int)
+
+  final case class IndexMerge(index: Int, previousIndex: Int, diff: Diff)
 
   final case class Event(name: String, payload: Json)
 
@@ -48,20 +55,43 @@ object Diff:
 
   private def toJson(diff: Diff): Json =
     diff match
-      case Diff.Tag(static, dynamic, events) =>
+      case Diff.Tag(static, dynamic, events, root, title, components, templates, templateRef) =>
         val eventsJson =
           Option.when(events.nonEmpty)(
             "e" -> Json.Arr(events.map(event => Json.Arr(Json.Str(event.name), event.payload))*)
           )
 
+        val staticJson =
+          templateRef
+            .map(ref => "s" -> Json.Num(ref))
+            .orElse(Option.when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*)))
+
+        val titleJson      = title.map(value => "t" -> Json.Str(value))
+        val rootJson       = Option.when(root)("r" -> Json.Num(1))
+        val componentsJson =
+          Option.when(components.nonEmpty)(
+            "c" -> Json.Obj(components.toSeq.map { case (cid, value) =>
+              cid.toString -> toJson(value)
+            }*)
+          )
+        val templatesJson =
+          Option.when(templates.nonEmpty)(
+            "p" -> Json.Obj(templates.toSeq.map { case (ref, values) =>
+              ref.toString -> Json.Arr(values.map(Json.Str(_))*)
+            }*)
+          )
+
         Json.Obj(
-          Option
-            .when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*))
+          staticJson
             .to(Chunk)
             .appendedAll(
               dynamic.map(d => d.index.toString -> toJson(d.diff))
             )
             .appendedAll(eventsJson)
+            .appendedAll(titleJson)
+            .appendedAll(rootJson)
+            .appendedAll(componentsJson)
+            .appendedAll(templatesJson)
         )
       case Diff.Comprehension(static, entries, count, stream) =>
         val keyedEntries =
@@ -72,6 +102,8 @@ object Diff:
                   index.toString -> toJson(diff)
                 case Diff.IndexChange(index, previousIndex) =>
                   index.toString -> Json.Num(previousIndex)
+                case Diff.IndexMerge(index, previousIndex, diff) =>
+                  index.toString -> Json.Arr(Json.Num(previousIndex), toJson(diff))
               }*
             ).add("kc", Json.Num(count))
 

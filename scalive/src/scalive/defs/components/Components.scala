@@ -1,7 +1,5 @@
 package scalive.defs.components
 
-import scala.annotation.targetName
-
 import scalive.*
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
@@ -20,24 +18,23 @@ trait Components:
 
   private val dataPhxAutoUpload = htmlAttr("data-phx-auto-upload", BooleanAsAttrPresenceEncoder)
 
-  def liveFileInput(upload: Dyn[LiveUpload], mods: Mod*): HtmlElement =
+  def liveFileInput(upload: LiveUpload, mods: Mod*): HtmlElement =
     input(
-      idAttr                      := upload(_.ref),
+      idAttr                      := upload.ref,
       typ                         := "file",
-      nameAttr                    := upload(_.name),
-      accept                      := upload(_.accept.toHtmlValue),
+      nameAttr                    := upload.name,
+      accept                      := upload.accept.toHtmlValue,
       dataAttr("phx-hook")        := "Phoenix.LiveFileUpload",
       dataAttr("phx-update")      := "ignore",
-      dataAttr("phx-upload-ref")  := upload(_.ref),
-      dataAttr("phx-active-refs") := upload(u =>
-        u.entries.filterNot(_.cancelled).map(_.ref).mkString(",")
-      ),
-      dataAttr("phx-done-refs") := upload(u => u.entries.filter(_.done).map(_.ref).mkString(",")),
-      dataAttr("phx-preflighted-refs") := upload(u =>
-        u.entries.filter(entry => entry.preflighted || entry.done).map(_.ref).mkString(",")
-      ),
-      dataPhxAutoUpload := upload(_.autoUpload),
-      multiple          := upload(_.maxEntries > 1),
+      dataAttr("phx-upload-ref")  := upload.ref,
+      dataAttr("phx-active-refs") := upload.entries.filterNot(_.cancelled).map(_.ref).mkString(","),
+      dataAttr("phx-done-refs")   := upload.entries.filter(_.done).map(_.ref).mkString(","),
+      dataAttr("phx-preflighted-refs") := upload.entries
+        .filter(entry => entry.preflighted || entry.done)
+        .map(_.ref)
+        .mkString(","),
+      dataPhxAutoUpload := upload.autoUpload,
+      multiple          := upload.maxEntries > 1,
       mods
     )
 
@@ -47,11 +44,6 @@ trait Components:
     val _ = upload
     entry.errors
 
-  @targetName("uploadErrorsDynUpload")
-  def uploadErrors(upload: Dyn[LiveUpload]): Dyn[List[LiveUploadError]] =
-    upload(_.errors)
+  def uploadErrors(entry: LiveUploadEntry): List[LiveUploadError] = entry.errors
 
-  @targetName("uploadErrorsDynEntry")
-  def uploadErrors(entry: Dyn[LiveUploadEntry]): Dyn[List[LiveUploadError]] =
-    entry(_.errors)
 end Components

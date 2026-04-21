@@ -10,7 +10,7 @@ class ComponentsLiveView(initialTab: String) extends LiveView[Msg, Model]:
   def update(model: Model) =
     case Msg.SetTab(tab) => model.copy(activeTab = tab)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       styleAttr := "padding: 1.5rem;",
       h1(

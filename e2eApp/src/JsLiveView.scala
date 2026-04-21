@@ -10,7 +10,7 @@ class JsLiveView extends LiveView[Msg, Model]:
   def update(model: Model) =
     case Msg.Increment => model.copy(count = model.count + 1)
 
-  def view(model: Dyn[Model]) =
+  def view(model: Model) =
     div(
       div(
         idAttr        := "my-modal",

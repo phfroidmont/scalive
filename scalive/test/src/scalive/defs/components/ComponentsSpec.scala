@@ -63,14 +63,12 @@ object ComponentsSpec extends ZIOSpecDefault:
     },
     suite("liveFileInput helper")(
       test("does not render auto upload marker when disabled") {
-        val uploadVar = Var(
-          liveUpload(
-            autoUpload = false,
-            maxEntries = 1,
-            entries = Nil
-          )
+        val upload = liveUpload(
+          autoUpload = false,
+          maxEntries = 1,
+          entries = Nil
         )
-        val el        = liveFileInput(uploadVar(identity))
+        val el     = liveFileInput(upload)
         el.syncAll()
 
         val result = HtmlBuilder.build(el)
@@ -84,19 +82,17 @@ object ComponentsSpec extends ZIOSpecDefault:
         )
       },
       test("renders computed refs and presence attrs") {
-        val uploadVar = Var(
-          liveUpload(
-            autoUpload = true,
-            maxEntries = 2,
-            entries = List(
-              uploadEntry("entry-a"),
-              uploadEntry("entry-b", cancelled = true),
-              uploadEntry("entry-c", done = true),
-              uploadEntry("entry-d", preflighted = true)
-            )
+        val upload = liveUpload(
+          autoUpload = true,
+          maxEntries = 2,
+          entries = List(
+            uploadEntry("entry-a"),
+            uploadEntry("entry-b", cancelled = true),
+            uploadEntry("entry-c", done = true),
+            uploadEntry("entry-d", preflighted = true)
           )
         )
-        val el        = liveFileInput(uploadVar(identity))
+        val el     = liveFileInput(upload)
         el.syncAll()
 
         val result = HtmlBuilder.build(el)

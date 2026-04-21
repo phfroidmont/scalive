@@ -21,7 +21,7 @@ object JSCommands:
       JsonEncoder[Json].contramap(ops => Json.Arr(ops.map(_.renderJson(None)).reverse*))
 
   private def encodeOp[A: JsonEncoder](kind: String, args: A): Json =
-    (kind, args).toJsonAST.fold(e => throw new IllegalArgumentException(e), identity)
+    (kind, args).toJsonAST.toOption.getOrElse(Json.Arr(Json.Str(kind), Json.Obj.empty))
 
   private def classNames(names: String): Seq[String] = names.split("\\s+").toSeq
   private def transitionClasses(names: String | (String, String, String))

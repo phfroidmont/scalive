@@ -105,9 +105,11 @@ object LiveContext:
     name: String,
     payload: A
   ): URIO[HasClientEvents, Unit] =
-    val encoded =
-      payload.toJsonAST.fold(error => throw new IllegalArgumentException(error), identity)
-    ZIO.serviceWithZIO[HasClientEvents](_.clientEvents.push(name, encoded))
+    payload.toJsonAST match
+      case Right(encoded) =>
+        ZIO.serviceWithZIO[HasClientEvents](_.clientEvents.push(name, encoded))
+      case Left(error) =>
+        ZIO.logWarning(s"Could not encode client event '$name': $error")
 
   final private case class PushJsPayload(cmd: String) derives JsonEncoder
 

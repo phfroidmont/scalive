@@ -123,6 +123,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   lv: LiveView[Msg, Model],
   ctx: LiveContext,
   meta: WebSocketMessage.Meta,
+  tokenConfig: TokenConfig,
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
   outHub: Hub[(Payload, WebSocketMessage.Meta)],
   ref: Ref[(Model, RenderedView[Msg])],

@@ -10,7 +10,8 @@ private[scalive] object SocketBootstrap:
   def initializeRuntime[Msg, Model](
     lv: LiveView[Msg, Model],
     ctx: LiveContext,
-    meta: WebSocketMessage.Meta
+    meta: WebSocketMessage.Meta,
+    tokenConfig: TokenConfig
   ): Task[RuntimeState[Msg, Model]] =
     for
       inbox           <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
@@ -54,6 +55,7 @@ private[scalive] object SocketBootstrap:
       lv = lv,
       ctx = runtimeCtx,
       meta = meta,
+      tokenConfig = tokenConfig,
       inbox = inbox,
       outHub = outHub,
       ref = ref,

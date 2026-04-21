@@ -28,11 +28,12 @@ object Socket:
     token: String,
     lv: LiveView[Msg, Model],
     ctx: LiveContext,
-    meta: WebSocketMessage.Meta
+    meta: WebSocketMessage.Meta,
+    tokenConfig: TokenConfig = TokenConfig.default
   ): RIO[Scope, Socket[Msg, Model]] =
     ZIO.logAnnotate("lv", id) {
       for
-        state       <- SocketBootstrap.initializeRuntime(lv, ctx, meta)
+        state       <- SocketBootstrap.initializeRuntime(lv, ctx, meta, tokenConfig)
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
         livePatch =

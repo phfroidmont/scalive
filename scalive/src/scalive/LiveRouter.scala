@@ -1,7 +1,6 @@
 package scalive
 
 import java.util.Base64
-import scala.concurrent.duration.*
 import scala.util.Random
 
 import zio.*
@@ -26,12 +25,15 @@ final case class LiveRoute[A, Msg, Model](
   liveviewBuilder: (A, Request) => LiveView[Msg, Model],
   sessionName: String = "default"):
 
-  def toZioRoute(rootLayout: HtmlElement => HtmlElement): Route[Any, Throwable] =
+  def toZioRoute(
+    rootLayout: HtmlElement => HtmlElement,
+    tokenConfig: TokenConfig
+  ): Route[Any, Throwable] =
     Method.GET / path -> handler { (params: A, req: Request) =>
       val lv         = liveviewBuilder(params, req)
       val id: String =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
-      val token = Token.sign("secret", id, sessionName)
+      val token = Token.sign(tokenConfig.secret, id, sessionName)
       for
         streamRef <- Ref.make(StreamRuntimeState.empty)
         ctx = LiveContext(
@@ -59,7 +61,8 @@ end LiveRoute
 
 class LiveChannel(
   private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
-  private val uploadOwners: Ref[Map[String, String]]):
+  private val uploadOwners: Ref[Map[String, String]],
+  private val tokenConfig: TokenConfig):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
     sockets.changes
       .map(m =>
@@ -80,11 +83,11 @@ class LiveChannel(
           case Some(socket) =>
             socket.shutdown *>
               Socket
-                .start(id, token, lv, ctx, meta)
+                .start(id, token, lv, ctx, meta, tokenConfig)
                 .map(m.updated(id, _))
           case None =>
             Socket
-              .start(id, token, lv, ctx, meta)
+              .start(id, token, lv, ctx, meta, tokenConfig)
               .map(m.updated(id, _))
       }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
 
@@ -190,13 +193,16 @@ class LiveChannel(
 end LiveChannel
 
 object LiveChannel:
-  def make(): UIO[LiveChannel] =
+  def make(tokenConfig: TokenConfig): UIO[LiveChannel] =
     for
       sockets      <- SubscriptionRef.make(Map.empty[String, Socket[?, ?]])
       uploadOwners <- Ref.make(Map.empty[String, String])
-    yield new LiveChannel(sockets, uploadOwners)
+    yield new LiveChannel(sockets, uploadOwners, tokenConfig)
 
-class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRoute[?, ?, ?]]):
+class LiveRouter(
+  rootLayout: HtmlElement => HtmlElement,
+  liveRoutes: List[LiveRoute[?, ?, ?]],
+  tokenConfig: TokenConfig = TokenConfig.default):
 
   private val trackedStatic = StaticTracking.collect(rootLayout(div()))
 
@@ -204,7 +210,7 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
     Handler.webSocket { channel =>
       ZIO
         .scoped(for
-          liveChannel <- LiveChannel.make()
+          liveChannel <- LiveChannel.make(tokenConfig)
           _           <- liveChannel.diffsStream
                  .runForeach((payload, meta) =>
                    channel
@@ -268,36 +274,40 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
       case Payload.Join(url, redirect, session, static, params, sticky) =>
         val clientStatics = static.orElse(StaticTracking.clientListFromParams(params))
         val ctx           = LiveContext(StaticTracking.staticChanged(clientStatics, trackedStatic))
-        ZIO
-          .fromEither(URL.decode(url.orElse(redirect).getOrElse(???))).flatMap(url =>
-            val req = Request(url = url)
-            liveRoutes.iterator
-              .map(route =>
-                route.path
-                  .decode(req.path)
-                  .toOption
-                  .map(pathParams =>
-                    if isAuthorizedJoin(route.sessionName, message.topic, session) then
-                      val lv = route.liveviewBuilder(pathParams, req)
-                      ZIO.logDebug(s"Joining LiveView ${route.path.toString} ${message.topic}") *>
-                        liveChannel.join(message.topic, session, lv, ctx, message.meta).as(None)
-                    else
-                      ZIO.succeed(
-                        Some(
-                          WebSocketMessage(
-                            message.joinRef,
-                            message.messageRef,
-                            message.topic,
-                            "phx_reply",
-                            Payload.errorReply(LiveResponse.JoinError(JoinErrorReason.Unauthorized))
+        url
+          .orElse(redirect)
+          .toRight("Join payload must contain url or redirect") match
+          case Left(error) =>
+            ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+          case Right(rawUrl) =>
+            URL.decode(rawUrl) match
+              case Left(error) =>
+                ZIO
+                  .logWarning(s"Could not decode join URL '$rawUrl': $error")
+                  .as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+              case Right(decodedUrl) =>
+                val req = Request(url = decodedUrl)
+                liveRoutes.iterator
+                  .map(route =>
+                    route.path
+                      .decode(req.path)
+                      .toOption
+                      .map(pathParams =>
+                        if isAuthorizedJoin(route.sessionName, message.topic, session) then
+                          val lv = route.liveviewBuilder(pathParams, req)
+                          ZIO.logDebug(
+                            s"Joining LiveView ${route.path.toString} ${message.topic}"
+                          ) *>
+                            liveChannel.join(message.topic, session, lv, ctx, message.meta).as(None)
+                        else
+                          ZIO.succeed(
+                            Some(joinErrorReply(message, JoinErrorReason.Unauthorized))
                           )
-                        )
                       )
                   )
-              )
-              .collectFirst { case Some(join) => join }
-              .getOrElse(ZIO.succeed(None))
-          )
+                  .collectFirst { case Some(join) => join }
+                  .getOrElse(ZIO.succeed(None))
+        end match
       case Payload.Leave =>
         if message.topic.startsWith("lv:") && message.topic.length > 3 then
           liveChannel
@@ -395,19 +405,57 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
               )
             )
           )
-      case Payload.LiveNavigation(_, _) => ZIO.die(new IllegalArgumentException())
-      case Payload.Error                => ZIO.die(new IllegalArgumentException())
-      case Payload.Reply(_, _)          => ZIO.die(new IllegalArgumentException())
-      case Payload.Diff(_)              => ZIO.die(new IllegalArgumentException())
-      case Payload.Close                => ZIO.die(new IllegalArgumentException())
+      case Payload.LiveNavigation(_, _) =>
+        unexpectedClientPayload(message, "live_navigation")
+      case Payload.Error =>
+        unexpectedClientPayload(message, "error")
+      case Payload.Reply(_, _) =>
+        unexpectedClientPayload(message, "reply")
+      case Payload.Diff(_) =>
+        unexpectedClientPayload(message, "diff")
+      case Payload.Close =>
+        if message.topic.startsWith("lv:") && message.topic.length > 3 then
+          liveChannel.leave(message.topic).as(Some(message.okReply))
+        else
+          ZIO
+            .logDebug(s"Ignoring close for non-liveview topic ${message.topic}").as(
+              Some(message.okReply)
+            )
     end match
   end handleMessage
+
+  private def joinErrorReply(message: WebSocketMessage, reason: JoinErrorReason): WebSocketMessage =
+    WebSocketMessage(
+      message.joinRef,
+      message.messageRef,
+      message.topic,
+      "phx_reply",
+      Payload.errorReply(LiveResponse.JoinError(reason))
+    )
+
+  private def unexpectedClientPayload(
+    message: WebSocketMessage,
+    payloadType: String
+  ): UIO[Option[WebSocketMessage]] =
+    ZIO
+      .logWarning(s"Ignoring unexpected client payload type $payloadType on topic ${message.topic}")
+      .as(
+        Some(
+          WebSocketMessage(
+            message.joinRef,
+            message.messageRef,
+            message.topic,
+            "phx_reply",
+            Payload.errorReply(LiveResponse.Empty)
+          )
+        )
+      )
 
   private def isAuthorizedJoin(expectedSession: String, topic: String, sessionToken: String)
     : Boolean =
     val topicId = topic.stripPrefix("lv:")
     Token
-      .verify[String]("secret", sessionToken, 7.days)
+      .verify[String](tokenConfig.secret, sessionToken, tokenConfig.maxAge)
       .toOption
       .exists { case (tokenTopic, tokenSession) =>
         (tokenTopic == topic || tokenTopic == topicId) && tokenSession == expectedSession
@@ -417,11 +465,11 @@ class LiveRouter(rootLayout: HtmlElement => HtmlElement, liveRoutes: List[LiveRo
     Routes
       .fromIterable(
         liveRoutes
-          .map(route => route.toZioRoute(rootLayout))
+          .map(route => route.toZioRoute(rootLayout, tokenConfig))
           .prepended(
             Method.GET / "live" / "websocket" -> handler(socketApp.toResponse)
           )
       ).handleErrorZIO(e =>
-        ZIO.logErrorCause(Cause.die(e)).as(Response(status = Status.InternalServerError))
+        ZIO.logErrorCause(Cause.fail(e)).as(Response(status = Status.InternalServerError))
       )
 end LiveRouter

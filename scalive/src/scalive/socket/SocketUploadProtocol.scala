@@ -1,7 +1,6 @@
 package scalive
 package socket
 
-import scala.concurrent.duration.*
 import scala.util.Try
 
 import zio.*
@@ -117,7 +116,7 @@ private[scalive] object SocketUploadProtocol:
                                               )
                                             val token =
                                               Token.sign[UploadJoinToken](
-                                                "secret",
+                                                state.tokenConfig.secret,
                                                 state.meta.topic,
                                                 tokenPayload
                                               )
@@ -247,7 +246,7 @@ private[scalive] object SocketUploadProtocol:
     token: String,
     state: RuntimeState[Msg, Model]
   ): Task[Payload.Reply] =
-    Token.verify[UploadJoinToken]("secret", token, 7.days) match
+    Token.verify[UploadJoinToken](state.tokenConfig.secret, token, state.tokenConfig.maxAge) match
       case Left(_) =>
         ZIO.succeed(
           Payload.errorReply(LiveResponse.UploadJoinError(UploadJoinErrorReason.InvalidToken))

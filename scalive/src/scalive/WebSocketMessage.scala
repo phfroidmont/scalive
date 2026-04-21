@@ -70,25 +70,30 @@ object WebSocketMessage:
         m.messageRef.map(ref => Json.Str(ref.toString)).getOrElse(Json.Null),
         Json.Str(m.topic),
         Json.Str(m.eventType),
-        m.payload match
-          case Payload.Heartbeat      => Json.Obj.empty
-          case p: Payload.Join        => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.UploadJoin  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case Payload.UploadChunk(_) =>
-            throw new IllegalArgumentException("UploadChunk cannot be JSON encoded")
-          case Payload.Leave          => Json.Obj.empty
-          case Payload.Close          => Json.Obj.empty
-          case p: Payload.LivePatch   => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.AllowUpload => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Progress    => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.LiveNavigation =>
-            p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case Payload.Error    => Json.Obj.empty
-          case p: Payload.Reply => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Event => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
-          case p: Payload.Diff  => p.toJsonAST.getOrElse(throw new IllegalArgumentException())
+        encodePayload(m.payload)
       )
   )
+
+  private def encodePayload(payload: Payload): Json =
+    payload match
+      case Payload.Heartbeat         => Json.Obj.empty
+      case p: Payload.Join           => encodeJsonOrFallback(p, Json.Obj.empty)
+      case p: Payload.UploadJoin     => encodeJsonOrFallback(p, Json.Obj.empty)
+      case Payload.UploadChunk(_)    => Json.Obj("error" -> Json.Str("upload_chunk_binary_only"))
+      case Payload.Leave             => Json.Obj.empty
+      case Payload.Close             => Json.Obj.empty
+      case p: Payload.LivePatch      => encodeJsonOrFallback(p, Json.Obj.empty)
+      case p: Payload.AllowUpload    => encodeJsonOrFallback(p, Json.Obj.empty)
+      case p: Payload.Progress       => encodeJsonOrFallback(p, Json.Obj.empty)
+      case p: Payload.LiveNavigation =>
+        encodeJsonOrFallback(p, Json.Obj.empty)
+      case Payload.Error    => Json.Obj.empty
+      case p: Payload.Reply => encodeJsonOrFallback(p, Json.Obj.empty)
+      case p: Payload.Event => encodeJsonOrFallback(p, Json.Obj.empty)
+      case p: Payload.Diff  => encodeJsonOrFallback(p, Json.Obj.empty)
+
+  private def encodeJsonOrFallback[A: JsonEncoder](value: A, fallback: Json): Json =
+    value.toJsonAST.toOption.getOrElse(fallback)
 
   enum Payload:
     case Heartbeat
@@ -161,12 +166,15 @@ object WebSocketMessage:
         val base =
           p.`type` match
             case "form" =>
-              QueryParams
-                .decode(
-                  p.value.asString.getOrElse(throw new IllegalArgumentException())
-                ).map.iterator.map { case (key, values) =>
+              p.value.asString
+                .map(value => QueryParams.decode(value))
+                .getOrElse(QueryParams.decode(""))
+                .map
+                .iterator
+                .map { case (key, values) =>
                   key -> values.headOption.getOrElse("")
-                }.toMap
+                }
+                .toMap
             case _ => decodeObjectToStringMap(p.value)
 
         val withMeta = p.meta match
@@ -183,13 +191,14 @@ object WebSocketMessage:
         p.cid match
           case Some(cid) => withUploads.updated("__cid", cid.toString)
           case None      => withUploads
+    end extension
 
     private def decodeObjectToStringMap(value: Json): Map[String, String] =
       value match
         case obj: Json.Obj =>
           obj.fields.map { case (key, jsonValue) => key -> jsonToParamValue(jsonValue) }.toMap
         case _ =>
-          value.as[Map[String, String]].getOrElse(throw new IllegalArgumentException())
+          value.as[Map[String, String]].getOrElse(Map.empty)
 
     private def jsonToParamValue(value: Json): String =
       value match
@@ -273,11 +282,11 @@ object WebSocketMessage:
         case InitDiff(rendered) =>
           Json.Obj(
             "liveview_version" -> Json.Str("1.1.8"),
-            "rendered"         -> rendered.toJsonAST.getOrElse(throw new IllegalArgumentException())
+            "rendered"         -> encodeJsonOrFallback(rendered, Json.Obj.empty)
           )
         case Diff(diff) =>
           Json.Obj(
-            "diff" -> diff.toJsonAST.getOrElse(throw new IllegalArgumentException())
+            "diff" -> encodeJsonOrFallback(diff, Json.Obj.empty)
           )
         case InterceptReply(reply, diff) =>
           val mergedDiff =
@@ -319,14 +328,14 @@ object WebSocketMessage:
         case UploadPreflightSuccess(ref, config, entries, errors) =>
           Json.Obj(
             "ref"     -> Json.Str(ref),
-            "config"  -> config.toJsonAST.getOrElse(throw new IllegalArgumentException()),
-            "entries" -> entries.toJsonAST.getOrElse(throw new IllegalArgumentException()),
-            "errors"  -> errors.toJsonAST.getOrElse(throw new IllegalArgumentException())
+            "config"  -> encodeJsonOrFallback(config, Json.Obj.empty),
+            "entries" -> encodeJsonOrFallback(entries, Json.Obj.empty),
+            "errors"  -> encodeJsonOrFallback(errors, Json.Obj.empty)
           )
         case UploadPreflightFailure(ref, error) =>
           Json.Obj(
             "ref"   -> Json.Str(ref),
-            "error" -> error.toJsonAST.getOrElse(throw new IllegalArgumentException())
+            "error" -> encodeJsonOrFallback(error, Json.Arr())
           )
       }
   end LiveResponse

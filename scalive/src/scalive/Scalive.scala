@@ -106,7 +106,6 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val trackStatic   = htmlAttr("phx-track-static", BooleanAsAttrPresenceEncoder)
   end phx
 
-  implicit def stringToMod(v: String): Mod                          = Mod.Content.Text(v)
-  implicit def htmlElementToMod(el: HtmlElement): Mod               = Mod.Content.Tag(el)
-  implicit private[scalive] def dynStringToMod(d: Dyn[String]): Mod = Mod.Content.DynText(d)
+  implicit def stringToMod(v: String): Mod            = Mod.Content.Text(v)
+  implicit def htmlElementToMod(el: HtmlElement): Mod = Mod.Content.Tag(el)
 end scalive

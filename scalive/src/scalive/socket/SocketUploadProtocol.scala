@@ -473,15 +473,15 @@ private[scalive] object SocketUploadProtocol:
     state: RuntimeState[Msg, Model]
   ): Task[Payload.Reply] =
     for
-      (modelVar, el) <- state.ref.get
-      reply          <- el.findBinding(eventRef) match
+      (currentModel, el) <- state.ref.get
+      reply              <- el.findBinding(eventRef) match
                  case Some(binding) =>
                    for
                      params                     <- ZIO.succeed(progressPayloadToParams(payload))
                      (updatedModel, navigation) <-
                        SocketModelRuntime.captureNavigation(state)(
                          LiveIO
-                           .toZIO(state.lv.update(modelVar.currentValue)(binding(params)))
+                           .toZIO(state.lv.update(currentModel)(binding(params)))
                            .provide(ZLayer.succeed(state.ctx))
                        )
                      reply <- navigation match
@@ -489,7 +489,6 @@ private[scalive] object SocketUploadProtocol:
                                   state.patchRedirectCountRef.set(0) *>
                                     SocketInbound
                                       .handleNavigationCommand(
-                                        modelVar,
                                         el,
                                         updatedModel,
                                         command,
@@ -500,7 +499,6 @@ private[scalive] object SocketUploadProtocol:
                                 case None =>
                                   SocketModelRuntime
                                     .updateModelAndSubscriptions(
-                                      modelVar,
                                       el,
                                       updatedModel,
                                       state

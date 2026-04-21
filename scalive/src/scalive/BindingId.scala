@@ -1,7 +1,5 @@
 package scalive
 
-import zio.json.EncoderOps
-
 import scala.util.hashing.MurmurHash3
 
 /** Binding IDs are internal server-side routing keys used to map client events back to handlers.
@@ -47,24 +45,11 @@ private[scalive] object BindingId:
   private def assignInMod(mod: Mod, allocator: Allocator, nextId: () => String): Unit =
     mod match
       case Mod.Attr.Binding(_, id, _) =>
-        id match
-          case idVar: Var[String] if isPending(idVar.currentValue) =>
-            idVar.set(nextId())
-          case _ => ()
-      case Mod.Attr.JsBinding(_, jsonValue, command) =>
+        if isPending(id.currentValue) then id.set(nextId())
+      case Mod.Attr.JsBinding(_, command) =>
         command.assignPendingBindingIds(nextId)
-        jsonValue.set(command.toJson)
-      case Mod.Content.Tag(child)            => assignInElement(child, allocator, nextId)
-      case Mod.Content.Component(_, child)   => assignInElement(child, allocator, nextId)
-      case Mod.Content.DynElement(dyn)       => assignInElement(dyn.currentValue, allocator, nextId)
-      case Mod.Content.DynOptionElement(dyn) =>
-        dyn.currentValue.foreach(assignInElement(_, allocator, nextId))
-      case Mod.Content.DynElementColl(dyn) =>
-        dyn.currentValue.iterator.foreach(assignInElement(_, allocator, nextId))
-      case Mod.Content.DynSplit(splitVar) =>
-        splitVar.currentValues.iterator.foreach(assignInElement(_, allocator, nextId))
-      case Mod.Content.DynStream(streamVar) =>
-        streamVar.currentValues.iterator.foreach(assignInElement(_, allocator, nextId))
+      case Mod.Content.Tag(child)                    => assignInElement(child, allocator, nextId)
+      case Mod.Content.Component(_, child)           => assignInElement(child, allocator, nextId)
       case Mod.Content.Keyed(entries, _, allEntries) =>
         val keyedEntries = allEntries.getOrElse(entries)
         val groupSalt    = allocator.allocate().drop(1)

@@ -121,7 +121,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   meta: WebSocketMessage.Meta,
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
   outHub: Hub[(Payload, WebSocketMessage.Meta)],
-  ref: Ref[(Var[Model], HtmlElement)],
+  ref: Ref[(Model, HtmlElement)],
   lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],
   navigationRef: Ref[Option[LiveNavigationCommand]],
   uploadRef: Ref[UploadRuntimeState],

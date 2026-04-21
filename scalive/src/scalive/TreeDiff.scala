@@ -2,6 +2,8 @@ package scalive
 
 import scala.collection.mutable
 
+import zio.json.EncoderOps
+
 import scalive.Mod.Attr
 import scalive.Mod.Content
 
@@ -68,11 +70,10 @@ private[scalive] object TreeDiff:
     node: CompiledNode)
 
   sealed private trait CompiledSlot
-  final private case class StringSlot(value: String)                    extends CompiledSlot
-  final private case class NodeSlot(node: CompiledNode)                 extends CompiledSlot
-  final private case class OptionalNodeSlot(node: Option[CompiledNode]) extends CompiledSlot
-  final private case class KeyedSlot(node: KeyedNode)                   extends CompiledSlot
-  final private case class ComponentSlot(component: CompiledComponent)  extends CompiledSlot
+  final private case class StringSlot(value: String)                   extends CompiledSlot
+  final private case class NodeSlot(node: CompiledNode)                extends CompiledSlot
+  final private case class KeyedSlot(node: KeyedNode)                  extends CompiledSlot
+  final private case class ComponentSlot(component: CompiledComponent) extends CompiledSlot
 
   private def compileElement(el: HtmlElement, isTopLevel: Boolean): TagNode =
     val staticBuilder = Vector.newBuilder[String]
@@ -89,11 +90,6 @@ private[scalive] object TreeDiff:
       staticBuilder += staticFragment
       staticFragment = ""
       slotBuilder += NodeSlot(value)
-
-    def pushOptionalNodeSlot(value: Option[CompiledNode]): Unit =
-      staticBuilder += staticFragment
-      staticFragment = ""
-      slotBuilder += OptionalNodeSlot(value)
 
     def pushKeyedSlot(value: KeyedNode): Unit =
       staticBuilder += staticFragment
@@ -116,23 +112,10 @@ private[scalive] object TreeDiff:
         staticFragment += s" $name=\""
         pushStringSlot(Escaping.escape(id.currentValue))
         staticFragment += "\""
-      case Attr.JsBinding(name, jsonValue, _) =>
+      case Attr.JsBinding(name, command) =>
         staticFragment += s" $name='"
-        pushStringSlot(Escaping.escape(jsonValue.currentValue))
+        pushStringSlot(Escaping.escape(command.toJson))
         staticFragment += "'"
-      case Attr.Dyn(name, value, isJson) =>
-        if isJson then
-          staticFragment += s" $name='"
-          pushStringSlot(value.render(trackUpdates = false).getOrElse(""))
-          staticFragment += "'"
-        else
-          staticFragment += s" $name=\""
-          pushStringSlot(Escaping.escape(value.render(trackUpdates = false).getOrElse("")))
-          staticFragment += "\""
-      case Attr.DynValueAsPresence(name, value) =>
-        val encoded =
-          value.render(trackUpdates = false).map(if _ then s" $name" else "").getOrElse("")
-        pushStringSlot(encoded)
     }
 
     staticFragment += (if el.tag.void then "/>" else ">")
@@ -147,29 +130,6 @@ private[scalive] object TreeDiff:
         pushComponentSlot(
           CompiledComponent(cid, compileElement(child, isTopLevel = false))
         )
-      case Content.DynText(dyn) =>
-        pushStringSlot(Escaping.escape(dyn.render(trackUpdates = false).getOrElse("")))
-      case Content.DynElement(dyn) =>
-        pushNodeSlot(compileElement(dyn.currentValue, isTopLevel = false))
-      case Content.DynOptionElement(dyn) =>
-        pushOptionalNodeSlot(dyn.currentValue.map(compileElement(_, isTopLevel = false)))
-      case Content.DynElementColl(dyn) =>
-        val html = dyn.currentValue.iterator.map(child => HtmlBuilder.build(child)).mkString
-        pushStringSlot(html)
-      case Content.DynSplit(v) =>
-        val (entries, _, _, stream) =
-          v.render(trackUpdates = false).getOrElse((List.empty, 0, true, None))
-        val keyedEntries = entries.map { case (index, _, value) =>
-          KeyedEntry(index, compileElement(value, isTopLevel = false))
-        }.toVector
-        pushKeyedSlot(KeyedNode(keyedEntries, stream))
-      case Content.DynStream(v) =>
-        val (entries, _, _, stream) =
-          v.render(trackUpdates = false).getOrElse((List.empty, 0, true, None))
-        val keyedEntries = entries.map { case (index, _, value) =>
-          KeyedEntry(index, compileElement(value, isTopLevel = false))
-        }.toVector
-        pushKeyedSlot(KeyedNode(keyedEntries, stream))
       case Content.Keyed(entries, stream, _) =>
         val keyedEntries = entries.map(entry =>
           KeyedEntry(entry.key, compileElement(entry.element, isTopLevel = false))
@@ -189,11 +149,10 @@ private[scalive] object TreeDiff:
 
   private def slotShape(slot: CompiledSlot): String =
     slot match
-      case _: StringSlot       => "string"
-      case _: NodeSlot         => "node"
-      case _: OptionalNodeSlot => "optional"
-      case _: KeyedSlot        => "keyed"
-      case _: ComponentSlot    => "component"
+      case _: StringSlot    => "string"
+      case _: NodeSlot      => "node"
+      case _: KeyedSlot     => "keyed"
+      case _: ComponentSlot => "component"
 
   private def sameTagShape(left: TagNode, right: TagNode): Boolean =
     left.static == right.static &&
@@ -227,12 +186,6 @@ private[scalive] object TreeDiff:
         Option.when(left != right)(Diff.Value(right))
       case (NodeSlot(left), NodeSlot(right)) =>
         diffNode(left, right)
-      case (OptionalNodeSlot(left), OptionalNodeSlot(right)) =>
-        (left, right) match
-          case (Some(l), Some(r)) => diffNode(l, r)
-          case (None, Some(r))    => Some(fullNode(r, includeStatic = true))
-          case (Some(_), None)    => Some(Diff.Deleted)
-          case (None, None)       => None
       case (KeyedSlot(left), KeyedSlot(right)) =>
         diffKeyed(left, right)
       case (ComponentSlot(left), ComponentSlot(right)) =>
@@ -242,10 +195,8 @@ private[scalive] object TreeDiff:
 
   private def fullSlot(slot: CompiledSlot): Diff =
     slot match
-      case StringSlot(value)      => Diff.Value(value)
-      case NodeSlot(node)         => fullNode(node, includeStatic = true)
-      case OptionalNodeSlot(node) =>
-        node.map(fullNode(_, includeStatic = true)).getOrElse(Diff.Value(""))
+      case StringSlot(value)        => Diff.Value(value)
+      case NodeSlot(node)           => fullNode(node, includeStatic = true)
       case KeyedSlot(node)          => fullNode(node, includeStatic = true)
       case ComponentSlot(component) => Diff.ComponentRef(component.cid)
 
@@ -430,10 +381,9 @@ private[scalive] object TreeDiff:
 
     def loopSlot(slot: CompiledSlot): Unit =
       slot match
-        case NodeSlot(node)            => loopNode(node)
-        case OptionalNodeSlot(Some(n)) => loopNode(n)
-        case KeyedSlot(node)           => loopNode(node)
-        case ComponentSlot(component)  =>
+        case NodeSlot(node)           => loopNode(node)
+        case KeyedSlot(node)          => loopNode(node)
+        case ComponentSlot(component) =>
           acc.update(component.cid, component.node)
           loopNode(component.node)
         case _ => ()

@@ -16,7 +16,6 @@ object StaticTracking:
       mods.exists {
         case Mod.Attr.Static(`attrName`, _)                => true
         case Mod.Attr.StaticValueAsPresence(`attrName`, v) => v
-        case Mod.Attr.DynValueAsPresence(`attrName`, dyn)  => dyn.currentValue
         case _                                             => false
       }
 
@@ -26,13 +25,12 @@ object StaticTracking:
         attrs.foreach {
           case Mod.Attr.Static(name, value) if urlAttrNames.contains(name) =>
             urls += value
-          case Mod.Attr.Dyn(name, dyn, _) if urlAttrNames.contains(name) =>
-            urls += dyn.currentValue
           case _ => ()
         }
       node.contentMods.foreach {
-        case Mod.Content.Tag(child) => loop(child)
-        case _                      => ()
+        case Mod.Content.Tag(child)          => loop(child)
+        case Mod.Content.Component(_, child) => loop(child)
+        case _                               => ()
       }
 
     loop(el)

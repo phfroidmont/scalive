@@ -73,7 +73,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
                 .splitBy(_.toString) { (_, error) =>
                   p(
                     cls := "alert alert-danger",
-                    error(errorToString)
+                    errorToString(error)
                   )
                 }
             )
@@ -81,7 +81,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
           uploadErrors(model.upload).splitBy(_.toString) { (_, error) =>
             p(
               cls := "alert alert-danger",
-              error(errorToString)
+              errorToString(error)
             )
           }
         ),

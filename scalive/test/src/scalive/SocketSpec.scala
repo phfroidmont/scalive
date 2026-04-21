@@ -36,7 +36,7 @@ object SocketSpec extends ZIOSpecDefault:
         div(
           idAttr := "root",
           phx.onClick(Msg.FromClient),
-          model(_.counter.toString)
+          model.counter.toString
         )
 
       def subscriptions(model: Model) = serverStream

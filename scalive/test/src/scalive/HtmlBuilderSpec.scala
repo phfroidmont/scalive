@@ -45,44 +45,33 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
     ),
     suite("Dynamic HTML rendering")(
       test("Dynamic text") {
-        val model = Var(TestModel(title = "dynamic title"))
-        val el    = h1(model(_.title))
-        el.syncAll()
+        val model = TestModel(title = "dynamic title")
+        val el    = h1(model.title)
 
         val result = HtmlBuilder.build(el)
         assertTrue(result == "<h1>dynamic title</h1>")
       },
       test("Dynamic attribute") {
-        val model = Var(TestModel(cls = "dynamic-class"))
-        val el    = div(cls := model(_.cls), "Content")
-        el.syncAll()
+        val model = TestModel(cls = "dynamic-class")
+        val el    = div(cls := model.cls, "Content")
 
         val result = HtmlBuilder.build(el)
         assertTrue(result == "<div class=\"dynamic-class\">Content</div>")
       },
       test("Dynamic boolean attribute") {
-        val model = Var(TestModel(bool = true))
+        val model = TestModel(bool = true)
         val el    = div(
-          cls      := model(_.cls),
-          disabled := model(_.bool),
+          cls      := model.cls,
+          disabled := model.bool,
           "Content"
         )
-        el.syncAll()
 
         val result = HtmlBuilder.build(el)
         assertTrue(result == "<div class=\"text-sm\" disabled>Content</div>")
       },
       test("Dynamic text with update") {
-        val model = Var(TestModel(title = "initial"))
-        val el    = h1(model(_.title))
-        el.syncAll()
-
-        val initialResult = HtmlBuilder.build(el)
-
-        model.update(_.copy(title = "updated"))
-        el.syncAll()
-
-        val updatedResult = HtmlBuilder.build(el)
+        val initialResult = HtmlBuilder.build(h1("initial"))
+        val updatedResult = HtmlBuilder.build(h1("updated"))
         assertTrue(
           initialResult == "<h1>initial</h1>",
           updatedResult == "<h1>updated</h1>"
@@ -91,22 +80,19 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
     ),
     suite("Complex HTML rendering")(
       test("Form with dynamic fields") {
-        val model = Var(
-          TestModel(
-            title = "Form Title",
-            cls = "form-container"
-          )
+        val model = TestModel(
+          title = "Form Title",
+          cls = "form-container"
         )
 
         val el = form(
-          cls := model(_.cls),
+          cls := model.cls,
           div(
             label("Title:"),
-            input(value := model(_.title))
+            input(value := model.title)
           ),
           button("Submit")
         )
-        el.syncAll()
 
         val result   = HtmlBuilder.build(el)
         val expected =
@@ -114,26 +100,23 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
         assertTrue(result == expected)
       },
       test("List with dynamic content") {
-        val model = Var(
-          TestModel(
-            items = List(
-              NestedModel("Item 1", 10),
-              NestedModel("Item 2", 20)
-            )
+        val model = TestModel(
+          items = List(
+            NestedModel("Item 1", 10),
+            NestedModel("Item 2", 20)
           )
         )
 
         val el = ul(
-          model(_.items).splitByIndex((_, elem) =>
+          model.items.splitByIndex((_, elem) =>
             li(
-              elem(_.name),
+              elem.name,
               " (",
-              elem(_.age.toString),
+              elem.age.toString,
               ")"
             )
           )
         )
-        el.syncAll()
 
         val result   = HtmlBuilder.build(el)
         val expected = "<ul><li>Item 1 (10)</li><li>Item 2 (20)</li></ul>"
@@ -181,9 +164,8 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
         },
         test("Script tags in dynamic content are escaped") {
           val maliciousInput = "<script>alert('xss')</script>"
-          val model          = Var(TestModel(title = maliciousInput))
-          val el             = h1(model(_.title))
-          el.syncAll()
+          val model          = TestModel(title = maliciousInput)
+          val el             = h1(model.title)
 
           val result = HtmlBuilder.build(el)
           assertTrue(

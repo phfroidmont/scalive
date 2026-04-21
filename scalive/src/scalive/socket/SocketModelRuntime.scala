@@ -25,7 +25,6 @@ private[scalive] object SocketModelRuntime:
     yield (value, navigation)
 
   def applyInterceptHalt[Msg, Model](
-    modelVar: Var[Model],
     el: HtmlElement,
     interceptModel: Model,
     reply: Option[Json],
@@ -34,14 +33,13 @@ private[scalive] object SocketModelRuntime:
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     for
-      diff <- updateModelAndSubscriptions(modelVar, el, interceptModel, state)
+      diff <- updateModelAndSubscriptions(el, interceptModel, state)
       payload = interceptReplyPayload(reply, diff)
       _ <- publishPayload(payload, meta, state)
       _ <- navigation match
              case Some(command) =>
                state.patchRedirectCountRef.set(0) *>
                  SocketInbound.handleNavigationCommand(
-                   modelVar,
                    el,
                    interceptModel,
                    command,
@@ -52,7 +50,6 @@ private[scalive] object SocketModelRuntime:
     yield ()
 
   def applyBoundEvent[Msg, Model](
-    modelVar: Var[Model],
     el: HtmlElement,
     interceptModel: Model,
     event: Payload.Event,
@@ -74,7 +71,6 @@ private[scalive] object SocketModelRuntime:
                    publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
                      state.patchRedirectCountRef.set(0) *>
                      SocketInbound.handleNavigationCommand(
-                       modelVar,
                        el,
                        updatedModel,
                        command,
@@ -83,7 +79,7 @@ private[scalive] object SocketModelRuntime:
                      )
                  case None =>
                    for
-                     diff <- updateModelAndSubscriptions(modelVar, el, updatedModel, state)
+                     diff <- updateModelAndSubscriptions(el, updatedModel, state)
                      _    <- publishPayload(Payload.okReply(LiveResponse.Diff(diff)), meta, state)
                    yield ()
         yield ()
@@ -93,7 +89,6 @@ private[scalive] object SocketModelRuntime:
             publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
               state.patchRedirectCountRef.set(0) *>
               SocketInbound.handleNavigationCommand(
-                modelVar,
                 el,
                 interceptModel,
                 command,
@@ -105,19 +100,17 @@ private[scalive] object SocketModelRuntime:
               publishPayload(Payload.okReply(LiveResponse.Empty), meta, state)
 
   def updateModelAndSubscriptions[Msg, Model](
-    modelVar: Var[Model],
     el: HtmlElement,
     model: Model,
     state: RuntimeState[Msg, Model]
   ): Task[Diff] =
     for
-      _ = modelVar.set(model)
       _ <- state.lvStreamRef.set(
              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
       nextEl = state.lv.view(model)
       diff   = TreeDiff.diff(el, nextEl)
-      _      <- state.ref.set((modelVar, nextEl))
+      _      <- state.ref.set((model, nextEl))
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)
       title  <- state.titleRef.getAndSet(None)
       _      <- SocketStreamRuntime.prune(state.streamRef)

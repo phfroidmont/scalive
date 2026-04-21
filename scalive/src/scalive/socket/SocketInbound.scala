@@ -28,8 +28,8 @@ private[scalive] object SocketInbound:
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     for
-      (modelVar, el) <- state.ref.get
-      parsedUri      <- ZIO.attempt(URI.create(url))
+      (currentModel, el) <- state.ref.get
+      parsedUri          <- ZIO.attempt(URI.create(url))
       params = QueryParams
                  .decode(Option(parsedUri.getRawQuery).getOrElse(""))
                  .map
@@ -41,16 +41,16 @@ private[scalive] object SocketInbound:
       (model, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
           LiveIO
-            .toZIO(state.lv.handleParams(modelVar.currentValue, params, parsedUri))
+            .toZIO(state.lv.handleParams(currentModel, params, parsedUri))
             .provide(ZLayer.succeed(state.ctx))
         )
       _ <- navigation match
              case Some(command) =>
-               handleNavigationCommand(modelVar, el, model, command, meta, state)
+               handleNavigationCommand(el, model, command, meta, state)
              case None =>
                for
                  _    <- state.patchRedirectCountRef.set(0)
-                 diff <- SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, model, state)
+                 diff <- SocketModelRuntime.updateModelAndSubscriptions(el, model, state)
                  _    <- ZIO.when(!diff.isEmpty)(
                         SocketModelRuntime.publishPayload(
                           Payload.Diff(diff),
@@ -86,18 +86,17 @@ private[scalive] object SocketInbound:
         yield ()
       case _ =>
         for
-          _              <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)
-          (modelVar, el) <- state.ref.get
+          _                  <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)
+          (currentModel, el) <- state.ref.get
           (interceptResult, navigation) <-
             SocketModelRuntime.captureNavigation(state)(
               LiveIO
-                .toZIO(state.lv.interceptEvent(modelVar.currentValue, event.event, event.value))
+                .toZIO(state.lv.interceptEvent(currentModel, event.event, event.value))
                 .provide(ZLayer.succeed(state.ctx))
             )
           _ <- interceptResult match
                  case InterceptResult.Halt(interceptModel, reply) =>
                    SocketModelRuntime.applyInterceptHalt(
-                     modelVar,
                      el,
                      interceptModel,
                      reply,
@@ -107,7 +106,6 @@ private[scalive] object SocketInbound:
                    )
                  case InterceptResult.Continue(interceptModel) =>
                    SocketModelRuntime.applyBoundEvent(
-                     modelVar,
                      el,
                      interceptModel,
                      event,
@@ -131,7 +129,6 @@ private[scalive] object SocketInbound:
       case _ => Set.empty
 
   def handleNavigationCommand[Msg, Model](
-    modelVar: Var[Model],
     el: HtmlElement,
     model: Model,
     command: LiveNavigationCommand,
@@ -145,7 +142,7 @@ private[scalive] object SocketInbound:
 
     for
       redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
-      _             <- SocketModelRuntime.updateModelAndSubscriptions(modelVar, el, model, state)
+      _             <- SocketModelRuntime.updateModelAndSubscriptions(el, model, state)
       _             <-
         if redirectCount > 20 then
           SocketModelRuntime.publishPayload(Payload.Error, meta.copy(messageRef = None), state)

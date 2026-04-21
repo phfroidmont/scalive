@@ -1,7 +1,5 @@
 package scalive
 
-import zio.json.*
-
 import scalive.JSCommands.JSCommand
 import scalive.Mod.Attr
 import scalive.Mod.Content
@@ -17,16 +15,6 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
     mods.collect { case mod: Mod.Attr => mod }
   def contentMods: Seq[Mod.Content] =
     mods.collect { case mod: Mod.Content => mod }
-  def dynamicMods: Seq[(Mod.Attr | Mod.Content) & DynamicMod] =
-    dynamicAttrMods ++ dynamicContentMods.flatMap {
-      case Content.Tag(el) => el.dynamicMods
-      case mod             => List(mod)
-
-    }
-  def dynamicAttrMods: Seq[Mod.Attr & DynamicMod] =
-    mods.collect { case mod: (Mod.Attr & DynamicMod) => mod }
-  def dynamicContentMods: Seq[Mod.Content & DynamicMod] =
-    mods.collect { case mod: (Mod.Content & DynamicMod) => mod }
 
   def prepended(mod: Mod*): HtmlElement = HtmlElement(tag, mods.prependedAll(mod))
   def apended(mod: Mod*): HtmlElement   = HtmlElement(tag, mods.appendedAll(mod))
@@ -34,17 +22,15 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
     mods.iterator.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
 
   private[scalive] def syncAll(): Unit                   = mods.foreach(_.syncAll())
-  private[scalive] def setAllUnchanged(): Unit           = dynamicMods.foreach(_.setAllUnchanged())
+  private[scalive] def setAllUnchanged(): Unit           = ()
   private[scalive] def allocatePendingBindingIds(): Unit =
     nextBindingId = BindingId.assignPending(this, nextBindingId)
 
   private[scalive] def diff(trackUpdates: Boolean = true): Diff =
+    val _ = trackUpdates
     syncAll()
     allocatePendingBindingIds()
-    val diff = DiffBuilder.build(this, trackUpdates = trackUpdates)
-    setAllUnchanged()
-    diff
-end HtmlElement
+    TreeDiff.initial(this)
 
 class HtmlTag(val name: String, val void: Boolean = false):
   def apply(mods: (Mod | IterableOnce[Mod])*): HtmlElement = HtmlElement(
@@ -66,17 +52,9 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
       )
     else Mod.Attr.Static(name, codec.encode(value))
 
-  private[scalive] def :=(value: Dyn[V]): Mod.Attr =
-    if isBooleanAsAttrPresence then
-      Mod.Attr.DynValueAsPresence(
-        name,
-        value.asInstanceOf[Dyn[Boolean]]
-      )
-    else Mod.Attr.Dyn(name, value(codec.encode))
-
 class HtmlAttrBinding(val name: String):
   def apply(cmd: JSCommand): Mod.Attr =
-    Mod.Attr.JsBinding(name, Var(cmd.toJson), cmd)
+    Mod.Attr.JsBinding(name, cmd)
 
   def apply[Msg](msg: Msg): Mod.Attr =
     apply(_ => msg)
@@ -84,7 +62,7 @@ class HtmlAttrBinding(val name: String):
   def apply[Msg](f: Map[String, String] => Msg): Mod.Attr =
     Mod.Attr.Binding(
       name,
-      Var(BindingId.pending()),
+      MutableValue(BindingId.pending()),
       f
     )
   def withValue[Msg](f: String => Msg): Mod.Attr =
@@ -114,28 +92,15 @@ object Mod:
   enum Attr extends Mod:
     case Static(name: String, value: String)                 extends Attr with StaticMod
     case StaticValueAsPresence(name: String, value: Boolean) extends Attr with StaticMod
-    case Binding(name: String, id: scalive.Dyn[String], f: Map[String, String] => ?)
+    case Binding(name: String, id: MutableValue[String], f: Map[String, String] => ?)
         extends Attr
         with DynamicMod
-    case JsBinding(name: String, jsonValue: Var[String], command: JSCommand)
-        extends Attr
-        with DynamicMod
-    case Dyn(name: String, value: scalive.Dyn[String], isJson: Boolean = false)
-        extends Attr
-        with DynamicMod
-    case DynValueAsPresence(name: String, value: scalive.Dyn[Boolean]) extends Attr with DynamicMod
+    case JsBinding(name: String, command: JSCommand) extends Attr with DynamicMod
 
   enum Content extends Mod:
     case Text(text: String, raw: Boolean = false) extends Content with StaticMod
     case Tag(el: HtmlElement)                     extends Content with StaticMod with DynamicMod
     case Component(cid: Int, el: HtmlElement)     extends Content with DynamicMod
-    case DynText(dyn: Dyn[String])                extends Content with DynamicMod
-    case DynElement(dyn: Dyn[HtmlElement])        extends Content with DynamicMod
-    // TODO support arbitrary collection
-    case DynOptionElement(dyn: Dyn[Option[HtmlElement]])     extends Content with DynamicMod
-    case DynElementColl(dyn: Dyn[IterableOnce[HtmlElement]]) extends Content with DynamicMod
-    case DynSplit(v: SplitVar[?, HtmlElement, ?])            extends Content with DynamicMod
-    case DynStream(v: StreamSplitVar[?, HtmlElement])        extends Content with DynamicMod
     case Keyed(
       entries: Vector[Content.Keyed.Entry],
       stream: Option[Diff.Stream] = None,
@@ -144,68 +109,29 @@ object Mod:
   object Content:
     object Keyed:
       final case class Entry(key: Any, element: HtmlElement)
-end Mod
 
 extension (mod: Mod)
   private[scalive] def setAllUnchanged(): Unit =
     mod match
-      case Attr.Static(_, _)                 => ()
-      case Attr.Binding(_, id, _)            => id.setUnchanged()
-      case Attr.JsBinding(_, json, _)        => json.setUnchanged()
-      case Attr.StaticValueAsPresence(_, _)  => ()
-      case Attr.Dyn(_, value, _)             => value.setUnchanged()
-      case Attr.DynValueAsPresence(_, value) => value.setUnchanged()
-      case Content.Text(text, _)             => ()
-      case Content.Tag(el)                   => el.setAllUnchanged()
-      case Content.Component(_, el)          => el.setAllUnchanged()
-      case Content.DynText(dyn)              => dyn.setUnchanged()
-      case Content.DynElement(dyn)           =>
-        dyn.setUnchanged()
-        dyn.callOnEveryChild(_.setAllUnchanged())
-      case Content.DynOptionElement(dyn) =>
-        dyn.setUnchanged()
-        dyn.callOnEveryChild(_.foreach(_.setAllUnchanged()))
-      case Content.DynElementColl(dyn) =>
-        dyn.setUnchanged()
-        dyn.callOnEveryChild(_.iterator.foreach(_.setAllUnchanged()))
-      case Content.DynSplit(v) =>
-        v.setUnchanged()
-        v.callOnEveryChild(_.setAllUnchanged())
-      case Content.DynStream(v) =>
-        v.setUnchanged()
-        v.callOnEveryChild(_.setAllUnchanged())
+      case Attr.Static(_, _)                     => ()
+      case Attr.Binding(_, _, _)                 => ()
+      case Attr.JsBinding(_, _)                  => ()
+      case Attr.StaticValueAsPresence(_, _)      => ()
+      case Content.Text(text, _)                 => ()
+      case Content.Tag(el)                       => el.setAllUnchanged()
+      case Content.Component(_, el)              => el.setAllUnchanged()
       case Content.Keyed(entries, _, allEntries) =>
         allEntries.getOrElse(entries).foreach(_.element.setAllUnchanged())
 
   private[scalive] def syncAll(): Unit =
     mod match
-      case Attr.Static(_, _)                => ()
-      case Attr.StaticValueAsPresence(_, _) => ()
-      case Attr.Binding(_, id, _)           => id.sync()
-      case Attr.JsBinding(_, json, command) =>
-        json.set(command.toJson)
-        json.sync()
-      case Attr.Dyn(_, value, _)             => value.sync()
-      case Attr.DynValueAsPresence(_, value) => value.sync()
-      case Content.Text(text, _)             => ()
-      case Content.Tag(el)                   => el.syncAll()
-      case Content.Component(_, el)          => el.syncAll()
-      case Content.DynText(dyn)              => dyn.sync()
-      case Content.DynElement(dyn)           =>
-        dyn.sync()
-        dyn.callOnEveryChild(_.syncAll())
-      case Content.DynOptionElement(dyn) =>
-        dyn.sync()
-        dyn.callOnEveryChild(_.foreach(_.syncAll()))
-      case Content.DynElementColl(dyn) =>
-        dyn.sync()
-        dyn.callOnEveryChild(_.iterator.foreach(_.syncAll()))
-      case Content.DynSplit(v) =>
-        v.sync()
-        v.callOnEveryChild(_.syncAll())
-      case Content.DynStream(v) =>
-        v.sync()
-        v.callOnEveryChild(_.syncAll())
+      case Attr.Static(_, _)                     => ()
+      case Attr.StaticValueAsPresence(_, _)      => ()
+      case Attr.Binding(_, _, _)                 => ()
+      case Attr.JsBinding(_, _)                  => ()
+      case Content.Text(text, _)                 => ()
+      case Content.Tag(el)                       => el.syncAll()
+      case Content.Component(_, el)              => el.syncAll()
       case Content.Keyed(entries, _, allEntries) =>
         allEntries.getOrElse(entries).foreach(_.element.syncAll())
 
@@ -216,22 +142,11 @@ extension (mod: Mod)
       case Attr.Binding(_, eventId, f)      =>
         if id == eventId.currentValue then Some(f.asInstanceOf[Map[String, String] => Msg])
         else None
-      case Attr.JsBinding(_, _, command) =>
+      case Attr.JsBinding(_, command) =>
         command.bindings.get(id).map(msg => _ => msg.asInstanceOf[Msg])
-      case Attr.Dyn(_, value, _)             => None
-      case Attr.DynValueAsPresence(_, value) => None
-      case Content.Text(text, _)             => None
-      case Content.Tag(el)                   => el.findBinding(id)
-      case Content.Component(_, el)          => el.findBinding(id)
-      case Content.DynText(dyn)              => None
-      case Content.DynElement(dyn)           => dyn.currentValue.findBinding(id)
-      case Content.DynOptionElement(dyn)     => dyn.currentValue.flatMap(_.findBinding(id))
-      case Content.DynElementColl(dyn)       =>
-        dyn.currentValue.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
-      case Content.DynSplit(v) =>
-        v.currentValues.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
-      case Content.DynStream(v) =>
-        v.currentValues.iterator.map(_.findBinding(id)).collectFirst { case Some(f) => f }
+      case Content.Text(text, _)                 => None
+      case Content.Tag(el)                       => el.findBinding(id)
+      case Content.Component(_, el)              => el.findBinding(id)
       case Content.Keyed(entries, _, allEntries) =>
         allEntries
           .getOrElse(entries)

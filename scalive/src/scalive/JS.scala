@@ -10,7 +10,7 @@ object JSCommands:
 
   final private case class Op[Msg](renderJson: () => Json, binding: Option[Binding[Msg]])
 
-  final case class Binding[Msg](id: Var[String], msg: Msg)
+  final case class Binding[Msg](id: MutableValue[String], msg: Msg)
 
   def empty: JSCommand = List.empty
 
@@ -128,7 +128,7 @@ object JSCommands:
       loading: String = "",
       pageLoading: Boolean = false
     ): JSCommand =
-      val bindingId = Var(BindingId.pending())
+      val bindingId = MutableValue(BindingId.pending())
       val binding   = Binding(bindingId, event)
       Op(
         () =>

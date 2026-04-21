@@ -258,8 +258,8 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Extract shared constructor/factory for `UploadEntryState` used in preflight and sync paths.
-- [ ] Centralize validation mapping to `LiveUploadError` values.
+- [x] Extract shared constructor/factory for `UploadEntryState` used in preflight and sync paths.
+- [x] Centralize validation mapping to `LiveUploadError` values.
 
 ### 6.2 Stream runtime simplification
 
@@ -271,13 +271,13 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Reduce duplication in insert/delete/update application logic.
-- [ ] Clarify `entries` vs `allEntries` semantics and ensure renderer/binding use a single authoritative source where possible.
+- [x] Reduce duplication in insert/delete/update application logic.
+- [x] Clarify `entries` vs `allEntries` semantics and ensure renderer/binding use a single authoritative source where possible.
 
 ### Acceptance
 
-- [ ] Stream and upload tests remain green.
-- [ ] Upstream stream/upload e2e tests remain green.
+- [x] Stream and upload tests remain green.
+- [x] Upstream stream/upload e2e tests remain green.
 
 ---
 

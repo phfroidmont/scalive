@@ -34,8 +34,12 @@ final private[scalive] class SocketStreamRuntime(
                           entries = Vector.empty
                         )
                       else existing
-                    collectInserts(items, atWire, limitWire, updateOnly = None)(item =>
-                      safeDomId(definition.name)(definition.domId(item))
+                    collectStreamInserts(
+                      definition = definition,
+                      items = items,
+                      at = atWire,
+                      limit = limitWire,
+                      updateOnly = None
                     ) match
                       case Left(error)       => Left(error) -> current
                       case Right(newInserts) =>
@@ -50,8 +54,12 @@ final private[scalive] class SocketStreamRuntime(
 
                   case None =>
                     val ref = current.nextRef.toString
-                    collectInserts(items, at = -1, limit = limitWire, updateOnly = None)(item =>
-                      safeDomId(definition.name)(definition.domId(item))
+                    collectStreamInserts(
+                      definition = definition,
+                      items = items,
+                      at = -1,
+                      limit = limitWire,
+                      updateOnly = None
                     ) match
                       case Left(error)       => Left(error) -> current
                       case Right(newInserts) =>
@@ -84,59 +92,36 @@ final private[scalive] class SocketStreamRuntime(
       _         <- validateName(definition.name)
       atWire    <- normalizeAt(at)
       limitWire <- normalizeLimit(limit)
-      next      <- streamRef.modify { current =>
-                current.streams.get(definition.name) match
-                  case None =>
-                    Left(
-                      new IllegalArgumentException(
-                        s"No stream with name ${definition.name} has been defined"
-                      )
-                    ) -> current
-                  case Some(existing) =>
-                    safeDomId(definition.name)(definition.domId(item)) match
-                      case Left(error)  => Left(error) -> current
-                      case Right(domId) =>
-                        val insert = StreamInsertState(
-                          domId = domId,
-                          at = atWire,
-                          item = StreamItem(item),
-                          limit = limitWire,
-                          updateOnly = Some(updateOnly)
-                        )
-                        val updated = existing.copy(
-                          inserts = insert :: existing.inserts,
-                          entries = applyInsert(existing.entries, insert)
-                        )
-                        toLiveStream(updated, definition) -> current.copy(
-                          streams = current.streams.updated(definition.name, updated)
-                        )
-              }
+      next      <- streamRef.modify(current =>
+                updateExistingStream(current, definition) { existing =>
+                  safeDomId(definition.name)(definition.domId(item)).map { domId =>
+                    val insert = StreamInsertState(
+                      domId = domId,
+                      at = atWire,
+                      item = StreamItem(item),
+                      limit = limitWire,
+                      updateOnly = Some(updateOnly)
+                    )
+                    existing.copy(
+                      inserts = insert :: existing.inserts,
+                      entries = applyInsert(existing.entries, insert)
+                    )
+                  }
+                }
+              )
       out <- ZIO.fromEither(next)
     yield out
 
   def delete[A](definition: LiveStreamDef[A], item: A): Task[LiveStream[A]] =
     for
       _    <- validateName(definition.name)
-      next <- streamRef.modify { current =>
-                current.streams.get(definition.name) match
-                  case None =>
-                    Left(
-                      new IllegalArgumentException(
-                        s"No stream with name ${definition.name} has been defined"
-                      )
-                    ) -> current
-                  case Some(existing) =>
-                    safeDomId(definition.name)(definition.domId(item)) match
-                      case Left(error)  => Left(error) -> current
-                      case Right(domId) =>
-                        val updated = existing.copy(
-                          deleteIds = domId :: existing.deleteIds,
-                          entries = existing.entries.filterNot(_.domId == domId)
-                        )
-                        toLiveStream(updated, definition) -> current.copy(
-                          streams = current.streams.updated(definition.name, updated)
-                        )
-              }
+      next <- streamRef.modify(current =>
+                updateExistingStream(current, definition) { existing =>
+                  safeDomId(definition.name)(definition.domId(item)).map(domId =>
+                    markDeleted(existing, domId)
+                  )
+                }
+              )
       out <- ZIO.fromEither(next)
     yield out
 
@@ -147,23 +132,11 @@ final private[scalive] class SocketStreamRuntime(
         if domId.isEmpty then
           ZIO.fail(new IllegalArgumentException("Stream DOM id must not be empty"))
         else ZIO.unit
-      next <- streamRef.modify { current =>
-                current.streams.get(definition.name) match
-                  case None =>
-                    Left(
-                      new IllegalArgumentException(
-                        s"No stream with name ${definition.name} has been defined"
-                      )
-                    ) -> current
-                  case Some(existing) =>
-                    val updated = existing.copy(
-                      deleteIds = domId :: existing.deleteIds,
-                      entries = existing.entries.filterNot(_.domId == domId)
-                    )
-                    toLiveStream(updated, definition) -> current.copy(
-                      streams = current.streams.updated(definition.name, updated)
-                    )
-              }
+      next <- streamRef.modify(current =>
+                updateExistingStream(current, definition) { existing =>
+                  Right(markDeleted(existing, domId))
+                }
+              )
       out <- ZIO.fromEither(next)
     yield out
 
@@ -204,6 +177,44 @@ final private[scalive] class SocketStreamRuntime(
         Left(new IllegalArgumentException(s"Stream $name generated an empty DOM id"))
       else Right(domId)
     catch case NonFatal(error) => Left(error)
+
+  private def missingStreamError(name: String): Throwable =
+    new IllegalArgumentException(s"No stream with name $name has been defined")
+
+  private def updateExistingStream[A](
+    current: StreamRuntimeState,
+    definition: LiveStreamDef[A]
+  )(
+    f: StreamState => Either[Throwable, StreamState]
+  ): (Either[Throwable, LiveStream[A]], StreamRuntimeState) =
+    current.streams.get(definition.name) match
+      case None =>
+        Left(missingStreamError(definition.name)) -> current
+      case Some(existing) =>
+        f(existing) match
+          case Left(error) =>
+            Left(error) -> current
+          case Right(updated) =>
+            toLiveStream(updated, definition) -> current.copy(
+              streams = current.streams.updated(definition.name, updated)
+            )
+
+  private def markDeleted(stream: StreamState, domId: String): StreamState =
+    stream.copy(
+      deleteIds = domId :: stream.deleteIds,
+      entries = stream.entries.filterNot(_.domId == domId)
+    )
+
+  private def collectStreamInserts[A](
+    definition: LiveStreamDef[A],
+    items: Iterable[A],
+    at: Int,
+    limit: Option[Int],
+    updateOnly: Option[Boolean]
+  ): Either[Throwable, List[StreamInsertState]] =
+    collectInserts(items, at, limit, updateOnly)(item =>
+      safeDomId(definition.name)(definition.domId(item))
+    )
 
   private def collectInserts[A](
     items: Iterable[A],
@@ -274,7 +285,7 @@ final private[scalive] class SocketStreamRuntime(
       stream.name,
       definition
     )
-    val allEntries = decodeEntries(
+    val snapshotEntries = decodeEntries(
       stream.entries.map(entry => entry.domId -> entry.item),
       stream.name,
       definition
@@ -282,11 +293,11 @@ final private[scalive] class SocketStreamRuntime(
 
     for
       decodedEntries    <- entries
-      decodedAllEntries <- allEntries
+      decodedAllEntries <- snapshotEntries
     yield LiveStream(
       name = stream.name,
       entries = decodedEntries,
-      allEntries = decodedAllEntries,
+      snapshotEntries = decodedAllEntries,
       ref = stream.ref,
       inserts = dedupedInserts
         .map(insert =>

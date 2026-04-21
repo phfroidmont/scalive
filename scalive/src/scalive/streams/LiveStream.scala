@@ -48,13 +48,13 @@ final private[scalive] case class LiveStreamInsert(
 final case class LiveStream[+A] private[scalive] (
   name: String,
   entries: Vector[LiveStreamEntry[A]],
-  private[scalive] allEntries: Vector[LiveStreamEntry[A]],
+  private[scalive] snapshotEntries: Vector[LiveStreamEntry[A]],
   private[scalive] ref: String,
   private[scalive] inserts: Vector[LiveStreamInsert],
   private[scalive] deleteIds: Vector[String],
   private[scalive] reset: Boolean):
-  def isEmpty: Boolean  = allEntries.isEmpty
-  def nonEmpty: Boolean = allEntries.nonEmpty
+  def isEmpty: Boolean  = snapshotEntries.isEmpty
+  def nonEmpty: Boolean = snapshotEntries.nonEmpty
 
 object api:
   export _root_.scalive.streams.{LiveStream, LiveStreamDef, LiveStreamEntry, StreamAt, StreamLimit}

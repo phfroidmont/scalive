@@ -15,14 +15,14 @@ extension [T](items: IterableOnce[T])
 extension [T](stream: streams.LiveStream[T])
   def stream(project: (String, T) => HtmlElement): Mod =
     val renderedEntries =
-      stream.allEntries.iterator
+      stream.snapshotEntries.iterator
         .map(entry =>
           entry.domId -> Mod.Content.Keyed.Entry(entry.domId, project(entry.domId, entry.value))
         ).toVector
 
     val renderedByDomId = renderedEntries.toMap
 
-    val allEntries = renderedEntries.map(_._2)
+    val snapshotEntries = renderedEntries.map(_._2)
 
     val entries = stream.entries.iterator
       .map(entry =>
@@ -49,5 +49,5 @@ extension [T](stream: streams.LiveStream[T])
         )
       )
 
-    Mod.Content.Keyed(entries, stream = streamPatch, allEntries = Some(allEntries))
+    Mod.Content.Keyed(entries, stream = streamPatch, allEntries = Some(snapshotEntries))
 end extension

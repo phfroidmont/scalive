@@ -36,31 +36,15 @@ private[scalive] object SocketUploadProtocol:
                    val activeEntries =
                      payload.entries.filterNot(entry => config.cancelledRefs.contains(entry.ref))
                    val baseState        = current.removeUploadByRef(payload.ref)
-                   val validationErrors =
-                     validateUploadEntries(activeEntries, config.options).groupMap(_._1)(_._2)
+                   val validationErrors = validationErrorsByEntry(activeEntries, config.options)
                    val preflightEntries = activeEntries.map(entry =>
-                     entry.ref -> UploadEntryState(
-                       uploadName = config.name,
+                     entry.ref -> buildUploadEntryState(
+                       config = config,
                        uploadRef = payload.ref,
-                       ref = entry.ref,
-                       name = entry.name,
-                       contentType = entry.`type`,
-                       size = entry.size,
-                       relativePath = entry.relative_path,
-                       lastModified = entry.last_modified,
-                       clientMeta = entry.meta,
-                       token = None,
-                       joined = false,
-                       bytes = Chunk.empty,
-                       progress = 0,
+                       entry = entry,
                        preflighted = true,
                        valid = true,
-                       errors = Nil,
-                       externalMeta = None,
-                       writer = config.options.writer,
-                       writerState = None,
-                       writerMeta = None,
-                       writerClosed = false
+                       errors = Nil
                      )
                    )
 
@@ -69,10 +53,7 @@ private[scalive] object SocketUploadProtocol:
                                     validationErrors.get(entryRef) match
                                       case Some(errors) =>
                                         ZIO.succeed(
-                                          entryRef -> entryState.copy(
-                                            valid = false,
-                                            errors = errors
-                                          )
+                                          entryRef -> withEntryErrors(entryState, errors)
                                         )
                                       case None =>
                                         config.options.external match
@@ -89,21 +70,19 @@ private[scalive] object SocketUploadProtocol:
                                                   entryRef -> entryState
                                                     .copy(externalMeta = Some(meta))
                                                 case Right(LiveExternalUploadResult.Ok(_)) =>
-                                                  entryRef -> entryState.copy(
-                                                    valid = false,
-                                                    errors =
-                                                      List(Json.Str("external_client_failure"))
+                                                  entryRef -> withEntryErrors(
+                                                    entryState,
+                                                    List(LiveUploadError.ExternalClientFailure)
                                                   )
                                                 case Right(LiveExternalUploadResult.Error(meta)) =>
-                                                  entryRef -> entryState.copy(
-                                                    valid = false,
-                                                    errors = List(meta)
+                                                  entryRef -> withEntryErrors(
+                                                    entryState,
+                                                    List(LiveUploadError.External(meta))
                                                   )
                                                 case Left(_) =>
-                                                  entryRef -> entryState.copy(
-                                                    valid = false,
-                                                    errors =
-                                                      List(Json.Str("external_client_failure"))
+                                                  entryRef -> withEntryErrors(
+                                                    entryState,
+                                                    List(LiveUploadError.ExternalClientFailure)
                                                   )
                                               }
                                           case None =>
@@ -138,7 +117,7 @@ private[scalive] object SocketUploadProtocol:
                      globalErrors =
                        Option
                          .when(activeEntries.length > config.options.maxEntries)(
-                           config.ref -> Json.Str("too_many_files")
+                           config.ref -> errorJson(LiveUploadError.TooManyFiles)
                          )
                          .toList
                      nextConfig = config.copy(
@@ -290,7 +269,7 @@ private[scalive] object SocketUploadProtocol:
                              case Left(_) =>
                                val errored = entry.copy(
                                  valid = false,
-                                 errors = List(Json.Str("writer_error"))
+                                 errors = List(errorJson(WriterError))
                                )
                                state.uploadRef
                                  .update { st =>
@@ -354,9 +333,9 @@ private[scalive] object SocketUploadProtocol:
                                      .closeWriter(
                                        withWriter.copy(
                                          valid = false,
-                                         errors = List(Json.Str("writer_error"))
+                                         errors = List(errorJson(WriterError))
                                        ),
-                                       LiveUploadWriterCloseReason.Error("writer_error")
+                                       LiveUploadWriterCloseReason.Error(WriterErrorReason)
                                      ).flatMap { errored =>
                                        state.uploadRef
                                          .update { st =>
@@ -417,39 +396,24 @@ private[scalive] object SocketUploadProtocol:
                     val visibleEntries =
                       entries.filterNot(entry => config.cancelledRefs.contains(entry.ref))
                     val cleared          = runtime.removeEntries(config.entryOrder.toSet)
-                    val validationErrors =
-                      validateUploadEntries(visibleEntries, config.options).groupMap(_._1)(_._2)
-                    val syncedEntries =
+                    val validationErrors = validationErrorsByEntry(visibleEntries, config.options)
+                    val syncedEntries    =
                       visibleEntries
                         .map(entry =>
-                          entry.ref -> UploadEntryState(
-                            uploadName = config.name,
+                          val errors = validationErrors.getOrElse(entry.ref, Nil)
+                          entry.ref -> buildUploadEntryState(
+                            config = config,
                             uploadRef = uploadRef,
-                            ref = entry.ref,
-                            name = entry.name,
-                            contentType = entry.`type`,
-                            size = entry.size,
-                            relativePath = entry.relative_path,
-                            lastModified = entry.last_modified,
-                            clientMeta = entry.meta,
-                            token = None,
-                            joined = false,
-                            bytes = Chunk.empty,
-                            progress = 0,
+                            entry = entry,
                             preflighted = false,
-                            valid = validationErrors.get(entry.ref).isEmpty,
-                            errors = validationErrors.getOrElse(entry.ref, Nil),
-                            externalMeta = None,
-                            writer = config.options.writer,
-                            writerState = None,
-                            writerMeta = None,
-                            writerClosed = false
+                            valid = errors.isEmpty,
+                            errors = errors
                           )
                         ).toMap
                     val globalErrors =
                       Option
                         .when(visibleEntries.length > config.options.maxEntries)(
-                          config.ref -> Json.Str("too_many_files")
+                          config.ref -> errorJson(LiveUploadError.TooManyFiles)
                         )
                         .toList
                     val nextConfig = config.copy(
@@ -547,14 +511,64 @@ private[scalive] object SocketUploadProtocol:
   private def validateUploadEntries(
     entries: List[WebSocketMessage.UploadPreflightEntry],
     options: LiveUploadOptions
-  ): List[(String, Json)] =
+  ): List[(String, LiveUploadError)] =
     entries.zipWithIndex.flatMap { case (entry, index) =>
-      if index >= options.maxEntries then Some(entry.ref -> Json.Str("too_many_files"))
-      else if entry.size > options.maxFileSize then Some(entry.ref -> Json.Str("too_large"))
+      if index >= options.maxEntries then Some(entry.ref -> LiveUploadError.TooManyFiles)
+      else if entry.size > options.maxFileSize then Some(entry.ref -> LiveUploadError.TooLarge)
       else if !isAcceptedUploadEntry(entry, options.accept) then
-        Some(entry.ref -> Json.Str("not_accepted"))
+        Some(entry.ref -> LiveUploadError.NotAccepted)
       else None
     }
+
+  private def validationErrorsByEntry(
+    entries: List[WebSocketMessage.UploadPreflightEntry],
+    options: LiveUploadOptions
+  ): Map[String, List[LiveUploadError]] =
+    validateUploadEntries(entries, options).groupMap(_._1)(_._2)
+
+  private def buildUploadEntryState(
+    config: UploadConfigState,
+    uploadRef: String,
+    entry: WebSocketMessage.UploadPreflightEntry,
+    preflighted: Boolean,
+    valid: Boolean,
+    errors: List[LiveUploadError]
+  ): UploadEntryState =
+    UploadEntryState(
+      uploadName = config.name,
+      uploadRef = uploadRef,
+      ref = entry.ref,
+      name = entry.name,
+      contentType = entry.`type`,
+      size = entry.size,
+      relativePath = entry.relative_path,
+      lastModified = entry.last_modified,
+      clientMeta = entry.meta,
+      token = None,
+      joined = false,
+      bytes = Chunk.empty,
+      progress = 0,
+      preflighted = preflighted,
+      valid = valid,
+      errors = errors.map(errorJson),
+      externalMeta = None,
+      writer = config.options.writer,
+      writerState = None,
+      writerMeta = None,
+      writerClosed = false
+    )
+
+  private def withEntryErrors(
+    entry: UploadEntryState,
+    errors: List[LiveUploadError]
+  ): UploadEntryState =
+    entry.copy(valid = false, errors = errors.map(errorJson))
+
+  private def errorJson(error: LiveUploadError): Json =
+    LiveUploadError.toJson(error)
+
+  private val WriterErrorReason = "writer_error"
+  private val WriterError       = LiveUploadError.WriterFailure(WriterErrorReason)
 
   private def isAcceptedUploadEntry(
     entry: WebSocketMessage.UploadPreflightEntry,

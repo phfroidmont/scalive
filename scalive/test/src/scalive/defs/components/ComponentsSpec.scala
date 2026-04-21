@@ -69,7 +69,6 @@ object ComponentsSpec extends ZIOSpecDefault:
           entries = Nil
         )
         val el     = liveFileInput(upload)
-        el.syncAll()
 
         val result = HtmlBuilder.build(el)
 
@@ -93,7 +92,6 @@ object ComponentsSpec extends ZIOSpecDefault:
           )
         )
         val el     = liveFileInput(upload)
-        el.syncAll()
 
         val result = HtmlBuilder.build(el)
 

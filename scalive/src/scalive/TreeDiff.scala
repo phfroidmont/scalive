@@ -8,7 +8,6 @@ import scalive.Mod.Content
 private[scalive] object TreeDiff:
 
   def initial(root: HtmlElement): Diff =
-    prepare(root)
     val compiled = compileElement(
       root,
       isTopLevel = true,
@@ -28,9 +27,6 @@ private[scalive] object TreeDiff:
     )
 
   def diff(previous: HtmlElement, current: HtmlElement): Diff =
-    prepare(previous)
-    prepare(current)
-
     val previousCompiled = compileElement(
       previous,
       isTopLevel = true,
@@ -55,9 +51,6 @@ private[scalive] object TreeDiff:
       previous = previousComponents,
       diff = withTemplateSharing(raw)
     )
-
-  private def prepare(el: HtmlElement): Unit =
-    el.syncAll()
 
   sealed private trait CompiledNode
 

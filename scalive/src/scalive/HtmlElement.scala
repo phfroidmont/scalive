@@ -15,16 +15,6 @@ class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
 
   def prepended(mod: Mod*): HtmlElement = HtmlElement(tag, mods.prependedAll(mod))
   def apended(mod: Mod*): HtmlElement   = HtmlElement(tag, mods.appendedAll(mod))
-  def findBinding[Msg](id: String): Option[Map[String, String] => Msg] =
-    BindingRegistry.collect[Msg](this).get(id)
-
-  private[scalive] def syncAll(): Unit         = mods.foreach(_.syncAll())
-  private[scalive] def setAllUnchanged(): Unit = ()
-
-  private[scalive] def diff(trackUpdates: Boolean = true): Diff =
-    val _ = trackUpdates
-    syncAll()
-    TreeDiff.initial(this)
 
 class HtmlTag(val name: String, val void: Boolean = false):
   def apply(mods: (Mod | IterableOnce[Mod])*): HtmlElement = HtmlElement(
@@ -75,50 +65,23 @@ final case class BindingParams(params: Map[String, String]):
   def apply(key: String) = params.apply(key)
 
 sealed trait Mod
-sealed trait StaticMod  extends Mod
-sealed trait DynamicMod extends Mod
 
 object Mod:
   enum Attr extends Mod:
-    case Static(name: String, value: String)                 extends Attr with StaticMod
-    case StaticValueAsPresence(name: String, value: Boolean) extends Attr with StaticMod
-    case Binding(name: String, f: Map[String, String] => ?)  extends Attr with DynamicMod
-    case JsBinding(name: String, command: JSCommand)         extends Attr with DynamicMod
+    case Static(name: String, value: String)                 extends Attr
+    case StaticValueAsPresence(name: String, value: Boolean) extends Attr
+    case Binding(name: String, f: Map[String, String] => ?)  extends Attr
+    case JsBinding(name: String, command: JSCommand)         extends Attr
 
   enum Content extends Mod:
-    case Text(text: String, raw: Boolean = false) extends Content with StaticMod
-    case Tag(el: HtmlElement)                     extends Content with StaticMod with DynamicMod
-    case Component(cid: Int, el: HtmlElement)     extends Content with DynamicMod
+    case Text(text: String, raw: Boolean = false) extends Content
+    case Tag(el: HtmlElement)                     extends Content
+    case Component(cid: Int, el: HtmlElement)     extends Content
     case Keyed(
       entries: Vector[Content.Keyed.Entry],
       stream: Option[Diff.Stream] = None,
-      allEntries: Option[Vector[Content.Keyed.Entry]] = None) extends Content with DynamicMod
+      allEntries: Option[Vector[Content.Keyed.Entry]] = None) extends Content
 
   object Content:
     object Keyed:
       final case class Entry(key: Any, element: HtmlElement)
-
-extension (mod: Mod)
-  private[scalive] def setAllUnchanged(): Unit =
-    mod match
-      case Attr.Static(_, _)                     => ()
-      case Attr.Binding(_, _)                    => ()
-      case Attr.JsBinding(_, _)                  => ()
-      case Attr.StaticValueAsPresence(_, _)      => ()
-      case Content.Text(text, _)                 => ()
-      case Content.Tag(el)                       => el.setAllUnchanged()
-      case Content.Component(_, el)              => el.setAllUnchanged()
-      case Content.Keyed(entries, _, allEntries) =>
-        allEntries.getOrElse(entries).foreach(_.element.setAllUnchanged())
-
-  private[scalive] def syncAll(): Unit =
-    mod match
-      case Attr.Static(_, _)                     => ()
-      case Attr.StaticValueAsPresence(_, _)      => ()
-      case Attr.Binding(_, _)                    => ()
-      case Attr.JsBinding(_, _)                  => ()
-      case Content.Text(text, _)                 => ()
-      case Content.Tag(el)                       => el.syncAll()
-      case Content.Component(_, el)              => el.syncAll()
-      case Content.Keyed(entries, _, allEntries) =>
-        allEntries.getOrElse(entries).foreach(_.element.syncAll())

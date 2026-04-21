@@ -115,13 +115,17 @@ private[scalive] object StreamRuntimeState:
   val empty: StreamRuntimeState =
     StreamRuntimeState(Map.empty, 0L)
 
+final private[scalive] case class RenderedView[Msg](
+  el: HtmlElement,
+  bindings: Map[String, Map[String, String] => Msg])
+
 final private[scalive] case class RuntimeState[Msg, Model](
   lv: LiveView[Msg, Model],
   ctx: LiveContext,
   meta: WebSocketMessage.Meta,
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
   outHub: Hub[(Payload, WebSocketMessage.Meta)],
-  ref: Ref[(Model, HtmlElement)],
+  ref: Ref[(Model, RenderedView[Msg])],
   lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],
   navigationRef: Ref[Option[LiveNavigationCommand]],
   uploadRef: Ref[UploadRuntimeState],

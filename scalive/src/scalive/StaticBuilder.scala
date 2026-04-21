@@ -16,8 +16,8 @@ object StaticBuilder:
       case Attr.Static(name, value) => List(Some(s""" $name="${Escaping.escape(value)}"""))
       case Attr.StaticValueAsPresence(name, value) =>
         List(Some(if value then s" $name" else ""))
-      case Attr.Binding(name, _, _) => List(Some(s""" $name="""), None, Some('"'.toString))
-      case Attr.JsBinding(name, _)  => List(Some(s" $name='"), None, Some("'"))
+      case Attr.Binding(name, _)   => List(Some(s""" $name="""), None, Some('"'.toString))
+      case Attr.JsBinding(name, _) => List(Some(s" $name='"), None, Some("'"))
     }
 
     val children = el.contentMods.flatMap {

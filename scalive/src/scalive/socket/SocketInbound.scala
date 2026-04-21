@@ -28,8 +28,8 @@ private[scalive] object SocketInbound:
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     for
-      (currentModel, el) <- state.ref.get
-      parsedUri          <- ZIO.attempt(URI.create(url))
+      (currentModel, rendered) <- state.ref.get
+      parsedUri                <- ZIO.attempt(URI.create(url))
       params = QueryParams
                  .decode(Option(parsedUri.getRawQuery).getOrElse(""))
                  .map
@@ -46,11 +46,11 @@ private[scalive] object SocketInbound:
         )
       _ <- navigation match
              case Some(command) =>
-               handleNavigationCommand(el, model, command, meta, state)
+               handleNavigationCommand(rendered, model, command, meta, state)
              case None =>
                for
                  _    <- state.patchRedirectCountRef.set(0)
-                 diff <- SocketModelRuntime.updateModelAndSubscriptions(el, model, state)
+                 diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
                  _    <- ZIO.when(!diff.isEmpty)(
                         SocketModelRuntime.publishPayload(
                           Payload.Diff(diff),
@@ -86,8 +86,8 @@ private[scalive] object SocketInbound:
         yield ()
       case _ =>
         for
-          _                  <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)
-          (currentModel, el) <- state.ref.get
+          _                        <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)
+          (currentModel, rendered) <- state.ref.get
           (interceptResult, navigation) <-
             SocketModelRuntime.captureNavigation(state)(
               LiveIO
@@ -97,7 +97,7 @@ private[scalive] object SocketInbound:
           _ <- interceptResult match
                  case InterceptResult.Halt(interceptModel, reply) =>
                    SocketModelRuntime.applyInterceptHalt(
-                     el,
+                     rendered,
                      interceptModel,
                      reply,
                      navigation,
@@ -106,7 +106,7 @@ private[scalive] object SocketInbound:
                    )
                  case InterceptResult.Continue(interceptModel) =>
                    SocketModelRuntime.applyBoundEvent(
-                     el,
+                     rendered,
                      interceptModel,
                      event,
                      navigation,
@@ -129,7 +129,7 @@ private[scalive] object SocketInbound:
       case _ => Set.empty
 
   def handleNavigationCommand[Msg, Model](
-    el: HtmlElement,
+    rendered: RenderedView[Msg],
     model: Model,
     command: LiveNavigationCommand,
     meta: WebSocketMessage.Meta,
@@ -142,7 +142,7 @@ private[scalive] object SocketInbound:
 
     for
       redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
-      _             <- SocketModelRuntime.updateModelAndSubscriptions(el, model, state)
+      _             <- SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
       _             <-
         if redirectCount > 20 then
           SocketModelRuntime.publishPayload(Payload.Error, meta.copy(messageRef = None), state)

@@ -1,69 +1,59 @@
 package scalive
 
-import scala.util.hashing.MurmurHash3
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
-/** Binding IDs are internal server-side routing keys used to map client events back to handlers.
-  *
-  * IDs are intentionally stored on the binding node itself (`Mod.Attr.Binding` and JS push
-  * bindings) rather than in a separate registry. The HTML tree is already the source of truth for
-  * diffing and lookup (`findBinding`), so keeping the ID on the node makes IDs naturally follow the
-  * node lifecycle across diffs.
-  *
-  * New bindings start with a pending marker. During render/diff, pending IDs are replaced with
-  * monotonic `b<N>` IDs using a caller-provided cursor. The cursor state is owned by the
-  * `HtmlElement` instance (one render tree), which keeps allocation scoped to that tree and avoids
-  * global mutable state.
-  */
 private[scalive] object BindingId:
-  private val PendingValue = "__scalive_pending_binding_id__"
+  type Path = Vector[String]
 
-  final private class Allocator(var nextId: Long):
-    def allocate(): String =
-      val id = nextId
-      nextId = nextId + 1
-      s"b$id"
+  private val UnresolvedValue = "__scalive_pending_binding_id__"
+  private val HashSizeBytes   = 10
+  private val HexDigits       = "0123456789abcdef"
 
-  def pending(): String = PendingValue
+  def unresolved(): String = UnresolvedValue
 
-  def isPending(id: String): Boolean = id == PendingValue
+  def rootPath(tagName: String): Path =
+    Vector(s"root:$tagName")
 
-  def assignPending(root: HtmlElement, startAt: Long): Long =
-    val allocator = new Allocator(startAt)
-    assignInElement(root, allocator)
-    allocator.nextId
+  def childTagPath(parent: Path, index: Int, tagName: String): Path =
+    parent :+ s"tag:$index:$tagName"
 
-  private def assignInElement(el: HtmlElement, allocator: Allocator): Unit =
-    assignInElement(el, allocator, () => allocator.allocate())
+  def childComponentPath(parent: Path, index: Int, cid: Int): Path =
+    parent :+ s"component:$index:$cid"
 
-  private def assignInElement(
-    el: HtmlElement,
-    allocator: Allocator,
-    nextId: () => String
-  ): Unit =
-    el.mods.foreach(assignInMod(_, allocator, nextId))
+  def childKeyedPath(parent: Path, index: Int): Path =
+    parent :+ s"keyed:$index"
 
-  private def assignInMod(mod: Mod, allocator: Allocator, nextId: () => String): Unit =
-    mod match
-      case Mod.Attr.Binding(_, id, _) =>
-        if isPending(id.currentValue) then id.set(nextId())
-      case Mod.Attr.JsBinding(_, command) =>
-        command.assignPendingBindingIds(nextId)
-      case Mod.Content.Tag(child)                    => assignInElement(child, allocator, nextId)
-      case Mod.Content.Component(_, child)           => assignInElement(child, allocator, nextId)
-      case Mod.Content.Keyed(entries, _, allEntries) =>
-        val keyedEntries = allEntries.getOrElse(entries)
-        val groupSalt    = allocator.allocate().drop(1)
-        keyedEntries.foreach { entry =>
-          var localIndex  = 0
-          val keyPrefix   = stableKeyPrefix(entry.key)
-          val keyedNextId = () =>
-            val id = s"b${groupSalt}_${keyPrefix}_$localIndex"
-            localIndex = localIndex + 1
-            id
-          assignInElement(entry.element, allocator, keyedNextId)
-        }
-      case _ => ()
+  def keyedEntryPath(parent: Path, key: Any): Path =
+    parent :+ s"entry:${stableToken(stableKeySeed(key), 6)}"
 
-  private def stableKeyPrefix(key: Any): String =
-    Integer.toUnsignedString(MurmurHash3.stringHash(String.valueOf(key)), 36)
+  def attrBindingId(path: Path, attrIndex: Int): String =
+    idFromSeed(s"${pathSeed(path)}|attr:$attrIndex")
+
+  def jsBindingScope(path: Path, attrIndex: Int): String =
+    s"${pathSeed(path)}|js:$attrIndex"
+
+  def jsPushBindingId(scope: String, pushIndex: Int): String =
+    idFromSeed(s"$scope|push:$pushIndex")
+
+  private def idFromSeed(seed: String): String =
+    s"b${stableToken(seed, HashSizeBytes)}"
+
+  private def pathSeed(path: Path): String =
+    path.mkString("/")
+
+  private def stableKeySeed(key: Any): String =
+    val className = Option(key).map(_.getClass.getName).getOrElse("null")
+    s"$className:${String.valueOf(key)}"
+
+  private def stableToken(seed: String, bytes: Int): String =
+    val digest = MessageDigest.getInstance("SHA-256").digest(seed.getBytes(StandardCharsets.UTF_8))
+    val sb     = new StringBuilder(bytes * 2)
+    var i      = 0
+    while i < bytes do
+      val b = digest(i) & 0xff
+      sb.append(HexDigits.charAt((b >>> 4) & 0x0f))
+      sb.append(HexDigits.charAt(b & 0x0f))
+      i = i + 1
+    sb.toString
 end BindingId

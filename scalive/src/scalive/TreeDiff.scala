@@ -2,8 +2,6 @@ package scalive
 
 import scala.collection.mutable
 
-import zio.json.EncoderOps
-
 import scalive.Mod.Attr
 import scalive.Mod.Content
 
@@ -11,7 +9,11 @@ private[scalive] object TreeDiff:
 
   def initial(root: HtmlElement): Diff =
     prepare(root)
-    val compiled       = compileElement(root, isTopLevel = true)
+    val compiled = compileElement(
+      root,
+      isTopLevel = true,
+      path = BindingId.rootPath(root.tag.name)
+    )
     val componentNodes = collectComponents(compiled)
     val withComponents = withComponentDiffs(
       diff = fullNode(compiled, includeStatic = true),
@@ -29,8 +31,16 @@ private[scalive] object TreeDiff:
     prepare(previous)
     prepare(current)
 
-    val previousCompiled   = compileElement(previous, isTopLevel = true)
-    val currentCompiled    = compileElement(current, isTopLevel = true)
+    val previousCompiled = compileElement(
+      previous,
+      isTopLevel = true,
+      path = BindingId.rootPath(previous.tag.name)
+    )
+    val currentCompiled = compileElement(
+      current,
+      isTopLevel = true,
+      path = BindingId.rootPath(current.tag.name)
+    )
     val previousComponents = collectComponents(previousCompiled)
     val currentComponents  = collectComponents(currentCompiled)
 
@@ -48,7 +58,6 @@ private[scalive] object TreeDiff:
 
   private def prepare(el: HtmlElement): Unit =
     el.syncAll()
-    el.allocatePendingBindingIds()
 
   sealed private trait CompiledNode
 
@@ -75,7 +84,11 @@ private[scalive] object TreeDiff:
   final private case class KeyedSlot(node: KeyedNode)                  extends CompiledSlot
   final private case class ComponentSlot(component: CompiledComponent) extends CompiledSlot
 
-  private def compileElement(el: HtmlElement, isTopLevel: Boolean): TagNode =
+  private def compileElement(
+    el: HtmlElement,
+    isTopLevel: Boolean,
+    path: BindingId.Path
+  ): TagNode =
     val staticBuilder = Vector.newBuilder[String]
     val slotBuilder   = Vector.newBuilder[CompiledSlot]
 
@@ -101,38 +114,57 @@ private[scalive] object TreeDiff:
       staticFragment = ""
       slotBuilder += ComponentSlot(value)
 
-    el.attrMods.foreach {
-      case Attr.Static(name, value) =>
-        staticFragment += s" $name=\""
-        pushStringSlot(Escaping.escape(value))
-        staticFragment += "\""
-      case Attr.StaticValueAsPresence(name, value) =>
-        if value then staticFragment += s" $name"
-      case Attr.Binding(name, id, _) =>
-        staticFragment += s" $name=\""
-        pushStringSlot(Escaping.escape(id.currentValue))
-        staticFragment += "\""
-      case Attr.JsBinding(name, command) =>
-        staticFragment += s" $name='"
-        pushStringSlot(Escaping.escape(command.toJson))
-        staticFragment += "'"
+    el.attrMods.zipWithIndex.foreach { case (attr, attrIndex) =>
+      attr match
+        case Attr.Static(name, value) =>
+          staticFragment += s" $name=\""
+          pushStringSlot(Escaping.escape(value))
+          staticFragment += "\""
+        case Attr.StaticValueAsPresence(name, value) =>
+          if value then staticFragment += s" $name"
+        case Attr.Binding(name, _) =>
+          staticFragment += s" $name=\""
+          pushStringSlot(Escaping.escape(BindingId.attrBindingId(path, attrIndex)))
+          staticFragment += "\""
+        case Attr.JsBinding(name, command) =>
+          staticFragment += s" $name='"
+          val scope = BindingId.jsBindingScope(path, attrIndex)
+          pushStringSlot(Escaping.escape(command.renderJson(scope)))
+          staticFragment += "'"
     }
 
     staticFragment += (if el.tag.void then "/>" else ">")
 
+    var structuralChildIndex = 0
     el.contentMods.foreach {
       case Content.Text(text, raw) =>
         if raw then pushStringSlot(text)
         else pushStringSlot(Escaping.escape(text))
       case Content.Tag(child) =>
-        pushNodeSlot(compileElement(child, isTopLevel = false))
+        val childPath = BindingId.childTagPath(path, structuralChildIndex, child.tag.name)
+        structuralChildIndex = structuralChildIndex + 1
+        pushNodeSlot(compileElement(child, isTopLevel = false, path = childPath))
       case Content.Component(cid, child) =>
+        val componentPath = BindingId.childComponentPath(path, structuralChildIndex, cid)
+        structuralChildIndex = structuralChildIndex + 1
         pushComponentSlot(
-          CompiledComponent(cid, compileElement(child, isTopLevel = false))
+          CompiledComponent(
+            cid,
+            compileElement(child, isTopLevel = false, path = componentPath)
+          )
         )
       case Content.Keyed(entries, stream, _) =>
+        val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
+        structuralChildIndex = structuralChildIndex + 1
         val keyedEntries = entries.map(entry =>
-          KeyedEntry(entry.key, compileElement(entry.element, isTopLevel = false))
+          KeyedEntry(
+            entry.key,
+            compileElement(
+              entry.element,
+              isTopLevel = false,
+              path = BindingId.keyedEntryPath(keyedPath, entry.key)
+            )
+          )
         )
         pushKeyedSlot(KeyedNode(keyedEntries, stream))
     }

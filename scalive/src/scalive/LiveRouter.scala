@@ -41,7 +41,6 @@ final case class LiveRoute[A, Msg, Model](
         initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(ctx))
         el = lv.view(initModel)
         _  = el.syncAll()
-        _  = el.allocatePendingBindingIds()
       yield Response.html(
         Html.raw(
           HtmlBuilder.build(

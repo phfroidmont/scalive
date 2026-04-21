@@ -49,7 +49,7 @@ private[scalive] object SocketOutbound:
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     for
-      (currentModel, el)         <- state.ref.get
+      (currentModel, rendered)   <- state.ref.get
       (updatedModel, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
           LiveIO
@@ -60,7 +60,7 @@ private[scalive] object SocketOutbound:
              case Some(command) =>
                state.patchRedirectCountRef.set(0) *>
                  SocketInbound.handleNavigationCommand(
-                   el,
+                   rendered,
                    updatedModel,
                    command,
                    meta,
@@ -70,7 +70,7 @@ private[scalive] object SocketOutbound:
                for
                  diff <-
                    SocketModelRuntime.updateModelAndSubscriptions(
-                     el,
+                     rendered,
                      updatedModel,
                      state
                    )

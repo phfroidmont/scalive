@@ -8,15 +8,17 @@ val JS: JSCommands.JSCommand = JSCommands.empty
 object JSCommands:
   opaque type JSCommand = List[Op[?]]
 
-  final private case class Op[Msg](renderJson: () => Json, binding: Option[Binding[Msg]])
+  final private case class Op[Msg](
+    renderJson: Option[String] => Json,
+    binding: Option[Binding[Msg]])
 
-  final case class Binding[Msg](id: MutableValue[String], msg: Msg)
+  final case class Binding[Msg](msg: Msg)
 
   def empty: JSCommand = List.empty
 
   object JSCommand:
     given JsonEncoder[JSCommand] =
-      JsonEncoder[Json].contramap(ops => Json.Arr(ops.map(_.renderJson()).reverse*))
+      JsonEncoder[Json].contramap(ops => Json.Arr(ops.map(_.renderJson(None)).reverse*))
 
   private def encodeOp[A: JsonEncoder](kind: String, args: A): Json =
     (kind, args).toJsonAST.fold(e => throw new IllegalArgumentException(e), identity)
@@ -31,16 +33,23 @@ object JSCommands:
 
   extension (ops: JSCommand)
     private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand =
-      Op(() => encodeOp(kind, args), None) :: ops
+      Op(_ => encodeOp(kind, args), None) :: ops
 
-    private[scalive] def bindings: Map[String, ?] =
-      ops.flatMap(_.binding).map(binding => (binding.id.currentValue, binding.msg)).toMap
+    private def resolved[Msg](scope: String): Vector[(Json, Option[(String, Msg)])] =
+      ops.reverse.zipWithIndex.map { case (op, pushIndex) =>
+        val resolvedId =
+          if op.binding.isDefined then Some(BindingId.jsPushBindingId(scope, pushIndex)) else None
+        val json    = op.renderJson(resolvedId)
+        val binding =
+          op.binding.map(binding => resolvedId.get -> binding.msg.asInstanceOf[Msg])
+        (json, binding)
+      }.toVector
 
-    private[scalive] def assignPendingBindingIds(nextId: () => String): Unit =
-      ops
-        .flatMap(_.binding).foreach(binding =>
-          if BindingId.isPending(binding.id.currentValue) then binding.id.set(nextId())
-        )
+    private[scalive] def renderJson(scope: String): String =
+      Json.Arr(resolved[Any](scope).map(_._1)*).toJson
+
+    private[scalive] def bindings[Msg](scope: String): Map[String, Msg] =
+      resolved[Msg](scope).flatMap(_._2).toMap
 
     def addClass    = ClassOp("add_class", ops)
     def toggleClass = ClassOp("toggle_class", ops)
@@ -128,14 +137,13 @@ object JSCommands:
       loading: String = "",
       pageLoading: Boolean = false
     ): JSCommand =
-      val bindingId = MutableValue(BindingId.pending())
-      val binding   = Binding(bindingId, event)
+      val binding = Binding(event)
       Op(
-        () =>
+        maybeBindingId =>
           encodeOp(
             "push",
             Args.Push(
-              bindingId.currentValue,
+              maybeBindingId.getOrElse(BindingId.unresolved()),
               Option.when(target.nonEmpty)(target),
               Option.when(loading.nonEmpty)(loading),
               Option.when(!pageLoading)(pageLoading)

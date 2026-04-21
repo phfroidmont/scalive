@@ -115,11 +115,12 @@ private[scalive] object SocketModelRuntime:
       _ <- state.lvStreamRef.set(
              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
-      nextEl       = state.lv.view(model)
-      diff         = TreeDiff.diff(rendered.el, nextEl)
+      nextCompiled = RenderSnapshot.compile(state.lv.view(model))
+      diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
       nextRendered = RenderedView(
-                       el = nextEl,
-                       bindings = BindingRegistry.collect[Msg](nextEl)(using state.msgClassTag)
+                       compiled = nextCompiled,
+                       bindings =
+                         BindingRegistry.collect[Msg](nextCompiled)(using state.msgClassTag)
                      )
       _      <- state.ref.set((model, nextRendered))
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)

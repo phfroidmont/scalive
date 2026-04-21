@@ -2,20 +2,17 @@ package scalive
 
 import scala.collection.mutable
 
-import scalive.Mod.Attr
-import scalive.Mod.Content
+import scalive.RenderSnapshot.*
 
 private[scalive] object TreeDiff:
 
   def initial(root: HtmlElement): Diff =
-    val compiled = compileElement(
-      root,
-      isTopLevel = true,
-      path = BindingId.rootPath(root.tag.name)
-    )
-    val componentNodes = collectComponents(compiled)
+    initial(RenderSnapshot.compile(root))
+
+  def initial(compiled: Compiled): Diff =
+    val componentNodes = collectComponents(compiled.root)
     val withComponents = withComponentDiffs(
-      diff = fullNode(compiled, includeStatic = true),
+      diff = fullNode(compiled.root, includeStatic = true),
       previous = Map.empty,
       current = componentNodes,
       includeAll = true
@@ -27,21 +24,14 @@ private[scalive] object TreeDiff:
     )
 
   def diff(previous: HtmlElement, current: HtmlElement): Diff =
-    val previousCompiled = compileElement(
-      previous,
-      isTopLevel = true,
-      path = BindingId.rootPath(previous.tag.name)
-    )
-    val currentCompiled = compileElement(
-      current,
-      isTopLevel = true,
-      path = BindingId.rootPath(current.tag.name)
-    )
-    val previousComponents = collectComponents(previousCompiled)
-    val currentComponents  = collectComponents(currentCompiled)
+    diff(RenderSnapshot.compile(previous), RenderSnapshot.compile(current))
+
+  def diff(previous: Compiled, current: Compiled): Diff =
+    val previousComponents = collectComponents(previous.root)
+    val currentComponents  = collectComponents(current.root)
 
     val raw = withComponentDiffs(
-      diff = diffNode(previousCompiled, currentCompiled).getOrElse(Diff.Tag()),
+      diff = diffNode(previous.root, current.root).getOrElse(Diff.Tag()),
       previous = previousComponents,
       current = currentComponents,
       includeAll = false
@@ -51,126 +41,6 @@ private[scalive] object TreeDiff:
       previous = previousComponents,
       diff = withTemplateSharing(raw)
     )
-
-  sealed private trait CompiledNode
-
-  final private case class TagNode(
-    static: Vector[String],
-    slots: Vector[CompiledSlot],
-    root: Boolean)
-      extends CompiledNode
-
-  final private case class KeyedNode(
-    entries: Vector[KeyedEntry],
-    stream: Option[Diff.Stream])
-      extends CompiledNode
-
-  final private case class KeyedEntry(key: Any, node: CompiledNode)
-
-  final private case class CompiledComponent(
-    cid: Int,
-    node: CompiledNode)
-
-  sealed private trait CompiledSlot
-  final private case class StringSlot(value: String)                   extends CompiledSlot
-  final private case class NodeSlot(node: CompiledNode)                extends CompiledSlot
-  final private case class KeyedSlot(node: KeyedNode)                  extends CompiledSlot
-  final private case class ComponentSlot(component: CompiledComponent) extends CompiledSlot
-
-  private def compileElement(
-    el: HtmlElement,
-    isTopLevel: Boolean,
-    path: BindingId.Path
-  ): TagNode =
-    val staticBuilder = Vector.newBuilder[String]
-    val slotBuilder   = Vector.newBuilder[CompiledSlot]
-
-    var staticFragment = s"<${el.tag.name}"
-
-    def pushStringSlot(value: String): Unit =
-      staticBuilder += staticFragment
-      staticFragment = ""
-      slotBuilder += StringSlot(value)
-
-    def pushNodeSlot(value: CompiledNode): Unit =
-      staticBuilder += staticFragment
-      staticFragment = ""
-      slotBuilder += NodeSlot(value)
-
-    def pushKeyedSlot(value: KeyedNode): Unit =
-      staticBuilder += staticFragment
-      staticFragment = ""
-      slotBuilder += KeyedSlot(value)
-
-    def pushComponentSlot(value: CompiledComponent): Unit =
-      staticBuilder += staticFragment
-      staticFragment = ""
-      slotBuilder += ComponentSlot(value)
-
-    el.attrMods.zipWithIndex.foreach { case (attr, attrIndex) =>
-      attr match
-        case Attr.Static(name, value) =>
-          staticFragment += s" $name=\""
-          pushStringSlot(Escaping.escape(value))
-          staticFragment += "\""
-        case Attr.StaticValueAsPresence(name, value) =>
-          if value then staticFragment += s" $name"
-        case Attr.Binding(name, _) =>
-          staticFragment += s" $name=\""
-          pushStringSlot(Escaping.escape(BindingId.attrBindingId(path, attrIndex)))
-          staticFragment += "\""
-        case Attr.JsBinding(name, command) =>
-          staticFragment += s" $name='"
-          val scope = BindingId.jsBindingScope(path, attrIndex)
-          pushStringSlot(Escaping.escape(command.renderJson(scope)))
-          staticFragment += "'"
-    }
-
-    staticFragment += (if el.tag.void then "/>" else ">")
-
-    var structuralChildIndex = 0
-    el.contentMods.foreach {
-      case Content.Text(text, raw) =>
-        if raw then pushStringSlot(text)
-        else pushStringSlot(Escaping.escape(text))
-      case Content.Tag(child) =>
-        val childPath = BindingId.childTagPath(path, structuralChildIndex, child.tag.name)
-        structuralChildIndex = structuralChildIndex + 1
-        pushNodeSlot(compileElement(child, isTopLevel = false, path = childPath))
-      case Content.Component(cid, child) =>
-        val componentPath = BindingId.childComponentPath(path, structuralChildIndex, cid)
-        structuralChildIndex = structuralChildIndex + 1
-        pushComponentSlot(
-          CompiledComponent(
-            cid,
-            compileElement(child, isTopLevel = false, path = componentPath)
-          )
-        )
-      case Content.Keyed(entries, stream, _) =>
-        val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
-        structuralChildIndex = structuralChildIndex + 1
-        val keyedEntries = entries.map(entry =>
-          KeyedEntry(
-            entry.key,
-            compileElement(
-              entry.element,
-              isTopLevel = false,
-              path = BindingId.keyedEntryPath(keyedPath, entry.key)
-            )
-          )
-        )
-        pushKeyedSlot(KeyedNode(keyedEntries, stream))
-    }
-
-    if !el.tag.void then staticFragment += s"</${el.tag.name}>"
-    staticBuilder += staticFragment
-
-    TagNode(
-      static = staticBuilder.result(),
-      slots = slotBuilder.result(),
-      root = !isTopLevel
-    )
-  end compileElement
 
   private def slotShape(slot: CompiledSlot): String =
     slot match

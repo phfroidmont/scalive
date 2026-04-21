@@ -116,7 +116,7 @@ private[scalive] object StreamRuntimeState:
     StreamRuntimeState(Map.empty, 0L)
 
 final private[scalive] case class RenderedView[Msg](
-  el: HtmlElement,
+  compiled: RenderSnapshot.Compiled,
   bindings: Map[String, Map[String, String] => Either[String, Msg]])
 
 final private[scalive] case class RuntimeState[Msg, Model](

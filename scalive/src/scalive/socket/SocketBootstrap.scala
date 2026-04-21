@@ -31,13 +31,13 @@ private[scalive] object SocketBootstrap:
                      title = new SocketTitleRuntime(titleRef)
                    )
       initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(runtimeCtx))
-      initEl   = lv.view(initModel)
-      initView = RenderedView(
-                   el = initEl,
-                   bindings = BindingRegistry.collect[Msg](initEl)
+      initCompiled = RenderSnapshot.compile(lv.view(initModel))
+      initView     = RenderedView(
+                   compiled = initCompiled,
+                   bindings = BindingRegistry.collect[Msg](initCompiled)
                  )
       ref <- Ref.make((initModel, initView))
-      rawInitDiff = TreeDiff.initial(initEl)
+      rawInitDiff = TreeDiff.initial(initCompiled)
       initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
       initTitle  <- titleRef.getAndSet(None)
       initDiff = SocketModelRuntime.withTitle(

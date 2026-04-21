@@ -173,12 +173,12 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Define internal compiled render snapshot/IR.
-- [ ] Reuse a shared traversal for:
+- [x] Define internal compiled render snapshot/IR.
+- [x] Reuse a shared traversal for:
   - static/dynamic diff compilation
   - HTML rendering
   - binding extraction
-- [ ] Keep output wire format unchanged.
+- [x] Keep output wire format unchanged.
 
 ### 4.2 Unify socket state around compiled snapshot
 
@@ -190,14 +190,14 @@ Clean up and simplify the post-migration plain-model architecture while keeping 
 
 #### Tasks
 
-- [ ] Store compiled snapshot in runtime state instead of recomputing parallel artifacts each update.
-- [ ] Keep event dispatch and diff generation sourced from same snapshot.
+- [x] Store compiled snapshot in runtime state instead of recomputing parallel artifacts each update.
+- [x] Keep event dispatch and diff generation sourced from same snapshot.
 
 ### Acceptance
 
-- [ ] No observable protocol regression.
-- [ ] Reduced duplicate traversal code.
-- [ ] Full verification green.
+- [x] No observable protocol regression.
+- [x] Reduced duplicate traversal code.
+- [x] Full verification green.
 
 ---
 

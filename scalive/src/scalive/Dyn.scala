@@ -10,7 +10,7 @@ import scala.collection.mutable
   * Observables are not used on purpose to avoid the complexity of managing their cleanup. The
   * tradeoff of micro managing the updates is acceptable as it is only done internally.
   */
-sealed trait Dyn[T]:
+sealed private[scalive] trait Dyn[T]:
   private[scalive] def currentValue: T
   private[scalive] def changed: Boolean
 
@@ -37,7 +37,7 @@ sealed trait Dyn[T]:
   private[scalive] def callOnEveryChild(f: T => Unit): Unit
 
 extension [T](parent: Dyn[List[T]])
-  def splitBy[Key](key: T => Key)(project: (Key, Dyn[T]) => HtmlElement): Mod =
+  private[scalive] def splitBy[Key](key: T => Key)(project: (Key, Dyn[T]) => HtmlElement): Mod =
     Mod.Content.DynSplit(
       new SplitVar(
         parent,
@@ -45,11 +45,11 @@ extension [T](parent: Dyn[List[T]])
         project = (k, v) => project(k, v)
       )
     )
-  def splitByIndex(project: (Int, Dyn[T]) => HtmlElement): Mod =
+  private[scalive] def splitByIndex(project: (Int, Dyn[T]) => HtmlElement): Mod =
     parent(_.zipWithIndex).splitBy(_._2)((index, v) => project(index, v(_._1)))
 
 extension [T](parent: Dyn[streams.LiveStream[T]])
-  def stream(
+  private[scalive] def stream(
     project: (Dyn[String], Dyn[T]) => HtmlElement
   ): Mod =
     Mod.Content.DynStream(new StreamSplitVar(parent, project))

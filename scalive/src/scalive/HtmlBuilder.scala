@@ -30,13 +30,17 @@ object HtmlBuilder:
           strw.write(
             value.render(false).map(if _ then s" $name" else "").getOrElse("")
           )
-        case Content.Tag(el)               => build(el.static, el.dynamicMods, strw)
-        case Content.DynText(dyn)          => strw.writeEscaped(dyn.render(false).getOrElse(""))
-        case Content.DynElement(dyn)       => ???
+        case Content.Tag(el)          => build(el.static, el.dynamicMods, strw)
+        case Content.Component(_, el) => build(el.static, el.dynamicMods, strw)
+        case Content.DynText(dyn)     => strw.writeEscaped(dyn.render(false).getOrElse(""))
+        case Content.DynElement(dyn)  =>
+          dyn.render(false).foreach(el => build(el.static, el.dynamicMods, strw))
         case Content.DynOptionElement(dyn) =>
           dyn.render(false).foreach(_.foreach(el => build(el.static, el.dynamicMods, strw)))
-        case Content.DynElementColl(dyn) => ???
-        case Content.DynSplit(splitVar)  =>
+        case Content.DynElementColl(dyn) =>
+          dyn
+            .render(false).foreach(_.iterator.foreach(el => build(el.static, el.dynamicMods, strw)))
+        case Content.DynSplit(splitVar) =>
           val (entries, _, _, _) =
             splitVar.render(false).getOrElse((List.empty, 0, true, None))
           val staticOpt = entries.collectFirst { case (value = el) => el.static }

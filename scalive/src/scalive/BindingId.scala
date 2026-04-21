@@ -55,6 +55,7 @@ private[scalive] object BindingId:
         command.assignPendingBindingIds(nextId)
         jsonValue.set(command.toJson)
       case Mod.Content.Tag(child)            => assignInElement(child, allocator, nextId)
+      case Mod.Content.Component(_, child)   => assignInElement(child, allocator, nextId)
       case Mod.Content.DynElement(dyn)       => assignInElement(dyn.currentValue, allocator, nextId)
       case Mod.Content.DynOptionElement(dyn) =>
         dyn.currentValue.foreach(assignInElement(_, allocator, nextId))

@@ -26,6 +26,7 @@ object StaticBuilder:
     val children = el.contentMods.flatMap {
       case Content.Text(text, raw)     => List(Some(if raw then text else Escaping.escape(text)))
       case Content.Tag(el)             => buildStaticFragments(el)
+      case Content.Component(_, _)     => List(None)
       case Content.DynText(_)          => List(None)
       case Content.DynElement(_)       => List(None)
       case Content.DynOptionElement(_) => List(None)

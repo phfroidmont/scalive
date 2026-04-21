@@ -1,6 +1,8 @@
 package scalive
 
 import zio.*
+import zio.json.*
+import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
 
@@ -13,6 +15,7 @@ object SocketSpec extends ZIOSpecDefault:
   enum Msg:
     case FromClient
     case FromServer
+    case SetTitle
 
   final case class Model(counter: Int = 0, staticFlag: Option[Boolean] = None)
 
@@ -26,6 +29,7 @@ object SocketSpec extends ZIOSpecDefault:
       def update(model: Model) = {
         case Msg.FromClient => ZIO.succeed(model.copy(counter = model.counter + 1))
         case Msg.FromServer => ZIO.succeed(model.copy(counter = model.counter + 10))
+        case Msg.SetTitle   => LiveContext.putTitle("Updated title").as(model)
       }
 
       def view(model: Model): HtmlElement =
@@ -72,6 +76,150 @@ object SocketSpec extends ZIOSpecDefault:
         _      <- socket.shutdown
         res    <- socket.outbox.runCollect
       yield assertTrue(res.nonEmpty)
+    },
+    test("emits title updates on top-level diff") {
+      val ctx = LiveContext(staticChanged = false)
+      val lv  = makeLiveView(ZStream.succeed(Msg.SetTitle))
+      for
+        socket <- makeSocket(ctx, lv)
+        diff   <- socket.outbox.drop(1).runHead.some
+      yield
+        val title = diff._1 match
+          case Payload.Diff(Diff.Tag(_, _, _, _, title, _, _, _)) => title
+          case _                                                   => None
+
+        assertTrue(
+          diff._1.isInstanceOf[Payload.Diff],
+          title.contains("Updated title")
+        )
+    },
+    test("cids_destroyed replies with prunable cids") {
+      val lv = new LiveView[Unit, Unit]:
+        def init = ZIO.unit
+
+        def update(model: Unit) = _ => ZIO.succeed(model)
+
+        def view(model: Unit): HtmlElement =
+          div(
+            component(1, span("A")),
+            component(2, span("B"))
+          )
+
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = "cids_destroyed",
+        value = zio.json.ast.Json.Obj(
+          "cids" -> zio.json.ast.Json.Arr(zio.json.ast.Json.Num(1), zio.json.ast.Json.Num(3))
+        ),
+        uploads = None,
+        cid = None,
+        meta = None
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        repliesFiber <- socket.outbox.drop(1).take(2).runCollect.fork
+        _      <- socket.inbox.offer(event -> meta)
+        _      <- socket.inbox.offer(event -> meta)
+        replies <- repliesFiber.join
+        first = replies.head
+        second = replies.tail.head
+      yield
+        val firstCids = first._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Raw(zio.json.ast.Json.Obj(fields))
+              ) =>
+            fields.collectFirst {
+              case (
+                    "cids",
+                    zio.json.ast.Json.Arr(values)
+                  ) => values.collect { case zio.json.ast.Json.Num(v) => v.intValue }
+            }.getOrElse(Vector.empty)
+          case _ => Vector.empty
+
+        val secondCids = second._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Raw(zio.json.ast.Json.Obj(fields))
+              ) =>
+            fields.collectFirst {
+              case (
+                    "cids",
+                    zio.json.ast.Json.Arr(values)
+                  ) => values.collect { case zio.json.ast.Json.Num(v) => v.intValue }
+            }.getOrElse(Vector.empty)
+          case _ => Vector.empty
+
+        assertTrue(
+          first._1.isInstanceOf[Payload.Reply],
+          second._1.isInstanceOf[Payload.Reply],
+          firstCids == Vector(1),
+          secondCids.isEmpty
+        )
+    },
+    test("intercept replies are encoded under top-level r") {
+      val lv = new LiveView[Unit, Unit]:
+        def init = ZIO.unit
+
+        def update(model: Unit) = _ => ZIO.succeed(model)
+
+        def view(model: Unit): HtmlElement =
+          div("constant")
+
+        def subscriptions(model: Unit) = ZStream.empty
+
+        override def interceptEvent(model: Unit, event: String, value: Json) =
+          ZIO.succeed(
+            InterceptResult.haltReply(
+              model,
+              Json.Obj("kind" -> Json.Str("hook"))
+            )
+          )
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = "any",
+        value = Json.Obj.empty,
+        uploads = None,
+        cid = None,
+        meta = None
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _      <- socket.inbox.offer(event -> meta)
+        reply  <- replyFiber.join.some
+      yield
+        val hasReplyAtTopLevelR = reply._1 match
+          case payload: Payload.Reply =>
+            payload
+              .toJsonAST
+              .toOption
+              .collect { case Json.Obj(fields) => fields }
+              .exists(_.collectFirst {
+                case ("response", Json.Obj(responseFields)) =>
+                  responseFields.collectFirst {
+                    case (
+                          "diff",
+                          Json.Obj(diffFields)
+                        ) => diffFields.exists {
+                        case ("r", Json.Obj(replyObj)) =>
+                          replyObj.exists {
+                            case ("kind", Json.Str("hook")) => true
+                            case _                             => false
+                          }
+                        case _                        =>
+                          false
+                      }
+                  }.contains(true)
+              }.contains(true))
+          case _                    => false
+
+        assertTrue(hasReplyAtTopLevelR)
     }
   )
 end SocketSpec

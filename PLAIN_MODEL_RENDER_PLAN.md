@@ -225,12 +225,12 @@ Implement all protocol-relevant render/diff optimizations expected by upstream c
 
 ## Delivery Checklist
 
-- [ ] Plain-model `LiveView.view` API merged.
-- [ ] New runtime render differ integrated in socket path.
-- [ ] Keyed and stream semantics preserved in new differ.
-- [ ] Top-level `e/t/r` semantics preserved.
-- [ ] Root marker semantics aligned with upstream behavior.
-- [ ] Shared templates (`p`) implemented.
-- [ ] Components (`c`) and cid destruction messages implemented.
-- [ ] Legacy `Dyn` public API removed (or explicitly isolated as legacy).
-- [ ] Unit + e2e compatibility suite green.
+- [x] Plain-model `LiveView.view` API merged.
+- [x] New runtime render differ integrated in socket path.
+- [x] Keyed and stream semantics preserved in new differ.
+- [x] Top-level `e/t/r` semantics preserved.
+- [x] Root marker semantics aligned with upstream behavior.
+- [x] Shared templates (`p`) implemented.
+- [x] Components (`c`) and cid destruction messages implemented.
+- [x] Legacy `Dyn` public API removed (or explicitly isolated as legacy).
+- [x] Unit + e2e compatibility suite green.

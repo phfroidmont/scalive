@@ -66,7 +66,7 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
       )
     else Mod.Attr.Static(name, codec.encode(value))
 
-  def :=(value: Dyn[V]): Mod.Attr =
+  private[scalive] def :=(value: Dyn[V]): Mod.Attr =
     if isBooleanAsAttrPresence then
       Mod.Attr.DynValueAsPresence(
         name,
@@ -128,6 +128,7 @@ object Mod:
   enum Content extends Mod:
     case Text(text: String, raw: Boolean = false) extends Content with StaticMod
     case Tag(el: HtmlElement)                     extends Content with StaticMod with DynamicMod
+    case Component(cid: Int, el: HtmlElement)     extends Content with DynamicMod
     case DynText(dyn: Dyn[String])                extends Content with DynamicMod
     case DynElement(dyn: Dyn[HtmlElement])        extends Content with DynamicMod
     // TODO support arbitrary collection
@@ -156,6 +157,7 @@ extension (mod: Mod)
       case Attr.DynValueAsPresence(_, value) => value.setUnchanged()
       case Content.Text(text, _)             => ()
       case Content.Tag(el)                   => el.setAllUnchanged()
+      case Content.Component(_, el)          => el.setAllUnchanged()
       case Content.DynText(dyn)              => dyn.setUnchanged()
       case Content.DynElement(dyn)           =>
         dyn.setUnchanged()
@@ -187,6 +189,7 @@ extension (mod: Mod)
       case Attr.DynValueAsPresence(_, value) => value.sync()
       case Content.Text(text, _)             => ()
       case Content.Tag(el)                   => el.syncAll()
+      case Content.Component(_, el)          => el.syncAll()
       case Content.DynText(dyn)              => dyn.sync()
       case Content.DynElement(dyn)           =>
         dyn.sync()
@@ -219,6 +222,7 @@ extension (mod: Mod)
       case Attr.DynValueAsPresence(_, value) => None
       case Content.Text(text, _)             => None
       case Content.Tag(el)                   => el.findBinding(id)
+      case Content.Component(_, el)          => el.findBinding(id)
       case Content.DynText(dyn)              => None
       case Content.DynElement(dyn)           => dyn.currentValue.findBinding(id)
       case Content.DynOptionElement(dyn)     => dyn.currentValue.flatMap(_.findBinding(id))

@@ -87,13 +87,16 @@ object StreamApiSpec extends ZIOSpecDefault:
   private def diffFor(users: LiveStream[User]): Task[Json] =
     ZIO
       .fromEither(
-        ul(
-          idAttr       := "users",
-          phx.onUpdate := "stream",
-          Var(users).stream { (domId, user) =>
-            li(idAttr := domId, user(_.name))
-          }
-        ).diff(trackUpdates = false).toJsonAST
+        TreeDiff
+          .initial(
+            ul(
+              idAttr       := "users",
+              phx.onUpdate := "stream",
+              users.stream { (domId, user) =>
+                li(idAttr := domId, user.name)
+              }
+            )
+          ).toJsonAST
       )
       .mapError(error => new IllegalArgumentException(error))
 
@@ -102,10 +105,9 @@ object StreamApiSpec extends ZIOSpecDefault:
       case obj: Json.Obj => obj
       case other         => throw new IllegalArgumentException(s"Expected root object, got $other")
 
-    val comprehension = root.fields
-      .collectFirst { case ("0", value: Json.Obj) => value }.getOrElse(
-        throw new IllegalArgumentException("Missing top-level comprehension at key 0")
-      )
+    val comprehension = findStreamContainer(root).getOrElse(
+      throw new IllegalArgumentException("Missing stream payload")
+    )
 
     val stream = comprehension.fields
       .collectFirst { case ("stream", value: Json.Arr) => value }
@@ -145,4 +147,17 @@ object StreamApiSpec extends ZIOSpecDefault:
 
     StreamPayload(ref = ref, inserts = inserts, deleteIds = deleteIds, reset = reset)
   end extractStreamPayload
+
+  private def findStreamContainer(json: Json): Option[Json.Obj] =
+    json match
+      case obj: Json.Obj =>
+        if obj.fields.exists(_._1 == "stream") then Some(obj)
+        else
+          obj.fields.iterator
+            .map(_._2)
+            .collectFirst(Function.unlift(findStreamContainer))
+      case Json.Arr(values) =>
+        values.iterator.collectFirst(Function.unlift(findStreamContainer))
+      case _                =>
+        None
 end StreamApiSpec

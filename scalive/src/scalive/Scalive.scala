@@ -15,24 +15,17 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
   lazy val defer            = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
   def rawHtml(html: String) = Mod.Content.Text(html, raw = true)
+  def component(cid: Int, element: HtmlElement): Mod =
+    Mod.Content.Component(cid, element)
 
   object link:
     def navigate(path: String, mods: Mod*): HtmlElement =
       a(href := path, phx.link := "redirect", phx.linkState := "push", mods)
 
-    def navigate(path: Dyn[String], mods: Mod*): HtmlElement =
-      a(href := path, phx.link := "redirect", phx.linkState := "push", mods)
-
     def patch(path: String, mods: Mod*): HtmlElement =
       a(href := path, phx.link := "patch", phx.linkState := "push", mods)
 
-    def patch(path: Dyn[String], mods: Mod*): HtmlElement =
-      a(href := path, phx.link := "patch", phx.linkState := "push", mods)
-
     def patchReplace(path: String, mods: Mod*): HtmlElement =
-      a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
-
-    def patchReplace(path: Dyn[String], mods: Mod*): HtmlElement =
       a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
 
   object phx:
@@ -113,7 +106,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val trackStatic   = htmlAttr("phx-track-static", BooleanAsAttrPresenceEncoder)
   end phx
 
-  implicit def stringToMod(v: String): Mod            = Mod.Content.Text(v)
-  implicit def htmlElementToMod(el: HtmlElement): Mod = Mod.Content.Tag(el)
-  implicit def dynStringToMod(d: Dyn[String]): Mod    = Mod.Content.DynText(d)
+  implicit def stringToMod(v: String): Mod                          = Mod.Content.Text(v)
+  implicit def htmlElementToMod(el: HtmlElement): Mod               = Mod.Content.Tag(el)
+  implicit private[scalive] def dynStringToMod(d: Dyn[String]): Mod = Mod.Content.DynText(d)
 end scalive

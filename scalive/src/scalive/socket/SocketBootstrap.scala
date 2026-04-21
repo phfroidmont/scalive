@@ -18,12 +18,14 @@ private[scalive] object SocketBootstrap:
       uploadRef       <- Ref.make(UploadRuntimeState.empty)
       streamRef       <- Ref.make(StreamRuntimeState.empty)
       clientEventsRef <- Ref.make(Vector.empty[Diff.Event])
+      titleRef        <- Ref.make(Option.empty[String])
       navigationRef   <- Ref.make(Option.empty[LiveNavigationCommand])
       runtimeCtx = ctx.copy(
                      uploads = new SocketUploadRuntime(uploadRef),
                      streams = new SocketStreamRuntime(streamRef),
                      clientEvents = new SocketClientEventRuntime(clientEventsRef),
-                     navigation = new SocketNavigationRuntime(navigationRef)
+                     navigation = new SocketNavigationRuntime(navigationRef),
+                     title = new SocketTitleRuntime(titleRef)
                    )
       initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(runtimeCtx))
       modelVar = Var(initModel)
@@ -31,7 +33,16 @@ private[scalive] object SocketBootstrap:
       ref <- Ref.make((modelVar, el))
       rawInitDiff = TreeDiff.initial(el)
       initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
-      initDiff = SocketModelRuntime.withClientEvents(rawInitDiff, initEvents)
+      initTitle  <- titleRef.getAndSet(None)
+      initDiff = SocketModelRuntime.withTitle(
+                   SocketModelRuntime.withClientEvents(rawInitDiff, initEvents),
+                   initTitle
+                 )
+      componentCidsRef <- Ref.make(
+                            initDiff match
+                              case Diff.Tag(_, _, _, _, _, components, _, _) => components.keySet
+                              case _                                         => Set.empty[Int]
+                          )
       _           <- SocketStreamRuntime.prune(streamRef)
       lvStreamRef <-
         SubscriptionRef.make(lv.subscriptions(initModel).provideLayer(ZLayer.succeed(runtimeCtx)))
@@ -48,6 +59,8 @@ private[scalive] object SocketBootstrap:
       uploadRef = uploadRef,
       streamRef = streamRef,
       clientEventsRef = clientEventsRef,
+      titleRef = titleRef,
+      componentCidsRef = componentCidsRef,
       patchRedirectCountRef = patchRedirectCountRef,
       initDiff = initDiff
     )

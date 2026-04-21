@@ -252,6 +252,7 @@ object WebSocketMessage:
 
   enum LiveResponse:
     case Empty
+    case Raw(value: Json)
     case InitDiff(rendered: scalive.Diff)
     case Diff(diff: scalive.Diff)
     case InterceptReply(reply: Json, diff: Option[scalive.Diff] = None)
@@ -268,6 +269,7 @@ object WebSocketMessage:
     given JsonEncoder[LiveResponse] =
       JsonEncoder[Json].contramap {
         case Empty              => Json.Obj.empty
+        case Raw(value)         => value
         case InitDiff(rendered) =>
           Json.Obj(
             "liveview_version" -> Json.Str("1.1.8"),

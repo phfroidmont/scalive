@@ -127,5 +127,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   uploadRef: Ref[UploadRuntimeState],
   streamRef: Ref[StreamRuntimeState],
   clientEventsRef: Ref[Vector[Diff.Event]],
+  titleRef: Ref[Option[String]],
+  componentCidsRef: Ref[Set[Int]],
   patchRedirectCountRef: Ref[Int],
   initDiff: Diff)

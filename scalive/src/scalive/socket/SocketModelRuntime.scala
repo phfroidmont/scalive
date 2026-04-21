@@ -119,8 +119,17 @@ private[scalive] object SocketModelRuntime:
       diff   = TreeDiff.diff(el, nextEl)
       _      <- state.ref.set((modelVar, nextEl))
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)
+      title  <- state.titleRef.getAndSet(None)
       _      <- SocketStreamRuntime.prune(state.streamRef)
-    yield withClientEvents(diff, events)
+      renderedDiff = withTitle(withClientEvents(diff, events), title)
+      _ <- state.componentCidsRef.update(
+             _ ++ (
+               renderedDiff match
+                 case Diff.Tag(_, _, _, _, _, components, _, _) => components.keySet
+                 case _                                         => Set.empty[Int]
+             )
+           )
+    yield renderedDiff
 
   def publishPayload[Msg, Model](
     payload: Payload,
@@ -159,6 +168,34 @@ private[scalive] object SocketModelRuntime:
           events = existingEvents ++ events,
           root = root,
           title = title,
+          components = components,
+          templates = templates,
+          templateRef = templateRef
+        )
+      case _ =>
+        diff
+
+  private[socket] def withTitle(diff: Diff, title: Option[String]): Diff =
+    (diff, title) match
+      case (
+            Diff.Tag(
+              static,
+              dynamic,
+              events,
+              root,
+              _,
+              components,
+              templates,
+              templateRef
+            ),
+            Some(nextTitle)
+          ) =>
+        Diff.Tag(
+          static = static,
+          dynamic = dynamic,
+          events = events,
+          root = root,
+          title = Some(nextTitle),
           components = components,
           templates = templates,
           templateRef = templateRef

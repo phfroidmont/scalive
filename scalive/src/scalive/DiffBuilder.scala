@@ -30,9 +30,15 @@ object DiffBuilder:
         List(value.render(trackUpdates).map(v => Diff.Value(v.toString)))
       case Attr.DynValueAsPresence(name, value) =>
         List(value.render(trackUpdates).map(v => Diff.Value(if v then s" $name" else "")))
-      case Content.Tag(el)               => buildDynamic(el.dynamicMods, trackUpdates)
-      case Content.DynText(dyn)          => List(dyn.render(trackUpdates).map(Diff.Value(_)))
-      case Content.DynElement(dyn)       => ???
+      case Content.Tag(el)          => buildDynamic(el.dynamicMods, trackUpdates)
+      case Content.Component(_, el) => buildDynamic(el.dynamicMods, trackUpdates)
+      case Content.DynText(dyn)     => List(dyn.render(trackUpdates).map(Diff.Value(_)))
+      case Content.DynElement(dyn)  =>
+        List(
+          dyn.render(trackUpdates) match
+            case Some(el) => Some(build(el, trackUpdates = false))
+            case None     => Some(build(dyn.currentValue, trackUpdates = true))
+        )
       case Content.DynOptionElement(dyn) =>
         List(dyn.render(trackUpdates) match
           // Element is added
@@ -41,8 +47,14 @@ object DiffBuilder:
           case Some(None) => Some(Diff.Deleted)
           // Element is updated if present
           case None => dyn.currentValue.map(build(_, trackUpdates)))
-      case Content.DynElementColl(dyn) => ???
-      case Content.DynSplit(splitVar)  =>
+      case Content.DynElementColl(dyn) =>
+        List(
+          dyn
+            .render(trackUpdates).map(elements =>
+              Diff.Value(elements.iterator.map(HtmlBuilder.build(_)).mkString)
+            )
+        )
+      case Content.DynSplit(splitVar) =>
         splitVar.render(trackUpdates) match
           case Some((entries, keysCount, includeStatics, streamPatch)) =>
             val static =

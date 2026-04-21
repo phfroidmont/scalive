@@ -11,7 +11,8 @@ final case class LiveContext(
   uploads: UploadRuntime = UploadRuntime.Disabled,
   streams: StreamRuntime = StreamRuntime.Disabled,
   clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
-  navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled)
+  navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
+  title: TitleRuntime = TitleRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
 object LiveContext:
@@ -30,11 +31,15 @@ object LiveContext:
   trait HasNavigation:
     private[scalive] def navigation: LiveNavigationRuntime
 
+  trait HasTitle:
+    def title: TitleRuntime
+
   trait BaseCapabilities
       extends HasStaticChanged
       with HasUploads
       with HasStreams
       with HasClientEvents
+      with HasTitle
   trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =
@@ -115,4 +120,7 @@ object LiveContext:
 
   def replacePatch(to: String): RIO[HasNavigation, Unit] =
     ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.ReplacePatch(to)))
+
+  def putTitle(title: String): URIO[HasTitle, Unit] =
+    ZIO.serviceWithZIO[HasTitle](_.title.set(title))
 end LiveContext

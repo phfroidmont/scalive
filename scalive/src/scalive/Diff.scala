@@ -20,6 +20,7 @@ enum Diff:
     count: Int = 0,
     stream: Option[Diff.Stream] = None)
   case Value(value: String)
+  case ComponentRef(cid: Int)
   case Dynamic(index: Int, diff: Diff)
   case Deleted
 
@@ -29,6 +30,7 @@ extension (diff: Diff)
       static.isEmpty && dynamic.isEmpty && events.isEmpty && !root && title.isEmpty && components.isEmpty && templates.isEmpty && templateRef.isEmpty
     case _: Diff.Comprehension => false
     case _: Diff.Value         => false
+    case _: Diff.ComponentRef  => false
     case _: Diff.Dynamic       => false
     case Diff.Deleted          => false
 
@@ -138,6 +140,7 @@ object Diff:
             .appended("k" -> keyedEntries)
             .appendedAll(streamJson.map(json => "stream" -> json))
         )
+      case Diff.ComponentRef(cid)    => Json.Num(cid)
       case Diff.Value(value)         => Json.Str(value)
       case Diff.Dynamic(index, diff) =>
         Json.Obj(index.toString -> toJson(diff))

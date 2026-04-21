@@ -9,18 +9,40 @@ private[scalive] object TreeDiff:
 
   def initial(root: HtmlElement): Diff =
     prepare(root)
-    val compiled = compileElement(root, isTopLevel = true)
-    withTemplateSharing(fullNode(compiled, includeStatic = true))
+    val compiled       = compileElement(root, isTopLevel = true)
+    val componentNodes = collectComponents(compiled)
+    val withComponents = withComponentDiffs(
+      diff = fullNode(compiled, includeStatic = true),
+      previous = Map.empty,
+      current = componentNodes,
+      includeAll = true
+    )
+
+    withComponentStaticSharing(
+      previous = Map.empty,
+      diff = withTemplateSharing(withComponents)
+    )
 
   def diff(previous: HtmlElement, current: HtmlElement): Diff =
     prepare(previous)
     prepare(current)
 
-    val previousCompiled = compileElement(previous, isTopLevel = true)
-    val currentCompiled  = compileElement(current, isTopLevel = true)
+    val previousCompiled   = compileElement(previous, isTopLevel = true)
+    val currentCompiled    = compileElement(current, isTopLevel = true)
+    val previousComponents = collectComponents(previousCompiled)
+    val currentComponents  = collectComponents(currentCompiled)
 
-    val raw = diffNode(previousCompiled, currentCompiled).getOrElse(Diff.Tag())
-    withTemplateSharing(raw)
+    val raw = withComponentDiffs(
+      diff = diffNode(previousCompiled, currentCompiled).getOrElse(Diff.Tag()),
+      previous = previousComponents,
+      current = currentComponents,
+      includeAll = false
+    )
+
+    withComponentStaticSharing(
+      previous = previousComponents,
+      diff = withTemplateSharing(raw)
+    )
 
   private def prepare(el: HtmlElement): Unit =
     el.syncAll()
@@ -41,11 +63,16 @@ private[scalive] object TreeDiff:
 
   final private case class KeyedEntry(key: Any, node: CompiledNode)
 
+  final private case class CompiledComponent(
+    cid: Int,
+    node: CompiledNode)
+
   sealed private trait CompiledSlot
   final private case class StringSlot(value: String)                    extends CompiledSlot
   final private case class NodeSlot(node: CompiledNode)                 extends CompiledSlot
   final private case class OptionalNodeSlot(node: Option[CompiledNode]) extends CompiledSlot
   final private case class KeyedSlot(node: KeyedNode)                   extends CompiledSlot
+  final private case class ComponentSlot(component: CompiledComponent)  extends CompiledSlot
 
   private def compileElement(el: HtmlElement, isTopLevel: Boolean): TagNode =
     val staticBuilder = Vector.newBuilder[String]
@@ -72,6 +99,11 @@ private[scalive] object TreeDiff:
       staticBuilder += staticFragment
       staticFragment = ""
       slotBuilder += KeyedSlot(value)
+
+    def pushComponentSlot(value: CompiledComponent): Unit =
+      staticBuilder += staticFragment
+      staticFragment = ""
+      slotBuilder += ComponentSlot(value)
 
     el.attrMods.foreach {
       case Attr.Static(name, value) =>
@@ -111,6 +143,10 @@ private[scalive] object TreeDiff:
         else pushStringSlot(Escaping.escape(text))
       case Content.Tag(child) =>
         pushNodeSlot(compileElement(child, isTopLevel = false))
+      case Content.Component(cid, child) =>
+        pushComponentSlot(
+          CompiledComponent(cid, compileElement(child, isTopLevel = false))
+        )
       case Content.DynText(dyn) =>
         pushStringSlot(Escaping.escape(dyn.render(trackUpdates = false).getOrElse("")))
       case Content.DynElement(dyn) =>
@@ -157,6 +193,7 @@ private[scalive] object TreeDiff:
       case _: NodeSlot         => "node"
       case _: OptionalNodeSlot => "optional"
       case _: KeyedSlot        => "keyed"
+      case _: ComponentSlot    => "component"
 
   private def sameTagShape(left: TagNode, right: TagNode): Boolean =
     left.static == right.static &&
@@ -198,6 +235,8 @@ private[scalive] object TreeDiff:
           case (None, None)       => None
       case (KeyedSlot(left), KeyedSlot(right)) =>
         diffKeyed(left, right)
+      case (ComponentSlot(left), ComponentSlot(right)) =>
+        Option.when(left.cid != right.cid)(Diff.ComponentRef(right.cid))
       case _ =>
         Some(fullSlot(current))
 
@@ -207,7 +246,8 @@ private[scalive] object TreeDiff:
       case NodeSlot(node)         => fullNode(node, includeStatic = true)
       case OptionalNodeSlot(node) =>
         node.map(fullNode(_, includeStatic = true)).getOrElse(Diff.Value(""))
-      case KeyedSlot(node) => fullNode(node, includeStatic = true)
+      case KeyedSlot(node)          => fullNode(node, includeStatic = true)
+      case ComponentSlot(component) => Diff.ComponentRef(component.cid)
 
   private def fullNode(node: CompiledNode, includeStatic: Boolean): Diff =
     node match
@@ -310,6 +350,97 @@ private[scalive] object TreeDiff:
     end if
   end diffKeyed
 
+  private def withComponentDiffs(
+    diff: Diff,
+    previous: Map[Int, CompiledNode],
+    current: Map[Int, CompiledNode],
+    includeAll: Boolean
+  ): Diff =
+    diff match
+      case tag: Diff.Tag =>
+        val componentDiffs = current.toSeq.flatMap { case (cid, currentNode) =>
+          val nodeDiff =
+            if includeAll then Some(fullNode(currentNode, includeStatic = true))
+            else
+              previous.get(cid) match
+                case Some(previousNode) => diffNode(previousNode, currentNode)
+                case None               => Some(fullNode(currentNode, includeStatic = true))
+
+          nodeDiff.filterNot(_.isEmpty).map(cid -> _)
+        }.toMap
+        tag.copy(components = componentDiffs)
+      case other => other
+
+  private def withComponentStaticSharing(
+    previous: Map[Int, CompiledNode],
+    diff: Diff
+  ): Diff =
+    diff match
+      case tag: Diff.Tag if tag.components.nonEmpty =>
+        val previousStatics = previous.flatMap { case (cid, node) =>
+          tagStatic(node).map(cid -> _)
+        }
+
+        val seenCurrentStatics = mutable.Map.empty[Vector[String], Int]
+
+        val sharedComponents = tag.components.toSeq
+          .sortBy(_._1).map { case (cid, componentDiff) =>
+            componentDiff match
+              case componentTag: Diff.Tag
+                  if componentTag.static.nonEmpty && componentTag.templateRef.isEmpty =>
+                val static   = componentTag.static.toVector
+                val maybeRef =
+                  seenCurrentStatics
+                    .get(static).orElse(
+                      previousStatics.collectFirst {
+                        case (previousCid, previousStatic)
+                            if previousCid != cid && previousStatic == static =>
+                          -previousCid
+                      }
+                    )
+
+                maybeRef match
+                  case Some(ref) =>
+                    cid -> componentTag.copy(
+                      static = Vector.empty,
+                      templateRef = Some(ref)
+                    )
+                  case None =>
+                    seenCurrentStatics.update(static, cid)
+                    cid -> componentTag
+              case _ =>
+                cid -> componentDiff
+          }.toMap
+
+        tag.copy(components = sharedComponents)
+      case other => other
+
+  private def tagStatic(node: CompiledNode): Option[Vector[String]] =
+    node match
+      case TagNode(static, _, _) => Some(static)
+      case _                     => None
+
+  private def collectComponents(node: CompiledNode): Map[Int, CompiledNode] =
+    val acc = mutable.LinkedHashMap.empty[Int, CompiledNode]
+
+    def loopNode(current: CompiledNode): Unit =
+      current match
+        case TagNode(_, slots, _)  => slots.foreach(loopSlot)
+        case KeyedNode(entries, _) => entries.foreach(entry => loopNode(entry.node))
+
+    def loopSlot(slot: CompiledSlot): Unit =
+      slot match
+        case NodeSlot(node)            => loopNode(node)
+        case OptionalNodeSlot(Some(n)) => loopNode(n)
+        case KeyedSlot(node)           => loopNode(node)
+        case ComponentSlot(component)  =>
+          acc.update(component.cid, component.node)
+          loopNode(component.node)
+        case _ => ()
+
+    loopNode(node)
+    acc.toMap
+
   private def withTemplateSharing(diff: Diff): Diff =
     diff match
       case tag: Diff.Tag =>
@@ -357,7 +488,7 @@ private[scalive] object TreeDiff:
                       events = events,
                       root = root,
                       title = title,
-                      components = components.view.mapValues(rewrite).toMap,
+                      components = components,
                       templates = templates,
                       templateRef = Some(ref)
                     )
@@ -368,7 +499,7 @@ private[scalive] object TreeDiff:
                       events = events,
                       root = root,
                       title = title,
-                      components = components.view.mapValues(rewrite).toMap,
+                      components = components,
                       templates = templates,
                       templateRef = templateRef
                     )

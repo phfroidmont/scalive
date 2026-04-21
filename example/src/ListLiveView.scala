@@ -28,18 +28,18 @@ class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
         h1(cls := "card-title", someParam),
         ul(
           cls := "divide-y divide-base-200",
-          model(_.elems).splitByIndex((_, elem) =>
+          model.elems.splitByIndex((_, elem) =>
             li(
               cls := "py-3 flex flex-wrap items-center justify-between gap-2",
               span(
                 cls := "text-base-content",
                 "Nom: ",
-                span(cls := "font-semibold", elem(_.name))
+                span(cls := "font-semibold", elem.name)
               ),
               span(
                 cls := "text-sm opacity-70",
                 "Age: ",
-                span(cls := "font-bold", elem(_.age.toString))
+                span(cls := "font-bold", elem.age.toString)
               )
             )
           )

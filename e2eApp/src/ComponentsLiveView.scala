@@ -24,17 +24,16 @@ class ComponentsLiveView(initialTab: String) extends LiveView[Msg, Model]:
           a(
             href := "/components?tab=focus_wrap",
             phx.onClick(JS.patch("/components?tab=focus_wrap").push(Msg.SetTab("focus_wrap"))),
-            styleAttr := model(m =>
-              if m.activeTab == "focus_wrap" then
-                "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid #3b82f6; color: #2563eb; font-weight: 500; font-size: 0.875rem;"
-              else
-                "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid transparent; color: #6b7280; font-weight: 500; font-size: 0.875rem;"
-            ),
+            styleAttr :=
+              (if model.activeTab == "focus_wrap" then
+                 "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid #3b82f6; color: #2563eb; font-weight: 500; font-size: 0.875rem;"
+               else
+                 "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid transparent; color: #6b7280; font-weight: 500; font-size: 0.875rem;"),
             "Focus Wrap"
           )
         )
       ),
-      model.when(_.activeTab == "focus_wrap")(focusWrapDemo)
+      if model.activeTab == "focus_wrap" then focusWrapDemo else ""
     )
 
   def subscriptions(model: Model) = ZStream.empty

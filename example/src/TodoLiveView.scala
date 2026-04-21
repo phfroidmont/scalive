@@ -44,39 +44,39 @@ class TodoLiveView() extends LiveView[Msg, Model]:
             typ         := "text",
             nameAttr    := "todo-name",
             placeholder := "What needs to be done?",
-            value       := model(_.inputText)
+            value       := model.inputText
           )
         ),
         ul(
           cls := "divide-y divide-base-200",
-          model(_.filteredItems).splitBy(_.id)((id, todo) =>
+          model.filteredItems.splitBy(_.id)((id, todo) =>
             li(
               cls := "py-3 flex items-center gap-3",
               input(
                 tpe     := "checkbox",
                 cls     := "checkbox checkbox-primary",
-                checked := todo(_.completed),
+                checked := todo.completed,
                 phx.onClick(Msg.ToggleCompletion(id))
               ),
-              todo.whenNot(_.editing)(
+              if !todo.editing then
                 div(
                   cls := "truncate cursor-text w-full",
                   phx.onClick(Msg.Edit(id)),
                   span(
-                    cls := todo(t => if t.completed then "line-through opacity-60" else ""),
-                    todo(_.text)
+                    cls := (if todo.completed then "line-through opacity-60" else ""),
+                    todo.text
                   )
                 )
-              ),
-              todo.when(_.editing)(
+              else "",
+              if todo.editing then
                 input(
                   tpe   := "text",
                   cls   := "input input-bordered w-full",
-                  value := todo(_.text),
+                  value := todo.text,
                   phx.onMounted(JS.focus()),
                   phx.onBlur.withValue(Msg.Update(id, _))
                 )
-              ),
+              else "",
               button(
                 cls := "btn btn-ghost btn-sm text-error",
                 phx.onClick(Msg.Remove(id)),
@@ -90,21 +90,21 @@ class TodoLiveView() extends LiveView[Msg, Model]:
           div(
             cls := "join",
             button(
-              cls := model(_.filter match
+              cls := (model.filter match
                 case Filter.All => "btn btn-sm join-item btn-active"
                 case _          => "btn btn-sm join-item"),
               phx.onClick(Msg.SetFilter(Filter.All)),
               "All"
             ),
             button(
-              cls := model(_.filter match
+              cls := (model.filter match
                 case Filter.Active => "btn btn-sm join-item btn-active"
                 case _             => "btn btn-sm join-item"),
               phx.onClick(Msg.SetFilter(Filter.Active)),
               "Active"
             ),
             button(
-              cls := model(_.filter match
+              cls := (model.filter match
                 case Filter.Completed => "btn btn-sm join-item btn-active"
                 case _                => "btn btn-sm join-item"),
               phx.onClick(Msg.SetFilter(Filter.Completed)),
@@ -113,13 +113,13 @@ class TodoLiveView() extends LiveView[Msg, Model]:
           ),
           span(
             cls := "badge badge-outline",
-            model(m => s"${m.itemsLeft} item${if m.itemsLeft == 1 then "" else "s"} left")
+            s"${model.itemsLeft} item${if model.itemsLeft == 1 then "" else "s"} left"
           ),
           button(
             cls      := "btn btn-sm btn-outline",
-            disabled := model(_.completedCount == 0),
+            disabled := (model.completedCount == 0),
             phx.onClick(Msg.RemoveCompleted),
-            model(m => s"Clear completed (${m.completedCount})")
+            s"Clear completed (${model.completedCount})"
           )
         )
       )

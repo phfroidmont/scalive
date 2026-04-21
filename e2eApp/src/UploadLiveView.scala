@@ -41,7 +41,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
         phx.onSubmit(Msg.Save),
         phx.onChange(_ => Msg.Validate),
         liveFileInput(
-          model(_.upload),
+          model.upload,
           phx.onProgress(_ => Msg.Progress)
         ),
         button(
@@ -49,26 +49,27 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
           "Upload"
         ),
         sectionTag(
-          phx.dropTarget := model(_.upload.ref),
-          model(_.upload.entries).splitBy(_.ref) { (_, entry) =>
+          phx.dropTarget := model.upload.ref,
+          model.upload.entries.splitBy(_.ref) { (_, entry) =>
             articleTag(
               cls := "upload-entry",
               figure(
-                figCaption(entry(_.clientName))
+                figCaption(entry.clientName)
               ),
               progressTag(
-                value   := entry(e => e.progress.toString),
+                value   := entry.progress.toString,
                 maxAttr := "100",
-                entry(e => s"${e.progress}%")
+                s"${entry.progress}%"
               ),
               button(
                 typ := "button",
                 phx.onClick(params => Msg.CancelUpload(params.getOrElse("ref", ""))),
-                phx.value("ref") := entry(_.ref),
+                phx.value("ref") := entry.ref,
                 ariaLabel        := "cancel",
                 "x"
               ),
-              uploadErrors(entry)(_.filterNot(_ == LiveUploadError.TooManyFiles))
+              uploadErrors(entry)
+                .filterNot(_ == LiveUploadError.TooManyFiles)
                 .splitBy(_.toString) { (_, error) =>
                   p(
                     cls := "alert alert-danger",
@@ -77,7 +78,7 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
                 }
             )
           },
-          uploadErrors(model(_.upload)).splitBy(_.toString) { (_, error) =>
+          uploadErrors(model.upload).splitBy(_.toString) { (_, error) =>
             p(
               cls := "alert alert-danger",
               error(errorToString)
@@ -85,11 +86,11 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
           }
         ),
         ul(
-          model(_.uploadedFiles).splitBy(_.storedName) { (_, file) =>
+          model.uploadedFiles.splitBy(_.storedName) { (_, file) =>
             li(
               a(
-                href := file(f => downloadUrl(f.storedName)),
-                file(_.name)
+                href := downloadUrl(file.storedName),
+                file.name
               )
             )
           }

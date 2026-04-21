@@ -28,17 +28,17 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
           role := "tablist",
           cls  := "tabs tabs-border",
           a(
-            cls  := model(m => tabClass(m.activeTab, "all_keyed")),
+            cls  := tabClass(model.activeTab, "all_keyed"),
             href := "/keyed-comprehension?tab=all_keyed",
             "All keyed"
           ),
           a(
-            cls  := model(m => tabClass(m.activeTab, "rows_keyed")),
+            cls  := tabClass(model.activeTab, "rows_keyed"),
             href := "/keyed-comprehension?tab=rows_keyed",
             "Rows keyed"
           ),
           a(
-            cls  := model(m => tabClass(m.activeTab, "no_keyed")),
+            cls  := tabClass(model.activeTab, "no_keyed"),
             href := "/keyed-comprehension?tab=no_keyed",
             "No keyed"
           )
@@ -46,8 +46,8 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
       ),
       button(cls := "btn", phx.onClick(Msg.Randomize), "randomize"),
       div(
-        model(_.items).splitBy(_.id) { (_, item) =>
-          div(cls := "hidden", item(_.entry.foo.bar))
+        model.items.splitBy(_.id) { (_, item) =>
+          div(cls := "hidden", item.entry.foo.bar)
         }
       ),
       (1 to 2).map(i => renderTable(i, model))
@@ -70,22 +70,22 @@ class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model
             ),
             tbody(
               cls := "divide-y divide-gray-200",
-              model(_.items).splitBy(_.id) { (_, item) =>
+              model.items.splitBy(_.id) { (_, item) =>
                 tr(
                   td(
                     cls := "py-4 px-3 text-sm whitespace-nowrap",
                     span(
                       " Count: ",
-                      model(_.count.toString),
+                      model.count.toString,
                       " Name: ",
-                      item(_.entry.foo.bar),
+                      item.entry.foo.bar,
                       s" $i "
                     )
                   ),
                   td(
                     cls := "py-4 px-3 text-sm whitespace-nowrap",
                     " ",
-                    model(_.count.toString),
+                    model.count.toString,
                     " "
                   )
                 )

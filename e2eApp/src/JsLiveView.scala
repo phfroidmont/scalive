@@ -47,7 +47,7 @@ class JsLiveView extends LiveView[Msg, Model]:
         summaryTag("Details"),
         button(
           phx.onClick(Msg.Increment),
-          model(_.count.toString)
+          model.count.toString
         )
       )
     )

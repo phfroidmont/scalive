@@ -35,12 +35,12 @@ class CounterLiveView() extends LiveView[Msg, Model]:
           button(
             cls := "btn btn-default",
             phx.onClick(Msg.ToggleCounter),
-            model(_.isVisible match
+            model.isVisible match
               case true  => "Hide counter"
-              case false => "Show counter")
+              case false => "Show counter"
           )
         ),
-        model.when(_.isVisible)(
+        if model.isVisible then
           div(
             cls := "flex items-center justify-center gap-4",
             button(
@@ -50,7 +50,7 @@ class CounterLiveView() extends LiveView[Msg, Model]:
             ),
             div(
               cls := "min-w-[4rem] text-center text-lg font-semibold",
-              model(_.counter.toString)
+              model.counter.toString
             ),
             button(
               cls := "btn btn-neutral",
@@ -58,7 +58,7 @@ class CounterLiveView() extends LiveView[Msg, Model]:
               "+"
             )
           )
-        )
+        else ""
       )
     )
 

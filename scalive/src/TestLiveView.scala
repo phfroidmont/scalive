@@ -17,15 +17,15 @@ class TestView extends LiveView[Msg, Model]:
   def view(model: Model) =
     div(
       idAttr   := "42",
-      cls      := model(_.cls),
-      disabled := model(_.bool),
+      cls      := model.cls,
+      disabled := model.bool,
       ul(
-        model(_.elems).splitByIndex((_, elem) =>
+        model.elems.splitByIndex((_, elem) =>
           li(
             "Nom: ",
-            elem(_.name),
+            elem.name,
             " Age: ",
-            elem(_.age.toString)
+            elem.age.toString
           )
         )
       )

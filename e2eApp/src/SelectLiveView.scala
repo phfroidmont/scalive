@@ -34,17 +34,17 @@ class SelectLiveView extends LiveView[Msg, Model]:
           select(
             idAttr   := "select_form_select3",
             nameAttr := "select_form[select3]",
-            cls      := model(m => if m.hasError then "has-error" else ""),
-            option(value := "1", selected  := model(_.selected == "1"), "1"),
-            option(value := "2", selected  := model(_.selected == "2"), "2"),
-            option(value := "3", selected  := model(_.selected == "3"), "3"),
-            option(value := "4", selected  := model(_.selected == "4"), "4"),
-            option(value := "5", selected  := model(_.selected == "5"), "5"),
-            option(value := "6", selected  := model(_.selected == "6"), "6"),
-            option(value := "7", selected  := model(_.selected == "7"), "7"),
-            option(value := "8", selected  := model(_.selected == "8"), "8"),
-            option(value := "9", selected  := model(_.selected == "9"), "9"),
-            option(value := "10", selected := model(_.selected == "10"), "10")
+            cls      := (if model.hasError then "has-error" else ""),
+            option(value := "1", selected  := (model.selected == "1"), "1"),
+            option(value := "2", selected  := (model.selected == "2"), "2"),
+            option(value := "3", selected  := (model.selected == "3"), "3"),
+            option(value := "4", selected  := (model.selected == "4"), "4"),
+            option(value := "5", selected  := (model.selected == "5"), "5"),
+            option(value := "6", selected  := (model.selected == "6"), "6"),
+            option(value := "7", selected  := (model.selected == "7"), "7"),
+            option(value := "8", selected  := (model.selected == "8"), "8"),
+            option(value := "9", selected  := (model.selected == "9"), "9"),
+            option(value := "10", selected := (model.selected == "10"), "10")
           )
         )
       )

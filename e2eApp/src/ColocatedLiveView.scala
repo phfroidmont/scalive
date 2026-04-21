@@ -23,7 +23,7 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
           placeholder := "phone"
         )
       ),
-      p(idAttr := "phone", model(_.phone)),
+      p(idAttr := "phone", model.phone),
       div(
         idAttr    := "runtime",
         phx.hook  := "Runtime",

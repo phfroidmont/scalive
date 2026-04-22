@@ -1,6 +1,9 @@
 package scalive
 
+import java.util.concurrent.ConcurrentHashMap
+
 import scala.collection.mutable
+import scala.util.hashing.MurmurHash3
 
 import scalive.Mod.Attr
 import scalive.Mod.Content
@@ -13,20 +16,27 @@ private[scalive] object RenderSnapshot:
     bindings: Map[String, RawBindingHandler],
     trackedStaticUrls: Vector[String])
 
-  sealed trait CompiledNode
+  sealed trait CompiledNode:
+    def fingerprint: Int
+    def templateFingerprint: Int
 
   final case class TagNode(
     static: Vector[String],
     slots: Vector[CompiledSlot],
-    root: Boolean)
+    root: Boolean,
+    fingerprint: Int,
+    templateFingerprint: Int)
       extends CompiledNode
 
   final case class KeyedNode(
     entries: Vector[KeyedEntry],
-    stream: Option[Diff.Stream])
+    stream: Option[Diff.Stream],
+    fingerprint: Int,
+    templateFingerprint: Int,
+    entryFingerprints: Option[Map[Any, Int]])
       extends CompiledNode
 
-  final case class KeyedEntry(key: Any, node: CompiledNode)
+  final case class KeyedEntry(key: Any, node: CompiledNode, fingerprint: Option[Int])
 
   final case class CompiledComponent(
     cid: Int,
@@ -38,8 +48,16 @@ private[scalive] object RenderSnapshot:
   final case class KeyedSlot(node: KeyedNode)                  extends CompiledSlot
   final case class ComponentSlot(component: CompiledComponent) extends CompiledSlot
 
-  private val trackStaticAttrName = phx.trackStatic.name
-  private val urlAttrNames        = Set(href.name, src.name)
+  private val trackStaticAttrName           = phx.trackStatic.name
+  private val urlAttrNames                  = Set(href.name, src.name)
+  private val stringSlotTemplateFingerprint = MurmurHash3.stringHash("string-slot")
+
+  private object RenderArtifactCache:
+    private val staticPool = new ConcurrentHashMap[Vector[String], Vector[String]]()
+
+    def internStatic(static: Vector[String]): Vector[String] =
+      val existing = staticPool.putIfAbsent(static, static)
+      if existing == null then static else existing
 
   def compile(root: HtmlElement): Compiled =
     val bindings = mutable.LinkedHashMap.empty[String, RawBindingHandler]
@@ -67,14 +85,14 @@ private[scalive] object RenderSnapshot:
 
   private def appendNode(node: CompiledNode, out: StringBuilder): Unit =
     node match
-      case TagNode(static, slots, _) =>
+      case TagNode(static, slots, _, _, _) =>
         var index = 0
         while index < slots.length do
           out.append(static(index))
           appendSlot(slots(index), out)
           index = index + 1
         out.append(static.lastOption.getOrElse(""))
-      case KeyedNode(entries, _) =>
+      case KeyedNode(entries, _, _, _, _) =>
         entries.foreach(entry => appendNode(entry.node, out))
 
   private def appendSlot(slot: CompiledSlot, out: StringBuilder): Unit =
@@ -181,8 +199,7 @@ private[scalive] object RenderSnapshot:
         val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
         structuralChildIndex = structuralChildIndex + 1
         val keyedEntries = entries.map(entry =>
-          KeyedEntry(
-            entry.key,
+          val node =
             compileElement(
               entry.element,
               isTopLevel = false,
@@ -190,6 +207,10 @@ private[scalive] object RenderSnapshot:
               bindings = bindings,
               trackedStaticUrls = trackedStaticUrls
             )
+          KeyedEntry(
+            entry.key,
+            node,
+            fingerprint = Option.unless(stream.nonEmpty)(keyedEntryFingerprint(entry.key, node))
           )
         )
 
@@ -203,18 +224,110 @@ private[scalive] object RenderSnapshot:
           }
         }
 
-        pushKeyedSlot(KeyedNode(keyedEntries, stream))
+        pushKeyedSlot(buildKeyedNode(keyedEntries, stream))
     }
 
     if !el.tag.void then staticFragment += s"</${el.tag.name}>"
     staticBuilder += staticFragment
 
-    TagNode(
-      static = staticBuilder.result(),
-      slots = slotBuilder.result(),
+    val rawStatic = staticBuilder.result()
+    val slots     = slotBuilder.result()
+
+    buildTagNode(
+      static = rawStatic,
+      slots = slots,
       root = !isTopLevel
     )
   end compileElement
+
+  private def buildTagNode(
+    static: Vector[String],
+    slots: Vector[CompiledSlot],
+    root: Boolean
+  ): TagNode =
+    val internedStatic      = RenderArtifactCache.internStatic(static)
+    val templateFingerprint = hashTagTemplate(internedStatic, slots, root)
+    val fingerprint         = hashTag(internedStatic, slots, root)
+
+    TagNode(
+      static = internedStatic,
+      slots = slots,
+      root = root,
+      fingerprint = fingerprint,
+      templateFingerprint = templateFingerprint
+    )
+
+  private def buildKeyedNode(
+    entries: Vector[KeyedEntry],
+    stream: Option[Diff.Stream]
+  ): KeyedNode =
+    val hasStream           = stream.nonEmpty
+    val templateFingerprint =
+      entries.foldLeft(MurmurHash3.mix(0x6b657965, if hasStream then 1 else 0))((acc, entry) =>
+        MurmurHash3.mix(acc, entry.node.templateFingerprint)
+      )
+    val fingerprint =
+      entries.foldLeft(MurmurHash3.mix(0x6b657966, streamHash(stream)))((acc, entry) =>
+        val entryFingerprint = entry.fingerprint.getOrElse(entry.node.fingerprint)
+        MurmurHash3.mix(MurmurHash3.mix(acc, stableKeyHash(entry.key)), entryFingerprint)
+      )
+
+    KeyedNode(
+      entries = entries,
+      stream = stream,
+      fingerprint = MurmurHash3.finalizeHash(fingerprint, 1 + entries.length * 2),
+      templateFingerprint = MurmurHash3.finalizeHash(templateFingerprint, 1 + entries.length),
+      entryFingerprints = Option.unless(hasStream)(
+        entries.iterator.flatMap(entry => entry.fingerprint.map(print => entry.key -> print)).toMap
+      )
+    )
+
+  private def hashTag(static: Vector[String], slots: Vector[CompiledSlot], root: Boolean): Int =
+    val withStatic = static.foldLeft(MurmurHash3.mix(0x74616766, if root then 1 else 0))(
+      (acc, value) => MurmurHash3.mix(acc, value.hashCode)
+    )
+    val withSlots =
+      slots.foldLeft(withStatic)((acc, slot) => MurmurHash3.mix(acc, slotFingerprint(slot)))
+    MurmurHash3.finalizeHash(withSlots, 1 + static.length + slots.length)
+
+  private def hashTagTemplate(
+    static: Vector[String],
+    slots: Vector[CompiledSlot],
+    root: Boolean
+  ): Int =
+    val withStatic = static.foldLeft(MurmurHash3.mix(0x74616774, if root then 1 else 0))(
+      (acc, value) => MurmurHash3.mix(acc, value.hashCode)
+    )
+    val withSlots =
+      slots.foldLeft(withStatic)((acc, slot) => MurmurHash3.mix(acc, slotTemplateFingerprint(slot)))
+    MurmurHash3.finalizeHash(withSlots, 1 + static.length + slots.length)
+
+  private def slotFingerprint(slot: CompiledSlot): Int =
+    slot match
+      case StringSlot(value)        => value.hashCode
+      case NodeSlot(node)           => node.fingerprint
+      case KeyedSlot(node)          => node.fingerprint
+      case ComponentSlot(component) => MurmurHash3.mix(0x636f6d70, component.cid)
+
+  private def slotTemplateFingerprint(slot: CompiledSlot): Int =
+    slot match
+      case _: StringSlot            => stringSlotTemplateFingerprint
+      case NodeSlot(node)           => node.templateFingerprint
+      case KeyedSlot(node)          => node.templateFingerprint
+      case ComponentSlot(component) => MurmurHash3.mix(0x636f6d74, component.cid)
+
+  private def keyedEntryFingerprint(key: Any, node: CompiledNode): Int =
+    val hash = MurmurHash3.mix(MurmurHash3.mix(0x656e7472, stableKeyHash(key)), node.fingerprint)
+    MurmurHash3.finalizeHash(hash, 2)
+
+  private def stableKeyHash(key: Any): Int =
+    val className = Option(key).map(_.getClass.getName).getOrElse("null")
+    s"$className:${String.valueOf(key)}".hashCode
+
+  private def streamHash(stream: Option[Diff.Stream]): Int =
+    stream match
+      case Some(value) => value.hashCode
+      case None        => 0
 
   private def maybeCollectTrackedStaticUrls(
     attrs: Seq[Attr],

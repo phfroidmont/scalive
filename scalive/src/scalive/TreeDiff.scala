@@ -20,6 +20,7 @@ private[scalive] object TreeDiff:
 
     withComponentStaticSharing(
       previous = Map.empty,
+      current = componentNodes,
       diff = withTemplateSharing(withComponents)
     )
 
@@ -39,6 +40,7 @@ private[scalive] object TreeDiff:
 
     withComponentStaticSharing(
       previous = previousComponents,
+      current = currentComponents,
       diff = withTemplateSharing(raw)
     )
 
@@ -55,25 +57,27 @@ private[scalive] object TreeDiff:
       left.slots.indices.forall(i => slotShape(left.slots(i)) == slotShape(right.slots(i)))
 
   private def diffNode(previous: CompiledNode, current: CompiledNode): Option[Diff] =
-    (previous, current) match
-      case (left: TagNode, right: TagNode) =>
-        if !sameTagShape(left, right) then Some(fullNode(right, includeStatic = true))
-        else
-          val dynamic: Vector[Diff.Dynamic] = right.slots.zipWithIndex.flatMap {
-            case (slot, index) =>
-              diffSlot(left.slots(index), slot)
-                .map(diff => Diff.Dynamic(index, diff))
-          }
-          Option.when(dynamic.nonEmpty)(
-            Diff.Tag(
-              dynamic = dynamic,
-              root = right.root
+    if previous.fingerprint == current.fingerprint then None
+    else
+      (previous, current) match
+        case (left: TagNode, right: TagNode) =>
+          if !sameTagShape(left, right) then Some(fullNode(right, includeStatic = true))
+          else
+            val dynamic: Vector[Diff.Dynamic] = right.slots.zipWithIndex.flatMap {
+              case (slot, index) =>
+                diffSlot(left.slots(index), slot)
+                  .map(diff => Diff.Dynamic(index, diff))
+            }
+            Option.when(dynamic.nonEmpty)(
+              Diff.Tag(
+                dynamic = dynamic,
+                root = right.root
+              )
             )
-          )
-      case (left: KeyedNode, right: KeyedNode) =>
-        diffKeyed(left, right)
-      case _ =>
-        Some(fullNode(current, includeStatic = true))
+        case (left: KeyedNode, right: KeyedNode) =>
+          diffKeyed(left, right)
+        case _ =>
+          Some(fullNode(current, includeStatic = true))
 
   private def diffSlot(previous: CompiledSlot, current: CompiledSlot): Option[Diff] =
     (previous, current) match
@@ -110,10 +114,10 @@ private[scalive] object TreeDiff:
 
   private def keyedSharedStatic(entries: Vector[KeyedEntry]): Option[Vector[String]] =
     entries.headOption.flatMap {
-      case KeyedEntry(_, tag: TagNode) =>
+      case KeyedEntry(_, tag: TagNode, _) =>
         val same = entries.forall {
-          case KeyedEntry(_, other: TagNode) => other.static == tag.static
-          case _                             => false
+          case KeyedEntry(_, other: TagNode, _) => other.static == tag.static
+          case _                                => false
         }
         Option.when(same)(tag.static)
       case _ => None
@@ -139,58 +143,66 @@ private[scalive] object TreeDiff:
     )
 
   private def diffKeyed(previous: KeyedNode, current: KeyedNode): Option[Diff] =
-    val previousStatic = keyedSharedStatic(previous.entries)
-    val currentStatic  = keyedSharedStatic(current.entries)
-    val hasStreamPatch = current.stream.nonEmpty && current.stream != previous.stream
-
-    if hasStreamPatch then
-      Some(
-        fullKeyed(
-          current,
-          includeStatic = previous.entries.isEmpty || previousStatic != currentStatic
-        )
-      )
-    else if previousStatic != currentStatic && currentStatic.nonEmpty then
-      Some(fullKeyed(current, includeStatic = true))
+    if previous.fingerprint == current.fingerprint then None
     else
-      val previousByKey = previous.entries.zipWithIndex.map { case (entry, index) =>
-        entry.key -> (index, entry.node)
-      }.toMap
+      val previousStatic = keyedSharedStatic(previous.entries)
+      val currentStatic  = keyedSharedStatic(current.entries)
+      val hasStreamPatch = current.stream.nonEmpty && current.stream != previous.stream
 
-      val entries: Vector[Diff.Dynamic | Diff.IndexChange | Diff.IndexMerge] =
-        current.entries.zipWithIndex.flatMap { case (entry, index) =>
-          previousByKey.get(entry.key) match
-            case None =>
-              val includeStaticInEntry = currentStatic.isEmpty
-              Some(
-                Diff
-                  .Dynamic(index, fullNode(entry.node, includeStatic = includeStaticInEntry))
-              )
-            case Some((previousIndex, previousNode)) =>
-              val maybeDiff = diffNode(previousNode, entry.node)
-              if previousIndex == index then maybeDiff.map(diff => Diff.Dynamic(index, diff))
-              else
-                maybeDiff match
-                  case Some(diff) => Some(Diff.IndexMerge(index, previousIndex, diff))
-                  case None       => Some(Diff.IndexChange(index, previousIndex))
-        }
-
-      val includeStatic =
-        currentStatic.nonEmpty && previous.entries.isEmpty && current.entries.nonEmpty
-
-      val hasCountChange = previous.entries.length != current.entries.length
-
-      if entries.isEmpty && !hasCountChange && !includeStatic then None
-      else
+      if hasStreamPatch then
         Some(
-          Diff.Comprehension(
-            static = if includeStatic then currentStatic.getOrElse(Vector.empty) else Vector.empty,
-            entries = entries,
-            count = current.entries.length,
-            stream = None
+          fullKeyed(
+            current,
+            includeStatic = previous.entries.isEmpty || previousStatic != currentStatic
           )
         )
-    end if
+      else if previousStatic != currentStatic && currentStatic.nonEmpty then
+        Some(fullKeyed(current, includeStatic = true))
+      else
+        val previousByKey = previous.entries.zipWithIndex.map { case (entry, index) =>
+          entry.key -> (index, entry.node, entry.fingerprint)
+        }.toMap
+
+        val entries: Vector[Diff.Dynamic | Diff.IndexChange | Diff.IndexMerge] =
+          current.entries.zipWithIndex.flatMap { case (entry, index) =>
+            previousByKey.get(entry.key) match
+              case None =>
+                val includeStaticInEntry = currentStatic.isEmpty
+                Some(
+                  Diff
+                    .Dynamic(index, fullNode(entry.node, includeStatic = includeStaticInEntry))
+                )
+              case Some((previousIndex, previousNode, previousFingerprint)) =>
+                val unchanged =
+                  previousFingerprint.nonEmpty && previousFingerprint == entry.fingerprint
+                if unchanged then
+                  Option.when(previousIndex != index)(Diff.IndexChange(index, previousIndex))
+                else
+                  val maybeDiff = diffNode(previousNode, entry.node)
+                  if previousIndex == index then maybeDiff.map(diff => Diff.Dynamic(index, diff))
+                  else
+                    maybeDiff match
+                      case Some(diff) => Some(Diff.IndexMerge(index, previousIndex, diff))
+                      case None       => Some(Diff.IndexChange(index, previousIndex))
+          }
+
+        val includeStatic =
+          currentStatic.nonEmpty && previous.entries.isEmpty && current.entries.nonEmpty
+
+        val hasCountChange = previous.entries.length != current.entries.length
+
+        if entries.isEmpty && !hasCountChange && !includeStatic then None
+        else
+          Some(
+            Diff.Comprehension(
+              static =
+                if includeStatic then currentStatic.getOrElse(Vector.empty) else Vector.empty,
+              entries = entries,
+              count = current.entries.length,
+              stream = None
+            )
+          )
+      end if
   end diffKeyed
 
   private def withComponentDiffs(
@@ -216,31 +228,31 @@ private[scalive] object TreeDiff:
 
   private def withComponentStaticSharing(
     previous: Map[Int, CompiledNode],
+    current: Map[Int, CompiledNode],
     diff: Diff
   ): Diff =
     diff match
       case tag: Diff.Tag if tag.components.nonEmpty =>
-        val previousStatics = previous.flatMap { case (cid, node) =>
-          tagStatic(node).map(cid -> _)
-        }
+        val previousByTemplate = previous.toSeq
+          .groupMap(_._2.templateFingerprint)(_._1)
 
-        val seenCurrentStatics = mutable.Map.empty[Vector[String], Int]
+        val seenCurrentTemplates = mutable.Map.empty[Int, Int]
 
         val sharedComponents = tag.components.toSeq
           .sortBy(_._1).map { case (cid, componentDiff) =>
             componentDiff match
               case componentTag: Diff.Tag
                   if componentTag.static.nonEmpty && componentTag.templateRef.isEmpty =>
-                val static   = componentTag.static.toVector
-                val maybeRef =
-                  seenCurrentStatics
-                    .get(static).orElse(
-                      previousStatics.collectFirst {
-                        case (previousCid, previousStatic)
-                            if previousCid != cid && previousStatic == static =>
-                          -previousCid
-                      }
+                val currentTemplate = current.get(cid).map(_.templateFingerprint)
+                val maybeRef        = currentTemplate.flatMap { template =>
+                  seenCurrentTemplates
+                    .get(template)
+                    .orElse(
+                      previousByTemplate
+                        .get(template)
+                        .flatMap(_.find(_ != cid).map(previousCid => -previousCid))
                     )
+                }
 
                 maybeRef match
                   case Some(ref) =>
@@ -249,7 +261,7 @@ private[scalive] object TreeDiff:
                       templateRef = Some(ref)
                     )
                   case None =>
-                    seenCurrentStatics.update(static, cid)
+                    currentTemplate.foreach(template => seenCurrentTemplates.update(template, cid))
                     cid -> componentTag
               case _ =>
                 cid -> componentDiff
@@ -258,18 +270,13 @@ private[scalive] object TreeDiff:
         tag.copy(components = sharedComponents)
       case other => other
 
-  private def tagStatic(node: CompiledNode): Option[Vector[String]] =
-    node match
-      case TagNode(static, _, _) => Some(static)
-      case _                     => None
-
   private def collectComponents(node: CompiledNode): Map[Int, CompiledNode] =
     val acc = mutable.LinkedHashMap.empty[Int, CompiledNode]
 
     def loopNode(current: CompiledNode): Unit =
       current match
-        case TagNode(_, slots, _)  => slots.foreach(loopSlot)
-        case KeyedNode(entries, _) => entries.foreach(entry => loopNode(entry.node))
+        case TagNode(_, slots, _, _, _)     => slots.foreach(loopSlot)
+        case KeyedNode(entries, _, _, _, _) => entries.foreach(entry => loopNode(entry.node))
 
     def loopSlot(slot: CompiledSlot): Unit =
       slot match

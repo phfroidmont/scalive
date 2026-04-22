@@ -213,13 +213,28 @@ private[scalive] object TreeDiff:
   ): Diff =
     diff match
       case tag: Diff.Tag =>
-        val componentDiffs = current.toSeq.flatMap { case (cid, currentNode) =>
-          val nodeDiff =
+        val diffMemo = mutable.Map.empty[(Boolean, Option[(Int, Int)], (Int, Int)), Option[Diff]]
+
+        def componentDiff(
+          previousNode: Option[CompiledNode],
+          currentNode: CompiledNode
+        ): Option[Diff] =
+          val previousFingerprint =
+            previousNode.map(node => node.fingerprint -> node.templateFingerprint)
+          val currentFingerprint = currentNode.fingerprint -> currentNode.templateFingerprint
+          val cacheKey           = (includeAll, previousFingerprint, currentFingerprint)
+
+          diffMemo.getOrElseUpdate(
+            cacheKey,
             if includeAll then Some(fullNode(currentNode, includeStatic = true))
             else
-              previous.get(cid) match
-                case Some(previousNode) => diffNode(previousNode, currentNode)
-                case None               => Some(fullNode(currentNode, includeStatic = true))
+              previousNode match
+                case Some(previousValue) => diffNode(previousValue, currentNode)
+                case None                => Some(fullNode(currentNode, includeStatic = true))
+          )
+
+        val componentDiffs = current.toSeq.flatMap { case (cid, currentNode) =>
+          val nodeDiff = componentDiff(previous.get(cid), currentNode)
 
           nodeDiff.filterNot(_.isEmpty).map(cid -> _)
         }.toMap

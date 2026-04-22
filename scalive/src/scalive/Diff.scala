@@ -18,7 +18,8 @@ enum Diff:
     static: Seq[String] = Seq.empty,
     entries: Seq[Diff.Dynamic | Diff.IndexChange | Diff.IndexMerge] = Seq.empty,
     count: Int = 0,
-    stream: Option[Diff.Stream] = None)
+    stream: Option[Diff.Stream] = None,
+    staticRef: Option[Int] = None)
   case Value(value: String)
   case ComponentRef(cid: Int)
   case Dynamic(index: Int, diff: Diff)
@@ -95,7 +96,7 @@ object Diff:
             .appendedAll(componentsJson)
             .appendedAll(templatesJson)
         )
-      case Diff.Comprehension(static, entries, count, stream) =>
+      case Diff.Comprehension(static, entries, count, stream, staticRef) =>
         val keyedEntries =
           Json
             .Obj(
@@ -134,8 +135,12 @@ object Diff:
           }
 
         Json.Obj(
-          Option
-            .when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*))
+          staticRef
+            .map(ref => "s" -> Json.Num(ref))
+            .orElse(
+              Option
+                .when(static.nonEmpty)("s" -> Json.Arr(static.map(Json.Str(_))*))
+            )
             .to(Chunk)
             .appended("k" -> keyedEntries)
             .appendedAll(streamJson.map(json => "stream" -> json))

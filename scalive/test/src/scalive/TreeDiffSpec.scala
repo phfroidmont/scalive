@@ -19,6 +19,22 @@ object TreeDiffSpec extends ZIOSpecDefault:
       case Json.Arr(values) => values.exists(hasNumericStaticRef)
       case _                => false
 
+  private def hasNumericComprehensionStaticRef(json: Json): Boolean =
+    json match
+      case Json.Obj(fields) =>
+        val isComprehension = fields.exists(_._1 == "k")
+        val hasStaticRef    = fields.exists {
+          case ("s", Json.Num(_)) => true
+          case _                   => false
+        }
+        (isComprehension && hasStaticRef) || fields.exists { case (_, value) =>
+          hasNumericComprehensionStaticRef(value)
+        }
+      case Json.Arr(values) =>
+        values.exists(hasNumericComprehensionStaticRef)
+      case _ =>
+        false
+
   override def spec = suite("TreeDiffSpec")(
     test("does not emit root-only diffs for unchanged nodes") {
       val previous = div(span("value"))
@@ -48,6 +64,33 @@ object TreeDiffSpec extends ZIOSpecDefault:
       assertTrue(
         hasTemplateTable,
         hasNumericStaticRef(json)
+      )
+    },
+    test("shares templates for repeated keyed comprehension statics") {
+      val diff = TreeDiff.initial(
+        div(
+          ul(
+            List("a", "b").splitBy(identity) { (_, value) =>
+              li(value)
+            }
+          ),
+          ul(
+            List("c", "d").splitBy(identity) { (_, value) =>
+              li(value)
+            }
+          )
+        )
+      )
+
+      val json = asJson(diff)
+
+      val hasTemplateTable = json match
+        case Json.Obj(fields) => fields.exists(_._1 == "p")
+        case _                => false
+
+      assertTrue(
+        hasTemplateTable,
+        hasNumericComprehensionStaticRef(json)
       )
     },
     test("encodes component refs via c-map and cid slots") {

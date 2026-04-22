@@ -293,7 +293,9 @@ private[scalive] object TreeDiff:
             case Diff.Tag(static, dynamic, _, _, _, _, _, _) =>
               if static.nonEmpty then counts.update(static.toVector, counts(static.toVector) + 1)
               dynamic.foreach(d => collect(d.diff))
-            case Diff.Comprehension(_, entries, _, _) =>
+            case Diff.Comprehension(static, entries, _, _, staticRef) =>
+              if static.nonEmpty && staticRef.isEmpty then
+                counts.update(static.toVector, counts(static.toVector) + 1)
               entries.foreach {
                 case Diff.Dynamic(_, child)       => collect(child)
                 case Diff.IndexChange(_, _)       => ()
@@ -345,17 +347,30 @@ private[scalive] object TreeDiff:
                       templates = templates,
                       templateRef = templateRef
                     )
-              case Diff.Comprehension(static, entries, count, stream) =>
-                Diff.Comprehension(
-                  static = static,
-                  entries = entries.map {
-                    case d: Diff.Dynamic     => d.copy(diff = rewrite(d.diff))
-                    case d: Diff.IndexChange => d
-                    case d: Diff.IndexMerge  => d.copy(diff = rewrite(d.diff))
-                  },
-                  count = count,
-                  stream = stream
-                )
+              case Diff.Comprehension(static, entries, count, stream, staticRef) =>
+                val updatedEntries = entries.map {
+                  case d: Diff.Dynamic     => d.copy(diff = rewrite(d.diff))
+                  case d: Diff.IndexChange => d
+                  case d: Diff.IndexMerge  => d.copy(diff = rewrite(d.diff))
+                }
+
+                refs.get(static.toVector) match
+                  case Some(ref) if static.nonEmpty =>
+                    Diff.Comprehension(
+                      static = Vector.empty,
+                      entries = updatedEntries,
+                      count = count,
+                      stream = stream,
+                      staticRef = Some(ref)
+                    )
+                  case _ =>
+                    Diff.Comprehension(
+                      static = static,
+                      entries = updatedEntries,
+                      count = count,
+                      stream = stream,
+                      staticRef = staticRef
+                    )
               case other => other
 
           rewrite(tag) match

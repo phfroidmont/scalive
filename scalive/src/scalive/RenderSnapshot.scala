@@ -1,7 +1,6 @@
 package scalive
 
 import java.util.concurrent.ConcurrentHashMap
-
 import scala.collection.mutable
 import scala.util.hashing.MurmurHash3
 

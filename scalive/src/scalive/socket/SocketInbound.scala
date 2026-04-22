@@ -9,8 +9,8 @@ import zio.json.ast.Json
 import zio.stream.ZStream
 
 import scalive.*
-import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.LivePatchKind
+import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 
 private[scalive] object SocketInbound:

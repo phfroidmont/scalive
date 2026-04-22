@@ -44,17 +44,9 @@ private[scalive] object TreeDiff:
       diff = withTemplateSharing(raw)
     )
 
-  private def slotShape(slot: CompiledSlot): String =
-    slot match
-      case _: StringSlot    => "string"
-      case _: NodeSlot      => "node"
-      case _: KeyedSlot     => "keyed"
-      case _: ComponentSlot => "component"
-
   private def sameTagShape(left: TagNode, right: TagNode): Boolean =
     left.static == right.static &&
-      left.slots.length == right.slots.length &&
-      left.slots.indices.forall(i => slotShape(left.slots(i)) == slotShape(right.slots(i)))
+      left.slots.length == right.slots.length
 
   private def diffNode(previous: CompiledNode, current: CompiledNode): Option[Diff] =
     if previous.fingerprint == current.fingerprint then None

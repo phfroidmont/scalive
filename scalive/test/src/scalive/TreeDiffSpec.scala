@@ -47,6 +47,25 @@ object TreeDiffSpec extends ZIOSpecDefault:
         asJson(diff) == Json.Obj.empty
       )
     },
+    test("does not resend unchanged siblings when slot type changes") {
+      val title = "Counter with auto increment every second"
+      val shown = div(
+        h1(title),
+        div("1")
+      )
+      val hidden = div(
+        h1(title),
+        ""
+      )
+
+      val hideDiffJson = TreeDiff.diff(shown, hidden).toJson
+      val showDiffJson = TreeDiff.diff(hidden, shown).toJson
+
+      assertTrue(
+        !hideDiffJson.contains(title),
+        !showDiffJson.contains(title)
+      )
+    },
     test("emits shared template table for repeated statics") {
       val diff = TreeDiff.initial(
         div(

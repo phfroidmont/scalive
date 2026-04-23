@@ -1,6 +1,7 @@
 package scalive
 
 import java.util.Base64
+import scala.annotation.targetName
 import scala.reflect.ClassTag
 import scala.util.Random
 
@@ -22,18 +23,46 @@ import scalive.WebSocketMessage.Protocol
 import scalive.socket.SocketStreamRuntime
 import scalive.socket.StreamRuntimeState
 
-final case class LiveRoute[A, Msg, Model](
-  path: PathCodec[A],
-  liveviewBuilder: (A, Request) => LiveView[Msg, Model],
-  sessionName: String = "default"
-)(using val msgClassTag: ClassTag[Msg]):
+final case class LiveRouteHandler[A, Msg, Model] private[scalive] (
+  liveviewBuilder: (A, Request) => LiveView[Msg, Model]
+)(using val msgClassTag: ClassTag[Msg])
 
-  def toZioRoute(
+object liveHandler:
+  def apply[A, Msg: ClassTag, Model](
+    f: (A, Request) => LiveView[Msg, Model]
+  ): LiveRouteHandler[A, Msg, Model] =
+    LiveRouteHandler(f)
+
+  @targetName("applyRequest")
+  def apply[Msg: ClassTag, Model](
+    f: Request => LiveView[Msg, Model]
+  ): LiveRouteHandler[Unit, Msg, Model] =
+    LiveRouteHandler((_, req) => f(req))
+
+  def apply[A, Msg: ClassTag, Model](
+    f: A => LiveView[Msg, Model]
+  ): LiveRouteHandler[A, Msg, Model] =
+    LiveRouteHandler((params, _) => f(params))
+
+  def apply[Msg: ClassTag, Model](
+    view: => LiveView[Msg, Model]
+  ): LiveRouteHandler[Unit, Msg, Model] =
+    LiveRouteHandler((_, _) => view)
+
+final case class LiveRoute[A, Msg, Model](
+  pattern: RoutePattern[A],
+  live: LiveRouteHandler[A, Msg, Model],
+  sessionName: String = "default"):
+
+  def session(name: String): LiveRoute[A, Msg, Model] =
+    copy(sessionName = name)
+
+  private[scalive] def toZioRoute(
     rootLayout: HtmlElement => HtmlElement,
     tokenConfig: TokenConfig
   ): Route[Any, Throwable] =
-    Method.GET / path -> handler { (params: A, req: Request) =>
-      val lv         = liveviewBuilder(params, req)
+    pattern -> handler { (params: A, req: Request) =>
+      val lv         = live.liveviewBuilder(params, req)
       val id: String =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val token = Token.sign(tokenConfig.secret, id, sessionName)
@@ -62,10 +91,35 @@ final case class LiveRoute[A, Msg, Model](
     }
 end LiveRoute
 
-class LiveChannel(
-  private val sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
-  private val uploadOwners: Ref[Map[String, String]],
-  private val tokenConfig: TokenConfig):
+extension [A](pattern: RoutePattern[A])
+  infix def ->[Msg, Model](handler: LiveRouteHandler[A, Msg, Model]): LiveRoute[A, Msg, Model] =
+    LiveRoute(pattern, handler)
+
+object LiveRoutes:
+  def apply(
+    layout: HtmlElement => HtmlElement,
+    mount: String = "live",
+    tokenConfig: TokenConfig = TokenConfig.default
+  )(
+    routes: LiveRoute[?, ?, ?]*
+  ): Routes[Any, Nothing] =
+    new LiveRoutesRuntime(layout, routes.toList, websocketMountCodec(mount), tokenConfig).routes
+
+  private[scalive] def websocketMountCodec(mount: String): PathCodec[Unit] =
+    val segments =
+      mount
+        .split("/")
+        .iterator
+        .map(_.trim)
+        .filter(_.nonEmpty)
+        .toList
+    require(segments.nonEmpty, "mount must contain at least one path segment")
+    segments.foldLeft(PathCodec.empty: PathCodec[Unit])((codec, segment) => codec / segment)
+
+final private class LiveChannel(
+  sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
+  uploadOwners: Ref[Map[String, String]],
+  tokenConfig: TokenConfig):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
     sockets.changes
       .map(m =>
@@ -203,10 +257,11 @@ object LiveChannel:
       uploadOwners <- Ref.make(Map.empty[String, String])
     yield new LiveChannel(sockets, uploadOwners, tokenConfig)
 
-class LiveRouter(
+final private class LiveRoutesRuntime(
   rootLayout: HtmlElement => HtmlElement,
   liveRoutes: List[LiveRoute[?, ?, ?]],
-  tokenConfig: TokenConfig = TokenConfig.default):
+  websocketMount: PathCodec[Unit],
+  tokenConfig: TokenConfig):
 
   private val trackedStatic = StaticTracking.collect(rootLayout(div()))
 
@@ -304,16 +359,16 @@ class LiveRouter(
         val req = Request(url = decodedUrl)
         liveRoutes.iterator
           .map(route =>
-            route.path
+            route.pattern.pathCodec
               .decode(req.path)
               .toOption
               .map(pathParams =>
                 if isAuthorizedJoin(route.sessionName, message.topic, join.session) then
-                  val lv = route.liveviewBuilder(pathParams, req)
-                  ZIO.logDebug(s"Joining LiveView ${route.path.toString} ${message.topic}") *>
+                  val lv = route.live.liveviewBuilder(pathParams, req)
+                  ZIO.logDebug(s"Joining LiveView ${route.pattern.pathCodec} ${message.topic}") *>
                     liveChannel
                       .join(message.topic, join.session, lv, ctx, message.meta)(
-                        using route.msgClassTag
+                        using route.live.msgClassTag
                       )
                       .as(None)
                 else ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
@@ -479,9 +534,9 @@ class LiveRouter(
         liveRoutes
           .map(route => route.toZioRoute(rootLayout, tokenConfig))
           .prepended(
-            Method.GET / "live" / "websocket" -> handler(socketApp.toResponse)
+            Method.GET / websocketMount / "websocket" -> handler(socketApp.toResponse)
           )
       ).handleErrorZIO(e =>
         ZIO.logErrorCause(Cause.fail(e)).as(Response(status = Status.InternalServerError))
       )
-end LiveRouter
+end LiveRoutesRuntime

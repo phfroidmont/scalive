@@ -31,109 +31,75 @@ object E2EApp extends ZIOAppDefault:
   override val bootstrap =
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
-  val liveRouter =
-    LiveRouter(
-      E2ERootLayout(_),
-      List(
-        LiveRoute(
-          Root / "select",
-          (_, _) => SelectLiveView()
-        ),
-        LiveRoute(
-          Root / "keyed-comprehension",
-          (_, req) =>
-            val tab =
-              req.url.queryParams.getAll("tab").headOption.getOrElse("all_keyed")
-            KeyedComprehensionLiveView(tab)
-        ),
-        LiveRoute(
-          Root / "navigation" / "a",
-          (_, req) =>
-            val param = req.url.queryParams.getAll("param").headOption
-            NavigationALiveView(param)
-          ,
-          "navigation"
-        ),
-        LiveRoute(
-          Root / "navigation" / "b",
-          (_, req) =>
-            val container = req.url.queryParams.getAll("container").headOption.contains("1")
-            NavigationBLiveView(container)
-          ,
-          "navigation"
-        ),
-        LiveRoute(
-          Root / "navigation" / "redirectloop",
-          (_, req) =>
-            val loop = req.url.queryParams.getAll("loop").headOption.contains("true")
-            RedirectLoopLiveView(loop)
-          ,
-          "navigation"
-        ),
-        LiveRoute(
-          Root / "stream",
-          (_, req) =>
-            val extraItemWithId = req.url.queryParams.getAll("empty_item").headOption.nonEmpty
-            StreamLiveView(extraItemWithId)
-        ),
-        LiveRoute(
-          Root / "stream" / "reset",
-          (_, req) =>
-            val usePhxRemove = req.url.queryParams.getAll("phx-remove").headOption.nonEmpty
-            StreamResetLiveView(usePhxRemove)
-        ),
-        LiveRoute(
-          Root / "stream" / "reset-lc",
-          (_, _) => StreamResetLCLiveView()
-        ),
-        LiveRoute(
-          Root / "stream" / "limit",
-          (_, _) => StreamLimitLiveView()
-        ),
-        LiveRoute(
-          Root / "stream" / "nested-component-reset",
-          (_, _) => StreamNestedComponentResetLiveView()
-        ),
-        LiveRoute(
-          Root / "stream" / "inside-for",
-          (_, _) => StreamInsideForLiveView()
-        ),
-        LiveRoute(
-          Root / "healthy" / "fruits",
-          (_, _) => HealthyLiveView("fruits")
-        ),
-        LiveRoute(
-          Root / "healthy" / "veggies",
-          (_, _) => HealthyLiveView("veggies")
-        ),
-        LiveRoute(
-          Root / "components",
-          (_, req) =>
-            val tab = req.url.queryParams.getAll("tab").headOption.getOrElse("focus_wrap")
-            ComponentsLiveView(tab)
-        ),
-        LiveRoute(
-          Root / "js",
-          (_, _) => JsLiveView()
-        ),
-        LiveRoute(
-          Root / "colocated",
-          (_, _) => ColocatedLiveView()
-        ),
-        LiveRoute(
-          Root / "upload",
-          (_, req) =>
-            val autoUpload = req.url.queryParams.getAll("auto_upload").headOption.contains("1")
-            UploadLiveView(autoUpload)
-        )
-      )
+  val liveRoutes =
+    LiveRoutes(
+      layout = E2ERootLayout(_)
+    )(
+      Method.GET / "select" ->
+        liveHandler(SelectLiveView()),
+      Method.GET / "keyed-comprehension" ->
+        liveHandler { req =>
+          val tab = req.queryParamOrElse("tab", "all_keyed")
+          KeyedComprehensionLiveView(tab)
+        },
+      (Method.GET / "navigation" / "a" ->
+        liveHandler { req =>
+          val param = req.queryParam("param")
+          NavigationALiveView(param)
+        }).session("navigation"),
+      (Method.GET / "navigation" / "b" ->
+        liveHandler { req =>
+          val container = req.queryParam("container").contains("1")
+          NavigationBLiveView(container)
+        }).session("navigation"),
+      (Method.GET / "navigation" / "redirectloop" ->
+        liveHandler { req =>
+          val loop = req.queryParam("loop").contains("true")
+          RedirectLoopLiveView(loop)
+        }).session("navigation"),
+      Method.GET / "stream" ->
+        liveHandler { req =>
+          val extraItemWithId = req.queryParam("empty_item").isDefined
+          StreamLiveView(extraItemWithId)
+        },
+      Method.GET / "stream" / "reset" ->
+        liveHandler { req =>
+          val usePhxRemove = req.queryParam("phx-remove").isDefined
+          StreamResetLiveView(usePhxRemove)
+        },
+      Method.GET / "stream" / "reset-lc" ->
+        liveHandler(StreamResetLCLiveView()),
+      Method.GET / "stream" / "limit" ->
+        liveHandler(StreamLimitLiveView()),
+      Method.GET / "stream" / "nested-component-reset" ->
+        liveHandler(StreamNestedComponentResetLiveView()),
+      Method.GET / "stream" / "inside-for" ->
+        liveHandler(StreamInsideForLiveView()),
+      Method.GET / "healthy" / "fruits" ->
+        liveHandler(HealthyLiveView("fruits")),
+      Method.GET / "healthy" / "veggies" ->
+        liveHandler(HealthyLiveView("veggies")),
+      Method.GET / "components" ->
+        liveHandler { req =>
+          val tab = req.queryParamOrElse("tab", "focus_wrap")
+          ComponentsLiveView(tab)
+        },
+      Method.GET / "js" ->
+        liveHandler(JsLiveView()),
+      Method.GET / "colocated" ->
+        liveHandler(ColocatedLiveView()),
+      Method.GET / "upload" ->
+        liveHandler { req =>
+          val autoUpload = req.queryParam("auto_upload").contains("1")
+          UploadLiveView(autoUpload)
+        }
     )
 
   private val healthRoutes =
     Routes(
       Method.GET / "health"   -> handler(Response.text("OK")),
       Method.GET / "download" -> handler { (req: Request) =>
-        val maybeFile = req.url.queryParams.getAll("file").headOption
+        val maybeFile = req.queryParam("file")
         maybeFile.flatMap(UploadLiveView.resolveUploadPath) match
           case Some(path) if java.nio.file.Files.exists(path) =>
             ZIO
@@ -167,7 +133,7 @@ object E2EApp extends ZIOAppDefault:
     )
 
   val routes =
-    (liveRouter.routes ++ healthRoutes) @@
+    (liveRoutes ++ healthRoutes) @@
       ServeHashedResourcesMiddleware(Path.empty / "static", "public")
 
   override val run = Server.serve(routes).provide(Server.defaultWithPort(serverPort))

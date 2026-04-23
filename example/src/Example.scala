@@ -1,6 +1,5 @@
 import zio.*
 import zio.http.*
-import zio.http.codec.PathCodec
 import zio.logging.ConsoleLoggerConfig
 import zio.logging.LogColor
 import zio.logging.LogFilter
@@ -31,33 +30,22 @@ object Example extends ZIOAppDefault:
   override val bootstrap =
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
-  val liveRouter =
-    LiveRouter(
-      RootLayout(_),
-      List(
-        LiveRoute(
-          Root,
-          (_, _) => HomeLiveView()
-        ),
-        LiveRoute(
-          Root / "counter",
-          (_, _) => CounterLiveView()
-        ),
-        LiveRoute(
-          Root / "list",
-          (_, req) =>
-            val q = req.queryParam("q").map("Param : " ++ _).getOrElse("No param")
-            ListLiveView(q)
-        ),
-        LiveRoute(
-          Root / "todo",
-          (_, _) => TodoLiveView()
-        )
-      )
+  val liveRoutes =
+    LiveRoutes(
+      layout = RootLayout(_)
+    )(
+      Method.GET / Root      -> liveHandler(HomeLiveView()),
+      Method.GET / "counter" -> liveHandler(CounterLiveView()),
+      Method.GET / "list"    ->
+        liveHandler { req =>
+          val param = req.queryParam("q").map(q => s"Param : $q").getOrElse("No param")
+          ListLiveView(param)
+        },
+      Method.GET / "todo" -> liveHandler(TodoLiveView())
     )
 
   val routes =
-    liveRouter.routes @@
+    liveRoutes @@
       ServeHashedResourcesMiddleware(Path.empty / "static", "public")
 
   override val run = Server.serve(routes).provide(Server.defaultWithPort(serverPort))

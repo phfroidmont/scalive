@@ -3,9 +3,14 @@ import zio.stream.ZStream
 
 import scalive.*
 
-class ComponentsLiveView(initialTab: String) extends LiveView[Msg, Model]:
+class ComponentsLiveView() extends LiveView[Msg, Model]:
 
-  def init = Model(activeTab = if initialTab.nonEmpty then initialTab else "focus_wrap")
+  def init = Model(activeTab = "focus_wrap")
+
+  override def handleParams(model: Model, params: Map[String, String], uri: java.net.URI) =
+    val _   = uri
+    val tab = params.getOrElse("tab", "focus_wrap")
+    model.copy(activeTab = tab)
 
   def update(model: Model) =
     case Msg.SetTab(tab) => model.copy(activeTab = tab)

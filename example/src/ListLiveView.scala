@@ -5,16 +5,22 @@ import zio.stream.ZStream
 
 import scalive.*
 
-class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
+class ListLiveView() extends LiveView[Msg, Model]:
 
   def init =
     Model(
+      paramText = "No param",
       elems = List(
         NestedModel("a", 10),
         NestedModel("b", 15),
         NestedModel("c", 20)
       )
     )
+
+  override def handleParams(model: Model, params: Map[String, String], uri: java.net.URI) =
+    val _         = uri
+    val paramText = params.get("q").map(q => s"Param : $q").getOrElse(model.paramText)
+    model.copy(paramText = paramText)
 
   def update(model: Model) =
     case Msg.IncAge(value) =>
@@ -25,7 +31,7 @@ class ListLiveView(someParam: String) extends LiveView[Msg, Model]:
       cls := "mx-auto card bg-base-100 max-w-2xl shadow-xl space-y-6",
       div(
         cls := "card-body",
-        h1(cls := "card-title", someParam),
+        h1(cls := "card-title", model.paramText),
         ul(
           cls := "divide-y divide-base-200",
           model.elems.splitByIndex((_, elem) =>
@@ -71,5 +77,6 @@ object ListLiveView:
     case IncAge(value: Int)
 
   final case class Model(
+    paramText: String,
     elems: List[NestedModel])
   final case class NestedModel(name: String, age: Int)

@@ -4,6 +4,7 @@ import scala.reflect.ClassTag
 
 import zio.*
 import zio.Queue
+import zio.http.URL
 import zio.stream.ZStream
 
 import scalive.WebSocketMessage.Payload
@@ -16,7 +17,7 @@ final case class Socket[Msg, Model] private (
   id: String,
   token: String,
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
-  livePatch: (String, WebSocketMessage.Meta) => Task[Unit],
+  livePatch: (String, WebSocketMessage.Meta) => Task[Payload.Reply],
   allowUpload: Payload.AllowUpload => Task[Payload.Reply],
   progressUpload: Payload.Progress => Task[Payload.Reply],
   uploadJoin: (String, String) => Task[Payload.Reply],
@@ -31,11 +32,12 @@ object Socket:
     lv: LiveView[Msg, Model],
     ctx: LiveContext,
     meta: WebSocketMessage.Meta,
-    tokenConfig: TokenConfig = TokenConfig.default
+    tokenConfig: TokenConfig = TokenConfig.default,
+    initialUrl: URL = URL.root
   ): RIO[Scope, Socket[Msg, Model]] =
     ZIO.logAnnotate("lv", id) {
       for
-        state       <- SocketBootstrap.initializeRuntime(lv, ctx, meta, tokenConfig)
+        state       <- SocketBootstrap.initializeRuntime(lv, ctx, meta, tokenConfig, initialUrl)
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
         livePatch =

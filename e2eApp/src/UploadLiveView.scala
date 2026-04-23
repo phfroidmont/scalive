@@ -12,15 +12,27 @@ import zio.stream.ZStream
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
 
-class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
+class UploadLiveView() extends LiveView[Msg, Model]:
 
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 
   def init =
     LiveContext
-      .allowUpload(UploadName, uploadOptions)
+      .allowUpload(UploadName, uploadOptions(autoUpload = false))
       .map(upload => Model(upload = upload))
-      .catchAll(_ => ZIO.succeed(Model(upload = disconnectedUpload)))
+      .catchAll(_ => ZIO.succeed(Model(upload = disconnectedUpload(autoUpload = false))))
+
+  override def handleParams(model: Model, params: Map[String, String], uri: java.net.URI) =
+    val _          = uri
+    val autoUpload = params.get("auto_upload").contains("1")
+    if model.upload.autoUpload == autoUpload then ZIO.succeed(model)
+    else
+      (LiveContext.disallowUpload(UploadName).ignore *>
+        LiveContext
+          .allowUpload(UploadName, uploadOptions(autoUpload))
+          .map(upload => model.copy(upload = upload))).catchAll(_ =>
+        ZIO.succeed(model.copy(upload = disconnectedUpload(autoUpload)))
+      )
 
   def update(model: Model) =
     case Msg.Validate =>
@@ -106,16 +118,16 @@ class UploadLiveView(initialAutoUpload: Boolean) extends LiveView[Msg, Model]:
       case None         => model
     }
 
-  private def uploadOptions: LiveUploadOptions =
+  private def uploadOptions(autoUpload: Boolean): LiveUploadOptions =
     LiveUploadOptions(
       accept = LiveUploadAccept.Exactly(AcceptedExtensions),
       maxEntries = MaxEntries,
       maxFileSize = MaxFileSize,
-      autoUpload = initialAutoUpload
+      autoUpload = autoUpload
     )
 
-  private def disconnectedUpload: LiveUpload =
-    val options = uploadOptions
+  private def disconnectedUpload(autoUpload: Boolean): LiveUpload =
+    val options = uploadOptions(autoUpload)
     LiveUpload(
       name = UploadName,
       ref = s"$UploadName-upload",

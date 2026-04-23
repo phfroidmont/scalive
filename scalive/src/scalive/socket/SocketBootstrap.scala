@@ -4,6 +4,7 @@ package socket
 import scala.reflect.ClassTag
 
 import zio.*
+import zio.http.URL
 import zio.stream.SubscriptionRef
 
 import scalive.*
@@ -13,7 +14,8 @@ private[scalive] object SocketBootstrap:
     lv: LiveView[Msg, Model],
     ctx: LiveContext,
     meta: WebSocketMessage.Meta,
-    tokenConfig: TokenConfig
+    tokenConfig: TokenConfig,
+    initialUrl: URL
   ): Task[RuntimeState[Msg, Model]] =
     for
       inbox           <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
@@ -31,12 +33,14 @@ private[scalive] object SocketBootstrap:
                      title = new SocketTitleRuntime(titleRef)
                    )
       initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(runtimeCtx))
-      initCompiled = RenderSnapshot.compile(lv.view(initModel))
+      (bootstrapModel, bootstrapPayloads) <-
+        runInitialLifecycle(lv, runtimeCtx, navigationRef, initModel, initialUrl)
+      initCompiled = RenderSnapshot.compile(lv.view(bootstrapModel))
       initView     = RenderedView(
                    compiled = initCompiled,
                    bindings = BindingRegistry.collect[Msg](initCompiled)
                  )
-      ref <- Ref.make((initModel, initView))
+      ref <- Ref.make((bootstrapModel, initView))
       rawInitDiff = TreeDiff.initial(initCompiled)
       initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
       initTitle  <- titleRef.getAndSet(None)
@@ -51,8 +55,12 @@ private[scalive] object SocketBootstrap:
                           )
       _           <- SocketStreamRuntime.prune(streamRef)
       lvStreamRef <-
-        SubscriptionRef.make(lv.subscriptions(initModel).provideLayer(ZLayer.succeed(runtimeCtx)))
+        SubscriptionRef.make(
+          lv.subscriptions(bootstrapModel).provideLayer(ZLayer.succeed(runtimeCtx))
+        )
       patchRedirectCountRef <- Ref.make(0)
+      bootstrapPayloadEnvelopes =
+        bootstrapPayloads.map(_ -> meta.copy(messageRef = None))
     yield RuntimeState(
       lv = lv,
       msgClassTag = summon[ClassTag[Msg]],
@@ -70,6 +78,63 @@ private[scalive] object SocketBootstrap:
       titleRef = titleRef,
       componentCidsRef = componentCidsRef,
       patchRedirectCountRef = patchRedirectCountRef,
+      bootstrapPayloads = bootstrapPayloadEnvelopes,
       initDiff = initDiff
     )
+
+  private val MaxBootstrapRedirects = 20
+
+  private def runInitialLifecycle[Msg, Model](
+    lv: LiveView[Msg, Model],
+    runtimeCtx: LiveContext,
+    navigationRef: Ref[Option[LiveNavigationCommand]],
+    initialModel: Model,
+    initialUrl: URL
+  ): Task[(Model, Chunk[WebSocketMessage.Payload])] =
+    def loop(
+      model: Model,
+      url: URL,
+      redirectCount: Int,
+      payloads: Chunk[WebSocketMessage.Payload]
+    ): Task[(Model, Chunk[WebSocketMessage.Payload])] =
+      val parsed = LiveParams.fromUrl(url)
+      for
+        _         <- navigationRef.set(None)
+        nextModel <- LiveIO
+                       .toZIO(lv.handleParams(model, parsed.params, parsed.uri))
+                       .provide(ZLayer.succeed(runtimeCtx))
+        navigation <- navigationRef.getAndSet(None)
+        result     <- navigation match
+                    case None =>
+                      ZIO.succeed(nextModel -> payloads)
+                    case Some(_) if redirectCount >= MaxBootstrapRedirects =>
+                      ZIO
+                        .logWarning("Too many redirects while applying initial handleParams")
+                        .as(nextModel -> (payloads :+ WebSocketMessage.Payload.Error))
+                    case Some(command) =>
+                      val (to, kind) = command match
+                        case LiveNavigationCommand.PushPatch(value) =>
+                          value -> WebSocketMessage.LivePatchKind.Push
+                        case LiveNavigationCommand.ReplacePatch(value) =>
+                          value -> WebSocketMessage.LivePatchKind.Replace
+                      URL.decode(to) match
+                        case Right(nextUrl) =>
+                          loop(
+                            nextModel,
+                            nextUrl,
+                            redirectCount + 1,
+                            Chunk(WebSocketMessage.Payload.LiveNavigation(to, kind))
+                          )
+                        case Left(error) =>
+                          ZIO
+                            .logWarning(
+                              s"Could not decode bootstrap navigation URL '$to': $error"
+                            )
+                            .as(nextModel -> payloads)
+      yield result
+      end for
+    end loop
+
+    loop(initialModel, initialUrl, 0, Chunk.empty)
+  end runInitialLifecycle
 end SocketBootstrap

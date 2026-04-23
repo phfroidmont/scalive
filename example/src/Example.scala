@@ -36,12 +36,8 @@ object Example extends ZIOAppDefault:
     )(
       Method.GET / Root      -> liveHandler(HomeLiveView()),
       Method.GET / "counter" -> liveHandler(CounterLiveView()),
-      Method.GET / "list"    ->
-        liveHandler { req =>
-          val param = req.queryParam("q").map(q => s"Param : $q").getOrElse("No param")
-          ListLiveView(param)
-        },
-      Method.GET / "todo" -> liveHandler(TodoLiveView())
+      Method.GET / "list"    -> liveHandler(ListLiveView()),
+      Method.GET / "todo"    -> liveHandler(TodoLiveView())
     )
 
   val routes =

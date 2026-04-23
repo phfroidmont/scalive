@@ -1,12 +1,14 @@
 package scalive
 
 import zio.*
+import zio.http.URL
 import zio.json.*
 import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
 
 import scalive.WebSocketMessage.LiveResponse
+import scalive.WebSocketMessage.LivePatchKind
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.ReplyStatus
 
@@ -58,6 +60,81 @@ object SocketSpec extends ZIOSpecDefault:
           case _                                                       => false
         ,
         msgs.head._2 == meta
+      )
+    },
+    test("runs handleParams during connected bootstrap") {
+      val ctx = LiveContext(staticChanged = false)
+      for
+        callsRef <- Ref.make(List.empty[String])
+        lv = new LiveView[Unit, Int]:
+               def init = callsRef.update(_ :+ "init").as(0)
+
+               override def handleParams(model: Int, params: Map[String, String], uri: java.net.URI) =
+                 callsRef
+                   .update(_ :+ s"params:${params.getOrElse("q", "")}:${uri.getPath}")
+                   .as(model)
+
+               def update(model: Int) = _ => ZIO.succeed(model)
+
+               def view(model: Int): HtmlElement =
+                 div(model.toString)
+
+               def subscriptions(model: Int) = ZStream.empty
+        initialUrl <- ZIO.fromEither(URL.decode("/?q=1")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        _     <- socket.outbox.take(1).runCollect
+        calls <- callsRef.get
+      yield assertTrue(calls == List("init", "params:1:/"))
+    },
+    test("emits live navigation when bootstrap handleParams patches") {
+      val ctx = LiveContext(staticChanged = false)
+      for
+        callsRef <- Ref.make(List.empty[String])
+        lv = new LiveView[Unit, Int]:
+               def init = ZIO.succeed(0)
+
+               override def handleParams(model: Int, params: Map[String, String], uri: java.net.URI) =
+                 val path = Option(uri.getPath).getOrElse("")
+                 callsRef.update(_ :+ path) *>
+                   (if path == "/start" then LiveContext.pushPatch("/done").as(model + 1)
+                    else ZIO.succeed(model + 10))
+
+               def update(model: Int) = _ => ZIO.succeed(model)
+
+               def view(model: Int): HtmlElement =
+                 div(model.toString)
+
+               def subscriptions(model: Int) = ZStream.empty
+        initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        messages <- socket.outbox.take(2).runCollect
+        calls    <- callsRef.get
+      yield assertTrue(
+        calls == List("/start", "/done"),
+        messages.size == 2,
+        messages.head._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(_)) => true
+          case _                                                       => false
+        ,
+        messages.drop(1).headOption.exists { case (payload, _) =>
+          payload match
+            case Payload.LiveNavigation("/done", LivePatchKind.Push) => true
+            case _                                                    => false
+        }
       )
     },
     test("server stream emits diff") {

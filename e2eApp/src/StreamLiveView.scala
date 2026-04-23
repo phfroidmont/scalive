@@ -8,8 +8,7 @@ import zio.stream.ZStream
 import scalive.*
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
-class StreamLiveView(extraItemWithId: Boolean = false)
-    extends LiveView[StreamLiveView.Msg, StreamLiveView.Model]:
+class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model]:
   import StreamLiveView.*
 
   private val onlyChild = htmlAttr("only-child", BooleanAsAttrPresenceEncoder)
@@ -24,8 +23,12 @@ class StreamLiveView(extraItemWithId: Boolean = false)
       admins = admins,
       componentUsers = componentUsers,
       count = 0,
-      extraItemWithId = extraItemWithId
+      extraItemWithId = false
     )
+
+  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
+    val _ = uri
+    model.copy(extraItemWithId = params.get("empty_item").isDefined)
 
   def update(model: Model) = msg => handle(model, msg)
 
@@ -435,14 +438,17 @@ object HealthyLiveView:
   private def otherCategoryPath(category: String): String =
     if category == "fruits" then "/healthy/veggies" else "/healthy/fruits"
 
-class StreamResetLiveView(usePhxRemove: Boolean = false)
-    extends LiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model]:
+class StreamResetLiveView() extends LiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model]:
   import StreamResetLiveView.*
 
   def init =
     LiveContext
       .stream(ItemsStreamDef, InitialItems)
-      .map(items => Model(items = items, usePhxRemove = usePhxRemove))
+      .map(items => Model(items = items, usePhxRemove = false))
+
+  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
+    val _ = uri
+    model.copy(usePhxRemove = params.get("phx-remove").isDefined)
 
   def update(model: Model) =
     case Msg.Filter =>

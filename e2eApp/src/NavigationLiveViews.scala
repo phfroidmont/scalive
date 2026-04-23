@@ -5,9 +5,13 @@ import zio.stream.ZStream
 
 import scalive.*
 
-class NavigationALiveView(initialParam: Option[String]) extends LiveView[Msg, Model]:
+class NavigationALiveView() extends LiveView[Msg, Model]:
 
-  def init = Model(paramCurrent = initialParam, paramNext = 1)
+  def init = Model(paramCurrent = None, paramNext = 1)
+
+  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
+    val _ = uri
+    model.copy(paramCurrent = params.get("param"))
 
   def update(model: Model) =
     case _ => model
@@ -38,10 +42,10 @@ class NavigationALiveView(initialParam: Option[String]) extends LiveView[Msg, Mo
   def subscriptions(model: Model) = ZStream.empty
 end NavigationALiveView
 
-class NavigationBLiveView(withContainer: Boolean) extends LiveView[Msg, Model]:
+class NavigationBLiveView() extends LiveView[Msg, Model]:
 
   def init =
-    Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = withContainer)
+    Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
 
   def update(model: Model) =
     case Msg.Noop => model
@@ -107,22 +111,23 @@ class NavigationBLiveView(withContainer: Boolean) extends LiveView[Msg, Model]:
   def subscriptions(model: Model) = ZStream.empty
 end NavigationBLiveView
 
-class RedirectLoopLiveView(loop: Boolean) extends LiveView[Msg, Model]:
+class RedirectLoopLiveView() extends LiveView[Msg, Model]:
   def init =
-    if loop then Model(shouldLoop = false, message = Some("Too many redirects"))
-    else Model(shouldLoop = true, message = None)
+    Model(shouldLoop = false, message = None)
 
   def update(model: Model) =
     case Msg.TriggerLoop => model.copy(message = Some("Too many redirects"), shouldLoop = false)
     case _               => model
 
   override def handleParams(model: Model, params: Map[String, String], uri: URI) =
-    if params.get("loop").contains("true") && model.shouldLoop then
-      val path  = Option(uri.getPath).getOrElse("")
-      val query = Option(uri.getRawQuery).getOrElse("")
-      val to    = if query.isEmpty then path else s"$path?$query"
-      LiveContext.pushPatch(to).as(model)
-    else model
+    if params.get("loop").contains("true") then
+      if model.shouldLoop then
+        val path  = Option(uri.getPath).getOrElse("")
+        val query = Option(uri.getRawQuery).getOrElse("")
+        val to    = if query.isEmpty then path else s"$path?$query"
+        LiveContext.pushPatch(to).as(model)
+      else model.copy(message = Some("Too many redirects"), shouldLoop = false)
+    else model.copy(message = None, shouldLoop = true)
 
   def view(model: Model) =
     NavigationLayout(

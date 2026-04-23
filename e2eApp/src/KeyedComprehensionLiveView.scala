@@ -6,14 +6,19 @@ import zio.stream.ZStream
 
 import scalive.*
 
-class KeyedComprehensionLiveView(initialTab: String) extends LiveView[Msg, Model]:
+class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
 
   def init =
     Model(
-      activeTab = normalizeTab(initialTab),
+      activeTab = "all_keyed",
       items = randomItems(10),
       count = 10
     )
+
+  override def handleParams(model: Model, params: Map[String, String], uri: java.net.URI) =
+    val _   = uri
+    val tab = params.getOrElse("tab", "all_keyed")
+    model.copy(activeTab = normalizeTab(tab))
 
   def update(model: Model) =
     case Msg.Randomize => model.copy(items = randomItems(model.items.size))

@@ -20,6 +20,7 @@ import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.Protocol
+import scalive.socket.SocketNavigationRuntime
 import scalive.socket.SocketStreamRuntime
 import scalive.socket.StreamRuntimeState
 
@@ -67,28 +68,81 @@ final case class LiveRoute[A, Msg, Model](
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val token = Token.sign(tokenConfig.secret, id, sessionName)
       for
-        streamRef <- Ref.make(StreamRuntimeState.empty)
+        streamRef     <- Ref.make(StreamRuntimeState.empty)
+        navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
         ctx = LiveContext(
                 staticChanged = false,
-                streams = new SocketStreamRuntime(streamRef)
+                streams = new SocketStreamRuntime(streamRef),
+                navigation = new SocketNavigationRuntime(navigationRef)
               )
         initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(ctx))
-        el = lv.view(initModel)
-      yield Response.html(
-        Html.raw(
-          HtmlBuilder.build(
-            rootLayout(
-              div(
-                idAttr      := id,
-                phx.main    := true,
-                phx.session := token,
-                el
+        lifecycle <- LiveRoute.runInitialHandleParams(
+                       lv,
+                       initModel,
+                       req.url,
+                       ctx,
+                       navigationRef
+                     )
+      yield lifecycle match
+        case LiveRoute.InitialLifecycleOutcome.Render(model) =>
+          val el = lv.view(model)
+          Response.html(
+            Html.raw(
+              HtmlBuilder.build(
+                rootLayout(
+                  div(
+                    idAttr      := id,
+                    phx.main    := true,
+                    phx.session := token,
+                    el
+                  )
+                )
               )
             )
           )
-        )
-      )
+        case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
+          Response.redirect(url)
+      end for
     }
+end LiveRoute
+
+object LiveRoute:
+  enum InitialLifecycleOutcome[+Model]:
+    case Render(model: Model)
+    case Redirect(url: URL)
+
+  private[scalive] def runInitialHandleParams[Msg, Model](
+    lv: LiveView[Msg, Model],
+    initModel: Model,
+    url: URL,
+    ctx: LiveContext,
+    navigationRef: Ref[Option[LiveNavigationCommand]]
+  ): Task[InitialLifecycleOutcome[Model]] =
+    val parsed = LiveParams.fromUrl(url)
+    for
+      _     <- navigationRef.set(None)
+      model <- LiveIO
+                 .toZIO(lv.handleParams(initModel, parsed.params, parsed.uri))
+                 .provide(ZLayer.succeed(ctx))
+      navigation <- navigationRef.getAndSet(None)
+      result     <- navigation match
+                  case None =>
+                    ZIO.succeed(InitialLifecycleOutcome.Render(model))
+                  case Some(command) =>
+                    val destination = command match
+                      case LiveNavigationCommand.PushPatch(to)    => to
+                      case LiveNavigationCommand.ReplacePatch(to) => to
+                    URL.decode(destination) match
+                      case Right(redirectUrl) =>
+                        ZIO.succeed(InitialLifecycleOutcome.Redirect(redirectUrl))
+                      case Left(error) =>
+                        ZIO
+                          .logWarning(
+                            s"Could not decode initial navigation URL '$destination': $error"
+                          )
+                          .as(InitialLifecycleOutcome.Render(model))
+    yield result
+  end runInitialHandleParams
 end LiveRoute
 
 extension [A](pattern: RoutePattern[A])
@@ -132,7 +186,8 @@ final private class LiveChannel(
     token: String,
     lv: LiveView[Msg, Model],
     ctx: LiveContext,
-    meta: WebSocketMessage.Meta
+    meta: WebSocketMessage.Meta,
+    initialUrl: URL
   )(using ClassTag[Msg]
   ): RIO[Scope, Unit] =
     sockets
@@ -141,11 +196,11 @@ final private class LiveChannel(
           case Some(socket) =>
             socket.shutdown *>
               Socket
-                .start(id, token, lv, ctx, meta, tokenConfig)
+                .start(id, token, lv, ctx, meta, tokenConfig, initialUrl)
                 .map(m.updated(id, _))
           case None =>
             Socket
-              .start(id, token, lv, ctx, meta, tokenConfig)
+              .start(id, token, lv, ctx, meta, tokenConfig, initialUrl)
               .map(m.updated(id, _))
       }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
 
@@ -172,11 +227,11 @@ final private class LiveChannel(
         case None => ZIO.unit
     }
 
-  def livePatch(id: String, url: String, meta: WebSocketMessage.Meta): UIO[Unit] =
+  def livePatch(id: String, url: String, meta: WebSocketMessage.Meta): Task[Payload.Reply] =
     sockets.get.flatMap { m =>
       m.get(id) match
-        case Some(socket) => socket.livePatch(url, meta).ignore
-        case None         => ZIO.unit
+        case Some(socket) => socket.livePatch(url, meta)
+        case None         => ZIO.succeed(Payload.okReply(LiveResponse.Empty))
     }
 
   def allowUpload(id: String, payload: Payload.AllowUpload): Task[Payload.Reply] =
@@ -367,7 +422,7 @@ final private class LiveRoutesRuntime(
                   val lv = route.live.liveviewBuilder(pathParams, req)
                   ZIO.logDebug(s"Joining LiveView ${route.pattern.pathCodec} ${message.topic}") *>
                     liveChannel
-                      .join(message.topic, join.session, lv, ctx, message.meta)(
+                      .join(message.topic, join.session, lv, ctx, message.meta, decodedUrl)(
                         using route.live.msgClassTag
                       )
                       .as(None)
@@ -424,7 +479,7 @@ final private class LiveRoutesRuntime(
     payload: Payload.LivePatch,
     liveChannel: LiveChannel
   ): Task[Option[WebSocketMessage]] =
-    liveChannel.livePatch(message.topic, payload.url, message.meta).as(Some(message.okReply))
+    wrapReply(message)(liveChannel.livePatch(message.topic, payload.url, message.meta))
 
   private def handleUploadJoin(
     message: WebSocketMessage,

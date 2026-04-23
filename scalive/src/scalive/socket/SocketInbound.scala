@@ -1,10 +1,8 @@
 package scalive
 package socket
 
-import java.net.URI
-
 import zio.*
-import zio.http.QueryParams
+import zio.http.URL
 import zio.json.ast.Json
 import zio.stream.ZStream
 
@@ -26,40 +24,34 @@ private[scalive] object SocketInbound:
     url: String,
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
-  ): Task[Unit] =
+  ): Task[Payload.Reply] =
     for
       (currentModel, rendered) <- state.ref.get
-      parsedUri                <- ZIO.attempt(URI.create(url))
-      params = QueryParams
-                 .decode(Option(parsedUri.getRawQuery).getOrElse(""))
-                 .map
-                 .iterator
-                 .map { case (key, values) =>
-                   key -> values.lastOption.getOrElse("")
-                 }
-                 .toMap
+      decodedUrl               <- ZIO
+                      .fromEither(URL.decode(url))
+                      .mapError(error => new IllegalArgumentException(error.toString))
+      parsed = LiveParams.fromUrl(decodedUrl)
       (model, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
           LiveIO
-            .toZIO(state.lv.handleParams(currentModel, params, parsedUri))
+            .toZIO(state.lv.handleParams(currentModel, parsed.params, parsed.uri))
             .provide(ZLayer.succeed(state.ctx))
         )
-      _ <- navigation match
-             case Some(command) =>
-               handleNavigationCommand(rendered, model, command, meta, state)
-             case None =>
-               for
-                 _    <- state.patchRedirectCountRef.set(0)
-                 diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
-                 _    <- ZIO.when(!diff.isEmpty)(
-                        SocketModelRuntime.publishPayload(
-                          Payload.Diff(diff),
-                          meta.copy(messageRef = None),
-                          state
-                        )
-                      )
-               yield ()
-    yield ()
+      diffOpt <- navigation match
+                   case Some(command) =>
+                     handleNavigationCommand(rendered, model, command, meta, state).as(None)
+                   case None =>
+                     for
+                       _    <- state.patchRedirectCountRef.set(0)
+                       diff <-
+                         SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
+                     yield Some(diff)
+      reply = diffOpt match
+                case Some(diff) if !diff.isEmpty =>
+                  Payload.okReply(LiveResponse.Diff(diff))
+                case _ =>
+                  Payload.okReply(LiveResponse.Empty)
+    yield reply
 
   private def handleClientEvent[Msg, Model](
     event: Payload.Event,

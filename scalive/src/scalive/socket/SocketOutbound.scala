@@ -17,8 +17,9 @@ private[scalive] object SocketOutbound:
   def buildOutbox[Msg, Model](
     state: RuntimeState[Msg, Model]
   ): ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)] =
-    ZStream.succeed(
-      Payload.okReply(LiveResponse.InitDiff(state.initDiff)) -> state.meta
+    ZStream.fromIterable(
+      (Payload.okReply(LiveResponse.InitDiff(state.initDiff)) -> state.meta) +:
+        state.bootstrapPayloads.toList
     ) ++ ZStream
       .unwrapScoped(ZStream.fromHubScoped(state.outHub)).filterNot {
         case (Payload.Diff(diff), _) => diff.isEmpty

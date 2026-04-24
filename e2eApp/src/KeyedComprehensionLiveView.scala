@@ -1,12 +1,17 @@
 import scala.util.Random
 
 import KeyedComprehensionLiveView.*
+import zio.http.URL
 import zio.json.ast.Json
+import zio.schema.derived
 import zio.stream.ZStream
+import zio.schema.Schema
 
 import scalive.*
 
 class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
+
+  override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
 
   def init =
     Model(
@@ -15,9 +20,8 @@ class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
       count = 10
     )
 
-  override def handleParams(model: Model, params: Map[String, String], uri: java.net.URI) =
-    val _   = uri
-    val tab = params.getOrElse("tab", "all_keyed")
+  override def handleParams(model: Model, params: UrlParams, _url: URL) =
+    val tab = params.tab.getOrElse("all_keyed")
     model.copy(activeTab = normalizeTab(tab))
 
   def update(model: Model) =
@@ -129,6 +133,11 @@ object KeyedComprehensionLiveView:
 
   enum Msg:
     case Randomize
+
+  final case class UrlParams(tab: Option[String]) derives Schema
+
+  val ParamsCodec: LiveQueryCodec[UrlParams] =
+    LiveQueryCodec[UrlParams]
 
   final case class Model(activeTab: String, items: List[Item], count: Int)
 

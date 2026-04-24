@@ -1,11 +1,16 @@
 import ListLiveView.*
 import monocle.syntax.all.*
 import zio.*
+import zio.http.URL
+import zio.schema.derived
 import zio.stream.ZStream
+import zio.schema.Schema
 
 import scalive.*
 
 class ListLiveView() extends LiveView[Msg, Model]:
+
+  override val queryCodec: LiveQueryCodec[ListParams] = ParamsCodec
 
   def init =
     Model(
@@ -17,9 +22,8 @@ class ListLiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  override def handleParams(model: Model, params: Map[String, String], uri: java.net.URI) =
-    val _         = uri
-    val paramText = params.get("q").map(q => s"Param : $q").getOrElse(model.paramText)
+  override def handleParams(model: Model, params: ListParams, _url: URL) =
+    val paramText = params.q.map(q => s"Param : $q").getOrElse("No param")
     model.copy(paramText = paramText)
 
   def update(model: Model) =
@@ -75,6 +79,11 @@ object ListLiveView:
 
   enum Msg:
     case IncAge(value: Int)
+
+  final case class ListParams(q: Option[String]) derives Schema
+
+  val ParamsCodec: LiveQueryCodec[ListParams] =
+    LiveQueryCodec[ListParams]
 
   final case class Model(
     paramText: String,

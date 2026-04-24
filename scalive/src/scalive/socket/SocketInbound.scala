@@ -2,7 +2,6 @@ package scalive
 package socket
 
 import zio.*
-import zio.http.URL
 import zio.json.ast.Json
 import zio.stream.ZStream
 
@@ -27,14 +26,15 @@ private[scalive] object SocketInbound:
   ): Task[Payload.Reply] =
     for
       (currentModel, rendered) <- state.ref.get
+      currentUrl               <- state.currentUrlRef.get
       decodedUrl               <- ZIO
-                      .fromEither(URL.decode(url))
-                      .mapError(error => new IllegalArgumentException(error.toString))
-      parsed = LiveParams.fromUrl(decodedUrl)
+                      .fromEither(LivePatchUrl.resolve(url, currentUrl))
+                      .mapError(error => new IllegalArgumentException(error))
+      _                        <- state.currentUrlRef.set(decodedUrl)
       (model, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
           LiveIO
-            .toZIO(state.lv.handleParams(currentModel, parsed.params, parsed.uri))
+            .toZIO(LiveViewParamsRuntime.runHandleParams(state.lv, currentModel, decodedUrl))
             .provide(ZLayer.succeed(state.ctx))
         )
       diffOpt <- navigation match
@@ -133,16 +133,25 @@ private[scalive] object SocketInbound:
         case LiveNavigationCommand.ReplacePatch(value) => value -> LivePatchKind.Replace
 
     for
+      currentUrl <- state.currentUrlRef.get
+      resolvedUrl <- ZIO
+                       .fromEither(LivePatchUrl.resolve(to, currentUrl))
+                       .mapError(error => new IllegalArgumentException(error))
+      resolvedTo = resolvedUrl.encode
       redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
       _             <- SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
       _             <-
         if redirectCount > 20 then
-          SocketModelRuntime.publishPayload(Payload.Error, meta.copy(messageRef = None), state)
+          SocketModelRuntime.publishPayload(
+            Payload.Error,
+            meta.copy(joinRef = None, messageRef = None),
+            state
+          )
         else
           SocketModelRuntime.publishPayload(
-            Payload.LiveNavigation(to, kind),
+            Payload.LiveNavigation(resolvedTo, kind),
             meta.copy(messageRef = None),
             state
-          ) *> handleLivePatch(to, meta, state)
+          ) *> handleLivePatch(resolvedTo, meta, state)
     yield ()
 end SocketInbound

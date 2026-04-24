@@ -1,17 +1,19 @@
-import java.net.URI
-
 import NavigationLiveViews.*
+import zio.http.URL
+import zio.schema.derived
+import zio.schema.Schema
 import zio.stream.ZStream
 
 import scalive.*
 
 class NavigationALiveView() extends LiveView[Msg, Model]:
 
+  override val queryCodec: LiveQueryCodec[AParams] = AParamsCodec
+
   def init = Model(paramCurrent = None, paramNext = 1)
 
-  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
-    val _ = uri
-    model.copy(paramCurrent = params.get("param"))
+  override def handleParams(model: Model, params: AParams, _url: URL) =
+    model.copy(paramCurrent = params.param.map(_.toString))
 
   def update(model: Model) =
     case _ => model
@@ -22,12 +24,14 @@ class NavigationALiveView() extends LiveView[Msg, Model]:
         h1("This is page A"),
         p("Current param: ", model.paramCurrent.getOrElse("")),
         link.patch(
-          s"/navigation/a?param=${model.paramNext}",
+          AParamsCodec,
+          AParams(Some(model.paramNext)),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch this LiveView"
         ),
         link.patchReplace(
-          s"/navigation/a?param=${model.paramNext}",
+          AParamsCodec,
+          AParams(Some(model.paramNext)),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch (Replace)"
         ),
@@ -44,6 +48,8 @@ end NavigationALiveView
 
 class NavigationBLiveView() extends LiveView[Msg, Model]:
 
+  override val queryCodec: LiveQueryCodec[BParams] = BParamsCodec
+
   def init =
     Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
 
@@ -51,19 +57,11 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
     case Msg.Noop => model
     case _        => model
 
-  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
-    val withContainer = params.get("container").contains("1")
-    val containerFlow = withContainer || model.withContainer
-    val selectedItem  =
-      if containerFlow then
-        val path = Option(uri.getPath).filter(_.nonEmpty).getOrElse("")
-        path.stripPrefix("/navigation/b/") match
-          case ""                   => None
-          case same if same == path => None
-          case id                   => Some(id)
-      else None
+  override def handleParams(model: Model, params: BParams, url: URL) =
+    val containerFlow = params.withContainerRequested || model.withContainer
+    val selectedItem  = if containerFlow then selectedItemFromPath(url) else None
     model.copy(
-      withContainer = withContainer,
+      withContainer = params.withContainerRequested,
       selectedItem = selectedItem
     )
 
@@ -91,7 +89,7 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
                   idAttr    := s"items-${item.id}",
                   styleAttr := "padding: 0.5rem; border-bottom: 1px solid #e2e8f0;",
                   link.patch(
-                    s"/navigation/b/${item.id}",
+                    itemHref(item.id, model.withContainer),
                     "Item ",
                     item.name.toString
                   )
@@ -109,9 +107,21 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
     )
 
   def subscriptions(model: Model) = ZStream.empty
+
+  private def selectedItemFromPath(url: URL): Option[String] =
+    url.path.segments.toList match
+      case "navigation" :: "b" :: id :: Nil if id.nonEmpty => Some(id)
+      case _                                                 => None
+
+  private def itemHref(id: String, withContainer: Boolean): String =
+    val base = s"/navigation/b/$id"
+    if withContainer then s"$base?container=1" else base
 end NavigationBLiveView
 
 class RedirectLoopLiveView() extends LiveView[Msg, Model]:
+
+  override val queryCodec: LiveQueryCodec[RedirectLoopParams] = RedirectLoopParamsCodec
+
   def init =
     Model(shouldLoop = false, message = None)
 
@@ -119,13 +129,10 @@ class RedirectLoopLiveView() extends LiveView[Msg, Model]:
     case Msg.TriggerLoop => model.copy(message = Some("Too many redirects"), shouldLoop = false)
     case _               => model
 
-  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
-    if params.get("loop").contains("true") then
+  override def handleParams(model: Model, params: RedirectLoopParams, _url: URL) =
+    if params.loop.contains(true) then
       if model.shouldLoop then
-        val path  = Option(uri.getPath).getOrElse("")
-        val query = Option(uri.getRawQuery).getOrElse("")
-        val to    = if query.isEmpty then path else s"$path?$query"
-        LiveContext.pushPatch(to).as(model)
+        LiveContext.pushPatch(RedirectLoopParamsCodec, RedirectLoopParams(Some(true))).as(model)
       else model.copy(message = Some("Too many redirects"), shouldLoop = false)
     else model.copy(message = None, shouldLoop = true)
 
@@ -139,7 +146,8 @@ class RedirectLoopLiveView() extends LiveView[Msg, Model]:
           )
         else "",
         link.patch(
-          "/navigation/redirectloop?loop=true",
+          RedirectLoopParamsCodec,
+          RedirectLoopParams(Some(true)),
           "Redirect Loop"
         )
       )
@@ -153,6 +161,28 @@ object NavigationLiveViews:
   enum Msg:
     case TriggerLoop
     case Noop
+
+  final case class AParams(param: Option[Int]) derives Schema
+
+  val AParamsCodec: LiveQueryCodec[AParams] =
+    LiveQueryCodec[AParams]
+
+  final case class BParams(withContainerRequested: Boolean)
+
+  val BParamsCodec: LiveQueryCodec[BParams] =
+    LiveQueryCodec.custom(
+      decodeFn = url => Right(BParams(withContainerRequested = url.queryParam("container").contains("1"))),
+      encodeFn = params =>
+        Right(
+          if params.withContainerRequested then "?container=1"
+          else "?"
+        )
+    )
+
+  final case class RedirectLoopParams(loop: Option[Boolean]) derives Schema
+
+  val RedirectLoopParamsCodec: LiveQueryCodec[RedirectLoopParams] =
+    LiveQueryCodec[RedirectLoopParams]
 
   final case class Item(id: String, name: Int)
   final case class Model(

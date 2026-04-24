@@ -120,8 +120,18 @@ object LiveContext:
   def pushPatch(to: String): RIO[HasNavigation, Unit] =
     ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.PushPatch(to)))
 
+  def pushPatch[A](to: LiveQueryCodec[A], value: A): RIO[HasNavigation, Unit] =
+    ZIO
+      .fromEither(to.href(value))
+      .flatMap(pushPatch)
+
   def replacePatch(to: String): RIO[HasNavigation, Unit] =
     ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.ReplacePatch(to)))
+
+  def replacePatch[A](to: LiveQueryCodec[A], value: A): RIO[HasNavigation, Unit] =
+    ZIO
+      .fromEither(to.href(value))
+      .flatMap(replacePatch)
 
   def putTitle(title: String): URIO[HasTitle, Unit] =
     ZIO.serviceWithZIO[HasTitle](_.title.set(title))

@@ -1,7 +1,6 @@
 package scalive
 
-import java.net.URI
-
+import zio.http.URL
 import zio.json.ast.Json
 import zio.stream.*
 
@@ -13,14 +12,23 @@ trait LiveView[Msg, Model]:
   def view(model: Model): HtmlElement
   def subscriptions(model: Model): ZStream[SubscriptionsContext, Nothing, Msg]
 
-  def handleParams(model: Model, _params: Map[String, String], _uri: URI)
-    : LiveIO[ParamsContext, Model] =
-    val _ = (_params, _uri)
+  val queryCodec: LiveQueryCodec[?] = LiveQueryCodec.none
+
+  def handleParams(model: Model, query: queryCodec.Out, url: URL): LiveIO[ParamsContext, Model] =
+    val _ = (query, url)
     model
 
-  def interceptEvent(model: Model, _event: String, _value: Json)
+  def handleParamsDecodeError(
+    model: Model,
+    error: LiveQueryCodec.DecodeError,
+    url: URL
+  ): LiveIO[ParamsContext, Model] =
+    val _ = (error, url)
+    model
+
+  def interceptEvent(model: Model, event: String, value: Json)
     : LiveIO[InterceptContext, InterceptResult[Model]] =
-    val _ = (_event, _value)
+    val _ = (event, value)
     InterceptResult.cont(model)
 
 object LiveView:

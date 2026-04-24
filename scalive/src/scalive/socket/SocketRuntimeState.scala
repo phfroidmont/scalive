@@ -4,6 +4,7 @@ package socket
 import scala.reflect.ClassTag
 
 import zio.*
+import zio.http.URL
 import zio.json.ast.Json
 import zio.stream.SubscriptionRef
 import zio.stream.ZStream
@@ -128,6 +129,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
   outHub: Hub[(Payload, WebSocketMessage.Meta)],
   ref: Ref[(Model, RenderedView[Msg])],
+  currentUrlRef: Ref[URL],
   lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],
   navigationRef: Ref[Option[LiveNavigationCommand]],
   uploadRef: Ref[UploadRuntimeState],

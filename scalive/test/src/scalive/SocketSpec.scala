@@ -2,6 +2,7 @@ package scalive
 
 import zio.*
 import zio.http.URL
+import zio.http.codec.HttpCodec
 import zio.json.*
 import zio.json.ast.Json
 import zio.stream.ZStream
@@ -67,19 +68,26 @@ object SocketSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView[Unit, Int]:
-               def init = callsRef.update(_ :+ "init").as(0)
+          override val queryCodec: LiveQueryCodec[(Option[String], String)] =
+            LiveQueryCodec.custom(
+              decodeFn = url => Right(url.queryParam("q") -> url.path.encode),
+              encodeFn = _ => Right("?")
+            )
 
-               override def handleParams(model: Int, params: Map[String, String], uri: java.net.URI) =
-                 callsRef
-                   .update(_ :+ s"params:${params.getOrElse("q", "")}:${uri.getPath}")
-                   .as(model)
+          def init = callsRef.update(_ :+ "init").as(0)
 
-               def update(model: Int) = _ => ZIO.succeed(model)
+          override def handleParams(model: Int, params: (Option[String], String), _url: URL) =
+            val (q, path) = params
+            callsRef
+              .update(_ :+ s"params:${q.getOrElse("")}:$path")
+              .as(model)
 
-               def view(model: Int): HtmlElement =
-                 div(model.toString)
+          def update(model: Int) = _ => ZIO.succeed(model)
 
-               def subscriptions(model: Int) = ZStream.empty
+          def view(model: Int): HtmlElement =
+            div(model.toString)
+
+          def subscriptions(model: Int) = ZStream.empty
         initialUrl <- ZIO.fromEither(URL.decode("/?q=1")).orDie
         socket <- Socket.start(
                     "id",
@@ -98,20 +106,20 @@ object SocketSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView[Unit, Int]:
-               def init = ZIO.succeed(0)
+          def init = ZIO.succeed(0)
 
-               override def handleParams(model: Int, params: Map[String, String], uri: java.net.URI) =
-                 val path = Option(uri.getPath).getOrElse("")
-                 callsRef.update(_ :+ path) *>
-                   (if path == "/start" then LiveContext.pushPatch("/done").as(model + 1)
-                    else ZIO.succeed(model + 10))
+          override def handleParams(model: Int, _query: queryCodec.Out, url: URL) =
+            val path = url.path.encode
+            callsRef.update(_ :+ path) *>
+              (if path == "/start" then LiveContext.pushPatch("/done").as(model + 1)
+               else ZIO.succeed(model + 10))
 
-               def update(model: Int) = _ => ZIO.succeed(model)
+          def update(model: Int) = _ => ZIO.succeed(model)
 
-               def view(model: Int): HtmlElement =
-                 div(model.toString)
+          def view(model: Int): HtmlElement =
+            div(model.toString)
 
-               def subscriptions(model: Int) = ZStream.empty
+          def subscriptions(model: Int) = ZStream.empty
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
         socket <- Socket.start(
                     "id",
@@ -133,6 +141,48 @@ object SocketSpec extends ZIOSpecDefault:
         messages.drop(1).headOption.exists { case (payload, _) =>
           payload match
             case Payload.LiveNavigation("/done", LivePatchKind.Push) => true
+            case _                                                    => false
+        }
+      )
+    },
+    test("resolves query-only bootstrap patches against current path") {
+      val ctx = LiveContext(staticChanged = false)
+      for
+        callsRef <- Ref.make(List.empty[String])
+        lv = new LiveView[Unit, Int]:
+          override val queryCodec: LiveQueryCodec[Option[String]] =
+            LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
+
+          def init = ZIO.succeed(0)
+
+          override def handleParams(model: Int, query: Option[String], url: URL) =
+            val current = s"${url.path.encode}:${query.getOrElse("")}"
+            callsRef.update(_ :+ current) *>
+              (if query.isEmpty then LiveContext.pushPatch(queryCodec, Some("1")).as(model)
+               else ZIO.succeed(model))
+
+          def update(model: Int) = _ => ZIO.succeed(model)
+
+          def view(model: Int): HtmlElement =
+            div(model.toString)
+
+          def subscriptions(model: Int) = ZStream.empty
+        initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        messages <- socket.outbox.take(2).runCollect
+        calls    <- callsRef.get
+      yield assertTrue(
+        calls == List("/start:", "/start:1"),
+        messages.drop(1).headOption.exists { case (payload, _) =>
+          payload match
+            case Payload.LiveNavigation("/start?q=1", LivePatchKind.Push) => true
             case _                                                    => false
         }
       )

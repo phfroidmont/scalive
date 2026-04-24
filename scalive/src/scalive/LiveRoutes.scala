@@ -118,11 +118,10 @@ object LiveRoute:
     ctx: LiveContext,
     navigationRef: Ref[Option[LiveNavigationCommand]]
   ): Task[InitialLifecycleOutcome[Model]] =
-    val parsed = LiveParams.fromUrl(url)
     for
       _     <- navigationRef.set(None)
       model <- LiveIO
-                 .toZIO(lv.handleParams(initModel, parsed.params, parsed.uri))
+                 .toZIO(LiveViewParamsRuntime.runHandleParams(lv, initModel, url))
                  .provide(ZLayer.succeed(ctx))
       navigation <- navigationRef.getAndSet(None)
       result     <- navigation match
@@ -132,7 +131,7 @@ object LiveRoute:
                     val destination = command match
                       case LiveNavigationCommand.PushPatch(to)    => to
                       case LiveNavigationCommand.ReplacePatch(to) => to
-                    URL.decode(destination) match
+                    LivePatchUrl.resolve(destination, url) match
                       case Right(redirectUrl) =>
                         ZIO.succeed(InitialLifecycleOutcome.Redirect(redirectUrl))
                       case Left(error) =>

@@ -1,15 +1,19 @@
 import ComponentsLiveView.*
+import zio.http.URL
+import zio.schema.derived
 import zio.stream.ZStream
+import zio.schema.Schema
 
 import scalive.*
 
 class ComponentsLiveView() extends LiveView[Msg, Model]:
 
+  override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
+
   def init = Model(activeTab = "focus_wrap")
 
-  override def handleParams(model: Model, params: Map[String, String], uri: java.net.URI) =
-    val _   = uri
-    val tab = params.getOrElse("tab", "focus_wrap")
+  override def handleParams(model: Model, params: UrlParams, _url: URL) =
+    val tab = params.tab.getOrElse("focus_wrap")
     model.copy(activeTab = tab)
 
   def update(model: Model) =
@@ -27,8 +31,10 @@ class ComponentsLiveView() extends LiveView[Msg, Model]:
         navTag(
           styleAttr := "margin-bottom: -1px; display: flex; gap: 2rem;",
           a(
-            href := "/components?tab=focus_wrap",
-            phx.onClick(JS.patch("/components?tab=focus_wrap").push(Msg.SetTab("focus_wrap"))),
+            href := paramsHref(UrlParams(Some("focus_wrap"))),
+            phx.onClick(
+              JS.patch(ParamsCodec, UrlParams(Some("focus_wrap"))).push(Msg.SetTab("focus_wrap"))
+            ),
             styleAttr :=
               (if model.activeTab == "focus_wrap" then
                  "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid #3b82f6; color: #2563eb; font-weight: 500; font-size: 0.875rem;"
@@ -132,5 +138,18 @@ end ComponentsLiveView
 object ComponentsLiveView:
   enum Msg:
     case SetTab(tab: String)
+
+  final case class UrlParams(tab: Option[String]) derives Schema
+
+  val ParamsCodec = LiveQueryCodec[UrlParams]
+
+  def paramsHref(params: UrlParams): String =
+    ParamsCodec.href(params) match
+      case Right(url)  => url
+      case Left(error) =>
+        throw new IllegalArgumentException(
+          s"Could not encode ComponentsLiveView params: ${error.message}",
+          error
+        )
 
   final case class Model(activeTab: String)

@@ -2,6 +2,7 @@ package scalive
 
 import zio.*
 import zio.http.*
+import zio.http.codec.HttpCodec
 import zio.stream.ZStream
 import zio.test.*
 
@@ -19,10 +20,14 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView[Unit, Unit]:
+
+               override val queryCodec: LiveQueryCodec[Option[String]] =
+                 LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
+
                def init = callsRef.update(_ :+ "init").as(())
 
-               override def handleParams(model: Unit, params: Map[String, String], uri: java.net.URI) =
-                 callsRef.update(_ :+ s"params:${params.getOrElse("q", "")}").as(model)
+                 override def handleParams(model: Unit, params: Option[String], _url: URL) =
+                  callsRef.update(_ :+ s"params:${params.getOrElse("")}").as(model)
 
                def update(model: Unit) = _ => ZIO.succeed(model)
 
@@ -42,7 +47,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       val lv = new LiveView[Unit, Unit]:
         def init = ZIO.unit
 
-        override def handleParams(model: Unit, params: Map[String, String], uri: java.net.URI) =
+        override def handleParams(model: Unit, _query: queryCodec.Out, _url: URL) =
           LiveContext.pushPatch("/target").as(model)
 
         def update(model: Unit) = _ => ZIO.succeed(model)

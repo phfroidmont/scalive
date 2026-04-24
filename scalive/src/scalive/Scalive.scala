@@ -25,8 +25,20 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def patch(path: String, mods: Mod*): HtmlElement =
       a(href := path, phx.link := "patch", phx.linkState := "push", mods)
 
+    def patch[A](to: LiveQueryCodec[A], value: A, mods: Mod*): HtmlElement =
+      patch(requireHref(to, value, "link.patch"), mods*)
+
     def patchReplace(path: String, mods: Mod*): HtmlElement =
       a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
+
+    def patchReplace[A](to: LiveQueryCodec[A], value: A, mods: Mod*): HtmlElement =
+      patchReplace(requireHref(to, value, "link.patchReplace"), mods*)
+
+    private def requireHref[A](to: LiveQueryCodec[A], value: A, operation: String): String =
+      to.href(value) match
+        case Right(url) => url
+        case Left(error) =>
+          throw new IllegalArgumentException(s"Could not encode URL for $operation: ${error.message}", error)
 
   object phx:
     private def phxAttr(suffix: String): HtmlAttr[String] =

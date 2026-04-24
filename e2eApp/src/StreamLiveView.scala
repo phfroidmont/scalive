@@ -1,7 +1,8 @@
-import java.net.URI
 import java.util.UUID
 
 import zio.*
+import zio.http.URL
+import zio.http.codec.HttpCodec
 import zio.json.ast.Json
 import zio.stream.ZStream
 
@@ -10,6 +11,8 @@ import scalive.codecs.BooleanAsAttrPresenceEncoder
 
 class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model]:
   import StreamLiveView.*
+
+  override val queryCodec: LiveQueryCodec[Option[String]] = ParamsCodec
 
   private val onlyChild = htmlAttr("only-child", BooleanAsAttrPresenceEncoder)
 
@@ -26,9 +29,8 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
       extraItemWithId = false
     )
 
-  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
-    val _ = uri
-    model.copy(extraItemWithId = params.get("empty_item").isDefined)
+  override def handleParams(model: Model, params: Option[String], _url: URL) =
+    model.copy(extraItemWithId = params.isDefined)
 
   def update(model: Model) = msg => handle(model, msg)
 
@@ -342,6 +344,9 @@ object StreamLiveView:
     case ReorderUsers
     case AppendUsers
 
+  val ParamsCodec: LiveQueryCodec[Option[String]] =
+    LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("empty_item").optional)
+
   private val InitialUsers  = List(User("1", "chris"), User("2", "callan"))
   private val InitialAdmins = List(
     User("1", "chris-admin"),
@@ -378,9 +383,8 @@ class HealthyLiveView(initialCategory: String)
 
   def update(model: Model) = _ => model
 
-  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
-    val path     = Option(uri.getPath).getOrElse("")
-    val category = normalizeCategory(path.stripPrefix("/healthy/"))
+  override def handleParams(model: Model, _query: queryCodec.Out, url: URL) =
+    val category = normalizeCategory(categoryFromUrl(url))
     LiveContext
       .stream(
         ItemsStreamDef,
@@ -392,10 +396,7 @@ class HealthyLiveView(initialCategory: String)
   def view(model: Model) =
     div(
       p(
-        link.patch(
-          otherCategoryPath(model.category),
-          "Switch"
-        )
+        link.patch(s"/healthy/${otherCategory(model.category)}", "Switch")
       ),
       h1(model.category.capitalize),
       ul(
@@ -435,20 +436,27 @@ object HealthyLiveView:
   private def itemsFor(category: String): List[Item] =
     HealthyStuff.getOrElse(normalizeCategory(category), HealthyStuff("fruits"))
 
-  private def otherCategoryPath(category: String): String =
-    if category == "fruits" then "/healthy/veggies" else "/healthy/fruits"
+  private def otherCategory(category: String): String =
+    if category == "fruits" then "veggies" else "fruits"
 
-class StreamResetLiveView() extends LiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model]:
+  private def categoryFromUrl(url: URL): String =
+    url.path.segments.toList match
+      case "healthy" :: category :: Nil => category
+      case _                             => "fruits"
+
+class StreamResetLiveView()
+    extends LiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model]:
   import StreamResetLiveView.*
+
+  override val queryCodec: LiveQueryCodec[Option[String]] = ParamsCodec
 
   def init =
     LiveContext
       .stream(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items, usePhxRemove = false))
 
-  override def handleParams(model: Model, params: Map[String, String], uri: URI) =
-    val _ = uri
-    model.copy(usePhxRemove = params.get("phx-remove").isDefined)
+  override def handleParams(model: Model, params: Option[String], _url: URL) =
+    model.copy(usePhxRemove = params.isDefined)
 
   def update(model: Model) =
     case Msg.Filter =>
@@ -597,6 +605,9 @@ end StreamResetLiveView
 object StreamResetLiveView:
   final case class Item(id: String, name: String)
   final case class Model(items: LiveStream[Item], usePhxRemove: Boolean)
+
+  val ParamsCodec: LiveQueryCodec[Option[String]] =
+    LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("phx-remove").optional)
 
   enum Msg:
     case Filter

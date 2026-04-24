@@ -87,7 +87,8 @@ object E2EApp extends ZIOAppDefault:
                 NavigationLayout(
                   h1("Dead view")
                 )
-              )
+              ),
+              isRoot = false
             )
           )
         )

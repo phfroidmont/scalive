@@ -14,24 +14,24 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   export _root_.scalive.upload.api.*
 
   lazy val defer            = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
-  def rawHtml(html: String) = Mod.Content.Text(html, raw = true)
-  def component(cid: Int, element: HtmlElement): Mod =
+  def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
+  def component[Msg](cid: Int, element: HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.Component(cid, element)
 
   object link:
-    def navigate(path: String, mods: Mod*): HtmlElement =
+    def navigate[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "redirect", phx.linkState := "push", mods)
 
-    def patch(path: String, mods: Mod*): HtmlElement =
+    def patch[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "patch", phx.linkState := "push", mods)
 
-    def patch[A](to: LiveQueryCodec[A], value: A, mods: Mod*): HtmlElement =
+    def patch[A, Msg](to: LiveQueryCodec[A], value: A, mods: Mod[Msg]*): HtmlElement[Msg] =
       patch(requireHref(to, value, "link.patch"), mods*)
 
-    def patchReplace(path: String, mods: Mod*): HtmlElement =
+    def patchReplace[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
 
-    def patchReplace[A](to: LiveQueryCodec[A], value: A, mods: Mod*): HtmlElement =
+    def patchReplace[A, Msg](to: LiveQueryCodec[A], value: A, mods: Mod[Msg]*): HtmlElement[Msg] =
       patchReplace(requireHref(to, value, "link.patchReplace"), mods*)
 
     private def requireHref[A](to: LiveQueryCodec[A], value: A, operation: String): String =
@@ -118,6 +118,6 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val trackStatic   = htmlAttr("phx-track-static", BooleanAsAttrPresenceEncoder)
   end phx
 
-  implicit def stringToMod(v: String): Mod            = Mod.Content.Text(v)
-  implicit def htmlElementToMod(el: HtmlElement): Mod = Mod.Content.Tag(el)
+  implicit def stringToMod(v: String): Mod[Nothing]            = Mod.Content.Text(v)
+  implicit def htmlElementToMod[Msg](el: HtmlElement[Msg]): Mod[Msg] = Mod.Content.Tag(el)
 end scalive

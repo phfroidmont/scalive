@@ -3,21 +3,21 @@ package scalive
 import zio.json.*
 import zio.json.ast.Json
 
-val JS: JSCommands.JSCommand = JSCommands.empty
+val JS: JSCommands.JSCommand[Nothing] = JSCommands.empty
 
 object JSCommands:
-  opaque type JSCommand = List[Op]
+  opaque type JSCommand[+Msg] = List[Op[Msg]]
 
-  final private case class Op(
+  final private case class Op[+Msg](
     renderJson: Option[String] => Json,
-    binding: Option[Binding])
+    binding: Option[Binding[Msg]])
 
-  final case class Binding(msg: Any)
+  final case class Binding[+Msg](msg: Msg)
 
-  def empty: JSCommand = List.empty
+  def empty: JSCommand[Nothing] = List.empty
 
   object JSCommand:
-    given JsonEncoder[JSCommand] =
+    given [Msg]: JsonEncoder[JSCommand[Msg]] =
       JsonEncoder[Json].contramap(ops => Json.Arr(ops.map(_.renderJson(None)).reverse*))
 
   private def encodeOp[A: JsonEncoder](kind: String, args: A): Json =
@@ -31,8 +31,8 @@ object JSCommands:
       case names: String               => Some(Seq(classNames(names), Seq.empty, Seq.empty))
       case t: (String, String, String) => Some(t.toList.map(classNames))
 
-  extension (ops: JSCommand)
-    private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand =
+  extension [Msg](ops: JSCommand[Msg])
+    private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand[Msg] =
       Op(_ => encodeOp(kind, args), None) :: ops
 
     private def resolved(scope: String): Vector[(Json, Option[(String, Any)])] =
@@ -128,21 +128,21 @@ object JSCommands:
         Args.Href(href, Option.when(replace)(replace))
       )
 
-    def patch[A](to: LiveQueryCodec[A], value: A): JSCommand =
+    def patch[A](to: LiveQueryCodec[A], value: A): JSCommand[Msg] =
       patch(to, value, replace = false)
 
-    def patch[A](to: LiveQueryCodec[A], value: A, replace: Boolean): JSCommand =
+    def patch[A](to: LiveQueryCodec[A], value: A, replace: Boolean): JSCommand[Msg] =
       patch(requireHref(to, value, "JS.patch"): String, replace)
 
     def popFocus() =
       ops.addOp("pop_focus", Json.Obj.empty)
 
-    def push[Msg](
-      event: Msg,
+    def push[Msg2 >: Msg](
+      event: Msg2,
       target: String = "",
       loading: String = "",
       pageLoading: Boolean = false
-    ): JSCommand =
+    ): JSCommand[Msg2] =
       val binding = Binding(event)
       Op(
         maybeBindingId =>
@@ -251,14 +251,14 @@ object JSCommands:
           throw new IllegalArgumentException(s"Could not encode URL for $operation: ${error.message}", error)
   end extension
 
-  final private[scalive] class ClassOp(kind: String, ops: JSCommand):
+  final private[scalive] class ClassOp[Msg](kind: String, ops: JSCommand[Msg]):
     def apply(
       names: String,
       to: String = "",
       transition: String | (String, String, String) = "",
       time: Int = 200,
       blocking: Boolean = true
-    ) =
+    ): JSCommand[Msg] =
       ops.addOp(
         kind,
         Args.ClassChange(

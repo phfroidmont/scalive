@@ -50,7 +50,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
           case Msg.EmitJs    => ZIO.succeed(model)
         }
 
-        def render(model: Model): HtmlElement =
+        def render(model: Model): HtmlElement[Msg] =
           div(idAttr := "root", "ready")
 
         def subscriptions(model: Model) = ZStream.empty
@@ -83,7 +83,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
           case Msg.EmitJs    => ZIO.succeed(model)
         }
 
-        def render(model: Model): HtmlElement =
+        def render(model: Model): HtmlElement[Msg] =
           div(idAttr := "root", "constant")
 
         def subscriptions(model: Model) = ZStream.succeed(Msg.EmitEvent)
@@ -118,7 +118,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
             LiveContext.pushJs(JS.show(to = "#modal")).as(model)
         }
 
-        def render(model: Model): HtmlElement =
+        def render(model: Model): HtmlElement[Msg] =
           div(idAttr := "root", "constant")
 
         def subscriptions(model: Model) = ZStream.succeed(Msg.EmitJs)

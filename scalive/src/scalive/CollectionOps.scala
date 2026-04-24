@@ -1,19 +1,19 @@
 package scalive
 
 extension [T](items: IterableOnce[T])
-  def splitBy[Key](key: T => Key)(project: (Key, T) => HtmlElement): Mod =
+  def splitBy[Key, Msg](key: T => Key)(project: (Key, T) => HtmlElement[Msg]): Mod[Msg] =
     val entries = items.iterator
       .map(item => Mod.Content.Keyed.Entry(key(item), project(key(item), item))).toVector
     Mod.Content.Keyed(entries)
 
-  def splitByIndex(project: (Int, T) => HtmlElement): Mod =
+  def splitByIndex[Msg](project: (Int, T) => HtmlElement[Msg]): Mod[Msg] =
     val entries = items.iterator.zipWithIndex.map { case (item, index) =>
       Mod.Content.Keyed.Entry(index, project(index, item))
     }.toVector
     Mod.Content.Keyed(entries)
 
 extension [T](stream: streams.LiveStream[T])
-  def stream(project: (String, T) => HtmlElement): Mod =
+  def stream[Msg](project: (String, T) => HtmlElement[Msg]): Mod[Msg] =
     val renderedEntries =
       stream.snapshotEntries.iterator
         .map(entry =>

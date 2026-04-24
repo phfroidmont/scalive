@@ -113,7 +113,7 @@ object LiveContext:
 
   final private case class PushJsPayload(cmd: String) derives JsonEncoder
 
-  def pushJs(command: JSCommands.JSCommand): URIO[HasClientEvents, Unit] =
+  def pushJs[Msg](command: JSCommands.JSCommand[Msg]): URIO[HasClientEvents, Unit] =
     import JSCommands.JSCommand.given
     pushEvent("js:exec", PushJsPayload(command.toJson))
 

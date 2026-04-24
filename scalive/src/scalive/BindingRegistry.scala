@@ -5,7 +5,7 @@ import scala.reflect.ClassTag
 private[scalive] object BindingRegistry:
   type Handler[Msg] = Map[String, String] => Either[String, Msg]
 
-  def collect[Msg: ClassTag](root: HtmlElement): Map[String, Handler[Msg]] =
+  def collect[Msg: ClassTag](root: HtmlElement[Msg]): Map[String, Handler[Msg]] =
     collect(RenderSnapshot.compile(root))
 
   def collect[Msg: ClassTag](compiled: RenderSnapshot.Compiled): Map[String, Handler[Msg]] =

@@ -45,7 +45,7 @@ object SocketUploadSpec extends ZIOSpecDefault:
 
       def handleMessage(model: Unit) = _ => model
 
-      def render(model: Unit): HtmlElement =
+      def render(model: Unit): HtmlElement[Unit] =
         div("upload")
 
       def subscriptions(model: Unit) = ZStream.empty

@@ -6,29 +6,31 @@ import scalive.Mod.Content
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 import scalive.codecs.Encoder
 
-class HtmlElement(val tag: HtmlTag, val mods: Vector[Mod]):
-  def static: Seq[String]     = StaticBuilder.build(this)
-  def attrMods: Seq[Mod.Attr] =
-    mods.collect { case mod: Mod.Attr => mod }
-  def contentMods: Seq[Mod.Content] =
-    mods.collect { case mod: Mod.Content => mod }
+class HtmlElement[+Msg](val tag: HtmlTag, val mods: Vector[Mod[Msg]]):
+  def static: Seq[String]          = StaticBuilder.build(this)
+  def attrMods: Seq[Mod.Attr[Msg]] =
+    mods.collect { case mod: Mod.Attr[Msg] => mod }
+  def contentMods: Seq[Mod.Content[Msg]] =
+    mods.collect { case mod: Mod.Content[Msg] => mod }
 
-  def prepended(mod: Mod*): HtmlElement = HtmlElement(tag, mods.prependedAll(mod))
-  def appended(mod: Mod*): HtmlElement  = HtmlElement(tag, mods.appendedAll(mod))
+  def prepended[Msg2 >: Msg](mod: Mod[Msg2]*): HtmlElement[Msg2] =
+    HtmlElement(tag, mods.prependedAll(mod))
+  def appended[Msg2 >: Msg](mod: Mod[Msg2]*): HtmlElement[Msg2] =
+    HtmlElement(tag, mods.appendedAll(mod))
 
 class HtmlTag(val name: String, val void: Boolean = false):
-  def apply(mods: (Mod | IterableOnce[Mod])*): HtmlElement = HtmlElement(
+  def apply[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] = HtmlElement(
     this,
     mods.toVector.flatMap {
-      case m: Mod                => Some(m)
-      case ms: IterableOnce[Mod] => ms
+      case m: Mod[Msg]                => Some(m)
+      case ms: IterableOnce[Mod[Msg]] => ms
     }
   )
 
 class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
   private inline def isBooleanAsAttrPresence = codec == BooleanAsAttrPresenceEncoder
 
-  def :=(value: V): Mod.Attr =
+  def :=(value: V): Mod.Attr[Nothing] =
     if isBooleanAsAttrPresence then
       Mod.Attr.StaticValueAsPresence(
         name,
@@ -37,42 +39,42 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
     else Mod.Attr.Static(name, codec.encode(value))
 
 class HtmlAttrBinding(val name: String):
-  def apply(cmd: JSCommand): Mod.Attr =
+  def apply[Msg](cmd: JSCommand[Msg]): Mod.Attr[Msg] =
     Mod.Attr.JsBinding(name, cmd)
 
-  def apply[Msg](msg: Msg): Mod.Attr =
+  def apply[Msg](msg: Msg): Mod.Attr[Msg] =
     apply(_ => msg)
 
-  def apply[Msg](f: Map[String, String] => Msg): Mod.Attr =
+  def apply[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] =
     Mod.Attr.Binding(name, f)
-  def withValue[Msg](f: String => Msg): Mod.Attr =
+  def withValue[Msg](f: String => Msg): Mod.Attr[Msg] =
     apply(m => f(m("value")))
 
-  def withBoolValue[Msg](f: Boolean => Msg): Mod.Attr =
+  def withBoolValue[Msg](f: Boolean => Msg): Mod.Attr[Msg] =
     apply(m =>
       f(m("value") match
         case "on" | "yes" | "true"  => true
         case "off" | "no" | "false" => false)
     )
 
-sealed trait Mod
+sealed trait Mod[+Msg]
 
 object Mod:
-  enum Attr extends Mod:
-    case Static(name: String, value: String)                 extends Attr
-    case StaticValueAsPresence(name: String, value: Boolean) extends Attr
-    case Binding(name: String, f: Map[String, String] => ?)  extends Attr
-    case JsBinding(name: String, command: JSCommand)         extends Attr
+  enum Attr[+Msg] extends Mod[Msg]:
+    case Static(name: String, value: String)                       extends Attr[Nothing]
+    case StaticValueAsPresence(name: String, value: Boolean)       extends Attr[Nothing]
+    case Binding[Msg](name: String, f: Map[String, String] => Msg) extends Attr[Msg]
+    case JsBinding[Msg](name: String, command: JSCommand[Msg])     extends Attr[Msg]
 
-  enum Content extends Mod:
-    case Text(text: String, raw: Boolean = false) extends Content
-    case Tag(el: HtmlElement)                     extends Content
-    case Component(cid: Int, el: HtmlElement)     extends Content
+  enum Content[+Msg] extends Mod[Msg]:
+    case Text(text: String, raw: Boolean = false)       extends Content[Nothing]
+    case Tag[Msg](el: HtmlElement[Msg])                 extends Content[Msg]
+    case Component[Msg](cid: Int, el: HtmlElement[Msg]) extends Content[Msg]
     case Keyed(
-      entries: Vector[Content.Keyed.Entry],
+      entries: Vector[Content.Keyed.Entry[Msg]],
       stream: Option[Diff.Stream] = None,
-      allEntries: Option[Vector[Content.Keyed.Entry]] = None) extends Content
+      allEntries: Option[Vector[Content.Keyed.Entry[Msg]]] = None) extends Content[Msg]
 
   object Content:
     object Keyed:
-      final case class Entry(key: Any, element: HtmlElement)
+      final case class Entry[+Msg](key: Any, element: HtmlElement[Msg])

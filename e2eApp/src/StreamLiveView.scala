@@ -578,7 +578,7 @@ class StreamResetLiveView()
 
   def subscriptions(model: Model) = ZStream.empty
 
-  private def streamList(model: Model, withPhxRemove: Boolean): HtmlElement =
+  private def streamList(model: Model, withPhxRemove: Boolean): HtmlElement[Msg] =
     ul(
       idAttr       := "thelist",
       phx.onUpdate := "stream",

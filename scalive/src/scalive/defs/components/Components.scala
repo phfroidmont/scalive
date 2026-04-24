@@ -4,7 +4,7 @@ import scalive.*
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
 trait Components:
-  def focusWrap(id: String, mods: Mod*)(content: Mod*): HtmlElement =
+  def focusWrap[Msg](id: String, mods: Mod[Msg]*)(content: Mod[Msg]*): HtmlElement[Msg] =
     val startSentinel = span(idAttr := s"$id-start", tabIndex := 0, aria.hidden := true)
     val endSentinel   = span(idAttr := s"$id-end", tabIndex := 0, aria.hidden := true)
 
@@ -18,7 +18,7 @@ trait Components:
 
   private val dataPhxAutoUpload = htmlAttr("data-phx-auto-upload", BooleanAsAttrPresenceEncoder)
 
-  def liveFileInput(upload: LiveUpload, mods: Mod*): HtmlElement =
+  def liveFileInput[Msg](upload: LiveUpload, mods: Mod[Msg]*): HtmlElement[Msg] =
     val activeRefs      = upload.entries.map(_.ref).mkString(",")
     val doneRefs        = upload.entries.filter(_.done).map(_.ref).mkString(",")
     val preflightedRefs = upload.entries

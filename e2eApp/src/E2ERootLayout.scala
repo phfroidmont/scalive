@@ -21,7 +21,7 @@ object E2ERootLayout:
 
   val daisyCssHref: String = hashedDaisyCss
 
-  def apply(content: HtmlElement): HtmlElement =
+  def apply[Msg](content: HtmlElement[Msg]): HtmlElement[Msg] =
     htmlRootTag(
       lang := "en",
       headTag(

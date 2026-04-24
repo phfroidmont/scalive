@@ -59,7 +59,7 @@ final case class LiveRoute[A, Msg, Model](
     copy(sessionName = name)
 
   private[scalive] def toZioRoute(
-    rootLayout: HtmlElement => HtmlElement,
+    rootLayout: HtmlElement[?] => HtmlElement[?],
     tokenConfig: TokenConfig
   ): Route[Any, Throwable] =
     pattern -> handler { (params: A, req: Request) =>
@@ -96,7 +96,8 @@ final case class LiveRoute[A, Msg, Model](
                     phx.session := token,
                     el
                   )
-                )
+                ),
+                isRoot = false
               )
             )
           )
@@ -150,7 +151,7 @@ extension [A](pattern: RoutePattern[A])
 
 object LiveRoutes:
   def apply(
-    layout: HtmlElement => HtmlElement,
+    layout: HtmlElement[?] => HtmlElement[?],
     mount: String = "live",
     tokenConfig: TokenConfig = TokenConfig.default
   )(
@@ -312,7 +313,7 @@ object LiveChannel:
     yield new LiveChannel(sockets, uploadOwners, tokenConfig)
 
 final private class LiveRoutesRuntime(
-  rootLayout: HtmlElement => HtmlElement,
+  rootLayout: HtmlElement[?] => HtmlElement[?],
   liveRoutes: List[LiveRoute[?, ?, ?]],
   websocketMount: PathCodec[Unit],
   tokenConfig: TokenConfig):

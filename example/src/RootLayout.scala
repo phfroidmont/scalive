@@ -19,7 +19,7 @@ object RootLayout:
   private val hashedJs  = s"/static/${hashOrDie("app.js")}"
   private val hashedCss = s"/static/${hashOrDie("app.css")}"
 
-  def apply(content: HtmlElement): HtmlElement =
+  def apply[Msg](content: HtmlElement[Msg]): HtmlElement[Msg] =
     htmlRootTag(
       lang              := "en",
       dataAttr("theme") := "business",

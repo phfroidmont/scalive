@@ -4,7 +4,7 @@ import zio.json.*
 import zio.json.ast.Json
 
 object StaticTracking:
-  def collect(el: HtmlElement): List[String] =
+  def collect(el: HtmlElement[?]): List[String] =
     RenderSnapshot.compile(el).trackedStaticUrls.toList
 
   def clientListFromParams(params: Option[Map[String, Json]]): Option[List[String]] =

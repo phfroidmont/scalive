@@ -4,7 +4,7 @@ import zio.test.*
 
 object BindingRegistrySpec extends ZIOSpecDefault:
 
-  private def keyedClickView(keys: List[String]): HtmlElement =
+  private def keyedClickView(keys: List[String]): HtmlElement[String] =
     ul(
       keys.splitBy(identity) { (_, key) =>
         li(idAttr := key, phx.onClick(s"msg-$key"), key)

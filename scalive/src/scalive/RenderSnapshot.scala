@@ -58,7 +58,7 @@ private[scalive] object RenderSnapshot:
       val existing = staticPool.putIfAbsent(static, static)
       if existing == null then static else existing
 
-  def compile(root: HtmlElement): Compiled =
+  def compile(root: HtmlElement[?]): Compiled =
     val bindings = mutable.LinkedHashMap.empty[String, RawBindingHandler]
     val tracked  = mutable.ArrayBuffer.empty[String]
 
@@ -102,7 +102,7 @@ private[scalive] object RenderSnapshot:
       case ComponentSlot(component) => appendNode(component.node, out)
 
   private def compileElement(
-    el: HtmlElement,
+    el: HtmlElement[?],
     isTopLevel: Boolean,
     path: BindingId.Path,
     bindings: mutable.LinkedHashMap[String, RawBindingHandler],
@@ -329,7 +329,7 @@ private[scalive] object RenderSnapshot:
       case None        => 0
 
   private def maybeCollectTrackedStaticUrls(
-    attrs: Seq[Attr],
+    attrs: Seq[Attr[?]],
     trackedStaticUrls: mutable.ArrayBuffer[String]
   ): Unit =
     val hasTrack = attrs.exists {
@@ -346,7 +346,7 @@ private[scalive] object RenderSnapshot:
       }
 
   private def collectBindingsOnly(
-    el: HtmlElement,
+    el: HtmlElement[?],
     path: BindingId.Path,
     bindings: mutable.LinkedHashMap[String, RawBindingHandler]
   ): Unit =

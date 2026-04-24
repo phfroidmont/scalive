@@ -8,10 +8,10 @@ import scalive.Mod.Content
 
 object StaticBuilder:
 
-  def build(el: HtmlElement): ArraySeq[String] =
+  def build(el: HtmlElement[?]): ArraySeq[String] =
     buildStaticFragments(el).flatten.to(ArraySeq)
 
-  private def buildStaticFragments(el: HtmlElement): Seq[Option[String]] =
+  private def buildStaticFragments(el: HtmlElement[?]): Seq[Option[String]] =
     val attrs = el.attrMods.flatMap {
       case Attr.Static(name, value) => List(Some(s""" $name="${Escaping.escape(value)}"""))
       case Attr.StaticValueAsPresence(name, value) =>

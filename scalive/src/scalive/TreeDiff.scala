@@ -6,7 +6,7 @@ import scalive.RenderSnapshot.*
 
 private[scalive] object TreeDiff:
 
-  def initial(root: HtmlElement): Diff =
+  def initial(root: HtmlElement[?]): Diff =
     initial(RenderSnapshot.compile(root))
 
   def initial(compiled: Compiled): Diff =
@@ -24,7 +24,7 @@ private[scalive] object TreeDiff:
       diff = withTemplateSharing(withComponents)
     )
 
-  def diff(previous: HtmlElement, current: HtmlElement): Diff =
+  def diff(previous: HtmlElement[?], current: HtmlElement[?]): Diff =
     diff(RenderSnapshot.compile(previous), RenderSnapshot.compile(current))
 
   def diff(previous: Compiled, current: Compiled): Diff =

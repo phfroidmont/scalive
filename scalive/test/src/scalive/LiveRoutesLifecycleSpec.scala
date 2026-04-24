@@ -8,7 +8,7 @@ import zio.test.*
 
 object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
-  private val identityLayout: HtmlElement => HtmlElement = element => element
+  private val identityLayout: HtmlElement[?] => HtmlElement[?] = element => element
 
   private def runRequest(routes: Routes[Any, Nothing], path: String) =
     URL.decode(path) match
@@ -31,7 +31,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
                def handleMessage(model: Unit) = _ => ZIO.succeed(model)
 
-               def render(model: Unit): HtmlElement =
+                def render(model: Unit): HtmlElement[Unit] =
                  div("ok")
 
                def subscriptions(model: Unit) = ZStream.empty
@@ -52,7 +52,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
         def handleMessage(model: Unit) = _ => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement =
+        def render(model: Unit): HtmlElement[Unit] =
           div("ok")
 
         def subscriptions(model: Unit) = ZStream.empty

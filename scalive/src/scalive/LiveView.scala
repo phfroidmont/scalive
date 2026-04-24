@@ -9,7 +9,7 @@ trait LiveView[Msg, Model]:
 
   def mount: LiveIO[InitContext, Model]
   def handleMessage(model: Model): Msg => LiveIO[UpdateContext, Model]
-  def render(model: Model): HtmlElement
+  def render(model: Model): HtmlElement[Msg]
   def subscriptions(model: Model): ZStream[SubscriptionsContext, Nothing, Msg]
 
   val queryCodec: LiveQueryCodec[?] = LiveQueryCodec.none

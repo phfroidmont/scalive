@@ -13,14 +13,14 @@ object LiveViewSpec extends ZIOSpecDefault:
     showNested: Boolean = false,
     items: List[NestedModel] = Nil)
 
-  private def baseView(model: TestModel): HtmlElement =
+  private def baseView(model: TestModel): HtmlElement[Nothing] =
     div(
       h1(model.title),
       p(model.subtitle),
       if model.showNested then span("nested") else ""
     )
 
-  private def keyedView(model: TestModel): HtmlElement =
+  private def keyedView(model: TestModel): HtmlElement[Nothing] =
     div(
       ul(
         model.items.splitBy(_.name) { (_, elem) =>

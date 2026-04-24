@@ -35,7 +35,7 @@ object SocketSpec extends ZIOSpecDefault:
         case Msg.SetTitle   => LiveContext.putTitle("Updated title").as(model)
       }
 
-      def render(model: Model): HtmlElement =
+      def render(model: Model): HtmlElement[Msg] =
         div(
           idAttr := "root",
           phx.onClick(Msg.FromClient),
@@ -84,7 +84,7 @@ object SocketSpec extends ZIOSpecDefault:
 
           def handleMessage(model: Int) = _ => ZIO.succeed(model)
 
-          def render(model: Int): HtmlElement =
+          def render(model: Int): HtmlElement[Unit] =
             div(model.toString)
 
           def subscriptions(model: Int) = ZStream.empty
@@ -116,7 +116,7 @@ object SocketSpec extends ZIOSpecDefault:
 
           def handleMessage(model: Int) = _ => ZIO.succeed(model)
 
-          def render(model: Int): HtmlElement =
+          def render(model: Int): HtmlElement[Unit] =
             div(model.toString)
 
           def subscriptions(model: Int) = ZStream.empty
@@ -163,7 +163,7 @@ object SocketSpec extends ZIOSpecDefault:
 
           def handleMessage(model: Int) = _ => ZIO.succeed(model)
 
-          def render(model: Int): HtmlElement =
+          def render(model: Int): HtmlElement[Unit] =
             div(model.toString)
 
           def subscriptions(model: Int) = ZStream.empty
@@ -226,7 +226,7 @@ object SocketSpec extends ZIOSpecDefault:
 
         def handleMessage(model: Unit) = _ => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement =
+        def render(model: Unit): HtmlElement[Unit] =
           div(
             component(1, span("A")),
             component(2, span("B"))
@@ -293,7 +293,7 @@ object SocketSpec extends ZIOSpecDefault:
 
         def handleMessage(model: Unit) = _ => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement =
+        def render(model: Unit): HtmlElement[Unit] =
           div("constant")
 
         def subscriptions(model: Unit) = ZStream.empty

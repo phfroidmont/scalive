@@ -2,7 +2,7 @@ import scalive.*
 
 object NavigationLayout:
 
-  def apply(content: HtmlElement): HtmlElement =
+  def apply[Msg](content: HtmlElement[Msg]): HtmlElement[Msg] =
     div(
       styleTag(
         "html, body {",

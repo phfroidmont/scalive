@@ -5,12 +5,12 @@ import scalive.*
 
 class SelectLiveView extends LiveView[Msg, Model]:
 
-  def init = Model(selected = "2", validated = false)
+  def mount = Model(selected = "2", validated = false)
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.ChangeSelected(value) => model.copy(selected = value, validated = true)
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       styleAttr := "padding: 20px; max-width: 500px; font-family: sans-serif;",
       styleTag(

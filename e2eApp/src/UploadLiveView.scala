@@ -20,7 +20,7 @@ class UploadLiveView() extends LiveView[Msg, Model]:
 
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 
-  def init =
+  def mount =
     LiveContext
       .allowUpload(UploadName, uploadOptions(autoUpload = false))
       .map(upload => Model(upload = upload))
@@ -37,7 +37,7 @@ class UploadLiveView() extends LiveView[Msg, Model]:
         ZIO.succeed(model.copy(upload = disconnectedUpload(autoUpload)))
       )
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.Validate =>
       refreshUpload(model)
     case Msg.Progress =>
@@ -47,7 +47,7 @@ class UploadLiveView() extends LiveView[Msg, Model]:
     case Msg.Save =>
       saveCompletedEntries(model)
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       styleAttr := "padding: 1rem;",
       h1("Uploads"),

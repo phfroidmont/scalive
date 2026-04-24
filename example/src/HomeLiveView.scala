@@ -10,11 +10,11 @@ class HomeLiveView() extends LiveView[String, Unit]:
     "/todo"        -> "Todo"
   )
 
-  def init = ()
+  def mount = ()
 
-  def update(model: Unit) = _ => model
+  def handleMessage(model: Unit) = _ => model
 
-  def view(model: Unit) =
+  def render(model: Unit) =
     ul(
       cls := "mx-auto menu bg-base-100 rounded-box shadow-xl w-56",
       links.map((path, name) =>

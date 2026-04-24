@@ -26,16 +26,16 @@ object SocketSpec extends ZIOSpecDefault:
 
   private def makeLiveView(serverStream: ZStream[LiveView.SubscriptionsContext, Nothing, Msg]) =
     new LiveView[Msg, Model]:
-      def init =
+      def mount =
         LiveContext.staticChanged.map(flag => Model(staticFlag = Some(flag)))
 
-      def update(model: Model) = {
+      def handleMessage(model: Model) = {
         case Msg.FromClient => ZIO.succeed(model.copy(counter = model.counter + 1))
         case Msg.FromServer => ZIO.succeed(model.copy(counter = model.counter + 10))
         case Msg.SetTitle   => LiveContext.putTitle("Updated title").as(model)
       }
 
-      def view(model: Model): HtmlElement =
+      def render(model: Model): HtmlElement =
         div(
           idAttr := "root",
           phx.onClick(Msg.FromClient),
@@ -74,7 +74,7 @@ object SocketSpec extends ZIOSpecDefault:
               encodeFn = _ => Right("?")
             )
 
-          def init = callsRef.update(_ :+ "init").as(0)
+          def mount = callsRef.update(_ :+ "mount").as(0)
 
           override def handleParams(model: Int, params: (Option[String], String), _url: URL) =
             val (q, path) = params
@@ -82,9 +82,9 @@ object SocketSpec extends ZIOSpecDefault:
               .update(_ :+ s"params:${q.getOrElse("")}:$path")
               .as(model)
 
-          def update(model: Int) = _ => ZIO.succeed(model)
+          def handleMessage(model: Int) = _ => ZIO.succeed(model)
 
-          def view(model: Int): HtmlElement =
+          def render(model: Int): HtmlElement =
             div(model.toString)
 
           def subscriptions(model: Int) = ZStream.empty
@@ -99,14 +99,14 @@ object SocketSpec extends ZIOSpecDefault:
                   )
         _     <- socket.outbox.take(1).runCollect
         calls <- callsRef.get
-      yield assertTrue(calls == List("init", "params:1:/"))
+      yield assertTrue(calls == List("mount", "params:1:/"))
     },
     test("emits live navigation when bootstrap handleParams patches") {
       val ctx = LiveContext(staticChanged = false)
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView[Unit, Int]:
-          def init = ZIO.succeed(0)
+          def mount = ZIO.succeed(0)
 
           override def handleParams(model: Int, _query: queryCodec.Out, url: URL) =
             val path = url.path.encode
@@ -114,9 +114,9 @@ object SocketSpec extends ZIOSpecDefault:
               (if path == "/start" then LiveContext.pushPatch("/done").as(model + 1)
                else ZIO.succeed(model + 10))
 
-          def update(model: Int) = _ => ZIO.succeed(model)
+          def handleMessage(model: Int) = _ => ZIO.succeed(model)
 
-          def view(model: Int): HtmlElement =
+          def render(model: Int): HtmlElement =
             div(model.toString)
 
           def subscriptions(model: Int) = ZStream.empty
@@ -153,7 +153,7 @@ object SocketSpec extends ZIOSpecDefault:
           override val queryCodec: LiveQueryCodec[Option[String]] =
             LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
 
-          def init = ZIO.succeed(0)
+          def mount = ZIO.succeed(0)
 
           override def handleParams(model: Int, query: Option[String], url: URL) =
             val current = s"${url.path.encode}:${query.getOrElse("")}"
@@ -161,9 +161,9 @@ object SocketSpec extends ZIOSpecDefault:
               (if query.isEmpty then LiveContext.pushPatch(queryCodec, Some("1")).as(model)
                else ZIO.succeed(model))
 
-          def update(model: Int) = _ => ZIO.succeed(model)
+          def handleMessage(model: Int) = _ => ZIO.succeed(model)
 
-          def view(model: Int): HtmlElement =
+          def render(model: Int): HtmlElement =
             div(model.toString)
 
           def subscriptions(model: Int) = ZStream.empty
@@ -222,11 +222,11 @@ object SocketSpec extends ZIOSpecDefault:
     },
     test("cids_destroyed replies with prunable cids") {
       val lv = new LiveView[Unit, Unit]:
-        def init = ZIO.unit
+        def mount = ZIO.unit
 
-        def update(model: Unit) = _ => ZIO.succeed(model)
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
 
-        def view(model: Unit): HtmlElement =
+        def render(model: Unit): HtmlElement =
           div(
             component(1, span("A")),
             component(2, span("B"))
@@ -289,11 +289,11 @@ object SocketSpec extends ZIOSpecDefault:
     },
     test("intercept replies are encoded under top-level r") {
       val lv = new LiveView[Unit, Unit]:
-        def init = ZIO.unit
+        def mount = ZIO.unit
 
-        def update(model: Unit) = _ => ZIO.succeed(model)
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
 
-        def view(model: Unit): HtmlElement =
+        def render(model: Unit): HtmlElement =
           div("constant")
 
         def subscriptions(model: Unit) = ZStream.empty

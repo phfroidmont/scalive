@@ -16,7 +16,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       case Right(url)  => ZIO.scoped(routes.runZIO(Request.get(url)))
 
   override def spec = suite("LiveRoutesLifecycleSpec")(
-    test("runs init then handleParams before disconnected render") {
+    test("runs mount then handleParams before disconnected render") {
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView[Unit, Unit]:
@@ -24,14 +24,14 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
                override val queryCodec: LiveQueryCodec[Option[String]] =
                  LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
 
-               def init = callsRef.update(_ :+ "init").as(())
+               def mount = callsRef.update(_ :+ "mount").as(())
 
                  override def handleParams(model: Unit, params: Option[String], _url: URL) =
                   callsRef.update(_ :+ s"params:${params.getOrElse("")}").as(model)
 
-               def update(model: Unit) = _ => ZIO.succeed(model)
+               def handleMessage(model: Unit) = _ => ZIO.succeed(model)
 
-               def view(model: Unit): HtmlElement =
+               def render(model: Unit): HtmlElement =
                  div("ok")
 
                def subscriptions(model: Unit) = ZStream.empty
@@ -41,18 +41,18 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           )
         response <- runRequest(routes, "/?q=1")
         calls    <- callsRef.get
-      yield assertTrue(response.status == Status.Ok, calls == List("init", "params:1"))
+      yield assertTrue(response.status == Status.Ok, calls == List("mount", "params:1"))
     },
     test("honors initial pushPatch with HTTP redirect") {
       val lv = new LiveView[Unit, Unit]:
-        def init = ZIO.unit
+        def mount = ZIO.unit
 
         override def handleParams(model: Unit, _query: queryCodec.Out, _url: URL) =
           LiveContext.pushPatch("/target").as(model)
 
-        def update(model: Unit) = _ => ZIO.succeed(model)
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
 
-        def view(model: Unit): HtmlElement =
+        def render(model: Unit): HtmlElement =
           div("ok")
 
         def subscriptions(model: Unit) = ZStream.empty

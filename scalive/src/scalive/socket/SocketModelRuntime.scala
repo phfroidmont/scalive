@@ -65,7 +65,7 @@ private[scalive] object SocketModelRuntime:
               (updatedModel, navigation) <-
                 captureNavigation(state, carriedNavigation)(
                   LiveIO
-                    .toZIO(state.lv.update(interceptModel)(message))
+                    .toZIO(state.lv.handleMessage(interceptModel)(message))
                     .provide(ZLayer.succeed(state.ctx))
                 )
               _ <- navigation match
@@ -113,9 +113,9 @@ private[scalive] object SocketModelRuntime:
   ): Task[Diff] =
     for
       _ <- state.lvStreamRef.set(
-             state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
+              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
-      nextCompiled = RenderSnapshot.compile(state.lv.view(model))
+      nextCompiled = RenderSnapshot.compile(state.lv.render(model))
       diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
       nextRendered = RenderedView(
                        compiled = nextCompiled,

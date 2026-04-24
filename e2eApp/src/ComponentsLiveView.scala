@@ -10,16 +10,16 @@ class ComponentsLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
 
-  def init = Model(activeTab = "focus_wrap")
+  def mount = Model(activeTab = "focus_wrap")
 
   override def handleParams(model: Model, params: UrlParams, _url: URL) =
     val tab = params.tab.getOrElse("focus_wrap")
     model.copy(activeTab = tab)
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.SetTab(tab) => model.copy(activeTab = tab)
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       styleAttr := "padding: 1.5rem;",
       h1(

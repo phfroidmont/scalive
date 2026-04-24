@@ -7,13 +7,13 @@ import scalive.*
 
 class CounterLiveView() extends LiveView[Msg, Model]:
 
-  def init =
+  def mount =
     Model(
       isVisible = true,
       counter = 0
     )
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.ToggleCounter =>
       model.focus(_.isVisible).modify(!_)
     case Msg.IncCounter =>
@@ -21,7 +21,7 @@ class CounterLiveView() extends LiveView[Msg, Model]:
     case Msg.DecCounter =>
       model.focus(_.counter).modify(_ - 1)
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       cls := "mx-auto card bg-base-100 max-w-2xl shadow-xl space-y-6",
       div(

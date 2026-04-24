@@ -12,7 +12,7 @@ class ListLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[ListParams] = ParamsCodec
 
-  def init =
+  def mount =
     Model(
       paramText = "No param",
       elems = List(
@@ -26,11 +26,11 @@ class ListLiveView() extends LiveView[Msg, Model]:
     val paramText = params.q.map(q => s"Param : $q").getOrElse("No param")
     model.copy(paramText = paramText)
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.IncAge(value) =>
       model.focus(_.elems.index(2).age).modify(_ + value)
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       cls := "mx-auto card bg-base-100 max-w-2xl shadow-xl space-y-6",
       div(

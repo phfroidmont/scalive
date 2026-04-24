@@ -10,15 +10,15 @@ class NavigationALiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[AParams] = AParamsCodec
 
-  def init = Model(paramCurrent = None, paramNext = 1)
+  def mount = Model(paramCurrent = None, paramNext = 1)
 
   override def handleParams(model: Model, params: AParams, _url: URL) =
     model.copy(paramCurrent = params.param.map(_.toString))
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case _ => model
 
-  def view(model: Model) =
+  def render(model: Model) =
     NavigationLayout(
       div(
         h1("This is page A"),
@@ -50,10 +50,10 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[BParams] = BParamsCodec
 
-  def init =
+  def mount =
     Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.Noop => model
     case _        => model
 
@@ -65,7 +65,7 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
       selectedItem = selectedItem
     )
 
-  def view(model: Model) =
+  def render(model: Model) =
     NavigationLayout(
       div(
         h1("This is page B"),
@@ -122,10 +122,10 @@ class RedirectLoopLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[RedirectLoopParams] = RedirectLoopParamsCodec
 
-  def init =
+  def mount =
     Model(shouldLoop = false, message = None)
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.TriggerLoop => model.copy(message = Some("Too many redirects"), shouldLoop = false)
     case _               => model
 
@@ -136,7 +136,7 @@ class RedirectLoopLiveView() extends LiveView[Msg, Model]:
       else model.copy(message = Some("Too many redirects"), shouldLoop = false)
     else model.copy(message = None, shouldLoop = true)
 
-  def view(model: Model) =
+  def render(model: Model) =
     NavigationLayout(
       div(
         if model.message.nonEmpty then

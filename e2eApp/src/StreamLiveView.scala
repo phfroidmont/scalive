@@ -16,7 +16,7 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
 
   private val onlyChild = htmlAttr("only-child", BooleanAsAttrPresenceEncoder)
 
-  def init =
+  def mount =
     for
       users          <- LiveContext.stream(UsersStreamDef, InitialUsers)
       admins         <- LiveContext.stream(AdminsStreamDef, InitialAdmins)
@@ -32,7 +32,7 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
   override def handleParams(model: Model, params: Option[String], _url: URL) =
     model.copy(extraItemWithId = params.isDefined)
 
-  def update(model: Model) = msg => handle(model, msg)
+  def handleMessage(model: Model) = msg => handle(model, msg)
 
   override def interceptEvent(model: Model, event: String, value: Json) =
     if event != "sandbox:eval" then ZIO.succeed(InterceptResult.cont(model))
@@ -47,7 +47,7 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
         case _ =>
           ZIO.succeed(E2ESandboxEval.handle(model, event, value))
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       div(
         idAttr       := "users",
@@ -375,13 +375,13 @@ class HealthyLiveView(initialCategory: String)
     extends LiveView[HealthyLiveView.Msg, HealthyLiveView.Model]:
   import HealthyLiveView.*
 
-  def init =
+  def mount =
     val category = normalizeCategory(initialCategory)
     LiveContext
       .stream(ItemsStreamDef, itemsFor(category))
       .map(items => Model(category = category, items = items))
 
-  def update(model: Model) = _ => model
+  def handleMessage(model: Model) = _ => model
 
   override def handleParams(model: Model, _query: queryCodec.Out, url: URL) =
     val category = normalizeCategory(categoryFromUrl(url))
@@ -393,7 +393,7 @@ class HealthyLiveView(initialCategory: String)
       )
       .map(items => model.copy(category = category, items = items))
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       p(
         link.patch(s"/healthy/${otherCategory(model.category)}", "Switch")
@@ -450,7 +450,7 @@ class StreamResetLiveView()
 
   override val queryCodec: LiveQueryCodec[Option[String]] = ParamsCodec
 
-  def init =
+  def mount =
     LiveContext
       .stream(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items, usePhxRemove = false))
@@ -458,7 +458,7 @@ class StreamResetLiveView()
   override def handleParams(model: Model, params: Option[String], _url: URL) =
     model.copy(usePhxRemove = params.isDefined)
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.Filter =>
       LiveContext
         .stream(ItemsStreamDef, FilteredItems, reset = true)
@@ -555,9 +555,9 @@ class StreamResetLiveView()
           updateOnly = true
         )
         .map(items => model.copy(items = items))
-  end update
+  end handleMessage
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       if model.usePhxRemove then streamList(model, withPhxRemove = true) else "",
       if !model.usePhxRemove then streamList(model, withPhxRemove = false) else "",
@@ -651,18 +651,18 @@ class StreamResetLCLiveView
     extends LiveView[StreamResetLCLiveView.Msg, StreamResetLCLiveView.Model]:
   import StreamResetLCLiveView.*
 
-  def init =
+  def mount =
     LiveContext
       .stream(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items))
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.Reorder =>
       LiveContext
         .stream(ItemsStreamDef, ReorderedItems, reset = true)
         .map(items => model.copy(items = items))
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       ul(
         idAttr       := "thelist",
@@ -706,7 +706,7 @@ object StreamResetLCLiveView:
 class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitLiveView.Model]:
   import StreamLimitLiveView.*
 
-  def init =
+  def mount =
     val initialAt    = -1
     val initialLimit = -5
     LiveContext
@@ -725,7 +725,7 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         )
       )
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.Configure(atRaw, limitRaw) =>
       val nextAt    = parseIntOrDefault(atRaw, model.at)
       val nextLimit = parseIntOrDefault(limitRaw, model.limit)
@@ -766,9 +766,9 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
           reset = true
         )
         .map(nextItems => model.copy(items = nextItems, lastId = 0))
-  end update
+  end handleMessage
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       form(
         phx.onSubmit(params =>
@@ -852,7 +852,7 @@ class StreamNestedComponentResetLiveView
     ]:
   import StreamNestedComponentResetLiveView.*
 
-  def init =
+  def mount =
     for
       a     <- buildParentItem("a", "A")
       b     <- buildParentItem("b", "B")
@@ -861,13 +861,13 @@ class StreamNestedComponentResetLiveView
       items <- LiveContext.stream(ItemsStreamDef, List(a, b, c, d))
     yield Model(items = items)
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.ReorderNested(id) =>
       reorderNested(model, id)
     case Msg.ReorderParents =>
       reorderParents(model)
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       ul(
         idAttr       := "thelist",
@@ -987,14 +987,14 @@ class StreamInsideForLiveView
     extends LiveView[StreamInsideForLiveView.Msg, StreamInsideForLiveView.Model]:
   import StreamInsideForLiveView.*
 
-  def init =
+  def mount =
     LiveContext
       .stream(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items))
 
-  def update(model: Model) = _ => model
+  def handleMessage(model: Model) = _ => model
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       List(1).map(_ =>
         ul(

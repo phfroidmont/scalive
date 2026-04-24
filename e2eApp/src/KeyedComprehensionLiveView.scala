@@ -13,7 +13,7 @@ class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
 
-  def init =
+  def mount =
     Model(
       activeTab = "all_keyed",
       items = randomItems(10),
@@ -24,10 +24,10 @@ class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
     val tab = params.tab.getOrElse("all_keyed")
     model.copy(activeTab = normalizeTab(tab))
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.Randomize => model.copy(items = randomItems(model.items.size))
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       linkTag(rel := "stylesheet", typ := "text/css", href := E2ERootLayout.daisyCssHref),
       cls := "p-8",

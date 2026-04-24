@@ -6,14 +6,14 @@ import scalive.*
 
 class TodoLiveView() extends LiveView[Msg, Model]:
 
-  def init = Model(
+  def mount = Model(
     List(
       Todo(99, "Buy eggs"),
       Todo(1, "Wash dishes", true)
     )
   )
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.Add(text) =>
       val nextId = model.items.maxByOption(_.id).map(_.id).getOrElse(1) + 1
       model.copy(items = model.items.appended(Todo(nextId, text)))
@@ -30,7 +30,7 @@ class TodoLiveView() extends LiveView[Msg, Model]:
     case Msg.RemoveCompleted =>
       model.copy(items = model.items.filterNot(_.completed))
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       cls := "mx-auto card bg-base-100 max-w-2xl shadow-xl space-y-6 p-6",
       div(

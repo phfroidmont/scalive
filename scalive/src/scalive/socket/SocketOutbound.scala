@@ -54,7 +54,7 @@ private[scalive] object SocketOutbound:
       (updatedModel, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
           LiveIO
-            .toZIO(state.lv.update(currentModel)(msg))
+            .toZIO(state.lv.handleMessage(currentModel)(msg))
             .provide(ZLayer.succeed(state.ctx))
         )
       _ <- navigation match

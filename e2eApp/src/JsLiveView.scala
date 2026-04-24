@@ -5,12 +5,12 @@ import scalive.*
 
 class JsLiveView extends LiveView[Msg, Model]:
 
-  def init = Model(count = 0)
+  def mount = Model(count = 0)
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.Increment => model.copy(count = model.count + 1)
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       div(
         idAttr        := "my-modal",

@@ -7,9 +7,9 @@ import zio.stream.*
 trait LiveView[Msg, Model]:
   import LiveView.*
 
-  def init: LiveIO[InitContext, Model]
-  def update(model: Model): Msg => LiveIO[UpdateContext, Model]
-  def view(model: Model): HtmlElement
+  def mount: LiveIO[InitContext, Model]
+  def handleMessage(model: Model): Msg => LiveIO[UpdateContext, Model]
+  def render(model: Model): HtmlElement
   def subscriptions(model: Model): ZStream[SubscriptionsContext, Nothing, Msg]
 
   val queryCodec: LiveQueryCodec[?] = LiveQueryCodec.none

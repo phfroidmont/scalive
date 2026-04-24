@@ -32,10 +32,10 @@ private[scalive] object SocketBootstrap:
                      navigation = new SocketNavigationRuntime(navigationRef),
                      title = new SocketTitleRuntime(titleRef)
                    )
-      initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(runtimeCtx))
+      initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(runtimeCtx))
       (bootstrapModel, bootstrapPayloads, bootstrapUrl) <-
         runInitialLifecycle(lv, runtimeCtx, navigationRef, initModel, initialUrl)
-      initCompiled = RenderSnapshot.compile(lv.view(bootstrapModel))
+      initCompiled = RenderSnapshot.compile(lv.render(bootstrapModel))
       initView     = RenderedView(
                    compiled = initCompiled,
                    bindings = BindingRegistry.collect[Msg](initCompiled)

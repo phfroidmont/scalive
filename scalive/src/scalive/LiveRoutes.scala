@@ -75,7 +75,7 @@ final case class LiveRoute[A, Msg, Model](
                 streams = new SocketStreamRuntime(streamRef),
                 navigation = new SocketNavigationRuntime(navigationRef)
               )
-        initModel <- LiveIO.toZIO(lv.init).provide(ZLayer.succeed(ctx))
+        initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
         lifecycle <- LiveRoute.runInitialHandleParams(
                        lv,
                        initModel,
@@ -85,7 +85,7 @@ final case class LiveRoute[A, Msg, Model](
                      )
       yield lifecycle match
         case LiveRoute.InitialLifecycleOutcome.Render(model) =>
-          val el = lv.view(model)
+          val el = lv.render(model)
           Response.html(
             Html.raw(
               HtmlBuilder.build(

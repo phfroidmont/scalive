@@ -5,13 +5,13 @@ import scalive.*
 
 class ColocatedLiveView extends LiveView[Msg, Model]:
 
-  def init = Model()
+  def mount = Model()
 
-  def update(model: Model) =
+  def handleMessage(model: Model) =
     case Msg.SubmitPhone(phone) => model.copy(phone = phone)
     case Msg.PushJs             => LiveContext.pushJs(JS.toggle(to = "#hello")).as(model)
 
-  def view(model: Model) =
+  def render(model: Model) =
     div(
       form(
         phx.onSubmit(params => Msg.SubmitPhone(params.getOrElse("user[phone_number]", ""))),

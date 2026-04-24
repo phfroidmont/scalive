@@ -42,15 +42,15 @@ object ClientEventsSpec extends ZIOSpecDefault:
   override def spec = suite("ClientEventsSpec")(
     test("includes init pushEvent in join diff") {
       val lv = new LiveView[Msg, Model]:
-        def init =
+        def mount =
           LiveContext.pushEvent("ready", Map("ok" -> true)).as(Model())
 
-        def update(model: Model) = {
+        def handleMessage(model: Model) = {
           case Msg.EmitEvent => ZIO.succeed(model)
           case Msg.EmitJs    => ZIO.succeed(model)
         }
 
-        def view(model: Model): HtmlElement =
+        def render(model: Model): HtmlElement =
           div(idAttr := "root", "ready")
 
         def subscriptions(model: Model) = ZStream.empty
@@ -75,15 +75,15 @@ object ClientEventsSpec extends ZIOSpecDefault:
     },
     test("emits diff when only pushEvent changes") {
       val lv = new LiveView[Msg, Model]:
-        def init = Model()
+        def mount = Model()
 
-        def update(model: Model) = {
+        def handleMessage(model: Model) = {
           case Msg.EmitEvent =>
             LiveContext.pushEvent("tick", Map("value" -> 1)).as(model)
           case Msg.EmitJs    => ZIO.succeed(model)
         }
 
-        def view(model: Model): HtmlElement =
+        def render(model: Model): HtmlElement =
           div(idAttr := "root", "constant")
 
         def subscriptions(model: Model) = ZStream.succeed(Msg.EmitEvent)
@@ -110,15 +110,15 @@ object ClientEventsSpec extends ZIOSpecDefault:
     },
     test("pushJs sends js:exec event with encoded command") {
       val lv = new LiveView[Msg, Model]:
-        def init = Model()
+        def mount = Model()
 
-        def update(model: Model) = {
+        def handleMessage(model: Model) = {
           case Msg.EmitEvent => ZIO.succeed(model)
           case Msg.EmitJs    =>
             LiveContext.pushJs(JS.show(to = "#modal")).as(model)
         }
 
-        def view(model: Model): HtmlElement =
+        def render(model: Model): HtmlElement =
           div(idAttr := "root", "constant")
 
         def subscriptions(model: Model) = ZStream.succeed(Msg.EmitJs)

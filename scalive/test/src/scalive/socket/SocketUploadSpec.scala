@@ -37,15 +37,15 @@ object SocketUploadSpec extends ZIOSpecDefault:
     snapshots: Queue[Option[LiveUpload]]
   ) =
     new LiveView[Unit, Unit]:
-      def init =
+      def mount =
         for
           upload <- LiveContext.allowUpload(uploadName, options)
           _      <- allowedUploadPromise.succeed(upload).ignore
         yield ()
 
-      def update(model: Unit) = _ => model
+      def handleMessage(model: Unit) = _ => model
 
-      def view(model: Unit): HtmlElement =
+      def render(model: Unit): HtmlElement =
         div("upload")
 
       def subscriptions(model: Unit) = ZStream.empty

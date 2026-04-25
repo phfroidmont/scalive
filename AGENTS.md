@@ -12,7 +12,7 @@ When we diverge from upstream, it is only to leverage Scala features and improve
 ## Upstream Alignment
 We aim to match upstream Phoenix LiveView behavior and feature set as closely as possible.
 To track alignment, run upstream end-to-end tests against Scalive with:
-`./scripts/e2e-run-compatible.sh`
+`./scripts/e2e-run-upstream.sh`
 
 ## Decision Rule
 If API quality and strict upstream parity conflict, prefer the best user-facing API.

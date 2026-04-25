@@ -3,7 +3,6 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-allowlist_file="${repo_root}/test/e2e-allowlist.txt"
 config_file="${repo_root}/test/playwright.upstream.config.js"
 
 kill_process_tree() {
@@ -71,11 +70,6 @@ trap cleanup_on_exit EXIT INT TERM
 
 cleanup_stale_e2e_run
 
-if [[ ! -f "${allowlist_file}" ]]; then
-	echo "Missing allowlist: ${allowlist_file}" >&2
-	exit 1
-fi
-
 if [[ ! -f "${config_file}" ]]; then
 	echo "Missing Playwright config: ${config_file}" >&2
 	exit 1
@@ -114,27 +108,11 @@ ln -s "${PLAYWRIGHT_TEST_NODE_PATH}/@playwright" "${upstream_root}/node_modules/
 ln -s "${PLAYWRIGHT_TEST_NODE_PATH}/playwright" "${upstream_root}/node_modules/playwright"
 ln -s "${PLAYWRIGHT_TEST_NODE_PATH}/playwright-core" "${upstream_root}/node_modules/playwright-core"
 
-test_files=()
-while IFS= read -r line || [[ -n "${line}" ]]; do
-	trimmed="${line## }"
-	trimmed="${trimmed%% }"
-	if [[ -z "${trimmed}" ]] || [[ "${trimmed:0:1}" == "#" ]]; then
-		continue
-	fi
-	test_files+=("${trimmed}")
-done <"${allowlist_file}"
-
-if [[ ${#test_files[@]} -eq 0 ]]; then
-	echo "Allowlist is empty: ${allowlist_file}" >&2
-	exit 1
-fi
-
 export SCALIVE_REPO_ROOT="${repo_root}"
 export LV_LOCAL_E2E_DIR="${upstream_root}"
 
 "${playwright_bin}" test \
 	--config "${config_file}" \
-	"${test_files[@]}" \
 	"$@" &
 
 playwright_pid="$!"

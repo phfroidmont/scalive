@@ -63,6 +63,7 @@ object E2EApp extends ZIOAppDefault:
       Method.GET / "portal"                  -> liveHandler(PortalLiveView()),
       Method.GET / "errors" -> liveHandler(req => ErrorLiveView(req.headers.isEmpty)),
       Method.GET / "issues" / "2787" -> liveHandler(Issue2787LiveView()),
+      Method.GET / "issues" / "3040" -> liveHandler(Issue3040LiveView()),
       Method.GET / "issues" / "3026" -> liveHandler(Issue3026LiveView()),
       Method.GET / "issues" / "3083" -> liveHandler(Issue3083LiveView()),
       Method.GET / "issues" / "3117" -> liveHandler(Issue3117LiveView()),

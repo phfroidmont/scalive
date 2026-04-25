@@ -80,6 +80,46 @@ object Issue3814LiveView:
   enum Msg:
     case Submit(event: FormEvent[FormData])
 
+class Issue3040LiveView extends LiveView[Issue3040LiveView.Msg, Issue3040LiveView.Model]:
+  import Issue3040LiveView.*
+
+  def mount = Model()
+
+  def handleMessage(model: Model) =
+    case Msg.Open   => model.copy(open = true, submitted = false)
+    case Msg.Close  => model.copy(open = false)
+    case Msg.Submit => model.copy(submitted = true)
+
+  def subscriptions(model: Model) = ZStream.empty
+
+  def render(model: Model) =
+    div(
+      a(href := "#", phx.onClick(Msg.Open), "Add new"),
+      div(
+        idAttr    := "my-modal-container",
+        styleAttr := (if model.open then "position: fixed; inset: 0" else "display: none"),
+        phx.onWindowKeydown(Msg.Close),
+        phx.key := "Escape",
+        if model.open then
+          div(
+            styleAttr := "margin: 320px 0 0 300px; width: 300px; padding: 20px",
+            phx.onClickAway(Msg.Close),
+            phx.onMounted(JS.focusFirst(to = "#my-modal-container")),
+            form(
+              phx.onSubmit(Msg.Submit),
+              if model.submitted then "Form was submitted!" else input(nameAttr := "name")
+            )
+          )
+        else ""
+      )
+    )
+end Issue3040LiveView
+
+object Issue3040LiveView:
+  final case class Model(open: Boolean = false, submitted: Boolean = false)
+  enum Msg:
+    case Open, Close, Submit
+
 class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
   import Issue3819LiveView.*
 

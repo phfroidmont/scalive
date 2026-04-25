@@ -62,8 +62,11 @@ object E2EApp extends ZIOAppDefault:
       Method.GET / "form" / "feedback"       -> liveHandler(FormFeedbackLiveView()),
       Method.GET / "portal"                  -> liveHandler(PortalLiveView()),
       Method.GET / "errors" -> liveHandler(req => ErrorLiveView(req.headers.isEmpty)),
+      Method.GET / "issues" / "3083" -> liveHandler(Issue3083LiveView()),
+      Method.GET / "issues" / "3107" -> liveHandler(Issue3107LiveView()),
       Method.GET / "issues" / "3719" -> liveHandler(Issue3719LiveView()),
-      Method.GET / "issues" / "3814" -> liveHandler(Issue3814LiveView())
+      Method.GET / "issues" / "3814" -> liveHandler(Issue3814LiveView()),
+      Method.GET / "issues" / "3819" -> liveHandler(Issue3819LiveView())
     )
 
   private val healthRoutes =

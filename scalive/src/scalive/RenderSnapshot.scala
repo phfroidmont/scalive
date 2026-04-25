@@ -156,6 +156,15 @@ private[scalive] object RenderSnapshot:
           pushStringSlot(Escaping.escape(id))
           staticFragment += "\""
           bindings.update(id, payload => f(payload.formData))
+        case Attr.FormEventBinding(name, codec, f) =>
+          val id = BindingId.attrBindingId(path, attrIndex)
+          staticFragment += s" $name=\""
+          pushStringSlot(Escaping.escape(id))
+          staticFragment += "\""
+          bindings.update(
+            id,
+            payload => f(payload.formEvent(codec, submitted = name == "phx-submit"))
+          )
         case Attr.JsBinding(name, command) =>
           val scope = BindingId.jsBindingScope(path, attrIndex)
           staticFragment += s" $name='"

@@ -194,8 +194,26 @@ object WebSocketMessage:
     extension (p: Payload.Event)
       def bindingPayload: BindingPayload =
         p.`type` match
-          case "form" => BindingPayload.Form(p.formData)
+          case "form" => BindingPayload.Form(p.formData, p.formMeta)
           case _      => BindingPayload.Params(p.params)
+
+      def formMeta: FormEvent.Meta =
+        val fields = p.meta match
+          case Some(meta: Json.Obj) => meta.fields.toMap
+          case _                    => Map.empty[String, Json]
+
+        FormEvent.Meta(
+          target = fields.get("_target").flatMap(decodeFormTarget),
+          submitter = decodeFormSubmitter(fields, p.formData),
+          recovery = fields
+            .get("_recover")
+            .orElse(fields.get("_recovery"))
+            .orElse(fields.get("recovery"))
+            .exists(jsonToBoolean),
+          metadata = fields.view.mapValues(jsonToParamValue).toMap,
+          componentId = p.cid,
+          uploads = p.uploads
+        )
 
       def formData: FormData =
         p.`type` match
@@ -234,6 +252,40 @@ object WebSocketMessage:
           obj.fields.map { case (key, jsonValue) => key -> jsonToParamValue(jsonValue) }.toMap
         case _ =>
           value.as[Map[String, String]].getOrElse(Map.empty)
+
+    private def decodeFormTarget(value: Json): Option[FormPath] =
+      value match
+        case Json.Str("undefined") => None
+        case Json.Str(value)       => Some(FormPath.parse(value))
+        case Json.Arr(values)      =>
+          val segments = values.collect {
+            case Json.Str(segment) if segment.nonEmpty && segment != "undefined" => segment
+          }.toVector
+          if segments.isEmpty && values.exists(_.asString.contains("undefined")) then None
+          else Some(FormPath(segments))
+        case _ => None
+
+    private def decodeFormSubmitter(
+      fields: Map[String, Json],
+      data: FormData
+    ): Option[FormSubmitter] =
+      fields.get("submitter").orElse(fields.get("_submitter")).flatMap {
+        case submitter: Json.Obj =>
+          val submitterFields = submitter.fields.toMap
+          submitterFields.get("name").flatMap(_.asString).filter(_.nonEmpty).map { name =>
+            val value = submitterFields.get("value").flatMap(_.asString).getOrElse("")
+            FormSubmitter(name, value)
+          }
+        case Json.Str(name) if name.nonEmpty =>
+          data.get(name).map(value => FormSubmitter(name, value))
+        case _ => None
+      }
+
+    private def jsonToBoolean(value: Json): Boolean =
+      value match
+        case Json.Bool(value) => value
+        case Json.Str(value)  => value == "true"
+        case _                => false
 
     private def jsonToParamValue(value: Json): String =
       value match

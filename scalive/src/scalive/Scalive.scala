@@ -90,8 +90,12 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val onSubmit                                        = phxAttrBinding("submit")
     def onChangeForm[Msg](f: FormData => Msg): Mod.Attr[Msg] =
       onChange.form(f)
+    def onChangeForm[A, Msg](codec: FormCodec[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+      onChange.form(codec)(f)
     def onSubmitForm[Msg](f: FormData => Msg): Mod.Attr[Msg] =
       onSubmit.form(f)
+    def onSubmitForm[A, Msg](codec: FormCodec[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+      onSubmit.form(codec)(f)
     lazy val autoRecover   = phxAttrBinding("auto-recover")
     lazy val triggerAction = phxAttrBool("trigger-action")
 

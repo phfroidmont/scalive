@@ -51,6 +51,9 @@ class HtmlAttrBinding(val name: String):
   def form[Msg](f: FormData => Msg): Mod.Attr[Msg] =
     Mod.Attr.FormBinding(name, f)
 
+  def form[A, Msg](codec: FormCodec[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    Mod.Attr.FormEventBinding(name, codec, f)
+
   def withValue[Msg](f: String => Msg): Mod.Attr[Msg] =
     apply(m => f(m("value")))
 
@@ -69,7 +72,9 @@ object Mod:
     case StaticValueAsPresence(name: String, value: Boolean)       extends Attr[Nothing]
     case Binding[Msg](name: String, f: Map[String, String] => Msg) extends Attr[Msg]
     case FormBinding[Msg](name: String, f: FormData => Msg)        extends Attr[Msg]
-    case JsBinding[Msg](name: String, command: JSCommand[Msg])     extends Attr[Msg]
+    case FormEventBinding[A, Msg](name: String, codec: FormCodec[A], f: FormEvent[A] => Msg)
+        extends Attr[Msg]
+    case JsBinding[Msg](name: String, command: JSCommand[Msg]) extends Attr[Msg]
 
   enum Content[+Msg] extends Mod[Msg]:
     case Text(text: String, raw: Boolean = false)       extends Content[Nothing]

@@ -49,8 +49,8 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
     model.copy(query = params)
 
   def handleMessage(model: Model) =
-    case Msg.Validate(data) =>
-      maybeAwait(model, "validate").as(model.copy(values = model.values ++ data.asMap))
+    case Msg.Validate(event) =>
+      maybeAwait(model, "validate").as(model.copy(values = model.values ++ event.raw.asMap))
     case Msg.Save(_) =>
       maybeAwait(model, "save").as(model.copy(submitted = true))
     case Msg.CustomRecovery(_) =>
@@ -72,16 +72,17 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
     if nested then div(idAttr := "nested", content) else content
 
   private def renderForm(model: Model) =
+    val formModel = Form.of("", FormState(formData(model), Right(formData(model)), submitted = false), FormCodec.formData)
     val formAttrs = Vector.newBuilder[Mod[Msg]]
     if !model.query.noId then formAttrs += (idAttr := "test-form")
-    formAttrs += phx.onSubmitForm(Msg.Save(_))
+    formAttrs += formModel.onSubmit(Msg.Save(_))
     if !model.query.noChangeEvent then
       formAttrs += (
-        if model.query.jsChange then phx.onChange(JS.push(Msg.Validate(FormData.empty)))
-        else phx.onChangeForm(Msg.Validate(_))
+        if model.query.jsChange then phx.onChange(JS.push(Msg.Validate(EmptyFormEvent)))
+        else formModel.onChange(Msg.Validate(_))
       )
     model.query.autoRecover.foreach(_ =>
-      formAttrs += phx.autoRecover(Msg.CustomRecovery(FormData.empty))
+      formAttrs += phx.autoRecover(Msg.CustomRecovery(EmptyFormEvent))
     )
     formAttrs += (cls := "myformclass")
 
@@ -89,10 +90,10 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
       formAttrs.result(),
       fieldset(
         disabled := model.query.disabledFieldset,
-        input(typ := "text", nameAttr := "a", readonly := true, value := model.values("a")),
-        input(typ := "text", nameAttr := "b", value    := model.values("b"))
+        formModel.text("a", readonly := true),
+        formModel.text("b")
       ),
-      input(typ := "text", nameAttr := "c", value := model.values("c")),
+      formModel.text("c"),
       select(
         nameAttr := "d",
         option(value := "foo", selected := model.values.get("d").contains("foo"), "foo"),
@@ -127,14 +128,20 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
 
   private def maybeAwait(model: Model, event: String) =
     if model.query.latencyMode then E2ELatencyGate.await(event) else ZIO.unit
+
+  private def formData(model: Model): FormData =
+    FormData.fromMap(model.values)
 end FormLiveView
 
 object FormLiveView:
   enum Msg:
-    case Validate(data: FormData)
-    case Save(data: FormData)
-    case CustomRecovery(data: FormData)
+    case Validate(event: FormEvent[FormData])
+    case Save(event: FormEvent[FormData])
+    case CustomRecovery(event: FormEvent[FormData])
     case ButtonTest
+
+  val EmptyFormEvent: FormEvent[FormData] =
+    FormEvent(FormData.empty, Right(FormData.empty))
 
   final case class Model(
     query: FormQueryParams = FormQueryParams(),
@@ -158,24 +165,30 @@ class FormDynamicInputsLiveView
     model.copy(checkboxes = params.checkboxes)
 
   def handleMessage(model: Model) =
-    case Msg.Validate(data) => updateFromData(model, data)
-    case Msg.Save(data)     => updateFromData(model, data).copy(submitted = true)
+    case Msg.Validate(event) => updateFromEvent(model, event)
+    case Msg.Save(event)     => updateFromEvent(model, event).copy(submitted = true)
 
   def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
+    val formModel = Form.of(
+      "my_form",
+      FormState(formData(model), Right(dynamicInputsForm(model)), submitted = false),
+      DynamicInputsForm.codec
+    )
+
     div(
       form(
         idAttr := "my-form",
-        phx.onChangeForm(Msg.Validate(_)),
-        phx.onSubmitForm(Msg.Save(_)),
+        formModel.onChange(Msg.Validate(_)),
+        formModel.onSubmit(Msg.Save(_)),
         styleAttr := "display: flex; flex-direction: column; gap: 4px; max-width: 500px;",
         fieldset(
           input(
             typ         := "text",
             idAttr      := "my-form_name",
-            nameAttr    := "my_form[name]",
-            value       := model.name,
+            nameAttr    := formModel.name("name"),
+            value       := formModel.value("name"),
             placeholder := "name"
           ),
           model.users.zipWithIndex.map { case (user, index) =>
@@ -230,27 +243,73 @@ end FormDynamicInputsLiveView
 
 object FormDynamicInputsLiveView:
   enum Msg:
-    case Validate(data: FormData)
-    case Save(data: FormData)
+    case Validate(event: FormEvent[DynamicInputsForm])
+    case Save(event: FormEvent[DynamicInputsForm])
 
   final case class UserInput(name: String)
+  final case class DynamicInputsForm(
+    name: String,
+    usersSort: Vector[String],
+    usersDrop: Set[String],
+    userNames: Map[String, String])
+
+  object DynamicInputsForm:
+    val codec: FormCodec[DynamicInputsForm] =
+      FormCodec { data =>
+        Right(
+          DynamicInputsForm(
+            name = data.string("my_form[name]").getOrElse(""),
+            usersSort = data.values("my_form[users_sort][]"),
+            usersDrop = data.values("my_form[users_drop][]").filter(_.nonEmpty).toSet,
+            userNames = userNames(data)
+          )
+        )
+      }
+
+    private def userNames(data: FormData): Map[String, String] =
+      val prefix = "my_form[users]["
+      val suffix = "][name]"
+      data.raw.collect {
+        case (key, value) if key.startsWith(prefix) && key.endsWith(suffix) =>
+          key.stripPrefix(prefix).stripSuffix(suffix) -> value
+      }.toMap
+
   final case class Model(
     name: String = "",
     users: Vector[UserInput] = Vector.empty,
     checkboxes: Boolean = false,
     submitted: Boolean = false)
 
-  private def updateFromData(model: Model, data: FormData): Model =
-    val name  = data.string("my_form[name]").getOrElse("")
-    val drop  = data.values("my_form[users_drop][]").filter(_.nonEmpty).toSet
-    val sort  = data.values("my_form[users_sort][]")
-    val users = sort.filterNot(drop).foldLeft(Vector.empty[UserInput]) { (acc, key) =>
+  private def updateFromEvent(model: Model, event: FormEvent[DynamicInputsForm]): Model =
+    event.value match
+      case Right(data) => updateFromData(model, data)
+      case Left(_)     => model
+
+  private def updateFromData(model: Model, data: DynamicInputsForm): Model =
+    val users = data.usersSort.filterNot(data.usersDrop).foldLeft(Vector.empty[UserInput]) { (acc, key) =>
       if key == "new" then acc :+ UserInput("")
       else
-        val value = data.string(s"my_form[users][$key][name]").getOrElse("")
+        val value = data.userNames.getOrElse(key, "")
         acc :+ UserInput(value)
     }
-    model.copy(name = name, users = users)
+    model.copy(name = data.name, users = users)
+
+  private def dynamicInputsForm(model: Model): DynamicInputsForm =
+    DynamicInputsForm(
+      name = model.name,
+      usersSort = model.users.indices.map(_.toString).toVector,
+      usersDrop = Set.empty,
+      userNames = model.users.zipWithIndex.map { case (user, index) => index.toString -> user.name }.toMap
+    )
+
+  private def formData(model: Model): FormData =
+    val raw = Vector.newBuilder[(String, String)]
+    raw += "my_form[name]" -> model.name
+    model.users.zipWithIndex.foreach { case (user, index) =>
+      raw += "my_form[users_sort][]"       -> index.toString
+      raw += s"my_form[users][$index][name]" -> user.name
+    }
+    FormData(raw.result())
 
 class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLiveView.Model]:
   import FormStreamLiveView.*
@@ -269,14 +328,17 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
   def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
+    val data = FormData(Vector("myname" -> model.count.toString, "other" -> model.count.toString))
+    val formModel = Form.of("", FormState(data, Right(data), submitted = false), FormCodec.formData)
+
     div(
       model.count.toString,
       form(
         idAttr := "test-form",
-        phx.onChangeForm(Msg.Validate(_)),
-        phx.onSubmitForm(Msg.Save(_)),
-        input(nameAttr := "myname", value   := model.count.toString),
-        input(idAttr   := "other", nameAttr := "other", value := model.count.toString),
+        formModel.onChange(Msg.Validate(_)),
+        formModel.onSubmit(Msg.Save(_)),
+        formModel.text("myname"),
+        formModel.text("other"),
         div(idAttr := "form-stream-hook", phx.hook := "FormHook", phx.onUpdate := "ignore"),
         ul(
           idAttr       := "form-stream",
@@ -299,8 +361,8 @@ end FormStreamLiveView
 
 object FormStreamLiveView:
   enum Msg:
-    case Validate(data: FormData)
-    case Save(data: FormData)
+    case Validate(event: FormEvent[FormData])
+    case Save(event: FormEvent[FormData])
     case Ping
 
   final case class Item(id: Int)
@@ -334,6 +396,9 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
   def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
+    val data = FormData.empty
+    val formModel = Form.of("", FormState(data, Right(data), submitted = false), FormCodec.formData)
+
     div(
       styleTag(".phx-no-feedback { display: none; }"),
       p("Button Count: ", model.count.toString),
@@ -344,20 +409,10 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
       form(
         idAttr   := "myform",
         nameAttr := "test",
-        phx.onChangeForm(Msg.Validate(_)),
-        phx.onSubmitForm(Msg.Submit(_)),
-        input(
-          typ         := "text",
-          nameAttr    := "name",
-          cls         := "border border-gray-500",
-          placeholder := "type sth"
-        ),
-        input(
-          typ         := "text",
-          nameAttr    := "myfeedback",
-          cls         := "border border-gray-500",
-          placeholder := "myfeedback"
-        ),
+        formModel.onChange(Msg.Validate(_)),
+        formModel.onSubmit(Msg.Submit(_)),
+        formModel.text("name", cls := "border border-gray-500", placeholder := "type sth"),
+        formModel.text("myfeedback", cls := "border border-gray-500", placeholder := "myfeedback"),
         button(typ := "submit", "Submit"),
         button(typ := "reset", "Reset")
       ),
@@ -373,8 +428,8 @@ end FormFeedbackLiveView
 
 object FormFeedbackLiveView:
   enum Msg:
-    case Validate(data: FormData)
-    case Submit(data: FormData)
+    case Validate(event: FormEvent[FormData])
+    case Submit(event: FormEvent[FormData])
     case Inc
     case Dec
     case ToggleFeedback

@@ -11,15 +11,25 @@ final case class FormData private (raw: Vector[(String, String)]):
   def get(name: String): Option[String] =
     values(name).lastOption
 
+  def get(path: FormPath): Option[String] =
+    get(path.name)
+
   def string(name: String): Option[String] = get(name)
+
+  def string(path: FormPath): Option[String] = get(path)
 
   def values(name: String): Vector[String] =
     fields.get(name).map(_.values).getOrElse(Vector.empty)
+
+  def values(path: FormPath): Vector[String] =
+    values(path.name)
 
   def getOrElse(name: String, fallback: String): String =
     get(name).getOrElse(fallback)
 
   def contains(name: String): Boolean = fields.contains(name)
+
+  def contains(path: FormPath): Boolean = contains(path.name)
 
   def asMap: Map[String, String] =
     fields.view.mapValues(_.value).toMap

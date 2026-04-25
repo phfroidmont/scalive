@@ -61,7 +61,9 @@ object E2EApp extends ZIOAppDefault:
       Method.GET / "form" / "dynamic-inputs" -> liveHandler(FormDynamicInputsLiveView()),
       Method.GET / "form" / "feedback"       -> liveHandler(FormFeedbackLiveView()),
       Method.GET / "portal"                  -> liveHandler(PortalLiveView()),
-      Method.GET / "errors" -> liveHandler(req => ErrorLiveView(req.headers.isEmpty))
+      Method.GET / "errors" -> liveHandler(req => ErrorLiveView(req.headers.isEmpty)),
+      Method.GET / "issues" / "3719" -> liveHandler(Issue3719LiveView()),
+      Method.GET / "issues" / "3814" -> liveHandler(Issue3814LiveView())
     )
 
   private val healthRoutes =
@@ -75,6 +77,16 @@ object E2EApp extends ZIOAppDefault:
               body = Body.fromString("{\"result\":null}")
             )
           )
+      },
+      Method.POST / "submit" -> handler { (req: Request) =>
+        req.body.asString.orDie.map { body =>
+          val fields = FormData.fromUrlEncoded(body).raw
+          val json = fields
+            .map { case (key, value) => s"\"$key\":\"$value\"" }
+            .mkString("{", ",", "}")
+
+          Response.text(json)
+        }
       },
       Method.GET / "download" -> handler { (req: Request) =>
         val maybeFile = req.queryParam("file")

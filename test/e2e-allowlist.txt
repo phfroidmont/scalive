@@ -12,3 +12,5 @@ colocated.spec.js
 forms.spec.js
 portal.spec.js
 errors.spec.js
+issues/3719.spec.js
+issues/3814.spec.js

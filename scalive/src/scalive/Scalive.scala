@@ -1,5 +1,4 @@
 import scalive.codecs.BooleanAsAttrPresenceEncoder
-import scalive.codecs.BooleanAsTrueFalseStringEncoder
 import scalive.codecs.Encoder
 import scalive.codecs.IntAsStringEncoder
 import scalive.codecs.StringAsIsEncoder
@@ -77,7 +76,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     private def phxAttr(suffix: String): HtmlAttr[String] =
       new HtmlAttr(s"phx-$suffix", StringAsIsEncoder)
     private def phxAttrBool(suffix: String): HtmlAttr[Boolean] =
-      new HtmlAttr(s"phx-$suffix", BooleanAsTrueFalseStringEncoder)
+      new HtmlAttr(s"phx-$suffix", BooleanAsAttrPresenceEncoder)
     private def phxAttrInt(suffix: String): HtmlAttr[Int] =
       new HtmlAttr(s"phx-$suffix", IntAsStringEncoder)
     private def phxAttrBinding(suffix: String): HtmlAttrBinding =

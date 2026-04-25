@@ -67,6 +67,7 @@ private[scalive] object SocketInbound:
           requestedCids = parseCids(event.value)
           destroyedCids = requestedCids.intersect(activeCids)
           _ <- state.componentCidsRef.update(_ -- destroyedCids)
+          _ <- state.componentsRef.update(_.removeCids(destroyedCids))
           response = Json.Obj(
                        "cids" -> Json.Arr(destroyedCids.toSeq.sorted.map(Json.Num(_))*)
                      )

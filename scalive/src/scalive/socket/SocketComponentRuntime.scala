@@ -21,6 +21,14 @@ final private[scalive] case class ComponentRuntimeState(
   def instance(cid: Int): Option[ComponentInstance] =
     byCid.get(cid).flatMap(instances.get)
 
+  def removeCids(cids: Set[Int]): ComponentRuntimeState =
+    val identities = cids.flatMap(byCid.get)
+    copy(
+      instances = instances -- identities,
+      byCid = byCid -- cids,
+      pendingUpdates = pendingUpdates -- identities
+    )
+
 private[scalive] object ComponentRuntimeState:
   val empty: ComponentRuntimeState = ComponentRuntimeState(Map.empty, Map.empty, Map.empty, 1)
 

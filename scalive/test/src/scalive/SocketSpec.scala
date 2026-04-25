@@ -479,6 +479,124 @@ object SocketSpec extends ZIOSpecDefault:
           case _ => false
 
         assertTrue(componentUpdated)
+    },
+    test("cids_destroyed removes live component state before remount") {
+      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+        object Msg
+
+        def mount(props: Unit) = ZIO.succeed(0)
+        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
+        def render(model: Int, self: ComponentRef[Msg.type]) =
+          button(phx.onClick(Msg), phx.target(self), model.toString)
+
+      enum ParentMsg:
+        case Toggle
+
+      val lv = new LiveView[ParentMsg, Boolean]:
+        def mount = ZIO.succeed(true)
+        def handleMessage(model: Boolean) = { case ParentMsg.Toggle => ZIO.succeed(!model) }
+        def render(model: Boolean): HtmlElement[ParentMsg] =
+          div(
+            button(phx.onClick(ParentMsg.Toggle), "toggle"),
+            if model then liveComponent(CounterComponent, id = "counter", props = ()) else "gone"
+          )
+        def subscriptions(model: Boolean) = ZStream.empty
+
+      val incrementEvent: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "component:1:1"), 1),
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+      val toggleEvent: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
+      val destroyedEvent: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = "cids_destroyed",
+        value = Json.Obj("cids" -> Json.Arr(Json.Num(1)))
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        repliesFiber <- socket.outbox.drop(1).take(4).runCollect.fork
+        _ <- socket.inbox.offer(incrementEvent -> meta)
+        _ <- socket.inbox.offer(toggleEvent -> meta)
+        _ <- socket.inbox.offer(destroyedEvent -> meta)
+        _ <- socket.inbox.offer(toggleEvent -> meta)
+        replies <- repliesFiber.join
+      yield
+        val componentRemountedFresh = replies.last._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))) =>
+            components.get(2).exists {
+              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+                dynamic.exists {
+                  case Diff.Dynamic(_, Diff.Value("0")) => true
+                  case _                                 => false
+                }
+              case _ => false
+            }
+          case _ => false
+
+        assertTrue(componentRemountedFresh)
+    },
+    test("removed live component keeps state until client confirms cids_destroyed") {
+      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+        object Msg
+
+        def mount(props: Unit) = ZIO.succeed(0)
+        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
+        def render(model: Int, self: ComponentRef[Msg.type]) =
+          button(phx.onClick(Msg), phx.target(self), model.toString)
+
+      enum ParentMsg:
+        case Toggle
+
+      val lv = new LiveView[ParentMsg, Boolean]:
+        def mount = ZIO.succeed(true)
+        def handleMessage(model: Boolean) = { case ParentMsg.Toggle => ZIO.succeed(!model) }
+        def render(model: Boolean): HtmlElement[ParentMsg] =
+          div(
+            button(phx.onClick(ParentMsg.Toggle), "toggle"),
+            if model then liveComponent(CounterComponent, id = "counter", props = ()) else "gone"
+          )
+        def subscriptions(model: Boolean) = ZStream.empty
+
+      val incrementEvent: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "component:1:1"), 1),
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+      val toggleEvent: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        repliesFiber <- socket.outbox.drop(1).take(3).runCollect.fork
+        _ <- socket.inbox.offer(incrementEvent -> meta)
+        _ <- socket.inbox.offer(toggleEvent -> meta)
+        _ <- socket.inbox.offer(toggleEvent -> meta)
+        replies <- repliesFiber.join
+      yield
+        val componentPreserved = replies.last._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))) =>
+            components.get(1).exists {
+              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+                dynamic.exists {
+                  case Diff.Dynamic(_, Diff.Value("1")) => true
+                  case _                                 => false
+                }
+              case _ => false
+            }
+          case _ => false
+
+        assertTrue(componentPreserved)
     }
   )
 end SocketSpec

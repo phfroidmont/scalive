@@ -13,6 +13,7 @@ private val multipleAttr = htmlAttr("multiple", scalive.codecs.BooleanAsAttrPres
 private val placeholderAttr = htmlAttr("placeholder", scalive.codecs.StringAsIsEncoder)
 private val feedbackForAttr = htmlAttr("phx-feedback-for", scalive.codecs.StringAsIsEncoder)
 private val targetAttr = htmlAttr("phx-target", scalive.codecs.StringAsIsEncoder)
+private val phxClickAttr = htmlAttr("phx-click", scalive.codecs.StringAsIsEncoder)
 class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveView.Model]:
   import Issue3719LiveView.*
 
@@ -179,6 +180,35 @@ class Issue3529LiveView(page: String) extends LiveView[Unit, String]:
       link.patch("/issues/3529/navigated?patched=true", "Patch")
     )
 end Issue3529LiveView
+
+class Issue3530LiveView extends LiveView[Unit, Vector[Int]]:
+  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
+
+  def mount = Vector(1, 2, 3)
+
+  override def handleParams(model: Vector[Int], params: Unit, url: URL) =
+    if url.encode.contains("patch=a") then Vector(1, 3)
+    else if url.encode.contains("patch=b") then Vector(2, 3)
+    else model
+
+  override def interceptEvent(model: Vector[Int], event: String, value: Json) =
+    if event == "inc" then ZIO.succeed(InterceptResult.halt(model :+ 4))
+    else ZIO.succeed(InterceptResult.cont(model))
+
+  def handleMessage(model: Vector[Int]) = Function.const(model)
+
+  def subscriptions(model: Vector[Int]) = ZStream.empty
+
+  def render(items: Vector[Int]) =
+    div(
+      link.patch("/issues/3530?patch=a", "patch a"),
+      link.patch("/issues/3530?patch=b", "patch b"),
+      div(phxClickAttr := "inc", "inc"),
+      div(
+        items.map(item => div(idAttr := s"item-$item", phx.hook := "Issue3530Item", s"item $item"))
+      )
+    )
+end Issue3530LiveView
 
 class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg.type, Boolean]:
   def mount = false

@@ -81,6 +81,14 @@ const hooks = {
     mounted() {
       console.log("Hook mounted!")
     }
+  },
+  Issue3530Item: {
+    mounted() {
+      console.log(`${this.el.id} mounted`)
+    },
+    destroyed() {
+      console.log(`${this.el.id} destroyed`)
+    }
   }
 }
 

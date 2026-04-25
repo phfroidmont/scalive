@@ -505,3 +505,18 @@ class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
       h1(s"Page $pageName")
     )
 end Issue3612LiveView
+
+class Issue3636LiveView extends LiveView[Unit, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) = Function.const(model)
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    focusWrap("focus-wrap")(
+      button("One"),
+      button("Two"),
+      button("Three")
+    )
+end Issue3636LiveView

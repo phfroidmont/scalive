@@ -11,7 +11,6 @@ private val multipleAttr = htmlAttr("multiple", scalive.codecs.BooleanAsAttrPres
 private val placeholderAttr = htmlAttr("placeholder", scalive.codecs.StringAsIsEncoder)
 private val feedbackForAttr = htmlAttr("phx-feedback-for", scalive.codecs.StringAsIsEncoder)
 private val targetAttr = htmlAttr("phx-target", scalive.codecs.StringAsIsEncoder)
-
 class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveView.Model]:
   import Issue3719LiveView.*
 
@@ -473,3 +472,36 @@ class Issue3378LiveView extends LiveView[Unit, Unit]:
       )
     )
 end Issue3378LiveView
+
+class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends LiveView[Unit, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) = Function.const(model)
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    div(
+      h1(s"Page $pageName"),
+      if pageName == "A" then link.navigate("/issues/3496/b", "Go to page B") else "",
+      if includeStickyHook then div(idAttr := "my-component", phx.hook := "MyHook")
+      else div(idAttr := "my-component", phx.hook := "MyHook")
+    )
+end Issue3496LiveView
+
+class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) = Function.const(model)
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    div(
+      div(
+        link.navigate("/issues/3612/a", "Go to page A"),
+        link.navigate("/issues/3612/b", "Go to page B")
+      ),
+      h1(s"Page $pageName")
+    )
+end Issue3612LiveView

@@ -76,6 +76,11 @@ const hooks = {
       this.loggedMessages = messages
       JSON.parse(messages).forEach((message) => console.log(message))
     }
+  },
+  MyHook: {
+    mounted() {
+      console.log("Hook mounted!")
+    }
   }
 }
 

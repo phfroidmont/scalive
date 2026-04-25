@@ -111,7 +111,7 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
   private def selectedItemFromPath(url: URL): Option[String] =
     url.path.segments.toList match
       case "navigation" :: "b" :: id :: Nil if id.nonEmpty => Some(id)
-      case _                                                 => None
+      case _                                               => None
 
   private def itemHref(id: String, withContainer: Boolean): String =
     val base = s"/navigation/b/$id"
@@ -171,7 +171,8 @@ object NavigationLiveViews:
 
   val BParamsCodec: LiveQueryCodec[BParams] =
     LiveQueryCodec.custom(
-      decodeFn = url => Right(BParams(withContainerRequested = url.queryParam("container").contains("1"))),
+      decodeFn =
+        url => Right(BParams(withContainerRequested = url.queryParam("container").contains("1"))),
       encodeFn = params =>
         Right(
           if params.withContainerRequested then "?container=1"
@@ -193,3 +194,4 @@ object NavigationLiveViews:
     withContainer: Boolean = false,
     shouldLoop: Boolean = false,
     message: Option[String] = None)
+end NavigationLiveViews

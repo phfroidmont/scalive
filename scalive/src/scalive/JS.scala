@@ -246,9 +246,12 @@ object JSCommands:
 
     private def requireHref[A](to: LiveQueryCodec[A], value: A, operation: String): String =
       to.href(value) match
-        case Right(url) => url
+        case Right(url)  => url
         case Left(error) =>
-          throw new IllegalArgumentException(s"Could not encode URL for $operation: ${error.message}", error)
+          throw new IllegalArgumentException(
+            s"Could not encode URL for $operation: ${error.message}",
+            error
+          )
   end extension
 
   final private[scalive] class ClassOp[Msg](kind: String, ops: JSCommand[Msg]):

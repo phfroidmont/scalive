@@ -447,7 +447,7 @@ private[scalive] object SocketUploadProtocol:
                          (updatedModel, navigation) <-
                            SocketModelRuntime.captureNavigation(state)(
                              LiveIO
-                                .toZIO(state.lv.handleMessage(currentModel)(message))
+                               .toZIO(state.lv.handleMessage(currentModel)(message))
                                .provide(ZLayer.succeed(state.ctx))
                            )
                          reply <- navigation match

@@ -442,10 +442,9 @@ object HealthyLiveView:
   private def categoryFromUrl(url: URL): String =
     url.path.segments.toList match
       case "healthy" :: category :: Nil => category
-      case _                             => "fruits"
+      case _                            => "fruits"
 
-class StreamResetLiveView()
-    extends LiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model]:
+class StreamResetLiveView() extends LiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model]:
   import StreamResetLiveView.*
 
   override val queryCodec: LiveQueryCodec[Option[String]] = ParamsCodec

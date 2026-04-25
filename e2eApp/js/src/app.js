@@ -33,6 +33,27 @@ const hooks = {
       if (["items-1", "items-2", "items-3"].includes(this.el.id)) appendPong()
       else window.setTimeout(appendPong, 800)
     }
+  },
+  InsidePortal: {
+    mounted() {
+      this.el.setAttribute("data-portalhook-mounted", "true")
+    }
+  },
+  PortalTooltip: {
+    mounted() {
+      this.tooltipEl = document.getElementById(this.el.dataset.id)
+      this.activatorEl = document.getElementById(`${this.el.dataset.id}-activator`)
+      this.activatorEl.addEventListener("mouseover", () => this.show())
+      this.activatorEl.addEventListener("focusin", () => this.show())
+      this.activatorEl.addEventListener("mouseout", () => this.hide())
+      this.activatorEl.addEventListener("focusout", () => this.hide())
+    },
+    show() {
+      if (this.el.dataset.show) this.liveSocket.execJS(this.el, this.el.dataset.show)
+    },
+    hide() {
+      if (this.el.dataset.hide) this.liveSocket.execJS(this.el, this.el.dataset.hide)
+    }
   }
 }
 

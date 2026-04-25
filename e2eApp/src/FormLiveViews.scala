@@ -72,7 +72,11 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
     if nested then div(idAttr := "nested", content) else content
 
   private def renderForm(model: Model) =
-    val formModel = Form.of("", FormState(formData(model), Right(formData(model)), submitted = false), FormCodec.formData)
+    val formModel = Form.of(
+      "",
+      FormState(formData(model), Right(formData(model)), submitted = false),
+      FormCodec.formData
+    )
     val formAttrs = Vector.newBuilder[Mod[Msg]]
     if !model.query.noId then formAttrs += (idAttr := "test-form")
     formAttrs += formModel.onSubmit(Msg.Save(_))
@@ -241,6 +245,7 @@ class FormDynamicInputsLiveView
       ),
       if model.submitted then p("Form was submitted!") else ""
     )
+  end render
 end FormDynamicInputsLiveView
 
 object FormDynamicInputsLiveView:
@@ -288,12 +293,13 @@ object FormDynamicInputsLiveView:
       case Left(_)     => model
 
   private def updateFromData(model: Model, data: DynamicInputsForm): Model =
-    val users = data.usersSort.filterNot(data.usersDrop).foldLeft(Vector.empty[UserInput]) { (acc, key) =>
-      if key == "new" then acc :+ UserInput("")
-      else
-        val value = data.userNames.getOrElse(key, "")
-        acc :+ UserInput(value)
-    }
+    val users =
+      data.usersSort.filterNot(data.usersDrop).foldLeft(Vector.empty[UserInput]) { (acc, key) =>
+        if key == "new" then acc :+ UserInput("")
+        else
+          val value = data.userNames.getOrElse(key, "")
+          acc :+ UserInput(value)
+      }
     model.copy(name = data.name, users = users)
 
   private def dynamicInputsForm(model: Model): DynamicInputsForm =
@@ -301,17 +307,20 @@ object FormDynamicInputsLiveView:
       name = model.name,
       usersSort = model.users.indices.map(_.toString).toVector,
       usersDrop = Set.empty,
-      userNames = model.users.zipWithIndex.map { case (user, index) => index.toString -> user.name }.toMap
+      userNames = model.users.zipWithIndex.map { case (user, index) =>
+        index.toString -> user.name
+      }.toMap
     )
 
   private def formData(model: Model): FormData =
     val raw = Vector.newBuilder[(String, String)]
     raw += "my_form[name]" -> model.name
     model.users.zipWithIndex.foreach { case (user, index) =>
-      raw += "my_form[users_sort][]"       -> index.toString
+      raw += "my_form[users_sort][]"         -> index.toString
       raw += s"my_form[users][$index][name]" -> user.name
     }
     FormData(raw.result())
+end FormDynamicInputsLiveView
 
 class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLiveView.Model]:
   import FormStreamLiveView.*
@@ -398,7 +407,7 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
   def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
-    val data = FormData.empty
+    val data      = FormData.empty
     val formModel = Form.of("", FormState(data, Right(data), submitted = false), FormCodec.formData)
 
     div(
@@ -413,10 +422,10 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
         nameAttr := "test",
         formModel.onChange(Msg.Validate(_)),
         formModel.onSubmit(Msg.Submit(_)),
-        formModel.text("name", cls := "border border-gray-500", placeholder := "type sth"),
+        formModel.text("name", cls       := "border border-gray-500", placeholder := "type sth"),
         formModel.text("myfeedback", cls := "border border-gray-500", placeholder := "myfeedback"),
-        button(typ := "submit", "Submit"),
-        button(typ := "reset", "Reset")
+        button(typ                       := "submit", "Submit"),
+        button(typ                       := "reset", "Reset")
       ),
       div(
         Option.when(model.feedback)(phxFeedbackFor := "myfeedback"),

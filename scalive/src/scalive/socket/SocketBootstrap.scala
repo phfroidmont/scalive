@@ -40,7 +40,7 @@ private[scalive] object SocketBootstrap:
                    compiled = initCompiled,
                    bindings = BindingRegistry.collect[Msg](initCompiled)
                  )
-      ref <- Ref.make((bootstrapModel, initView))
+      ref           <- Ref.make((bootstrapModel, initView))
       currentUrlRef <- Ref.make(bootstrapUrl)
       rawInitDiff = TreeDiff.initial(initCompiled)
       initEvents <- SocketClientEventRuntime.drain(clientEventsRef)

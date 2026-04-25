@@ -10,8 +10,9 @@ private[scalive] enum BindingPayload:
       case Form(data, meta) =>
         val params = data.asMap ++ meta.params
         meta.submitter match
-          case Some(FormSubmitter(name, value)) if !params.contains(name) => params.updated(name, value)
-          case _                                                          => params
+          case Some(FormSubmitter(name, value)) if !params.contains(name) =>
+            params.updated(name, value)
+          case _ => params
 
   def formData: FormData =
     this match

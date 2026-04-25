@@ -10,3 +10,4 @@ uploads.spec.js
 streams.spec.js
 colocated.spec.js
 forms.spec.js
+portal.spec.js

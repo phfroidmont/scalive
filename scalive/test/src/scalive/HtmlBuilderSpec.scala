@@ -41,6 +41,18 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
         )
         val result = HtmlBuilder.build(el)
         assertTrue(result == "<div class=\"container\" id=\"main\">Content</div>")
+      },
+      test("Portal wraps content in a template") {
+        val el = portal("portal-source", target = "#root-portal")(
+          div(idAttr := "my-modal", "Modal"),
+          div(idAttr := "hook-test", phx.hook := "InsidePortal")
+        )
+
+        val result = HtmlBuilder.build(el)
+
+        assertTrue(
+          result == "<template id=\"portal-source\" data-phx-portal=\"#root-portal\"><div id=\"_lv_portal_wrap_portal-source\"><div id=\"my-modal\">Modal</div><div id=\"hook-test\" phx-hook=\"InsidePortal\"></div></div></template>"
+        )
       }
     ),
     suite("Dynamic HTML rendering")(

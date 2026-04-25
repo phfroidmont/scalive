@@ -11,4 +11,3 @@ private[scalive] object LivePatchUrl:
         else raw
 
       URL.decode(candidate).left.map(_.toString)
-end LivePatchUrl

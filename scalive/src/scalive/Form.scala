@@ -148,6 +148,7 @@ object FormCodec:
 
   def optionalString(path: FormPath): FormCodec[Option[String]] =
     optionalString(path.name)
+end FormCodec
 
 final case class FormSubmitter(name: String, value: String)
 
@@ -384,6 +385,7 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   private[scalive] def fullPath(path: FormPath): FormPath =
     if root.isEmpty then path
     else FormPath(root.segments ++ path.segments)
+end Form
 
 object Form:
   private val feedbackFor = htmlAttr("phx-feedback-for", StringAsIsEncoder)
@@ -396,8 +398,8 @@ object Form:
     of(name, event.state, codec)
 
   final case class Field(form: Form[?], path: FormPath):
-    def name: String = form.name(path)
-    def id: String   = form.id(path)
+    def name: String       = form.name(path)
+    def id: String         = form.id(path)
     def fieldValue: String = form.value(path)
 
     def text(mods: Mod[Nothing]*): HtmlElement[Nothing] =
@@ -420,11 +422,11 @@ object Form:
 
     def checkbox(checkedValue: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
       input(
-        typ := "checkbox",
-        idAttr := id,
+        typ      := "checkbox",
+        idAttr   := id,
         nameAttr := name,
-        value := checkedValue,
-        checked := form.state.raw.values(form.fullPath(path)).contains(checkedValue),
+        value    := checkedValue,
+        checked  := form.state.raw.values(form.fullPath(path)).contains(checkedValue),
         mods
       )
 
@@ -434,11 +436,12 @@ object Form:
     def select(options: Iterable[(String, String)], mods: Mod[Nothing]*): HtmlElement[Nothing] =
       val selectedValues = form.state.raw.values(form.fullPath(path)).toSet
       _root_.scalive.select(
-        idAttr := id,
+        idAttr   := id,
         nameAttr := name,
         mods,
         options.map { case (optionValue, label) =>
-          _root_.scalive.option(value := optionValue, selected := selectedValues.contains(optionValue), label)
+          _root_.scalive
+            .option(value := optionValue, selected := selectedValues.contains(optionValue), label)
         }
       )
 

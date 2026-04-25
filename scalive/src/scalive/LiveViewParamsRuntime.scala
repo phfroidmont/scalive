@@ -14,4 +14,3 @@ private[scalive] object LiveViewParamsRuntime:
       .catchSome { case error: LiveQueryCodec.DecodeError =>
         LiveIO.toZIO(lv.handleParamsDecodeError(model, error, url))
       }
-end LiveViewParamsRuntime

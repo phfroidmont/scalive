@@ -30,7 +30,7 @@ private[scalive] object SocketInbound:
       decodedUrl               <- ZIO
                       .fromEither(LivePatchUrl.resolve(url, currentUrl))
                       .mapError(error => new IllegalArgumentException(error))
-      _                        <- state.currentUrlRef.set(decodedUrl)
+      _                   <- state.currentUrlRef.set(decodedUrl)
       (model, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
           LiveIO
@@ -133,7 +133,7 @@ private[scalive] object SocketInbound:
         case LiveNavigationCommand.ReplacePatch(value) => value -> LivePatchKind.Replace
 
     for
-      currentUrl <- state.currentUrlRef.get
+      currentUrl  <- state.currentUrlRef.get
       resolvedUrl <- ZIO
                        .fromEither(LivePatchUrl.resolve(to, currentUrl))
                        .mapError(error => new IllegalArgumentException(error))
@@ -154,4 +154,5 @@ private[scalive] object SocketInbound:
             state
           ) *> handleLivePatch(resolvedTo, meta, state)
     yield ()
+  end handleNavigationCommand
 end SocketInbound

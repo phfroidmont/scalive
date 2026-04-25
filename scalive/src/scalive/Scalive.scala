@@ -18,6 +18,22 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   def component[Msg](cid: Int, element: HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.Component(cid, element)
 
+  private lazy val portalTemplateTag = HtmlTag("template")
+  private lazy val portalWrapperTag  = HtmlTag("div")
+  private lazy val phxPortal         = dataAttr("phx-portal")
+
+  def portal[Msg](id: String, target: String)(mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*)
+    : HtmlElement[Msg] =
+    val contentMods = mods.toVector.flatMap {
+      case mod: Mod[Msg]                => Some(mod)
+      case mods: IterableOnce[Mod[Msg]] => mods
+    }
+    portalTemplateTag(
+      idAttr    := id,
+      phxPortal := target,
+      portalWrapperTag(idAttr := s"_lv_portal_wrap_$id", contentMods)
+    )
+
   object link:
     def navigate[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "redirect", phx.linkState := "push", mods)

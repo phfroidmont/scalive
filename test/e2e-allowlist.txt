@@ -11,3 +11,4 @@ streams.spec.js
 colocated.spec.js
 forms.spec.js
 portal.spec.js
+errors.spec.js

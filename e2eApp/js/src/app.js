@@ -1,6 +1,13 @@
 import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
 
+const originalConsoleLog = console.log.bind(console)
+console.log = (...args) => {
+  const first = args[0]
+  if (typeof first === "string" && /^phx-[\w-]+ (mount|update):/.test(first)) return
+  originalConsoleLog(...args)
+}
+
 const hooks = {
   PhoneNumber: {
     mounted() {
@@ -54,12 +61,30 @@ const hooks = {
     hide() {
       if (this.el.dataset.hide) this.liveSocket.execJS(this.el, this.el.dataset.hide)
     }
+  },
+  ErrorLogger: {
+    mounted() {
+      this.logMessages()
+    },
+    updated() {
+      this.logMessages()
+    },
+    logMessages() {
+      const messages = this.el.dataset.consoleMessages
+      if (!messages) return
+      if (messages === this.loggedMessages) return
+      this.loggedMessages = messages
+      JSON.parse(messages).forEach((message) => console.log(message))
+    }
   }
 }
 
 let liveSocket = new LiveSocket("/live", Socket, {
   reloadJitterMin: 50,
   reloadJitterMax: 500,
+  maxReloads: 5,
+  failsafeJitter: 1000,
+  rejoinAfterMs: () => 50,
   hooks
 })
 
@@ -81,4 +106,8 @@ window.addEventListener("reset", () => {
   document.querySelectorAll("[phx-feedback-for]").forEach((el) => {
     el.classList.add("phx-no-feedback")
   })
+})
+
+window.addEventListener("phx:e2e:console-log", (event) => {
+  console.log(event.detail.message)
 })

@@ -66,8 +66,8 @@ final case class LiveRoute[A, Msg, Model](
       val lv         = live.liveviewBuilder(params, req)
       val id: String =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
-      val token = Token.sign(tokenConfig.secret, id, sessionName)
-      for
+      val token    = Token.sign(tokenConfig.secret, id, sessionName)
+      val response = for
         streamRef     <- Ref.make(StreamRuntimeState.empty)
         navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
         ctx = LiveContext(
@@ -103,7 +103,10 @@ final case class LiveRoute[A, Msg, Model](
           )
         case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
           Response.redirect(url)
-      end for
+      response.catchAllCause { cause =>
+        ZIO.logErrorCause(cause) *>
+          ZIO.succeed(Response.text("Internal Server Error").status(Status.InternalServerError))
+      }
     }
 end LiveRoute
 
@@ -426,6 +429,10 @@ final private class LiveRoutesRuntime(
                         using route.live.msgClassTag
                       )
                       .as(None)
+                      .catchAllCause(cause =>
+                        ZIO.logErrorCause(cause) *>
+                          ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+                      )
                 else ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
               )
           )

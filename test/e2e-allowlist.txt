@@ -14,6 +14,7 @@ portal.spec.js
 errors.spec.js
 issues/2787.spec.js
 issues/3040.spec.js
+issues/3047.spec.js
 issues/3026.spec.js
 issues/3083.spec.js
 issues/3107.spec.js

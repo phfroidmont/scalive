@@ -120,6 +120,45 @@ object Issue3040LiveView:
   enum Msg:
     case Open, Close, Submit
 
+class Issue3047LiveView(pageName: String, afterReset: Boolean)
+    extends LiveView[Issue3047LiveView.Msg.type, Issue3047LiveView.Model]:
+  import Issue3047LiveView.*
+
+  def mount =
+    LiveContext
+      .stream(ItemsStreamDef, if afterReset then ResetItems else InitialItems)
+      .map(items => Model(items))
+
+  def handleMessage(model: Model) =
+    case Msg =>
+      LiveContext
+        .stream(ItemsStreamDef, ResetItems, reset = true)
+        .map(items => model.copy(items = items))
+
+  def subscriptions(model: Model) = ZStream.empty
+
+  def render(model: Model) =
+    div(
+      div(idAttr := "page", s"Page $pageName"),
+      div(
+        phx.onUpdate := "stream",
+        model.items.stream { (domId, item) => span(idAttr := domId, item.id.toString) }
+      ),
+      button(phx.onClick(Msg), "Reset"),
+      link.navigate("/issues/3047/b", "Page B")
+    )
+end Issue3047LiveView
+
+object Issue3047LiveView:
+  final case class Item(id: Int)
+  final case class Model(items: LiveStream[Item])
+
+  case object Msg
+
+  private val ItemsStreamDef = LiveStreamDef.byId[Item, Int]("items")(_.id)
+  private val InitialItems   = (1 to 10).map(Item(_)).toList
+  private val ResetItems     = (5 to 15).map(Item(_)).toList
+
 class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
   import Issue3819LiveView.*
 

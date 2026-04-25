@@ -84,6 +84,7 @@ object E2EApp extends ZIOAppDefault:
       Method.GET / "issues" / "3612" / "a" -> liveHandler(Issue3612LiveView("A")),
       Method.GET / "issues" / "3612" / "b" -> liveHandler(Issue3612LiveView("B")),
       Method.GET / "issues" / "3636" -> liveHandler(Issue3636LiveView()),
+      Method.GET / "issues" / "3647" -> liveHandler(Issue3647LiveView()),
       Method.GET / "issues" / "3651" -> liveHandler(Issue3651LiveView()),
       Method.GET / "issues" / "3658" -> liveHandler(Issue3658LiveView()),
       Method.GET / "issues" / "3681" -> liveHandler(Issue3681LiveView(onAway = false)),

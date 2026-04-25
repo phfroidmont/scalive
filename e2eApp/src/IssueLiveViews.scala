@@ -180,6 +180,25 @@ class Issue3529LiveView(page: String) extends LiveView[Unit, String]:
     )
 end Issue3529LiveView
 
+class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg.type, Boolean]:
+  def mount = false
+
+  def handleMessage(model: Boolean) =
+    case Issue3647LiveView.Msg => true
+
+  def subscriptions(model: Boolean) = ZStream.empty
+
+  def render(uploaded: Boolean) =
+    div(
+      input(nameAttr := "user[name]", value := (if uploaded then "0" else "")),
+      button(phx.onClick(Issue3647LiveView.Msg), "Upload then Input"),
+      ul(if uploaded then li("file.txt") else "")
+    )
+end Issue3647LiveView
+
+object Issue3647LiveView:
+  case object Msg
+
 class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
   import Issue3819LiveView.*
 

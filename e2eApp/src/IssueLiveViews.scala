@@ -1,6 +1,7 @@
 import zio.stream.ZStream
 import zio.ZIO
 import zio.json.ast.Json
+import zio.http.URL
 
 import scalive.*
 
@@ -8,6 +9,8 @@ private val actionAttr = htmlAttr("action", scalive.codecs.StringAsIsEncoder)
 private val methodAttr = htmlAttr("method", scalive.codecs.StringAsIsEncoder)
 private val multipleAttr = htmlAttr("multiple", scalive.codecs.BooleanAsAttrPresenceEncoder)
 private val placeholderAttr = htmlAttr("placeholder", scalive.codecs.StringAsIsEncoder)
+private val feedbackForAttr = htmlAttr("phx-feedback-for", scalive.codecs.StringAsIsEncoder)
+private val targetAttr = htmlAttr("phx-target", scalive.codecs.StringAsIsEncoder)
 
 class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveView.Model]:
   import Issue3719LiveView.*
@@ -173,3 +176,178 @@ end Issue3083LiveView
 object Issue3083LiveView:
   final case class Model(selected: Vector[Int] = Vector.empty)
   case object Msg
+
+class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveView.Model]:
+  import Issue2787LiveView.*
+
+  def mount = Model()
+
+  def handleMessage(model: Model) =
+    case Msg.Updated(data) =>
+      val select1 = data.get("demo[select1]").filter(_.nonEmpty)
+      val select2 = data.get("demo[select2]").filter(_.nonEmpty)
+      model.copy(select1 = select1, select2 = select2)
+    case Msg.Submitted(_) => Model()
+
+  def subscriptions(model: Model) = ZStream.empty
+
+  def render(model: Model) =
+    div(
+      form(
+        phx.onChangeForm(Msg.Updated(_)),
+        phx.onSubmitForm(Msg.Submitted(_)),
+        select(
+          idAttr   := "demo_select1",
+          nameAttr := "demo[select1]",
+          option(value := "", "Select"),
+          Vector("greetings", "goodbyes").map(optionValue =>
+            option(selected := model.select1.contains(optionValue), value := optionValue, optionValue)
+          )
+        ),
+        select(
+          idAttr   := "demo_select2",
+          nameAttr := "demo[select2]",
+          option(value := "", "Select"),
+          model.select2Options.map(optionValue => option(selected := model.select2.contains(optionValue), value := optionValue, optionValue))
+        ),
+        input(typ := "text", idAttr := "demo_dummy", nameAttr := "demo[dummy]"),
+        button(typ := "submit", "Submit")
+      )
+    )
+end Issue2787LiveView
+
+object Issue2787LiveView:
+  final case class Model(select1: Option[String] = None, select2: Option[String] = None):
+    def select2Options: Vector[String] =
+      select1 match
+        case Some("greetings") => Vector("hello", "hallo", "hei")
+        case Some("goodbyes")  => Vector("goodbye", "auf wiedersehen", "ha det bra")
+        case _                 => Vector.empty
+
+  enum Msg:
+    case Updated(data: FormData)
+    case Submitted(data: FormData)
+
+class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
+  import Issue3448LiveView.*
+
+  def mount = Vector.empty
+
+  def handleMessage(model: Vector[String]) =
+    case Msg.Validate(data) => data.values("a[]")
+    case Msg.Search        => model
+
+  def subscriptions(model: Vector[String]) = ZStream.empty
+
+  def render(selectedValues: Vector[String]) =
+    form(
+      idAttr := "my_form",
+      phx.onChangeForm(Msg.Validate(_)),
+      div(
+        selectedValues.map(value => div(value)),
+        input(idAttr := "search", typ := "search", nameAttr := "value", phx.onChange(Msg.Search))
+      ),
+      div(
+        Vector("settings", "content").map(optionValue =>
+          input(
+            typ      := "checkbox",
+            nameAttr := "a[]",
+            value    := optionValue,
+            checked  := selectedValues.contains(optionValue),
+            phx.onClick(JS.dispatch("input").focus(to = "#search"))
+          )
+        )
+      )
+    )
+end Issue3448LiveView
+
+object Issue3448LiveView:
+  enum Msg:
+    case Validate(data: FormData)
+    case Search
+
+class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg.type, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) =
+    case Issue3194LiveView.Msg => model
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    form(
+      phx.onChange(Issue3194LiveView.Msg),
+      phx.onSubmit(JS.navigate("/issues/3194/other")),
+      input(
+        idAttr       := "foo_store_number",
+        nameAttr     := "foo[store_number]",
+        typ          := "text",
+        phx.debounce := "blur"
+      )
+    )
+end Issue3194LiveView
+
+object Issue3194LiveView:
+  case object Msg
+
+class Issue3194OtherLiveView extends LiveView[Unit, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) = Function.const(model)
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) = h2("Another LiveView")
+end Issue3194OtherLiveView
+
+class Issue3200LiveView extends LiveView[Issue3200LiveView.Msg, Issue3200LiveView.Model]:
+  import Issue3200LiveView.*
+
+  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
+
+  def mount = Model()
+
+  override def handleParams(model: Model, params: Unit, url: URL) =
+    val tab = url.path.segments.toList match
+      case "issues" :: "3200" :: "messages" :: Nil => Tab.Messages
+      case _                                        => Tab.Settings
+    model.copy(tab = tab)
+
+  def handleMessage(model: Model) =
+    case Msg.Change(data) => model.copy(message = data.getOrElse("new_message", ""))
+    case Msg.Submit      => model
+
+  def subscriptions(model: Model) = ZStream.empty
+
+  def render(model: Model) =
+    div(
+      button(typ := "button", phx.onClick(JS.patch("/issues/3200/messages")), "Messages tab"),
+      button(typ := "button", phx.onClick(JS.patch("/issues/3200/settings")), "Settings tab"),
+      model.tab match
+        case Tab.Settings => div("Settings")
+        case Tab.Messages =>
+          div(
+            div("Example message"),
+            form(
+              idAttr     := "full_add_message_form",
+              phx.onChangeForm(Msg.Change(_)),
+              phx.onSubmit(Msg.Submit),
+              targetAttr := "#full_add_message_form",
+              div(
+                feedbackForAttr := "new_message",
+                input(idAttr := "new_message_input", nameAttr := "new_message", value := model.message)
+              )
+            )
+          )
+    )
+end Issue3200LiveView
+
+object Issue3200LiveView:
+  enum Tab:
+    case Settings, Messages
+
+  final case class Model(tab: Tab = Tab.Settings, message: String = "")
+
+  enum Msg:
+    case Change(data: FormData)
+    case Submit

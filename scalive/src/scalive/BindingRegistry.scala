@@ -3,14 +3,14 @@ package scalive
 import scala.reflect.ClassTag
 
 private[scalive] object BindingRegistry:
-  type Handler[Msg] = Map[String, String] => Either[String, Msg]
+  type Handler[Msg] = BindingHandler[Msg]
 
   def collect[Msg: ClassTag](root: HtmlElement[Msg]): Map[String, Handler[Msg]] =
     collect(RenderSnapshot.compile(root))
 
   def collect[Msg: ClassTag](compiled: RenderSnapshot.Compiled): Map[String, Handler[Msg]] =
     compiled.bindings.iterator.map { case (id, handler) =>
-      id -> ((params: Map[String, String]) => toMessage(id, handler(params)))
+      id -> BindingHandler(payload => toMessage(id, handler(payload)))
     }.toMap
   end collect
 

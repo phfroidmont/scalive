@@ -59,7 +59,7 @@ private[scalive] object SocketModelRuntime:
   ): Task[Unit] =
     rendered.bindings.get(event.event) match
       case Some(binding) =>
-        binding(event.params) match
+        binding(event.bindingPayload) match
           case Right(message) =>
             for
               (updatedModel, navigation) <-
@@ -113,7 +113,7 @@ private[scalive] object SocketModelRuntime:
   ): Task[Diff] =
     for
       _ <- state.lvStreamRef.set(
-              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
+             state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
       nextCompiled = RenderSnapshot.compile(state.lv.render(model))
       diff         = TreeDiff.diff(rendered.compiled, nextCompiled)

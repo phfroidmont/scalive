@@ -9,3 +9,4 @@ js.spec.js
 uploads.spec.js
 streams.spec.js
 colocated.spec.js
+forms.spec.js

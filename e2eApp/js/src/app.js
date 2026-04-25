@@ -19,6 +19,20 @@ const hooks = {
     updated() {
       this.el.style.display = "block"
     }
+  },
+  FormHook: {
+    mounted() {
+      this.el.textContent = "pong"
+    }
+  },
+  FormStreamHook: {
+    mounted() {
+      const appendPong = () => {
+        if (!this.el.textContent.endsWith("pong")) this.el.textContent = `${this.el.textContent}pong`
+      }
+      if (["items-1", "items-2", "items-3"].includes(this.el.id)) appendPong()
+      else window.setTimeout(appendPong, 800)
+    }
   }
 }
 
@@ -40,4 +54,10 @@ window.addEventListener("phx:js:exec", (event) => {
 
 window.addEventListener("phx:navigate", (event) => {
   console.log("navigate event", JSON.stringify(event.detail))
+})
+
+window.addEventListener("reset", () => {
+  document.querySelectorAll("[phx-feedback-for]").forEach((el) => {
+    el.classList.add("phx-no-feedback")
+  })
 })

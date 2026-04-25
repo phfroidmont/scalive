@@ -3,7 +3,6 @@ package scalive
 import java.nio.charset.StandardCharsets
 
 import zio.Chunk
-import zio.http.QueryParams
 import zio.json.*
 import zio.json.ast.Json
 
@@ -193,19 +192,24 @@ object WebSocketMessage:
     given JsonEncoder[Payload.Diff]  = JsonEncoder[scalive.Diff].contramap(_.diff)
 
     extension (p: Payload.Event)
+      def bindingPayload: BindingPayload =
+        p.`type` match
+          case "form" => BindingPayload.Form(p.formData)
+          case _      => BindingPayload.Params(p.params)
+
+      def formData: FormData =
+        p.`type` match
+          case "form" =>
+            p.value.asString
+              .map(FormData.fromUrlEncoded)
+              .getOrElse(FormData.empty)
+          case _ => FormData.fromMap(decodeObjectToStringMap(p.value))
+
       def params: Map[String, String] =
         val base =
           p.`type` match
             case "form" =>
-              p.value.asString
-                .map(value => QueryParams.decode(value))
-                .getOrElse(QueryParams.decode(""))
-                .map
-                .iterator
-                .map { case (key, values) =>
-                  key -> values.headOption.getOrElse("")
-                }
-                .toMap
+              p.formData.asMap
             case _ => decodeObjectToStringMap(p.value)
 
         val withMeta = p.meta match

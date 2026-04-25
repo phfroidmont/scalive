@@ -12,7 +12,7 @@ object BindingRegistrySpec extends ZIOSpecDefault:
     )
 
   private def messageToId(
-    bindings: Map[String, Map[String, String] => Either[String, String]]
+    bindings: Map[String, BindingHandler[String]]
   ): Map[String, String] =
     bindings.flatMap { case (id, handler) =>
       handler(Map.empty).toOption.map(message => message -> id)
@@ -41,6 +41,17 @@ object BindingRegistrySpec extends ZIOSpecDefault:
         first.keySet == second.keySet,
         first.values.flatMap(_(Map.empty).toOption).toSet == Set("one", "two")
       )
+    },
+    test("form bindings receive lossless form data") {
+      val view = form(
+        phx.onChangeForm(data => data.values("items[]").mkString(",")),
+        input(nameAttr := "items[]")
+      )
+
+      val binding = BindingRegistry.collect[String](view).values.head
+      val payload = BindingPayload.Form(FormData(Vector("items[]" -> "a", "items[]" -> "b")))
+
+      assertTrue(binding(payload) == Right("a,b"))
     }
   )
 end BindingRegistrySpec

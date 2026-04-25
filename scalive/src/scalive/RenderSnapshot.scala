@@ -8,7 +8,7 @@ import scalive.Mod.Attr
 import scalive.Mod.Content
 
 private[scalive] object RenderSnapshot:
-  type RawBindingHandler = Map[String, String] => Any
+  type RawBindingHandler = BindingPayload => Any
 
   final case class Compiled(
     root: TagNode,
@@ -149,7 +149,13 @@ private[scalive] object RenderSnapshot:
           staticFragment += s" $name=\""
           pushStringSlot(Escaping.escape(id))
           staticFragment += "\""
-          bindings.update(id, params => f(params))
+          bindings.update(id, payload => f(payload.params))
+        case Attr.FormBinding(name, f) =>
+          val id = BindingId.attrBindingId(path, attrIndex)
+          staticFragment += s" $name=\""
+          pushStringSlot(Escaping.escape(id))
+          staticFragment += "\""
+          bindings.update(id, payload => f(payload.formData))
         case Attr.JsBinding(name, command) =>
           val scope = BindingId.jsBindingScope(path, attrIndex)
           staticFragment += s" $name='"
@@ -354,7 +360,10 @@ private[scalive] object RenderSnapshot:
       attr match
         case Attr.Binding(_, f) =>
           val id = BindingId.attrBindingId(path, attrIndex)
-          bindings.update(id, params => f(params))
+          bindings.update(id, payload => f(payload.params))
+        case Attr.FormBinding(_, f) =>
+          val id = BindingId.attrBindingId(path, attrIndex)
+          bindings.update(id, payload => f(payload.formData))
         case Attr.JsBinding(_, command) =>
           val scope = BindingId.jsBindingScope(path, attrIndex)
           command.bindings(scope).foreach { case (id, msg) =>

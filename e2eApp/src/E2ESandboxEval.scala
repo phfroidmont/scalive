@@ -14,6 +14,8 @@ object E2ESandboxEval:
 
       val result =
         code match
+          case value if value.contains("inspect(self())") =>
+            Json.Obj("lv_pid" -> Json.Arr(Json.Str("0"), Json.Str("0"), Json.Str("0")))
           case "socket.assigns.items" =>
             extractProductField(model, "items").map(toJson).getOrElse(Json.Null)
           case "socket.assigns" => toJson(model)

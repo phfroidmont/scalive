@@ -118,7 +118,7 @@ private[scalive] object StreamRuntimeState:
 
 final private[scalive] case class RenderedView[Msg](
   compiled: RenderSnapshot.Compiled,
-  bindings: Map[String, Map[String, String] => Either[String, Msg]])
+  bindings: Map[String, BindingHandler[Msg]])
 
 final private[scalive] case class RuntimeState[Msg, Model](
   lv: LiveView[Msg, Model],

@@ -13,7 +13,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   export _root_.scalive.streams.api.*
   export _root_.scalive.upload.api.*
 
-  lazy val defer            = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
+  lazy val defer                          = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
   def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
   def component[Msg](cid: Int, element: HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.Component(cid, element)
@@ -36,9 +36,12 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
     private def requireHref[A](to: LiveQueryCodec[A], value: A, operation: String): String =
       to.href(value) match
-        case Right(url) => url
+        case Right(url)  => url
         case Left(error) =>
-          throw new IllegalArgumentException(s"Could not encode URL for $operation: ${error.message}", error)
+          throw new IllegalArgumentException(
+            s"Could not encode URL for $operation: ${error.message}",
+            error
+          )
 
   object phx:
     private def phxAttr(suffix: String): HtmlAttr[String] =
@@ -83,8 +86,12 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val onProgress = phxAttrBinding("progress")
 
     // Form
-    lazy val onChange      = phxAttrBinding("change")
-    lazy val onSubmit      = phxAttrBinding("submit")
+    lazy val onChange                                        = phxAttrBinding("change")
+    lazy val onSubmit                                        = phxAttrBinding("submit")
+    def onChangeForm[Msg](f: FormData => Msg): Mod.Attr[Msg] =
+      onChange.form(f)
+    def onSubmitForm[Msg](f: FormData => Msg): Mod.Attr[Msg] =
+      onSubmit.form(f)
     lazy val autoRecover   = phxAttrBinding("auto-recover")
     lazy val triggerAction = phxAttrBool("trigger-action")
 
@@ -118,6 +125,6 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val trackStatic   = htmlAttr("phx-track-static", BooleanAsAttrPresenceEncoder)
   end phx
 
-  implicit def stringToMod(v: String): Mod[Nothing]            = Mod.Content.Text(v)
+  implicit def stringToMod(v: String): Mod[Nothing]                  = Mod.Content.Text(v)
   implicit def htmlElementToMod[Msg](el: HtmlElement[Msg]): Mod[Msg] = Mod.Content.Tag(el)
 end scalive

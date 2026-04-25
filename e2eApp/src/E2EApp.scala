@@ -48,18 +48,32 @@ object E2EApp extends ZIOAppDefault:
       Method.GET / "stream" / "nested-component-reset" -> liveHandler(
         StreamNestedComponentResetLiveView()
       ),
-      Method.GET / "stream" / "inside-for" -> liveHandler(StreamInsideForLiveView()),
-      Method.GET / "healthy" / "fruits"    -> liveHandler(HealthyLiveView("fruits")),
-      Method.GET / "healthy" / "veggies"   -> liveHandler(HealthyLiveView("veggies")),
-      Method.GET / "components"            -> liveHandler(ComponentsLiveView()),
-      Method.GET / "js"                    -> liveHandler(JsLiveView()),
-      Method.GET / "colocated"             -> liveHandler(ColocatedLiveView()),
-      Method.GET / "upload"                -> liveHandler(UploadLiveView())
+      Method.GET / "stream" / "inside-for"   -> liveHandler(StreamInsideForLiveView()),
+      Method.GET / "healthy" / "fruits"      -> liveHandler(HealthyLiveView("fruits")),
+      Method.GET / "healthy" / "veggies"     -> liveHandler(HealthyLiveView("veggies")),
+      Method.GET / "components"              -> liveHandler(ComponentsLiveView()),
+      Method.GET / "js"                      -> liveHandler(JsLiveView()),
+      Method.GET / "colocated"               -> liveHandler(ColocatedLiveView()),
+      Method.GET / "upload"                  -> liveHandler(UploadLiveView()),
+      Method.GET / "form"                    -> liveHandler(FormLiveView()),
+      Method.GET / "form" / "nested"         -> liveHandler(FormLiveView(nested = true)),
+      Method.GET / "form" / "stream"         -> liveHandler(FormStreamLiveView()),
+      Method.GET / "form" / "dynamic-inputs" -> liveHandler(FormDynamicInputsLiveView()),
+      Method.GET / "form" / "feedback"       -> liveHandler(FormFeedbackLiveView())
     )
 
   private val healthRoutes =
     Routes(
-      Method.GET / "health"   -> handler(Response.text("OK")),
+      Method.GET / "health" -> handler(Response.text("OK")),
+      Method.POST / "eval"  -> handler { (req: Request) =>
+        req.body.asString.orDie
+          .flatMap(E2ELatencyGate.releaseFromCode).as(
+            Response(
+              headers = Headers(Header.ContentType(MediaType.application.json)),
+              body = Body.fromString("{\"result\":null}")
+            )
+          )
+      },
       Method.GET / "download" -> handler { (req: Request) =>
         val maybeFile = req.queryParam("file")
         maybeFile.flatMap(UploadLiveView.resolveUploadPath) match

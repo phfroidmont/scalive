@@ -13,10 +13,14 @@ forms.spec.js
 portal.spec.js
 errors.spec.js
 issues/2787.spec.js
+issues/3026.spec.js
 issues/3083.spec.js
 issues/3107.spec.js
+issues/3117.spec.js
+issues/3169.spec.js
 issues/3194.spec.js
 issues/3200.spec.js
+issues/3378.spec.js
 issues/3448.spec.js
 issues/3719.spec.js
 issues/3814.spec.js

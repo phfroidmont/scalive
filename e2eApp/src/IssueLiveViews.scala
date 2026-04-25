@@ -351,3 +351,125 @@ object Issue3200LiveView:
   enum Msg:
     case Change(data: FormData)
     case Submit
+
+class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveView.Model]:
+  import Issue3026LiveView.*
+
+  def mount = Model()
+
+  def handleMessage(model: Model) =
+    case Msg.ChangeStatus(data) => model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
+    case Msg.Validate(data)     => model.copy(name = data.getOrElse("name", model.name), email = data.getOrElse("email", model.email))
+    case Msg.Submit             => model.copy(status = Status.Loaded)
+
+  def subscriptions(model: Model) = ZStream.empty
+
+  def render(model: Model) =
+    div(
+      form(
+        phx.onChangeForm(Msg.ChangeStatus(_)),
+        select(
+          nameAttr := "status",
+          Vector(Status.Connecting, Status.Loading, Status.Connected, Status.Loaded).map(status =>
+            option(value := status.value, selected := (status == model.status), status.value.capitalize)
+          )
+        )
+      ),
+      model.status match
+        case Status.Loaded =>
+          div(
+            "Example form",
+            form(
+              phx.onChangeForm(Msg.Validate(_)),
+              phx.onSubmit(Msg.Submit),
+              input(nameAttr := "name", typ := "text", value := model.name),
+              input(nameAttr := "email", typ := "text", value := model.email),
+              button(typ := "submit", "Submit")
+            )
+          )
+        case other => div(cls := "p-8 bg-gray-200 mb-4", other.value)
+    )
+end Issue3026LiveView
+
+object Issue3026LiveView:
+  enum Status(val value: String):
+    case Connecting extends Status("connecting")
+    case Loading    extends Status("loading")
+    case Connected  extends Status("connected")
+    case Loaded     extends Status("loaded")
+
+  final case class Model(status: Status = Status.Loaded, name: String = "John", email: String = "")
+
+  enum Msg:
+    case ChangeStatus(data: FormData)
+    case Validate(data: FormData)
+    case Submit
+
+class Issue3117LiveView extends LiveView[Unit, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) = Function.const(model)
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    div(
+      a(idAttr := "navigate", href := "/issues/3117?nav", phx.onClick(JS.navigate("/issues/3117?nav")), "Navigate"),
+      (1 to 2).map(i => div(idAttr := s"row-$i", s"Example LC Row $i", div(cls := "static", "static content")))
+    )
+end Issue3117LiveView
+
+class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
+  import Issue3169LiveView.*
+
+  def mount = None
+
+  def handleMessage(model: Option[String]) =
+    case Msg.Select(name) => Some(name)
+
+  def subscriptions(model: Option[String]) = ZStream.empty
+
+  def render(selected: Option[String]) =
+    div(
+      "HomeLive ",
+      selected.map(name =>
+        div(
+          "FormComponent (c1)",
+          div(
+            "FormCore (c2)",
+            div(
+              "FormColumn (c3) ",
+              input(typ := "text", value := s"Record $name"),
+              div(s"Record $name", input(typ := "text", value := s"Record $name"), div(s"Record $name", input(typ := "text", value := s"Record $name"))),
+              "This is a test! foo"
+            )
+          )
+        )
+      ),
+      button(idAttr := "select-a", phx.value("name") := "a", phx.onClick(params => Msg.Select(params.getOrElse("name", ""))), "Select A"),
+      button(idAttr := "select-b", phx.value("name") := "b", phx.onClick(params => Msg.Select(params.getOrElse("name", ""))), "Select B"),
+      button(idAttr := "select-z", phx.value("name") := "z", phx.onClick(params => Msg.Select(params.getOrElse("name", ""))), "Select Z")
+    )
+end Issue3169LiveView
+
+object Issue3169LiveView:
+  enum Msg:
+    case Select(name: String)
+
+class Issue3378LiveView extends LiveView[Unit, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) = Function.const(model)
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    div(
+      idAttr := "notifications",
+      ul(
+        idAttr       := "notifications_list",
+        phx.onUpdate := "stream",
+        div(idAttr := "notifications-1", p("big!"))
+      )
+    )
+end Issue3378LiveView

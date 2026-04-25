@@ -783,6 +783,31 @@ object Issue3658LiveView:
   enum Msg:
     case Noop
 
+class Issue3656LiveView extends LiveView[Issue3656LiveView.Msg.type, Unit]:
+  import Issue3656LiveView.*
+
+  def mount = ()
+
+  def handleMessage(model: Unit) =
+    case Msg => model
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    navTag(
+      a(
+        idAttr := "issue-3656-link",
+        href := "#",
+        phx.hook := "Issue3656ClearClass",
+        phx.onClick(JS.push(Msg).dispatch("scalive:clear-class")),
+        "Link 1"
+      )
+    )
+end Issue3656LiveView
+
+object Issue3656LiveView:
+  case object Msg
+
 class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Unit]:
   def mount = ()
 

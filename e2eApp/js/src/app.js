@@ -89,6 +89,13 @@ const hooks = {
     destroyed() {
       console.log(`${this.el.id} destroyed`)
     }
+  },
+  Issue3656ClearClass: {
+    mounted() {
+      this.el.addEventListener("scalive:clear-class", () => {
+        setTimeout(() => this.el.setAttribute("class", ""), 0)
+      })
+    }
   }
 }
 

@@ -25,6 +25,7 @@ private[scalive] object SocketBootstrap:
       clientEventsRef <- Ref.make(Vector.empty[Diff.Event])
       titleRef        <- Ref.make(Option.empty[String])
       navigationRef   <- Ref.make(Option.empty[LiveNavigationCommand])
+      componentsRef   <- Ref.make(ComponentRuntimeState.empty)
       runtimeCtx = ctx.copy(
                      uploads = new SocketUploadRuntime(uploadRef),
                      streams = new SocketStreamRuntime(streamRef),
@@ -35,10 +36,12 @@ private[scalive] object SocketBootstrap:
       initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(runtimeCtx))
       (bootstrapModel, bootstrapPayloads, bootstrapUrl) <-
         runInitialLifecycle(lv, runtimeCtx, navigationRef, initModel, initialUrl)
-      initCompiled = RenderSnapshot.compile(lv.render(bootstrapModel))
+      initRoot <-
+        SocketComponentRuntime.renderRoot(lv.render(bootstrapModel), componentsRef, runtimeCtx)
+      initCompiled = RenderSnapshot.compile(initRoot)
       initView     = RenderedView(
                    compiled = initCompiled,
-                   bindings = BindingRegistry.collect[Msg](initCompiled)
+                   bindings = BindingRegistry.collect[Any](initCompiled)
                  )
       ref           <- Ref.make((bootstrapModel, initView))
       currentUrlRef <- Ref.make(bootstrapUrl)
@@ -78,6 +81,7 @@ private[scalive] object SocketBootstrap:
       streamRef = streamRef,
       clientEventsRef = clientEventsRef,
       titleRef = titleRef,
+      componentsRef = componentsRef,
       componentCidsRef = componentCidsRef,
       patchRedirectCountRef = patchRedirectCountRef,
       bootstrapPayloads = bootstrapPayloadEnvelopes,

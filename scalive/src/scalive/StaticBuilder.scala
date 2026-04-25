@@ -24,10 +24,11 @@ object StaticBuilder:
     }
 
     val children = el.contentMods.flatMap {
-      case Content.Text(text, raw) => List(Some(if raw then text else Escaping.escape(text)))
-      case Content.Tag(child)      => buildStaticFragments(child)
-      case Content.Component(_, _) => List(None)
-      case Content.Keyed(_, _, _)  => List(None)
+      case Content.Text(text, raw)  => List(Some(if raw then text else Escaping.escape(text)))
+      case Content.Tag(child)       => buildStaticFragments(child)
+      case Content.Component(_, _)  => List(None)
+      case Content.LiveComponent(_) => List(None)
+      case Content.Keyed(_, _, _)   => List(None)
     }
 
     val static         = ListBuffer.empty[Option[String]]

@@ -121,7 +121,7 @@ private[scalive] object SocketInbound:
       case _ => Set.empty
 
   def handleNavigationCommand[Msg, Model](
-    rendered: RenderedView[Msg],
+    rendered: RenderedView,
     model: Model,
     command: LiveNavigationCommand,
     meta: WebSocketMessage.Meta,

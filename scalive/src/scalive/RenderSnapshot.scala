@@ -209,6 +209,8 @@ private[scalive] object RenderSnapshot:
             )
           )
         )
+      case Content.LiveComponent(_) =>
+        throw new IllegalStateException("live components must be resolved before rendering")
       case Content.Keyed(entries, stream, allEntries) =>
         val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
         structuralChildIndex = structuralChildIndex + 1
@@ -393,6 +395,10 @@ private[scalive] object RenderSnapshot:
         val childPath = BindingId.childComponentPath(path, structuralChildIndex, cid)
         structuralChildIndex = structuralChildIndex + 1
         collectBindingsOnly(child, childPath, bindings)
+      case Content.LiveComponent(_) =>
+        throw new IllegalStateException(
+          "live components must be resolved before collecting bindings"
+        )
       case Content.Keyed(entries, _, allEntries) =>
         val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
         structuralChildIndex = structuralChildIndex + 1

@@ -32,6 +32,9 @@ object JSCommands:
       case t: (String, String, String) => Some(t.toList.map(classNames))
 
   extension [Msg](ops: JSCommand[Msg])
+    private[scalive] def map[Msg2](f: Msg => Msg2): JSCommand[Msg2] =
+      ops.map(op => op.copy(binding = op.binding.map(binding => Binding(f(binding.msg)))))
+
     private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand[Msg] =
       Op(_ => encodeOp(kind, args), None) :: ops
 

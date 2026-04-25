@@ -25,7 +25,7 @@ private[scalive] object SocketModelRuntime:
     yield (value, navigation)
 
   def applyInterceptHalt[Msg, Model](
-    rendered: RenderedView[Msg],
+    rendered: RenderedView,
     interceptModel: Model,
     reply: Option[Json],
     navigation: Option[LiveNavigationCommand],
@@ -50,7 +50,7 @@ private[scalive] object SocketModelRuntime:
     yield ()
 
   def applyBoundEvent[Msg, Model](
-    rendered: RenderedView[Msg],
+    rendered: RenderedView,
     interceptModel: Model,
     event: Payload.Event,
     carriedNavigation: Option[LiveNavigationCommand],
@@ -60,31 +60,58 @@ private[scalive] object SocketModelRuntime:
     rendered.bindings.get(event.event) match
       case Some(binding) =>
         binding(event.bindingPayload) match
+          case Right(ComponentMessage(cid, message)) =>
+            SocketComponentRuntime
+              .handleComponentMessage(
+                cid,
+                message,
+                rendered,
+                meta,
+                state
+              ).flatMap {
+                case true  => ZIO.unit
+                case false => publishPayload(Payload.okReply(LiveResponse.Empty), meta, state)
+              }
           case Right(message) =>
-            for
-              (updatedModel, navigation) <-
-                captureNavigation(state, carriedNavigation)(
-                  LiveIO
-                    .toZIO(state.lv.handleMessage(interceptModel)(message))
-                    .provide(ZLayer.succeed(state.ctx))
+            state.msgClassTag.unapply(message) match
+              case Some(parentMessage) =>
+                for
+                  (updatedModel, navigation) <-
+                    captureNavigation(state, carriedNavigation)(
+                      LiveIO
+                        .toZIO(state.lv.handleMessage(interceptModel)(parentMessage))
+                        .provide(ZLayer.succeed(state.ctx))
+                    )
+                  _ <- navigation match
+                         case Some(command) =>
+                           publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
+                             state.patchRedirectCountRef.set(0) *>
+                             SocketInbound.handleNavigationCommand(
+                               rendered,
+                               updatedModel,
+                               command,
+                               meta,
+                               state
+                             )
+                         case None =>
+                           for
+                             diff <- updateModelAndSubscriptions(rendered, updatedModel, state)
+                             _    <-
+                               publishPayload(Payload.okReply(LiveResponse.Diff(diff)), meta, state)
+                           yield ()
+                yield ()
+              case None =>
+                handleInvalidOrMissingBinding(
+                  rendered,
+                  event.event,
+                  Some(
+                    s"Binding '${event.event}' produced ${message.getClass.getName}, expected ${state.msgClassTag.runtimeClass.getName}"
+                  ),
+                  interceptModel,
+                  carriedNavigation,
+                  meta,
+                  state
                 )
-              _ <- navigation match
-                     case Some(command) =>
-                       publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
-                         state.patchRedirectCountRef.set(0) *>
-                         SocketInbound.handleNavigationCommand(
-                           rendered,
-                           updatedModel,
-                           command,
-                           meta,
-                           state
-                         )
-                     case None =>
-                       for
-                         diff <- updateModelAndSubscriptions(rendered, updatedModel, state)
-                         _ <- publishPayload(Payload.okReply(LiveResponse.Diff(diff)), meta, state)
-                       yield ()
-            yield ()
           case Left(error) =>
             handleInvalidOrMissingBinding(
               rendered,
@@ -107,7 +134,7 @@ private[scalive] object SocketModelRuntime:
         )
 
   def updateModelAndSubscriptions[Msg, Model](
-    rendered: RenderedView[Msg],
+    rendered: RenderedView,
     model: Model,
     state: RuntimeState[Msg, Model]
   ): Task[Diff] =
@@ -115,12 +142,12 @@ private[scalive] object SocketModelRuntime:
       _ <- state.lvStreamRef.set(
              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
-      nextCompiled = RenderSnapshot.compile(state.lv.render(model))
+      nextRoot <- SocketComponentRuntime.renderRoot(state.lv.render(model), state)
+      nextCompiled = RenderSnapshot.compile(nextRoot)
       diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
       nextRendered = RenderedView(
                        compiled = nextCompiled,
-                       bindings =
-                         BindingRegistry.collect[Msg](nextCompiled)(using state.msgClassTag)
+                       bindings = BindingRegistry.collect[Any](nextCompiled)
                      )
       _      <- state.ref.set((model, nextRendered))
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)
@@ -156,7 +183,7 @@ private[scalive] object SocketModelRuntime:
         Payload.okReply(LiveResponse.Empty)
 
   private def handleInvalidOrMissingBinding[Msg, Model](
-    rendered: RenderedView[Msg],
+    rendered: RenderedView,
     bindingId: String,
     error: Option[String],
     model: Model,

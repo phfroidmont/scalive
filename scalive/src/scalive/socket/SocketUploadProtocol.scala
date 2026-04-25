@@ -442,38 +442,50 @@ private[scalive] object SocketUploadProtocol:
       reply                    <- rendered.bindings.get(eventRef) match
                  case Some(binding) =>
                    binding(progressPayloadToParams(payload)) match
+                     case Right(ComponentMessage(cid, message)) =>
+                       SocketComponentRuntime
+                         .handleComponentMessage(cid, message, rendered, state.meta, state)
+                         .as(Payload.okReply(LiveResponse.Empty))
                      case Right(message) =>
-                       for
-                         (updatedModel, navigation) <-
-                           SocketModelRuntime.captureNavigation(state)(
-                             LiveIO
-                               .toZIO(state.lv.handleMessage(currentModel)(message))
-                               .provide(ZLayer.succeed(state.ctx))
-                           )
-                         reply <- navigation match
-                                    case Some(command) =>
-                                      state.patchRedirectCountRef.set(0) *>
-                                        SocketInbound
-                                          .handleNavigationCommand(
-                                            rendered,
-                                            updatedModel,
-                                            command,
-                                            state.meta,
-                                            state
-                                          )
-                                          .as(Payload.okReply(LiveResponse.Empty))
-                                    case None =>
-                                      SocketModelRuntime
-                                        .updateModelAndSubscriptions(
-                                          rendered,
-                                          updatedModel,
-                                          state
-                                        )
-                                        .map(diff =>
-                                          if diff.isEmpty then Payload.okReply(LiveResponse.Empty)
-                                          else Payload.okReply(LiveResponse.Diff(diff))
-                                        )
-                       yield reply
+                       state.msgClassTag.unapply(message) match
+                         case Some(parentMessage) =>
+                           for
+                             (updatedModel, navigation) <-
+                               SocketModelRuntime.captureNavigation(state)(
+                                 LiveIO
+                                   .toZIO(state.lv.handleMessage(currentModel)(parentMessage))
+                                   .provide(ZLayer.succeed(state.ctx))
+                               )
+                             reply <- navigation match
+                                        case Some(command) =>
+                                          state.patchRedirectCountRef.set(0) *>
+                                            SocketInbound
+                                              .handleNavigationCommand(
+                                                rendered,
+                                                updatedModel,
+                                                command,
+                                                state.meta,
+                                                state
+                                              )
+                                              .as(Payload.okReply(LiveResponse.Empty))
+                                        case None =>
+                                          SocketModelRuntime
+                                            .updateModelAndSubscriptions(
+                                              rendered,
+                                              updatedModel,
+                                              state
+                                            )
+                                            .map(diff =>
+                                              if diff.isEmpty then
+                                                Payload.okReply(LiveResponse.Empty)
+                                              else Payload.okReply(LiveResponse.Diff(diff))
+                                            )
+                           yield reply
+                         case None =>
+                           ZIO
+                             .logWarning(
+                               s"upload_progress binding type mismatch for ref=$eventRef: expected ${state.msgClassTag.runtimeClass.getName}"
+                             ).as(Payload.okReply(LiveResponse.Empty))
                      case Left(error) =>
                        ZIO.logWarning(
                          s"upload_progress binding type mismatch for ref=$eventRef: $error"

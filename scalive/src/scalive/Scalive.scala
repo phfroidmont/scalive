@@ -16,6 +16,19 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
   def component[Msg](cid: Int, element: HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.Component(cid, element)
+  def liveComponent[Props, Msg, Model](
+    component: LiveComponent[Props, Msg, Model],
+    id: String,
+    props: Props
+  ): Mod[Nothing] =
+    Mod.Content.LiveComponent(LiveComponentSpec(component, id, props))
+
+  def liveComponent[Props, Msg, Model](
+    component: LiveComponent[Props, Msg, Model],
+    id: Int,
+    props: Props
+  ): Mod[Nothing] =
+    liveComponent(component, id.toString, props)
 
   private lazy val portalTemplateTag = HtmlTag("template")
   private lazy val phxPortal         = dataAttr("phx-portal")
@@ -88,6 +101,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     private[scalive] lazy val main      = htmlAttr("data-phx-main", BooleanAsAttrPresenceEncoder)
     private[scalive] lazy val link      = dataPhxAttr("link")
     private[scalive] lazy val linkState = dataPhxAttr("link-state")
+    private[scalive] lazy val component = dataPhxAttr("component")
 
     // Click
     lazy val onClick     = phxAttrBinding("click")
@@ -142,7 +156,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       new HtmlAttr["update" | "stream" | "ignore"](s"phx-update", Encoder(identity))
 
     // Client hooks
-    lazy val hook = phxAttr("hook")
+    lazy val hook                                              = phxAttr("hook")
+    def target[Msg](ref: ComponentRef[Msg]): Mod.Attr[Nothing] =
+      phxAttr("target") := ref.toString
+    def target(selector: String): Mod.Attr[Nothing] =
+      phxAttr("target") := selector
 
     // Rate limiting
     lazy val debounce = new HtmlAttr["blur" | Int](

@@ -77,9 +77,10 @@ object Mod:
     case JsBinding[Msg](name: String, command: JSCommand[Msg]) extends Attr[Msg]
 
   enum Content[+Msg] extends Mod[Msg]:
-    case Text(text: String, raw: Boolean = false)       extends Content[Nothing]
-    case Tag[Msg](el: HtmlElement[Msg])                 extends Content[Msg]
-    case Component[Msg](cid: Int, el: HtmlElement[Msg]) extends Content[Msg]
+    case Text(text: String, raw: Boolean = false)        extends Content[Nothing]
+    case Tag[Msg](el: HtmlElement[Msg])                  extends Content[Msg]
+    case Component[Msg](cid: Int, el: HtmlElement[Msg])  extends Content[Msg]
+    case LiveComponent(spec: LiveComponentSpec[?, ?, ?]) extends Content[Nothing]
     case Keyed(
       entries: Vector[Content.Keyed.Entry[Msg]],
       stream: Option[Diff.Stream] = None,

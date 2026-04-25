@@ -1,3 +1,5 @@
+import java.util.UUID
+
 import zio.stream.ZStream
 import zio.ZIO
 import zio.json.ast.Json
@@ -158,6 +160,25 @@ object Issue3047LiveView:
   private val ItemsStreamDef = LiveStreamDef.byId[Item, Int]("items")(_.id)
   private val InitialItems   = (1 to 10).map(Item(_)).toList
   private val ResetItems     = (5 to 15).map(Item(_)).toList
+
+class Issue3529LiveView(page: String) extends LiveView[Unit, String]:
+  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
+
+  def mount = UUID.randomUUID().toString
+
+  override def handleParams(model: String, params: Unit, url: URL) = model
+
+  def handleMessage(model: String) = Function.const(model)
+
+  def subscriptions(model: String) = ZStream.empty
+
+  def render(model: String) =
+    div(
+      h1(s"$page $model"),
+      link.navigate("/issues/3529/navigated", "Navigate"),
+      link.patch("/issues/3529/navigated?patched=true", "Patch")
+    )
+end Issue3529LiveView
 
 class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
   import Issue3819LiveView.*

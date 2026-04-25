@@ -25,6 +25,7 @@ issues/3200.spec.js
 issues/3378.spec.js
 issues/3448.spec.js
 issues/3496.spec.js
+issues/3529.spec.js
 issues/3612.spec.js
 issues/3636.spec.js
 issues/3651.spec.js

@@ -176,6 +176,8 @@ class FormDynamicInputsLiveView
       FormState(formData(model), Right(dynamicInputsForm(model)), submitted = false),
       DynamicInputsForm.codec
     )
+    val usersSortName = formModel.name(FormPath("users_sort").array)
+    val usersDropName = formModel.name(FormPath("users_drop").array)
 
     div(
       form(
@@ -191,22 +193,22 @@ class FormDynamicInputsLiveView
             value       := formModel.value("name"),
             placeholder := "name"
           ),
-          model.users.zipWithIndex.map { case (user, index) =>
+          model.users.indices.map { index =>
             div(
               styleAttr := "padding: 4px; border: 1px solid gray;",
-              input(typ := "hidden", nameAttr := "my_form[users_sort][]", value := index.toString),
+              input(typ := "hidden", nameAttr := usersSortName, value := index.toString),
               input(
                 typ         := "text",
                 idAttr      := s"my-form_users_${index}_name",
-                nameAttr    := s"my_form[users][$index][name]",
-                value       := user.name,
+                nameAttr    := formModel.name(FormPath("users", index.toString, "name")),
+                value       := formModel.value(FormPath("users", index.toString, "name")),
                 placeholder := "name"
               ),
               if model.checkboxes then
                 label(
                   input(
                     typ      := "checkbox",
-                    nameAttr := "my_form[users_drop][]",
+                    nameAttr := usersDropName,
                     value    := index.toString
                   ),
                   " Remove"
@@ -214,7 +216,7 @@ class FormDynamicInputsLiveView
               else
                 button(
                   typ      := "button",
-                  nameAttr := "my_form[users_drop][]",
+                  nameAttr := usersDropName,
                   value    := index.toString,
                   phx.onClick(JS.dispatch("change")),
                   "Remove"
@@ -222,16 +224,16 @@ class FormDynamicInputsLiveView
             )
           }
         ),
-        input(typ := "hidden", nameAttr := "my_form[users_drop][]"),
+        input(typ := "hidden", nameAttr := usersDropName),
         if model.checkboxes then
           label(
-            input(typ := "checkbox", nameAttr := "my_form[users_sort][]"),
+            input(typ := "checkbox", nameAttr := usersSortName),
             " add more"
           )
         else
           button(
             typ      := "button",
-            nameAttr := "my_form[users_sort][]",
+            nameAttr := usersSortName,
             value    := "new",
             phx.onClick(JS.dispatch("change")),
             "add more"

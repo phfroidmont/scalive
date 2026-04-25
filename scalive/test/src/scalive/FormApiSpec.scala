@@ -149,6 +149,54 @@ object FormApiSpec extends ZIOSpecDefault:
       val payload = BindingPayload.Form(FormData.fromUrlEncoded("profile%5Bname%5D=Alice"))
 
       assertTrue(binding(payload) == Right(Changed(Right(Profile("Alice")))))
+    },
+    test("render-side common field helpers generate expected markup") {
+      val state = FormState(
+        raw = FormData(
+          Vector(
+            "profile[bio]"      -> "Hello",
+            "profile[password]" -> "secret",
+            "profile[active]"   -> "yes",
+            "profile[role]"     -> "admin"
+          )
+        ),
+        value = Right(Profile("Alice")),
+        submitted = false
+      )
+      val form = Form.of("profile", state, profileCodec)
+
+      val html = HtmlBuilder.build(
+        div(
+          form.text("name", "custom-name-id"),
+          form.password("password"),
+          form.textarea("bio"),
+          form.checkbox("active", "yes"),
+          form.select("role", Vector("user" -> "User", "admin" -> "Admin"))
+        )
+      )
+
+      assertTrue(
+        html.contains("id=\"custom-name-id\""),
+        html.contains("type=\"password\""),
+        html.contains("<textarea"),
+        html.contains("name=\"profile[bio]\""),
+        html.contains("Hello"),
+        html.contains("type=\"checkbox\""),
+        html.contains("checked"),
+        html.contains("<select"),
+        html.contains("value=\"admin\" selected")
+      )
+    },
+    test("form paths can generate array-style names") {
+      val state = FormState(FormData.empty, Right(Profile("")), submitted = false)
+      val form = Form.of("profile", state, profileCodec)
+      val sortPath = FormPath("users_sort").array
+
+      assertTrue(
+        sortPath.name == "users_sort[]",
+        form.name(sortPath) == "profile[users_sort][]",
+        form.id(sortPath) == "profile_users_sort"
+      )
     }
   )
 end FormApiSpec

@@ -10,6 +10,9 @@ final case class FormPath(segments: Vector[String]):
   def /(segment: String): FormPath =
     copy(segments = segments :+ segment)
 
+  def array: FormPath =
+    copy(segments = segments :+ "")
+
   def isEmpty: Boolean  = segments.isEmpty
   def nonEmpty: Boolean = segments.nonEmpty
 
@@ -279,7 +282,7 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
     id(FormPath.parse(path))
 
   def id(path: FormPath): String =
-    fullPath(path).segments.mkString("_")
+    fullPath(path).segments.filter(_.nonEmpty).mkString("_")
 
   def value(path: String): String =
     value(FormPath.parse(path))
@@ -290,11 +293,64 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   def text(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
     field(path).text(mods*)
 
+  def text(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).text(mods*)
+
+  def text(path: String, explicitId: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).text(explicitId, mods*)
+
+  def text(path: FormPath, explicitId: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).text(explicitId, mods*)
+
   def email(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
     field(path).email(mods*)
 
+  def email(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).email(mods*)
+
+  def password(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).password(mods*)
+
+  def password(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).password(mods*)
+
   def hidden(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
     field(path).hidden(mods*)
+
+  def hidden(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).hidden(mods*)
+
+  def checkbox(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).checkbox(mods*)
+
+  def checkbox(path: String, checkedValue: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).checkbox(checkedValue, mods*)
+
+  def checkbox(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).checkbox(mods*)
+
+  def checkbox(path: FormPath, checkedValue: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).checkbox(checkedValue, mods*)
+
+  def textarea(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).textarea(mods*)
+
+  def textarea(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+    field(path).textarea(mods*)
+
+  def select(
+    path: String,
+    options: Iterable[(String, String)],
+    mods: Mod[Nothing]*
+  ): HtmlElement[Nothing] =
+    field(path).select(options, mods*)
+
+  def select(
+    path: FormPath,
+    options: Iterable[(String, String)],
+    mods: Mod[Nothing]*
+  ): HtmlElement[Nothing] =
+    field(path).select(options, mods*)
 
   def errors(path: String): HtmlElement[Nothing] =
     errors(FormPath.parse(path))
@@ -331,6 +387,7 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
 
 object Form:
   private val feedbackFor = htmlAttr("phx-feedback-for", StringAsIsEncoder)
+  private val textareaTag = HtmlTag("textarea")
 
   def of[A](name: String, state: FormState[A], codec: FormCodec[A]): Form[A] =
     Form(FormPath.parse(name), state, codec)
@@ -346,11 +403,44 @@ object Form:
     def text(mods: Mod[Nothing]*): HtmlElement[Nothing] =
       input(typ := "text", idAttr := id, nameAttr := name, value := fieldValue, mods)
 
+    def text(explicitId: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+      input(typ := "text", idAttr := explicitId, nameAttr := name, value := fieldValue, mods)
+
     def email(mods: Mod[Nothing]*): HtmlElement[Nothing] =
       input(typ := "email", idAttr := id, nameAttr := name, value := fieldValue, mods)
 
+    def password(mods: Mod[Nothing]*): HtmlElement[Nothing] =
+      input(typ := "password", idAttr := id, nameAttr := name, value := fieldValue, mods)
+
     def hidden(mods: Mod[Nothing]*): HtmlElement[Nothing] =
       input(typ := "hidden", idAttr := id, nameAttr := name, value := fieldValue, mods)
+
+    def checkbox(mods: Mod[Nothing]*): HtmlElement[Nothing] =
+      checkbox("true", mods*)
+
+    def checkbox(checkedValue: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+      input(
+        typ := "checkbox",
+        idAttr := id,
+        nameAttr := name,
+        value := checkedValue,
+        checked := form.state.raw.values(form.fullPath(path)).contains(checkedValue),
+        mods
+      )
+
+    def textarea(mods: Mod[Nothing]*): HtmlElement[Nothing] =
+      Form.textareaTag(idAttr := id, nameAttr := name, mods, fieldValue)
+
+    def select(options: Iterable[(String, String)], mods: Mod[Nothing]*): HtmlElement[Nothing] =
+      val selectedValues = form.state.raw.values(form.fullPath(path)).toSet
+      _root_.scalive.select(
+        idAttr := id,
+        nameAttr := name,
+        mods,
+        options.map { case (optionValue, label) =>
+          _root_.scalive.option(value := optionValue, selected := selectedValues.contains(optionValue), label)
+        }
+      )
 
     def errors: HtmlElement[Nothing] =
       form.errors(path)

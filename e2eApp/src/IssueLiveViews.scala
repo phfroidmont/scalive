@@ -14,6 +14,7 @@ private val placeholderAttr = htmlAttr("placeholder", scalive.codecs.StringAsIsE
 private val feedbackForAttr = htmlAttr("phx-feedback-for", scalive.codecs.StringAsIsEncoder)
 private val targetAttr = htmlAttr("phx-target", scalive.codecs.StringAsIsEncoder)
 private val phxClickAttr = htmlAttr("phx-click", scalive.codecs.StringAsIsEncoder)
+private val dataPhxAutoUploadAttr = htmlAttr("data-phx-auto-upload", scalive.codecs.BooleanAsAttrPresenceEncoder)
 class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveView.Model]:
   import Issue3719LiveView.*
 
@@ -44,6 +45,83 @@ object Issue3719LiveView:
   final case class Model(target: Option[Vector[String]] = None)
   enum Msg:
     case Change(event: FormEvent[FormData])
+
+class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg.type, LiveUpload]:
+  import Issue2965LiveView.*
+
+  def mount =
+    LiveContext
+      .allowUpload(UploadName, UploadOptions)
+      .catchAll(_ => ZIO.succeed(disconnectedUpload))
+
+  def handleMessage(upload: LiveUpload) =
+    case Msg => LiveContext.upload(UploadName).map(_.getOrElse(upload))
+
+  def subscriptions(upload: LiveUpload) = ZStream.empty
+
+  def render(upload: LiveUpload) =
+    form(
+      phx.onChange(Msg),
+      issue2965FileInput(upload, phx.onProgress(_ => Msg)),
+      table(
+        tbody(
+          upload.entries.splitBy(_.ref) { (_, entry) =>
+            tr(
+              td(entry.clientName),
+              td(progressTag(value := "100", maxAttr := "100", "100%"))
+            )
+          }
+        )
+      )
+    )
+
+  private def issue2965FileInput(upload: LiveUpload, mods: Mod[Issue2965LiveView.Msg.type]*) =
+    val activeRefs      = upload.entries.map(_.ref).mkString(",")
+    val doneRefs        = upload.entries.filter(_.done).map(_.ref).mkString(",")
+    val preflightedRefs = upload.entries.filter(entry => entry.preflighted || entry.done).map(_.ref).mkString(",")
+
+    input(
+      idAttr                           := "fileinput",
+      typ                              := "file",
+      nameAttr                         := upload.name,
+      accept                           := upload.accept.toHtmlValue,
+      dataAttr("phx-hook")             := "Phoenix.LiveFileUpload",
+      dataAttr("phx-update")           := "ignore",
+      dataAttr("phx-upload-ref")       := upload.ref,
+      dataAttr("phx-active-refs")      := activeRefs,
+      dataAttr("phx-done-refs")        := doneRefs,
+      dataAttr("phx-preflighted-refs") := preflightedRefs,
+      dataPhxAutoUploadAttr            := upload.autoUpload,
+      multipleAttr                     := true,
+      mods
+    )
+end Issue2965LiveView
+
+object Issue2965LiveView:
+  case object Msg
+
+  private val UploadName = "files"
+  private val UploadOptions = LiveUploadOptions(
+    accept = LiveUploadAccept.Exactly(List(".txt")),
+    maxEntries = 20,
+    maxFileSize = 200_000,
+    autoUpload = true
+  )
+
+  private def disconnectedUpload =
+    LiveUpload(
+      name = UploadName,
+      ref = s"$UploadName-upload",
+      accept = UploadOptions.accept,
+      maxEntries = UploadOptions.maxEntries,
+      maxFileSize = UploadOptions.maxFileSize,
+      chunkSize = UploadOptions.chunkSize,
+      chunkTimeout = UploadOptions.chunkTimeout,
+      autoUpload = UploadOptions.autoUpload,
+      external = UploadOptions.external.nonEmpty,
+      entries = Nil,
+      errors = Nil
+    )
 
 class Issue3814LiveView extends LiveView[Issue3814LiveView.Msg, Issue3814LiveView.Model]:
   import Issue3814LiveView.*

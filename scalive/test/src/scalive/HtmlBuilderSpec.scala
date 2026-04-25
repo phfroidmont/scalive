@@ -53,6 +53,27 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
         assertTrue(
           result == "<template id=\"portal-source\" data-phx-portal=\"#root-portal\"><div id=\"_lv_portal_wrap_portal-source\"><div id=\"my-modal\">Modal</div><div id=\"hook-test\" phx-hook=\"InsidePortal\"></div></div></template>"
         )
+      },
+      test("Portal supports custom wrapper container and class") {
+        val el = portal(
+          id = "portal-source",
+          target = "body",
+          container = "section",
+          wrapperClass = Some("contents-wrapper")
+        )(
+          p("Content")
+        )
+
+        val result = HtmlBuilder.build(el)
+
+        assertTrue(
+          result == "<template id=\"portal-source\" data-phx-portal=\"body\"><section id=\"_lv_portal_wrap_portal-source\" class=\"contents-wrapper\"><p>Content</p></section></template>"
+        )
+      },
+      test("Portal rejects invalid wrapper container") {
+        assertTrue(
+          scala.util.Try(portal("portal-source", target = "body", container = "not a tag")()).isFailure
+        )
       }
     ),
     suite("Dynamic HTML rendering")(

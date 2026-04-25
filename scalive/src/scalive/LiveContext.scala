@@ -1,5 +1,7 @@
 package scalive
 
+import scala.reflect.ClassTag
+
 import zio.*
 import zio.json.*
 
@@ -12,7 +14,8 @@ final case class LiveContext(
   streams: StreamRuntime = StreamRuntime.Disabled,
   clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
   navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
-  title: TitleRuntime = TitleRuntime.Disabled)
+  title: TitleRuntime = TitleRuntime.Disabled,
+  components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
 object LiveContext:
@@ -34,12 +37,16 @@ object LiveContext:
   trait HasTitle:
     def title: TitleRuntime
 
+  trait HasComponents:
+    def components: ComponentUpdateRuntime
+
   trait BaseCapabilities
       extends HasStaticChanged
       with HasUploads
       with HasStreams
       with HasClientEvents
       with HasTitle
+      with HasComponents
   trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =
@@ -135,4 +142,12 @@ object LiveContext:
 
   def putTitle(title: String): URIO[HasTitle, Unit] =
     ZIO.serviceWithZIO[HasTitle](_.title.set(title))
+
+  def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
+    id: String,
+    props: LiveComponent.PropsOf[C]
+  ): URIO[HasComponents, Unit] =
+    ZIO.serviceWithZIO[HasComponents](
+      _.components.sendUpdate(summon[ClassTag[C]].runtimeClass, id, props)
+    )
 end LiveContext

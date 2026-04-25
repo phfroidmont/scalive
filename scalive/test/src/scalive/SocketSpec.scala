@@ -434,6 +434,51 @@ object SocketSpec extends ZIOSpecDefault:
           case _ => false
 
         assertTrue(componentUpdated)
+    },
+    test("sendUpdate applies typed props to an existing live component") {
+      class LabelComponent extends LiveComponent[String, Unit, String]:
+        def mount(props: String) = ZIO.succeed(props)
+        override def update(props: String, model: String) = ZIO.succeed(props)
+        def handleMessage(model: String) = _ => ZIO.succeed(model)
+        def render(model: String, self: ComponentRef[Unit]) =
+          div(phx.target(self), model)
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount = ZIO.unit
+        def handleMessage(model: Unit) = _ =>
+          LiveContext.sendUpdate[LabelComponent]("label", "updated").as(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            button(phx.onClick(()), "update"),
+            liveComponent(LabelComponent(), id = "label", props = "initial")
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _ <- socket.inbox.offer(event -> meta)
+        reply <- replyFiber.join.some
+      yield
+        val componentUpdated = reply._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))) =>
+            components.get(1).exists {
+              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+                dynamic.exists {
+                  case Diff.Dynamic(_, Diff.Value("updated")) => true
+                  case _                                       => false
+                }
+              case _ => false
+            }
+          case _ => false
+
+        assertTrue(componentUpdated)
     }
   )
 end SocketSpec

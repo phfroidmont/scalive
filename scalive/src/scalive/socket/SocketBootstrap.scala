@@ -31,7 +31,8 @@ private[scalive] object SocketBootstrap:
                      streams = new SocketStreamRuntime(streamRef),
                      clientEvents = new SocketClientEventRuntime(clientEventsRef),
                      navigation = new SocketNavigationRuntime(navigationRef),
-                     title = new SocketTitleRuntime(titleRef)
+                     title = new SocketTitleRuntime(titleRef),
+                     components = new SocketComponentUpdateRuntime(componentsRef)
                    )
       initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(runtimeCtx))
       (bootstrapModel, bootstrapPayloads, bootstrapUrl) <-

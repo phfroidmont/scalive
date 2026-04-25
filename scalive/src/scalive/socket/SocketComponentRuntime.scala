@@ -7,23 +7,35 @@ import scalive.*
 import scalive.Mod.Attr
 import scalive.Mod.Content
 
-final private[scalive] case class ComponentKey(componentClass: Class[?], id: String)
-
 final private[scalive] case class ComponentInstance(
   cid: Int,
-  key: ComponentKey,
+  identity: ComponentIdentity,
   component: LiveComponent[Any, Any, Any],
   model: Any)
 
 final private[scalive] case class ComponentRuntimeState(
-  instances: Map[ComponentKey, ComponentInstance],
-  byCid: Map[Int, ComponentKey],
+  instances: Map[ComponentIdentity, ComponentInstance],
+  byCid: Map[Int, ComponentIdentity],
+  pendingUpdates: Map[ComponentIdentity, Vector[Any]],
   nextCid: Int):
   def instance(cid: Int): Option[ComponentInstance] =
     byCid.get(cid).flatMap(instances.get)
 
 private[scalive] object ComponentRuntimeState:
-  val empty: ComponentRuntimeState = ComponentRuntimeState(Map.empty, Map.empty, 1)
+  val empty: ComponentRuntimeState = ComponentRuntimeState(Map.empty, Map.empty, Map.empty, 1)
+
+final private[scalive] class SocketComponentUpdateRuntime(ref: Ref[ComponentRuntimeState])
+    extends ComponentUpdateRuntime:
+  def sendUpdate[Props](
+    componentClass: Class[?],
+    id: String,
+    props: Props
+  ): UIO[Unit] =
+    val identity = ComponentIdentity(componentClass, id)
+    ref.update { state =>
+      val pending = state.pendingUpdates.getOrElse(identity, Vector.empty) :+ props
+      state.copy(pendingUpdates = state.pendingUpdates.updated(identity, pending))
+    }
 
 private[scalive] object SocketComponentRuntime:
   def renderRoot[Msg, Model](
@@ -68,7 +80,7 @@ private[scalive] object SocketComponentRuntime:
                        _ <- state.componentsRef.update { current =>
                               val updated = instance.copy(model = model)
                               current.copy(instances =
-                                current.instances.updated(instance.key, updated)
+                                current.instances.updated(instance.identity, updated)
                               )
                             }
                        (parentModel, _) <- state.ref.get
@@ -151,29 +163,33 @@ private[scalive] object SocketComponentRuntime:
     ctx: LiveContext
   ): Task[Content.Component[Any]] =
     val typed     = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any]]
-    val key       = ComponentKey(typed.component.getClass, typed.id)
-    val existing  = cursor.state.instances.get(key)
+    val identity  = ComponentIdentity(typed.component.getClass, typed.id)
+    val existing  = cursor.state.instances.get(identity)
     val cid       = existing.map(_.cid).getOrElse(cursor.state.nextCid)
     val component = existing.map(_.component).getOrElse(typed.component)
     val mounted   = existing match
       case Some(instance) => ZIO.succeed(instance.model)
       case None           => LiveIO.toZIO(component.mount(typed.props)).provide(ZLayer.succeed(ctx))
+    val updateProps =
+      cursor.state.pendingUpdates.get(identity).flatMap(_.lastOption).getOrElse(typed.props)
 
     for
       model        <- mounted
       updatedModel <- LiveIO
-                        .toZIO(component.update(typed.props, model))
+                        .toZIO(component.update(updateProps, model))
                         .provide(ZLayer.succeed(ctx))
-      instance = ComponentInstance(cid, key, component, updatedModel)
+      instance = ComponentInstance(cid, identity, component, updatedModel)
       _        = cursor.state = cursor.state.copy(
-            instances = cursor.state.instances.updated(key, instance),
-            byCid = cursor.state.byCid.updated(cid, key),
+            instances = cursor.state.instances.updated(identity, instance),
+            byCid = cursor.state.byCid.updated(cid, identity),
+            pendingUpdates = cursor.state.pendingUpdates.removed(identity),
             nextCid = if existing.isDefined then cursor.state.nextCid else cursor.state.nextCid + 1
           )
       ref      = ComponentRef[Any](cid)
       rendered = component.render(updatedModel, ref).prepended(phx.component := cid.toString)
       wrapped <- wrapComponentMessages(cid, rendered)
     yield Content.Component(cid, wrapped)
+  end renderComponent
 
   private def wrapComponentMessages(cid: Int, element: HtmlElement[Any]): Task[HtmlElement[Any]] =
     ZIO.foreach(element.mods)(wrapComponentMod(cid, _)).map(mods => HtmlElement(element.tag, mods))

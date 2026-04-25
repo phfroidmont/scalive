@@ -520,3 +520,191 @@ class Issue3636LiveView extends LiveView[Unit, Unit]:
       button("Three")
     )
 end Issue3636LiveView
+
+class Issue3651LiveView extends LiveView[Unit, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) = Function.const(model)
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    div(
+      div(idAttr := "notice", styleAttr := "display: none", "too many events"),
+      div(idAttr := "total", "0")
+    )
+end Issue3651LiveView
+
+class Issue3658LiveView extends LiveView[Issue3658LiveView.Msg, Unit]:
+  import Issue3658LiveView.*
+
+  def mount = ()
+
+  def handleMessage(model: Unit) =
+    case Msg.Noop => model
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    div(
+      div(idAttr := "foo", phx.onRemove(JS.hide()), "Foo"),
+      navTag(a(href := "#", phx.onClick(Msg.Noop), "Link 1"))
+    )
+end Issue3658LiveView
+
+object Issue3658LiveView:
+  enum Msg:
+    case Noop
+
+class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Unit]:
+  def mount = ()
+
+  def handleMessage(model: Unit) = Function.const(model)
+
+  def subscriptions(model: Unit) = ZStream.empty
+
+  def render(model: Unit) =
+    div(
+      div(
+        idAttr := "msgs-sticky",
+        div(idAttr := "messages-1", "one"),
+        div(idAttr := "messages-2", "two"),
+        div(idAttr := "messages-4", "four")
+      ),
+      if onAway then link.navigate("/issues/3681", "Go back to (the now borked) LV without a stream")
+      else link.navigate("/issues/3681/away", "Go to a different LV with a (funcky) stream")
+    )
+end Issue3681LiveView
+
+class Issue3684LiveView extends LiveView[Issue3684LiveView.Msg, Boolean]:
+  import Issue3684LiveView.*
+
+  def mount = false
+
+  def handleMessage(model: Boolean) =
+    case Msg.Toggle => !model
+
+  def subscriptions(model: Boolean) = ZStream.empty
+
+  def render(model: Boolean) =
+    input(idAttr := "dewey", typ := "checkbox", checked := model, phx.onClick(Msg.Toggle))
+end Issue3684LiveView
+
+object Issue3684LiveView:
+  enum Msg:
+    case Toggle
+
+class Issue3686LiveView(pageName: String, flash: String) extends LiveView[Unit, String]:
+  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
+
+  def mount = flash
+
+  override def handleParams(model: String, params: Unit, url: URL) =
+    if pageName == "A" && url.encode.contains("from=c") then "Flash from C" else model
+
+  def handleMessage(model: String) = Function.const(model)
+
+  def subscriptions(model: String) = ZStream.empty
+
+  def render(model: String) =
+    val next = pageName match
+      case "A" => "B"
+      case "B" => "C"
+      case _   => "A"
+    val nextHref = if pageName == "C" then "/issues/3686/a?from=c" else s"/issues/3686/${next.toLowerCase}"
+
+    div(
+      div(idAttr := "flash", model),
+      button(phx.onClick(JS.navigate(nextHref)), s"To $next")
+    )
+end Issue3686LiveView
+
+class Issue3709LiveView(id: Int) extends LiveView[Issue3709LiveView.Msg, Int]:
+  import Issue3709LiveView.*
+
+  def mount = id
+
+  def handleMessage(model: Int) =
+    case Msg.BreakStuff => model
+
+  def subscriptions(model: Int) = ZStream.empty
+
+  def render(model: Int) =
+    div(
+      div(s"id: $model"),
+      button(phx.onClick(Msg.BreakStuff), "Break Stuff"),
+      link.navigate("/issues/3709/5", "Link 5")
+    )
+end Issue3709LiveView
+
+object Issue3709LiveView:
+  enum Msg:
+    case BreakStuff
+
+class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Boolean]:
+  import Issue3919LiveView.*
+
+  def mount = false
+
+  def handleMessage(model: Boolean) =
+    case Msg.Toggle => !model
+
+  def subscriptions(model: Boolean) = ZStream.empty
+
+  def render(model: Boolean) =
+    div(
+      div(styleAttr := (if model then "background-color: red;" else ""), if model then "Red" else "No red"),
+      button(phx.onClick(Msg.Toggle), "toggle")
+    )
+end Issue3919LiveView
+
+object Issue3919LiveView:
+  enum Msg:
+    case Toggle
+
+class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Set[String]]:
+  import Issue3941LiveView.*
+
+  def mount = Set("Item_1", "Item_2")
+
+  def handleMessage(model: Set[String]) =
+    case Msg.Toggle(id) => if model.contains(id) then model - id else model + id
+
+  def subscriptions(model: Set[String]) = ZStream.empty
+
+  def render(model: Set[String]) =
+    div(
+      itemCheckbox("Item_1", model),
+      itemCheckbox("Item_2", model),
+      if model.contains("Item_1") then div(idAttr := "Item_1", "I AM LOADED") else "",
+      if model.contains("Item_2") then div(idAttr := "Item_2", "I AM LOADED") else ""
+    )
+
+  private def itemCheckbox(id: String, selected: Set[String]) =
+    input(idAttr := s"select-$id", typ := "checkbox", checked := selected.contains(id), phx.onClick(Msg.Toggle(id)))
+end Issue3941LiveView
+
+object Issue3941LiveView:
+  enum Msg:
+    case Toggle(id: String)
+
+class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
+  import Issue3953LiveView.*
+
+  def mount = false
+
+  def handleMessage(model: Boolean) =
+    case Msg.Toggle => !model
+
+  def subscriptions(model: Boolean) = ZStream.empty
+
+  def render(model: Boolean) =
+    div(
+      button(phx.onClick(Msg.Toggle), "Show"),
+      div(idAttr := "nested_view", if model then div(dataAttr("phx-component") := "1", "component") else "")
+    )
+end Issue3953LiveView
+
+object Issue3953LiveView:
+  enum Msg:
+    case Toggle

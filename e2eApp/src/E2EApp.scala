@@ -79,9 +79,22 @@ object E2EApp extends ZIOAppDefault:
       Method.GET / "issues" / "3612" / "a" -> liveHandler(Issue3612LiveView("A")),
       Method.GET / "issues" / "3612" / "b" -> liveHandler(Issue3612LiveView("B")),
       Method.GET / "issues" / "3636" -> liveHandler(Issue3636LiveView()),
+      Method.GET / "issues" / "3651" -> liveHandler(Issue3651LiveView()),
+      Method.GET / "issues" / "3658" -> liveHandler(Issue3658LiveView()),
+      Method.GET / "issues" / "3681" -> liveHandler(Issue3681LiveView(onAway = false)),
+      Method.GET / "issues" / "3681" / "away" -> liveHandler(Issue3681LiveView(onAway = true)),
+      Method.GET / "issues" / "3684" -> liveHandler(Issue3684LiveView()),
+      Method.GET / "issues" / "3686" / "a" -> liveHandler(Issue3686LiveView("A", "%{}")),
+      Method.GET / "issues" / "3686" / "b" -> liveHandler(Issue3686LiveView("B", "Flash from A")),
+      Method.GET / "issues" / "3686" / "c" -> liveHandler(Issue3686LiveView("C", "Flash from B")),
+      Method.GET / "issues" / "3709" / "1" -> liveHandler(Issue3709LiveView(1)),
+      Method.GET / "issues" / "3709" / "5" -> liveHandler(Issue3709LiveView(5)),
       Method.GET / "issues" / "3719" -> liveHandler(Issue3719LiveView()),
       Method.GET / "issues" / "3814" -> liveHandler(Issue3814LiveView()),
-      Method.GET / "issues" / "3819" -> liveHandler(Issue3819LiveView())
+      Method.GET / "issues" / "3819" -> liveHandler(Issue3819LiveView()),
+      Method.GET / "issues" / "3919" -> liveHandler(Issue3919LiveView()),
+      Method.GET / "issues" / "3941" -> liveHandler(Issue3941LiveView()),
+      Method.GET / "issues" / "3953" -> liveHandler(Issue3953LiveView())
     )
 
   private val healthRoutes =

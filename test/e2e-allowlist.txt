@@ -25,6 +25,15 @@ issues/3448.spec.js
 issues/3496.spec.js
 issues/3612.spec.js
 issues/3636.spec.js
+issues/3651.spec.js
+issues/3658.spec.js
+issues/3681.spec.js
+issues/3684.spec.js
+issues/3686.spec.js
+issues/3709.spec.js
 issues/3719.spec.js
 issues/3814.spec.js
 issues/3819.spec.js
+issues/3919.spec.js
+issues/3941.spec.js
+issues/3953.spec.js

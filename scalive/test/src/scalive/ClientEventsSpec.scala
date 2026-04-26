@@ -143,6 +143,54 @@ object ClientEventsSpec extends ZIOSpecDefault:
           maybeCmd.exists(_.contains("\"show\"")),
           maybeCmd.exists(_.contains("#modal"))
         )
+    },
+    test("component events include pushEvent and title updates") {
+      object EffectsComponent extends LiveComponent[Unit, EffectsComponent.Msg.type, Unit]:
+        object Msg
+
+        def mount(props: Unit) = ZIO.unit
+
+        def handleMessage(model: Unit) = {
+          case Msg =>
+            LiveContext.pushEvent("component", Map("ok" -> true)) *>
+              LiveContext.putTitle("Component title").as(model)
+        }
+
+        def render(model: Unit, self: ComponentRef[Msg.type]) =
+          button(phx.onClick(Msg), phx.target(self), "emit")
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(idAttr := "root", liveComponent(EffectsComponent, id = "effects", props = ()))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _     <- socket.inbox.offer(event -> meta)
+        reply <- replyFiber.join.some
+      yield
+        val (events, title) = reply._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Diff(diff @ Diff.Tag(_, _, _, _, title, _, _, _))
+              ) =>
+            (eventsFromDiff(diff), title)
+          case _ => (Vector.empty, None)
+
+        assertTrue(
+          events == Vector(Diff.Event("component", Json.Obj("ok" -> Json.Bool(true)))),
+          title.contains("Component title")
+        )
     }
   )
 end ClientEventsSpec

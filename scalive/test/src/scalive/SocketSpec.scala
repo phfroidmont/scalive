@@ -452,6 +452,67 @@ object SocketSpec extends ZIOSpecDefault:
 
         assertTrue(componentUpdated)
     },
+    test("routes self-targeted live component form events to component state") {
+      object FormComponent extends LiveComponent[Unit, FormComponent.Msg, String]:
+        enum Msg:
+          case Submitted(value: String)
+
+        def mount(props: Unit) = ZIO.succeed("")
+        def handleMessage(model: String) = { case Msg.Submitted(value) => ZIO.succeed(value) }
+        def render(model: String, self: ComponentRef[Msg]) =
+          form(
+            phx.onSubmitForm(data => Msg.Submitted(data.string("name").getOrElse(""))),
+            phx.target(self),
+            input(nameAttr := "name"),
+            span(model)
+          )
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                                  = ZIO.unit
+        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(FormComponent, id = "form", props = ()))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "form",
+        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
+        value = Json.Str("name=Alice"),
+        cid = Some(1)
+      )
+
+      def containsValue(diff: Diff, value: String): Boolean =
+        diff match
+          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
+            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
+              containsValue(_, value)
+            )
+          case Diff.Comprehension(_, entries, _, _, _) =>
+            entries.exists {
+              case Diff.Dynamic(_, diff)       => containsValue(diff, value)
+              case Diff.IndexMerge(_, _, diff) => containsValue(diff, value)
+              case _                           => false
+            }
+          case Diff.Value(current)  => current == value
+          case Diff.Dynamic(_, diff) => containsValue(diff, value)
+          case _                    => false
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        reply      <- replyFiber.join.some
+      yield
+        val componentUpdated = reply._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+              ) =>
+            components.get(1).exists(containsValue(_, "Alice"))
+          case _ => false
+
+        assertTrue(componentUpdated)
+    },
     test("untargeted live component events do not route to component state") {
       object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
         object Msg

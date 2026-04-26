@@ -255,13 +255,14 @@ final private[scalive] class LiveChannel(
 
   def leave(id: String): UIO[Unit] =
     for
-      _        <- uploadOwners.update(_.filterNot { case (_, ownerId) => ownerId == id })
       childIds <- nestedEntries.modify { entries =>
                     val children = entries.collect {
                       case (topic, entry) if entry.parentTopic == id => topic
                     }.toSet
                     (children, entries -- children - id)
                   }
+      leavingIds = childIds + id
+      _ <- uploadOwners.update(_.filterNot { case (_, ownerId) => leavingIds.contains(ownerId) })
       _ <- sockets.updateZIO { m =>
              val children     = childIds.flatMap(m.get)
              val stopChildren = ZIO.foreachDiscard(children)(_.shutdown)

@@ -17,7 +17,7 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 | --- | --- | --- | --- | --- |
 | Browser E2E behavior | `test/e2e/tests/**/*.spec.js` | Passing baseline | Covered by `./scripts/e2e-run-upstream.sh`; keep running as regression suite. | High |
 | Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Partial | Core runtime exists: lifecycle, stable cid, local/nested component events, form events, upload progress, typed `sendUpdate`, selector/multiple `phx-target`, connected nested LiveViews inside components, removal cleanup, patch navigation, client effects, and component-scoped stream state. Remaining gaps include flash behavior and async. | Highest |
-| Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Partial | Connected nested LiveViews can be registered, joined, and can handle isolated events, including when rendered from LiveComponents. Remaining gaps include disconnected parity, sticky nested LiveViews, fuller cleanup semantics, and broader navigation cases. | High |
+| Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Partial | Connected nested LiveViews can be registered, joined, handle isolated events, clean up on parent/child leave, keep stable topics across parent re-renders/patches, defer render-removal cleanup until client confirmation, and emit child-scoped navigation. Remaining gaps include disconnected parity, sticky nested LiveViews, and broader navigation/lifecycle edge cases. | High |
 | Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Gap | Depends on navigation, patch, redirect, nested LiveView, and component boundaries. | High |
 | Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Gap | Needs a Scala API design for task lifecycle, cancellation, failures, and navigation side effects. | Medium |
 | Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Gap | Should probably build on the async task model. | Medium |
@@ -28,7 +28,7 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 
 Continue closing the remaining stateful `LiveComponent` gaps with small vertical slices.
 
-The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around component flash behavior, component async, and the remaining nested LiveView lifecycle edge cases.
+The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around component flash behavior, component async, and remaining nested LiveView disconnected/sticky lifecycle cases.
 
 ## LiveComponent Implementation Sequence
 

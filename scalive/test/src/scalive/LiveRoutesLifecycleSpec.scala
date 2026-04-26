@@ -21,10 +21,24 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
   private enum ChildMsg:
     case Increment
 
+  private enum ParentMsg:
+    case Rerender
+    case HideChild
+
   private def childLiveView =
     new LiveView[ChildMsg, Int]:
       def mount = ZIO.succeed(0)
       def handleMessage(model: Int) = { case ChildMsg.Increment => ZIO.succeed(model + 1) }
+      def render(model: Int): HtmlElement[ChildMsg] =
+        button(phx.onClick(ChildMsg.Increment), model.toString)
+      def subscriptions(model: Int) = ZStream.empty
+
+  private def navigatingChildLiveView =
+    new LiveView[ChildMsg, Int]:
+      def mount = ZIO.succeed(0)
+      def handleMessage(model: Int) = { case ChildMsg.Increment =>
+        LiveContext.pushPatch("/child-next").as(model + 1)
+      }
       def render(model: Int): HtmlElement[ChildMsg] =
         button(phx.onClick(ChildMsg.Increment), model.toString)
       def subscriptions(model: Int) = ZStream.empty
@@ -138,14 +152,14 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
               )
         _      <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
         entry  <- channel.nestedEntry(childTopic).some
-        joined      <- channel
-                         .joinNested(childTopic, entry.token, false, childMeta, URL.root)
-                         .timeoutFail(new RuntimeException("nested join timed out"))(2.seconds)
+        joined      <- channel.joinNested(childTopic, entry.token, false, childMeta, URL.root)
         childSocket <- channel.socket(childTopic).some
-        replyFiber  <- childSocket.outbox.drop(1).runHead.fork
-        _           <- ZIO.yieldNow
+        outQueue    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        _           <- childSocket.outbox.runForeach(outQueue.offer).forkScoped
+        _           <- outQueue.take
+        _           <- ZIO.yieldNow.repeatN(5)
         _           <- channel.event(childTopic, event, childMeta.copy(eventType = "event"))
-        reply       <- replyFiber.join.some.timeoutFail(new RuntimeException("nested event timed out"))(2.seconds)
+        reply       <- outQueue.take
       yield
         val childUpdated = reply match
           case (
@@ -180,6 +194,186 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         _     <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
         entry <- channel.nestedEntry(childTopic)
       yield assertTrue(entry.exists(_.parentTopic == rootTopic)))
+    },
+    test("parent leave removes child sockets and nested registry entries") {
+      val parent = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveView("child", childLiveView))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(TokenConfig.default)
+        ctx = LiveContext(
+                staticChanged = false,
+                nestedLiveViews = channel.nestedRuntime(rootTopic)
+              )
+        _          <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
+        entry      <- channel.nestedEntry(childTopic).some
+        _          <- channel.joinNested(childTopic, entry.token, false, rootMeta.copy(topic = childTopic), URL.root)
+        childBefore <- channel.socket(childTopic)
+        _          <- channel.leave(rootTopic)
+        parentAfter <- channel.socket(rootTopic)
+        childAfter <- channel.socket(childTopic)
+        entryAfter <- channel.nestedEntry(childTopic)
+      yield assertTrue(childBefore.nonEmpty, parentAfter.isEmpty, childAfter.isEmpty, entryAfter.isEmpty))
+    },
+    test("child leave removes only child socket and nested registry entry") {
+      val parent = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveView("child", childLiveView))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(TokenConfig.default)
+        ctx = LiveContext(
+                staticChanged = false,
+                nestedLiveViews = channel.nestedRuntime(rootTopic)
+              )
+        _       <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
+        entry   <- channel.nestedEntry(childTopic).some
+        _       <- channel.joinNested(childTopic, entry.token, false, rootMeta.copy(topic = childTopic), URL.root)
+        _       <- channel.leave(childTopic)
+        parent  <- channel.socket(rootTopic)
+        child   <- channel.socket(childTopic)
+        removed <- channel.nestedEntry(childTopic)
+      yield assertTrue(parent.nonEmpty, child.isEmpty, removed.isEmpty))
+    },
+    test("parent rerender preserves stable nested LiveView topic") {
+      val parent = new LiveView[ParentMsg, Int]:
+        def mount = ZIO.succeed(0)
+        def handleMessage(model: Int) =
+          case ParentMsg.Rerender => ZIO.succeed(model + 1)
+          case ParentMsg.HideChild => ZIO.succeed(model)
+        def render(model: Int): HtmlElement[ParentMsg] =
+          div(
+            button(phx.onClick(ParentMsg.Rerender), model.toString),
+            liveView("child", childLiveView)
+          )
+        def subscriptions(model: Int) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(TokenConfig.default)
+        ctx = LiveContext(
+                staticChanged = false,
+                nestedLiveViews = channel.nestedRuntime(rootTopic)
+              )
+        _      <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
+        before <- channel.nestedEntry(childTopic).some
+        _      <- channel.event(rootTopic, event, rootMeta.copy(eventType = "event"))
+        after  <- channel.nestedEntry(childTopic).some
+      yield assertTrue(before.parentTopic == rootTopic, after.parentTopic == rootTopic))
+    },
+    test("removed nested LiveView registry remains until client cleanup") {
+      val parent = new LiveView[ParentMsg, Boolean]:
+        def mount = ZIO.succeed(true)
+        def handleMessage(model: Boolean) =
+          case ParentMsg.HideChild => ZIO.succeed(false)
+          case ParentMsg.Rerender  => ZIO.succeed(model)
+        def render(model: Boolean): HtmlElement[ParentMsg] =
+          div(
+            button(phx.onClick(ParentMsg.HideChild), "hide"),
+            if model then liveView("child", childLiveView) else "hidden"
+          )
+        def subscriptions(model: Boolean) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(TokenConfig.default)
+        ctx = LiveContext(
+                staticChanged = false,
+                nestedLiveViews = channel.nestedRuntime(rootTopic)
+              )
+        _      <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
+        before <- channel.nestedEntry(childTopic)
+        _      <- channel.event(rootTopic, event, rootMeta.copy(eventType = "event"))
+        after  <- channel.nestedEntry(childTopic)
+      yield assertTrue(before.nonEmpty, after.nonEmpty))
+    },
+    test("nested child pushPatch emits navigation for child topic only") {
+      val parent = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveView("child", navigatingChildLiveView))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val childMeta = rootMeta.copy(topic = childTopic)
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(TokenConfig.default)
+        ctx = LiveContext(
+                staticChanged = false,
+                nestedLiveViews = channel.nestedRuntime(rootTopic)
+              )
+        _           <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
+        entry       <- channel.nestedEntry(childTopic).some
+        _           <- channel.joinNested(childTopic, entry.token, false, childMeta, URL.root)
+        childSocket <- channel.socket(childTopic).some
+        outQueue    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        _           <- childSocket.outbox.runForeach(outQueue.offer).forkScoped
+        _           <- outQueue.take
+        _           <- ZIO.yieldNow.repeatN(5)
+        _           <- channel.event(childTopic, event, childMeta.copy(eventType = "event"))
+        first       <- outQueue.take
+        second      <- outQueue.take
+        navigation = first match
+                       case (Payload.LiveNavigation(_, _), _) => first
+                       case _                                 => second
+      yield assertTrue(
+        navigation == (Payload.LiveNavigation("/child-next", WebSocketMessage.LivePatchKind.Push) -> childMeta.copy(messageRef = None, eventType = "event"))
+      ))
+    },
+    test("parent patch does not reset stable nested child registration") {
+      val parent = new LiveView[ParentMsg, Int]:
+        def mount = ZIO.succeed(0)
+        def handleMessage(model: Int) =
+          case ParentMsg.Rerender =>
+            LiveContext.pushPatch("/parent-next").as(model + 1)
+          case ParentMsg.HideChild => ZIO.succeed(model)
+        def render(model: Int): HtmlElement[ParentMsg] =
+          div(
+            button(phx.onClick(ParentMsg.Rerender), model.toString),
+            liveView("child", childLiveView)
+          )
+        def subscriptions(model: Int) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(TokenConfig.default)
+        ctx = LiveContext(
+                staticChanged = false,
+                nestedLiveViews = channel.nestedRuntime(rootTopic)
+              )
+        _      <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
+        before <- channel.nestedEntry(childTopic).some
+        _      <- channel.event(rootTopic, event, rootMeta.copy(eventType = "event"))
+        after  <- channel.nestedEntry(childTopic).some
+      yield assertTrue(before.parentTopic == rootTopic, after.parentTopic == rootTopic))
     }
   )
 end LiveRoutesLifecycleSpec

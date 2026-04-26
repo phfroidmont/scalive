@@ -17,7 +17,8 @@ final case class LiveContext(
   title: TitleRuntime = TitleRuntime.Disabled,
   components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
   nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled,
-  flash: FlashRuntime = FlashRuntime.Disabled)
+  flash: FlashRuntime = FlashRuntime.Disabled,
+  async: LiveAsyncRuntime = LiveAsyncRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
 object LiveContext:
@@ -48,6 +49,9 @@ object LiveContext:
   trait HasFlash:
     def flash: FlashRuntime
 
+  trait HasAsync:
+    def async: LiveAsyncRuntime
+
   trait BaseCapabilities
       extends HasStaticChanged
       with HasUploads
@@ -57,6 +61,7 @@ object LiveContext:
       with HasComponents
       with HasNestedLiveViews
       with HasFlash
+      with HasAsync
   trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =
@@ -167,6 +172,22 @@ object LiveContext:
 
   def flash: URIO[HasFlash, Map[String, String]] =
     ZIO.serviceWithZIO[HasFlash](_.flash.snapshot)
+
+  def startAsync[A, Msg](
+    key: LiveAsync[A],
+    mode: AsyncStartMode = AsyncStartMode.Restart
+  )(
+    effect: Task[A]
+  )(
+    toMsg: LiveAsyncResult[A] => Msg
+  ): URIO[HasAsync, Unit] =
+    ZIO.serviceWithZIO[HasAsync](_.async.start(key, mode)(effect)(toMsg))
+
+  def cancelAsync[A](
+    key: LiveAsync[A],
+    reason: Option[String] = None
+  ): URIO[HasAsync, Unit] =
+    ZIO.serviceWithZIO[HasAsync](_.async.cancel(key, reason))
 
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
     id: String,

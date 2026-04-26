@@ -53,6 +53,16 @@ object FlashSpec extends ZIOSpecDefault:
       value = Json.Obj.empty
     )
 
+  private def withOutbox[Msg, Model, A](socket: Socket[Msg, Model])(
+    f: Queue[(Payload, WebSocketMessage.Meta)] => Task[A]
+  ): Task[A] =
+    for
+      queue <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+      fiber <- socket.outbox.runForeach(queue.offer).fork
+      _     <- queue.take
+      value <- f(queue).ensuring(fiber.interrupt)
+    yield value
+
   override def spec = suite("FlashSpec")(
     test("root events can put and client-clear keyed flash") {
       val lv = new LiveView[Msg, Unit]:
@@ -79,17 +89,18 @@ object FlashSpec extends ZIOSpecDefault:
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        out    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
-        _      <- socket.outbox.runForeach(out.offer).forkScoped
-        _      <- out.take
-        _      <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
-        shown  <- out.take
-        _      <- socket.inbox.offer(clear -> meta)
-        cleared <- out.take
-      yield assertTrue(
-        diffFromReply(shown._1).exists(containsValue(_, "Saved")),
-        !diffFromReply(cleared._1).exists(containsValue(_, "Saved"))
-      )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _       <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      shown   <- outbox.take
+                      _       <- socket.inbox.offer(clear -> meta)
+                      cleared <- outbox.take
+                    yield assertTrue(
+                      diffFromReply(shown._1).exists(containsValue(_, "Saved")),
+                      !diffFromReply(cleared._1).exists(containsValue(_, "Saved"))
+                    )
+                  }
+      yield result
     },
     test("server-side clearFlash removes keyed or all flash") {
       val lv = new LiveView[Msg, Unit]:
@@ -115,22 +126,25 @@ object FlashSpec extends ZIOSpecDefault:
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        out    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
-        _      <- socket.outbox.runForeach(out.offer).forkScoped
-        _      <- out.take
-        _      <- socket.inbox.offer(click(Vector("root:div", "tag:0:button"), 1) -> meta)
-        shown  <- out.take
-        _      <- socket.inbox.offer(click(Vector("root:div", "tag:1:button"), 1) -> meta)
-        clearInfo <- out.take
-        _      <- socket.inbox.offer(click(Vector("root:div", "tag:2:button"), 1) -> meta)
-        clearAll <- out.take
-      yield assertTrue(
-        diffFromReply(shown._1).exists(diff => containsValue(diff, "Info") && containsValue(diff, "Error")),
-        !diffFromReply(clearInfo._1).exists(containsValue(_, "Info")),
-        !diffFromReply(clearAll._1).exists(diff =>
-          containsValue(diff, "Info") || containsValue(diff, "Error")
-        )
-      )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button"), 1) -> meta)
+                      shown <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button"), 1) -> meta)
+                      clearInfo <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:2:button"), 1) -> meta)
+                      clearAll <- outbox.take
+                    yield assertTrue(
+                      diffFromReply(shown._1).exists(diff =>
+                        containsValue(diff, "Info") && containsValue(diff, "Error")
+                      ),
+                      !diffFromReply(clearInfo._1).exists(containsValue(_, "Info")),
+                      !diffFromReply(clearAll._1).exists(diff =>
+                        containsValue(diff, "Info") || containsValue(diff, "Error")
+                      )
+                    )
+                  }
+      yield result
     },
     test("component events can put root flash") {
       object FlashComponent extends LiveComponent[Unit, FlashComponent.Msg.type, Unit]:
@@ -162,12 +176,15 @@ object FlashSpec extends ZIOSpecDefault:
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        out    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
-        _      <- socket.outbox.runForeach(out.offer).forkScoped
-        _      <- out.take
-        _      <- socket.inbox.offer(event -> meta)
-        reply  <- out.take
-      yield assertTrue(diffFromReply(reply._1).exists(containsValue(_, "Component saved")))
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _     <- socket.inbox.offer(event -> meta)
+                      reply <- outbox.take
+                    yield assertTrue(
+                      diffFromReply(reply._1).exists(containsValue(_, "Component saved"))
+                    )
+                  }
+      yield result
     },
     test("flash survives event-triggered pushPatch") {
       val lv = new LiveView[Msg, String]:
@@ -191,20 +208,21 @@ object FlashSpec extends ZIOSpecDefault:
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        out    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
-        _      <- socket.outbox.runForeach(out.offer).forkScoped
-        _      <- out.take
-        _      <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
-        emptyReply  <- out.take
-        navigation  <- out.take
-        patchReply  <- socket.livePatch("/next", meta)
-      yield assertTrue(
-        emptyReply._1 == Payload.okReply(LiveResponse.Empty),
-        navigation._1 == Payload.LiveNavigation("/next", LivePatchKind.Push),
-        diffFromReply(patchReply).exists(diff =>
-          containsValue(diff, "/next") && containsValue(diff, "Patched")
-        )
-      )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      emptyReply <- outbox.take
+                      navigation <- outbox.take
+                      patchReply <- socket.livePatch("/next", meta)
+                    yield assertTrue(
+                      emptyReply._1 == Payload.okReply(LiveResponse.Empty),
+                      navigation._1 == Payload.LiveNavigation("/next", LivePatchKind.Push),
+                      diffFromReply(patchReply).exists(diff =>
+                        containsValue(diff, "/next") && containsValue(diff, "Patched")
+                      )
+                    )
+                  }
+      yield result
     },
     test("flash survives event-triggered replacePatch") {
       val lv = new LiveView[Msg, String]:
@@ -228,20 +246,21 @@ object FlashSpec extends ZIOSpecDefault:
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        out    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
-        _      <- socket.outbox.runForeach(out.offer).forkScoped
-        _      <- out.take
-        _      <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
-        emptyReply <- out.take
-        navigation <- out.take
-        patchReply <- socket.livePatch("/next", meta)
-      yield assertTrue(
-        emptyReply._1 == Payload.okReply(LiveResponse.Empty),
-        navigation._1 == Payload.LiveNavigation("/next", LivePatchKind.Replace),
-        diffFromReply(patchReply).exists(diff =>
-          containsValue(diff, "/next") && containsValue(diff, "Replaced")
-        )
-      )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      emptyReply <- outbox.take
+                      navigation <- outbox.take
+                      patchReply <- socket.livePatch("/next", meta)
+                    yield assertTrue(
+                      emptyReply._1 == Payload.okReply(LiveResponse.Empty),
+                      navigation._1 == Payload.LiveNavigation("/next", LivePatchKind.Replace),
+                      diffFromReply(patchReply).exists(diff =>
+                        containsValue(diff, "/next") && containsValue(diff, "Replaced")
+                      )
+                    )
+                  }
+      yield result
     },
     test("flash survives bootstrap handleParams patch loop") {
       val lv = new LiveView[Unit, String]:
@@ -323,25 +342,29 @@ object FlashSpec extends ZIOSpecDefault:
         _      <- channel.joinNested(childTopic, entry.token, false, childMeta, URL.root)
         childSocket <- channel.socket(childTopic).some
         parentSocket <- channel.socket(rootTopic).some
-        childReplyFiber  <- childSocket.outbox.drop(1).runHead.fork
-        parentReplyFiber <- parentSocket.outbox.drop(1).runHead.fork
-        _                <- ZIO.yieldNow.repeatN(5)
-        _ <- channel.event(
-               childTopic,
-               click(Vector("root:div", "tag:0:button")),
-               childMeta.copy(eventType = "event")
-             )
-        childReply <- childReplyFiber.join.some
-        _ <- channel.event(
-               rootTopic,
-               click(Vector("root:div", "tag:0:button")),
-               rootMeta.copy(eventType = "event")
-             )
-        parentReply <- parentReplyFiber.join.some
-      yield assertTrue(
-        diffFromReply(childReply._1).exists(containsValue(_, "Child flash")),
-        !diffFromReply(parentReply._1).exists(containsValue(_, "Child flash"))
-      ))
+        childOut <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        childFiber <- childSocket.outbox.runForeach(childOut.offer).fork
+        parentOut <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        parentFiber <- parentSocket.outbox.runForeach(parentOut.offer).fork
+        result <- (for
+                    _ <- childOut.take *> parentOut.take
+                    _ <- channel.event(
+                           childTopic,
+                           click(Vector("root:div", "tag:0:button")),
+                           childMeta.copy(eventType = "event")
+                         )
+                    childReply <- childOut.take
+                    _ <- channel.event(
+                           rootTopic,
+                           click(Vector("root:div", "tag:0:button")),
+                           rootMeta.copy(eventType = "event")
+                         )
+                    parentReply <- parentOut.take
+                  yield assertTrue(
+                    diffFromReply(childReply._1).exists(containsValue(_, "Child flash")),
+                    !diffFromReply(parentReply._1).exists(containsValue(_, "Child flash"))
+                  )).ensuring(childFiber.interrupt *> parentFiber.interrupt)
+      yield result)
     }
   )
 end FlashSpec

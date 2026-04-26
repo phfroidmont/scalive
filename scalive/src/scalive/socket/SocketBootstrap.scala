@@ -19,12 +19,14 @@ private[scalive] object SocketBootstrap:
   ): Task[RuntimeState[Msg, Model]] =
     for
       inbox           <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
+      asyncQueue      <- Queue.unbounded[LiveAsyncCompletion]
       outHub          <- Hub.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
       uploadRef       <- Ref.make(UploadRuntimeState.empty)
       streamRef       <- Ref.make(StreamRuntimeState.empty)
       clientEventsRef <- Ref.make(Vector.empty[Diff.Event])
       titleRef        <- Ref.make(Option.empty[String])
       flashRef        <- Ref.make(FlashRuntimeState.empty)
+      asyncTasksRef   <- Ref.make(LiveAsyncRuntimeState.empty)
       navigationRef   <- Ref.make(Option.empty[LiveNavigationCommand])
       componentsRef   <- Ref.make(ComponentRuntimeState.empty)
       runtimeCtx = ctx.copy(
@@ -34,6 +36,11 @@ private[scalive] object SocketBootstrap:
                      navigation = new SocketNavigationRuntime(navigationRef),
                      title = new SocketTitleRuntime(titleRef),
                      flash = new SocketFlashRuntime(flashRef),
+                     async = new SocketAsyncRuntime(
+                       asyncQueue,
+                       asyncTasksRef,
+                       LiveAsyncOwner.Root
+                     ),
                      components = new SocketComponentUpdateRuntime(componentsRef)
                    )
       initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(runtimeCtx))
@@ -75,6 +82,7 @@ private[scalive] object SocketBootstrap:
       meta = meta,
       tokenConfig = tokenConfig,
       inbox = inbox,
+      asyncQueue = asyncQueue,
       outHub = outHub,
       ref = ref,
       currentUrlRef = currentUrlRef,
@@ -85,6 +93,7 @@ private[scalive] object SocketBootstrap:
       clientEventsRef = clientEventsRef,
       titleRef = titleRef,
       flashRef = flashRef,
+      asyncTasksRef = asyncTasksRef,
       componentsRef = componentsRef,
       componentCidsRef = componentCidsRef,
       patchRedirectCountRef = patchRedirectCountRef,

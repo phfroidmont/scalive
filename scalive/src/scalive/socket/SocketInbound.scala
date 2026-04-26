@@ -69,6 +69,10 @@ private[scalive] object SocketInbound:
           _ <- state.componentCidsRef.update(_ -- destroyedCids)
           _ <- state.componentsRef.update(_.removeCids(destroyedCids))
           _ <- SocketStreamRuntime.removeComponentScopes(state.streamRef, destroyedCids)
+          _ <- SocketAsyncRuntime.interruptOwners(
+                 state.asyncTasksRef,
+                 destroyedCids.map(LiveAsyncOwner.Component(_))
+               )
           response = Json.Obj(
                        "cids" -> Json.Arr(destroyedCids.toSeq.sorted.map(Json.Num(_))*)
                      )

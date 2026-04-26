@@ -9,10 +9,14 @@ import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 
 private[scalive] object SocketOutbound:
+  private enum ServerEvent[+Msg]:
+    case Message(value: Msg)
+    case Async(value: LiveAsyncCompletion)
+
   def startServerFiber[Msg, Model](
     state: RuntimeState[Msg, Model]
   ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
-    serverMsgStream(state).runForeach((msg, meta) => handleServerMsg(msg, meta, state)).fork
+    serverEventStream(state).runForeach((event, meta) => handleServerEvent(event, meta, state)).fork
 
   def buildOutbox[Msg, Model](
     state: RuntimeState[Msg, Model]
@@ -32,17 +36,32 @@ private[scalive] object SocketOutbound:
     serverFiber: Fiber.Runtime[Throwable, Unit]
   ): UIO[Unit] =
     state.outHub.publish(Payload.Close -> state.meta) *>
+      SocketAsyncRuntime.interruptAll(state.asyncTasksRef) *>
       state.inbox.shutdown *>
+      state.asyncQueue.shutdown *>
       state.outHub.shutdown *>
       clientFiber.interrupt.unit *>
       serverFiber.interrupt.unit
 
-  private def serverMsgStream[Msg, Model](
+  private def serverEventStream[Msg, Model](
     state: RuntimeState[Msg, Model]
-  ): ZStream[Any, Nothing, (Msg, WebSocketMessage.Meta)] =
-    (ZStream.fromZIO(state.lvStreamRef.get) ++ state.lvStreamRef.changes)
+  ): ZStream[Any, Nothing, (ServerEvent[Msg], WebSocketMessage.Meta)] =
+    val messages = (ZStream.fromZIO(state.lvStreamRef.get) ++ state.lvStreamRef.changes)
       .flatMapParSwitch(1, 1)(identity)
-      .map(_ -> state.meta.copy(messageRef = None, eventType = "diff"))
+      .map(ServerEvent.Message(_) -> state.meta.copy(messageRef = None, eventType = "diff"))
+    val async = ZStream
+      .fromQueue(state.asyncQueue)
+      .map(ServerEvent.Async(_) -> state.meta.copy(messageRef = None, eventType = "diff"))
+    messages.merge(async)
+
+  private def handleServerEvent[Msg, Model](
+    event: ServerEvent[Msg],
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    event match
+      case ServerEvent.Message(msg)      => handleServerMsg(msg, meta, state)
+      case ServerEvent.Async(completion) => handleAsyncCompletion(completion, meta, state)
 
   private def handleServerMsg[Msg, Model](
     msg: Msg,
@@ -78,4 +97,29 @@ private[scalive] object SocketOutbound:
                  _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
                yield ()
     yield ()
+
+  private def handleAsyncCompletion[Msg, Model](
+    completion: LiveAsyncCompletion,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    completion.owner match
+      case LiveAsyncOwner.Root =>
+        state.msgClassTag.unapply(completion.message) match
+          case Some(msg) => handleServerMsg(msg, meta, state)
+          case None      =>
+            ZIO.logWarning(
+              s"Ignoring async message ${completion.message.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"
+            )
+      case LiveAsyncOwner.Component(cid) =>
+        for
+          (_, rendered) <- state.ref.get
+          _             <- SocketComponentRuntime.handleComponentServerMessage(
+                 cid,
+                 completion.message,
+                 rendered,
+                 meta,
+                 state
+               )
+        yield ()
 end SocketOutbound

@@ -71,18 +71,32 @@ private[scalive] object SocketComponentRuntime:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Boolean] =
+    handleComponentMessage(cid, message, rendered, meta, state, ComponentResponseMode.EventReply)
+
+  def handleComponentServerMessage[Msg, Model](
+    cid: Int,
+    message: Any,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    handleComponentMessage(cid, message, rendered, meta, state, ComponentResponseMode.ServerDiff)
+
+  private def handleComponentMessage[Msg, Model](
+    cid: Int,
+    message: Any,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model],
+    responseMode: ComponentResponseMode
+  ): Task[Boolean] =
     for
       runtime <- state.componentsRef.get
       handled <- runtime.instance(cid) match
                    case None           => ZIO.succeed(false)
                    case Some(instance) =>
                      for
-                       componentCtx = state.ctx.copy(
-                                        streams = SocketStreamRuntime.scoped(
-                                          state.ctx.streams,
-                                          SocketStreamRuntime.componentScope(cid)
-                                        )
-                                      )
+                       componentCtx = componentContext(state.ctx, cid)
                        (model, navigation) <-
                          SocketModelRuntime.captureNavigation(state)(
                            LiveIO
@@ -100,13 +114,7 @@ private[scalive] object SocketComponentRuntime:
                        (parentModel, _) <- state.ref.get
                        _                <- navigation match
                               case Some(command) =>
-                                SocketModelRuntime.publishPayload(
-                                  WebSocketMessage.Payload.okReply(
-                                    WebSocketMessage.LiveResponse.Empty
-                                  ),
-                                  meta,
-                                  state
-                                ) *>
+                                eventReply(responseMode, meta, state) *>
                                   state.patchRedirectCountRef.set(0) *>
                                   SocketInbound.handleNavigationCommand(
                                     rendered,
@@ -123,9 +131,7 @@ private[scalive] object SocketComponentRuntime:
                                             state
                                           )
                                   _ <- SocketModelRuntime.publishPayload(
-                                         WebSocketMessage.Payload.okReply(
-                                           WebSocketMessage.LiveResponse.Diff(diff)
-                                         ),
+                                         diffPayload(responseMode, diff),
                                          meta,
                                          state
                                        )
@@ -203,10 +209,8 @@ private[scalive] object SocketComponentRuntime:
     val existing     = cursor.state.instances.get(identity)
     val cid          = existing.map(_.cid).getOrElse(cursor.state.nextCid)
     val component    = existing.map(_.component).getOrElse(typed.component)
-    val componentCtx = ctx.copy(
-      streams = SocketStreamRuntime.scoped(ctx.streams, SocketStreamRuntime.componentScope(cid))
-    )
-    val mounted = existing match
+    val componentCtx = componentContext(ctx, cid)
+    val mounted      = existing match
       case Some(instance) => ZIO.succeed(instance.model)
       case None => LiveIO.toZIO(component.mount(typed.props)).provide(ZLayer.succeed(componentCtx))
     val updateProps =
@@ -237,6 +241,40 @@ private[scalive] object SocketComponentRuntime:
       wrapped  <- wrapComponentMessages(cid, rendered.prepended(phx.component := cid.toString))
     yield Content.Component(cid, wrapped)
   end renderComponent
+
+  private enum ComponentResponseMode:
+    case EventReply
+    case ServerDiff
+
+  private def componentContext(ctx: LiveContext, cid: Int): LiveContext =
+    ctx.copy(
+      streams = SocketStreamRuntime.scoped(ctx.streams, SocketStreamRuntime.componentScope(cid)),
+      async = SocketAsyncRuntime.scoped(ctx.async, LiveAsyncOwner.Component(cid))
+    )
+
+  private def eventReply[Msg, Model](
+    responseMode: ComponentResponseMode,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    responseMode match
+      case ComponentResponseMode.EventReply =>
+        SocketModelRuntime.publishPayload(
+          WebSocketMessage.Payload.okReply(WebSocketMessage.LiveResponse.Empty),
+          meta,
+          state
+        )
+      case ComponentResponseMode.ServerDiff => ZIO.unit
+
+  private def diffPayload(
+    responseMode: ComponentResponseMode,
+    diff: Diff
+  ): WebSocketMessage.Payload =
+    responseMode match
+      case ComponentResponseMode.EventReply =>
+        WebSocketMessage.Payload.okReply(WebSocketMessage.LiveResponse.Diff(diff))
+      case ComponentResponseMode.ServerDiff =>
+        WebSocketMessage.Payload.Diff(diff)
 
   private def renderLiveView(
     spec: NestedLiveViewSpec[?, ?],

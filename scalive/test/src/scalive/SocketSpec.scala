@@ -452,6 +452,51 @@ object SocketSpec extends ZIOSpecDefault:
 
         assertTrue(componentUpdated)
     },
+    test("untargeted live component events do not route to component state") {
+      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+        object Msg
+
+        def mount(props: Unit)        = ZIO.succeed(0)
+        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
+        def render(model: Int, self: ComponentRef[Msg.type]) =
+          button(phx.onClick(Msg), model.toString)
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                                  = ZIO.unit
+        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(CounterComponent, id = "counter", props = ()))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
+        value = Json.Obj.empty
+      )
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        reply      <- replyFiber.join.some
+      yield
+        val componentUpdated = reply._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+              ) =>
+            components.get(1).exists {
+              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+                dynamic.exists {
+                  case Diff.Dynamic(_, Diff.Value("1")) => true
+                  case _                                => false
+                }
+              case _ => false
+            }
+          case _ => false
+
+        assertTrue(!componentUpdated)
+    },
     test("sendUpdate applies typed props to an existing live component") {
       class LabelComponent extends LiveComponent[String, Unit, String]:
         def mount(props: String)                            = ZIO.succeed(props)

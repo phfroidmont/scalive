@@ -60,7 +60,7 @@ private[scalive] object SocketModelRuntime:
     rendered.bindings.get(event.event) match
       case Some(binding) =>
         binding(event.bindingPayload) match
-          case Right(ComponentMessage(cid, message)) =>
+          case Right(ComponentMessage(cid, message)) if event.cid.contains(cid) =>
             SocketComponentRuntime
               .handleComponentMessage(
                 cid,
@@ -72,6 +72,16 @@ private[scalive] object SocketModelRuntime:
                 case true  => ZIO.unit
                 case false => publishPayload(Payload.okReply(LiveResponse.Empty), meta, state)
               }
+          case Right(ComponentMessage(cid, _)) =>
+            handleInvalidOrMissingBinding(
+              rendered,
+              event.event,
+              Some(s"Binding '${event.event}' targets component $cid without matching event cid"),
+              interceptModel,
+              carriedNavigation,
+              meta,
+              state
+            )
           case Right(message) =>
             state.msgClassTag.unapply(message) match
               case Some(parentMessage) =>

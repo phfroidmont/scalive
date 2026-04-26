@@ -7,7 +7,7 @@ Scalive tracks Phoenix LiveView behavior and feature coverage while keeping the 
 - The upstream browser E2E harness is available via `./scripts/e2e-run-upstream.sh`.
 - The last recorded Playwright run in `test-results/.last-run.json` passed.
 - Scalive already has protocol-level component diff support through `component(cid, element)`, `RenderSnapshot`, and `TreeDiff`.
-- Scalive now has a user-facing stateful `LiveComponent` abstraction with stable identity, component-local state, event routing, typed `sendUpdate`, confirmed removal cleanup, and component patch navigation coverage.
+- Scalive now has a user-facing stateful `LiveComponent` abstraction with stable identity, component-local state, nested components, event/form/upload routing, typed `sendUpdate`, confirmed removal cleanup, component-scoped streams, and component-side navigation/client-effect coverage.
 
 ## Compatibility Parity Matrix
 
@@ -16,7 +16,7 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 | Area | Upstream Reference | Scalive Status | Notes | Priority |
 | --- | --- | --- | --- | --- |
 | Browser E2E behavior | `test/e2e/tests/**/*.spec.js` | Passing baseline | Covered by `./scripts/e2e-run-upstream.sh`; keep running as regression suite. | High |
-| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Partial | Core runtime exists: lifecycle, stable cid, local events, typed `sendUpdate`, removal cleanup, patch navigation, and component-scoped stream state. Remaining gaps include broader `phx-target` parity, nested LiveViews inside components, flash behavior, and async. | Highest |
+| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Partial | Core runtime exists: lifecycle, stable cid, local/nested component events, form events, upload progress, typed `sendUpdate`, removal cleanup, patch navigation, client effects, and component-scoped stream state. Remaining gaps include broader selector/multiple `phx-target` parity, nested LiveViews inside components, flash behavior, and async. | Highest |
 | Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Partial/gap | Several browser E2E nested/sticky scenarios pass, but full server-side nested lifecycle parity is broader. | High |
 | Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Gap | Depends on navigation, patch, redirect, nested LiveView, and component boundaries. | High |
 | Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Gap | Needs a Scala API design for task lifecycle, cancellation, failures, and navigation side effects. | Medium |
@@ -28,7 +28,7 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 
 Continue closing the remaining stateful `LiveComponent` gaps with small vertical slices.
 
-The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around `phx-target`, nested LiveViews inside components, component flash behavior, and component async.
+The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around selector and multiple `phx-target` behavior, nested LiveViews inside components, component flash behavior, and component async.
 
 ## LiveComponent Implementation Sequence
 
@@ -42,15 +42,15 @@ The core runtime is in place, so the highest-leverage follow-up work is now targ
 
 3. Wire component event routing. Done for component-local events and `@myself`-style targeting.
 
-   Support `phx-target` so events can be delivered to component-local handlers instead of the parent `LiveView`. Preserve the existing parent message API where possible.
+   Support `phx-target` so events can be delivered to component-local handlers instead of the parent `LiveView`. Component event, form, upload progress, nested component, and mismatched-cid guard coverage exists. Selector and multiple-target parity still needs focused work.
 
 4. Add regression tests modeled after upstream `live_components_test.exs`. In progress.
 
-   Start with disconnected render, connected render, additions/updates/removals, event delegation, `phx-target`, and multiple targets.
+   Covered so far: connected render, stable ids, duplicate-id rejection, removals after `cids_destroyed`, event delegation, form events, upload progress, nested components, `sendUpdate`, streams, navigation, and client effects. Remaining component tests should focus on selector `phx-target`, multiple targets, nested LiveViews, flash, and async.
 
 5. Add dependent component features. In progress.
 
-   Continue with `send_update`, component streams, component navigation side effects, nested LiveViews inside components, component flash behavior, and component async.
+   `send_update`, component streams, component navigation side effects, and component client effects are covered. Continue with nested LiveViews inside components, component flash behavior, and component async.
 
 ## Suggested Work Order After Components
 

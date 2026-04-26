@@ -553,6 +553,75 @@ object SocketSpec extends ZIOSpecDefault:
 
         assertTrue(scoped)
     },
+    test("live component stream updates are scoped to the target component") {
+      object StreamComponent extends LiveComponent[String, Unit, StreamComponent.Model]:
+        final case class Model(prefix: String, items: LiveStream[String])
+
+        private val Items = LiveStreamDef.byId[String, String]("items")(identity)
+
+        def mount(props: String) =
+          LiveContext.stream(Items, List(props)).map(items => Model(props, items))
+        def handleMessage(model: Model) =
+          _ =>
+            LiveContext
+              .streamInsert(Items, s"${model.prefix}-added")
+              .map(items => model.copy(items = items))
+        def render(model: Model, self: ComponentRef[Unit]) =
+          ul(
+            idAttr       := s"items-${model.prefix}",
+            phx.onUpdate := "stream",
+            phx.onClick(()),
+            phx.target(self),
+            model.items.stream { (domId, item) => li(idAttr := domId, item) }
+          )
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                         = ZIO.unit
+        def handleMessage(model: Unit)    = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            liveComponent(StreamComponent, id = "one", props = "one"),
+            liveComponent(StreamComponent, id = "two", props = "two")
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      def containsValue(diff: Diff, value: String): Boolean =
+        diff match
+          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
+            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
+              containsValue(_, value)
+            )
+          case Diff.Comprehension(_, entries, _, _, _) =>
+            entries.exists {
+              case Diff.Dynamic(_, diff)       => containsValue(diff, value)
+              case Diff.IndexMerge(_, _, diff) => containsValue(diff, value)
+              case _                           => false
+            }
+          case Diff.Value(current)  => current == value
+          case Diff.Dynamic(_, diff) => containsValue(diff, value)
+          case _                    => false
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 3),
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        reply      <- replyFiber.join.some
+      yield
+        val scoped = reply._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))) =>
+            components.get(1).exists(diff => containsValue(diff, "one-added")) &&
+            !components.get(2).exists(diff => containsValue(diff, "one-added"))
+          case _ => false
+
+        assertTrue(scoped)
+    },
     test("cids_destroyed removes live component state before remount") {
       object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
         object Msg

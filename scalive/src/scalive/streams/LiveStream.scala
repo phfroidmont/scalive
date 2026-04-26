@@ -33,6 +33,9 @@ final case class LiveStreamDef[A](
   private[scalive] def decode(value: Any): Option[A] =
     itemClassTag.unapply(value)
 
+  private[scalive] def withName(name: String): LiveStreamDef[A] =
+    copy(name = name)
+
 object LiveStreamDef:
   def byId[A: ClassTag, Id](name: String)(id: A => Id): LiveStreamDef[A] =
     LiveStreamDef(name, value => s"$name-${id(value)}")

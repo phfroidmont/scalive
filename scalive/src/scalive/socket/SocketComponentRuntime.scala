@@ -77,13 +77,19 @@ private[scalive] object SocketComponentRuntime:
                    case None           => ZIO.succeed(false)
                    case Some(instance) =>
                      for
+                       componentCtx = state.ctx.copy(
+                                        streams = SocketStreamRuntime.scoped(
+                                          state.ctx.streams,
+                                          SocketStreamRuntime.componentScope(cid)
+                                        )
+                                      )
                        (model, navigation) <-
                          SocketModelRuntime.captureNavigation(state)(
                            LiveIO
                              .toZIO(
                                instance.component.handleMessage(instance.model)(message)
                              )
-                             .provide(ZLayer.succeed(state.ctx))
+                             .provide(ZLayer.succeed(componentCtx))
                          )
                        _ <- state.componentsRef.update { current =>
                               val updated = instance.copy(model = model)
@@ -170,14 +176,17 @@ private[scalive] object SocketComponentRuntime:
     cursor: ComponentCursor,
     ctx: LiveContext
   ): Task[Content.Component[Any]] =
-    val typed     = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any]]
-    val identity  = ComponentIdentity(typed.component.getClass, typed.id)
-    val existing  = cursor.state.instances.get(identity)
-    val cid       = existing.map(_.cid).getOrElse(cursor.state.nextCid)
-    val component = existing.map(_.component).getOrElse(typed.component)
-    val mounted   = existing match
+    val typed        = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any]]
+    val identity     = ComponentIdentity(typed.component.getClass, typed.id)
+    val existing     = cursor.state.instances.get(identity)
+    val cid          = existing.map(_.cid).getOrElse(cursor.state.nextCid)
+    val component    = existing.map(_.component).getOrElse(typed.component)
+    val componentCtx = ctx.copy(
+      streams = SocketStreamRuntime.scoped(ctx.streams, SocketStreamRuntime.componentScope(cid))
+    )
+    val mounted = existing match
       case Some(instance) => ZIO.succeed(instance.model)
-      case None           => LiveIO.toZIO(component.mount(typed.props)).provide(ZLayer.succeed(ctx))
+      case None => LiveIO.toZIO(component.mount(typed.props)).provide(ZLayer.succeed(componentCtx))
     val updateProps =
       cursor.state.pendingUpdates.get(identity).flatMap(_.lastOption).getOrElse(typed.props)
 
@@ -185,7 +194,7 @@ private[scalive] object SocketComponentRuntime:
       model        <- mounted
       updatedModel <- LiveIO
                         .toZIO(component.update(updateProps, model))
-                        .provide(ZLayer.succeed(ctx))
+                        .provide(ZLayer.succeed(componentCtx))
       instance = ComponentInstance(cid, identity, component, updatedModel)
       _        = cursor.state = cursor.state.copy(
             instances = cursor.state.instances.updated(identity, instance),

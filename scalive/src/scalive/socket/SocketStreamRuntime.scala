@@ -349,6 +349,19 @@ final private[scalive] class SocketStreamRuntime(
 end SocketStreamRuntime
 
 private[scalive] object SocketStreamRuntime:
+  def scoped(runtime: StreamRuntime, scope: String): StreamRuntime =
+    new ScopedStreamRuntime(runtime, scope)
+
+  def removeComponentScopes(streamRef: Ref[StreamRuntimeState], cids: Set[Int]): UIO[Unit] =
+    val prefixes = cids.map(componentScope)
+    streamRef.update { current =>
+      current.copy(streams = current.streams.filterNot { case (name, _) =>
+        prefixes.exists(name.startsWith)
+      })
+    }.unit
+
+  def componentScope(cid: Int): String = s"component:$cid:"
+
   def prune(streamRef: Ref[StreamRuntimeState]): UIO[Unit] =
     streamRef.update { current =>
       current.copy(
@@ -363,3 +376,40 @@ private[scalive] object SocketStreamRuntime:
           .toMap
       )
     }.unit
+
+  final private class ScopedStreamRuntime(runtime: StreamRuntime, scope: String)
+      extends StreamRuntime:
+    def stream[A](
+      definition: LiveStreamDef[A],
+      items: Iterable[A],
+      at: StreamAt,
+      reset: Boolean,
+      limit: Option[StreamLimit]
+    ): Task[LiveStream[A]] =
+      runtime.stream(scoped(definition), items, at, reset, limit).map(unscoped(_, definition))
+
+    def insert[A](
+      definition: LiveStreamDef[A],
+      item: A,
+      at: StreamAt,
+      limit: Option[StreamLimit],
+      updateOnly: Boolean
+    ): Task[LiveStream[A]] =
+      runtime.insert(scoped(definition), item, at, limit, updateOnly).map(unscoped(_, definition))
+
+    def delete[A](definition: LiveStreamDef[A], item: A): Task[LiveStream[A]] =
+      runtime.delete(scoped(definition), item).map(unscoped(_, definition))
+
+    def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): Task[LiveStream[A]] =
+      runtime.deleteByDomId(scoped(definition), domId).map(unscoped(_, definition))
+
+    def get[A](definition: LiveStreamDef[A]): UIO[Option[LiveStream[A]]] =
+      runtime.get(scoped(definition)).map(_.map(unscoped(_, definition)))
+
+    private def scoped[A](definition: LiveStreamDef[A]): LiveStreamDef[A] =
+      definition.withName(scope + definition.name)
+
+    private def unscoped[A](stream: LiveStream[A], definition: LiveStreamDef[A]): LiveStream[A] =
+      stream.copy(name = definition.name)
+  end ScopedStreamRuntime
+end SocketStreamRuntime

@@ -20,6 +20,9 @@ object LiveComponent:
   type PropsOf[C] = C match
     case LiveComponent[props, msg, model] => props
 
+  type MsgOf[C] = C match
+    case LiveComponent[props, msg, model] => msg
+
 final case class ComponentRef[Msg] private[scalive] (cid: Int):
   override def toString: String = cid.toString
 
@@ -31,6 +34,10 @@ final private[scalive] case class LiveComponentSpec[Props, Msg, Model](
 final private[scalive] case class ComponentIdentity(componentClass: Class[?], id: String)
 
 final private[scalive] case class ComponentMessage(cid: Int, message: Any)
+
+final case class ComponentTargetMessage private[scalive] (
+  componentClass: Class[?],
+  message: Any)
 
 trait ComponentUpdateRuntime:
   def sendUpdate[Props](

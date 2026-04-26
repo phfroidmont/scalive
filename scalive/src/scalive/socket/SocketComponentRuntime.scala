@@ -133,6 +133,23 @@ private[scalive] object SocketComponentRuntime:
                      yield true
     yield handled
 
+  def handleComponentTargetMessage[Msg, Model](
+    componentClass: Class[?],
+    cid: Int,
+    message: Any,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    for
+      runtime <- state.componentsRef.get
+      handled <- runtime.instance(cid) match
+                   case Some(instance) if instance.identity.componentClass == componentClass =>
+                     handleComponentMessage(cid, message, rendered, meta, state)
+                   case _ =>
+                     ZIO.succeed(false)
+    yield handled
+
   final private class ComponentCursor(
     var state: ComponentRuntimeState,
     var renderedIdentities: Set[ComponentIdentity] = Set.empty)

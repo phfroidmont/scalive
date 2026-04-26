@@ -39,6 +39,9 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
     else Mod.Attr.Static(name, codec.encode(value))
 
 class HtmlAttrBinding(val name: String):
+  def apply(message: ComponentTargetMessage): Mod.Attr[Nothing] =
+    Mod.Attr.RoutedBinding(name, _ => message)
+
   def apply[Msg](cmd: JSCommand[Msg]): Mod.Attr[Msg] =
     Mod.Attr.JsBinding(name, cmd)
 
@@ -75,6 +78,8 @@ object Mod:
     case FormEventBinding[A, Msg](name: String, codec: FormCodec[A], f: FormEvent[A] => Msg)
         extends Attr[Msg]
     case JsBinding[Msg](name: String, command: JSCommand[Msg]) extends Attr[Msg]
+    case RoutedBinding(name: String, f: BindingPayload => ComponentTargetMessage)
+        extends Attr[Nothing]
 
   enum Content[+Msg] extends Mod[Msg]:
     case Text(text: String, raw: Boolean = false)        extends Content[Nothing]

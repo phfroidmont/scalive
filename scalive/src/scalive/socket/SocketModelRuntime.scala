@@ -82,6 +82,44 @@ private[scalive] object SocketModelRuntime:
               meta,
               state
             )
+          case Right(ComponentTargetMessage(componentClass, message)) =>
+            event.cid match
+              case Some(cid) =>
+                SocketComponentRuntime
+                  .handleComponentTargetMessage(
+                    componentClass,
+                    cid,
+                    message,
+                    rendered,
+                    meta,
+                    state
+                  ).flatMap {
+                    case true  => ZIO.unit
+                    case false =>
+                      handleInvalidOrMissingBinding(
+                        rendered,
+                        event.event,
+                        Some(
+                          s"Binding '${event.event}' targets ${componentClass.getName} but event cid $cid does not match"
+                        ),
+                        interceptModel,
+                        carriedNavigation,
+                        meta,
+                        state
+                      )
+                  }
+              case None =>
+                handleInvalidOrMissingBinding(
+                  rendered,
+                  event.event,
+                  Some(
+                    s"Binding '${event.event}' targets ${componentClass.getName} without event cid"
+                  ),
+                  interceptModel,
+                  carriedNavigation,
+                  meta,
+                  state
+                )
           case Right(message) =>
             state.msgClassTag.unapply(message) match
               case Some(parentMessage) =>

@@ -173,6 +173,12 @@ private[scalive] object RenderSnapshot:
           command.bindings(scope).foreach { case (id, msg) =>
             bindings.update(id, _ => msg)
           }
+        case Attr.RoutedBinding(name, f) =>
+          val id = BindingId.attrBindingId(path, attrIndex)
+          staticFragment += s" $name=\""
+          pushStringSlot(Escaping.escape(id))
+          staticFragment += "\""
+          bindings.update(id, f)
     }
 
     staticFragment += (if el.tag.void then "/>" else ">")
@@ -380,6 +386,9 @@ private[scalive] object RenderSnapshot:
           command.bindings(scope).foreach { case (id, msg) =>
             bindings.update(id, _ => msg)
           }
+        case Attr.RoutedBinding(_, f) =>
+          val id = BindingId.attrBindingId(path, attrIndex)
+          bindings.update(id, f)
         case _ => ()
     }
 

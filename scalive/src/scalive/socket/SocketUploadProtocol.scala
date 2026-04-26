@@ -451,6 +451,24 @@ private[scalive] object SocketUploadProtocol:
                          s"upload_progress binding '$eventRef' targets component $cid without matching event cid"
                        ) *>
                          ZIO.succeed(Payload.okReply(LiveResponse.Empty))
+                     case Right(ComponentTargetMessage(componentClass, message)) =>
+                       payload.cid match
+                         case Some(cid) =>
+                           SocketComponentRuntime
+                             .handleComponentTargetMessage(
+                               componentClass,
+                               cid,
+                               message,
+                               rendered,
+                               state.meta,
+                               state
+                             )
+                             .as(Payload.okReply(LiveResponse.Empty))
+                         case None =>
+                           ZIO.logWarning(
+                             s"upload_progress binding '$eventRef' targets ${componentClass.getName} without event cid"
+                           ) *>
+                             ZIO.succeed(Payload.okReply(LiveResponse.Empty))
                      case Right(message) =>
                        state.msgClassTag.unapply(message) match
                          case Some(parentMessage) =>

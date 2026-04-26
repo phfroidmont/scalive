@@ -1,3 +1,5 @@
+import scala.reflect.ClassTag
+
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 import scalive.codecs.Encoder
 import scalive.codecs.IntAsStringEncoder
@@ -16,6 +18,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
   def component[Msg](cid: Int, element: HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.Component(cid, element)
+  def component[C <: LiveComponent[?, ?, ?]: ClassTag](
+    message: LiveComponent.MsgOf[C]
+  ): ComponentTargetMessage =
+    ComponentTargetMessage(summon[ClassTag[C]].runtimeClass, message)
+
   def liveComponent[Props, Msg, Model](
     component: LiveComponent[Props, Msg, Model],
     id: String,

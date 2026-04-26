@@ -20,7 +20,8 @@ object StaticBuilder:
       case Attr.FormBinding(name, _)         => List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.FormEventBinding(name, _, _) =>
         List(Some(s""" $name="""), None, Some('"'.toString))
-      case Attr.JsBinding(name, _) => List(Some(s" $name='"), None, Some("'"))
+      case Attr.JsBinding(name, _)     => List(Some(s" $name='"), None, Some("'"))
+      case Attr.RoutedBinding(name, _) => List(Some(s""" $name="""), None, Some('"'.toString))
     }
 
     val children = el.contentMods.flatMap {

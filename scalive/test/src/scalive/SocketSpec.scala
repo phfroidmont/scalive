@@ -756,6 +756,179 @@ object SocketSpec extends ZIOSpecDefault:
 
         assertTrue(!componentUpdated)
     },
+    test("selector-targeted component events route by event cid") {
+      final case class CounterModel(id: String, count: Int)
+
+      object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, CounterModel]:
+        object Msg
+
+        def mount(props: String) = ZIO.succeed(CounterModel(props, 0))
+        def handleMessage(model: CounterModel) = { case Msg =>
+          ZIO.succeed(model.copy(count = model.count + 1))
+        }
+        def render(model: CounterModel, self: ComponentRef[Msg.type]) =
+          div(idAttr := s"counter-${model.id}", model.count.toString)
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            button(
+              phx.onClick(component[CounterComponent.type](CounterComponent.Msg)),
+              phx.target("#counter-one"),
+              "increment"
+            ),
+            liveComponent(CounterComponent, id = "one", props = "one"),
+            liveComponent(CounterComponent, id = "two", props = "two")
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        reply      <- replyFiber.join.some
+      yield
+        val componentUpdated = reply._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+              ) =>
+            components.get(1).exists {
+              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+                dynamic.exists {
+                  case Diff.Dynamic(_, Diff.Value("1")) => true
+                  case _                                => false
+                }
+              case _ => false
+            } && !components.contains(2)
+          case _ => false
+
+        assertTrue(componentUpdated)
+    },
+    test("selector-targeted component events can be sent to multiple cids") {
+      final case class CounterModel(id: String, count: Int)
+
+      object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, CounterModel]:
+        object Msg
+
+        def mount(props: String) = ZIO.succeed(CounterModel(props, 0))
+        def handleMessage(model: CounterModel) = { case Msg =>
+          ZIO.succeed(model.copy(count = model.count + 1))
+        }
+        def render(model: CounterModel, self: ComponentRef[Msg.type]) =
+          div(idAttr := s"counter-${model.id}", cls := "dismissible", model.count.toString)
+
+      def containsValue(diff: Diff, value: String): Boolean =
+        diff match
+          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
+            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
+              containsValue(_, value)
+            )
+          case Diff.Value(current)  => current == value
+          case Diff.Dynamic(_, diff) => containsValue(diff, value)
+          case _                    => false
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            button(
+              phx.onClick(component[CounterComponent.type](CounterComponent.Msg)),
+              phx.target("#counter-one, #counter-two"),
+              "increment"
+            ),
+            liveComponent(CounterComponent, id = "one", props = "one"),
+            liveComponent(CounterComponent, id = "two", props = "two")
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val firstEvent: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+      val secondEvent: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty,
+        cid = Some(2)
+      )
+
+      for
+        socket       <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        repliesFiber <- socket.outbox.drop(1).take(2).runCollect.fork
+        _            <- socket.inbox.offer(firstEvent -> meta)
+        _            <- socket.inbox.offer(secondEvent -> meta)
+        replies      <- repliesFiber.join
+      yield
+        val firstUpdated = replies.head._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) => containsValue(diff, "1")
+          case _                                                       => false
+        val secondUpdated = replies.last._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+              ) =>
+            components.get(2).exists(containsValue(_, "1"))
+          case _ => false
+
+        assertTrue(firstUpdated, secondUpdated)
+    },
+    test("selector-targeted component events reject mismatched component classes") {
+      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+        object Msg
+
+        def mount(props: Unit)        = ZIO.succeed(0)
+        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
+        def render(model: Int, self: ComponentRef[Msg.type]) =
+          div(model.toString)
+
+      object OtherComponent extends LiveComponent[Unit, Unit, Unit]:
+        def mount(props: Unit)                    = ZIO.unit
+        def handleMessage(model: Unit)            = _ => ZIO.succeed(model)
+        def render(model: Unit, self: ComponentRef[Unit]) =
+          div("other")
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            button(
+              phx.onClick(component[CounterComponent.type](CounterComponent.Msg)),
+              phx.target("#other"),
+              "increment"
+            ),
+            liveComponent(CounterComponent, id = "counter", props = ()),
+            liveComponent(OtherComponent, id = "other", props = ())
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty,
+        cid = Some(2)
+      )
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        reply      <- replyFiber.join.some
+      yield assertTrue(reply._1 == Payload.okReply(LiveResponse.Empty))
+    },
     test("nested live component events route to nested component state") {
       object ChildComponent extends LiveComponent[Unit, ChildComponent.Msg.type, Int]:
         object Msg

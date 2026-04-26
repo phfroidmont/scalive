@@ -558,6 +558,39 @@ object SocketSpec extends ZIOSpecDefault:
 
         assertTrue(!componentUpdated)
     },
+    test("component events do not route when event cid targets a different component") {
+      object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, Int]:
+        object Msg
+
+        def mount(props: String)     = ZIO.succeed(0)
+        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
+        def render(model: Int, self: ComponentRef[Msg.type]) =
+          button(phx.onClick(Msg), phx.target(self), model.toString)
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                                  = ZIO.unit
+        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            liveComponent(CounterComponent, id = "one", props = "one"),
+            liveComponent(CounterComponent, id = "two", props = "two")
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
+        value = Json.Obj.empty,
+        cid = Some(2)
+      )
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        reply      <- replyFiber.join.some
+      yield assertTrue(reply._1 == Payload.okReply(LiveResponse.Empty))
+    },
     test("nested live component events route to nested component state") {
       object ChildComponent extends LiveComponent[Unit, ChildComponent.Msg.type, Int]:
         object Msg
@@ -985,17 +1018,13 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket        <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        messagesFiber <- socket.outbox.drop(1).take(2).runCollect.fork
-        _             <- socket.inbox.offer(event -> meta)
-        messages      <- messagesFiber.join
-      yield
-        val navigated = messages.exists {
-          case (Payload.LiveNavigation("/next", LivePatchKind.Push), _) => true
-          case _                                                        => false
-        }
-
-        assertTrue(navigated)
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        navigationFiber <- socket.outbox.drop(1).collect {
+                             case (payload @ Payload.LiveNavigation(_, _), _) => payload
+                           }.runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        navigation <- navigationFiber.join.some
+      yield assertTrue(navigation == Payload.LiveNavigation("/next", LivePatchKind.Push))
     },
     test("component events can replace patch") {
       object NavComponent extends LiveComponent[Unit, NavComponent.Msg.type, Unit]:
@@ -1021,17 +1050,13 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket        <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        messagesFiber <- socket.outbox.drop(1).take(2).runCollect.fork
-        _             <- socket.inbox.offer(event -> meta)
-        messages      <- messagesFiber.join
-      yield
-        val navigated = messages.exists {
-          case (Payload.LiveNavigation("/next", LivePatchKind.Replace), _) => true
-          case _                                                           => false
-        }
-
-        assertTrue(navigated)
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        navigationFiber <- socket.outbox.drop(1).collect {
+                             case (payload @ Payload.LiveNavigation(_, _), _) => payload
+                           }.runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        navigation <- navigationFiber.join.some
+      yield assertTrue(navigation == Payload.LiveNavigation("/next", LivePatchKind.Replace))
     }
   )
 end SocketSpec

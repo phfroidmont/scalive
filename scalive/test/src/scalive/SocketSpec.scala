@@ -497,6 +497,61 @@ object SocketSpec extends ZIOSpecDefault:
 
         assertTrue(!componentUpdated)
     },
+    test("nested live component events route to nested component state") {
+      object ChildComponent extends LiveComponent[Unit, ChildComponent.Msg.type, Int]:
+        object Msg
+
+        def mount(props: Unit)        = ZIO.succeed(0)
+        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
+        def render(model: Int, self: ComponentRef[Msg.type]) =
+          button(phx.onClick(Msg), phx.target(self), model.toString)
+
+      object ParentComponent extends LiveComponent[Unit, Unit, Unit]:
+        def mount(props: Unit)                    = ZIO.unit
+        def handleMessage(model: Unit)            = _ => ZIO.succeed(model)
+        def render(model: Unit, self: ComponentRef[Unit]) =
+          div(liveComponent(ChildComponent, id = "child", props = ()))
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                                  = ZIO.unit
+        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(ParentComponent, id = "parent", props = ()))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(
+          Vector("root:div", "component:0:1", "component:0:2"),
+          1
+        ),
+        value = Json.Obj.empty,
+        cid = Some(2)
+      )
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _          <- socket.inbox.offer(event -> meta)
+        reply      <- replyFiber.join.some
+      yield
+        val childUpdated = reply._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+              ) =>
+            components.get(2).exists {
+              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+                dynamic.exists {
+                  case Diff.Dynamic(_, Diff.Value("1")) => true
+                  case _                                => false
+                }
+              case _ => false
+            }
+          case _ => false
+
+        assertTrue(childUpdated)
+    },
     test("sendUpdate applies typed props to an existing live component") {
       class LabelComponent extends LiveComponent[String, Unit, String]:
         def mount(props: String)                            = ZIO.succeed(props)

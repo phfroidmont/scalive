@@ -202,9 +202,9 @@ private[scalive] object SocketComponentRuntime:
             pendingUpdates = cursor.state.pendingUpdates.removed(identity),
             nextCid = if existing.isDefined then cursor.state.nextCid else cursor.state.nextCid + 1
           )
-      ref      = ComponentRef[Any](cid)
-      rendered = component.render(updatedModel, ref).prepended(phx.component := cid.toString)
-      wrapped <- wrapComponentMessages(cid, rendered)
+      ref = ComponentRef[Any](cid)
+      rendered <- renderElement(component.render(updatedModel, ref), cursor, componentCtx)
+      wrapped  <- wrapComponentMessages(cid, rendered.prepended(phx.component := cid.toString))
     yield Content.Component(cid, wrapped)
   end renderComponent
 
@@ -239,8 +239,8 @@ private[scalive] object SocketComponentRuntime:
         ZIO.succeed(mod)
       case Content.Tag(el) =>
         wrapComponentMessages(cid, el).map(Content.Tag(_))
-      case Content.Component(componentCid, el) =>
-        wrapComponentMessages(cid, el).map(rendered => Content.Component(componentCid, rendered))
+      case Content.Component(_, _) =>
+        ZIO.succeed(mod)
       case Content.LiveComponent(_) =>
         ZIO.fail(
           new IllegalStateException("nested live components must be resolved before wrapping")

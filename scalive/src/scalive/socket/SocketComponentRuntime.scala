@@ -133,7 +133,9 @@ private[scalive] object SocketComponentRuntime:
                      yield true
     yield handled
 
-  final private class ComponentCursor(var state: ComponentRuntimeState)
+  final private class ComponentCursor(
+    var state: ComponentRuntimeState,
+    var renderedIdentities: Set[ComponentIdentity] = Set.empty)
 
   private def renderElement[Msg, Model](
     element: HtmlElement[Msg],
@@ -178,6 +180,7 @@ private[scalive] object SocketComponentRuntime:
   ): Task[Content.Component[Any]] =
     val typed        = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any]]
     val identity     = ComponentIdentity(typed.component.getClass, typed.id)
+    val duplicated   = cursor.renderedIdentities.contains(identity)
     val existing     = cursor.state.instances.get(identity)
     val cid          = existing.map(_.cid).getOrElse(cursor.state.nextCid)
     val component    = existing.map(_.component).getOrElse(typed.component)
@@ -191,6 +194,14 @@ private[scalive] object SocketComponentRuntime:
       cursor.state.pendingUpdates.get(identity).flatMap(_.lastOption).getOrElse(typed.props)
 
     for
+      _ <-
+        if duplicated then
+          ZIO.fail(
+            new IllegalArgumentException(
+              s"Duplicate live component id '${typed.id}' for ${typed.component.getClass.getName}"
+            )
+          )
+        else ZIO.succeed(cursor.renderedIdentities = cursor.renderedIdentities + identity)
       model        <- mounted
       updatedModel <- LiveIO
                         .toZIO(component.update(updateProps, model))

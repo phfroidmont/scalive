@@ -402,6 +402,27 @@ object SocketSpec extends ZIOSpecDefault:
 
         assertTrue(initHasComponent, updateHasSameComponent)
     },
+    test("rejects duplicate live component identities in one render") {
+      object CounterComponent extends LiveComponent[String, Unit, String]:
+        def mount(props: String)                            = ZIO.succeed(props)
+        override def update(props: String, model: String)   = ZIO.succeed(props)
+        def handleMessage(model: String)                    = _ => ZIO.succeed(model)
+        def render(model: String, self: ComponentRef[Unit]) =
+          div(model)
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                                  = ZIO.unit
+        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            liveComponent(CounterComponent, id = "counter", props = "one"),
+            liveComponent(CounterComponent, id = "counter", props = "two")
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      for exit <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta).exit
+      yield assertTrue(exit.isFailure)
+    },
     test("routes self-targeted live component events to component state") {
       object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
         object Msg

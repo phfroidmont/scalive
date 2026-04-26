@@ -534,6 +534,127 @@ object SocketSpec extends ZIOSpecDefault:
 
         assertTrue(componentUpdated)
     },
+    test("routes self-targeted live component upload progress to component state") {
+      object UploadComponent extends LiveComponent[Unit, UploadComponent.Msg, String]:
+        enum Msg:
+          case Progress(value: String)
+
+        def mount(props: Unit) = ZIO.succeed("")
+        def handleMessage(model: String) = { case Msg.Progress(value) => ZIO.succeed(value) }
+        def render(model: String, self: ComponentRef[Msg]) =
+          div(
+            phx.onProgress(params => Msg.Progress(params.getOrElse("progress", ""))),
+            phx.target(self),
+            model
+          )
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                                  = ZIO.unit
+        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(UploadComponent, id = "upload", props = ()))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val progress: Payload.Progress = Payload.Progress(
+        event = Some(BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1)),
+        ref = "upload-ref",
+        entry_ref = "entry-ref",
+        progress = Json.Num(50),
+        cid = Some(1)
+      )
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        _          <- socket.progressUpload(progress)
+        reply      <- replyFiber.join.some
+      yield
+        val componentUpdated = reply._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+              ) =>
+            components.get(1).exists {
+              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+                dynamic.exists {
+                  case Diff.Dynamic(_, Diff.Value("50")) => true
+                  case _                                 => false
+                }
+              case _ => false
+            }
+          case _ => false
+
+        assertTrue(componentUpdated)
+    },
+    test("upload progress component bindings ignore mismatched event cid") {
+      object UploadComponent extends LiveComponent[String, UploadComponent.Msg, String]:
+        enum Msg:
+          case Progress(value: String)
+
+        def mount(props: String) = ZIO.succeed(props)
+        def handleMessage(model: String) = { case Msg.Progress(value) => ZIO.succeed(value) }
+        def render(model: String, self: ComponentRef[Msg]) =
+          div(
+            phx.onProgress(params => Msg.Progress(params.getOrElse("progress", ""))),
+            phx.target(self),
+            model
+          )
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                                  = ZIO.unit
+        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            button(phx.onClick(()), "rerender"),
+            liveComponent(UploadComponent, id = "one", props = "one"),
+            liveComponent(UploadComponent, id = "two", props = "two")
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val progress: Payload.Progress = Payload.Progress(
+        event = Some(BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1)),
+        ref = "upload-ref",
+        entry_ref = "entry-ref",
+        progress = Json.Num(50),
+        cid = Some(2)
+      )
+      val rerender: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      def containsValue(diff: Diff, value: String): Boolean =
+        diff match
+          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
+            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
+              containsValue(_, value)
+            )
+          case Diff.Comprehension(_, entries, _, _, _) =>
+            entries.exists {
+              case Diff.Dynamic(_, diff)       => containsValue(diff, value)
+              case Diff.IndexMerge(_, _, diff) => containsValue(diff, value)
+              case _                           => false
+            }
+          case Diff.Value(current)  => current == value
+          case Diff.Dynamic(_, diff) => containsValue(diff, value)
+          case _                    => false
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replyFiber <- socket.outbox.drop(1).runHead.fork
+        reply      <- socket.progressUpload(progress)
+        _          <- socket.inbox.offer(rerender -> meta)
+        routed     <- replyFiber.join.some
+      yield
+        val progressRouted = routed._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
+            containsValue(diff, "50")
+          case Payload.Diff(diff) => containsValue(diff, "50")
+          case _                  => false
+
+        assertTrue(reply == Payload.okReply(LiveResponse.Empty), !progressRouted)
+    },
     test("untargeted live component events do not route to component state") {
       object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
         object Msg
@@ -593,6 +714,7 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
         def render(model: Unit): HtmlElement[Unit] =
           div(
+            button(phx.onClick(()), "rerender"),
             liveComponent(CounterComponent, id = "one", props = "one"),
             liveComponent(CounterComponent, id = "two", props = "two")
           )
@@ -604,13 +726,35 @@ object SocketSpec extends ZIOSpecDefault:
         value = Json.Obj.empty,
         cid = Some(2)
       )
+      val rerender: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         replyFiber <- socket.outbox.drop(1).runHead.fork
         _          <- socket.inbox.offer(event -> meta)
+        _          <- socket.inbox.offer(rerender -> meta)
         reply      <- replyFiber.join.some
-      yield assertTrue(reply._1 == Payload.okReply(LiveResponse.Empty))
+      yield
+        val componentUpdated = reply._1 match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+              ) =>
+            components.values.exists {
+              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+                dynamic.exists {
+                  case Diff.Dynamic(_, Diff.Value("1")) => true
+                  case _                                => false
+                }
+              case _ => false
+            }
+          case _ => false
+
+        assertTrue(!componentUpdated)
     },
     test("nested live component events route to nested component state") {
       object ChildComponent extends LiveComponent[Unit, ChildComponent.Msg.type, Int]:

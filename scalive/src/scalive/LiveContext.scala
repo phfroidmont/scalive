@@ -15,7 +15,8 @@ final case class LiveContext(
   clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
   navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
   title: TitleRuntime = TitleRuntime.Disabled,
-  components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled)
+  components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
+  nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
 object LiveContext:
@@ -40,6 +41,9 @@ object LiveContext:
   trait HasComponents:
     def components: ComponentUpdateRuntime
 
+  trait HasNestedLiveViews:
+    def nestedLiveViews: NestedLiveViewRuntime
+
   trait BaseCapabilities
       extends HasStaticChanged
       with HasUploads
@@ -47,6 +51,7 @@ object LiveContext:
       with HasClientEvents
       with HasTitle
       with HasComponents
+      with HasNestedLiveViews
   trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =

@@ -29,6 +29,7 @@ object StaticBuilder:
       case Content.Tag(child)       => buildStaticFragments(child)
       case Content.Component(_, _)  => List(None)
       case Content.LiveComponent(_) => List(None)
+      case Content.LiveView(_)      => List(None)
       case Content.Keyed(_, _, _)   => List(None)
     }
 

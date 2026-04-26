@@ -217,6 +217,18 @@ private[scalive] object RenderSnapshot:
         )
       case Content.LiveComponent(_) =>
         throw new IllegalStateException("live components must be resolved before rendering")
+      case Content.LiveView(spec) =>
+        val childPath = BindingId.childTagPath(path, structuralChildIndex, "div")
+        structuralChildIndex = structuralChildIndex + 1
+        pushNodeSlot(
+          compileElement(
+            div(idAttr := s"nested-${spec.id}", phx.childId := spec.id),
+            isTopLevel = false,
+            path = childPath,
+            bindings = bindings,
+            trackedStaticUrls = trackedStaticUrls
+          )
+        )
       case Content.Keyed(entries, stream, allEntries) =>
         val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
         structuralChildIndex = structuralChildIndex + 1
@@ -408,6 +420,8 @@ private[scalive] object RenderSnapshot:
         throw new IllegalStateException(
           "live components must be resolved before collecting bindings"
         )
+      case Content.LiveView(_) =>
+        structuralChildIndex = structuralChildIndex + 1
       case Content.Keyed(entries, _, allEntries) =>
         val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
         structuralChildIndex = structuralChildIndex + 1

@@ -173,6 +173,7 @@ private[scalive] object SocketComponentRuntime:
       case Content.Component(cid, el) =>
         renderElement(el, cursor, ctx).map(rendered => Content.Component(cid, rendered))
       case Content.LiveComponent(spec)                => renderComponent(spec, cursor, ctx)
+      case Content.LiveView(spec)                     => renderLiveView(spec, ctx)
       case Content.Keyed(entries, stream, allEntries) =>
         for
           renderedEntries <- ZIO.foreach(entries)(entry => renderKeyedEntry(entry, cursor, ctx))
@@ -236,6 +237,21 @@ private[scalive] object SocketComponentRuntime:
     yield Content.Component(cid, wrapped)
   end renderComponent
 
+  private def renderLiveView(
+    spec: NestedLiveViewSpec[?, ?],
+    ctx: LiveContext
+  ): Task[Content.Tag[Any]] =
+    ctx.nestedLiveViews.register(spec).map { registration =>
+      Content.Tag(
+        div(
+          idAttr       := registration.topic.stripPrefix("lv:"),
+          phx.session  := registration.session,
+          phx.parentId := registration.parentTopic,
+          phx.childId  := registration.id
+        )
+      )
+    }
+
   private def wrapComponentMessages(cid: Int, element: HtmlElement[Any]): Task[HtmlElement[Any]] =
     ZIO.foreach(element.mods)(wrapComponentMod(cid, _)).map(mods => HtmlElement(element.tag, mods))
 
@@ -273,6 +289,8 @@ private[scalive] object SocketComponentRuntime:
         ZIO.fail(
           new IllegalStateException("nested live components must be resolved before wrapping")
         )
+      case Content.LiveView(_) =>
+        ZIO.fail(new IllegalStateException("nested LiveViews must be resolved before wrapping"))
       case Content.Keyed(entries, stream, allEntries) =>
         for
           renderedEntries <- ZIO.foreach(entries)(entry =>

@@ -86,6 +86,7 @@ object Mod:
     case Tag[Msg](el: HtmlElement[Msg])                  extends Content[Msg]
     case Component[Msg](cid: Int, el: HtmlElement[Msg])  extends Content[Msg]
     case LiveComponent(spec: LiveComponentSpec[?, ?, ?]) extends Content[Nothing]
+    case LiveView(spec: NestedLiveViewSpec[?, ?])        extends Content[Nothing]
     case Keyed(
       entries: Vector[Content.Keyed.Entry[Msg]],
       stream: Option[Diff.Stream] = None,

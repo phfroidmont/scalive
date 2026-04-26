@@ -16,8 +16,8 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 | Area | Upstream Reference | Scalive Status | Notes | Priority |
 | --- | --- | --- | --- | --- |
 | Browser E2E behavior | `test/e2e/tests/**/*.spec.js` | Passing baseline | Covered by `./scripts/e2e-run-upstream.sh`; keep running as regression suite. | High |
-| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Partial | Core runtime exists: lifecycle, stable cid, local/nested component events, form events, upload progress, typed `sendUpdate`, selector/multiple `phx-target`, removal cleanup, patch navigation, client effects, and component-scoped stream state. Remaining gaps include nested LiveViews inside components, flash behavior, and async. | Highest |
-| Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Partial/gap | Several browser E2E nested/sticky scenarios pass, but full server-side nested lifecycle parity is broader. | High |
+| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Partial | Core runtime exists: lifecycle, stable cid, local/nested component events, form events, upload progress, typed `sendUpdate`, selector/multiple `phx-target`, connected nested LiveViews inside components, removal cleanup, patch navigation, client effects, and component-scoped stream state. Remaining gaps include flash behavior and async. | Highest |
+| Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Partial | Connected nested LiveViews can be registered, joined, and can handle isolated events, including when rendered from LiveComponents. Remaining gaps include disconnected parity, sticky nested LiveViews, fuller cleanup semantics, and broader navigation cases. | High |
 | Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Gap | Depends on navigation, patch, redirect, nested LiveView, and component boundaries. | High |
 | Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Gap | Needs a Scala API design for task lifecycle, cancellation, failures, and navigation side effects. | Medium |
 | Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Gap | Should probably build on the async task model. | Medium |
@@ -28,7 +28,7 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 
 Continue closing the remaining stateful `LiveComponent` gaps with small vertical slices.
 
-The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around nested LiveViews inside components, component flash behavior, and component async.
+The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around component flash behavior, component async, and the remaining nested LiveView lifecycle edge cases.
 
 ## LiveComponent Implementation Sequence
 
@@ -46,11 +46,11 @@ The core runtime is in place, so the highest-leverage follow-up work is now targ
 
 4. Add regression tests modeled after upstream `live_components_test.exs`. In progress.
 
-   Covered so far: connected render, stable ids, duplicate-id rejection, removals after `cids_destroyed`, event delegation, form events, upload progress, nested components, selector/multiple `phx-target`, `sendUpdate`, streams, navigation, and client effects. Remaining component tests should focus on nested LiveViews, flash, and async.
+   Covered so far: connected render, stable ids, duplicate-id rejection, removals after `cids_destroyed`, event delegation, form events, upload progress, nested components, connected nested LiveViews inside components, selector/multiple `phx-target`, `sendUpdate`, streams, navigation, and client effects. Remaining component tests should focus on flash and async.
 
 5. Add dependent component features. In progress.
 
-   `send_update`, component streams, component navigation side effects, and component client effects are covered. Continue with nested LiveViews inside components, component flash behavior, and component async.
+   `send_update`, component streams, component navigation side effects, component client effects, and connected nested LiveViews inside components are covered. Continue with component flash behavior and component async.
 
 ## Suggested Work Order After Components
 

@@ -173,9 +173,10 @@ object LiveRoutes:
     require(segments.nonEmpty, "mount must contain at least one path segment")
     segments.foldLeft(PathCodec.empty: PathCodec[Unit])((codec, segment) => codec / segment)
 
-final private class LiveChannel(
+final private[scalive] class LiveChannel(
   sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
   uploadOwners: Ref[Map[String, String]],
+  nestedEntries: Ref[Map[String, NestedLiveViewEntry]],
   tokenConfig: TokenConfig):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
     sockets.changes
@@ -207,18 +208,73 @@ final private class LiveChannel(
               .map(m.updated(id, _))
       }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
 
+  def nestedRuntime(parentTopic: String): NestedLiveViewRuntime =
+    new SocketNestedLiveViewRuntime(parentTopic, tokenConfig, nestedEntries)
+
+  private[scalive] def nestedEntry(topic: String): UIO[Option[NestedLiveViewEntry]] =
+    nestedEntries.get.map(_.get(topic))
+
+  private[scalive] def socket(id: String): UIO[Option[Socket[?, ?]]] =
+    sockets.get.map(_.get(id))
+
+  def joinNested(
+    topic: String,
+    token: String,
+    staticChanged: Boolean,
+    meta: WebSocketMessage.Meta,
+    initialUrl: URL
+  ): RIO[Scope, Option[JoinErrorReason]] =
+    nestedEntries.get.flatMap { entries =>
+      entries.get(topic) match
+        case Some(entry) if isAuthorizedNestedJoin(topic, token) =>
+          val ctx = LiveContext(
+            staticChanged = staticChanged,
+            nestedLiveViews = nestedRuntime(topic)
+          )
+          sockets
+            .updateZIO { m =>
+              m.get(topic) match
+                case Some(socket) =>
+                  socket.shutdown *>
+                    entry.start(ctx, meta, initialUrl).map(socket => m.updated(topic, socket))
+                case None =>
+                  entry.start(ctx, meta, initialUrl).map(socket => m.updated(topic, socket))
+            }
+            .as(None)
+        case Some(_) =>
+          ZIO.succeed(Some(JoinErrorReason.Unauthorized))
+        case None =>
+          ZIO.succeed(None)
+    }
+
+  private def isAuthorizedNestedJoin(topic: String, token: String): Boolean =
+    Token
+      .verify[String](tokenConfig.secret, token, tokenConfig.maxAge)
+      .toOption
+      .exists { case (tokenTopic, payload) => tokenTopic == topic && payload == "nested" }
+
   def leave(id: String): UIO[Unit] =
     for
-      _ <- uploadOwners.update(_.filterNot { case (_, ownerId) => ownerId == id })
+      _        <- uploadOwners.update(_.filterNot { case (_, ownerId) => ownerId == id })
+      childIds <- nestedEntries.modify { entries =>
+                    val children = entries.collect {
+                      case (topic, entry) if entry.parentTopic == id => topic
+                    }.toSet
+                    (children, entries -- children - id)
+                  }
       _ <- sockets.updateZIO { m =>
+             val children     = childIds.flatMap(m.get)
+             val stopChildren = ZIO.foreachDiscard(children)(_.shutdown)
              m.get(id) match
                case Some(socket) =>
                  for
+                   _ <- stopChildren
                    _ <- socket.shutdown
                    _ <- ZIO.logDebug(s"Left LiveView $id")
-                 yield m.removed(id)
+                 yield m -- childIds - id
                case None =>
-                 ZIO.logDebug(s"Ignoring leave for unknown LiveView $id").as(m)
+                 stopChildren *>
+                   ZIO.logDebug(s"Ignoring leave for unknown LiveView $id").as(m -- childIds)
            }
     yield ()
 
@@ -313,7 +369,8 @@ object LiveChannel:
     for
       sockets      <- SubscriptionRef.make(Map.empty[String, Socket[?, ?]])
       uploadOwners <- Ref.make(Map.empty[String, String])
-    yield new LiveChannel(sockets, uploadOwners, tokenConfig)
+      nested       <- Ref.make(Map.empty[String, NestedLiveViewEntry])
+    yield new LiveChannel(sockets, uploadOwners, nested, tokenConfig)
 
 final private class LiveRoutesRuntime(
   rootLayout: HtmlElement[?] => HtmlElement[?],
@@ -408,36 +465,49 @@ final private class LiveRoutesRuntime(
     liveChannel: LiveChannel
   ): RIO[Scope, Option[WebSocketMessage]] =
     val clientStatics = join.static.orElse(StaticTracking.clientListFromParams(join.params))
-    val ctx           = LiveContext(StaticTracking.staticChanged(clientStatics, trackedStatic))
+    val staticChanged = StaticTracking.staticChanged(clientStatics, trackedStatic)
+    val ctx           = LiveContext(
+      staticChanged = staticChanged,
+      nestedLiveViews = liveChannel.nestedRuntime(message.topic)
+    )
 
     decodeJoinUrl(join) match
       case Left(error) =>
         ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
       case Right(decodedUrl) =>
-        val req = Request(url = decodedUrl)
-        liveRoutes.iterator
-          .map(route =>
-            route.pattern.pathCodec
-              .decode(req.path)
-              .toOption
-              .map(pathParams =>
-                if isAuthorizedJoin(route.sessionName, message.topic, join.session) then
-                  val lv = route.live.liveviewBuilder(pathParams, req)
-                  ZIO.logDebug(s"Joining LiveView ${route.pattern.pathCodec} ${message.topic}") *>
-                    liveChannel
-                      .join(message.topic, join.session, lv, ctx, message.meta, decodedUrl)(
-                        using route.live.msgClassTag
-                      )
-                      .as(None)
-                      .catchAllCause(cause =>
-                        ZIO.logErrorCause(cause) *>
-                          ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Stale)))
-                      )
-                else ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
-              )
-          )
-          .collectFirst { case Some(joinAction) => joinAction }
-          .getOrElse(ZIO.succeed(None))
+        liveChannel
+          .joinNested(message.topic, join.session, staticChanged, message.meta, decodedUrl)
+          .flatMap {
+            case Some(reason) => ZIO.succeed(Some(joinErrorReply(message, reason)))
+            case None         =>
+              val req = Request(url = decodedUrl)
+              liveRoutes.iterator
+                .map(route =>
+                  route.pattern.pathCodec
+                    .decode(req.path)
+                    .toOption
+                    .map(pathParams =>
+                      if isAuthorizedJoin(route.sessionName, message.topic, join.session) then
+                        val lv = route.live.liveviewBuilder(pathParams, req)
+                        ZIO.logDebug(
+                          s"Joining LiveView ${route.pattern.pathCodec} ${message.topic}"
+                        ) *>
+                          liveChannel
+                            .join(message.topic, join.session, lv, ctx, message.meta, decodedUrl)(
+                              using route.live.msgClassTag
+                            )
+                            .as(None)
+                            .catchAllCause(cause =>
+                              ZIO.logErrorCause(cause) *>
+                                ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+                            )
+                      else ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+                    )
+                )
+                .collectFirst { case Some(joinAction) => joinAction }
+                .getOrElse(ZIO.succeed(None))
+          }
+    end match
   end handleJoin
 
   private def handleLeave(

@@ -16,7 +16,8 @@ final case class LiveContext(
   navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
   title: TitleRuntime = TitleRuntime.Disabled,
   components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
-  nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled)
+  nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled,
+  flash: FlashRuntime = FlashRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
 object LiveContext:
@@ -44,6 +45,9 @@ object LiveContext:
   trait HasNestedLiveViews:
     def nestedLiveViews: NestedLiveViewRuntime
 
+  trait HasFlash:
+    def flash: FlashRuntime
+
   trait BaseCapabilities
       extends HasStaticChanged
       with HasUploads
@@ -52,6 +56,7 @@ object LiveContext:
       with HasTitle
       with HasComponents
       with HasNestedLiveViews
+      with HasFlash
   trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =
@@ -147,6 +152,21 @@ object LiveContext:
 
   def putTitle(title: String): URIO[HasTitle, Unit] =
     ZIO.serviceWithZIO[HasTitle](_.title.set(title))
+
+  def putFlash(kind: String, message: String): URIO[HasFlash, Unit] =
+    ZIO.serviceWithZIO[HasFlash](_.flash.put(kind, message))
+
+  def clearFlash(kind: String): URIO[HasFlash, Unit] =
+    ZIO.serviceWithZIO[HasFlash](_.flash.clear(kind))
+
+  def clearFlash: URIO[HasFlash, Unit] =
+    ZIO.serviceWithZIO[HasFlash](_.flash.clearAll)
+
+  def flash(kind: String): URIO[HasFlash, Option[String]] =
+    ZIO.serviceWithZIO[HasFlash](_.flash.get(kind))
+
+  def flash: URIO[HasFlash, Map[String, String]] =
+    ZIO.serviceWithZIO[HasFlash](_.flash.snapshot)
 
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
     id: String,

@@ -24,6 +24,7 @@ private[scalive] object SocketBootstrap:
       streamRef       <- Ref.make(StreamRuntimeState.empty)
       clientEventsRef <- Ref.make(Vector.empty[Diff.Event])
       titleRef        <- Ref.make(Option.empty[String])
+      flashRef        <- Ref.make(FlashRuntimeState.empty)
       navigationRef   <- Ref.make(Option.empty[LiveNavigationCommand])
       componentsRef   <- Ref.make(ComponentRuntimeState.empty)
       runtimeCtx = ctx.copy(
@@ -32,6 +33,7 @@ private[scalive] object SocketBootstrap:
                      clientEvents = new SocketClientEventRuntime(clientEventsRef),
                      navigation = new SocketNavigationRuntime(navigationRef),
                      title = new SocketTitleRuntime(titleRef),
+                     flash = new SocketFlashRuntime(flashRef),
                      components = new SocketComponentUpdateRuntime(componentsRef)
                    )
       initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(runtimeCtx))
@@ -82,6 +84,7 @@ private[scalive] object SocketBootstrap:
       streamRef = streamRef,
       clientEventsRef = clientEventsRef,
       titleRef = titleRef,
+      flashRef = flashRef,
       componentsRef = componentsRef,
       componentCidsRef = componentCidsRef,
       patchRedirectCountRef = patchRedirectCountRef,

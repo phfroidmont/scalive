@@ -36,6 +36,9 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): Mod[Nothing] =
     Mod.Content.LiveView(NestedLiveViewSpec(id, liveView, summon[ClassTag[Msg]]))
 
+  def flash(kind: String)(f: String => HtmlElement[Nothing]): Mod[Nothing] =
+    Mod.Content.Flash(kind, f)
+
   def liveComponent[Props, Msg, Model](
     component: LiveComponent[Props, Msg, Model],
     id: Int,
@@ -171,7 +174,8 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       new HtmlAttr["update" | "stream" | "ignore"](s"phx-update", Encoder(identity))
 
     // Client hooks
-    lazy val hook                                              = phxAttr("hook")
+    lazy val hook                          = phxAttr("hook")
+    lazy val clearFlash: Mod.Attr[Nothing] = phxAttr("click") := "lv:clear-flash"
     def target[Msg](ref: ComponentRef[Msg]): Mod.Attr[Nothing] =
       phxAttr("target") := ref.toString
     def target(selector: String): Mod.Attr[Nothing] =

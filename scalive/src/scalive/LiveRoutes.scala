@@ -21,7 +21,11 @@ import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.Protocol
 import scalive.socket.SocketNavigationRuntime
+import scalive.socket.SocketComponentRuntime
+import scalive.socket.SocketFlashRuntime
 import scalive.socket.SocketStreamRuntime
+import scalive.socket.ComponentRuntimeState
+import scalive.socket.FlashRuntimeState
 import scalive.socket.StreamRuntimeState
 
 final case class LiveRouteHandler[A, Msg, Model] private[scalive] (
@@ -69,11 +73,15 @@ final case class LiveRoute[A, Msg, Model](
       val token    = Token.sign(tokenConfig.secret, id, sessionName)
       val response = for
         streamRef     <- Ref.make(StreamRuntimeState.empty)
+        flashRef      <- Ref.make(FlashRuntimeState.empty)
+        componentsRef <- Ref.make(ComponentRuntimeState.empty)
         navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
         ctx = LiveContext(
                 staticChanged = false,
                 streams = new SocketStreamRuntime(streamRef),
-                navigation = new SocketNavigationRuntime(navigationRef)
+                navigation = new SocketNavigationRuntime(navigationRef),
+                flash = new SocketFlashRuntime(flashRef),
+                components = new scalive.socket.SocketComponentUpdateRuntime(componentsRef)
               )
         initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
         lifecycle <- LiveRoute.runInitialHandleParams(
@@ -83,26 +91,34 @@ final case class LiveRoute[A, Msg, Model](
                        ctx,
                        navigationRef
                      )
-      yield lifecycle match
-        case LiveRoute.InitialLifecycleOutcome.Render(model) =>
-          val el = lv.render(model)
-          Response.html(
-            Html.raw(
-              HtmlBuilder.build(
-                rootLayout(
-                  div(
-                    idAttr      := id,
-                    phx.main    := true,
-                    phx.session := token,
-                    el
-                  )
-                ),
-                isRoot = false
-              )
-            )
-          )
-        case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
-          Response.redirect(url)
+        response <- lifecycle match
+                      case LiveRoute.InitialLifecycleOutcome.Render(model) =>
+                        val el = lv.render(model)
+                        SocketComponentRuntime
+                          .renderRoot(
+                            rootLayout(
+                              div(
+                                idAttr      := id,
+                                phx.main    := true,
+                                phx.session := token,
+                                el
+                              )
+                            ),
+                            componentsRef,
+                            ctx
+                          ).map(rendered =>
+                            Response.html(
+                              Html.raw(
+                                HtmlBuilder.build(
+                                  rendered,
+                                  isRoot = false
+                                )
+                              )
+                            )
+                          )
+                      case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
+                        ZIO.succeed(Response.redirect(url))
+      yield response
       response.catchAllCause { cause =>
         ZIO.logErrorCause(cause) *>
           ZIO.succeed(Response.text("Internal Server Error").status(Status.InternalServerError))

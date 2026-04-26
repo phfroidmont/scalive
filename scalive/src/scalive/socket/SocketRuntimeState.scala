@@ -116,6 +116,11 @@ private[scalive] object StreamRuntimeState:
   val empty: StreamRuntimeState =
     StreamRuntimeState(Map.empty, 0L)
 
+final private[scalive] case class FlashRuntimeState(values: Map[String, String])
+
+private[scalive] object FlashRuntimeState:
+  val empty: FlashRuntimeState = FlashRuntimeState(Map.empty)
+
 final private[scalive] case class RenderedView(
   compiled: RenderSnapshot.Compiled,
   bindings: Map[String, BindingHandler[Any]])
@@ -136,6 +141,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   streamRef: Ref[StreamRuntimeState],
   clientEventsRef: Ref[Vector[Diff.Event]],
   titleRef: Ref[Option[String]],
+  flashRef: Ref[FlashRuntimeState],
   componentsRef: Ref[ComponentRuntimeState],
   componentCidsRef: Ref[Set[Int]],
   patchRedirectCountRef: Ref[Int],

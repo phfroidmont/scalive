@@ -229,6 +229,8 @@ private[scalive] object RenderSnapshot:
             trackedStaticUrls = trackedStaticUrls
           )
         )
+      case Content.Flash(_, _) =>
+        throw new IllegalStateException("flash content must be resolved before rendering")
       case Content.Keyed(entries, stream, allEntries) =>
         val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
         structuralChildIndex = structuralChildIndex + 1
@@ -422,6 +424,8 @@ private[scalive] object RenderSnapshot:
         )
       case Content.LiveView(_) =>
         structuralChildIndex = structuralChildIndex + 1
+      case Content.Flash(_, _) =>
+        throw new IllegalStateException("flash content must be resolved before collecting bindings")
       case Content.Keyed(entries, _, allEntries) =>
         val keyedPath = BindingId.childKeyedPath(path, structuralChildIndex)
         structuralChildIndex = structuralChildIndex + 1

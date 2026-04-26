@@ -30,6 +30,7 @@ object StaticBuilder:
       case Content.Component(_, _)  => List(None)
       case Content.LiveComponent(_) => List(None)
       case Content.LiveView(_)      => List(None)
+      case Content.Flash(_, _)      => List(None)
       case Content.Keyed(_, _, _)   => List(None)
     }
 

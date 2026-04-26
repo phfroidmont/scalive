@@ -78,6 +78,20 @@ private[scalive] object SocketInbound:
                  state
                )
         yield ()
+      case "lv:clear-flash" =>
+        for
+          (currentModel, rendered) <- state.ref.get
+          _                        <- event.params.get("key") match
+                 case Some(kind) => state.ctx.flash.clear(kind)
+                 case None       => state.ctx.flash.clearAll
+          diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, currentModel, state)
+          _    <- SocketModelRuntime.publishPayload(
+                 if diff.isEmpty then Payload.okReply(LiveResponse.Empty)
+                 else Payload.okReply(LiveResponse.Diff(diff)),
+                 meta,
+                 state
+               )
+        yield ()
       case _ =>
         for
           _                        <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)

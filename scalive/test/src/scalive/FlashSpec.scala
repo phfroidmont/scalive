@@ -7,6 +7,7 @@ import zio.stream.ZStream
 import zio.test.*
 
 import scalive.WebSocketMessage.LiveResponse
+import scalive.WebSocketMessage.LivePatchKind
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.ReplyStatus
 
@@ -18,6 +19,8 @@ object FlashSpec extends ZIOSpecDefault:
     case ShowBoth
     case ClearInfo
     case ClearAll
+    case PushPatch
+    case ReplacePatch
     case Rerender
 
   private def containsValue(diff: Diff, value: String): Boolean =
@@ -165,6 +168,114 @@ object FlashSpec extends ZIOSpecDefault:
         _      <- socket.inbox.offer(event -> meta)
         reply  <- out.take
       yield assertTrue(diffFromReply(reply._1).exists(containsValue(_, "Component saved")))
+    },
+    test("flash survives event-triggered pushPatch") {
+      val lv = new LiveView[Msg, String]:
+        def mount = ZIO.succeed("start")
+        def handleMessage(model: String) = {
+          case Msg.PushPatch =>
+            LiveContext.putFlash("info", "Patched") *>
+              LiveContext.pushPatch("/next").as(model)
+          case _ => ZIO.succeed(model)
+        }
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          ZIO.succeed(url.path.encode)
+        def render(model: String): HtmlElement[Msg] =
+          div(
+            idAttr := "root",
+            button(phx.onClick(Msg.PushPatch), "patch"),
+            span(idAttr := "path", model),
+            flash("info")(message => p(idAttr := "flash", message))
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        out    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        _      <- socket.outbox.runForeach(out.offer).forkScoped
+        _      <- out.take
+        _      <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+        emptyReply  <- out.take
+        navigation  <- out.take
+        patchReply  <- socket.livePatch("/next", meta)
+      yield assertTrue(
+        emptyReply._1 == Payload.okReply(LiveResponse.Empty),
+        navigation._1 == Payload.LiveNavigation("/next", LivePatchKind.Push),
+        diffFromReply(patchReply).exists(diff =>
+          containsValue(diff, "/next") && containsValue(diff, "Patched")
+        )
+      )
+    },
+    test("flash survives event-triggered replacePatch") {
+      val lv = new LiveView[Msg, String]:
+        def mount = ZIO.succeed("start")
+        def handleMessage(model: String) = {
+          case Msg.ReplacePatch =>
+            LiveContext.putFlash("info", "Replaced") *>
+              LiveContext.replacePatch("/next").as(model)
+          case _ => ZIO.succeed(model)
+        }
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          ZIO.succeed(url.path.encode)
+        def render(model: String): HtmlElement[Msg] =
+          div(
+            idAttr := "root",
+            button(phx.onClick(Msg.ReplacePatch), "patch"),
+            span(idAttr := "path", model),
+            flash("info")(message => p(idAttr := "flash", message))
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        out    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        _      <- socket.outbox.runForeach(out.offer).forkScoped
+        _      <- out.take
+        _      <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+        emptyReply <- out.take
+        navigation <- out.take
+        patchReply <- socket.livePatch("/next", meta)
+      yield assertTrue(
+        emptyReply._1 == Payload.okReply(LiveResponse.Empty),
+        navigation._1 == Payload.LiveNavigation("/next", LivePatchKind.Replace),
+        diffFromReply(patchReply).exists(diff =>
+          containsValue(diff, "/next") && containsValue(diff, "Replaced")
+        )
+      )
+    },
+    test("flash survives bootstrap handleParams patch loop") {
+      val lv = new LiveView[Unit, String]:
+        def mount = ZIO.succeed("mount")
+        def handleMessage(model: String) = _ => ZIO.succeed(model)
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          if url.path.encode == "/start" then
+            LiveContext.putFlash("info", "Boot patched") *>
+              LiveContext.pushPatch("/done").as(model)
+          else ZIO.succeed(url.path.encode)
+        def render(model: String): HtmlElement[Unit] =
+          div(
+            idAttr := "root",
+            span(idAttr := "path", model),
+            flash("info")(message => p(idAttr := "flash", message))
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        init <- socket.outbox.take(1).runHead.some
+      yield assertTrue(
+        diffFromReply(init._1).exists(diff =>
+          containsValue(diff, "/done") && containsValue(diff, "Boot patched")
+        )
+      )
     },
     test("nested LiveView flash is scoped to the child socket") {
       enum ChildMsg:

@@ -16,9 +16,9 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 | Area | Upstream Reference | Scalive Status | Notes | Priority |
 | --- | --- | --- | --- | --- |
 | Browser E2E behavior | `test/e2e/tests/**/*.spec.js` | Passing baseline | Covered by `./scripts/e2e-run-upstream.sh`; keep running as regression suite. | High |
-| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Partial | Core runtime exists: lifecycle, stable cid, local/nested component events, form events, upload progress, typed `sendUpdate`, selector/multiple `phx-target`, connected nested LiveViews inside components, removal cleanup, patch navigation, client effects, component flash, and component-scoped stream state. Remaining gaps include async and broader flash navigation propagation. | Highest |
+| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Partial | Core runtime exists: lifecycle, stable cid, local/nested component events, form events, upload progress, typed `sendUpdate`, selector/multiple `phx-target`, connected nested LiveViews inside components, removal cleanup, patch navigation, client effects, component flash, and component-scoped stream state. Remaining gaps include async and redirect/push-navigate flash propagation. | Highest |
 | Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Partial | Connected nested LiveViews can be registered, joined, handle isolated events, clean up on parent/child leave, keep stable topics across parent re-renders/patches, defer render-removal cleanup until client confirmation, and emit child-scoped navigation. Remaining gaps include disconnected parity, sticky nested LiveViews, and broader navigation/lifecycle edge cases. | High |
-| Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Partial | Socket-scoped flash state exists with root/component APIs, render helpers, keyed/all clear, built-in `lv:clear-flash`, and nested socket isolation. Remaining gaps include redirect propagation and broader patch/navigation parity. | High |
+| Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Partial | Socket-scoped flash state exists with root/component APIs, render helpers, keyed/all clear, built-in `lv:clear-flash`, patch navigation persistence, bootstrap patch-loop persistence, and nested socket isolation. Remaining gaps include redirect and push-navigate propagation. | High |
 | Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Gap | Needs a Scala API design for task lifecycle, cancellation, failures, and navigation side effects. | Medium |
 | Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Gap | Should probably build on the async task model. | Medium |
 | Lifecycle hooks | `test/phoenix_live_view/integrations/hooks_test.exs` | Gap/partial | Scalive has `interceptEvent`; upstream hooks cover mount, event, params, info, async, and render stages. | Medium |
@@ -28,7 +28,7 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 
 Continue closing the remaining stateful `LiveComponent` gaps with small vertical slices.
 
-The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around flash navigation propagation, component async, and remaining nested LiveView disconnected/sticky lifecycle cases.
+The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around redirect/push-navigate flash propagation, component async, and remaining nested LiveView disconnected/sticky lifecycle cases.
 
 ## LiveComponent Implementation Sequence
 
@@ -46,11 +46,11 @@ The core runtime is in place, so the highest-leverage follow-up work is now targ
 
 4. Add regression tests modeled after upstream `live_components_test.exs`. In progress.
 
-   Covered so far: connected render, stable ids, duplicate-id rejection, removals after `cids_destroyed`, event delegation, form events, upload progress, nested components, connected nested LiveViews inside components, selector/multiple `phx-target`, `sendUpdate`, streams, navigation, client effects, and flash. Remaining component tests should focus on async and broader flash navigation propagation.
+   Covered so far: connected render, stable ids, duplicate-id rejection, removals after `cids_destroyed`, event delegation, form events, upload progress, nested components, connected nested LiveViews inside components, selector/multiple `phx-target`, `sendUpdate`, streams, navigation, client effects, and flash. Remaining component tests should focus on async and redirect/push-navigate flash propagation.
 
 5. Add dependent component features. In progress.
 
-   `send_update`, component streams, component navigation side effects, component client effects, component flash behavior, and connected nested LiveViews inside components are covered. Continue with component async and broader flash navigation propagation.
+   `send_update`, component streams, component navigation side effects, component client effects, component flash behavior, and connected nested LiveViews inside components are covered. Continue with component async and redirect/push-navigate flash propagation.
 
 ## Suggested Work Order After Components
 

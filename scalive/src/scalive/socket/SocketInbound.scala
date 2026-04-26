@@ -143,6 +143,7 @@ private[scalive] object SocketInbound:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
+    val _          = rendered
     val (to, kind) =
       command match
         case LiveNavigationCommand.PushPatch(value)    => value -> LivePatchKind.Push
@@ -155,7 +156,7 @@ private[scalive] object SocketInbound:
                        .mapError(error => new IllegalArgumentException(error))
       resolvedTo = resolvedUrl.encode
       redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
-      _             <- SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
+      _             <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
       _             <-
         if redirectCount > 20 then
           SocketModelRuntime.publishPayload(
@@ -168,7 +169,7 @@ private[scalive] object SocketInbound:
             Payload.LiveNavigation(resolvedTo, kind),
             meta.copy(messageRef = None),
             state
-          ) *> handleLivePatch(resolvedTo, meta, state)
+          )
     yield ()
   end handleNavigationCommand
 end SocketInbound

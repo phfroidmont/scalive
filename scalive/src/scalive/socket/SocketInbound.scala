@@ -38,6 +38,11 @@ private[scalive] object SocketInbound:
             .provide(ZLayer.succeed(state.ctx))
         )
       diffOpt <- navigation match
+                   case Some(
+                         command @ (LiveNavigationCommand.PushPatch(_) |
+                         LiveNavigationCommand.ReplacePatch(_))
+                       ) =>
+                     followPatchRedirects(rendered, model, command, meta, state)
                    case Some(command) =>
                      handleNavigationCommand(rendered, model, command, meta, state).as(None)
                    case None =>
@@ -52,6 +57,85 @@ private[scalive] object SocketInbound:
                 case _ =>
                   Payload.okReply(LiveResponse.Empty)
     yield reply
+
+  private def followPatchRedirects[Msg, Model](
+    rendered: RenderedView,
+    model: Model,
+    command: LiveNavigationCommand,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Option[Diff]] =
+    def loop(currentModel: Model, currentCommand: LiveNavigationCommand): Task[Option[Diff]] =
+      currentCommand match
+        case LiveNavigationCommand.PushPatch(to) =>
+          continue(currentModel, to, LivePatchKind.Push)
+        case LiveNavigationCommand.ReplacePatch(to) =>
+          continue(currentModel, to, LivePatchKind.Replace)
+        case other =>
+          handleNavigationCommand(rendered, currentModel, other, meta, state).as(None)
+
+    def continue(
+      currentModel: Model,
+      to: String,
+      kind: LivePatchKind
+    ): Task[Option[Diff]] =
+      for
+        currentUrl <- state.currentUrlRef.get
+        nextUrl    <- ZIO
+                     .fromEither(LivePatchUrl.resolve(to, currentUrl))
+                     .mapError(error => new IllegalArgumentException(error))
+        redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
+        _      <- state.ref.update { case (_, currentRendered) => (currentModel, currentRendered) }
+        result <-
+          if redirectCount > 20 then
+            SocketModelRuntime
+              .publishPayload(
+                Payload.Error,
+                meta.copy(joinRef = None, messageRef = None),
+                state
+              ).as(None)
+          else
+            for
+              _                       <- state.currentUrlRef.set(nextUrl)
+              (nextModel, navigation) <- SocketModelRuntime.captureNavigation(state)(
+                                           LiveIO
+                                             .toZIO(
+                                               LiveViewParamsRuntime.runHandleParams(
+                                                 state.lv,
+                                                 currentModel,
+                                                 nextUrl
+                                               )
+                                             )
+                                             .provide(ZLayer.succeed(state.ctx))
+                                         )
+              diffOpt <- navigation match
+                           case Some(
+                                 nextCommand @ (LiveNavigationCommand.PushPatch(_) |
+                                 LiveNavigationCommand.ReplacePatch(_))
+                               ) =>
+                             loop(nextModel, nextCommand)
+                           case Some(nextCommand) =>
+                             handleNavigationCommand(rendered, nextModel, nextCommand, meta, state)
+                               .as(None)
+                           case None =>
+                             for
+                               _    <- state.patchRedirectCountRef.set(0)
+                               diff <- SocketModelRuntime.updateModelAndSubscriptions(
+                                         rendered,
+                                         nextModel,
+                                         state
+                                       )
+                               _ <- SocketModelRuntime.publishPayload(
+                                      Payload.LiveNavigation(nextUrl.encode, kind),
+                                      meta.copy(messageRef = None),
+                                      state
+                                    )
+                             yield Some(diff)
+            yield diffOpt
+      yield result
+
+    loop(model, command)
+  end followPatchRedirects
 
   private def handleClientEvent[Msg, Model](
     event: Payload.Event,

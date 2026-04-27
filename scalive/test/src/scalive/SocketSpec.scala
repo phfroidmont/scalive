@@ -190,6 +190,45 @@ object SocketSpec extends ZIOSpecDefault:
       )
       end for
     },
+    test("live patch handleParams redirect loops emit an error") {
+      final case class LoopModel(shouldLoop: Boolean)
+
+      val ctx = LiveContext(staticChanged = false)
+      val lv = new LiveView[Unit, LoopModel]:
+        override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
+
+        def mount = ZIO.succeed(LoopModel(shouldLoop = false))
+
+        override def handleParams(model: LoopModel, query: queryCodec.Out, url: URL) =
+          if url.queryParam("loop").contains("true") then
+            if model.shouldLoop then LiveContext.pushPatch("?loop=true").as(model)
+            else ZIO.succeed(model.copy(shouldLoop = false))
+          else ZIO.succeed(model.copy(shouldLoop = true))
+
+        def handleMessage(model: LoopModel) = _ => ZIO.succeed(model)
+
+        def render(model: LoopModel): HtmlElement[Unit] = div(model.shouldLoop.toString)
+
+        def subscriptions(model: LoopModel) = ZStream.empty
+
+      for
+        initialUrl <- ZIO.fromEither(URL.decode("/redirectloop")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        error <- socket.outbox.drop(1).runHead.fork
+        reply <- socket.livePatch("?loop=true", meta)
+        emitted <- error.join.some
+      yield assertTrue(
+        reply == Payload.okReply(LiveResponse.Empty),
+        emitted._1 == Payload.Error
+      )
+    },
     test("server stream emits diff") {
       val ctx = LiveContext(staticChanged = false)
       val lv  = makeLiveView(ZStream.succeed(Msg.FromServer))

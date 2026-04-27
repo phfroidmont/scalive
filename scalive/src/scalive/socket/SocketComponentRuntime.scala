@@ -82,6 +82,40 @@ private[scalive] object SocketComponentRuntime:
   ): Task[Boolean] =
     handleComponentMessage(cid, message, rendered, meta, state, ComponentResponseMode.ServerDiff)
 
+  def handleComponentAssign[Msg, Model](
+    cid: Int,
+    update: Any => Any,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    for
+      runtime <- state.componentsRef.get
+      handled <- runtime.instance(cid) match
+                   case None           => ZIO.succeed(false)
+                   case Some(instance) =>
+                     for
+                       updatedModel <- ZIO.attempt(update(instance.model))
+                       _            <- state.componentsRef.update { current =>
+                              val updated = instance.copy(model = updatedModel)
+                              current.copy(instances =
+                                current.instances.updated(instance.identity, updated)
+                              )
+                            }
+                       (parentModel, _) <- state.ref.get
+                       diff             <- SocketModelRuntime.updateModelAndSubscriptions(
+                                 rendered,
+                                 parentModel,
+                                 state
+                               )
+                       _ <- SocketModelRuntime.publishPayload(
+                              WebSocketMessage.Payload.Diff(diff),
+                              meta,
+                              state
+                            )
+                     yield true
+    yield handled
+
   private def handleComponentMessage[Msg, Model](
     cid: Int,
     message: Any,

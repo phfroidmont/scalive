@@ -35,13 +35,15 @@ private[scalive] object SocketOutbound:
     clientFiber: Fiber.Runtime[Throwable, Unit],
     serverFiber: Fiber.Runtime[Throwable, Unit]
   ): UIO[Unit] =
-    state.outHub.publish(Payload.Close -> state.meta) *>
-      SocketAsyncRuntime.interruptAll(state.asyncTasksRef) *>
-      state.inbox.shutdown *>
-      state.asyncQueue.shutdown *>
-      state.outHub.shutdown *>
-      clientFiber.interrupt.unit *>
-      serverFiber.interrupt.unit
+    ZIO.uninterruptible(
+      state.outHub.publish(Payload.Close -> state.meta) *>
+        SocketAsyncRuntime.interruptAll(state.asyncTasksRef) *>
+        state.inbox.shutdown *>
+        state.asyncQueue.shutdown *>
+        state.outHub.shutdown *>
+        clientFiber.interrupt.unit *>
+        serverFiber.interrupt.unit
+    )
 
   private def serverEventStream[Msg, Model](
     state: RuntimeState[Msg, Model]
@@ -105,21 +107,47 @@ private[scalive] object SocketOutbound:
   ): Task[Unit] =
     completion.owner match
       case LiveAsyncOwner.Root =>
-        state.msgClassTag.unapply(completion.message) match
-          case Some(msg) => handleServerMsg(msg, meta, state)
-          case None      =>
-            ZIO.logWarning(
-              s"Ignoring async message ${completion.message.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"
-            )
+        completion.event match
+          case LiveAsyncCompletionEvent.Message(message) =>
+            state.msgClassTag.unapply(message) match
+              case Some(msg) => handleServerMsg(msg, meta, state)
+              case None      =>
+                ZIO.logWarning(
+                  s"Ignoring async message ${message.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"
+                )
+          case LiveAsyncCompletionEvent.Assign(update) =>
+            for
+              (currentModel, rendered) <- state.ref.get
+              updatedModel = update(currentModel).asInstanceOf[Model]
+              diff <- SocketModelRuntime.updateModelAndSubscriptions(
+                        rendered,
+                        updatedModel,
+                        state
+                      )
+              _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+            yield ()
       case LiveAsyncOwner.Component(cid) =>
-        for
-          (_, rendered) <- state.ref.get
-          _             <- SocketComponentRuntime.handleComponentServerMessage(
-                 cid,
-                 completion.message,
-                 rendered,
-                 meta,
-                 state
-               )
-        yield ()
+        completion.event match
+          case LiveAsyncCompletionEvent.Message(message) =>
+            for
+              (_, rendered) <- state.ref.get
+              _             <- SocketComponentRuntime.handleComponentServerMessage(
+                     cid,
+                     message,
+                     rendered,
+                     meta,
+                     state
+                   )
+            yield ()
+          case LiveAsyncCompletionEvent.Assign(update) =>
+            for
+              (_, rendered) <- state.ref.get
+              _             <- SocketComponentRuntime.handleComponentAssign(
+                     cid,
+                     update,
+                     rendered,
+                     meta,
+                     state
+                   )
+            yield ()
 end SocketOutbound

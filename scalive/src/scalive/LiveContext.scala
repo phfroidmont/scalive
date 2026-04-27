@@ -183,11 +183,30 @@ object LiveContext:
   ): URIO[HasAsync, Unit] =
     ZIO.serviceWithZIO[HasAsync](_.async.start(key, mode)(effect)(toMsg))
 
+  inline def assignAsync[Model, A](
+    model: Model,
+    mode: AsyncStartMode = AsyncStartMode.Restart,
+    reset: Boolean = false
+  )(
+    inline field: Model => AsyncValue[A]
+  )(
+    effect: Task[A]
+  ): URIO[HasAsync, Model] =
+    ${ LiveContextMacros.assignAsyncImpl[Model, A]('model, 'mode, 'reset, 'field, 'effect) }
+
   def cancelAsync[A](
     key: LiveAsync[A],
     reason: Option[String] = None
   ): URIO[HasAsync, Unit] =
     ZIO.serviceWithZIO[HasAsync](_.async.cancel(key, reason))
+
+  inline def cancelAssignAsync[Model, A](
+    model: Model
+  )(
+    inline field: Model => AsyncValue[A],
+    reason: Option[String] = None
+  ): URIO[HasAsync, Unit] =
+    ${ LiveContextMacros.cancelAssignAsyncImpl[Model, A]('model, 'field, 'reason) }
 
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
     id: String,

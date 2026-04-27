@@ -16,13 +16,35 @@ final private[scalive] class SocketAsyncRuntime(
   )(
     toMsg: LiveAsyncResult[A] => Msg
   ): UIO[Unit] =
+    startTask(key, mode)(effect)(result => LiveAsyncCompletionEvent.Message(toMsg(result)))
+
+  def startAssign[A, Model](
+    key: LiveAsync[A],
+    mode: AsyncStartMode
+  )(
+    effect: Task[A]
+  )(
+    update: (Model, LiveAsyncResult[A]) => Model
+  ): UIO[Unit] =
+    startTask(key, mode)(effect)(result =>
+      LiveAsyncCompletionEvent.Assign(model => update(model.asInstanceOf[Model], result))
+    )
+
+  private def startTask[A](
+    key: LiveAsync[A],
+    mode: AsyncStartMode
+  )(
+    effect: Task[A]
+  )(
+    toEvent: LiveAsyncResult[A] => LiveAsyncCompletionEvent
+  ): UIO[Unit] =
     val id = LiveAsyncTaskId(owner, key.name)
 
     for
       token <- Random.nextUUID.map(_.toString)
       start <- Promise.make[Nothing, Unit]
       fiber <-
-        (start.await *> effect.exit.flatMap(exit => complete(id, token, exit, toMsg))).forkDaemon
+        (start.await *> effect.exit.flatMap(exit => complete(id, token, exit, toEvent))).forkDaemon
       decision <- tasksRef.modify { current =>
                     current.tasks.get(id) match
                       case Some(_) if mode == AsyncStartMode.KeepExisting =>
@@ -31,7 +53,7 @@ final private[scalive] class SocketAsyncRuntime(
                         val task = LiveAsyncTaskState(
                           token = token,
                           fiber = fiber,
-                          cancelledMessage = reason => toMsg(LiveAsyncResult.Cancelled(reason))
+                          cancelledEvent = reason => toEvent(LiveAsyncResult.Cancelled(reason))
                         )
                         StartDecision.Start(existing.map(_.fiber)) ->
                           current.copy(tasks = current.tasks.updated(id, task))
@@ -41,7 +63,7 @@ final private[scalive] class SocketAsyncRuntime(
              case StartDecision.Start(previous) =>
                ZIO.foreachDiscard(previous)(_.interrupt.forkDaemon) *> start.succeed(()).unit
     yield ()
-  end start
+  end startTask
 
   def cancel[A](key: LiveAsync[A], reason: Option[String]): UIO[Unit] =
     val id = LiveAsyncTaskId(owner, key.name)
@@ -53,17 +75,17 @@ final private[scalive] class SocketAsyncRuntime(
       _ <- task match
              case Some(value) =>
                value.fiber.interrupt.forkDaemon *>
-                 queue.offer(LiveAsyncCompletion(owner, value.cancelledMessage(reason))).unit
+                 queue.offer(LiveAsyncCompletion(owner, value.cancelledEvent(reason))).unit
              case None => ZIO.unit
     yield ()
 
-  private def complete[A, Msg](
+  private def complete[A](
     id: LiveAsyncTaskId,
     token: String,
     exit: Exit[Throwable, A],
-    toMsg: LiveAsyncResult[A] => Msg
+    toEvent: LiveAsyncResult[A] => LiveAsyncCompletionEvent
   ): UIO[Unit] =
-    val message = toMsg(toResult(exit))
+    val event = toEvent(toResult(exit))
 
     for
       active <- tasksRef.modify { current =>
@@ -74,7 +96,7 @@ final private[scalive] class SocketAsyncRuntime(
                       false -> current
                 }
       _ <-
-        if active then queue.offer(LiveAsyncCompletion(owner, message)).unit
+        if active then queue.offer(LiveAsyncCompletion(owner, event)).unit
         else ZIO.unit
     yield ()
 

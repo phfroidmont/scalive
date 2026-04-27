@@ -53,6 +53,7 @@ object Socket:
                         SocketUploadProtocol.handleUploadChunk(uploadTopic, bytes, state)
         outbox = SocketOutbound.buildOutbox(state)
         stop   = SocketOutbound.buildShutdown(state, clientFiber, serverFiber)
+        _ <- ZIO.addFinalizerExit(_ => stop.exit.unit)
       yield Socket[Msg, Model](
         id,
         token,

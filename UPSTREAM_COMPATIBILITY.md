@@ -19,8 +19,8 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 | Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Partial | Core runtime exists: lifecycle, stable cid, local/nested component events, form events, upload progress, typed `sendUpdate`, selector/multiple `phx-target`, connected nested LiveViews inside components, removal cleanup, patch navigation, client effects, component flash, component-scoped stream state, and component-scoped async tasks. Remaining gaps include redirect/push-navigate flash propagation. | Highest |
 | Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Partial | Connected nested LiveViews can be registered, joined, handle isolated events, clean up on parent/child leave, keep stable topics across parent re-renders/patches, defer render-removal cleanup until client confirmation, and emit child-scoped navigation. Remaining gaps include disconnected parity, sticky nested LiveViews, and broader navigation/lifecycle edge cases. | High |
 | Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Partial | Socket-scoped flash state exists with root/component APIs, render helpers, keyed/all clear, built-in `lv:clear-flash`, patch navigation persistence, bootstrap patch-loop persistence, and nested socket isolation. Remaining gaps include redirect and push-navigate propagation. | High |
-| Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Partial | Root LiveViews and LiveComponents can start typed named async tasks from mount/update/events, receive success/failure/cancellation as normal messages, render completion diffs, trigger patch navigation, cancel tasks, restart tasks by name, and clean up component/socket-owned tasks. Remaining gaps include broader upstream lifecycle edge cases and async assigns. | Medium |
-| Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Gap | Should probably build on the async task model. | Medium |
+| Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Partial | Root LiveViews and LiveComponents can start typed named async tasks from mount/update/events, receive success/failure/cancellation as normal messages, render completion diffs, trigger patch navigation, cancel tasks, restart tasks by name, and clean up component/socket-owned tasks. Remaining gaps include broader upstream lifecycle edge cases. | Medium |
+| Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Partial | `LiveContext.assignAsync(model)(_.field)(effect)` updates typed `AsyncValue` model fields directly without user completion messages. Success, failure, reset/preserve loading behavior, cancellation, and component-scoped assigns are covered. Remaining gaps include broader upstream lifecycle edge cases and any multi-key convenience API. | Medium |
 | Lifecycle hooks | `test/phoenix_live_view/integrations/hooks_test.exs` | Gap/partial | Scalive has `interceptEvent`; upstream hooks cover mount, event, params, info, async, and render stages. | Medium |
 | Test harness helpers | `lib/phoenix_live_view/test/*` and integration tests | Not directly applicable | Scalive may need its own testing API rather than direct Phoenix API parity. | Low |
 
@@ -28,7 +28,7 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 
 Continue closing the remaining stateful `LiveComponent` gaps with small vertical slices.
 
-The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around async assigns, redirect/push-navigate flash propagation, and remaining nested LiveView disconnected/sticky lifecycle cases.
+The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around redirect/push-navigate flash propagation, async lifecycle edge cases, and remaining nested LiveView disconnected/sticky lifecycle cases.
 
 ## LiveComponent Implementation Sequence
 
@@ -64,7 +64,11 @@ The core runtime is in place, so the highest-leverage follow-up work is now targ
 
 3. Add lifecycle controls. Done for the first slice.
 
-   Cancellation, restart-by-name, keep-existing start mode, and shutdown cleanup are implemented. Remaining work is broader upstream edge cases around navigation/remount and async assigns.
+   Cancellation, restart-by-name, keep-existing start mode, and shutdown cleanup are implemented. Remaining work is broader upstream edge cases around navigation/remount.
+
+4. Add async assign helpers. Done for the first slice.
+
+   `LiveContext.assignAsync(model)(_.field)(effect)` derives a typed case-class field updater, stores loading state immediately, and applies completion to `AsyncValue` without requiring a user message. Cancellation uses `LiveContext.cancelAssignAsync(model)(_.field, reason)`.
 
 ## Suggested Work Order After Components
 

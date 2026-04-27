@@ -290,6 +290,7 @@ private[scalive] object SocketInbound:
           token      <- flashToken
           _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
           _          <- publish(Payload.LiveRedirect(resolvedTo, LivePatchKind.Push, token))
+          _          <- SocketFlashRuntime.resetNavigation(state.flashRef)
         yield ()
       case LiveNavigationCommand.ReplaceNavigate(to) =>
         for
@@ -297,6 +298,7 @@ private[scalive] object SocketInbound:
           token      <- flashToken
           _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
           _          <- publish(Payload.LiveRedirect(resolvedTo, LivePatchKind.Replace, token))
+          _          <- SocketFlashRuntime.resetNavigation(state.flashRef)
         yield ()
       case LiveNavigationCommand.Redirect(to) =>
         for
@@ -304,6 +306,7 @@ private[scalive] object SocketInbound:
           token      <- flashToken
           _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
           _          <- publish(Payload.Redirect(resolvedTo, token))
+          _          <- SocketFlashRuntime.resetNavigation(state.flashRef)
         yield ()
     end match
   end handleNavigationCommand

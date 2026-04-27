@@ -18,7 +18,7 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 | Browser E2E behavior | `test/e2e/tests/**/*.spec.js` | Passing baseline | Covered by `./scripts/e2e-run-upstream.sh`; keep running as regression suite. | High |
 | Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Native parity covered | Scalive-native coverage now mirrors upstream component runtime behavior: `@myself`-style refs, disconnected/connected render, stable cids, additions/updates/removals, whole-root removals, nested LiveView/component removal combinations, removal races, local/form/upload events, nested components, selector/multiple `phx-target`, typed `sendUpdate`, missing-target handling, push-navigate/push-patch/redirect side effects, client effects, flash, streams, and async. Phoenix-only APIs such as module/id-less `send_update`, cid-based external updates, and `render_component/2` are intentionally not copied. | Highest |
 | Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream nested integration suite: disconnected/connected render, dynamic children, recursive cleanup, multiple children of the same LiveView type, fresh constructor data, comprehensions, children inside components, duplicate id rejection, child push-navigate/push-patch/redirect, external redirect, and sticky child preservation. | High |
-| Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Mostly covered | Scalive-native coverage now exercises root and component flash lifecycle behavior: keyed/all clear, built-in `lv:clear-flash`, stale flash exclusion for redirect/push-navigate/push-patch, client-side patch clearing, patch-redirect carryover, event and bootstrap patch persistence, mount redirect/push-navigate cookie propagation, hard-redirect cookie propagation, push-navigate token propagation, and nested socket isolation. Remaining gaps are nested child patch flash transfer to the root socket and Phoenix test-helper/deadview-specific assertions. | High |
+| Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream flash lifecycle behavior: keyed/all clear, built-in `lv:clear-flash`, stale flash exclusion for redirect/push-navigate/push-patch, client-side patch clearing, patch-redirect carryover, event and bootstrap patch persistence, mount redirect/push-navigate cookie propagation, hard-redirect cookie propagation, push-navigate token propagation, nested socket isolation, and nested child patch flash transfer to the root socket. Phoenix ConnTest/LiveViewTest helper assertions are intentionally not copied. | High |
 | Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream start_async runtime behavior: root LiveViews and LiveComponents can start typed named async tasks from mount/update/events, receive success/failure/cancellation as normal messages, render completion diffs, trigger push-navigate/push-patch/redirect/flash side effects, cancel and restart tasks by name, keep existing tasks when requested, and deterministically interrupt socket/component-owned tasks on cancellation, socket shutdown, and confirmed component removal. Phoenix complex keys are represented by explicit string task names in Scalive's typed API. | Medium |
 | Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream assign_async runtime behavior through the typed field API: root LiveViews and LiveComponents can assign async fields from mount/update/events, store success/failure/cancellation, preserve or reset previous values while loading, renew after cancellation, and deterministically interrupt socket/component-owned assign tasks on shutdown or confirmed component removal. Phoenix's untyped map/list-key return validation and explicit Task.Supervisor option are intentionally not copied; Scalive uses typed direct `AsyncValue` field selectors and ZIO structured concurrency. | Medium |
 | Lifecycle hooks | `test/phoenix_live_view/integrations/hooks_test.exs` | Gap/partial | Scalive has `interceptEvent`; upstream hooks cover mount, event, params, info, async, and render stages. | Medium |
@@ -26,9 +26,9 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 
 ## Recommended Next Step
 
-Continue closing the remaining lifecycle hook and flash edge-case gaps with small vertical slices.
+Continue closing lifecycle hook gaps with small vertical slices.
 
-The core async runtime is in place, so the highest-leverage follow-up work is now targeted parity around lifecycle hooks and any remaining flash lifecycle edge cases.
+The core component, nested LiveView, flash, async task, and async assign runtimes are covered, so the highest-leverage follow-up work is now targeted parity around lifecycle hooks.
 
 ## LiveComponent Implementation Sequence
 
@@ -73,7 +73,7 @@ The core async runtime is in place, so the highest-leverage follow-up work is no
 ## Suggested Work Order After Components
 
 1. Complete nested LiveView lifecycle parity. Done for the upstream `nested_test.exs` equivalent slice.
-2. Flash propagation across redirect, push navigate, and push patch. Done for the first slice.
+2. Flash propagation across redirect, push navigate, and push patch. Done for the upstream `flash_test.exs` equivalent slice.
 3. Design and implement async task support. Done for the first slice.
 4. Build async assigns on top of async task support. Done for the first slice.
 5. Revisit lifecycle hooks and align them with the final component, nested, and async runtime model.

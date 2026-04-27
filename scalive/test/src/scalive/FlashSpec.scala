@@ -1147,6 +1147,79 @@ object FlashSpec extends ZIOSpecDefault:
                     !diffFromReply(parentReply._1).exists(containsValue(_, "Child flash"))
                   )).ensuring(childFiber.interrupt *> parentFiber.interrupt)
       yield result)
+    },
+    test("nested child pushPatch transfers flash to the root live_patch") {
+      enum ChildMsg:
+        case Patch
+
+      val rootTopic  = "lv:flash-root"
+      val childTopic = "lv:flash-root-child"
+      val rootMeta   = WebSocketMessage.Meta(Some(1), Some(1), rootTopic, "phx_join")
+      val childMeta  = rootMeta.copy(topic = childTopic)
+
+      val child = new LiveView[ChildMsg, Unit]:
+        def mount = ZIO.unit
+        def handleMessage(model: Unit) = { case ChildMsg.Patch =>
+          LiveContext.putFlash("info", "Child patched") *>
+            LiveContext.pushPatch("/flash-root?patched=true").as(model)
+        }
+        def render(model: Unit): HtmlElement[ChildMsg] =
+          div(
+            idAttr := "child",
+            button(phx.onClick(ChildMsg.Patch), "patch")
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val parent = new LiveView[Unit, String]:
+        def mount = ZIO.succeed("start")
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          ZIO.succeed(url.encode)
+        def handleMessage(model: String) = _ => ZIO.succeed(model)
+        def render(model: String): HtmlElement[Unit] =
+          div(
+            idAttr := "parent",
+            span(idAttr := "url", model),
+            flash("info")(message => p(idAttr := "parent-flash", message)),
+            liveView("child", child)
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      ZIO.scoped(for
+        initialUrl <- ZIO.fromEither(URL.decode("/flash-root")).orDie
+        channel    <- LiveChannel.make(TokenConfig.default)
+        ctx = LiveContext(
+                staticChanged = false,
+                nestedLiveViews = channel.nestedRuntime(rootTopic)
+              )
+        _      <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, initialUrl)
+        entry  <- channel.nestedEntry(childTopic).some
+        _      <- channel.joinNested(childTopic, entry.token, false, childMeta, initialUrl)
+        childSocket <- channel.socket(childTopic).some
+        childOut <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        childFiber <- childSocket.outbox.runForeach(childOut.offer).fork
+        result <- (for
+                    _ <- childOut.take
+                    _ <- channel.event(
+                           childTopic,
+                           click(Vector("root:div", "tag:0:button")),
+                           childMeta.copy(eventType = "event")
+                         )
+                    emptyReply <- childOut.take
+                    navigation <- childOut.take
+                    patchReply <- channel.livePatch(
+                                    rootTopic,
+                                    "/flash-root?patched=true",
+                                    rootMeta.copy(eventType = "live_patch")
+                                  )
+                  yield assertTrue(
+                    emptyReply._1 == Payload.okReply(LiveResponse.Empty),
+                    navigation._1 == Payload.LiveNavigation("/flash-root?patched=true", LivePatchKind.Push),
+                    diffFromReply(patchReply).exists(diff =>
+                      containsValue(diff, "/flash-root?patched=true") &&
+                        containsValue(diff, "Child patched")
+                    )
+                  )).ensuring(childFiber.interrupt)
+      yield result)
     }
   )
 end FlashSpec

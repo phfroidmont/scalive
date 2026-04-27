@@ -327,6 +327,25 @@ final private[scalive] class LiveChannel(
   private[scalive] def socket(id: String): UIO[Option[Socket[?, ?]]] =
     sockets.get.map(_.get(id))
 
+  private def rootTopic(entries: Map[String, NestedLiveViewEntry], topic: String): String =
+    entries.get(topic) match
+      case Some(entry) => rootTopic(entries, entry.parentTopic)
+      case None        => topic
+
+  private def takeNestedNavigationFlash(id: String): UIO[Map[String, String]] =
+    for
+      entries        <- nestedEntries.get
+      currentSockets <- sockets.get
+      descendantTopics = entries.keysIterator
+                           .filter(topic => rootTopic(entries, topic) == id)
+                           .toList
+      flashes <- ZIO.foreach(descendantTopics)(topic =>
+                   currentSockets
+                     .get(topic)
+                     .fold(ZIO.succeed(Map.empty[String, String]))(_.takeNavigationFlash)
+                 )
+    yield flashes.foldLeft(Map.empty[String, String])(_ ++ _)
+
   def joinNested(
     topic: String,
     token: String,
@@ -400,8 +419,13 @@ final private[scalive] class LiveChannel(
   def livePatch(id: String, url: String, meta: WebSocketMessage.Meta): Task[Payload.Reply] =
     sockets.get.flatMap { m =>
       m.get(id) match
-        case Some(socket) => socket.livePatch(url, meta)
-        case None         => ZIO.succeed(Payload.okReply(LiveResponse.Empty))
+        case Some(socket) =>
+          for
+            flash <- takeNestedNavigationFlash(id)
+            _     <- ZIO.when(flash.nonEmpty)(socket.replaceNavigationFlash(flash))
+            reply <- socket.livePatch(url, meta)
+          yield reply
+        case None => ZIO.succeed(Payload.okReply(LiveResponse.Empty))
     }
 
   def allowUpload(id: String, payload: Payload.AllowUpload): Task[Payload.Reply] =

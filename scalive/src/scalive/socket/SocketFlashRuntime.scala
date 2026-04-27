@@ -36,5 +36,11 @@ private[scalive] object SocketFlashRuntime:
   def commitNavigation(ref: Ref[FlashRuntimeState]): UIO[Unit] =
     ref.update(state => state.copy(values = state.navigationValues))
 
+  def replaceNavigation(ref: Ref[FlashRuntimeState], values: Map[String, String]): UIO[Unit] =
+    ref.update(_.copy(navigationValues = values))
+
+  def takeNavigation(ref: Ref[FlashRuntimeState]): UIO[Map[String, String]] =
+    ref.modify(state => state.navigationValues -> state.copy(navigationValues = Map.empty))
+
   def navigationValues(ref: Ref[FlashRuntimeState]): UIO[Map[String, String]] =
     ref.get.map(_.navigationValues)

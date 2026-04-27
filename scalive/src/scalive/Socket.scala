@@ -9,6 +9,7 @@ import zio.stream.ZStream
 
 import scalive.WebSocketMessage.Payload
 import scalive.socket.SocketBootstrap
+import scalive.socket.SocketFlashRuntime
 import scalive.socket.SocketInbound
 import scalive.socket.SocketOutbound
 import scalive.socket.SocketUploadProtocol
@@ -23,6 +24,8 @@ final case class Socket[Msg, Model] private (
   uploadJoin: (String, String) => Task[Payload.Reply],
   uploadChunk: (String, Chunk[Byte]) => Task[Payload.Reply],
   outbox: ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)],
+  private[scalive] val takeNavigationFlash: UIO[Map[String, String]],
+  private[scalive] val replaceNavigationFlash: Map[String, String] => UIO[Unit],
   shutdown: UIO[Unit])
 
 object Socket:
@@ -59,8 +62,11 @@ object Socket:
                        SocketUploadProtocol.handleUploadJoin(uploadTopic, uploadToken, state)
         uploadChunk = (uploadTopic: String, bytes: Chunk[Byte]) =>
                         SocketUploadProtocol.handleUploadChunk(uploadTopic, bytes, state)
-        outbox = SocketOutbound.buildOutbox(state)
-        stop   = SocketOutbound.buildShutdown(state, clientFiber, serverFiber)
+        outbox                 = SocketOutbound.buildOutbox(state)
+        takeNavigationFlash    = SocketFlashRuntime.takeNavigation(state.flashRef)
+        replaceNavigationFlash = (flash: Map[String, String]) =>
+                                   SocketFlashRuntime.replaceNavigation(state.flashRef, flash)
+        stop = SocketOutbound.buildShutdown(state, clientFiber, serverFiber)
         _ <- ZIO.addFinalizerExit(_ => stop.exit.unit)
       yield Socket[Msg, Model](
         id,
@@ -72,6 +78,8 @@ object Socket:
         uploadJoin,
         uploadChunk,
         outbox,
+        takeNavigationFlash,
+        replaceNavigationFlash,
         stop
       )
     }

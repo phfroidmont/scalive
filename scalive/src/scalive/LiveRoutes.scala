@@ -353,7 +353,7 @@ final private[scalive] class LiveChannel(
     for
       childIds <- nestedEntries.modify { entries =>
                     val children = entries.collect {
-                      case (topic, entry) if entry.parentTopic == id => topic
+                      case (topic, entry) if entry.parentTopic == id && !entry.sticky => topic
                     }.toSet
                     (children, entries -- children - id)
                   }

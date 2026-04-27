@@ -32,9 +32,10 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
   def liveView[Msg: ClassTag, Model](
     id: String,
-    liveView: => LiveView[Msg, Model]
+    liveView: => LiveView[Msg, Model],
+    sticky: Boolean = false
   ): Mod[Nothing] =
-    Mod.Content.LiveView(NestedLiveViewSpec(id, () => liveView, summon[ClassTag[Msg]]))
+    Mod.Content.LiveView(NestedLiveViewSpec(id, () => liveView, summon[ClassTag[Msg]], sticky))
 
   def flash(kind: String)(f: String => HtmlElement[Nothing]): Mod[Nothing] =
     Mod.Content.Flash(kind, f)
@@ -117,6 +118,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     private[scalive] lazy val main      = htmlAttr("data-phx-main", BooleanAsAttrPresenceEncoder)
     private[scalive] lazy val parentId  = dataPhxAttr("parent-id")
     private[scalive] lazy val childId   = dataPhxAttr("child-id")
+    private[scalive] lazy val sticky    = htmlAttr("data-phx-sticky", BooleanAsAttrPresenceEncoder)
     private[scalive] lazy val link      = dataPhxAttr("link")
     private[scalive] lazy val linkState = dataPhxAttr("link-state")
     private[scalive] lazy val component = dataPhxAttr("component")

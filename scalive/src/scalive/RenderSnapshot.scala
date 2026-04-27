@@ -222,7 +222,7 @@ private[scalive] object RenderSnapshot:
         structuralChildIndex = structuralChildIndex + 1
         pushNodeSlot(
           compileElement(
-            div(idAttr := s"nested-${spec.id}", phx.childId := spec.id),
+            div(idAttr := s"nested-${spec.id}", phx.childId := spec.id, phx.sticky := spec.sticky),
             isTopLevel = false,
             path = childPath,
             bindings = bindings,

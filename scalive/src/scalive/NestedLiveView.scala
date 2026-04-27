@@ -18,13 +18,15 @@ import scalive.socket.StreamRuntimeState
 final private[scalive] case class NestedLiveViewSpec[Msg, Model](
   id: String,
   liveView: () => LiveView[Msg, Model],
-  msgClassTag: ClassTag[Msg])
+  msgClassTag: ClassTag[Msg],
+  sticky: Boolean)
 
 final private[scalive] case class NestedLiveViewRegistration(
   id: String,
   parentTopic: String,
   topic: String,
   session: String,
+  sticky: Boolean,
   rendered: Option[HtmlElement[Any]] = None)
 
 trait NestedLiveViewRuntime:
@@ -41,6 +43,7 @@ object NestedLiveViewRuntime:
 
 final private[scalive] case class NestedLiveViewEntry(
   parentTopic: String,
+  sticky: Boolean,
   token: String,
   start: (LiveContext, WebSocketMessage.Meta, URL) => RIO[Scope, Socket[?, ?]])
 
@@ -58,6 +61,7 @@ final private[scalive] class SocketNestedLiveViewRuntime(
       token = Token.sign(tokenConfig.secret, topic, "nested")
       entry = NestedLiveViewEntry(
                 parentTopic = parentTopic,
+                sticky = spec.sticky,
                 token = token,
                 start = (ctx, meta, initialUrl) =>
                   Socket.start(
@@ -71,7 +75,7 @@ final private[scalive] class SocketNestedLiveViewRuntime(
                   )(using spec.msgClassTag)
               )
       _ <- entriesRef.update(_.updated(topic, entry))
-    yield NestedLiveViewRegistration(spec.id, parentTopic, topic, token)
+    yield NestedLiveViewRegistration(spec.id, parentTopic, topic, token, spec.sticky)
 
 final private[scalive] class DisconnectedNestedLiveViewRuntime(
   parentTopic: String,
@@ -115,7 +119,14 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
                       SocketComponentRuntime.renderRoot(lv.render(model), componentsRef, ctx)
                     case LiveRoute.InitialLifecycleOutcome.Redirect(_) =>
                       ZIO.succeed(div())
-    yield NestedLiveViewRegistration(spec.id, parentTopic, topic, token, Some(rendered))
+    yield NestedLiveViewRegistration(
+      spec.id,
+      parentTopic,
+      topic,
+      token,
+      spec.sticky,
+      Some(rendered)
+    )
     end for
   end register
 end DisconnectedNestedLiveViewRuntime

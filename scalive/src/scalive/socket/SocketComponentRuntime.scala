@@ -321,6 +321,7 @@ private[scalive] object SocketComponentRuntime:
           phx.session  := registration.session,
           phx.parentId := registration.parentTopic,
           phx.childId  := registration.id,
+          phx.sticky   := registration.sticky,
           registration.rendered.map(Content.Tag(_))
         )
       )

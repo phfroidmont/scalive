@@ -151,6 +151,28 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         body.contains("data-phx-session=")
       )
     },
+    test("sticky nested LiveView renders sticky marker during disconnected render") {
+      val parent = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveView("child", childLiveView, sticky = true))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val routes =
+        LiveRoutes(layout = identityLayout)(
+          Method.GET / Root -> liveHandler(parent)
+        )
+
+      for
+        response <- runRequest(routes, "/")
+        body     <- response.body.asString
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains("data-phx-child-id=\"child\""),
+        body.contains("data-phx-sticky")
+      )
+    },
     test("connected parent render registers nested LiveView for join") {
       val parent = new LiveView[Unit, Unit]:
         def mount                      = ZIO.unit
@@ -258,6 +280,51 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         childAfter <- channel.socket(childTopic)
         entryAfter <- channel.nestedEntry(childTopic)
       yield assertTrue(childBefore.nonEmpty, parentAfter.isEmpty, childAfter.isEmpty, entryAfter.isEmpty))
+    },
+    test("parent leave preserves sticky child socket and registry entry") {
+      val parent = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveView("child", childLiveView, sticky = true))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val childMeta = rootMeta.copy(topic = childTopic)
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(TokenConfig.default)
+        ctx = LiveContext(
+                staticChanged = false,
+                nestedLiveViews = channel.nestedRuntime(rootTopic)
+              )
+        _           <- channel.join(rootTopic, "root-token", parent, ctx, rootMeta, URL.root)
+        entry       <- channel.nestedEntry(childTopic).some
+        _           <- channel.joinNested(childTopic, entry.token, false, childMeta, URL.root)
+        childSocket <- channel.socket(childTopic).some
+        outQueue    <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        _           <- childSocket.outbox.runForeach(outQueue.offer).forkScoped
+        _           <- outQueue.take
+        _           <- channel.leave(rootTopic)
+        parentAfter <- channel.socket(rootTopic)
+        childAfter  <- channel.socket(childTopic)
+        entryAfter  <- channel.nestedEntry(childTopic)
+        _           <- channel.event(childTopic, event, childMeta.copy(eventType = "event"))
+        reply       <- outQueue.take
+      yield
+        val childUpdated = reply match
+          case (
+                Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)),
+                WebSocketMessage.Meta(_, _, `childTopic`, _)
+              ) =>
+            containsValue(diff, "1")
+          case _ => false
+
+        assertTrue(parentAfter.isEmpty, childAfter.nonEmpty, entryAfter.nonEmpty, childUpdated))
     },
     test("child leave removes only child socket and nested registry entry") {
       val parent = new LiveView[Unit, Unit]:

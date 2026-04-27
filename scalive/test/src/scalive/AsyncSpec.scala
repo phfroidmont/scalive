@@ -14,6 +14,9 @@ object AsyncSpec extends ZIOSpecDefault:
   private object Tasks:
     val Load  = "load"
     val Patch = "patch"
+    val Navigate = "navigate"
+    val Redirect = "redirect"
+    val Flash    = "flash"
 
   private enum Msg:
     case Start
@@ -21,6 +24,9 @@ object AsyncSpec extends ZIOSpecDefault:
     case Cancel
     case Loaded(result: LiveAsyncResult[String])
     case PatchLoaded(result: LiveAsyncResult[String])
+    case NavigateLoaded(result: LiveAsyncResult[Unit])
+    case RedirectLoaded(result: LiveAsyncResult[Unit])
+    case FlashLoaded(result: LiveAsyncResult[String])
 
   private case class AssignModel(value: AsyncValue[String] = AsyncValue.Empty)
 
@@ -74,6 +80,66 @@ object AsyncSpec extends ZIOSpecDefault:
       else outbox.take.flatMap { case (payload, _) => loop(remaining - 1, payload :: acc) }
 
     loop(max, Nil).timeoutFail(new RuntimeException("timed out waiting for async payload"))(2.seconds)
+
+  private object UpdateAsyncComponent
+      extends LiveComponent[UpdateAsyncComponent.Action, UpdateAsyncComponent.Msg, UpdateAsyncComponent.Model]:
+    enum Action:
+      case Ok
+      case Navigate
+      case Patch
+      case Redirect
+      case NavigateFlash
+
+    enum Msg:
+      case Done(result: LiveAsyncResult[String])
+
+    final case class Model(
+      action: Action,
+      started: Boolean = false,
+      result: String = "loading")
+
+    private val TaskName = "component-update-task"
+
+    def mount(props: Action) = ZIO.succeed(Model(props))
+
+    override def update(props: Action, model: Model) =
+      val next = model.copy(action = props)
+      if next.started then ZIO.succeed(next)
+      else
+        LiveContext
+          .startAsync(TaskName)(effect(props))(Msg.Done(_))
+          .as(next.copy(started = true, result = "loading"))
+
+    def handleMessage(model: Model) = {
+      case Msg.Done(LiveAsyncResult.Ok(value)) =>
+        model.action match
+          case Action.Ok => ZIO.succeed(model.copy(result = value))
+          case Action.Navigate =>
+            LiveContext.pushNavigate("/start_async?test=ok").as(model)
+          case Action.Patch =>
+            LiveContext.pushPatch("/start_async?test=ok").as(model)
+          case Action.Redirect =>
+            LiveContext.redirect("/not_found").as(model)
+          case Action.NavigateFlash =>
+            LiveContext.putFlash("info", value) *>
+              LiveContext.pushNavigate("/start_async?test=ok").as(model)
+      case Msg.Done(LiveAsyncResult.Failed(_)) =>
+        ZIO.succeed(model.copy(result = "failed"))
+      case Msg.Done(LiveAsyncResult.Cancelled(_)) =>
+        ZIO.succeed(model.copy(result = "cancelled"))
+    }
+
+    def render(model: Model, self: ComponentRef[Msg]) =
+      val _ = self
+      div(s"lc: ${model.result}")
+
+    private def effect(action: Action): Task[String] =
+      action match
+        case Action.Ok            => ZIO.succeed("good")
+        case Action.Navigate      => ZIO.succeed("navigate")
+        case Action.Patch         => ZIO.succeed("patch")
+        case Action.Redirect      => ZIO.succeed("redirect")
+        case Action.NavigateFlash => ZIO.succeed("hello")
 
   override def spec = suite("AsyncSpec")(
     test("completed async task sends typed message and pushes diff") {
@@ -270,6 +336,76 @@ object AsyncSpec extends ZIOSpecDefault:
           case _                                                => false
       )
     },
+    test("async completion message can push navigate") {
+      val lv = new LiveView[Msg, String]:
+        def mount =
+          LiveContext
+            .startAsync(Tasks.Navigate)(ZIO.unit)(Msg.NavigateLoaded(_))
+            .as("loading")
+        def handleMessage(model: String) = {
+          case Msg.NavigateLoaded(LiveAsyncResult.Ok(_)) =>
+            LiveContext.pushNavigate("/start_async?test=ok").as(model)
+          case _ => ZIO.succeed(model)
+        }
+        def render(model: String): HtmlElement[Msg] =
+          div(idAttr := "root", model)
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        navigation <- socket.outbox.drop(1).runHead.some
+      yield assertTrue(
+        navigation._1 == Payload.LiveRedirect(
+          "/start_async?test=ok",
+          LivePatchKind.Push,
+          None
+        )
+      )
+    },
+    test("async completion message can redirect") {
+      val lv = new LiveView[Msg, String]:
+        def mount =
+          LiveContext
+            .startAsync(Tasks.Redirect)(ZIO.unit)(Msg.RedirectLoaded(_))
+            .as("loading")
+        def handleMessage(model: String) = {
+          case Msg.RedirectLoaded(LiveAsyncResult.Ok(_)) =>
+            LiveContext.redirect("/not_found").as(model)
+          case _ => ZIO.succeed(model)
+        }
+        def render(model: String): HtmlElement[Msg] =
+          div(idAttr := "root", model)
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        socket   <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        redirect <- socket.outbox.drop(1).runHead.some
+      yield assertTrue(redirect._1 == Payload.Redirect("/not_found", None))
+    },
+    test("async completion message can put flash") {
+      val lv = new LiveView[Msg, String]:
+        def mount =
+          LiveContext
+            .startAsync(Tasks.Flash)(ZIO.succeed("hello"))(Msg.FlashLoaded(_))
+            .as("loading")
+        def handleMessage(model: String) = {
+          case Msg.FlashLoaded(LiveAsyncResult.Ok(message)) =>
+            LiveContext.putFlash("info", message).as("loaded")
+          case _ => ZIO.succeed(model)
+        }
+        def render(model: String): HtmlElement[Msg] =
+          div(
+            idAttr := "root",
+            span(model),
+            flash("info")(message => span(idAttr := "flash", s"flash:$message"))
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        update <- socket.outbox.drop(1).runHead.some
+      yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "flash:hello")))
+    },
     test("event handlers can start async tasks") {
       for
         release <- Promise.make[Nothing, Unit]
@@ -331,6 +467,43 @@ object AsyncSpec extends ZIOSpecDefault:
                   }
       yield result
     },
+    test("cancelAsync interrupts the running task before publishing cancellation") {
+      for
+        allowFinalize <- Promise.make[Nothing, Unit]
+        stopped <- Promise.make[Nothing, Unit]
+        lv = new LiveView[Msg, String]:
+               def mount =
+                 LiveContext
+                   .startAsync(Tasks.Load)(
+                     ZIO.never.as("loaded").ensuring(allowFinalize.await *> stopped.succeed(()).unit)
+                   )(Msg.Loaded(_))
+                   .as("loading")
+               def handleMessage(model: String) = {
+                 case Msg.Cancel =>
+                   LiveContext.cancelAsync(Tasks.Load, Some("stop")).as(model)
+                 case Msg.Loaded(LiveAsyncResult.Cancelled(Some("stop"))) =>
+                   ZIO.succeed("cancelled")
+                 case _ => ZIO.succeed(model)
+               }
+               def render(model: String): HtmlElement[Msg] =
+                 div(idAttr := "root", button(phx.onClick(Msg.Cancel), "cancel"), span(model))
+               def subscriptions(model: String) = ZStream.empty
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    val hasCancelled = (payload: Payload) =>
+                      diffFromPayload(payload).exists(containsValue(_, "cancelled"))
+
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      _ <- ZIO.foreachDiscard(1 to 20)(_ => ZIO.yieldNow)
+                      early <- outbox.poll
+                      _        <- allowFinalize.succeed(())
+                      payloads <- takeUntil(outbox, 3)(hasCancelled)
+                      done     <- stopped.await
+                    yield assertTrue(early.isEmpty, payloads.exists(hasCancelled), done == ())
+                  }
+      yield result
+    },
     test("restarting an async task suppresses the previous completion") {
       for
         oldRelease <- Promise.make[Nothing, Unit]
@@ -385,6 +558,118 @@ object AsyncSpec extends ZIOSpecDefault:
             containsValue(diff, "old") && !containsValue(diff, "new")
           case _ => false
       )
+    },
+    test("live components can start async tasks during update") {
+      val lv = new LiveView[Unit, Unit]:
+        def mount = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.Ok))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        update <- socket.outbox.drop(1).runHead.some
+      yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "lc: good")))
+    },
+    test("live component async completion can push navigate") {
+      val lv = new LiveView[Unit, Unit]:
+        def mount = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.Navigate))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        navigation <- socket.outbox.drop(1).collect {
+                        case (payload @ Payload.LiveRedirect(_, _, _), _) => payload
+                      }.runHead.some
+      yield assertTrue(
+        navigation == Payload.LiveRedirect("/start_async?test=ok", LivePatchKind.Push, None)
+      )
+    },
+    test("live component async completion can push patch") {
+      val lv = new LiveView[Unit, String]:
+        override val queryCodec: LiveQueryCodec[Option[String]] =
+          LiveQueryCodec.fromZioHttp(zio.http.codec.HttpCodec.query[String]("test").optional)
+
+        def mount = ZIO.succeed("none")
+        override def handleParams(model: String, test: Option[String], _url: zio.http.URL) =
+          ZIO.succeed(test.getOrElse("none"))
+        def handleMessage(model: String) = _ => ZIO.succeed(model)
+        def render(model: String): HtmlElement[Unit] =
+          div(
+            p(s"test:$model"),
+            liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.Patch)
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        initialUrl <- ZIO.fromEither(zio.http.URL.decode("/start_async?test=patch")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        navigation <- socket.outbox.drop(1).collect {
+                        case (payload @ Payload.LiveNavigation(_, _), _) => payload
+                      }.runHead.some
+        patchReply <- socket.livePatch("/start_async?test=ok", meta)
+      yield assertTrue(
+        navigation == Payload.LiveNavigation("/start_async?test=ok", LivePatchKind.Push),
+        patchReply.response match
+          case scalive.WebSocketMessage.LiveResponse.Diff(diff) => containsValue(diff, "test:ok")
+          case _                                                => false
+      )
+    },
+    test("live component async completion can redirect") {
+      val lv = new LiveView[Unit, Unit]:
+        def mount = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.Redirect))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        redirect <- socket.outbox.drop(1).collect {
+                      case (payload @ Payload.Redirect(_, _), _) => payload
+                    }.runHead.some
+      yield assertTrue(redirect == Payload.Redirect("/not_found", None))
+    },
+    test("live component async completion can navigate with flash") {
+      val tokenConfig = TokenConfig.default
+      val lv = new LiveView[Unit, Unit]:
+        def mount = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.NavigateFlash))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      for
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    tokenConfig = tokenConfig
+                  )
+        navigation <- socket.outbox.drop(1).collect {
+                        case (payload @ Payload.LiveRedirect(_, _, _), _) => payload
+                      }.runHead.some
+        flashValues = navigation match
+                        case Payload.LiveRedirect(
+                              "/start_async?test=ok",
+                              LivePatchKind.Push,
+                              Some(token)
+                            ) => FlashToken.decode(tokenConfig, token)
+                        case _ => None
+      yield assertTrue(flashValues.contains(Map("info" -> "hello")))
     },
     test("live components can start scoped async tasks") {
       object AsyncComponent
@@ -481,6 +766,81 @@ object AsyncSpec extends ZIOSpecDefault:
                       diffFromPayload(loading._1).exists(containsValue(_, "loading:none")),
                       diffFromPayload(loaded._1).exists(containsValue(_, "ok:component-assigned"))
                     )
+                  }
+      yield result
+    },
+    test("socket shutdown interrupts root async tasks") {
+      for
+        stopped <- Promise.make[Nothing, Unit]
+        lv = new LiveView[Msg, String]:
+               def mount =
+                 LiveContext
+                   .startAsync(Tasks.Load)(
+                     ZIO.never.as("loaded").ensuring(stopped.succeed(()).unit)
+                   )(Msg.Loaded(_))
+                   .as("loading")
+               def handleMessage(model: String) = _ => ZIO.succeed(model)
+               def render(model: String): HtmlElement[Msg] =
+                 div(idAttr := "root", model)
+               def subscriptions(model: String) = ZStream.empty
+        result <- ZIO.scoped {
+                    for
+                      socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+                      _      <- socket.shutdown
+                      done   <- stopped.await.timeout(1.second)
+                    yield assertTrue(done.contains(()))
+                  }
+      yield result
+    },
+    test("confirmed component removal interrupts component async tasks") {
+      object InterruptComponent extends LiveComponent[Promise[Nothing, Unit], Unit, Boolean]:
+        private val Load = "component-interrupt"
+
+        def mount(props: Promise[Nothing, Unit]) = ZIO.succeed(false)
+        override def update(props: Promise[Nothing, Unit], started: Boolean) =
+          if started then ZIO.succeed(started)
+          else
+            LiveContext
+              .startAsync(Load)(
+                ZIO.never.as(()).ensuring(props.succeed(()).unit)
+              )(_ => ())
+              .as(true)
+        def handleMessage(model: Boolean) = _ => ZIO.succeed(model)
+        def render(model: Boolean, self: ComponentRef[Unit]) =
+          val _ = (model, self)
+          div("component")
+
+      enum ParentMsg:
+        case Toggle
+
+      for
+        stopped <- Promise.make[Nothing, Unit]
+        lv = new LiveView[ParentMsg, Boolean]:
+               def mount = ZIO.succeed(true)
+               def handleMessage(model: Boolean) = {
+                 case ParentMsg.Toggle => ZIO.succeed(!model)
+               }
+               def render(model: Boolean): HtmlElement[ParentMsg] =
+                 div(
+                   button(phx.onClick(ParentMsg.Toggle), "toggle"),
+                   if model then liveComponent(InterruptComponent, id = "interrupt", props = stopped)
+                   else "gone"
+                 )
+               def subscriptions(model: Boolean) = ZStream.empty
+        destroyed: Payload.Event = Payload.Event(
+                                     `type` = "click",
+                                     event = "cids_destroyed",
+                                     value = Json.Obj("cids" -> Json.Arr(Json.Num(1)))
+                                   )
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      _ <- outbox.take
+                      _ <- socket.inbox.offer(destroyed -> meta)
+                      _ <- outbox.take
+                      done <- stopped.await.timeout(1.second)
+                    yield assertTrue(done.contains(()))
                   }
       yield result
     }

@@ -74,7 +74,7 @@ final private[scalive] class SocketAsyncRuntime(
               }
       _ <- task match
              case Some(value) =>
-               value.fiber.interrupt.forkDaemon *>
+               value.fiber.interrupt.unit *>
                  queue.offer(LiveAsyncCompletion(owner, value.cancelledEvent(reason))).unit
              case None => ZIO.unit
     yield ()
@@ -120,7 +120,7 @@ private[scalive] object SocketAsyncRuntime:
   def interruptAll(ref: Ref[LiveAsyncRuntimeState]): UIO[Unit] =
     ref
       .getAndSet(LiveAsyncRuntimeState.empty).flatMap(state =>
-        ZIO.foreachDiscard(state.tasks.values)(_.fiber.interrupt.forkDaemon).unit
+        ZIO.foreachDiscard(state.tasks.values)(_.fiber.interrupt.unit).unit
       )
 
   def interruptOwners(
@@ -136,4 +136,4 @@ private[scalive] object SocketAsyncRuntime:
           }
           removed.values -> current.copy(tasks = kept)
         }
-        .flatMap(tasks => ZIO.foreachDiscard(tasks)(_.fiber.interrupt.forkDaemon).unit)
+        .flatMap(tasks => ZIO.foreachDiscard(tasks)(_.fiber.interrupt.unit).unit)

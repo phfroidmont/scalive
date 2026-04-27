@@ -288,13 +288,17 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket       <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        repliesFiber <- socket.outbox.drop(1).take(2).runCollect.fork
-        _            <- socket.inbox.offer(event -> meta)
-        _            <- socket.inbox.offer(event -> meta)
-        replies      <- repliesFiber.join
-        first  = replies.head
-        second = replies.tail.head
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        queue  <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        fiber  <- socket.outbox.runForeach(queue.offer).fork
+        result <- (for
+                    _      <- queue.take
+                    _      <- socket.inbox.offer(event -> meta)
+                    first  <- queue.take
+                    _      <- socket.inbox.offer(event -> meta)
+                    second <- queue.take
+                  yield (first, second)).ensuring(fiber.interrupt)
+        (first, second) = result
       yield
         val firstCids = first._1 match
           case Payload.Reply(

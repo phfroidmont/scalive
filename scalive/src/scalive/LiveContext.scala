@@ -255,7 +255,7 @@ object LiveContext:
   ): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.attachEvent(id)(hook))
 
-  def detachEventHook(id: String): URIO[HasHooks, Unit] =
+  def detachEventHook(id: String): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.detachEvent(id))
 
   def attachParamsHook[Model](
@@ -265,7 +265,7 @@ object LiveContext:
   ): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.attachParams(id)(hook))
 
-  def detachParamsHook(id: String): URIO[HasHooks, Unit] =
+  def detachParamsHook(id: String): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.detachParams(id))
 
   def attachInfoHook[Msg, Model](
@@ -275,7 +275,7 @@ object LiveContext:
   ): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.attachInfo(id)(hook))
 
-  def detachInfoHook(id: String): URIO[HasHooks, Unit] =
+  def detachInfoHook(id: String): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.detachInfo(id))
 
   def attachAsyncHook[Msg, Model](
@@ -285,7 +285,7 @@ object LiveContext:
   ): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.attachAsync(id)(hook))
 
-  def detachAsyncHook(id: String): URIO[HasHooks, Unit] =
+  def detachAsyncHook(id: String): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.detachAsync(id))
 
   def attachAfterRenderHook[Model](
@@ -295,6 +295,6 @@ object LiveContext:
   ): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.attachAfterRender(id)(hook))
 
-  def detachAfterRenderHook(id: String): URIO[HasHooks, Unit] =
+  def detachAfterRenderHook(id: String): RIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.detachAfterRender(id))
 end LiveContext

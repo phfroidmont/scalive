@@ -444,7 +444,14 @@ private[scalive] object SocketUploadProtocol:
                    binding(progressPayloadToParams(payload)) match
                      case Right(ComponentMessage(cid, message)) if payload.cid.contains(cid) =>
                        SocketComponentRuntime
-                         .handleComponentMessage(cid, message, rendered, state.meta, state)
+                         .handleComponentMessage(
+                           cid,
+                           message,
+                           uploadProgressEvent(eventRef, payload),
+                           rendered,
+                           state.meta,
+                           state
+                         )
                          .as(Payload.okReply(LiveResponse.Empty))
                      case Right(ComponentMessage(cid, _)) =>
                        ZIO.logWarning(
@@ -459,6 +466,7 @@ private[scalive] object SocketUploadProtocol:
                                componentClass,
                                cid,
                                message,
+                               uploadProgressEvent(eventRef, payload),
                                rendered,
                                state.meta,
                                state
@@ -476,7 +484,11 @@ private[scalive] object SocketUploadProtocol:
                              (updatedModel, navigation) <-
                                SocketModelRuntime.captureNavigation(state)(
                                  LiveIO
-                                   .toZIO(state.lv.handleMessage(currentModel)(parentMessage))
+                                   .toZIO(
+                                     state.lv.handleMessage(currentModel)(
+                                       parentMessage
+                                     )
+                                   )
                                    .provide(ZLayer.succeed(state.ctx))
                                )
                              reply <- navigation match
@@ -520,6 +532,16 @@ private[scalive] object SocketUploadProtocol:
                    ) *>
                      ZIO.succeed(Payload.okReply(LiveResponse.Empty))
     yield reply
+
+  private def uploadProgressEvent(eventRef: String, payload: Payload.Progress): LiveEvent =
+    LiveEvent(
+      kind = payload.event.getOrElse("progress"),
+      bindingId = eventRef,
+      value = payload.progress,
+      params = Map.empty,
+      cid = payload.cid,
+      meta = None
+    )
 
   private def progressPayloadToParams(payload: Payload.Progress): Map[String, String] =
     val base = Map(

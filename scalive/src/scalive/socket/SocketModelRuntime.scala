@@ -67,6 +67,7 @@ private[scalive] object SocketModelRuntime:
               .handleComponentMessage(
                 cid,
                 message,
+                LiveEvent.fromPayload(event),
                 rendered,
                 meta,
                 state
@@ -92,6 +93,7 @@ private[scalive] object SocketModelRuntime:
                     componentClass,
                     cid,
                     message,
+                    LiveEvent.fromPayload(event),
                     rendered,
                     meta,
                     state

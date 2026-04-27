@@ -57,7 +57,7 @@ trait LiveHookRuntime:
     hook: (Model, Msg, LiveEvent) => LiveIO[LiveView.UpdateContext, LiveEventResult[Model]]
   ): Task[Unit]
 
-  def detachEvent(id: String): UIO[Unit]
+  def detachEvent(id: String): Task[Unit]
 
   def attachParams[Model](
     id: String
@@ -65,7 +65,7 @@ trait LiveHookRuntime:
     hook: (Model, URL) => LiveIO[LiveView.ParamsContext, LiveHookResult[Model]]
   ): Task[Unit]
 
-  def detachParams(id: String): UIO[Unit]
+  def detachParams(id: String): Task[Unit]
 
   def attachInfo[Msg, Model](
     id: String
@@ -73,7 +73,7 @@ trait LiveHookRuntime:
     hook: (Model, Msg) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
   ): Task[Unit]
 
-  def detachInfo(id: String): UIO[Unit]
+  def detachInfo(id: String): Task[Unit]
 
   def attachAsync[Msg, Model](
     id: String
@@ -81,7 +81,7 @@ trait LiveHookRuntime:
     hook: (Model, Msg, LiveAsyncEvent) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
   ): Task[Unit]
 
-  def detachAsync(id: String): UIO[Unit]
+  def detachAsync(id: String): Task[Unit]
 
   def attachAfterRender[Model](
     id: String
@@ -89,7 +89,7 @@ trait LiveHookRuntime:
     hook: Model => LiveIO[LiveView.UpdateContext, Model]
   ): Task[Unit]
 
-  def detachAfterRender(id: String): UIO[Unit]
+  def detachAfterRender(id: String): Task[Unit]
 
   private[scalive] def runEvent[Msg, Model](
     model: Model,
@@ -136,7 +136,7 @@ object LiveHookRuntime:
       val _ = (id, hook)
       unavailable
 
-    def detachEvent(id: String): UIO[Unit] =
+    def detachEvent(id: String): Task[Unit] =
       val _ = id
       ZIO.unit
 
@@ -148,7 +148,7 @@ object LiveHookRuntime:
       val _ = (id, hook)
       unavailable
 
-    def detachParams(id: String): UIO[Unit] =
+    def detachParams(id: String): Task[Unit] =
       val _ = id
       ZIO.unit
 
@@ -160,7 +160,7 @@ object LiveHookRuntime:
       val _ = (id, hook)
       unavailable
 
-    def detachInfo(id: String): UIO[Unit] =
+    def detachInfo(id: String): Task[Unit] =
       val _ = id
       ZIO.unit
 
@@ -172,7 +172,7 @@ object LiveHookRuntime:
       val _ = (id, hook)
       unavailable
 
-    def detachAsync(id: String): UIO[Unit] =
+    def detachAsync(id: String): Task[Unit] =
       val _ = id
       ZIO.unit
 
@@ -184,7 +184,7 @@ object LiveHookRuntime:
       val _ = (id, hook)
       unavailable
 
-    def detachAfterRender(id: String): UIO[Unit] =
+    def detachAfterRender(id: String): Task[Unit] =
       val _ = id
       ZIO.unit
 
@@ -279,7 +279,7 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
         else Right(()) -> state.copy(eventHooks = state.eventHooks :+ stored)
       }.flatMap(ZIO.fromEither(_))
 
-  def detachEvent(id: String): UIO[Unit] =
+  def detachEvent(id: String): Task[Unit] =
     ref.update(state => state.copy(eventHooks = state.eventHooks.filterNot(_.id == id)))
 
   def attachParams[Model](
@@ -300,7 +300,7 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
         else Right(()) -> state.copy(paramsHooks = state.paramsHooks :+ stored)
       }.flatMap(ZIO.fromEither(_))
 
-  def detachParams(id: String): UIO[Unit] =
+  def detachParams(id: String): Task[Unit] =
     ref.update(state => state.copy(paramsHooks = state.paramsHooks.filterNot(_.id == id)))
 
   def attachInfo[Msg, Model](
@@ -321,7 +321,7 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
         else Right(()) -> state.copy(infoHooks = state.infoHooks :+ stored)
       }.flatMap(ZIO.fromEither(_))
 
-  def detachInfo(id: String): UIO[Unit] =
+  def detachInfo(id: String): Task[Unit] =
     ref.update(state => state.copy(infoHooks = state.infoHooks.filterNot(_.id == id)))
 
   def attachAsync[Msg, Model](
@@ -342,7 +342,7 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
         else Right(()) -> state.copy(asyncHooks = state.asyncHooks :+ stored)
       }.flatMap(ZIO.fromEither(_))
 
-  def detachAsync(id: String): UIO[Unit] =
+  def detachAsync(id: String): Task[Unit] =
     ref.update(state => state.copy(asyncHooks = state.asyncHooks.filterNot(_.id == id)))
 
   def attachAfterRender[Model](
@@ -361,7 +361,7 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
         else Right(()) -> state.copy(afterRenderHooks = state.afterRenderHooks :+ stored)
       }.flatMap(ZIO.fromEither(_))
 
-  def detachAfterRender(id: String): UIO[Unit] =
+  def detachAfterRender(id: String): Task[Unit] =
     ref.update(state => state.copy(afterRenderHooks = state.afterRenderHooks.filterNot(_.id == id)))
 
   private[scalive] def runEvent[Msg, Model](
@@ -464,3 +464,107 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
   private def duplicateError(id: String, stage: String): IllegalArgumentException =
     new IllegalArgumentException(s"existing hook '$id' already attached on $stage")
 end SocketLiveHookRuntime
+
+final private[scalive] class ComponentLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
+    extends LiveHookRuntime:
+  private val delegate = new SocketLiveHookRuntime(ref)
+
+  def attachEvent[Msg, Model](
+    id: String
+  )(
+    hook: (Model, Msg, LiveEvent) => LiveIO[LiveView.UpdateContext, LiveEventResult[Model]]
+  ): Task[Unit] =
+    delegate.attachEvent(id)(hook)
+
+  def detachEvent(id: String): Task[Unit] =
+    delegate.detachEvent(id)
+
+  def attachParams[Model](
+    id: String
+  )(
+    hook: (Model, URL) => LiveIO[LiveView.ParamsContext, LiveHookResult[Model]]
+  ): Task[Unit] =
+    val _ = (id, hook)
+    unsupported
+
+  def detachParams(id: String): Task[Unit] =
+    val _ = id
+    unsupported
+
+  def attachInfo[Msg, Model](
+    id: String
+  )(
+    hook: (Model, Msg) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
+  ): Task[Unit] =
+    val _ = (id, hook)
+    unsupported
+
+  def detachInfo(id: String): Task[Unit] =
+    val _ = id
+    unsupported
+
+  def attachAsync[Msg, Model](
+    id: String
+  )(
+    hook: (Model, Msg, LiveAsyncEvent) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
+  ): Task[Unit] =
+    val _ = (id, hook)
+    unsupported
+
+  def detachAsync(id: String): Task[Unit] =
+    val _ = id
+    unsupported
+
+  def attachAfterRender[Model](
+    id: String
+  )(
+    hook: Model => LiveIO[LiveView.UpdateContext, Model]
+  ): Task[Unit] =
+    delegate.attachAfterRender(id)(hook)
+
+  def detachAfterRender(id: String): Task[Unit] =
+    delegate.detachAfterRender(id)
+
+  private[scalive] def runEvent[Msg, Model](
+    model: Model,
+    message: Msg,
+    event: LiveEvent,
+    ctx: LiveContext
+  ): Task[LiveEventResult[Model]] =
+    delegate.runEvent(model, message, event, ctx)
+
+  private[scalive] def runParams[Model](
+    model: Model,
+    url: URL,
+    ctx: LiveContext
+  ): Task[LiveHookResult[Model]] =
+    val _ = (url, ctx)
+    ZIO.succeed(LiveHookResult.Continue(model))
+
+  private[scalive] def runInfo[Msg, Model](
+    model: Model,
+    message: Msg,
+    ctx: LiveContext
+  ): Task[LiveHookResult[Model]] =
+    val _ = (message, ctx)
+    ZIO.succeed(LiveHookResult.Continue(model))
+
+  private[scalive] def runAsync[Msg, Model](
+    model: Model,
+    message: Msg,
+    event: LiveAsyncEvent,
+    ctx: LiveContext
+  ): Task[LiveHookResult[Model]] =
+    val _ = (message, event, ctx)
+    ZIO.succeed(LiveHookResult.Continue(model))
+
+  private[scalive] def runAfterRender[Model](model: Model, ctx: LiveContext): Task[Model] =
+    delegate.runAfterRender(model, ctx)
+
+  private def unsupported[A]: Task[A] =
+    ZIO.fail(
+      new IllegalArgumentException(
+        "lifecycle hooks are not supported on stateful components for this stage"
+      )
+    )
+end ComponentLiveHookRuntime

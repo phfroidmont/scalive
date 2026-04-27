@@ -67,7 +67,7 @@ private[scalive] object SocketOutbound:
   ): Task[Unit] =
     state.lifecycleLock.withPermit {
       event match
-        case ServerEvent.Message(msg)      => handleServerMsg(msg, meta, state, MessageHookStage.Info)
+        case ServerEvent.Message(msg) => handleServerMsg(msg, meta, state, MessageHookStage.Info)
         case ServerEvent.Async(completion) => handleAsyncCompletion(completion, meta, state)
     }
 

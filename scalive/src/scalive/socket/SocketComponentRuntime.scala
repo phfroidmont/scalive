@@ -192,7 +192,8 @@ private[scalive] object SocketComponentRuntime:
 
   final private class ComponentCursor(
     var state: ComponentRuntimeState,
-    var renderedIdentities: Set[ComponentIdentity] = Set.empty)
+    var renderedIdentities: Set[ComponentIdentity] = Set.empty,
+    var renderedLiveViewIds: Set[String] = Set.empty)
 
   private def renderElement[Msg, Model](
     element: HtmlElement[Msg],
@@ -213,7 +214,7 @@ private[scalive] object SocketComponentRuntime:
       case Content.Component(cid, el) =>
         renderElement(el, cursor, ctx).map(rendered => Content.Component(cid, rendered))
       case Content.LiveComponent(spec)                => renderComponent(spec, cursor, ctx)
-      case Content.LiveView(spec)                     => renderLiveView(spec, ctx)
+      case Content.LiveView(spec)                     => renderLiveView(spec, cursor, ctx)
       case Content.Flash(kind, f)                     => renderFlash(kind, f, cursor, ctx)
       case Content.Keyed(entries, stream, allEntries) =>
         for
@@ -312,20 +313,25 @@ private[scalive] object SocketComponentRuntime:
 
   private def renderLiveView(
     spec: NestedLiveViewSpec[?, ?],
+    cursor: ComponentCursor,
     ctx: LiveContext
   ): Task[Content.Tag[Any]] =
-    ctx.nestedLiveViews.register(spec).map { registration =>
-      Content.Tag(
-        div(
-          idAttr       := registration.topic.stripPrefix("lv:"),
-          phx.session  := registration.session,
-          phx.parentId := registration.parentTopic,
-          phx.childId  := registration.id,
-          phx.sticky   := registration.sticky,
-          registration.rendered.map(Content.Tag(_))
+    if cursor.renderedLiveViewIds.contains(spec.id) then
+      ZIO.fail(new IllegalArgumentException(s"Duplicate nested LiveView id '${spec.id}'"))
+    else
+      cursor.renderedLiveViewIds = cursor.renderedLiveViewIds + spec.id
+      ctx.nestedLiveViews.register(spec).map { registration =>
+        Content.Tag(
+          div(
+            idAttr       := registration.topic.stripPrefix("lv:"),
+            phx.session  := registration.session,
+            phx.parentId := registration.parentTopic,
+            phx.childId  := registration.id,
+            phx.sticky   := registration.sticky,
+            registration.rendered.map(Content.Tag(_))
+          )
         )
-      )
-    }
+      }
 
   private def renderFlash(
     kind: String,

@@ -265,6 +265,108 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                   yield result)
       yield result
     },
+    test("async hooks continue in attach order before handleMessage") {
+      enum Msg:
+        case Loaded(result: LiveAsyncResult[String])
+
+      for
+        release <- Promise.make[Nothing, Unit]
+        lv = new LiveView[Msg, String]:
+               def mount =
+                 LiveContext.attachAsyncHook[Msg, String]("name") { (model, msg, event) =>
+                   msg match
+                     case Msg.Loaded(LiveAsyncResult.Ok("loaded")) if event.name == "load" =>
+                       ZIO.succeed(LiveHookResult.cont(s"$model:hook"))
+                     case _ => ZIO.succeed(LiveHookResult.cont(model))
+                 } *>
+                   LiveContext.attachAsyncHook[Msg, String]("order") { (model, msg, _) =>
+                     msg match
+                       case Msg.Loaded(LiveAsyncResult.Ok(_)) =>
+                         ZIO.succeed(LiveHookResult.cont(s"$model:second"))
+                       case _ => ZIO.succeed(LiveHookResult.cont(model))
+                   } *>
+                   LiveContext.startAsync("load")(release.await.as("loaded"))(Msg.Loaded(_))
+                     .as("loading")
+
+               def handleMessage(model: String) = {
+                 case Msg.Loaded(LiveAsyncResult.Ok(value)) => ZIO.succeed(s"$model:$value")
+                 case _                                     => ZIO.succeed(model)
+               }
+               def render(model: String): HtmlElement[Msg] = div(model)
+               def subscriptions(model: String)             = ZStream.empty
+        result <- ZIO.scoped(for
+                    socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+                    result <- withOutbox(socket) { outbox =>
+                                for
+                                  _     <- outbox.take
+                                  _     <- release.succeed(())
+                                  reply <- outbox.take
+                                yield assertTrue(
+                                  diffFromPayload(reply._1).exists(
+                                    containsValue(_, "loading:hook:second:loaded")
+                                  )
+                                )
+                              }
+                  yield result)
+      yield result
+    },
+    test("async hook halt skips handleMessage and detach removes the hook") {
+      enum Msg:
+        case Start
+        case Detach
+        case Loaded(result: LiveAsyncResult[String])
+
+      val lv = new LiveView[Msg, String]:
+        def mount =
+          LiveContext.attachAsyncHook[Msg, String]("halt") { (model, msg, event) =>
+            msg match
+              case Msg.Loaded(LiveAsyncResult.Ok("done")) if event.name == "load" =>
+                ZIO.succeed(LiveHookResult.halt(s"$model:hook"))
+              case _ => ZIO.succeed(LiveHookResult.cont(model))
+          }.as("ready")
+
+        def handleMessage(model: String) = {
+          case Msg.Start =>
+            LiveContext.startAsync("load")(ZIO.succeed("done"))(Msg.Loaded(_)).as(s"$model:start")
+          case Msg.Detach =>
+            LiveContext.detachAsyncHook("halt").as(s"$model:detached")
+          case Msg.Loaded(LiveAsyncResult.Ok(value)) =>
+            ZIO.succeed(s"$model:callback:$value")
+          case _ => ZIO.succeed(model)
+        }
+
+        def render(model: String): HtmlElement[Msg] =
+          div(
+            span(model),
+            button(phx.onClick(Msg.Start), "start"),
+            button(phx.onClick(Msg.Detach), "detach")
+          )
+
+        def subscriptions(model: String) = ZStream.empty
+
+      ZIO.scoped(for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      _ <- outbox.take
+                      halted <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:2:button")) -> meta)
+                      _ <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      _ <- outbox.take
+                      continued <- outbox.take
+                    yield assertTrue(
+                      diffFromPayload(halted._1).exists(containsValue(_, "ready:start:hook")),
+                      !diffFromPayload(halted._1).exists(containsValue(_, "callback")),
+                      diffFromPayload(continued._1).exists(
+                        containsValue(_, "ready:start:hook:detached:start:callback:done")
+                      )
+                    )
+                  }
+      yield result)
+    },
     test("afterRender hook updates state for the next render only") {
       enum Msg:
         case Inc

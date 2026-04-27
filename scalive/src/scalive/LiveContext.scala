@@ -278,6 +278,16 @@ object LiveContext:
   def detachInfoHook(id: String): URIO[HasHooks, Unit] =
     ZIO.serviceWithZIO[HasHooks](_.hooks.detachInfo(id))
 
+  def attachAsyncHook[Msg, Model](
+    id: String
+  )(
+    hook: (Model, Msg, LiveAsyncEvent) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
+  ): RIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.attachAsync(id)(hook))
+
+  def detachAsyncHook(id: String): URIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.detachAsync(id))
+
   def attachAfterRenderHook[Model](
     id: String
   )(

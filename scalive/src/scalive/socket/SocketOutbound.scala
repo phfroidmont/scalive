@@ -13,6 +13,10 @@ private[scalive] object SocketOutbound:
     case Message(value: Msg)
     case Async(value: LiveAsyncCompletion)
 
+  private enum MessageHookStage:
+    case Info
+    case Async(name: String)
+
   def startServerFiber[Msg, Model](
     state: RuntimeState[Msg, Model]
   ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
@@ -63,7 +67,7 @@ private[scalive] object SocketOutbound:
   ): Task[Unit] =
     state.lifecycleLock.withPermit {
       event match
-        case ServerEvent.Message(msg)      => handleServerMsg(msg, meta, state, runInfoHooks = true)
+        case ServerEvent.Message(msg)      => handleServerMsg(msg, meta, state, MessageHookStage.Info)
         case ServerEvent.Async(completion) => handleAsyncCompletion(completion, meta, state)
     }
 
@@ -71,14 +75,13 @@ private[scalive] object SocketOutbound:
     msg: Msg,
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model],
-    runInfoHooks: Boolean
+    hookStage: MessageHookStage
   ): Task[Unit] =
     for
       (currentModel, rendered)   <- state.ref.get
       (updatedModel, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
-          (if runInfoHooks then state.ctx.hooks.runInfo(currentModel, msg, state.ctx)
-           else ZIO.succeed(LiveHookResult.Continue(currentModel))).flatMap {
+          runMessageHooks(currentModel, msg, hookStage, state.ctx).flatMap {
             case LiveHookResult.Continue(hookModel) =>
               LiveIO
                 .toZIO(state.lv.handleMessage(hookModel)(msg))
@@ -130,6 +133,18 @@ private[scalive] object SocketOutbound:
                    yield ()
     yield ()
 
+  private def runMessageHooks[Msg, Model](
+    model: Model,
+    msg: Msg,
+    hookStage: MessageHookStage,
+    ctx: LiveContext
+  ): Task[LiveHookResult[Model]] =
+    hookStage match
+      case MessageHookStage.Info =>
+        ctx.hooks.runInfo(model, msg, ctx)
+      case MessageHookStage.Async(name) =>
+        ctx.hooks.runAsync(model, msg, LiveAsyncEvent(name), ctx)
+
   private def handleAsyncCompletion[Msg, Model](
     completion: LiveAsyncCompletion,
     meta: WebSocketMessage.Meta,
@@ -138,9 +153,9 @@ private[scalive] object SocketOutbound:
     completion.owner match
       case LiveAsyncOwner.Root =>
         completion.event match
-          case LiveAsyncCompletionEvent.Message(message) =>
+          case LiveAsyncCompletionEvent.Message(name, message) =>
             state.msgClassTag.unapply(message) match
-              case Some(msg) => handleServerMsg(msg, meta, state, runInfoHooks = false)
+              case Some(msg) => handleServerMsg(msg, meta, state, MessageHookStage.Async(name))
               case None      =>
                 ZIO.logWarning(
                   s"Ignoring async message ${message.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"
@@ -159,7 +174,7 @@ private[scalive] object SocketOutbound:
             yield ()
       case LiveAsyncOwner.Component(cid) =>
         completion.event match
-          case LiveAsyncCompletionEvent.Message(message) =>
+          case LiveAsyncCompletionEvent.Message(_, message) =>
             for
               (_, rendered) <- state.ref.get
               _             <- SocketComponentRuntime.handleComponentServerMessage(

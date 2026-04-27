@@ -135,7 +135,7 @@ private[scalive] object LiveAsyncRuntimeState:
   val empty: LiveAsyncRuntimeState = LiveAsyncRuntimeState(Map.empty)
 
 private[scalive] enum LiveAsyncCompletionEvent:
-  case Message(message: Any)
+  case Message(name: String, message: Any)
   case Assign(update: Any => Any)
 
 final private[scalive] case class LiveAsyncCompletion(

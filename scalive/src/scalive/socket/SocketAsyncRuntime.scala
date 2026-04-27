@@ -16,7 +16,7 @@ final private[scalive] class SocketAsyncRuntime(
   )(
     toMsg: LiveAsyncResult[A] => Msg
   ): UIO[Unit] =
-    startTask(name, mode)(effect)(result => LiveAsyncCompletionEvent.Message(toMsg(result)))
+    startTask(name, mode)(effect)(result => LiveAsyncCompletionEvent.Message(name, toMsg(result)))
 
   def startAssign[A, Model](
     name: String,

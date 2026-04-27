@@ -11,6 +11,7 @@ import zio.http.ChannelEvent.Read
 import zio.http.codec.PathCodec
 import zio.http.template.Html
 import zio.json.*
+import zio.json.ast.Json
 import zio.stream.SubscriptionRef
 import zio.stream.ZStream
 
@@ -28,144 +29,168 @@ import scalive.socket.ComponentRuntimeState
 import scalive.socket.FlashRuntimeState
 import scalive.socket.StreamRuntimeState
 
-final case class LiveRouteHandler[A, Msg, Model] private[scalive] (
-  liveviewBuilder: (A, Request) => LiveView[Msg, Model]
+final case class LiveRouteHandler[A, Ctx, Msg, Model] private[scalive] (
+  liveviewBuilder: (A, Request, Ctx) => LiveView[Msg, Model]
 )(using val msgClassTag: ClassTag[Msg])
 
-final private[scalive] case class LiveSession(sessionName: String, flash: Option[String])
+final private[scalive] case class LiveSessionPayload(
+  sessionName: String,
+  flash: Option[String],
+  mountClaims: Option[Json])
     derives JsonCodec
 
-private[scalive] object LiveSession:
-  def sign(config: TokenConfig, liveViewId: String, sessionName: String, flash: Option[String])
-    : String =
-    Token.sign(config.secret, liveViewId, LiveSession(sessionName, flash))
+private[scalive] object LiveSessionPayload:
+  def sign(
+    config: TokenConfig,
+    liveViewId: String,
+    sessionName: String,
+    flash: Option[String],
+    mountClaims: Option[Json]
+  ): String =
+    Token.sign(config.secret, liveViewId, LiveSessionPayload(sessionName, flash, mountClaims))
 
-  def verify(config: TokenConfig, token: String): Either[String, (String, LiveSession)] =
+  def verify(config: TokenConfig, token: String): Either[String, (String, LiveSessionPayload)] =
     Token
-      .verify[LiveSession](config.secret, token, config.maxAge)
+      .verify[LiveSessionPayload](config.secret, token, config.maxAge)
       .map { case (liveViewId, session) => liveViewId -> session }
       .orElse(
         Token
           .verify[String](config.secret, token, config.maxAge)
-          .map { case (liveViewId, sessionName) => liveViewId -> LiveSession(sessionName, None) }
+          .map { case (liveViewId, sessionName) =>
+            liveViewId -> LiveSessionPayload(sessionName, None, None)
+          }
       )
 
 object liveHandler:
+  def apply[A, Ctx, Msg: ClassTag, Model](
+    f: (A, Request, Ctx) => LiveView[Msg, Model]
+  ): LiveRouteHandler[A, Ctx, Msg, Model] =
+    LiveRouteHandler(f)
+
   def apply[A, Msg: ClassTag, Model](
     f: (A, Request) => LiveView[Msg, Model]
-  ): LiveRouteHandler[A, Msg, Model] =
-    LiveRouteHandler(f)
+  ): LiveRouteHandler[A, Unit, Msg, Model] =
+    LiveRouteHandler((params, req, _) => f(params, req))
 
   @targetName("applyRequest")
   def apply[Msg: ClassTag, Model](
     f: Request => LiveView[Msg, Model]
-  ): LiveRouteHandler[Unit, Msg, Model] =
-    LiveRouteHandler((_, req) => f(req))
+  ): LiveRouteHandler[Unit, Unit, Msg, Model] =
+    LiveRouteHandler((_, req, _) => f(req))
 
   def apply[A, Msg: ClassTag, Model](
     f: A => LiveView[Msg, Model]
-  ): LiveRouteHandler[A, Msg, Model] =
-    LiveRouteHandler((params, _) => f(params))
+  ): LiveRouteHandler[A, Unit, Msg, Model] =
+    LiveRouteHandler((params, _, _) => f(params))
 
   def apply[Msg: ClassTag, Model](
     view: => LiveView[Msg, Model]
-  ): LiveRouteHandler[Unit, Msg, Model] =
-    LiveRouteHandler((_, _) => view)
+  ): LiveRouteHandler[Unit, Unit, Msg, Model] =
+    LiveRouteHandler((_, _, _) => view)
 
-final case class LiveRoute[A, Msg, Model](
+final case class LiveRoute[R, A, Ctx, Msg, Model] private[scalive] (
   pattern: RoutePattern[A],
-  live: LiveRouteHandler[A, Msg, Model],
+  live: LiveRouteHandler[A, Ctx, Msg, Model],
+  mountAspect: LiveMountAspectRuntime[R, Ctx],
   sessionName: String = "default"):
 
-  def session(name: String): LiveRoute[A, Msg, Model] =
+  def session(name: String): LiveRoute[R, A, Ctx, Msg, Model] =
     copy(sessionName = name)
 
   private[scalive] def toZioRoute(
     rootLayout: HtmlElement[?] => HtmlElement[?],
     tokenConfig: TokenConfig
-  ): Route[Any, Throwable] =
+  ): Route[R, Throwable] =
     pattern -> handler { (params: A, req: Request) =>
-      val lv         = live.liveviewBuilder(params, req)
       val id: String =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val initialFlash = LiveRoute.flashFromRequest(req, tokenConfig)
-      val response     = for
-        streamRef     <- Ref.make(StreamRuntimeState.empty)
-        flashRef      <- Ref.make(FlashRuntimeState(initialFlash))
-        componentsRef <- Ref.make(ComponentRuntimeState.empty)
-        navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
-        hooksRef      <- Ref.make(LiveHookRuntimeState.empty)
-        ctx = LiveContext(
-                staticChanged = false,
-                streams = new SocketStreamRuntime(streamRef),
-                navigation = new SocketNavigationRuntime(navigationRef),
-                flash = new SocketFlashRuntime(flashRef),
-                components = new scalive.socket.SocketComponentUpdateRuntime(componentsRef),
-                hooks = new SocketLiveHookRuntime(hooksRef),
-                nestedLiveViews = new DisconnectedNestedLiveViewRuntime(
-                  s"lv:$id",
-                  tokenConfig,
-                  req.url
-                )
-              )
-        _               <- SocketFlashRuntime.resetNavigation(flashRef)
-        _               <- navigationRef.set(None)
-        initModel       <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
-        mountNavigation <- navigationRef.getAndSet(None)
-        lifecycle       <- LiveRoute.runInitialHandleParams(
-                       lv,
-                       initModel,
-                       req.url,
-                       ctx,
-                       navigationRef,
-                       flashRef,
-                       mountNavigation
-                     )
-        response <- lifecycle match
-                      case LiveRoute.InitialLifecycleOutcome.Render(model) =>
-                        for
-                          flash <- flashRef.get
-                          token = LiveSession.sign(
-                                    tokenConfig,
-                                    id,
-                                    sessionName,
-                                    FlashToken.encode(tokenConfig, flash.values)
+      val response     = mountAspect
+        .runDisconnected(req).foldZIO(
+          ZIO.succeed,
+          { case (mountClaims, mountContext) =>
+            val lv = live.liveviewBuilder(params, req, mountContext)
+            for
+              streamRef     <- Ref.make(StreamRuntimeState.empty)
+              flashRef      <- Ref.make(FlashRuntimeState(initialFlash))
+              componentsRef <- Ref.make(ComponentRuntimeState.empty)
+              navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
+              hooksRef      <- Ref.make(LiveHookRuntimeState.empty)
+              ctx = LiveContext(
+                      staticChanged = false,
+                      streams = new SocketStreamRuntime(streamRef),
+                      navigation = new SocketNavigationRuntime(navigationRef),
+                      flash = new SocketFlashRuntime(flashRef),
+                      components = new scalive.socket.SocketComponentUpdateRuntime(componentsRef),
+                      hooks = new SocketLiveHookRuntime(hooksRef),
+                      nestedLiveViews = new DisconnectedNestedLiveViewRuntime(
+                        s"lv:$id",
+                        tokenConfig,
+                        req.url
+                      )
+                    )
+              _               <- SocketFlashRuntime.resetNavigation(flashRef)
+              _               <- navigationRef.set(None)
+              initModel       <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
+              mountNavigation <- navigationRef.getAndSet(None)
+              lifecycle       <- LiveRoute.runInitialHandleParams(
+                             lv,
+                             initModel,
+                             req.url,
+                             ctx,
+                             navigationRef,
+                             flashRef,
+                             mountNavigation
+                           )
+              response <- lifecycle match
+                            case LiveRoute.InitialLifecycleOutcome.Render(model) =>
+                              for
+                                flash <- flashRef.get
+                                token = LiveSessionPayload.sign(
+                                          tokenConfig,
+                                          id,
+                                          sessionName,
+                                          FlashToken.encode(tokenConfig, flash.values),
+                                          Some(mountClaims)
+                                        )
+                                el = lv.render(model)
+                                rendered <- SocketComponentRuntime.renderRoot(
+                                              rootLayout(
+                                                div(
+                                                  idAttr      := id,
+                                                  phx.main    := true,
+                                                  phx.session := token,
+                                                  el
+                                                )
+                                              ),
+                                              componentsRef,
+                                              ctx
+                                            )
+                                _ <- ctx.hooks.runAfterRender(model, ctx)
+                              yield LiveRoute.clearFlashCookie(
+                                Response.html(
+                                  Html.raw(
+                                    HtmlBuilder.build(
+                                      rendered,
+                                      isRoot = false
+                                    )
                                   )
-                          el = lv.render(model)
-                          rendered <- SocketComponentRuntime.renderRoot(
-                                        rootLayout(
-                                          div(
-                                            idAttr      := id,
-                                            phx.main    := true,
-                                            phx.session := token,
-                                            el
-                                          )
-                                        ),
-                                        componentsRef,
-                                        ctx
-                                      )
-                          _ <- ctx.hooks.runAfterRender(model, ctx)
-                        yield LiveRoute.clearFlashCookie(
-                          Response.html(
-                            Html.raw(
-                              HtmlBuilder.build(
-                                rendered,
-                                isRoot = false
+                                ),
+                                req
                               )
-                            )
-                          ),
-                          req
-                        )
-                      case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
-                        SocketFlashRuntime
-                          .navigationValues(flashRef).map(flash =>
-                            LiveRoute.addFlashCookie(
-                              Response.redirect(url),
-                              tokenConfig,
-                              flash
-                            )
-                          )
-      yield response
+                            case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
+                              SocketFlashRuntime
+                                .navigationValues(flashRef).map(flash =>
+                                  LiveRoute.addFlashCookie(
+                                    Response.redirect(url),
+                                    tokenConfig,
+                                    flash
+                                  )
+                                )
+            yield response
+            end for
+          }
+        )
       response.catchAllCause { cause =>
         ZIO.logErrorCause(cause) *>
           ZIO.succeed(Response.text("Internal Server Error").status(Status.InternalServerError))
@@ -258,18 +283,35 @@ object LiveRoute:
   end runInitialHandleParams
 end LiveRoute
 
+final case class LiveMountedRoutePattern[R, A, Ctx] private[scalive] (
+  pattern: RoutePattern[A],
+  mountAspect: LiveMountAspectRuntime[R, Ctx])
+
 extension [A](pattern: RoutePattern[A])
-  infix def ->[Msg, Model](handler: LiveRouteHandler[A, Msg, Model]): LiveRoute[A, Msg, Model] =
-    LiveRoute(pattern, handler)
+  infix def ->[Msg, Model](
+    handler: LiveRouteHandler[A, Unit, Msg, Model]
+  ): LiveRoute[Any, A, Unit, Msg, Model] =
+    LiveRoute(pattern, handler, LiveMountAspect.identityRuntime)
+
+  infix def @@[R, Claims, Ctx](
+    mountAspect: LiveMountAspect[R, Claims, Ctx]
+  ): LiveMountedRoutePattern[R, A, Ctx] =
+    LiveMountedRoutePattern(pattern, mountAspect.runtime)
+
+extension [R, A, Ctx](mounted: LiveMountedRoutePattern[R, A, Ctx])
+  infix def ->[Msg, Model](
+    handler: LiveRouteHandler[A, Ctx, Msg, Model]
+  ): LiveRoute[R, A, Ctx, Msg, Model] =
+    LiveRoute(mounted.pattern, handler, mounted.mountAspect)
 
 object LiveRoutes:
-  def apply(
+  def apply[R](
     layout: HtmlElement[?] => HtmlElement[?],
     mount: String = "live",
     tokenConfig: TokenConfig = TokenConfig.default
   )(
-    routes: LiveRoute[?, ?, ?]*
-  ): Routes[Any, Nothing] =
+    routes: LiveRoute[R, ?, ?, ?, ?]*
+  ): Routes[R, Nothing] =
     new LiveRoutesRuntime(layout, routes.toList, websocketMountCodec(mount), tokenConfig).routes
 
   private[scalive] def websocketMountCodec(mount: String): PathCodec[Unit] =
@@ -508,15 +550,15 @@ object LiveChannel:
       nested       <- Ref.make(Map.empty[String, NestedLiveViewEntry])
     yield new LiveChannel(sockets, uploadOwners, nested, tokenConfig)
 
-final private class LiveRoutesRuntime(
+final private[scalive] class LiveRoutesRuntime[R](
   rootLayout: HtmlElement[?] => HtmlElement[?],
-  liveRoutes: List[LiveRoute[?, ?, ?]],
+  liveRoutes: List[LiveRoute[R, ?, ?, ?, ?]],
   websocketMount: PathCodec[Unit],
   tokenConfig: TokenConfig):
 
   private val trackedStatic = StaticTracking.collect(rootLayout(div()))
 
-  private val socketApp: WebSocketApp[Any] =
+  private val socketApp: WebSocketApp[R] =
     Handler.webSocket { channel =>
       ZIO
         .scoped(for
@@ -572,8 +614,8 @@ final private class LiveRoutesRuntime(
 
     }
 
-  private def handleMessage(message: WebSocketMessage, liveChannel: LiveChannel)
-    : RIO[Scope, Option[WebSocketMessage]] =
+  private[scalive] def handleMessage(message: WebSocketMessage, liveChannel: LiveChannel)
+    : RIO[R & Scope, Option[WebSocketMessage]] =
     message.payload match
       case Payload.Heartbeat            => handleHeartbeat(message)
       case join: Payload.Join           => handleJoin(message, join, liveChannel)
@@ -603,7 +645,7 @@ final private class LiveRoutesRuntime(
     message: WebSocketMessage,
     join: Payload.Join,
     liveChannel: LiveChannel
-  ): RIO[Scope, Option[WebSocketMessage]] =
+  ): RIO[R & Scope, Option[WebSocketMessage]] =
     val clientStatics = join.static.orElse(StaticTracking.clientListFromParams(join.params))
     val staticChanged = StaticTracking.staticChanged(clientStatics, trackedStatic)
     val rootSession   = verifyRootSession(message.topic, join.session)
@@ -632,27 +674,36 @@ final private class LiveRoutesRuntime(
                     .decode(req.path)
                     .toOption
                     .map(pathParams =>
-                      if rootSession.exists(_.sessionName == route.sessionName) then
-                        val lv = route.live.liveviewBuilder(pathParams, req)
-                        ZIO.logDebug(
-                          s"Joining LiveView ${route.pattern.pathCodec} ${message.topic}"
-                        ) *>
-                          liveChannel
-                            .join(
-                              message.topic,
-                              join.session,
-                              lv,
-                              ctx,
-                              message.meta,
-                              decodedUrl,
-                              initialFlash
-                            )(using route.live.msgClassTag)
-                            .as(None)
-                            .catchAllCause(cause =>
-                              ZIO.logErrorCause(cause) *>
-                                ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+                      rootSession match
+                        case Some(session) if session.sessionName == route.sessionName =>
+                          route.mountAspect
+                            .runConnected(session.mountClaims, decodedUrl).foldZIO(
+                              response => ZIO.succeed(Some(mountFailureReply(message, response))),
+                              mountContext =>
+                                val lv = route.live.liveviewBuilder(pathParams, req, mountContext)
+                                ZIO.logDebug(
+                                  s"Joining LiveView ${route.pattern.pathCodec} ${message.topic}"
+                                ) *>
+                                  liveChannel
+                                    .join(
+                                      message.topic,
+                                      join.session,
+                                      lv,
+                                      ctx,
+                                      message.meta,
+                                      decodedUrl,
+                                      initialFlash
+                                    )(using route.live.msgClassTag)
+                                    .as(None)
+                                    .catchAllCause(cause =>
+                                      ZIO.logErrorCause(cause) *>
+                                        ZIO.succeed(
+                                          Some(joinErrorReply(message, JoinErrorReason.Stale))
+                                        )
+                                    )
                             )
-                      else ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+                        case _ =>
+                          ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
                     )
                 )
                 .collectFirst { case Some(joinAction) => joinAction }
@@ -787,6 +838,21 @@ final private class LiveRoutesRuntime(
   private def joinErrorReply(message: WebSocketMessage, reason: JoinErrorReason): WebSocketMessage =
     errorReply(message, LiveResponse.JoinError(reason))
 
+  private def mountFailureReply(message: WebSocketMessage, response: Response): WebSocketMessage =
+    response.rawHeader("location") match
+      case Some(to) if response.status.isRedirection =>
+        WebSocketMessage(
+          message.joinRef,
+          message.messageRef,
+          message.topic,
+          Protocol.EventRedirect,
+          Payload.Redirect(to, None)
+        )
+      case _ if response.status == Status.Unauthorized || response.status == Status.Forbidden =>
+        joinErrorReply(message, JoinErrorReason.Unauthorized)
+      case _ =>
+        joinErrorReply(message, JoinErrorReason.Stale)
+
   private def outgoingEventType(payload: Payload): String =
     payload match
       case Payload.Diff(_)               => Protocol.EventDiff
@@ -803,9 +869,9 @@ final private class LiveRoutesRuntime(
   private def isUploadTopic(topic: String): Boolean =
     topic.startsWith("lvu:")
 
-  private def verifyRootSession(topic: String, sessionToken: String): Option[LiveSession] =
+  private def verifyRootSession(topic: String, sessionToken: String): Option[LiveSessionPayload] =
     val topicId = topic.stripPrefix("lv:")
-    LiveSession
+    LiveSessionPayload
       .verify(tokenConfig, sessionToken)
       .toOption
       .collect {
@@ -813,7 +879,7 @@ final private class LiveRoutesRuntime(
           session
       }
 
-  val routes: Routes[Any, Nothing] =
+  val routes: Routes[R, Nothing] =
     Routes
       .fromIterable(
         liveRoutes

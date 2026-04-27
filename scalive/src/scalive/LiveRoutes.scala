@@ -94,12 +94,14 @@ final case class LiveRoute[A, Msg, Model](
         flashRef      <- Ref.make(FlashRuntimeState(initialFlash))
         componentsRef <- Ref.make(ComponentRuntimeState.empty)
         navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
+        hooksRef      <- Ref.make(LiveHookRuntimeState.empty)
         ctx = LiveContext(
                 staticChanged = false,
                 streams = new SocketStreamRuntime(streamRef),
                 navigation = new SocketNavigationRuntime(navigationRef),
                 flash = new SocketFlashRuntime(flashRef),
                 components = new scalive.socket.SocketComponentUpdateRuntime(componentsRef),
+                hooks = new SocketLiveHookRuntime(hooksRef),
                 nestedLiveViews = new DisconnectedNestedLiveViewRuntime(
                   s"lv:$id",
                   tokenConfig,
@@ -142,6 +144,7 @@ final case class LiveRoute[A, Msg, Model](
                                         componentsRef,
                                         ctx
                                       )
+                          _ <- ctx.hooks.runAfterRender(model, ctx)
                         yield LiveRoute.clearFlashCookie(
                           Response.html(
                             Html.raw(
@@ -244,11 +247,9 @@ object LiveRoute:
       case Some(command) => applyNavigation(initModel, command)
       case None          =>
         for
-          _     <- SocketFlashRuntime.resetNavigation(flashRef)
-          _     <- navigationRef.set(None)
-          model <- LiveIO
-                     .toZIO(LiveViewParamsRuntime.runHandleParams(lv, initModel, url))
-                     .provide(ZLayer.succeed(ctx))
+          _          <- SocketFlashRuntime.resetNavigation(flashRef)
+          _          <- navigationRef.set(None)
+          model      <- LiveViewParamsRuntime.runHandleParams(lv, initModel, url, ctx)
           navigation <- navigationRef.getAndSet(None)
           result     <- navigation match
                       case None          => ZIO.succeed(InitialLifecycleOutcome.Render(model))

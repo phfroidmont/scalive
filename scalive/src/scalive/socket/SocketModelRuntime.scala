@@ -128,28 +128,54 @@ private[scalive] object SocketModelRuntime:
                 for
                   (updatedModel, navigation) <-
                     captureNavigation(state, carriedNavigation)(
-                      LiveIO
-                        .toZIO(state.lv.handleMessage(interceptModel)(parentMessage))
-                        .provide(ZLayer.succeed(state.ctx))
+                      state.ctx.hooks
+                        .runEvent(
+                          interceptModel,
+                          parentMessage,
+                          LiveEvent.fromPayload(event),
+                          state.ctx
+                        ).flatMap {
+                          case LiveEventResult.Continue(hookModel) =>
+                            LiveIO
+                              .toZIO(state.lv.handleMessage(hookModel)(parentMessage))
+                              .provide(ZLayer.succeed(state.ctx))
+                              .map(LiveEventResult.Continue(_))
+                          case halt @ LiveEventResult.Halt(_, _) => ZIO.succeed(halt)
+                        }
                     )
-                  _ <- navigation match
-                         case Some(command) =>
-                           publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
-                             state.patchRedirectCountRef.set(0) *>
-                             SocketInbound.handleNavigationCommand(
-                               rendered,
-                               updatedModel,
-                               command,
-                               meta,
-                               state
-                             )
-                         case None =>
-                           for
-                             diff <- updateModelAndSubscriptions(rendered, updatedModel, state)
-                             _    <-
-                               publishPayload(Payload.okReply(LiveResponse.Diff(diff)), meta, state)
-                             _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
-                           yield ()
+                  _ <- updatedModel match
+                         case LiveEventResult.Halt(hookModel, reply) =>
+                           applyInterceptHalt(
+                             rendered,
+                             hookModel,
+                             reply,
+                             navigation,
+                             meta,
+                             state
+                           )
+                         case LiveEventResult.Continue(hookModel) =>
+                           navigation match
+                             case Some(command) =>
+                               publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
+                                 state.patchRedirectCountRef.set(0) *>
+                                 SocketInbound.handleNavigationCommand(
+                                   rendered,
+                                   hookModel,
+                                   command,
+                                   meta,
+                                   state
+                                 )
+                             case None =>
+                               for
+                                 diff <- updateModelAndSubscriptions(rendered, hookModel, state)
+                                 _    <-
+                                   publishPayload(
+                                     Payload.okReply(LiveResponse.Diff(diff)),
+                                     meta,
+                                     state
+                                   )
+                                 _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
+                               yield ()
                 yield ()
               case None =>
                 handleInvalidOrMissingBinding(
@@ -200,7 +226,6 @@ private[scalive] object SocketModelRuntime:
                        compiled = nextCompiled,
                        bindings = BindingRegistry.collect[Any](nextCompiled)
                      )
-      _      <- state.ref.set((model, nextRendered))
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)
       title  <- state.titleRef.getAndSet(None)
       _      <- SocketStreamRuntime.prune(state.streamRef)
@@ -212,6 +237,8 @@ private[scalive] object SocketModelRuntime:
                  case _                                         => Set.empty[Int]
              )
            )
+      afterRenderModel <- state.ctx.hooks.runAfterRender(model, state.ctx)
+      _                <- state.ref.set((afterRenderModel, nextRendered))
     yield renderedDiff
 
   def publishPayload[Msg, Model](

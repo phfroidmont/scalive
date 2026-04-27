@@ -22,6 +22,7 @@ private[scalive] object SocketBootstrap:
       inbox           <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
       asyncQueue      <- Queue.unbounded[LiveAsyncCompletion]
       outHub          <- Hub.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
+      lifecycleLock   <- Semaphore.make(1)
       uploadRef       <- Ref.make(UploadRuntimeState.empty)
       streamRef       <- Ref.make(StreamRuntimeState.empty)
       clientEventsRef <- Ref.make(Vector.empty[Diff.Event])
@@ -30,6 +31,7 @@ private[scalive] object SocketBootstrap:
       asyncTasksRef   <- Ref.make(LiveAsyncRuntimeState.empty)
       navigationRef   <- Ref.make(Option.empty[LiveNavigationCommand])
       componentsRef   <- Ref.make(ComponentRuntimeState.empty)
+      hooksRef        <- Ref.make(LiveHookRuntimeState.empty)
       runtimeCtx = ctx.copy(
                      uploads = new SocketUploadRuntime(uploadRef),
                      streams = new SocketStreamRuntime(streamRef),
@@ -42,7 +44,8 @@ private[scalive] object SocketBootstrap:
                        asyncTasksRef,
                        LiveAsyncOwner.Root
                      ),
-                     components = new SocketComponentUpdateRuntime(componentsRef)
+                     components = new SocketComponentUpdateRuntime(componentsRef),
+                     hooks = new SocketLiveHookRuntime(hooksRef)
                    )
       _               <- SocketFlashRuntime.resetNavigation(flashRef)
       _               <- navigationRef.set(None)
@@ -66,8 +69,9 @@ private[scalive] object SocketBootstrap:
                    compiled = initCompiled,
                    bindings = BindingRegistry.collect[Any](initCompiled)
                  )
-      ref           <- Ref.make((bootstrapModel, initView))
-      currentUrlRef <- Ref.make(bootstrapUrl)
+      afterRenderModel <- runtimeCtx.hooks.runAfterRender(bootstrapModel, runtimeCtx)
+      ref              <- Ref.make((afterRenderModel, initView))
+      currentUrlRef    <- Ref.make(bootstrapUrl)
       rawInitDiff = TreeDiff.initial(initCompiled)
       initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
       initTitle  <- titleRef.getAndSet(None)
@@ -84,7 +88,7 @@ private[scalive] object SocketBootstrap:
       _           <- SocketStreamRuntime.prune(streamRef)
       lvStreamRef <-
         SubscriptionRef.make(
-          lv.subscriptions(bootstrapModel).provideLayer(ZLayer.succeed(runtimeCtx))
+          lv.subscriptions(afterRenderModel).provideLayer(ZLayer.succeed(runtimeCtx))
         )
       patchRedirectCountRef <- Ref.make(0)
       bootstrapPayloadEnvelopes =
@@ -98,6 +102,7 @@ private[scalive] object SocketBootstrap:
       inbox = inbox,
       asyncQueue = asyncQueue,
       outHub = outHub,
+      lifecycleLock = lifecycleLock,
       ref = ref,
       currentUrlRef = currentUrlRef,
       lvStreamRef = lvStreamRef,
@@ -137,9 +142,7 @@ private[scalive] object SocketBootstrap:
       for
         _ <- ZIO.unless(preserveNavigationFlash)(SocketFlashRuntime.resetNavigation(flashRef))
         _ <- navigationRef.set(None)
-        nextModel <- LiveIO
-                       .toZIO(LiveViewParamsRuntime.runHandleParams(lv, model, url))
-                       .provide(ZLayer.succeed(runtimeCtx))
+        nextModel  <- LiveViewParamsRuntime.runHandleParams(lv, model, url, runtimeCtx)
         navigation <- navigationRef.getAndSet(None)
         result     <- navigation match
                     case None =>

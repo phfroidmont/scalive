@@ -61,44 +61,73 @@ private[scalive] object SocketOutbound:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
-    event match
-      case ServerEvent.Message(msg)      => handleServerMsg(msg, meta, state)
-      case ServerEvent.Async(completion) => handleAsyncCompletion(completion, meta, state)
+    state.lifecycleLock.withPermit {
+      event match
+        case ServerEvent.Message(msg)      => handleServerMsg(msg, meta, state, runInfoHooks = true)
+        case ServerEvent.Async(completion) => handleAsyncCompletion(completion, meta, state)
+    }
 
   private def handleServerMsg[Msg, Model](
     msg: Msg,
     meta: WebSocketMessage.Meta,
-    state: RuntimeState[Msg, Model]
+    state: RuntimeState[Msg, Model],
+    runInfoHooks: Boolean
   ): Task[Unit] =
     for
       (currentModel, rendered)   <- state.ref.get
       (updatedModel, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
-          LiveIO
-            .toZIO(state.lv.handleMessage(currentModel)(msg))
-            .provide(ZLayer.succeed(state.ctx))
+          (if runInfoHooks then state.ctx.hooks.runInfo(currentModel, msg, state.ctx)
+           else ZIO.succeed(LiveHookResult.Continue(currentModel))).flatMap {
+            case LiveHookResult.Continue(hookModel) =>
+              LiveIO
+                .toZIO(state.lv.handleMessage(hookModel)(msg))
+                .provide(ZLayer.succeed(state.ctx))
+                .map(LiveHookResult.Continue(_))
+            case halt @ LiveHookResult.Halt(_) => ZIO.succeed(halt)
+          }
         )
-      _ <- navigation match
-             case Some(command) =>
-               state.patchRedirectCountRef.set(0) *>
-                 SocketInbound.handleNavigationCommand(
-                   rendered,
-                   updatedModel,
-                   command,
-                   meta,
-                   state
-                 )
-             case None =>
-               for
-                 diff <-
-                   SocketModelRuntime.updateModelAndSubscriptions(
-                     rendered,
-                     updatedModel,
-                     state
-                   )
-                 _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
-                 _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
-               yield ()
+      _ <- updatedModel match
+             case LiveHookResult.Halt(hookModel) =>
+               navigation match
+                 case Some(command) =>
+                   state.patchRedirectCountRef.set(0) *>
+                     SocketInbound.handleNavigationCommand(
+                       rendered,
+                       hookModel,
+                       command,
+                       meta,
+                       state
+                     )
+                 case None =>
+                   for
+                     diff <-
+                       SocketModelRuntime.updateModelAndSubscriptions(rendered, hookModel, state)
+                     _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+                     _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
+                   yield ()
+             case LiveHookResult.Continue(hookModel) =>
+               navigation match
+                 case Some(command) =>
+                   state.patchRedirectCountRef.set(0) *>
+                     SocketInbound.handleNavigationCommand(
+                       rendered,
+                       hookModel,
+                       command,
+                       meta,
+                       state
+                     )
+                 case None =>
+                   for
+                     diff <-
+                       SocketModelRuntime.updateModelAndSubscriptions(
+                         rendered,
+                         hookModel,
+                         state
+                       )
+                     _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+                     _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
+                   yield ()
     yield ()
 
   private def handleAsyncCompletion[Msg, Model](
@@ -111,7 +140,7 @@ private[scalive] object SocketOutbound:
         completion.event match
           case LiveAsyncCompletionEvent.Message(message) =>
             state.msgClassTag.unapply(message) match
-              case Some(msg) => handleServerMsg(msg, meta, state)
+              case Some(msg) => handleServerMsg(msg, meta, state, runInfoHooks = false)
               case None      =>
                 ZIO.logWarning(
                   s"Ignoring async message ${message.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"

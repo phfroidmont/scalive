@@ -16,7 +16,9 @@ private[scalive] object SocketInbound:
   ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
     ZStream
       .fromQueue(state.inbox)
-      .runForeach((event, meta) => handleClientEvent(event, meta, state))
+      .runForeach((event, meta) =>
+        state.lifecycleLock.withPermit(handleClientEvent(event, meta, state))
+      )
       .fork
 
   def handleLivePatch[Msg, Model](
@@ -24,41 +26,41 @@ private[scalive] object SocketInbound:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Payload.Reply] =
-    for
-      (currentModel, rendered) <- state.ref.get
-      currentUrl               <- state.currentUrlRef.get
-      decodedUrl               <- ZIO
-                      .fromEither(LivePatchUrl.resolve(url, currentUrl))
-                      .mapError(error => new IllegalArgumentException(error))
-      _                   <- SocketFlashRuntime.commitNavigation(state.flashRef)
-      _                   <- state.currentUrlRef.set(decodedUrl)
-      (model, navigation) <-
-        SocketModelRuntime.captureNavigation(state, resetFlash = false)(
-          LiveIO
-            .toZIO(LiveViewParamsRuntime.runHandleParams(state.lv, currentModel, decodedUrl))
-            .provide(ZLayer.succeed(state.ctx))
-        )
-      diffOpt <- navigation match
-                   case Some(
-                         command @ (LiveNavigationCommand.PushPatch(_) |
-                         LiveNavigationCommand.ReplacePatch(_))
-                       ) =>
-                     followPatchRedirects(rendered, model, command, meta, state)
-                   case Some(command) =>
-                     handleNavigationCommand(rendered, model, command, meta, state).as(None)
-                   case None =>
-                     for
-                       _    <- state.patchRedirectCountRef.set(0)
-                       diff <-
-                         SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
-                       _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
-                     yield Some(diff)
-      reply = diffOpt match
-                case Some(diff) if !diff.isEmpty =>
-                  Payload.okReply(LiveResponse.Diff(diff))
-                case _ =>
-                  Payload.okReply(LiveResponse.Empty)
-    yield reply
+    state.lifecycleLock.withPermit {
+      for
+        (currentModel, rendered) <- state.ref.get
+        currentUrl               <- state.currentUrlRef.get
+        decodedUrl               <- ZIO
+                        .fromEither(LivePatchUrl.resolve(url, currentUrl))
+                        .mapError(error => new IllegalArgumentException(error))
+        _                   <- SocketFlashRuntime.commitNavigation(state.flashRef)
+        _                   <- state.currentUrlRef.set(decodedUrl)
+        (model, navigation) <-
+          SocketModelRuntime.captureNavigation(state, resetFlash = false)(
+            LiveViewParamsRuntime.runHandleParams(state.lv, currentModel, decodedUrl, state.ctx)
+          )
+        diffOpt <- navigation match
+                     case Some(
+                           command @ (LiveNavigationCommand.PushPatch(_) |
+                           LiveNavigationCommand.ReplacePatch(_))
+                         ) =>
+                       followPatchRedirects(rendered, model, command, meta, state)
+                     case Some(command) =>
+                       handleNavigationCommand(rendered, model, command, meta, state).as(None)
+                     case None =>
+                       for
+                         _    <- state.patchRedirectCountRef.set(0)
+                         diff <-
+                           SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
+                         _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
+                       yield Some(diff)
+        reply = diffOpt match
+                  case Some(diff) if !diff.isEmpty =>
+                    Payload.okReply(LiveResponse.Diff(diff))
+                  case _ =>
+                    Payload.okReply(LiveResponse.Empty)
+      yield reply
+    }
 
   private def followPatchRedirects[Msg, Model](
     rendered: RenderedView,
@@ -102,15 +104,12 @@ private[scalive] object SocketInbound:
               _                       <- state.currentUrlRef.set(nextUrl)
               (nextModel, navigation) <-
                 SocketModelRuntime.captureNavigation(state, resetFlash = false)(
-                  LiveIO
-                    .toZIO(
-                      LiveViewParamsRuntime.runHandleParams(
-                        state.lv,
-                        currentModel,
-                        nextUrl
-                      )
-                    )
-                    .provide(ZLayer.succeed(state.ctx))
+                  LiveViewParamsRuntime.runHandleParams(
+                    state.lv,
+                    currentModel,
+                    nextUrl,
+                    state.ctx
+                  )
                 )
               diffOpt <- navigation match
                            case Some(

@@ -297,7 +297,8 @@ private[scalive] object SocketComponentRuntime:
   private def componentContext(ctx: LiveContext, cid: Int): LiveContext =
     ctx.copy(
       streams = SocketStreamRuntime.scoped(ctx.streams, SocketStreamRuntime.componentScope(cid)),
-      async = SocketAsyncRuntime.scoped(ctx.async, LiveAsyncOwner.Component(cid))
+      async = SocketAsyncRuntime.scoped(ctx.async, LiveAsyncOwner.Component(cid)),
+      hooks = LiveHookRuntime.Disabled
     )
 
   private def eventReply[Msg, Model](

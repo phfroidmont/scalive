@@ -136,6 +136,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
   asyncQueue: Queue[LiveAsyncCompletion],
   outHub: Hub[(Payload, WebSocketMessage.Meta)],
+  lifecycleLock: Semaphore,
   ref: Ref[(Model, RenderedView)],
   currentUrlRef: Ref[URL],
   lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],

@@ -1,16 +1,23 @@
 package scalive
 
 import zio.http.URL
+import zio.*
 
 private[scalive] object LiveViewParamsRuntime:
   def runHandleParams[Msg, Model](
     lv: LiveView[Msg, Model],
     model: Model,
-    url: URL
-  ): LiveIO[LiveView.ParamsContext, Model] =
-    lv.queryCodec
-      .decode(url)
-      .flatMap(query => LiveIO.toZIO(lv.handleParams(model, query, url)))
-      .catchSome { case error: LiveQueryCodec.DecodeError =>
-        LiveIO.toZIO(lv.handleParamsDecodeError(model, error, url))
-      }
+    url: URL,
+    ctx: LiveContext
+  ): Task[Model] =
+    ctx.hooks.runParams(model, url, ctx).flatMap {
+      case LiveHookResult.Halt(hookModel)     => ZIO.succeed(hookModel)
+      case LiveHookResult.Continue(hookModel) =>
+        lv.queryCodec
+          .decode(url)
+          .flatMap(query => LiveIO.toZIO(lv.handleParams(hookModel, query, url)))
+          .catchSome { case error: LiveQueryCodec.DecodeError =>
+            LiveIO.toZIO(lv.handleParamsDecodeError(hookModel, error, url))
+          }
+          .provide(ZLayer.succeed(ctx))
+    }

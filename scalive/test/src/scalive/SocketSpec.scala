@@ -47,6 +47,16 @@ object SocketSpec extends ZIOSpecDefault:
   private def makeSocket(ctx: LiveContext, lv: LiveView[Msg, Model]) =
     Socket.start("id", "token", lv, ctx, meta)
 
+  private def withOutbox[Msg, Model, A](socket: Socket[Msg, Model])(
+    f: Queue[(Payload, WebSocketMessage.Meta)] => Task[A]
+  ): Task[A] =
+    for
+      queue  <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+      fiber  <- socket.outbox.runForeach(queue.offer).fork
+      _      <- queue.take
+      result <- f(queue).ensuring(fiber.interrupt)
+    yield result
+
   override def spec = suite("SocketSpec")(
     test("emits init diff and uses LiveContext") {
       val ctx = LiveContext(staticChanged = true)
@@ -913,24 +923,29 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket       <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        repliesFiber <- socket.outbox.drop(1).take(2).runCollect.fork
-        _            <- socket.inbox.offer(firstEvent -> meta)
-        _            <- socket.inbox.offer(secondEvent -> meta)
-        replies      <- repliesFiber.join
-      yield
-        val firstUpdated = replies.head._1 match
-          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) => containsValue(diff, "1")
-          case _                                                       => false
-        val secondUpdated = replies.last._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(2).exists(containsValue(_, "1"))
-          case _ => false
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _      <- socket.inbox.offer(firstEvent -> meta)
+                      _      <- socket.inbox.offer(secondEvent -> meta)
+                      first  <- outbox.take
+                      second <- outbox.take
+                    yield
+                      val firstUpdated = first._1 match
+                        case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
+                          containsValue(diff, "1")
+                        case _ => false
+                      val secondUpdated = second._1 match
+                        case Payload.Reply(
+                              ReplyStatus.Ok,
+                              LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+                            ) =>
+                          components.get(2).exists(containsValue(_, "1"))
+                        case _ => false
 
-        assertTrue(firstUpdated, secondUpdated)
+                      assertTrue(firstUpdated, secondUpdated)
+                  }
+      yield result
     },
     test("selector-targeted component events reject mismatched component classes") {
       object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:

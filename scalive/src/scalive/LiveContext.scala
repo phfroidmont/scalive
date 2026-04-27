@@ -3,6 +3,7 @@ package scalive
 import scala.reflect.ClassTag
 
 import zio.*
+import zio.http.URL
 import zio.json.*
 
 import scalive.streams.*
@@ -18,7 +19,8 @@ final case class LiveContext(
   components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
   nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled,
   flash: FlashRuntime = FlashRuntime.Disabled,
-  async: LiveAsyncRuntime = LiveAsyncRuntime.Disabled)
+  async: LiveAsyncRuntime = LiveAsyncRuntime.Disabled,
+  hooks: LiveHookRuntime = LiveHookRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
 object LiveContext:
@@ -52,6 +54,9 @@ object LiveContext:
   trait HasAsync:
     def async: LiveAsyncRuntime
 
+  trait HasHooks:
+    def hooks: LiveHookRuntime
+
   trait BaseCapabilities
       extends HasStaticChanged
       with HasUploads
@@ -62,6 +67,7 @@ object LiveContext:
       with HasNestedLiveViews
       with HasFlash
       with HasAsync
+      with HasHooks
   trait NavigationCapabilities extends BaseCapabilities with HasNavigation
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =
@@ -241,4 +247,44 @@ object LiveContext:
     ZIO.serviceWithZIO[HasComponents](
       _.components.sendUpdate(summon[ClassTag[C]].runtimeClass, id, props)
     )
+
+  def attachEventHook[Msg, Model](
+    id: String
+  )(
+    hook: (Model, Msg, LiveEvent) => LiveIO[LiveView.UpdateContext, LiveEventResult[Model]]
+  ): RIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.attachEvent(id)(hook))
+
+  def detachEventHook(id: String): URIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.detachEvent(id))
+
+  def attachParamsHook[Model](
+    id: String
+  )(
+    hook: (Model, URL) => LiveIO[LiveView.ParamsContext, LiveHookResult[Model]]
+  ): RIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.attachParams(id)(hook))
+
+  def detachParamsHook(id: String): URIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.detachParams(id))
+
+  def attachInfoHook[Msg, Model](
+    id: String
+  )(
+    hook: (Model, Msg) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
+  ): RIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.attachInfo(id)(hook))
+
+  def detachInfoHook(id: String): URIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.detachInfo(id))
+
+  def attachAfterRenderHook[Model](
+    id: String
+  )(
+    hook: Model => LiveIO[LiveView.UpdateContext, Model]
+  ): RIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.attachAfterRender(id)(hook))
+
+  def detachAfterRenderHook(id: String): URIO[HasHooks, Unit] =
+    ZIO.serviceWithZIO[HasHooks](_.hooks.detachAfterRender(id))
 end LiveContext

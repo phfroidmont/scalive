@@ -20,15 +20,15 @@ Track upstream parity by suite or feature area, not only by individual bugs. Sta
 | Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream nested integration suite: disconnected/connected render, dynamic children, recursive cleanup, multiple children of the same LiveView type, fresh constructor data, comprehensions, children inside components, duplicate id rejection, child push-navigate/push-patch/redirect, external redirect, and sticky child preservation. | High |
 | Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Partial | Socket-scoped flash state exists with root/component APIs, render helpers, keyed/all clear, built-in `lv:clear-flash`, patch navigation persistence, bootstrap patch-loop persistence, nested socket isolation, push-navigate token propagation, and hard-redirect cookie propagation. Remaining gaps are broader upstream lifecycle edge cases. | High |
 | Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream start_async runtime behavior: root LiveViews and LiveComponents can start typed named async tasks from mount/update/events, receive success/failure/cancellation as normal messages, render completion diffs, trigger push-navigate/push-patch/redirect/flash side effects, cancel and restart tasks by name, keep existing tasks when requested, and deterministically interrupt socket/component-owned tasks on cancellation, socket shutdown, and confirmed component removal. Phoenix complex keys are represented by explicit string task names in Scalive's typed API. | Medium |
-| Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Partial | `LiveContext.assignAsync(model)(_.field)(effect)` updates typed `AsyncValue` model fields directly without user completion messages. Success, failure, reset/preserve loading behavior, cancellation, and component-scoped assigns are covered. Remaining gaps include broader upstream lifecycle edge cases and any multi-key convenience API. | Medium |
+| Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream assign_async runtime behavior through the typed field API: root LiveViews and LiveComponents can assign async fields from mount/update/events, store success/failure/cancellation, preserve or reset previous values while loading, renew after cancellation, and deterministically interrupt socket/component-owned assign tasks on shutdown or confirmed component removal. Phoenix's untyped map/list-key return validation and explicit Task.Supervisor option are intentionally not copied; Scalive uses typed direct `AsyncValue` field selectors and ZIO structured concurrency. | Medium |
 | Lifecycle hooks | `test/phoenix_live_view/integrations/hooks_test.exs` | Gap/partial | Scalive has `interceptEvent`; upstream hooks cover mount, event, params, info, async, and render stages. | Medium |
 | Test harness helpers | `lib/phoenix_live_view/test/*` and integration tests | Not directly applicable | Scalive may need its own testing API rather than direct Phoenix API parity. | Low |
 
 ## Recommended Next Step
 
-Continue closing the remaining async assign lifecycle and hook gaps with small vertical slices.
+Continue closing the remaining lifecycle hook and flash edge-case gaps with small vertical slices.
 
-The core runtime is in place, so the highest-leverage follow-up work is now targeted parity around async assigns and lifecycle hooks.
+The core async runtime is in place, so the highest-leverage follow-up work is now targeted parity around lifecycle hooks and any remaining flash lifecycle edge cases.
 
 ## LiveComponent Implementation Sequence
 
@@ -66,9 +66,9 @@ The core runtime is in place, so the highest-leverage follow-up work is now targ
 
    Cancellation, restart-by-name, keep-existing start mode, navigation/redirect/flash side effects, component update-started tasks, and deterministic socket/component cleanup are implemented and covered.
 
-4. Add async assign helpers. Done for the first slice.
+4. Add async assign helpers. Done.
 
-   `LiveContext.assignAsync(model)(_.field)(effect)` derives a typed case-class field updater, stores loading state immediately, and applies completion to `AsyncValue` without requiring a user message. Cancellation uses `LiveContext.cancelAssignAsync(model)(_.field, reason)`.
+   `LiveContext.assignAsync(model)(_.field)(effect)` derives a typed case-class field updater, stores loading state immediately, and applies completion to `AsyncValue` without requiring a user message. Cancellation uses `LiveContext.cancelAssignAsync(model)(_.field, reason)`. Root/component mount, update, event, cancellation/renewal, reset/preserve, failure, and cleanup behavior are covered.
 
 ## Suggested Work Order After Components
 

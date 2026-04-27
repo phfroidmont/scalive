@@ -35,7 +35,7 @@ object LiveView:
   type BaseContext       = LiveContext.BaseCapabilities
   type NavigationContext = LiveContext.NavigationCapabilities
 
-  type InitContext          = BaseContext
+  type InitContext          = NavigationContext
   type SubscriptionsContext = BaseContext
   type UpdateContext        = NavigationContext
   type ParamsContext        = NavigationContext

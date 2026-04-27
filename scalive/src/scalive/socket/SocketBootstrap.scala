@@ -44,7 +44,10 @@ private[scalive] object SocketBootstrap:
                      ),
                      components = new SocketComponentUpdateRuntime(componentsRef)
                    )
-      initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(runtimeCtx))
+      _               <- SocketFlashRuntime.resetNavigation(flashRef)
+      _               <- navigationRef.set(None)
+      initModel       <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(runtimeCtx))
+      mountNavigation <- navigationRef.getAndSet(None)
       (bootstrapModel, bootstrapPayloads, bootstrapUrl) <-
         runInitialLifecycle(
           lv,
@@ -53,7 +56,8 @@ private[scalive] object SocketBootstrap:
           flashRef,
           tokenConfig,
           initModel,
-          initialUrl
+          initialUrl,
+          mountNavigation
         )
       initRoot <-
         SocketComponentRuntime.renderRoot(lv.render(bootstrapModel), componentsRef, runtimeCtx)
@@ -71,6 +75,7 @@ private[scalive] object SocketBootstrap:
                    SocketModelRuntime.withClientEvents(rawInitDiff, initEvents),
                    initTitle
                  )
+      _                <- SocketFlashRuntime.resetNavigation(flashRef)
       componentCidsRef <- Ref.make(
                             initDiff match
                               case Diff.Tag(_, _, _, _, _, components, _, _) => components.keySet
@@ -119,16 +124,19 @@ private[scalive] object SocketBootstrap:
     flashRef: Ref[FlashRuntimeState],
     tokenConfig: TokenConfig,
     initialModel: Model,
-    initialUrl: URL
+    initialUrl: URL,
+    initialNavigation: Option[LiveNavigationCommand]
   ): Task[(Model, Chunk[WebSocketMessage.Payload], URL)] =
     def loop(
       model: Model,
       url: URL,
       redirectCount: Int,
-      payloads: Chunk[WebSocketMessage.Payload]
+      payloads: Chunk[WebSocketMessage.Payload],
+      preserveNavigationFlash: Boolean = false
     ): Task[(Model, Chunk[WebSocketMessage.Payload], URL)] =
       for
-        _         <- navigationRef.set(None)
+        _ <- ZIO.unless(preserveNavigationFlash)(SocketFlashRuntime.resetNavigation(flashRef))
+        _ <- navigationRef.set(None)
         nextModel <- LiveIO
                        .toZIO(LiveViewParamsRuntime.runHandleParams(lv, model, url))
                        .provide(ZLayer.succeed(runtimeCtx))
@@ -192,12 +200,14 @@ private[scalive] object SocketBootstrap:
     ): Task[(Model, Chunk[WebSocketMessage.Payload], URL)] =
       LivePatchUrl.resolve(to, url) match
         case Right(nextUrl) =>
-          loop(
-            nextModel,
-            nextUrl,
-            redirectCount + 1,
-            Chunk(WebSocketMessage.Payload.LiveNavigation(nextUrl.encode, kind))
-          )
+          SocketFlashRuntime.commitNavigation(flashRef) *>
+            loop(
+              nextModel,
+              nextUrl,
+              redirectCount + 1,
+              payloads :+ WebSocketMessage.Payload.LiveNavigation(nextUrl.encode, kind),
+              preserveNavigationFlash = true
+            )
         case Left(error) =>
           ZIO
             .logWarning(
@@ -214,8 +224,8 @@ private[scalive] object SocketBootstrap:
     ): Task[(Model, Chunk[WebSocketMessage.Payload], URL)] =
       LivePatchUrl.resolve(to, url) match
         case Right(nextUrl) =>
-          flashRef.get.map { flash =>
-            val token = FlashToken.encode(tokenConfig, flash.values)
+          SocketFlashRuntime.navigationValues(flashRef).map { flash =>
+            val token = FlashToken.encode(tokenConfig, flash)
             (
               nextModel,
               payloads :+ WebSocketMessage.Payload.LiveRedirect(nextUrl.encode, kind, token),
@@ -237,8 +247,8 @@ private[scalive] object SocketBootstrap:
     ): Task[(Model, Chunk[WebSocketMessage.Payload], URL)] =
       LivePatchUrl.resolve(to, url) match
         case Right(nextUrl) =>
-          flashRef.get.map { flash =>
-            val token = FlashToken.encode(tokenConfig, flash.values)
+          SocketFlashRuntime.navigationValues(flashRef).map { flash =>
+            val token = FlashToken.encode(tokenConfig, flash)
             (nextModel, payloads :+ WebSocketMessage.Payload.Redirect(nextUrl.encode, token), url)
           }
         case Left(error) =>
@@ -248,6 +258,45 @@ private[scalive] object SocketBootstrap:
             )
             .as((nextModel, payloads, url))
 
-    loop(initialModel, initialUrl, 0, Chunk.empty)
+    initialNavigation match
+      case Some(LiveNavigationCommand.PushPatch(to)) =>
+        handleBootstrapPatch(
+          initialModel,
+          initialUrl,
+          0,
+          Chunk.empty,
+          to,
+          WebSocketMessage.LivePatchKind.Push
+        )
+      case Some(LiveNavigationCommand.ReplacePatch(to)) =>
+        handleBootstrapPatch(
+          initialModel,
+          initialUrl,
+          0,
+          Chunk.empty,
+          to,
+          WebSocketMessage.LivePatchKind.Replace
+        )
+      case Some(LiveNavigationCommand.PushNavigate(to)) =>
+        handleBootstrapLiveRedirect(
+          initialModel,
+          initialUrl,
+          Chunk.empty,
+          to,
+          WebSocketMessage.LivePatchKind.Push
+        )
+      case Some(LiveNavigationCommand.ReplaceNavigate(to)) =>
+        handleBootstrapLiveRedirect(
+          initialModel,
+          initialUrl,
+          Chunk.empty,
+          to,
+          WebSocketMessage.LivePatchKind.Replace
+        )
+      case Some(LiveNavigationCommand.Redirect(to)) =>
+        handleBootstrapRedirect(initialModel, initialUrl, Chunk.empty, to)
+      case None =>
+        loop(initialModel, initialUrl, 0, Chunk.empty)
+    end match
   end runInitialLifecycle
 end SocketBootstrap

@@ -124,6 +124,7 @@ private[scalive] object SocketComponentRuntime:
                               meta,
                               state
                             )
+                       _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                      yield true
     yield handled
 
@@ -180,6 +181,7 @@ private[scalive] object SocketComponentRuntime:
                                          meta,
                                          state
                                        )
+                                  _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                                 yield ()
                      yield true
     yield handled

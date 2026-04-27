@@ -11,11 +11,13 @@ import scalive.WebSocketMessage.Payload
 private[scalive] object SocketModelRuntime:
   def captureNavigation[Msg, Model, A](
     state: RuntimeState[Msg, Model],
-    initial: Option[LiveNavigationCommand] = None
+    initial: Option[LiveNavigationCommand] = None,
+    resetFlash: Boolean = true
   )(
     effect: Task[A]
   ): Task[(A, Option[LiveNavigationCommand])] =
     for
+      _          <- ZIO.when(resetFlash)(SocketFlashRuntime.resetNavigation(state.flashRef))
       _          <- state.navigationRef.set(initial)
       exit       <- effect.exit
       navigation <- state.navigationRef.getAndSet(None)
@@ -46,7 +48,7 @@ private[scalive] object SocketModelRuntime:
                    meta,
                    state
                  )
-             case None => ZIO.unit
+             case None => SocketFlashRuntime.resetNavigation(state.flashRef)
     yield ()
 
   def applyBoundEvent[Msg, Model](
@@ -146,6 +148,7 @@ private[scalive] object SocketModelRuntime:
                              diff <- updateModelAndSubscriptions(rendered, updatedModel, state)
                              _    <-
                                publishPayload(Payload.okReply(LiveResponse.Diff(diff)), meta, state)
+                             _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                            yield ()
                 yield ()
               case None =>
@@ -253,7 +256,8 @@ private[scalive] object SocketModelRuntime:
       case None =>
         val detail = error.getOrElse("unknown binding id")
         ZIO.logWarning(s"Ignoring binding '$bindingId': $detail") *>
-          publishPayload(Payload.okReply(LiveResponse.Empty), meta, state)
+          publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
+          SocketFlashRuntime.resetNavigation(state.flashRef)
 
   private[socket] def withClientEvents(diff: Diff, events: Seq[Diff.Event]): Diff =
     diff match

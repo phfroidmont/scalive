@@ -97,6 +97,7 @@ private[scalive] object SocketOutbound:
                      state
                    )
                  _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+                 _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                yield ()
     yield ()
 
@@ -125,6 +126,7 @@ private[scalive] object SocketOutbound:
                         state
                       )
               _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+              _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
             yield ()
       case LiveAsyncOwner.Component(cid) =>
         completion.event match

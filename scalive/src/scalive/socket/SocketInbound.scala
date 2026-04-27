@@ -30,9 +30,10 @@ private[scalive] object SocketInbound:
       decodedUrl               <- ZIO
                       .fromEither(LivePatchUrl.resolve(url, currentUrl))
                       .mapError(error => new IllegalArgumentException(error))
+      _                   <- SocketFlashRuntime.commitNavigation(state.flashRef)
       _                   <- state.currentUrlRef.set(decodedUrl)
       (model, navigation) <-
-        SocketModelRuntime.captureNavigation(state)(
+        SocketModelRuntime.captureNavigation(state, resetFlash = false)(
           LiveIO
             .toZIO(LiveViewParamsRuntime.runHandleParams(state.lv, currentModel, decodedUrl))
             .provide(ZLayer.succeed(state.ctx))
@@ -50,6 +51,7 @@ private[scalive] object SocketInbound:
                        _    <- state.patchRedirectCountRef.set(0)
                        diff <-
                          SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
+                       _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                      yield Some(diff)
       reply = diffOpt match
                 case Some(diff) if !diff.isEmpty =>
@@ -80,6 +82,7 @@ private[scalive] object SocketInbound:
       kind: LivePatchKind
     ): Task[Option[Diff]] =
       for
+        _          <- SocketFlashRuntime.commitNavigation(state.flashRef)
         currentUrl <- state.currentUrlRef.get
         nextUrl    <- ZIO
                      .fromEither(LivePatchUrl.resolve(to, currentUrl))
@@ -97,17 +100,18 @@ private[scalive] object SocketInbound:
           else
             for
               _                       <- state.currentUrlRef.set(nextUrl)
-              (nextModel, navigation) <- SocketModelRuntime.captureNavigation(state)(
-                                           LiveIO
-                                             .toZIO(
-                                               LiveViewParamsRuntime.runHandleParams(
-                                                 state.lv,
-                                                 currentModel,
-                                                 nextUrl
-                                               )
-                                             )
-                                             .provide(ZLayer.succeed(state.ctx))
-                                         )
+              (nextModel, navigation) <-
+                SocketModelRuntime.captureNavigation(state, resetFlash = false)(
+                  LiveIO
+                    .toZIO(
+                      LiveViewParamsRuntime.runHandleParams(
+                        state.lv,
+                        currentModel,
+                        nextUrl
+                      )
+                    )
+                    .provide(ZLayer.succeed(state.ctx))
+                )
               diffOpt <- navigation match
                            case Some(
                                  nextCommand @ (LiveNavigationCommand.PushPatch(_) |
@@ -130,6 +134,7 @@ private[scalive] object SocketInbound:
                                       meta.copy(messageRef = None),
                                       state
                                     )
+                               _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                              yield Some(diff)
             yield diffOpt
       yield result
@@ -179,6 +184,7 @@ private[scalive] object SocketInbound:
                  meta,
                  state
                )
+          _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
         yield ()
       case _ =>
         for
@@ -242,7 +248,9 @@ private[scalive] object SocketInbound:
       )
 
     def flashToken: UIO[Option[String]] =
-      state.flashRef.get.map(flash => FlashToken.encode(state.tokenConfig, flash.values))
+      SocketFlashRuntime
+        .navigationValues(state.flashRef)
+        .map(FlashToken.encode(state.tokenConfig, _))
 
     def publish(payload: Payload): UIO[Unit] =
       SocketModelRuntime.publishPayload(payload, meta.copy(messageRef = None), state)

@@ -105,14 +105,19 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
                 initialUrl
               )
             )
-      lv        <- ZIO.succeed(spec.liveView())
-      initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
-      lifecycle <- LiveRoute.runInitialHandleParams(
+      lv              <- ZIO.succeed(spec.liveView())
+      _               <- SocketFlashRuntime.resetNavigation(flashRef)
+      _               <- navigationRef.set(None)
+      initModel       <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
+      mountNavigation <- navigationRef.getAndSet(None)
+      lifecycle       <- LiveRoute.runInitialHandleParams(
                      lv,
                      initModel,
                      initialUrl,
                      ctx,
-                     navigationRef
+                     navigationRef,
+                     flashRef,
+                     mountNavigation
                    )
       rendered <- lifecycle match
                     case LiveRoute.InitialLifecycleOutcome.Render(model) =>

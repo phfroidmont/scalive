@@ -116,7 +116,9 @@ private[scalive] object StreamRuntimeState:
   val empty: StreamRuntimeState =
     StreamRuntimeState(Map.empty, 0L)
 
-final private[scalive] case class FlashRuntimeState(values: Map[String, String])
+final private[scalive] case class FlashRuntimeState(
+  values: Map[String, String],
+  navigationValues: Map[String, String] = Map.empty)
 
 private[scalive] object FlashRuntimeState:
   val empty: FlashRuntimeState = FlashRuntimeState(Map.empty)

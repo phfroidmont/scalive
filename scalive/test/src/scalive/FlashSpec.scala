@@ -155,6 +155,293 @@ object FlashSpec extends ZIOSpecDefault:
                   }
       yield result
     },
+    test("redirect flash only includes flash set during the redirecting event") {
+      enum RootMsg:
+        case SetError
+        case Redirect
+
+      val tokenConfig = TokenConfig.default
+      val lv = new LiveView[RootMsg, Unit]:
+        def mount = ZIO.unit
+        def handleMessage(model: Unit) = {
+          case RootMsg.SetError => LiveContext.putFlash("error", "stale").as(model)
+          case RootMsg.Redirect =>
+            LiveContext.putFlash("info", "fresh") *>
+              LiveContext.redirect("/target").as(model)
+        }
+        def render(model: Unit): HtmlElement[RootMsg] =
+          div(
+            idAttr := "root",
+            button(phx.onClick(RootMsg.SetError), "set-error"),
+            button(phx.onClick(RootMsg.Redirect), "redirect"),
+            flash("info")(message => p(idAttr := "info", message)),
+            flash("error")(message => p(idAttr := "error", message))
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      for
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    tokenConfig = tokenConfig
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _     <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      shown <- outbox.take
+                      _     <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      empty <- outbox.take
+                      redirect <- outbox.take
+                      flashValues = redirect._1 match
+                                      case Payload.Redirect("/target", Some(token)) =>
+                                        FlashToken.decode(tokenConfig, token)
+                                      case _ => None
+                    yield assertTrue(
+                      diffFromReply(shown._1).exists(containsValue(_, "stale")),
+                      empty._1 == Payload.okReply(LiveResponse.Empty),
+                      flashValues.contains(Map("info" -> "fresh"))
+                    )
+                  }
+      yield result
+    },
+    test("pushNavigate flash only includes flash set during the navigating event") {
+      enum RootMsg:
+        case SetError
+        case Navigate
+
+      val tokenConfig = TokenConfig.default
+      val lv = new LiveView[RootMsg, Unit]:
+        def mount = ZIO.unit
+        def handleMessage(model: Unit) = {
+          case RootMsg.SetError => LiveContext.putFlash("error", "stale").as(model)
+          case RootMsg.Navigate =>
+            LiveContext.putFlash("info", "fresh") *>
+              LiveContext.pushNavigate("/target").as(model)
+        }
+        def render(model: Unit): HtmlElement[RootMsg] =
+          div(
+            idAttr := "root",
+            button(phx.onClick(RootMsg.SetError), "set-error"),
+            button(phx.onClick(RootMsg.Navigate), "navigate"),
+            flash("error")(message => p(idAttr := "error", message))
+          )
+        def subscriptions(model: Unit) = ZStream.empty
+
+      for
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    tokenConfig = tokenConfig
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      _ <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      _ <- outbox.take
+                      navigation <- outbox.take
+                      flashValues = navigation._1 match
+                                      case Payload.LiveRedirect(
+                                            "/target",
+                                            LivePatchKind.Push,
+                                            Some(token)
+                                          ) => FlashToken.decode(tokenConfig, token)
+                                      case _ => None
+                    yield assertTrue(flashValues.contains(Map("info" -> "fresh")))
+                  }
+      yield result
+    },
+    test("pushPatch flash replaces previous event flash") {
+      enum RootMsg:
+        case SetError
+        case Patch
+
+      val lv = new LiveView[RootMsg, String]:
+        def mount = ZIO.succeed("start")
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          ZIO.succeed(url.encode)
+        def handleMessage(model: String) = {
+          case RootMsg.SetError => LiveContext.putFlash("error", "stale").as(model)
+          case RootMsg.Patch =>
+            LiveContext.putFlash("info", "fresh") *>
+              LiveContext.pushPatch("/flash-root?patched=true").as(model)
+        }
+        def render(model: String): HtmlElement[RootMsg] =
+          div(
+            idAttr := "root",
+            button(phx.onClick(RootMsg.SetError), "set-error"),
+            button(phx.onClick(RootMsg.Patch), "patch"),
+            span(idAttr := "url", model),
+            flash("info")(message => p(idAttr := "info", message)),
+            flash("error")(message => p(idAttr := "error", message))
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        initialUrl <- ZIO.fromEither(URL.decode("/flash-root")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      errorReply <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      _ <- outbox.take
+                      navigation <- outbox.take
+                      patchReply <- socket.livePatch("/flash-root?patched=true", meta)
+                    yield assertTrue(
+                      diffFromReply(errorReply._1).exists(containsValue(_, "stale")),
+                      navigation._1 == Payload.LiveNavigation("/flash-root?patched=true", LivePatchKind.Push),
+                      diffFromReply(patchReply).exists(diff =>
+                        containsValue(diff, "fresh") && !containsValue(diff, "stale")
+                      )
+                    )
+                  }
+      yield result
+    },
+    test("patch redirect carries flash from the triggering patch") {
+      enum RootMsg:
+        case Patch
+
+      val tokenConfig = TokenConfig.default
+      val lv = new LiveView[RootMsg, String]:
+        def mount = ZIO.succeed("start")
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          if url.path.encode == "/redirecting" then LiveContext.redirect("/target").as(model)
+          else ZIO.succeed(url.encode)
+        def handleMessage(model: String) = { case RootMsg.Patch =>
+          LiveContext.putFlash("info", "Patched") *>
+            LiveContext.pushPatch("/redirecting").as(model)
+        }
+        def render(model: String): HtmlElement[RootMsg] =
+          div(
+            idAttr := "root",
+            button(phx.onClick(RootMsg.Patch), "patch"),
+            flash("info")(message => p(idAttr := "info", message))
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        initialUrl <- ZIO.fromEither(URL.decode("/flash-root")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    tokenConfig = tokenConfig,
+                    initialUrl = initialUrl
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      empty <- outbox.take
+                      navigation <- outbox.take
+                      patchReply <- socket.livePatch("/redirecting", meta)
+                      redirect <- outbox.take
+                      flashValues = redirect._1 match
+                                      case Payload.Redirect("/target", Some(token)) =>
+                                        FlashToken.decode(tokenConfig, token)
+                                      case _ => None
+                    yield assertTrue(
+                      empty._1 == Payload.okReply(LiveResponse.Empty),
+                      navigation._1 == Payload.LiveNavigation("/redirecting", LivePatchKind.Push),
+                      patchReply == Payload.okReply(LiveResponse.Empty),
+                      flashValues.contains(Map("info" -> "Patched"))
+                    )
+                  }
+      yield result
+    },
+    test("client-side live_patch clears previous event flash") {
+      enum RootMsg:
+        case SetError
+
+      val lv = new LiveView[RootMsg, String]:
+        def mount = ZIO.succeed("start")
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          ZIO.succeed(url.encode)
+        def handleMessage(model: String) = {
+          case RootMsg.SetError => LiveContext.putFlash("error", "stale").as(model)
+        }
+        def render(model: String): HtmlElement[RootMsg] =
+          div(
+            idAttr := "root",
+            button(phx.onClick(RootMsg.SetError), "set-error"),
+            span(idAttr := "url", model),
+            flash("error")(message => p(idAttr := "error", message))
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        initialUrl <- ZIO.fromEither(URL.decode("/flash-root")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      errorReply <- outbox.take
+                      patchReply <- socket.livePatch("/flash-root?patched=true", meta)
+                    yield assertTrue(
+                      diffFromReply(errorReply._1).exists(containsValue(_, "stale")),
+                      diffFromReply(patchReply).exists(diff =>
+                        containsValue(diff, "/flash-root?patched=true") && !containsValue(diff, "stale")
+                      )
+                    )
+                  }
+      yield result
+    },
+    test("client-side live_patch clears mount flash") {
+      val lv = new LiveView[Unit, String]:
+        def mount = LiveContext.putFlash("info", "Mounted").as("start")
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          ZIO.succeed(url.encode)
+        def handleMessage(model: String) = _ => ZIO.succeed(model)
+        def render(model: String): HtmlElement[Unit] =
+          div(
+            idAttr := "root",
+            span(idAttr := "url", model),
+            flash("info")(message => p(idAttr := "info", message))
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      for
+        initialUrl <- ZIO.fromEither(URL.decode("/flash-root")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        result <- withOutbox(socket) { _ =>
+                    for patchReply <- socket.livePatch("/flash-root?patched=true", meta)
+                    yield assertTrue(
+                      diffFromReply(patchReply).exists(diff =>
+                        containsValue(diff, "/flash-root?patched=true") && !containsValue(diff, "Mounted")
+                      )
+                    )
+                  }
+      yield result
+    },
     test("component events can put root flash") {
       object FlashComponent extends LiveComponent[Unit, FlashComponent.Msg.type, Unit]:
         object Msg
@@ -191,6 +478,284 @@ object FlashSpec extends ZIOSpecDefault:
                       reply <- outbox.take
                     yield assertTrue(
                       diffFromReply(reply._1).exists(containsValue(_, "Component saved"))
+                    )
+                  }
+      yield result
+    },
+    test("component redirect carries only flash set during the redirecting event") {
+      object FlashComponent extends LiveComponent[Unit, FlashComponent.Msg, Unit]:
+        enum Msg:
+          case SetError
+          case Redirect
+
+        def mount(props: Unit) = ZIO.unit
+        def handleMessage(model: Unit) = {
+          case Msg.SetError => LiveContext.putFlash("error", "stale").as(model)
+          case Msg.Redirect =>
+            LiveContext.putFlash("info", "fresh") *>
+              LiveContext.redirect("/target").as(model)
+        }
+        def render(model: Unit, self: ComponentRef[Msg]) =
+          div(
+            button(phx.onClick(Msg.SetError), phx.target(self), "set-error"),
+            button(phx.onClick(Msg.Redirect), phx.target(self), "redirect"),
+            flash("error")(message => p(idAttr := "component-error", message))
+          )
+
+      val tokenConfig = TokenConfig.default
+      val lv = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(idAttr := "root", liveComponent(FlashComponent, id = "flash", props = ()))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      def componentClick(buttonIndex: Int): Payload.Event =
+        Payload.Event(
+          `type` = "click",
+          event = BindingId.attrBindingId(
+            Vector("root:div", "component:0:1", s"tag:$buttonIndex:button"),
+            0
+          ),
+          value = Json.Obj.empty,
+          cid = Some(1)
+        )
+
+      for
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    tokenConfig = tokenConfig
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(componentClick(0) -> meta)
+                      stale <- outbox.take
+                      _ <- socket.inbox.offer(componentClick(1) -> meta)
+                      empty <- outbox.take
+                      redirect <- outbox.take
+                      flashValues = redirect._1 match
+                                      case Payload.Redirect("/target", Some(token)) =>
+                                        FlashToken.decode(tokenConfig, token)
+                                      case _ => None
+                    yield assertTrue(
+                      diffFromReply(stale._1).exists(containsValue(_, "stale")),
+                      empty._1 == Payload.okReply(LiveResponse.Empty),
+                      flashValues.contains(Map("info" -> "fresh"))
+                    )
+                  }
+      yield result
+    },
+    test("component pushNavigate carries only flash set during the navigating event") {
+      object FlashComponent extends LiveComponent[Unit, FlashComponent.Msg, Unit]:
+        enum Msg:
+          case SetError
+          case Navigate
+
+        def mount(props: Unit) = ZIO.unit
+        def handleMessage(model: Unit) = {
+          case Msg.SetError => LiveContext.putFlash("error", "stale").as(model)
+          case Msg.Navigate =>
+            LiveContext.putFlash("info", "fresh") *>
+              LiveContext.pushNavigate("/target").as(model)
+        }
+        def render(model: Unit, self: ComponentRef[Msg]) =
+          div(
+            button(phx.onClick(Msg.SetError), phx.target(self), "set-error"),
+            button(phx.onClick(Msg.Navigate), phx.target(self), "navigate"),
+            flash("error")(message => p(idAttr := "component-error", message))
+          )
+
+      val tokenConfig = TokenConfig.default
+      val lv = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(idAttr := "root", liveComponent(FlashComponent, id = "flash", props = ()))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      def componentClick(buttonIndex: Int): Payload.Event =
+        Payload.Event(
+          `type` = "click",
+          event = BindingId.attrBindingId(
+            Vector("root:div", "component:0:1", s"tag:$buttonIndex:button"),
+            0
+          ),
+          value = Json.Obj.empty,
+          cid = Some(1)
+        )
+
+      for
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    tokenConfig = tokenConfig
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(componentClick(0) -> meta)
+                      stale <- outbox.take
+                      _ <- socket.inbox.offer(componentClick(1) -> meta)
+                      empty <- outbox.take
+                      navigation <- outbox.take
+                      flashValues = navigation._1 match
+                                      case Payload.LiveRedirect(
+                                            "/target",
+                                            LivePatchKind.Push,
+                                            Some(token)
+                                          ) => FlashToken.decode(tokenConfig, token)
+                                      case _ => None
+                    yield assertTrue(
+                      diffFromReply(stale._1).exists(containsValue(_, "stale")),
+                      empty._1 == Payload.okReply(LiveResponse.Empty),
+                      flashValues.contains(Map("info" -> "fresh"))
+                    )
+                  }
+      yield result
+    },
+    test("component pushPatch flash replaces previous event flash") {
+      object FlashComponent extends LiveComponent[Unit, FlashComponent.Msg, Unit]:
+        enum Msg:
+          case SetError
+          case Patch
+
+        def mount(props: Unit) = ZIO.unit
+        def handleMessage(model: Unit) = {
+          case Msg.SetError => LiveContext.putFlash("error", "stale").as(model)
+          case Msg.Patch =>
+            LiveContext.putFlash("info", "fresh") *>
+              LiveContext.pushPatch("/flash-root?patched=true").as(model)
+        }
+        def render(model: Unit, self: ComponentRef[Msg]) =
+          div(
+            button(phx.onClick(Msg.SetError), phx.target(self), "set-error"),
+            button(phx.onClick(Msg.Patch), phx.target(self), "patch"),
+            flash("info")(message => p(idAttr := "component-info", message)),
+            flash("error")(message => p(idAttr := "component-error", message))
+          )
+
+      val lv = new LiveView[Unit, String]:
+        def mount = ZIO.succeed("start")
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          ZIO.succeed(url.encode)
+        def handleMessage(model: String) = _ => ZIO.succeed(model)
+        def render(model: String): HtmlElement[Unit] =
+          div(
+            idAttr := "root",
+            liveComponent(FlashComponent, id = "flash", props = ()),
+            span(idAttr := "url", model)
+          )
+        def subscriptions(model: String) = ZStream.empty
+
+      def componentClick(buttonIndex: Int): Payload.Event =
+        Payload.Event(
+          `type` = "click",
+          event = BindingId.attrBindingId(
+            Vector("root:div", "component:0:1", s"tag:$buttonIndex:button"),
+            0
+          ),
+          value = Json.Obj.empty,
+          cid = Some(1)
+        )
+
+      for
+        initialUrl <- ZIO.fromEither(URL.decode("/flash-root")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(componentClick(0) -> meta)
+                      stale <- outbox.take
+                      _ <- socket.inbox.offer(componentClick(1) -> meta)
+                      empty <- outbox.take
+                      navigation <- outbox.take
+                      patchReply <- socket.livePatch("/flash-root?patched=true", meta)
+                    yield assertTrue(
+                      diffFromReply(stale._1).exists(containsValue(_, "stale")),
+                      empty._1 == Payload.okReply(LiveResponse.Empty),
+                      navigation._1 == Payload.LiveNavigation("/flash-root?patched=true", LivePatchKind.Push),
+                      diffFromReply(patchReply).exists(diff =>
+                        containsValue(diff, "fresh") && !containsValue(diff, "stale")
+                      )
+                    )
+                  }
+      yield result
+    },
+    test("component-targeted lv:clear-flash clears keyed or all flash") {
+      object FlashComponent extends LiveComponent[Unit, FlashComponent.Msg, Unit]:
+        enum Msg:
+          case SetBoth
+
+        def mount(props: Unit) = ZIO.unit
+        def handleMessage(model: Unit) = { case Msg.SetBoth =>
+          LiveContext.putFlash("info", "Info") *>
+            LiveContext.putFlash("error", "Error").as(model)
+        }
+        def render(model: Unit, self: ComponentRef[Msg]) =
+          div(
+            button(phx.onClick(Msg.SetBoth), phx.target(self), "set"),
+            span(phx.clearFlash, phx.target(self), "clear-all"),
+            span(phx.clearFlash, phx.target(self), phx.value("key") := "info", "clear-info"),
+            flash("info")(message => p(idAttr := "info", message)),
+            flash("error")(message => p(idAttr := "error", message))
+          )
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(idAttr := "root", liveComponent(FlashComponent, id = "flash", props = ()))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val setBoth = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "component:0:1", "tag:0:button"), 0),
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+      val clearInfo = Payload.Event(
+        `type` = "click",
+        event = "lv:clear-flash",
+        value = Json.Obj("key" -> Json.Str("info")),
+        cid = Some(1)
+      )
+      val clearAll = Payload.Event(
+        `type` = "click",
+        event = "lv:clear-flash",
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(setBoth -> meta)
+                      shown <- outbox.take
+                      _ <- socket.inbox.offer(clearInfo -> meta)
+                      infoCleared <- outbox.take
+                      _ <- socket.inbox.offer(clearAll -> meta)
+                      allCleared <- outbox.take
+                    yield assertTrue(
+                      diffFromReply(shown._1).exists(diff =>
+                        containsValue(diff, "Info") && containsValue(diff, "Error")
+                      ),
+                      !diffFromReply(infoCleared._1).exists(containsValue(_, "Info")),
+                      !diffFromReply(allCleared._1).exists(diff =>
+                        containsValue(diff, "Info") || containsValue(diff, "Error")
+                      )
                     )
                   }
       yield result
@@ -385,6 +950,98 @@ object FlashSpec extends ZIOSpecDefault:
         flashToken.isDefined,
         rendered.status == Status.Ok,
         body.contains("Redirected")
+      )
+    },
+    test("mount redirect carries flash through cookie to disconnected render") {
+      val tokenConfig = TokenConfig.default
+
+      val source = new LiveView[Unit, Unit]:
+        def mount =
+          LiveContext.putFlash("info", "Mounted") *>
+            LiveContext.redirect("/target")
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] = div("source")
+        def subscriptions(model: Unit)             = ZStream.empty
+
+      val target = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(flash("info")(message => p(idAttr := "flash", message)))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val routes = LiveRoutes(layout = identityLayout, tokenConfig = tokenConfig)(
+        Method.GET / "source" -> liveHandler(source),
+        Method.GET / "target" -> liveHandler(target)
+      )
+
+      def run(path: String, flashToken: Option[String] = None) =
+        URL.decode(path) match
+          case Left(error) => ZIO.die(error)
+          case Right(url)  =>
+            val request = flashToken match
+              case Some(token) => Request.get(url).addCookie(Cookie.Request(FlashToken.CookieName, token))
+              case None        => Request.get(url)
+            ZIO.scoped(routes.runZIO(request))
+
+      for
+        redirected <- run("/source")
+        flashToken = responseCookie(redirected, FlashToken.CookieName)
+        flashValues = flashToken.flatMap(FlashToken.decode(tokenConfig, _))
+        rendered <- run("/target", flashToken)
+        body     <- rendered.body.asString
+      yield assertTrue(
+        redirected.status.isRedirection,
+        redirected.rawHeader("location").contains("/target"),
+        flashValues.contains(Map("info" -> "Mounted")),
+        rendered.status == Status.Ok,
+        body.contains("Mounted")
+      )
+    },
+    test("mount pushNavigate carries flash through cookie to disconnected render") {
+      val tokenConfig = TokenConfig.default
+
+      val source = new LiveView[Unit, Unit]:
+        def mount =
+          LiveContext.pushNavigate("/target") *>
+            LiveContext.putFlash("info", "Mounted")
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] = div("source")
+        def subscriptions(model: Unit)             = ZStream.empty
+
+      val target = new LiveView[Unit, Unit]:
+        def mount                      = ZIO.unit
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(flash("info")(message => p(idAttr := "flash", message)))
+        def subscriptions(model: Unit) = ZStream.empty
+
+      val routes = LiveRoutes(layout = identityLayout, tokenConfig = tokenConfig)(
+        Method.GET / "source" -> liveHandler(source),
+        Method.GET / "target" -> liveHandler(target)
+      )
+
+      def run(path: String, flashToken: Option[String] = None) =
+        URL.decode(path) match
+          case Left(error) => ZIO.die(error)
+          case Right(url)  =>
+            val request = flashToken match
+              case Some(token) => Request.get(url).addCookie(Cookie.Request(FlashToken.CookieName, token))
+              case None        => Request.get(url)
+            ZIO.scoped(routes.runZIO(request))
+
+      for
+        redirected <- run("/source")
+        flashToken = responseCookie(redirected, FlashToken.CookieName)
+        flashValues = flashToken.flatMap(FlashToken.decode(tokenConfig, _))
+        rendered <- run("/target", flashToken)
+        body     <- rendered.body.asString
+      yield assertTrue(
+        redirected.status.isRedirection,
+        redirected.rawHeader("location").contains("/target"),
+        flashValues.contains(Map("info" -> "Mounted")),
+        rendered.status == Status.Ok,
+        body.contains("Mounted")
       )
     },
     test("flash survives bootstrap handleParams patch loop") {

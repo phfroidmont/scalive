@@ -106,13 +106,18 @@ final case class LiveRoute[A, Msg, Model](
                   req.url
                 )
               )
-        initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
-        lifecycle <- LiveRoute.runInitialHandleParams(
+        _               <- SocketFlashRuntime.resetNavigation(flashRef)
+        _               <- navigationRef.set(None)
+        initModel       <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
+        mountNavigation <- navigationRef.getAndSet(None)
+        lifecycle       <- LiveRoute.runInitialHandleParams(
                        lv,
                        initModel,
                        req.url,
                        ctx,
-                       navigationRef
+                       navigationRef,
+                       flashRef,
+                       mountNavigation
                      )
         response <- lifecycle match
                       case LiveRoute.InitialLifecycleOutcome.Render(model) =>
@@ -149,13 +154,14 @@ final case class LiveRoute[A, Msg, Model](
                           req
                         )
                       case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
-                        flashRef.get.map(flash =>
-                          LiveRoute.addFlashCookie(
-                            Response.redirect(url),
-                            tokenConfig,
-                            flash.values
+                        SocketFlashRuntime
+                          .navigationValues(flashRef).map(flash =>
+                            LiveRoute.addFlashCookie(
+                              Response.redirect(url),
+                              tokenConfig,
+                              flash
+                            )
                           )
-                        )
       yield response
       response.catchAllCause { cause =>
         ZIO.logErrorCause(cause) *>
@@ -212,34 +218,42 @@ object LiveRoute:
     initModel: Model,
     url: URL,
     ctx: LiveContext,
-    navigationRef: Ref[Option[LiveNavigationCommand]]
+    navigationRef: Ref[Option[LiveNavigationCommand]],
+    flashRef: Ref[FlashRuntimeState],
+    initialNavigation: Option[LiveNavigationCommand]
   ): Task[InitialLifecycleOutcome[Model]] =
-    for
-      _     <- navigationRef.set(None)
-      model <- LiveIO
-                 .toZIO(LiveViewParamsRuntime.runHandleParams(lv, initModel, url))
-                 .provide(ZLayer.succeed(ctx))
-      navigation <- navigationRef.getAndSet(None)
-      result     <- navigation match
-                  case None =>
-                    ZIO.succeed(InitialLifecycleOutcome.Render(model))
-                  case Some(command) =>
-                    val destination = command match
-                      case LiveNavigationCommand.PushPatch(to)       => to
-                      case LiveNavigationCommand.ReplacePatch(to)    => to
-                      case LiveNavigationCommand.PushNavigate(to)    => to
-                      case LiveNavigationCommand.ReplaceNavigate(to) => to
-                      case LiveNavigationCommand.Redirect(to)        => to
-                    LivePatchUrl.resolve(destination, url) match
-                      case Right(redirectUrl) =>
-                        ZIO.succeed(InitialLifecycleOutcome.Redirect(redirectUrl))
-                      case Left(error) =>
-                        ZIO
-                          .logWarning(
-                            s"Could not decode initial navigation URL '$destination': $error"
-                          )
-                          .as(InitialLifecycleOutcome.Render(model))
-    yield result
+    def applyNavigation(model: Model, command: LiveNavigationCommand)
+      : Task[InitialLifecycleOutcome[Model]] =
+      val destination = command match
+        case LiveNavigationCommand.PushPatch(to)       => to
+        case LiveNavigationCommand.ReplacePatch(to)    => to
+        case LiveNavigationCommand.PushNavigate(to)    => to
+        case LiveNavigationCommand.ReplaceNavigate(to) => to
+        case LiveNavigationCommand.Redirect(to)        => to
+      LivePatchUrl.resolve(destination, url) match
+        case Right(redirectUrl) =>
+          ZIO.succeed(InitialLifecycleOutcome.Redirect(redirectUrl))
+        case Left(error) =>
+          ZIO
+            .logWarning(
+              s"Could not decode initial navigation URL '$destination': $error"
+            )
+            .as(InitialLifecycleOutcome.Render(model))
+
+    initialNavigation match
+      case Some(command) => applyNavigation(initModel, command)
+      case None          =>
+        for
+          _     <- SocketFlashRuntime.resetNavigation(flashRef)
+          _     <- navigationRef.set(None)
+          model <- LiveIO
+                     .toZIO(LiveViewParamsRuntime.runHandleParams(lv, initModel, url))
+                     .provide(ZLayer.succeed(ctx))
+          navigation <- navigationRef.getAndSet(None)
+          result     <- navigation match
+                      case None          => ZIO.succeed(InitialLifecycleOutcome.Render(model))
+                      case Some(command) => applyNavigation(model, command)
+        yield result
   end runInitialHandleParams
 end LiveRoute
 

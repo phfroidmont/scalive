@@ -607,10 +607,14 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.progressUpload(progress)
-        reply      <- replyFiber.join.some
+        socket   <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        outQueue <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+        outFiber <- socket.outbox.runForeach(outQueue.offer).fork
+        reply <- (for
+                   _     <- outQueue.take
+                   _     <- socket.progressUpload(progress)
+                   reply <- outQueue.take
+                 yield reply).ensuring(outFiber.interrupt)
       yield
         val componentUpdated = reply._1 match
           case Payload.Reply(

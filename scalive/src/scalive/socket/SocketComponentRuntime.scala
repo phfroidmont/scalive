@@ -40,10 +40,21 @@ final private[scalive] class SocketComponentUpdateRuntime(ref: Ref[ComponentRunt
     props: Props
   ): UIO[Unit] =
     val identity = ComponentIdentity(componentClass, id)
-    ref.update { state =>
-      val pending = state.pendingUpdates.getOrElse(identity, Vector.empty) :+ props
-      state.copy(pendingUpdates = state.pendingUpdates.updated(identity, pending))
-    }
+    ref
+      .modify { state =>
+        if state.instances.contains(identity) then
+          val pending = state.pendingUpdates.getOrElse(identity, Vector.empty) :+ props
+          None -> state.copy(pendingUpdates = state.pendingUpdates.updated(identity, pending))
+        else
+          Some(
+            s"sendUpdate ignored because component ${componentClass.getName} with id '$id' does not exist"
+          ) -> state
+      }.flatMap {
+        case Some(message) =>
+          ZIO
+            .logWarning(message)
+        case None => ZIO.unit
+      }
 
 private[scalive] object SocketComponentRuntime:
   def renderRoot[Msg, Model](

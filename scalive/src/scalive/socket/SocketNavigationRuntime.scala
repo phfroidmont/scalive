@@ -25,5 +25,8 @@ final private[scalive] class SocketNavigationRuntime(
 
   private def show(command: LiveNavigationCommand): String =
     command match
-      case LiveNavigationCommand.PushPatch(to)    => s"push_patch($to)"
-      case LiveNavigationCommand.ReplacePatch(to) => s"replace_patch($to)"
+      case LiveNavigationCommand.PushPatch(to)       => s"push_patch($to)"
+      case LiveNavigationCommand.ReplacePatch(to)    => s"replace_patch($to)"
+      case LiveNavigationCommand.PushNavigate(to)    => s"push_navigate($to)"
+      case LiveNavigationCommand.ReplaceNavigate(to) => s"replace_navigate($to)"
+      case LiveNavigationCommand.Redirect(to)        => s"redirect($to)"

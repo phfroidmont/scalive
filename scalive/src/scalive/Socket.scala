@@ -33,11 +33,19 @@ object Socket:
     ctx: LiveContext,
     meta: WebSocketMessage.Meta,
     tokenConfig: TokenConfig = TokenConfig.default,
-    initialUrl: URL = URL.root
+    initialUrl: URL = URL.root,
+    initialFlash: Map[String, String] = Map.empty
   ): RIO[Scope, Socket[Msg, Model]] =
     ZIO.logAnnotate("lv", id) {
       for
-        state       <- SocketBootstrap.initializeRuntime(lv, ctx, meta, tokenConfig, initialUrl)
+        state <- SocketBootstrap.initializeRuntime(
+                   lv,
+                   ctx,
+                   meta,
+                   tokenConfig,
+                   initialUrl,
+                   initialFlash
+                 )
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
         livePatch =

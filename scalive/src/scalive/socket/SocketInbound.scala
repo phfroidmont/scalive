@@ -147,33 +147,72 @@ private[scalive] object SocketInbound:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
-    val _          = rendered
-    val (to, kind) =
-      command match
-        case LiveNavigationCommand.PushPatch(value)    => value -> LivePatchKind.Push
-        case LiveNavigationCommand.ReplacePatch(value) => value -> LivePatchKind.Replace
+    val _ = rendered
 
-    for
-      currentUrl  <- state.currentUrlRef.get
-      resolvedUrl <- ZIO
-                       .fromEither(LivePatchUrl.resolve(to, currentUrl))
-                       .mapError(error => new IllegalArgumentException(error))
-      resolvedTo = resolvedUrl.encode
-      redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
-      _             <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
-      _             <-
-        if redirectCount > 20 then
-          SocketModelRuntime.publishPayload(
-            Payload.Error,
-            meta.copy(joinRef = None, messageRef = None),
-            state
-          )
-        else
-          SocketModelRuntime.publishPayload(
-            Payload.LiveNavigation(resolvedTo, kind),
-            meta.copy(messageRef = None),
-            state
-          )
-    yield ()
+    def resolve(to: String): Task[String] =
+      state.currentUrlRef.get.flatMap(currentUrl =>
+        ZIO
+          .fromEither(LivePatchUrl.resolve(to, currentUrl))
+          .map(_.encode)
+          .mapError(error => new IllegalArgumentException(error))
+      )
+
+    def flashToken: UIO[Option[String]] =
+      state.flashRef.get.map(flash => FlashToken.encode(state.tokenConfig, flash.values))
+
+    def publish(payload: Payload): UIO[Unit] =
+      SocketModelRuntime.publishPayload(payload, meta.copy(messageRef = None), state)
+
+    command match
+      case LiveNavigationCommand.PushPatch(to) =>
+        for
+          resolvedTo    <- resolve(to)
+          redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
+          _ <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
+          _ <-
+            if redirectCount > 20 then
+              SocketModelRuntime.publishPayload(
+                Payload.Error,
+                meta.copy(joinRef = None, messageRef = None),
+                state
+              )
+            else publish(Payload.LiveNavigation(resolvedTo, LivePatchKind.Push))
+        yield ()
+      case LiveNavigationCommand.ReplacePatch(to) =>
+        for
+          resolvedTo    <- resolve(to)
+          redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
+          _ <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
+          _ <-
+            if redirectCount > 20 then
+              SocketModelRuntime.publishPayload(
+                Payload.Error,
+                meta.copy(joinRef = None, messageRef = None),
+                state
+              )
+            else publish(Payload.LiveNavigation(resolvedTo, LivePatchKind.Replace))
+        yield ()
+      case LiveNavigationCommand.PushNavigate(to) =>
+        for
+          resolvedTo <- resolve(to)
+          token      <- flashToken
+          _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
+          _          <- publish(Payload.LiveRedirect(resolvedTo, LivePatchKind.Push, token))
+        yield ()
+      case LiveNavigationCommand.ReplaceNavigate(to) =>
+        for
+          resolvedTo <- resolve(to)
+          token      <- flashToken
+          _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
+          _          <- publish(Payload.LiveRedirect(resolvedTo, LivePatchKind.Replace, token))
+        yield ()
+      case LiveNavigationCommand.Redirect(to) =>
+        for
+          resolvedTo <- resolve(to)
+          token      <- flashToken
+          _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
+          _          <- publish(Payload.Redirect(resolvedTo, token))
+        yield ()
+    end match
   end handleNavigationCommand
 end SocketInbound

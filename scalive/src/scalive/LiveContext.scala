@@ -155,6 +155,32 @@ object LiveContext:
       .fromEither(to.href(value))
       .flatMap(replacePatch)
 
+  def pushNavigate(to: String): RIO[HasNavigation, Unit] =
+    ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.PushNavigate(to)))
+
+  def pushNavigate[A](to: LiveQueryCodec[A], value: A): RIO[HasNavigation, Unit] =
+    ZIO
+      .fromEither(to.href(value))
+      .flatMap(pushNavigate)
+
+  def replaceNavigate(to: String): RIO[HasNavigation, Unit] =
+    ZIO.serviceWithZIO[HasNavigation](
+      _.navigation.request(LiveNavigationCommand.ReplaceNavigate(to))
+    )
+
+  def replaceNavigate[A](to: LiveQueryCodec[A], value: A): RIO[HasNavigation, Unit] =
+    ZIO
+      .fromEither(to.href(value))
+      .flatMap(replaceNavigate)
+
+  def redirect(to: String): RIO[HasNavigation, Unit] =
+    ZIO.serviceWithZIO[HasNavigation](_.navigation.request(LiveNavigationCommand.Redirect(to)))
+
+  def redirect[A](to: LiveQueryCodec[A], value: A): RIO[HasNavigation, Unit] =
+    ZIO
+      .fromEither(to.href(value))
+      .flatMap(redirect)
+
   def putTitle(title: String): URIO[HasTitle, Unit] =
     ZIO.serviceWithZIO[HasTitle](_.title.set(title))
 

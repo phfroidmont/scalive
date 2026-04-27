@@ -97,6 +97,7 @@ object WebSocketMessageSpec extends ZIOSpecDefault:
         "session"  -> Json.Str("session-token"),
         "static"   -> Json.Null,
         "params"   -> Json.Null,
+        "flash"    -> Json.Str("flash-token"),
         "sticky"   -> Json.Bool(false)
       )
 
@@ -112,7 +113,11 @@ object WebSocketMessageSpec extends ZIOSpecDefault:
         )
       )
 
-      assertTrue(result.exists(_.payload.isInstanceOf[Payload.Join]))
+      val flash = result.toOption.collect { case WebSocketMessage(_, _, _, _, join: Payload.Join) =>
+        join.flash
+      }.flatten
+
+      assertTrue(result.exists(_.payload.isInstanceOf[Payload.Join]), flash.contains("flash-token"))
     },
     test("decodeBinaryPush returns Left for unsupported event") {
       val result = WebSocketMessage.decodeBinaryPush(

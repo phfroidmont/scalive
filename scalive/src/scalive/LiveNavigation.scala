@@ -5,6 +5,9 @@ import zio.*
 enum LiveNavigationCommand:
   case PushPatch(to: String)
   case ReplacePatch(to: String)
+  case PushNavigate(to: String)
+  case ReplaceNavigate(to: String)
+  case Redirect(to: String)
 
 trait LiveNavigationRuntime:
   def request(command: LiveNavigationCommand): Task[Unit]

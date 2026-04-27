@@ -37,19 +37,21 @@ object WebSocketMessage:
     eventType: String)
 
   object Protocol:
-    val EventHeartbeat   = "heartbeat"
-    val EventJoin        = "phx_join"
-    val EventLeave       = "phx_leave"
-    val EventClose       = "phx_close"
-    val EventEvent       = "event"
-    val EventLivePatch   = "live_patch"
-    val EventAllowUpload = "allow_upload"
-    val EventProgress    = "progress"
-    val EventReply       = "phx_reply"
-    val EventError       = "phx_error"
-    val EventDiff        = "diff"
-    val BinaryChunkEvent = "chunk"
-    val LiveViewVersion  = "1.1.8"
+    val EventHeartbeat    = "heartbeat"
+    val EventJoin         = "phx_join"
+    val EventLeave        = "phx_leave"
+    val EventClose        = "phx_close"
+    val EventEvent        = "event"
+    val EventLivePatch    = "live_patch"
+    val EventAllowUpload  = "allow_upload"
+    val EventProgress     = "progress"
+    val EventReply        = "phx_reply"
+    val EventError        = "phx_error"
+    val EventDiff         = "diff"
+    val EventRedirect     = "redirect"
+    val EventLiveRedirect = "live_redirect"
+    val BinaryChunkEvent  = "chunk"
+    val LiveViewVersion   = "1.1.8"
 
   given JsonCodec[WebSocketMessage] = JsonCodec[Json].transformOrFail(
     decodeSocketMessage,
@@ -117,6 +119,10 @@ object WebSocketMessage:
       case p: Payload.Progress       => encodeJsonOrFallback(p, Json.Obj.empty)
       case p: Payload.LiveNavigation =>
         encodeJsonOrFallback(p, Json.Obj.empty)
+      case p: Payload.LiveRedirect =>
+        encodeJsonOrFallback(p, Json.Obj.empty)
+      case p: Payload.Redirect =>
+        encodeJsonOrFallback(p, Json.Obj.empty)
       case Payload.Error    => Json.Obj.empty
       case p: Payload.Reply => encodeJsonOrFallback(p, Json.Obj.empty)
       case p: Payload.Event => encodeJsonOrFallback(p, Json.Obj.empty)
@@ -134,6 +140,7 @@ object WebSocketMessage:
       session: String,
       static: Option[List[String]],
       params: Option[Map[String, Json]],
+      flash: Option[String],
       sticky: Boolean)
     case UploadJoin(token: String)
     case Leave
@@ -148,6 +155,8 @@ object WebSocketMessage:
       cid: Option[Int])
     case UploadChunk(bytes: Chunk[Byte])
     case LiveNavigation(to: String, kind: LivePatchKind)
+    case LiveRedirect(to: String, kind: LivePatchKind, flash: Option[String])
+    case Redirect(to: String, flash: Option[String])
     case Error
     case Reply(status: ReplyStatus, response: LiveResponse)
     case Diff(diff: scalive.Diff)
@@ -170,22 +179,37 @@ object WebSocketMessage:
     meta: Option[Json] = None)
 
   object Payload:
-    given JsonCodec[Payload.Join]             = JsonCodec.derived
-    given JsonCodec[Payload.UploadJoin]       = JsonCodec.derived
-    given JsonCodec[Payload.LivePatch]        = JsonCodec.derived
-    given JsonCodec[UploadPreflightEntry]     = JsonCodec.derived
-    given JsonCodec[Payload.AllowUpload]      = JsonCodec.derived
-    given JsonCodec[Payload.Progress]         = JsonCodec.derived
+    given JsonCodec[Payload.Join]                                = JsonCodec.derived
+    given JsonCodec[Payload.UploadJoin]                          = JsonCodec.derived
+    given JsonCodec[Payload.LivePatch]                           = JsonCodec.derived
+    given JsonCodec[UploadPreflightEntry]                        = JsonCodec.derived
+    given JsonCodec[Payload.AllowUpload]                         = JsonCodec.derived
+    given JsonCodec[Payload.Progress]                            = JsonCodec.derived
+    private def encodeLivePatchKind(kind: LivePatchKind): String =
+      kind match
+        case LivePatchKind.Push    => "push"
+        case LivePatchKind.Replace => "replace"
+
     given JsonEncoder[Payload.LiveNavigation] =
       JsonEncoder[Json].contramap { navigation =>
         Json.Obj(
           "to"   -> Json.Str(navigation.to),
-          "kind" -> Json.Str(
-            navigation.kind match
-              case LivePatchKind.Push    => "push"
-              case LivePatchKind.Replace => "replace"
-          )
+          "kind" -> Json.Str(encodeLivePatchKind(navigation.kind))
         )
+      }
+    given JsonEncoder[Payload.LiveRedirect] =
+      JsonEncoder[Json].contramap { navigation =>
+        val fields = List(
+          "to"   -> Json.Str(navigation.to),
+          "kind" -> Json.Str(encodeLivePatchKind(navigation.kind))
+        ) ++ navigation.flash.map(value => "flash" -> Json.Str(value))
+        Json.Obj(fields*)
+      }
+    given JsonEncoder[Payload.Redirect] =
+      JsonEncoder[Json].contramap { redirect =>
+        val fields = List("to" -> Json.Str(redirect.to)) ++
+          redirect.flash.map(value => "flash" -> Json.Str(value))
+        Json.Obj(fields*)
       }
     given JsonEncoder[Payload.Reply] = JsonEncoder.derived
     given JsonCodec[Payload.Event]   = JsonCodec.derived

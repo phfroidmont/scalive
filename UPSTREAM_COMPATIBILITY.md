@@ -56,7 +56,7 @@ The core runtime is in place, so the highest-leverage follow-up work is now targ
 
 1. Add root LiveView named async tasks. Done.
 
-   `LiveContext.startAsync(key)(effect)(toMsg)` runs a socket-owned typed task and delivers completion as a normal LiveView message. Success, failure, event-started tasks, and patch navigation from completion are covered.
+   `LiveContext.startAsync(name)(effect)(toMsg)` runs a socket-owned typed task and delivers completion as a normal LiveView message. Success, failure, event-started tasks, and patch navigation from completion are covered.
 
 2. Add component-scoped async tasks. Done.
 

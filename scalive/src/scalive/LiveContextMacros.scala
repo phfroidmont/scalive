@@ -18,7 +18,6 @@ private[scalive] object LiveContextMacros:
     val keyName   = asyncKeyName[Model](fieldName)
 
     '{
-      val asyncFieldKey = LiveAsync[A](${ Expr(keyName) })
       val setAsyncField = $setter
       val loadingModel  = setAsyncField(
         $model,
@@ -27,8 +26,9 @@ private[scalive] object LiveContextMacros:
 
       ZIO
         .serviceWithZIO[LiveContext.HasAsync](
-          _.async.startAssign[A, Model](asyncFieldKey, $mode)($effect) { (currentModel, result) =>
-            setAsyncField(currentModel, AsyncValue.applyResult($field(currentModel), result))
+          _.async.startAssign[A, Model](${ Expr(keyName) }, $mode)($effect) {
+            (currentModel, result) =>
+              setAsyncField(currentModel, AsyncValue.applyResult($field(currentModel), result))
           }
         ).as(loadingModel)
     }
@@ -43,7 +43,7 @@ private[scalive] object LiveContextMacros:
     val fieldName = selectedFieldName(field)
     val keyName   = asyncKeyName[Model](fieldName)
 
-    '{ LiveContext.cancelAsync(LiveAsync[A](${ Expr(keyName) }), $reason) }
+    '{ LiveContext.cancelAsync(${ Expr(keyName) }, $reason) }
 
   private def asyncKeyName[Model: Type](fieldName: String)(using Quotes): String =
     s"${Type.show[Model]}.$fieldName"

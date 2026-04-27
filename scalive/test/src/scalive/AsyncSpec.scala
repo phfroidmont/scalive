@@ -12,8 +12,8 @@ object AsyncSpec extends ZIOSpecDefault:
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
 
   private object Tasks:
-    val Load  = LiveAsync[String]("load")
-    val Patch = LiveAsync[String]("patch")
+    val Load  = "load"
+    val Patch = "patch"
 
   private enum Msg:
     case Start
@@ -389,7 +389,7 @@ object AsyncSpec extends ZIOSpecDefault:
     test("live components can start scoped async tasks") {
       object AsyncComponent
           extends LiveComponent[Promise[Nothing, Unit], AsyncComponent.Msg, (Promise[Nothing, Unit], String)]:
-        private val Load = LiveAsync[String]("component-load")
+        private val Load = "component-load"
 
         enum Msg:
           case Start

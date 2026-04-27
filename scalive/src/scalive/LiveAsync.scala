@@ -4,8 +4,6 @@ import zio.*
 
 import scala.annotation.targetName
 
-final case class LiveAsync[A](name: String)
-
 enum AsyncValue[+A]:
   case Empty
   case Loading(previous: Option[A])
@@ -72,7 +70,7 @@ enum AsyncStartMode:
 
 trait LiveAsyncRuntime:
   def start[A, Msg](
-    key: LiveAsync[A],
+    name: String,
     mode: AsyncStartMode
   )(
     effect: Task[A]
@@ -81,7 +79,7 @@ trait LiveAsyncRuntime:
   ): UIO[Unit]
 
   def startAssign[A, Model](
-    key: LiveAsync[A],
+    name: String,
     mode: AsyncStartMode
   )(
     effect: Task[A]
@@ -89,34 +87,34 @@ trait LiveAsyncRuntime:
     update: (Model, LiveAsyncResult[A]) => Model
   ): UIO[Unit]
 
-  def cancel[A](key: LiveAsync[A], reason: Option[String]): UIO[Unit]
+  def cancel(name: String, reason: Option[String]): UIO[Unit]
 
 object LiveAsyncRuntime:
   object Disabled extends LiveAsyncRuntime:
     def start[A, Msg](
-      key: LiveAsync[A],
+      name: String,
       mode: AsyncStartMode
     )(
       effect: Task[A]
     )(
       toMsg: LiveAsyncResult[A] => Msg
     ): UIO[Unit] =
-      val _ = (key, mode, effect, toMsg)
+      val _ = (name, mode, effect, toMsg)
       ZIO.unit
 
     def startAssign[A, Model](
-      key: LiveAsync[A],
+      name: String,
       mode: AsyncStartMode
     )(
       effect: Task[A]
     )(
       update: (Model, LiveAsyncResult[A]) => Model
     ): UIO[Unit] =
-      val _ = (key, mode, effect, update)
+      val _ = (name, mode, effect, update)
       ZIO.unit
 
-    def cancel[A](key: LiveAsync[A], reason: Option[String]): UIO[Unit] =
-      val _ = (key, reason)
+    def cancel(name: String, reason: Option[String]): UIO[Unit] =
+      val _ = (name, reason)
       ZIO.unit
 
 private[scalive] enum LiveAsyncOwner:

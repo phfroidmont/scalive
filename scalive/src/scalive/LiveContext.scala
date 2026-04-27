@@ -200,14 +200,14 @@ object LiveContext:
     ZIO.serviceWithZIO[HasFlash](_.flash.snapshot)
 
   def startAsync[A, Msg](
-    key: LiveAsync[A],
+    name: String,
     mode: AsyncStartMode = AsyncStartMode.Restart
   )(
     effect: Task[A]
   )(
     toMsg: LiveAsyncResult[A] => Msg
   ): URIO[HasAsync, Unit] =
-    ZIO.serviceWithZIO[HasAsync](_.async.start(key, mode)(effect)(toMsg))
+    ZIO.serviceWithZIO[HasAsync](_.async.start(name, mode)(effect)(toMsg))
 
   inline def assignAsync[Model, A](
     model: Model,
@@ -220,11 +220,11 @@ object LiveContext:
   ): URIO[HasAsync, Model] =
     ${ LiveContextMacros.assignAsyncImpl[Model, A]('model, 'mode, 'reset, 'field, 'effect) }
 
-  def cancelAsync[A](
-    key: LiveAsync[A],
+  def cancelAsync(
+    name: String,
     reason: Option[String] = None
   ): URIO[HasAsync, Unit] =
-    ZIO.serviceWithZIO[HasAsync](_.async.cancel(key, reason))
+    ZIO.serviceWithZIO[HasAsync](_.async.cancel(name, reason))
 
   inline def cancelAssignAsync[Model, A](
     model: Model

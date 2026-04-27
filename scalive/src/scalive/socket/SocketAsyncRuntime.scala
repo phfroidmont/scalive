@@ -9,36 +9,36 @@ final private[scalive] class SocketAsyncRuntime(
   private val owner: LiveAsyncOwner)
     extends LiveAsyncRuntime:
   def start[A, Msg](
-    key: LiveAsync[A],
+    name: String,
     mode: AsyncStartMode
   )(
     effect: Task[A]
   )(
     toMsg: LiveAsyncResult[A] => Msg
   ): UIO[Unit] =
-    startTask(key, mode)(effect)(result => LiveAsyncCompletionEvent.Message(toMsg(result)))
+    startTask(name, mode)(effect)(result => LiveAsyncCompletionEvent.Message(toMsg(result)))
 
   def startAssign[A, Model](
-    key: LiveAsync[A],
+    name: String,
     mode: AsyncStartMode
   )(
     effect: Task[A]
   )(
     update: (Model, LiveAsyncResult[A]) => Model
   ): UIO[Unit] =
-    startTask(key, mode)(effect)(result =>
+    startTask(name, mode)(effect)(result =>
       LiveAsyncCompletionEvent.Assign(model => update(model.asInstanceOf[Model], result))
     )
 
   private def startTask[A](
-    key: LiveAsync[A],
+    name: String,
     mode: AsyncStartMode
   )(
     effect: Task[A]
   )(
     toEvent: LiveAsyncResult[A] => LiveAsyncCompletionEvent
   ): UIO[Unit] =
-    val id = LiveAsyncTaskId(owner, key.name)
+    val id = LiveAsyncTaskId(owner, name)
 
     for
       token <- Random.nextUUID.map(_.toString)
@@ -65,8 +65,8 @@ final private[scalive] class SocketAsyncRuntime(
     yield ()
   end startTask
 
-  def cancel[A](key: LiveAsync[A], reason: Option[String]): UIO[Unit] =
-    val id = LiveAsyncTaskId(owner, key.name)
+  def cancel(name: String, reason: Option[String]): UIO[Unit] =
+    val id = LiveAsyncTaskId(owner, name)
 
     for
       task <- tasksRef.modify { current =>

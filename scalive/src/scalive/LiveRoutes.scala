@@ -99,7 +99,12 @@ final case class LiveRoute[A, Msg, Model](
                 streams = new SocketStreamRuntime(streamRef),
                 navigation = new SocketNavigationRuntime(navigationRef),
                 flash = new SocketFlashRuntime(flashRef),
-                components = new scalive.socket.SocketComponentUpdateRuntime(componentsRef)
+                components = new scalive.socket.SocketComponentUpdateRuntime(componentsRef),
+                nestedLiveViews = new DisconnectedNestedLiveViewRuntime(
+                  s"lv:$id",
+                  tokenConfig,
+                  req.url
+                )
               )
         initModel <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
         lifecycle <- LiveRoute.runInitialHandleParams(

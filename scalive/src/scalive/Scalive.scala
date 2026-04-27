@@ -32,9 +32,9 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
   def liveView[Msg: ClassTag, Model](
     id: String,
-    liveView: LiveView[Msg, Model]
+    liveView: => LiveView[Msg, Model]
   ): Mod[Nothing] =
-    Mod.Content.LiveView(NestedLiveViewSpec(id, liveView, summon[ClassTag[Msg]]))
+    Mod.Content.LiveView(NestedLiveViewSpec(id, () => liveView, summon[ClassTag[Msg]]))
 
   def flash(kind: String)(f: String => HtmlElement[Nothing]): Mod[Nothing] =
     Mod.Content.Flash(kind, f)

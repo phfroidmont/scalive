@@ -111,6 +111,46 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         response.rawHeader("location").contains("/target")
       )
     },
+    test("renders nested LiveView content during disconnected render") {
+      for
+        callsRef <- Ref.make(List.empty[String])
+        child = new LiveView[Unit, String]:
+                  override val queryCodec: LiveQueryCodec[Option[String]] =
+                    LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
+
+                  def mount = callsRef.update(_ :+ "child mount").as("mount")
+
+                  override def handleParams(model: String, params: Option[String], _url: URL) =
+                    callsRef.update(_ :+ s"child params:${params.getOrElse("")}")
+                      .as(s"$model:${params.getOrElse("")}")
+
+                  def handleMessage(model: String) = _ => ZIO.succeed(model)
+
+                  def render(model: String): HtmlElement[Unit] =
+                    div(idAttr := "child-content", s"child $model")
+
+                  def subscriptions(model: String) = ZStream.empty
+        parent = new LiveView[Unit, Unit]:
+                   def mount = ZIO.unit
+                   def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+                   def render(model: Unit): HtmlElement[Unit] = div(liveView("child", child))
+                   def subscriptions(model: Unit) = ZStream.empty
+        routes =
+          LiveRoutes(layout = identityLayout)(
+            Method.GET / Root -> liveHandler(parent)
+          )
+        response <- runRequest(routes, "/?q=1")
+        body     <- response.body.asString
+        calls    <- callsRef.get
+      yield assertTrue(
+        response.status == Status.Ok,
+        calls == List("child mount", "child params:1"),
+        body.contains("child mount:1"),
+        body.contains("data-phx-child-id=\"child\""),
+        body.contains("data-phx-parent-id=\"lv:phx-"),
+        body.contains("data-phx-session=")
+      )
+    },
     test("connected parent render registers nested LiveView for join") {
       val parent = new LiveView[Unit, Unit]:
         def mount                      = ZIO.unit

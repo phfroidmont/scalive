@@ -320,7 +320,8 @@ private[scalive] object SocketComponentRuntime:
           idAttr       := registration.topic.stripPrefix("lv:"),
           phx.session  := registration.session,
           phx.parentId := registration.parentTopic,
-          phx.childId  := registration.id
+          phx.childId  := registration.id,
+          registration.rendered.map(Content.Tag(_))
         )
       )
     }

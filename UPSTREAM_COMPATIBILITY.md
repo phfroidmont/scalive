@@ -1,86 +1,86 @@
-# Upstream Compatibility Plan
+# Upstream Compatibility Matrix
 
-Scalive tracks Phoenix LiveView behavior and feature coverage while keeping the Scala API ergonomic, typed, and robust. The immediate goal is to move from browser-level upstream E2E parity toward broader upstream feature parity, including server-side integration behavior.
+Scalive tracks Phoenix LiveView behavior and feature coverage while keeping the Scala API ergonomic, typed, and robust. Compatibility targets behavior and feature-set parity, not internal implementation parity or direct copying of Elixir APIs.
 
-## Current Baseline
+The current upstream target is Phoenix LiveView `v1.1.8`, pinned by `flake.nix` and the websocket protocol version in `WebSocketMessage`.
 
-- The upstream browser E2E harness is available via `./scripts/e2e-run-upstream.sh`.
-- The last recorded Playwright run in `test-results/.last-run.json` passed.
-- Scalive already has protocol-level component diff support through `component(cid, element)`, `RenderSnapshot`, and `TreeDiff`.
-- Scalive now has a user-facing stateful `LiveComponent` abstraction with stable identity, component-local state, nested components, event/form/upload routing, typed `sendUpdate`, confirmed removal cleanup, component-scoped streams, and component-side navigation/client-effect/flash coverage.
+## Status Legend
 
-## Compatibility Parity Matrix
+| Status | Meaning |
+| --- | --- |
+| Passing baseline | Covered by the upstream browser E2E harness, but not necessarily by a complete server-side parity suite. |
+| Native parity covered | Scalive has native tests that mirror the relevant upstream runtime behavior. |
+| Native coverage substantial | Core behavior is implemented and tested, but edge-case parity needs a dedicated upstream-suite audit. |
+| Native coverage expanding | Implemented enough to use, with known parity gaps still being closed. |
+| Partial | Some behavior exists, but the upstream feature area is not yet complete or fully mapped. |
+| Intentional divergence | Scalive deliberately exposes a Scala-first typed API instead of copying Phoenix's untyped API shape. |
+| Not implemented | No equivalent feature exists yet. |
+| Not directly applicable | The upstream concept is specific to Phoenix/Elixir and should be replaced by a Scalive-native concept if needed. |
 
-Track upstream parity by suite or feature area, not only by individual bugs. Status values should stay coarse until we have automated parity checks for each row.
+## Compatibility Matrix
 
-| Area | Upstream Reference | Scalive Status | Notes | Priority |
-| --- | --- | --- | --- | --- |
-| Browser E2E behavior | `test/e2e/tests/**/*.spec.js` | Passing baseline | Covered by `./scripts/e2e-run-upstream.sh`; keep running as regression suite. | High |
-| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs` | Native parity covered | Scalive-native coverage now mirrors upstream component runtime behavior: `@myself`-style refs, disconnected/connected render, stable cids, additions/updates/removals, whole-root removals, nested LiveView/component removal combinations, removal races, local/form/upload events, nested components, selector/multiple `phx-target`, typed `sendUpdate`, missing-target handling, push-navigate/push-patch/redirect side effects, client effects, flash, streams, and async. Phoenix-only APIs such as module/id-less `send_update`, cid-based external updates, and `render_component/2` are intentionally not copied. | Highest |
-| Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream nested integration suite: disconnected/connected render, dynamic children, recursive cleanup, multiple children of the same LiveView type, fresh constructor data, comprehensions, children inside components, duplicate id rejection, child push-navigate/push-patch/redirect, external redirect, and sticky child preservation. | High |
-| Flash propagation | `test/phoenix_live_view/integrations/flash_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream flash lifecycle behavior: keyed/all clear, built-in `lv:clear-flash`, stale flash exclusion for redirect/push-navigate/push-patch, client-side patch clearing, patch-redirect carryover, event and bootstrap patch persistence, mount redirect/push-navigate cookie propagation, hard-redirect cookie propagation, push-navigate token propagation, nested socket isolation, and nested child patch flash transfer to the root socket. Phoenix ConnTest/LiveViewTest helper assertions are intentionally not copied. | High |
-| Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream start_async runtime behavior: root LiveViews and LiveComponents can start typed named async tasks from mount/update/events, receive success/failure/cancellation as normal messages, render completion diffs, trigger push-navigate/push-patch/redirect/flash side effects, cancel and restart tasks by name, keep existing tasks when requested, and deterministically interrupt socket/component-owned tasks on cancellation, socket shutdown, and confirmed component removal. Phoenix complex keys are represented by explicit string task names in Scalive's typed API. | Medium |
-| Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Native parity covered | Scalive-native coverage now mirrors the upstream assign_async runtime behavior through the typed field API: root LiveViews and LiveComponents can assign async fields from mount/update/events, store success/failure/cancellation, preserve or reset previous values while loading, renew after cancellation, and deterministically interrupt socket/component-owned assign tasks on shutdown or confirmed component removal. Phoenix's untyped map/list-key return validation and explicit Task.Supervisor option are intentionally not copied; Scalive uses typed direct `AsyncValue` field selectors and ZIO structured concurrency. | Medium |
-| Lifecycle hooks | `test/phoenix_live_view/integrations/hooks_test.exs` | Native coverage expanding | Scalive now has typed root hooks for event, params, info, async, and after-render stages. Hooks can be attached during mount or after connected mount and detached later; stateful components support event/after-render hooks. `LiveContext.connected` exposes the disconnected HTTP render vs connected websocket mount distinction. Route-level `onMount` is represented by typed `LiveMountAspect`s that run before disconnected and connected mount, sign claims into the root session token, reload typed context on websocket join, compose deterministically, and support redirect halts. Signed mount claims are tamper-proof but not encrypted, so they must not contain secrets. First-class `LiveSession` grouping exists. Live layouts compose across router/session/route scopes and can see typed layout context; root layouts are selected by precedence and keyed so websocket navigation falls back to a fresh HTTP render when the document shell changes. Live redirects that would reuse route-specific mount claims are also rejected for fresh HTTP render fallback. Remaining gaps are broader upstream error-shape assertions and smaller live-session ergonomics. | Medium |
-| Test harness helpers | `lib/phoenix_live_view/test/*` and integration tests | Not directly applicable | Scalive may need its own testing API rather than direct Phoenix API parity. | Low |
+| Area | Upstream Reference | Scalive Status | Scalive Coverage | Remaining Work / Decision | Priority |
+| --- | --- | --- | --- | --- | --- |
+| Browser E2E behavior | `test/e2e/tests/**/*.spec.js` | Passing baseline | Covered by `./scripts/e2e-run-upstream.sh`; keep running as the browser regression gate. | Keep the upstream harness green after protocol/runtime changes. | High |
+| Wire protocol and diff encoding | `Phoenix.LiveView.Socket`, `Phoenix.LiveView.Diff`, JS client protocol | Native coverage substantial | `WebSocketMessage`, `RenderSnapshot`, `TreeDiff`, component diffs, keyed comprehensions, stream payloads, events, redirects, joins, upload messages. | Add protocol matrix rows for exact error payloads, reconnect/stale cases, and any protocol additions beyond `v1.1.8`. | High |
+| Static HTTP render and connected bootstrap | `Phoenix.LiveView` lifecycle docs; `mount/3`, `handle_params/3`, `render/1` | Native coverage substantial | Disconnected render, connected socket mount, initial `handleParams`, bootstrap patch/redirect loops, static tracking, root shell rendering. | Expand error/crash/reconnect assertions against upstream integration behavior. | High |
+| Live routes | `Phoenix.LiveView.Router.live/4` | Native coverage substantial | Typed route algebra with `live`, path codecs, GET-only live routes, duplicate route validation, typed route params, typed environment inference. | Decide whether route action/metadata equivalents are useful in Scala API; document any intentional divergence from `@live_action`, `:metadata`, and `:private`. | Medium |
+| Live sessions | `Phoenix.LiveView.Router.live_session/3` | Native coverage expanding | First-class `Live.session`, duplicate session-name validation, websocket navigation boundaries, session-scoped mount aspects/layouts. | Polish live-session ergonomics and document exact security model for plugs vs typed mount aspects. | High |
+| Route-level `on_mount` | `Phoenix.LiveView.on_mount/1`; `live_session :on_mount` | Intentional divergence | Represented by typed `LiveMountAspect`s that run before disconnected and connected mount, sign claims, reload typed context on join, compose in order, and support redirect/unauthorized/stale halts. | Finish upstream error-shape parity for invalid/contradictory halt/redirect returns where applicable to Scalive's typed API. | High |
+| Layouts and root layouts | `:layout`, `:root_layout`, mount/layout options | Native coverage substantial | Typed `LiveLayout` and `LiveRootLayout`, router/session/route composition, root-layout precedence, root-layout key mismatch fallback to fresh render. | Decide whether LiveView-returned layout changes are needed or intentionally replaced by route/session layout configuration. | Medium |
+| `connected?/1` equivalent | `Phoenix.LiveView.connected?/1` | Native parity covered | `LiveContext.connected` is `false` for disconnected render and `true` for connected websocket mount. | Consider adding docs/examples after public API settles. | Medium |
+| Connect params and connect info | `get_connect_params/1`, `get_connect_info/2` | Partial | Mount aspects receive the `Request` on disconnected and connected phases; route context can carry typed data. | Add explicit typed APIs for websocket connect params/info if needed: `_mounts`, `_track_static`, `_live_referer`, user-agent, peer/header data. | Medium |
+| LiveView model lifecycle | `mount/3`, `handle_params/3`, `handle_event/3`, `handle_info/2`, `handle_async/3`, `render/1` | Intentional divergence | Scalive uses typed `mount`, `handleMessage`, typed `subscriptions`, `handleParams`, and typed async completion messages instead of socket assigns/callback tuples. | Keep documenting typed equivalents; add parity rows when Phoenix callback behavior maps to Scalive runtime behavior. | High |
+| Process-style callbacks | `handle_call/3`, `handle_cast/2`, `terminate/2`, `transport_pid/1`, `put_private/3` | Not implemented | No direct public equivalent; Scalive uses ZIO fibers, streams, scoped resources, and typed context capabilities. | Decide which process APIs have useful Scala/ZIO equivalents; likely not direct API parity. | Low |
+| Lifecycle hooks, root LiveViews | `test/phoenix_live_view/integrations/hooks_test.exs`; `attach_hook/4`, `detach_hook/3` | Native coverage expanding | Root event, params, info, async, and after-render hooks; attach during mount or after connected mount; detach; halt/continue; event replies; duplicate-id checks. | Broader upstream error-shape assertions and invalid-return reporting. | High |
+| Lifecycle hooks, LiveComponents | `Phoenix.LiveView.attach_hook/4` component limitations | Native coverage substantial | Stateful components support event and after-render hooks, matching the upstream `v1.1.8` supported stages; unsupported stages fail. | Align unsupported-stage error wording if exact error parity becomes important. | Medium |
+| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs`; `Phoenix.LiveComponent` | Native parity covered | Stable identity/cids, disconnected/connected render, additions/updates/removals, duplicate-id rejection, component-local events/forms/uploads, selector/multiple targets, nested components, streams, async, flash, navigation, client effects. | Phoenix-only APIs such as `render_component/2`, cid-based external updates, and module/id-less `send_update` are intentionally not copied. | Highest |
+| Component update APIs | `send_update/3`, `send_update_after/4`, `update_many/1` | Partial | Typed `LiveContext.sendUpdate[C](id, props)` updates mounted components and ignores missing targets. | Decide on typed `sendUpdateAfter` and `updateMany` equivalents. | Medium |
+| Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Native parity covered | Disconnected/connected render, dynamic children, recursive cleanup, duplicate id rejection, sticky children, nested children inside components, child navigation/redirect behavior. | Keep aligned as component and route/session behavior evolves. | High |
+| Live navigation | `push_patch/2`, `push_navigate/2`, `redirect/2`, `<.link>` | Native coverage substantial | Typed `LiveContext.pushPatch`, `replacePatch`, `pushNavigate`, `replaceNavigate`, `redirect`; live patch URL resolution; navigation payloads; flash carryover; live-session boundary checks. | Audit exact client/server fallback behavior for cross-session navigation, root-layout changes, and route-specific mount claims. | High |
+| Flash lifecycle | `test/phoenix_live_view/integrations/flash_test.exs` | Native parity covered | Keyed/all clear, `lv:clear-flash`, stale flash exclusion, patch redirect carryover, push-navigate/redirect cookies, nested socket isolation, nested child patch flash transfer. | Phoenix ConnTest/LiveViewTest helper assertions intentionally not copied. | High |
+| Forms and form events | Phoenix form bindings, `Phoenix.Component.form/1`, `to_form/2`, recovery behavior | Native coverage substantial | Lossless form payload parsing, typed `FormCodec`, change/submit bindings, used fields, submitter metadata, render-side helpers, form event routing to components. | Complete upstream form recovery/autorecover matrix and decide which `to_form`/Ecto-specific behavior is out of scope. | Medium |
+| Uploads | `Phoenix.LiveView.Upload`, `live_file_input`, upload integration tests | Native coverage substantial | `allowUpload`, cancel/disallow/consume/drop APIs, validation errors, upload preflight/progress/chunks, component upload routing, external uploader and writer abstractions, live file input helper. | Add a full upstream upload edge-case matrix: auto-upload, external failures, postponed consumption, in-progress submit behavior, reallow/disallow, progress callback side effects. | Medium |
+| Streams | `Phoenix.LiveView.stream/4`, `stream_insert`, `stream_delete`, `stream_async`, `stream_configure` | Partial | Typed `LiveStreamDef`, `stream`, insert/delete/delete-by-dom-id, reset/limit/update-only options, component-scoped streams, stream diff payloads. | Add or intentionally exclude typed equivalents for `stream_configure` and `stream_async`; expand upstream stream edge-case coverage. | Medium |
+| Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Native parity covered | Typed named async tasks for roots/components; success/failure/cancellation messages; restart/keep-existing; navigation/flash/client side effects; deterministic cleanup on socket shutdown and component removal. | Phoenix complex task keys represented by explicit string names. | Medium |
+| Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Native parity covered | Typed field-level `assignAsync`; success/failure/cancellation; reset/preserve previous values; renewal after cancellation; root/component cleanup behavior. | Phoenix untyped map/list-key return validation and explicit `Task.Supervisor` option intentionally not copied. | Medium |
+| JS commands | `Phoenix.LiveView.JS` | Native coverage substantial | `JS` command builder supports class changes, show/hide/toggle/transition, dispatch, exec, focus, focus stack, attrs, patch/navigate, push, ignore attributes, server-pushed `js:exec`. | Audit command JSON against upstream for any missing command/options in `v1.1.8`. | Medium |
+| Client events and hooks | `push_event/3`, JS hook `handleEvent`, `phx-hook` | Native coverage substantial | Server `pushEvent`, component pushEvent, client-event diff payloads, hook name attrs, event replies via intercept/hook halt replies. | Browser-level hook behavior is mostly delegated to upstream JS client; add native tests for edge protocol behavior as needed. | Medium |
+| DOM bindings and patch attributes | `phx-click`, `phx-submit`, `phx-target`, `phx-update`, `phx-mounted`, `phx-remove`, `phx-connected`, `phx-disconnected` | Native coverage substantial | Typed event bindings, form bindings, JS bindings, targets, upload progress, stream/ignore/update attrs, lifecycle binding attrs are renderable. | Audit all `phx-*` attributes and JS-client behavior against upstream docs. | Medium |
+| Static asset tracking | `phx-track-static`, `_track_static`, static changed behavior | Native coverage substantial | Collects tracked static href/src values and computes `staticChanged`; exposed through `LiveContext.staticChanged`. | Add exact connect-param parity for `_track_static` once connect params are modeled explicitly. | Medium |
+| Title updates | `live_title`, `@page_title`, title diff metadata | Partial | `LiveContext.putTitle` sends title updates in diffs. | Decide whether to add a typed `liveTitle` helper with prefix/suffix semantics. | Low |
+| Portals and focus wrap | `Phoenix.Component.portal/1`, `focus_wrap/1` | Native coverage substantial | `portal` helper and `focusWrap` component helper exist and are covered. | Keep aligned with browser E2E expectations. | Low |
+| HEEx templates and function components | `Phoenix.Component`, `~H`, `attr`, `slot`, `embed_templates` | Intentional divergence | Scalive uses typed Scala HTML builders and typed stateful components instead of HEEx macros and assigns maps. | Do not copy HEEx; document Scala component patterns when docs are written. | Low |
+| Verified routes and path helpers | `Phoenix.VerifiedRoutes`, route helpers | Intentional divergence | Typed route/path/query codecs provide compile-time URL construction for Scalive APIs. | Decide whether to expose more ergonomic typed URL builders from `LiveRouteSeed`/route declarations. | Low |
+| Security and session tokens | LiveView signing salt, session token, flash token, CSRF/connect params | Partial | HMAC-signed tokens with max age, signed mount claims, signed flash tokens, root-layout key in session payload. | Token format still has TODOs around salt/messagepack; connect-param CSRF parity is not modeled yet. Claims are signed but not encrypted. | High |
+| Endpoint/socket configuration | `:live_view` endpoint config, socket path, `hibernate_after`, long-poll options | Partial | `Live.socketAt(PathCodec[Unit])` configures socket mount path; `TokenConfig` configures secret/maxAge. | Decide which endpoint options matter in ZIO HTTP; hibernation/long-poll are not implemented. | Low |
+| Transport support | Phoenix Channels websocket and long-poll fallback | Partial | WebSocket transport and upload websocket protocol are implemented. | Long-poll fallback is not implemented; decide if browser/client parity requires it. | Low |
+| Telemetry and observability | Phoenix telemetry events, logger metadata | Not implemented | Some runtime warnings/errors are logged with context. | Add a Scalive/ZIO telemetry story if operational parity is required. | Low |
+| Test harness helpers | `Phoenix.LiveViewTest` | Not directly applicable | Current coverage uses Scalive-native ZIO tests plus upstream browser E2E harness. | Design a Scalive-native test API rather than copying Phoenix ConnTest/LiveViewTest helpers. | Low |
+| Error shapes and crash/reconnect behavior | Upstream integration tests and protocol errors | Native coverage expanding | Join unauthorized/stale/redirect responses, invalid route/session failures, duplicate ids, redirect loop errors are covered in slices. | Systematically audit upstream error messages, invalid hook returns, crash logging, stale joins, reconnect remount behavior. | High |
 
-## Recommended Next Step
+## Intentional Divergences
 
-Continue closing lifecycle hook gaps with small vertical slices.
+These are not gaps unless a concrete user-facing need appears:
 
-The core component, nested LiveView, flash, async task, async assign, root hook, component hook, and route-level typed mount-aspect runtimes are covered, so the highest-leverage follow-up work is now broader lifecycle error-shape parity and smaller live-session ergonomics.
+- Socket assigns are replaced by typed models and typed context capabilities.
+- Phoenix callback tuples are replaced by typed `ZIO` effects and explicit result ADTs where needed.
+- `on_mount` is represented by typed `LiveMountAspect`s instead of module/atom callbacks.
+- Route declarations use typed path/query codecs instead of Phoenix macros and atom route actions.
+- HEEx/component macros are replaced by typed Scala HTML builders and component values.
+- Phoenix test helpers should become Scalive-native testing helpers, not direct API clones.
 
-## LiveComponent Implementation Sequence
+## Immediate Work Queue
 
-1. Define a minimal user-facing `LiveComponent` API. Done.
-
-   Include lifecycle methods for initialization/update/render, stable component identity, and a component-local model. Prefer the smallest API that can express upstream behavior without copying Elixir internals.
-
-2. Add component identity and runtime storage. Done.
-
-   Components need stable `cid` assignment from component type and id, preserved component-local state across parent renders, removal detection, and `data-phx-component` rendering.
-
-3. Wire component event routing. Done for component-local events and `@myself`-style targeting.
-
-   Support `phx-target` so events can be delivered to component-local handlers instead of the parent `LiveView`. Component event, form, upload progress, nested component, selector/multiple-target, and mismatched-cid guard coverage exists.
-
-4. Add regression tests modeled after upstream `live_components_test.exs`. Done for the upstream runtime-equivalent slice.
-
-   Covered: connected/disconnected render, stable ids, duplicate-id rejection, additions/updates/removals, root replacement, removals after `cids_destroyed`, server/client removal races, event delegation, form events, upload progress, nested components, connected nested LiveViews inside components, selector/multiple `phx-target`, typed `sendUpdate`, streams, navigation/redirect side effects, client effects, flash, and async. Phoenix test-helper or untyped Elixir API cases are documented as intentionally not applicable.
-
-5. Add dependent component features. Done for the first runtime-equivalent slice.
-
-   `sendUpdate`, component streams, component navigation/redirect side effects, component client effects, component flash behavior, connected nested LiveViews inside components, and component async are covered.
-
-## Async Task Implementation Sequence
-
-1. Add root LiveView named async tasks. Done.
-
-   `LiveContext.startAsync(name)(effect)(toMsg)` runs a socket-owned typed task and delivers completion as a normal LiveView message. Success, failure, event-started tasks, and patch navigation from completion are covered.
-
-2. Add component-scoped async tasks. Done.
-
-   Component completions dispatch to the originating component instance and component-owned tasks are interrupted on confirmed component removal.
-
-3. Add lifecycle controls. Done.
-
-   Cancellation, restart-by-name, keep-existing start mode, navigation/redirect/flash side effects, component update-started tasks, and deterministic socket/component cleanup are implemented and covered.
-
-4. Add async assign helpers. Done.
-
-   `LiveContext.assignAsync(model)(_.field)(effect)` derives a typed case-class field updater, stores loading state immediately, and applies completion to `AsyncValue` without requiring a user message. Cancellation uses `LiveContext.cancelAssignAsync(model)(_.field, reason)`. Root/component mount, update, event, cancellation/renewal, reset/preserve, failure, and cleanup behavior are covered.
-
-## Suggested Work Order After Components
-
-1. Complete nested LiveView lifecycle parity. Done for the upstream `nested_test.exs` equivalent slice.
-2. Flash propagation across redirect, push navigate, and push patch. Done for the upstream `flash_test.exs` equivalent slice.
-3. Design and implement async task support. Done for the first slice.
-4. Build async assigns on top of async task support. Done for the first slice.
-5. Revisit lifecycle hooks and align them with the final component, nested, and async runtime model.
+1. Finish lifecycle hook error-shape parity against `hooks_test.exs`.
+2. Audit uploads and streams against upstream integration behavior and add missing rows/tests for uncovered edge cases.
+3. Decide typed APIs for connect params/info, stream async/configuration, delayed component updates, and component batch updates.
+4. Add protocol/error/reconnect parity tests for stale joins, invalid payloads, transport errors, and recovery behavior.
+5. Keep `./scripts/e2e-run-upstream.sh` green while expanding native server-side parity suites.
 
 ## Verification Strategy
 
 - Keep `./scripts/e2e-run-upstream.sh` green.
 - Add Scalive-native tests for upstream integration behaviors that cannot be run directly as Elixir tests.
-- For each parity matrix row, record the upstream files and the Scalive tests that cover equivalent behavior.
+- For each matrix row, record the upstream files and the Scalive tests that cover equivalent behavior.
 - Prefer small vertical slices that make one upstream scenario pass end-to-end over broad incomplete abstractions.

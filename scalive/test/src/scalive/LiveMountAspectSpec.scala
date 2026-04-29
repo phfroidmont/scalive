@@ -553,13 +553,15 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
         channel <- LiveChannel.make(tokenConfig)
         reply   <- runtime.handleMessage(joinMessage(topic, session, "/"), channel)
         socket  <- channel.socket(topic)
+        calls   <- callsRef.get
       yield assertTrue(
         response.status == Status.Ok,
         reply.exists(message =>
           message.eventType == Protocol.EventRedirect &&
             message.payload == Payload.Redirect("/login", None)
         ),
-        socket.isEmpty
+        socket.isEmpty,
+        calls == List("mount:disconnected")
       )
     },
     test("connected mount aspect unauthorized failure returns unauthorized join error") {
@@ -583,10 +585,12 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
         channel <- LiveChannel.make(tokenConfig)
         reply   <- runtime.handleMessage(joinMessage(topic, session, "/"), channel)
         socket  <- channel.socket(topic)
+        calls   <- callsRef.get
       yield assertTrue(
         response.status == Status.Ok,
         joinFailure(reply, JoinErrorReason.Unauthorized),
-        socket.isEmpty
+        socket.isEmpty,
+        calls == List("mount:disconnected")
       )
     },
     test("connected mount aspect unauthorized reason returns unauthorized join error") {
@@ -610,10 +614,12 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
         channel <- LiveChannel.make(tokenConfig)
         reply   <- runtime.handleMessage(joinMessage(topic, session, "/"), channel)
         socket  <- channel.socket(topic)
+        calls   <- callsRef.get
       yield assertTrue(
         response.status == Status.Ok,
         joinFailure(reply, JoinErrorReason.Unauthorized),
-        socket.isEmpty
+        socket.isEmpty,
+        calls == List("mount:disconnected")
       )
     },
     test("connected mount aspect server failure returns stale join error") {
@@ -637,10 +643,12 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
         channel <- LiveChannel.make(tokenConfig)
         reply   <- runtime.handleMessage(joinMessage(topic, session, "/"), channel)
         socket  <- channel.socket(topic)
+        calls   <- callsRef.get
       yield assertTrue(
         response.status == Status.Ok,
         joinFailure(reply, JoinErrorReason.Stale),
-        socket.isEmpty
+        socket.isEmpty,
+        calls == List("mount:disconnected")
       )
     }
   )

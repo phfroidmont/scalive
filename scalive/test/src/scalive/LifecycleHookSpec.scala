@@ -81,6 +81,11 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       case Left(error) => ZIO.die(error)
       case Right(url)  => ZIO.scoped(routes.runZIO(Request.get(url)))
 
+  private def failureMessage(exit: Exit[Throwable, ?]): Option[String] =
+    exit match
+      case Exit.Failure(cause) => cause.failureOption.map(_.getMessage)
+      case Exit.Success(_)     => None
+
   def spec = suite("LifecycleHookSpec")(
     test("connected capability is false for disconnected render and true for socket mount") {
       for
@@ -233,24 +238,88 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       yield result)
     },
     test("duplicate hook ids fail per lifecycle stage") {
-      enum Msg:
-        case Inc
+      def staticView(init: LiveIO[LiveView.InitContext, Unit]) = new LiveView[Unit, Unit]:
+        def mount = init
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] = div()
+        def subscriptions(model: Unit)             = ZStream.empty
 
-      val lv = new LiveView[Msg, Int]:
-        def mount =
-          LiveContext.attachEventHook[Msg, Int]("same")((model, _, _) =>
+      val views = List(
+        "event hook 'same' is already attached" -> staticView(
+          LiveContext.attachEventHook[Unit, Unit]("same")((model, _, _) =>
             ZIO.succeed(LiveEventResult.cont(model))
           ) *>
-            LiveContext.attachEventHook[Msg, Int]("same")((model, _, _) =>
+            LiveContext.attachEventHook[Unit, Unit]("same")((model, _, _) =>
               ZIO.succeed(LiveEventResult.cont(model))
-            ).as(0)
+            )
+        ),
+        "params hook 'same' is already attached" -> staticView(
+          LiveContext.attachParamsHook[Unit]("same")((model, _) =>
+            ZIO.succeed(LiveHookResult.cont(model))
+          ) *>
+            LiveContext.attachParamsHook[Unit]("same")((model, _) =>
+              ZIO.succeed(LiveHookResult.cont(model))
+            )
+        ),
+        "info hook 'same' is already attached" -> staticView(
+          LiveContext.attachInfoHook[Unit, Unit]("same")((model, _) =>
+            ZIO.succeed(LiveHookResult.cont(model))
+          ) *>
+            LiveContext.attachInfoHook[Unit, Unit]("same")((model, _) =>
+              ZIO.succeed(LiveHookResult.cont(model))
+            )
+        ),
+        "async hook 'same' is already attached" -> staticView(
+          LiveContext.attachAsyncHook[Unit, Unit]("same")((model, _, _) =>
+            ZIO.succeed(LiveHookResult.cont(model))
+          ) *>
+            LiveContext.attachAsyncHook[Unit, Unit]("same")((model, _, _) =>
+              ZIO.succeed(LiveHookResult.cont(model))
+            )
+        ),
+        "afterRender hook 'same' is already attached" -> staticView(
+          LiveContext.attachAfterRenderHook[Unit]("same")(model => ZIO.succeed(model)) *>
+            LiveContext.attachAfterRenderHook[Unit]("same")(model => ZIO.succeed(model))
+        )
+      )
 
-        def handleMessage(model: Int) = { case Msg.Inc => ZIO.succeed(model + 1) }
-        def render(model: Int): HtmlElement[Msg] = div(model.toString)
-        def subscriptions(model: Int)             = ZStream.empty
+      for
+        results <- ZIO.foreach(views) { case (expectedMessage, lv) =>
+                     Socket
+                       .start("id", s"token-$expectedMessage", lv, LiveContext(staticChanged = false), meta)
+                       .exit
+                       .map(exit => expectedMessage -> failureMessage(exit))
+                   }
+      yield assertTrue(
+        results.forall { case (expectedMessage, message) =>
+          message.contains(expectedMessage)
+        }
+      )
+    },
+    test("hook ids can be reused across lifecycle stages") {
+      val lv = new LiveView[Unit, Unit]:
+        def mount =
+          LiveContext.attachEventHook[Unit, Unit]("same")((model, _, _) =>
+            ZIO.succeed(LiveEventResult.cont(model))
+          ) *>
+            LiveContext.attachParamsHook[Unit]("same")((model, _) =>
+              ZIO.succeed(LiveHookResult.cont(model))
+            ) *>
+            LiveContext.attachInfoHook[Unit, Unit]("same")((model, _) =>
+              ZIO.succeed(LiveHookResult.cont(model))
+            ) *>
+            LiveContext.attachAsyncHook[Unit, Unit]("same")((model, _, _) =>
+              ZIO.succeed(LiveHookResult.cont(model))
+            ) *>
+            LiveContext.attachAfterRenderHook[Unit]("same")(model => ZIO.succeed(model))
 
-      for exit <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta).exit
-      yield assertTrue(exit.isFailure)
+        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] = div()
+        def subscriptions(model: Unit)             = ZStream.empty
+
+      ZIO.scoped(
+        Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta).as(assertTrue(true))
+      )
     },
     test("params hooks run before handleParams") {
       val lv = new LiveView[Unit, String]:
@@ -754,6 +823,69 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                       !diffFromPayload(first._1).exists(containsValue(_, "10")),
                       diffFromPayload(second._1).exists(containsValue(_, "11"))
                     )
+                   }
+       yield result)
+    },
+    test("component afterRender hook can be detached after connected mount") {
+      enum Msg:
+        case Inc
+        case Detach
+
+      object Counter extends LiveComponent[Unit, Msg, Int]:
+        def mount(props: Unit) =
+          LiveContext.attachAfterRenderHook[Int]("multiply") { model =>
+            ZIO.succeed(if model > 0 then model * 10 else model)
+          }.as(0)
+
+        def handleMessage(model: Int) = {
+          case Msg.Inc    => ZIO.succeed(model + 1)
+          case Msg.Detach => LiveContext.detachAfterRenderHook("multiply").as(model + 1)
+        }
+
+        def render(model: Int, self: ComponentRef[Msg]): HtmlElement[Msg] =
+          div(
+            button(phx.onClick(Msg.Inc), phx.target(self), model.toString),
+            button(phx.onClick(Msg.Detach), phx.target(self), "detach")
+          )
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount                                  = ZIO.unit
+        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] = div(liveComponent(Counter, "counter", ()))
+        def subscriptions(model: Unit)             = ZStream.empty
+
+      ZIO.scoped(for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- outbox.take
+                      _ <- socket.inbox.offer(
+                             click(
+                               Vector("root:div", "component:0:1", "tag:0:button"),
+                               cid = Some(1)
+                             ) -> meta
+                           )
+                      first <- outbox.take
+                      _ <- socket.inbox.offer(
+                             click(
+                               Vector("root:div", "component:0:1", "tag:1:button"),
+                               cid = Some(1)
+                             ) -> meta
+                           )
+                      detached <- outbox.take
+                      _ <- socket.inbox.offer(
+                             click(
+                               Vector("root:div", "component:0:1", "tag:0:button"),
+                               cid = Some(1)
+                             ) -> meta
+                           )
+                      afterDetach <- outbox.take
+                    yield assertTrue(
+                      diffFromPayload(first._1).exists(containsValue(_, "1")),
+                      !diffFromPayload(first._1).exists(containsValue(_, "10")),
+                      diffFromPayload(detached._1).exists(containsValue(_, "11")),
+                      diffFromPayload(afterDetach._1).exists(containsValue(_, "12"))
+                    )
                   }
       yield result)
     },
@@ -784,7 +916,14 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         detachExit <- Socket
                         .start("id", "token", parent(DetachInfo), LiveContext(staticChanged = false), meta)
                         .exit
-      yield assertTrue(attachExit.isFailure, detachExit.isFailure)
+      yield assertTrue(
+        failureMessage(attachExit).contains(
+          "info hooks are not supported on LiveComponents"
+        ),
+        failureMessage(detachExit).contains(
+          "info hooks are not supported on LiveComponents"
+        )
+      )
     },
     test("afterRender hook updates state for the next render only") {
       enum Msg:
@@ -816,6 +955,59 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                       diffFromPayload(first._1).exists(containsValue(_, "1")),
                       !diffFromPayload(first._1).exists(containsValue(_, "10")),
                       diffFromPayload(second._1).exists(containsValue(_, "11"))
+                    )
+                   }
+      yield result)
+    },
+    test("afterRender hooks can be attached and detached after connected mount") {
+      enum Msg:
+        case Attach
+        case Detach
+        case Inc
+
+      val lv = new LiveView[Msg, Int]:
+        def mount = ZIO.succeed(0)
+
+        def handleMessage(model: Int) = {
+          case Msg.Attach =>
+            LiveContext.attachAfterRenderHook[Int]("multiply") { value =>
+              ZIO.succeed(if value > 0 then value * 10 else value)
+            }.as(model + 1)
+          case Msg.Detach =>
+            LiveContext.detachAfterRenderHook("multiply").as(model + 1)
+          case Msg.Inc =>
+            ZIO.succeed(model + 1)
+        }
+
+        def render(model: Int): HtmlElement[Msg] =
+          div(
+            span(model.toString),
+            button(phx.onClick(Msg.Attach), "attach"),
+            button(phx.onClick(Msg.Detach), "detach"),
+            button(phx.onClick(Msg.Inc), "inc")
+          )
+
+        def subscriptions(model: Int) = ZStream.empty
+
+      ZIO.scoped(for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      attached <- outbox.take
+                      _        <- socket.inbox.offer(click(Vector("root:div", "tag:3:button")) -> meta)
+                      multiplied <- outbox.take
+                      _          <- socket.inbox.offer(click(Vector("root:div", "tag:2:button")) -> meta)
+                      detached   <- outbox.take
+                      _          <- socket.inbox.offer(click(Vector("root:div", "tag:3:button")) -> meta)
+                      afterDetach <- outbox.take
+                    yield assertTrue(
+                      diffFromPayload(attached._1).exists(containsValue(_, "1")),
+                      !diffFromPayload(attached._1).exists(containsValue(_, "10")),
+                      diffFromPayload(multiplied._1).exists(containsValue(_, "11")),
+                      diffFromPayload(detached._1).exists(containsValue(_, "111")),
+                      diffFromPayload(afterDetach._1).exists(containsValue(_, "112"))
                     )
                   }
       yield result)

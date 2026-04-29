@@ -462,7 +462,7 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
       }.map(_.asInstanceOf[LiveHookResult[Model]])
 
   private def duplicateError(id: String, stage: String): IllegalArgumentException =
-    new IllegalArgumentException(s"existing hook '$id' already attached on $stage")
+    new IllegalArgumentException(s"$stage hook '$id' is already attached")
 end SocketLiveHookRuntime
 
 final private[scalive] class ComponentLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
@@ -485,11 +485,11 @@ final private[scalive] class ComponentLiveHookRuntime(ref: Ref[LiveHookRuntimeSt
     hook: (Model, URL) => LiveIO[LiveView.ParamsContext, LiveHookResult[Model]]
   ): Task[Unit] =
     val _ = (id, hook)
-    unsupported
+    unsupported("params")
 
   def detachParams(id: String): Task[Unit] =
     val _ = id
-    unsupported
+    unsupported("params")
 
   def attachInfo[Msg, Model](
     id: String
@@ -497,11 +497,11 @@ final private[scalive] class ComponentLiveHookRuntime(ref: Ref[LiveHookRuntimeSt
     hook: (Model, Msg) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
   ): Task[Unit] =
     val _ = (id, hook)
-    unsupported
+    unsupported("info")
 
   def detachInfo(id: String): Task[Unit] =
     val _ = id
-    unsupported
+    unsupported("info")
 
   def attachAsync[Msg, Model](
     id: String
@@ -509,11 +509,11 @@ final private[scalive] class ComponentLiveHookRuntime(ref: Ref[LiveHookRuntimeSt
     hook: (Model, Msg, LiveAsyncEvent) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
   ): Task[Unit] =
     val _ = (id, hook)
-    unsupported
+    unsupported("async")
 
   def detachAsync(id: String): Task[Unit] =
     val _ = id
-    unsupported
+    unsupported("async")
 
   def attachAfterRender[Model](
     id: String
@@ -561,10 +561,10 @@ final private[scalive] class ComponentLiveHookRuntime(ref: Ref[LiveHookRuntimeSt
   private[scalive] def runAfterRender[Model](model: Model, ctx: LiveContext): Task[Model] =
     delegate.runAfterRender(model, ctx)
 
-  private def unsupported[A]: Task[A] =
+  private def unsupported[A](stage: String): Task[A] =
     ZIO.fail(
       new IllegalArgumentException(
-        "lifecycle hooks are not supported on stateful components for this stage"
+        s"$stage hooks are not supported on LiveComponents"
       )
     )
 end ComponentLiveHookRuntime

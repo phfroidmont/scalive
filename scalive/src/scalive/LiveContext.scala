@@ -11,6 +11,7 @@ import scalive.upload.*
 
 final case class LiveContext(
   staticChanged: Boolean,
+  connected: Boolean = false,
   uploads: UploadRuntime = UploadRuntime.Disabled,
   streams: StreamRuntime = StreamRuntime.Disabled,
   clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
@@ -24,6 +25,9 @@ final case class LiveContext(
     extends LiveContext.NavigationCapabilities
 
 object LiveContext:
+  trait HasConnected:
+    def connected: Boolean
+
   trait HasStaticChanged:
     def staticChanged: Boolean
 
@@ -58,7 +62,8 @@ object LiveContext:
     def hooks: LiveHookRuntime
 
   trait BaseCapabilities
-      extends HasStaticChanged
+      extends HasConnected
+      with HasStaticChanged
       with HasUploads
       with HasStreams
       with HasClientEvents
@@ -72,6 +77,9 @@ object LiveContext:
 
   def staticChanged: URIO[HasStaticChanged, Boolean] =
     ZIO.serviceWith[HasStaticChanged](_.staticChanged)
+
+  def connected: URIO[HasConnected, Boolean] =
+    ZIO.serviceWith[HasConnected](_.connected)
 
   def allowUpload(name: String, options: LiveUploadOptions): RIO[HasUploads, LiveUpload] =
     ZIO.serviceWithZIO[HasUploads](_.uploads.allow(name, options))

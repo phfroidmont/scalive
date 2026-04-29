@@ -34,6 +34,7 @@ private[scalive] object SocketBootstrap:
       componentsRef   <- Ref.make(ComponentRuntimeState.empty)
       hooksRef        <- Ref.make(LiveHookRuntimeState.empty)
       runtimeCtx = ctx.copy(
+                     connected = true,
                      uploads = new SocketUploadRuntime(uploadRef),
                      streams = new SocketStreamRuntime(streamRef),
                      clientEvents = new SocketClientEventRuntime(clientEventsRef),

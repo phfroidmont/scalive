@@ -1,7 +1,7 @@
 package scalive
 
 import zio.*
-import zio.http.URL
+import zio.http.*
 import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
@@ -43,6 +43,22 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       case Diff.Dynamic(_, diff) => containsValue(diff, value)
       case _                    => false
 
+  private def containsText(diff: Diff, value: String): Boolean =
+    diff match
+      case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
+        dynamic.exists(d => containsText(d.diff, value)) || components.values.exists(
+          containsText(_, value)
+        )
+      case Diff.Comprehension(_, entries, _, _, _) =>
+        entries.exists {
+          case Diff.Dynamic(_, diff)       => containsText(diff, value)
+          case Diff.IndexMerge(_, _, diff) => containsText(diff, value)
+          case _                           => false
+        }
+      case Diff.Value(current)  => current.contains(value)
+      case Diff.Dynamic(_, diff) => containsText(diff, value)
+      case _                    => false
+
   private def diffFromPayload(payload: Payload): Option[Diff] =
     payload match
       case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(diff)) => Some(diff)
@@ -60,7 +76,38 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       result <- f(queue).ensuring(fiber.interrupt)
     yield result
 
+  private def runRequest(routes: Routes[Any, Nothing], path: String) =
+    URL.decode(path) match
+      case Left(error) => ZIO.die(error)
+      case Right(url)  => ZIO.scoped(routes.runZIO(Request.get(url)))
+
   def spec = suite("LifecycleHookSpec")(
+    test("connected capability is false for disconnected render and true for socket mount") {
+      for
+        callsRef <- Ref.make(Vector.empty[String])
+        lv = new LiveView[Unit, Boolean]:
+               def mount =
+                 LiveContext.connected.flatMap(connected =>
+                   callsRef.update(_ :+ s"mount:$connected").as(connected)
+                 )
+
+               def handleMessage(model: Boolean) = _ => ZIO.succeed(model)
+
+               def render(model: Boolean): HtmlElement[Unit] =
+                 div(model.toString)
+
+               def subscriptions(model: Boolean) = ZStream.empty
+        routes = scalive.Live.router(scalive.live(lv))
+        response <- runRequest(routes, "/")
+        body     <- response.body.asString
+        _        <- ZIO.scoped(Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta))
+        calls    <- callsRef.get
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains("false"),
+        calls == Vector("mount:false", "mount:true")
+      )
+    },
     test("event hooks continue in attach order before handleMessage") {
       enum Msg:
         case Inc
@@ -238,6 +285,68 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                   }
       yield result)
     },
+    test("params hooks can be attached and detached after connected mount") {
+      enum Msg:
+        case Attach
+        case Detach
+
+      val lv = new LiveView[Msg, String]:
+        def mount = ZIO.succeed("mount")
+
+        override def handleParams(model: String, query: queryCodec.Out, url: URL) =
+          ZIO.succeed(s"$model|callback:${url.path.encode}")
+
+        def handleMessage(model: String) = {
+          case Msg.Attach =>
+            LiveContext.attachParamsHook[String]("late") { (hookModel, url) =>
+              ZIO.succeed(LiveHookResult.halt(s"$hookModel|hook:${url.path.encode}"))
+            }.as(s"$model|attached")
+          case Msg.Detach =>
+            LiveContext.detachParamsHook("late").as(s"$model|detached")
+        }
+
+        def render(model: String): HtmlElement[Msg] =
+          div(
+            span(model),
+            button(phx.onClick(Msg.Attach), "attach"),
+            button(phx.onClick(Msg.Detach), "detach")
+          )
+
+        def subscriptions(model: String) = ZStream.empty
+
+      ZIO.scoped(for
+        initialUrl <- ZIO.fromEither(URL.decode("/first")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl
+                  )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      initial  <- outbox.take
+                      _        <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      attached <- outbox.take
+                      patched  <- socket.livePatch("/second", meta.copy(eventType = "live_patch"))
+                      _        <- socket.inbox.offer(click(Vector("root:div", "tag:2:button")) -> meta)
+                      detached <- outbox.take
+                      patchedAgain <- socket.livePatch(
+                                        "/third",
+                                        meta.copy(eventType = "live_patch")
+                                      )
+                    yield assertTrue(
+                      diffFromPayload(initial._1).exists(containsValue(_, "mount|callback:/first")),
+                      diffFromPayload(attached._1).exists(containsText(_, "attached")),
+                      diffFromPayload(patched).exists(containsText(_, "hook:/second")),
+                      !diffFromPayload(patched).exists(containsText(_, "callback:/second")),
+                      diffFromPayload(detached._1).exists(containsText(_, "detached")),
+                      diffFromPayload(patchedAgain).exists(containsText(_, "callback:/third"))
+                    )
+                  }
+      yield result)
+    },
     test("info hook halt skips subscription handleMessage") {
       enum Msg:
         case Tick
@@ -266,6 +375,62 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                                   diff <- outbox.take
                                 yield assertTrue(
                                   diffFromPayload(diff._1).exists(containsValue(_, "10"))
+                                )
+                              }
+                  yield result)
+      yield result
+    },
+    test("info hooks can be attached and detached after connected mount") {
+      enum Msg:
+        case Attach
+        case Detach
+        case Ping
+
+      for
+        messages <- Queue.unbounded[Msg]
+        lv = new LiveView[Msg, String]:
+               def mount = ZIO.succeed("ready")
+
+               def handleMessage(model: String) = {
+                 case Msg.Attach =>
+                   LiveContext.attachInfoHook[Msg, String]("late") { (hookModel, msg) =>
+                     msg match
+                       case Msg.Ping => ZIO.succeed(LiveHookResult.halt(s"$hookModel|hook"))
+                       case _        => ZIO.succeed(LiveHookResult.cont(hookModel))
+                   }.as(s"$model|attached")
+                 case Msg.Detach =>
+                   LiveContext.detachInfoHook("late").as(s"$model|detached")
+                 case Msg.Ping =>
+                   ZIO.succeed(s"$model|callback")
+               }
+
+               def render(model: String): HtmlElement[Msg] =
+                 div(
+                   span(model),
+                   button(phx.onClick(Msg.Attach), "attach"),
+                   button(phx.onClick(Msg.Detach), "detach")
+                 )
+
+               def subscriptions(model: String) = ZStream.fromQueue(messages)
+        result <- ZIO.scoped(for
+                    socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+                    result <- withOutbox(socket) { outbox =>
+                                for
+                                  _         <- outbox.take
+                                  _         <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                                  attached  <- outbox.take
+                                  _         <- messages.offer(Msg.Ping)
+                                  halted    <- outbox.take
+                                  _         <- socket.inbox.offer(click(Vector("root:div", "tag:2:button")) -> meta)
+                                  detached  <- outbox.take
+                                  _         <- messages.offer(Msg.Ping)
+                                  continued <- outbox.take
+                                yield assertTrue(
+                                  diffFromPayload(attached._1).exists(containsText(_, "attached")),
+                                  diffFromPayload(halted._1).exists(containsText(_, "hook")),
+                                  !diffFromPayload(halted._1).exists(containsText(_, "callback")),
+                                  diffFromPayload(detached._1).exists(containsText(_, "detached")),
+                                  diffFromPayload(continued._1).exists(containsText(_, "callback"))
                                 )
                               }
                   yield result)
@@ -315,6 +480,70 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                               }
                   yield result)
       yield result
+    },
+    test("async hooks can be attached and detached after connected mount") {
+      enum Msg:
+        case Attach
+        case Detach
+        case Start
+        case Loaded(result: LiveAsyncResult[String])
+
+      val lv = new LiveView[Msg, String]:
+        def mount = ZIO.succeed("ready")
+
+        def handleMessage(model: String) = {
+          case Msg.Attach =>
+            LiveContext.attachAsyncHook[Msg, String]("late") { (hookModel, msg, event) =>
+              msg match
+                case Msg.Loaded(LiveAsyncResult.Ok(_)) if event.name == "late" =>
+                  ZIO.succeed(LiveHookResult.cont(s"$hookModel|hook"))
+                case _ => ZIO.succeed(LiveHookResult.cont(hookModel))
+            }.as(s"$model|attached")
+          case Msg.Detach =>
+            LiveContext.detachAsyncHook("late").as(s"$model|detached")
+          case Msg.Start =>
+            LiveContext.startAsync("late")(ZIO.succeed("done"))(Msg.Loaded(_)).as(s"$model|start")
+          case Msg.Loaded(LiveAsyncResult.Ok(value)) =>
+            ZIO.succeed(s"$model|callback:$value")
+          case _ =>
+            ZIO.succeed(model)
+        }
+
+        def render(model: String): HtmlElement[Msg] =
+          div(
+            span(model),
+            button(phx.onClick(Msg.Attach), "attach"),
+            button(phx.onClick(Msg.Detach), "detach"),
+            button(phx.onClick(Msg.Start), "start")
+          )
+
+        def subscriptions(model: String) = ZStream.empty
+
+      ZIO.scoped(for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _               <- outbox.take
+                      _               <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      attached        <- outbox.take
+                      _               <- socket.inbox.offer(click(Vector("root:div", "tag:3:button")) -> meta)
+                      _               <- outbox.take
+                      firstCompletion <- outbox.take
+                      _               <- socket.inbox.offer(click(Vector("root:div", "tag:2:button")) -> meta)
+                      detached        <- outbox.take
+                      _               <- socket.inbox.offer(click(Vector("root:div", "tag:3:button")) -> meta)
+                      _               <- outbox.take
+                      secondCompletion <- outbox.take
+                    yield assertTrue(
+                      diffFromPayload(attached._1).exists(containsText(_, "attached")),
+                      diffFromPayload(firstCompletion._1).exists(containsText(_, "hook|callback:done")),
+                      diffFromPayload(detached._1).exists(containsText(_, "detached")),
+                      diffFromPayload(secondCompletion._1).exists(
+                        containsText(_, "detached|start|callback:done")
+                      )
+                    )
+                  }
+      yield result)
     },
     test("async hook halt skips handleMessage and detach removes the hook") {
       enum Msg:

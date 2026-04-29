@@ -17,7 +17,6 @@ import scalive.WebSocketMessage.ReplyStatus
 
 object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
-  private val identityLayout: HtmlElement[?] => HtmlElement[?] = element => element
   private val rootTopic                                             = "lv:root"
   private val childTopic                                            = "lv:root-child"
   private val secondChildTopic                                      = "lv:root-second"
@@ -183,8 +182,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
                def subscriptions(model: Unit) = ZStream.empty
         routes =
-          LiveRoutes(layout = identityLayout)(
-            Method.GET / Root -> liveHandler(lv)
+          scalive.Live.router(
+            scalive.live(lv)
           )
         response <- runRequest(routes, "/?q=1")
         calls    <- callsRef.get
@@ -205,8 +204,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def subscriptions(model: Unit) = ZStream.empty
 
       val routes =
-        LiveRoutes(layout = identityLayout)(
-          Method.GET / Root -> liveHandler(lv)
+        scalive.Live.router(
+          scalive.live(lv)
         )
 
       for response <- runRequest(routes, "/")
@@ -240,8 +239,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
                    def render(model: Unit): HtmlElement[Unit] = div(liveView("child", child))
                    def subscriptions(model: Unit) = ZStream.empty
         routes =
-          LiveRoutes(layout = identityLayout)(
-            Method.GET / Root -> liveHandler(parent)
+          scalive.Live.router(
+            scalive.live(parent)
           )
         response <- runRequest(routes, "/?q=1")
         body     <- response.body.asString
@@ -264,8 +263,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def subscriptions(model: Unit) = ZStream.empty
 
       val routes =
-        LiveRoutes(layout = identityLayout)(
-          Method.GET / Root -> liveHandler(parent)
+        scalive.Live.router(
+          scalive.live(parent)
         )
 
       for

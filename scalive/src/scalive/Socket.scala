@@ -37,8 +37,10 @@ object Socket:
     meta: WebSocketMessage.Meta,
     tokenConfig: TokenConfig = TokenConfig.default,
     initialUrl: URL = URL.root,
-    initialFlash: Map[String, String] = Map.empty
+    initialFlash: Map[String, String] = Map.empty,
+    renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None
   ): RIO[Scope, Socket[Msg, Model]] =
+    val rootRenderer = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
     ZIO.logAnnotate("lv", id) {
       for
         state <- SocketBootstrap.initializeRuntime(
@@ -47,7 +49,8 @@ object Socket:
                    meta,
                    tokenConfig,
                    initialUrl,
-                   initialFlash
+                   initialFlash,
+                   rootRenderer
                  )
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
@@ -83,4 +86,5 @@ object Socket:
         stop
       )
     }
+  end start
 end Socket

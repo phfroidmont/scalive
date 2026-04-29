@@ -221,7 +221,8 @@ private[scalive] object SocketModelRuntime:
       _ <- state.lvStreamRef.set(
              state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
            )
-      nextRoot <- SocketComponentRuntime.renderRoot(state.lv.render(model), state)
+      currentUrl <- state.currentUrlRef.get
+      nextRoot   <- SocketComponentRuntime.renderRoot(state.renderRoot(model, currentUrl), state)
       nextCompiled = RenderSnapshot.compile(nextRoot)
       diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
       nextRendered = RenderedView(

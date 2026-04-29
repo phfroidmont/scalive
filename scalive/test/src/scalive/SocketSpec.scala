@@ -50,12 +50,29 @@ object SocketSpec extends ZIOSpecDefault:
   private def withOutbox[Msg, Model, A](socket: Socket[Msg, Model])(
     f: Queue[(Payload, WebSocketMessage.Meta)] => Task[A]
   ): Task[A] =
+    withOutboxAndInit(socket)((_, queue) => f(queue))
+
+  private def withOutboxAndInit[Msg, Model, A](socket: Socket[Msg, Model])(
+    f: ((Payload, WebSocketMessage.Meta), Queue[(Payload, WebSocketMessage.Meta)]) => Task[A]
+  ): Task[A] =
     for
       queue  <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
       fiber  <- socket.outbox.runForeach(queue.offer).fork
-      _      <- queue.take
-      result <- f(queue).ensuring(fiber.interrupt)
+      init   <- queue.take
+      result <- f(init, queue).ensuring(fiber.interrupt)
     yield result
+
+  private def takeOutbox(
+    queue: Queue[(Payload, WebSocketMessage.Meta)],
+    count: Int
+  ): UIO[Chunk[(Payload, WebSocketMessage.Meta)]] =
+    ZIO.collectAll(Chunk.fill(count)(queue.take))
+
+  private def takeLiveNavigation(queue: Queue[(Payload, WebSocketMessage.Meta)]): UIO[Payload] =
+    queue.take.flatMap {
+      case (payload @ Payload.LiveNavigation(_, _), _) => ZIO.succeed(payload)
+      case _                                           => takeLiveNavigation(queue)
+    }
 
   override def spec = suite("SocketSpec")(
     test("emits init diff and uses LiveContext") {
@@ -231,20 +248,23 @@ object SocketSpec extends ZIOSpecDefault:
                     meta,
                     initialUrl = initialUrl
                   )
-        error <- socket.outbox.drop(1).runHead.fork
-        reply <- socket.livePatch("?loop=true", meta)
-        emitted <- error.join.some
-      yield assertTrue(
-        reply == Payload.okReply(LiveResponse.Empty),
-        emitted._1 == Payload.Error
-      )
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      reply   <- socket.livePatch("?loop=true", meta)
+                      emitted <- outbox.take
+                    yield assertTrue(
+                      reply == Payload.okReply(LiveResponse.Empty),
+                      emitted._1 == Payload.Error
+                    )
+                  }
+      yield result
     },
     test("server stream emits diff") {
       val ctx = LiveContext(staticChanged = false)
       val lv  = makeLiveView(ZStream.succeed(Msg.FromServer))
       for
         socket <- makeSocket(ctx, lv)
-        diff   <- socket.outbox.drop(1).runHead.some
+        diff   <- withOutbox(socket)(_.take)
       yield assertTrue(diff._1.isInstanceOf[Payload.Diff])
     },
     test("shutdown stops outbox") {
@@ -261,7 +281,7 @@ object SocketSpec extends ZIOSpecDefault:
       val lv  = makeLiveView(ZStream.succeed(Msg.SetTitle))
       for
         socket <- makeSocket(ctx, lv)
-        diff   <- socket.outbox.drop(1).runHead.some
+        diff   <- withOutbox(socket)(_.take)
       yield
         val title = diff._1 match
           case Payload.Diff(Diff.Tag(_, _, _, _, title, _, _, _)) => title
@@ -378,9 +398,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val hasReplyAtTopLevelR = reply._1 match
           case payload: Payload.Reply =>
@@ -431,29 +451,31 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        init       <- socket.outbox.take(1).runHead.some
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
-      yield
-        val initHasComponent = init._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.InitDiff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.contains(1)
-          case _ => false
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutboxAndInit(socket) { (init, outbox) =>
+                    for
+                      _     <- socket.inbox.offer(event -> meta)
+                      reply <- outbox.take
+                    yield
+                      val initHasComponent = init._1 match
+                        case Payload.Reply(
+                              ReplyStatus.Ok,
+                              LiveResponse.InitDiff(Diff.Tag(_, _, _, _, _, components, _, _))
+                            ) =>
+                          components.contains(1)
+                        case _ => false
 
-        val updateHasSameComponent = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.contains(1)
-          case _ => false
+                      val updateHasSameComponent = reply._1 match
+                        case Payload.Reply(
+                              ReplyStatus.Ok,
+                              LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
+                            ) =>
+                          components.contains(1)
+                        case _ => false
 
-        assertTrue(initHasComponent, updateHasSameComponent)
+                      assertTrue(initHasComponent, updateHasSameComponent)
+                  }
+      yield result
     },
     test("rejects duplicate live component identities in one render") {
       object CounterComponent extends LiveComponent[String, Unit, String]:
@@ -505,9 +527,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val componentUpdated = reply._1 match
           case Payload.Reply(
@@ -573,9 +595,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val componentUpdated = reply._1 match
           case Payload.Reply(
@@ -698,19 +720,22 @@ object SocketSpec extends ZIOSpecDefault:
           case _                    => false
 
       for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        reply      <- socket.progressUpload(progress)
-        _          <- socket.inbox.offer(rerender -> meta)
-        routed     <- replyFiber.join.some
-      yield
-        val progressRouted = routed._1 match
-          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
-            containsValue(diff, "50")
-          case Payload.Diff(diff) => containsValue(diff, "50")
-          case _                  => false
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      reply  <- socket.progressUpload(progress)
+                      _      <- socket.inbox.offer(rerender -> meta)
+                      routed <- outbox.take
+                    yield
+                      val progressRouted = routed._1 match
+                        case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
+                          containsValue(diff, "50")
+                        case Payload.Diff(diff) => containsValue(diff, "50")
+                        case _                  => false
 
-        assertTrue(reply == Payload.okReply(LiveResponse.Empty), !progressRouted)
+                      assertTrue(reply == Payload.okReply(LiveResponse.Empty), !progressRouted)
+                  }
+      yield result
     },
     test("untargeted live component events do not route to component state") {
       object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
@@ -736,9 +761,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val componentUpdated = reply._1 match
           case Payload.Reply(
@@ -791,10 +816,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        _          <- socket.inbox.offer(rerender -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> socket.inbox.offer(rerender -> meta) *> outbox.take
+                      }
       yield
         val componentUpdated = reply._1 match
           case Payload.Reply(
@@ -850,9 +874,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val componentUpdated = reply._1 match
           case Payload.Reply(
@@ -986,9 +1010,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield assertTrue(reply._1 == Payload.okReply(LiveResponse.Empty))
     },
     test("nested live component events route to nested component state") {
@@ -1025,9 +1049,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val childUpdated = reply._1 match
           case Payload.Reply(
@@ -1073,9 +1097,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val componentUpdated = reply._1 match
           case Payload.Reply(
@@ -1127,9 +1151,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val componentUpdated = reply._1 match
           case Payload.Reply(
@@ -1258,9 +1282,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replyFiber <- socket.outbox.drop(1).runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        reply      <- replyFiber.join.some
+        reply      <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> outbox.take
+                      }
       yield
         val scoped = reply._1 match
           case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))) =>
@@ -1310,13 +1334,16 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket       <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        repliesFiber <- socket.outbox.drop(1).take(4).runCollect.fork
-        _            <- socket.inbox.offer(incrementEvent -> meta)
-        _            <- socket.inbox.offer(toggleEvent -> meta)
-        _            <- socket.inbox.offer(destroyedEvent -> meta)
-        _            <- socket.inbox.offer(toggleEvent -> meta)
-        replies      <- repliesFiber.join
+        socket  <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replies <- withOutbox(socket) { outbox =>
+                     for
+                       _       <- socket.inbox.offer(incrementEvent -> meta)
+                       _       <- socket.inbox.offer(toggleEvent -> meta)
+                       _       <- socket.inbox.offer(destroyedEvent -> meta)
+                       _       <- socket.inbox.offer(toggleEvent -> meta)
+                       replies <- takeOutbox(outbox, 4)
+                     yield replies
+                   }
       yield
         val componentRemountedFresh = replies.last._1 match
           case Payload.Reply(
@@ -1370,12 +1397,15 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket       <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        repliesFiber <- socket.outbox.drop(1).take(3).runCollect.fork
-        _            <- socket.inbox.offer(incrementEvent -> meta)
-        _            <- socket.inbox.offer(toggleEvent -> meta)
-        _            <- socket.inbox.offer(toggleEvent -> meta)
-        replies      <- repliesFiber.join
+        socket  <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        replies <- withOutbox(socket) { outbox =>
+                     for
+                       _       <- socket.inbox.offer(incrementEvent -> meta)
+                       _       <- socket.inbox.offer(toggleEvent -> meta)
+                       _       <- socket.inbox.offer(toggleEvent -> meta)
+                       replies <- takeOutbox(outbox, 3)
+                     yield replies
+                   }
       yield
         val componentPreserved = replies.last._1 match
           case Payload.Reply(
@@ -1419,11 +1449,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        navigationFiber <- socket.outbox.drop(1).collect {
-                             case (payload @ Payload.LiveNavigation(_, _), _) => payload
-                           }.runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        navigation <- navigationFiber.join.some
+        navigation <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> takeLiveNavigation(outbox)
+                      }
       yield assertTrue(navigation == Payload.LiveNavigation("/next", LivePatchKind.Push))
     },
     test("component events can replace patch") {
@@ -1451,11 +1479,9 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        navigationFiber <- socket.outbox.drop(1).collect {
-                             case (payload @ Payload.LiveNavigation(_, _), _) => payload
-                           }.runHead.fork
-        _          <- socket.inbox.offer(event -> meta)
-        navigation <- navigationFiber.join.some
+        navigation <- withOutbox(socket) { outbox =>
+                        socket.inbox.offer(event -> meta) *> takeLiveNavigation(outbox)
+                      }
       yield assertTrue(navigation == Payload.LiveNavigation("/next", LivePatchKind.Replace))
     }
   )

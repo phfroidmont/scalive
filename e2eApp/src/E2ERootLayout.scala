@@ -1,6 +1,6 @@
 import scalive.*
 
-object E2ERootLayout:
+object E2ERootLayout extends LiveRootLayout[Any, Any]:
   import java.nio.file.Paths
 
   private val runtime = zio.Runtime.default
@@ -21,7 +21,15 @@ object E2ERootLayout:
 
   val daisyCssHref: String = hashedDaisyCss
 
+  def key(ctx: LiveLayoutContext[Any, Any]): String = "e2e-root"
+
   def apply[Msg](content: HtmlElement[Msg]): HtmlElement[Msg] =
+    render(
+      content,
+      LiveLayoutContext((), zio.http.Request.get(zio.http.URL.root), zio.http.URL.root, ())
+    )
+
+  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
     htmlRootTag(
       lang := "en",
       headTag(

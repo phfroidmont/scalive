@@ -134,8 +134,8 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           div(liveComponent(LabelComponent, id = "chris", props = "chris"))
         def subscriptions(model: Unit) = ZStream.empty
 
-      val routes = LiveRoutes(layout = identity)(
-        Method.GET / Root -> liveHandler(parent)
+      val routes = scalive.Live.router(
+        scalive.live(parent)
       )
 
       for

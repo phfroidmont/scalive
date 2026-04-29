@@ -81,6 +81,13 @@ object AsyncSpec extends ZIOSpecDefault:
 
     loop(max, Nil).timeoutFail(new RuntimeException("timed out waiting for async payload"))(2.seconds)
 
+  private def awaitWithinTestClock[A](effect: UIO[A], duration: Duration): UIO[Option[A]] =
+    for
+      fiber <- effect.timeout(duration).fork
+      _     <- TestClock.adjust(duration)
+      value <- fiber.join
+    yield value
+
   private object UpdateAsyncComponent
       extends LiveComponent[UpdateAsyncComponent.Action, UpdateAsyncComponent.Msg, UpdateAsyncComponent.Model]:
     enum Action:
@@ -787,7 +794,7 @@ object AsyncSpec extends ZIOSpecDefault:
                     for
                       socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
                       _      <- socket.shutdown
-                      done   <- stopped.await.timeout(1.second)
+                      done   <- awaitWithinTestClock(stopped.await, 1.second)
                     yield assertTrue(done.contains(()))
                   }
       yield result
@@ -839,7 +846,7 @@ object AsyncSpec extends ZIOSpecDefault:
                       _ <- outbox.take
                       _ <- socket.inbox.offer(destroyed -> meta)
                       _ <- outbox.take
-                      done <- stopped.await.timeout(1.second)
+                      done <- awaitWithinTestClock(stopped.await, 1.second)
                     yield assertTrue(done.contains(()))
                   }
       yield result

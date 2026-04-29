@@ -8,6 +8,7 @@ import scala.util.Random
 import zio.*
 import zio.http.*
 import zio.http.ChannelEvent.Read
+import zio.http.codec.Combiner
 import zio.http.codec.PathCodec
 import zio.http.template.Html
 import zio.json.*
@@ -21,33 +22,96 @@ import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.Protocol
-import scalive.socket.SocketNavigationRuntime
-import scalive.socket.SocketComponentRuntime
-import scalive.socket.SocketFlashRuntime
-import scalive.socket.SocketStreamRuntime
 import scalive.socket.ComponentRuntimeState
 import scalive.socket.FlashRuntimeState
+import scalive.socket.SocketComponentRuntime
+import scalive.socket.SocketFlashRuntime
+import scalive.socket.SocketNavigationRuntime
+import scalive.socket.SocketStreamRuntime
 import scalive.socket.StreamRuntimeState
 
-final case class LiveRouteHandler[A, Ctx, Msg, Model] private[scalive] (
-  liveviewBuilder: (A, Request, Ctx) => LiveView[Msg, Model]
-)(using val msgClassTag: ClassTag[Msg])
+final case class LiveLayoutContext[+A, +Ctx](
+  params: A,
+  request: Request,
+  currentUrl: URL,
+  context: Ctx)
+
+trait LiveLayout[-A, -Ctx]:
+  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
+
+object LiveLayout:
+  val identity: LiveLayout[Any, Any] =
+    new LiveLayout[Any, Any]:
+      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]) = content
+
+  def apply[A, Ctx](
+    f: (HtmlElement[?], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
+  ): LiveLayout[A, Ctx] =
+    new LiveLayout[A, Ctx]:
+      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]) =
+        f(content, ctx).asInstanceOf[HtmlElement[Msg]]
+
+trait LiveRootLayout[-A, -Ctx]:
+  def key(ctx: LiveLayoutContext[A, Ctx]): String
+  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
+
+object LiveRootLayout:
+  val identity: LiveRootLayout[Any, Any] =
+    new LiveRootLayout[Any, Any]:
+      def key(ctx: LiveLayoutContext[Any, Any]) = "scalive:identity-root"
+      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]) = content
+
+  def apply[A, Ctx](
+    rootKey: String
+  )(
+    f: (HtmlElement[?], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
+  ): LiveRootLayout[A, Ctx] =
+    new LiveRootLayout[A, Ctx]:
+      def key(ctx: LiveLayoutContext[A, Ctx])                                    = rootKey
+      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]) =
+        f(content, ctx).asInstanceOf[HtmlElement[Msg]]
+
+  def dynamic[A, Ctx](
+    rootKey: LiveLayoutContext[A, Ctx] => String
+  )(
+    f: (HtmlElement[?], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
+  ): LiveRootLayout[A, Ctx] =
+    new LiveRootLayout[A, Ctx]:
+      def key(ctx: LiveLayoutContext[A, Ctx])                                    = rootKey(ctx)
+      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]) =
+        f(content, ctx).asInstanceOf[HtmlElement[Msg]]
 
 final private[scalive] case class LiveSessionPayload(
+  sessionName: String,
+  flash: Option[String],
+  mountClaims: Option[Json],
+  hasRouteMountClaims: Boolean,
+  rootLayoutKey: String)
+    derives JsonCodec
+
+final private[scalive] case class LegacyLiveSessionPayload(
   sessionName: String,
   flash: Option[String],
   mountClaims: Option[Json])
     derives JsonCodec
 
 private[scalive] object LiveSessionPayload:
+  private val LegacyRootLayoutKey = "scalive:legacy-root"
+
   def sign(
     config: TokenConfig,
     liveViewId: String,
     sessionName: String,
     flash: Option[String],
-    mountClaims: Option[Json]
+    mountClaims: Option[Json],
+    hasRouteMountClaims: Boolean,
+    rootLayoutKey: String
   ): String =
-    Token.sign(config.secret, liveViewId, LiveSessionPayload(sessionName, flash, mountClaims))
+    Token.sign(
+      config.secret,
+      liveViewId,
+      LiveSessionPayload(sessionName, flash, mountClaims, hasRouteMountClaims, rootLayoutKey)
+    )
 
   def verify(config: TokenConfig, token: String): Either[String, (String, LiveSessionPayload)] =
     Token
@@ -55,61 +119,276 @@ private[scalive] object LiveSessionPayload:
       .map { case (liveViewId, session) => liveViewId -> session }
       .orElse(
         Token
+          .verify[LegacyLiveSessionPayload](config.secret, token, config.maxAge)
+          .map { case (liveViewId, session) =>
+            liveViewId -> LiveSessionPayload(
+              session.sessionName,
+              session.flash,
+              session.mountClaims,
+              hasRouteMountClaims = true,
+              rootLayoutKey = LegacyRootLayoutKey
+            )
+          }
+      ).orElse(
+        Token
           .verify[String](config.secret, token, config.maxAge)
           .map { case (liveViewId, sessionName) =>
-            liveViewId -> LiveSessionPayload(sessionName, None, None)
+            liveViewId -> LiveSessionPayload(
+              sessionName,
+              None,
+              None,
+              hasRouteMountClaims = false,
+              rootLayoutKey = LegacyRootLayoutKey
+            )
           }
       )
+end LiveSessionPayload
 
-object liveHandler:
-  def apply[A, Ctx, Msg: ClassTag, Model](
-    f: (A, Request, Ctx) => LiveView[Msg, Model]
-  ): LiveRouteHandler[A, Ctx, Msg, Model] =
-    LiveRouteHandler(f)
+final private[scalive] case class LiveLayoutLayer[A, Ctx, LayerCtx](
+  layout: LiveLayout[A, LayerCtx],
+  project: Ctx => LayerCtx):
+  def render[Msg](
+    content: HtmlElement[Msg],
+    params: A,
+    request: Request,
+    currentUrl: URL,
+    context: Ctx
+  ): HtmlElement[Msg] =
+    layout.render(content, LiveLayoutContext(params, request, currentUrl, project(context)))
 
-  def apply[A, Msg: ClassTag, Model](
-    f: (A, Request) => LiveView[Msg, Model]
-  ): LiveRouteHandler[A, Unit, Msg, Model] =
-    LiveRouteHandler((params, req, _) => f(params, req))
+  def mapContext[Ctx2](f: Ctx2 => Ctx): LiveLayoutLayer[A, Ctx2, LayerCtx] =
+    copy(project = project.compose(f))
 
-  @targetName("applyRequest")
-  def apply[Msg: ClassTag, Model](
-    f: Request => LiveView[Msg, Model]
-  ): LiveRouteHandler[Unit, Unit, Msg, Model] =
-    LiveRouteHandler((_, req, _) => f(req))
+final private[scalive] case class LiveRootLayoutLayer[A, Ctx, LayerCtx](
+  layout: LiveRootLayout[A, LayerCtx],
+  project: Ctx => LayerCtx):
+  def key(params: A, request: Request, currentUrl: URL, context: Ctx): String =
+    layout.key(LiveLayoutContext(params, request, currentUrl, project(context)))
 
-  def apply[A, Msg: ClassTag, Model](
-    f: A => LiveView[Msg, Model]
-  ): LiveRouteHandler[A, Unit, Msg, Model] =
-    LiveRouteHandler((params, _, _) => f(params))
+  def render[Msg](
+    content: HtmlElement[Msg],
+    params: A,
+    request: Request,
+    currentUrl: URL,
+    context: Ctx
+  ): HtmlElement[Msg] =
+    layout.render(content, LiveLayoutContext(params, request, currentUrl, project(context)))
 
-  def apply[Msg: ClassTag, Model](
-    view: => LiveView[Msg, Model]
-  ): LiveRouteHandler[Unit, Unit, Msg, Model] =
-    LiveRouteHandler((_, _, _) => view)
+  def mapContext[Ctx2](f: Ctx2 => Ctx): LiveRootLayoutLayer[A, Ctx2, LayerCtx] =
+    copy(project = project.compose(f))
 
-final case class LiveRoute[R, A, Ctx, Msg, Model] private[scalive] (
-  pattern: RoutePattern[A],
-  live: LiveRouteHandler[A, Ctx, Msg, Model],
-  mountAspect: LiveMountAspectRuntime[R, Ctx],
-  sessionName: String = "default"):
+trait LiveRouteFragment[-R, -Need]:
+  private[scalive] def liveRoutes: List[LiveRoute[?, ?, ?, ?, ?, ?]]
 
-  def session(name: String): LiveRoute[R, A, Ctx, Msg, Model] =
-    copy(sessionName = name)
+sealed private[scalive] trait LiveSessionGroup
+
+private[scalive] object LiveSessionGroup:
+  case object Default extends LiveSessionGroup
+
+  final class Named private[LiveSessionGroup] (val name: String) extends LiveSessionGroup
+
+  def named(name: String): LiveSessionGroup =
+    new Named(name)
+
+final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
+  private[scalive] val pathCodec: PathCodec[A],
+  private val liveViewBuilder: (A, Request, Ctx) => LiveView[Msg, Model],
+  private[scalive] val msgClassTag: ClassTag[Msg],
+  private[scalive] val mountPipeline: LiveMountPipeline[R, A, Need, Ctx],
+  private[scalive] val liveLayouts: List[LiveLayoutLayer[A, Ctx, ?]] = Nil,
+  private[scalive] val rootLayout: Option[LiveRootLayoutLayer[A, Ctx, ?]] = None,
+  private[scalive] val sessionName: String = "default",
+  private[scalive] val sessionGroup: LiveSessionGroup = LiveSessionGroup.Default,
+  private[scalive] val hasRouteMountAspect: Boolean = false)
+    extends LiveRouteFragment[R, Need]:
+
+  private[scalive] def liveRoutes: List[LiveRoute[?, ?, ?, ?, ?, ?]] =
+    List(this)
+
+  private[scalive] def withSessionName(
+    name: String,
+    group: LiveSessionGroup
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    new LiveRoute(
+      pathCodec,
+      liveViewBuilder,
+      msgClassTag,
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      name,
+      group,
+      hasRouteMountAspect
+    )
+
+  private[scalive] def withSession[R1, SessionCtx](
+    session: LiveSessionBuilder[R1, SessionCtx]
+  )(using ev: SessionCtx <:< Need
+  ): LiveRoute[R & R1, A, Any, (SessionCtx, Ctx), Msg, Model] =
+    val route          = this
+    val sessionLayouts = session.liveLayouts.map { layer =>
+      LiveLayoutLayer[A, (SessionCtx, Ctx), Any](
+        layer.layout.asInstanceOf[LiveLayout[A, Any]],
+        context => layer.project(context._1).asInstanceOf[Any]
+      )
+    }
+    val routeLayouts = liveLayouts.map(_.mapContext[(SessionCtx, Ctx)](_._2))
+    val selectedRoot = rootLayout
+      .map(_.mapContext[(SessionCtx, Ctx)](_._2))
+      .orElse(
+        session.rootLayout.map(layer =>
+          LiveRootLayoutLayer[A, (SessionCtx, Ctx), Any](
+            layer.layout.asInstanceOf[LiveRootLayout[A, Any]],
+            context => layer.project(context._1).asInstanceOf[Any]
+          )
+        )
+      )
+    new LiveRoute(
+      pathCodec,
+      (params, request, context) => liveViewBuilder(params, request, context._2),
+      msgClassTag,
+      new LiveMountPipeline[R & R1, A, Any, (SessionCtx, Ctx)]:
+        def runDisconnected(request: LiveMountRequest[A], input: Any) =
+          for
+            sessionResult <- session.mountPipeline.runDisconnected(
+                               LiveMountRequest(request.params, request.request),
+                               input
+                             )
+            routeResult <- route.mountPipeline.runDisconnected(
+                             request,
+                             ev(sessionResult._2)
+                           )
+          yield Json.Arr(
+            Chunk(sessionResult._1, routeResult._1)
+          ) -> (sessionResult._2 -> routeResult._2)
+
+        def runConnected(claims: Option[Json], request: LiveMountRequest[A], input: Any) =
+          claims match
+            case Some(Json.Arr(values)) if values.length == 2 =>
+              for
+                sessionContext <- session.mountPipeline.runConnected(
+                                    Some(values(0)),
+                                    LiveMountRequest(request.params, request.request),
+                                    input
+                                  )
+                routeContext <- route.mountPipeline.runConnected(
+                                  Some(values(1)),
+                                  request,
+                                  ev(sessionContext)
+                                )
+              yield sessionContext -> routeContext
+            case _ =>
+              ZIO.fail(LiveMountFailure.unauthorized("Invalid session LiveMountAspect claims"))
+      ,
+      sessionLayouts ++ routeLayouts,
+      selectedRoot,
+      session.name,
+      session.group,
+      hasRouteMountAspect
+    )
+  end withSession
+
+  private[scalive] def buildLiveView(
+    params: A,
+    request: Request,
+    mountContext: Ctx
+  ): LiveView[Msg, Model] =
+    liveViewBuilder(params, request, mountContext)
+
+  private[scalive] def renderLiveRoot(
+    lv: LiveView[Msg, Model],
+    model: Model,
+    params: A,
+    request: Request,
+    currentUrl: URL,
+    mountContext: Ctx,
+    globalLayouts: List[LiveLayout[Any, Any]]
+  ): HtmlElement[Msg] =
+    applyLiveLayouts(lv.render(model), params, request, currentUrl, mountContext, globalLayouts)
+
+  private[scalive] def socketRenderRoot(
+    lv: LiveView[Msg, Model],
+    params: A,
+    request: Request,
+    mountContext: Ctx,
+    globalLayouts: List[LiveLayout[Any, Any]]
+  ): (Model, URL) => HtmlElement[Msg] =
+    (model, currentUrl) =>
+      renderLiveRoot(lv, model, params, request, currentUrl, mountContext, globalLayouts)
+
+  private def applyLiveLayouts[Msg](
+    content: HtmlElement[Msg],
+    params: A,
+    request: Request,
+    currentUrl: URL,
+    mountContext: Ctx,
+    globalLayouts: List[LiveLayout[Any, Any]]
+  ): HtmlElement[Msg] =
+    val globalLayers = globalLayouts.map(layout =>
+      LiveLayoutLayer[A, Ctx, Any](layout.asInstanceOf[LiveLayout[A, Any]], identity)
+    )
+    (globalLayers ++ liveLayouts).foldRight(content) { (layer, current) =>
+      layer.render(current, params, request, currentUrl, mountContext)
+    }
+
+  private[scalive] def renderRootHtml[Msg](
+    content: HtmlElement[Msg],
+    params: A,
+    request: Request,
+    currentUrl: URL,
+    mountContext: Ctx,
+    globalRootLayout: LiveRootLayout[Any, Any]
+  ): HtmlElement[Msg] =
+    rootLayer(globalRootLayout).render(content, params, request, currentUrl, mountContext)
+
+  private[scalive] def rootLayoutKey(
+    params: A,
+    request: Request,
+    currentUrl: URL,
+    mountContext: Ctx,
+    globalRootLayout: LiveRootLayout[Any, Any]
+  ): String =
+    rootLayer(globalRootLayout).key(params, request, currentUrl, mountContext)
+
+  private[scalive] def trackedStatic(
+    params: A,
+    request: Request,
+    currentUrl: URL,
+    mountContext: Ctx,
+    globalLayouts: List[LiveLayout[Any, Any]],
+    globalRootLayout: LiveRootLayout[Any, Any]
+  ): List[String] =
+    val live = applyLiveLayouts(div(), params, request, currentUrl, mountContext, globalLayouts)
+    StaticTracking.collect(
+      renderRootHtml(live, params, request, currentUrl, mountContext, globalRootLayout)
+    )
+
+  private def rootLayer(
+    globalRootLayout: LiveRootLayout[Any, Any]
+  ): LiveRootLayoutLayer[A, Ctx, ?] =
+    rootLayout.getOrElse(
+      LiveRootLayoutLayer[A, Ctx, Any](
+        globalRootLayout.asInstanceOf[LiveRootLayout[A, Any]],
+        identity
+      )
+    )
 
   private[scalive] def toZioRoute(
-    rootLayout: HtmlElement[?] => HtmlElement[?],
+    globalLayouts: List[LiveLayout[Any, Any]],
+    globalRootLayout: LiveRootLayout[Any, Any],
     tokenConfig: TokenConfig
+  )(using Any <:< Need
   ): Route[R, Throwable] =
-    pattern -> handler { (params: A, req: Request) =>
-      val id: String =
+    Method.GET / pathCodec -> handler { (params: A, req: Request) =>
+      val initialInput = summon[Any <:< Need](())
+      val id: String   =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val initialFlash = LiveRoute.flashFromRequest(req, tokenConfig)
-      val response     = mountAspect
-        .runDisconnected(req).foldZIO(
+      val response     = mountPipeline
+        .runDisconnected(LiveMountRequest(params, req), initialInput).foldZIO(
           ZIO.succeed,
           { case (mountClaims, mountContext) =>
-            val lv = live.liveviewBuilder(params, req, mountContext)
+            val lv = buildLiveView(params, req, mountContext)
             for
               streamRef     <- Ref.make(StreamRuntimeState.empty)
               flashRef      <- Ref.make(FlashRuntimeState(initialFlash))
@@ -146,32 +425,54 @@ final case class LiveRoute[R, A, Ctx, Msg, Model] private[scalive] (
                             case LiveRoute.InitialLifecycleOutcome.Render(model) =>
                               for
                                 flash <- flashRef.get
+                                rootKey = rootLayoutKey(
+                                            params,
+                                            req,
+                                            req.url,
+                                            mountContext,
+                                            globalRootLayout
+                                          )
                                 token = LiveSessionPayload.sign(
                                           tokenConfig,
                                           id,
                                           sessionName,
                                           FlashToken.encode(tokenConfig, flash.values),
-                                          Some(mountClaims)
+                                          Some(mountClaims),
+                                          hasRouteMountAspect,
+                                          rootKey
                                         )
-                                el = lv.render(model)
+                                el = applyLiveLayouts(
+                                       lv.render(model),
+                                       params,
+                                       req,
+                                       req.url,
+                                       mountContext,
+                                       globalLayouts
+                                     )
                                 rendered <- SocketComponentRuntime.renderRoot(
-                                              rootLayout(
-                                                div(
-                                                  idAttr      := id,
-                                                  phx.main    := true,
-                                                  phx.session := token,
-                                                  el
-                                                )
+                                              div(
+                                                idAttr      := id,
+                                                phx.main    := true,
+                                                phx.session := token,
+                                                el
                                               ),
                                               componentsRef,
                                               ctx
                                             )
+                                document = renderRootHtml(
+                                             rendered,
+                                             params,
+                                             req,
+                                             req.url,
+                                             mountContext,
+                                             globalRootLayout
+                                           )
                                 _ <- ctx.hooks.runAfterRender(model, ctx)
                               yield LiveRoute.clearFlashCookie(
                                 Response.html(
                                   Html.raw(
                                     HtmlBuilder.build(
-                                      rendered,
+                                      document,
                                       isRoot = false
                                     )
                                   )
@@ -283,47 +584,375 @@ object LiveRoute:
   end runInitialHandleParams
 end LiveRoute
 
-final case class LiveMountedRoutePattern[R, A, Ctx] private[scalive] (
-  pattern: RoutePattern[A],
-  mountAspect: LiveMountAspectRuntime[R, Ctx])
+final private[scalive] class LiveRouteGroup[-R, -Need](
+  private[scalive] val liveRoutes: List[LiveRoute[?, ?, ?, ?, ?, ?]])
+    extends LiveRouteFragment[R, Need]
 
-extension [A](pattern: RoutePattern[A])
-  infix def ->[Msg, Model](
-    handler: LiveRouteHandler[A, Unit, Msg, Model]
-  ): LiveRoute[Any, A, Unit, Msg, Model] =
-    LiveRoute(pattern, handler, LiveMountAspect.identityRuntime)
+class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
+  def /[B](that: PathCodec[B])(using combiner: Combiner[A, B]): LiveRouteSeed[combiner.Out] =
+    LiveRouteSeed(pathCodec / that)
 
-  infix def @@[R, Claims, Ctx](
-    mountAspect: LiveMountAspect[R, Claims, Ctx]
-  ): LiveMountedRoutePattern[R, A, Ctx] =
-    LiveMountedRoutePattern(pattern, mountAspect.runtime)
+  private def base[Ctx]: LiveRouteBuilder[Any, A, Ctx, Ctx] =
+    LiveRouteBuilder(
+      pathCodec,
+      LiveMountPipeline.identity[A, Ctx],
+      Nil,
+      None,
+      hasRouteMountAspect = false
+    )
 
-extension [R, A, Ctx](mounted: LiveMountedRoutePattern[R, A, Ctx])
-  infix def ->[Msg, Model](
-    handler: LiveRouteHandler[A, Ctx, Msg, Model]
-  ): LiveRoute[R, A, Ctx, Msg, Model] =
-    LiveRoute(mounted.pattern, handler, mounted.mountAspect)
+  infix def @@[R, In, Claims, Out, Result](
+    aspect: LiveMountAspect[R, A, In, Claims, Out]
+  )(using append: ContextAppend.Aux[In, Out, Result]
+  ): LiveRouteBuilder[R, A, In, Result] =
+    LiveRouteBuilder(
+      pathCodec,
+      LiveMountPipeline.identity[A, In] ++ aspect.runtime,
+      Nil,
+      None,
+      hasRouteMountAspect = true
+    )
+
+  infix def @@[Ctx](layout: LiveLayout[A, Ctx]): LiveRouteBuilder[Any, A, Ctx, Ctx] =
+    base[Ctx] @@ layout
+
+  @targetName("rootLayoutModifier")
+  infix def @@[Ctx](layout: LiveRootLayout[A, Ctx]): LiveRouteBuilder[Any, A, Ctx, Ctx] =
+    base[Ctx] @@ layout
+
+  def apply[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
+    : LiveRoute[Any, A, Any, Any, Msg, Model] =
+    base[Any].apply(view)
+
+  @targetName("arrowView")
+  infix def ->[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
+    : LiveRoute[Any, A, Any, Any, Msg, Model] =
+    apply(view)
+
+  @targetName("applyFull")
+  def apply[Ctx, Msg: ClassTag, Model](
+    builder: (A, Request, Ctx) => LiveView[Msg, Model]
+  ): LiveRoute[Any, A, Ctx, Ctx, Msg, Model] =
+    base[Ctx].apply(builder)
+
+  @targetName("arrowFull")
+  infix def ->[Ctx, Msg: ClassTag, Model](
+    builder: (A, Request, Ctx) => LiveView[Msg, Model]
+  ): LiveRoute[Any, A, Ctx, Ctx, Msg, Model] =
+    apply(builder)
+
+  @targetName("applyRequestParams")
+  def apply[Msg: ClassTag, Model](
+    builder: (A, Request) => LiveView[Msg, Model]
+  ): LiveRoute[Any, A, Any, Any, Msg, Model] =
+    base[Any].apply((params, request, _) => builder(params, request))
+
+  @targetName("arrowRequestParams")
+  infix def ->[Msg: ClassTag, Model](
+    builder: (A, Request) => LiveView[Msg, Model]
+  ): LiveRoute[Any, A, Any, Any, Msg, Model] =
+    apply(builder)
+
+  @targetName("applyRequest")
+  def apply[Msg: ClassTag, Model](
+    builder: Request => LiveView[Msg, Model]
+  )(using A =:= Unit
+  ): LiveRoute[Any, A, Any, Any, Msg, Model] =
+    base[Any].apply((_, request, _) => builder(request))
+
+  @targetName("arrowRequest")
+  infix def ->[Msg: ClassTag, Model](
+    builder: Request => LiveView[Msg, Model]
+  )(using A =:= Unit
+  ): LiveRoute[Any, A, Any, Any, Msg, Model] =
+    apply(builder)
+
+  @targetName("applyTuple2")
+  def apply[C1, C2, Msg: ClassTag, Model](
+    builder: (A, Request, C1, C2) => LiveView[Msg, Model]
+  ): LiveRoute[Any, A, (C1, C2), (C1, C2), Msg, Model] =
+    base[(C1, C2)].apply(builder)
+
+  @targetName("arrowTuple2")
+  infix def ->[C1, C2, Msg: ClassTag, Model](
+    builder: (A, Request, C1, C2) => LiveView[Msg, Model]
+  ): LiveRoute[Any, A, (C1, C2), (C1, C2), Msg, Model] =
+    apply(builder)
+end LiveRouteSeed
+
+final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
+  pathCodec: PathCodec[A],
+  mountPipeline: LiveMountPipeline[R, A, Need, Ctx],
+  liveLayouts: List[LiveLayoutLayer[A, Ctx, ?]],
+  rootLayout: Option[LiveRootLayoutLayer[A, Ctx, ?]],
+  hasRouteMountAspect: Boolean):
+
+  infix def @@[R1, Claims, Out, Result](
+    aspect: LiveMountAspect[R1, A, Ctx, Claims, Out]
+  )(using append: ContextAppend.Aux[Ctx, Out, Result]
+  ): LiveRouteBuilder[R & R1, A, Need, Result] =
+    val projectPrevious = (result: Result) => append.left(result)
+    LiveRouteBuilder(
+      pathCodec,
+      mountPipeline ++ aspect.runtime,
+      liveLayouts.map(_.mapContext(projectPrevious)),
+      rootLayout.map(_.mapContext(projectPrevious)),
+      hasRouteMountAspect = true
+    )
+
+  infix def @@(layout: LiveLayout[A, Ctx]): LiveRouteBuilder[R, A, Need, Ctx] =
+    LiveRouteBuilder(
+      pathCodec,
+      mountPipeline,
+      liveLayouts :+ LiveLayoutLayer[A, Ctx, Ctx](layout, identity),
+      rootLayout,
+      hasRouteMountAspect
+    )
+
+  @targetName("rootLayoutModifier")
+  infix def @@(layout: LiveRootLayout[A, Ctx]): LiveRouteBuilder[R, A, Need, Ctx] =
+    LiveRouteBuilder(
+      pathCodec,
+      mountPipeline,
+      liveLayouts,
+      Some(LiveRootLayoutLayer[A, Ctx, Ctx](layout, identity)),
+      hasRouteMountAspect
+    )
+
+  def apply[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
+    : LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply((_, _, _) => view)
+
+  @targetName("arrowView")
+  infix def ->[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
+    : LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply(view)
+
+  @targetName("applyFull")
+  def apply[Msg: ClassTag, Model](
+    builder: (A, Request, Ctx) => LiveView[Msg, Model]
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    new LiveRoute(
+      pathCodec,
+      builder,
+      summon[ClassTag[Msg]],
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      hasRouteMountAspect = hasRouteMountAspect
+    )
+
+  @targetName("arrowFull")
+  infix def ->[Msg: ClassTag, Model](
+    builder: (A, Request, Ctx) => LiveView[Msg, Model]
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply(builder)
+
+  @targetName("applyTuple2")
+  def apply[C1, C2, Msg: ClassTag, Model](
+    builder: (A, Request, C1, C2) => LiveView[Msg, Model]
+  )(using ev: Ctx <:< (C1, C2)
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply((params, request, context) =>
+      val tuple = ev(context)
+      builder(params, request, tuple._1, tuple._2)
+    )
+
+  @targetName("arrowTuple2")
+  infix def ->[C1, C2, Msg: ClassTag, Model](
+    builder: (A, Request, C1, C2) => LiveView[Msg, Model]
+  )(using ev: Ctx <:< (C1, C2)
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply(builder)
+end LiveRouteBuilder
+
+final class LiveSessionSeed private[scalive] (val name: String):
+  private val group = LiveSessionGroup.named(name)
+
+  def apply[R](route: LiveRouteFragment[R, Any], routes: LiveRouteFragment[R, Any]*)
+    : LiveRouteFragment[R, Any] =
+    LiveSessionBuilder[Any, Any](
+      name,
+      LiveMountPipeline.identity[Any, Any],
+      Nil,
+      None,
+      group
+    )(route, routes*)
+
+  infix def @@[R, Claims, Out, Result](
+    aspect: LiveMountAspect[R, Any, Any, Claims, Out]
+  )(using ContextAppend.Aux[Any, Out, Result]
+  ): LiveSessionBuilder[R, Result] =
+    LiveSessionBuilder(
+      name,
+      LiveMountPipeline.identity[Any, Any] ++ aspect.runtime,
+      Nil,
+      None,
+      group
+    )
+
+  infix def @@(layout: LiveLayout[Any, Any]): LiveSessionBuilder[Any, Any] =
+    LiveSessionBuilder[Any, Any](
+      name,
+      LiveMountPipeline.identity[Any, Any],
+      List(LiveLayoutLayer[Any, Any, Any](layout, identity)),
+      None,
+      group
+    )
+
+  @targetName("rootLayoutModifier")
+  infix def @@(layout: LiveRootLayout[Any, Any]): LiveSessionBuilder[Any, Any] =
+    LiveSessionBuilder[Any, Any](
+      name,
+      LiveMountPipeline.identity[Any, Any],
+      Nil,
+      Some(LiveRootLayoutLayer[Any, Any, Any](layout, identity)),
+      group
+    )
+end LiveSessionSeed
+
+final class LiveSessionBuilder[R, Ctx] private[scalive] (
+  private[scalive] val name: String,
+  private[scalive] val mountPipeline: LiveMountPipeline[R, Any, Any, Ctx],
+  private[scalive] val liveLayouts: List[LiveLayoutLayer[Any, Ctx, ?]],
+  private[scalive] val rootLayout: Option[LiveRootLayoutLayer[Any, Ctx, ?]],
+  private[scalive] val group: LiveSessionGroup):
+
+  def apply[R1, Need](
+    route: LiveRouteFragment[R1, Need],
+    routes: LiveRouteFragment[R1, Need]*
+  )(using Ctx <:< Need
+  ): LiveRouteFragment[R & R1, Any] =
+    val liveRoutes = (route +: routes.toList)
+      .flatMap(_.liveRoutes)
+      .asInstanceOf[List[LiveRoute[R1, ?, Need, ?, ?, ?]]]
+      .map(_.withSession(this))
+    new LiveRouteGroup[R & R1, Any](liveRoutes)
+
+  infix def @@[R1, Claims, Out, Result](
+    aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out]
+  )(using append: ContextAppend.Aux[Ctx, Out, Result]
+  ): LiveSessionBuilder[R & R1, Result] =
+    val projectPrevious = (result: Result) => append.left(result)
+    LiveSessionBuilder(
+      name,
+      mountPipeline ++ aspect.runtime,
+      liveLayouts.map(_.mapContext(projectPrevious)),
+      rootLayout.map(_.mapContext(projectPrevious)),
+      group
+    )
+
+  infix def @@(layout: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
+    LiveSessionBuilder(
+      name,
+      mountPipeline,
+      liveLayouts :+ LiveLayoutLayer[Any, Ctx, Ctx](layout, identity),
+      rootLayout,
+      group
+    )
+
+  @targetName("rootLayoutModifier")
+  infix def @@(layout: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
+    LiveSessionBuilder(
+      name,
+      mountPipeline,
+      liveLayouts,
+      Some(LiveRootLayoutLayer[Any, Ctx, Ctx](layout, identity)),
+      group
+    )
+end LiveSessionBuilder
+
+final case class LiveSocketMount(pathCodec: PathCodec[Unit])
+final case class LiveTokenConfig(config: TokenConfig)
+
+final class LiveRouter[R] private[scalive] (
+  globalLayouts: List[LiveLayout[Any, Any]],
+  globalRootLayout: LiveRootLayout[Any, Any],
+  liveSocketMount: PathCodec[Unit],
+  tokenConfig: TokenConfig):
+
+  infix def @@(layout: LiveLayout[Any, Any]): LiveRouter[R] =
+    LiveRouter(globalLayouts :+ layout, globalRootLayout, liveSocketMount, tokenConfig)
+
+  @targetName("rootLayoutModifier")
+  infix def @@(layout: LiveRootLayout[Any, Any]): LiveRouter[R] =
+    LiveRouter(globalLayouts, layout, liveSocketMount, tokenConfig)
+
+  @targetName("socketMountModifier")
+  infix def @@(mount: LiveSocketMount): LiveRouter[R] =
+    LiveRouter(globalLayouts, globalRootLayout, mount.pathCodec, tokenConfig)
+
+  @targetName("tokenConfigModifier")
+  infix def @@(config: LiveTokenConfig): LiveRouter[R] =
+    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, config.config)
+
+  def apply[R1](route: LiveRouteFragment[R1, Any], routes: LiveRouteFragment[R1, Any]*)
+    : Routes[R & R1, Nothing] =
+    buildRoutes[R1](route +: routes.toList)
+
+  private def buildRoutes[R1](routes: List[LiveRouteFragment[?, Any]]): Routes[R & R1, Nothing] =
+    val liveRoutes = routes
+      .flatMap(_.liveRoutes)
+      .asInstanceOf[List[LiveRoute[R & R1, ?, Any, ?, ?, ?]]]
+    LiveRoutes.validateLiveRoutes(liveRoutes)
+    new LiveRoutesRuntime(
+      globalLayouts,
+      globalRootLayout,
+      liveRoutes,
+      liveSocketMount,
+      tokenConfig
+    ).routes
+end LiveRouter
+
+object Live:
+  val router: LiveRouter[Any] =
+    LiveRouter(Nil, LiveRootLayout.identity, PathCodec.empty / "live", TokenConfig.default)
+
+  def route[A](path: PathCodec[A]): LiveRouteSeed[A] =
+    LiveRouteSeed(path)
+
+  def session(name: String): LiveSessionSeed =
+    LiveSessionSeed(name)
+
+  def socketAt(path: PathCodec[Unit]): LiveSocketMount =
+    LiveSocketMount(path)
+
+  def tokenConfig(config: TokenConfig): LiveTokenConfig =
+    LiveTokenConfig(config)
+
+val live: LiveRouteSeed[Unit] = LiveRouteSeed(PathCodec.empty)
 
 object LiveRoutes:
-  def apply[R](
-    layout: HtmlElement[?] => HtmlElement[?],
-    mount: String = "live",
-    tokenConfig: TokenConfig = TokenConfig.default
-  )(
-    routes: LiveRoute[R, ?, ?, ?, ?]*
-  ): Routes[R, Nothing] =
-    new LiveRoutesRuntime(layout, routes.toList, websocketMountCodec(mount), tokenConfig).routes
 
-  private[scalive] def websocketMountCodec(mount: String): PathCodec[Unit] =
-    val segments =
-      mount
-        .split("/")
-        .iterator
-        .map(_.trim)
-        .filter(_.nonEmpty)
-        .toList
-    require(segments.nonEmpty, "mount must contain at least one path segment")
-    segments.foldLeft(PathCodec.empty: PathCodec[Unit])((codec, segment) => codec / segment)
+  private[scalive] def validateLiveRoutes(
+    routes: List[LiveRoute[?, ?, Any, ?, ?, ?]]
+  ): Unit =
+    val duplicatePaths = routes
+      .map(_.pathCodec.render)
+      .groupBy(identity)
+      .collect { case (path, occurrences) if occurrences.size > 1 => path }
+      .toList
+      .sorted
+
+    if duplicatePaths.nonEmpty then
+      throw new IllegalArgumentException(
+        s"Duplicate LiveRoutes paths: ${duplicatePaths.mkString(", ")}"
+      )
+
+    val duplicateSessions = routes
+      .groupBy(_.sessionName)
+      .collect {
+        case (name, sessionRoutes) if sessionRoutes.map(_.sessionGroup).distinct.size > 1 => name
+      }
+      .toList
+      .sorted
+
+    if duplicateSessions.nonEmpty then
+      throw new IllegalArgumentException(
+        s"Duplicate LiveSession names: ${duplicateSessions.mkString(", ")}. " +
+          "LiveSession routes must be declared in a single named group."
+      )
+end LiveRoutes
 
 final private[scalive] class LiveChannel(
   sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
@@ -344,22 +973,45 @@ final private[scalive] class LiveChannel(
     ctx: LiveContext,
     meta: WebSocketMessage.Meta,
     initialUrl: URL,
-    initialFlash: Map[String, String] = Map.empty
+    initialFlash: Map[String, String] = Map.empty,
+    renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None
   )(using ClassTag[Msg]
   ): RIO[Scope, Unit] =
+    val rootRenderer = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
     sockets
       .updateZIO { m =>
         m.get(id) match
           case Some(socket) =>
             socket.shutdown *>
               Socket
-                .start(id, token, lv, ctx, meta, tokenConfig, initialUrl, initialFlash)
+                .start(
+                  id,
+                  token,
+                  lv,
+                  ctx,
+                  meta,
+                  tokenConfig,
+                  initialUrl,
+                  initialFlash,
+                  Some(rootRenderer)
+                )
                 .map(m.updated(id, _))
           case None =>
             Socket
-              .start(id, token, lv, ctx, meta, tokenConfig, initialUrl, initialFlash)
+              .start(
+                id,
+                token,
+                lv,
+                ctx,
+                meta,
+                tokenConfig,
+                initialUrl,
+                initialFlash,
+                Some(rootRenderer)
+              )
               .map(m.updated(id, _))
       }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
+  end join
 
   def nestedRuntime(parentTopic: String): NestedLiveViewRuntime =
     new SocketNestedLiveViewRuntime(parentTopic, tokenConfig, nestedEntries)
@@ -551,12 +1203,11 @@ object LiveChannel:
     yield new LiveChannel(sockets, uploadOwners, nested, tokenConfig)
 
 final private[scalive] class LiveRoutesRuntime[R](
-  rootLayout: HtmlElement[?] => HtmlElement[?],
-  liveRoutes: List[LiveRoute[R, ?, ?, ?, ?]],
-  websocketMount: PathCodec[Unit],
+  globalLayouts: List[LiveLayout[Any, Any]],
+  globalRootLayout: LiveRootLayout[Any, Any],
+  liveRoutes: List[LiveRoute[R, ?, Any, ?, ?, ?]],
+  liveSocketMount: PathCodec[Unit],
   tokenConfig: TokenConfig):
-
-  private val trackedStatic = StaticTracking.collect(rootLayout(div()))
 
   private val socketApp: WebSocketApp[R] =
     Handler.webSocket { channel =>
@@ -647,61 +1298,105 @@ final private[scalive] class LiveRoutesRuntime[R](
     liveChannel: LiveChannel
   ): RIO[R & Scope, Option[WebSocketMessage]] =
     val clientStatics = join.static.orElse(StaticTracking.clientListFromParams(join.params))
-    val staticChanged = StaticTracking.staticChanged(clientStatics, trackedStatic)
     val rootSession   = verifyRootSession(message.topic, join.session)
     val initialFlash  = join.flash
       .orElse(rootSession.flatMap(_.flash))
       .flatMap(FlashToken.decode(tokenConfig, _))
       .getOrElse(Map.empty)
-    val ctx = LiveContext(
-      staticChanged = staticChanged,
-      nestedLiveViews = liveChannel.nestedRuntime(message.topic)
-    )
 
     decodeJoinUrl(join) match
       case Left(error) =>
         ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
       case Right(decodedUrl) =>
         liveChannel
-          .joinNested(message.topic, join.session, staticChanged, message.meta, decodedUrl)
+          .joinNested(message.topic, join.session, staticChanged = false, message.meta, decodedUrl)
           .flatMap {
             case Some(reason) => ZIO.succeed(Some(joinErrorReply(message, reason)))
             case None         =>
               val req = Request(url = decodedUrl)
               liveRoutes.iterator
                 .map(route =>
-                  route.pattern.pathCodec
+                  route.pathCodec
                     .decode(req.path)
                     .toOption
                     .map(pathParams =>
                       rootSession match
                         case Some(session) if session.sessionName == route.sessionName =>
-                          route.mountAspect
-                            .runConnected(session.mountClaims, decodedUrl).foldZIO(
-                              response => ZIO.succeed(Some(mountFailureReply(message, response))),
-                              mountContext =>
-                                val lv = route.live.liveviewBuilder(pathParams, req, mountContext)
-                                ZIO.logDebug(
-                                  s"Joining LiveView ${route.pattern.pathCodec} ${message.topic}"
-                                ) *>
-                                  liveChannel
-                                    .join(
-                                      message.topic,
-                                      join.session,
-                                      lv,
-                                      ctx,
-                                      message.meta,
-                                      decodedUrl,
-                                      initialFlash
-                                    )(using route.live.msgClassTag)
-                                    .as(None)
-                                    .catchAllCause(cause =>
-                                      ZIO.logErrorCause(cause) *>
-                                        ZIO.succeed(
-                                          Some(joinErrorReply(message, JoinErrorReason.Stale))
+                          if isAuthorizedRootJoin(session, route, join) then
+                            route.mountPipeline
+                              .runConnected(
+                                session.mountClaims,
+                                LiveMountRequest(pathParams, req),
+                                ()
+                              ).foldZIO(
+                                failure => mountFailureReply(message, failure).map(Some(_)),
+                                mountContext =>
+                                  val rootKey = route.rootLayoutKey(
+                                    pathParams,
+                                    req,
+                                    decodedUrl,
+                                    mountContext,
+                                    globalRootLayout
+                                  )
+                                  val serverStatics = route.trackedStatic(
+                                    pathParams,
+                                    req,
+                                    decodedUrl,
+                                    mountContext,
+                                    globalLayouts,
+                                    globalRootLayout
+                                  )
+                                  val staticChanged =
+                                    StaticTracking.staticChanged(clientStatics, serverStatics)
+                                  val ctx = LiveContext(
+                                    staticChanged = staticChanged,
+                                    nestedLiveViews = liveChannel.nestedRuntime(message.topic)
+                                  )
+                                  val lv = route.buildLiveView(pathParams, req, mountContext)
+                                  val renderRoot = route.socketRenderRoot(
+                                    lv,
+                                    pathParams,
+                                    req,
+                                    mountContext,
+                                    globalLayouts
+                                  )
+                                  if rootKey != session.rootLayoutKey then
+                                    ZIO.logWarning(
+                                      s"Rejecting live redirect to ${decodedUrl.path.encode}: root layout changed from ${session.rootLayoutKey} to $rootKey"
+                                    ) *>
+                                      ZIO.succeed(
+                                        Some(joinErrorReply(message, JoinErrorReason.Unauthorized))
+                                      )
+                                  else
+                                    ZIO.logDebug(
+                                      s"Joining LiveView ${route.pathCodec} ${message.topic}"
+                                    ) *>
+                                      liveChannel
+                                        .join(
+                                          message.topic,
+                                          join.session,
+                                          lv,
+                                          ctx,
+                                          message.meta,
+                                          decodedUrl,
+                                          initialFlash,
+                                          Some(renderRoot)
+                                        )(using route.msgClassTag)
+                                        .as(None)
+                                        .catchAllCause(cause =>
+                                          ZIO.logErrorCause(cause) *>
+                                            ZIO.succeed(
+                                              Some(joinErrorReply(message, JoinErrorReason.Stale))
+                                            )
                                         )
-                                    )
-                            )
+                              )
+                          else
+                            ZIO.logWarning(
+                              s"Rejecting live redirect to ${decodedUrl.path.encode}: route-specific mount claims require a fresh HTTP render"
+                            ) *>
+                              ZIO.succeed(
+                                Some(joinErrorReply(message, JoinErrorReason.Unauthorized))
+                              )
                         case _ =>
                           ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
                     )
@@ -711,6 +1406,13 @@ final private[scalive] class LiveRoutesRuntime[R](
           }
     end match
   end handleJoin
+
+  private def isAuthorizedRootJoin(
+    session: LiveSessionPayload,
+    route: LiveRoute[R, ?, Any, ?, ?, ?],
+    join: Payload.Join
+  ): Boolean =
+    join.redirect.isEmpty || (!session.hasRouteMountClaims && !route.hasRouteMountAspect)
 
   private def handleLeave(
     message: WebSocketMessage,
@@ -838,20 +1540,39 @@ final private[scalive] class LiveRoutesRuntime[R](
   private def joinErrorReply(message: WebSocketMessage, reason: JoinErrorReason): WebSocketMessage =
     errorReply(message, LiveResponse.JoinError(reason))
 
-  private def mountFailureReply(message: WebSocketMessage, response: Response): WebSocketMessage =
-    response.rawHeader("location") match
-      case Some(to) if response.status.isRedirection =>
-        WebSocketMessage(
-          message.joinRef,
-          message.messageRef,
-          message.topic,
-          Protocol.EventRedirect,
-          Payload.Redirect(to, None)
+  private def mountFailureReply(message: WebSocketMessage, failure: LiveMountFailure)
+    : UIO[WebSocketMessage] =
+    failure match
+      case LiveMountFailure.Redirect(to) =>
+        ZIO.succeed(
+          WebSocketMessage(
+            message.joinRef,
+            message.messageRef,
+            message.topic,
+            Protocol.EventRedirect,
+            Payload.Redirect(to.encode, None)
+          )
         )
-      case _ if response.status == Status.Unauthorized || response.status == Status.Forbidden =>
-        joinErrorReply(message, JoinErrorReason.Unauthorized)
-      case _ =>
-        joinErrorReply(message, JoinErrorReason.Stale)
+      // Phoenix LiveView clients know unauthorized and stale join failures; keep details server-side.
+      case LiveMountFailure.Unauthorized(reason) =>
+        logConnectedMountFailure("unauthorized", message, reason).as(
+          joinErrorReply(message, JoinErrorReason.Unauthorized)
+        )
+      case LiveMountFailure.Stale(reason) =>
+        logConnectedMountFailure("stale", message, reason).as(
+          joinErrorReply(message, JoinErrorReason.Stale)
+        )
+
+  private def logConnectedMountFailure(
+    kind: String,
+    message: WebSocketMessage,
+    reason: Option[String]
+  ): UIO[Unit] =
+    reason match
+      case Some(value) =>
+        ZIO.logWarning(s"Connected LiveView mount failed for ${message.topic} as $kind: $value")
+      case None =>
+        ZIO.unit
 
   private def outgoingEventType(payload: Payload): String =
     payload match
@@ -883,9 +1604,9 @@ final private[scalive] class LiveRoutesRuntime[R](
     Routes
       .fromIterable(
         liveRoutes
-          .map(route => route.toZioRoute(rootLayout, tokenConfig))
+          .map(route => route.toZioRoute(globalLayouts, globalRootLayout, tokenConfig))
           .prepended(
-            Method.GET / websocketMount / "websocket" -> handler(socketApp.toResponse)
+            Method.GET / liveSocketMount / "websocket" -> handler(socketApp.toResponse)
           )
       ).handleErrorZIO(e =>
         ZIO.logErrorCause(Cause.fail(e)).as(Response(status = Status.InternalServerError))

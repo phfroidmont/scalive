@@ -2,9 +2,9 @@ import ListLiveView.*
 import monocle.syntax.all.*
 import zio.*
 import zio.http.URL
+import zio.schema.Schema
 import zio.schema.derived
 import zio.stream.ZStream
-import zio.schema.Schema
 
 import scalive.*
 

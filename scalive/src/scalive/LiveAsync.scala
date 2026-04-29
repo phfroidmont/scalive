@@ -1,8 +1,8 @@
 package scalive
 
-import zio.*
-
 import scala.annotation.targetName
+
+import zio.*
 
 enum AsyncValue[+A]:
   case Empty

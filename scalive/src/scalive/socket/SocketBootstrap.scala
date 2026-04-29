@@ -16,7 +16,8 @@ private[scalive] object SocketBootstrap:
     meta: WebSocketMessage.Meta,
     tokenConfig: TokenConfig,
     initialUrl: URL,
-    initialFlash: Map[String, String]
+    initialFlash: Map[String, String],
+    renderRoot: (Model, URL) => HtmlElement[Msg]
   ): Task[RuntimeState[Msg, Model]] =
     for
       inbox           <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
@@ -63,7 +64,11 @@ private[scalive] object SocketBootstrap:
           mountNavigation
         )
       initRoot <-
-        SocketComponentRuntime.renderRoot(lv.render(bootstrapModel), componentsRef, runtimeCtx)
+        SocketComponentRuntime.renderRoot(
+          renderRoot(bootstrapModel, bootstrapUrl),
+          componentsRef,
+          runtimeCtx
+        )
       initCompiled = RenderSnapshot.compile(initRoot)
       initView     = RenderedView(
                    compiled = initCompiled,
@@ -95,6 +100,7 @@ private[scalive] object SocketBootstrap:
         bootstrapPayloads.map(_ -> meta.copy(messageRef = None))
     yield RuntimeState(
       lv = lv,
+      renderRoot = renderRoot,
       msgClassTag = summon[ClassTag[Msg]],
       ctx = runtimeCtx,
       meta = meta,

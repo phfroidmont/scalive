@@ -3,9 +3,9 @@ import scala.util.Random
 import KeyedComprehensionLiveView.*
 import zio.http.URL
 import zio.json.ast.Json
+import zio.schema.Schema
 import zio.schema.derived
 import zio.stream.ZStream
-import zio.schema.Schema
 
 import scalive.*
 

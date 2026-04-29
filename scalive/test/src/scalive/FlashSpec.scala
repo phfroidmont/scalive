@@ -24,8 +24,6 @@ object FlashSpec extends ZIOSpecDefault:
     case PushNavigate
     case Rerender
 
-  private val identityLayout: HtmlElement[?] => HtmlElement[?] = element => element
-
   private def containsValue(diff: Diff, value: String): Boolean =
     diff match
       case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
@@ -925,9 +923,9 @@ object FlashSpec extends ZIOSpecDefault:
           div(flash("info")(message => p(idAttr := "flash", message)))
         def subscriptions(model: Unit) = ZStream.empty
 
-      val routes = LiveRoutes(layout = identityLayout, tokenConfig = tokenConfig)(
-        Method.GET / "source" -> liveHandler(source),
-        Method.GET / "target" -> liveHandler(target)
+      val routes = (scalive.Live.router @@ scalive.Live.tokenConfig(tokenConfig))(
+        (scalive.live / "source")(source),
+        (scalive.live / "target")(target)
       )
 
       def run(path: String, flashToken: Option[String] = None) =
@@ -970,9 +968,9 @@ object FlashSpec extends ZIOSpecDefault:
           div(flash("info")(message => p(idAttr := "flash", message)))
         def subscriptions(model: Unit) = ZStream.empty
 
-      val routes = LiveRoutes(layout = identityLayout, tokenConfig = tokenConfig)(
-        Method.GET / "source" -> liveHandler(source),
-        Method.GET / "target" -> liveHandler(target)
+      val routes = (scalive.Live.router @@ scalive.Live.tokenConfig(tokenConfig))(
+        (scalive.live / "source")(source),
+        (scalive.live / "target")(target)
       )
 
       def run(path: String, flashToken: Option[String] = None) =
@@ -1016,9 +1014,9 @@ object FlashSpec extends ZIOSpecDefault:
           div(flash("info")(message => p(idAttr := "flash", message)))
         def subscriptions(model: Unit) = ZStream.empty
 
-      val routes = LiveRoutes(layout = identityLayout, tokenConfig = tokenConfig)(
-        Method.GET / "source" -> liveHandler(source),
-        Method.GET / "target" -> liveHandler(target)
+      val routes = (scalive.Live.router @@ scalive.Live.tokenConfig(tokenConfig))(
+        (scalive.live / "source")(source),
+        (scalive.live / "target")(target)
       )
 
       def run(path: String, flashToken: Option[String] = None) =

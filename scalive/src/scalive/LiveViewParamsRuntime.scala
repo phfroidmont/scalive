@@ -1,7 +1,7 @@
 package scalive
 
-import zio.http.URL
 import zio.*
+import zio.http.URL
 
 private[scalive] object LiveViewParamsRuntime:
   def runHandleParams[Msg, Model](

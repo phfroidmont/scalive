@@ -67,6 +67,13 @@ object AssignAsyncParitySpec extends ZIOSpecDefault:
 
     loop(max, Nil).timeoutFail(new RuntimeException("timed out waiting for async assign payload"))(2.seconds)
 
+  private def awaitWithinTestClock[A](effect: UIO[A], duration: Duration): UIO[Option[A]] =
+    for
+      fiber <- effect.timeout(duration).fork
+      _     <- TestClock.adjust(duration)
+      value <- fiber.join
+    yield value
+
   private object UpdateAssignComponent
       extends LiveComponent[UpdateAssignComponent.Action, Unit, UpdateAssignComponent.Model]:
     enum Action:
@@ -223,7 +230,7 @@ object AssignAsyncParitySpec extends ZIOSpecDefault:
                     for
                       socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
                       _      <- socket.shutdown
-                      done   <- stopped.await.timeout(1.second)
+                      done   <- awaitWithinTestClock(stopped.await, 1.second)
                     yield assertTrue(done.contains(()))
                   }
       yield result
@@ -340,7 +347,7 @@ object AssignAsyncParitySpec extends ZIOSpecDefault:
                       _    <- outbox.take
                       _    <- socket.inbox.offer(destroyed -> meta)
                       _    <- outbox.take
-                      done <- stopped.await.timeout(1.second)
+                      done <- awaitWithinTestClock(stopped.await, 1.second)
                     yield assertTrue(done.contains(()))
                   }
       yield result

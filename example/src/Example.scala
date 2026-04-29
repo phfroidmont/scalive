@@ -31,13 +31,11 @@ object Example extends ZIOAppDefault:
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
   val liveRoutes =
-    LiveRoutes(
-      layout = RootLayout(_)
-    )(
-      Method.GET / Root      -> liveHandler(HomeLiveView()),
-      Method.GET / "counter" -> liveHandler(CounterLiveView()),
-      Method.GET / "list"    -> liveHandler(ListLiveView()),
-      Method.GET / "todo"    -> liveHandler(TodoLiveView())
+    (Live.router @@ RootLayout)(
+      live             -> HomeLiveView(),
+      live / "counter" -> CounterLiveView(),
+      live / "list"    -> ListLiveView(),
+      live / "todo"    -> TodoLiveView()
     )
 
   val routes =

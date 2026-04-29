@@ -1,6 +1,6 @@
 import scalive.*
 
-object RootLayout:
+object RootLayout extends LiveRootLayout[Any, Any]:
   import java.nio.file.Paths
 
   private val runtime = zio.Runtime.default
@@ -19,7 +19,15 @@ object RootLayout:
   private val hashedJs  = s"/static/${hashOrDie("app.js")}"
   private val hashedCss = s"/static/${hashOrDie("app.css")}"
 
+  def key(ctx: LiveLayoutContext[Any, Any]): String = "example-root"
+
   def apply[Msg](content: HtmlElement[Msg]): HtmlElement[Msg] =
+    render(
+      content,
+      LiveLayoutContext((), zio.http.Request.get(zio.http.URL.root), zio.http.URL.root, ())
+    )
+
+  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
     htmlRootTag(
       lang              := "en",
       dataAttr("theme") := "business",

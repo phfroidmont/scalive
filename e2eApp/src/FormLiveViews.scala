@@ -1,7 +1,7 @@
+import zio.ZIO
 import zio.http.URL
 import zio.json.ast.Json
 import zio.stream.ZStream
-import zio.ZIO
 
 import scalive.*
 import scalive.codecs.{BooleanAsAttrPresenceEncoder, StringAsIsEncoder}

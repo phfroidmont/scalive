@@ -109,12 +109,12 @@ object SocketUploadSpec extends ZIOSpecDefault:
     )
 
   private def waitForAllowedUpload(promise: Promise[Throwable, LiveUpload]): Task[LiveUpload] =
-    Live.live(
+    zio.test.Live.live(
       promise.await.timeoutFail(new RuntimeException("Timed out waiting for allowed upload"))(5.seconds)
     )
 
   private def waitForSnapshot(snapshots: Queue[Option[LiveUpload]]): Task[LiveUpload] =
-    Live.live(
+    zio.test.Live.live(
       snapshots.take
         .timeoutFail(new RuntimeException("Timed out waiting for upload snapshot"))(5.seconds)
     )

@@ -1,20 +1,21 @@
 import java.util.UUID
 
-import zio.stream.ZStream
 import zio.ZIO
-import zio.json.ast.Json
 import zio.http.URL
+import zio.json.ast.Json
+import zio.stream.ZStream
 
 import scalive.*
 
-private val actionAttr = htmlAttr("action", scalive.codecs.StringAsIsEncoder)
-private val methodAttr = htmlAttr("method", scalive.codecs.StringAsIsEncoder)
-private val multipleAttr = htmlAttr("multiple", scalive.codecs.BooleanAsAttrPresenceEncoder)
+private val actionAttr      = htmlAttr("action", scalive.codecs.StringAsIsEncoder)
+private val methodAttr      = htmlAttr("method", scalive.codecs.StringAsIsEncoder)
+private val multipleAttr    = htmlAttr("multiple", scalive.codecs.BooleanAsAttrPresenceEncoder)
 private val placeholderAttr = htmlAttr("placeholder", scalive.codecs.StringAsIsEncoder)
 private val feedbackForAttr = htmlAttr("phx-feedback-for", scalive.codecs.StringAsIsEncoder)
-private val targetAttr = htmlAttr("phx-target", scalive.codecs.StringAsIsEncoder)
-private val phxClickAttr = htmlAttr("phx-click", scalive.codecs.StringAsIsEncoder)
-private val dataPhxAutoUploadAttr = htmlAttr("data-phx-auto-upload", scalive.codecs.BooleanAsAttrPresenceEncoder)
+private val targetAttr      = htmlAttr("phx-target", scalive.codecs.StringAsIsEncoder)
+private val phxClickAttr    = htmlAttr("phx-click", scalive.codecs.StringAsIsEncoder)
+private val dataPhxAutoUploadAttr =
+  htmlAttr("data-phx-auto-upload", scalive.codecs.BooleanAsAttrPresenceEncoder)
 class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveView.Model]:
   import Issue3719LiveView.*
 
@@ -39,7 +40,6 @@ class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveVie
     target match
       case Some(segments) => segments.map(segment => s"\"$segment\"").mkString("[", ", ", "]")
       case None           => "nil"
-end Issue3719LiveView
 
 object Issue3719LiveView:
   final case class Model(target: Option[Vector[String]] = None)
@@ -78,7 +78,8 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg.type, LiveUpload]
   private def issue2965FileInput(upload: LiveUpload, mods: Mod[Issue2965LiveView.Msg.type]*) =
     val activeRefs      = upload.entries.map(_.ref).mkString(",")
     val doneRefs        = upload.entries.filter(_.done).map(_.ref).mkString(",")
-    val preflightedRefs = upload.entries.filter(entry => entry.preflighted || entry.done).map(_.ref).mkString(",")
+    val preflightedRefs =
+      upload.entries.filter(entry => entry.preflighted || entry.done).map(_.ref).mkString(",")
 
     input(
       idAttr                           := "fileinput",
@@ -100,7 +101,7 @@ end Issue2965LiveView
 object Issue2965LiveView:
   case object Msg
 
-  private val UploadName = "files"
+  private val UploadName    = "files"
   private val UploadOptions = LiveUploadOptions(
     accept = LiveUploadAccept.Exactly(List(".txt")),
     maxEntries = 20,
@@ -223,12 +224,11 @@ class Issue3047LiveView(pageName: String, afterReset: Boolean)
       div(idAttr := "page", s"Page $pageName"),
       div(
         phx.onUpdate := "stream",
-        model.items.stream { (domId, item) => span(idAttr := domId, item.id.toString) }
+        model.items.stream((domId, item) => span(idAttr := domId, item.id.toString))
       ),
       button(phx.onClick(Msg), "Reset"),
       link.navigate("/issues/3047/b", "Page B")
     )
-end Issue3047LiveView
 
 object Issue3047LiveView:
   final case class Item(id: Int)
@@ -257,7 +257,6 @@ class Issue3529LiveView(page: String) extends LiveView[Unit, String]:
       link.navigate("/issues/3529/navigated", "Navigate"),
       link.patch("/issues/3529/navigated?patched=true", "Patch")
     )
-end Issue3529LiveView
 
 class Issue3530LiveView extends LiveView[Unit, Vector[Int]]:
   override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
@@ -286,7 +285,6 @@ class Issue3530LiveView extends LiveView[Unit, Vector[Int]]:
         items.map(item => div(idAttr := s"item-$item", phx.hook := "Issue3530Item", s"item $item"))
       )
     )
-end Issue3530LiveView
 
 class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg.type, Boolean]:
   def mount = false
@@ -302,7 +300,6 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg.type, Boolean]:
       button(phx.onClick(Issue3647LiveView.Msg), "Upload then Input"),
       ul(if uploaded then li("file.txt") else "")
     )
-end Issue3647LiveView
 
 object Issue3647LiveView:
   case object Msg
@@ -331,7 +328,6 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
       ),
       if reconnected then p(idAttr := "reconnected", "Reconnected!") else ""
     )
-end Issue3819LiveView
 
 object Issue3819LiveView:
   enum Msg:
@@ -354,7 +350,6 @@ class Issue3107LiveView extends LiveView[Issue3107LiveView.Msg.type, Boolean]:
       ),
       button(disabled := disabledButton, "OK")
     )
-end Issue3107LiveView
 
 object Issue3107LiveView:
   case object Msg
@@ -371,8 +366,9 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
     if event != "sandbox:eval" then ZIO.succeed(InterceptResult.cont(model))
     else
       val code = value match
-        case Json.Obj(fields) => fields.collectFirst { case ("value", Json.Str(v)) => v }.getOrElse("")
-        case _                => ""
+        case Json.Obj(fields) =>
+          fields.collectFirst { case ("value", Json.Str(v)) => v }.getOrElse("")
+        case _ => ""
       val selected = code match
         case value if value.contains("[1,2]") => Some(Vector(1, 2))
         case value if value.contains("[2,3]") => Some(Vector(2, 3))
@@ -380,8 +376,14 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
         case _                                => None
 
       selected match
-        case Some(values) => ZIO.succeed(InterceptResult.haltReply(model.copy(selected = values), Json.Obj("result" -> Json.Null)))
-        case None         => ZIO.succeed(E2ESandboxEval.handle(model, event, value))
+        case Some(values) =>
+          ZIO.succeed(
+            InterceptResult.haltReply(
+              model.copy(selected = values),
+              Json.Obj("result" -> Json.Null)
+            )
+          )
+        case None => ZIO.succeed(E2ESandboxEval.handle(model, event, value))
 
   def subscriptions(model: Model) = ZStream.empty
 
@@ -393,7 +395,13 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
         idAttr       := "ids",
         nameAttr     := "ids[]",
         multipleAttr := true,
-        (1 to 5).map(number => option(value := number.toString, selected := model.selected.contains(number), number.toString))
+        (1 to 5).map(number =>
+          option(
+            value    := number.toString,
+            selected := model.selected.contains(number),
+            number.toString
+          )
+        )
       ),
       input(typ := "text", placeholderAttr := "focus me!")
     )
@@ -427,16 +435,26 @@ class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveVie
           nameAttr := "demo[select1]",
           option(value := "", "Select"),
           Vector("greetings", "goodbyes").map(optionValue =>
-            option(selected := model.select1.contains(optionValue), value := optionValue, optionValue)
+            option(
+              selected := model.select1.contains(optionValue),
+              value    := optionValue,
+              optionValue
+            )
           )
         ),
         select(
           idAttr   := "demo_select2",
           nameAttr := "demo[select2]",
           option(value := "", "Select"),
-          model.select2Options.map(optionValue => option(selected := model.select2.contains(optionValue), value := optionValue, optionValue))
+          model.select2Options.map(optionValue =>
+            option(
+              selected := model.select2.contains(optionValue),
+              value    := optionValue,
+              optionValue
+            )
+          )
         ),
-        input(typ := "text", idAttr := "demo_dummy", nameAttr := "demo[dummy]"),
+        input(typ  := "text", idAttr := "demo_dummy", nameAttr := "demo[dummy]"),
         button(typ := "submit", "Submit")
       )
     )
@@ -461,7 +479,7 @@ class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
 
   def handleMessage(model: Vector[String]) =
     case Msg.Validate(data) => data.values("a[]")
-    case Msg.Search        => model
+    case Msg.Search         => model
 
   def subscriptions(model: Vector[String]) = ZStream.empty
 
@@ -511,7 +529,6 @@ class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg.type, Unit]:
         phx.debounce := "blur"
       )
     )
-end Issue3194LiveView
 
 object Issue3194LiveView:
   case object Msg
@@ -524,7 +541,6 @@ class Issue3194OtherLiveView extends LiveView[Unit, Unit]:
   def subscriptions(model: Unit) = ZStream.empty
 
   def render(model: Unit) = h2("Another LiveView")
-end Issue3194OtherLiveView
 
 class Issue3200LiveView extends LiveView[Issue3200LiveView.Msg, Issue3200LiveView.Model]:
   import Issue3200LiveView.*
@@ -536,12 +552,12 @@ class Issue3200LiveView extends LiveView[Issue3200LiveView.Msg, Issue3200LiveVie
   override def handleParams(model: Model, params: Unit, url: URL) =
     val tab = url.path.segments.toList match
       case "issues" :: "3200" :: "messages" :: Nil => Tab.Messages
-      case _                                        => Tab.Settings
+      case _                                       => Tab.Settings
     model.copy(tab = tab)
 
   def handleMessage(model: Model) =
     case Msg.Change(data) => model.copy(message = data.getOrElse("new_message", ""))
-    case Msg.Submit      => model
+    case Msg.Submit       => model
 
   def subscriptions(model: Model) = ZStream.empty
 
@@ -555,13 +571,17 @@ class Issue3200LiveView extends LiveView[Issue3200LiveView.Msg, Issue3200LiveVie
           div(
             div("Example message"),
             form(
-              idAttr     := "full_add_message_form",
+              idAttr := "full_add_message_form",
               phx.onChangeForm(Msg.Change(_)),
               phx.onSubmit(Msg.Submit),
               targetAttr := "#full_add_message_form",
               div(
                 feedbackForAttr := "new_message",
-                input(idAttr := "new_message_input", nameAttr := "new_message", value := model.message)
+                input(
+                  idAttr   := "new_message_input",
+                  nameAttr := "new_message",
+                  value    := model.message
+                )
               )
             )
           )
@@ -584,9 +604,14 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
   def mount = Model()
 
   def handleMessage(model: Model) =
-    case Msg.ChangeStatus(data) => model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
-    case Msg.Validate(data)     => model.copy(name = data.getOrElse("name", model.name), email = data.getOrElse("email", model.email))
-    case Msg.Submit             => model.copy(status = Status.Loaded)
+    case Msg.ChangeStatus(data) =>
+      model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
+    case Msg.Validate(data) =>
+      model.copy(
+        name = data.getOrElse("name", model.name),
+        email = data.getOrElse("email", model.email)
+      )
+    case Msg.Submit => model.copy(status = Status.Loaded)
 
   def subscriptions(model: Model) = ZStream.empty
 
@@ -597,7 +622,11 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
         select(
           nameAttr := "status",
           Vector(Status.Connecting, Status.Loading, Status.Connected, Status.Loaded).map(status =>
-            option(value := status.value, selected := (status == model.status), status.value.capitalize)
+            option(
+              value    := status.value,
+              selected := (status == model.status),
+              status.value.capitalize
+            )
           )
         )
       ),
@@ -608,9 +637,9 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
             form(
               phx.onChangeForm(Msg.Validate(_)),
               phx.onSubmit(Msg.Submit),
-              input(nameAttr := "name", typ := "text", value := model.name),
+              input(nameAttr := "name", typ  := "text", value := model.name),
               input(nameAttr := "email", typ := "text", value := model.email),
-              button(typ := "submit", "Submit")
+              button(typ     := "submit", "Submit")
             )
           )
         case other => div(cls := "p-8 bg-gray-200 mb-4", other.value)
@@ -640,10 +669,16 @@ class Issue3117LiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      a(idAttr := "navigate", href := "/issues/3117?nav", phx.onClick(JS.navigate("/issues/3117?nav")), "Navigate"),
-      (1 to 2).map(i => div(idAttr := s"row-$i", s"Example LC Row $i", div(cls := "static", "static content")))
+      a(
+        idAttr := "navigate",
+        href   := "/issues/3117?nav",
+        phx.onClick(JS.navigate("/issues/3117?nav")),
+        "Navigate"
+      ),
+      (1 to 2).map(i =>
+        div(idAttr := s"row-$i", s"Example LC Row $i", div(cls := "static", "static content"))
+      )
     )
-end Issue3117LiveView
 
 class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
   import Issue3169LiveView.*
@@ -666,15 +701,34 @@ class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
             div(
               "FormColumn (c3) ",
               input(typ := "text", value := s"Record $name"),
-              div(s"Record $name", input(typ := "text", value := s"Record $name"), div(s"Record $name", input(typ := "text", value := s"Record $name"))),
+              div(
+                s"Record $name",
+                input(typ := "text", value := s"Record $name"),
+                div(s"Record $name", input(typ := "text", value := s"Record $name"))
+              ),
               "This is a test! foo"
             )
           )
         )
       ),
-      button(idAttr := "select-a", phx.value("name") := "a", phx.onClick(params => Msg.Select(params.getOrElse("name", ""))), "Select A"),
-      button(idAttr := "select-b", phx.value("name") := "b", phx.onClick(params => Msg.Select(params.getOrElse("name", ""))), "Select B"),
-      button(idAttr := "select-z", phx.value("name") := "z", phx.onClick(params => Msg.Select(params.getOrElse("name", ""))), "Select Z")
+      button(
+        idAttr            := "select-a",
+        phx.value("name") := "a",
+        phx.onClick(params => Msg.Select(params.getOrElse("name", ""))),
+        "Select A"
+      ),
+      button(
+        idAttr            := "select-b",
+        phx.value("name") := "b",
+        phx.onClick(params => Msg.Select(params.getOrElse("name", ""))),
+        "Select B"
+      ),
+      button(
+        idAttr            := "select-z",
+        phx.value("name") := "z",
+        phx.onClick(params => Msg.Select(params.getOrElse("name", ""))),
+        "Select Z"
+      )
     )
 end Issue3169LiveView
 
@@ -698,7 +752,6 @@ class Issue3378LiveView extends LiveView[Unit, Unit]:
         div(idAttr := "notifications-1", p("big!"))
       )
     )
-end Issue3378LiveView
 
 class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends LiveView[Unit, Unit]:
   def mount = ()
@@ -712,9 +765,8 @@ class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends Li
       h1(s"Page $pageName"),
       if pageName == "A" then link.navigate("/issues/3496/b", "Go to page B") else "",
       if includeStickyHook then div(idAttr := "my-component", phx.hook := "MyHook")
-      else div(idAttr := "my-component", phx.hook := "MyHook")
+      else div(idAttr                      := "my-component", phx.hook := "MyHook")
     )
-end Issue3496LiveView
 
 class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
   def mount = ()
@@ -731,7 +783,6 @@ class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
       ),
       h1(s"Page $pageName")
     )
-end Issue3612LiveView
 
 class Issue3636LiveView extends LiveView[Unit, Unit]:
   def mount = ()
@@ -746,7 +797,6 @@ class Issue3636LiveView extends LiveView[Unit, Unit]:
       button("Two"),
       button("Three")
     )
-end Issue3636LiveView
 
 class Issue3651LiveView extends LiveView[Unit, Unit]:
   def mount = ()
@@ -760,7 +810,6 @@ class Issue3651LiveView extends LiveView[Unit, Unit]:
       div(idAttr := "notice", styleAttr := "display: none", "too many events"),
       div(idAttr := "total", "0")
     )
-end Issue3651LiveView
 
 class Issue3658LiveView extends LiveView[Issue3658LiveView.Msg, Unit]:
   import Issue3658LiveView.*
@@ -777,7 +826,6 @@ class Issue3658LiveView extends LiveView[Issue3658LiveView.Msg, Unit]:
       div(idAttr := "foo", phx.onRemove(JS.hide()), "Foo"),
       navTag(a(href := "#", phx.onClick(Msg.Noop), "Link 1"))
     )
-end Issue3658LiveView
 
 object Issue3658LiveView:
   enum Msg:
@@ -796,14 +844,13 @@ class Issue3656LiveView extends LiveView[Issue3656LiveView.Msg.type, Unit]:
   def render(model: Unit) =
     navTag(
       a(
-        idAttr := "issue-3656-link",
-        href := "#",
+        idAttr   := "issue-3656-link",
+        href     := "#",
         phx.hook := "Issue3656ClearClass",
         phx.onClick(JS.push(Msg).dispatch("scalive:clear-class")),
         "Link 1"
       )
     )
-end Issue3656LiveView
 
 object Issue3656LiveView:
   case object Msg
@@ -823,10 +870,10 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Unit]:
         div(idAttr := "messages-2", "two"),
         div(idAttr := "messages-4", "four")
       ),
-      if onAway then link.navigate("/issues/3681", "Go back to (the now borked) LV without a stream")
+      if onAway then
+        link.navigate("/issues/3681", "Go back to (the now borked) LV without a stream")
       else link.navigate("/issues/3681/away", "Go to a different LV with a (funcky) stream")
     )
-end Issue3681LiveView
 
 class Issue3684LiveView extends LiveView[Issue3684LiveView.Msg, Boolean]:
   import Issue3684LiveView.*
@@ -840,7 +887,6 @@ class Issue3684LiveView extends LiveView[Issue3684LiveView.Msg, Boolean]:
 
   def render(model: Boolean) =
     input(idAttr := "dewey", typ := "checkbox", checked := model, phx.onClick(Msg.Toggle))
-end Issue3684LiveView
 
 object Issue3684LiveView:
   enum Msg:
@@ -863,13 +909,13 @@ class Issue3686LiveView(pageName: String, flash: String) extends LiveView[Unit, 
       case "A" => "B"
       case "B" => "C"
       case _   => "A"
-    val nextHref = if pageName == "C" then "/issues/3686/a?from=c" else s"/issues/3686/${next.toLowerCase}"
+    val nextHref =
+      if pageName == "C" then "/issues/3686/a?from=c" else s"/issues/3686/${next.toLowerCase}"
 
     div(
       div(idAttr := "flash", model),
       button(phx.onClick(JS.navigate(nextHref)), s"To $next")
     )
-end Issue3686LiveView
 
 class Issue3709LiveView(id: Int) extends LiveView[Issue3709LiveView.Msg, Int]:
   import Issue3709LiveView.*
@@ -887,7 +933,6 @@ class Issue3709LiveView(id: Int) extends LiveView[Issue3709LiveView.Msg, Int]:
       button(phx.onClick(Msg.BreakStuff), "Break Stuff"),
       link.navigate("/issues/3709/5", "Link 5")
     )
-end Issue3709LiveView
 
 object Issue3709LiveView:
   enum Msg:
@@ -905,10 +950,12 @@ class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Boolean]:
 
   def render(model: Boolean) =
     div(
-      div(styleAttr := (if model then "background-color: red;" else ""), if model then "Red" else "No red"),
+      div(
+        styleAttr := (if model then "background-color: red;" else ""),
+        if model then "Red" else "No red"
+      ),
       button(phx.onClick(Msg.Toggle), "toggle")
     )
-end Issue3919LiveView
 
 object Issue3919LiveView:
   enum Msg:
@@ -933,8 +980,12 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Set[String]]:
     )
 
   private def itemCheckbox(id: String, selected: Set[String]) =
-    input(idAttr := s"select-$id", typ := "checkbox", checked := selected.contains(id), phx.onClick(Msg.Toggle(id)))
-end Issue3941LiveView
+    input(
+      idAttr  := s"select-$id",
+      typ     := "checkbox",
+      checked := selected.contains(id),
+      phx.onClick(Msg.Toggle(id))
+    )
 
 object Issue3941LiveView:
   enum Msg:
@@ -953,9 +1004,11 @@ class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
   def render(model: Boolean) =
     div(
       button(phx.onClick(Msg.Toggle), "Show"),
-      div(idAttr := "nested_view", if model then div(dataAttr("phx-component") := "1", "component") else "")
+      div(
+        idAttr := "nested_view",
+        if model then div(dataAttr("phx-component") := "1", "component") else ""
+      )
     )
-end Issue3953LiveView
 
 object Issue3953LiveView:
   enum Msg:

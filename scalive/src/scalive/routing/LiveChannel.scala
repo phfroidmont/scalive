@@ -1,0 +1,261 @@
+package scalive
+
+import scala.reflect.ClassTag
+
+import zio.*
+import zio.http.URL
+import zio.stream.SubscriptionRef
+import zio.stream.ZStream
+
+import scalive.WebSocketMessage.JoinErrorReason
+import scalive.WebSocketMessage.LiveResponse
+import scalive.WebSocketMessage.Meta
+import scalive.WebSocketMessage.Payload
+
+final private[scalive] class LiveChannel(
+  sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
+  uploadOwners: Ref[Map[String, String]],
+  nestedEntries: Ref[Map[String, NestedLiveViewEntry]],
+  tokenConfig: TokenConfig):
+  def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
+    sockets.changes
+      .map(m =>
+        ZStream
+          .mergeAllUnbounded()(m.values.map(_.outbox).toList*)
+      ).flatMapParSwitch(1)(identity)
+
+  def join[Msg, Model](
+    id: String,
+    token: String,
+    lv: LiveView[Msg, Model],
+    ctx: LiveContext,
+    meta: WebSocketMessage.Meta,
+    initialUrl: URL,
+    initialFlash: Map[String, String] = Map.empty,
+    renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None
+  )(using ClassTag[Msg]
+  ): RIO[Scope, Unit] =
+    val rootRenderer = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
+    sockets
+      .updateZIO { m =>
+        m.get(id) match
+          case Some(socket) =>
+            socket.shutdown *>
+              Socket
+                .start(
+                  id,
+                  token,
+                  lv,
+                  ctx,
+                  meta,
+                  tokenConfig,
+                  initialUrl,
+                  initialFlash,
+                  Some(rootRenderer)
+                )
+                .map(m.updated(id, _))
+          case None =>
+            Socket
+              .start(
+                id,
+                token,
+                lv,
+                ctx,
+                meta,
+                tokenConfig,
+                initialUrl,
+                initialFlash,
+                Some(rootRenderer)
+              )
+              .map(m.updated(id, _))
+      }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
+  end join
+
+  def nestedRuntime(parentTopic: String): NestedLiveViewRuntime =
+    new SocketNestedLiveViewRuntime(parentTopic, tokenConfig, nestedEntries)
+
+  private[scalive] def nestedEntry(topic: String): UIO[Option[NestedLiveViewEntry]] =
+    nestedEntries.get.map(_.get(topic))
+
+  private[scalive] def socket(id: String): UIO[Option[Socket[?, ?]]] =
+    sockets.get.map(_.get(id))
+
+  private def rootTopic(entries: Map[String, NestedLiveViewEntry], topic: String): String =
+    entries.get(topic) match
+      case Some(entry) => rootTopic(entries, entry.parentTopic)
+      case None        => topic
+
+  private def takeNestedNavigationFlash(id: String): UIO[Map[String, String]] =
+    for
+      entries        <- nestedEntries.get
+      currentSockets <- sockets.get
+      descendantTopics = entries.keysIterator
+                           .filter(topic => rootTopic(entries, topic) == id)
+                           .toList
+      flashes <- ZIO.foreach(descendantTopics)(topic =>
+                   currentSockets
+                     .get(topic)
+                     .fold(ZIO.succeed(Map.empty[String, String]))(_.takeNavigationFlash)
+                 )
+    yield flashes.foldLeft(Map.empty[String, String])(_ ++ _)
+
+  def joinNested(
+    topic: String,
+    token: String,
+    staticChanged: Boolean,
+    meta: WebSocketMessage.Meta,
+    initialUrl: URL
+  ): RIO[Scope, Option[JoinErrorReason]] =
+    nestedEntries.get.flatMap { entries =>
+      entries.get(topic) match
+        case Some(entry) if isAuthorizedNestedJoin(topic, token) =>
+          val ctx = LiveContext(
+            staticChanged = staticChanged,
+            nestedLiveViews = nestedRuntime(topic)
+          )
+          sockets
+            .updateZIO { m =>
+              m.get(topic) match
+                case Some(socket) =>
+                  socket.shutdown *>
+                    entry.start(ctx, meta, initialUrl).map(socket => m.updated(topic, socket))
+                case None =>
+                  entry.start(ctx, meta, initialUrl).map(socket => m.updated(topic, socket))
+            }
+            .as(None)
+        case Some(_) =>
+          ZIO.succeed(Some(JoinErrorReason.Unauthorized))
+        case None =>
+          ZIO.succeed(None)
+    }
+
+  private def isAuthorizedNestedJoin(topic: String, token: String): Boolean =
+    Token
+      .verify[String](tokenConfig.secret, token, tokenConfig.maxAge)
+      .toOption
+      .exists { case (tokenTopic, payload) => tokenTopic == topic && payload == "nested" }
+
+  def leave(id: String): UIO[Unit] =
+    for
+      childIds <- nestedEntries.modify { entries =>
+                    val children = entries.collect {
+                      case (topic, entry) if entry.parentTopic == id && !entry.sticky => topic
+                    }.toSet
+                    (children, entries -- children - id)
+                  }
+      leavingIds = childIds + id
+      _ <- uploadOwners.update(_.filterNot { case (_, ownerId) => leavingIds.contains(ownerId) })
+      _ <- sockets.updateZIO { m =>
+             val children     = childIds.flatMap(m.get)
+             val stopChildren = ZIO.foreachDiscard(children)(_.shutdown)
+             m.get(id) match
+               case Some(socket) =>
+                 for
+                   _ <- stopChildren
+                   _ <- socket.shutdown
+                   _ <- ZIO.logDebug(s"Left LiveView $id")
+                 yield m -- childIds - id
+               case None =>
+                 stopChildren *>
+                   ZIO.logDebug(s"Ignoring leave for unknown LiveView $id").as(m -- childIds)
+           }
+    yield ()
+
+  def event(id: String, event: Payload.Event, meta: WebSocketMessage.Meta): UIO[Unit] =
+    sockets.get.flatMap { m =>
+      m.get(id) match
+        case Some(socket) =>
+          socket.inbox.offer(event -> meta).unit
+        case None => ZIO.unit
+    }
+
+  def livePatch(id: String, url: String, meta: WebSocketMessage.Meta): Task[Payload.Reply] =
+    sockets.get.flatMap { m =>
+      m.get(id) match
+        case Some(socket) =>
+          for
+            flash <- takeNestedNavigationFlash(id)
+            _     <- ZIO.when(flash.nonEmpty)(socket.replaceNavigationFlash(flash))
+            reply <- socket.livePatch(url, meta)
+          yield reply
+        case None => ZIO.succeed(Payload.okReply(LiveResponse.Empty))
+    }
+
+  def allowUpload(id: String, payload: Payload.AllowUpload): Task[Payload.Reply] =
+    sockets.get.flatMap { m =>
+      m.get(id) match
+        case Some(socket) =>
+          socket.allowUpload(payload).tap {
+            case Payload.Reply(_, LiveResponse.UploadPreflightSuccess(_, _, entries, _)) =>
+              uploadOwners
+                .update(current => current ++ entries.keys.map(entryRef => s"lvu:$entryRef" -> id))
+            case _ => ZIO.unit
+          }
+        case None =>
+          ZIO.succeed(
+            Payload.okReply(LiveResponse.UploadPreflightFailure(payload.ref, List.empty))
+          )
+    }
+
+  def progressUpload(id: String, payload: Payload.Progress): Task[Payload.Reply] =
+    sockets.get.flatMap { m =>
+      m.get(id) match
+        case Some(socket) => socket.progressUpload(payload)
+        case None         => ZIO.succeed(Payload.okReply(LiveResponse.Empty))
+    }
+
+  def uploadJoin(uploadTopic: String, token: String): Task[Payload.Reply] =
+    uploadOwners.get.flatMap { owners =>
+      owners.get(uploadTopic) match
+        case Some(ownerId) =>
+          sockets.get.flatMap { socketMap =>
+            socketMap.get(ownerId) match
+              case Some(socket) => socket.uploadJoin(uploadTopic, token)
+              case None         =>
+                ZIO.succeed(
+                  Payload.errorReply(
+                    LiveResponse.UploadJoinError(WebSocketMessage.UploadJoinErrorReason.Disallowed)
+                  )
+                )
+          }
+        case None =>
+          ZIO.succeed(
+            Payload.errorReply(
+              LiveResponse.UploadJoinError(WebSocketMessage.UploadJoinErrorReason.InvalidToken)
+            )
+          )
+    }
+
+  def uploadChunk(uploadTopic: String, bytes: Chunk[Byte]): Task[Payload.Reply] =
+    uploadOwners.get.flatMap { owners =>
+      owners.get(uploadTopic) match
+        case Some(ownerId) =>
+          sockets.get.flatMap { socketMap =>
+            socketMap.get(ownerId) match
+              case Some(socket) => socket.uploadChunk(uploadTopic, bytes)
+              case None         =>
+                ZIO.succeed(
+                  Payload.errorReply(
+                    LiveResponse.UploadChunkError(
+                      WebSocketMessage.UploadChunkErrorReason.Disallowed
+                    )
+                  )
+                )
+          }
+        case None =>
+          ZIO.succeed(
+            Payload.errorReply(
+              LiveResponse.UploadChunkError(WebSocketMessage.UploadChunkErrorReason.Disallowed)
+            )
+          )
+    }
+
+end LiveChannel
+
+object LiveChannel:
+  def make(tokenConfig: TokenConfig): UIO[LiveChannel] =
+    for
+      sockets      <- SubscriptionRef.make(Map.empty[String, Socket[?, ?]])
+      uploadOwners <- Ref.make(Map.empty[String, String])
+      nested       <- Ref.make(Map.empty[String, NestedLiveViewEntry])
+    yield new LiveChannel(sockets, uploadOwners, nested, tokenConfig)

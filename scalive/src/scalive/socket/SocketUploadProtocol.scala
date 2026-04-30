@@ -36,9 +36,10 @@ private[scalive] object SocketUploadProtocol:
                    val activeEntries =
                      payload.entries.filterNot(entry => config.cancelledRefs.contains(entry.ref))
                    val baseState        = current.removeUploadByRef(payload.ref)
-                   val validationErrors = validationErrorsByEntry(activeEntries, config.options)
+                   val validationErrors =
+                     SocketUploadValidation.validationErrorsByEntry(activeEntries, config.options)
                    val preflightEntries = activeEntries.map(entry =>
-                     entry.ref -> buildUploadEntryState(
+                     entry.ref -> SocketUploadEntries.buildUploadEntryState(
                        config = config,
                        uploadRef = payload.ref,
                        entry = entry,
@@ -53,7 +54,10 @@ private[scalive] object SocketUploadProtocol:
                                     validationErrors.get(entryRef) match
                                       case Some(errors) =>
                                         ZIO.succeed(
-                                          entryRef -> withEntryErrors(entryState, errors)
+                                          entryRef -> SocketUploadEntries.withEntryErrors(
+                                            entryState,
+                                            errors
+                                          )
                                         )
                                       case None =>
                                         config.options.external match
@@ -66,21 +70,23 @@ private[scalive] object SocketUploadProtocol:
                                               .either
                                               .map {
                                                 case Right(LiveExternalUploadResult.Ok(meta))
-                                                    if hasExternalUploader(meta) =>
+                                                    if SocketUploadEntries.hasExternalUploader(
+                                                      meta
+                                                    ) =>
                                                   entryRef -> entryState
                                                     .copy(externalMeta = Some(meta))
                                                 case Right(LiveExternalUploadResult.Ok(_)) =>
-                                                  entryRef -> withEntryErrors(
+                                                  entryRef -> SocketUploadEntries.withEntryErrors(
                                                     entryState,
                                                     List(LiveUploadError.ExternalClientFailure)
                                                   )
                                                 case Right(LiveExternalUploadResult.Error(meta)) =>
-                                                  entryRef -> withEntryErrors(
+                                                  entryRef -> SocketUploadEntries.withEntryErrors(
                                                     entryState,
                                                     List(LiveUploadError.External(meta))
                                                   )
                                                 case Left(_) =>
-                                                  entryRef -> withEntryErrors(
+                                                  entryRef -> SocketUploadEntries.withEntryErrors(
                                                     entryState,
                                                     List(LiveUploadError.ExternalClientFailure)
                                                   )
@@ -117,7 +123,9 @@ private[scalive] object SocketUploadProtocol:
                      globalErrors =
                        Option
                          .when(activeEntries.length > config.options.maxEntries)(
-                           config.ref -> errorJson(LiveUploadError.TooManyFiles)
+                           config.ref -> SocketUploadValidation.errorJson(
+                             LiveUploadError.TooManyFiles
+                           )
                          )
                          .toList
                      nextConfig = config.copy(
@@ -192,7 +200,7 @@ private[scalive] object SocketUploadProtocol:
                                   .closeWriter(
                                     entry.copy(valid = false, errors = List(errorJson)),
                                     LiveUploadWriterCloseReason.Error(
-                                      progressToParamValue(errorJson)
+                                      SocketUploadProgressBinding.progressToParamValue(errorJson)
                                     )
                                   ).flatMap { updated =>
                                     state.uploadRef
@@ -206,11 +214,16 @@ private[scalive] object SocketUploadProtocol:
                           case _ => ZIO.none
                       }
       _ <- maybeUpdated match
-             case Some(updated) => runUploadProgressCallback(payload.ref, updated, state)
-             case None          => ZIO.unit
+             case Some(updated) =>
+               SocketUploadProgressBinding.runUploadProgressCallback(payload.ref, updated, state)
+             case None => ZIO.unit
       reply <- payload.event match
                  case Some(eventRef) if eventRef.nonEmpty =>
-                   applyUploadProgressBinding(eventRef, payload, state)
+                   SocketUploadProgressBinding.applyUploadProgressBinding(
+                     eventRef,
+                     payload,
+                     state
+                   )
                  case _ =>
                    ZIO.succeed(Payload.okReply(LiveResponse.Empty))
     yield reply
@@ -269,7 +282,11 @@ private[scalive] object SocketUploadProtocol:
                              case Left(_) =>
                                val errored = entry.copy(
                                  valid = false,
-                                 errors = List(errorJson(WriterError))
+                                 errors = List(
+                                   SocketUploadValidation.errorJson(
+                                     SocketUploadValidation.WriterError
+                                   )
+                                 )
                                )
                                state.uploadRef
                                  .update { st =>
@@ -333,9 +350,15 @@ private[scalive] object SocketUploadProtocol:
                                      .closeWriter(
                                        withWriter.copy(
                                          valid = false,
-                                         errors = List(errorJson(WriterError))
+                                         errors = List(
+                                           SocketUploadValidation.errorJson(
+                                             SocketUploadValidation.WriterError
+                                           )
+                                         )
                                        ),
-                                       LiveUploadWriterCloseReason.Error(WriterErrorReason)
+                                       LiveUploadWriterCloseReason.Error(
+                                         SocketUploadValidation.WriterErrorReason
+                                       )
                                      ).flatMap { errored =>
                                        state.uploadRef
                                          .update { st =>
@@ -396,12 +419,15 @@ private[scalive] object SocketUploadProtocol:
                     val visibleEntries =
                       entries.filterNot(entry => config.cancelledRefs.contains(entry.ref))
                     val cleared          = runtime.removeEntries(config.entryOrder.toSet)
-                    val validationErrors = validationErrorsByEntry(visibleEntries, config.options)
-                    val syncedEntries    =
+                    val validationErrors = SocketUploadValidation.validationErrorsByEntry(
+                      visibleEntries,
+                      config.options
+                    )
+                    val syncedEntries =
                       visibleEntries
                         .map(entry =>
                           val errors = validationErrors.getOrElse(entry.ref, Nil)
-                          entry.ref -> buildUploadEntryState(
+                          entry.ref -> SocketUploadEntries.buildUploadEntryState(
                             config = config,
                             uploadRef = uploadRef,
                             entry = entry,
@@ -413,7 +439,9 @@ private[scalive] object SocketUploadProtocol:
                     val globalErrors =
                       Option
                         .when(visibleEntries.length > config.options.maxEntries)(
-                          config.ref -> errorJson(LiveUploadError.TooManyFiles)
+                          config.ref -> SocketUploadValidation.errorJson(
+                            LiveUploadError.TooManyFiles
+                          )
                         )
                         .toList
                     val nextConfig = config.copy(
@@ -431,241 +459,4 @@ private[scalive] object SocketUploadProtocol:
             }.unit
       case None =>
         ZIO.unit
-
-  private def applyUploadProgressBinding[Msg, Model](
-    eventRef: String,
-    payload: Payload.Progress,
-    state: RuntimeState[Msg, Model]
-  ): Task[Payload.Reply] =
-    for
-      (currentModel, rendered) <- state.ref.get
-      reply                    <- rendered.bindings.get(eventRef) match
-                 case Some(binding) =>
-                   binding(progressPayloadToParams(payload)) match
-                     case Right(ComponentMessage(cid, message)) if payload.cid.contains(cid) =>
-                       SocketComponentRuntime
-                         .handleComponentMessage(
-                           cid,
-                           message,
-                           uploadProgressEvent(eventRef, payload),
-                           rendered,
-                           state.meta,
-                           state
-                         )
-                         .as(Payload.okReply(LiveResponse.Empty))
-                     case Right(ComponentMessage(cid, _)) =>
-                       ZIO.logWarning(
-                         s"upload_progress binding '$eventRef' targets component $cid without matching event cid"
-                       ) *>
-                         ZIO.succeed(Payload.okReply(LiveResponse.Empty))
-                     case Right(ComponentTargetMessage(componentClass, message)) =>
-                       payload.cid match
-                         case Some(cid) =>
-                           SocketComponentRuntime
-                             .handleComponentTargetMessage(
-                               componentClass,
-                               cid,
-                               message,
-                               uploadProgressEvent(eventRef, payload),
-                               rendered,
-                               state.meta,
-                               state
-                             )
-                             .as(Payload.okReply(LiveResponse.Empty))
-                         case None =>
-                           ZIO.logWarning(
-                             s"upload_progress binding '$eventRef' targets ${componentClass.getName} without event cid"
-                           ) *>
-                             ZIO.succeed(Payload.okReply(LiveResponse.Empty))
-                     case Right(message) =>
-                       state.msgClassTag.unapply(message) match
-                         case Some(parentMessage) =>
-                           for
-                             (updatedModel, navigation) <-
-                               SocketModelRuntime.captureNavigation(state)(
-                                 LiveIO
-                                   .toZIO(
-                                     state.lv.handleMessage(currentModel)(
-                                       parentMessage
-                                     )
-                                   )
-                                   .provide(ZLayer.succeed(state.ctx))
-                               )
-                             reply <- navigation match
-                                        case Some(command) =>
-                                          state.patchRedirectCountRef.set(0) *>
-                                            SocketInbound
-                                              .handleNavigationCommand(
-                                                rendered,
-                                                updatedModel,
-                                                command,
-                                                state.meta,
-                                                state
-                                              )
-                                              .as(Payload.okReply(LiveResponse.Empty))
-                                        case None =>
-                                          SocketModelRuntime
-                                            .updateModelAndSubscriptions(
-                                              rendered,
-                                              updatedModel,
-                                              state
-                                            )
-                                            .map(diff =>
-                                              if diff.isEmpty then
-                                                Payload.okReply(LiveResponse.Empty)
-                                              else Payload.okReply(LiveResponse.Diff(diff))
-                                            )
-                           yield reply
-                         case None =>
-                           ZIO
-                             .logWarning(
-                               s"upload_progress binding type mismatch for ref=$eventRef: expected ${state.msgClassTag.runtimeClass.getName}"
-                             ).as(Payload.okReply(LiveResponse.Empty))
-                     case Left(error) =>
-                       ZIO.logWarning(
-                         s"upload_progress binding type mismatch for ref=$eventRef: $error"
-                       ) *>
-                         ZIO.succeed(Payload.okReply(LiveResponse.Empty))
-                 case None =>
-                   ZIO.logWarning(
-                     s"upload_progress binding missing for ref=$eventRef"
-                   ) *>
-                     ZIO.succeed(Payload.okReply(LiveResponse.Empty))
-    yield reply
-
-  private def uploadProgressEvent(eventRef: String, payload: Payload.Progress): LiveEvent =
-    LiveEvent(
-      kind = payload.event.getOrElse("progress"),
-      bindingId = eventRef,
-      value = payload.progress,
-      params = Map.empty,
-      cid = payload.cid,
-      meta = None
-    )
-
-  private def progressPayloadToParams(payload: Payload.Progress): Map[String, String] =
-    val base = Map(
-      "ref"       -> payload.ref,
-      "entry_ref" -> payload.entry_ref,
-      "progress"  -> progressToParamValue(payload.progress)
-    )
-    payload.progress match
-      case obj: Json.Obj =>
-        obj.fields
-          .collectFirst { case ("error", Json.Str(reason)) =>
-            base.updated("error", reason)
-          }.getOrElse(base)
-      case _ => base
-
-  private def progressToParamValue(progress: Json): String =
-    progress match
-      case Json.Num(v)  => Try(v.intValueExact()).toOption.map(_.toString).getOrElse(v.toString)
-      case Json.Str(v)  => v
-      case Json.Bool(v) => v.toString
-      case Json.Null    => ""
-      case other        => other.toJson
-
-  private def validateUploadEntries(
-    entries: List[WebSocketMessage.UploadPreflightEntry],
-    options: LiveUploadOptions
-  ): List[(String, LiveUploadError)] =
-    entries.zipWithIndex.flatMap { case (entry, index) =>
-      if index >= options.maxEntries then Some(entry.ref -> LiveUploadError.TooManyFiles)
-      else if entry.size > options.maxFileSize then Some(entry.ref -> LiveUploadError.TooLarge)
-      else if !isAcceptedUploadEntry(entry, options.accept) then
-        Some(entry.ref -> LiveUploadError.NotAccepted)
-      else None
-    }
-
-  private def validationErrorsByEntry(
-    entries: List[WebSocketMessage.UploadPreflightEntry],
-    options: LiveUploadOptions
-  ): Map[String, List[LiveUploadError]] =
-    validateUploadEntries(entries, options).groupMap(_._1)(_._2)
-
-  private def buildUploadEntryState(
-    config: UploadConfigState,
-    uploadRef: String,
-    entry: WebSocketMessage.UploadPreflightEntry,
-    preflighted: Boolean,
-    valid: Boolean,
-    errors: List[LiveUploadError]
-  ): UploadEntryState =
-    UploadEntryState(
-      uploadName = config.name,
-      uploadRef = uploadRef,
-      ref = entry.ref,
-      name = entry.name,
-      contentType = entry.`type`,
-      size = entry.size,
-      relativePath = entry.relative_path,
-      lastModified = entry.last_modified,
-      clientMeta = entry.meta,
-      token = None,
-      joined = false,
-      bytes = Chunk.empty,
-      progress = 0,
-      preflighted = preflighted,
-      valid = valid,
-      errors = errors.map(errorJson),
-      externalMeta = None,
-      writer = config.options.writer,
-      writerState = None,
-      writerMeta = None,
-      writerClosed = false
-    )
-
-  private def withEntryErrors(
-    entry: UploadEntryState,
-    errors: List[LiveUploadError]
-  ): UploadEntryState =
-    entry.copy(valid = false, errors = errors.map(errorJson))
-
-  private def errorJson(error: LiveUploadError): Json =
-    LiveUploadError.toJson(error)
-
-  private val WriterErrorReason = "writer_error"
-  private val WriterError       = LiveUploadError.WriterFailure(WriterErrorReason)
-
-  private def isAcceptedUploadEntry(
-    entry: WebSocketMessage.UploadPreflightEntry,
-    accept: LiveUploadAccept
-  ): Boolean =
-    accept match
-      case LiveUploadAccept.Any              => true
-      case LiveUploadAccept.Exactly(filters) =>
-        val normalizedName = entry.name.toLowerCase
-        val normalizedType = entry.`type`.toLowerCase
-        filters.exists { filter =>
-          val normalizedFilter = filter.toLowerCase
-          if normalizedFilter.startsWith(".") then normalizedName.endsWith(normalizedFilter)
-          else if normalizedFilter.endsWith("/*") then
-            val prefix = normalizedFilter.dropRight(1)
-            normalizedType.startsWith(prefix)
-          else normalizedType == normalizedFilter
-        }
-
-  private def hasExternalUploader(meta: Json.Obj): Boolean =
-    meta.fields.exists {
-      case ("uploader", Json.Str(value)) => value.nonEmpty
-      case _                             => false
-    }
-
-  private def runUploadProgressCallback[Msg, Model](
-    uploadRef: String,
-    entry: UploadEntryState,
-    state: RuntimeState[Msg, Model]
-  ): Task[Unit] =
-    for
-      runtime <- state.uploadRef.get
-      _       <- runtime
-             .configByRef(uploadRef)
-             .flatMap(_.options.progress)
-             .map(callback =>
-               callback
-                 .onProgress(entry.uploadName, SocketUploadShared.toLiveUploadEntry(entry))
-                 .provide(ZLayer.succeed(state.ctx))
-             )
-             .getOrElse(ZIO.unit)
-    yield ()
 end SocketUploadProtocol

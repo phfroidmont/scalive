@@ -50,7 +50,7 @@ object LiveEventResult:
   def haltReply[Model](model: Model, value: Json): LiveEventResult[Model] =
     LiveEventResult.Halt(model, Some(value))
 
-trait LiveHookRuntime:
+private[scalive] trait LiveHookRuntime:
   def attachEvent[Msg, Model](
     id: String
   )(
@@ -123,7 +123,7 @@ trait LiveHookRuntime:
   ): Task[Model]
 end LiveHookRuntime
 
-object LiveHookRuntime:
+private[scalive] object LiveHookRuntime:
   object Disabled extends LiveHookRuntime:
     private def unavailable[A]: Task[A] =
       ZIO.fail(new IllegalStateException("lifecycle hooks are not available in this context"))

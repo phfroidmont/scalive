@@ -3,14 +3,14 @@ package scalive
 import zio.*
 import zio.json.*
 
-trait FlashRuntime:
+private[scalive] trait FlashRuntime:
   def put(kind: String, message: String): UIO[Unit]
   def clear(kind: String): UIO[Unit]
   def clearAll: UIO[Unit]
   def get(kind: String): UIO[Option[String]]
   def snapshot: UIO[Map[String, String]]
 
-object FlashRuntime:
+private[scalive] object FlashRuntime:
   object Disabled extends FlashRuntime:
     def put(kind: String, message: String): UIO[Unit] =
       val _ = (kind, message)

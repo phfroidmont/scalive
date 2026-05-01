@@ -68,7 +68,7 @@ enum AsyncStartMode:
   case Restart
   case KeepExisting
 
-trait LiveAsyncRuntime:
+private[scalive] trait LiveAsyncRuntime:
   def start[A, Msg](
     name: String,
     mode: AsyncStartMode
@@ -89,7 +89,7 @@ trait LiveAsyncRuntime:
 
   def cancel(name: String, reason: Option[String]): UIO[Unit]
 
-object LiveAsyncRuntime:
+private[scalive] object LiveAsyncRuntime:
   object Disabled extends LiveAsyncRuntime:
     def start[A, Msg](
       name: String,

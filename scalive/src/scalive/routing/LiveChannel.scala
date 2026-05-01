@@ -252,7 +252,7 @@ final private[scalive] class LiveChannel(
 
 end LiveChannel
 
-object LiveChannel:
+private[scalive] object LiveChannel:
   def make(tokenConfig: TokenConfig): UIO[LiveChannel] =
     for
       sockets      <- SubscriptionRef.make(Map.empty[String, Socket[?, ?]])

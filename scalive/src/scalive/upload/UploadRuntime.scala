@@ -3,7 +3,7 @@ package upload
 
 import zio.*
 
-trait UploadRuntime:
+private[scalive] trait UploadRuntime:
   def allow(name: String, options: LiveUploadOptions): Task[LiveUpload]
   def disallow(name: String): Task[Unit]
   def get(name: String): UIO[Option[LiveUpload]]
@@ -12,7 +12,7 @@ trait UploadRuntime:
   def consume(entryRef: String): UIO[Option[LiveUploadedEntry]]
   def drop(entryRef: String): UIO[Unit]
 
-object UploadRuntime:
+private[scalive] object UploadRuntime:
   val Disabled: UploadRuntime = new UploadRuntime:
     def allow(name: String, options: LiveUploadOptions): Task[LiveUpload] =
       ZIO.fail(new IllegalStateException("Upload runtime is not available"))

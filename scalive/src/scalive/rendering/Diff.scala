@@ -4,7 +4,7 @@ import zio.Chunk
 import zio.json.JsonEncoder
 import zio.json.ast.Json
 
-enum Diff:
+private[scalive] enum Diff:
   case Tag(
     static: Seq[String] = Seq.empty,
     dynamic: Seq[Diff.Dynamic] = Seq.empty,
@@ -35,7 +35,7 @@ extension (diff: Diff)
     case _: Diff.Dynamic       => false
     case Diff.Deleted          => false
 
-object Diff:
+private[scalive] object Diff:
   given JsonEncoder[Diff] = JsonEncoder[Json].contramap(toJson(_))
 
   final case class IndexChange(index: Int, previousIndex: Int)

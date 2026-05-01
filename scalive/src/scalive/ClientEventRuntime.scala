@@ -3,9 +3,9 @@ package scalive
 import zio.*
 import zio.json.ast.Json
 
-trait ClientEventRuntime:
+private[scalive] trait ClientEventRuntime:
   def push(name: String, payload: Json): UIO[Unit]
 
-object ClientEventRuntime:
+private[scalive] object ClientEventRuntime:
   val Disabled: ClientEventRuntime = new ClientEventRuntime:
     def push(name: String, payload: Json): UIO[Unit] = ZIO.unit

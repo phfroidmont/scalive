@@ -14,7 +14,7 @@ import scalive.socket.SocketInbound
 import scalive.socket.SocketOutbound
 import scalive.socket.SocketUploadProtocol
 
-final case class Socket[Msg, Model] private (
+final private[scalive] case class Socket[Msg, Model] private (
   id: String,
   token: String,
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
@@ -28,7 +28,7 @@ final case class Socket[Msg, Model] private (
   private[scalive] val replaceNavigationFlash: Map[String, String] => UIO[Unit],
   shutdown: UIO[Unit])
 
-object Socket:
+private[scalive] object Socket:
   def start[Msg: ClassTag, Model](
     id: String,
     token: String,

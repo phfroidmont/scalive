@@ -3,7 +3,7 @@ package streams
 
 import zio.*
 
-trait StreamRuntime:
+private[scalive] trait StreamRuntime:
   def stream[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
@@ -26,7 +26,7 @@ trait StreamRuntime:
 
   def get[A](definition: LiveStreamDef[A]): UIO[Option[LiveStream[A]]]
 
-object StreamRuntime:
+private[scalive] object StreamRuntime:
   val Disabled: StreamRuntime = new StreamRuntime:
     def stream[A](
       definition: LiveStreamDef[A],

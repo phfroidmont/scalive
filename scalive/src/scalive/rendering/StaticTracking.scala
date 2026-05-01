@@ -3,7 +3,7 @@ package scalive
 import zio.json.*
 import zio.json.ast.Json
 
-object StaticTracking:
+private[scalive] object StaticTracking:
   def collect(el: HtmlElement[?]): List[String] =
     RenderSnapshot.compile(el).trackedStaticUrls.toList
 

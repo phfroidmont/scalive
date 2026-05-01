@@ -29,12 +29,12 @@ final private[scalive] case class NestedLiveViewRegistration(
   sticky: Boolean,
   rendered: Option[HtmlElement[Any]] = None)
 
-trait NestedLiveViewRuntime:
+private[scalive] trait NestedLiveViewRuntime:
   def register[Msg, Model](
     spec: NestedLiveViewSpec[Msg, Model]
   ): Task[NestedLiveViewRegistration]
 
-object NestedLiveViewRuntime:
+private[scalive] object NestedLiveViewRuntime:
   object Disabled extends NestedLiveViewRuntime:
     def register[Msg, Model](
       spec: NestedLiveViewSpec[Msg, Model]

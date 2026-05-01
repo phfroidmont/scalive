@@ -1,6 +1,6 @@
 package scalive
 
-object LiveRoutes:
+private[scalive] object LiveRoutes:
 
   private[scalive] def validateLiveRoutes(
     routes: List[LiveRoute[?, ?, Any, ?, ?, ?]]

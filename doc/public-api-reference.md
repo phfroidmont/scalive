@@ -1,6 +1,6 @@
 # Scalive Public API Reference
 
-This document describes the current public API exposed by Scalive.
+This document describes the intended public API exposed by Scalive to application authors.
 
 Most application code starts with:
 
@@ -9,6 +9,14 @@ import scalive.*
 ```
 
 The package object exports the generated HTML tag and attribute definitions, stream APIs, upload APIs, helpers for LiveViews and components, and Phoenix LiveView-style `phx-*` bindings.
+
+## Public Boundary
+
+The app-author API lives in `scalive.*` and the explicitly public subpackages used from it, such as `scalive.codecs` for custom attribute encoders.
+
+Runtime, websocket protocol, diff rendering, socket orchestration, and disabled runtime implementation types are internal implementation details. They are kept package-private in code and are not supported as application APIs.
+
+There is no supported `scalive.testing.*` package yet. Test helpers should be introduced there when Scalive-native testing APIs are designed.
 
 ## Core LiveView API
 
@@ -104,26 +112,11 @@ Given conversions allow plain values and `RIO` values to satisfy `LiveIO` return
 
 ## Live Context API
 
-`LiveContext` is the service available inside `LiveIO` effects. Capabilities are split into traits and exposed through type aliases on `LiveView` and `LiveComponent`.
+`LiveContext` is the service available inside `LiveIO` effects. Application code uses the methods on `LiveContext`; direct construction and runtime fields are internal.
 
 ### `LiveContext`
 
-```scala
-final case class LiveContext(
-  staticChanged: Boolean,
-  connected: Boolean = false,
-  uploads: UploadRuntime = UploadRuntime.Disabled,
-  streams: StreamRuntime = StreamRuntime.Disabled,
-  clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
-  navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
-  title: TitleRuntime = TitleRuntime.Disabled,
-  components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
-  nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled,
-  flash: FlashRuntime = FlashRuntime.Disabled,
-  async: LiveAsyncRuntime = LiveAsyncRuntime.Disabled,
-  hooks: LiveHookRuntime = LiveHookRuntime.Disabled
-)
-```
+`LiveContext` capability traits describe which operations are available to each lifecycle phase. The runtime values backing those capabilities are not public API.
 
 Capability traits:
 
@@ -559,7 +552,6 @@ Supporting types:
 ```scala
 final case class ComponentRef[Msg] private[scalive] (cid: Int)
 final case class ComponentTargetMessage private[scalive] (componentClass: Class[?], message: Any)
-trait ComponentUpdateRuntime
 ```
 
 ### Built-in component helpers
@@ -766,28 +758,6 @@ LiveQueryCodec.none
 LiveQueryCodec[A]
 LiveQueryCodec.fromZioHttp(codec)
 LiveQueryCodec.custom(decodeFn, encodeFn)
-```
-
-## Navigation Runtime API
-
-```scala
-enum LiveNavigationCommand:
-  case PushPatch(to: String)
-  case ReplacePatch(to: String)
-  case PushNavigate(to: String)
-  case ReplaceNavigate(to: String)
-  case Redirect(to: String)
-```
-
-```scala
-trait LiveNavigationRuntime:
-  def request(command: LiveNavigationCommand): Task[Unit]
-```
-
-Disabled runtime:
-
-```scala
-LiveNavigationRuntime.Disabled
 ```
 
 ## Forms API
@@ -1245,82 +1215,6 @@ LiveEventResult.halt(model)
 LiveEventResult.haltReply(model, value)
 ```
 
-```scala
-trait LiveHookRuntime:
-  def attachEvent(id)(hook): Task[Unit]
-  def detachEvent(id): Task[Unit]
-  def attachParams(id)(hook): Task[Unit]
-  def detachParams(id): Task[Unit]
-  def attachInfo(id)(hook): Task[Unit]
-  def detachInfo(id): Task[Unit]
-  def attachAsync(id)(hook): Task[Unit]
-  def detachAsync(id): Task[Unit]
-  def attachAfterRender(id)(hook): Task[Unit]
-  def detachAfterRender(id): Task[Unit]
-```
-
-Disabled runtime:
-
-```scala
-LiveHookRuntime.Disabled
-```
-
-## Runtime Capability Traits
-
-These runtime traits back `LiveContext` operations.
-
-```scala
-trait ClientEventRuntime:
-  def push(name: String, payload: zio.json.ast.Json): UIO[Unit]
-```
-
-```scala
-trait ComponentUpdateRuntime:
-  def sendUpdate[Props](componentClass: Class[?], id: String, props: Props): UIO[Unit]
-```
-
-```scala
-trait NestedLiveViewRuntime:
-  def register[Msg, Model](spec: NestedLiveViewSpec[Msg, Model]): Task[NestedLiveViewRegistration]
-```
-
-```scala
-trait FlashRuntime:
-  def put(kind: String, message: String): UIO[Unit]
-  def clear(kind: String): UIO[Unit]
-  def clearAll: UIO[Unit]
-  def get(kind: String): UIO[Option[String]]
-  def snapshot: UIO[Map[String, String]]
-```
-
-```scala
-trait TitleRuntime:
-  def set(title: String): UIO[Unit]
-  def drain: UIO[Option[String]]
-```
-
-```scala
-trait StreamRuntime:
-  def stream(definition, items, at, reset, limit): Task[LiveStream[A]]
-  def insert(definition, item, at, limit, updateOnly): Task[LiveStream[A]]
-  def delete(definition, item): Task[LiveStream[A]]
-  def deleteByDomId(definition, domId): Task[LiveStream[A]]
-  def get(definition): UIO[Option[LiveStream[A]]]
-```
-
-```scala
-trait UploadRuntime:
-  def allow(name: String, options: LiveUploadOptions): Task[LiveUpload]
-  def disallow(name: String): Task[Unit]
-  def get(name: String): UIO[Option[LiveUpload]]
-  def cancel(name: String, entryRef: String): Task[Unit]
-  def consumeCompleted(name: String): UIO[List[LiveUploadedEntry]]
-  def consume(entryRef: String): UIO[Option[LiveUploadedEntry]]
-  def drop(entryRef: String): UIO[Unit]
-```
-
-Disabled runtimes are available as `ClientEventRuntime.Disabled`, `FlashRuntime.Disabled`, `TitleRuntime.Disabled`, `StreamRuntime.Disabled`, `UploadRuntime.Disabled`, `ComponentUpdateRuntime.Disabled`, and `NestedLiveViewRuntime.Disabled`.
-
 ## Static Assets API
 
 ```scala
@@ -1346,252 +1240,6 @@ TokenConfig.default
 ```
 
 `TokenConfig.default` reads `SCALIVE_TOKEN_SECRET` and `SCALIVE_TOKEN_MAX_AGE_SECONDS` when present.
-
-```scala
-final case class Token[T] private (
-  version: Int,
-  liveViewId: String,
-  payload: T,
-  issuedAt: Long,
-  salt: String
-)
-```
-
-```scala
-Token.sign(secret, liveViewId, payload)
-Token.verify(secret, token, maxAge)
-```
-
-## Low-Level Socket and Protocol API
-
-These public types model the websocket protocol and runtime socket.
-
-### `Socket[Msg, Model]`
-
-```scala
-final case class Socket[Msg, Model] private (
-  id: String,
-  token: String,
-  inbox: Queue[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)],
-  livePatch: (String, WebSocketMessage.Meta) => Task[WebSocketMessage.Payload.Reply],
-  allowUpload: WebSocketMessage.Payload.AllowUpload => Task[WebSocketMessage.Payload.Reply],
-  progressUpload: WebSocketMessage.Payload.Progress => Task[WebSocketMessage.Payload.Reply],
-  uploadJoin: (String, String) => Task[WebSocketMessage.Payload.Reply],
-  uploadChunk: (String, Chunk[Byte]) => Task[WebSocketMessage.Payload.Reply],
-  outbox: ZStream[Any, Nothing, (WebSocketMessage.Payload, WebSocketMessage.Meta)],
-  shutdown: UIO[Unit]
-)
-```
-
-Constructor:
-
-```scala
-Socket.start(id, token, liveView, ctx, meta, tokenConfig = TokenConfig.default, initialUrl = URL.root, initialFlash = Map.empty, renderRoot = None)
-```
-
-### `WebSocketMessage`
-
-```scala
-final case class WebSocketMessage(
-  joinRef: Option[Int],
-  messageRef: Option[Int],
-  topic: String,
-  eventType: String,
-  payload: WebSocketMessage.Payload
-):
-  val meta: WebSocketMessage.Meta
-  def okReply: WebSocketMessage
-```
-
-Supporting values and types:
-
-```scala
-WebSocketMessage.Meta
-WebSocketMessage.Protocol
-WebSocketMessage.Payload
-WebSocketMessage.ReplyStatus
-WebSocketMessage.UploadClientConfig
-WebSocketMessage.LivePatchKind
-WebSocketMessage.UploadJoinToken
-WebSocketMessage.JoinErrorReason
-WebSocketMessage.UploadJoinErrorReason
-WebSocketMessage.UploadChunkErrorReason
-WebSocketMessage.LiveResponse
-WebSocketMessage.decodeBinaryPush(bytes)
-```
-
-Protocol constants:
-
-```scala
-WebSocketMessage.Protocol.EventHeartbeat
-WebSocketMessage.Protocol.EventJoin
-WebSocketMessage.Protocol.EventLeave
-WebSocketMessage.Protocol.EventClose
-WebSocketMessage.Protocol.EventEvent
-WebSocketMessage.Protocol.EventLivePatch
-WebSocketMessage.Protocol.EventAllowUpload
-WebSocketMessage.Protocol.EventProgress
-WebSocketMessage.Protocol.EventReply
-WebSocketMessage.Protocol.EventError
-WebSocketMessage.Protocol.EventDiff
-WebSocketMessage.Protocol.EventRedirect
-WebSocketMessage.Protocol.EventLiveRedirect
-WebSocketMessage.Protocol.BinaryChunkEvent
-WebSocketMessage.Protocol.LiveViewVersion
-```
-
-Payload cases:
-
-```scala
-enum WebSocketMessage.Payload:
-  case Heartbeat
-  case Join(url, redirect, session, static, params, flash, sticky)
-  case UploadJoin(token)
-  case Leave
-  case Close
-  case LivePatch(url)
-  case AllowUpload(ref, entries, cid)
-  case Progress(event, ref, entry_ref, progress, cid)
-  case UploadChunk(bytes)
-  case LiveNavigation(to, kind)
-  case LiveRedirect(to, kind, flash)
-  case Redirect(to, flash)
-  case Error
-  case Reply(status, response)
-  case Diff(diff)
-  case Event(`type`, event, value, uploads = None, cid = None, meta = None)
-```
-
-Payload supporting types and helpers:
-
-```scala
-final case class WebSocketMessage.UploadPreflightEntry(
-  ref: String,
-  name: String,
-  relative_path: Option[String],
-  size: Long,
-  `type`: String,
-  last_modified: Option[Long] = None,
-  meta: Option[zio.json.ast.Json] = None
-)
-
-WebSocketMessage.Payload.okReply(response)
-WebSocketMessage.Payload.errorReply(response)
-```
-
-Reply and navigation enums:
-
-```scala
-enum WebSocketMessage.ReplyStatus:
-  case Ok
-  case Error
-
-enum WebSocketMessage.LivePatchKind:
-  case Push
-  case Replace
-```
-
-Upload protocol types:
-
-```scala
-final case class WebSocketMessage.UploadClientConfig(
-  max_file_size: Long,
-  max_entries: Int,
-  chunk_size: Int,
-  chunk_timeout: Int
-)
-
-final case class WebSocketMessage.UploadJoinToken(
-  liveViewTopic: String,
-  uploadRef: String,
-  entryRef: String
-)
-
-enum WebSocketMessage.UploadJoinErrorReason:
-  case InvalidToken
-  case AlreadyRegistered
-  case Disallowed
-  case WriterError
-
-enum WebSocketMessage.UploadChunkErrorReason:
-  case FileSizeLimitExceeded
-  case WriterError
-  case Disallowed
-```
-
-Join errors and responses:
-
-```scala
-enum WebSocketMessage.JoinErrorReason:
-  case Unauthorized
-  case Stale
-
-enum WebSocketMessage.LiveResponse:
-  case Empty
-  case Raw(value)
-  case InitDiff(rendered)
-  case Diff(diff)
-  case InterceptReply(reply, diff = None)
-  case JoinError(reason)
-  case UploadJoinError(reason)
-  case UploadChunkError(reason, limit = None)
-  case UploadPreflightSuccess(ref, config, entries, errors)
-  case UploadPreflightFailure(ref, error)
-```
-
-### `Diff`
-
-```scala
-enum Diff:
-  case Tag(
-    static: Seq[String] = Seq.empty,
-    dynamic: Seq[Diff.Dynamic] = Seq.empty,
-    events: Seq[Diff.Event] = Seq.empty,
-    root: Boolean = false,
-    title: Option[String] = None,
-    components: Map[Int, Diff] = Map.empty,
-    templates: Map[Int, Seq[String]] = Map.empty,
-    templateRef: Option[Int] = None
-  )
-  case Comprehension(
-    static: Seq[String] = Seq.empty,
-    entries: Seq[Diff.Dynamic | Diff.IndexChange | Diff.IndexMerge] = Seq.empty,
-    count: Int = 0,
-    stream: Option[Diff.Stream] = None,
-    staticRef: Option[Int] = None
-  )
-  case Value(value: String)
-  case ComponentRef(cid: Int)
-  case Dynamic(index: Int, diff: Diff)
-  case Deleted
-```
-
-Supporting diff types:
-
-```scala
-final case class Diff.IndexChange(index: Int, previousIndex: Int)
-final case class Diff.IndexMerge(index: Int, previousIndex: Int, diff: Diff)
-final case class Diff.Event(name: String, payload: zio.json.ast.Json)
-final case class Diff.StreamInsert(domId: String, at: Int, limit: Option[Int], updateOnly: Option[Boolean])
-final case class Diff.Stream(ref: String, inserts: Seq[Diff.StreamInsert], deleteIds: Seq[String], reset: Boolean)
-```
-
-Extension:
-
-```scala
-diff.isEmpty
-```
-
-### HTML builder and escaping
-
-```scala
-HtmlBuilder.build(el, isRoot = false): String
-Escaping.validTag(s): Boolean
-Escaping.validAttrName(s): Boolean
-Escaping.escape(text, writer): Unit
-Escaping.escape(text): String
-StringWriter.writeEscaped(text)
-```
 
 ## Attribute Encoding API
 

@@ -6,7 +6,7 @@ import scala.collection.mutable.ListBuffer
 import scalive.Mod.Attr
 import scalive.Mod.Content
 
-object StaticBuilder:
+private[scalive] object StaticBuilder:
 
   def build(el: HtmlElement[?]): ArraySeq[String] =
     buildStaticFragments(el).flatten.to(ArraySeq)

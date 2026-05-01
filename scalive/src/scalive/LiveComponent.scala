@@ -39,14 +39,14 @@ final case class ComponentTargetMessage private[scalive] (
   componentClass: Class[?],
   message: Any)
 
-trait ComponentUpdateRuntime:
+private[scalive] trait ComponentUpdateRuntime:
   def sendUpdate[Props](
     componentClass: Class[?],
     id: String,
     props: Props
   ): UIO[Unit]
 
-object ComponentUpdateRuntime:
+private[scalive] object ComponentUpdateRuntime:
   object Disabled extends ComponentUpdateRuntime:
     def sendUpdate[Props](
       componentClass: Class[?],

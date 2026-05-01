@@ -9,19 +9,19 @@ import zio.json.*
 import scalive.streams.*
 import scalive.upload.*
 
-final case class LiveContext(
+final case class LiveContext private[scalive] (
   staticChanged: Boolean,
   connected: Boolean = false,
-  uploads: UploadRuntime = UploadRuntime.Disabled,
-  streams: StreamRuntime = StreamRuntime.Disabled,
-  clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
-  navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
-  title: TitleRuntime = TitleRuntime.Disabled,
-  components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
-  nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled,
-  flash: FlashRuntime = FlashRuntime.Disabled,
-  async: LiveAsyncRuntime = LiveAsyncRuntime.Disabled,
-  hooks: LiveHookRuntime = LiveHookRuntime.Disabled)
+  private[scalive] val uploads: UploadRuntime = UploadRuntime.Disabled,
+  private[scalive] val streams: StreamRuntime = StreamRuntime.Disabled,
+  private[scalive] val clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
+  private[scalive] val navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
+  private[scalive] val title: TitleRuntime = TitleRuntime.Disabled,
+  private[scalive] val components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
+  private[scalive] val nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled,
+  private[scalive] val flash: FlashRuntime = FlashRuntime.Disabled,
+  private[scalive] val async: LiveAsyncRuntime = LiveAsyncRuntime.Disabled,
+  private[scalive] val hooks: LiveHookRuntime = LiveHookRuntime.Disabled)
     extends LiveContext.NavigationCapabilities
 
 object LiveContext:
@@ -32,34 +32,34 @@ object LiveContext:
     def staticChanged: Boolean
 
   trait HasUploads:
-    def uploads: UploadRuntime
+    private[scalive] def uploads: UploadRuntime
 
   trait HasStreams:
-    def streams: StreamRuntime
+    private[scalive] def streams: StreamRuntime
 
   trait HasClientEvents:
-    def clientEvents: ClientEventRuntime
+    private[scalive] def clientEvents: ClientEventRuntime
 
   trait HasNavigation:
     private[scalive] def navigation: LiveNavigationRuntime
 
   trait HasTitle:
-    def title: TitleRuntime
+    private[scalive] def title: TitleRuntime
 
   trait HasComponents:
-    def components: ComponentUpdateRuntime
+    private[scalive] def components: ComponentUpdateRuntime
 
   trait HasNestedLiveViews:
-    def nestedLiveViews: NestedLiveViewRuntime
+    private[scalive] def nestedLiveViews: NestedLiveViewRuntime
 
   trait HasFlash:
-    def flash: FlashRuntime
+    private[scalive] def flash: FlashRuntime
 
   trait HasAsync:
-    def async: LiveAsyncRuntime
+    private[scalive] def async: LiveAsyncRuntime
 
   trait HasHooks:
-    def hooks: LiveHookRuntime
+    private[scalive] def hooks: LiveHookRuntime
 
   trait BaseCapabilities
       extends HasConnected

@@ -11,7 +11,7 @@ import scala.util.Random
 
 import zio.json.*
 
-final case class Token[T] private (
+final private[scalive] case class Token[T] private (
   version: Int,
   liveViewId: String,
   payload: T,
@@ -40,7 +40,7 @@ object TokenConfig:
       maxAge = maxAgeFromEnv.getOrElse(defaultMaxAge)
     )
 
-object Token:
+private[scalive] object Token:
   private val version = 1
 
   def sign[T: JsonCodec](secret: String, liveViewId: String, payload: T)

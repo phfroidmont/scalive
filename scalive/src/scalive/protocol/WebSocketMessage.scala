@@ -10,7 +10,7 @@ import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.ReplyStatus
 
-final case class WebSocketMessage(
+final private[scalive] case class WebSocketMessage(
   // Live session ID, auto increment defined by the client on join
   joinRef: Option[Int],
   // Message ID, global auto increment defined by the client on every message
@@ -28,7 +28,7 @@ final case class WebSocketMessage(
       WebSocketMessage.Protocol.EventReply,
       Payload.Reply(ReplyStatus.Ok, LiveResponse.Empty)
     )
-object WebSocketMessage:
+private[scalive] object WebSocketMessage:
 
   final case class Meta(
     joinRef: Option[Int],

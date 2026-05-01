@@ -5,7 +5,7 @@ import java.io.StringWriter
 /** Taken from Scalatags
   * https://github.com/com-lihaoyi/scalatags/blob/0024ce995f301b10a435c672ff643f2a432a7f3b/scalatags/src/scalatags/Escaping.scala
   */
-object Escaping:
+private[scalive] object Escaping:
 
   private val tagRegex = "^[a-z][:\\w0-9-]*$".r
 
@@ -85,7 +85,3 @@ object Escaping:
     escape(text, s)
     s.toString
 end Escaping
-
-extension (s: StringWriter)
-  def writeEscaped(text: String) =
-    Escaping.escape(text, s)

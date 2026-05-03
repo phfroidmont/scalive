@@ -240,7 +240,7 @@ private[scalive] object SocketModelRuntime:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): UIO[Unit] =
-    state.outHub.publish(payload -> meta).unit
+    state.outQueue.offer(payload -> meta).unit
 
   private def interceptReplyPayload(
     reply: Option[Json],

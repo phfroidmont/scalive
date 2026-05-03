@@ -112,6 +112,38 @@ object SocketSpec extends ZIOSpecDefault:
         update <- socket.outbox.drop(1).runHead.some
       yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "10")))
     },
+    test("outbox buffers server messages emitted before first subscription") {
+      for
+        handled <- Promise.make[Nothing, Unit]
+        lv = new LiveView[Msg, Model]:
+               def mount(ctx: MountContext) =
+                 ZIO.succeed(Model())
+
+               def handleMessage(model: Model, ctx: MessageContext) =
+                 case Msg.FromClient => handled.succeed(()).as(model.copy(counter = 1))
+                 case _              => ZIO.succeed(model)
+
+               def render(model: Model): HtmlElement[Msg] =
+                 div(idAttr := "root", button(phx.onClick(Msg.FromClient), model.counter.toString))
+        event: Payload.Event = Payload.Event(
+                  `type` = "click",
+                  event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+                  value = Json.Obj.empty
+                )
+        socket <- makeSocket(LiveContext(staticChanged = false), lv)
+        _      <- socket.inbox.offer(event -> meta)
+        _ <- Live.live(
+               handled.await.timeoutFail(new RuntimeException("Timed out waiting for event handler"))(1.second)
+             )
+        _ <- Live.live(ZIO.sleep(50.millis))
+        update <- Live.live(
+                    socket.outbox
+                      .drop(1)
+                      .runHead
+                      .timeoutFail(new RuntimeException("Timed out waiting for buffered outbox message"))(1.second)
+                  ).some
+      yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "1")))
+    },
     test("emits title updates on top-level diff") {
       val lv = makeLiveView(ZStream.succeed(Msg.SetTitle))
 

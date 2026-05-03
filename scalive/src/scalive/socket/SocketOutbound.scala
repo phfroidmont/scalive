@@ -29,7 +29,7 @@ private[scalive] object SocketOutbound:
       (Payload.okReply(LiveResponse.InitDiff(state.initDiff)) -> state.meta) +:
         state.bootstrapPayloads.toList
     ) ++ ZStream
-      .unwrapScoped(ZStream.fromHubScoped(state.outHub)).filterNot {
+      .fromQueue(state.outQueue).filterNot {
         case (Payload.Diff(diff), _) => diff.isEmpty
         case _                       => false
       }
@@ -40,11 +40,11 @@ private[scalive] object SocketOutbound:
     serverFiber: Fiber.Runtime[Throwable, Unit]
   ): UIO[Unit] =
     ZIO.uninterruptible(
-      state.outHub.publish(Payload.Close -> state.meta) *>
+      state.outQueue.offer(Payload.Close -> state.meta) *>
         SocketAsyncRuntime.interruptAll(state.asyncTasksRef) *>
         state.inbox.shutdown *>
         state.asyncQueue.shutdown *>
-        state.outHub.shutdown *>
+        state.outQueue.shutdown *>
         clientFiber.interrupt.unit *>
         serverFiber.interrupt.unit
     )

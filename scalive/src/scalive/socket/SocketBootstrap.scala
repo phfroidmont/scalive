@@ -23,7 +23,7 @@ private[scalive] object SocketBootstrap:
     for
       inbox            <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
       asyncQueue       <- Queue.unbounded[LiveAsyncCompletion]
-      outHub           <- Hub.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
+      outQueue         <- Queue.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
       lifecycleLock    <- Semaphore.make(1)
       uploadRef        <- Ref.make(UploadRuntimeState.empty)
       streamRef        <- Ref.make(StreamRuntimeState.empty)
@@ -108,7 +108,7 @@ private[scalive] object SocketBootstrap:
       tokenConfig = tokenConfig,
       inbox = inbox,
       asyncQueue = asyncQueue,
-      outHub = outHub,
+      outQueue = outQueue,
       lifecycleLock = lifecycleLock,
       ref = ref,
       currentUrlRef = currentUrlRef,

@@ -3,7 +3,6 @@ package scalive
 import zio.*
 import zio.http.*
 import zio.json.*
-import zio.stream.ZStream
 import zio.test.*
 
 object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
@@ -15,10 +14,11 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
   private final case class TypeSection(name: String)
 
   private def view(text: String): LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
-    def mount                                  = ZIO.unit
-    def handleMessage(model: Unit)             = _ => ZIO.unit
+    def mount(ctx: MountContext) =
+      ZIO.unit
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      (_: Unit) => ZIO.unit
     def render(model: Unit): HtmlElement[Unit] = div(text)
-    def subscriptions(model: Unit)             = ZStream.empty
 
   private def url(path: String): URL =
     URL.decode(path).toOption.get
@@ -29,15 +29,13 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         import scalive.*
         import zio.*
         import zio.http.*
-        import zio.stream.ZStream
 
         final case class User(name: String)
 
         def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
-          def mount = ZIO.unit
-          def handleMessage(model: Unit) = _ => ZIO.unit
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
           def render(model: Unit): HtmlElement[Unit] = div()
-          def subscriptions(model: Unit) = ZStream.empty
 
         val routes = scalive.Live.router(
           scalive.live { (_: Unit, _: Request, user: User) => view }
@@ -52,17 +50,15 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         import zio.*
         import zio.http.*
         import zio.json.*
-        import zio.stream.ZStream
 
         final case class Claims(value: String) derives JsonCodec
         final case class User(name: String)
         final case class Role(name: String)
 
         def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
-          def mount = ZIO.unit
-          def handleMessage(model: Unit) = _ => ZIO.unit
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
           def render(model: Unit): HtmlElement[Unit] = div()
-          def subscriptions(model: Unit) = ZStream.empty
 
         val aspect = LiveMountAspect.fromRequest[Any, Any, Claims, User](
           _ => ZIO.succeed(Claims("signed") -> User("disconnected")),

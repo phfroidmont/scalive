@@ -62,20 +62,27 @@ private[scalive] object SocketUploadProgressBinding:
                            for
                              (updatedModel, navigation) <-
                                SocketModelRuntime.captureNavigation(state)(
-                                 LiveIO
-                                   .toZIO(
-                                     state.lv.handleMessage(currentModel)(
-                                       parentMessage
-                                     )
-                                   )
-                                   .provide(ZLayer.succeed(state.ctx))
+                                 state.ctx.hooks
+                                   .runEvent(
+                                     currentModel,
+                                     parentMessage,
+                                     uploadProgressEvent(eventRef, payload),
+                                     state.ctx
+                                   ).flatMap {
+                                     case LiveEventHookResult.Continue(hookModel) =>
+                                       state.lv.handleMessage(
+                                         hookModel,
+                                         state.ctx.messageContext[Msg, Model]
+                                       )(parentMessage)
+                                     case LiveEventHookResult.Halt(hookModel, _) =>
+                                       ZIO.succeed(hookModel)
+                                   }
                                )
                              reply <- navigation match
                                         case Some(command) =>
                                           state.patchRedirectCountRef.set(0) *>
                                             SocketInbound
                                               .handleNavigationCommand(
-                                                rendered,
                                                 updatedModel,
                                                 command,
                                                 state.meta,
@@ -133,7 +140,6 @@ private[scalive] object SocketUploadProgressBinding:
              .map(callback =>
                callback
                  .onProgress(entry.uploadName, SocketUploadShared.toLiveUploadEntry(entry))
-                 .provide(ZLayer.succeed(state.ctx))
              )
              .getOrElse(ZIO.unit)
     yield ()

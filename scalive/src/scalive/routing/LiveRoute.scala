@@ -236,7 +236,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
               flashRef      <- Ref.make(FlashRuntimeState(initialFlash))
               componentsRef <- Ref.make(ComponentRuntimeState.empty)
               navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
-              hooksRef      <- Ref.make(LiveHookRuntimeState.empty)
+              hooksRef      <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
               ctx = LiveContext(
                       staticChanged = false,
                       streams = new SocketStreamRuntime(streamRef),
@@ -252,7 +252,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                     )
               _               <- SocketFlashRuntime.resetNavigation(flashRef)
               _               <- navigationRef.set(None)
-              initModel       <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
+              initModel       <- lv.mount(ctx.mountContext[Msg, Model])
               mountNavigation <- navigationRef.getAndSet(None)
               lifecycle       <- LiveRoute.runInitialHandleParams(
                              lv,
@@ -309,7 +309,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                                              mountContext,
                                              globalRootLayout
                                            )
-                                _ <- ctx.hooks.runAfterRender(model, ctx)
+                                _ <- ctx.hooks.runAfterRender[Msg, Model](model, ctx)
                               yield LiveRoute.clearFlashCookie(
                                 Response.html(
                                   Html.raw(

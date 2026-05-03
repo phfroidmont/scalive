@@ -6,7 +6,6 @@ import zio.*
 import zio.http.*
 import zio.http.codec.PathCodec
 import zio.json.*
-import zio.stream.ZStream
 import zio.test.*
 
 import scalive.WebSocketMessage.JoinErrorReason
@@ -36,15 +35,14 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
 
   private def liveView(callsRef: Ref[List[String]], user: MountUser) =
     new LiveView[Unit, String]:
-      def mount =
+      def mount(ctx: MountContext) =
         callsRef.update(_ :+ s"mount:${user.name}").as(user.name)
 
-      def handleMessage(model: String) = _ => ZIO.succeed(model)
+      def handleMessage(model: String, ctx: MessageContext) =
+        (_: Unit) => ZIO.succeed(model)
 
       def render(model: String): HtmlElement[Unit] =
         div(model)
-
-      def subscriptions(model: String) = ZStream.empty
 
   private def runtimeFor(
     route: LiveRouteFragment[Any, Any],

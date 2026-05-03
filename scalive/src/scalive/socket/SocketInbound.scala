@@ -46,7 +46,7 @@ private[scalive] object SocketInbound:
                          ) =>
                        followPatchRedirects(rendered, model, command, meta, state)
                      case Some(command) =>
-                       handleNavigationCommand(rendered, model, command, meta, state).as(None)
+                       handleNavigationCommand(model, command, meta, state).as(None)
                      case None =>
                        for
                          _    <- state.patchRedirectCountRef.set(0)
@@ -76,7 +76,7 @@ private[scalive] object SocketInbound:
         case LiveNavigationCommand.ReplacePatch(to) =>
           continue(currentModel, to, LivePatchKind.Replace)
         case other =>
-          handleNavigationCommand(rendered, currentModel, other, meta, state).as(None)
+          handleNavigationCommand(currentModel, other, meta, state).as(None)
 
     def continue(
       currentModel: Model,
@@ -118,7 +118,7 @@ private[scalive] object SocketInbound:
                                ) =>
                              loop(nextModel, nextCommand)
                            case Some(nextCommand) =>
-                             handleNavigationCommand(rendered, nextModel, nextCommand, meta, state)
+                             handleNavigationCommand(nextModel, nextCommand, meta, state)
                                .as(None)
                            case None =>
                              for
@@ -157,6 +157,7 @@ private[scalive] object SocketInbound:
           _ <- state.componentCidsRef.update(_ -- destroyedCids)
           _ <- state.componentsRef.update(_.removeCids(destroyedCids))
           _ <- SocketStreamRuntime.removeComponentScopes(state.streamRef, destroyedCids)
+          _ <- SocketUploadRuntime.removeComponentScopes(state.uploadRef, destroyedCids)
           _ <- SocketAsyncRuntime.interruptOwners(
                  state.asyncTasksRef,
                  destroyedCids.map(LiveAsyncOwner.Component(_))
@@ -189,26 +190,28 @@ private[scalive] object SocketInbound:
         for
           _                        <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)
           (currentModel, rendered) <- state.ref.get
-          (interceptResult, navigation) <-
+          (rawResult, navigation)  <-
             SocketModelRuntime.captureNavigation(state)(
-              LiveIO
-                .toZIO(state.lv.interceptEvent(currentModel, event.event, event.value))
-                .provide(ZLayer.succeed(state.ctx))
+              state.ctx.hooks.runRawEvent[Msg, Model](
+                currentModel,
+                LiveEvent.fromPayload(event),
+                state.ctx
+              )
             )
-          _ <- interceptResult match
-                 case InterceptResult.Halt(interceptModel, reply) =>
+          _ <- rawResult match
+                 case LiveEventHookResult.Halt(rawModel, reply) =>
                    SocketModelRuntime.applyInterceptHalt(
                      rendered,
-                     interceptModel,
+                     rawModel,
                      reply,
                      navigation,
                      meta,
                      state
                    )
-                 case InterceptResult.Continue(interceptModel) =>
+                 case LiveEventHookResult.Continue(rawModel) =>
                    SocketModelRuntime.applyBoundEvent(
                      rendered,
-                     interceptModel,
+                     rawModel,
                      event,
                      navigation,
                      meta,
@@ -230,13 +233,11 @@ private[scalive] object SocketInbound:
       case _ => Set.empty
 
   def handleNavigationCommand[Msg, Model](
-    rendered: RenderedView,
     model: Model,
     command: LiveNavigationCommand,
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
-    val _ = rendered
 
     def resolve(to: String): Task[String] =
       state.currentUrlRef.get.flatMap(currentUrl =>

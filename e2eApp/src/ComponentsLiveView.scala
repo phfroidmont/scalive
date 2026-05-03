@@ -2,21 +2,23 @@ import ComponentsLiveView.*
 import zio.http.URL
 import zio.schema.Schema
 import zio.schema.derived
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class ComponentsLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
 
-  def mount = Model(activeTab = "focus_wrap")
+  def mount(ctx: MountContext) =
+    Model(activeTab = "focus_wrap")
 
-  override def handleParams(model: Model, params: UrlParams, _url: URL) =
+  override def handleParams(model: Model, params: UrlParams, _url: URL, ctx: ParamsContext) =
+    val _   = ctx
     val tab = params.tab.getOrElse("focus_wrap")
     model.copy(activeTab = tab)
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.SetTab(tab) => model.copy(activeTab = tab)
 
   def render(model: Model) =
@@ -46,8 +48,6 @@ class ComponentsLiveView() extends LiveView[Msg, Model]:
       ),
       if model.activeTab == "focus_wrap" then focusWrapDemo else ""
     )
-
-  def subscriptions(model: Model) = ZStream.empty
 
   private def focusWrapDemo =
     div(

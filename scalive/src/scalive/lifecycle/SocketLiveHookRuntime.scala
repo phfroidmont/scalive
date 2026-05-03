@@ -3,46 +3,136 @@ package scalive
 import zio.*
 import zio.http.URL
 
-final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
+private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     extends LiveHookRuntime:
+
+  def attachRawEvent[Msg, Model](
+    id: String
+  )(
+    hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
+  ): Task[Unit] =
+    attach(
+      id,
+      "rawEvent",
+      _.rawEventHooks.exists(_.id == id),
+      state =>
+        state.copy(rawEventHooks =
+          state.rawEventHooks :+ StoredRawEventHook(
+            id,
+            (_, model, event, ctx) =>
+              hook(model.asInstanceOf[Model], event, ctx.messageContext[Msg, Model])
+                .map(_.asInstanceOf[LiveEventHookResult[Any]])
+          )
+        )
+    )
+
+  def attachComponentRawEvent[Props, Msg, Model](
+    id: String
+  )(
+    hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
+      LiveEventHookResult[Model]
+    ]
+  ): Task[Unit] =
+    attach(
+      id,
+      "rawEvent",
+      _.rawEventHooks.exists(_.id == id),
+      state =>
+        state.copy(rawEventHooks =
+          state.rawEventHooks :+ StoredRawEventHook(
+            id,
+            (props, model, event, ctx) =>
+              hook(
+                props.get.asInstanceOf[Props],
+                model.asInstanceOf[Model],
+                event,
+                ctx.componentMessageContext[Props, Msg, Model]
+              )
+                .map(_.asInstanceOf[LiveEventHookResult[Any]])
+          )
+        )
+    )
+
+  def detachRawEvent(id: String): Task[Unit] =
+    ref.update(state => state.copy(rawEventHooks = state.rawEventHooks.filterNot(_.id == id)))
+
   def attachEvent[Msg, Model](
     id: String
   )(
-    hook: (Model, Msg, LiveEvent) => LiveIO[LiveView.UpdateContext, LiveEventResult[Model]]
+    hook: (Model, Msg, LiveEvent, MessageContext[Msg, Model]) => LiveIO[
+      LiveEventHookResult[Model]
+    ]
   ): Task[Unit] =
-    val stored = StoredEventHook(
+    attach(
       id,
-      (model, message, event) =>
-        LiveIO
-          .toZIO(hook(model.asInstanceOf[Model], message.asInstanceOf[Msg], event))
-          .map(_.asInstanceOf[LiveEventResult[Any]])
+      "event",
+      _.eventHooks.exists(_.id == id),
+      state =>
+        state.copy(eventHooks =
+          state.eventHooks :+ StoredEventHook(
+            id,
+            (_, model, message, event, ctx) =>
+              hook(
+                model.asInstanceOf[Model],
+                message.asInstanceOf[Msg],
+                event,
+                ctx.messageContext[Msg, Model]
+              )
+                .map(_.asInstanceOf[LiveEventHookResult[Any]])
+          )
+        )
     )
-    ref
-      .modify { state =>
-        if state.eventHooks.exists(_.id == id) then Left(duplicateError(id, "event")) -> state
-        else Right(()) -> state.copy(eventHooks = state.eventHooks :+ stored)
-      }.flatMap(ZIO.fromEither(_))
+
+  def attachComponentEvent[Props, Msg, Model](
+    id: String
+  )(
+    hook: (Props, Model, Msg, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
+      LiveEventHookResult[Model]
+    ]
+  ): Task[Unit] =
+    attach(
+      id,
+      "event",
+      _.eventHooks.exists(_.id == id),
+      state =>
+        state.copy(eventHooks =
+          state.eventHooks :+ StoredEventHook(
+            id,
+            (props, model, message, event, ctx) =>
+              hook(
+                props.get.asInstanceOf[Props],
+                model.asInstanceOf[Model],
+                message.asInstanceOf[Msg],
+                event,
+                ctx.componentMessageContext[Props, Msg, Model]
+              )
+                .map(_.asInstanceOf[LiveEventHookResult[Any]])
+          )
+        )
+    )
 
   def detachEvent(id: String): Task[Unit] =
     ref.update(state => state.copy(eventHooks = state.eventHooks.filterNot(_.id == id)))
 
-  def attachParams[Model](
+  def attachParams[Msg, Model](
     id: String
   )(
-    hook: (Model, URL) => LiveIO[LiveView.ParamsContext, LiveHookResult[Model]]
+    hook: (Model, URL, ParamsContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
   ): Task[Unit] =
-    val stored = StoredParamsHook(
+    attach(
       id,
-      (model, url) =>
-        LiveIO
-          .toZIO(hook(model.asInstanceOf[Model], url))
-          .map(_.asInstanceOf[LiveHookResult[Any]])
+      "params",
+      _.paramsHooks.exists(_.id == id),
+      state =>
+        state.copy(paramsHooks =
+          state.paramsHooks :+ StoredParamsHook(
+            id,
+            (model, url, ctx) =>
+              hook(model.asInstanceOf[Model], url, ctx.paramsContext[Msg, Model])
+                .map(_.asInstanceOf[LiveHookResult[Any]])
+          )
+        )
     )
-    ref
-      .modify { state =>
-        if state.paramsHooks.exists(_.id == id) then Left(duplicateError(id, "params")) -> state
-        else Right(()) -> state.copy(paramsHooks = state.paramsHooks :+ stored)
-      }.flatMap(ZIO.fromEither(_))
 
   def detachParams(id: String): Task[Unit] =
     ref.update(state => state.copy(paramsHooks = state.paramsHooks.filterNot(_.id == id)))
@@ -50,20 +140,26 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
   def attachInfo[Msg, Model](
     id: String
   )(
-    hook: (Model, Msg) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
+    hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
   ): Task[Unit] =
-    val stored = StoredInfoHook(
+    attach(
       id,
-      (model, message) =>
-        LiveIO
-          .toZIO(hook(model.asInstanceOf[Model], message.asInstanceOf[Msg]))
-          .map(_.asInstanceOf[LiveHookResult[Any]])
+      "info",
+      _.infoHooks.exists(_.id == id),
+      state =>
+        state.copy(infoHooks =
+          state.infoHooks :+ StoredInfoHook(
+            id,
+            (model, message, ctx) =>
+              hook(
+                model.asInstanceOf[Model],
+                message.asInstanceOf[Msg],
+                ctx.messageContext[Msg, Model]
+              )
+                .map(_.asInstanceOf[LiveHookResult[Any]])
+          )
+        )
     )
-    ref
-      .modify { state =>
-        if state.infoHooks.exists(_.id == id) then Left(duplicateError(id, "info")) -> state
-        else Right(()) -> state.copy(infoHooks = state.infoHooks :+ stored)
-      }.flatMap(ZIO.fromEither(_))
 
   def detachInfo(id: String): Task[Unit] =
     ref.update(state => state.copy(infoHooks = state.infoHooks.filterNot(_.id == id)))
@@ -71,106 +167,275 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
   def attachAsync[Msg, Model](
     id: String
   )(
-    hook: (Model, Msg, LiveAsyncEvent) => LiveIO[LiveView.UpdateContext, LiveHookResult[Model]]
+    hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => LiveIO[
+      LiveHookResult[Model]
+    ]
   ): Task[Unit] =
-    val stored = StoredAsyncHook(
+    attach(
       id,
-      (model, message, event) =>
-        LiveIO
-          .toZIO(hook(model.asInstanceOf[Model], message.asInstanceOf[Msg], event))
-          .map(_.asInstanceOf[LiveHookResult[Any]])
+      "async",
+      _.asyncHooks.exists(_.id == id),
+      state =>
+        state.copy(asyncHooks =
+          state.asyncHooks :+ StoredAsyncHook(
+            id,
+            (_, model, event, ctx) =>
+              hook(
+                model.asInstanceOf[Model],
+                event.asInstanceOf[LiveAsyncEvent[Msg]],
+                ctx.messageContext[Msg, Model]
+              )
+                .map(_.asInstanceOf[LiveHookResult[Any]])
+          )
+        )
     )
-    ref
-      .modify { state =>
-        if state.asyncHooks.exists(_.id == id) then Left(duplicateError(id, "async")) -> state
-        else Right(()) -> state.copy(asyncHooks = state.asyncHooks :+ stored)
-      }.flatMap(ZIO.fromEither(_))
+
+  def attachComponentAsync[Props, Msg, Model](
+    id: String
+  )(
+    hook: (Props, Model, LiveAsyncEvent[Msg], ComponentMessageContext[Props, Msg, Model]) => LiveIO[
+      LiveHookResult[Model]
+    ]
+  ): Task[Unit] =
+    attach(
+      id,
+      "async",
+      _.asyncHooks.exists(_.id == id),
+      state =>
+        state.copy(asyncHooks =
+          state.asyncHooks :+ StoredAsyncHook(
+            id,
+            (props, model, event, ctx) =>
+              hook(
+                props.get.asInstanceOf[Props],
+                model.asInstanceOf[Model],
+                event.asInstanceOf[LiveAsyncEvent[Msg]],
+                ctx.componentMessageContext[Props, Msg, Model]
+              )
+                .map(_.asInstanceOf[LiveHookResult[Any]])
+          )
+        )
+    )
 
   def detachAsync(id: String): Task[Unit] =
     ref.update(state => state.copy(asyncHooks = state.asyncHooks.filterNot(_.id == id)))
 
-  def attachAfterRender[Model](
+  def attachAfterRender[Msg, Model](
     id: String
   )(
-    hook: Model => LiveIO[LiveView.UpdateContext, Model]
+    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model]
   ): Task[Unit] =
-    val stored = StoredAfterRenderHook(
+    attach(
       id,
-      model => LiveIO.toZIO(hook(model.asInstanceOf[Model])).map(_.asInstanceOf[Any])
+      "afterRender",
+      _.afterRenderHooks.exists(_.id == id),
+      state =>
+        state.copy(afterRenderHooks =
+          state.afterRenderHooks :+ StoredAfterRenderHook(
+            id,
+            (_, model, ctx) =>
+              hook(model.asInstanceOf[Model], ctx.afterRenderContext[Msg, Model])
+                .map(_.asInstanceOf[Any])
+          )
+        )
     )
-    ref
-      .modify { state =>
-        if state.afterRenderHooks.exists(_.id == id) then
-          Left(duplicateError(id, "afterRender")) -> state
-        else Right(()) -> state.copy(afterRenderHooks = state.afterRenderHooks :+ stored)
-      }.flatMap(ZIO.fromEither(_))
+
+  def attachComponentAfterRender[Props, Msg, Model](
+    id: String
+  )(
+    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Model]
+  ): Task[Unit] =
+    attach(
+      id,
+      "afterRender",
+      _.afterRenderHooks.exists(_.id == id),
+      state =>
+        state.copy(afterRenderHooks =
+          state.afterRenderHooks :+ StoredAfterRenderHook(
+            id,
+            (props, model, ctx) =>
+              hook(
+                props.get.asInstanceOf[Props],
+                model.asInstanceOf[Model],
+                ctx.componentAfterRenderContext[Props, Msg, Model]
+              )
+                .map(_.asInstanceOf[Any])
+          )
+        )
+    )
 
   def detachAfterRender(id: String): Task[Unit] =
     ref.update(state => state.copy(afterRenderHooks = state.afterRenderHooks.filterNot(_.id == id)))
+
+  private[scalive] def runRawEvent[Msg, Model](
+    model: Model,
+    event: LiveEvent,
+    ctx: LiveContext
+  ): Task[LiveEventHookResult[Model]] =
+    ref.get.flatMap(state => reduceEventHooks(state.rawEventHooks, None, model, event, ctx))
+
+  private[scalive] def runComponentRawEvent[Props, Msg, Model](
+    props: Props,
+    model: Model,
+    event: LiveEvent,
+    ctx: LiveContext
+  ): Task[LiveEventHookResult[Model]] =
+    ref.get.flatMap(state => reduceEventHooks(state.rawEventHooks, Some(props), model, event, ctx))
 
   private[scalive] def runEvent[Msg, Model](
     model: Model,
     message: Msg,
     event: LiveEvent,
     ctx: LiveContext
-  ): Task[LiveEventResult[Model]] =
-    ref.get.flatMap(state => reduceEventHooks(state.eventHooks, model, message, event, ctx))
+  ): Task[LiveEventHookResult[Model]] =
+    ref.get.flatMap(state =>
+      reduceTypedEventHooks(state.eventHooks, None, model, message, event, ctx)
+    )
 
-  private[scalive] def runParams[Model](
+  private[scalive] def runComponentEvent[Props, Msg, Model](
+    props: Props,
+    model: Model,
+    message: Msg,
+    event: LiveEvent,
+    ctx: LiveContext
+  ): Task[LiveEventHookResult[Model]] =
+    ref.get.flatMap(state =>
+      reduceTypedEventHooks(state.eventHooks, Some(props), model, message, event, ctx)
+    )
+
+  private[scalive] def runParams[Msg, Model](
     model: Model,
     url: URL,
     ctx: LiveContext
   ): Task[LiveHookResult[Model]] =
-    ref.get.flatMap(state => reduceHooks(state.paramsHooks, model)(_.run(_, url), ctx))
+    ref.get.flatMap(state => reduceParamsHooks(state.paramsHooks, model, url, ctx))
 
   private[scalive] def runInfo[Msg, Model](
     model: Model,
     message: Msg,
     ctx: LiveContext
   ): Task[LiveHookResult[Model]] =
-    ref.get.flatMap(state => reduceHooks(state.infoHooks, model)(_.run(_, message), ctx))
+    ref.get.flatMap(state => reduceInfoHooks(state.infoHooks, model, message, ctx))
 
   private[scalive] def runAsync[Msg, Model](
     model: Model,
-    message: Msg,
-    event: LiveAsyncEvent,
+    event: LiveAsyncEvent[Msg],
     ctx: LiveContext
   ): Task[LiveHookResult[Model]] =
-    ref.get.flatMap(state => reduceAsyncHooks(state.asyncHooks, model, message, event, ctx))
+    ref.get.flatMap(state => reduceAsyncHooks(state.asyncHooks, None, model, event, ctx))
 
-  private[scalive] def runAfterRender[Model](model: Model, ctx: LiveContext): Task[Model] =
-    ref.get.flatMap { state =>
-      state.afterRenderHooks
-        .foldLeft(ZIO.succeed(model.asInstanceOf[Any]): Task[Any]) { case (current, hook) =>
-          current.flatMap(value => hook.run(value).provide(ZLayer.succeed(ctx)))
-        }.map(_.asInstanceOf[Model])
-    }
+  private[scalive] def runComponentAsync[Props, Msg, Model](
+    props: Props,
+    model: Model,
+    event: LiveAsyncEvent[Msg],
+    ctx: LiveContext
+  ): Task[LiveHookResult[Model]] =
+    ref.get.flatMap(state => reduceAsyncHooks(state.asyncHooks, Some(props), model, event, ctx))
 
-  private def reduceEventHooks[Msg, Model](
+  private[scalive] def runAfterRender[Msg, Model](model: Model, ctx: LiveContext): Task[Model] =
+    ref.get.flatMap(state => reduceAfterRenderHooks(state.afterRenderHooks, None, model, ctx))
+
+  private[scalive] def runComponentAfterRender[Props, Msg, Model](
+    props: Props,
+    model: Model,
+    ctx: LiveContext
+  ): Task[Model] =
+    ref.get.flatMap(state =>
+      reduceAfterRenderHooks(state.afterRenderHooks, Some(props), model, ctx)
+    )
+
+  private def attach(
+    id: String,
+    stage: String,
+    exists: LiveHookRuntimeState => Boolean,
+    update: LiveHookRuntimeState => LiveHookRuntimeState
+  ): Task[Unit] =
+    ref
+      .modify { state =>
+        if exists(state) then Left(duplicateError(id, stage)) -> state
+        else Right(())                                        -> update(state)
+      }.flatMap(ZIO.fromEither(_))
+
+  private def reduceEventHooks[Model](
+    hooks: Vector[StoredRawEventHook],
+    props: Option[Any],
+    initialModel: Model,
+    event: LiveEvent,
+    ctx: LiveContext
+  ): Task[LiveEventHookResult[Model]] =
+    hooks
+      .foldLeft(
+        ZIO.succeed(
+          LiveEventHookResult.Continue(initialModel).asInstanceOf[LiveEventHookResult[Any]]
+        ): Task[LiveEventHookResult[Any]]
+      ) { case (current, hook) =>
+        current.flatMap {
+          case LiveEventHookResult.Continue(model)   => hook.run(props, model, event, ctx)
+          case halt @ LiveEventHookResult.Halt(_, _) => ZIO.succeed(halt)
+        }
+      }.map(_.asInstanceOf[LiveEventHookResult[Model]])
+
+  private def reduceTypedEventHooks[Msg, Model](
     hooks: Vector[StoredEventHook],
+    props: Option[Any],
     initialModel: Model,
     message: Msg,
     event: LiveEvent,
     ctx: LiveContext
-  ): Task[LiveEventResult[Model]] =
+  ): Task[LiveEventHookResult[Model]] =
     hooks
       .foldLeft(
         ZIO.succeed(
-          LiveEventResult.Continue(initialModel).asInstanceOf[LiveEventResult[Any]]
-        ): Task[LiveEventResult[Any]]
+          LiveEventHookResult.Continue(initialModel).asInstanceOf[LiveEventHookResult[Any]]
+        ): Task[LiveEventHookResult[Any]]
       ) { case (current, hook) =>
         current.flatMap {
-          case LiveEventResult.Continue(model) =>
-            hook.run(model, message, event).provide(ZLayer.succeed(ctx))
-          case halt @ LiveEventResult.Halt(_, _) => ZIO.succeed(halt)
+          case LiveEventHookResult.Continue(model)   => hook.run(props, model, message, event, ctx)
+          case halt @ LiveEventHookResult.Halt(_, _) => ZIO.succeed(halt)
         }
-      }.map(_.asInstanceOf[LiveEventResult[Model]])
+      }.map(_.asInstanceOf[LiveEventHookResult[Model]])
+
+  private def reduceParamsHooks[Model](
+    hooks: Vector[StoredParamsHook],
+    initialModel: Model,
+    url: URL,
+    ctx: LiveContext
+  ): Task[LiveHookResult[Model]] =
+    hooks
+      .foldLeft(
+        ZIO.succeed(LiveHookResult.Continue(initialModel).asInstanceOf[LiveHookResult[Any]]): Task[
+          LiveHookResult[Any]
+        ]
+      ) { case (current, hook) =>
+        current.flatMap {
+          case LiveHookResult.Continue(model) => hook.run(model, url, ctx)
+          case halt @ LiveHookResult.Halt(_)  => ZIO.succeed(halt)
+        }
+      }.map(_.asInstanceOf[LiveHookResult[Model]])
+
+  private def reduceInfoHooks[Msg, Model](
+    hooks: Vector[StoredInfoHook],
+    initialModel: Model,
+    message: Msg,
+    ctx: LiveContext
+  ): Task[LiveHookResult[Model]] =
+    hooks
+      .foldLeft(
+        ZIO.succeed(LiveHookResult.Continue(initialModel).asInstanceOf[LiveHookResult[Any]]): Task[
+          LiveHookResult[Any]
+        ]
+      ) { case (current, hook) =>
+        current.flatMap {
+          case LiveHookResult.Continue(model) => hook.run(model, message, ctx)
+          case halt @ LiveHookResult.Halt(_)  => ZIO.succeed(halt)
+        }
+      }.map(_.asInstanceOf[LiveHookResult[Model]])
 
   private def reduceAsyncHooks[Msg, Model](
     hooks: Vector[StoredAsyncHook],
+    props: Option[Any],
     initialModel: Model,
-    message: Msg,
-    event: LiveAsyncEvent,
+    event: LiveAsyncEvent[Msg],
     ctx: LiveContext
   ): Task[LiveHookResult[Model]] =
     hooks
@@ -181,29 +446,21 @@ final private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState
       ) { case (current, hook) =>
         current.flatMap {
           case LiveHookResult.Continue(model) =>
-            hook.run(model, message, event).provide(ZLayer.succeed(ctx))
+            hook.run(props, model, event.asInstanceOf[LiveAsyncEvent[Any]], ctx)
           case halt @ LiveHookResult.Halt(_) => ZIO.succeed(halt)
         }
       }.map(_.asInstanceOf[LiveHookResult[Model]])
 
-  private def reduceHooks[Model, Hook](
-    hooks: Vector[Hook],
-    initialModel: Model
-  )(
-    run: (Hook, Any) => RIO[LiveView.UpdateContext, LiveHookResult[Any]],
+  private def reduceAfterRenderHooks[Model](
+    hooks: Vector[StoredAfterRenderHook],
+    props: Option[Any],
+    initialModel: Model,
     ctx: LiveContext
-  ): Task[LiveHookResult[Model]] =
+  ): Task[Model] =
     hooks
-      .foldLeft(
-        ZIO.succeed(LiveHookResult.Continue(initialModel).asInstanceOf[LiveHookResult[Any]]): Task[
-          LiveHookResult[Any]
-        ]
-      ) { case (current, hook) =>
-        current.flatMap {
-          case LiveHookResult.Continue(model) => run(hook, model).provide(ZLayer.succeed(ctx))
-          case halt @ LiveHookResult.Halt(_)  => ZIO.succeed(halt)
-        }
-      }.map(_.asInstanceOf[LiveHookResult[Model]])
+      .foldLeft(ZIO.succeed(initialModel.asInstanceOf[Any]): Task[Any]) { case (current, hook) =>
+        current.flatMap(model => hook.run(props, model, ctx))
+      }.map(_.asInstanceOf[Model])
 
   private def duplicateError(id: String, stage: String): IllegalArgumentException =
     new IllegalArgumentException(s"$stage hook '$id' is already attached")

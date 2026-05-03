@@ -140,7 +140,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   lifecycleLock: Semaphore,
   ref: Ref[(Model, RenderedView)],
   currentUrlRef: Ref[URL],
-  lvStreamRef: SubscriptionRef[ZStream[Any, Nothing, Msg]],
+  subscriptionsRef: SubscriptionRef[Map[String, ZStream[Any, Nothing, Msg]]],
   navigationRef: Ref[Option[LiveNavigationCommand]],
   uploadRef: Ref[UploadRuntimeState],
   streamRef: Ref[StreamRuntimeState],

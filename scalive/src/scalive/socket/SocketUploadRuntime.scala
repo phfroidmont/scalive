@@ -66,46 +66,44 @@ final private[scalive] class SocketUploadRuntime(
   def cancel(name: String, entryRef: String): Task[Unit] =
     for
       state <- uploadRef.get
-      entry <- ZIO
-                 .fromOption(state.entries.get(entryRef))
-                 .orElseFail(
-                   new IllegalArgumentException(
-                     s"No upload entry found for ref $entryRef"
+      _     <- state.configs.get(name) match
+             case None    => ZIO.fail(new IllegalArgumentException(s"Upload $name is not allowed"))
+             case Some(_) =>
+               state.entries.get(entryRef) match
+                 case None                                    => ZIO.unit
+                 case Some(entry) if entry.uploadName != name =>
+                   ZIO.fail(
+                     new IllegalArgumentException(
+                       s"Upload entry $entryRef does not belong to upload $name"
+                     )
                    )
-                 )
-      _ <-
-        if entry.uploadName != name then
-          ZIO.fail(
-            new IllegalArgumentException(
-              s"Upload entry $entryRef does not belong to upload $name"
-            )
-          )
-        else
-          SocketUploadShared.closeWriter(entry, LiveUploadWriterCloseReason.Cancel).ignore *>
-            uploadRef.update { current =>
-              val removed = current.removeEntry(entryRef)
-              removed.configs.get(name) match
-                case Some(config) =>
-                  val nextErrors =
-                    Option
-                      .when(
-                        config.entryOrder.length > config.options.maxEntries
-                      )(
-                        config.ref -> Json.Str("too_many_files")
-                      )
-                      .toList
-                  val nextConfig = config.copy(
-                    cancelledRefs = config.cancelledRefs + entryRef,
-                    errors = nextErrors
-                  )
-                  removed.copy(
-                    configs = removed.configs.updated(
-                      name,
-                      nextConfig
-                    )
-                  )
-                case None => removed
-            }.unit
+                 case Some(entry) =>
+                   SocketUploadShared
+                     .closeWriter(entry, LiveUploadWriterCloseReason.Cancel).ignore *>
+                     uploadRef.update { current =>
+                       val removed = current.removeEntry(entryRef)
+                       removed.configs.get(name) match
+                         case Some(config) =>
+                           val nextErrors =
+                             Option
+                               .when(
+                                 config.entryOrder.length > config.options.maxEntries
+                               )(
+                                 config.ref -> Json.Str("too_many_files")
+                               )
+                               .toList
+                           val nextConfig = config.copy(
+                             cancelledRefs = config.cancelledRefs + entryRef,
+                             errors = nextErrors
+                           )
+                           removed.copy(
+                             configs = removed.configs.updated(
+                               name,
+                               nextConfig
+                             )
+                           )
+                         case None => removed
+                     }.unit
     yield ()
 
   def consumeCompleted(name: String): UIO[List[LiveUploadedEntry]] =
@@ -131,4 +129,48 @@ final private[scalive] class SocketUploadRuntime(
              case None => ZIO.unit
       _ <- uploadRef.update(_.removeEntry(entryRef)).unit
     yield ()
+end SocketUploadRuntime
+
+private[scalive] object SocketUploadRuntime:
+  def scoped(runtime: UploadRuntime, scope: String): UploadRuntime =
+    new ScopedUploadRuntime(runtime, scope)
+
+  def removeComponentScopes(uploadRef: Ref[UploadRuntimeState], cids: Set[Int]): UIO[Unit] =
+    val prefixes = cids.map(SocketStreamRuntime.componentScope)
+    uploadRef.update { current =>
+      prefixes.foldLeft(current) { (state, prefix) =>
+        state.configs.keysIterator
+          .filter(_.startsWith(prefix))
+          .foldLeft(state)((inner, name) => inner.removeUploadByName(name))
+      }
+    }
+
+  final private class ScopedUploadRuntime(runtime: UploadRuntime, scope: String)
+      extends UploadRuntime:
+    def allow(name: String, options: LiveUploadOptions): Task[LiveUpload] =
+      runtime.allow(scoped(name), options).map(unscoped)
+
+    def disallow(name: String): Task[Unit] =
+      runtime.disallow(scoped(name))
+
+    def get(name: String): UIO[Option[LiveUpload]] =
+      runtime.get(scoped(name)).map(_.map(unscoped))
+
+    def cancel(name: String, entryRef: String): Task[Unit] =
+      runtime.cancel(scoped(name), entryRef)
+
+    def consumeCompleted(name: String): UIO[List[LiveUploadedEntry]] =
+      runtime.consumeCompleted(scoped(name))
+
+    def consume(entryRef: String): UIO[Option[LiveUploadedEntry]] =
+      runtime.consume(entryRef)
+
+    def drop(entryRef: String): UIO[Unit] =
+      runtime.drop(entryRef)
+
+    private def scoped(name: String): String = scope + name
+
+    private def unscoped(upload: LiveUpload): LiveUpload =
+      if upload.name.startsWith(scope) then upload.copy(name = upload.name.drop(scope.length))
+      else upload
 end SocketUploadRuntime

@@ -1,14 +1,16 @@
 import SelectLiveView.*
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class SelectLiveView extends LiveView[Msg, Model]:
 
-  def mount = Model(selected = "2", validated = false)
+  def mount(ctx: MountContext) =
+    Model(selected = "2", validated = false)
 
-  def handleMessage(model: Model) =
-    case Msg.ChangeSelected(value) => model.copy(selected = value, validated = true)
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.ChangeSelected(value) =>
+      model.copy(selected = value, validated = true)
 
   def render(model: Model) =
     div(
@@ -50,7 +52,6 @@ class SelectLiveView extends LiveView[Msg, Model]:
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
 end SelectLiveView
 
 object SelectLiveView:

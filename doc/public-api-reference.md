@@ -26,30 +26,32 @@ There is no supported `scalive.testing.*` package yet. Test helpers should be in
 
 ```scala
 trait LiveView[Msg, Model]:
-  def mount: LiveIO[LiveView.InitContext, Model]
-  def handleMessage(model: Model): Msg => LiveIO[LiveView.UpdateContext, Model]
+  type MountContext = scalive.MountContext[Msg, Model]
+  type MessageContext = scalive.MessageContext[Msg, Model]
+  type ParamsContext = scalive.ParamsContext[Msg, Model]
+  type AfterRenderContext = scalive.AfterRenderContext[Msg, Model]
+
+  def hooks: LiveHooks[Msg, Model] = LiveHooks.empty
+
+  def mount(ctx: MountContext): LiveIO[Model]
+  def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
   def render(model: Model): HtmlElement[Msg]
-  def subscriptions(model: Model): ZStream[LiveView.SubscriptionsContext, Nothing, Msg]
 
   val queryCodec: LiveQueryCodec[?] = LiveQueryCodec.none
 
   def handleParams(
     model: Model,
     query: queryCodec.Out,
-    url: zio.http.URL
-  ): LiveIO[LiveView.ParamsContext, Model]
+    url: zio.http.URL,
+    ctx: ParamsContext
+  ): LiveIO[Model]
 
   def handleParamsDecodeError(
     model: Model,
     error: LiveQueryCodec.DecodeError,
-    url: zio.http.URL
-  ): LiveIO[LiveView.ParamsContext, Model]
-
-  def interceptEvent(
-    model: Model,
-    event: String,
-    value: zio.json.ast.Json
-  ): LiveIO[LiveView.InterceptContext, InterceptResult[Model]]
+    url: zio.http.URL,
+    ctx: ParamsContext
+  ): LiveIO[Model]
 ```
 
 Lifecycle methods:
@@ -57,181 +59,266 @@ Lifecycle methods:
 - `mount` creates the initial model for disconnected and connected lifecycle phases.
 - `handleMessage` handles typed messages produced by HTML bindings, JS push commands, async tasks, and subscriptions.
 - `render` returns the current HTML tree.
-- `subscriptions` returns a stream of messages for server-side subscriptions.
 - `queryCodec` decodes query parameters for `handleParams`.
 - `handleParams` runs when URL parameters are decoded successfully.
 - `handleParamsDecodeError` runs when `queryCodec` cannot decode the current URL.
-- `interceptEvent` can continue or halt a raw client event before it becomes a normal typed message.
+- `hooks` installs static lifecycle hooks, including raw client-event interception through `LiveHooks.rawEvent`.
+- Runtime subscriptions are started explicitly from phase contexts with `ctx.subscriptions.start`.
 
-Context aliases:
+### `LiveComponent[Props, Msg, Model]`
+
+`LiveComponent` is a stateful component abstraction. A component receives typed props, owns a typed model, and receives typed component messages.
 
 ```scala
-object LiveView:
-  type BaseContext       = LiveContext.BaseCapabilities
-  type NavigationContext = LiveContext.NavigationCapabilities
-  type InitContext       = NavigationContext
-  type SubscriptionsContext = BaseContext
-  type UpdateContext     = NavigationContext
-  type ParamsContext     = NavigationContext
-  type InterceptContext  = NavigationContext
+trait LiveComponent[Props, Msg, Model]:
+  type MountContext = scalive.ComponentMountContext[Props, Msg, Model]
+  type UpdateContext = scalive.ComponentUpdateContext[Props, Msg, Model]
+  type MessageContext = scalive.ComponentMessageContext[Props, Msg, Model]
+  type AfterRenderContext = scalive.ComponentAfterRenderContext[Props, Msg, Model]
+
+  def hooks: ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.empty
+
+  def mount(props: Props, ctx: MountContext): LiveIO[Model]
+  def update(props: Props, model: Model, ctx: UpdateContext): LiveIO[Model]
+  def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => LiveIO[Model]
+  def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
 ```
 
-### `InterceptResult[Model]`
+### `LiveIO[A]`
 
-`InterceptResult` is returned by `LiveView.interceptEvent`.
+`LiveIO` is the effect type used by lifecycle callbacks and context facades.
 
 ```scala
-enum InterceptResult[Model]:
+type LiveIO[+A] = zio.Task[A]
+
+object LiveIO:
+  def succeed[A](value: A): LiveIO[A]
+  def fail[A](error: Throwable): LiveIO[A]
+
+  given [A]: Conversion[A, LiveIO[A]]
+```
+
+Plain model returns are opt-in. Import the conversion where you want that style:
+
+```scala
+import scalive.LiveIO.given
+
+def mount(ctx: MountContext): LiveIO[Model] =
+  Model.empty
+```
+
+`Task` values conform directly because `LiveIO` is a transparent type alias.
+
+## Phase Context API
+
+Lifecycle callbacks receive explicit phase contexts. Contexts expose domain facades directly and do not require application code to provide or request ZIO environment services.
+
+### Context Availability
+
+```scala
+trait LifecycleContext:
+  def connected: Boolean
+  def staticChanged: Boolean
+
+trait MountContext[Msg, Model] extends LifecycleContext:
+  def nav: MountNavigation
+  def flash: Flash
+  def uploads: Uploads
+  def streams: Streams
+  def async: Async[Msg]
+  def subscriptions: Subscriptions[Msg]
+  def client: Client
+  def title: Title
+  def hooks: RootHooks[Msg, Model]
+
+trait MessageContext[Msg, Model] extends LifecycleContext:
+  def nav: Navigation
+  def flash: Flash
+  def uploads: Uploads
+  def streams: Streams
+  def async: Async[Msg]
+  def subscriptions: Subscriptions[Msg]
+  def client: Client
+  def title: Title
+  def components: ComponentUpdates
+  def hooks: RootHooks[Msg, Model]
+
+trait ParamsContext[Msg, Model] extends LifecycleContext:
+  def nav: Navigation
+  def flash: Flash
+  def uploads: Uploads
+  def streams: Streams
+  def async: Async[Msg]
+  def subscriptions: Subscriptions[Msg]
+  def client: Client
+  def title: Title
+  def components: ComponentUpdates
+  def hooks: RootHooks[Msg, Model]
+
+trait AfterRenderContext[Msg, Model] extends LifecycleContext:
+  def client: Client
+  def hooks: RootHooks[Msg, Model]
+```
+
+```scala
+trait ComponentMountContext[Props, Msg, Model] extends LifecycleContext:
+  def flash: Flash
+  def uploads: Uploads
+  def streams: Streams
+  def async: Async[Msg]
+  def client: Client
+  def hooks: ComponentHooks[Props, Msg, Model]
+
+trait ComponentUpdateContext[Props, Msg, Model] extends LifecycleContext:
+  def flash: Flash
+  def uploads: Uploads
+  def streams: Streams
+  def async: Async[Msg]
+  def client: Client
+  def hooks: ComponentHooks[Props, Msg, Model]
+
+trait ComponentMessageContext[Props, Msg, Model] extends LifecycleContext:
+  def nav: Navigation
+  def flash: Flash
+  def uploads: Uploads
+  def streams: Streams
+  def async: Async[Msg]
+  def client: Client
+  def components: ComponentUpdates
+  def hooks: ComponentHooks[Props, Msg, Model]
+
+trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext:
+  def hooks: ComponentHooks[Props, Msg, Model]
+```
+
+### Navigation
+
+```scala
+trait MountNavigation:
+  def pushNavigate(to: String): LiveIO[Unit]
+  def pushNavigate[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
+  def replaceNavigate(to: String): LiveIO[Unit]
+  def replaceNavigate[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
+  def redirect(to: String): LiveIO[Unit]
+  def redirect[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
+
+trait Navigation extends MountNavigation:
+  def pushPatch(to: String): LiveIO[Unit]
+  def pushPatch[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
+  def replacePatch(to: String): LiveIO[Unit]
+  def replacePatch[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
+```
+
+### Flash
+
+```scala
+trait Flash:
+  def put(kind: String, message: String): LiveIO[Unit]
+  def clear(kind: String): LiveIO[Unit]
+  def clearAll: LiveIO[Unit]
+  def get(kind: String): LiveIO[Option[String]]
+  def snapshot: LiveIO[Map[String, String]]
+```
+
+### Uploads
+
+```scala
+trait Uploads:
+  def allow(name: String, options: LiveUploadOptions): LiveIO[LiveUpload]
+  def disallow(name: String): LiveIO[Unit]
+  def get(name: String): LiveIO[Option[LiveUpload]]
+  def cancel(name: String, entryRef: String): LiveIO[Unit]
+  def consumeCompleted(name: String): LiveIO[List[LiveUploadedEntry]]
+  def consume(entryRef: String): LiveIO[Option[LiveUploadedEntry]]
+  def drop(entryRef: String): LiveIO[Unit]
+```
+
+### Streams
+
+```scala
+trait Streams:
+  def init[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt = StreamAt.Last, reset: Boolean = false, limit: Option[StreamLimit] = None): LiveIO[LiveStream[A]]
+  def insert[A](definition: LiveStreamDef[A], item: A, at: StreamAt = StreamAt.Last, limit: Option[StreamLimit] = None, updateOnly: Boolean = false): LiveIO[LiveStream[A]]
+  def delete[A](definition: LiveStreamDef[A], item: A): LiveIO[LiveStream[A]]
+  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]]
+```
+
+### Async And Subscriptions
+
+```scala
+trait Async[Msg]:
+  def start[A](name: String)(task: zio.Task[A])(toMsg: A => Msg): LiveIO[Unit]
+  def cancel(name: String): LiveIO[Unit]
+
+trait Subscriptions[Msg]:
+  def start(name: String)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def replace(name: String)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def cancel(name: String): LiveIO[Unit]
+```
+
+### Client, Title, And Components
+
+```scala
+trait Client:
+  def pushEvent[A: JsonEncoder](name: String, payload: A): LiveIO[Unit]
+  def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
+
+trait Title:
+  def set(value: String): LiveIO[Unit]
+
+trait ComponentUpdates:
+  def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](id: String, props: LiveComponent.PropsOf[C]): LiveIO[Unit]
+```
+
+### Hook Results
+
+```scala
+enum LiveHookResult[+Model]:
   case Continue(model: Model)
-  case Halt(model: Model, reply: Option[zio.json.ast.Json])
+  case Halt(model: Model)
+
+enum LiveEventHookResult[+Model]:
+  case Continue(model: Model)
+  case Halt(model: Model, reply: Option[zio.json.ast.Json] = None)
 ```
 
 Constructors:
 
 ```scala
-InterceptResult.cont(model)
-InterceptResult.halt(model)
-InterceptResult.haltReply(model, value)
+LiveHookResult.cont(model)
+LiveHookResult.halt(model)
+LiveEventHookResult.cont(model)
+LiveEventHookResult.halt(model)
+LiveEventHookResult.haltReply(model, value)
 ```
 
-### `LiveIO[-R, +A]`
-
-`LiveIO` is an opaque alias over `zio.RIO[R, A]` used by lifecycle callbacks.
+### Static Hooks
 
 ```scala
-opaque type LiveIO[-R, +A] = zio.RIO[R, A]
+LiveHooks.empty
+LiveHooks.empty.rawEvent(id)(hook)
+LiveHooks.empty.event(id)(hook)
+LiveHooks.empty.params(id)(hook)
+LiveHooks.empty.info(id)(hook)
+LiveHooks.empty.async(id)(hook)
+LiveHooks.empty.afterRender(id)(hook)
 ```
 
-Helpers:
+### Dynamic Hooks
 
 ```scala
-LiveIO.pure(value)
-```
-
-Given conversions allow plain values and `RIO` values to satisfy `LiveIO` return types.
-
-## Live Context API
-
-`LiveContext` is the service available inside `LiveIO` effects. Application code uses the methods on `LiveContext`; direct construction and runtime fields are internal.
-
-### `LiveContext`
-
-`LiveContext` capability traits describe which operations are available to each lifecycle phase. The runtime values backing those capabilities are not public API.
-
-Capability traits:
-
-```scala
-LiveContext.HasConnected
-LiveContext.HasStaticChanged
-LiveContext.HasUploads
-LiveContext.HasStreams
-LiveContext.HasClientEvents
-LiveContext.HasNavigation
-LiveContext.HasTitle
-LiveContext.HasComponents
-LiveContext.HasNestedLiveViews
-LiveContext.HasFlash
-LiveContext.HasAsync
-LiveContext.HasHooks
-LiveContext.BaseCapabilities
-LiveContext.NavigationCapabilities
-```
-
-### Connection and static tracking
-
-```scala
-LiveContext.connected: URIO[LiveContext.HasConnected, Boolean]
-LiveContext.staticChanged: URIO[LiveContext.HasStaticChanged, Boolean]
-```
-
-### Upload context methods
-
-```scala
-LiveContext.allowUpload(name, options): RIO[LiveContext.HasUploads, LiveUpload]
-LiveContext.disallowUpload(name): RIO[LiveContext.HasUploads, Unit]
-LiveContext.upload(name): URIO[LiveContext.HasUploads, Option[LiveUpload]]
-LiveContext.cancelUpload(name, entryRef): RIO[LiveContext.HasUploads, Unit]
-LiveContext.consumeUploadedEntries(name): URIO[LiveContext.HasUploads, List[LiveUploadedEntry]]
-LiveContext.consumeUploadedEntry(entryRef): URIO[LiveContext.HasUploads, Option[LiveUploadedEntry]]
-LiveContext.dropUploadedEntry(entryRef): URIO[LiveContext.HasUploads, Unit]
-```
-
-### Stream context methods
-
-```scala
-LiveContext.stream(definition, items, at = StreamAt.Last, reset = false, limit = None): RIO[LiveContext.HasStreams, LiveStream[A]]
-LiveContext.streamInsert(definition, item, at = StreamAt.Last, limit = None, updateOnly = false): RIO[LiveContext.HasStreams, LiveStream[A]]
-LiveContext.streamDelete(definition, item): RIO[LiveContext.HasStreams, LiveStream[A]]
-LiveContext.streamDeleteByDomId(definition, domId): RIO[LiveContext.HasStreams, LiveStream[A]]
-LiveContext.streamState(definition): URIO[LiveContext.HasStreams, Option[LiveStream[A]]]
-```
-
-### Client event methods
-
-```scala
-LiveContext.pushEvent[A: JsonEncoder](name, payload): URIO[LiveContext.HasClientEvents, Unit]
-LiveContext.pushJs(command): URIO[LiveContext.HasClientEvents, Unit]
-```
-
-### Navigation methods
-
-```scala
-LiveContext.pushPatch(to: String): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.pushPatch(codec, value): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.replacePatch(to: String): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.replacePatch(codec, value): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.pushNavigate(to: String): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.pushNavigate(codec, value): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.replaceNavigate(to: String): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.replaceNavigate(codec, value): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.redirect(to: String): RIO[LiveContext.HasNavigation, Unit]
-LiveContext.redirect(codec, value): RIO[LiveContext.HasNavigation, Unit]
-```
-
-### Title methods
-
-```scala
-LiveContext.putTitle(title): URIO[LiveContext.HasTitle, Unit]
-```
-
-### Flash methods
-
-```scala
-LiveContext.putFlash(kind, message): URIO[LiveContext.HasFlash, Unit]
-LiveContext.clearFlash(kind): URIO[LiveContext.HasFlash, Unit]
-LiveContext.clearFlash: URIO[LiveContext.HasFlash, Unit]
-LiveContext.flash(kind): URIO[LiveContext.HasFlash, Option[String]]
-LiveContext.flash: URIO[LiveContext.HasFlash, Map[String, String]]
-```
-
-### Async methods
-
-```scala
-LiveContext.startAsync(name, mode = AsyncStartMode.Restart)(effect)(toMsg): URIO[LiveContext.HasAsync, Unit]
-LiveContext.assignAsync(model, mode = AsyncStartMode.Restart, reset = false)(field)(effect): URIO[LiveContext.HasAsync, Model]
-LiveContext.cancelAsync(name, reason = None): URIO[LiveContext.HasAsync, Unit]
-LiveContext.cancelAssignAsync(model)(field, reason = None): URIO[LiveContext.HasAsync, Unit]
-```
-
-### Component update method
-
-```scala
-LiveContext.sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](id, props): URIO[LiveContext.HasComponents, Unit]
-```
-
-### Lifecycle hook methods
-
-```scala
-LiveContext.attachEventHook(id)(hook): RIO[LiveContext.HasHooks, Unit]
-LiveContext.detachEventHook(id): RIO[LiveContext.HasHooks, Unit]
-LiveContext.attachParamsHook(id)(hook): RIO[LiveContext.HasHooks, Unit]
-LiveContext.detachParamsHook(id): RIO[LiveContext.HasHooks, Unit]
-LiveContext.attachInfoHook(id)(hook): RIO[LiveContext.HasHooks, Unit]
-LiveContext.detachInfoHook(id): RIO[LiveContext.HasHooks, Unit]
-LiveContext.attachAsyncHook(id)(hook): RIO[LiveContext.HasHooks, Unit]
-LiveContext.detachAsyncHook(id): RIO[LiveContext.HasHooks, Unit]
-LiveContext.attachAfterRenderHook(id)(hook): RIO[LiveContext.HasHooks, Unit]
-LiveContext.detachAfterRenderHook(id): RIO[LiveContext.HasHooks, Unit]
+ctx.hooks.rawEvent.attach(id)(hook)
+ctx.hooks.rawEvent.detach(id)
+ctx.hooks.event.attach(id)(hook)
+ctx.hooks.event.detach(id)
+ctx.hooks.params.attach(id)(hook)
+ctx.hooks.params.detach(id)
+ctx.hooks.info.attach(id)(hook)
+ctx.hooks.info.detach(id)
+ctx.hooks.async.attach(id)(hook)
+ctx.hooks.async.detach(id)
+ctx.hooks.afterRender.attach(id)(hook)
+ctx.hooks.afterRender.detach(id)
 ```
 
 ## Async API
@@ -245,7 +332,7 @@ enum AsyncValue[+A]:
   case Empty
   case Loading(previous: Option[A])
   case Ok(value: A)
-  case Failed(previous: Option[A], cause: zio.Cause[Throwable])
+  case Failed(previous: Option[A], cause: Throwable)
   case Cancelled(previous: Option[A], reason: Option[String])
 ```
 
@@ -276,17 +363,8 @@ value.updated(result)
 
 ```scala
 enum LiveAsyncResult[+A]:
-  case Ok(value: A)
-  case Failed(cause: zio.Cause[Throwable])
-  case Cancelled(reason: Option[String])
-```
-
-### `AsyncStartMode`
-
-```scala
-enum AsyncStartMode:
-  case Restart
-  case KeepExisting
+  case Succeeded(message: A)
+  case Failed(cause: Throwable)
 ```
 
 ## HTML Rendering API

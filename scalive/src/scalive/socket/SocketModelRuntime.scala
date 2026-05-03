@@ -42,7 +42,6 @@ private[scalive] object SocketModelRuntime:
              case Some(command) =>
                state.patchRedirectCountRef.set(0) *>
                  SocketInbound.handleNavigationCommand(
-                   rendered,
                    interceptModel,
                    command,
                    meta,
@@ -77,7 +76,6 @@ private[scalive] object SocketModelRuntime:
               }
           case Right(ComponentMessage(cid, _)) =>
             handleInvalidOrMissingBinding(
-              rendered,
               event.event,
               Some(s"Binding '${event.event}' targets component $cid without matching event cid"),
               interceptModel,
@@ -101,7 +99,6 @@ private[scalive] object SocketModelRuntime:
                     case true  => ZIO.unit
                     case false =>
                       handleInvalidOrMissingBinding(
-                        rendered,
                         event.event,
                         Some(
                           s"Binding '${event.event}' targets ${componentClass.getName} but event cid $cid does not match"
@@ -114,7 +111,6 @@ private[scalive] object SocketModelRuntime:
                   }
               case None =>
                 handleInvalidOrMissingBinding(
-                  rendered,
                   event.event,
                   Some(
                     s"Binding '${event.event}' targets ${componentClass.getName} without event cid"
@@ -137,16 +133,18 @@ private[scalive] object SocketModelRuntime:
                           LiveEvent.fromPayload(event),
                           state.ctx
                         ).flatMap {
-                          case LiveEventResult.Continue(hookModel) =>
-                            LiveIO
-                              .toZIO(state.lv.handleMessage(hookModel)(parentMessage))
-                              .provide(ZLayer.succeed(state.ctx))
-                              .map(LiveEventResult.Continue(_))
-                          case halt @ LiveEventResult.Halt(_, _) => ZIO.succeed(halt)
+                          case LiveEventHookResult.Continue(hookModel) =>
+                            state.lv
+                              .handleMessage(
+                                hookModel,
+                                state.ctx.messageContext[Msg, Model]
+                              )(parentMessage)
+                              .map(LiveEventHookResult.Continue(_))
+                          case halt @ LiveEventHookResult.Halt(_, _) => ZIO.succeed(halt)
                         }
                     )
                   _ <- updatedModel match
-                         case LiveEventResult.Halt(hookModel, reply) =>
+                         case LiveEventHookResult.Halt(hookModel, reply) =>
                            applyInterceptHalt(
                              rendered,
                              hookModel,
@@ -155,13 +153,12 @@ private[scalive] object SocketModelRuntime:
                              meta,
                              state
                            )
-                         case LiveEventResult.Continue(hookModel) =>
+                         case LiveEventHookResult.Continue(hookModel) =>
                            navigation match
                              case Some(command) =>
                                publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
                                  state.patchRedirectCountRef.set(0) *>
                                  SocketInbound.handleNavigationCommand(
-                                   rendered,
                                    hookModel,
                                    command,
                                    meta,
@@ -181,7 +178,6 @@ private[scalive] object SocketModelRuntime:
                 yield ()
               case None =>
                 handleInvalidOrMissingBinding(
-                  rendered,
                   event.event,
                   Some(
                     s"Binding '${event.event}' produced ${message.getClass.getName}, expected ${state.msgClassTag.runtimeClass.getName}"
@@ -193,7 +189,6 @@ private[scalive] object SocketModelRuntime:
                 )
           case Left(error) =>
             handleInvalidOrMissingBinding(
-              rendered,
               event.event,
               Some(error),
               interceptModel,
@@ -203,7 +198,6 @@ private[scalive] object SocketModelRuntime:
             )
       case None =>
         handleInvalidOrMissingBinding(
-          rendered,
           event.event,
           None,
           interceptModel,
@@ -218,9 +212,6 @@ private[scalive] object SocketModelRuntime:
     state: RuntimeState[Msg, Model]
   ): Task[Diff] =
     for
-      _ <- state.lvStreamRef.set(
-             state.lv.subscriptions(model).provideLayer(ZLayer.succeed(state.ctx))
-           )
       currentUrl <- state.currentUrlRef.get
       nextRoot   <- SocketComponentRuntime.renderRoot(state.renderRoot(model, currentUrl), state)
       nextCompiled = RenderSnapshot.compile(nextRoot)
@@ -240,7 +231,7 @@ private[scalive] object SocketModelRuntime:
                  case _                                         => Set.empty[Int]
              )
            )
-      afterRenderModel <- state.ctx.hooks.runAfterRender(model, state.ctx)
+      afterRenderModel <- state.ctx.hooks.runAfterRender[Msg, Model](model, state.ctx)
       _                <- state.ref.set((afterRenderModel, nextRendered))
     yield renderedDiff
 
@@ -264,7 +255,6 @@ private[scalive] object SocketModelRuntime:
         Payload.okReply(LiveResponse.Empty)
 
   private def handleInvalidOrMissingBinding[Msg, Model](
-    rendered: RenderedView,
     bindingId: String,
     error: Option[String],
     model: Model,
@@ -277,7 +267,6 @@ private[scalive] object SocketModelRuntime:
         publishPayload(Payload.okReply(LiveResponse.Empty), meta, state) *>
           state.patchRedirectCountRef.set(0) *>
           SocketInbound.handleNavigationCommand(
-            rendered = rendered,
             model = model,
             command = command,
             meta = meta,

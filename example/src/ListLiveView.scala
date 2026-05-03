@@ -4,15 +4,15 @@ import zio.*
 import zio.http.URL
 import zio.schema.Schema
 import zio.schema.derived
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class ListLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[ListParams] = ParamsCodec
 
-  def mount =
+  def mount(ctx: MountContext) =
     Model(
       paramText = "No param",
       elems = List(
@@ -22,11 +22,12 @@ class ListLiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  override def handleParams(model: Model, params: ListParams, _url: URL) =
+  override def handleParams(model: Model, params: ListParams, _url: URL, ctx: ParamsContext) =
+    val _         = ctx
     val paramText = params.q.map(q => s"Param : $q").getOrElse("No param")
     model.copy(paramText = paramText)
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.IncAge(value) =>
       model.focus(_.elems.index(2).age).modify(_ + value)
 
@@ -70,8 +71,6 @@ class ListLiveView() extends LiveView[Msg, Model]:
         )
       )
     )
-
-  def subscriptions(model: Model) = ZStream.empty
 
 end ListLiveView
 

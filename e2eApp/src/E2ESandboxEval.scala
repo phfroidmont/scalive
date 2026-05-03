@@ -3,8 +3,8 @@ import zio.json.ast.Json
 import scalive.*
 
 object E2ESandboxEval:
-  def handle[Model](model: Model, event: String, value: Json): InterceptResult[Model] =
-    if event != "sandbox:eval" then InterceptResult.cont(model)
+  def handle[Model](model: Model, event: String, value: Json): LiveEventHookResult[Model] =
+    if event != "sandbox:eval" then LiveEventHookResult.cont(model)
     else
       val code =
         value match
@@ -21,7 +21,7 @@ object E2ESandboxEval:
           case "socket.assigns" => toJson(model)
           case _                => Json.Null
 
-      InterceptResult.haltReply(model, Json.Obj("result" -> result))
+      LiveEventHookResult.haltReply(model, Json.Obj("result" -> result))
 
   private def extractProductField(value: Any, name: String): Option[Any] =
     value match

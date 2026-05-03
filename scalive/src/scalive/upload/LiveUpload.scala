@@ -101,7 +101,7 @@ enum LiveExternalUploadResult:
   case Error(meta: Json.Obj)
 
 trait LiveUploadExternalUploader:
-  def preflight(entry: LiveExternalUploadEntry): RIO[LiveContext, LiveExternalUploadResult]
+  def preflight(entry: LiveExternalUploadEntry): LiveIO[LiveExternalUploadResult]
 
 enum LiveUploadWriterCloseReason:
   case Done
@@ -124,7 +124,6 @@ object LiveUploadWriter:
 
   val InMemory: LiveUploadWriter = new LiveUploadWriter:
     def init(uploadName: String, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState] =
-      val _ = (uploadName, entry)
       ZIO.succeed(LiveUploadWriterState(InMemoryState(Chunk.empty)))
 
     def meta(state: LiveUploadWriterState): Json.Obj =
@@ -143,11 +142,10 @@ object LiveUploadWriter:
       state: LiveUploadWriterState,
       reason: LiveUploadWriterCloseReason
     ): Task[LiveUploadWriterState] =
-      val _ = reason
       ZIO.succeed(state)
 
 trait LiveUploadProgress:
-  def onProgress(uploadName: String, entry: LiveUploadEntry): RIO[LiveContext, Unit]
+  def onProgress(uploadName: String, entry: LiveUploadEntry): LiveIO[Unit]
 
 final case class LiveUploadOptions(
   accept: LiveUploadAccept,

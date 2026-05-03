@@ -2,44 +2,44 @@ import zio.*
 import zio.http.URL
 import zio.json.*
 import zio.json.ast.Json
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class PortalLiveView extends LiveView[PortalLiveView.Msg, PortalLiveView.Model]:
   import PortalLiveView.*
 
   override val queryCodec: LiveQueryCodec[QueryParams] = QueryParams.codec
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  override def handleParams(model: Model, params: QueryParams, _url: URL) =
+  override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
     model.copy(param = params.param)
 
-  override def interceptEvent(model: Model, event: String, value: Json) =
-    if event != "sandbox:eval" then ZIO.succeed(InterceptResult.cont(model))
-    else
-      evalCode(value) match
-        case code if code.contains("send(self(), :tick)") =>
-          ZIO.succeed(
-            InterceptResult.haltReply(
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("sandbox") { (model, event, _) =>
+      if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
+      else
+        evalCode(event.value) match
+          case code if code.contains("send(self(), :tick)") =>
+            LiveEventHookResult.haltReply(
               model.copy(count = model.count + 1),
               Json.Obj("result" -> Json.Null)
             )
-          )
-        case _ => ZIO.succeed(E2ESandboxEval.handle(model, event, value))
+          case _ => E2ESandboxEval.handle(model, event.bindingId, event.value)
+    }
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ToggleModal => model.copy(renderModal = !model.renderModal)
-    case Msg.NestedEvent => model.copy(nestedEventCount = model.nestedEventCount + 1)
+    case Msg.NestedEvent =>
+      model.copy(nestedEventCount = model.nestedEventCount + 1)
     case Msg.PrependItem =>
       model.copy(
         items = (model.nextItem, s"Item ${model.nextItem}") +: model.items,
         nextItem = model.nextItem + 1
       )
     case Msg.Tick => model.copy(count = model.count + 1)
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     div(

@@ -1,13 +1,14 @@
 import JsLiveView.*
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class JsLiveView extends LiveView[Msg, Model]:
 
-  def mount = Model(count = 0)
+  def mount(ctx: MountContext) =
+    Model(count = 0)
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Increment => model.copy(count = model.count + 1)
 
   def render(model: Model) =
@@ -52,7 +53,6 @@ class JsLiveView extends LiveView[Msg, Model]:
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
 end JsLiveView
 
 object JsLiveView:

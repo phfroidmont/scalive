@@ -1,18 +1,19 @@
 import zio.*
 import zio.http.URL
 import zio.json.*
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class ErrorLiveView(connected: Boolean) extends LiveView[ErrorLiveView.Msg, ErrorLiveView.Model]:
   import ErrorLiveView.*
 
   override val queryCodec: LiveQueryCodec[QueryParams] = QueryParams.codec
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  override def handleParams(model: Model, params: QueryParams, _url: URL) =
+  override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
     if !connected && params.deadMountRaise then ZIO.fail(RuntimeException("boom"))
     else if connected && params.connectedMountRaise then ZIO.fail(RuntimeException("boom"))
     else
@@ -26,7 +27,7 @@ class ErrorLiveView(connected: Boolean) extends LiveView[ErrorLiveView.Msg, Erro
         logs = logs
       )
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.CrashChild if model.link =>
       model.copy(
         renderTime = now,
@@ -50,8 +51,6 @@ class ErrorLiveView(connected: Boolean) extends LiveView[ErrorLiveView.Msg, Erro
         childRenderTime = now,
         logs = Vector("child destroyed", "error: view crashed", "mount", "child mount")
       )
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     div(

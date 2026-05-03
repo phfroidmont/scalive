@@ -1,7 +1,5 @@
-import zio.*
-import zio.stream.ZStream
-
 import scalive.*
+import scalive.LiveIO.given
 
 class HomeLiveView() extends LiveView[String, Unit]:
   val links = List(
@@ -10,9 +8,11 @@ class HomeLiveView() extends LiveView[String, Unit]:
     "/todo"        -> "Todo"
   )
 
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = _ => model
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    _ => model
 
   def render(model: Unit) =
     ul(
@@ -23,5 +23,3 @@ class HomeLiveView() extends LiveView[String, Unit]:
         )
       )
     )
-
-  def subscriptions(model: Unit) = ZStream.empty

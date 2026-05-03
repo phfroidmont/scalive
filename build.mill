@@ -21,6 +21,7 @@ trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
     "-preview",
     "-feature",
     "-language:implicitConversions",
+    """-Wconf:msg=.*unused explicit parameter.*&src=.*[/\\](LiveView|LiveComponent)\.scala:silent""",
     "-Wvalue-discard",
     "-Wnonunit-statement",
     "-deprecation"

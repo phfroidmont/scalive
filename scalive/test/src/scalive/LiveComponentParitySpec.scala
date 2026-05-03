@@ -5,7 +5,6 @@ import scala.reflect.ClassTag
 import zio.*
 import zio.http.*
 import zio.json.ast.Json
-import zio.stream.ZStream
 import zio.test.*
 
 import scalive.WebSocketMessage.LivePatchKind
@@ -29,19 +28,23 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     case Redirect
 
   private object LabelComponent extends LiveComponent[String, Unit, String]:
-    def mount(props: String)                          = ZIO.succeed(props)
-    override def update(props: String, model: String) = ZIO.succeed(props)
-    def handleMessage(model: String)                  = _ => ZIO.succeed(model)
-    def render(model: String, self: ComponentRef[Unit]) =
+    def mount(props: String, ctx: MountContext) =
+      ZIO.succeed(props)
+    override def update(props: String, model: String, ctx: UpdateContext) =
+      ZIO.succeed(props)
+    def handleMessage(props: String, model: String, ctx: MessageContext) =
+      (_: Unit) => ZIO.succeed(model)
+    def render(props: String, model: String, self: ComponentRef[Unit]) =
       div(idAttr := model, s"$model says hi")
 
   private object NavComponent extends LiveComponent[Unit, NavMsg, Unit]:
-    def mount(props: Unit) = ZIO.unit
-    def handleMessage(model: Unit) =
-      case NavMsg.PushNavigate => LiveContext.pushNavigate("/components?redirect=push").as(model)
-      case NavMsg.PushPatch    => LiveContext.pushPatch("/components?redirect=patch").as(model)
-      case NavMsg.Redirect     => LiveContext.redirect("/components?redirect=redirect").as(model)
-    def render(model: Unit, self: ComponentRef[NavMsg]) =
+    def mount(props: Unit, ctx: MountContext) =
+      ZIO.unit
+    def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
+          case NavMsg.PushNavigate => ctx.nav.pushNavigate("/components?redirect=push").as(model)
+          case NavMsg.PushPatch    => ctx.nav.pushPatch("/components?redirect=patch").as(model)
+          case NavMsg.Redirect     => ctx.nav.redirect("/components?redirect=redirect").as(model)
+    def render(props: Unit, model: Unit, self: ComponentRef[NavMsg]) =
       div(
         button(phx.onClick(NavMsg.PushNavigate), phx.target(self), "push navigate"),
         button(phx.onClick(NavMsg.PushPatch), phx.target(self), "push patch"),
@@ -51,9 +54,11 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
   private object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
     object Msg
 
-    def mount(props: Unit)        = ZIO.succeed(0)
-    def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
-    def render(model: Int, self: ComponentRef[Msg.type]) =
+    def mount(props: Unit, ctx: MountContext) =
+      ZIO.succeed(0)
+    def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+      (_: Msg.type) => ZIO.succeed(model + 1)
+    def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
       button(phx.onClick(Msg), phx.target(self), model.toString)
 
   private def containsValue(diff: Diff, value: String): Boolean =
@@ -128,11 +133,12 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("renders live components during disconnected HTTP render") {
       val parent = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def mount(ctx: MountContext) =
+          ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
         def render(model: Unit): HtmlElement[Unit] =
           div(liveComponent(LabelComponent, id = "chris", props = "chris"))
-        def subscriptions(model: Unit) = ZStream.empty
 
       val routes = scalive.Live.router(
         scalive.live(parent)
@@ -149,14 +155,15 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("renders connected live components with stable sequential cids") {
       val parent = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def mount(ctx: MountContext) =
+          ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
         def render(model: Unit): HtmlElement[Unit] =
           div(
             liveComponent(LabelComponent, id = "chris", props = "chris"),
             liveComponent(LabelComponent, id = "jose", props = "jose")
           )
-        def subscriptions(model: Unit) = ZStream.empty
 
       for
         socket <- start(parent)
@@ -176,11 +183,11 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("tracks component additions and prop updates") {
       val parent = new LiveView[ParentMsg, Boolean]:
-        def mount = ZIO.succeed(false)
-        def handleMessage(model: Boolean) = {
-          case ParentMsg.Toggle            => ZIO.succeed(true)
-          case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
-        }
+        def mount(ctx: MountContext) =
+          ZIO.succeed(false)
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+              case ParentMsg.Toggle            => ZIO.succeed(true)
+              case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
             button(phx.onClick(ParentMsg.Toggle), "toggle"),
@@ -193,7 +200,6 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               )
             else Seq.empty
           )
-        def subscriptions(model: Boolean) = ZStream.empty
 
       for
         socket     <- start(parent)
@@ -214,16 +220,15 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("whole-root component removal keeps the socket alive") {
       val parent = new LiveView[ParentMsg, Boolean]:
-        def mount = ZIO.succeed(true)
-        def handleMessage(model: Boolean) = {
-          case ParentMsg.Toggle            => ZIO.succeed(false)
-          case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
-        }
+        def mount(ctx: MountContext) =
+          ZIO.succeed(true)
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+              case ParentMsg.Toggle            => ZIO.succeed(false)
+              case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           if model then
             div(button(phx.onClick(ParentMsg.Toggle), "disable"), liveComponent(LabelComponent, id = "chris", props = "chris"))
           else div("Disabled")
-        def subscriptions(model: Boolean) = ZStream.empty
 
       for
         socket     <- start(parent)
@@ -239,24 +244,24 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("tracks component removals from a nested LiveView") {
       val child = new LiveView[ParentMsg, Boolean]:
-        def mount = ZIO.succeed(true)
-        def handleMessage(model: Boolean) = {
-          case ParentMsg.Toggle            => ZIO.succeed(false)
-          case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
-        }
+        def mount(ctx: MountContext) =
+          ZIO.succeed(true)
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+              case ParentMsg.Toggle            => ZIO.succeed(false)
+              case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
             button(phx.onClick(ParentMsg.Toggle), "disable"),
             if model then liveComponent(LabelComponent, id = "hello", props = "Hello World")
             else "disabled"
           )
-        def subscriptions(model: Boolean) = ZStream.empty
 
       val parent = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def mount(ctx: MountContext) =
+          ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
         def render(model: Unit): HtmlElement[Unit] = div(liveView("child", child))
-        def subscriptions(model: Unit) = ZStream.empty
 
       val childMeta = meta.copy(topic = childTopic)
 
@@ -275,17 +280,18 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("tracks root component and nested LiveView removals in the same render") {
       val child = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def mount(ctx: MountContext) =
+          ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
         def render(model: Unit): HtmlElement[Unit] = div("world")
-        def subscriptions(model: Unit) = ZStream.empty
 
       val parent = new LiveView[ParentMsg, Boolean]:
-        def mount = ZIO.succeed(true)
-        def handleMessage(model: Boolean) = {
-          case ParentMsg.Toggle            => ZIO.succeed(false)
-          case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
-        }
+        def mount(ctx: MountContext) =
+          ZIO.succeed(true)
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+              case ParentMsg.Toggle            => ZIO.succeed(false)
+              case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
             button(phx.onClick(ParentMsg.Toggle), "disable"),
@@ -296,7 +302,6 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               )
             else Seq(rawHtml("disabled"))
           )
-        def subscriptions(model: Boolean) = ZStream.empty
 
       ZIO.scoped(for
         channel      <- LiveChannel.make(TokenConfig.default)
@@ -315,18 +320,17 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("sendUpdate to a missing component is ignored instead of applied on later mount") {
       val parent = new LiveView[ParentMsg, Boolean]:
-        def mount = ZIO.succeed(false)
-        def handleMessage(model: Boolean) = {
-          case ParentMsg.SendMissingUpdate =>
-            LiveContext.sendUpdate[LabelComponent.type]("missing", "stale").as(true)
-          case ParentMsg.Toggle => ZIO.succeed(model)
-        }
+        def mount(ctx: MountContext) =
+          ZIO.succeed(false)
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+              case ParentMsg.SendMissingUpdate =>
+                ctx.components.sendUpdate[LabelComponent.type]("missing", "stale").as(true)
+              case ParentMsg.Toggle => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
             button(phx.onClick(ParentMsg.SendMissingUpdate), "add"),
             if model then liveComponent(LabelComponent, id = "missing", props = "fresh") else "hidden"
           )
-        def subscriptions(model: Boolean) = ZStream.empty
 
       for
         socket     <- start(parent)
@@ -343,11 +347,12 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("component pushNavigate emits live redirect") {
       val parent = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def mount(ctx: MountContext) =
+          ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
         def render(model: Unit): HtmlElement[Unit] =
           div(liveComponent(NavComponent, id = "nav", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
 
       for
         socket <- start(parent)
@@ -367,13 +372,14 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         override val queryCodec: LiveQueryCodec[Option[String]] =
           LiveQueryCodec.fromZioHttp(zio.http.codec.HttpCodec.query[String]("redirect").optional)
 
-        def mount = ZIO.succeed("none")
-        override def handleParams(model: String, redirect: Option[String], _url: URL) =
+        def mount(ctx: MountContext) =
+          ZIO.succeed("none")
+        override def handleParams(model: String, redirect: Option[String], _url: URL, ctx: ParamsContext) =
           ZIO.succeed(redirect.getOrElse("none"))
-        def handleMessage(model: String) = _ => ZIO.succeed(model)
+        def handleMessage(model: String, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
         def render(model: String): HtmlElement[Unit] =
           div(p(s"Redirect: $model"), liveComponent(NavComponent, id = "nav", props = ()))
-        def subscriptions(model: String) = ZStream.empty
 
       for
         initialUrl <- ZIO.fromEither(URL.decode("/components?redirect=none")).orDie
@@ -395,11 +401,12 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("component redirect emits redirect payload") {
       val parent = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def mount(ctx: MountContext) =
+          ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
         def render(model: Unit): HtmlElement[Unit] =
           div(liveComponent(NavComponent, id = "nav", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
 
       for
         socket <- start(parent)

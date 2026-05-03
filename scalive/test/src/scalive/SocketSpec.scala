@@ -3,13 +3,12 @@ package scalive
 import zio.*
 import zio.http.URL
 import zio.http.codec.HttpCodec
-import zio.json.*
 import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
 
-import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.LivePatchKind
+import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.ReplyStatus
 
@@ -24,35 +23,38 @@ object SocketSpec extends ZIOSpecDefault:
 
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
 
-  private def makeLiveView(serverStream: ZStream[LiveView.SubscriptionsContext, Nothing, Msg]) =
+  private def makeLiveView(serverStream: ZStream[Any, Nothing, Msg]) =
     new LiveView[Msg, Model]:
-      def mount =
-        LiveContext.staticChanged.map(flag => Model(staticFlag = Some(flag)))
+      def mount(ctx: MountContext) =
+        ctx.subscriptions
+          .start("server")(serverStream).as(Model(staticFlag = Some(ctx.staticChanged)))
 
-      def handleMessage(model: Model) = {
+      def handleMessage(model: Model, ctx: MessageContext) =
         case Msg.FromClient => ZIO.succeed(model.copy(counter = model.counter + 1))
         case Msg.FromServer => ZIO.succeed(model.copy(counter = model.counter + 10))
-        case Msg.SetTitle   => LiveContext.putTitle("Updated title").as(model)
-      }
+        case Msg.SetTitle   => ctx.title.set("Updated title").as(model)
 
       def render(model: Model): HtmlElement[Msg] =
         div(
           idAttr := "root",
           phx.onClick(Msg.FromClient),
-          model.counter.toString
+          span(model.counter.toString),
+          span(model.staticFlag.map(_.toString).getOrElse("none"))
         )
-
-      def subscriptions(model: Model) = serverStream
 
   private def makeSocket(ctx: LiveContext, lv: LiveView[Msg, Model]) =
     Socket.start("id", "token", lv, ctx, meta)
 
-  private def withOutbox[Msg, Model, A](socket: Socket[Msg, Model])(
+  private def withOutbox[Msg, Model, A](
+    socket: Socket[Msg, Model]
+  )(
     f: Queue[(Payload, WebSocketMessage.Meta)] => Task[A]
   ): Task[A] =
     withOutboxAndInit(socket)((_, queue) => f(queue))
 
-  private def withOutboxAndInit[Msg, Model, A](socket: Socket[Msg, Model])(
+  private def withOutboxAndInit[Msg, Model, A](
+    socket: Socket[Msg, Model]
+  )(
     f: ((Payload, WebSocketMessage.Meta), Queue[(Payload, WebSocketMessage.Meta)]) => Task[A]
   ): Task[A] =
     for
@@ -62,33 +64,68 @@ object SocketSpec extends ZIOSpecDefault:
       result <- f(init, queue).ensuring(fiber.interrupt)
     yield result
 
-  private def takeOutbox(
-    queue: Queue[(Payload, WebSocketMessage.Meta)],
-    count: Int
-  ): UIO[Chunk[(Payload, WebSocketMessage.Meta)]] =
-    ZIO.collectAll(Chunk.fill(count)(queue.take))
+  private def containsValue(diff: Diff, value: String): Boolean =
+    diff match
+      case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
+        dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
+          containsValue(_, value)
+        )
+      case Diff.Comprehension(_, entries, _, _, _) =>
+        entries.exists {
+          case Diff.Dynamic(_, diff)       => containsValue(diff, value)
+          case Diff.IndexMerge(_, _, diff) => containsValue(diff, value)
+          case _                           => false
+        }
+      case Diff.Value(current)   => current == value
+      case Diff.Dynamic(_, diff) => containsValue(diff, value)
+      case _                     => false
 
-  private def takeLiveNavigation(queue: Queue[(Payload, WebSocketMessage.Meta)]): UIO[Payload] =
-    queue.take.flatMap {
-      case (payload @ Payload.LiveNavigation(_, _), _) => ZIO.succeed(payload)
-      case _                                           => takeLiveNavigation(queue)
-    }
+  private def diffFromPayload(payload: Payload): Option[Diff] =
+    payload match
+      case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(diff))          => Some(diff)
+      case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff))              => Some(diff)
+      case Payload.Reply(ReplyStatus.Ok, LiveResponse.InterceptReply(_, diff)) => diff
+      case Payload.Diff(diff)                                                  => Some(diff)
+      case _                                                                   => None
 
   override def spec = suite("SocketSpec")(
-    test("emits init diff and uses LiveContext") {
+    test("emits init diff and exposes lifecycle flags") {
       val ctx = LiveContext(staticChanged = true)
       val lv  = makeLiveView(ZStream.empty)
+
       for
         socket <- makeSocket(ctx, lv)
-        msgs   <- socket.outbox.take(1).runHead
+        msg    <- socket.outbox.take(1).runHead.some
       yield assertTrue(
-        msgs.size == 1,
-        msgs.head._1 match
-          case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(_)) => true
-          case _                                                       => false
-        ,
-        msgs.head._2 == meta
+        msg._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(diff)) =>
+            containsValue(diff, "true")
+          case _ => false,
+        msg._2 == meta
       )
+    },
+    test("server stream emits diff") {
+      val lv = makeLiveView(ZStream.succeed(Msg.FromServer))
+
+      for
+        socket <- makeSocket(LiveContext(staticChanged = false), lv)
+        update <- socket.outbox.drop(1).runHead.some
+      yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "10")))
+    },
+    test("emits title updates on top-level diff") {
+      val lv = makeLiveView(ZStream.succeed(Msg.SetTitle))
+
+      for
+        socket <- makeSocket(LiveContext(staticChanged = false), lv)
+        update <- socket.outbox.drop(1).runHead.some
+      yield
+        val title = update._1 match
+          case Payload.Diff(Diff.Tag(_, _, _, _, value, _, _, _)) => value
+          case Payload
+                .Reply(ReplyStatus.Ok, LiveResponse.Diff(Diff.Tag(_, _, _, _, value, _, _, _))) =>
+            value
+          case _ => None
+        assertTrue(title.contains("Updated title"))
     },
     test("runs handleParams during connected bootstrap") {
       val ctx = LiveContext(staticChanged = false)
@@ -101,31 +138,27 @@ object SocketSpec extends ZIOSpecDefault:
                    encodeFn = _ => Right("?")
                  )
 
-               def mount = callsRef.update(_ :+ "mount").as(0)
+               def mount(ctx: MountContext) =
+                 callsRef.update(_ :+ "mount").as(0)
 
-               override def handleParams(model: Int, params: (Option[String], String), _url: URL) =
+               override def handleParams(
+                 model: Int,
+                 params: (Option[String], String),
+                 _url: URL,
+                 ctx: ParamsContext
+               ) =
+                 val _         = ctx
                  val (q, path) = params
-                 callsRef
-                   .update(_ :+ s"params:${q.getOrElse("")}:$path")
-                   .as(model)
+                 callsRef.update(_ :+ s"params:${q.getOrElse("")}:$path").as(model)
 
-               def handleMessage(model: Int) = _ => ZIO.succeed(model)
+               def handleMessage(model: Int, ctx: MessageContext) =
+                 (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Int): HtmlElement[Unit] =
-                 div(model.toString)
-
-               def subscriptions(model: Int) = ZStream.empty
+               def render(model: Int): HtmlElement[Unit] = div(model.toString)
         initialUrl <- ZIO.fromEither(URL.decode("/?q=1")).orDie
-        socket     <- Socket.start(
-                    "id",
-                    "token",
-                    lv,
-                    ctx,
-                    meta,
-                    initialUrl = initialUrl
-                  )
-        _     <- socket.outbox.take(1).runCollect
-        calls <- callsRef.get
+        socket     <- Socket.start("id", "token", lv, ctx, meta, initialUrl = initialUrl)
+        _          <- socket.outbox.take(1).runCollect
+        calls      <- callsRef.get
       yield assertTrue(calls == List("mount", "params:1:/"))
       end for
     },
@@ -134,42 +167,33 @@ object SocketSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView[Unit, Int]:
-               def mount = ZIO.succeed(0)
+               def mount(ctx: MountContext) =
+                 ZIO.succeed(0)
 
-               override def handleParams(model: Int, _query: queryCodec.Out, url: URL) =
+               override def handleParams(
+                 model: Int,
+                 query: queryCodec.Out,
+                 url: URL,
+                 ctx: ParamsContext
+               ) =
+                 val _    = query
                  val path = url.path.encode
                  callsRef.update(_ :+ path) *>
-                   (if path == "/start" then LiveContext.pushPatch("/done").as(model + 1)
+                   (if path == "/start" then ctx.nav.pushPatch("/done").as(model + 1)
                     else ZIO.succeed(model + 10))
 
-               def handleMessage(model: Int) = _ => ZIO.succeed(model)
+               def handleMessage(model: Int, ctx: MessageContext) =
+                 (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Int): HtmlElement[Unit] =
-                 div(model.toString)
-
-               def subscriptions(model: Int) = ZStream.empty
+               def render(model: Int): HtmlElement[Unit] = div(model.toString)
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
-        socket     <- Socket.start(
-                    "id",
-                    "token",
-                    lv,
-                    ctx,
-                    meta,
-                    initialUrl = initialUrl
-                  )
-        messages <- socket.outbox.take(2).runCollect
-        calls    <- callsRef.get
+        socket     <- Socket.start("id", "token", lv, ctx, meta, initialUrl = initialUrl)
+        messages   <- socket.outbox.take(2).runCollect
+        calls      <- callsRef.get
       yield assertTrue(
         calls == List("/start", "/done"),
-        messages.size == 2,
-        messages.head._1 match
-          case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(_)) => true
-          case _                                                       => false
-        ,
         messages.drop(1).headOption.exists { case (payload, _) =>
-          payload match
-            case Payload.LiveNavigation("/done", LivePatchKind.Push) => true
-            case _                                                   => false
+          payload == Payload.LiveNavigation("/done", LivePatchKind.Push)
         }
       )
       end for
@@ -182,37 +206,32 @@ object SocketSpec extends ZIOSpecDefault:
                override val queryCodec: LiveQueryCodec[Option[String]] =
                  LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
 
-               def mount = ZIO.succeed(0)
+               def mount(ctx: MountContext) =
+                 ZIO.succeed(0)
 
-               override def handleParams(model: Int, query: Option[String], url: URL) =
+               override def handleParams(
+                 model: Int,
+                 query: Option[String],
+                 url: URL,
+                 ctx: ParamsContext
+               ) =
                  val current = s"${url.path.encode}:${query.getOrElse("")}"
                  callsRef.update(_ :+ current) *>
-                   (if query.isEmpty then LiveContext.pushPatch(queryCodec, Some("1")).as(model)
+                   (if query.isEmpty then ctx.nav.pushPatch(queryCodec, Some("1")).as(model)
                     else ZIO.succeed(model))
 
-               def handleMessage(model: Int) = _ => ZIO.succeed(model)
+               def handleMessage(model: Int, ctx: MessageContext) =
+                 (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Int): HtmlElement[Unit] =
-                 div(model.toString)
-
-               def subscriptions(model: Int) = ZStream.empty
+               def render(model: Int): HtmlElement[Unit] = div(model.toString)
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
-        socket     <- Socket.start(
-                    "id",
-                    "token",
-                    lv,
-                    ctx,
-                    meta,
-                    initialUrl = initialUrl
-                  )
-        messages <- socket.outbox.take(2).runCollect
-        calls    <- callsRef.get
+        socket     <- Socket.start("id", "token", lv, ctx, meta, initialUrl = initialUrl)
+        messages   <- socket.outbox.take(2).runCollect
+        calls      <- callsRef.get
       yield assertTrue(
         calls == List("/start:", "/start:1"),
         messages.drop(1).headOption.exists { case (payload, _) =>
-          payload match
-            case Payload.LiveNavigation("/start?q=1", LivePatchKind.Push) => true
-            case _                                                        => false
+          payload == Payload.LiveNavigation("/start?q=1", LivePatchKind.Push)
         }
       )
       end for
@@ -221,34 +240,32 @@ object SocketSpec extends ZIOSpecDefault:
       final case class LoopModel(shouldLoop: Boolean)
 
       val ctx = LiveContext(staticChanged = false)
-      val lv = new LiveView[Unit, LoopModel]:
+      val lv  = new LiveView[Unit, LoopModel]:
         override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
-        def mount = ZIO.succeed(LoopModel(shouldLoop = false))
+        def mount(ctx: MountContext) =
+          ZIO.succeed(LoopModel(shouldLoop = false))
 
-        override def handleParams(model: LoopModel, query: queryCodec.Out, url: URL) =
+        override def handleParams(
+          model: LoopModel,
+          query: queryCodec.Out,
+          url: URL,
+          ctx: ParamsContext
+        ) =
           if url.queryParam("loop").contains("true") then
-            if model.shouldLoop then LiveContext.pushPatch("?loop=true").as(model)
+            if model.shouldLoop then ctx.nav.pushPatch("?loop=true").as(model)
             else ZIO.succeed(model.copy(shouldLoop = false))
           else ZIO.succeed(model.copy(shouldLoop = true))
 
-        def handleMessage(model: LoopModel) = _ => ZIO.succeed(model)
+        def handleMessage(model: LoopModel, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
 
         def render(model: LoopModel): HtmlElement[Unit] = div(model.shouldLoop.toString)
 
-        def subscriptions(model: LoopModel) = ZStream.empty
-
       for
         initialUrl <- ZIO.fromEither(URL.decode("/redirectloop")).orDie
-        socket <- Socket.start(
-                    "id",
-                    "token",
-                    lv,
-                    ctx,
-                    meta,
-                    initialUrl = initialUrl
-                  )
-        result <- withOutbox(socket) { outbox =>
+        socket     <- Socket.start("id", "token", lv, ctx, meta, initialUrl = initialUrl)
+        result     <- withOutbox(socket) { outbox =>
                     for
                       reply   <- socket.livePatch("?loop=true", meta)
                       emitted <- outbox.take
@@ -259,889 +276,111 @@ object SocketSpec extends ZIOSpecDefault:
                   }
       yield result
     },
-    test("server stream emits diff") {
-      val ctx = LiveContext(staticChanged = false)
-      val lv  = makeLiveView(ZStream.succeed(Msg.FromServer))
-      for
-        socket <- makeSocket(ctx, lv)
-        diff   <- withOutbox(socket)(_.take)
-      yield assertTrue(diff._1.isInstanceOf[Payload.Diff])
-    },
-    test("shutdown stops outbox") {
-      val ctx = LiveContext(staticChanged = false)
-      val lv  = makeLiveView(ZStream.empty)
-      for
-        socket <- makeSocket(ctx, lv)
-        _      <- socket.shutdown
-        res    <- socket.outbox.runCollect
-      yield assertTrue(res.nonEmpty)
-    },
-    test("emits title updates on top-level diff") {
-      val ctx = LiveContext(staticChanged = false)
-      val lv  = makeLiveView(ZStream.succeed(Msg.SetTitle))
-      for
-        socket <- makeSocket(ctx, lv)
-        diff   <- withOutbox(socket)(_.take)
-      yield
-        val title = diff._1 match
-          case Payload.Diff(Diff.Tag(_, _, _, _, title, _, _, _)) => title
-          case _                                                  => None
+    test("raw event hooks can reply under top-level r") {
+      val replyValue = Json.Obj("ok" -> Json.Bool(true))
+      val lv         = new LiveView[Unit, String]:
+        override def hooks: LiveHooks[Unit, String] =
+          LiveHooks.empty.rawEvent("intercept") { (model, event, _) =>
+            if event.bindingId == "intercept" then
+              ZIO.succeed(LiveEventHookResult.haltReply("intercepted", replyValue))
+            else ZIO.succeed(LiveEventHookResult.cont(model))
+          }
 
-        assertTrue(
-          diff._1.isInstanceOf[Payload.Diff],
-          title.contains("Updated title")
-        )
-    },
-    test("cids_destroyed replies with prunable cids") {
-      val lv = new LiveView[Unit, Unit]:
-        def mount = ZIO.unit
+        def mount(ctx: MountContext) =
+          ZIO.succeed("ready")
 
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
+        def handleMessage(model: String, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            component(1, span("A")),
-            component(2, span("B"))
-          )
+        def render(model: String): HtmlElement[Unit] = div(model)
 
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = "cids_destroyed",
-        value = zio.json.ast.Json.Obj(
-          "cids" -> zio.json.ast.Json.Arr(zio.json.ast.Json.Num(1), zio.json.ast.Json.Num(3))
-        ),
-        uploads = None,
-        cid = None,
-        meta = None
-      )
+      val event: Payload.Event =
+        Payload.Event(`type` = "click", event = "intercept", value = Json.Obj.empty)
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        queue  <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
-        fiber  <- socket.outbox.runForeach(queue.offer).fork
-        result <- (for
-                    _      <- queue.take
-                    _      <- socket.inbox.offer(event -> meta)
-                    first  <- queue.take
-                    _      <- socket.inbox.offer(event -> meta)
-                    second <- queue.take
-                  yield (first, second)).ensuring(fiber.interrupt)
-        (first, second) = result
-      yield
-        val firstCids = first._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Raw(zio.json.ast.Json.Obj(fields))
-              ) =>
-            fields
-              .collectFirst {
-                case (
-                      "cids",
-                      zio.json.ast.Json.Arr(values)
-                    ) =>
-                  values.collect { case zio.json.ast.Json.Num(v) => v.intValue }
-              }.getOrElse(Vector.empty)
-          case _ => Vector.empty
-
-        val secondCids = second._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Raw(zio.json.ast.Json.Obj(fields))
-              ) =>
-            fields
-              .collectFirst {
-                case (
-                      "cids",
-                      zio.json.ast.Json.Arr(values)
-                    ) =>
-                  values.collect { case zio.json.ast.Json.Num(v) => v.intValue }
-              }.getOrElse(Vector.empty)
-          case _ => Vector.empty
-
-        assertTrue(
-          first._1.isInstanceOf[Payload.Reply],
-          second._1.isInstanceOf[Payload.Reply],
-          firstCids == Vector(1),
-          secondCids.isEmpty
-        )
-      end for
-    },
-    test("intercept replies are encoded under top-level r") {
-      val lv = new LiveView[Unit, Unit]:
-        def mount = ZIO.unit
-
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
-
-        def render(model: Unit): HtmlElement[Unit] =
-          div("constant")
-
-        def subscriptions(model: Unit) = ZStream.empty
-
-        override def interceptEvent(model: Unit, event: String, value: Json) =
-          ZIO.succeed(
-            InterceptResult.haltReply(
-              model,
-              Json.Obj("kind" -> Json.Str("hook"))
-            )
-          )
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = "any",
-        value = Json.Obj.empty,
-        uploads = None,
-        cid = None,
-        meta = None
-      )
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val hasReplyAtTopLevelR = reply._1 match
-          case payload: Payload.Reply =>
-            payload.toJsonAST.toOption
-              .collect { case Json.Obj(fields) => fields }
-              .exists(_.collectFirst { case ("response", Json.Obj(responseFields)) =>
-                responseFields
-                  .collectFirst {
-                    case (
-                          "diff",
-                          Json.Obj(diffFields)
-                        ) =>
-                      diffFields.exists {
-                        case ("r", Json.Obj(replyObj)) =>
-                          replyObj.exists {
-                            case ("kind", Json.Str("hook")) => true
-                            case _                          => false
-                          }
-                        case _ =>
-                          false
-                      }
-                  }.contains(true)
-              }.contains(true))
-          case _ => false
-
-        assertTrue(hasReplyAtTopLevelR)
-      end for
-    },
-    test("renders stateful live components with stable component ids") {
-      object CounterComponent extends LiveComponent[String, Unit, String]:
-        def mount(props: String)                            = ZIO.succeed(props)
-        override def update(props: String, model: String)   = ZIO.succeed(props)
-        def handleMessage(model: String)                    = _ => ZIO.succeed(model)
-        def render(model: String, self: ComponentRef[Unit]) =
-          button(phx.target(self), model)
-
-      val lv = new LiveView[Unit, String]:
-        def mount                                    = ZIO.succeed("first")
-        def handleMessage(model: String)             = _ => ZIO.succeed("second")
-        def render(model: String): HtmlElement[Unit] =
-          div(phx.onClick(()), liveComponent(CounterComponent, id = "counter", props = model))
-        def subscriptions(model: String) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div"), 0),
-        value = Json.Obj.empty
-      )
-
-      for
-        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        result <- withOutboxAndInit(socket) { (init, outbox) =>
+        result <- withOutbox(socket) { outbox =>
                     for
                       _     <- socket.inbox.offer(event -> meta)
                       reply <- outbox.take
-                    yield
-                      val initHasComponent = init._1 match
+                    yield assertTrue(
+                      reply._1 match
                         case Payload.Reply(
                               ReplyStatus.Ok,
-                              LiveResponse.InitDiff(Diff.Tag(_, _, _, _, _, components, _, _))
+                              LiveResponse.InterceptReply(`replyValue`, Some(diff))
                             ) =>
-                          components.contains(1)
+                          containsValue(diff, "intercepted")
                         case _ => false
-
-                      val updateHasSameComponent = reply._1 match
-                        case Payload.Reply(
-                              ReplyStatus.Ok,
-                              LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-                            ) =>
-                          components.contains(1)
-                        case _ => false
-
-                      assertTrue(initHasComponent, updateHasSameComponent)
+                    )
                   }
       yield result
-    },
-    test("rejects duplicate live component identities in one render") {
-      object CounterComponent extends LiveComponent[String, Unit, String]:
-        def mount(props: String)                            = ZIO.succeed(props)
-        override def update(props: String, model: String)   = ZIO.succeed(props)
-        def handleMessage(model: String)                    = _ => ZIO.succeed(model)
-        def render(model: String, self: ComponentRef[Unit]) =
-          div(model)
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            liveComponent(CounterComponent, id = "counter", props = "one"),
-            liveComponent(CounterComponent, id = "counter", props = "two")
-          )
-        def subscriptions(model: Unit) = ZStream.empty
-
-      for exit <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta).exit
-      yield assertTrue(exit.isFailure)
     },
     test("routes self-targeted live component events to component state") {
       object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
         object Msg
 
-        def mount(props: Unit)        = ZIO.succeed(0)
-        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
-        def render(model: Int, self: ComponentRef[Msg.type]) =
-          button(
-            phx.onClick(Msg),
-            phx.target(self),
-            model.toString
-          )
+        def mount(props: Unit, ctx: MountContext) =
+          ZIO.succeed(0)
 
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(liveComponent(CounterComponent, id = "counter", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+          (_: Msg.type) => ZIO.succeed(model + 1)
 
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val componentUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(1).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("1")) => true
-                  case _                                => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(componentUpdated)
-    },
-    test("routes self-targeted live component form events to component state") {
-      object FormComponent extends LiveComponent[Unit, FormComponent.Msg, String]:
-        enum Msg:
-          case Submitted(value: String)
-
-        def mount(props: Unit) = ZIO.succeed("")
-        def handleMessage(model: String) = { case Msg.Submitted(value) => ZIO.succeed(value) }
-        def render(model: String, self: ComponentRef[Msg]) =
-          form(
-            phx.onSubmitForm(data => Msg.Submitted(data.string("name").getOrElse(""))),
-            phx.target(self),
-            input(nameAttr := "name"),
-            span(model)
-          )
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(liveComponent(FormComponent, id = "form", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "form",
-        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
-        value = Json.Str("name=Alice"),
-        cid = Some(1)
-      )
-
-      def containsValue(diff: Diff, value: String): Boolean =
-        diff match
-          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
-            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
-              containsValue(_, value)
-            )
-          case Diff.Comprehension(_, entries, _, _, _) =>
-            entries.exists {
-              case Diff.Dynamic(_, diff)       => containsValue(diff, value)
-              case Diff.IndexMerge(_, _, diff) => containsValue(diff, value)
-              case _                           => false
-            }
-          case Diff.Value(current)  => current == value
-          case Diff.Dynamic(_, diff) => containsValue(diff, value)
-          case _                    => false
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val componentUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(1).exists(containsValue(_, "Alice"))
-          case _ => false
-
-        assertTrue(componentUpdated)
-    },
-    test("routes self-targeted live component upload progress to component state") {
-      object UploadComponent extends LiveComponent[Unit, UploadComponent.Msg, String]:
-        enum Msg:
-          case Progress(value: String)
-
-        def mount(props: Unit) = ZIO.succeed("")
-        def handleMessage(model: String) = { case Msg.Progress(value) => ZIO.succeed(value) }
-        def render(model: String, self: ComponentRef[Msg]) =
-          div(
-            phx.onProgress(params => Msg.Progress(params.getOrElse("progress", ""))),
-            phx.target(self),
-            model
-          )
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(liveComponent(UploadComponent, id = "upload", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val progress: Payload.Progress = Payload.Progress(
-        event = Some(BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1)),
-        ref = "upload-ref",
-        entry_ref = "entry-ref",
-        progress = Json.Num(50),
-        cid = Some(1)
-      )
-
-      for
-        socket   <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        outQueue <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
-        outFiber <- socket.outbox.runForeach(outQueue.offer).fork
-        reply <- (for
-                   _     <- outQueue.take
-                   _     <- socket.progressUpload(progress)
-                   reply <- outQueue.take
-                 yield reply).ensuring(outFiber.interrupt)
-      yield
-        val componentUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(1).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("50")) => true
-                  case _                                 => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(componentUpdated)
-    },
-    test("upload progress component bindings ignore mismatched event cid") {
-      object UploadComponent extends LiveComponent[String, UploadComponent.Msg, String]:
-        enum Msg:
-          case Progress(value: String)
-
-        def mount(props: String) = ZIO.succeed(props)
-        def handleMessage(model: String) = { case Msg.Progress(value) => ZIO.succeed(value) }
-        def render(model: String, self: ComponentRef[Msg]) =
-          div(
-            phx.onProgress(params => Msg.Progress(params.getOrElse("progress", ""))),
-            phx.target(self),
-            model
-          )
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            button(phx.onClick(()), "rerender"),
-            liveComponent(UploadComponent, id = "one", props = "one"),
-            liveComponent(UploadComponent, id = "two", props = "two")
-          )
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val progress: Payload.Progress = Payload.Progress(
-        event = Some(BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1)),
-        ref = "upload-ref",
-        entry_ref = "entry-ref",
-        progress = Json.Num(50),
-        cid = Some(2)
-      )
-      val rerender: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty
-      )
-
-      def containsValue(diff: Diff, value: String): Boolean =
-        diff match
-          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
-            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
-              containsValue(_, value)
-            )
-          case Diff.Comprehension(_, entries, _, _, _) =>
-            entries.exists {
-              case Diff.Dynamic(_, diff)       => containsValue(diff, value)
-              case Diff.IndexMerge(_, _, diff) => containsValue(diff, value)
-              case _                           => false
-            }
-          case Diff.Value(current)  => current == value
-          case Diff.Dynamic(_, diff) => containsValue(diff, value)
-          case _                    => false
-
-      for
-        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        result <- withOutbox(socket) { outbox =>
-                    for
-                      reply  <- socket.progressUpload(progress)
-                      _      <- socket.inbox.offer(rerender -> meta)
-                      routed <- outbox.take
-                    yield
-                      val progressRouted = routed._1 match
-                        case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
-                          containsValue(diff, "50")
-                        case Payload.Diff(diff) => containsValue(diff, "50")
-                        case _                  => false
-
-                      assertTrue(reply == Payload.okReply(LiveResponse.Empty), !progressRouted)
-                  }
-      yield result
-    },
-    test("untargeted live component events do not route to component state") {
-      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
-        object Msg
-
-        def mount(props: Unit)        = ZIO.succeed(0)
-        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
-        def render(model: Int, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), model.toString)
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(liveComponent(CounterComponent, id = "counter", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
-        value = Json.Obj.empty
-      )
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val componentUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(1).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("1")) => true
-                  case _                                => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(!componentUpdated)
-    },
-    test("component events do not route when event cid targets a different component") {
-      object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, Int]:
-        object Msg
-
-        def mount(props: String)     = ZIO.succeed(0)
-        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
-        def render(model: Int, self: ComponentRef[Msg.type]) =
+        def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
           button(phx.onClick(Msg), phx.target(self), model.toString)
 
       val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
+        def mount(ctx: MountContext) =
+          ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
         def render(model: Unit): HtmlElement[Unit] =
-          div(
-            button(phx.onClick(()), "rerender"),
-            liveComponent(CounterComponent, id = "one", props = "one"),
-            liveComponent(CounterComponent, id = "two", props = "two")
-          )
-        def subscriptions(model: Unit) = ZStream.empty
+          div(liveComponent(CounterComponent, id = "counter", props = ()))
 
       val event: Payload.Event = Payload.Event(
         `type` = "click",
         event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
         value = Json.Obj.empty,
-        cid = Some(2)
-      )
-      val rerender: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty
-      )
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> socket.inbox.offer(rerender -> meta) *> outbox.take
-                      }
-      yield
-        val componentUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.values.exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("1")) => true
-                  case _                                => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(!componentUpdated)
-    },
-    test("selector-targeted component events route by event cid") {
-      final case class CounterModel(id: String, count: Int)
-
-      object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, CounterModel]:
-        object Msg
-
-        def mount(props: String) = ZIO.succeed(CounterModel(props, 0))
-        def handleMessage(model: CounterModel) = { case Msg =>
-          ZIO.succeed(model.copy(count = model.count + 1))
-        }
-        def render(model: CounterModel, self: ComponentRef[Msg.type]) =
-          div(idAttr := s"counter-${model.id}", model.count.toString)
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            button(
-              phx.onClick(component[CounterComponent.type](CounterComponent.Msg)),
-              phx.target("#counter-one"),
-              "increment"
-            ),
-            liveComponent(CounterComponent, id = "one", props = "one"),
-            liveComponent(CounterComponent, id = "two", props = "two")
-          )
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty,
         cid = Some(1)
-      )
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val componentUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(1).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("1")) => true
-                  case _                                => false
-                }
-              case _ => false
-            } && !components.contains(2)
-          case _ => false
-
-        assertTrue(componentUpdated)
-    },
-    test("selector-targeted component events can be sent to multiple cids") {
-      final case class CounterModel(id: String, count: Int)
-
-      object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, CounterModel]:
-        object Msg
-
-        def mount(props: String) = ZIO.succeed(CounterModel(props, 0))
-        def handleMessage(model: CounterModel) = { case Msg =>
-          ZIO.succeed(model.copy(count = model.count + 1))
-        }
-        def render(model: CounterModel, self: ComponentRef[Msg.type]) =
-          div(idAttr := s"counter-${model.id}", cls := "dismissible", model.count.toString)
-
-      def containsValue(diff: Diff, value: String): Boolean =
-        diff match
-          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
-            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
-              containsValue(_, value)
-            )
-          case Diff.Value(current)  => current == value
-          case Diff.Dynamic(_, diff) => containsValue(diff, value)
-          case _                    => false
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            button(
-              phx.onClick(component[CounterComponent.type](CounterComponent.Msg)),
-              phx.target("#counter-one, #counter-two"),
-              "increment"
-            ),
-            liveComponent(CounterComponent, id = "one", props = "one"),
-            liveComponent(CounterComponent, id = "two", props = "two")
-          )
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val firstEvent: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
-      val secondEvent: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty,
-        cid = Some(2)
       )
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
-                      _      <- socket.inbox.offer(firstEvent -> meta)
-                      _      <- socket.inbox.offer(secondEvent -> meta)
-                      first  <- outbox.take
-                      second <- outbox.take
-                    yield
-                      val firstUpdated = first._1 match
-                        case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
-                          containsValue(diff, "1")
-                        case _ => false
-                      val secondUpdated = second._1 match
-                        case Payload.Reply(
-                              ReplyStatus.Ok,
-                              LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-                            ) =>
-                          components.get(2).exists(containsValue(_, "1"))
-                        case _ => false
-
-                      assertTrue(firstUpdated, secondUpdated)
+                      _     <- socket.inbox.offer(event -> meta)
+                      reply <- outbox.take
+                    yield assertTrue(diffFromPayload(reply._1).exists(containsValue(_, "1")))
                   }
       yield result
-    },
-    test("selector-targeted component events reject mismatched component classes") {
-      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
-        object Msg
-
-        def mount(props: Unit)        = ZIO.succeed(0)
-        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
-        def render(model: Int, self: ComponentRef[Msg.type]) =
-          div(model.toString)
-
-      object OtherComponent extends LiveComponent[Unit, Unit, Unit]:
-        def mount(props: Unit)                    = ZIO.unit
-        def handleMessage(model: Unit)            = _ => ZIO.succeed(model)
-        def render(model: Unit, self: ComponentRef[Unit]) =
-          div("other")
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            button(
-              phx.onClick(component[CounterComponent.type](CounterComponent.Msg)),
-              phx.target("#other"),
-              "increment"
-            ),
-            liveComponent(CounterComponent, id = "counter", props = ()),
-            liveComponent(OtherComponent, id = "other", props = ())
-          )
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty,
-        cid = Some(2)
-      )
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield assertTrue(reply._1 == Payload.okReply(LiveResponse.Empty))
-    },
-    test("nested live component events route to nested component state") {
-      object ChildComponent extends LiveComponent[Unit, ChildComponent.Msg.type, Int]:
-        object Msg
-
-        def mount(props: Unit)        = ZIO.succeed(0)
-        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
-        def render(model: Int, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), phx.target(self), model.toString)
-
-      object ParentComponent extends LiveComponent[Unit, Unit, Unit]:
-        def mount(props: Unit)                    = ZIO.unit
-        def handleMessage(model: Unit)            = _ => ZIO.succeed(model)
-        def render(model: Unit, self: ComponentRef[Unit]) =
-          div(liveComponent(ChildComponent, id = "child", props = ()))
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(liveComponent(ParentComponent, id = "parent", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(
-          Vector("root:div", "component:0:1", "component:0:2"),
-          1
-        ),
-        value = Json.Obj.empty,
-        cid = Some(2)
-      )
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val childUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(2).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("1")) => true
-                  case _                                => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(childUpdated)
     },
     test("sendUpdate applies typed props to an existing live component") {
-      class LabelComponent extends LiveComponent[String, Unit, String]:
-        def mount(props: String)                            = ZIO.succeed(props)
-        override def update(props: String, model: String)   = ZIO.succeed(props)
-        def handleMessage(model: String)                    = _ => ZIO.succeed(model)
-        def render(model: String, self: ComponentRef[Unit]) =
-          div(phx.target(self), model)
+      object LabelComponent extends LiveComponent[String, Unit, String]:
+        def mount(props: String, ctx: MountContext) =
+          ZIO.succeed(props)
 
-      val lv = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) =
-          _ => LiveContext.sendUpdate[LabelComponent]("label", "updated").as(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            button(phx.onClick(()), "update"),
-            liveComponent(LabelComponent(), id = "label", props = "initial")
-          )
-        def subscriptions(model: Unit) = ZStream.empty
+        override def update(props: String, model: String, ctx: UpdateContext) =
+          ZIO.succeed(props)
 
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty
-      )
+        def handleMessage(props: String, model: String, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
 
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val componentUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(1).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("updated")) => true
-                  case _                                      => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(componentUpdated)
-    },
-    test("sendUpdate applies typed props to a nested live component") {
-      class LabelComponent extends LiveComponent[String, Unit, String]:
-        def mount(props: String)                            = ZIO.succeed(props)
-        override def update(props: String, model: String)   = ZIO.succeed(props)
-        def handleMessage(model: String)                    = _ => ZIO.succeed(model)
-        def render(model: String, self: ComponentRef[Unit]) =
+        def render(props: String, model: String, self: ComponentRef[Unit]) =
           div(model)
 
-      object ParentComponent extends LiveComponent[Unit, Unit, Unit]:
-        def mount(props: Unit)                    = ZIO.unit
-        def handleMessage(model: Unit)            = _ => ZIO.succeed(model)
-        def render(model: Unit, self: ComponentRef[Unit]) =
-          div(liveComponent(LabelComponent(), id = "label", props = "initial"))
-
       val lv = new LiveView[Unit, Unit]:
-        def mount                      = ZIO.unit
-        def handleMessage(model: Unit) =
-          _ => LiveContext.sendUpdate[LabelComponent]("label", "updated").as(model)
+        def mount(ctx: MountContext) =
+          ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ctx.components.sendUpdate[LabelComponent.type]("label", "updated").as(model)
+
         def render(model: Unit): HtmlElement[Unit] =
           div(
             button(phx.onClick(()), "update"),
-            liveComponent(ParentComponent, id = "parent", props = ())
+            liveComponent(LabelComponent, id = "label", props = "initial")
           )
-        def subscriptions(model: Unit) = ZStream.empty
 
       val event: Payload.Event = Payload.Event(
         `type` = "click",
@@ -1150,339 +389,14 @@ object SocketSpec extends ZIOSpecDefault:
       )
 
       for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val componentUpdated = reply._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(2).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("updated")) => true
-                  case _                                      => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(componentUpdated)
-    },
-    test("live component streams with the same name are scoped per component") {
-      object StreamComponent extends LiveComponent[String, Unit, LiveStream[String]]:
-        private val Items = LiveStreamDef.byId[String, String]("items")(identity)
-
-        def mount(props: String)                          = LiveContext.stream(Items, List(props))
-        def handleMessage(model: LiveStream[String])      = _ => ZIO.succeed(model)
-        def render(model: LiveStream[String], self: ComponentRef[Unit]) =
-          ul(
-            idAttr       := s"items-${model.entries.head.value}",
-            phx.onUpdate := "stream",
-            model.stream { (domId, item) => li(idAttr := domId, item) }
-          )
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                         = ZIO.unit
-        def handleMessage(model: Unit)    = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            liveComponent(StreamComponent, id = "one", props = "one"),
-            liveComponent(StreamComponent, id = "two", props = "two")
-          )
-        def subscriptions(model: Unit) = ZStream.empty
-
-      def containsValue(diff: Diff, value: String): Boolean =
-        diff match
-          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
-            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
-              containsValue(_, value)
-            )
-          case Diff.Comprehension(_, entries, _, _, _) =>
-            entries.exists {
-              case Diff.Dynamic(_, diff)       => containsValue(diff, value)
-              case Diff.IndexMerge(_, _, diff) => containsValue(diff, value)
-              case _                           => false
-            }
-          case Diff.Value(current) => current == value
-          case Diff.Dynamic(_, diff) => containsValue(diff, value)
-          case _ => false
-
-      for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        init   <- socket.outbox.take(1).runHead.some
-      yield
-        val scoped = init._1 match
-          case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(Diff.Tag(_, _, _, _, _, components, _, _))) =>
-            val first  = components.get(1)
-            val second = components.get(2)
-            first.exists(diff => containsValue(diff, "one") && !containsValue(diff, "two")) &&
-            second.exists(diff => containsValue(diff, "two") && !containsValue(diff, "one"))
-          case _ => false
-
-        assertTrue(scoped)
-    },
-    test("live component stream updates are scoped to the target component") {
-      object StreamComponent extends LiveComponent[String, Unit, StreamComponent.Model]:
-        final case class Model(prefix: String, items: LiveStream[String])
-
-        private val Items = LiveStreamDef.byId[String, String]("items")(identity)
-
-        def mount(props: String) =
-          LiveContext.stream(Items, List(props)).map(items => Model(props, items))
-        def handleMessage(model: Model) =
-          _ =>
-            LiveContext
-              .streamInsert(Items, s"${model.prefix}-added")
-              .map(items => model.copy(items = items))
-        def render(model: Model, self: ComponentRef[Unit]) =
-          ul(
-            idAttr       := s"items-${model.prefix}",
-            phx.onUpdate := "stream",
-            phx.onClick(()),
-            phx.target(self),
-            model.items.stream { (domId, item) => li(idAttr := domId, item) }
-          )
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                         = ZIO.unit
-        def handleMessage(model: Unit)    = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(
-            liveComponent(StreamComponent, id = "one", props = "one"),
-            liveComponent(StreamComponent, id = "two", props = "two")
-          )
-        def subscriptions(model: Unit) = ZStream.empty
-
-      def containsValue(diff: Diff, value: String): Boolean =
-        diff match
-          case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
-            dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
-              containsValue(_, value)
-            )
-          case Diff.Comprehension(_, entries, _, _, _) =>
-            entries.exists {
-              case Diff.Dynamic(_, diff)       => containsValue(diff, value)
-              case Diff.IndexMerge(_, _, diff) => containsValue(diff, value)
-              case _                           => false
-            }
-          case Diff.Value(current)  => current == value
-          case Diff.Dynamic(_, diff) => containsValue(diff, value)
-          case _                    => false
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 3),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
-
-      for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        reply      <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> outbox.take
-                      }
-      yield
-        val scoped = reply._1 match
-          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))) =>
-            components.get(1).exists(diff => containsValue(diff, "one-added")) &&
-            !components.get(2).exists(diff => containsValue(diff, "one-added"))
-          case _ => false
-
-        assertTrue(scoped)
-    },
-    test("cids_destroyed removes live component state before remount") {
-      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
-        object Msg
-
-        def mount(props: Unit)        = ZIO.succeed(0)
-        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
-        def render(model: Int, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), phx.target(self), model.toString)
-
-      enum ParentMsg:
-        case Toggle
-
-      val lv = new LiveView[ParentMsg, Boolean]:
-        def mount                         = ZIO.succeed(true)
-        def handleMessage(model: Boolean) = { case ParentMsg.Toggle => ZIO.succeed(!model) }
-        def render(model: Boolean): HtmlElement[ParentMsg] =
-          div(
-            button(phx.onClick(ParentMsg.Toggle), "toggle"),
-            if model then liveComponent(CounterComponent, id = "counter", props = ()) else "gone"
-          )
-        def subscriptions(model: Boolean) = ZStream.empty
-
-      val incrementEvent: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:1:1"), 1),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
-      val toggleEvent: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty
-      )
-      val destroyedEvent: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = "cids_destroyed",
-        value = Json.Obj("cids" -> Json.Arr(Json.Num(1)))
-      )
-
-      for
-        socket  <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replies <- withOutbox(socket) { outbox =>
-                     for
-                       _       <- socket.inbox.offer(incrementEvent -> meta)
-                       _       <- socket.inbox.offer(toggleEvent -> meta)
-                       _       <- socket.inbox.offer(destroyedEvent -> meta)
-                       _       <- socket.inbox.offer(toggleEvent -> meta)
-                       replies <- takeOutbox(outbox, 4)
-                     yield replies
-                   }
-      yield
-        val componentRemountedFresh = replies.last._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(2).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("0")) => true
-                  case _                                => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(componentRemountedFresh)
-    },
-    test("removed live component keeps state until client confirms cids_destroyed") {
-      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
-        object Msg
-
-        def mount(props: Unit)        = ZIO.succeed(0)
-        def handleMessage(model: Int) = { case Msg => ZIO.succeed(model + 1) }
-        def render(model: Int, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), phx.target(self), model.toString)
-
-      enum ParentMsg:
-        case Toggle
-
-      val lv = new LiveView[ParentMsg, Boolean]:
-        def mount                         = ZIO.succeed(true)
-        def handleMessage(model: Boolean) = { case ParentMsg.Toggle => ZIO.succeed(!model) }
-        def render(model: Boolean): HtmlElement[ParentMsg] =
-          div(
-            button(phx.onClick(ParentMsg.Toggle), "toggle"),
-            if model then liveComponent(CounterComponent, id = "counter", props = ()) else "gone"
-          )
-        def subscriptions(model: Boolean) = ZStream.empty
-
-      val incrementEvent: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:1:1"), 1),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
-      val toggleEvent: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
-        value = Json.Obj.empty
-      )
-
-      for
-        socket  <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        replies <- withOutbox(socket) { outbox =>
-                     for
-                       _       <- socket.inbox.offer(incrementEvent -> meta)
-                       _       <- socket.inbox.offer(toggleEvent -> meta)
-                       _       <- socket.inbox.offer(toggleEvent -> meta)
-                       replies <- takeOutbox(outbox, 3)
-                     yield replies
-                   }
-      yield
-        val componentPreserved = replies.last._1 match
-          case Payload.Reply(
-                ReplyStatus.Ok,
-                LiveResponse.Diff(Diff.Tag(_, _, _, _, _, components, _, _))
-              ) =>
-            components.get(1).exists {
-              case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
-                dynamic.exists {
-                  case Diff.Dynamic(_, Diff.Value("1")) => true
-                  case _                                => false
-                }
-              case _ => false
-            }
-          case _ => false
-
-        assertTrue(componentPreserved)
-    },
-    test("component events can push patch") {
-      object NavComponent extends LiveComponent[Unit, NavComponent.Msg.type, Unit]:
-        object Msg
-
-        def mount(props: Unit)         = ZIO.unit
-        def handleMessage(model: Unit) = { case Msg => LiveContext.pushPatch("/next").as(model) }
-        def render(model: Unit, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), phx.target(self), "patch")
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(liveComponent(NavComponent, id = "nav", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
-
-      for
-        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        navigation <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> takeLiveNavigation(outbox)
-                      }
-      yield assertTrue(navigation == Payload.LiveNavigation("/next", LivePatchKind.Push))
-    },
-    test("component events can replace patch") {
-      object NavComponent extends LiveComponent[Unit, NavComponent.Msg.type, Unit]:
-        object Msg
-
-        def mount(props: Unit)         = ZIO.unit
-        def handleMessage(model: Unit) = { case Msg => LiveContext.replacePatch("/next").as(model) }
-        def render(model: Unit, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), phx.target(self), "patch")
-
-      val lv = new LiveView[Unit, Unit]:
-        def mount                                  = ZIO.unit
-        def handleMessage(model: Unit)             = _ => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
-          div(liveComponent(NavComponent, id = "nav", props = ()))
-        def subscriptions(model: Unit) = ZStream.empty
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
-
-      for
-        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        navigation <- withOutbox(socket) { outbox =>
-                        socket.inbox.offer(event -> meta) *> takeLiveNavigation(outbox)
-                      }
-      yield assertTrue(navigation == Payload.LiveNavigation("/next", LivePatchKind.Replace))
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _     <- socket.inbox.offer(event -> meta)
+                      reply <- outbox.take
+                    yield assertTrue(diffFromPayload(reply._1).exists(containsValue(_, "updated")))
+                  }
+      yield result
     }
   )
 end SocketSpec

@@ -5,7 +5,6 @@ import scalive.*
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
-import zio.stream.ZStream
 import zio.test.*
 
 import scalive.WebSocketMessage.LiveResponse
@@ -37,37 +36,38 @@ object SocketUploadSpec extends ZIOSpecDefault:
     snapshots: Queue[Option[LiveUpload]]
   ) =
     new LiveView[Unit, Unit]:
-      def mount =
+      def mount(ctx: MountContext) =
         for
-          upload <- LiveContext.allowUpload(uploadName, options)
+          upload <- ctx.uploads.allow(uploadName, options)
           _      <- allowedUploadPromise.succeed(upload).ignore
         yield ()
 
-      def handleMessage(model: Unit) = _ => model
+      def handleMessage(model: Unit, ctx: MessageContext) =
+        (_: Unit) => ZIO.succeed(model)
 
       def render(model: Unit): HtmlElement[Unit] =
         div("upload")
 
-      def subscriptions(model: Unit) = ZStream.empty
-
-      override def interceptEvent(model: Unit, event: String, value: Json) =
-        event match
+      override def hooks: LiveHooks[Unit, Unit] =
+        LiveHooks.empty.rawEvent("uploads") { (model, event, ctx) =>
+          event.bindingId match
           case "capture" =>
-            LiveContext.upload(uploadName)
+            ctx.uploads.get(uploadName)
               .flatMap(upload => snapshots.offer(upload))
-              .as(InterceptResult.halt(model))
+              .as(LiveEventHookResult.halt(model))
           case "cancel"  =>
-            entryRefFromHookValue(value) match
+            entryRefFromHookValue(event.value) match
               case Some(entryRef) =>
-                (LiveContext.cancelUpload(uploadName, entryRef) *> LiveContext.upload(uploadName))
+                (ctx.uploads.cancel(uploadName, entryRef) *> ctx.uploads.get(uploadName))
                   .flatMap(upload => snapshots.offer(upload))
-                  .as(InterceptResult.halt(model))
+                  .as(LiveEventHookResult.halt(model))
               case None           =>
-                LiveContext.upload(uploadName)
+                ctx.uploads.get(uploadName)
                   .flatMap(upload => snapshots.offer(upload))
-                  .as(InterceptResult.halt(model))
+                  .as(LiveEventHookResult.halt(model))
           case _         =>
-            ZIO.succeed(InterceptResult.cont(model))
+            ZIO.succeed(LiveEventHookResult.cont(model))
+        }
 
   private def entryRefFromHookValue(value: Json): Option[String] =
     value match

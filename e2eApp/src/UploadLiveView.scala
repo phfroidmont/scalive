@@ -9,7 +9,6 @@ import UploadLiveView.*
 import zio.*
 import zio.http.URL
 import zio.http.codec.HttpCodec
-import zio.stream.ZStream
 
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
@@ -20,32 +19,32 @@ class UploadLiveView() extends LiveView[Msg, Model]:
 
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 
-  def mount =
-    LiveContext
-      .allowUpload(UploadName, uploadOptions(autoUpload = false))
+  def mount(ctx: MountContext) =
+    ctx.uploads
+      .allow(UploadName, uploadOptions(autoUpload = false))
       .map(upload => Model(upload = upload))
       .catchAll(_ => ZIO.succeed(Model(upload = disconnectedUpload(autoUpload = false))))
 
-  override def handleParams(model: Model, params: Option[String], _url: URL) =
+  override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
     val autoUpload = params.contains("1")
     if model.upload.autoUpload == autoUpload then ZIO.succeed(model)
     else
-      (LiveContext.disallowUpload(UploadName).ignore *>
-        LiveContext
-          .allowUpload(UploadName, uploadOptions(autoUpload))
+      (ctx.uploads.disallow(UploadName).ignore *>
+        ctx.uploads
+          .allow(UploadName, uploadOptions(autoUpload))
           .map(upload => model.copy(upload = upload))).catchAll(_ =>
         ZIO.succeed(model.copy(upload = disconnectedUpload(autoUpload)))
       )
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate =>
-      refreshUpload(model)
+      refreshUpload(model, ctx.uploads)
     case Msg.Progress =>
-      refreshUpload(model)
+      refreshUpload(model, ctx.uploads)
     case Msg.CancelUpload(ref) =>
-      LiveContext.cancelUpload(UploadName, ref) *> refreshUpload(model)
+      ctx.uploads.cancel(UploadName, ref) *> refreshUpload(model, ctx.uploads)
     case Msg.Save =>
-      saveCompletedEntries(model)
+      saveCompletedEntries(model, ctx.uploads)
 
   def render(model: Model) =
     div(
@@ -113,10 +112,8 @@ class UploadLiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
-
-  private def refreshUpload(model: Model): RIO[LiveContext.HasUploads, Model] =
-    LiveContext.upload(UploadName).map {
+  private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
+    uploads.get(UploadName).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
     }
@@ -145,15 +142,15 @@ class UploadLiveView() extends LiveView[Msg, Model]:
       errors = Nil
     )
 
-  private def saveCompletedEntries(model: Model): RIO[LiveContext.HasUploads, Model] =
+  private def saveCompletedEntries(model: Model, uploads: Uploads): LiveIO[Model] =
     for
-      consumed  <- LiveContext.consumeUploadedEntries(UploadName)
+      consumed  <- uploads.consumeCompleted(UploadName)
       persisted <- ZIO.foreach(consumed) { entry =>
                      persistUploadedFile(entry.name, entry.bytes).map(storedName =>
                        UploadedFile(name = entry.name, storedName = storedName)
                      )
                    }
-      refreshed <- LiveContext.upload(UploadName)
+      refreshed <- uploads.get(UploadName)
     yield model.copy(
       upload = refreshed.getOrElse(model.upload),
       uploadedFiles = model.uploadedFiles ++ persisted

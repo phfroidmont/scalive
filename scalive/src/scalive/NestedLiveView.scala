@@ -93,7 +93,8 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
       flashRef      <- Ref.make(FlashRuntimeState.empty)
       componentsRef <- Ref.make(ComponentRuntimeState.empty)
       navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
-      hooksRef      <- Ref.make(LiveHookRuntimeState.empty)
+      lv            <- ZIO.succeed(spec.liveView())
+      hooksRef      <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
       ctx = LiveContext(
               staticChanged = false,
               streams = new SocketStreamRuntime(streamRef),
@@ -107,10 +108,9 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
                 initialUrl
               )
             )
-      lv              <- ZIO.succeed(spec.liveView())
       _               <- SocketFlashRuntime.resetNavigation(flashRef)
       _               <- navigationRef.set(None)
-      initModel       <- LiveIO.toZIO(lv.mount).provide(ZLayer.succeed(ctx))
+      initModel       <- lv.mount(ctx.mountContext[Msg, Model])
       mountNavigation <- navigationRef.getAndSet(None)
       lifecycle       <- LiveRoute.runInitialHandleParams(
                      lv,
@@ -125,7 +125,7 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
                     case LiveRoute.InitialLifecycleOutcome.Render(model) =>
                       SocketComponentRuntime
                         .renderRoot(lv.render(model), componentsRef, ctx)
-                        .tap(_ => ctx.hooks.runAfterRender(model, ctx))
+                        .tap(_ => ctx.hooks.runAfterRender[Msg, Model](model, ctx))
                     case LiveRoute.InitialLifecycleOutcome.Redirect(_) =>
                       ZIO.succeed(div())
     yield NestedLiveViewRegistration(

@@ -1,9 +1,9 @@
 import zio.ZIO
 import zio.http.URL
 import zio.json.ast.Json
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 import scalive.codecs.{BooleanAsAttrPresenceEncoder, StringAsIsEncoder}
 
 private val fieldset = HtmlTag("fieldset")
@@ -43,12 +43,13 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
 
   override val queryCodec: LiveQueryCodec[FormQueryParams] = FormQueryParams.codec
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  override def handleParams(model: Model, params: FormQueryParams, _url: URL) =
+  override def handleParams(model: Model, params: FormQueryParams, _url: URL, ctx: ParamsContext) =
     model.copy(query = params)
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(event) =>
       maybeAwait(model, "validate").as(model.copy(values = model.values ++ event.raw.asMap))
     case Msg.Save(_) =>
@@ -57,11 +58,12 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
       model.copy(values = model.values.updated("b", "custom value from server"))
     case Msg.ButtonTest => model
 
-  override def interceptEvent(model: Model, event: String, value: Json) =
-    if event == "sandbox:eval" then ZIO.succeed(E2ESandboxEval.handle(model, event, value))
-    else ZIO.succeed(InterceptResult.cont(applyRawFormValue(model, value)))
-
-  def subscriptions(model: Model) = ZStream.empty
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("form-raw") { (model, event, _) =>
+      if event.bindingId == "sandbox:eval" then
+        E2ESandboxEval.handle(model, event.bindingId, event.value)
+      else LiveEventHookResult.cont(applyRawFormValue(model, event.value))
+    }
 
   def render(model: Model) =
     val content =
@@ -163,16 +165,15 @@ class FormDynamicInputsLiveView
 
   override val queryCodec: LiveQueryCodec[FormQueryParams] = FormQueryParams.codec
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  override def handleParams(model: Model, params: FormQueryParams, _url: URL) =
+  override def handleParams(model: Model, params: FormQueryParams, _url: URL, ctx: ParamsContext) =
     model.copy(checkboxes = params.checkboxes)
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(event) => updateFromEvent(model, event)
     case Msg.Save(event)     => updateFromEvent(model, event).copy(submitted = true)
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     val formModel = Form.of(
@@ -325,18 +326,18 @@ end FormDynamicInputsLiveView
 class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLiveView.Model]:
   import FormStreamLiveView.*
 
-  def mount =
-    LiveContext.stream(ItemsStream, InitialItems).map(items => Model(items = items))
+  def mount(ctx: MountContext) =
+    ctx.streams.init(ItemsStream, InitialItems).map(items => Model(items = items))
 
-  def handleMessage(model: Model) =
-    case Msg.Validate(_) => E2ELatencyGate.await("validate") *> inc(model)
-    case Msg.Save(_)     => E2ELatencyGate.await("save") *> inc(model)
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.Validate(_) => E2ELatencyGate.await("validate") *> inc(model, ctx)
+    case Msg.Save(_)     => E2ELatencyGate.await("save") *> inc(model, ctx)
     case Msg.Ping        => model
 
-  override def interceptEvent(model: Model, event: String, value: Json) =
-    ZIO.succeed(E2ESandboxEval.handle(model, event, value))
-
-  def subscriptions(model: Model) = ZStream.empty
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("sandbox") { (model, event, _) =>
+      E2ESandboxEval.handle(model, event.bindingId, event.value)
+    }
 
   def render(model: Model) =
     val data = FormData(Vector("myname" -> model.count.toString, "other" -> model.count.toString))
@@ -362,10 +363,10 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
       )
     )
 
-  private def inc(model: Model) =
+  private def inc(model: Model, ctx: MessageContext) =
     val next = model.streamCount + 1
-    LiveContext
-      .streamInsert(ItemsStream, Item(next)).map(items =>
+    ctx.streams
+      .insert(ItemsStream, Item(next)).map(items =>
         model.copy(items = items, count = model.count + 1, streamCount = next)
       )
 end FormStreamLiveView
@@ -385,26 +386,28 @@ object FormStreamLiveView:
 class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedbackLiveView.Model]:
   import FormFeedbackLiveView.*
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  def handleMessage(model: Model) =
-    case Msg.Validate(_)    => model.copy(validateCount = model.validateCount + 1)
-    case Msg.Submit(_)      => model.copy(submitCount = model.submitCount + 1, feedbackUsed = true)
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.Validate(_) => model.copy(validateCount = model.validateCount + 1)
+    case Msg.Submit(_)   =>
+      model.copy(submitCount = model.submitCount + 1, feedbackUsed = true)
     case Msg.Inc            => model.copy(count = model.count + 1)
     case Msg.Dec            => model.copy(count = model.count - 1)
-    case Msg.ToggleFeedback => model.copy(feedback = !model.feedback, feedbackUsed = false)
+    case Msg.ToggleFeedback =>
+      model.copy(feedback = !model.feedback, feedbackUsed = false)
 
-  override def interceptEvent(model: Model, event: String, value: Json) =
-    if event == "sandbox:eval" then ZIO.succeed(E2ESandboxEval.handle(model, event, value))
-    else
-      val usedFeedback = value match
-        case Json.Str(raw) => FormData.fromUrlEncoded(raw).string("myfeedback").exists(_.nonEmpty)
-        case _             => false
-      ZIO.succeed(
-        InterceptResult.cont(model.copy(feedbackUsed = model.feedbackUsed || usedFeedback))
-      )
-
-  def subscriptions(model: Model) = ZStream.empty
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("feedback-raw") { (model, event, _) =>
+      if event.bindingId == "sandbox:eval" then
+        E2ESandboxEval.handle(model, event.bindingId, event.value)
+      else
+        val usedFeedback = event.value match
+          case Json.Str(raw) => FormData.fromUrlEncoded(raw).string("myfeedback").exists(_.nonEmpty)
+          case _             => false
+        LiveEventHookResult.cont(model.copy(feedbackUsed = model.feedbackUsed || usedFeedback))
+    }
 
   def render(model: Model) =
     val data      = FormData.empty

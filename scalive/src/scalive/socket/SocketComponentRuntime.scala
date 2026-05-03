@@ -97,6 +97,97 @@ private[scalive] object SocketComponentRuntime:
                      yield true
     yield handled
 
+  def handleComponentAsyncSuccess[Msg, Model](
+    cid: Int,
+    name: String,
+    message: Any,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    handleComponentAsync(cid, name, Some(message), None, rendered, meta, state)
+
+  def handleComponentAsyncFailure[Msg, Model](
+    cid: Int,
+    name: String,
+    cause: Throwable,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    handleComponentAsync(cid, name, None, Some(cause), rendered, meta, state)
+
+  private def handleComponentAsync[Msg, Model](
+    cid: Int,
+    name: String,
+    message: Option[Any],
+    cause: Option[Throwable],
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    for
+      runtime <- state.componentsRef.get
+      handled <- runtime.instance(cid) match
+                   case None           => ZIO.succeed(false)
+                   case Some(instance) =>
+                     for
+                       hooksRef <- Ref.make(instance.hooks)
+                       componentCtx = componentContext(state.ctx, cid, hooksRef)
+                       asyncEvent   = LiveAsyncEvent(
+                                      name,
+                                      message match
+                                        case Some(value) => LiveAsyncResult.Succeeded(value)
+                                        case None        => LiveAsyncResult.Failed(cause.get)
+                                    )
+                       (result, navigation) <-
+                         SocketModelRuntime.captureNavigation(state)(
+                           componentCtx.hooks
+                             .runComponentAsync(
+                               instance.props,
+                               instance.model,
+                               asyncEvent,
+                               componentCtx
+                             ).flatMap {
+                               case LiveHookResult.Continue(hookModel) =>
+                                 message match
+                                   case Some(value) =>
+                                     instance.component
+                                       .handleMessage(
+                                         instance.props,
+                                         hookModel,
+                                         componentCtx.componentMessageContext[Any, Any, Any]
+                                       )(value)
+                                       .map(LiveEventHookResult.Continue(_))
+                                   case None =>
+                                     ZIO.succeed(LiveEventHookResult.Continue(hookModel))
+                               case LiveHookResult.Halt(hookModel) =>
+                                 ZIO.succeed(LiveEventHookResult.Halt(hookModel, None))
+                             }
+                         )
+                       hooks <- hooksRef.get
+                       model = result match
+                                 case LiveEventHookResult.Continue(value) => value
+                                 case LiveEventHookResult.Halt(value, _)  => value
+                       _ <- state.componentsRef.update { current =>
+                              val updated = instance.copy(model = model, hooks = hooks)
+                              current.copy(instances =
+                                current.instances.updated(instance.identity, updated)
+                              )
+                            }
+                       (parentModel, _) <- state.ref.get
+                       _                <- handleComponentLifecycleResult(
+                              result,
+                              navigation,
+                              ComponentResponseMode.ServerDiff,
+                              rendered,
+                              parentModel,
+                              meta,
+                              state
+                            )
+                     yield true
+    yield handled
+
   private def handleComponentMessage[Msg, Model](
     cid: Int,
     message: Any,
@@ -117,18 +208,21 @@ private[scalive] object SocketComponentRuntime:
                        (result, navigation) <-
                          SocketModelRuntime.captureNavigation(state)(
                            runComponentEventHooks(instance, message, event, componentCtx).flatMap {
-                             case LiveEventResult.Continue(hookModel) =>
-                               LiveIO
-                                 .toZIO(instance.component.handleMessage(hookModel)(message))
-                                 .provide(ZLayer.succeed(componentCtx))
-                                 .map(LiveEventResult.Continue(_))
-                             case halt @ LiveEventResult.Halt(_, _) => ZIO.succeed(halt)
+                             case LiveEventHookResult.Continue(hookModel) =>
+                               instance.component
+                                 .handleMessage(
+                                   instance.props,
+                                   hookModel,
+                                   componentCtx.componentMessageContext[Any, Any, Any]
+                                 )(message)
+                                 .map(LiveEventHookResult.Continue(_))
+                             case halt @ LiveEventHookResult.Halt(_, _) => ZIO.succeed(halt)
                            }
                          )
                        hooks <- hooksRef.get
                        model = result match
-                                 case LiveEventResult.Continue(value) => value
-                                 case LiveEventResult.Halt(value, _)  => value
+                                 case LiveEventHookResult.Continue(value) => value
+                                 case LiveEventHookResult.Halt(value, _)  => value
                        _ <- state.componentsRef.update { current =>
                               val updated = instance.copy(model = model, hooks = hooks)
                               current.copy(instances =
@@ -153,15 +247,27 @@ private[scalive] object SocketComponentRuntime:
     message: Any,
     event: Option[LiveEvent],
     componentCtx: LiveContext
-  ): Task[LiveEventResult[Any]] =
+  ): Task[LiveEventHookResult[Any]] =
     event match
       case Some(value) =>
-        componentCtx.hooks.runEvent(instance.model, message, value, componentCtx)
+        componentCtx.hooks
+          .runComponentRawEvent(instance.props, instance.model, value, componentCtx)
+          .flatMap {
+            case LiveEventHookResult.Continue(rawModel) =>
+              componentCtx.hooks.runComponentEvent(
+                instance.props,
+                rawModel,
+                message,
+                value,
+                componentCtx
+              )
+            case halt @ LiveEventHookResult.Halt(_, _) => ZIO.succeed(halt)
+          }
       case None =>
-        ZIO.succeed(LiveEventResult.Continue(instance.model))
+        ZIO.succeed(LiveEventHookResult.Continue(instance.model))
 
   private def handleComponentLifecycleResult[Msg, Model](
-    result: LiveEventResult[Any],
+    result: LiveEventHookResult[Any],
     navigation: Option[LiveNavigationCommand],
     responseMode: ComponentResponseMode,
     rendered: RenderedView,
@@ -170,7 +276,7 @@ private[scalive] object SocketComponentRuntime:
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     result match
-      case LiveEventResult.Halt(_, reply) =>
+      case LiveEventHookResult.Halt(_, reply) =>
         for
           diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, parentModel, state)
           _    <- SocketModelRuntime.publishPayload(
@@ -182,7 +288,6 @@ private[scalive] object SocketComponentRuntime:
                  case Some(command) =>
                    state.patchRedirectCountRef.set(0) *>
                      SocketInbound.handleNavigationCommand(
-                       rendered,
                        parentModel,
                        command,
                        meta,
@@ -190,13 +295,12 @@ private[scalive] object SocketComponentRuntime:
                      )
                  case None => SocketFlashRuntime.resetNavigation(state.flashRef)
         yield ()
-      case LiveEventResult.Continue(_) =>
+      case LiveEventHookResult.Continue(_) =>
         navigation match
           case Some(command) =>
             eventReply(responseMode, meta, state) *>
               state.patchRedirectCountRef.set(0) *>
               SocketInbound.handleNavigationCommand(
-                rendered,
                 parentModel,
                 command,
                 meta,
@@ -319,17 +423,26 @@ private[scalive] object SocketComponentRuntime:
             )
           )
         else ZIO.succeed(cursor.renderedIdentities = cursor.renderedIdentities + identity)
-      hooksRef <- Ref.make(existing.map(_.hooks).getOrElse(LiveHookRuntimeState.empty))
+      hooksRef <-
+        Ref.make(
+          existing.map(_.hooks).getOrElse(LiveHookRuntimeState.component(typed.component.hooks))
+        )
       componentCtx = componentContext(ctx, cid, hooksRef)
       model <- existing match
                  case Some(instance) => ZIO.succeed(instance.model)
                  case None           =>
-                   LiveIO.toZIO(component.mount(typed.props)).provide(ZLayer.succeed(componentCtx))
-      updatedModel <- LiveIO
-                        .toZIO(component.update(updateProps, model))
-                        .provide(ZLayer.succeed(componentCtx))
+                   component.mount(
+                     typed.props,
+                     componentCtx.componentMountContext[Any, Any, Any]
+                   )
+      updatedModel <-
+        component.update(
+          updateProps,
+          model,
+          componentCtx.componentUpdateContext[Any, Any, Any]
+        )
       hooks <- hooksRef.get
-      instance = ComponentInstance(cid, identity, component, updatedModel, hooks)
+      instance = ComponentInstance(cid, identity, component, updateProps, updatedModel, hooks)
       _        = cursor.state = cursor.state.copy(
             instances = cursor.state.instances.updated(identity, instance),
             byCid = cursor.state.byCid.updated(cid, identity),
@@ -337,8 +450,13 @@ private[scalive] object SocketComponentRuntime:
             nextCid = if existing.isDefined then cursor.state.nextCid else cursor.state.nextCid + 1
           )
       ref = ComponentRef[Any](cid)
-      rendered         <- renderElement(component.render(updatedModel, ref), cursor, componentCtx)
-      afterRenderModel <- componentCtx.hooks.runAfterRender(updatedModel, componentCtx)
+      rendered <-
+        renderElement(component.render(updateProps, updatedModel, ref), cursor, componentCtx)
+      afterRenderModel <- componentCtx.hooks.runComponentAfterRender(
+                            updateProps,
+                            updatedModel,
+                            componentCtx
+                          )
       afterRenderHooks <- hooksRef.get
       _ = cursor.state = cursor.state.copy(instances =
             cursor.state.instances.updated(
@@ -361,6 +479,7 @@ private[scalive] object SocketComponentRuntime:
     hooksRef: Ref[LiveHookRuntimeState]
   ): LiveContext =
     ctx.copy(
+      uploads = SocketUploadRuntime.scoped(ctx.uploads, SocketStreamRuntime.componentScope(cid)),
       streams = SocketStreamRuntime.scoped(ctx.streams, SocketStreamRuntime.componentScope(cid)),
       async = SocketAsyncRuntime.scoped(ctx.async, LiveAsyncOwner.Component(cid)),
       hooks = new ComponentLiveHookRuntime(hooksRef)

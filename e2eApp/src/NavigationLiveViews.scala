@@ -2,21 +2,22 @@ import NavigationLiveViews.*
 import zio.http.URL
 import zio.schema.Schema
 import zio.schema.derived
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class NavigationALiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[AParams] = AParamsCodec
 
-  def mount = Model(paramCurrent = None, paramNext = 1)
+  def mount(ctx: MountContext) =
+    Model(paramCurrent = None, paramNext = 1)
 
-  override def handleParams(model: Model, params: AParams, _url: URL) =
+  override def handleParams(model: Model, params: AParams, _url: URL, ctx: ParamsContext) =
     model.copy(paramCurrent = params.param.map(_.toString))
 
-  def handleMessage(model: Model) =
-    case _ => model
+  def handleMessage(model: Model, ctx: MessageContext) =
+    _ => model
 
   def render(model: Model) =
     NavigationLayout(
@@ -43,21 +44,20 @@ class NavigationALiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
 end NavigationALiveView
 
 class NavigationBLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[BParams] = BParamsCodec
 
-  def mount =
+  def mount(ctx: MountContext) =
     Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
 
-  def handleMessage(model: Model) =
-    case Msg.Noop => model
-    case _        => model
+  def handleMessage(model: Model, ctx: MessageContext) =
+    _ => model
 
-  override def handleParams(model: Model, params: BParams, url: URL) =
+  override def handleParams(model: Model, params: BParams, url: URL, ctx: ParamsContext) =
+    val _             = ctx
     val containerFlow = params.withContainerRequested || model.withContainer
     val selectedItem  = if containerFlow then selectedItemFromPath(url) else None
     model.copy(
@@ -106,8 +106,6 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
-
   private def selectedItemFromPath(url: URL): Option[String] =
     url.path.segments.toList match
       case "navigation" :: "b" :: id :: Nil if id.nonEmpty => Some(id)
@@ -122,17 +120,23 @@ class RedirectLoopLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[RedirectLoopParams] = RedirectLoopParamsCodec
 
-  def mount =
+  def mount(ctx: MountContext) =
     Model(shouldLoop = false, message = None)
 
-  def handleMessage(model: Model) =
-    case Msg.TriggerLoop => model.copy(message = Some("Too many redirects"), shouldLoop = false)
-    case _               => model
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.TriggerLoop =>
+      model.copy(message = Some("Too many redirects"), shouldLoop = false)
+    case _ => model
 
-  override def handleParams(model: Model, params: RedirectLoopParams, _url: URL) =
+  override def handleParams(
+    model: Model,
+    params: RedirectLoopParams,
+    _url: URL,
+    ctx: ParamsContext
+  ) =
     if params.loop.contains(true) then
       if model.shouldLoop then
-        LiveContext.pushPatch(RedirectLoopParamsCodec, RedirectLoopParams(Some(true))).as(model)
+        ctx.nav.pushPatch(RedirectLoopParamsCodec, RedirectLoopParams(Some(true))).as(model)
       else model.copy(message = Some("Too many redirects"), shouldLoop = false)
     else model.copy(message = None, shouldLoop = true)
 
@@ -153,7 +157,6 @@ class RedirectLoopLiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
 end RedirectLoopLiveView
 
 object NavigationLiveViews:

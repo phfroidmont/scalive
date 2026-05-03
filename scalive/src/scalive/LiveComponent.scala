@@ -3,20 +3,23 @@ package scalive
 import zio.*
 
 trait LiveComponent[Props, Msg, Model]:
-  def mount(props: Props): LiveIO[LiveComponent.InitContext, Model]
+  type MountContext       = scalive.ComponentMountContext[Props, Msg, Model]
+  type UpdateContext      = scalive.ComponentUpdateContext[Props, Msg, Model]
+  type MessageContext     = scalive.ComponentMessageContext[Props, Msg, Model]
+  type AfterRenderContext = scalive.ComponentAfterRenderContext[Props, Msg, Model]
 
-  def update(props: Props, model: Model): LiveIO[LiveComponent.UpdateContext, Model] =
-    val _ = props
-    model
+  def hooks: ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.empty
 
-  def handleMessage(model: Model): Msg => LiveIO[LiveComponent.UpdateContext, Model]
+  def mount(props: Props, ctx: MountContext): LiveIO[Model]
 
-  def render(model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
+  def update(props: Props, model: Model, ctx: UpdateContext): LiveIO[Model] =
+    ZIO.succeed(model)
+
+  def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => LiveIO[Model]
+
+  def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
 
 object LiveComponent:
-  type InitContext   = LiveContext.BaseCapabilities
-  type UpdateContext = LiveContext.NavigationCapabilities
-
   type PropsOf[C] = C match
     case LiveComponent[props, msg, model] => props
 
@@ -52,6 +55,4 @@ private[scalive] object ComponentUpdateRuntime:
       componentClass: Class[?],
       id: String,
       props: Props
-    ): UIO[Unit] =
-      val _ = (componentClass, id, props)
-      ZIO.unit
+    ): UIO[Unit] = ZIO.unit

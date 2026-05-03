@@ -10,14 +10,13 @@ private[scalive] object LiveViewParamsRuntime:
     url: URL,
     ctx: LiveContext
   ): Task[Model] =
-    ctx.hooks.runParams(model, url, ctx).flatMap {
+    ctx.hooks.runParams[Msg, Model](model, url, ctx).flatMap {
       case LiveHookResult.Halt(hookModel)     => ZIO.succeed(hookModel)
       case LiveHookResult.Continue(hookModel) =>
         lv.queryCodec
           .decode(url)
-          .flatMap(query => LiveIO.toZIO(lv.handleParams(hookModel, query, url)))
+          .flatMap(query => lv.handleParams(hookModel, query, url, ctx.paramsContext[Msg, Model]))
           .catchSome { case error: LiveQueryCodec.DecodeError =>
-            LiveIO.toZIO(lv.handleParamsDecodeError(hookModel, error, url))
+            lv.handleParamsDecodeError(hookModel, error, url, ctx.paramsContext[Msg, Model])
           }
-          .provide(ZLayer.succeed(ctx))
     }

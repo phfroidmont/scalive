@@ -1,11 +1,10 @@
 import java.util.UUID
 
-import zio.ZIO
 import zio.http.URL
 import zio.json.ast.Json
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 private val actionAttr      = htmlAttr("action", scalive.codecs.StringAsIsEncoder)
 private val methodAttr      = htmlAttr("method", scalive.codecs.StringAsIsEncoder)
@@ -19,12 +18,11 @@ private val dataPhxAutoUploadAttr =
 class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveView.Model]:
   import Issue3719LiveView.*
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Change(event) => model.copy(target = event.target.map(_.segments))
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     div(
@@ -49,15 +47,13 @@ object Issue3719LiveView:
 class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg.type, LiveUpload]:
   import Issue2965LiveView.*
 
-  def mount =
-    LiveContext
-      .allowUpload(UploadName, UploadOptions)
-      .catchAll(_ => ZIO.succeed(disconnectedUpload))
+  def mount(ctx: MountContext) =
+    ctx.uploads
+      .allow(UploadName, UploadOptions)
+      .catchAll(_ => disconnectedUpload)
 
-  def handleMessage(upload: LiveUpload) =
-    case Msg => LiveContext.upload(UploadName).map(_.getOrElse(upload))
-
-  def subscriptions(upload: LiveUpload) = ZStream.empty
+  def handleMessage(upload: LiveUpload, ctx: MessageContext) =
+    (_: Msg.type) => ctx.uploads.get(UploadName).map(_.getOrElse(upload))
 
   def render(upload: LiveUpload) =
     form(
@@ -127,16 +123,16 @@ object Issue2965LiveView:
 class Issue3814LiveView extends LiveView[Issue3814LiveView.Msg, Issue3814LiveView.Model]:
   import Issue3814LiveView.*
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Submit(event) =>
       val submitter = event.submitter.orElse(
-        event.raw.get("i-am-the-submitter").map(value => FormSubmitter("i-am-the-submitter", value))
+        event.raw
+          .get("i-am-the-submitter").map(value => FormSubmitter("i-am-the-submitter", value))
       )
       model.copy(triggerSubmit = true, submitter = submitter)
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     form(
@@ -165,14 +161,13 @@ object Issue3814LiveView:
 class Issue3040LiveView extends LiveView[Issue3040LiveView.Msg, Issue3040LiveView.Model]:
   import Issue3040LiveView.*
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Open   => model.copy(open = true, submitted = false)
     case Msg.Close  => model.copy(open = false)
     case Msg.Submit => model.copy(submitted = true)
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     div(
@@ -206,18 +201,16 @@ class Issue3047LiveView(pageName: String, afterReset: Boolean)
     extends LiveView[Issue3047LiveView.Msg.type, Issue3047LiveView.Model]:
   import Issue3047LiveView.*
 
-  def mount =
-    LiveContext
-      .stream(ItemsStreamDef, if afterReset then ResetItems else InitialItems)
+  def mount(ctx: MountContext) =
+    ctx.streams
+      .init(ItemsStreamDef, if afterReset then ResetItems else InitialItems)
       .map(items => Model(items))
 
-  def handleMessage(model: Model) =
-    case Msg =>
-      LiveContext
-        .stream(ItemsStreamDef, ResetItems, reset = true)
+  def handleMessage(model: Model, ctx: MessageContext) =
+    (_: Msg.type) =>
+      ctx.streams
+        .init(ItemsStreamDef, ResetItems, reset = true)
         .map(items => model.copy(items = items))
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     div(
@@ -243,13 +236,14 @@ object Issue3047LiveView:
 class Issue3529LiveView(page: String) extends LiveView[Unit, String]:
   override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
-  def mount = UUID.randomUUID().toString
+  def mount(ctx: MountContext) =
+    UUID.randomUUID().toString
 
-  override def handleParams(model: String, params: Unit, url: URL) = model
+  override def handleParams(model: String, params: Unit, url: URL, ctx: ParamsContext) =
+    model
 
-  def handleMessage(model: String) = Function.const(model)
-
-  def subscriptions(model: String) = ZStream.empty
+  def handleMessage(model: String, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: String) =
     div(
@@ -261,20 +255,22 @@ class Issue3529LiveView(page: String) extends LiveView[Unit, String]:
 class Issue3530LiveView extends LiveView[Unit, Vector[Int]]:
   override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
-  def mount = Vector(1, 2, 3)
+  def mount(ctx: MountContext) =
+    Vector(1, 2, 3)
 
-  override def handleParams(model: Vector[Int], params: Unit, url: URL) =
+  override def handleParams(model: Vector[Int], params: Unit, url: URL, ctx: ParamsContext) =
     if url.encode.contains("patch=a") then Vector(1, 3)
     else if url.encode.contains("patch=b") then Vector(2, 3)
     else model
 
-  override def interceptEvent(model: Vector[Int], event: String, value: Json) =
-    if event == "inc" then ZIO.succeed(InterceptResult.halt(model :+ 4))
-    else ZIO.succeed(InterceptResult.cont(model))
+  override def hooks: LiveHooks[Unit, Vector[Int]] =
+    LiveHooks.empty.rawEvent("inc") { (model, event, _) =>
+      if event.bindingId == "inc" then LiveEventHookResult.halt(model :+ 4)
+      else LiveEventHookResult.cont(model)
+    }
 
-  def handleMessage(model: Vector[Int]) = Function.const(model)
-
-  def subscriptions(model: Vector[Int]) = ZStream.empty
+  def handleMessage(model: Vector[Int], ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(items: Vector[Int]) =
     div(
@@ -287,12 +283,11 @@ class Issue3530LiveView extends LiveView[Unit, Vector[Int]]:
     )
 
 class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg.type, Boolean]:
-  def mount = false
+  def mount(ctx: MountContext) =
+    false
 
-  def handleMessage(model: Boolean) =
-    case Issue3647LiveView.Msg => true
-
-  def subscriptions(model: Boolean) = ZStream.empty
+  def handleMessage(model: Boolean, ctx: MessageContext) =
+    (_: Issue3647LiveView.Msg.type) => true
 
   def render(uploaded: Boolean) =
     div(
@@ -307,16 +302,17 @@ object Issue3647LiveView:
 class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
   import Issue3819LiveView.*
 
-  def mount = false
+  def mount(ctx: MountContext) =
+    false
 
-  def handleMessage(model: Boolean) =
+  def handleMessage(model: Boolean, ctx: MessageContext) =
     case Msg.Noop(_) => model
 
-  override def interceptEvent(model: Boolean, event: String, value: Json) =
-    if event == "reconnected" then ZIO.succeed(InterceptResult.halt(true))
-    else ZIO.succeed(InterceptResult.cont(model))
-
-  def subscriptions(model: Boolean) = ZStream.empty
+  override def hooks: LiveHooks[Msg, Boolean] =
+    LiveHooks.empty.rawEvent("reconnected") { (model, event, _) =>
+      if event.bindingId == "reconnected" then LiveEventHookResult.halt(true)
+      else LiveEventHookResult.cont(model)
+    }
 
   def render(reconnected: Boolean) =
     div(
@@ -334,12 +330,11 @@ object Issue3819LiveView:
     case Noop(data: FormData)
 
 class Issue3107LiveView extends LiveView[Issue3107LiveView.Msg.type, Boolean]:
-  def mount = true
+  def mount(ctx: MountContext) =
+    true
 
-  def handleMessage(model: Boolean) =
-    case Issue3107LiveView.Msg => false
-
-  def subscriptions(model: Boolean) = ZStream.empty
+  def handleMessage(model: Boolean, ctx: MessageContext) =
+    (_: Issue3107LiveView.Msg.type) => false
 
   def render(disabledButton: Boolean) =
     form(
@@ -357,35 +352,34 @@ object Issue3107LiveView:
 class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083LiveView.Model]:
   import Issue3083LiveView.*
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  def handleMessage(model: Model) =
-    case Msg => model
+  def handleMessage(model: Model, ctx: MessageContext) =
+    (_: Msg.type) => model
 
-  override def interceptEvent(model: Model, event: String, value: Json) =
-    if event != "sandbox:eval" then ZIO.succeed(InterceptResult.cont(model))
-    else
-      val code = value match
-        case Json.Obj(fields) =>
-          fields.collectFirst { case ("value", Json.Str(v)) => v }.getOrElse("")
-        case _ => ""
-      val selected = code match
-        case value if value.contains("[1,2]") => Some(Vector(1, 2))
-        case value if value.contains("[2,3]") => Some(Vector(2, 3))
-        case value if value.contains("[3,4]") => Some(Vector(3, 4))
-        case _                                => None
+  override def hooks: LiveHooks[Msg.type, Model] =
+    LiveHooks.empty.rawEvent("sandbox") { (model, event, _) =>
+      if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
+      else
+        val code = event.value match
+          case Json.Obj(fields) =>
+            fields.collectFirst { case ("value", Json.Str(v)) => v }.getOrElse("")
+          case _ => ""
+        val selected = code match
+          case value if value.contains("[1,2]") => Some(Vector(1, 2))
+          case value if value.contains("[2,3]") => Some(Vector(2, 3))
+          case value if value.contains("[3,4]") => Some(Vector(3, 4))
+          case _                                => None
 
-      selected match
-        case Some(values) =>
-          ZIO.succeed(
-            InterceptResult.haltReply(
+        selected match
+          case Some(values) =>
+            LiveEventHookResult.haltReply(
               model.copy(selected = values),
               Json.Obj("result" -> Json.Null)
             )
-          )
-        case None => ZIO.succeed(E2ESandboxEval.handle(model, event, value))
-
-  def subscriptions(model: Model) = ZStream.empty
+          case None => E2ESandboxEval.handle(model, event.bindingId, event.value)
+    }
 
   def render(model: Model) =
     form(
@@ -414,16 +408,15 @@ object Issue3083LiveView:
 class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveView.Model]:
   import Issue2787LiveView.*
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Updated(data) =>
       val select1 = data.get("demo[select1]").filter(_.nonEmpty)
       val select2 = data.get("demo[select2]").filter(_.nonEmpty)
       model.copy(select1 = select1, select2 = select2)
     case Msg.Submitted(_) => Model()
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     div(
@@ -475,13 +468,12 @@ object Issue2787LiveView:
 class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
   import Issue3448LiveView.*
 
-  def mount = Vector.empty
+  def mount(ctx: MountContext) =
+    Vector.empty
 
-  def handleMessage(model: Vector[String]) =
+  def handleMessage(model: Vector[String], ctx: MessageContext) =
     case Msg.Validate(data) => data.values("a[]")
     case Msg.Search         => model
-
-  def subscriptions(model: Vector[String]) = ZStream.empty
 
   def render(selectedValues: Vector[String]) =
     form(
@@ -511,12 +503,11 @@ object Issue3448LiveView:
     case Search
 
 class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg.type, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) =
-    case Issue3194LiveView.Msg => model
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Issue3194LiveView.Msg.type) => model
 
   def render(model: Unit) =
     form(
@@ -534,11 +525,11 @@ object Issue3194LiveView:
   case object Msg
 
 class Issue3194OtherLiveView extends LiveView[Unit, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = Function.const(model)
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: Unit) = h2("Another LiveView")
 
@@ -547,19 +538,20 @@ class Issue3200LiveView extends LiveView[Issue3200LiveView.Msg, Issue3200LiveVie
 
   override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  override def handleParams(model: Model, params: Unit, url: URL) =
+  override def handleParams(model: Model, params: Unit, url: URL, ctx: ParamsContext) =
+    val _   = (params, ctx)
     val tab = url.path.segments.toList match
       case "issues" :: "3200" :: "messages" :: Nil => Tab.Messages
       case _                                       => Tab.Settings
     model.copy(tab = tab)
 
-  def handleMessage(model: Model) =
-    case Msg.Change(data) => model.copy(message = data.getOrElse("new_message", ""))
-    case Msg.Submit       => model
-
-  def subscriptions(model: Model) = ZStream.empty
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.Change(data) =>
+      model.copy(message = data.getOrElse("new_message", ""))
+    case Msg.Submit => model
 
   def render(model: Model) =
     div(
@@ -601,9 +593,10 @@ object Issue3200LiveView:
 class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveView.Model]:
   import Issue3026LiveView.*
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeStatus(data) =>
       model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
     case Msg.Validate(data) =>
@@ -612,8 +605,6 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
         email = data.getOrElse("email", model.email)
       )
     case Msg.Submit => model.copy(status = Status.Loaded)
-
-  def subscriptions(model: Model) = ZStream.empty
 
   def render(model: Model) =
     div(
@@ -661,11 +652,11 @@ object Issue3026LiveView:
     case Submit
 
 class Issue3117LiveView extends LiveView[Unit, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = Function.const(model)
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: Unit) =
     div(
@@ -683,12 +674,11 @@ class Issue3117LiveView extends LiveView[Unit, Unit]:
 class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
   import Issue3169LiveView.*
 
-  def mount = None
+  def mount(ctx: MountContext) =
+    None
 
-  def handleMessage(model: Option[String]) =
+  def handleMessage(model: Option[String], ctx: MessageContext) =
     case Msg.Select(name) => Some(name)
-
-  def subscriptions(model: Option[String]) = ZStream.empty
 
   def render(selected: Option[String]) =
     div(
@@ -737,11 +727,11 @@ object Issue3169LiveView:
     case Select(name: String)
 
 class Issue3378LiveView extends LiveView[Unit, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = Function.const(model)
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: Unit) =
     div(
@@ -754,11 +744,11 @@ class Issue3378LiveView extends LiveView[Unit, Unit]:
     )
 
 class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends LiveView[Unit, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = Function.const(model)
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: Unit) =
     div(
@@ -769,11 +759,11 @@ class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends Li
     )
 
 class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = Function.const(model)
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: Unit) =
     div(
@@ -785,11 +775,11 @@ class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
     )
 
 class Issue3636LiveView extends LiveView[Unit, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = Function.const(model)
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: Unit) =
     focusWrap("focus-wrap")(
@@ -799,11 +789,11 @@ class Issue3636LiveView extends LiveView[Unit, Unit]:
     )
 
 class Issue3651LiveView extends LiveView[Unit, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = Function.const(model)
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: Unit) =
     div(
@@ -814,12 +804,11 @@ class Issue3651LiveView extends LiveView[Unit, Unit]:
 class Issue3658LiveView extends LiveView[Issue3658LiveView.Msg, Unit]:
   import Issue3658LiveView.*
 
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) =
+  def handleMessage(model: Unit, ctx: MessageContext) =
     case Msg.Noop => model
-
-  def subscriptions(model: Unit) = ZStream.empty
 
   def render(model: Unit) =
     div(
@@ -834,12 +823,11 @@ object Issue3658LiveView:
 class Issue3656LiveView extends LiveView[Issue3656LiveView.Msg.type, Unit]:
   import Issue3656LiveView.*
 
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) =
-    case Msg => model
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Msg.type) => model
 
   def render(model: Unit) =
     navTag(
@@ -856,11 +844,11 @@ object Issue3656LiveView:
   case object Msg
 
 class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Unit]:
-  def mount = ()
+  def mount(ctx: MountContext) =
+    ()
 
-  def handleMessage(model: Unit) = Function.const(model)
-
-  def subscriptions(model: Unit) = ZStream.empty
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: Unit) =
     div(
@@ -878,12 +866,11 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Unit]:
 class Issue3684LiveView extends LiveView[Issue3684LiveView.Msg, Boolean]:
   import Issue3684LiveView.*
 
-  def mount = false
+  def mount(ctx: MountContext) =
+    false
 
-  def handleMessage(model: Boolean) =
+  def handleMessage(model: Boolean, ctx: MessageContext) =
     case Msg.Toggle => !model
-
-  def subscriptions(model: Boolean) = ZStream.empty
 
   def render(model: Boolean) =
     input(idAttr := "dewey", typ := "checkbox", checked := model, phx.onClick(Msg.Toggle))
@@ -895,14 +882,14 @@ object Issue3684LiveView:
 class Issue3686LiveView(pageName: String, flash: String) extends LiveView[Unit, String]:
   override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
-  def mount = flash
+  def mount(ctx: MountContext) =
+    flash
 
-  override def handleParams(model: String, params: Unit, url: URL) =
+  override def handleParams(model: String, params: Unit, url: URL, ctx: ParamsContext) =
     if pageName == "A" && url.encode.contains("from=c") then "Flash from C" else model
 
-  def handleMessage(model: String) = Function.const(model)
-
-  def subscriptions(model: String) = ZStream.empty
+  def handleMessage(model: String, ctx: MessageContext) =
+    (_: Unit) => model
 
   def render(model: String) =
     val next = pageName match
@@ -920,12 +907,11 @@ class Issue3686LiveView(pageName: String, flash: String) extends LiveView[Unit, 
 class Issue3709LiveView(id: Int) extends LiveView[Issue3709LiveView.Msg, Int]:
   import Issue3709LiveView.*
 
-  def mount = id
+  def mount(ctx: MountContext) =
+    id
 
-  def handleMessage(model: Int) =
+  def handleMessage(model: Int, ctx: MessageContext) =
     case Msg.BreakStuff => model
-
-  def subscriptions(model: Int) = ZStream.empty
 
   def render(model: Int) =
     div(
@@ -941,12 +927,11 @@ object Issue3709LiveView:
 class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Boolean]:
   import Issue3919LiveView.*
 
-  def mount = false
+  def mount(ctx: MountContext) =
+    false
 
-  def handleMessage(model: Boolean) =
+  def handleMessage(model: Boolean, ctx: MessageContext) =
     case Msg.Toggle => !model
-
-  def subscriptions(model: Boolean) = ZStream.empty
 
   def render(model: Boolean) =
     div(
@@ -964,12 +949,12 @@ object Issue3919LiveView:
 class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Set[String]]:
   import Issue3941LiveView.*
 
-  def mount = Set("Item_1", "Item_2")
+  def mount(ctx: MountContext) =
+    Set("Item_1", "Item_2")
 
-  def handleMessage(model: Set[String]) =
-    case Msg.Toggle(id) => if model.contains(id) then model - id else model + id
-
-  def subscriptions(model: Set[String]) = ZStream.empty
+  def handleMessage(model: Set[String], ctx: MessageContext) =
+    case Msg.Toggle(id) =>
+      if model.contains(id) then model - id else model + id
 
   def render(model: Set[String]) =
     div(
@@ -994,12 +979,11 @@ object Issue3941LiveView:
 class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
   import Issue3953LiveView.*
 
-  def mount = false
+  def mount(ctx: MountContext) =
+    false
 
-  def handleMessage(model: Boolean) =
+  def handleMessage(model: Boolean, ctx: MessageContext) =
     case Msg.Toggle => !model
-
-  def subscriptions(model: Boolean) = ZStream.empty
 
   def render(model: Boolean) =
     div(

@@ -2,29 +2,29 @@ import scala.util.Random
 
 import KeyedComprehensionLiveView.*
 import zio.http.URL
-import zio.json.ast.Json
 import zio.schema.Schema
 import zio.schema.derived
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
 
-  def mount =
+  def mount(ctx: MountContext) =
     Model(
       activeTab = "all_keyed",
       items = randomItems(10),
       count = 10
     )
 
-  override def handleParams(model: Model, params: UrlParams, _url: URL) =
+  override def handleParams(model: Model, params: UrlParams, _url: URL, ctx: ParamsContext) =
+    val _   = ctx
     val tab = params.tab.getOrElse("all_keyed")
     model.copy(activeTab = normalizeTab(tab))
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Randomize => model.copy(items = randomItems(model.items.size))
 
   def render(model: Model) =
@@ -105,10 +105,10 @@ class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
-
-  override def interceptEvent(model: Model, event: String, value: Json) =
-    E2ESandboxEval.handle(model, event, value)
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("sandbox") { (model, event, _) =>
+      E2ESandboxEval.handle(model, event.bindingId, event.value)
+    }
 
   private def normalizeTab(tab: String): String =
     tab match

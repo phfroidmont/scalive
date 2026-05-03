@@ -4,9 +4,9 @@ import zio.*
 import zio.http.URL
 import zio.http.codec.HttpCodec
 import zio.json.ast.Json
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
 class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model]:
@@ -16,11 +16,11 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
 
   private val onlyChild = htmlAttr("only-child", BooleanAsAttrPresenceEncoder)
 
-  def mount =
+  def mount(ctx: MountContext) =
     for
-      users          <- LiveContext.stream(UsersStreamDef, InitialUsers)
-      admins         <- LiveContext.stream(AdminsStreamDef, InitialAdmins)
-      componentUsers <- LiveContext.stream(ComponentUsersStreamDef, InitialUsers)
+      users          <- ctx.streams.init(UsersStreamDef, InitialUsers)
+      admins         <- ctx.streams.init(AdminsStreamDef, InitialAdmins)
+      componentUsers <- ctx.streams.init(ComponentUsersStreamDef, InitialUsers)
     yield Model(
       users = users,
       admins = admins,
@@ -29,23 +29,26 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
       extraItemWithId = false
     )
 
-  override def handleParams(model: Model, params: Option[String], _url: URL) =
+  override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
     model.copy(extraItemWithId = params.isDefined)
 
-  def handleMessage(model: Model) = msg => handle(model, msg)
+  def handleMessage(model: Model, ctx: MessageContext) =
+    (msg: Msg) => handle(model, msg, ctx.streams)
 
-  override def interceptEvent(model: Model, event: String, value: Json) =
-    if event != "sandbox:eval" then ZIO.succeed(InterceptResult.cont(model))
-    else
-      evalCode(value) match
-        case "socket.view.handle_event(\"reset-users\", %{}, socket)" =>
-          handle(model, Msg.ResetUsers)
-            .map(next => InterceptResult.haltReply(next, Json.Obj("result" -> Json.Null)))
-        case "socket.view.handle_event(\"append-users\", %{}, socket)" =>
-          handle(model, Msg.AppendUsers)
-            .map(next => InterceptResult.haltReply(next, Json.Obj("result" -> Json.Null)))
-        case _ =>
-          ZIO.succeed(E2ESandboxEval.handle(model, event, value))
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("sandbox") { (model, event, ctx) =>
+      if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
+      else
+        evalCode(event.value) match
+          case "socket.view.handle_event(\"reset-users\", %{}, socket)" =>
+            handle(model, Msg.ResetUsers, ctx.streams)
+              .map(next => LiveEventHookResult.haltReply(next, Json.Obj("result" -> Json.Null)))
+          case "socket.view.handle_event(\"append-users\", %{}, socket)" =>
+            handle(model, Msg.AppendUsers, ctx.streams)
+              .map(next => LiveEventHookResult.haltReply(next, Json.Obj("result" -> Json.Null)))
+          case _ =>
+            E2ESandboxEval.handle(model, event.bindingId, event.value)
+    }
 
   def render(model: Model) =
     div(
@@ -170,15 +173,12 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
-
-  private def handle(model: Model, msg: Msg): RIO[LiveContext.HasStreams, Model] =
+  private def handle(model: Model, msg: Msg, streams: Streams): LiveIO[Model] =
     msg match
       case Msg.DeleteUser(domId) =>
-        LiveContext
-          .streamDeleteByDomId(UsersStreamDef, domId).map(users => model.copy(users = users))
+        streams.deleteByDomId(UsersStreamDef, domId).map(users => model.copy(users = users))
       case Msg.UpdateUser(domId) =>
-        updateUserInStream(model, domId, UsersPrefix, UsersStreamDef)(users =>
+        updateUserInStream(model, domId, UsersPrefix, UsersStreamDef, streams)(users =>
           model.copy(users = users)
         )
       case Msg.MoveUserToFirst(domId) =>
@@ -187,7 +187,8 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
           domId,
           UsersPrefix,
           UsersStreamDef,
-          StreamAt.First
+          StreamAt.First,
+          streams
         )(users => model.copy(users = users))
       case Msg.MoveUserToLast(domId) =>
         moveUserInStream(
@@ -195,13 +196,13 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
           domId,
           UsersPrefix,
           UsersStreamDef,
-          StreamAt.Last
+          StreamAt.Last,
+          streams
         )(users => model.copy(users = users))
       case Msg.DeleteAdmin(domId) =>
-        LiveContext
-          .streamDeleteByDomId(AdminsStreamDef, domId).map(admins => model.copy(admins = admins))
+        streams.deleteByDomId(AdminsStreamDef, domId).map(admins => model.copy(admins = admins))
       case Msg.UpdateAdmin(domId) =>
-        updateUserInStream(model, domId, AdminsPrefix, AdminsStreamDef)(admins =>
+        updateUserInStream(model, domId, AdminsPrefix, AdminsStreamDef, streams)(admins =>
           model.copy(admins = admins)
         )
       case Msg.MoveAdminToFirst(domId) =>
@@ -210,7 +211,8 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
           domId,
           AdminsPrefix,
           AdminsStreamDef,
-          StreamAt.First
+          StreamAt.First,
+          streams
         )(admins => model.copy(admins = admins))
       case Msg.MoveAdminToLast(domId) =>
         moveUserInStream(
@@ -218,15 +220,16 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
           domId,
           AdminsPrefix,
           AdminsStreamDef,
-          StreamAt.Last
+          StreamAt.Last,
+          streams
         )(admins => model.copy(admins = admins))
       case Msg.DeleteComponentUser(domId) =>
-        LiveContext
-          .streamDeleteByDomId(ComponentUsersStreamDef, domId).map(componentUsers =>
+        streams
+          .deleteByDomId(ComponentUsersStreamDef, domId).map(componentUsers =>
             model.copy(componentUsers = componentUsers)
           )
       case Msg.UpdateComponentUser(domId) =>
-        updateUserInStream(model, domId, ComponentUsersPrefix, ComponentUsersStreamDef)(
+        updateUserInStream(model, domId, ComponentUsersPrefix, ComponentUsersStreamDef, streams)(
           componentUsers => model.copy(componentUsers = componentUsers)
         )
       case Msg.MoveComponentUserToFirst(domId) =>
@@ -235,7 +238,8 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
           domId,
           ComponentUsersPrefix,
           ComponentUsersStreamDef,
-          StreamAt.First
+          StreamAt.First,
+          streams
         )(componentUsers => model.copy(componentUsers = componentUsers))
       case Msg.MoveComponentUserToLast(domId) =>
         moveUserInStream(
@@ -243,15 +247,16 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
           domId,
           ComponentUsersPrefix,
           ComponentUsersStreamDef,
-          StreamAt.Last
+          StreamAt.Last,
+          streams
         )(componentUsers => model.copy(componentUsers = componentUsers))
       case Msg.ResetUsers =>
-        LiveContext
-          .stream(UsersStreamDef, Nil, reset = true)
+        streams
+          .init(UsersStreamDef, Nil, reset = true)
           .map(users => model.copy(users = users, count = model.count + 1))
       case Msg.ReorderUsers =>
-        LiveContext
-          .stream(
+        streams
+          .init(
             UsersStreamDef,
             List(
               User("3", "peter"),
@@ -262,8 +267,8 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
           )
           .map(users => model.copy(users = users, count = model.count + 1))
       case Msg.AppendUsers =>
-        LiveContext
-          .stream(
+        streams
+          .init(
             UsersStreamDef,
             AppendUsers,
             at = StreamAt.Last
@@ -274,38 +279,40 @@ class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model
     model: Model,
     domId: String,
     prefix: String,
-    definition: LiveStreamDef[User]
+    definition: LiveStreamDef[User],
+    streams: Streams
   )(
     setStream: LiveStream[User] => Model
-  ): RIO[LiveContext.HasStreams, Model] =
+  ): LiveIO[Model] =
     domIdToUserId(prefix, domId) match
       case Some(id) =>
-        LiveContext
-          .streamInsert(definition, User(id, "updated"))
+        streams
+          .insert(definition, User(id, "updated"))
           .map(setStream)
-      case None => ZIO.succeed(model)
+      case None => model
 
   private def moveUserInStream(
     model: Model,
     domId: String,
     prefix: String,
     definition: LiveStreamDef[User],
-    at: StreamAt
+    at: StreamAt,
+    streams: Streams
   )(
     setStream: LiveStream[User] => Model
-  ): RIO[LiveContext.HasStreams, Model] =
+  ): LiveIO[Model] =
     domIdToUserId(prefix, domId) match
       case Some(id) =>
-        LiveContext
-          .streamDeleteByDomId(definition, domId) *>
-          LiveContext
-            .streamInsert(
+        streams
+          .deleteByDomId(definition, domId) *>
+          streams
+            .insert(
               definition,
               User(id, "updated"),
               at = at
             )
             .map(setStream)
-      case None => ZIO.succeed(model)
+      case None => model
 
   private def evalCode(value: Json): String =
     value match
@@ -375,18 +382,19 @@ class HealthyLiveView(initialCategory: String)
     extends LiveView[HealthyLiveView.Msg, HealthyLiveView.Model]:
   import HealthyLiveView.*
 
-  def mount =
+  def mount(ctx: MountContext) =
     val category = normalizeCategory(initialCategory)
-    LiveContext
-      .stream(ItemsStreamDef, itemsFor(category))
+    ctx.streams
+      .init(ItemsStreamDef, itemsFor(category))
       .map(items => Model(category = category, items = items))
 
-  def handleMessage(model: Model) = _ => model
+  def handleMessage(model: Model, ctx: MessageContext) =
+    (_: Msg) => model
 
-  override def handleParams(model: Model, _query: queryCodec.Out, url: URL) =
+  override def handleParams(model: Model, _query: queryCodec.Out, url: URL, ctx: ParamsContext) =
     val category = normalizeCategory(categoryFromUrl(url))
-    LiveContext
-      .stream(
+    ctx.streams
+      .init(
         ItemsStreamDef,
         itemsFor(category),
         reset = true
@@ -411,7 +419,6 @@ class HealthyLiveView(initialCategory: String)
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
 end HealthyLiveView
 
 object HealthyLiveView:
@@ -449,46 +456,46 @@ class StreamResetLiveView() extends LiveView[StreamResetLiveView.Msg, StreamRese
 
   override val queryCodec: LiveQueryCodec[Option[String]] = ParamsCodec
 
-  def mount =
-    LiveContext
-      .stream(ItemsStreamDef, InitialItems)
+  def mount(ctx: MountContext) =
+    ctx.streams
+      .init(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items, usePhxRemove = false))
 
-  override def handleParams(model: Model, params: Option[String], _url: URL) =
+  override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
     model.copy(usePhxRemove = params.isDefined)
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Filter =>
-      LiveContext
-        .stream(ItemsStreamDef, FilteredItems, reset = true)
+      ctx.streams
+        .init(ItemsStreamDef, FilteredItems, reset = true)
         .map(items => model.copy(items = items))
     case Msg.Reorder =>
-      LiveContext
-        .stream(ItemsStreamDef, ReorderedItems, reset = true)
+      ctx.streams
+        .init(ItemsStreamDef, ReorderedItems, reset = true)
         .map(items => model.copy(items = items))
     case Msg.Reset =>
-      LiveContext
-        .stream(ItemsStreamDef, InitialItems, reset = true)
+      ctx.streams
+        .init(ItemsStreamDef, InitialItems, reset = true)
         .map(items => model.copy(items = items))
     case Msg.Prepend =>
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           randomItem(),
           at = StreamAt.First
         )
         .map(items => model.copy(items = items))
     case Msg.Append =>
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           randomItem(),
           at = StreamAt.Last
         )
         .map(items => model.copy(items = items))
     case Msg.BulkInsert =>
-      LiveContext
-        .stream(
+      ctx.streams
+        .init(
           ItemsStreamDef,
           List(
             Item("g", "G"),
@@ -499,56 +506,56 @@ class StreamResetLiveView() extends LiveView[StreamResetLiveView.Msg, StreamRese
         )
         .map(items => model.copy(items = items))
     case Msg.InsertAtOne =>
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           randomItem(),
           at = StreamAt.Index(1)
         )
         .map(items => model.copy(items = items))
     case Msg.InsertExistingAtOne =>
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           Item("c", "C"),
           at = StreamAt.Index(1)
         )
         .map(items => model.copy(items = items))
     case Msg.DeleteInsertExistingAtOne =>
-      (LiveContext
-        .streamDeleteByDomId(ItemsStreamDef, "items-c") *>
-        LiveContext.streamInsert(
+      (ctx.streams
+        .deleteByDomId(ItemsStreamDef, "items-c") *>
+        ctx.streams.insert(
           ItemsStreamDef,
           Item("c", "C"),
           at = StreamAt.Index(1)
         )).map(items => model.copy(items = items))
     case Msg.PrependExisting =>
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           Item("c", "C"),
           at = StreamAt.First
         )
         .map(items => model.copy(items = items))
     case Msg.AppendExisting =>
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           Item("c", "C"),
           at = StreamAt.Last
         )
         .map(items => model.copy(items = items))
     case Msg.NewUpdateOnly =>
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           Item("e", "E"),
           updateOnly = true
         )
         .map(items => model.copy(items = items))
     case Msg.ExistingUpdateOnly =>
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           Item("c", s"C ${UUID.randomUUID().toString}"),
           updateOnly = true
@@ -574,8 +581,6 @@ class StreamResetLiveView() extends LiveView[StreamResetLiveView.Msg, StreamRese
       button(phx.onClick(Msg.NewUpdateOnly), "Add E (update only)"),
       button(phx.onClick(Msg.ExistingUpdateOnly), "Update C (update only)")
     )
-
-  def subscriptions(model: Model) = ZStream.empty
 
   private def streamList(model: Model, withPhxRemove: Boolean): HtmlElement[Msg] =
     ul(
@@ -650,15 +655,15 @@ class StreamResetLCLiveView
     extends LiveView[StreamResetLCLiveView.Msg, StreamResetLCLiveView.Model]:
   import StreamResetLCLiveView.*
 
-  def mount =
-    LiveContext
-      .stream(ItemsStreamDef, InitialItems)
+  def mount(ctx: MountContext) =
+    ctx.streams
+      .init(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items))
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Reorder =>
-      LiveContext
-        .stream(ItemsStreamDef, ReorderedItems, reset = true)
+      ctx.streams
+        .init(ItemsStreamDef, ReorderedItems, reset = true)
         .map(items => model.copy(items = items))
 
   def render(model: Model) =
@@ -675,9 +680,6 @@ class StreamResetLCLiveView
       ),
       button(phx.onClick(Msg.Reorder), "Reorder")
     )
-
-  def subscriptions(model: Model) = ZStream.empty
-end StreamResetLCLiveView
 
 object StreamResetLCLiveView:
   final case class Item(id: String, name: String)
@@ -705,11 +707,11 @@ object StreamResetLCLiveView:
 class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitLiveView.Model]:
   import StreamLimitLiveView.*
 
-  def mount =
+  def mount(ctx: MountContext) =
     val initialAt    = -1
     val initialLimit = -5
-    LiveContext
-      .stream(
+    ctx.streams
+      .init(
         ItemsStreamDef,
         (1 to 10).toList.map(Item.apply),
         at = streamAt(initialAt),
@@ -724,12 +726,12 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         )
       )
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Configure(atRaw, limitRaw) =>
       val nextAt    = parseIntOrDefault(atRaw, model.at)
       val nextLimit = parseIntOrDefault(limitRaw, model.limit)
-      LiveContext
-        .stream(
+      ctx.streams
+        .init(
           ItemsStreamDef,
           (1 to 10).toList.map(Item.apply),
           at = streamAt(nextAt),
@@ -739,8 +741,8 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         .map(items => model.copy(items = items, at = nextAt, limit = nextLimit, lastId = 10))
     case Msg.Insert10 =>
       val items = (1 to 10).toList.map(index => Item(model.lastId + index))
-      LiveContext
-        .stream(
+      ctx.streams
+        .init(
           ItemsStreamDef,
           items,
           at = streamAt(model.at),
@@ -749,8 +751,8 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         .map(nextItems => model.copy(items = nextItems, lastId = model.lastId + 10))
     case Msg.Insert1 =>
       val item = Item(model.lastId + 1)
-      LiveContext
-        .streamInsert(
+      ctx.streams
+        .insert(
           ItemsStreamDef,
           item,
           at = streamAt(model.at),
@@ -758,8 +760,8 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         )
         .map(nextItems => model.copy(items = nextItems, lastId = model.lastId + 1))
     case Msg.Clear =>
-      LiveContext
-        .stream(
+      ctx.streams
+        .init(
           ItemsStreamDef,
           Nil,
           reset = true
@@ -816,8 +818,6 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
-
   private def parseIntOrDefault(raw: String, default: Int): Int =
     raw.toIntOption.getOrElse(default)
 end StreamLimitLiveView
@@ -851,20 +851,20 @@ class StreamNestedComponentResetLiveView
     ]:
   import StreamNestedComponentResetLiveView.*
 
-  def mount =
+  def mount(ctx: MountContext) =
     for
-      a     <- buildParentItem("a", "A")
-      b     <- buildParentItem("b", "B")
-      c     <- buildParentItem("c", "C")
-      d     <- buildParentItem("d", "D")
-      items <- LiveContext.stream(ItemsStreamDef, List(a, b, c, d))
+      a     <- buildParentItem("a", "A", ctx.streams)
+      b     <- buildParentItem("b", "B", ctx.streams)
+      c     <- buildParentItem("c", "C", ctx.streams)
+      d     <- buildParentItem("d", "D", ctx.streams)
+      items <- ctx.streams.init(ItemsStreamDef, List(a, b, c, d))
     yield Model(items = items)
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ReorderNested(id) =>
-      reorderNested(model, id)
+      reorderNested(model, id, ctx.streams)
     case Msg.ReorderParents =>
-      reorderParents(model)
+      reorderParents(model, ctx.streams)
 
   def render(model: Model) =
     div(
@@ -900,16 +900,15 @@ class StreamNestedComponentResetLiveView
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
-
   private def reorderNested(
     model: Model,
-    id: String
-  ): RIO[LiveContext.HasStreams, Model] =
-    if id.isEmpty then ZIO.succeed(model)
+    id: String,
+    streams: Streams
+  ): LiveIO[Model] =
+    if id.isEmpty then model
     else
       for
-        nested <- LiveContext.stream(
+        nested <- streams.init(
                     nestedStreamDef(id),
                     reorderedNestedItems,
                     reset = true
@@ -917,24 +916,24 @@ class StreamNestedComponentResetLiveView
         maybeCurrent = model.items.entries.find(_.value.id == id).map(_.value)
         current <- maybeCurrent match
                      case Some(value) => ZIO.succeed(value)
-                     case None        => buildParentItem(id, id.toUpperCase)
+                     case None        => buildParentItem(id, id.toUpperCase, streams)
         updatedParent = current.copy(nested = nested)
-        items <- LiveContext.streamInsert(
+        items <- streams.insert(
                    ItemsStreamDef,
                    updatedParent,
                    updateOnly = true
                  )
       yield model.copy(items = items)
 
-  private def reorderParents(model: Model): RIO[LiveContext.HasStreams, Model] =
+  private def reorderParents(model: Model, streams: Streams): LiveIO[Model] =
     for
       parentA <- model.items.entries.find(_.value.id == "a").map(_.value) match
                    case Some(value) => ZIO.succeed(value)
-                   case None        => buildParentItem("a", "A")
-      parentE <- buildParentItem("e", "E")
-      parentF <- buildParentItem("f", "F")
-      parentG <- buildParentItem("g", "G")
-      items   <- LiveContext.stream(
+                   case None        => buildParentItem("a", "A", streams)
+      parentE <- buildParentItem("e", "E", streams)
+      parentF <- buildParentItem("f", "F", streams)
+      parentG <- buildParentItem("g", "G", streams)
+      items   <- streams.init(
                  ItemsStreamDef,
                  List(parentE, parentA, parentF, parentG),
                  reset = true
@@ -943,10 +942,11 @@ class StreamNestedComponentResetLiveView
 
   private def buildParentItem(
     id: String,
-    name: String
-  ): RIO[LiveContext.HasStreams, ParentItem] =
-    LiveContext
-      .stream(nestedStreamDef(id), defaultNestedItems)
+    name: String,
+    streams: Streams
+  ): LiveIO[ParentItem] =
+    streams
+      .init(nestedStreamDef(id), defaultNestedItems)
       .map(nested => ParentItem(id = id, name = name, nested = nested))
 end StreamNestedComponentResetLiveView
 
@@ -986,12 +986,13 @@ class StreamInsideForLiveView
     extends LiveView[StreamInsideForLiveView.Msg, StreamInsideForLiveView.Model]:
   import StreamInsideForLiveView.*
 
-  def mount =
-    LiveContext
-      .stream(ItemsStreamDef, InitialItems)
+  def mount(ctx: MountContext) =
+    ctx.streams
+      .init(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items))
 
-  def handleMessage(model: Model) = _ => model
+  def handleMessage(model: Model, ctx: MessageContext) =
+    (_: Msg) => model
 
   def render(model: Model) =
     div(
@@ -1008,8 +1009,6 @@ class StreamInsideForLiveView
         )
       )
     )
-
-  def subscriptions(model: Model) = ZStream.empty
 
 object StreamInsideForLiveView:
   final case class Item(id: String, name: String)

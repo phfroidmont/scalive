@@ -66,7 +66,6 @@ private[scalive] object SocketUploadProtocol:
                                               .preflight(
                                                 SocketUploadShared.toExternalUploadEntry(entryState)
                                               )
-                                              .provide(ZLayer.succeed(state.ctx))
                                               .either
                                               .map {
                                                 case Right(LiveExternalUploadResult.Ok(meta))

@@ -1,19 +1,20 @@
 import TodoLiveView.*
 import zio.*
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class TodoLiveView() extends LiveView[Msg, Model]:
 
-  def mount = Model(
-    List(
-      Todo(99, "Buy eggs"),
-      Todo(1, "Wash dishes", true)
+  def mount(ctx: MountContext) =
+    Model(
+      List(
+        Todo(99, "Buy eggs"),
+        Todo(1, "Wash dishes", true)
+      )
     )
-  )
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Add(text) =>
       val nextId = model.items.maxByOption(_.id).map(_.id).getOrElse(1) + 1
       model.copy(items = model.items.appended(Todo(nextId, text)))
@@ -125,7 +126,6 @@ class TodoLiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  def subscriptions(model: Model) = ZStream.empty
 end TodoLiveView
 
 object TodoLiveView:

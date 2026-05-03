@@ -52,8 +52,8 @@ private[scalive] object SocketOutbound:
   private def serverEventStream[Msg, Model](
     state: RuntimeState[Msg, Model]
   ): ZStream[Any, Nothing, (ServerEvent[Msg], WebSocketMessage.Meta)] =
-    val messages = (ZStream.fromZIO(state.lvStreamRef.get) ++ state.lvStreamRef.changes)
-      .flatMapParSwitch(1, 1)(identity)
+    val messages = SocketSubscriptionRuntime
+      .stream(state.subscriptionsRef)
       .map(ServerEvent.Message(_) -> state.meta.copy(messageRef = None, eventType = "diff"))
     val async = ZStream
       .fromQueue(state.asyncQueue)
@@ -83,9 +83,8 @@ private[scalive] object SocketOutbound:
         SocketModelRuntime.captureNavigation(state)(
           runMessageHooks(currentModel, msg, hookStage, state.ctx).flatMap {
             case LiveHookResult.Continue(hookModel) =>
-              LiveIO
-                .toZIO(state.lv.handleMessage(hookModel)(msg))
-                .provide(ZLayer.succeed(state.ctx))
+              state.lv
+                .handleMessage(hookModel, state.ctx.messageContext[Msg, Model])(msg)
                 .map(LiveHookResult.Continue(_))
             case halt @ LiveHookResult.Halt(_) => ZIO.succeed(halt)
           }
@@ -96,7 +95,6 @@ private[scalive] object SocketOutbound:
                  case Some(command) =>
                    state.patchRedirectCountRef.set(0) *>
                      SocketInbound.handleNavigationCommand(
-                       rendered,
                        hookModel,
                        command,
                        meta,
@@ -114,7 +112,6 @@ private[scalive] object SocketOutbound:
                  case Some(command) =>
                    state.patchRedirectCountRef.set(0) *>
                      SocketInbound.handleNavigationCommand(
-                       rendered,
                        hookModel,
                        command,
                        meta,
@@ -143,7 +140,7 @@ private[scalive] object SocketOutbound:
       case MessageHookStage.Info =>
         ctx.hooks.runInfo(model, msg, ctx)
       case MessageHookStage.Async(name) =>
-        ctx.hooks.runAsync(model, msg, LiveAsyncEvent(name), ctx)
+        ctx.hooks.runAsync(model, LiveAsyncEvent(name, LiveAsyncResult.Succeeded(msg)), ctx)
 
   private def handleAsyncCompletion[Msg, Model](
     completion: LiveAsyncCompletion,
@@ -153,47 +150,70 @@ private[scalive] object SocketOutbound:
     completion.owner match
       case LiveAsyncOwner.Root =>
         completion.event match
-          case LiveAsyncCompletionEvent.Message(name, message) =>
+          case LiveAsyncCompletionEvent.Succeeded(name, message) =>
             state.msgClassTag.unapply(message) match
               case Some(msg) => handleServerMsg(msg, meta, state, MessageHookStage.Async(name))
               case None      =>
                 ZIO.logWarning(
                   s"Ignoring async message ${message.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"
                 )
-          case LiveAsyncCompletionEvent.Assign(update) =>
-            for
-              (currentModel, rendered) <- state.ref.get
-              updatedModel = update(currentModel).asInstanceOf[Model]
-              diff <- SocketModelRuntime.updateModelAndSubscriptions(
-                        rendered,
-                        updatedModel,
-                        state
-                      )
-              _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
-              _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
-            yield ()
+          case LiveAsyncCompletionEvent.Failed(name, cause) =>
+            handleAsyncFailure(name, cause, meta, state)
       case LiveAsyncOwner.Component(cid) =>
         completion.event match
-          case LiveAsyncCompletionEvent.Message(_, message) =>
+          case LiveAsyncCompletionEvent.Succeeded(name, message) =>
             for
               (_, rendered) <- state.ref.get
-              _             <- SocketComponentRuntime.handleComponentServerMessage(
+              _             <- SocketComponentRuntime.handleComponentAsyncSuccess(
                      cid,
+                     name,
                      message,
                      rendered,
                      meta,
                      state
                    )
             yield ()
-          case LiveAsyncCompletionEvent.Assign(update) =>
+          case LiveAsyncCompletionEvent.Failed(name, cause) =>
             for
               (_, rendered) <- state.ref.get
-              _             <- SocketComponentRuntime.handleComponentAssign(
+              _             <- SocketComponentRuntime.handleComponentAsyncFailure(
                      cid,
-                     update,
+                     name,
+                     cause,
                      rendered,
                      meta,
                      state
                    )
             yield ()
+
+  private def handleAsyncFailure[Msg, Model](
+    name: String,
+    cause: Throwable,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    for
+      (currentModel, rendered)   <- state.ref.get
+      (updatedModel, navigation) <-
+        SocketModelRuntime.captureNavigation(state)(
+          state.ctx.hooks.runAsync(
+            currentModel,
+            LiveAsyncEvent(name, LiveAsyncResult.Failed(cause)),
+            state.ctx
+          )
+        )
+      model = updatedModel match
+                case LiveHookResult.Continue(value) => value
+                case LiveHookResult.Halt(value)     => value
+      _ <- navigation match
+             case Some(command) =>
+               state.patchRedirectCountRef.set(0) *>
+                 SocketInbound.handleNavigationCommand(model, command, meta, state)
+             case None =>
+               for
+                 diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
+                 _    <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+                 _    <- SocketFlashRuntime.resetNavigation(state.flashRef)
+               yield ()
+    yield ()
 end SocketOutbound

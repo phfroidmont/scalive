@@ -2,16 +2,16 @@ package scalive
 
 import zio.*
 import zio.http.*
-import zio.stream.ZStream
 import zio.test.*
 
 object LiveRoutesValidationSpec extends ZIOSpecDefault:
 
   private def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
-    def mount = ZIO.unit
-    def handleMessage(model: Unit) = _ => ZIO.unit
+    def mount(ctx: MountContext) =
+      ZIO.unit
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      (_: Unit) => ZIO.unit
     def render(model: Unit): HtmlElement[Unit] = div()
-    def subscriptions(model: Unit) = ZStream.empty
 
   override def spec = suite("LiveRoutesValidationSpec")(
     test("duplicate live route paths fail fast") {
@@ -78,13 +78,11 @@ object LiveRoutesValidationSpec extends ZIOSpecDefault:
         import scalive.*
         import zio.*
         import zio.http.*
-        import zio.stream.ZStream
 
         def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
-          def mount = ZIO.unit
-          def handleMessage(model: Unit) = _ => ZIO.unit
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
           def render(model: Unit): HtmlElement[Unit] = div()
-          def subscriptions(model: Unit) = ZStream.empty
 
         val routes = scalive.Live.router(
           scalive.live(Method.POST / "submit")(view)
@@ -98,13 +96,11 @@ object LiveRoutesValidationSpec extends ZIOSpecDefault:
         import scalive.*
         import zio.*
         import zio.http.*
-        import zio.stream.ZStream
 
         def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
-          def mount = ZIO.unit
-          def handleMessage(model: Unit) = _ => ZIO.unit
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
           def render(model: Unit): HtmlElement[Unit] = div()
-          def subscriptions(model: Unit) = ZStream.empty
 
         val routes = scalive.Live.router(
           scalive.Live.session("admin")(

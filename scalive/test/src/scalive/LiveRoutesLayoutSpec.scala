@@ -6,7 +6,6 @@ import zio.*
 import zio.http.*
 import zio.http.codec.PathCodec
 import zio.json.*
-import zio.stream.ZStream
 import zio.test.*
 
 import scalive.WebSocketMessage.JoinErrorReason
@@ -23,10 +22,11 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
   final private case class Org(name: String)
 
   private def view(text: String) = new LiveView[Unit, Unit]:
-    def mount                                  = ZIO.unit
-    def handleMessage(model: Unit)             = _ => ZIO.unit
+    def mount(ctx: MountContext) =
+      ZIO.unit
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      (_: Unit) => ZIO.unit
     def render(model: Unit): HtmlElement[Unit] = div(idAttr := "view", text)
-    def subscriptions(model: Unit)             = ZStream.empty
 
   private def runtimeFor(route: LiveRouteFragment[Any, Any], tokenConfig: TokenConfig) =
     new LiveRoutesRuntime[Any](

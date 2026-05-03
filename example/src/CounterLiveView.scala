@@ -4,16 +4,22 @@ import zio.*
 import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class CounterLiveView() extends LiveView[Msg, Model]:
 
-  def mount =
-    Model(
-      isVisible = true,
-      counter = 0
-    )
+  def mount(ctx: MountContext) =
+    ctx.subscriptions
+      .start("counter")(
+        ZStream.tick(1.second).map(_ => Msg.IncCounter).drop(1)
+      ).as(
+        Model(
+          isVisible = true,
+          counter = 0
+        )
+      )
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ToggleCounter =>
       model.focus(_.isVisible).modify(!_)
     case Msg.IncCounter =>
@@ -61,9 +67,6 @@ class CounterLiveView() extends LiveView[Msg, Model]:
         else ""
       )
     )
-
-  def subscriptions(model: Model) =
-    ZStream.tick(1.second).map(_ => Msg.IncCounter).drop(1)
 
 end CounterLiveView
 

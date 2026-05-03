@@ -1,17 +1,17 @@
 package scalive
 
+import scala.language.implicitConversions
+
 import zio.*
 
-opaque type LiveIO[-R, +A] = RIO[R, A]
+type LiveIO[+A] = Task[A]
 
 object LiveIO:
-  def pure[A](value: A): LiveIO[Any, A] =
+  def succeed[A](value: A): LiveIO[A] =
     ZIO.succeed(value)
 
-  given pureConversion[R, A]: Conversion[A, LiveIO[R, A]] =
-    value => ZIO.succeed(value)
+  def fail[A](error: Throwable): LiveIO[A] =
+    ZIO.fail(error)
 
-  given effectConversion[R, A]: Conversion[RIO[R, A], LiveIO[R, A]] =
-    effect => effect
-
-  private[scalive] def toZIO[R, A](value: LiveIO[R, A]): RIO[R, A] = value
+  given [A]: Conversion[A, LiveIO[A]] =
+    ZIO.succeed(_)

@@ -1,15 +1,16 @@
 import ColocatedLiveView.*
-import zio.stream.ZStream
 
 import scalive.*
+import scalive.LiveIO.given
 
 class ColocatedLiveView extends LiveView[Msg, Model]:
 
-  def mount = Model()
+  def mount(ctx: MountContext) =
+    Model()
 
-  def handleMessage(model: Model) =
+  def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.SubmitPhone(phone) => model.copy(phone = phone)
-    case Msg.PushJs             => LiveContext.pushJs(JS.toggle(to = "#hello")).as(model)
+    case Msg.PushJs             => ctx.client.exec(JS.toggle(to = "#hello")).as(model)
 
   def render(model: Model) =
     div(
@@ -42,8 +43,6 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
           |""".stripMargin
       )
     )
-
-  def subscriptions(model: Model) = ZStream.empty
 end ColocatedLiveView
 
 object ColocatedLiveView:

@@ -29,5 +29,14 @@ object StaticTrackingSpec extends ZIOSpecDefault:
         StaticTracking.staticChanged(Some(List("/a.js")), server),
         !StaticTracking.staticChanged(None, server)
       )
+    },
+    test("normalizes absolute URLs and query strings before comparing") {
+      val client = List("http://localhost/static/app-123.js?vsn=d", "http://localhost/static/app-123.css")
+      val server = List("/static/app-123.js", "/static/app-123.css")
+
+      assertTrue(!StaticTracking.staticChanged(Some(client), server))
+    },
+    test("treats an empty client tracking list as unchanged") {
+      assertTrue(!StaticTracking.staticChanged(Some(Nil), List("/static/app.js")))
     }
   )

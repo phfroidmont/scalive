@@ -374,16 +374,12 @@ Ideas:
 
 ## Static Assets and Client Setup Improvements
 
-### Provide a first-class static asset story
-
-Current issue:
-
-- Examples manually hash assets in root layouts and configure serving separately.
+### Document static asset behavior
 
 Ideas:
 
-- Provide a single configuration object shared by `StaticAssetHasher`, root layout helpers, and `ServeHashedResourcesMiddleware`.
-- Add helpers for tracked script and stylesheet tags.
+- Document classpath and directory-backed asset sources.
+- Document digested URLs, original-path serving, cache headers, and tracked static helpers.
 - Document development and production asset behavior.
 
 ### Provide a client setup guide or helper

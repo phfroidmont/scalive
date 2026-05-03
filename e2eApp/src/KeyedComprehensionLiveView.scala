@@ -8,7 +8,7 @@ import zio.schema.derived
 import scalive.*
 import scalive.LiveIO.given
 
-class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
+class KeyedComprehensionLiveView(assets: StaticAssets) extends LiveView[Msg, Model]:
 
   override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
 
@@ -29,7 +29,7 @@ class KeyedComprehensionLiveView() extends LiveView[Msg, Model]:
 
   def render(model: Model) =
     div(
-      linkTag(rel := "stylesheet", typ := "text/css", href := E2ERootLayout.daisyCssHref),
+      assets.stylesheet("daisy.css", typ := "text/css"),
       cls := "p-8",
       div(
         cls := "border-b border-gray-200 mb-6",

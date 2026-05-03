@@ -30,17 +30,18 @@ object Example extends ZIOAppDefault:
   override val bootstrap =
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
-  val liveRoutes =
-    (Live.router @@ RootLayout)(
+  def liveRoutes(assets: StaticAssets) =
+    (Live.router @@ RootLayout(assets))(
       live             -> HomeLiveView(),
       live / "counter" -> CounterLiveView(),
       live / "list"    -> ListLiveView(),
       live / "todo"    -> TodoLiveView()
     )
 
-  val routes =
-    liveRoutes @@
-      ServeHashedResourcesMiddleware(Path.empty / "static", "public")
-
-  override val run = Server.serve(routes).provide(Server.defaultWithPort(serverPort))
+  override val run =
+    for
+      assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.css", "app.js")))
+      routes = liveRoutes(assets) ++ assets.routes
+      _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
+    yield ()
 end Example

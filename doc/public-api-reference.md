@@ -1296,13 +1296,59 @@ LiveEventResult.haltReply(model, value)
 ## Static Assets API
 
 ```scala
-object StaticAssetHasher:
-  def hashedPath(rel: String, root: java.nio.file.Path = Paths.get("public")): Task[String]
+final case class StaticAssetConfig(
+  source: StaticAssetSource,
+  mountPath: zio.http.Path = Path.empty / "static",
+  serveOriginals: Boolean = true,
+  cache: StaticAssetCache = StaticAssetCache.default)
 ```
 
 ```scala
-object ServeHashedResourcesMiddleware:
-  def apply(path: zio.http.Path, resourcePrefix: String = "public"): Middleware[Any]
+object StaticAssetConfig:
+  def classpath(
+    resourcePrefix: String,
+    assets: Iterable[String],
+    mountPath: zio.http.Path = Path.empty / "static",
+    serveOriginals: Boolean = true,
+    classLoader: ClassLoader = Thread.currentThread().getContextClassLoader
+  ): StaticAssetConfig
+
+  def directory(
+    root: java.nio.file.Path,
+    mountPath: zio.http.Path = Path.empty / "static",
+    serveOriginals: Boolean = true,
+    assets: Option[Iterable[String]] = None
+  ): StaticAssetConfig
+```
+
+```scala
+final class StaticAssets:
+  def path(rel: String): String
+  def pathOption(rel: String): Option[String]
+  def entry(rel: String): StaticAssetEntry
+  def stylesheet[Msg](rel: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def trackedStylesheet[Msg](rel: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def script[Msg](rel: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def trackedScript[Msg](rel: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  val routes: zio.http.Routes[Any, Nothing]
+```
+
+```scala
+object StaticAssets:
+  def load(config: StaticAssetConfig): Task[StaticAssets]
+```
+
+```scala
+final case class StaticAssetEntry(
+  originalPath: String,
+  digestedPath: String,
+  digest: String,
+  size: Long,
+  mediaType: zio.http.MediaType)
+
+final case class StaticAssetCache(
+  digested: zio.http.Header.CacheControl,
+  original: zio.http.Header.CacheControl)
 ```
 
 ## Token API

@@ -31,10 +31,10 @@ object E2EApp extends ZIOAppDefault:
   override val bootstrap =
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
-  val liveRoutes =
-    (Live.router @@ E2ERootLayout)(
+  def liveRoutes(rootLayout: E2ERootLayout, assets: StaticAssets) =
+    (Live.router @@ rootLayout)(
       live / "select"              -> SelectLiveView(),
-      live / "keyed-comprehension" -> KeyedComprehensionLiveView(),
+      live / "keyed-comprehension" -> KeyedComprehensionLiveView(assets),
       Live.session("navigation")(
         live / "navigation" / "a"            -> NavigationALiveView(),
         live / "navigation" / "b"            -> NavigationBLiveView(),
@@ -103,7 +103,7 @@ object E2EApp extends ZIOAppDefault:
       live / "issues" / "3953"               -> Issue3953LiveView()
     )
 
-  private val healthRoutes =
+  private def healthRoutes(rootLayout: E2ERootLayout) =
     Routes(
       Method.GET / "health" -> handler(Response.text("OK")),
       Method.POST / "eval"  -> handler { (req: Request) =>
@@ -148,7 +148,7 @@ object E2EApp extends ZIOAppDefault:
         Response.html(
           Html.raw(
             HtmlBuilder.build(
-              E2ERootLayout(
+              rootLayout(
                 NavigationLayout(
                   h1("Dead view")
                 )
@@ -160,9 +160,13 @@ object E2EApp extends ZIOAppDefault:
       }
     )
 
-  val routes =
-    (liveRoutes ++ healthRoutes) @@
-      ServeHashedResourcesMiddleware(Path.empty / "static", "public")
-
-  override val run = Server.serve(routes).provide(Server.defaultWithPort(serverPort))
+  override val run =
+    for
+      assets <- StaticAssets.load(
+                  StaticAssetConfig.classpath("public", Seq("app.css", "app.js", "daisy.css"))
+                )
+      rootLayout = new E2ERootLayout(assets)
+      routes     = liveRoutes(rootLayout, assets) ++ healthRoutes(rootLayout) ++ assets.routes
+      _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
+    yield ()
 end E2EApp

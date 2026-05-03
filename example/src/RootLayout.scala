@@ -1,23 +1,6 @@
 import scalive.*
 
-object RootLayout extends LiveRootLayout[Any, Any]:
-  import java.nio.file.Paths
-
-  private val runtime = zio.Runtime.default
-
-  // TODO externalize config in common with ServeHashedResourcesMiddleware
-  private lazy val resourceRoot: java.nio.file.Path =
-    Option(getClass.getClassLoader.getResource("public"))
-      .map(url => Paths.get(url.toURI))
-      .getOrElse(throw new IllegalArgumentException("public resources directory not found"))
-
-  private def hashOrDie(rel: String): String =
-    zio.Unsafe.unsafe { implicit u =>
-      runtime.unsafe.run(StaticAssetHasher.hashedPath(rel, resourceRoot)).getOrThrowFiberFailure()
-    }
-
-  private val hashedJs  = s"/static/${hashOrDie("app.js")}"
-  private val hashedCss = s"/static/${hashOrDie("app.css")}"
+final class RootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]:
 
   def key(ctx: LiveLayoutContext[Any, Any]): String = "example-root"
 
@@ -34,17 +17,15 @@ object RootLayout extends LiveRootLayout[Any, Any]:
       headTag(
         metaTag(charset  := "utf-8"),
         metaTag(nameAttr := "viewport", contentAttr := "width=device-width, initial-scale=1"),
-        scriptTag(
-          defer           := true,
-          phx.trackStatic := true,
-          typ             := "text/javascript",
-          src             := hashedJs
+        assets.trackedScript(
+          "app.js",
+          defer := true,
+          typ   := "text/javascript"
         ),
-        linkTag(phx.trackStatic := true, rel := "stylesheet", href := hashedCss),
+        assets.trackedStylesheet("app.css"),
         titleTag("Scalive Example")
       ),
       bodyTag(
         content
       )
     )
-end RootLayout

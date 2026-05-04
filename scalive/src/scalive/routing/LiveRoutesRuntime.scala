@@ -122,113 +122,212 @@ final private[scalive] class LiveRoutesRuntime[R](
         case Left(error) =>
           ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
         case Right(decodedUrl) =>
-          liveChannel
-            .joinNested(
-              message.topic,
-              join.session,
-              staticChanged = false,
-              message.meta,
-              decodedUrl
-            )
-            .flatMap {
-              case Some(reason) => ZIO.succeed(Some(joinErrorReply(message, reason)))
-              case None         =>
-                val req = Request(url = decodedUrl)
-                liveRoutes.iterator
-                  .map(route =>
-                    route.pathCodec
-                      .decode(req.path)
-                      .toOption
-                      .map(pathParams =>
-                        rootSession match
-                          case Some(session) if session.sessionName == route.sessionName =>
-                            if isAuthorizedRootJoin(session, route, join) then
-                              route.mountPipeline
-                                .runConnected(
-                                  session.mountClaims,
-                                  LiveMountRequest(pathParams, req),
-                                  ()
-                                ).foldZIO(
-                                  failure => mountFailureReply(message, failure).map(Some(_)),
-                                  mountContext =>
-                                    val rootKey = route.rootLayoutKey(
-                                      pathParams,
-                                      req,
-                                      decodedUrl,
-                                      mountContext,
-                                      globalRootLayout
-                                    )
-                                    val serverStatics = route.trackedStatic(
-                                      pathParams,
-                                      req,
-                                      decodedUrl,
-                                      mountContext,
-                                      globalLayouts,
-                                      globalRootLayout
-                                    )
-                                    val staticChanged =
-                                      StaticTracking.staticChanged(clientStatics, serverStatics)
-                                    val ctx = LiveContext(
-                                      staticChanged = staticChanged,
-                                      nestedLiveViews = liveChannel.nestedRuntime(message.topic)
-                                    )
-                                    val lv = route.buildLiveView(pathParams, req, mountContext)
-                                    val renderRoot = route.socketRenderRoot(
-                                      lv,
-                                      pathParams,
-                                      req,
-                                      mountContext,
-                                      globalLayouts
-                                    )
-                                    if rootKey != session.rootLayoutKey then
-                                      ZIO.logWarning(
-                                        s"Rejecting live redirect to ${decodedUrl.path.encode}: root layout changed from ${session.rootLayoutKey} to $rootKey"
-                                      ) *>
-                                        ZIO.succeed(
-                                          Some(
-                                            joinErrorReply(message, JoinErrorReason.Unauthorized)
-                                          )
-                                        )
-                                    else
-                                      ZIO.logDebug(
-                                        s"Joining LiveView ${route.pathCodec} ${message.topic}"
-                                      ) *>
-                                        liveChannel
-                                          .join(
-                                            message.topic,
-                                            join.session,
-                                            lv,
-                                            ctx,
-                                            message.meta,
-                                            decodedUrl,
-                                            initialFlash,
-                                            Some(renderRoot)
-                                          )(using route.msgClassTag)
-                                          .as(None)
-                                          .catchAllCause(cause =>
-                                            ZIO.logErrorCause(cause) *>
-                                              ZIO.succeed(
-                                                Some(joinErrorReply(message, JoinErrorReason.Stale))
-                                              )
-                                          )
-                                    end if
-                                )
-                            else
-                              ZIO.logWarning(
-                                s"Rejecting live redirect to ${decodedUrl.path.encode}: route-specific mount claims require a fresh HTTP render"
-                              ) *>
-                                ZIO.succeed(
-                                  Some(joinErrorReply(message, JoinErrorReason.Unauthorized))
-                                )
-                          case _ =>
-                            ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
-                      )
-                  )
-                  .collectFirst { case Some(joinAction) => joinAction }
-                  .getOrElse(ZIO.succeed(None))
-            }
-      end match
+          handleDecodedJoin(
+            message,
+            join,
+            liveChannel,
+            clientStatics,
+            rootSession,
+            initialFlash,
+            decodedUrl
+          )
   end handleJoin
+
+  private def handleDecodedJoin(
+    message: WebSocketMessage,
+    join: Payload.Join,
+    liveChannel: LiveChannel,
+    clientStatics: Option[List[String]],
+    rootSession: Option[LiveSessionPayload],
+    initialFlash: Map[String, String],
+    decodedUrl: URL
+  ): RIO[R & Scope, Option[WebSocketMessage]] =
+    liveChannel
+      .joinNested(
+        message.topic,
+        join.session,
+        staticChanged = false,
+        message.meta,
+        decodedUrl
+      ).flatMap {
+        case Some(reason) => ZIO.succeed(Some(joinErrorReply(message, reason)))
+        case None         =>
+          handleRootJoin(
+            message,
+            join,
+            liveChannel,
+            clientStatics,
+            rootSession,
+            initialFlash,
+            decodedUrl
+          )
+      }
+
+  private def handleRootJoin(
+    message: WebSocketMessage,
+    join: Payload.Join,
+    liveChannel: LiveChannel,
+    clientStatics: Option[List[String]],
+    rootSession: Option[LiveSessionPayload],
+    initialFlash: Map[String, String],
+    decodedUrl: URL
+  ): RIO[R & Scope, Option[WebSocketMessage]] =
+    val req = Request(url = decodedUrl)
+    liveRoutes.iterator
+      .map(route =>
+        rootJoinActionForRoute(
+          message,
+          join,
+          liveChannel,
+          clientStatics,
+          rootSession,
+          initialFlash,
+          decodedUrl,
+          req,
+          route
+        )
+      ).collectFirst { case Some(joinAction) => joinAction }
+      .getOrElse(ZIO.succeed(None))
+
+  private def rootJoinActionForRoute[A, Ctx, Msg, Model](
+    message: WebSocketMessage,
+    join: Payload.Join,
+    liveChannel: LiveChannel,
+    clientStatics: Option[List[String]],
+    rootSession: Option[LiveSessionPayload],
+    initialFlash: Map[String, String],
+    decodedUrl: URL,
+    req: Request,
+    route: LiveRoute[R, A, Any, Ctx, Msg, Model]
+  ): Option[RIO[R & Scope, Option[WebSocketMessage]]] =
+    route.pathCodec.decode(req.path).toOption.map { pathParams =>
+      rootSession match
+        case Some(session) if session.sessionName == route.sessionName =>
+          handleMatchedRootRoute(
+            message,
+            join,
+            liveChannel,
+            clientStatics,
+            initialFlash,
+            decodedUrl,
+            req,
+            route,
+            pathParams,
+            session
+          )
+        case _ =>
+          ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+    }
+
+  private def handleMatchedRootRoute[A, Ctx, Msg, Model](
+    message: WebSocketMessage,
+    join: Payload.Join,
+    liveChannel: LiveChannel,
+    clientStatics: Option[List[String]],
+    initialFlash: Map[String, String],
+    decodedUrl: URL,
+    req: Request,
+    route: LiveRoute[R, A, Any, Ctx, Msg, Model],
+    pathParams: A,
+    session: LiveSessionPayload
+  ): RIO[R & Scope, Option[WebSocketMessage]] =
+    if isAuthorizedRootJoin(session, route, join) then
+      route.mountPipeline
+        .runConnected(
+          session.mountClaims,
+          LiveMountRequest(pathParams, req),
+          ()
+        ).foldZIO(
+          failure => mountFailureReply(message, failure).map(Some(_)),
+          mountContext =>
+            joinMountedRootRoute(
+              message,
+              join,
+              liveChannel,
+              clientStatics,
+              initialFlash,
+              decodedUrl,
+              req,
+              route,
+              pathParams,
+              session,
+              mountContext
+            )
+        )
+    else
+      ZIO.logWarning(
+        s"Rejecting live redirect to ${decodedUrl.path.encode}: route-specific mount claims require a fresh HTTP render"
+      ) *>
+        ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+
+  private def joinMountedRootRoute[A, Ctx, Msg, Model](
+    message: WebSocketMessage,
+    join: Payload.Join,
+    liveChannel: LiveChannel,
+    clientStatics: Option[List[String]],
+    initialFlash: Map[String, String],
+    decodedUrl: URL,
+    req: Request,
+    route: LiveRoute[R, A, Any, Ctx, Msg, Model],
+    pathParams: A,
+    session: LiveSessionPayload,
+    mountContext: Ctx
+  ): RIO[Scope, Option[WebSocketMessage]] =
+    val rootKey = route.rootLayoutKey(
+      pathParams,
+      req,
+      decodedUrl,
+      mountContext,
+      globalRootLayout
+    )
+    val serverStatics = route.trackedStatic(
+      pathParams,
+      req,
+      decodedUrl,
+      mountContext,
+      globalLayouts,
+      globalRootLayout
+    )
+    val staticChanged = StaticTracking.staticChanged(clientStatics, serverStatics)
+    val ctx           = LiveContext(
+      staticChanged = staticChanged,
+      nestedLiveViews = liveChannel.nestedRuntime(message.topic)
+    )
+    val lv         = route.buildLiveView(pathParams, req, mountContext)
+    val renderRoot = route.socketRenderRoot(
+      lv,
+      pathParams,
+      req,
+      mountContext,
+      globalLayouts
+    )
+
+    if rootKey != session.rootLayoutKey then
+      ZIO.logWarning(
+        s"Rejecting live redirect to ${decodedUrl.path.encode}: root layout changed from ${session.rootLayoutKey} to $rootKey"
+      ) *>
+        ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+    else
+      ZIO.logDebug(
+        s"Joining LiveView ${route.pathCodec} ${message.topic}"
+      ) *>
+        liveChannel
+          .join(
+            message.topic,
+            join.session,
+            lv,
+            ctx,
+            message.meta,
+            decodedUrl,
+            initialFlash,
+            Some(renderRoot)
+          )(using route.msgClassTag)
+          .as(None)
+          .catchAllCause(cause =>
+            ZIO.logErrorCause(cause) *>
+              ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+          )
+  end joinMountedRootRoute
 
   private def isAuthorizedRootJoin(
     session: LiveSessionPayload,

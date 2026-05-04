@@ -51,7 +51,7 @@ private[scalive] object WebSocketMessage:
     val EventRedirect     = "redirect"
     val EventLiveRedirect = "live_redirect"
     val BinaryChunkEvent  = "chunk"
-    val LiveViewVersion   = "1.1.8"
+    val LiveViewVersion   = "1.1.28"
 
   given JsonCodec[WebSocketMessage] = JsonCodec[Json].transformOrFail(
     decodeSocketMessage,

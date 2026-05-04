@@ -99,6 +99,28 @@ const hooks = {
         setTimeout(() => this.el.setAttribute("class", ""), 0)
       })
     }
+  },
+  Issue4066Hook: {
+    mounted() {
+      this.el.addEventListener("input", () => {
+        window.setTimeout(() => {
+          this.pushEventTo(this.el, "do-something", { value: 100 })
+          document.body.setAttribute("data-pushed", "yes")
+        }, Number.parseInt(this.el.dataset.delay, 10))
+      })
+    }
+  },
+  Issue4088Hook: {
+    mounted() {
+      this.pushEventTo(this.el, "my_update", {})
+      this.pushEventTo(this.el, "my_update", {})
+      this.pushEventTo(this.el, "my_update", {})
+    }
+  },
+  HookOutside: {
+    mounted() {
+      console.log("HookOutside mounted")
+    }
   }
 }
 

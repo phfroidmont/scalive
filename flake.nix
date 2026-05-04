@@ -3,7 +3,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     liveview-upstream = {
-      url = "github:phoenixframework/phoenix_live_view/v1.1.8";
+      url = "github:phoenixframework/phoenix_live_view/v1.1.28";
       flake = false;
     };
   };
@@ -19,7 +19,7 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        liveviewRev = liveview-upstream.rev or "v1.1.8";
+        liveviewRev = liveview-upstream.rev or "v1.1.28";
       in
       {
         devShell = pkgs.mkShell {

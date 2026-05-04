@@ -100,7 +100,18 @@ object E2EApp extends ZIOAppDefault:
       live / "issues" / "3819"               -> Issue3819LiveView(),
       live / "issues" / "3919"               -> Issue3919LiveView(),
       live / "issues" / "3941"               -> Issue3941LiveView(),
-      live / "issues" / "3953"               -> Issue3953LiveView()
+      live / "issues" / "3953"               -> Issue3953LiveView(),
+      live / "issues" / "3979"               -> Issue3979LiveView(),
+      live / "issues" / "4027"               -> Issue4027LiveView(),
+      live / "issues" / "4066"               -> Issue4066LiveView(),
+      live / "issues" / "4078"               -> Issue4078LiveView(),
+      live / "issues" / "4088"               -> Issue4088LiveView(),
+      live / "issues" / "4094"               -> Issue4094LiveView(),
+      live / "issues" / "4095"               -> Issue4095LiveView(),
+      live / "issues" / "4102"               -> Issue4102LiveView(),
+      live / "issues" / "4107"               -> Issue4107LiveView(),
+      live / "issues" / "4121"               -> Issue4121LiveView(),
+      live / "issues" / "4147"               -> Issue4147LiveView()
     )
 
   private def healthRoutes(rootLayout: E2ERootLayout) =
@@ -125,7 +136,8 @@ object E2EApp extends ZIOAppDefault:
           Response.text(json)
         }
       },
-      Method.GET / "download" -> handler { (req: Request) =>
+      Method.POST / "api" / "test" -> handler(Response.text("OK")),
+      Method.GET / "download"      -> handler { (req: Request) =>
         val maybeFile = req.queryParam("file")
         maybeFile.flatMap(UploadLiveView.resolveUploadPath) match
           case Some(path) if java.nio.file.Files.exists(path) =>

@@ -17,6 +17,7 @@ final case class FormQueryParams(
   autoRecover: Option[String] = None,
   disabledFieldset: Boolean = false,
   checkboxes: Boolean = false,
+  portal: Boolean = false,
   latencyMode: Boolean = false)
 
 object FormQueryParams:
@@ -32,6 +33,7 @@ object FormQueryParams:
             autoRecover = url.queryParam("phx-auto-recover"),
             disabledFieldset = url.queryParam("disabled-fieldset").contains("true"),
             checkboxes = url.queryParam("checkboxes").contains("1"),
+            portal = url.queryParam("portal").isDefined,
             latencyMode = url.queryParam("phx-change").contains("validate")
           )
         ),
@@ -55,20 +57,45 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
     case Msg.Save(_) =>
       maybeAwait(model, "save").as(model.copy(submitted = true))
     case Msg.CustomRecovery(_) =>
-      model.copy(values = model.values.updated("b", "custom value from server"))
+      model.query.autoRecover match
+        case Some("patch-recovery") => ctx.nav.pushPatch("/form?patched=true").as(model)
+        case _ => model.copy(values = model.values.updated("b", "custom value from server"))
     case Msg.ButtonTest => model
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("form-raw") { (model, event, _) =>
-      if event.bindingId == "sandbox:eval" then
-        E2ESandboxEval.handle(model, event.bindingId, event.value)
-      else LiveEventHookResult.cont(applyRawFormValue(model, event.value))
-    }
+    LiveHooks
+      .empty[Msg, Model].rawEvent("form-raw") { (model: Model, event: LiveEvent, _) =>
+        if event.bindingId == "sandbox:eval" then
+          E2ESandboxEval.handle(model, event.bindingId, event.value)
+        else LiveEventHookResult.cont(applyRawFormValue(model, event.value))
+      }.rawEvent("form-e2e-events") { (model: Model, event: LiveEvent, ctx: MessageContext) =>
+        event.bindingId match
+          case "validate" =>
+            maybeAwait(model, "validate").map { _ =>
+              LiveEventHookResult.halt(
+                model.copy(values = model.values ++ rawFormData(event).asMap)
+              )
+            }
+          case "save" =>
+            maybeAwait(model, "save")
+              .map(_ => LiveEventHookResult.halt(model.copy(submitted = true)))
+          case "custom-recovery" =>
+            LiveEventHookResult.halt(
+              model.copy(values = model.values.updated("b", "custom value from server"))
+            )
+          case "patch-recovery" =>
+            ctx.nav.pushPatch("/form?patched=true").as(LiveEventHookResult.halt(model))
+          case "button-test" => LiveEventHookResult.halt(model)
+          case _             => LiveEventHookResult.cont(model)
+      }
 
   def render(model: Model) =
-    val content =
+    val formContent = renderForm(model)
+    val content     =
       div(
-        renderForm(model),
+        if model.query.portal then h1("Form") else "",
+        if model.query.portal then portal("form-portal", target = "body")(formContent)
+        else formContent,
         if model.submitted then p("Form was submitted!") else ""
       )
     if nested then div(idAttr := "nested", content) else content
@@ -81,48 +108,64 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
     )
     val formAttrs = Vector.newBuilder[Mod[Msg]]
     if !model.query.noId then formAttrs += (idAttr := "test-form")
-    formAttrs += formModel.onSubmit(Msg.Save(_))
+    formAttrs += (phxSubmitAttr                    := "save")
     if !model.query.noChangeEvent then
       formAttrs += (
         if model.query.jsChange then phx.onChange(JS.push(Msg.Validate(EmptyFormEvent)))
-        else formModel.onChange(Msg.Validate(_))
+        else phxChangeAttr := "validate"
       )
-    model.query.autoRecover.foreach(_ =>
-      formAttrs += phx.autoRecover(Msg.CustomRecovery(EmptyFormEvent))
-    )
+    model.query.autoRecover.foreach(event => formAttrs += (phxAutoRecoverAttr := event))
     formAttrs += (cls := "myformclass")
 
-    form(
-      formAttrs.result(),
-      fieldset(
-        disabled := model.query.disabledFieldset,
-        formModel.text("a", readonly := true),
-        formModel.text("b")
+    div(
+      form(
+        formAttrs.result(),
+        fieldset(
+          disabled := model.query.disabledFieldset,
+          formModel.text("a", readonly := true),
+          formModel.text("b")
+        ),
+        formModel.text("c"),
+        select(
+          nameAttr := "d",
+          option(value := "foo", selected := model.values.get("d").contains("foo"), "foo"),
+          option(value := "bar", selected := model.values.get("d").contains("bar"), "bar"),
+          option(value := "baz", selected := model.values.get("d").contains("baz"), "baz")
+        ),
+        Option.when(!model.query.noId)(
+          input(
+            typ      := "text",
+            nameAttr := "e",
+            formAttr := "test-form",
+            value    := model.values.getOrElse("e", "")
+          )
+        ),
+        button(
+          typ             := "submit",
+          phx.disableWith := "Submitting",
+          phx.onClick(JS.dispatch("test")),
+          "Submit with JS"
+        ),
+        button(
+          idAttr          := "submit",
+          typ             := "submit",
+          phx.disableWith := "Submitting",
+          "Submit"
+        ),
+        button(
+          typ             := "button",
+          phxClickAttr    := "button-test",
+          phx.disableWith := "Loading",
+          "Non-form Button"
+        )
       ),
-      formModel.text("c"),
-      select(
-        nameAttr := "d",
-        option(value := "foo", selected := model.values.get("d").contains("foo"), "foo"),
-        option(value := "bar", selected := model.values.get("d").contains("bar"), "bar"),
-        option(value := "baz", selected := model.values.get("d").contains("baz"), "baz")
-      ),
-      button(
-        typ             := "submit",
-        phx.disableWith := "Submitting",
-        phx.onClick(JS.dispatch("test")),
-        "Submit with JS"
-      ),
-      button(
-        idAttr          := "submit",
-        typ             := "submit",
-        phx.disableWith := "Submitting",
-        "Submit"
-      ),
-      button(
-        typ := "button",
-        phx.onClick(Msg.ButtonTest),
-        phx.disableWith := "Loading",
-        "Non-form Button"
+      Option.when(!model.query.noId)(
+        input(
+          typ      := "text",
+          nameAttr := "f",
+          formAttr := "test-form",
+          value    := model.values.getOrElse("f", "")
+        )
       )
     )
   end renderForm
@@ -132,6 +175,9 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
       case Json.Str(raw) => model.copy(values = model.values ++ FormData.fromUrlEncoded(raw).asMap)
       case _             => model
 
+  private def rawFormData(event: LiveEvent): FormData =
+    event.value.asString.map(FormData.fromUrlEncoded).getOrElse(FormData.fromMap(event.params))
+
   private def maybeAwait(model: Model, event: String) =
     if model.query.latencyMode then E2ELatencyGate.await(event) else ZIO.unit
 
@@ -140,6 +186,12 @@ class FormLiveView(nested: Boolean = false) extends LiveView[FormLiveView.Msg, F
 end FormLiveView
 
 object FormLiveView:
+  private val formAttr           = htmlAttr("form", StringAsIsEncoder)
+  private val phxAutoRecoverAttr = htmlAttr("phx-auto-recover", StringAsIsEncoder)
+  private val phxChangeAttr      = htmlAttr("phx-change", StringAsIsEncoder)
+  private val phxClickAttr       = htmlAttr("phx-click", StringAsIsEncoder)
+  private val phxSubmitAttr      = htmlAttr("phx-submit", StringAsIsEncoder)
+
   enum Msg:
     case Validate(event: FormEvent[FormData])
     case Save(event: FormEvent[FormData])

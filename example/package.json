@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "phoenix": "1.7.21",
-    "phoenix_live_view": "1.1.8",
+    "phoenix_live_view": "1.1.28",
     "topbar": "3.0.0"
   },
   "devDependencies": {

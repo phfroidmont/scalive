@@ -6,6 +6,8 @@ secrets.env
 out
 
 node_modules
+example/dist
+e2eApp/dist
 opencode.json
 .e2e-upstream
 test-results

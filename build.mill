@@ -5,13 +5,8 @@
 
 package build
 
-import mill.*, scalalib.*, javascriptlib.TypeScriptModule, publish.*
+import mill.*, scalalib.*, publish.*
 import mill.scalalib.scalafmt.ScalafmtModule
-import mill.api.Task.Simple
-import java.net.URI
-import java.nio.file.*
-import java.nio.file.attribute.BasicFileAttributes
-import java.util
 import com.goyeau.mill.scalafix.ScalafixModule
 
 trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
@@ -53,89 +48,20 @@ object scalive extends ScalaCommon with PublishCommon:
   object test extends ScalaTests with scalalib.TestModule.ZioTest:
     def zioTestVersion = "2.1.25"
 
-object example extends ScalaCommon:
+object example extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)
   def mvnDeps    = Seq(mvn"dev.optics::monocle-core:3.1.0", mvn"dev.zio::zio-logging:2.5.1")
 
-  def tailwindConfig = Task.Source(moduleDir / "tailwind.css")
-
-  def generateCss = Task {
-    sources()
-    os.proc(
-      "tailwindcss",
-      "--minify",
-      "--input",
-      tailwindConfig().path
-    ).call().out.text()
-  }
-
-  def customResources = Task {
-    os.write(
-      target = Task.dest / "public" / "app.css",
-      data = generateCss(),
-      createFolders = true
-    )
-    os.copy(
-      from = example.js.bundle().path,
-      to = Task.dest / "public" / "app.js",
-      createFolders = true
-    )
-    PathRef(Task.dest)
-  }
-
   def resources = Task {
-    super.resources() :+ customResources()
+    super.resources() :+ bundle()
   }
 
-  object js extends TypeScriptModule:
-    def mainFileName = "app.js"
-    def npmDeps = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8", "topbar@3.0.0", "daisyui@5.1.12")
-    def bundleFlags = super.bundleFlags() ++ Map("minify" -> ujson.Bool(false))
-end example
-
-object e2eApp extends ScalaCommon:
+object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)
   def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.1")
 
-  def baseCss = Task.Source(moduleDir / "app.css")
-
-  def tailwindConfig = Task.Source(moduleDir / "tailwind.css")
-
-  def generateDaisyCss = Task {
-    sources()
-    os.proc(
-      "tailwindcss",
-      "--minify",
-      "--input",
-      tailwindConfig().path
-    ).call().out.text()
-  }
-
-  def customResources = Task {
-    os.write(
-      target = Task.dest / "public" / "app.css",
-      data = os.read(baseCss().path),
-      createFolders = true
-    )
-    os.write(
-      target = Task.dest / "public" / "daisy.css",
-      data = generateDaisyCss(),
-      createFolders = true
-    )
-    os.copy(
-      from = e2eApp.js.bundle().path,
-      to = Task.dest / "public" / "app.js",
-      createFolders = true
-    )
-    PathRef(Task.dest)
-  }
+  override def bundleOutputs = Seq("app.js", "app.css", "daisy.css")
 
   def resources = Task {
-    super.resources() :+ customResources()
+    super.resources() :+ bundle()
   }
-
-  object js extends TypeScriptModule:
-    def mainFileName = "app.js"
-    def npmDeps      = Seq("phoenix@1.7.21", "phoenix_live_view@1.1.8", "daisyui@5.1.12")
-    def bundleFlags  = super.bundleFlags() ++ Map("minify" -> ujson.Bool(false))
-end e2eApp

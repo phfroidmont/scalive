@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:js && npm run build:css",
+    "build:js": "esbuild assets/js/app.js --bundle --platform=browser --format=iife --target=es2020 --outfile=dist/app.js",
+    "build:css": "tailwindcss -i assets/css/app.css -o dist/app.css --minify"
+  },
+  "dependencies": {
+    "phoenix": "1.7.21",
+    "phoenix_live_view": "1.1.8",
+    "topbar": "3.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/aspect-ratio": "0.4.2",
+    "@tailwindcss/cli": "4.1.12",
+    "@tailwindcss/forms": "0.5.9",
+    "@tailwindcss/typography": "0.5.15",
+    "daisyui": "5.1.12",
+    "esbuild": "0.24.2",
+    "tailwindcss": "4.1.12"
+  }
+}

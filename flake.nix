@@ -25,11 +25,10 @@
         devShell = pkgs.mkShell {
           buildInputs = [
             pkgs.mill
-            pkgs.nodejs_22
+            pkgs.nodejs
             pkgs.playwright-test
             pkgs.playwright-driver
             pkgs.rsync
-            pkgs.tailwindcss_4
           ];
           shellHook = ''
             export JAVA_HOME="${pkgs.jdk}";

@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+@source "../../src/**/*.scala";
+@source "../js/**/*.js";
+@plugin "daisyui";

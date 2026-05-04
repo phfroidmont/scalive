@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@plugin "@tailwindcss/forms";
+@plugin "@tailwindcss/typography";
+@plugin "@tailwindcss/aspect-ratio";
+
+@source "../../src/**/*.scala";
+@source "../js/**/*.js";
+
+@plugin "daisyui" {
+  themes: business;
+}

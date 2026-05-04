@@ -1,0 +1,61 @@
+package build
+
+import mill.*, scalalib.*
+import mill.api.BuildCtx
+import java.nio.file.*
+
+trait NpmAssets extends ScalaModule:
+  def packageJson = Task.Source(moduleDir / "package.json")
+
+  def packageLock = Task.Source(moduleDir / "package-lock.json")
+
+  def assetSources = Task.Sources(moduleDir / "assets")
+
+  def bundleOutputs = Seq("app.js", "app.css")
+
+  private def replaceSymlink(link: os.Path, target: os.Path): Unit =
+    BuildCtx.withFilesystemCheckerDisabled {
+      if Files.exists(link.toNIO, LinkOption.NOFOLLOW_LINKS) then os.remove.all(link)
+      os.symlink(link, target)
+    }
+
+  private def copyInputs(
+    destination: os.Path,
+    packageJson: PathRef,
+    packageLock: PathRef,
+    assets: Seq[PathRef],
+    scalaSources: Seq[PathRef]
+  ): Unit =
+    os.copy(packageJson.path, destination / "package.json", createFolders = true)
+    os.copy(packageLock.path, destination / "package-lock.json")
+    assets.foreach(source => os.copy(source.path, destination / source.path.last))
+    scalaSources.foreach(source => os.copy(source.path, destination / source.path.last))
+
+  def npmInstall = Task {
+    packageJson()
+    packageLock()
+    os.copy(packageJson().path, Task.dest / "package.json", createFolders = true)
+    os.copy(packageLock().path, Task.dest / "package-lock.json")
+    os.proc("npm", "ci").call(cwd = Task.dest)
+    replaceSymlink(moduleDir / "node_modules", Task.dest / "node_modules")
+    PathRef(Task.dest, quick = true)
+  }
+
+  def bundle = Task {
+    val installed = npmInstall()
+    replaceSymlink(moduleDir / "node_modules", installed.path / "node_modules")
+    val scalaSources = sources()
+    val assets       = assetSources()
+    val workDir      = Task.dest / "work"
+    val publicDir    = Task.dest / "public"
+    os.remove.all(workDir)
+    os.remove.all(publicDir)
+    copyInputs(workDir, packageJson(), packageLock(), assets, scalaSources)
+    os.symlink(workDir / "node_modules", installed.path / "node_modules")
+    os.proc("npm", "run", "build").call(cwd = workDir)
+    os.makeDir.all(publicDir)
+    bundleOutputs.foreach(asset => os.copy(workDir / "dist" / asset, publicDir / asset))
+    os.remove.all(workDir)
+    PathRef(Task.dest)
+  }
+end NpmAssets

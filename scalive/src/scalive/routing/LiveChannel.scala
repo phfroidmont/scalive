@@ -12,6 +12,11 @@ import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
 
+private[scalive] enum NestedJoinResult:
+  case Joined
+  case Rejected(reason: JoinErrorReason)
+  case NotNested
+
 final private[scalive] class LiveChannel(
   sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
   uploadOwners: Ref[Map[String, String]],
@@ -73,7 +78,10 @@ final private[scalive] class LiveChannel(
   end join
 
   def nestedRuntime(parentTopic: String): NestedLiveViewRuntime =
-    new SocketNestedLiveViewRuntime(parentTopic, tokenConfig, nestedEntries)
+    nestedRuntime(parentTopic, parentTopic.stripPrefix("lv:"))
+
+  private def nestedRuntime(parentTopic: String, parentDomId: String): NestedLiveViewRuntime =
+    new SocketNestedLiveViewRuntime(parentTopic, parentDomId, tokenConfig, nestedEntries)
 
   private[scalive] def nestedEntry(topic: String): UIO[Option[NestedLiveViewEntry]] =
     nestedEntries.get.map(_.get(topic))
@@ -107,28 +115,58 @@ final private[scalive] class LiveChannel(
     meta: WebSocketMessage.Meta,
     initialUrl: URL
   ): RIO[Scope, Option[JoinErrorReason]] =
+    tryJoinNested(topic, token, staticChanged, meta, Some(initialUrl)).map {
+      case NestedJoinResult.Rejected(reason) => Some(reason)
+      case _                                 => None
+    }
+
+  private[scalive] def tryJoinNested(
+    topic: String,
+    token: String,
+    staticChanged: Boolean,
+    meta: WebSocketMessage.Meta,
+    initialUrl: Option[URL]
+  ): RIO[Scope, NestedJoinResult] =
     nestedEntries.get.flatMap { entries =>
       entries.get(topic) match
         case Some(entry) if isAuthorizedNestedJoin(topic, token) =>
-          val ctx = LiveContext(
-            staticChanged = staticChanged,
-            nestedLiveViews = nestedRuntime(topic)
-          )
-          sockets
-            .updateZIO { m =>
-              m.get(topic) match
-                case Some(socket) =>
-                  socket.shutdown *>
-                    entry.start(ctx, meta, initialUrl).map(socket => m.updated(topic, socket))
-                case None =>
-                  entry.start(ctx, meta, initialUrl).map(socket => m.updated(topic, socket))
-            }
-            .as(None)
+          resolveNestedInitialUrl(entry, initialUrl).flatMap {
+            case Some(url) =>
+              val ctx = LiveContext(
+                staticChanged = staticChanged,
+                nestedLiveViews = nestedRuntime(topic, entry.id)
+              )
+              sockets
+                .updateZIO { m =>
+                  m.get(topic) match
+                    case Some(socket) =>
+                      socket.shutdown *>
+                        entry.start(ctx, meta, url).map(socket => m.updated(topic, socket))
+                    case None =>
+                      entry.start(ctx, meta, url).map(socket => m.updated(topic, socket))
+                }
+                .as(NestedJoinResult.Joined)
+            case None =>
+              ZIO.succeed(NestedJoinResult.Rejected(JoinErrorReason.Stale))
+          }
         case Some(_) =>
-          ZIO.succeed(Some(JoinErrorReason.Unauthorized))
+          ZIO.succeed(NestedJoinResult.Rejected(JoinErrorReason.Unauthorized))
         case None =>
-          ZIO.succeed(None)
+          ZIO.succeed(NestedJoinResult.NotNested)
     }
+
+  private def resolveNestedInitialUrl(
+    entry: NestedLiveViewEntry,
+    initialUrl: Option[URL]
+  ): UIO[Option[URL]] =
+    initialUrl match
+      case some @ Some(_) => ZIO.succeed(some)
+      case None           =>
+        sockets.get.flatMap { m =>
+          m.get(entry.parentTopic) match
+            case Some(parent) => parent.currentUrl.map(Some(_))
+            case None         => ZIO.none
+        }
 
   private def isAuthorizedNestedJoin(topic: String, token: String): Boolean =
     Token

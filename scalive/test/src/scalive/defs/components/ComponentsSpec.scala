@@ -75,6 +75,7 @@ object ComponentsSpec extends ZIOSpecDefault:
           result.contains("id=\"phx-upload-ref\""),
           result.contains("accept=\".jpg,.png\""),
           result.contains("data-phx-hook=\"Phoenix.LiveFileUpload\""),
+          !result.contains("data-phx-update"),
           !result.contains("data-phx-auto-upload"),
           !result.contains(" multiple")
         )

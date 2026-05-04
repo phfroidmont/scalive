@@ -246,6 +246,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                       hooks = new SocketLiveHookRuntime(hooksRef),
                       nestedLiveViews = new DisconnectedNestedLiveViewRuntime(
                         s"lv:$id",
+                        id,
                         tokenConfig,
                         req.url
                       )

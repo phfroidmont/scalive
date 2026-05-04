@@ -13,9 +13,9 @@ private[scalive] object StaticBuilder:
 
   private def buildStaticFragments(el: HtmlElement[?]): Seq[Option[String]] =
     val attrs = el.attrMods.flatMap {
-      case Attr.Static(name, value) => List(Some(s""" $name="${Escaping.escape(value)}"""))
-      case Attr.StaticValueAsPresence(name, value) =>
-        List(Some(if value then s" $name" else ""))
+      case Attr.Static(name, value)         => List(Some(s""" $name="${Escaping.escape(value)}"""))
+      case Attr.StaticValueAsPresence(_, _) =>
+        List(Some(""), None, Some(""))
       case Attr.Binding(name, _)             => List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.FormBinding(name, _)         => List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.FormEventBinding(name, _, _) =>

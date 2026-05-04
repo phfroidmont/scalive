@@ -16,7 +16,8 @@ import scalive.WebSocketMessage.ReplyStatus
 object LiveComponentParitySpec extends ZIOSpecDefault:
 
   private val meta = Meta(None, None, "lv:root", "event")
-  private val childTopic = "lv:root-child"
+  private val childTopic = "lv:child"
+  private val phxChangeAttr = htmlAttr("phx-change", scalive.codecs.StringAsIsEncoder)
 
   private enum ParentMsg:
     case Toggle
@@ -60,6 +61,22 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
       (_: Msg.type) => ZIO.succeed(model + 1)
     def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
       button(phx.onClick(Msg), phx.target(self), model.toString)
+
+  private object RawTargetComponent extends LiveComponent[Unit, Unit, String]:
+    override def hooks: ComponentLiveHooks[Unit, Unit, String] =
+      ComponentLiveHooks.empty.rawEvent("raw-target") { (_, model, event, _) =>
+        if event.bindingId == "validate" then ZIO.succeed(LiveEventHookResult.halt("handled"))
+        else ZIO.succeed(LiveEventHookResult.cont(model))
+      }
+
+    def mount(props: Unit, ctx: MountContext) =
+      ZIO.succeed("idle")
+
+    def handleMessage(props: Unit, model: String, ctx: MessageContext) =
+      (_: Unit) => ZIO.succeed(model)
+
+    def render(props: Unit, model: String, self: ComponentRef[Unit]) =
+      form(phxChangeAttr := "validate", phx.target(self), span(model))
 
   private def containsValue(diff: Diff, value: String): Boolean =
     diff match
@@ -130,6 +147,34 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
   override def spec = suite("LiveComponentParitySpec")(
     test("component refs stringify to their cid") {
       assertTrue(ComponentRef[Unit](123).toString == "123")
+    },
+    test("cid-targeted static events reach component raw hooks") {
+      val parent = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) =
+          ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveComponent(RawTargetComponent, id = "raw", props = ()))
+
+      val event = Payload.Event(
+        `type` = "form",
+        event = "validate",
+        value = Json.Str("value=1"),
+        cid = Some(1)
+      )
+
+      for
+        socket     <- start(parent)
+        replyFiber <- nextAfterInit(socket).fork
+        _          <- socket.inbox.offer(event -> meta)
+        reply      <- replyFiber.join
+      yield assertTrue(
+        reply._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
+            containsValue(diff, "handled")
+          case _ => false
+      )
     },
     test("renders live components during disconnected HTTP render") {
       val parent = new LiveView[Unit, Unit]:
@@ -344,6 +389,42 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           case _ => false
 
         assertTrue(fresh)
+    },
+    test("sendUpdate assigns survive unchanged parent rerenders") {
+      val parent = new LiveView[ParentMsg, Int]:
+        def mount(ctx: MountContext) =
+          ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext) =
+              case ParentMsg.SendMissingUpdate =>
+                ctx.components.sendUpdate[LabelComponent.type]("stable", "sent").as(model)
+              case ParentMsg.Toggle => ZIO.succeed(model + 1)
+        def render(model: Int): HtmlElement[ParentMsg] =
+          div(
+            button(phx.onClick(ParentMsg.SendMissingUpdate), "send update"),
+            button(phx.onClick(ParentMsg.Toggle), "rerender"),
+            p(model.toString),
+            liveComponent(LabelComponent, id = "stable", props = "parent")
+          )
+
+      for
+        socket <- start(parent)
+        firstFiber <- nextAfterInit(socket).fork
+        _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+        first <- firstFiber.join
+        secondFiber <- nextAfterInit(socket).fork
+        _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+        second <- secondFiber.join
+      yield
+        val sent = first._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
+            containsValue(diff, "sent says hi")
+          case _ => false
+        val notReset = second._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
+            !containsValue(diff, "parent says hi")
+          case _ => false
+
+        assertTrue(sent, notReset)
     },
     test("component pushNavigate emits live redirect") {
       val parent = new LiveView[Unit, Unit]:

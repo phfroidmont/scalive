@@ -24,6 +24,7 @@ final private[scalive] case class Socket[Msg, Model] private (
   uploadJoin: (String, String) => Task[Payload.Reply],
   uploadChunk: (String, Chunk[Byte]) => Task[Payload.Reply],
   outbox: ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)],
+  private[scalive] val currentUrl: UIO[URL],
   private[scalive] val takeNavigationFlash: UIO[Map[String, String]],
   private[scalive] val replaceNavigationFlash: Map[String, String] => UIO[Unit],
   shutdown: UIO[Unit])
@@ -66,6 +67,7 @@ private[scalive] object Socket:
         uploadChunk = (uploadTopic: String, bytes: Chunk[Byte]) =>
                         SocketUploadProtocol.handleUploadChunk(uploadTopic, bytes, state)
         outbox                 = SocketOutbound.buildOutbox(state)
+        currentUrl             = state.currentUrlRef.get
         takeNavigationFlash    = SocketFlashRuntime.takeNavigation(state.flashRef)
         replaceNavigationFlash = (flash: Map[String, String]) =>
                                    SocketFlashRuntime.replaceNavigation(state.flashRef, flash)
@@ -81,6 +83,7 @@ private[scalive] object Socket:
         uploadJoin,
         uploadChunk,
         outbox,
+        currentUrl,
         takeNavigationFlash,
         replaceNavigationFlash,
         stop

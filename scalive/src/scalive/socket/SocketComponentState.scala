@@ -8,6 +8,7 @@ final private[scalive] case class ComponentInstance(
   identity: ComponentIdentity,
   component: LiveComponent[Any, Any, Any],
   props: Any,
+  parentProps: Any,
   model: Any,
   hooks: LiveHookRuntimeState)
 

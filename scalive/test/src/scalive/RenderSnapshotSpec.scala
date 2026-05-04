@@ -15,6 +15,18 @@ object RenderSnapshotSpec extends ZIOSpecDefault:
         first.root.static.asInstanceOf[AnyRef] eq second.root.static.asInstanceOf[AnyRef]
       )
     },
+    test("treats boolean presence attrs as dynamic slots") {
+      val off = RenderSnapshot.compile(form(phx.triggerAction := false, button("Submit")))
+      val on  = RenderSnapshot.compile(form(phx.triggerAction := true, button("Submit")))
+      val diff = TreeDiff.diff(off, on)
+
+      val patchedAttr = diff match
+        case Diff.Tag(static, dynamic, _, _, _, _, _, _) =>
+          static.isEmpty && dynamic.exists(_.diff == Diff.Value(" phx-trigger-action"))
+        case _ => false
+
+      assertTrue(off.root.static == on.root.static, patchedAttr)
+    },
     test("keeps keyed entry fingerprints for non-stream comprehensions") {
       val compiled = RenderSnapshot.compile(
         ul(

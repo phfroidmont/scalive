@@ -32,7 +32,6 @@ trait Components:
       nameAttr                         := upload.name,
       accept                           := upload.accept.toHtmlValue,
       dataAttr("phx-hook")             := "Phoenix.LiveFileUpload",
-      dataAttr("phx-update")           := "ignore",
       dataAttr("phx-upload-ref")       := upload.ref,
       dataAttr("phx-active-refs")      := activeRefs,
       dataAttr("phx-done-refs")        := doneRefs,

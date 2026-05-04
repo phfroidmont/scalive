@@ -1,5 +1,6 @@
 package scalive
 
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.reflect.ClassTag
 
 import zio.*
@@ -24,15 +25,19 @@ final private[scalive] case class NestedLiveViewSpec[Msg, Model](
 final private[scalive] case class NestedLiveViewRegistration(
   id: String,
   parentTopic: String,
+  parentDomId: String,
   topic: String,
   session: String,
   sticky: Boolean,
+  loading: Boolean = false,
   rendered: Option[HtmlElement[Any]] = None)
 
 private[scalive] trait NestedLiveViewRuntime:
   def register[Msg, Model](
     spec: NestedLiveViewSpec[Msg, Model]
   ): Task[NestedLiveViewRegistration]
+
+  def afterParentRender: UIO[Unit] = ZIO.unit
 
 private[scalive] object NestedLiveViewRuntime:
   object Disabled extends NestedLiveViewRuntime:
@@ -42,6 +47,7 @@ private[scalive] object NestedLiveViewRuntime:
       ZIO.fail(new IllegalStateException("nested LiveViews require a connected LiveView runtime"))
 
 final private[scalive] case class NestedLiveViewEntry(
+  id: String,
   parentTopic: String,
   sticky: Boolean,
   token: String,
@@ -49,17 +55,24 @@ final private[scalive] case class NestedLiveViewEntry(
 
 final private[scalive] class SocketNestedLiveViewRuntime(
   parentTopic: String,
+  parentDomId: String,
   tokenConfig: TokenConfig,
   entriesRef: Ref[Map[String, NestedLiveViewEntry]])
     extends NestedLiveViewRuntime:
 
+  private val initialParentRender = new AtomicBoolean(true)
+
+  override def afterParentRender: UIO[Unit] =
+    ZIO.succeed(initialParentRender.set(false))
+
   def register[Msg, Model](
     spec: NestedLiveViewSpec[Msg, Model]
   ): Task[NestedLiveViewRegistration] =
-    val topic = s"$parentTopic-${spec.id}"
+    val topic = s"lv:${spec.id}"
     for
       token = Token.sign(tokenConfig.secret, topic, "nested")
       entry = NestedLiveViewEntry(
+                id = spec.id,
                 parentTopic = parentTopic,
                 sticky = spec.sticky,
                 token = token,
@@ -75,10 +88,21 @@ final private[scalive] class SocketNestedLiveViewRuntime(
                   )(using spec.msgClassTag)
               )
       _ <- entriesRef.update(_.updated(topic, entry))
-    yield NestedLiveViewRegistration(spec.id, parentTopic, topic, token, spec.sticky)
+    yield NestedLiveViewRegistration(
+      spec.id,
+      parentTopic,
+      parentDomId,
+      topic,
+      token,
+      spec.sticky,
+      loading = initialParentRender.get()
+    )
+  end register
+end SocketNestedLiveViewRuntime
 
 final private[scalive] class DisconnectedNestedLiveViewRuntime(
   parentTopic: String,
+  parentDomId: String,
   tokenConfig: TokenConfig,
   initialUrl: URL)
     extends NestedLiveViewRuntime:
@@ -86,7 +110,7 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
   def register[Msg, Model](
     spec: NestedLiveViewSpec[Msg, Model]
   ): Task[NestedLiveViewRegistration] =
-    val topic = s"$parentTopic-${spec.id}"
+    val topic = s"lv:${spec.id}"
     for
       token         <- ZIO.succeed(Token.sign(tokenConfig.secret, topic, "nested"))
       streamRef     <- Ref.make(StreamRuntimeState.empty)
@@ -104,6 +128,7 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
               hooks = new SocketLiveHookRuntime(hooksRef),
               nestedLiveViews = new DisconnectedNestedLiveViewRuntime(
                 topic,
+                spec.id,
                 tokenConfig,
                 initialUrl
               )
@@ -131,10 +156,11 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
     yield NestedLiveViewRegistration(
       spec.id,
       parentTopic,
+      parentDomId,
       topic,
       token,
       spec.sticky,
-      Some(rendered)
+      rendered = Some(rendered)
     )
     end for
   end register

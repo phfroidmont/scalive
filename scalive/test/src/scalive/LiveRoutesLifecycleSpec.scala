@@ -17,9 +17,9 @@ import scalive.WebSocketMessage.ReplyStatus
 object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
   private val rootTopic        = "lv:root"
-  private val childTopic       = "lv:root-child"
-  private val secondChildTopic = "lv:root-second"
-  private val grandchildTopic  = "lv:root-child-grandchild"
+  private val childTopic       = "lv:child"
+  private val secondChildTopic = "lv:second"
+  private val grandchildTopic  = "lv:grandchild"
   private val rootMeta         = WebSocketMessage.Meta(Some(1), Some(1), rootTopic, "phx_join")
 
   private enum ChildMsg:
@@ -240,7 +240,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         calls == List("child mount", "child params:1"),
         body.contains("child mount:1"),
         body.contains("data-phx-child-id=\"child\""),
-        body.contains("data-phx-parent-id=\"lv:phx-"),
+        body.contains("data-phx-parent-id=\"phx-"),
         body.contains("data-phx-session=")
       )
     },
@@ -259,6 +259,55 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         _       <- joinRoot(channel, parent)
         entry   <- channel.nestedEntry(childTopic)
       yield assertTrue(entry.exists(_.parentTopic == rootTopic)))
+    },
+    test("nested LiveView joins without URL use the parent current URL") {
+      val child = new LiveView[Unit, String]:
+        override val queryCodec: LiveQueryCodec[Option[String]] =
+          LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
+
+        def mount(ctx: MountContext) =
+          ZIO.succeed("mount")
+
+        override def handleParams(model: String, params: Option[String], _url: URL, ctx: ParamsContext) =
+          ZIO.succeed(params.getOrElse(model))
+
+        def handleMessage(model: String, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: String): HtmlElement[Unit] =
+          div(s"child:$model")
+
+      val parent = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) =
+          ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: Unit): HtmlElement[Unit] = div(liveView("child", child))
+
+      ZIO.scoped(for
+        initialUrl <- url("/parent?q=1")
+        channel    <- LiveChannel.make(TokenConfig.default)
+        _          <- joinRoot(channel, parent, initialUrl)
+        entry      <- channel.nestedEntry(childTopic).some
+        result     <- channel.tryJoinNested(
+                        childTopic,
+                        entry.token,
+                        staticChanged = false,
+                        rootMeta.copy(topic = childTopic),
+                        initialUrl = None
+                      )
+        childSocket <- channel.socket(childTopic).some
+        init        <- childSocket.outbox.take(1).runHead.some
+      yield
+        val renderedWithParentUrl = init._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(diff)) =>
+            containsValue(diff, "child:1")
+          case _ => false
+
+        assertTrue(result == NestedJoinResult.Joined, renderedWithParentUrl)
+      )
     },
     test("dynamically added nested LiveViews can join descendants and handle events") {
       val parent = new LiveView[ParentMsg, Boolean]:

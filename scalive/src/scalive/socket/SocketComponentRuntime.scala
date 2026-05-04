@@ -24,6 +24,7 @@ private[scalive] object SocketComponentRuntime:
       initial <- componentsRef.get
       cursor = ComponentCursor(initial)
       rendered <- renderElement(root, cursor, ctx)
+      _        <- ctx.nestedLiveViews.afterParentRender
       _        <- componentsRef.set(cursor.state)
     yield rendered
 
@@ -357,6 +358,53 @@ private[scalive] object SocketComponentRuntime:
                      ZIO.succeed(false)
     yield handled
 
+  def handleComponentRawEvent[Msg, Model](
+    cid: Int,
+    event: LiveEvent,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    for
+      runtime <- state.componentsRef.get
+      handled <- runtime.instance(cid) match
+                   case None           => ZIO.succeed(false)
+                   case Some(instance) =>
+                     for
+                       hooksRef <- Ref.make(instance.hooks)
+                       componentCtx = componentContext(state.ctx, cid, hooksRef)
+                       (result, navigation) <-
+                         SocketModelRuntime.captureNavigation(state)(
+                           componentCtx.hooks.runComponentRawEvent(
+                             instance.props,
+                             instance.model,
+                             event,
+                             componentCtx
+                           )
+                         )
+                       hooks <- hooksRef.get
+                       model = result match
+                                 case LiveEventHookResult.Continue(value) => value
+                                 case LiveEventHookResult.Halt(value, _)  => value
+                       _ <- state.componentsRef.update { current =>
+                              val updated = instance.copy(model = model, hooks = hooks)
+                              current.copy(instances =
+                                current.instances.updated(instance.identity, updated)
+                              )
+                            }
+                       (parentModel, _) <- state.ref.get
+                       _                <- handleComponentLifecycleResult(
+                              result,
+                              navigation,
+                              ComponentResponseMode.EventReply,
+                              rendered,
+                              parentModel,
+                              meta,
+                              state
+                            )
+                     yield true
+    yield handled
+
   final private class ComponentCursor(
     var state: ComponentRuntimeState,
     var renderedIdentities: Set[ComponentIdentity] = Set.empty,
@@ -405,14 +453,14 @@ private[scalive] object SocketComponentRuntime:
     cursor: ComponentCursor,
     ctx: LiveContext
   ): Task[Content.Component[Any]] =
-    val typed       = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any]]
-    val identity    = ComponentIdentity(typed.component.getClass, typed.id)
-    val duplicated  = cursor.renderedIdentities.contains(identity)
-    val existing    = cursor.state.instances.get(identity)
-    val cid         = existing.map(_.cid).getOrElse(cursor.state.nextCid)
-    val component   = existing.map(_.component).getOrElse(typed.component)
-    val updateProps =
-      cursor.state.pendingUpdates.get(identity).flatMap(_.lastOption).getOrElse(typed.props)
+    val typed          = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any]]
+    val identity       = ComponentIdentity(typed.component.getClass, typed.id)
+    val duplicated     = cursor.renderedIdentities.contains(identity)
+    val existing       = cursor.state.instances.get(identity)
+    val cid            = existing.map(_.cid).getOrElse(cursor.state.nextCid)
+    val component      = existing.map(_.component).getOrElse(typed.component)
+    val pendingUpdates = cursor.state.pendingUpdates.getOrElse(identity, Vector.empty)
+    val updateProps    = pendingUpdates.lastOption.getOrElse(typed.props)
 
     for
       _ <-
@@ -435,15 +483,31 @@ private[scalive] object SocketComponentRuntime:
                      typed.props,
                      componentCtx.componentMountContext[Any, Any, Any]
                    )
+      shouldUpdate = existing.isEmpty || pendingUpdates.nonEmpty || existing.exists(
+                       _.parentProps != typed.props
+                     )
       updatedModel <-
-        component.update(
-          updateProps,
-          model,
-          componentCtx.componentUpdateContext[Any, Any, Any]
-        )
+        if shouldUpdate then
+          component.update(
+            updateProps,
+            model,
+            componentCtx.componentUpdateContext[Any, Any, Any]
+          )
+        else ZIO.succeed(model)
       hooks <- hooksRef.get
-      instance = ComponentInstance(cid, identity, component, updateProps, updatedModel, hooks)
-      _        = cursor.state = cursor.state.copy(
+      renderProps =
+        if shouldUpdate then updateProps
+        else existing.map(_.props).getOrElse(updateProps)
+      instance = ComponentInstance(
+                   cid,
+                   identity,
+                   component,
+                   renderProps,
+                   typed.props,
+                   updatedModel,
+                   hooks
+                 )
+      _ = cursor.state = cursor.state.copy(
             instances = cursor.state.instances.updated(identity, instance),
             byCid = cursor.state.byCid.updated(cid, identity),
             pendingUpdates = cursor.state.pendingUpdates.removed(identity),
@@ -451,7 +515,7 @@ private[scalive] object SocketComponentRuntime:
           )
       ref = ComponentRef[Any](cid)
       rendered <-
-        renderElement(component.render(updateProps, updatedModel, ref), cursor, componentCtx)
+        renderElement(component.render(renderProps, updatedModel, ref), cursor, componentCtx)
       afterRenderModel <- componentCtx.hooks.runComponentAfterRender(
                             updateProps,
                             updatedModel,
@@ -521,11 +585,12 @@ private[scalive] object SocketComponentRuntime:
       ctx.nestedLiveViews.register(spec).map { registration =>
         Content.Tag(
           div(
-            idAttr       := registration.topic.stripPrefix("lv:"),
+            idAttr       := registration.id,
             phx.session  := registration.session,
-            phx.parentId := registration.parentTopic,
+            phx.parentId := registration.parentDomId,
             phx.childId  := registration.id,
             phx.sticky   := registration.sticky,
+            Option.when(registration.loading)(cls := "phx-loading"),
             registration.rendered.map(Content.Tag(_))
           )
         )

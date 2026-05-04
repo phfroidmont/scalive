@@ -118,7 +118,7 @@ final private[scalive] class LiveRoutesRuntime[R](
         .flatMap(FlashToken.decode(tokenConfig, _))
         .getOrElse(Map.empty)
 
-      decodeJoinUrl(join) match
+      decodeOptionalJoinUrl(join) match
         case Left(error) =>
           ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
         case Right(decodedUrl) =>
@@ -140,27 +140,36 @@ final private[scalive] class LiveRoutesRuntime[R](
     clientStatics: Option[List[String]],
     rootSession: Option[LiveSessionPayload],
     initialFlash: Map[String, String],
-    decodedUrl: URL
+    decodedUrl: Option[URL]
   ): RIO[R & Scope, Option[WebSocketMessage]] =
     liveChannel
-      .joinNested(
+      .tryJoinNested(
         message.topic,
         join.session,
         staticChanged = false,
         message.meta,
         decodedUrl
       ).flatMap {
-        case Some(reason) => ZIO.succeed(Some(joinErrorReply(message, reason)))
-        case None         =>
-          handleRootJoin(
-            message,
-            join,
-            liveChannel,
-            clientStatics,
-            rootSession,
-            initialFlash,
-            decodedUrl
-          )
+        case NestedJoinResult.Joined =>
+          ZIO.none
+        case NestedJoinResult.Rejected(reason) =>
+          ZIO.succeed(Some(joinErrorReply(message, reason)))
+        case NestedJoinResult.NotNested =>
+          decodedUrl match
+            case Some(url) =>
+              handleRootJoin(
+                message,
+                join,
+                liveChannel,
+                clientStatics,
+                rootSession,
+                initialFlash,
+                url
+              )
+            case None =>
+              ZIO
+                .logWarning("Join payload must contain url or redirect")
+                .as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
       }
 
   private def handleRootJoin(
@@ -426,13 +435,14 @@ final private[scalive] class LiveRoutesRuntime[R](
       .logWarning(s"Ignoring unexpected client payload type $payloadType on topic ${message.topic}")
       .as(Some(errorReply(message, LiveResponse.Empty)))
 
-  private def decodeJoinUrl(join: Payload.Join): Either[String, URL] =
-    join.url
-      .orElse(join.redirect)
-      .toRight("Join payload must contain url or redirect")
-      .flatMap(rawUrl =>
-        URL.decode(rawUrl).left.map(error => s"Could not decode join URL '$rawUrl': $error")
-      )
+  private def decodeOptionalJoinUrl(join: Payload.Join): Either[String, Option[URL]] =
+    join.url.orElse(join.redirect) match
+      case Some(rawUrl) =>
+        URL
+          .decode(rawUrl)
+          .left.map(error => s"Could not decode join URL '$rawUrl': $error")
+          .map(Some(_))
+      case None => Right(None)
 
   private def wrapReply(
     message: WebSocketMessage

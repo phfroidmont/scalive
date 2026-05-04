@@ -499,7 +499,7 @@ object FlashSpec extends ZIOSpecDefault:
         case Show
 
       val rootTopic  = "lv:flash-root"
-      val childTopic = "lv:flash-root-child"
+      val childTopic = "lv:child"
       val rootMeta   = WebSocketMessage.Meta(Some(1), Some(1), rootTopic, "phx_join")
       val childMeta  = rootMeta.copy(topic = childTopic)
 

@@ -197,14 +197,36 @@ private[scalive] object SocketModelRuntime:
               state
             )
       case None =>
-        handleInvalidOrMissingBinding(
-          event.event,
-          None,
-          interceptModel,
-          carriedNavigation,
-          meta,
-          state
-        )
+        event.cid match
+          case Some(cid) =>
+            SocketComponentRuntime
+              .handleComponentRawEvent(
+                cid,
+                LiveEvent.fromPayload(event),
+                rendered,
+                meta,
+                state
+              ).flatMap {
+                case true  => ZIO.unit
+                case false =>
+                  handleInvalidOrMissingBinding(
+                    event.event,
+                    None,
+                    interceptModel,
+                    carriedNavigation,
+                    meta,
+                    state
+                  )
+              }
+          case None =>
+            handleInvalidOrMissingBinding(
+              event.event,
+              None,
+              interceptModel,
+              carriedNavigation,
+              meta,
+              state
+            )
 
   def updateModelAndSubscriptions[Msg, Model](
     rendered: RenderedView,

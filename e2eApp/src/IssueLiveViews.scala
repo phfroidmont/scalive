@@ -1,6 +1,7 @@
 import java.util.UUID
 
 import zio.ZIO
+import zio.durationInt
 import zio.http.URL
 import zio.json.ast.Json
 
@@ -15,8 +16,11 @@ private val placeholderAttr = htmlAttr("placeholder", scalive.codecs.StringAsIsE
 private val feedbackForAttr = htmlAttr("phx-feedback-for", scalive.codecs.StringAsIsEncoder)
 private val targetAttr      = htmlAttr("phx-target", scalive.codecs.StringAsIsEncoder)
 private val phxClickAttr    = htmlAttr("phx-click", scalive.codecs.StringAsIsEncoder)
+private val phxChangeAttr   = htmlAttr("phx-change", scalive.codecs.StringAsIsEncoder)
+private val phxSubmitAttr   = htmlAttr("phx-submit", scalive.codecs.StringAsIsEncoder)
 private val dataPhxAutoUploadAttr =
   htmlAttr("data-phx-auto-upload", scalive.codecs.BooleanAsAttrPresenceEncoder)
+
 class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveView.Model]:
   import Issue3719LiveView.*
 
@@ -128,24 +132,22 @@ class Issue3814LiveView extends LiveView[Issue3814LiveView.Msg, Issue3814LiveVie
   def mount(ctx: MountContext) =
     Model()
 
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("issue-3814") { (model, event, _) =>
+      if event.bindingId == "submit" then LiveEventHookResult.halt(model.copy(triggerSubmit = true))
+      else LiveEventHookResult.cont(model)
+    }
+
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Submit(event) =>
-      val submitter = event.submitter.orElse(
-        event.raw
-          .get("i-am-the-submitter").map(value => FormSubmitter("i-am-the-submitter", value))
-      )
-      model.copy(triggerSubmit = true, submitter = submitter)
+    (_: Msg) => model
 
   def render(model: Model) =
     form(
-      phx.onSubmitForm(FormCodec.formData)(Msg.Submit(_)),
+      phxSubmitAttr     := "submit",
       phx.triggerAction := model.triggerSubmit,
       actionAttr        := "/submit",
       methodAttr        := "post",
       input(typ := "hidden", nameAttr := "greeting", value := "hello"),
-      model.submitter.map(submitter =>
-        input(typ := "hidden", nameAttr := submitter.name, value := submitter.value)
-      ),
       button(
         typ      := "submit",
         nameAttr := "i-am-the-submitter",
@@ -153,12 +155,11 @@ class Issue3814LiveView extends LiveView[Issue3814LiveView.Msg, Issue3814LiveVie
         "Submit"
       )
     )
-end Issue3814LiveView
 
 object Issue3814LiveView:
-  final case class Model(triggerSubmit: Boolean = false, submitter: Option[FormSubmitter] = None)
+  final case class Model(triggerSubmit: Boolean = false)
   enum Msg:
-    case Submit(event: FormEvent[FormData])
+    case Noop
 
 class Issue3040LiveView extends LiveView[Issue3040LiveView.Msg, Issue3040LiveView.Model]:
   import Issue3040LiveView.*
@@ -504,17 +505,20 @@ object Issue3448LiveView:
     case Validate(data: FormData)
     case Search
 
-class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg.type, Unit]:
+class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg, Unit]:
+  import Issue3194LiveView.*
+
   def mount(ctx: MountContext) =
     ()
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Issue3194LiveView.Msg.type) => model
+    case Msg.Validate => model
+    case Msg.Submit   => ctx.nav.pushNavigate("/issues/3194/other").as(model)
 
   def render(model: Unit) =
     form(
-      phx.onChange(Issue3194LiveView.Msg),
-      phx.onSubmit(JS.navigate("/issues/3194/other")),
+      phx.onChange(Msg.Validate),
+      phx.onSubmit(Msg.Submit),
       input(
         idAttr       := "foo_store_number",
         nameAttr     := "foo[store_number]",
@@ -524,7 +528,8 @@ class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg.type, Unit]:
     )
 
 object Issue3194LiveView:
-  case object Msg
+  enum Msg:
+    case Validate, Submit
 
 class Issue3194OtherLiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
@@ -596,17 +601,31 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
   import Issue3026LiveView.*
 
   def mount(ctx: MountContext) =
-    Model()
+    if ctx.connected then startLoad(ctx.async).as(Model(status = Status.Loading))
+    else Model(status = Status.Connecting)
+
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("issue-3026-form") { (model, event, ctx) =>
+      event.bindingId match
+        case "validate" =>
+          val data = event.value.asString
+            .map(FormData.fromUrlEncoded).getOrElse(FormData.fromMap(event.params))
+          LiveEventHookResult.halt(
+            model.copy(
+              name = data.getOrElse("name", model.name),
+              email = data.getOrElse("email", model.email)
+            )
+          )
+        case "submit" =>
+          startLoad(ctx.async).as(LiveEventHookResult.halt(model.copy(status = Status.Loading)))
+        case _ => LiveEventHookResult.cont(model)
+    }
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeStatus(data) =>
       model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
-    case Msg.Validate(data) =>
-      model.copy(
-        name = data.getOrElse("name", model.name),
-        email = data.getOrElse("email", model.email)
-      )
-    case Msg.Submit => model.copy(status = Status.Loaded)
+    case Msg.Loaded(result) =>
+      model.copy(status = Status.Loaded, name = result.name, email = result.email)
 
   def render(model: Model) =
     div(
@@ -625,15 +644,10 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
       ),
       model.status match
         case Status.Loaded =>
-          div(
-            "Example form",
-            form(
-              phx.onChangeForm(Msg.Validate(_)),
-              phx.onSubmit(Msg.Submit),
-              input(nameAttr := "name", typ  := "text", value := model.name),
-              input(nameAttr := "email", typ := "text", value := model.email),
-              button(typ     := "submit", "Submit")
-            )
+          liveComponent(
+            Issue3026FormComponent,
+            id = "my-form",
+            props = FormProps(model.name, model.email)
           )
         case other => div(cls := "p-8 bg-gray-200 mb-4", other.value)
     )
@@ -647,11 +661,35 @@ object Issue3026LiveView:
     case Loaded     extends Status("loaded")
 
   final case class Model(status: Status = Status.Loaded, name: String = "John", email: String = "")
+  final case class LoadResult(name: String, email: String)
+  final case class FormProps(name: String, email: String)
 
   enum Msg:
     case ChangeStatus(data: FormData)
-    case Validate(data: FormData)
-    case Submit
+    case Loaded(result: LoadResult)
+
+  private def startLoad(async: Async[Msg]) =
+    async.start("load")(ZIO.sleep(200.millis).as(LoadResult("John", "")))(Msg.Loaded(_))
+
+  object Issue3026FormComponent extends LiveComponent[FormProps, Unit, Unit]:
+    def mount(props: FormProps, ctx: MountContext) =
+      ()
+
+    def handleMessage(props: FormProps, model: Unit, ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(props: FormProps, model: Unit, self: ComponentRef[Unit]) =
+      div(
+        "Example form",
+        form(
+          phxChangeAttr := "validate",
+          phxSubmitAttr := "submit",
+          input(nameAttr := "name", typ  := "text", value := props.name),
+          input(nameAttr := "email", typ := "text", value := props.email),
+          button(typ     := "submit", "Submit")
+        )
+      )
+end Issue3026LiveView
 
 class Issue3117LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
@@ -662,16 +700,36 @@ class Issue3117LiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      a(
-        idAttr := "navigate",
-        href   := "/issues/3117?nav",
-        phx.onClick(JS.navigate("/issues/3117?nav")),
-        "Navigate"
-      ),
+      link.navigate("/issues/3117?nav", idAttr := "navigate", "Navigate"),
       (1 to 2).map(i =>
-        div(idAttr := s"row-$i", s"Example LC Row $i", div(cls := "static", "static content"))
+        div(liveComponent(Issue3117LiveView.Row, id = s"row-$i", props = s"row-$i"))
       )
     )
+
+object Issue3117LiveView:
+  object Row extends LiveComponent[String, Row.Msg, Row.Model]:
+    enum Msg:
+      case Loaded(value: String)
+
+    final case class Model(result: Option[String] = None, started: Boolean = false)
+
+    def mount(props: String, ctx: MountContext) =
+      Model()
+
+    override def update(props: String, model: Model, ctx: UpdateContext) =
+      if model.started then model
+      else ctx.async.start("foo")(ZIO.succeed("bar"))(Msg.Loaded(_)).as(model.copy(started = true))
+
+    def handleMessage(props: String, model: Model, ctx: MessageContext) =
+      case Msg.Loaded(value) => model.copy(result = Some(value))
+
+    def render(props: String, model: Model, self: ComponentRef[Msg]) =
+      val result = model.result.map(value => s"Some($value)").getOrElse("None")
+      div(
+        idAttr := props,
+        s"Example LC Row $result",
+        div(cls := "static", "static content")
+      )
 
 class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
   import Issue3169LiveView.*
@@ -865,46 +923,96 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Unit]:
       else link.navigate("/issues/3681/away", "Go to a different LV with a (funcky) stream")
     )
 
-class Issue3684LiveView extends LiveView[Issue3684LiveView.Msg, Boolean]:
-  import Issue3684LiveView.*
-
+class Issue3684LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    false
+    ()
 
-  def handleMessage(model: Boolean, ctx: MessageContext) =
-    case Msg.Toggle => !model
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Unit) => model
 
-  def render(model: Boolean) =
-    input(idAttr := "dewey", typ := "checkbox", checked := model, phx.onClick(Msg.Toggle))
+  def render(model: Unit) =
+    div(liveComponent(Issue3684LiveView.BadgeForm, id = "badge_form", props = ()))
 
 object Issue3684LiveView:
-  enum Msg:
-    case Toggle
+  object BadgeForm extends LiveComponent[Unit, BadgeForm.Msg, String]:
+    enum Msg:
+      case ChangeType(value: String)
 
-class Issue3686LiveView(pageName: String, flash: String) extends LiveView[Unit, String]:
+    def mount(props: Unit, ctx: MountContext) =
+      "huey"
+
+    def handleMessage(props: Unit, model: String, ctx: MessageContext) =
+      case Msg.ChangeType(value) => value
+
+    def render(props: Unit, selected: String, self: ComponentRef[Msg]) =
+      div(
+        form(
+          idAttr        := "foo",
+          cls           := "max-w-lg p-8 flex flex-col gap-4",
+          phxChangeAttr := "change",
+          phxSubmitAttr := "submit",
+          radios(selected, self)
+        )
+      )
+
+    private def radios(selected: String, self: ComponentRef[Msg]) =
+      fieldset(
+        legend("Radio example:"),
+        Vector("huey", "dewey").map(radioType =>
+          div(
+            phx.onClick(Msg.ChangeType(radioType)),
+            phx.target(self),
+            phx.value("type") := radioType,
+            input(
+              typ      := "radio",
+              idAttr   := radioType,
+              nameAttr := "type",
+              value    := radioType,
+              checked  := selected == radioType
+            ),
+            label(radioType)
+          )
+        )
+      )
+  end BadgeForm
+end Issue3684LiveView
+
+class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg.type, Unit]:
+  import Issue3686LiveView.*
+
   override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
   def mount(ctx: MountContext) =
-    flash
+    ()
 
-  override def handleParams(model: String, params: Unit, url: URL, ctx: ParamsContext) =
-    if pageName == "A" && url.encode.contains("from=c") then "Flash from C" else model
+  override def handleParams(model: Unit, params: Unit, url: URL, ctx: ParamsContext) =
+    model
 
-  def handleMessage(model: String, ctx: MessageContext) =
-    (_: Unit) => model
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Msg.type) =>
+      pageName match
+        case "A" =>
+          ctx.flash.put("info", "Flash from A") *> ctx.nav.pushNavigate("/issues/3686/b").as(model)
+        case "B" =>
+          ctx.flash.put("info", "Flash from B") *> ctx.nav.redirect("/issues/3686/c").as(model)
+        case _ =>
+          ctx.flash.put("info", "Flash from C") *> ctx.nav.pushNavigate("/issues/3686/a").as(model)
 
-  def render(model: String) =
+  def render(model: Unit) =
     val next = pageName match
       case "A" => "B"
       case "B" => "C"
       case _   => "A"
-    val nextHref =
-      if pageName == "C" then "/issues/3686/a?from=c" else s"/issues/3686/${next.toLowerCase}"
 
     div(
-      div(idAttr := "flash", model),
-      button(phx.onClick(JS.navigate(nextHref)), s"To $next")
+      h1(pageName),
+      button(phx.onClick(Msg), s"To $next"),
+      div(idAttr := "flash", "%{}", flash("info")(message => span(message)))
     )
+end Issue3686LiveView
+
+object Issue3686LiveView:
+  case object Msg
 
 class Issue3709LiveView(id: Int) extends LiveView[Issue3709LiveView.Msg, Int]:
   import Issue3709LiveView.*
@@ -926,25 +1034,38 @@ object Issue3709LiveView:
   enum Msg:
     case BreakStuff
 
-class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Boolean]:
+class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Issue3919LiveView.Action]:
   import Issue3919LiveView.*
 
   def mount(ctx: MountContext) =
-    false
+    Action(text = "No red")
 
-  def handleMessage(model: Boolean, ctx: MessageContext) =
-    case Msg.Toggle => !model
+  def handleMessage(model: Action, ctx: MessageContext) =
+    case Msg.Toggle =>
+      if model.attrs.nonEmpty then Action(text = "No red")
+      else Action(text = "Red", attrs = Some(ComponentAttrs(special = true)))
 
-  def render(model: Boolean) =
+  def render(model: Action) =
+    val renderedComponent =
+      model.attrs match
+        case Some(attrs) => myComponent(attrs)(model.text)
+        case None        => myComponent()(model.text)
+
     div(
-      div(
-        styleAttr := (if model then "background-color: red;" else ""),
-        if model then "Red" else "No red"
-      ),
+      renderedComponent,
       button(phx.onClick(Msg.Toggle), "toggle")
     )
 
+  private def myComponent(attrs: ComponentAttrs = ComponentAttrs())(inner: String) =
+    div(
+      styleAttr := (if attrs.special then "background-color: red;" else ""),
+      inner
+    )
+
 object Issue3919LiveView:
+  final case class Action(text: String, attrs: Option[ComponentAttrs] = None)
+  final case class ComponentAttrs(special: Boolean = false)
+
   enum Msg:
     case Toggle
 
@@ -989,34 +1110,99 @@ class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
 
   def render(model: Boolean) =
     div(
+      liveComponent(Component, id = "comp", props = ()),
       button(phx.onClick(Msg.Toggle), "Show"),
-      div(
-        idAttr := "nested_view",
-        if model then div(dataAttr("phx-component") := "1", "component") else ""
-      )
+      if model then liveView("nested_view", NestedViewLive()) else ""
     )
 
 object Issue3953LiveView:
   enum Msg:
     case Toggle
 
-class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg.type, Vector[Int]]:
+  object Component extends LiveComponent[Unit, Unit, Unit]:
+    def mount(props: Unit, ctx: MountContext) =
+      ()
+
+    def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(props: Unit, model: Unit, self: ComponentRef[Unit]) =
+      div("Component")
+
+  class NestedViewLive extends LiveView[Unit, Unit]:
+    def mount(ctx: MountContext) =
+      ()
+
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(model: Unit) =
+      div(
+        "Nested Content",
+        liveComponent(Component, id = "comp2", props = ())
+      )
+
+class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveView.Model]:
+  import Issue3979LiveView.*
+
   def mount(ctx: MountContext) =
-    Vector.fill(10)(0)
+    Model(counter = 1, components = (1 to 10).map(id => ComponentState(id, counter = 0)).toVector)
 
-  def handleMessage(model: Vector[Int], ctx: MessageContext) =
-    (_: Issue3979LiveView.Msg.type) => Vector.fill(10)(10)
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.Bump =>
+      val target         = model.counter
+      val nextComponents = model.components.map { component =>
+        if component.id == target then component.copy(counter = component.counter + 1)
+        else component
+      }
+      ctx.async
+        .start(s"update-$target")(ZIO.sleep(100.millis).as(target))(Msg.DelayedUpdate(_))
+        .as(model.copy(counter = target + 1, components = nextComponents))
+    case Msg.DelayedUpdate(id) =>
+      model.components.find(_.id == id) match
+        case Some(component) =>
+          ctx.components
+            .sendUpdate[CounterComponent.type](
+              s"comp-$id",
+              CounterProps(id = id, domCounter = component.counter, counter = 10)
+            ).as(model)
+        case None => model
 
-  def render(counters: Vector[Int]) =
+  def render(model: Model) =
     div(
-      counters.zipWithIndex.map { case (counter, index) =>
-        component(index + 1, div(idAttr := s"hello-${index + 1}-$counter", counter.toString))
+      model.components.map { component =>
+        liveComponent(
+          CounterComponent,
+          id = s"comp-${component.id}",
+          props =
+            CounterProps(component.id, domCounter = component.counter, counter = component.counter)
+        )
       },
-      button(phx.onClick(Issue3979LiveView.Msg), "Bump ID (and counter)")
+      button(phx.onClick(Msg.Bump), "Bump ID (and counter)")
     )
+end Issue3979LiveView
 
 object Issue3979LiveView:
-  case object Msg
+  final case class ComponentState(id: Int, counter: Int)
+  final case class Model(counter: Int, components: Vector[ComponentState])
+  final case class CounterProps(id: Int, domCounter: Int, counter: Int)
+
+  enum Msg:
+    case Bump
+    case DelayedUpdate(id: Int)
+
+  object CounterComponent extends LiveComponent[CounterProps, Unit, CounterProps]:
+    def mount(props: CounterProps, ctx: MountContext) =
+      props
+
+    override def update(props: CounterProps, model: CounterProps, ctx: UpdateContext) =
+      props
+
+    def handleMessage(props: CounterProps, model: CounterProps, ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(props: CounterProps, model: CounterProps, self: ComponentRef[Unit]) =
+      div(idAttr := s"hello-${model.id}-${model.domCounter}", model.counter.toString)
 
 class Issue4027LiveView extends LiveView[Issue4027LiveView.Msg, Issue4027LiveView.Model]:
   import Issue4027LiveView.*
@@ -1030,8 +1216,13 @@ class Issue4027LiveView extends LiveView[Issue4027LiveView.Msg, Issue4027LiveVie
     model.copy(caseName = params.caseName)
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Load   => model.copy(items = InitialItems)
-    case Msg.Remove => model.copy(items = InitialItems.tail)
+    case Msg.Load =>
+      startLoad(ctx.async, InitialItems).as(model.copy(data = AsyncValue.markLoading(model.data)))
+    case Msg.Remove =>
+      startLoad(ctx.async, InitialItems.tail).as(
+        model.copy(data = AsyncValue.markLoading(model.data))
+      )
+    case Msg.Loaded(items) => model.copy(data = AsyncValue.ok(items))
 
   def render(model: Model) =
     div(
@@ -1043,10 +1234,11 @@ class Issue4027LiveView extends LiveView[Issue4027LiveView.Msg, Issue4027LiveVie
       if model.caseName == "second" then
         div(styleAttr := "margin: 10px; height: 1px; background-color: black;")
       else "",
-      div(
-        idAttr := "result",
-        model.items.splitBy(_.id)((_, item) => p(item.value))
-      ),
+      if model.caseName == "first" then
+        AsyncValue.currentValue(model.data) match
+          case Some(items) => liveComponent(ReproLiveComponent, id = "repro", props = items)
+          case None        => ""
+      else liveComponent(ReproLiveComponentWithAsyncResult, id = "repro_async", props = model.data),
       div(
         button(phx.onClick(Msg.Load), "Load data"),
         button(phx.onClick(Msg.Remove), "Remove first entry")
@@ -1065,12 +1257,75 @@ object Issue4027LiveView:
       )
 
   final case class Item(id: Int, value: String)
-  final case class Model(caseName: String = "first", items: Vector[Item] = Vector.empty)
+  final case class Model(
+    caseName: String = "first",
+    data: AsyncValue[Vector[Item]] = AsyncValue.ok(Vector.empty))
 
   enum Msg:
     case Load, Remove
+    case Loaded(items: Vector[Item])
 
   private val InitialItems = Vector(Item(1, "First"), Item(2, "Second"), Item(3, "Third"))
+
+  private def startLoad(async: Async[Msg], items: Vector[Item]) =
+    async.start("data")(ZIO.sleep(100.millis).as(items))(Msg.Loaded(_))
+
+  object ReproLiveComponent extends LiveComponent[Vector[Item], Unit, Vector[Item]]:
+    def mount(props: Vector[Item], ctx: MountContext) =
+      props
+
+    override def update(props: Vector[Item], model: Vector[Item], ctx: UpdateContext) =
+      props
+
+    def handleMessage(props: Vector[Item], model: Vector[Item], ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(props: Vector[Item], model: Vector[Item], self: ComponentRef[Unit]) =
+      keyedResult(model)
+
+  object ReproLiveComponentWithAsyncResult
+      extends LiveComponent[AsyncValue[Vector[Item]], Unit, AsyncValue[Vector[Item]]]:
+    def mount(props: AsyncValue[Vector[Item]], ctx: MountContext) =
+      props
+
+    override def update(
+      props: AsyncValue[Vector[Item]],
+      model: AsyncValue[Vector[Item]],
+      ctx: UpdateContext
+    ) =
+      props
+
+    def handleMessage(
+      props: AsyncValue[Vector[Item]],
+      model: AsyncValue[Vector[Item]],
+      ctx: MessageContext
+    ) =
+      (_: Unit) => model
+
+    def render(
+      props: AsyncValue[Vector[Item]],
+      model: AsyncValue[Vector[Item]],
+      self: ComponentRef[Unit]
+    ) =
+      asyncResult(model)
+
+  private def keyedResult(items: Vector[Item]) =
+    div(
+      idAttr := "result",
+      keyedItems(items)
+    )
+
+  private def asyncResult(data: AsyncValue[Vector[Item]]) =
+    div(
+      idAttr := "result",
+      AsyncValue.currentValue(data) match
+        case Some(items) => keyedItems(items)
+        case None        => ""
+    )
+
+  private def keyedItems(items: Vector[Item]) =
+    items.splitBy(_.id)((_, item) => p(item.value))
+end Issue4027LiveView
 
 class Issue4066LiveView extends LiveView[Issue4066LiveView.Msg, Issue4066LiveView.Model]:
   import Issue4066LiveView.*
@@ -1083,12 +1338,6 @@ class Issue4066LiveView extends LiveView[Issue4066LiveView.Msg, Issue4066LiveVie
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
     model.copy(delay = params.delay)
 
-  override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("issue-4066") { (model, event, _) =>
-      if event.bindingId == "do-something" then LiveEventHookResult.halt(model)
-      else LiveEventHookResult.cont(model)
-    }
-
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Toggle => model.copy(renderInput = !model.renderInput)
 
@@ -1097,14 +1346,9 @@ class Issue4066LiveView extends LiveView[Issue4066LiveView.Msg, Issue4066LiveVie
       p(idAttr := "render-time", model.renderTime),
       button(phx.onClick(Msg.Toggle), "Toggle"),
       Option.when(model.renderInput)(
-        input(
-          idAttr            := "foo",
-          phx.hook          := "Issue4066Hook",
-          dataAttr("delay") := model.delay.toString
-        )
+        liveComponent(DelayedInputComponent, id = "foo", props = model.delay)
       )
     )
-end Issue4066LiveView
 
 object Issue4066LiveView:
   final case class QueryParams(delay: Int = 3000)
@@ -1121,6 +1365,28 @@ object Issue4066LiveView:
 
   enum Msg:
     case Toggle
+
+  object DelayedInputComponent extends LiveComponent[Int, Unit, Unit]:
+    override def hooks: ComponentLiveHooks[Int, Unit, Unit] =
+      ComponentLiveHooks.empty.rawEvent("issue-4066") { (_, model, event, _) =>
+        if event.bindingId == "do-something" then LiveEventHookResult.halt(model)
+        else LiveEventHookResult.cont(model)
+      }
+
+    def mount(props: Int, ctx: MountContext) =
+      ()
+
+    def handleMessage(props: Int, model: Unit, ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(delay: Int, model: Unit, self: ComponentRef[Unit]) =
+      input(
+        idAttr   := "foo",
+        phx.hook := "Issue4066Hook",
+        phx.target(self),
+        dataAttr("delay") := delay.toString
+      )
+end Issue4066LiveView
 
 class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveView.Model]:
   import Issue4078LiveView.*
@@ -1144,7 +1410,11 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
       form(
         idAttr := "upload-form",
         phx.onChange(_ => Msg.Validate),
-        issue4078FileInput(model)
+        liveFileInput(
+          model.upload,
+          disabled := model.disabled,
+          cls      := model.customClass
+        )
       ),
       button(
         idAttr := "toggle-disabled",
@@ -1169,30 +1439,6 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
       case None         => model
     }
 
-  private def issue4078FileInput(model: Model) =
-    val upload          = model.upload
-    val activeRefs      = upload.entries.map(_.ref).mkString(",")
-    val doneRefs        = upload.entries.filter(_.done).map(_.ref).mkString(",")
-    val preflightedRefs = upload.entries
-      .filter(entry => entry.preflighted || entry.done)
-      .map(_.ref)
-      .mkString(",")
-
-    input(
-      idAttr                           := upload.ref,
-      typ                              := "file",
-      nameAttr                         := upload.name,
-      accept                           := upload.accept.toHtmlValue,
-      dataAttr("phx-hook")             := "Phoenix.LiveFileUpload",
-      dataAttr("phx-upload-ref")       := upload.ref,
-      dataAttr("phx-active-refs")      := activeRefs,
-      dataAttr("phx-done-refs")        := doneRefs,
-      dataAttr("phx-preflighted-refs") := preflightedRefs,
-      dataPhxAutoUploadAttr            := upload.autoUpload,
-      multiple                         := upload.maxEntries > 1,
-      disabled                         := model.disabled,
-      cls                              := model.customClass
-    )
 end Issue4078LiveView
 
 object Issue4078LiveView:

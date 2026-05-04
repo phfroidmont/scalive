@@ -143,7 +143,7 @@ private[scalive] object RenderSnapshot:
           pushStringSlot(Escaping.escape(value))
           staticFragment += "\""
         case Attr.StaticValueAsPresence(name, value) =>
-          if value then staticFragment += s" $name"
+          pushStringSlot(if value then s" $name" else "")
         case Attr.Binding(name, f) =>
           val id = BindingId.attrBindingId(path, attrIndex)
           staticFragment += s" $name=\""
@@ -222,7 +222,7 @@ private[scalive] object RenderSnapshot:
         structuralChildIndex = structuralChildIndex + 1
         pushNodeSlot(
           compileElement(
-            div(idAttr := s"nested-${spec.id}", phx.childId := spec.id, phx.sticky := spec.sticky),
+            div(idAttr := spec.id, phx.childId := spec.id, phx.sticky := spec.sticky),
             isTopLevel = false,
             path = childPath,
             bindings = bindings,

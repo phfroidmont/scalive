@@ -37,21 +37,23 @@ private[scalive] object WebSocketMessage:
     eventType: String)
 
   object Protocol:
-    val EventHeartbeat    = "heartbeat"
-    val EventJoin         = "phx_join"
-    val EventLeave        = "phx_leave"
-    val EventClose        = "phx_close"
-    val EventEvent        = "event"
-    val EventLivePatch    = "live_patch"
-    val EventAllowUpload  = "allow_upload"
-    val EventProgress     = "progress"
-    val EventReply        = "phx_reply"
-    val EventError        = "phx_error"
-    val EventDiff         = "diff"
-    val EventRedirect     = "redirect"
-    val EventLiveRedirect = "live_redirect"
-    val BinaryChunkEvent  = "chunk"
-    val LiveViewVersion   = "1.1.28"
+    val EventHeartbeat       = "heartbeat"
+    val EventJoin            = "phx_join"
+    val EventLeave           = "phx_leave"
+    val EventClose           = "phx_close"
+    val EventEvent           = "event"
+    val EventCidsWillDestroy = "cids_will_destroy"
+    val EventCidsDestroyed   = "cids_destroyed"
+    val EventLivePatch       = "live_patch"
+    val EventAllowUpload     = "allow_upload"
+    val EventProgress        = "progress"
+    val EventReply           = "phx_reply"
+    val EventError           = "phx_error"
+    val EventDiff            = "diff"
+    val EventRedirect        = "redirect"
+    val EventLiveRedirect    = "live_redirect"
+    val BinaryChunkEvent     = "chunk"
+    val LiveViewVersion      = "1.1.28"
 
   given JsonCodec[WebSocketMessage] = JsonCodec[Json].transformOrFail(
     decodeSocketMessage,
@@ -96,11 +98,17 @@ private[scalive] object WebSocketMessage:
 
   private def decodePayload(eventType: String, payload: Json): Either[String, Payload] =
     eventType match
-      case Protocol.EventHeartbeat   => Right(Payload.Heartbeat)
-      case Protocol.EventJoin        => decodeJoinPayload(payload)
-      case Protocol.EventLeave       => Right(Payload.Leave)
-      case Protocol.EventClose       => Right(Payload.Close)
-      case Protocol.EventEvent       => payload.as[Payload.Event]
+      case Protocol.EventHeartbeat       => Right(Payload.Heartbeat)
+      case Protocol.EventJoin            => decodeJoinPayload(payload)
+      case Protocol.EventLeave           => Right(Payload.Leave)
+      case Protocol.EventClose           => Right(Payload.Close)
+      case Protocol.EventEvent           => payload.as[Payload.Event]
+      case Protocol.EventCidsWillDestroy =>
+        Right(
+          Payload.Event(`type` = "event", event = Protocol.EventCidsWillDestroy, value = payload)
+        )
+      case Protocol.EventCidsDestroyed =>
+        Right(Payload.Event(`type` = "event", event = Protocol.EventCidsDestroyed, value = payload))
       case Protocol.EventLivePatch   => payload.as[Payload.LivePatch]
       case Protocol.EventAllowUpload => payload.as[Payload.AllowUpload]
       case Protocol.EventProgress    => payload.as[Payload.Progress]

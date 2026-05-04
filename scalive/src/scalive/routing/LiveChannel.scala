@@ -16,7 +16,8 @@ final private[scalive] class LiveChannel(
   sockets: SubscriptionRef[Map[String, Socket[?, ?]]],
   uploadOwners: Ref[Map[String, String]],
   nestedEntries: Ref[Map[String, NestedLiveViewEntry]],
-  tokenConfig: TokenConfig):
+  tokenConfig: TokenConfig,
+  private[scalive] val connectAuthorized: Boolean):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
     sockets.changes
       .map(m =>
@@ -253,9 +254,9 @@ final private[scalive] class LiveChannel(
 end LiveChannel
 
 private[scalive] object LiveChannel:
-  def make(tokenConfig: TokenConfig): UIO[LiveChannel] =
+  def make(tokenConfig: TokenConfig, connectAuthorized: Boolean = true): UIO[LiveChannel] =
     for
       sockets      <- SubscriptionRef.make(Map.empty[String, Socket[?, ?]])
       uploadOwners <- Ref.make(Map.empty[String, String])
       nested       <- Ref.make(Map.empty[String, NestedLiveViewEntry])
-    yield new LiveChannel(sockets, uploadOwners, nested, tokenConfig)
+    yield new LiveChannel(sockets, uploadOwners, nested, tokenConfig, connectAuthorized)

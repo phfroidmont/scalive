@@ -8,6 +8,9 @@ console.log = (...args) => {
   originalConsoleLog(...args)
 }
 
+const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
+const liveSocketParams = csrfToken ? { _csrf_token: csrfToken } : {}
+
 const hooks = {
   PhoneNumber: {
     mounted() {
@@ -105,6 +108,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
   maxReloads: 5,
   failsafeJitter: 1000,
   rejoinAfterMs: () => 50,
+  params: liveSocketParams,
   hooks
 })
 

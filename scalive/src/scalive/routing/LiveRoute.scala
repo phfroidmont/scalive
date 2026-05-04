@@ -309,15 +309,20 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                                              mountContext,
                                              globalRootLayout
                                            )
+                                csrf             = CsrfProtection.prepare(tokenConfig, req)
+                                documentWithCsrf = CsrfProtection.injectMeta(document, csrf.value)
                                 _ <- ctx.hooks.runAfterRender[Msg, Model](model, ctx)
                               yield LiveRoute.clearFlashCookie(
-                                Response.html(
-                                  Html.raw(
-                                    HtmlBuilder.build(
-                                      document,
-                                      isRoot = false
+                                CsrfProtection.addCookie(
+                                  Response.html(
+                                    Html.raw(
+                                      HtmlBuilder.build(
+                                        documentWithCsrf,
+                                        isRoot = false
+                                      )
                                     )
-                                  )
+                                  ),
+                                  csrf.cookie
                                 ),
                                 req
                               )

@@ -18,11 +18,11 @@ final private[scalive] class LiveRoutesRuntime[R](
   liveSocketMount: PathCodec[Unit],
   tokenConfig: TokenConfig):
 
-  private val socketApp: WebSocketApp[R] =
+  private def socketApp(connectAuthorized: Boolean): WebSocketApp[R] =
     Handler.webSocket { channel =>
       ZIO
         .scoped(for
-          liveChannel <- LiveChannel.make(tokenConfig)
+          liveChannel <- LiveChannel.make(tokenConfig, connectAuthorized)
           _           <- liveChannel.diffsStream
                  .runForeach((payload, meta) =>
                    channel
@@ -106,114 +106,128 @@ final private[scalive] class LiveRoutesRuntime[R](
     join: Payload.Join,
     liveChannel: LiveChannel
   ): RIO[R & Scope, Option[WebSocketMessage]] =
-    val clientStatics = join.static.orElse(StaticTracking.clientListFromParams(join.params))
-    val rootSession   = verifyRootSession(message.topic, join.session)
-    val initialFlash  = join.flash
-      .orElse(rootSession.flatMap(_.flash))
-      .flatMap(FlashToken.decode(tokenConfig, _))
-      .getOrElse(Map.empty)
+    if !liveChannel.connectAuthorized then
+      ZIO
+        .logWarning(s"Rejecting LiveView join for ${message.topic}: invalid CSRF token")
+        .as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+    else
+      val clientStatics = join.static.orElse(StaticTracking.clientListFromParams(join.params))
+      val rootSession   = verifyRootSession(message.topic, join.session)
+      val initialFlash  = join.flash
+        .orElse(rootSession.flatMap(_.flash))
+        .flatMap(FlashToken.decode(tokenConfig, _))
+        .getOrElse(Map.empty)
 
-    decodeJoinUrl(join) match
-      case Left(error) =>
-        ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
-      case Right(decodedUrl) =>
-        liveChannel
-          .joinNested(message.topic, join.session, staticChanged = false, message.meta, decodedUrl)
-          .flatMap {
-            case Some(reason) => ZIO.succeed(Some(joinErrorReply(message, reason)))
-            case None         =>
-              val req = Request(url = decodedUrl)
-              liveRoutes.iterator
-                .map(route =>
-                  route.pathCodec
-                    .decode(req.path)
-                    .toOption
-                    .map(pathParams =>
-                      rootSession match
-                        case Some(session) if session.sessionName == route.sessionName =>
-                          if isAuthorizedRootJoin(session, route, join) then
-                            route.mountPipeline
-                              .runConnected(
-                                session.mountClaims,
-                                LiveMountRequest(pathParams, req),
-                                ()
-                              ).foldZIO(
-                                failure => mountFailureReply(message, failure).map(Some(_)),
-                                mountContext =>
-                                  val rootKey = route.rootLayoutKey(
-                                    pathParams,
-                                    req,
-                                    decodedUrl,
-                                    mountContext,
-                                    globalRootLayout
-                                  )
-                                  val serverStatics = route.trackedStatic(
-                                    pathParams,
-                                    req,
-                                    decodedUrl,
-                                    mountContext,
-                                    globalLayouts,
-                                    globalRootLayout
-                                  )
-                                  val staticChanged =
-                                    StaticTracking.staticChanged(clientStatics, serverStatics)
-                                  val ctx = LiveContext(
-                                    staticChanged = staticChanged,
-                                    nestedLiveViews = liveChannel.nestedRuntime(message.topic)
-                                  )
-                                  val lv = route.buildLiveView(pathParams, req, mountContext)
-                                  val renderRoot = route.socketRenderRoot(
-                                    lv,
-                                    pathParams,
-                                    req,
-                                    mountContext,
-                                    globalLayouts
-                                  )
-                                  if rootKey != session.rootLayoutKey then
-                                    ZIO.logWarning(
-                                      s"Rejecting live redirect to ${decodedUrl.path.encode}: root layout changed from ${session.rootLayoutKey} to $rootKey"
-                                    ) *>
-                                      ZIO.succeed(
-                                        Some(joinErrorReply(message, JoinErrorReason.Unauthorized))
-                                      )
-                                  else
-                                    ZIO.logDebug(
-                                      s"Joining LiveView ${route.pathCodec} ${message.topic}"
-                                    ) *>
-                                      liveChannel
-                                        .join(
-                                          message.topic,
-                                          join.session,
-                                          lv,
-                                          ctx,
-                                          message.meta,
-                                          decodedUrl,
-                                          initialFlash,
-                                          Some(renderRoot)
-                                        )(using route.msgClassTag)
-                                        .as(None)
-                                        .catchAllCause(cause =>
-                                          ZIO.logErrorCause(cause) *>
-                                            ZIO.succeed(
-                                              Some(joinErrorReply(message, JoinErrorReason.Stale))
-                                            )
+      decodeJoinUrl(join) match
+        case Left(error) =>
+          ZIO.logWarning(error).as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+        case Right(decodedUrl) =>
+          liveChannel
+            .joinNested(
+              message.topic,
+              join.session,
+              staticChanged = false,
+              message.meta,
+              decodedUrl
+            )
+            .flatMap {
+              case Some(reason) => ZIO.succeed(Some(joinErrorReply(message, reason)))
+              case None         =>
+                val req = Request(url = decodedUrl)
+                liveRoutes.iterator
+                  .map(route =>
+                    route.pathCodec
+                      .decode(req.path)
+                      .toOption
+                      .map(pathParams =>
+                        rootSession match
+                          case Some(session) if session.sessionName == route.sessionName =>
+                            if isAuthorizedRootJoin(session, route, join) then
+                              route.mountPipeline
+                                .runConnected(
+                                  session.mountClaims,
+                                  LiveMountRequest(pathParams, req),
+                                  ()
+                                ).foldZIO(
+                                  failure => mountFailureReply(message, failure).map(Some(_)),
+                                  mountContext =>
+                                    val rootKey = route.rootLayoutKey(
+                                      pathParams,
+                                      req,
+                                      decodedUrl,
+                                      mountContext,
+                                      globalRootLayout
+                                    )
+                                    val serverStatics = route.trackedStatic(
+                                      pathParams,
+                                      req,
+                                      decodedUrl,
+                                      mountContext,
+                                      globalLayouts,
+                                      globalRootLayout
+                                    )
+                                    val staticChanged =
+                                      StaticTracking.staticChanged(clientStatics, serverStatics)
+                                    val ctx = LiveContext(
+                                      staticChanged = staticChanged,
+                                      nestedLiveViews = liveChannel.nestedRuntime(message.topic)
+                                    )
+                                    val lv = route.buildLiveView(pathParams, req, mountContext)
+                                    val renderRoot = route.socketRenderRoot(
+                                      lv,
+                                      pathParams,
+                                      req,
+                                      mountContext,
+                                      globalLayouts
+                                    )
+                                    if rootKey != session.rootLayoutKey then
+                                      ZIO.logWarning(
+                                        s"Rejecting live redirect to ${decodedUrl.path.encode}: root layout changed from ${session.rootLayoutKey} to $rootKey"
+                                      ) *>
+                                        ZIO.succeed(
+                                          Some(
+                                            joinErrorReply(message, JoinErrorReason.Unauthorized)
+                                          )
                                         )
-                              )
-                          else
-                            ZIO.logWarning(
-                              s"Rejecting live redirect to ${decodedUrl.path.encode}: route-specific mount claims require a fresh HTTP render"
-                            ) *>
-                              ZIO.succeed(
-                                Some(joinErrorReply(message, JoinErrorReason.Unauthorized))
-                              )
-                        case _ =>
-                          ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
-                    )
-                )
-                .collectFirst { case Some(joinAction) => joinAction }
-                .getOrElse(ZIO.succeed(None))
-          }
-    end match
+                                    else
+                                      ZIO.logDebug(
+                                        s"Joining LiveView ${route.pathCodec} ${message.topic}"
+                                      ) *>
+                                        liveChannel
+                                          .join(
+                                            message.topic,
+                                            join.session,
+                                            lv,
+                                            ctx,
+                                            message.meta,
+                                            decodedUrl,
+                                            initialFlash,
+                                            Some(renderRoot)
+                                          )(using route.msgClassTag)
+                                          .as(None)
+                                          .catchAllCause(cause =>
+                                            ZIO.logErrorCause(cause) *>
+                                              ZIO.succeed(
+                                                Some(joinErrorReply(message, JoinErrorReason.Stale))
+                                              )
+                                          )
+                                    end if
+                                )
+                            else
+                              ZIO.logWarning(
+                                s"Rejecting live redirect to ${decodedUrl.path.encode}: route-specific mount claims require a fresh HTTP render"
+                              ) *>
+                                ZIO.succeed(
+                                  Some(joinErrorReply(message, JoinErrorReason.Unauthorized))
+                                )
+                          case _ =>
+                            ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+                      )
+                  )
+                  .collectFirst { case Some(joinAction) => joinAction }
+                  .getOrElse(ZIO.succeed(None))
+            }
+      end match
   end handleJoin
 
   private def isAuthorizedRootJoin(
@@ -415,7 +429,9 @@ final private[scalive] class LiveRoutesRuntime[R](
         liveRoutes
           .map(route => route.toZioRoute(globalLayouts, globalRootLayout, tokenConfig))
           .prepended(
-            Method.GET / liveSocketMount / "websocket" -> handler(socketApp.toResponse)
+            Method.GET / liveSocketMount / "websocket" -> handler { (request: Request) =>
+              socketApp(CsrfProtection.validate(tokenConfig, request)).toResponse
+            }
           )
       ).handleErrorZIO(e =>
         ZIO.logErrorCause(Cause.fail(e)).as(Response(status = Status.InternalServerError))

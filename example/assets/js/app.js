@@ -2,7 +2,11 @@ import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
 import topbar from "topbar"
 
+const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
+const liveSocketParams = csrfToken ? { _csrf_token: csrfToken } : {}
+
 let liveSocket = new LiveSocket("/live", Socket, {
+  params: liveSocketParams,
   // hooks: Hooks
 })
 

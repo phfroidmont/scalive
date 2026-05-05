@@ -72,6 +72,45 @@ const hooks = {
       })
     }
   },
+  JsUpload: {
+    mounted() {
+      this.el.addEventListener("click", () => {
+        const fillBefore = "before" in this.el.dataset
+        if (fillBefore) this.fillInput()
+        this.jsUpload()
+        if (!fillBefore) this.fillInput()
+      })
+    },
+    jsUpload() {
+      const content = "x".repeat(1024).repeat(1024)
+      const file = new File([content], "1mb_of_x.txt", { type: "text/plain" })
+      const input = document.querySelector("input[type=file]")
+      this.uploadTo(input.form, input.name, [file])
+    },
+    fillInput() {
+      const input = document.querySelector('input[type="text"]')
+      input.value = input.value + input.value.length
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+  },
+  OuterHook: {
+    mounted() {
+      this.pushEvent("lol")
+    }
+  },
+  InnerHook: {
+    mounted() {
+      this.handleEvent("myevent", () => {
+        setTimeout(() => {
+          this.pushEvent("reload", {})
+        }, 50)
+      })
+    },
+    destroyed() {
+      const notice = document.getElementById("notice")
+      if (notice) notice.innerHTML = ""
+    }
+  },
   InsidePortal: {
     mounted() {
       this.el.setAttribute("data-portalhook-mounted", "true")
@@ -126,13 +165,6 @@ const hooks = {
   test: {
     mounted() {
       console.log(`${this.__view().id} mounted hook!`)
-    }
-  },
-  Issue3656ClearClass: {
-    mounted() {
-      this.el.addEventListener("scalive:clear-class", () => {
-        setTimeout(() => this.el.setAttribute("class", ""), 0)
-      })
     }
   },
   Issue4066Hook: {

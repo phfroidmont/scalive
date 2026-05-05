@@ -20,6 +20,7 @@ private val phxClickAttr    = htmlAttr("phx-click", scalive.codecs.StringAsIsEnc
 private val phxChangeAttr   = htmlAttr("phx-change", scalive.codecs.StringAsIsEncoder)
 private val phxSubmitAttr   = htmlAttr("phx-submit", scalive.codecs.StringAsIsEncoder)
 private val ariaLabelAttr   = htmlAttr("aria-label", scalive.codecs.StringAsIsEncoder)
+private val onClickAttr     = htmlAttr("onclick", scalive.codecs.StringAsIsEncoder)
 
 class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveView.Model]:
   import Issue3719LiveView.*
@@ -488,22 +489,135 @@ object Issue3530LiveView:
         div(idAttr := s"test-hook-$itemId", phx.hook := "test")
       )
 
-class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg.type, Boolean]:
+class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveView.Model]:
+  import Issue3647LiveView.*
+
   def mount(ctx: MountContext) =
-    false
+    ctx.uploads
+      .allow(UploadName, UploadOptions)
+      .map(upload => Model(upload = upload))
+      .catchAll(_ => ZIO.succeed(Model(upload = disconnectedUpload)))
 
-  def handleMessage(model: Boolean, ctx: MessageContext) =
-    (_: Issue3647LiveView.Msg.type) => true
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.ValidateUser(event) =>
+      model.copy(userName = event.raw.getOrElse("user[name]", ""))
+    case Msg.Validate =>
+      refreshUpload(model, ctx.uploads)
+    case Msg.Progress =>
+      saveCompletedEntries(model, ctx.uploads)
+    case Msg.CancelUpload(ref) =>
+      ctx.uploads.cancel(UploadName, ref) *> refreshUpload(model, ctx.uploads)
 
-  def render(uploaded: Boolean) =
+  def render(model: Model) =
     div(
-      input(nameAttr := "user[name]", value := (if uploaded then "0" else "")),
-      button(phx.onClick(Issue3647LiveView.Msg), "Upload then Input"),
-      ul(if uploaded then li("file.txt") else "")
+      form(
+        idAttr := "user-form",
+        phx.onChangeForm(FormCodec.formData)(Msg.ValidateUser(_)),
+        input(
+          idAttr   := "user_name",
+          nameAttr := "user[name]",
+          value    := model.userName,
+          typ      := "text"
+        ),
+        button(idAttr := "x", typ := "button", phx.hook := "JsUpload", "Upload then Input"),
+        button(
+          idAttr             := "y",
+          typ                := "button",
+          phx.hook           := "JsUpload",
+          dataAttr("before") := "true",
+          "Input then Upload"
+        ),
+        liveFileInput(
+          model.upload,
+          formAttr := "auto-form",
+          phx.onProgress(_ => Msg.Progress)
+        )
+      ),
+      form(idAttr := "auto-form", phx.onChange(_ => Msg.Validate)),
+      sectionTag(
+        cls            := "pending-uploads",
+        phx.dropTarget := model.upload.ref,
+        styleAttr      := "min-height: 100%;",
+        h3(s"Pending Uploads (${model.upload.entries.length})"),
+        model.upload.entries.splitBy(_.ref) { (_, entry) =>
+          div(
+            progressTag(
+              value   := entry.progress.toString,
+              maxAttr := "100",
+              s"${entry.progress}%"
+            ),
+            div(
+              entry.ref,
+              br(),
+              a(
+                href := "#",
+                phx.onClick(params => Msg.CancelUpload(params.getOrElse("ref", ""))),
+                phx.value("ref") := entry.ref,
+                cls              := "upload-entry__cancel",
+                "Cancel Upload"
+              )
+            )
+          )
+        }
+      ),
+      ul(
+        model.uploadedFiles.splitBy(identity) { (_, fileName) =>
+          li(a(href := fileName, fileName))
+        }
+      )
     )
 
+  private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
+    uploads.get(UploadName).map {
+      case Some(upload) => model.copy(upload = upload)
+      case None         => model
+    }
+
+  private def saveCompletedEntries(model: Model, uploads: Uploads): LiveIO[Model] =
+    for
+      consumed  <- uploads.consumeCompleted(UploadName)
+      refreshed <- uploads.get(UploadName)
+    yield model.copy(
+      upload = refreshed.getOrElse(model.upload),
+      uploadedFiles = model.uploadedFiles ++ consumed.map(_.name)
+    )
+end Issue3647LiveView
+
 object Issue3647LiveView:
-  case object Msg
+  enum Msg:
+    case ValidateUser(event: FormEvent[FormData])
+    case Validate
+    case Progress
+    case CancelUpload(ref: String)
+
+  final case class Model(
+    upload: LiveUpload,
+    userName: String = "",
+    uploadedFiles: List[String] = Nil)
+
+  private val UploadName = "avatar"
+
+  private val UploadOptions = LiveUploadOptions(
+    accept = LiveUploadAccept.Exactly(List(".txt", ".md")),
+    maxEntries = 2,
+    autoUpload = true
+  )
+
+  private def disconnectedUpload =
+    LiveUpload(
+      name = UploadName,
+      ref = s"$UploadName-upload",
+      accept = UploadOptions.accept,
+      maxEntries = UploadOptions.maxEntries,
+      maxFileSize = UploadOptions.maxFileSize,
+      chunkSize = UploadOptions.chunkSize,
+      chunkTimeout = UploadOptions.chunkTimeout,
+      autoUpload = UploadOptions.autoUpload,
+      external = UploadOptions.external.nonEmpty,
+      entries = Nil,
+      errors = Nil
+    )
+end Issue3647LiveView
 
 class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
   import Issue3819LiveView.*
@@ -1166,12 +1280,29 @@ class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      div(
-        link.navigate("/issues/3612/a", "Go to page A"),
-        link.navigate("/issues/3612/b", "Go to page B")
-      ),
+      liveView("sticky", Issue3612LiveView.StickyLive(), sticky = true),
       h1(s"Page $pageName")
     )
+
+object Issue3612LiveView:
+  enum Msg:
+    case NavigateToA, NavigateToB
+
+  class StickyLive extends LiveView[Msg, Unit]:
+    import Msg.*
+
+    def mount(ctx: MountContext) =
+      ()
+
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      case NavigateToA => ctx.nav.pushNavigate("/issues/3612/a").as(model)
+      case NavigateToB => ctx.nav.pushNavigate("/issues/3612/b").as(model)
+
+    def render(model: Unit) =
+      div(
+        a(href := "#", phx.onClick(NavigateToA), "Go to page A"),
+        a(href := "#", phx.onClick(NavigateToB), "Go to page B")
+      )
 
 class Issue3636LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
@@ -1187,7 +1318,71 @@ class Issue3636LiveView extends LiveView[Unit, Unit]:
       button("Three")
     )
 
-class Issue3651LiveView extends LiveView[Unit, Unit]:
+class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveView.Model]:
+  import Issue3651LiveView.*
+
+  def mount(ctx: MountContext) =
+    val init = Model()
+    if ctx.connected then
+      ctx.async.start("change-id")(ZIO.unit)(_ => Msg.ChangeId) *>
+        ctx.client.pushEvent("myevent", Map.empty[String, String]).as(init)
+    else init
+
+  override def hooks: LiveHooks[Msg, Model] =
+    LiveHooks.empty.rawEvent("issue-3651") { (model, event, ctx) =>
+      event.bindingId match
+        case "lol" =>
+          LiveEventHookResult.halt(model)
+        case "reload" =>
+          val next = model.copy(counter = model.counter + 1)
+          ctx.client
+            .pushEvent("myevent", Map.empty[String, String]).as(LiveEventHookResult.halt(next))
+        case _ =>
+          LiveEventHookResult.cont(model)
+    }
+
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.ChangeId => model.copy(id = 2)
+
+  def render(model: Model) =
+    div(
+      div(
+        idAttr   := "main",
+        phx.hook := "OuterHook",
+        div(phx.hook := "InnerHook", idAttr := s"id-${model.id}"),
+        "This is an example of nested hooks resulting in a ghost element that isn't on the DOM, and is never cleaned up.",
+        p("Doing any of the following things fixes it:"),
+        ol(
+          li("Setting the phx-hook to use a fixed id."),
+          li("Removing the pushEvent from the OuterHook mounted callback."),
+          li("Deferring the pushEvent by wrapping it in a setTimeout.")
+        )
+      ),
+      div(
+        "To prevent blowing up your computer, the page will reload after 4096 events, which takes ~12 seconds"
+      ),
+      div(
+        styleAttr := "color: blue; font-size: 20px",
+        idAttr    := "counter",
+        "Total Event Calls: ",
+        span(idAttr := "total", model.counter.toString)
+      ),
+      div(
+        styleAttr    := "color: red; font-size: 72px",
+        idAttr       := "notice",
+        phx.onUpdate := "ignore",
+        "I will disappear if the bug is not present."
+      )
+    )
+end Issue3651LiveView
+
+object Issue3651LiveView:
+  enum Msg:
+    case ChangeId
+
+  final case class Model(id: Int = 1, counter: Int = 0)
+
+class Issue3658LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
     ()
 
@@ -1196,53 +1391,24 @@ class Issue3651LiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      div(idAttr := "notice", styleAttr := "display: none", "too many events"),
-      div(idAttr := "total", "0")
-    )
-
-class Issue3658LiveView extends LiveView[Issue3658LiveView.Msg, Unit]:
-  import Issue3658LiveView.*
-
-  def mount(ctx: MountContext) =
-    ()
-
-  def handleMessage(model: Unit, ctx: MessageContext) =
-    case Msg.Noop => model
-
-  def render(model: Unit) =
-    div(
-      div(idAttr := "foo", phx.onRemove(JS.hide()), "Foo"),
-      navTag(a(href := "#", phx.onClick(Msg.Noop), "Link 1"))
+      link.navigate("/issues/3658?navigated=true", "Link 1"),
+      liveView("sticky", Issue3658LiveView.Sticky(), sticky = true)
     )
 
 object Issue3658LiveView:
-  enum Msg:
-    case Noop
+  class Sticky extends LiveView[Unit, Unit]:
+    def mount(ctx: MountContext) =
+      ()
 
-class Issue3656LiveView extends LiveView[Issue3656LiveView.Msg.type, Unit]:
-  import Issue3656LiveView.*
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      (_: Unit) => model
 
-  def mount(ctx: MountContext) =
-    ()
-
-  def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Msg.type) => model
-
-  def render(model: Unit) =
-    navTag(
-      a(
-        idAttr   := "issue-3656-link",
-        href     := "#",
-        phx.hook := "Issue3656ClearClass",
-        phx.onClick(JS.push(Msg).dispatch("scalive:clear-class")),
-        "Link 1"
+    def render(model: Unit) =
+      div(
+        div(idAttr := "foo", phx.onRemove(JS.dispatch("my-event")), "Hi")
       )
-    )
 
-object Issue3656LiveView:
-  case object Msg
-
-class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Unit]:
+class Issue3656LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
     ()
 
@@ -1251,16 +1417,96 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      div(
-        idAttr := "msgs-sticky",
-        div(idAttr := "messages-1", "one"),
-        div(idAttr := "messages-2", "two"),
-        div(idAttr := "messages-4", "four")
+      styleTag(
+        "* { font-size: 1.1em }",
+        "nav { margin-top: 1em }",
+        "nav a { padding: 8px 16px; border: 1px solid black; text-decoration: none }",
+        "nav a:visited { color: inherit }",
+        "nav a.active { border: 3px solid green }",
+        "nav a.phx-click-loading { animation: pulsate 2s infinite }",
+        "@keyframes pulsate {",
+        "  0% { background-color: white; }",
+        "  50% { background-color: red; }",
+        "  100% { background-color: white; }",
+        "}"
       ),
-      if onAway then
-        link.navigate("/issues/3681", "Go back to (the now borked) LV without a stream")
-      else link.navigate("/issues/3681/away", "Go to a different LV with a (funcky) stream")
+      liveView("sticky", Issue3656LiveView.StickyLive(), sticky = true)
     )
+
+object Issue3656LiveView:
+  class StickyLive extends LiveView[Unit, Unit]:
+    def mount(ctx: MountContext) =
+      ()
+
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(model: Unit) =
+      navTag(
+        link.navigate("/issues/3656?navigated=true", "Link 1")
+      )
+
+class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveView.Model]:
+  import Issue3681LiveView.*
+
+  def mount(ctx: MountContext) =
+    if onAway then
+      for
+        _        <- ctx.streams.init(MessagesStream, List.empty[Message])
+        messages <- ctx.streams.init(MessagesStream, List(Message(4, 4)), reset = true)
+      yield Model(Some(messages))
+    else Model(None)
+
+  def handleMessage(model: Model, ctx: MessageContext) =
+    (_: Unit) => model
+
+  def render(model: Model) =
+    div(
+      liveView("sticky", Issue3681LiveView.StickyLive(), sticky = true),
+      hr(),
+      if onAway then
+        div(
+          h3("A liveview with a stream configured twice"),
+          h4("This causes the nested liveview in the layout above to be reset by the client."),
+          link.navigate("/issues/3681", "Go back to (the now borked) LV without a stream"),
+          h1("Normal Stream"),
+          div(
+            idAttr       := "msgs-normal",
+            phx.onUpdate := "stream",
+            model.messages.map(
+              _.stream((domId, message) => div(idAttr := domId, div(message.value.toString)))
+            )
+          )
+        )
+      else
+        div(
+          h3("A LiveView that does nothing but render it's layout."),
+          link.navigate("/issues/3681/away", "Go to a different LV with a (funcky) stream")
+        )
+      ,
+      hr()
+    )
+end Issue3681LiveView
+
+object Issue3681LiveView:
+  final case class Message(id: Int, value: Int = 0)
+  final case class Model(messages: Option[LiveStream[Message]])
+
+  private val MessagesStream = LiveStreamDef.byId[Message, Int]("messages")(_.id)
+
+  class StickyLive extends LiveView[Unit, LiveStream[Message]]:
+    def mount(ctx: MountContext) =
+      ctx.streams.init(MessagesStream, List(Message(1, 1), Message(2, 2), Message(3, 3)))
+
+    def handleMessage(model: LiveStream[Message], ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(messages: LiveStream[Message]) =
+      div(
+        idAttr       := "msgs-sticky",
+        phx.onUpdate := "stream",
+        messages.stream((domId, message) => div(idAttr := domId, div(message.value.toString)))
+      )
 
 class Issue3684LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
@@ -1353,25 +1599,56 @@ end Issue3686LiveView
 object Issue3686LiveView:
   case object Msg
 
-class Issue3709LiveView(id: Int) extends LiveView[Issue3709LiveView.Msg, Int]:
+class Issue3709LiveView extends LiveView[Unit, String]:
   import Issue3709LiveView.*
 
+  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
+
   def mount(ctx: MountContext) =
-    id
+    ""
 
-  def handleMessage(model: Int, ctx: MessageContext) =
-    case Msg.BreakStuff => model
+  override def handleParams(model: String, params: Unit, url: URL, ctx: ParamsContext) =
+    idFromPath(url).getOrElse("")
 
-  def render(model: Int) =
+  def handleMessage(model: String, ctx: MessageContext) =
+    (_: Unit) => model
+
+  def render(model: String) =
     div(
-      div(s"id: $model"),
-      button(phx.onClick(Msg.BreakStuff), "Break Stuff"),
-      link.navigate("/issues/3709/5", "Link 5")
+      ul(
+        (1 to 10).map { i =>
+          li(link.patch(s"/issues/3709/$i", s"Link $i"))
+        }
+      ),
+      div(
+        liveComponent(SomeComponent, id = s"user-$model", props = ()),
+        s" id: $model",
+        div(
+          "Click the button, then click any link.",
+          button(
+            onClickAttr := "document.querySelectorAll('li a').forEach((x) => x.click())",
+            "Break Stuff"
+          )
+        )
+      )
     )
 
+  private def idFromPath(url: URL): Option[String] =
+    url.path.segments.toList match
+      case "issues" :: "3709" :: id :: Nil => Some(id)
+      case _                               => None
+end Issue3709LiveView
+
 object Issue3709LiveView:
-  enum Msg:
-    case BreakStuff
+  object SomeComponent extends LiveComponent[Unit, Unit, Unit]:
+    def mount(props: Unit, ctx: MountContext) =
+      ()
+
+    def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
+      (_: Unit) => model
+
+    def render(props: Unit, model: Unit, self: ComponentRef[Unit]) =
+      div("Hello")
 
 class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Issue3919LiveView.Action]:
   import Issue3919LiveView.*

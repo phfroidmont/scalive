@@ -415,7 +415,28 @@ private[scalive] object SocketComponentRuntime:
     cursor: ComponentCursor,
     ctx: LiveContext
   ): Task[HtmlElement[Any]] =
-    ZIO.foreach(element.mods)(renderMod(_, cursor, ctx)).map(mods => HtmlElement(element.tag, mods))
+    nestedLiveViewRoot(element) match
+      case Some(spec) => renderLiveViewElement(spec, cursor, ctx)
+      case None       =>
+        ZIO
+          .foreach(element.mods)(renderMod(_, cursor, ctx)).map(mods =>
+            HtmlElement(element.tag, mods)
+          )
+
+  private def nestedLiveViewRoot[Msg](element: HtmlElement[Msg]): Option[NestedLiveViewSpec[?, ?]] =
+    element.contentMods match
+      case Seq(Content.LiveView(spec))
+          if element.tag.name == "div" && hasOnlyMatchingId(element, spec) =>
+        Some(spec)
+      case _ => None
+
+  private def hasOnlyMatchingId[Msg](
+    element: HtmlElement[Msg],
+    spec: NestedLiveViewSpec[?, ?]
+  ): Boolean =
+    element.attrMods match
+      case Seq(Attr.Static(name, value)) => name == idAttr.name && value == spec.id
+      case _                             => false
 
   private def renderMod[Msg, Model](
     mod: Mod[Msg],
@@ -591,20 +612,25 @@ private[scalive] object SocketComponentRuntime:
     cursor: ComponentCursor,
     ctx: LiveContext
   ): Task[Content.Tag[Any]] =
+    renderLiveViewElement(spec, cursor, ctx).map(Content.Tag(_))
+
+  private def renderLiveViewElement(
+    spec: NestedLiveViewSpec[?, ?],
+    cursor: ComponentCursor,
+    ctx: LiveContext
+  ): Task[HtmlElement[Any]] =
     if cursor.renderedLiveViewIds.contains(spec.id) then
       ZIO.fail(new IllegalArgumentException(s"Duplicate nested LiveView id '${spec.id}'"))
     else
       cursor.renderedLiveViewIds = cursor.renderedLiveViewIds + spec.id
       ctx.nestedLiveViews.register(spec).map { registration =>
-        Content.Tag(
-          div(
-            idAttr      := registration.id,
-            phx.session := registration.session,
-            Option.unless(registration.sticky)(phx.parentId := registration.parentDomId),
-            Option.unless(registration.sticky)(phx.childId  := registration.id),
-            phx.sticky := registration.sticky,
-            registration.rendered.map(Content.Tag(_))
-          )
+        div(
+          idAttr      := registration.id,
+          phx.session := registration.session,
+          Option.unless(registration.sticky)(phx.parentId := registration.parentDomId),
+          Option.unless(registration.sticky)(phx.childId  := registration.id),
+          phx.sticky := registration.sticky,
+          registration.rendered.map(Content.Tag(_))
         )
       }
 

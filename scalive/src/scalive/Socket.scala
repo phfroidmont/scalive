@@ -25,6 +25,7 @@ final private[scalive] case class Socket[Msg, Model] private (
   uploadJoin: (String, String) => Task[Payload.Reply],
   uploadChunk: (String, Chunk[Byte]) => Task[Payload.Reply],
   outbox: ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)],
+  private[scalive] val initReply: Payload.Reply,
   private[scalive] val stickyRejoinReply: UIO[Payload.Reply],
   private[scalive] val currentUrl: UIO[URL],
   private[scalive] val takeNavigationFlash: UIO[Map[String, String]],
@@ -41,7 +42,8 @@ private[scalive] object Socket:
     tokenConfig: TokenConfig = TokenConfig.default,
     initialUrl: URL = URL.root,
     initialFlash: Map[String, String] = Map.empty,
-    renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None
+    renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None,
+    enqueueInitReply: Boolean = true
   ): RIO[Scope, Socket[Msg, Model]] =
     val rootRenderer = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
     ZIO.logAnnotate("lv", id) {
@@ -57,9 +59,12 @@ private[scalive] object Socket:
                  )
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
-        _           <- ZIO.foreachDiscard(
-               (Payload.okReply(LiveResponse.InitDiff(state.initDiff)) -> state.meta) +:
-                 state.bootstrapPayloads.toList
+        initReply    = Payload.okReply(LiveResponse.InitDiff(state.initDiff))
+        initPayloads =
+          if enqueueInitReply then (initReply -> state.meta) +: state.bootstrapPayloads.toList
+          else state.bootstrapPayloads.toList
+        _ <- ZIO.foreachDiscard(
+               initPayloads
              )(state.outQueue.offer(_))
         livePatch =
           (url: String, patchMeta: WebSocketMessage.Meta) =>
@@ -96,6 +101,7 @@ private[scalive] object Socket:
         uploadJoin,
         uploadChunk,
         outbox,
+        initReply,
         stickyRejoinReply,
         currentUrl,
         takeNavigationFlash,

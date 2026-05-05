@@ -418,7 +418,7 @@ class Issue3530LiveView extends LiveView[Unit, Issue3530LiveView.Model]:
   def mount(ctx: MountContext) =
     ctx.streams
       .init(ItemsStream, List.empty[Item])
-      .map(items => Model(count = 3, items = items, itemIds = Nil, connected = ctx.connected))
+      .map(items => Model(count = 3, items = items))
 
   override def handleParams(model: Model, params: Unit, url: URL, ctx: ParamsContext) =
     val itemIds = url.queryParam("q") match
@@ -426,8 +426,9 @@ class Issue3530LiveView extends LiveView[Unit, Issue3530LiveView.Model]:
       case Some("b") => List(2, 3)
       case _         => List(1, 2, 3)
 
-    if !model.connected then model
-    else syncItems(model, itemIds, ctx.streams)
+    ctx.streams
+      .init(ItemsStream, itemIds.map(Item(_)), reset = true)
+      .map(items => model.copy(items = items))
 
   override def hooks: LiveHooks[Unit, Model] =
     LiveHooks.empty.rawEvent("inc") { (model, event, ctx) =>
@@ -437,7 +438,7 @@ class Issue3530LiveView extends LiveView[Unit, Issue3530LiveView.Model]:
           .insert(ItemsStream, Item(nextCount))
           .map(items =>
             LiveEventHookResult.halt(
-              model.copy(count = nextCount, items = items, itemIds = model.itemIds :+ nextCount)
+              model.copy(count = nextCount, items = items)
             )
           )
       else LiveEventHookResult.cont(model)
@@ -454,7 +455,7 @@ class Issue3530LiveView extends LiveView[Unit, Issue3530LiveView.Model]:
         model.items.stream((domId, item) =>
           div(
             idAttr := domId,
-            div(idAttr := s"test-hook-${item.id}", phx.hook := "test")
+            liveView(domId, NestedLive(item.id))
           )
         )
       ),
@@ -463,28 +464,13 @@ class Issue3530LiveView extends LiveView[Unit, Issue3530LiveView.Model]:
       div(phxClickAttr := "inc", "+")
     )
 
-  private def syncItems(model: Model, itemIds: List[Int], streams: Streams): LiveIO[Model] =
-    val currentIds = model.itemIds.toSet
-    val nextIds    = itemIds.toSet
-    val removed    = model.itemIds.filter(id => !nextIds.contains(id)).map(Item(_))
-    val inserted   = itemIds.filter(id => !currentIds.contains(id)).map(Item(_))
-
-    val deletedStream = ZIO
-      .foldLeft(removed)(model.items)((_, item) => streams.delete(ItemsStream, item))
-
-    deletedStream
-      .flatMap(items =>
-        ZIO.foldLeft(inserted)(items)((_, item) => streams.insert(ItemsStream, item))
-      ).map(items => model.copy(items = items, itemIds = itemIds))
 end Issue3530LiveView
 
 object Issue3530LiveView:
   final case class Item(id: Int)
   final case class Model(
     count: Int,
-    items: LiveStream[Item],
-    itemIds: List[Int],
-    connected: Boolean)
+    items: LiveStream[Item])
 
   private val ItemsStream = LiveStreamDef.byId[Item, Int]("item")(_.id)
 
@@ -498,7 +484,8 @@ object Issue3530LiveView:
     def render(model: Unit) =
       div(
         idAttr := s"item-outer-$itemId",
-        "test hook with nested liveview"
+        "test hook with nested liveview",
+        div(idAttr := s"test-hook-$itemId", phx.hook := "test")
       )
 
 class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg.type, Boolean]:

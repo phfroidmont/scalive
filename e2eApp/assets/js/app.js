@@ -124,24 +124,8 @@ const hooks = {
     }
   },
   test: {
-    viewId() {
-      return this.el.id.replace("test-hook-", "item-")
-    },
     mounted() {
-      console.log(`${this.viewId()} mounted`)
-      this.removalObserver = new MutationObserver(() => {
-        if (!document.body.contains(this.el)) this.logDestroyed()
-      })
-      this.removalObserver.observe(document.body, { childList: true, subtree: true })
-    },
-    destroyed() {
-      this.logDestroyed()
-    },
-    logDestroyed() {
-      if (this.destroyedLogged) return
-      this.destroyedLogged = true
-      this.removalObserver?.disconnect()
-      console.log(`${this.viewId()} destroyed`)
+      console.log(`${this.__view().id} mounted hook!`)
     }
   },
   Issue3656ClearClass: {

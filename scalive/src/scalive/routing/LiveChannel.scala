@@ -25,11 +25,49 @@ final private[scalive] class LiveChannel(
   tokenConfig: TokenConfig,
   private[scalive] val connectAuthorized: Boolean):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
-    sockets.changes
-      .map(m =>
-        ZStream
-          .mergeAllUnbounded()(m.values.map(_.outbox).toList*)
-      ).flatMapParSwitch(1)(identity)
+    ZStream.unwrapScoped {
+      for
+        outQueue  <- Queue.unbounded[(Payload, Meta)]
+        fibersRef <- Ref.make(
+                       Map.empty[
+                         String,
+                         (Socket[?, ?], Fiber.Runtime[Nothing, Unit])
+                       ]
+                     )
+        _ <- ZIO.addFinalizer(outQueue.shutdown)
+        _ <- sockets.changes
+               .runForeach(syncOutboxFibers(_, outQueue, fibersRef))
+               .forkScoped
+      yield ZStream.fromQueue(outQueue)
+    }
+
+  private def syncOutboxFibers(
+    socketsById: Map[String, Socket[?, ?]],
+    outQueue: Queue[(Payload, Meta)],
+    fibersRef: Ref[Map[String, (Socket[?, ?], Fiber.Runtime[Nothing, Unit])]]
+  ): URIO[Scope, Unit] =
+    fibersRef.get.flatMap { currentFibers =>
+      val removedIds  = currentFibers.keySet -- socketsById.keySet
+      val replacedIds = socketsById.collect {
+        case (id, socket) if currentFibers.get(id).exists { case (currentSocket, _) =>
+              currentSocket.asInstanceOf[AnyRef] ne socket.asInstanceOf[AnyRef]
+            } =>
+          id
+      }.toSet
+      val stoppedIds = removedIds ++ replacedIds
+      val retained   = currentFibers -- stoppedIds
+      val newSockets = socketsById.filter { case (id, _) => !retained.contains(id) }
+
+      for
+        _       <- ZIO.foreachDiscard(stoppedIds)(id => currentFibers(id)._2.interrupt)
+        started <- ZIO.foreach(newSockets.toSeq) { case (id, socket) =>
+                     socket.outbox
+                       .runForeach(payload => outQueue.offer(payload).unit).forkScoped
+                       .map(fiber => id -> (socket -> fiber))
+                   }
+        _ <- fibersRef.set(retained ++ started)
+      yield ()
+    }
 
   def join[Msg, Model](
     id: String,
@@ -126,7 +164,8 @@ final private[scalive] class LiveChannel(
     token: String,
     staticChanged: Boolean,
     meta: WebSocketMessage.Meta,
-    initialUrl: Option[URL]
+    initialUrl: Option[URL],
+    enqueueInitReply: Boolean = true
   ): RIO[Scope, NestedJoinResult] =
     nestedEntries.get.flatMap { entries =>
       entries.get(topic) match
@@ -147,13 +186,13 @@ final private[scalive] class LiveChannel(
                     case Some(socket) =>
                       socket.shutdown *>
                         entry
-                          .start(ctx, meta, url).map(socket =>
-                            NestedJoinResult.Joined -> m.updated(topic, socket)
+                          .start(ctx, meta, url, enqueueInitReply).map(socket =>
+                            joinedResult(socket, enqueueInitReply) -> m.updated(topic, socket)
                           )
                     case None =>
                       entry
-                        .start(ctx, meta, url).map(socket =>
-                          NestedJoinResult.Joined -> m.updated(topic, socket)
+                        .start(ctx, meta, url, enqueueInitReply).map(socket =>
+                          joinedResult(socket, enqueueInitReply) -> m.updated(topic, socket)
                         )
                 }
             case None =>
@@ -164,6 +203,10 @@ final private[scalive] class LiveChannel(
         case None =>
           ZIO.succeed(NestedJoinResult.NotNested)
     }
+
+  private def joinedResult(socket: Socket[?, ?], enqueueInitReply: Boolean): NestedJoinResult =
+    if enqueueInitReply then NestedJoinResult.Joined
+    else NestedJoinResult.JoinedWithReply(socket.initReply)
 
   private def resolveNestedInitialUrl(
     entry: NestedLiveViewEntry,

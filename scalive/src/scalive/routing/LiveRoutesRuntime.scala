@@ -155,7 +155,8 @@ final private[scalive] class LiveRoutesRuntime[R](
         join.session,
         staticChanged = false,
         message.meta,
-        decodedUrl
+        decodedUrl,
+        enqueueInitReply = false
       ).flatMap {
         case NestedJoinResult.Joined =>
           ZIO.none

@@ -407,24 +407,21 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           )
 
       for
-        socket <- start(parent)
-        firstFiber <- nextAfterInit(socket).fork
-        _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
-        first <- firstFiber.join
-        secondFiber <- nextAfterInit(socket).fork
-        _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
-        second <- secondFiber.join
-      yield
-        val sent = first._1 match
-          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
-            containsValue(diff, "sent says hi")
-          case _ => false
-        val notReset = second._1 match
-          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
-            !containsValue(diff, "parent says hi")
-          case _ => false
-
-        assertTrue(sent, notReset)
+        socket   <- start(parent)
+        outQueue <- subscribe(socket)
+        _        <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+        sent     <- takeMatching(outQueue) {
+                      case (Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)), _) =>
+                        containsValue(diff, "sent says hi")
+                      case _ => false
+                    }
+        _        <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+        notReset <- takeMatching(outQueue) {
+                      case (Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)), _) =>
+                        !containsValue(diff, "parent says hi")
+                      case _ => false
+                    }
+      yield assertTrue(sent._2.topic == meta.topic, notReset._2.topic == meta.topic)
     },
     test("component pushNavigate emits live redirect") {
       val parent = new LiveView[Unit, Unit]:

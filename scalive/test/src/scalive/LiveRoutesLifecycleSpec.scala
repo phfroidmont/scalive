@@ -13,6 +13,10 @@ import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Meta
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.ReplyStatus
+import scalive.socket.ComponentRuntimeState
+import scalive.socket.SocketComponentRuntime
+import scalive.socket.SocketStreamRuntime
+import scalive.socket.StreamRuntimeState
 
 object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
@@ -609,13 +613,11 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
                         }
       yield assertTrue(redirect._2.topic == childTopic))
     },
-    test("streamed nested LiveViews render without duplicate registration") {
-      // FIXME: This only guards duplicate registration while compiling stream snapshots.
-      // Issue3530 parity still needs hook mount/destroy behavior inside streamed nested LiveViews.
+    test("streamed nested LiveViews can be stream item roots") {
       final case class Item(id: Int)
       val items = LiveStreamDef.byId[Item, Int]("item")(_.id)
 
-      val child = new LiveView[Unit, Unit]:
+      def child(itemId: Int) = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
           ZIO.unit
 
@@ -623,11 +625,51 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           (_: Unit) => ZIO.succeed(model)
 
         def render(model: Unit): HtmlElement[Unit] =
-          div("child")
+          div(idAttr := s"item-outer-$itemId", "child")
+
+      ZIO.scoped(for
+        streamRef     <- Ref.make(StreamRuntimeState.empty)
+        streams       = new SocketStreamRuntime(streamRef)
+        stream        <- streams.stream(items, List(Item(1), Item(2)), StreamAt.Last, false, None)
+        componentsRef <- Ref.make(ComponentRuntimeState.empty)
+        channel       <- LiveChannel.make(TokenConfig.default)
+        rendered <- SocketComponentRuntime.renderRoot(
+                      ul(
+                        idAttr       := "items",
+                        phx.onUpdate := "stream",
+                        stream.stream((domId, item) => div(idAttr := domId, liveView(domId, child(item.id))))
+                      ),
+                      componentsRef,
+                      LiveContext(
+                        staticChanged = false,
+                        nestedLiveViews = channel.nestedRuntime(rootTopic)
+                      )
+                    )
+        body = HtmlBuilder.build(rendered)
+      yield assertTrue(
+        body.contains("<div id=\"item-1\" data-phx-session="),
+        body.contains("<div id=\"item-2\" data-phx-session="),
+        !body.contains("<div id=\"item-1\"><div id=\"item-1\""),
+        !body.contains("<div id=\"item-2\"><div id=\"item-2\"")
+      ))
+    },
+    test("diffsStream keeps rapid streamed nested LiveView join replies") {
+      final case class Item(id: Int)
+      val items = LiveStreamDef.byId[Item, Int]("item")(_.id)
+
+      def child(itemId: Int) = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) =
+          ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: Unit): HtmlElement[Unit] =
+          div(idAttr := s"item-outer-$itemId", "child")
 
       val parent = new LiveView[Unit, LiveStream[Item]]:
         def mount(ctx: MountContext) =
-          ctx.streams.init(items, List(Item(1), Item(2)))
+          ctx.streams.init(items, List(Item(1), Item(2), Item(3)))
 
         def handleMessage(model: LiveStream[Item], ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
@@ -636,13 +678,27 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           ul(
             idAttr       := "items",
             phx.onUpdate := "stream",
-            model.stream((domId, _) => div(idAttr := s"stream-$domId", liveView(domId, child)))
+            model.stream((domId, item) => div(idAttr := domId, liveView(domId, child(item.id))))
           )
 
       ZIO.scoped(for
-        channel <- LiveChannel.make(TokenConfig.default)
-        result  <- joinRoot(channel, parent).exit
-      yield assertTrue(result.isSuccess))
+        channel  <- LiveChannel.make(TokenConfig.default)
+        outQueue <- Queue.unbounded[(Payload, Meta)]
+        _        <- channel.diffsStream.runForeach(outQueue.offer).forkScoped
+        _        <- joinRoot(channel, parent)
+        topics = List("lv:item-1", "lv:item-2", "lv:item-3")
+        entries <- ZIO.foreach(topics)(topic => channel.nestedEntry(topic).some)
+        _ <- ZIO.foreachDiscard(topics.zip(entries)) { case (topic, entry) =>
+               channel.joinNested(topic, entry.token, false, rootMeta.copy(topic = topic), URL.root)
+             }
+        replies <- ZIO.foreach(topics)(topic =>
+                     takeMatching(outQueue) {
+                       case (Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(_)), meta) =>
+                         meta.topic == topic
+                       case _ => false
+                     }
+                   )
+      yield assertTrue(replies.map(_._2.topic).toSet == topics.toSet))
     },
     test("parent patch does not reset stable nested child registration") {
       val parent = new LiveView[ParentMsg, Int]:

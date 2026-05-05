@@ -51,7 +51,7 @@ final private[scalive] case class NestedLiveViewEntry(
   parentTopic: String,
   sticky: Boolean,
   token: String,
-  start: (LiveContext, WebSocketMessage.Meta, URL) => RIO[Scope, Socket[?, ?]])
+  start: (LiveContext, WebSocketMessage.Meta, URL, Boolean) => RIO[Scope, Socket[?, ?]])
 
 final private[scalive] class SocketNestedLiveViewRuntime(
   parentTopic: String,
@@ -81,7 +81,7 @@ final private[scalive] class SocketNestedLiveViewRuntime(
         parentTopic = parentTopic,
         sticky = spec.sticky,
         token = token,
-        start = (ctx, meta, initialUrl) =>
+        start = (ctx, meta, initialUrl, enqueueInitReply) =>
           Socket.start(
             topic,
             token,
@@ -89,7 +89,8 @@ final private[scalive] class SocketNestedLiveViewRuntime(
             ctx,
             meta,
             tokenConfig,
-            initialUrl
+            initialUrl,
+            enqueueInitReply = enqueueInitReply
           )(using spec.msgClassTag)
       )
 

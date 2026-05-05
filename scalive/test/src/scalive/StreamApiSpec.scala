@@ -75,6 +75,36 @@ object StreamApiSpec extends ZIOSpecDefault:
           streamPayload.deleteIds == Vector("users-1"),
           !streamPayload.reset
         )
+    },
+    test("stream reset encodes reset patch and replaces the snapshot") {
+      for
+        streamRef <- Ref.make(StreamRuntimeState.empty)
+        runtime = new SocketStreamRuntime(streamRef)
+        _ <- runtime.stream(
+               usersDef,
+               List(User(1, "chris"), User(2, "callan"), User(3, "jose")),
+               at = StreamAt.Last,
+               reset = false,
+               limit = None
+             )
+        _ <- SocketStreamRuntime.prune(streamRef)
+        reset <- runtime.stream(
+                   usersDef,
+                   List(User(1, "chris"), User(3, "jose")),
+                   at = StreamAt.Last,
+                   reset = true,
+                   limit = None
+                 )
+        rendered <- diffFor(reset)
+      yield
+        val streamPayload = extractStreamPayload(rendered)
+        assertTrue(
+          reset.snapshotEntries.map(_.domId) == Vector("users-1", "users-3"),
+          streamPayload.ref == "0",
+          streamPayload.inserts == Vector("users-1", "users-3"),
+          streamPayload.deleteIds.isEmpty,
+          streamPayload.reset
+        )
     }
   )
 

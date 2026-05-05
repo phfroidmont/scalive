@@ -34,15 +34,8 @@ class PortalLiveView extends LiveView[PortalLiveView.Msg, PortalLiveView.Model]:
     case Msg.ToggleModal         => model.copy(renderModal = !model.renderModal)
     case Msg.ToggleNestedPortals =>
       model.copy(renderNestedPortals = !model.renderNestedPortals)
-    case Msg.NestedEvent =>
-      model.copy(nestedEventCount = model.nestedEventCount + 1)
     case Msg.NestedPortalClick =>
       model.copy(nestedPortalCount = model.nestedPortalCount + 1)
-    case Msg.PrependItem =>
-      model.copy(
-        items = (model.nextItem, s"Item ${model.nextItem}") +: model.items,
-        nextItem = model.nextItem + 1
-      )
     case Msg.Tick => model.copy(count = model.count + 1)
 
   def render(model: Model) =
@@ -60,26 +53,21 @@ class PortalLiveView extends LiveView[PortalLiveView.Msg, PortalLiveView.Model]:
         ),
         button(phx.onClick(Msg.Tick), "Tick"),
         button(phx.onClick(JS.navigate("/form")), "Live navigate"),
-        nestedEventControls(model),
+        liveView("nested", NestedLive()),
         tooltip("tooltip-example-portal", "Hover me", portal = true, model.count),
         tooltip("tooltip-example-no-portal", "Hover me (no portal)", portal = false, model.count),
         nestedPortalExample(model),
         button(phx.onClick(showModal("non-teleported-modal")), "Open non-teleported modal")
       ),
-      Option.when(model.renderModal)(
+      if model.renderModal then
         portal("portal-source", target = "#root-portal")(
           modal("my-modal", model.count, first = true),
           div(idAttr := "hook-test", phx.hook := "InsidePortal", "This should get a data attribute")
         )
+      else "",
+      portal("portal-with-live-component", target = "#root-portal")(
+        liveComponent(LiveComponentFixture, id = "lc", props = ())
       ),
-      portal("portal-with-live-component", target = "#root-portal")(liveComponentLike(model)),
-      portal("teleported-from-lc-button", target = "body")(
-        button(phx.onClick(Msg.PrependItem), "Prepend item (teleported)")
-      ),
-      portal("nested-lv-button", target = "body")(
-        button(phx.onClick(Msg.NestedEvent), "Trigger event in nested LV (from teleported button)")
-      ),
-      portal("nested-lv", target = "body")(nestedTeleportedLiveView),
       portal("tooltip-example-portal-portal", target = "body")(
         tooltipBody("tooltip-example-portal", model.count)
       ),
@@ -87,7 +75,6 @@ class PortalLiveView extends LiveView[PortalLiveView.Msg, PortalLiveView.Model]:
         modal("my-modal-2", model.count, first = false, inner = Vector(secondModalInnerPortal))
       ),
       modal("non-teleported-modal", model.count, first = false, inner = nonTeleportedModalMenu),
-      div(idAttr := "root-portal"),
       div(idAttr := "app-portal")
     )
 end PortalLiveView
@@ -107,9 +94,7 @@ object PortalLiveView:
   enum Msg:
     case ToggleModal
     case ToggleNestedPortals
-    case NestedEvent
     case NestedPortalClick
-    case PrependItem
     case Tick
 
   final case class Model(
@@ -117,10 +102,7 @@ object PortalLiveView:
     count: Int = 0,
     renderModal: Boolean = true,
     renderNestedPortals: Boolean = true,
-    nestedEventCount: Int = 0,
-    nestedPortalCount: Int = 0,
-    items: Vector[(Int, String)] = Vector(1 -> "Item 1", 2 -> "Item 2"),
-    nextItem: Int = 1000)
+    nestedPortalCount: Int = 0)
 
   private def modal(
     id: String,
@@ -170,31 +152,6 @@ object PortalLiveView:
   private def hideModal(id: String) =
     JS.hide(to = s"#$id-container").hide(to = s"#$id-bg").hide(to = s"#$id")
 
-  private def nestedEventControls(model: Model) =
-    div(
-      h1("Nested LiveView"),
-      p(idAttr := "nested-event-count", model.nestedEventCount.toString),
-      button(phx.onClick(Msg.NestedEvent), "Trigger event in nested LV")
-    )
-
-  private def nestedTeleportedLiveView =
-    div(
-      h1("Nested teleport LiveView"),
-      button("Toggle event in teleported LV")
-    )
-
-  private def liveComponentLike(model: Model) =
-    div(
-      idAttr := "teleported-lc",
-      h1("LiveComponent"),
-      ul(
-        idAttr       := "stream-in-lc",
-        phx.onUpdate := "stream",
-        model.items.map { case (id, label) => li(idAttr := s"items-$id", label) }
-      ),
-      button(phx.onClick(Msg.PrependItem), "Prepend item")
-    )
-
   private def nestedPortalExample(model: Model) =
     div(
       cls := "border border-purple-600 mt-8 p-4",
@@ -204,7 +161,7 @@ object PortalLiveView:
         "Nested portal count: ",
         span(idAttr := "nested-portal-count", model.nestedPortalCount.toString)
       ),
-      Option.when(model.renderNestedPortals)(
+      if model.renderNestedPortals then
         portal("nested-portal-source", target = "#root-portal")(
           div(
             idAttr := "outer-portal",
@@ -219,7 +176,7 @@ object PortalLiveView:
             )
           )
         )
-      )
+      else ""
     )
 
   private def nonTeleportedModalMenu: Vector[Mod[Msg]] =
@@ -281,4 +238,102 @@ object PortalLiveView:
       case Json.Obj(fields) =>
         fields.collectFirst { case ("value", Json.Str(code)) => code }.getOrElse("")
       case _ => ""
+
+  class NestedLive extends LiveView[NestedLive.Msg.type, Int]:
+    def mount(ctx: MountContext) =
+      0
+
+    def handleMessage(model: Int, ctx: MessageContext) =
+      (_: NestedLive.Msg.type) => model + 1
+
+    def render(count: Int) =
+      div(
+        cls := "border border-orange-200",
+        h1("Nested LiveView"),
+        p(idAttr := "nested-event-count", count.toString),
+        button(phx.onClick(NestedLive.Msg), "Trigger event in nested LV"),
+        portal("nested-lv-button", target = "body")(
+          button(
+            phx.onClick(NestedLive.Msg),
+            "Trigger event in nested LV (from teleported button)"
+          )
+        ),
+        portal("nested-lv", target = "body")(
+          liveView("nested-teleported", NestedTeleportedLive())
+        )
+      )
+
+  object NestedLive:
+    case object Msg
+
+  class NestedTeleportedLive extends LiveView[NestedTeleportedLive.Msg.type, Unit]:
+    def mount(ctx: MountContext) =
+      ()
+
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      (_: NestedTeleportedLive.Msg.type) => model
+
+    def render(model: Unit) =
+      div(
+        cls := "border border-green-200",
+        h1("Nested teleport LiveView"),
+        button(phx.onClick(NestedTeleportedLive.Msg), "Toggle event in teleported LV")
+      )
+
+  object NestedTeleportedLive:
+    case object Msg
+
+  object LiveComponentFixture
+      extends LiveComponent[Unit, LiveComponentFixture.Msg.type, LiveComponentFixture.Model]:
+    import LiveComponentFixture.*
+
+    def mount(props: Unit, ctx: MountContext) =
+      ctx.streams.init(ItemsStream, InitialItems).map(items => Model(items = items))
+
+    def handleMessage(props: Unit, model: Model, ctx: MessageContext) =
+      (_: Msg.type) => prependItem(model, ctx.streams)
+
+    override def hooks: ComponentLiveHooks[Unit, Msg.type, Model] =
+      ComponentLiveHooks.empty.rawEvent("portal-lc") { (_, model, event, ctx) =>
+        if event.bindingId == "prepend" then
+          prependItem(model, ctx.streams).map(LiveEventHookResult.halt)
+        else LiveEventHookResult.cont(model)
+      }
+
+    def render(props: Unit, model: Model, self: ComponentRef[Msg.type]) =
+      div(
+        idAttr := "teleported-lc",
+        cls    := "border border-red-200",
+        h1("LiveComponent"),
+        ul(
+          idAttr       := "stream-in-lc",
+          phx.onUpdate := "stream",
+          model.items.stream((domId, item) => li(idAttr := domId, item.name))
+        ),
+        button(phx.onClick(Msg), phx.target(self), "Prepend item"),
+        portal("teleported-from-lc-button", target = "body")(
+          button(
+            idAttr   := "lcbtn",
+            phx.hook := "TeleportedLCButton",
+            "Prepend item (teleported)"
+          )
+        )
+      )
+
+    private def prependItem(model: Model, streams: Streams) =
+      val item = Item(model.nextItem, s"Item ${model.nextItem}")
+      streams
+        .insert(ItemsStream, item, at = StreamAt.First)
+        .map(items => model.copy(items = items, nextItem = model.nextItem + 1))
+
+    final case class Item(id: Int, name: String)
+    final case class Model(
+      items: LiveStream[Item],
+      nextItem: Int = 1000)
+
+    case object Msg
+
+    private val ItemsStream  = LiveStreamDef.byId[Item, Int]("items")(_.id)
+    private val InitialItems = Vector(Item(1, "Item 1"), Item(2, "Item 2"))
+  end LiveComponentFixture
 end PortalLiveView

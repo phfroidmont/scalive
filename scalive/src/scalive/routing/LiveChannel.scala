@@ -14,6 +14,7 @@ import scalive.WebSocketMessage.Payload
 
 private[scalive] enum NestedJoinResult:
   case Joined
+  case JoinedWithReply(reply: Payload.Reply)
   case Rejected(reason: JoinErrorReason)
   case NotNested
 
@@ -137,15 +138,24 @@ final private[scalive] class LiveChannel(
                 nestedLiveViews = nestedRuntime(topic, entry.id)
               )
               sockets
-                .updateZIO { m =>
+                .modifyZIO { m =>
                   m.get(topic) match
+                    case Some(socket) if entry.sticky =>
+                      socket.stickyRejoinReply
+                        .tap(_ => ZIO.logDebug(s"Rejoined sticky LiveView $topic"))
+                        .map(reply => NestedJoinResult.JoinedWithReply(reply) -> m)
                     case Some(socket) =>
                       socket.shutdown *>
-                        entry.start(ctx, meta, url).map(socket => m.updated(topic, socket))
+                        entry
+                          .start(ctx, meta, url).map(socket =>
+                            NestedJoinResult.Joined -> m.updated(topic, socket)
+                          )
                     case None =>
-                      entry.start(ctx, meta, url).map(socket => m.updated(topic, socket))
+                      entry
+                        .start(ctx, meta, url).map(socket =>
+                          NestedJoinResult.Joined -> m.updated(topic, socket)
+                        )
                 }
-                .as(NestedJoinResult.Joined)
             case None =>
               ZIO.succeed(NestedJoinResult.Rejected(JoinErrorReason.Stale))
           }
@@ -175,30 +185,38 @@ final private[scalive] class LiveChannel(
       .exists { case (tokenTopic, payload) => tokenTopic == topic && payload == "nested" }
 
   def leave(id: String): UIO[Unit] =
-    for
-      childIds <- nestedEntries.modify { entries =>
-                    val children = entries.collect {
-                      case (topic, entry) if entry.parentTopic == id && !entry.sticky => topic
-                    }.toSet
-                    (children, entries -- children - id)
-                  }
-      leavingIds = childIds + id
-      _ <- uploadOwners.update(_.filterNot { case (_, ownerId) => leavingIds.contains(ownerId) })
-      _ <- sockets.updateZIO { m =>
-             val children     = childIds.flatMap(m.get)
-             val stopChildren = ZIO.foreachDiscard(children)(_.shutdown)
-             m.get(id) match
-               case Some(socket) =>
-                 for
-                   _ <- stopChildren
-                   _ <- socket.shutdown
-                   _ <- ZIO.logDebug(s"Left LiveView $id")
-                 yield m -- childIds - id
-               case None =>
-                 stopChildren *>
-                   ZIO.logDebug(s"Ignoring leave for unknown LiveView $id").as(m -- childIds)
-           }
-    yield ()
+    nestedEntries.get.flatMap { entries =>
+      entries.get(id) match
+        case Some(entry) if entry.sticky =>
+          ZIO.logDebug(s"Detached sticky LiveView $id")
+        case _ =>
+          for
+            childIds <- nestedEntries.modify { entries =>
+                          val children = entries.collect {
+                            case (topic, entry) if entry.parentTopic == id && !entry.sticky => topic
+                          }.toSet
+                          (children, entries -- children - id)
+                        }
+            leavingIds = childIds + id
+            _ <- uploadOwners.update(_.filterNot { case (_, ownerId) =>
+                   leavingIds.contains(ownerId)
+                 })
+            _ <- sockets.updateZIO { m =>
+                   val children     = childIds.flatMap(m.get)
+                   val stopChildren = ZIO.foreachDiscard(children)(_.shutdown)
+                   m.get(id) match
+                     case Some(socket) =>
+                       for
+                         _ <- stopChildren
+                         _ <- socket.shutdown
+                         _ <- ZIO.logDebug(s"Left LiveView $id")
+                       yield m -- childIds - id
+                     case None =>
+                       stopChildren *>
+                         ZIO.logDebug(s"Ignoring leave for unknown LiveView $id").as(m -- childIds)
+                 }
+          yield ()
+    }
 
   def event(id: String, event: Payload.Event, meta: WebSocketMessage.Meta): UIO[Unit] =
     sockets.get.flatMap { m =>

@@ -5,7 +5,6 @@ import zio.*
 import zio.stream.ZStream
 
 import scalive.*
-import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 
 private[scalive] object SocketOutbound:
@@ -25,10 +24,7 @@ private[scalive] object SocketOutbound:
   def buildOutbox[Msg, Model](
     state: RuntimeState[Msg, Model]
   ): ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)] =
-    ZStream.fromIterable(
-      (Payload.okReply(LiveResponse.InitDiff(state.initDiff)) -> state.meta) +:
-        state.bootstrapPayloads.toList
-    ) ++ ZStream
+    ZStream
       .fromQueue(state.outQueue).filterNot {
         case (Payload.Diff(diff), _) => diff.isEmpty
         case _                       => false

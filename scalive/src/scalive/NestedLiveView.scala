@@ -69,34 +69,42 @@ final private[scalive] class SocketNestedLiveViewRuntime(
     spec: NestedLiveViewSpec[Msg, Model]
   ): Task[NestedLiveViewRegistration] =
     val topic = s"lv:${spec.id}"
-    for
-      token = Token.sign(tokenConfig.secret, topic, "nested")
-      entry = NestedLiveViewEntry(
-                id = spec.id,
-                parentTopic = parentTopic,
-                sticky = spec.sticky,
-                token = token,
-                start = (ctx, meta, initialUrl) =>
-                  Socket.start(
-                    topic,
-                    token,
-                    spec.liveView(),
-                    ctx,
-                    meta,
-                    tokenConfig,
-                    initialUrl
-                  )(using spec.msgClassTag)
-              )
-      _ <- entriesRef.update(_.updated(topic, entry))
-    yield NestedLiveViewRegistration(
-      spec.id,
-      parentTopic,
-      parentDomId,
-      topic,
-      token,
-      spec.sticky,
-      loading = initialParentRender.get()
-    )
+    entriesRef.modify { entries =>
+      val token = entries
+        .get(topic)
+        .filter(entry => entry.parentTopic == parentTopic && entry.sticky == spec.sticky)
+        .map(_.token)
+        .getOrElse(Token.sign(tokenConfig.secret, topic, "nested"))
+
+      val entry = NestedLiveViewEntry(
+        id = spec.id,
+        parentTopic = parentTopic,
+        sticky = spec.sticky,
+        token = token,
+        start = (ctx, meta, initialUrl) =>
+          Socket.start(
+            topic,
+            token,
+            spec.liveView(),
+            ctx,
+            meta,
+            tokenConfig,
+            initialUrl
+          )(using spec.msgClassTag)
+      )
+
+      val registration = NestedLiveViewRegistration(
+        spec.id,
+        parentTopic,
+        parentDomId,
+        topic,
+        token,
+        spec.sticky,
+        loading = initialParentRender.get()
+      )
+
+      registration -> entries.updated(topic, entry)
+    }
   end register
 end SocketNestedLiveViewRuntime
 

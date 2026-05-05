@@ -18,8 +18,13 @@ final private[scalive] class LiveRoutesRuntime[R](
   liveSocketMount: PathCodec[Unit],
   tokenConfig: TokenConfig):
 
+  private val websocketConfig =
+    WebSocketConfig.default.decoderConfig(
+      SocketDecoder.default.maxFramePayloadLength(16 * 1024 * 1024)
+    )
+
   private def socketApp(connectAuthorized: Boolean): WebSocketApp[R] =
-    Handler.webSocket { channel =>
+    val app = Handler.webSocket { channel =>
       ZIO
         .scoped(for
           liveChannel <- LiveChannel.make(tokenConfig, connectAuthorized)
@@ -73,6 +78,8 @@ final private[scalive] class LiveRoutesRuntime[R](
         yield ()).tapErrorCause(ZIO.logErrorCause(_))
 
     }
+    WebSocketApp(app.handler, Some(websocketConfig))
+  end socketApp
 
   private[scalive] def handleMessage(message: WebSocketMessage, liveChannel: LiveChannel)
     : RIO[R & Scope, Option[WebSocketMessage]] =
@@ -152,6 +159,15 @@ final private[scalive] class LiveRoutesRuntime[R](
       ).flatMap {
         case NestedJoinResult.Joined =>
           ZIO.none
+        case NestedJoinResult.JoinedWithReply(reply) =>
+          ZIO.succeed(
+            Some(
+              message.copy(
+                eventType = Protocol.EventReply,
+                payload = reply
+              )
+            )
+          )
         case NestedJoinResult.Rejected(reason) =>
           ZIO.succeed(Some(joinErrorReply(message, reason)))
         case NestedJoinResult.NotNested =>

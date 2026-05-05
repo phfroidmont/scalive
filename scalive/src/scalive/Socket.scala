@@ -7,6 +7,7 @@ import zio.Queue
 import zio.http.URL
 import zio.stream.ZStream
 
+import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 import scalive.socket.SocketBootstrap
 import scalive.socket.SocketFlashRuntime
@@ -24,6 +25,7 @@ final private[scalive] case class Socket[Msg, Model] private (
   uploadJoin: (String, String) => Task[Payload.Reply],
   uploadChunk: (String, Chunk[Byte]) => Task[Payload.Reply],
   outbox: ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)],
+  private[scalive] val stickyRejoinReply: UIO[Payload.Reply],
   private[scalive] val currentUrl: UIO[URL],
   private[scalive] val takeNavigationFlash: UIO[Map[String, String]],
   private[scalive] val replaceNavigationFlash: Map[String, String] => UIO[Unit],
@@ -55,6 +57,10 @@ private[scalive] object Socket:
                  )
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
+        _           <- ZIO.foreachDiscard(
+               (Payload.okReply(LiveResponse.InitDiff(state.initDiff)) -> state.meta) +:
+                 state.bootstrapPayloads.toList
+             )(state.outQueue.offer(_))
         livePatch =
           (url: String, patchMeta: WebSocketMessage.Meta) =>
             SocketInbound.handleLivePatch(url, patchMeta, state)
@@ -66,7 +72,14 @@ private[scalive] object Socket:
                        SocketUploadProtocol.handleUploadJoin(uploadTopic, uploadToken, state)
         uploadChunk = (uploadTopic: String, bytes: Chunk[Byte]) =>
                         SocketUploadProtocol.handleUploadChunk(uploadTopic, bytes, state)
-        outbox                 = SocketOutbound.buildOutbox(state)
+        outbox            = SocketOutbound.buildOutbox(state)
+        stickyRejoinReply = state.lifecycleLock.withPermit {
+                              state.ref.get.map { case (_, rendered) =>
+                                Payload.okReply(
+                                  LiveResponse.InitDiff(TreeDiff.initial(rendered.compiled))
+                                )
+                              }
+                            }
         currentUrl             = state.currentUrlRef.get
         takeNavigationFlash    = SocketFlashRuntime.takeNavigation(state.flashRef)
         replaceNavigationFlash = (flash: Map[String, String]) =>
@@ -83,6 +96,7 @@ private[scalive] object Socket:
         uploadJoin,
         uploadChunk,
         outbox,
+        stickyRejoinReply,
         currentUrl,
         takeNavigationFlash,
         replaceNavigationFlash,

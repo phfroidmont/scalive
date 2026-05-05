@@ -202,5 +202,112 @@ object SocketUploadSpec extends ZIOSpecDefault:
           afterSecond.entries.map(_.ref) == List("entry-1"),
           afterSecond.errors.isEmpty
         )
+    },
+    test("queued upload preflights append new entries") {
+      val options = LiveUploadOptions(accept = LiveUploadAccept.Any, maxEntries = 5)
+      for
+        allowedUploadPromise <- Promise.make[Throwable, LiveUpload]
+        snapshots            <- Queue.unbounded[Option[LiveUpload]]
+        socket               <- makeSocket(options, allowedUploadPromise, snapshots)
+        upload               <- waitForAllowedUpload(allowedUploadPromise)
+        firstReply           <- socket.allowUpload(
+                                  Payload.AllowUpload(
+                                    upload.ref,
+                                    List(preflightEntry("entry-1", name = "a.txt")),
+                                    None
+                                  )
+                                )
+        secondReply          <- socket.allowUpload(
+                                  Payload.AllowUpload(
+                                    upload.ref,
+                                    List(preflightEntry("entry-2", name = "b.txt")),
+                                    None
+                                  )
+                                )
+        _                    <- socket.inbox.offer(captureEvent(None) -> meta)
+        afterSecond          <- waitForSnapshot(snapshots)
+      yield
+        val firstAccepted = firstReply match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.UploadPreflightSuccess(_, _, entries, _)) =>
+            entries.keySet == Set("entry-1")
+          case _ => false
+
+        val secondAccepted = secondReply match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.UploadPreflightSuccess(_, _, entries, _)) =>
+            entries.keySet == Set("entry-2")
+          case _ => false
+
+        assertTrue(
+          firstAccepted,
+          secondAccepted,
+          afterSecond.entries.map(_.ref) == List("entry-1", "entry-2"),
+          afterSecond.errors.isEmpty
+        )
+    },
+    test("sync preserves existing entries omitted by later queued payloads") {
+      val options = LiveUploadOptions(accept = LiveUploadAccept.Any, maxEntries = 5)
+      for
+        allowedUploadPromise <- Promise.make[Throwable, LiveUpload]
+        snapshots            <- Queue.unbounded[Option[LiveUpload]]
+        socket               <- makeSocket(options, allowedUploadPromise, snapshots)
+        upload               <- waitForAllowedUpload(allowedUploadPromise)
+        _                    <- socket.allowUpload(
+                                  Payload.AllowUpload(
+                                    upload.ref,
+                                    List(preflightEntry("entry-1", name = "a.txt")),
+                                    None
+                                  )
+                                )
+        encodedUploads       <- uploadsJson(
+                                  upload.ref,
+                                  List(preflightEntry("entry-2", name = "b.txt"))
+                                )
+        _                    <- socket.inbox.offer(captureEvent(Some(encodedUploads)) -> meta)
+        afterSync            <- waitForSnapshot(snapshots)
+      yield
+        val firstPreserved = afterSync.entries.headOption.exists(entry =>
+          entry.ref == "entry-1" && !entry.done && entry.progress == 0
+        )
+
+        assertTrue(
+          firstPreserved,
+          afterSync.entries.map(_.ref) == List("entry-1", "entry-2"),
+          afterSync.errors.isEmpty
+        )
+    },
+    test("upload chunks update entry progress") {
+      val options = LiveUploadOptions(accept = LiveUploadAccept.Any, maxEntries = 5)
+      for
+        allowedUploadPromise <- Promise.make[Throwable, LiveUpload]
+        snapshots            <- Queue.unbounded[Option[LiveUpload]]
+        socket               <- makeSocket(options, allowedUploadPromise, snapshots)
+        upload               <- waitForAllowedUpload(allowedUploadPromise)
+        preflightReply       <- socket.allowUpload(
+                                  Payload.AllowUpload(
+                                    upload.ref,
+                                    List(preflightEntry("entry-1", name = "a.txt", size = 10L)),
+                                    None
+                                  )
+                                )
+        token                <- ZIO.fromOption(preflightReply match
+                                  case Payload.Reply(
+                                        ReplyStatus.Ok,
+                                        LiveResponse.UploadPreflightSuccess(_, _, entries, _)
+                                      ) =>
+                                    entries.get("entry-1").flatMap(_.asString)
+                                  case _ => None
+                                ).orElseFail(new RuntimeException("Missing upload token"))
+        _                    <- socket.uploadJoin("lvu:entry-1", token)
+        _                    <- socket.uploadChunk("lvu:entry-1", Chunk.fill(10)(1.toByte))
+        _                    <- socket.inbox.offer(captureEvent(None) -> meta)
+        afterChunk           <- waitForSnapshot(snapshots)
+      yield
+        val uploaded = afterChunk.entries.headOption
+
+        assertTrue(
+          uploaded.exists(_.ref == "entry-1"),
+          uploaded.exists(_.progress == 100),
+          uploaded.exists(_.done)
+        )
     }
   )

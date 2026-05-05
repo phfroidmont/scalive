@@ -35,7 +35,8 @@ private[scalive] object SocketUploadProtocol:
                  case Some(config) =>
                    val activeEntries =
                      payload.entries.filterNot(entry => config.cancelledRefs.contains(entry.ref))
-                   val baseState        = current.removeUploadByRef(payload.ref)
+                   val incomingRefs     = activeEntries.map(_.ref).toSet
+                   val baseState        = current.removeEntries(incomingRefs)
                    val validationErrors =
                      SocketUploadValidation.validationErrorsByEntry(activeEntries, config.options)
                    val preflightEntries = activeEntries.map(entry =>
@@ -119,9 +120,13 @@ private[scalive] object SocketUploadProtocol:
                        entriesMap.values.collect {
                          case entry if entry.errors.nonEmpty => entry.ref -> entry.errors
                        }.toMap
+                     entryOrder =
+                       config.entryOrder.filterNot(incomingRefs.contains) ++ activeEntries.map(
+                         _.ref
+                       )
                      globalErrors =
                        Option
-                         .when(activeEntries.length > config.options.maxEntries)(
+                         .when(entryOrder.length > config.options.maxEntries)(
                            config.ref -> SocketUploadValidation.errorJson(
                              LiveUploadError.TooManyFiles
                            )
@@ -129,7 +134,7 @@ private[scalive] object SocketUploadProtocol:
                          .toList
                      nextConfig = config.copy(
                                     errors = globalErrors,
-                                    entryOrder = activeEntries.map(_.ref).toVector
+                                    entryOrder = entryOrder
                                   )
                      nextState = baseState.copy(
                                    configs = baseState.configs.updated(config.name, nextConfig),
@@ -336,8 +341,12 @@ private[scalive] object SocketUploadProtocol:
                                .either
                                .flatMap {
                                  case Right(nextWriterState) =>
+                                   val progress =
+                                     if withWriter.size <= 0 then 100
+                                     else ((updatedSize * 100) / withWriter.size).toInt.min(100)
                                    val updatedEntry = withWriter.copy(
                                      bytes = withWriter.bytes ++ bytes,
+                                     progress = progress,
                                      writerState = Some(nextWriterState)
                                    )
                                    state.uploadRef
@@ -417,7 +426,11 @@ private[scalive] object SocketUploadProtocol:
                   case Some(config) =>
                     val visibleEntries =
                       entries.filterNot(entry => config.cancelledRefs.contains(entry.ref))
-                    val cleared          = runtime.removeEntries(config.entryOrder.toSet)
+                    val visibleRefs   = visibleEntries.map(_.ref).toSet
+                    val preservedRefs = config.entryOrder.filterNot(visibleRefs.contains)
+                    val cleared       = runtime.removeEntries(
+                      config.entryOrder.filterNot(preservedRefs.contains).toSet
+                    )
                     val validationErrors = SocketUploadValidation.validationErrorsByEntry(
                       visibleEntries,
                       config.options
@@ -445,7 +458,7 @@ private[scalive] object SocketUploadProtocol:
                         .toList
                     val nextConfig = config.copy(
                       errors = globalErrors,
-                      entryOrder = visibleEntries.map(_.ref).toVector
+                      entryOrder = preservedRefs ++ visibleEntries.map(_.ref)
                     )
                     cleared.copy(
                       configs = cleared.configs.updated(config.name, nextConfig),

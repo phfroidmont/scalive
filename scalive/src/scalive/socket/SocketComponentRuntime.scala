@@ -434,10 +434,23 @@ private[scalive] object SocketComponentRuntime:
       case Content.Keyed(entries, stream, allEntries) =>
         for
           renderedEntries <- ZIO.foreach(entries)(entry => renderKeyedEntry(entry, cursor, ctx))
-          renderedAll     <- ZIO.foreach(allEntries)(entries =>
-                           ZIO.foreach(entries)(entry => renderKeyedEntry(entry, cursor, ctx))
-                         )
+          renderedAll     <- renderStreamSnapshotEntries(allEntries, cursor, ctx)
         yield Content.Keyed(renderedEntries, stream, renderedAll)
+
+  private def renderStreamSnapshotEntries[Msg](
+    allEntries: Option[Vector[Content.Keyed.Entry[Msg]]],
+    cursor: ComponentCursor,
+    ctx: LiveContext
+  ): Task[Option[Vector[Content.Keyed.Entry[Any]]]] =
+    allEntries match
+      case None          => ZIO.none
+      case Some(entries) =>
+        val renderedLiveViewIds = cursor.renderedLiveViewIds
+        for
+          _        <- ZIO.succeed(cursor.renderedLiveViewIds = Set.empty)
+          rendered <- ZIO.foreach(entries)(entry => renderKeyedEntry(entry, cursor, ctx))
+          _        <- ZIO.succeed(cursor.renderedLiveViewIds = renderedLiveViewIds)
+        yield Some(rendered)
 
   private def renderKeyedEntry[Msg](
     entry: Content.Keyed.Entry[Msg],
@@ -585,12 +598,11 @@ private[scalive] object SocketComponentRuntime:
       ctx.nestedLiveViews.register(spec).map { registration =>
         Content.Tag(
           div(
-            idAttr       := registration.id,
-            phx.session  := registration.session,
-            phx.parentId := registration.parentDomId,
-            phx.childId  := registration.id,
-            phx.sticky   := registration.sticky,
-            Option.when(registration.loading)(cls := "phx-loading"),
+            idAttr      := registration.id,
+            phx.session := registration.session,
+            Option.unless(registration.sticky)(phx.parentId := registration.parentDomId),
+            Option.unless(registration.sticky)(phx.childId  := registration.id),
+            phx.sticky := registration.sticky,
             registration.rendered.map(Content.Tag(_))
           )
         )

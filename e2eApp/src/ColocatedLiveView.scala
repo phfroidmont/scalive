@@ -20,28 +20,36 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
           typ         := "text",
           idAttr      := "user-phone-number",
           nameAttr    := "user[phone_number]",
-          phx.hook    := "PhoneNumber",
+          phx.hook    := ".PhoneNumber",
           placeholder := "phone"
         )
       ),
       p(idAttr := "phone", model.phone),
       div(
         idAttr    := "runtime",
-        phx.hook  := "Runtime",
+        phx.hook  := ".Runtime",
         styleAttr := "display: none;",
         "Runtime hook works!"
       ),
       button(phx.onClick(Msg.PushJs), "Push JS from server"),
       h1(idAttr := "hello", "Hello!"),
-      rawHtml(
-        """
-          |<pre>def plain_example(), do: :ok</pre>
-          |<pre>
-          |  Current temperature: <span class="na">@temperature</span>
-          |  <span class="nt">button</span>
-          |</pre>
-          |""".stripMargin
-      )
+      syntaxHighlight("""
+                        |defmodule SyntaxHighlight do
+                        |  @behaviour Phoenix.Component.MacroComponent
+                        |end
+                        |""".stripMargin),
+      syntaxHighlight("""
+                        |defmodule MyAppWeb.ThermostatLive do
+                        |  use MyAppWeb, :live_view
+                        |
+                        |  def render(assigns) do
+                        |    ~H\"\"\"
+                        |    Current temperature: @temperature
+                        |    <button phx-click="inc_temperature">+</button>
+                        |    \"\"\"
+                        |  end
+                        |end
+                        |""".stripMargin)
     )
 end ColocatedLiveView
 
@@ -51,3 +59,13 @@ object ColocatedLiveView:
     case PushJs
 
   final case class Model(phone: String = "")
+
+  private def syntaxHighlight(code: String) =
+    val highlighted = code.trim
+      .replace("<button", "&lt;<span class=\"nt\">button</span>")
+      .replace("</button>", "&lt;/<span class=\"nt\">button</span>&gt;")
+      .replace("@temperature", "<span class=\"na\">@temperature</span>")
+
+    rawHtml(
+      s"""<pre class="highlight"><style>.highlight { padding: 8px; border-radius: 4px; }</style>$highlighted</pre>"""
+    )

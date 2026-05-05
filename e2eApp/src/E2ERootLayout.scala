@@ -23,5 +23,8 @@ final class E2ERootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]
         assets.trackedStylesheet("app.css"),
         titleTag("Scalive E2E")
       ),
-      bodyTag(content)
+      bodyTag(
+        content,
+        div(idAttr := "root-portal")
+      )
     )

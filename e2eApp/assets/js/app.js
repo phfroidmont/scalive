@@ -1,5 +1,6 @@
 import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
+import colocated, { hooks as colocatedHooks } from "./colocated/index.js"
 
 const originalConsoleLog = console.log.bind(console)
 console.log = (...args) => {
@@ -12,24 +13,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 const liveSocketParams = csrfToken ? { _csrf_token: csrfToken } : {}
 
 const hooks = {
-  PhoneNumber: {
-    mounted() {
-      this.el.addEventListener("input", () => {
-        const match = this.el.value.replace(/\D/g, "").match(/^(\d{3})(\d{3})(\d{4})$/)
-        if (match) {
-          this.el.value = `${match[1]}-${match[2]}-${match[3]}`
-        }
-      })
-    }
-  },
-  Runtime: {
-    mounted() {
-      this.el.style.display = "block"
-    },
-    updated() {
-      this.el.style.display = "block"
-    }
-  },
+  ...colocatedHooks,
   FormHook: {
     mounted() {
       this.el.textContent = "pong"
@@ -44,9 +28,63 @@ const hooks = {
       else window.setTimeout(appendPong, 800)
     }
   },
+  QueuedUploaderHook: {
+    mounted() {
+      const maxConcurrency = Number.parseInt(this.el.dataset.maxConcurrency || "3", 10)
+      let filesRemaining = []
+      let queuedSignature = null
+
+      const queueFiles = (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+
+        if (!(event.target instanceof HTMLInputElement)) return
+        if (!event.target.files) return
+
+        const rawFiles = Array.from(event.target.files)
+        const signature = rawFiles
+          .map((file) => `${file.name}:${file.size}:${file.lastModified}`)
+          .join("|")
+
+        if (signature === queuedSignature) return
+        queuedSignature = signature
+
+        const fileNames = rawFiles.map((file) => file.name)
+
+        this.pushEvent("upload_scrub_list", { file_names: fileNames }, ({ deduped_filenames }) => {
+          const files = rawFiles.filter((file) => deduped_filenames.includes(file.name))
+          const firstFiles = files.slice(0, maxConcurrency)
+
+          filesRemaining = files.slice(maxConcurrency)
+          this.upload("files", firstFiles)
+        })
+      }
+
+      this.el.addEventListener("input", queueFiles, true)
+      this.el.addEventListener("change", queueFiles, true)
+
+      this.handleEvent("upload_send_next_file", () => {
+        const nextFile = filesRemaining.shift()
+
+        if (nextFile) this.upload("files", [nextFile])
+        else console.log("Done uploading, noop!")
+      })
+    }
+  },
   InsidePortal: {
     mounted() {
       this.el.setAttribute("data-portalhook-mounted", "true")
+    }
+  },
+  TeleportedLCButton: {
+    mounted() {
+      this.el.addEventListener("click", () => {
+        this.el.classList.add("phx-click-loading")
+        this.pushEventTo(this.el, "prepend").finally(() => {
+          this.el.classList.remove("phx-click-loading")
+        })
+      })
     }
   },
   PortalTooltip: {
@@ -85,12 +123,25 @@ const hooks = {
       console.log("Hook mounted!")
     }
   },
-  Issue3530Item: {
+  test: {
+    viewId() {
+      return this.el.id.replace("test-hook-", "item-")
+    },
     mounted() {
-      console.log(`${this.el.id} mounted`)
+      console.log(`${this.viewId()} mounted`)
+      this.removalObserver = new MutationObserver(() => {
+        if (!document.body.contains(this.el)) this.logDestroyed()
+      })
+      this.removalObserver.observe(document.body, { childList: true, subtree: true })
     },
     destroyed() {
-      console.log(`${this.el.id} destroyed`)
+      this.logDestroyed()
+    },
+    logDestroyed() {
+      if (this.destroyedLogged) return
+      this.destroyedLogged = true
+      this.removalObserver?.disconnect()
+      console.log(`${this.viewId()} destroyed`)
     }
   },
   Issue3656ClearClass: {
@@ -136,13 +187,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
 
 liveSocket.connect()
 window.liveSocket = liveSocket
-
-window.addEventListener("phx:js:exec", (event) => {
-  const cmd = event?.detail?.cmd
-  if (typeof cmd === "string" && liveSocket.main) {
-    liveSocket.execJS(liveSocket.main.el, cmd)
-  }
-})
+colocated.js_exec(liveSocket)
 
 window.addEventListener("phx:navigate", (event) => {
   console.log("navigate event", JSON.stringify(event.detail))

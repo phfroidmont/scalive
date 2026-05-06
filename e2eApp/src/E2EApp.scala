@@ -59,7 +59,7 @@ object E2EApp extends ZIOAppDefault:
       live / "form" / "dynamic-inputs"           -> FormDynamicInputsLiveView(),
       live / "form" / "feedback"                 -> FormFeedbackLiveView(),
       live / "portal"                            -> PortalLiveView(),
-      live / "errors"                            -> { req => ErrorLiveView(req.headers.isEmpty) },
+      live / "errors"                            -> ErrorLiveView(),
       live / "issues" / "2965"                   -> Issue2965LiveView(),
       live / "issues" / "2787"                   -> Issue2787LiveView(),
       live / "issues" / "3040"                   -> Issue3040LiveView(),

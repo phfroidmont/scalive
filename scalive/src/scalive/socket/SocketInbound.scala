@@ -17,7 +17,12 @@ private[scalive] object SocketInbound:
     ZStream
       .fromQueue(state.inbox)
       .runForeach((event, meta) =>
-        state.lifecycleLock.withPermit(handleClientEvent(event, meta, state))
+        state.lifecycleLock
+          .withPermit(handleClientEvent(event, meta, state))
+          .catchAllCause(cause =>
+            SocketCrashRuntime
+              .crash(state, s"LiveView ${state.meta.topic} event crashed", Some(cause))
+          )
       )
       .fork
 

@@ -20,7 +20,8 @@ final private[scalive] case class NestedLiveViewSpec[Msg, Model](
   id: String,
   liveView: () => LiveView[Msg, Model],
   msgClassTag: ClassTag[Msg],
-  sticky: Boolean)
+  sticky: Boolean,
+  linkParentOnCrash: Boolean)
 
 final private[scalive] case class NestedLiveViewRegistration(
   id: String,
@@ -51,7 +52,11 @@ final private[scalive] case class NestedLiveViewEntry(
   parentTopic: String,
   sticky: Boolean,
   token: String,
-  start: (LiveContext, WebSocketMessage.Meta, URL, Boolean) => RIO[Scope, Socket[?, ?]])
+  linkParentOnCrash: Boolean,
+  start: (LiveContext, WebSocketMessage.Meta, URL, Boolean, UIO[Unit]) => RIO[
+    Scope,
+    Socket[?, ?]
+  ])
 
 final private[scalive] class SocketNestedLiveViewRuntime(
   parentTopic: String,
@@ -81,7 +86,8 @@ final private[scalive] class SocketNestedLiveViewRuntime(
         parentTopic = parentTopic,
         sticky = spec.sticky,
         token = token,
-        start = (ctx, meta, initialUrl, enqueueInitReply) =>
+        linkParentOnCrash = spec.linkParentOnCrash,
+        start = (ctx, meta, initialUrl, enqueueInitReply, onCrash) =>
           Socket.start(
             topic,
             token,
@@ -90,7 +96,8 @@ final private[scalive] class SocketNestedLiveViewRuntime(
             meta,
             tokenConfig,
             initialUrl,
-            enqueueInitReply = enqueueInitReply
+            enqueueInitReply = enqueueInitReply,
+            onCrash = onCrash
           )(using spec.msgClassTag)
       )
 

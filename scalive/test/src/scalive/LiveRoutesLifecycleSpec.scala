@@ -5,6 +5,7 @@ import scala.reflect.ClassTag
 import zio.*
 import zio.http.*
 import zio.http.codec.HttpCodec
+import zio.http.codec.PathCodec
 import zio.json.ast.Json
 import zio.test.*
 
@@ -25,6 +26,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
   private val secondChildTopic = "lv:second"
   private val grandchildTopic  = "lv:grandchild"
   private val rootMeta         = WebSocketMessage.Meta(Some(1), Some(1), rootTopic, "phx_join")
+  private val tokenConfig      = TokenConfig.default
 
   private enum ChildMsg:
     case Increment
@@ -33,6 +35,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
     case PushNavigate(to: String)
     case ReplaceNavigate(to: String)
     case Redirect(to: String)
+    case Crash
 
   private enum ParentMsg:
     case Rerender
@@ -79,6 +82,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
             case ChildMsg.PushNavigate(to)    => ctx.nav.pushNavigate(to).as(model + 1)
             case ChildMsg.ReplaceNavigate(to) => ctx.nav.replaceNavigate(to).as(model + 1)
             case ChildMsg.Redirect(to)        => ctx.nav.redirect(to).as(model + 1)
+            case ChildMsg.Crash               => ZIO.fail(RuntimeException("boom"))
 
       def render(model: Int): HtmlElement[ChildMsg] =
         button(phx.onClick(command), model.toString)
@@ -126,6 +130,58 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       `type` = "click",
       event = BindingId.attrBindingId(path, attrIndex),
       value = Json.Obj.empty
+    )
+
+  private val rootLayout = LiveRootLayout("lifecycle-root")((content, _) =>
+    htmlRootTag(
+      headTag(titleTag("Lifecycle")),
+      bodyTag(content)
+    )
+  )
+
+  private def runtimeFor(route: LiveRouteFragment[Any, Any]) =
+    new LiveRoutesRuntime[Any](
+      Nil,
+      rootLayout,
+      route.liveRoutes.asInstanceOf[List[LiveRoute[Any, ?, Any, ?, ?, ?]]],
+      PathCodec.empty / "live",
+      tokenConfig
+    )
+
+  private def extractAttr(body: String, attr: String): Task[String] =
+    val pattern = s"""$attr="([^"]+)""".r
+    ZIO.fromOption(pattern.findFirstMatchIn(body).map(_.group(1))).orElseFail(
+      new NoSuchElementException(attr)
+    )
+
+  private def joinMessage(
+    topic: String,
+    session: String,
+    path: String,
+    params: Option[Map[String, Json]] = None
+  ) =
+    WebSocketMessage(
+      joinRef = Some(1),
+      messageRef = Some(1),
+      topic = topic,
+      eventType = WebSocketMessage.Protocol.EventJoin,
+      payload = Payload.Join(
+        url = Some(path),
+        redirect = None,
+        session = session,
+        static = None,
+        params = params,
+        flash = None,
+        sticky = false
+      )
+    )
+
+  private def genericJoinError(reply: Option[WebSocketMessage]): Boolean =
+    reply.exists(
+      _.payload == Payload.Reply(
+        ReplyStatus.Error,
+        LiveResponse.Empty
+      )
     )
 
   private def joinRoot[Msg: ClassTag, Model](
@@ -286,6 +342,175 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         _       <- joinRoot(channel, parent)
         entry   <- channel.nestedEntry(childTopic)
       yield assertTrue(entry.exists(_.parentTopic == rootTopic)))
+    },
+    test("connected mount crashes return a generic join error") {
+      val crashing = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) =
+          if ctx.connected then ZIO.fail(RuntimeException("boom")) else ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: Unit): HtmlElement[Unit] = div("ok")
+
+      val runtime = runtimeFor(scalive.live(crashing))
+
+      for
+        response   <- runRequest(runtime.routes, "/")
+        body       <- response.body.asString
+        session    <- extractAttr(body, "data-phx-session")
+        liveViewId <- ZIO
+                        .fromEither(LiveSessionPayload.verify(tokenConfig, session))
+                        .map(_._1)
+                        .mapError(new IllegalArgumentException(_))
+        topic   = s"lv:$liveViewId"
+        channel <- LiveChannel.make(tokenConfig)
+        reply   <- runtime.handleMessage(joinMessage(topic, session, "/"), channel)
+        socket  <- channel.socket(topic)
+      yield assertTrue(genericJoinError(reply), socket.isEmpty)
+    },
+    test("nested connected mount crashes return a generic child join error") {
+      val child = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) =
+          if ctx.connected then ZIO.fail(RuntimeException("boom")) else ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: Unit): HtmlElement[Unit] = div("child")
+
+      val parent = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit]          = div(liveView("child", child))
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(tokenConfig)
+        _       <- joinRoot(channel, parent)
+        entry   <- channel.nestedEntry(childTopic).some
+        result  <- channel.tryJoinNested(
+                     childTopic,
+                     entry.token,
+                     staticChanged = false,
+                     rootMeta.copy(topic = childTopic),
+                     Some(URL.root)
+                   )
+        childSocket  <- channel.socket(childTopic)
+        parentSocket <- channel.socket(rootTopic)
+      yield assertTrue(
+        result == NestedJoinResult.FailedWithReply(Payload.errorReply(LiveResponse.Empty)),
+        childSocket.isEmpty,
+        parentSocket.nonEmpty
+      ))
+    },
+    test("joined LiveView crashes publish phx_error and can rejoin") {
+      val crashing = new LiveView[ChildMsg, Int]:
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+
+        def handleMessage(model: Int, ctx: MessageContext) =
+          case ChildMsg.Crash => ZIO.fail(RuntimeException("boom"))
+          case _              => ZIO.succeed(model)
+
+        def render(model: Int): HtmlElement[ChildMsg] =
+          button(phx.onClick(ChildMsg.Crash), model.toString)
+
+      ZIO.scoped(for
+        channel      <- LiveChannel.make(tokenConfig)
+        _            <- joinRoot(channel, crashing)
+        firstSocket  <- channel.socket(rootTopic).some
+        outQueue     <- subscribe(firstSocket)
+        _            <- channel.event(rootTopic, click(Vector("root:button")), rootMeta.copy(eventType = "event"))
+        errorPayload <- takeMatching(outQueue) {
+                          case (Payload.Error, meta) => meta.topic == rootTopic
+                          case _                     => false
+                        }
+        _            <- joinRoot(channel, crashing)
+        secondSocket <- channel.socket(rootTopic).some
+      yield assertTrue(
+        errorPayload._2.topic == rootTopic,
+        firstSocket.asInstanceOf[AnyRef] ne secondSocket.asInstanceOf[AnyRef]
+      ))
+    },
+    test("linked child crashes propagate phx_error to parent") {
+      val child = new LiveView[ChildMsg, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          case ChildMsg.Crash => ZIO.fail(RuntimeException("boom"))
+          case _              => ZIO.succeed(model)
+
+        def render(model: Unit): HtmlElement[ChildMsg] =
+          button(phx.onClick(ChildMsg.Crash), "crash")
+
+      val parent = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit] =
+          div(liveView("child", child, linkParentOnCrash = true))
+
+      ZIO.scoped(for
+        channel     <- LiveChannel.make(tokenConfig)
+        _           <- joinRoot(channel, parent)
+        parentSock  <- channel.socket(rootTopic).some
+        parentOut   <- subscribe(parentSock)
+        childEntry  <- channel.nestedEntry(childTopic).some
+        childSock   <- joinNested(channel, childTopic, rootMeta.copy(topic = childTopic))
+        childOut    <- subscribe(childSock)
+        _           <- channel.event(childTopic, click(Vector("root:button")), rootMeta.copy(topic = childTopic, eventType = "event"))
+        childError  <- takeMatching(childOut) {
+                         case (Payload.Error, meta) => meta.topic == childTopic
+                         case _                     => false
+                       }
+        parentError <- takeMatching(parentOut) {
+                         case (Payload.Error, meta) => meta.topic == rootTopic
+                         case _                     => false
+                       }
+      yield assertTrue(
+        childEntry.parentTopic == rootTopic,
+        childError._2.topic == childTopic,
+        parentError._2.topic == rootTopic
+      ))
+    },
+    test("connected lifecycle exposes LiveSocket connect params") {
+      val child = new LiveView[Unit, String]:
+        def mount(ctx: MountContext) =
+          val mounts = ctx.connectParams.get("_mounts").collect { case Json.Num(value) =>
+            value.toString
+          }
+          ZIO.succeed(s"mounts:${mounts.getOrElse("none")}")
+
+        def handleMessage(model: String, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: String): HtmlElement[Unit] = div(model)
+
+      val parent = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
+        def render(model: Unit): HtmlElement[Unit]          = div(liveView("child", child))
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(tokenConfig)
+        _       <- joinRoot(channel, parent)
+        entry   <- channel.nestedEntry(childTopic).some
+        result  <- channel.tryJoinNested(
+                     childTopic,
+                     entry.token,
+                     staticChanged = false,
+                     rootMeta.copy(topic = childTopic),
+                     Some(URL.root),
+                     connectParams = Map("_mounts" -> Json.Num(2))
+                   )
+        childSocket <- channel.socket(childTopic).some
+        init        <- childSocket.outbox.take(1).runHead.some
+      yield
+        val renderedConnectParams = init._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(diff)) =>
+            containsValue(diff, "mounts:2")
+          case _ => false
+
+        assertTrue(result == NestedJoinResult.Joined, renderedConnectParams)
+      )
     },
     test("nested LiveView joins without URL use the parent current URL") {
       val child = new LiveView[Unit, String]:

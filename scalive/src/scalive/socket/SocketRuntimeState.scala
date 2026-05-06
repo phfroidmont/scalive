@@ -151,5 +151,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   componentsRef: Ref[ComponentRuntimeState],
   componentCidsRef: Ref[Set[Int]],
   patchRedirectCountRef: Ref[Int],
+  crashedRef: Ref[Boolean],
+  onCrash: UIO[Unit],
   bootstrapPayloads: Chunk[(Payload, WebSocketMessage.Meta)],
   initDiff: Diff)

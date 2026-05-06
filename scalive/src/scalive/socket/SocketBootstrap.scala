@@ -18,7 +18,8 @@ private[scalive] object SocketBootstrap:
     tokenConfig: TokenConfig,
     initialUrl: URL,
     initialFlash: Map[String, String],
-    renderRoot: (Model, URL) => HtmlElement[Msg]
+    renderRoot: (Model, URL) => HtmlElement[Msg],
+    onCrash: UIO[Unit]
   ): Task[RuntimeState[Msg, Model]] =
     for
       inbox            <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
@@ -97,6 +98,7 @@ private[scalive] object SocketBootstrap:
                           )
       _                     <- SocketStreamRuntime.prune(streamRef)
       patchRedirectCountRef <- Ref.make(0)
+      crashedRef            <- Ref.make(false)
       bootstrapPayloadEnvelopes =
         bootstrapPayloads.map(_ -> meta.copy(messageRef = None))
     yield RuntimeState(
@@ -123,6 +125,8 @@ private[scalive] object SocketBootstrap:
       componentsRef = componentsRef,
       componentCidsRef = componentCidsRef,
       patchRedirectCountRef = patchRedirectCountRef,
+      crashedRef = crashedRef,
+      onCrash = onCrash,
       bootstrapPayloads = bootstrapPayloadEnvelopes,
       initDiff = initDiff
     )

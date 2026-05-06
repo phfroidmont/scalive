@@ -19,7 +19,16 @@ private[scalive] object SocketOutbound:
   def startServerFiber[Msg, Model](
     state: RuntimeState[Msg, Model]
   ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
-    serverEventStream(state).runForeach((event, meta) => handleServerEvent(event, meta, state)).fork
+    serverEventStream(state)
+      .runForeach((event, meta) =>
+        handleServerEvent(event, meta, state).catchAllCause(cause =>
+          SocketCrashRuntime.crash(
+            state,
+            s"LiveView ${state.meta.topic} server message crashed",
+            Some(cause)
+          )
+        )
+      ).fork
 
   def buildOutbox[Msg, Model](
     state: RuntimeState[Msg, Model]

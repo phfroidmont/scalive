@@ -5,6 +5,7 @@ import scala.reflect.ClassTag
 import zio.*
 import zio.http.URL
 import zio.json.*
+import zio.json.ast.Json
 
 import scalive.streams.*
 import scalive.upload.*
@@ -12,6 +13,7 @@ import scalive.upload.*
 trait LifecycleContext:
   def connected: Boolean
   def staticChanged: Boolean
+  def connectParams: Map[String, Json]
 
 trait MountContext[Msg, Model] extends LifecycleContext:
   def nav: MountNavigation
@@ -264,6 +266,7 @@ trait ComponentAfterRenderHooks[Props, Msg, Model]:
 final private[scalive] case class LiveContext(
   staticChanged: Boolean,
   connected: Boolean = false,
+  connectParams: Map[String, Json] = Map.empty,
   uploads: UploadRuntime = UploadRuntime.Disabled,
   streams: StreamRuntime = StreamRuntime.Disabled,
   clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
@@ -412,8 +415,9 @@ private[scalive] object LiveContext:
 
   private[scalive] trait RuntimeContextBase extends LifecycleContext:
     protected def runtime: LiveContext
-    def connected: Boolean     = runtime.connected
-    def staticChanged: Boolean = runtime.staticChanged
+    def connected: Boolean               = runtime.connected
+    def staticChanged: Boolean           = runtime.staticChanged
+    def connectParams: Map[String, Json] = runtime.connectParams
 
   final private[scalive] class RuntimeMountContext[Msg, Model](protected val runtime: LiveContext)
       extends MountContext[Msg, Model]

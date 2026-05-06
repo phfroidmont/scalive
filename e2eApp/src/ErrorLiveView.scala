@@ -1,11 +1,13 @@
+import java.util.concurrent.atomic.AtomicInteger
+
 import zio.*
 import zio.http.URL
-import zio.json.*
+import zio.json.ast.Json
 
 import scalive.*
 import scalive.LiveIO.given
 
-class ErrorLiveView(connected: Boolean) extends LiveView[ErrorLiveView.Msg, ErrorLiveView.Model]:
+class ErrorLiveView extends LiveView[ErrorLiveView.Msg, ErrorLiveView.Model]:
   import ErrorLiveView.*
 
   override val queryCodec: LiveQueryCodec[QueryParams] = QueryParams.codec
@@ -14,49 +16,15 @@ class ErrorLiveView(connected: Boolean) extends LiveView[ErrorLiveView.Msg, Erro
     Model()
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
-    if !connected && params.deadMountRaise then ZIO.fail(RuntimeException("boom"))
-    else if connected && params.connectedMountRaise then ZIO.fail(RuntimeException("boom"))
-    else
-      val child = params.child || params.connectedChildMountRaise.nonEmpty
-      val link  = params.connectedChildMountRaise.contains("link")
-      val logs  = initialLogs(params)
-      model.copy(
-        child = child,
-        link = link,
-        connectedMountRaise = params.connectedMountRaise,
-        logs = logs
-      )
+    if !ctx.connected && params.deadMountRaise then ZIO.fail(RuntimeException("boom"))
+    else if ctx.connected && params.connectedMountRaise then ZIO.fail(RuntimeException("boom"))
+    else model.copy(child = childBehavior(params, ctx))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.CrashChild if model.link =>
-      model.copy(
-        renderTime = now,
-        childRenderTime = now,
-        logs = Vector(
-          "child error: view crashed",
-          "child destroyed",
-          "error: view crashed",
-          "mount",
-          "child mount"
-        )
-      )
-    case Msg.CrashChild =>
-      model.copy(
-        childRenderTime = now,
-        logs = Vector("child error: view crashed", "child mount")
-      )
-    case Msg.CrashMain =>
-      model.copy(
-        renderTime = now,
-        childRenderTime = now,
-        logs = Vector("child destroyed", "error: view crashed", "mount", "child mount")
-      )
+    case Msg.CrashMain => ZIO.fail(RuntimeException("boom"))
 
   def render(model: Model) =
     div(
-      idAttr                       := "error-logger",
-      phx.hook                     := "ErrorLogger",
-      dataAttr("console-messages") := model.logs.toJson,
       p(idAttr := "render-time", "main rendered at: ", model.renderTime),
       button(phx.onClick(Msg.CrashMain), "Crash main"),
       p(cls := "if-phx-error", "Error"),
@@ -66,7 +34,13 @@ class ErrorLiveView(connected: Boolean) extends LiveView[ErrorLiveView.Msg, Erro
       p(cls := "if-phx-loading", "Loading"),
       div(
         styleAttr := "border: 1px solid lightgray; padding: 4px; margin-top: 16px;",
-        Option.when(model.child)(childView(model))
+        model.child.map(behavior =>
+          liveView(
+            "child",
+            ChildLiveView(behavior),
+            linkParentOnCrash = behavior.linkParentOnCrash
+          )
+        )
       ),
       styleTag(
         rawHtml("""
@@ -81,9 +55,6 @@ class ErrorLiveView(connected: Boolean) extends LiveView[ErrorLiveView.Msg, Erro
           [data-phx-session] .if-phx-loading { display: none; }
           [data-phx-session].phx-loading > .if-phx-loading { display: block; }
         """)
-      ),
-      Option.when(model.connectedMountRaise)(
-        scriptTag(rawHtml("console.log('5 consecutive reloads. Entering failsafe mode')"))
       )
     )
 end ErrorLiveView
@@ -91,15 +62,25 @@ end ErrorLiveView
 object ErrorLiveView:
   enum Msg:
     case CrashMain
+
+  enum ChildMsg:
     case CrashChild
 
   final case class Model(
-    child: Boolean = false,
-    link: Boolean = false,
-    connectedMountRaise: Boolean = false,
-    renderTime: String = now,
-    childRenderTime: String = now,
-    logs: Vector[String] = Vector.empty)
+    child: Option[ChildBehavior] = None,
+    renderTime: String = now)
+
+  final case class ChildModel(
+    connected: Boolean,
+    renderTime: String = now)
+
+  final case class ChildBehavior(
+    remainingConnectedMountFailures: AtomicInteger = AtomicInteger(0),
+    linkParentOnCrash: Boolean = false):
+    def failNextConnectedMount: Boolean =
+      remainingConnectedMountFailures.getAndUpdate(current =>
+        if current > 0 then current - 1 else current
+      ) > 0
 
   final case class QueryParams(
     deadMountRaise: Boolean = false,
@@ -122,42 +103,52 @@ object ErrorLiveView:
         encodeFn = _ => Right("?")
       )
 
-  private def childView(model: Model) =
-    div(
-      if model.child then "Child connected" else "Child rendered (dead)",
-      p(idAttr := "child-render-time", "child rendered at: ", model.childRenderTime),
-      button(phx.onClick(Msg.CrashChild), "Crash child"),
-      p(cls := "if-phx-error", "Error"),
-      p(cls := "if-phx-client-error", "Client Error"),
-      p(cls := "if-phx-server-error", "Server Error"),
-      p(cls := "if-phx-disconnected", "Disconnected"),
-      p(cls := "if-phx-loading", "Loading")
-    )
+  class ChildLiveView(behavior: ChildBehavior) extends LiveView[ChildMsg, ChildModel]:
+    override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
-  private def initialLogs(params: QueryParams): Vector[String] =
+    def mount(ctx: MountContext) =
+      ChildModel(connected = ctx.connected)
+
+    override def handleParams(model: ChildModel, params: Unit, _url: URL, ctx: ParamsContext) =
+      if ctx.connected && behavior.failNextConnectedMount then ZIO.fail(RuntimeException("boom"))
+      else model
+
+    def handleMessage(model: ChildModel, ctx: MessageContext) =
+      case ChildMsg.CrashChild => ZIO.fail(RuntimeException("boom"))
+
+    def render(model: ChildModel) =
+      div(
+        if model.connected then "Child connected" else "Child rendered (dead)",
+        p(idAttr := "child-render-time", "child rendered at: ", model.renderTime),
+        button(phx.onClick(ChildMsg.CrashChild), "Crash child"),
+        p(cls := "if-phx-error", "Error"),
+        p(cls := "if-phx-client-error", "Client Error"),
+        p(cls := "if-phx-server-error", "Server Error"),
+        p(cls := "if-phx-disconnected", "Disconnected"),
+        p(cls := "if-phx-loading", "Loading")
+      )
+
+  private def childBehavior(
+    params: QueryParams,
+    ctx: scalive.ParamsContext[Msg, Model]
+  ): Option[ChildBehavior] =
     params.connectedChildMountRaise match
-      case Some("2") =>
-        Vector("mount", "child error: unable to join", "child error: unable to join", "child mount")
-      case Some("5") =>
-        Vector(
-          "mount",
-          "child error: unable to join",
-          "child error: unable to join",
-          "child error: unable to join",
-          "child error: giving up",
-          "child destroyed"
-        )
       case Some("link") =>
-        Vector(
-          "mount",
-          "child error: unable to join",
-          "child destroyed",
-          "error: view crashed",
-          "mount",
-          "child mount"
-        )
-      case _ if params.child => Vector("mount", "child mount")
-      case _                 => Vector("mount")
+        val failOnce = if connectedRootMountCount(ctx) == 0 then 1 else 0
+        Some(ChildBehavior(AtomicInteger(failOnce), linkParentOnCrash = true))
+      case Some(value) =>
+        Some(ChildBehavior(AtomicInteger(value.toIntOption.getOrElse(0))))
+      case None if params.child => Some(ChildBehavior())
+      case None                 => None
+
+  private def connectedRootMountCount(ctx: scalive.ParamsContext[Msg, Model]): Int =
+    ctx.connectParams
+      .get("_mounts")
+      .flatMap {
+        case Json.Num(value) => Some(value.intValue)
+        case Json.Str(value) => value.toIntOption
+        case _               => None
+      }.getOrElse(0)
 
   private def now: String =
     java.time.Instant.now().toString + ":" + java.lang.System.nanoTime().toString

@@ -4,6 +4,7 @@ import scala.reflect.ClassTag
 
 import zio.*
 import zio.http.URL
+import zio.json.ast.Json
 import zio.stream.SubscriptionRef
 import zio.stream.ZStream
 
@@ -15,6 +16,7 @@ import scalive.WebSocketMessage.Payload
 private[scalive] enum NestedJoinResult:
   case Joined
   case JoinedWithReply(reply: Payload.Reply)
+  case FailedWithReply(reply: Payload.Reply)
   case Rejected(reason: JoinErrorReason)
   case NotNested
 
@@ -152,12 +154,21 @@ final private[scalive] class LiveChannel(
     token: String,
     staticChanged: Boolean,
     meta: WebSocketMessage.Meta,
-    initialUrl: URL
+    initialUrl: URL,
+    connectParams: Map[String, Json] = Map.empty
   ): RIO[Scope, Option[JoinErrorReason]] =
-    tryJoinNested(topic, token, staticChanged, meta, Some(initialUrl)).map {
-      case NestedJoinResult.Rejected(reason) => Some(reason)
-      case _                                 => None
-    }
+    tryJoinNested(
+      topic,
+      token,
+      staticChanged,
+      meta,
+      Some(initialUrl),
+      connectParams = connectParams
+    )
+      .map {
+        case NestedJoinResult.Rejected(reason) => Some(reason)
+        case _                                 => None
+      }
 
   private[scalive] def tryJoinNested(
     topic: String,
@@ -165,7 +176,8 @@ final private[scalive] class LiveChannel(
     staticChanged: Boolean,
     meta: WebSocketMessage.Meta,
     initialUrl: Option[URL],
-    enqueueInitReply: Boolean = true
+    enqueueInitReply: Boolean = true,
+    connectParams: Map[String, Json] = Map.empty
   ): RIO[Scope, NestedJoinResult] =
     nestedEntries.get.flatMap { entries =>
       entries.get(topic) match
@@ -174,6 +186,7 @@ final private[scalive] class LiveChannel(
             case Some(url) =>
               val ctx = LiveContext(
                 staticChanged = staticChanged,
+                connectParams = connectParams,
                 nestedLiveViews = nestedRuntime(topic, entry.id)
               )
               sockets
@@ -185,15 +198,9 @@ final private[scalive] class LiveChannel(
                         .map(reply => NestedJoinResult.JoinedWithReply(reply) -> m)
                     case Some(socket) =>
                       socket.shutdown *>
-                        entry
-                          .start(ctx, meta, url, enqueueInitReply).map(socket =>
-                            joinedResult(socket, enqueueInitReply) -> m.updated(topic, socket)
-                          )
+                        startNestedSocket(entry, topic, ctx, meta, url, enqueueInitReply, m - topic)
                     case None =>
-                      entry
-                        .start(ctx, meta, url, enqueueInitReply).map(socket =>
-                          joinedResult(socket, enqueueInitReply) -> m.updated(topic, socket)
-                        )
+                      startNestedSocket(entry, topic, ctx, meta, url, enqueueInitReply, m)
                 }
             case None =>
               ZIO.succeed(NestedJoinResult.Rejected(JoinErrorReason.Stale))
@@ -207,6 +214,43 @@ final private[scalive] class LiveChannel(
   private def joinedResult(socket: Socket[?, ?], enqueueInitReply: Boolean): NestedJoinResult =
     if enqueueInitReply then NestedJoinResult.Joined
     else NestedJoinResult.JoinedWithReply(socket.initReply)
+
+  private def startNestedSocket(
+    entry: NestedLiveViewEntry,
+    topic: String,
+    ctx: LiveContext,
+    meta: WebSocketMessage.Meta,
+    url: URL,
+    enqueueInitReply: Boolean,
+    socketsBeforeStart: Map[String, Socket[?, ?]]
+  ): RIO[Scope, (NestedJoinResult, Map[String, Socket[?, ?]])] =
+    val onCrash = linkedParentCrash(entry)
+    entry
+      .start(ctx, meta, url, enqueueInitReply, onCrash)
+      .foldCauseZIO(
+        cause =>
+          ZIO.logErrorCause(s"Nested LiveView $topic failed to join", cause) *>
+            linkedParentJoinFailureCrash(entry, onCrash).as(
+              NestedJoinResult.FailedWithReply(Payload.errorReply(LiveResponse.Empty)) ->
+                socketsBeforeStart
+            ),
+        socket =>
+          ZIO.succeed(
+            joinedResult(socket, enqueueInitReply) -> socketsBeforeStart.updated(topic, socket)
+          )
+      )
+
+  private def linkedParentCrash(entry: NestedLiveViewEntry): UIO[Unit] =
+    if entry.linkParentOnCrash then
+      sockets.get.flatMap(current => current.get(entry.parentTopic).fold(ZIO.unit)(_.crash))
+    else ZIO.unit
+
+  private def linkedParentJoinFailureCrash(
+    entry: NestedLiveViewEntry,
+    onCrash: UIO[Unit]
+  ): UIO[Unit] =
+    if entry.linkParentOnCrash then (ZIO.sleep(10.millis) *> onCrash).forkDaemon.unit
+    else ZIO.unit
 
   private def resolveNestedInitialUrl(
     entry: NestedLiveViewEntry,

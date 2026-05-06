@@ -5,7 +5,11 @@ import colocated, { hooks as colocatedHooks } from "./colocated/index.js"
 const originalConsoleLog = console.log.bind(console)
 console.log = (...args) => {
   const first = args[0]
-  if (typeof first === "string" && /^phx-[\w-]+ (mount|update):/.test(first)) return
+  if (
+    window.location.pathname !== "/errors" &&
+    typeof first === "string" &&
+    /^phx-[\w-]+ (mount|update):/.test(first)
+  ) return
   originalConsoleLog(...args)
 }
 
@@ -193,7 +197,7 @@ const hooks = {
 
 let liveSocket = new LiveSocket("/live", Socket, {
   reloadJitterMin: 50,
-  reloadJitterMax: 500,
+  reloadJitterMax: window.location.pathname === "/errors" ? 50 : 500,
   maxReloads: 5,
   failsafeJitter: 1000,
   rejoinAfterMs: () => 50,

@@ -10,6 +10,7 @@ import zio.stream.ZStream
 import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 import scalive.socket.SocketBootstrap
+import scalive.socket.SocketCrashRuntime
 import scalive.socket.SocketFlashRuntime
 import scalive.socket.SocketInbound
 import scalive.socket.SocketOutbound
@@ -30,6 +31,7 @@ final private[scalive] case class Socket[Msg, Model] private (
   private[scalive] val currentUrl: UIO[URL],
   private[scalive] val takeNavigationFlash: UIO[Map[String, String]],
   private[scalive] val replaceNavigationFlash: Map[String, String] => UIO[Unit],
+  private[scalive] val crash: UIO[Unit],
   shutdown: UIO[Unit])
 
 private[scalive] object Socket:
@@ -43,7 +45,8 @@ private[scalive] object Socket:
     initialUrl: URL = URL.root,
     initialFlash: Map[String, String] = Map.empty,
     renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None,
-    enqueueInitReply: Boolean = true
+    enqueueInitReply: Boolean = true,
+    onCrash: UIO[Unit] = ZIO.unit
   ): RIO[Scope, Socket[Msg, Model]] =
     val rootRenderer = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
     ZIO.logAnnotate("lv", id) {
@@ -55,7 +58,8 @@ private[scalive] object Socket:
                    tokenConfig,
                    initialUrl,
                    initialFlash,
-                   rootRenderer
+                   rootRenderer,
+                   onCrash
                  )
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
@@ -89,7 +93,8 @@ private[scalive] object Socket:
         takeNavigationFlash    = SocketFlashRuntime.takeNavigation(state.flashRef)
         replaceNavigationFlash = (flash: Map[String, String]) =>
                                    SocketFlashRuntime.replaceNavigation(state.flashRef, flash)
-        stop = SocketOutbound.buildShutdown(state, clientFiber, serverFiber)
+        crash = SocketCrashRuntime.crash(state, s"LiveView $id crashed by linked child")
+        stop  = SocketOutbound.buildShutdown(state, clientFiber, serverFiber)
         _ <- ZIO.addFinalizerExit(_ => stop.exit.unit)
       yield Socket[Msg, Model](
         id,
@@ -106,6 +111,7 @@ private[scalive] object Socket:
         currentUrl,
         takeNavigationFlash,
         replaceNavigationFlash,
+        crash,
         stop
       )
     }

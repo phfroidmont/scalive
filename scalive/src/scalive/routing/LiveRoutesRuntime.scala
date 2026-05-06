@@ -5,6 +5,7 @@ import zio.http.*
 import zio.http.ChannelEvent.Read
 import zio.http.codec.PathCodec
 import zio.json.*
+import zio.json.ast.Json
 
 import scalive.WebSocketMessage.JoinErrorReason
 import scalive.WebSocketMessage.LiveResponse
@@ -119,6 +120,7 @@ final private[scalive] class LiveRoutesRuntime[R](
         .as(Some(joinErrorReply(message, JoinErrorReason.Stale)))
     else
       val clientStatics = join.static.orElse(StaticTracking.clientListFromParams(join.params))
+      val connectParams = join.params.getOrElse(Map.empty[String, Json])
       val rootSession   = verifyRootSession(message.topic, join.session)
       val initialFlash  = join.flash
         .orElse(rootSession.flatMap(_.flash))
@@ -136,7 +138,8 @@ final private[scalive] class LiveRoutesRuntime[R](
             clientStatics,
             rootSession,
             initialFlash,
-            decodedUrl
+            decodedUrl,
+            connectParams
           )
   end handleJoin
 
@@ -147,7 +150,8 @@ final private[scalive] class LiveRoutesRuntime[R](
     clientStatics: Option[List[String]],
     rootSession: Option[LiveSessionPayload],
     initialFlash: Map[String, String],
-    decodedUrl: Option[URL]
+    decodedUrl: Option[URL],
+    connectParams: Map[String, Json]
   ): RIO[R & Scope, Option[WebSocketMessage]] =
     liveChannel
       .tryJoinNested(
@@ -156,7 +160,8 @@ final private[scalive] class LiveRoutesRuntime[R](
         staticChanged = false,
         message.meta,
         decodedUrl,
-        enqueueInitReply = false
+        enqueueInitReply = false,
+        connectParams = connectParams
       ).flatMap {
         case NestedJoinResult.Joined =>
           ZIO.none
@@ -169,6 +174,8 @@ final private[scalive] class LiveRoutesRuntime[R](
               )
             )
           )
+        case NestedJoinResult.FailedWithReply(reply) =>
+          ZIO.succeed(Some(replyEnvelope(message, reply)))
         case NestedJoinResult.Rejected(reason) =>
           ZIO.succeed(Some(joinErrorReply(message, reason)))
         case NestedJoinResult.NotNested =>
@@ -181,7 +188,8 @@ final private[scalive] class LiveRoutesRuntime[R](
                 clientStatics,
                 rootSession,
                 initialFlash,
-                url
+                url,
+                connectParams
               )
             case None =>
               ZIO
@@ -196,7 +204,8 @@ final private[scalive] class LiveRoutesRuntime[R](
     clientStatics: Option[List[String]],
     rootSession: Option[LiveSessionPayload],
     initialFlash: Map[String, String],
-    decodedUrl: URL
+    decodedUrl: URL,
+    connectParams: Map[String, Json]
   ): RIO[R & Scope, Option[WebSocketMessage]] =
     val req = Request(url = decodedUrl)
     liveRoutes.iterator
@@ -209,6 +218,7 @@ final private[scalive] class LiveRoutesRuntime[R](
           rootSession,
           initialFlash,
           decodedUrl,
+          connectParams,
           req,
           route
         )
@@ -223,6 +233,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     rootSession: Option[LiveSessionPayload],
     initialFlash: Map[String, String],
     decodedUrl: URL,
+    connectParams: Map[String, Json],
     req: Request,
     route: LiveRoute[R, A, Any, Ctx, Msg, Model]
   ): Option[RIO[R & Scope, Option[WebSocketMessage]]] =
@@ -236,6 +247,7 @@ final private[scalive] class LiveRoutesRuntime[R](
             clientStatics,
             initialFlash,
             decodedUrl,
+            connectParams,
             req,
             route,
             pathParams,
@@ -252,6 +264,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     clientStatics: Option[List[String]],
     initialFlash: Map[String, String],
     decodedUrl: URL,
+    connectParams: Map[String, Json],
     req: Request,
     route: LiveRoute[R, A, Any, Ctx, Msg, Model],
     pathParams: A,
@@ -273,6 +286,7 @@ final private[scalive] class LiveRoutesRuntime[R](
               clientStatics,
               initialFlash,
               decodedUrl,
+              connectParams,
               req,
               route,
               pathParams,
@@ -293,6 +307,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     clientStatics: Option[List[String]],
     initialFlash: Map[String, String],
     decodedUrl: URL,
+    connectParams: Map[String, Json],
     req: Request,
     route: LiveRoute[R, A, Any, Ctx, Msg, Model],
     pathParams: A,
@@ -317,6 +332,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     val staticChanged = StaticTracking.staticChanged(clientStatics, serverStatics)
     val ctx           = LiveContext(
       staticChanged = staticChanged,
+      connectParams = connectParams,
       nestedLiveViews = liveChannel.nestedRuntime(message.topic)
     )
     val lv         = route.buildLiveView(pathParams, req, mountContext)
@@ -351,7 +367,7 @@ final private[scalive] class LiveRoutesRuntime[R](
           .as(None)
           .catchAllCause(cause =>
             ZIO.logErrorCause(cause) *>
-              ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Stale)))
+              ZIO.succeed(Some(errorReply(message, LiveResponse.Empty)))
           )
   end joinMountedRootRoute
 

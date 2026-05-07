@@ -24,7 +24,14 @@ final class E2ERootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]
         titleTag("Scalive E2E")
       ),
       bodyTag(
+        hookOutsideLiveView(ctx),
         content,
         div(idAttr := "root-portal")
       )
     )
+
+  private def hookOutsideLiveView(ctx: LiveLayoutContext[Any, Any]): Mod[Nothing] =
+    if ctx.currentUrl.path.encode == "/issues/4147" then
+      Mod.Content.Tag(div(idAttr := "foobar", phx.hook := "HookOutside"))
+    else Mod.Content.Text("")
+end E2ERootLayout

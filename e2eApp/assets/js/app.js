@@ -32,6 +32,11 @@ const hooks = {
       else window.setTimeout(appendPong, 800)
     }
   },
+  PagePositionNotifier: {
+    mounted() {
+      this.pushEvent("page_position_update", {})
+    }
+  },
   QueuedUploaderHook: {
     mounted() {
       const maxConcurrency = Number.parseInt(this.el.dataset.maxConcurrency || "3", 10)

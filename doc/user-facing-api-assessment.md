@@ -1,0 +1,351 @@
+# Scalive User-Facing API Assessment
+
+## Executive Summary
+
+Scalive exposes a compact Scala-first LiveView API centered on typed `LiveView[Msg, Model]`, typed `LiveComponent[Props, Msg, Model]`, an HTML DSL exported through `scalive.*`, and phase-specific lifecycle contexts. The strongest current API qualities are typed messages, typed models, route param decoding, and explicit capability facades. The main assessment risks are documentation drift, stringly typed escape points, and parity areas whose behavior is implemented but not fully mapped to upstream evidence.
+
+This report is a current-state audit. It does not define implementation order or a roadmap.
+
+## Scope And Methodology
+
+Scope follows `doc/superpowers/specs/2026-06-29-user-facing-api-assessment-design.md` and covers public APIs application authors use directly, examples, docs, and Phoenix LiveView `v1.1.28` parity evidence.
+
+Method:
+
+- Inventory public APIs from `scalive/src/scalive` and public docs.
+- Compare documentation claims against implementation.
+- Review examples for beginner ergonomics and recommended style.
+- Review upstream compatibility and E2E fixture gap tracking.
+- Separate proven gaps from suspected gaps.
+- Avoid roadmap sequencing.
+
+## API Surface Inventory
+
+### Core Lifecycle
+
+- `LiveView[Msg, Model]` defines `mount`, `handleMessage`, `render`, and optional `hooks`. Evidence: `scalive/src/scalive/LiveView.scala:6`.
+- `RoutedLiveView[Msg, Model, Params]` adds `handleParams` and `handleParamsDecodeError`. Evidence: `scalive/src/scalive/LiveView.scala:19`.
+- `LiveComponent[Props, Msg, Model]` defines typed props, typed messages, typed model lifecycle, and `ComponentRef[Msg]` rendering. Evidence: `scalive/src/scalive/LiveComponent.scala:5`.
+
+### Package-Level DSL
+
+- `scalive.*` exports generated tags, attrs, streams, uploads, components, HTML helpers, `link`, and `phx` bindings. Evidence: `scalive/src/scalive/Scalive.scala:12`.
+- `component`, `liveComponent`, `liveView`, `flash`, `portal`, and implicit text/tag conversions are available as top-level helpers. Evidence: `scalive/src/scalive/Scalive.scala:18`, `scalive/src/scalive/Scalive.scala:19`, `scalive/src/scalive/Scalive.scala:21`, `scalive/src/scalive/Scalive.scala:26`, `scalive/src/scalive/Scalive.scala:33`, `scalive/src/scalive/Scalive.scala:43`, `scalive/src/scalive/Scalive.scala:56`, `scalive/src/scalive/Scalive.scala:189`.
+
+### HTML DSL, Bindings, And JS Commands
+
+- Generated HTML tags and attributes are mixed into the package object, while `HtmlElement`, `HtmlTag`, `HtmlAttr`, and `HtmlAttrBinding` define the public HTML model and message binding entry points. Evidence: `scalive/src/scalive/Scalive.scala:12`, `scalive/src/scalive/HtmlElement.scala:9`, `scalive/src/scalive/HtmlElement.scala:21`, `scalive/src/scalive/HtmlElement.scala:30`, `scalive/src/scalive/HtmlElement.scala:41`.
+- `phx` exposes event, form, lifecycle, hook, upload, targeting, rate-limit, value, update, and static-tracking bindings. Evidence: `scalive/src/scalive/Scalive.scala:93`, `scalive/src/scalive/Scalive.scala:115`, `scalive/src/scalive/Scalive.scala:135`, `scalive/src/scalive/Scalive.scala:140`, `scalive/src/scalive/Scalive.scala:157`, `scalive/src/scalive/Scalive.scala:162`, `scalive/src/scalive/Scalive.scala:168`, `scalive/src/scalive/Scalive.scala:170`, `scalive/src/scalive/Scalive.scala:176`, `scalive/src/scalive/Scalive.scala:185`, `scalive/src/scalive/Scalive.scala:186`.
+- JS commands are built from `JS`/`JSCommands.JSCommand` with operations for class changes, dispatch, exec, focus, show/hide, navigation, patching, push events, and attributes. Evidence: `scalive/src/scalive/JS.scala:6`, `scalive/src/scalive/JS.scala:8`, `scalive/src/scalive/JS.scala:57`, `scalive/src/scalive/JS.scala:61`, `scalive/src/scalive/JS.scala:79`, `scalive/src/scalive/JS.scala:88`, `scalive/src/scalive/JS.scala:100`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/JS.scala:128`, `scalive/src/scalive/JS.scala:137`, `scalive/src/scalive/JS.scala:171`, `scalive/src/scalive/JS.scala:174`.
+
+### Forms
+
+- Forms expose lossless `FormData`, typed decoding through `FormCodec`, state/error tracking through `FormState`, and rendered controls through `Form` and `Form.Field`. Evidence: `scalive/src/scalive/forms/FormData.scala:7`, `scalive/src/scalive/forms/FormCodec.scala:3`, `scalive/src/scalive/forms/FormState.scala:5`, `scalive/src/scalive/forms/Form.scala:5`, `scalive/src/scalive/forms/Form.scala:142`.
+- Form event bindings are available via both `phx.onChangeForm`/`phx.onSubmitForm` and `Form.onChange`/`Form.onSubmit`. Evidence: `scalive/src/scalive/Scalive.scala:142`, `scalive/src/scalive/Scalive.scala:144`, `scalive/src/scalive/Scalive.scala:146`, `scalive/src/scalive/Scalive.scala:148`, `scalive/src/scalive/forms/Form.scala:6`, `scalive/src/scalive/forms/Form.scala:9`.
+
+### Streams
+
+- Streams expose `LiveStreamDef`, `LiveStream`, `LiveStreamEntry`, `StreamAt`, and `StreamLimit`, with public operations through the `Streams` phase facade. Evidence: `scalive/src/scalive/streams/LiveStream.scala:6`, `scalive/src/scalive/streams/LiveStream.scala:18`, `scalive/src/scalive/streams/LiveStream.scala:28`, `scalive/src/scalive/streams/LiveStream.scala:43`, `scalive/src/scalive/streams/LiveStream.scala:51`, `scalive/src/scalive/LiveContext.scala:114`.
+- Stream rendering integrates with keyed content state exposed by the HTML model. Evidence: `scalive/src/scalive/HtmlElement.scala:91`, `scalive/src/scalive/streams/LiveStream.scala:62`.
+
+### Uploads
+
+- Uploads expose accepted types, upload state, entries, errors, external upload callbacks, progress callbacks, writers, and options. Evidence: `scalive/src/scalive/upload/LiveUpload.scala:7`, `scalive/src/scalive/upload/LiveUpload.scala:14`, `scalive/src/scalive/upload/LiveUpload.scala:23`, `scalive/src/scalive/upload/LiveUpload.scala:62`, `scalive/src/scalive/upload/LiveUpload.scala:77`, `scalive/src/scalive/upload/LiveUpload.scala:90`, `scalive/src/scalive/upload/LiveUpload.scala:99`, `scalive/src/scalive/upload/LiveUpload.scala:103`, `scalive/src/scalive/upload/LiveUpload.scala:113`, `scalive/src/scalive/upload/LiveUpload.scala:147`, `scalive/src/scalive/upload/LiveUpload.scala:150`.
+- Upload lifecycle operations are available through `ctx.uploads`, and rendering helpers include `liveFileInput` and upload error helpers. Evidence: `scalive/src/scalive/LiveContext.scala:105`, `scalive/src/scalive/defs/components/Components.scala:21`, `scalive/src/scalive/defs/components/Components.scala:44`.
+
+### Phase Contexts
+
+- Lifecycle contexts expose `connected`, `staticChanged`, and `connectParams`. Evidence: `scalive/src/scalive/LiveContext.scala:13`.
+- Mount, message, params, after-render, and component contexts expose phase-specific capability facades. Evidence: `scalive/src/scalive/LiveContext.scala:18`.
+- Navigation, flash, uploads, streams, async, subscriptions, client events, title updates, component updates, and hooks are explicit context facades rather than ambient services. Evidence: `scalive/src/scalive/LiveContext.scala:18`, `scalive/src/scalive/LiveContext.scala:29`, `scalive/src/scalive/LiveContext.scala:41`, `scalive/src/scalive/LiveContext.scala:53`, `scalive/src/scalive/LiveContext.scala:57`, `scalive/src/scalive/LiveContext.scala:65`, `scalive/src/scalive/LiveContext.scala:73`.
+
+### Navigation And Routing
+
+- Navigation is available through `link.navigate`, `link.patch`, `link.patchReplace`, `MountNavigation`, and `Navigation`. Evidence: `scalive/src/scalive/Scalive.scala:83`, `scalive/src/scalive/Scalive.scala:84`, `scalive/src/scalive/Scalive.scala:87`, `scalive/src/scalive/Scalive.scala:90`, `scalive/src/scalive/LiveContext.scala:86`, `scalive/src/scalive/LiveContext.scala:93`.
+- Routing starts from `Live.route`/`live`, composes ZIO HTTP `PathCodec` and query codecs, and can build plain, request-aware, params-aware, and context-aware routes. Evidence: `scalive/src/scalive/routing/LiveRouteDsl.scala:13`, `scalive/src/scalive/routing/LiveRouteDsl.scala:14`, `scalive/src/scalive/routing/LiveRouteDsl.scala:26`, `scalive/src/scalive/routing/LiveRouteDsl.scala:34`, `scalive/src/scalive/routing/LiveRouteDsl.scala:82`, `scalive/src/scalive/routing/LiveRouteDsl.scala:91`, `scalive/src/scalive/routing/LiveRouteDsl.scala:103`, `scalive/src/scalive/routing/LiveRouteDsl.scala:546`, `scalive/src/scalive/routing/LiveRouteDsl.scala:558`.
+
+### Layouts And Mount Aspects
+
+- Layouts are public `LiveLayout`, `LiveRootLayout`, and `LiveLayoutContext` APIs and can be applied at route, session, or router scope. Evidence: `scalive/src/scalive/routing/LiveLayouts.scala:6`, `scalive/src/scalive/routing/LiveLayouts.scala:12`, `scalive/src/scalive/routing/LiveLayouts.scala:27`, `scalive/src/scalive/routing/LiveRouteDsl.scala:75`, `scalive/src/scalive/routing/LiveRouteDsl.scala:78`, `scalive/src/scalive/routing/LiveRouteDsl.scala:429`, `scalive/src/scalive/routing/LiveRouteDsl.scala:438`, `scalive/src/scalive/routing/LiveRouteDsl.scala:509`, `scalive/src/scalive/routing/LiveRouteDsl.scala:512`.
+- Mount aspects expose disconnected and connected mount phases, signed claims, failure outcomes, composition, and request-derived context helpers. Evidence: `scalive/src/scalive/LiveMountAspect.scala:8`, `scalive/src/scalive/LiveMountAspect.scala:16`, `scalive/src/scalive/LiveMountAspect.scala:37`, `scalive/src/scalive/LiveMountAspect.scala:44`, `scalive/src/scalive/LiveMountAspect.scala:49`, `scalive/src/scalive/LiveMountAspect.scala:56`, `scalive/src/scalive/LiveMountAspect.scala:114`, `scalive/src/scalive/LiveMountAspect.scala:120`.
+
+### Async, Subscriptions, Flash, And Client Events
+
+- Async tasks are exposed through `AsyncValue`, `LiveAsyncEvent`, `LiveAsyncResult`, and the `ctx.async` facade. Evidence: `scalive/src/scalive/LiveAsync.scala:7`, `scalive/src/scalive/LiveAsync.scala:61`, `scalive/src/scalive/LiveAsync.scala:65`, `scalive/src/scalive/LiveContext.scala:134`.
+- Subscriptions are exposed through `ctx.subscriptions.start`, `replace`, and `cancel`. Evidence: `scalive/src/scalive/LiveContext.scala:138`, `scalive/src/scalive/SubscriptionRuntime.scala:6`.
+- Flash is available through the `ctx.flash` facade and the render-time `flash(kind)` helper. Evidence: `scalive/src/scalive/LiveContext.scala:98`, `scalive/src/scalive/Scalive.scala:43`.
+- Client events are exposed as `ctx.client.pushEvent` and client JS execution is exposed as `ctx.client.exec`. Evidence: `scalive/src/scalive/LiveContext.scala:143`, `scalive/src/scalive/ClientEventRuntime.scala:6`.
+
+### Static Assets And Token/Session Configuration
+
+- Static assets expose classpath and directory configuration, manifest entries, digested path helpers, tracked stylesheet/script helpers, and asset routes. Evidence: `scalive/src/scalive/StaticAssets.scala:12`, `scalive/src/scalive/StaticAssets.scala:18`, `scalive/src/scalive/StaticAssets.scala:32`, `scalive/src/scalive/StaticAssets.scala:71`, `scalive/src/scalive/StaticAssets.scala:78`, `scalive/src/scalive/StaticAssets.scala:96`, `scalive/src/scalive/StaticAssets.scala:102`, `scalive/src/scalive/StaticAssets.scala:111`, `scalive/src/scalive/StaticAssets.scala:114`, `scalive/src/scalive/StaticAssets.scala:117`, `scalive/src/scalive/StaticAssets.scala:120`, `scalive/src/scalive/StaticAssets.scala:123`.
+- Token/session configuration is public through `TokenConfig`, `Live.session`, `Live.socketAt`, `Live.tokenConfig`, and router/session `@@` modifiers. Evidence: `scalive/src/scalive/protocol/Token.scala:22`, `scalive/src/scalive/protocol/Token.scala:24`, `scalive/src/scalive/routing/LiveRouteDsl.scala:449`, `scalive/src/scalive/routing/LiveRouteDsl.scala:500`, `scalive/src/scalive/routing/LiveRouteDsl.scala:501`, `scalive/src/scalive/routing/LiveRouteDsl.scala:517`, `scalive/src/scalive/routing/LiveRouteDsl.scala:520`, `scalive/src/scalive/routing/LiveRouteDsl.scala:549`, `scalive/src/scalive/routing/LiveRouteDsl.scala:552`, `scalive/src/scalive/routing/LiveRouteDsl.scala:555`.
+- Signed live session payloads carry session name, flash, mount claims, route mount claim metadata, and root layout key. Evidence: `scalive/src/scalive/routing/LiveSessionPayload.scala:6`, `scalive/src/scalive/routing/LiveSessionPayload.scala:23`, `scalive/src/scalive/routing/LiveSessionPayload.scala:38`.
+
+## Ergonomics Findings
+
+### High - API Design - Outbound navigation is less typed than inbound routing
+
+Evidence: `scalive/src/scalive/Scalive.scala:84`, `scalive/src/scalive/Scalive.scala:87`, `scalive/src/scalive/Scalive.scala:90`, `scalive/src/scalive/LiveContext.scala:87`, `scalive/src/scalive/LiveContext.scala:89`, `scalive/src/scalive/LiveContext.scala:91`, `scalive/src/scalive/LiveContext.scala:94`, `scalive/src/scalive/LiveContext.scala:96`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/JS.scala:128`, `doc/api-improvement-ideas.md:31`.
+
+Inbound routes and route params use typed codecs, but `link.navigate`, `link.patch`, `ctx.nav.pushNavigate`, `ctx.nav.pushPatch`, redirects, and JS navigation accept raw strings. Application authors get strong safety when decoding incoming URLs but not when rendering links or navigation effects.
+
+Impact: route refactors can silently break outbound links, patches, and redirects.
+
+Confidence: High.
+
+### High - Correctness - Attribute value bindings can throw for normal client payload variation
+
+Evidence: `scalive/src/scalive/HtmlElement.scala:60`, `scalive/src/scalive/HtmlElement.scala:63`, `doc/api-improvement-ideas.md:103`.
+
+`withValue` and `withBoolValue` read the event payload's `value` key directly or decode a narrow boolean shape. Missing values or unexpected values can become runtime failures instead of typed optional or validation results.
+
+Impact: common form and input event patterns can fail at runtime in app code.
+
+Confidence: High.
+
+### High - API Design - Upload writer extension point is not externally implementable cleanly
+
+Evidence: `scalive/src/scalive/upload/LiveUpload.scala:111`, `scalive/src/scalive/upload/LiveUpload.scala:113`, `doc/api-improvement-ideas.md:46`.
+
+`LiveUploadWriter.init` returns `LiveUploadWriterState`, but that state has a `private[scalive]` constructor. The public API advertises custom writer extensibility while making external implementations awkward or impossible without a public state construction path.
+
+Impact: advanced upload integrations such as filesystem, S3-compatible, or streaming writers are blocked by API shape rather than runtime capability.
+
+Confidence: High.
+
+### Medium - API Design - Stream public state mixes durable state and pending commands
+
+Evidence: `scalive/src/scalive/streams/LiveStream.scala:51`, `doc/api-improvement-ideas.md:60`.
+
+`LiveStream.entries` is public but represents pending insert entries, not the full durable stream contents. That name invites application authors to treat stream runtime command state as business state.
+
+Impact: users can write code that appears natural but depends on implementation details and becomes confusing under deletes, resets, and limits.
+
+Confidence: High.
+
+### Medium - API Design - Repeated string identifiers make invalid states easy
+
+Evidence: `scalive/src/scalive/LiveContext.scala:99`, `scalive/src/scalive/LiveContext.scala:106`, `scalive/src/scalive/LiveContext.scala:135`, `scalive/src/scalive/LiveContext.scala:144`, `doc/api-improvement-ideas.md:205`.
+
+Flash kinds, upload names, stream definitions, async names, subscription names, client event names, selectors, hook IDs, and paths are largely represented as plain strings.
+
+Impact: app code can accidentally mix unrelated identifiers, with failures appearing only at runtime or in the browser.
+
+Confidence: Medium.
+
+### Medium - Discoverability - Component rendering and component targeting share the same helper name
+
+Evidence: `scalive/src/scalive/Scalive.scala:19`, `scalive/src/scalive/Scalive.scala:21`, `doc/api-improvement-ideas.md:169`.
+
+`component(cid, element)` renders component diff content internally, while `component[C](message)` creates a component event target. The shared name hides two different concepts behind overloads.
+
+Impact: app authors may struggle to discover the correct helper for component event routing.
+
+Confidence: High.
+
+### Medium - Discoverability - Route and session modifiers rely heavily on symbolic `@@`
+
+Evidence: `scalive/src/scalive/routing/LiveRouteDsl.scala:63`, `scalive/src/scalive/routing/LiveRouteDsl.scala:75`, `scalive/src/scalive/routing/LiveRouteDsl.scala:79`, `scalive/src/scalive/routing/LiveRouteDsl.scala:517`, `scalive/src/scalive/routing/LiveRouteDsl.scala:521`, `doc/api-improvement-ideas.md:193`.
+
+The `@@` operator composes mount aspects, live layouts, root layouts, socket mount configuration, and token configuration. This keeps declarations compact but makes the API harder to search and harder to learn without examples.
+
+Impact: new users may need to read implementation or examples to understand route composition.
+
+Confidence: Medium.
+
+### Low - Ergonomics - Static and eventless views still require message-handler boilerplate
+
+Evidence: `scalive/src/scalive/LiveView.scala:15`, `example/src/HomeLiveView.scala:14`, `doc/api-improvement-ideas.md:143`.
+
+`LiveView` requires `handleMessage` even when a view has no meaningful server messages.
+
+Impact: simple pages look heavier than their behavior requires.
+
+Confidence: High.
+
+## Polish And Discoverability Findings
+
+### High - Discoverability - There is no root README or newcomer path
+
+Evidence: verified root observation: repository root has no `README.md` (`ls README*` returns no match); `doc/api-improvement-ideas.md:75`, `doc/api-improvement-ideas.md:79`, `doc/api-improvement-ideas.md:80`.
+
+The project has detailed reference material and examples, but no root-level introduction that explains installation, a first LiveView, router setup, JS socket setup, static assets, and how to run the example.
+
+Impact: new users must reverse-engineer the intended setup from examples and implementation.
+
+Confidence: High.
+
+### Medium - Docs - Public API reference has stale or conflicting sections
+
+Evidence: `doc/public-api-reference.md:77`, `doc/public-api-reference.md:612`, `doc/public-api-reference.md:1252`, `doc/public-api-reference.md:1284`, `doc/public-api-reference.md:1332`, `scalive/src/scalive/LiveComponent.scala:5`, `scalive/src/scalive/upload/LiveUpload.scala:103`, `scalive/src/scalive/upload/LiveUpload.scala:147`, `scalive/src/scalive/Scalive.scala:87`, `scalive/src/scalive/JS.scala:128`.
+
+The public API reference includes a current-looking `LiveComponent[Props, Msg, Model]` section and an older component section later in the document. Similar drift appears around upload callback effect types, stale `LiveEventResult` naming, and documented typed `link.patch`/`JS.patch` overloads that do not match the current implementation shape.
+
+Impact: users can copy API shapes that no longer match implementation.
+
+Confidence: High.
+
+### Medium - Docs - Phase context documentation omits or lags current context members
+
+Evidence: `scalive/src/scalive/LiveContext.scala:13`, `scalive/src/scalive/LiveContext.scala:16`, `doc/public-api-reference.md:127`, `doc/public-api-reference.md:128`.
+
+`LifecycleContext` exposes `connectParams`, but the public reference's context availability snippet does not show it in the initial context summary.
+
+Impact: users may miss available runtime data or distrust the reference as source of truth.
+
+Confidence: High.
+
+### Medium - Discoverability - Human examples and parity fixtures are not clearly separated
+
+Evidence: `example/src/CounterLiveView.scala:9`, `example/src/CounterLiveView.scala:22`, `example/src/TodoLiveView.scala:7`, `example/src/TodoLiveView.scala:42`, `e2eApp/src/FormLiveViews.scala:65`, `e2eApp/src/FormLiveViews.scala:70`, `e2eApp/src/IssueLiveViews.scala:56`, `e2eApp/src/IssueLiveViews.scala:425`.
+
+`example/src` contains approachable examples, while `e2eApp/src` contains rich API coverage mixed with upstream parity fixture constraints. The repository does not clearly label which patterns are recommended app style and which exist to satisfy upstream fixture behavior.
+
+Impact: users may learn from noisy parity fixtures and copy patterns that are appropriate for tests but not for applications.
+
+Confidence: High.
+
+### Low - Polish - Some examples demonstrate escape hatches before high-level APIs
+
+Evidence: `example/src/TodoLiveView.scala:42`, `e2eApp/src/FormLiveViews.scala:331`, `e2eApp/src/FormLiveViews.scala:342`, `e2eApp/src/FormLiveViews.scala:343`, `doc/api-improvement-ideas.md:268`, `doc/api-improvement-ideas.md:272`.
+
+The beginner Todo example uses a raw form map, while E2E fixtures include typed form helpers and raw event shapes for parity coverage. Without clearer example boundaries, users may not know which style is recommended for normal application code.
+
+Impact: the typed API appears less complete than it is.
+
+Confidence: Medium.
+
+## Upstream Parity Findings
+
+### High - Parity - Full upstream browser parity cannot be claimed while `Issue4088LiveView` remains tracked
+
+Evidence: `doc/e2e-fixture-parity-gaps.md:7`, `doc/e2e-fixture-parity-gaps.md:66`.
+
+The fixture gap document explicitly says not to claim full Phoenix LiveView `v1.1.28` upstream browser parity until every gap is closed or reclassified with evidence. The remaining tracked gap is `Issue4088LiveView`, involving a hook inside a locked LiveComponent container pushing repeated targeted events to `@myself`.
+
+Impact: external compatibility claims need a caveat even if the upstream browser harness is broadly green.
+
+Confidence: High.
+
+### High - Parity - Compatibility evidence is strongest for browser E2E baseline and core native slices
+
+Evidence: `UPSTREAM_COMPATIBILITY.md:24`, `scripts/e2e-run-upstream.sh:6`, `scripts/e2e-run-upstream.sh:114`, `test/playwright.upstream.config.js:15`, `test/playwright.upstream.config.js:25`, `scalive/test/src/scalive/LiveComponentParitySpec.scala:16`, `scalive/test/src/scalive/LiveComponentParitySpec.scala:147`.
+
+The project has an upstream Playwright harness against Scalive fixtures and native tests for core runtime areas. This gives meaningful evidence for behavior, but the compatibility matrix correctly distinguishes baseline browser coverage from exhaustive server-side parity.
+
+Impact: parity confidence is real but uneven by feature area.
+
+Confidence: High.
+
+### High - Parity - Several high-priority runtime areas still need systematic parity audit
+
+Evidence: `UPSTREAM_COMPATIBILITY.md:25`, `UPSTREAM_COMPATIBILITY.md:26`, `UPSTREAM_COMPATIBILITY.md:55`, `UPSTREAM_COMPATIBILITY.md:60`.
+
+Wire protocol and diff encoding, static render/bootstrap, security/session tokens, and error/crash/reconnect behavior are marked substantial or expanding rather than fully mapped. Remaining work calls out exact error payloads, reconnect/stale cases, protocol additions, crash logging, and recovery behavior.
+
+Impact: these areas affect user-visible reliability and production confidence more than surface syntax.
+
+Confidence: High.
+
+### Medium - Parity - Feature areas with partial or expanding coverage are clearly identified
+
+Evidence: `UPSTREAM_COMPATIBILITY.md:32`, `UPSTREAM_COMPATIBILITY.md:38`, `UPSTREAM_COMPATIBILITY.md:42`, `UPSTREAM_COMPATIBILITY.md:43`, `UPSTREAM_COMPATIBILITY.md:44`, `UPSTREAM_COMPATIBILITY.md:47`, `UPSTREAM_COMPATIBILITY.md:49`, `UPSTREAM_COMPATIBILITY.md:51`, `UPSTREAM_COMPATIBILITY.md:56`, `UPSTREAM_COMPATIBILITY.md:57`, `UPSTREAM_COMPATIBILITY.md:58`.
+
+Connect params/info, component update APIs, forms, uploads, streams, JS commands, DOM bindings, title updates, endpoint configuration, transport fallback, and telemetry have incomplete mapping or known feature decisions remaining.
+
+Impact: users can build substantial applications, but some Phoenix feature expectations require checking Scalive-specific support.
+
+Confidence: High.
+
+### Medium - Parity - Intentional divergences are well framed but need user-facing explanations
+
+Evidence: `UPSTREAM_COMPATIBILITY.md:62`, `UPSTREAM_COMPATIBILITY.md:66`, `UPSTREAM_COMPATIBILITY.md:70`, `UPSTREAM_COMPATIBILITY.md:71`.
+
+Typed models, typed messages, ZIO effects, mount aspects, typed routing, Scala HTML builders, and future Scalive-native test helpers are intentional replacements for Phoenix concepts.
+
+Impact: these are API strengths, but without user-facing mapping they can look like missing parity to Phoenix users.
+
+Confidence: High.
+
+## Documentation And Example Findings
+
+### High - Docs - Reference breadth is strong but needs freshness checks
+
+Evidence: `doc/public-api-reference.md:1`, `doc/public-api-reference.md:13`, `doc/public-api-reference.md:121`, `doc/public-api-reference.md:890`, `doc/public-api-reference.md:1148`, `doc/api-improvement-ideas.md:75`.
+
+The public API reference covers a large portion of the intended API surface, including lifecycle, contexts, HTML, routing, forms, streams, uploads, hooks, assets, and tokens. Its main weakness is not breadth but drift from current implementation.
+
+Impact: the project has enough raw material for good docs, but users need a trusted, current entry point.
+
+Confidence: High.
+
+### Medium - Docs - Compatibility guidance exists but is not a user-facing Phoenix migration guide
+
+Evidence: `UPSTREAM_COMPATIBILITY.md:62`, `UPSTREAM_COMPATIBILITY.md:66`, `UPSTREAM_COMPATIBILITY.md:70`, `doc/api-improvement-ideas.md:87`.
+
+Intentional divergences are listed for maintainers, but there is no guide that maps Phoenix concepts to Scalive concepts for users evaluating or migrating from Phoenix LiveView.
+
+Impact: parity may be underestimated because Scala-first replacements are not explained from the user's perspective.
+
+Confidence: Medium.
+
+### Medium - Examples - Core examples demonstrate the mental model well
+
+Evidence: `example/src/CounterLiveView.scala:7`, `example/src/CounterLiveView.scala:9`, `example/src/CounterLiveView.scala:22`, `example/src/CounterLiveView.scala:30`, `example/src/Example.scala:33`, `example/src/Example.scala:43`, `example/src/RootLayout.scala:13`, `example/src/RootLayout.scala:20`.
+
+The examples show typed messages, typed models, `LiveIO`, rendering, event bindings, routing, static assets, and root layout setup.
+
+Impact: once discovered, the examples provide a useful starting point for the core API.
+
+Confidence: High.
+
+## Risk Register
+
+### High - Compatibility claims can outrun evidence
+
+Evidence: `doc/e2e-fixture-parity-gaps.md:7`, `UPSTREAM_COMPATIBILITY.md:81`.
+
+The upstream browser harness is valuable, but fixture honesty and native coverage mapping still matter. The project should avoid public claims of complete Phoenix LiveView parity until every tracked gap is closed or reclassified with evidence.
+
+Impact: over-claiming parity can create user trust issues when edge cases fail.
+
+Confidence: High.
+
+### High - Documentation drift can make the API feel less polished than it is
+
+Evidence: `doc/public-api-reference.md:77`, `doc/public-api-reference.md:127`, `doc/public-api-reference.md:1252`, `doc/public-api-reference.md:1284`, `doc/public-api-reference.md:1332`, `scalive/src/scalive/LiveComponent.scala:5`, `scalive/src/scalive/LiveContext.scala:13`.
+
+When reference docs show stale signatures or omit current context members, users cannot reliably distinguish intended API from old design notes.
+
+Impact: users waste time trying APIs that do not compile or miss APIs that already exist.
+
+Confidence: High.
+
+### Medium - Stringly typed concepts concentrate runtime risk in otherwise typed APIs
+
+Evidence: `scalive/src/scalive/LiveContext.scala:98`, `scalive/src/scalive/LiveContext.scala:105`, `scalive/src/scalive/LiveContext.scala:134`, `scalive/src/scalive/Scalive.scala:83`.
+
+The core model is strongly typed, but many boundary concepts remain plain strings.
+
+Impact: the API can feel inconsistent: safe in lifecycle modeling, less safe in navigation and runtime identifiers.
+
+Confidence: Medium.
+
+### Medium - E2E fixtures are useful evidence but poor teaching material
+
+Evidence: `e2eApp/src/FormLiveViews.scala:65`, `e2eApp/src/FormLiveViews.scala:70`, `e2eApp/src/FormLiveViews.scala:331`, `e2eApp/src/FormLiveViews.scala:342`, `e2eApp/src/IssueLiveViews.scala:56`, `e2eApp/src/IssueLiveViews.scala:425`, `doc/e2e-fixture-parity-gaps.md:66`.
+
+The E2E app necessarily mirrors upstream test shapes and edge cases. Without separation from recommended examples, it can make normal Scalive code look more complex than necessary.
+
+Impact: users may overestimate API complexity.
+
+Confidence: High.
+
+## Open Questions And Confidence Notes
+
+- High confidence: core public API inventory, missing README, typed inbound versus string outbound navigation, stale component docs, remaining `Issue4088LiveView` parity caveat.
+- Medium confidence: severity of repeated string identifiers; some strings may be acceptable escape hatches, and wrappers should be justified by concrete user errors.
+- Medium confidence: exact completeness of JS command, form recovery, upload, and stream edge-case parity; the compatibility matrix identifies these areas, but this audit does not execute every upstream scenario.
+- Open question: which intentional Phoenix divergences need user-facing migration documentation first is outside this report's scope because that becomes roadmap sequencing.
+- Open question: whether Scalive should expose direct typed equivalents for every partial Phoenix feature is outside this report's scope because API quality can override direct shape parity.

@@ -130,6 +130,7 @@ final private[scalive] case class RenderedView(
 final private[scalive] case class RuntimeState[Msg, Model](
   lv: LiveView[Msg, Model],
   renderRoot: (Model, URL) => HtmlElement[Msg],
+  paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
   msgClassTag: ClassTag[Msg],
   ctx: LiveContext,
   meta: WebSocketMessage.Meta,

@@ -8,9 +8,8 @@ import zio.schema.derived
 import scalive.*
 import scalive.LiveIO.given
 
-class KeyedComprehensionLiveView(assets: StaticAssets) extends LiveView[Msg, Model]:
-
-  override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
+class KeyedComprehensionLiveView(assets: StaticAssets)
+    extends RoutedLiveView[Msg, Model, UrlParams]:
 
   def mount(ctx: MountContext) =
     Model(
@@ -189,9 +188,6 @@ object KeyedComprehensionLiveView:
     case ChangeOther
 
   final case class UrlParams(tab: Option[String]) derives Schema
-
-  val ParamsCodec: LiveQueryCodec[UrlParams] =
-    LiveQueryCodec[UrlParams]
 
   final case class Model(activeTab: String, items: List[Item], size: Int, count: Int)
 

@@ -215,7 +215,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       yield result)
     },
     test("params hooks can transform the model around handleParams") {
-      val lv = new LiveView[Unit, String]:
+      val lv = new RoutedLiveView[Unit, String, String]:
         override def hooks: LiveHooks[Unit, String] =
           LiveHooks.empty[Unit, String].params("url") { (model, url, _) =>
             ZIO.succeed(LiveHookResult.cont(s"$model|hook:${url.path.encode}"))
@@ -224,7 +224,8 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) =
           ZIO.succeed("mount")
 
-        override def handleParams(model: String, query: queryCodec.Out, url: URL, ctx: ParamsContext) =
+        override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
+          val _ = params
           ZIO.succeed(s"$model|params:${url.path.encode}")
 
         def handleMessage(model: String, ctx: MessageContext) =
@@ -240,7 +241,11 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                     lv,
                     LiveContext(staticChanged = false),
                     meta,
-                    initialUrl = initialUrl
+                    initialUrl = initialUrl,
+                    paramsRuntime = LiveRouteParamsRuntime.routed(
+                      zio.http.codec.PathCodec.empty / zio.http.codec.PathCodec.string("page"),
+                      LiveParamsCodec.path[String]
+                    )
                   )
         init <- socket.outbox.take(1).runHead.some
       yield assertTrue(

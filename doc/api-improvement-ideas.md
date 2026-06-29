@@ -33,7 +33,7 @@ Ideas:
 Current issue:
 
 - Inbound routes use typed `PathCodec[A]`, but outbound links and navigation mostly use raw strings.
-- `LiveQueryCodec` models only query strings but is accepted by full navigation and redirect methods.
+- Route params are typed for inbound lifecycle handling, but there is no route-safe outbound renderer yet.
 
 Ideas:
 
@@ -278,28 +278,16 @@ Ideas:
 
 ## Routing and Navigation Improvements
 
-### Strengthen query encoding APIs
+### Strengthen route params APIs
 
 Current issue:
 
-- `LiveQueryCodec.custom` asks users to return a query string manually.
+- Direct `LiveParamsCodec.custom` decoders are verbose for common single-query-param and path-mapping routes.
 
 Ideas:
 
-- Add builder helpers that URL-encode keys and values.
-- Add `LiveQueryCodec.fromParams` or `LiveQueryCodec.query` constructors.
+- Keep route-level `query[A]`, `query[A]("name")`, `queryOptional[A]("name")`, and `mapParams` as the documented path for common query-only and path-plus-query routes.
 - Keep `custom` as an escape hatch for unusual cases.
-
-### Adjust `LiveQueryCodec.none.href`
-
-Current issue:
-
-- `LiveQueryCodec.none.href(())` returns `?`.
-
-Ideas:
-
-- Consider returning an empty query href if that better matches link rendering expectations.
-- Audit current patch behavior before changing it.
 
 ### Document initial navigation behavior
 

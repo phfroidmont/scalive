@@ -85,25 +85,15 @@ trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext:
 
 trait MountNavigation:
   def pushNavigate(to: String): LiveIO[Unit]
-  def pushNavigate[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit] =
-    LiveContext.encodeHref(to, value).flatMap(pushNavigate)
 
   def replaceNavigate(to: String): LiveIO[Unit]
-  def replaceNavigate[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit] =
-    LiveContext.encodeHref(to, value).flatMap(replaceNavigate)
 
   def redirect(to: String): LiveIO[Unit]
-  def redirect[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit] =
-    LiveContext.encodeHref(to, value).flatMap(redirect)
 
 trait Navigation extends MountNavigation:
   def pushPatch(to: String): LiveIO[Unit]
-  def pushPatch[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit] =
-    LiveContext.encodeHref(to, value).flatMap(pushPatch)
 
   def replacePatch(to: String): LiveIO[Unit]
-  def replacePatch[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit] =
-    LiveContext.encodeHref(to, value).flatMap(replacePatch)
 
 trait Flash:
   def put(kind: String, message: String): LiveIO[Unit]
@@ -306,9 +296,6 @@ final private[scalive] case class LiveContext(
 end LiveContext
 
 private[scalive] object LiveContext:
-  def encodeHref[A](to: LiveQueryCodec[A], value: A): LiveIO[String] =
-    ZIO.fromEither(to.href(value))
-
   private class RuntimeMountNavigation(runtime: LiveContext) extends MountNavigation:
     def pushNavigate(to: String): LiveIO[Unit] =
       runtime.navigation.request(LiveNavigationCommand.PushNavigate(to))

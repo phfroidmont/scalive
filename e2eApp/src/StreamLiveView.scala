@@ -2,17 +2,15 @@ import java.util.UUID
 
 import zio.*
 import zio.http.URL
-import zio.http.codec.HttpCodec
 import zio.json.ast.Json
 
 import scalive.*
 import scalive.LiveIO.given
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
-class StreamLiveView() extends LiveView[StreamLiveView.Msg, StreamLiveView.Model]:
+class StreamLiveView()
+    extends RoutedLiveView[StreamLiveView.Msg, StreamLiveView.Model, Option[String]]:
   import StreamLiveView.*
-
-  override val queryCodec: LiveQueryCodec[Option[String]] = ParamsCodec
 
   private val onlyChild = htmlAttr("only-child", BooleanAsAttrPresenceEncoder)
 
@@ -351,9 +349,6 @@ object StreamLiveView:
     case ReorderUsers
     case AppendUsers
 
-  val ParamsCodec: LiveQueryCodec[Option[String]] =
-    LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("empty_item").optional)
-
   private val InitialUsers  = List(User("1", "chris"), User("2", "callan"))
   private val InitialAdmins = List(
     User("1", "chris-admin"),
@@ -379,7 +374,7 @@ object StreamLiveView:
 end StreamLiveView
 
 class HealthyLiveView(initialCategory: String)
-    extends LiveView[HealthyLiveView.Msg, HealthyLiveView.Model]:
+    extends RoutedLiveView[HealthyLiveView.Msg, HealthyLiveView.Model, String]:
   import HealthyLiveView.*
 
   def mount(ctx: MountContext) =
@@ -391,8 +386,8 @@ class HealthyLiveView(initialCategory: String)
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Msg) => model
 
-  override def handleParams(model: Model, _query: queryCodec.Out, url: URL, ctx: ParamsContext) =
-    val category = normalizeCategory(categoryFromUrl(url))
+  override def handleParams(model: Model, params: String, url: URL, ctx: ParamsContext) =
+    val category = normalizeCategory(params)
     ctx.streams
       .init(
         ItemsStreamDef,
@@ -446,15 +441,9 @@ object HealthyLiveView:
   private def otherCategory(category: String): String =
     if category == "fruits" then "veggies" else "fruits"
 
-  private def categoryFromUrl(url: URL): String =
-    url.path.segments.toList match
-      case "healthy" :: category :: Nil => category
-      case _                            => "fruits"
-
-class StreamResetLiveView() extends LiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model]:
+class StreamResetLiveView()
+    extends RoutedLiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model, Option[String]]:
   import StreamResetLiveView.*
-
-  override val queryCodec: LiveQueryCodec[Option[String]] = ParamsCodec
 
   def mount(ctx: MountContext) =
     ctx.streams
@@ -609,9 +598,6 @@ end StreamResetLiveView
 object StreamResetLiveView:
   final case class Item(id: String, name: String)
   final case class Model(items: LiveStream[Item], usePhxRemove: Boolean)
-
-  val ParamsCodec: LiveQueryCodec[Option[String]] =
-    LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("phx-remove").optional)
 
   enum Msg:
     case Filter

@@ -2,7 +2,7 @@ package scalive
 
 import zio.*
 import zio.http.URL
-import zio.http.codec.HttpCodec
+import zio.http.codec.{HttpCodec, PathCodec}
 import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
@@ -22,6 +22,12 @@ object SocketSpec extends ZIOSpecDefault:
   final case class Model(counter: Int = 0, staticFlag: Option[Boolean] = None)
 
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
+
+  private def oneSegmentParamsRuntime[Msg, Model]: LiveRouteParamsRuntime[?, Msg, Model] =
+    LiveRouteParamsRuntime.routed(
+      PathCodec.empty / PathCodec.string("page"),
+      LiveParamsCodec.path[String]
+    )
 
   private def makeLiveView(serverStream: ZStream[Any, Nothing, Msg]) =
     new LiveView[Msg, Model]:
@@ -163,13 +169,7 @@ object SocketSpec extends ZIOSpecDefault:
       val ctx = LiveContext(staticChanged = false)
       for
         callsRef <- Ref.make(List.empty[String])
-        lv = new LiveView[Unit, Int]:
-               override val queryCodec: LiveQueryCodec[(Option[String], String)] =
-                 LiveQueryCodec.custom(
-                   decodeFn = url => Right(url.queryParam("q") -> url.path.encode),
-                   encodeFn = _ => Right("?")
-                 )
-
+        lv = new RoutedLiveView[Unit, Int, (Option[String], String)]:
                def mount(ctx: MountContext) =
                  callsRef.update(_ :+ "mount").as(0)
 
@@ -188,7 +188,21 @@ object SocketSpec extends ZIOSpecDefault:
 
                def render(model: Int): HtmlElement[Unit] = div(model.toString)
         initialUrl <- ZIO.fromEither(URL.decode("/?q=1")).orDie
-        socket     <- Socket.start("id", "token", lv, ctx, meta, initialUrl = initialUrl)
+        paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, Int, (Option[String], String)](
+                          PathCodec.empty,
+                          LiveParamsCodec.custom[Unit, (Option[String], String)](
+                            decodeFn = (_, url) => Right(url.queryParam("q") -> url.path.encode)
+                          )
+                        )
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl,
+                    paramsRuntime = paramsRuntime
+                  )
         _          <- socket.outbox.take(1).runCollect
         calls      <- callsRef.get
       yield assertTrue(calls == List("mount", "params:1:/"))
@@ -198,19 +212,19 @@ object SocketSpec extends ZIOSpecDefault:
       val ctx = LiveContext(staticChanged = false)
       for
         callsRef <- Ref.make(List.empty[String])
-        lv = new LiveView[Unit, Int]:
+        lv = new RoutedLiveView[Unit, Int, String]:
                def mount(ctx: MountContext) =
                  ZIO.succeed(0)
 
                override def handleParams(
                  model: Int,
-                 query: queryCodec.Out,
-                 url: URL,
-                 ctx: ParamsContext
-               ) =
-                 val _    = query
-                 val path = url.path.encode
-                 callsRef.update(_ :+ path) *>
+                  page: String,
+                  url: URL,
+                  ctx: ParamsContext
+                ) =
+                  val _    = page
+                  val path = url.path.encode
+                  callsRef.update(_ :+ path) *>
                    (if path == "/start" then ctx.nav.pushPatch("/done").as(model + 1)
                     else ZIO.succeed(model + 10))
 
@@ -219,7 +233,15 @@ object SocketSpec extends ZIOSpecDefault:
 
                def render(model: Int): HtmlElement[Unit] = div(model.toString)
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
-        socket     <- Socket.start("id", "token", lv, ctx, meta, initialUrl = initialUrl)
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl,
+                    paramsRuntime = oneSegmentParamsRuntime
+                  )
         messages   <- socket.outbox.take(2).runCollect
         calls      <- callsRef.get
       yield assertTrue(
@@ -234,10 +256,7 @@ object SocketSpec extends ZIOSpecDefault:
       val ctx = LiveContext(staticChanged = false)
       for
         callsRef <- Ref.make(List.empty[String])
-        lv = new LiveView[Unit, Int]:
-               override val queryCodec: LiveQueryCodec[Option[String]] =
-                 LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
-
+        lv = new RoutedLiveView[Unit, Int, Option[String]]:
                def mount(ctx: MountContext) =
                  ZIO.succeed(0)
 
@@ -245,19 +264,33 @@ object SocketSpec extends ZIOSpecDefault:
                  model: Int,
                  query: Option[String],
                  url: URL,
-                 ctx: ParamsContext
-               ) =
-                 val current = s"${url.path.encode}:${query.getOrElse("")}"
-                 callsRef.update(_ :+ current) *>
-                   (if query.isEmpty then ctx.nav.pushPatch(queryCodec, Some("1")).as(model)
-                    else ZIO.succeed(model))
+                  ctx: ParamsContext
+                ) =
+                  val current = s"${url.path.encode}:${query.getOrElse("")}"
+                  callsRef.update(_ :+ current) *>
+                    (if query.isEmpty then ctx.nav.pushPatch("?q=1").as(model)
+                     else ZIO.succeed(model))
 
                def handleMessage(model: Int, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
                def render(model: Int): HtmlElement[Unit] = div(model.toString)
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
-        socket     <- Socket.start("id", "token", lv, ctx, meta, initialUrl = initialUrl)
+        paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, Int, Option[String]](
+                          PathCodec.empty / "start",
+                          LiveParamsCodec.fromQuery[Unit, Option[String]](
+                            HttpCodec.query[String]("q").optional
+                          )
+                        )
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl,
+                    paramsRuntime = paramsRuntime
+                  )
         messages   <- socket.outbox.take(2).runCollect
         calls      <- callsRef.get
       yield assertTrue(
@@ -272,18 +305,17 @@ object SocketSpec extends ZIOSpecDefault:
       final case class LoopModel(shouldLoop: Boolean)
 
       val ctx = LiveContext(staticChanged = false)
-      val lv  = new LiveView[Unit, LoopModel]:
-        override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
-
+      val lv  = new RoutedLiveView[Unit, LoopModel, Unit]:
         def mount(ctx: MountContext) =
           ZIO.succeed(LoopModel(shouldLoop = false))
 
         override def handleParams(
           model: LoopModel,
-          query: queryCodec.Out,
+          params: Unit,
           url: URL,
           ctx: ParamsContext
         ) =
+          val _ = params
           if url.queryParam("loop").contains("true") then
             if model.shouldLoop then ctx.nav.pushPatch("?loop=true").as(model)
             else ZIO.succeed(model.copy(shouldLoop = false))
@@ -296,7 +328,19 @@ object SocketSpec extends ZIOSpecDefault:
 
       for
         initialUrl <- ZIO.fromEither(URL.decode("/redirectloop")).orDie
-        socket     <- Socket.start("id", "token", lv, ctx, meta, initialUrl = initialUrl)
+        paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, LoopModel, Unit](
+                          PathCodec.empty / "redirectloop",
+                          LiveParamsCodec.none
+                        )
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl,
+                    paramsRuntime = paramsRuntime
+                  )
         result     <- withOutbox(socket) { outbox =>
                     for
                       reply   <- socket.livePatch("?loop=true", meta)

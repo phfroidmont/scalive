@@ -23,7 +23,7 @@ This document records the user-facing phase-context API that replaced the public
 - Prefer rendered diff or DOM assertions for runtime/integration tests; a separate `scalive-test` module with recording contexts can be added later if direct command assertions become useful.
 - Do not keep `LiveView.interceptEvent` as a standalone lifecycle callback; preserve raw client-event interception through the hooks API instead.
 - Run raw event hooks before typed message decoding, then run typed event hooks before `handleMessage`.
-- Keep query decode failures as a separate `handleParamsDecodeError` lifecycle callback with `ParamsContext`; the default behavior should fail the lifecycle.
+- Keep route params decode failures as a separate `handleParamsDecodeError` lifecycle callback with `ParamsContext`; the default behavior should fail the lifecycle.
 - Do not keep `subscriptions(model)` as a dedicated lifecycle method; expose named, managed subscription message sources through phase contexts instead.
 - Treat managed starts that require a connected LiveView process, such as subscriptions and async tasks, as safe no-ops during disconnected mount and normal starts during connected mount.
 - Keep `Props` and `Model` separate for LiveComponents: props are parent-owned inputs, model is component-owned state, and component message handling and rendering receive both.
@@ -75,7 +75,6 @@ The public API is shaped like this:
 trait LiveView[Msg, Model]:
   type MountContext = scalive.MountContext[Msg, Model]
   type MessageContext = scalive.MessageContext[Msg, Model]
-  type ParamsContext = scalive.ParamsContext[Msg, Model]
 
   def mount(ctx: MountContext): LiveIO[Model]
 
@@ -84,21 +83,24 @@ trait LiveView[Msg, Model]:
     ctx: MessageContext
   ): Msg => LiveIO[Model]
 
+  def render(model: Model): HtmlElement[Msg]
+
+trait RoutedLiveView[Msg, Model, Params] extends LiveView[Msg, Model]:
+  type ParamsContext = scalive.ParamsContext[Msg, Model]
+
   def handleParams(
     model: Model,
-    query: queryCodec.Out,
+    params: Params,
     url: URL,
     ctx: ParamsContext
   ): LiveIO[Model]
 
   def handleParamsDecodeError(
     model: Model,
-    error: LiveQueryCodec.DecodeError,
+    error: LiveParamsCodec.DecodeError,
     url: URL,
     ctx: ParamsContext
   ): LiveIO[Model]
-
-  def render(model: Model): HtmlElement[Msg]
 ```
 
 Typical usage:
@@ -356,14 +358,14 @@ trait LiveComponent[Props, Msg, Model]:
 
 ## Params Decode Errors
 
-Query decoding should keep the successful path fully typed while still giving applications an explicit recovery point for invalid user-controlled URLs.
+Route params decoding should keep the successful path fully typed while still giving applications an explicit recovery point for invalid user-controlled URLs.
 
-`handleParams` should receive only successfully decoded query values:
+`handleParams` should receive only successfully decoded path and query params from the route declaration:
 
 ```scala
 def handleParams(
   model: Model,
-  query: queryCodec.Out,
+  params: Params,
   url: URL,
   ctx: ParamsContext
 ): LiveIO[Model]
@@ -374,13 +376,13 @@ Decode failures should call a separate lifecycle callback with the same phase co
 ```scala
 def handleParamsDecodeError(
   model: Model,
-  error: LiveQueryCodec.DecodeError,
+  error: LiveParamsCodec.DecodeError,
   url: URL,
   ctx: ParamsContext
 ): LiveIO[Model]
 ```
 
-The default implementation should fail the lifecycle with the decode error. Applications that want forgiving behavior can override the callback to keep the current model, flash an error, redirect, or patch to canonical query parameters.
+The default implementation should fail the lifecycle with the decode error. Applications that want forgiving behavior can override the callback to keep the current model, flash an error, redirect, or patch to canonical params.
 
 ## Capability Matrix
 
@@ -570,7 +572,7 @@ ctx.hooks.afterRender.attach("metrics") {
 }
 ```
 
-Params hooks receive the current `URL`, not `queryCodec.Out`, because they run before query decoding. The decoded query value belongs to `handleParams`.
+Params hooks receive the current `URL`, not decoded route params, because they run before params decoding. The decoded value belongs to `handleParams`.
 
 Hook result types should be split by reply capability:
 

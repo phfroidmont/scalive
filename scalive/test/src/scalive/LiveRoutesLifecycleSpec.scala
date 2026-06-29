@@ -7,6 +7,8 @@ import zio.http.*
 import zio.http.codec.HttpCodec
 import zio.http.codec.PathCodec
 import zio.json.ast.Json
+import zio.schema.Schema
+import zio.schema.derived
 import zio.test.*
 
 import scalive.WebSocketMessage.LivePatchKind
@@ -88,10 +90,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         button(phx.onClick(command), model.toString)
 
   private def redirectAwareParent(child: LiveView[ChildMsg, Int]) =
-    new LiveView[Unit, String]:
-      override val queryCodec: LiveQueryCodec[Option[String]] =
-        LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("redirect").optional)
-
+    new RoutedLiveView[Unit, String, Option[String]]:
       def mount(ctx: MountContext) =
         ZIO.succeed("none")
 
@@ -106,6 +105,12 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           p(s"Redirect: $model"),
           liveView("child", child)
         )
+
+  private val redirectParamsRuntime: LiveRouteParamsRuntime[?, Unit, String] =
+    LiveRouteParamsRuntime.routed(
+      PathCodec.empty / "thermo",
+      LiveParamsCodec.fromQuery[Unit, Option[String]](HttpCodec.query[String]("redirect").optional)
+    )
 
   private def containsValue(diff: Diff, value: String): Boolean =
     diff match
@@ -187,13 +192,14 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
   private def joinRoot[Msg: ClassTag, Model](
     channel: LiveChannel,
     liveView: LiveView[Msg, Model],
-    initialUrl: URL = URL.root
+    initialUrl: URL = URL.root,
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model] = LiveRouteParamsRuntime.none[Any, Msg, Model]
   ): RIO[Scope, Unit] =
     val ctx = LiveContext(
       staticChanged = false,
       nestedLiveViews = channel.nestedRuntime(rootTopic)
     )
-    channel.join(rootTopic, "root-token", liveView, ctx, rootMeta, initialUrl)
+    channel.join(rootTopic, "root-token", liveView, ctx, rootMeta, initialUrl, paramsRuntime = paramsRuntime)
 
   private def joinNested(
     channel: LiveChannel,
@@ -227,10 +233,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
     test("runs mount then handleParams before disconnected render") {
       for
         callsRef <- Ref.make(List.empty[String])
-        lv = new LiveView[Unit, Unit]:
-               override val queryCodec: LiveQueryCodec[Option[String]] =
-                 LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
-
+        lv = new RoutedLiveView[Unit, Unit, Option[String]]:
                def mount(ctx: MountContext) =
                   callsRef.update(_ :+ "mount").as(())
 
@@ -241,17 +244,46 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
                  (_: Unit) => ZIO.succeed(model)
 
                def render(model: Unit): HtmlElement[Unit] = div("ok")
-        routes   = scalive.Live.router(scalive.live(lv))
+        routes   = scalive.Live.router(scalive.live.queryOptional[String]("q")(lv))
         response <- runRequest(routes, "/?q=1")
         calls    <- callsRef.get
       yield assertTrue(response.status == Status.Ok, calls == List("mount", "params:1"))
     },
+    test("transforms path and query params into domain params") {
+      final case class UserQuery(tab: Option[String]) derives Schema
+      final case class UserParams(userId: Int, tab: Option[String])
+
+      val lv = new RoutedLiveView[Unit, String, UserParams]:
+        def mount(ctx: MountContext) =
+          ZIO.succeed("none")
+
+        override def handleParams(model: String, params: UserParams, _url: URL, ctx: ParamsContext) =
+          ZIO.succeed(s"${params.userId}:${params.tab.getOrElse("")}")
+
+        def handleMessage(model: String, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: String): HtmlElement[Unit] = div(model)
+
+      val routes = scalive.Live.router(
+        (scalive.live / "users" / PathCodec.int("userId"))
+          .query[UserQuery]
+          .mapParams { case (userId, query) =>
+            UserParams(userId, query.tab)
+          }(lv)
+      )
+
+      for
+        response <- runRequest(routes, "/users/42?tab=settings")
+        body     <- response.body.asString
+      yield assertTrue(response.status == Status.Ok, body.contains("42:settings"))
+    },
     test("honors initial pushPatch with HTTP redirect") {
-      val lv = new LiveView[Unit, Unit]:
+      val lv = new RoutedLiveView[Unit, Unit, Unit]:
         def mount(ctx: MountContext) =
           ZIO.unit
 
-        override def handleParams(model: Unit, query: queryCodec.Out, _url: URL, ctx: ParamsContext) =
+        override def handleParams(model: Unit, params: Unit, _url: URL, ctx: ParamsContext) =
           ctx.nav.pushPatch("/target").as(model)
 
         def handleMessage(model: Unit, ctx: MessageContext) =
@@ -259,7 +291,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
         def render(model: Unit): HtmlElement[Unit] = div("ok")
 
-      val routes = scalive.Live.router(scalive.live(lv))
+      val routes = scalive.Live.router(scalive.live.params(lv))
 
       for response <- runRequest(routes, "/")
       yield assertTrue(response.status.isRedirection, response.rawHeader("location").contains("/target"))
@@ -268,15 +300,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         child = new LiveView[Unit, String]:
-                  override val queryCodec: LiveQueryCodec[Option[String]] =
-                    LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
-
                   def mount(ctx: MountContext) =
                     callsRef.update(_ :+ "child mount").as("mount")
-
-                  override def handleParams(model: String, params: Option[String], _url: URL, ctx: ParamsContext) =
-                    callsRef.update(_ :+ s"child params:${params.getOrElse("")}")
-                      .as(s"$model:${params.getOrElse("")}")
 
                   def handleMessage(model: String, ctx: MessageContext) =
                     (_: Unit) => ZIO.succeed(model)
@@ -297,8 +322,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         calls    <- callsRef.get
       yield assertTrue(
         response.status == Status.Ok,
-        calls == List("child mount", "child params:1"),
-        body.contains("child mount:1"),
+          calls == List("child mount"),
+          body.contains("child mount"),
         body.contains("data-phx-child-id=\"child\""),
         body.contains("data-phx-parent-id=\"phx-"),
         body.contains("data-phx-session=")
@@ -514,14 +539,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
     },
     test("nested LiveView joins without URL use the parent current URL") {
       val child = new LiveView[Unit, String]:
-        override val queryCodec: LiveQueryCodec[Option[String]] =
-          LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("q").optional)
-
         def mount(ctx: MountContext) =
           ZIO.succeed("mount")
-
-        override def handleParams(model: String, params: Option[String], _url: URL, ctx: ParamsContext) =
-          ZIO.succeed(params.getOrElse(model))
 
         def handleMessage(model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
@@ -555,7 +574,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       yield
         val renderedWithParentUrl = init._1 match
           case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(diff)) =>
-            containsValue(diff, "child:1")
+            containsValue(diff, "child:mount")
           case _ => false
 
         assertTrue(result == NestedJoinResult.Joined, renderedWithParentUrl)
@@ -785,7 +804,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       ZIO.scoped(for
         initialUrl  <- url("/thermo?redirect=none")
         channel     <- LiveChannel.make(TokenConfig.default)
-        _           <- joinRoot(channel, parent, initialUrl)
+        _           <- joinRoot(channel, parent, initialUrl, redirectParamsRuntime)
         childSocket <- joinNested(channel, childTopic, childMeta, initialUrl)
         outQueue    <- subscribe(childSocket)
         _           <- channel.event(childTopic, click(Vector("root:button")), childMeta.copy(eventType = "event"))
@@ -803,7 +822,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       ZIO.scoped(for
         initialUrl  <- url("/thermo?redirect=none")
         channel     <- LiveChannel.make(TokenConfig.default)
-        _           <- joinRoot(channel, parent, initialUrl)
+        _           <- joinRoot(channel, parent, initialUrl, redirectParamsRuntime)
         childSocket <- joinNested(channel, childTopic, childMeta, initialUrl)
         outQueue    <- subscribe(childSocket)
         _           <- channel.event(childTopic, click(Vector("root:button")), childMeta.copy(eventType = "event"))
@@ -827,7 +846,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       ZIO.scoped(for
         initialUrl  <- url("/thermo?redirect=none")
         channel     <- LiveChannel.make(TokenConfig.default)
-        _           <- joinRoot(channel, parent, initialUrl)
+        _           <- joinRoot(channel, parent, initialUrl, redirectParamsRuntime)
         childSocket <- joinNested(channel, childTopic, childMeta, initialUrl)
         outQueue    <- subscribe(childSocket)
         _           <- channel.event(childTopic, click(Vector("root:button")), childMeta.copy(eventType = "event"))

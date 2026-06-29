@@ -8,14 +8,11 @@ import java.util.UUID
 import UploadLiveView.*
 import zio.*
 import zio.http.URL
-import zio.http.codec.HttpCodec
 
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
 
-class UploadLiveView() extends LiveView[Msg, Model]:
-
-  override val queryCodec: LiveQueryCodec[Option[String]] = ParamsCodec
+class UploadLiveView() extends RoutedLiveView[Msg, Model, Option[String]]:
 
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 
@@ -158,10 +155,6 @@ class UploadLiveView() extends LiveView[Msg, Model]:
 end UploadLiveView
 
 object UploadLiveView:
-
-  val ParamsCodec: LiveQueryCodec[Option[String]] =
-    LiveQueryCodec.fromZioHttp(HttpCodec.query[String]("auto_upload").optional)
-
   private val UploadName                       = "avatar"
   private val MaxEntries                       = 2
   private val MaxFileSize: Long                = 8_000_000L

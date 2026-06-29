@@ -1,6 +1,8 @@
 package scalive
 
 import zio.*
+import zio.http.URL
+import zio.http.codec.{HttpCodec, PathCodec}
 import zio.json.ast.Json
 import zio.test.*
 
@@ -9,6 +11,12 @@ import scalive.WebSocketMessage.Payload
 
 object AsyncSpec extends ZIOSpecDefault:
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
+
+  private def oneSegmentParamsRuntime[Msg, Model]: LiveRouteParamsRuntime[?, Msg, Model] =
+    LiveRouteParamsRuntime.routed(
+      PathCodec.empty / PathCodec.string("page"),
+      LiveParamsCodec.path[String]
+    )
 
   private object Tasks:
     val Load     = "load"
@@ -119,7 +127,7 @@ object AsyncSpec extends ZIOSpecDefault:
 
   override def spec = suite("AsyncSpec")(
     test("completed async task sends typed message and pushes diff") {
-      val lv = new LiveView[Msg, String]:
+      val lv = new RoutedLiveView[Msg, String, String]:
         def mount(ctx: MountContext) =
           ctx.async
             .start(Tasks.Load)(ZIO.succeed("loaded"))(Msg.Loaded(_))
@@ -138,7 +146,7 @@ object AsyncSpec extends ZIOSpecDefault:
       yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "loaded")))
     },
     test("failed async task is exposed to async hooks") {
-      val lv = new LiveView[Msg, String]:
+      val lv = new RoutedLiveView[Msg, String, String]:
         override def hooks: LiveHooks[Msg, String] =
           LiveHooks.empty.async("failure") { (model, event, _) =>
             event.result match
@@ -164,7 +172,7 @@ object AsyncSpec extends ZIOSpecDefault:
       yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "failed")))
     },
     test("async completion message can push patch") {
-      val lv = new LiveView[Msg, String]:
+      val lv = new RoutedLiveView[Msg, String, String]:
         def mount(ctx: MountContext) =
           ctx.async
             .start(Tasks.Patch)(ZIO.succeed("done"))(Msg.PatchLoaded(_))
@@ -174,14 +182,24 @@ object AsyncSpec extends ZIOSpecDefault:
               case Msg.PatchLoaded(_) => ctx.nav.pushPatch("/async-done").as(model)
               case _                  => ZIO.succeed(model)
 
-        override def handleParams(model: String, query: queryCodec.Out, url: zio.http.URL, ctx: ParamsContext) =
+        override def handleParams(model: String, page: String, url: URL, ctx: ParamsContext) =
+          val _ = page
           ZIO.succeed(url.path.encode)
 
         def render(model: String): HtmlElement[Msg] =
           div(idAttr := "root", model)
 
       for
-        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl,
+                    paramsRuntime = oneSegmentParamsRuntime
+                  )
         navigation <- socket.outbox.drop(1).runHead.some
         patchReply <- socket.livePatch("/async-done", meta)
       yield assertTrue(
@@ -364,14 +382,11 @@ object AsyncSpec extends ZIOSpecDefault:
       )
     },
     test("live component async completion can push patch") {
-      val lv = new LiveView[Unit, String]:
-        override val queryCodec: LiveQueryCodec[Option[String]] =
-          LiveQueryCodec.fromZioHttp(zio.http.codec.HttpCodec.query[String]("test").optional)
-
+      val lv = new RoutedLiveView[Unit, String, Option[String]]:
         def mount(ctx: MountContext) =
           ZIO.succeed("none")
 
-        override def handleParams(model: String, test: Option[String], _url: zio.http.URL, ctx: ParamsContext) =
+        override def handleParams(model: String, test: Option[String], _url: URL, ctx: ParamsContext) =
           ZIO.succeed(test.getOrElse("none"))
 
         def handleMessage(model: String, ctx: MessageContext) =
@@ -384,14 +399,21 @@ object AsyncSpec extends ZIOSpecDefault:
           )
 
       for
-        initialUrl <- ZIO.fromEither(zio.http.URL.decode("/start_async?test=patch")).orDie
+        initialUrl <- ZIO.fromEither(URL.decode("/start_async?test=patch")).orDie
+        paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, String, Option[String]](
+                          PathCodec.empty / "start_async",
+                          LiveParamsCodec.fromQuery[Unit, Option[String]](
+                            HttpCodec.query[String]("test").optional
+                          )
+                        )
         socket <- Socket.start(
                     "id",
                     "token",
                     lv,
                     LiveContext(staticChanged = false),
                     meta,
-                    initialUrl = initialUrl
+                    initialUrl = initialUrl,
+                    paramsRuntime = paramsRuntime
                   )
         navigation <- socket.outbox.drop(1).collect {
                         case (payload @ Payload.LiveNavigation(_, _), _) => payload

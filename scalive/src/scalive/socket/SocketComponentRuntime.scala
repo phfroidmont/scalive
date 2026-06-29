@@ -630,6 +630,7 @@ private[scalive] object SocketComponentRuntime:
           Option.unless(registration.sticky)(phx.parentId := registration.parentDomId),
           Option.unless(registration.sticky)(phx.childId  := registration.id),
           phx.sticky := registration.sticky,
+          Option.when(registration.loading)(cls := "phx-loading"),
           registration.rendered.map(Content.Tag(_))
         )
       }

@@ -6,9 +6,7 @@ import zio.schema.derived
 import scalive.*
 import scalive.LiveIO.given
 
-class ComponentsLiveView() extends LiveView[Msg, Model]:
-
-  override val queryCodec: LiveQueryCodec[UrlParams] = ParamsCodec
+class ComponentsLiveView() extends RoutedLiveView[Msg, Model, UrlParams]:
 
   def mount(ctx: MountContext) =
     Model(activeTab = "focus_wrap")
@@ -35,7 +33,7 @@ class ComponentsLiveView() extends LiveView[Msg, Model]:
           a(
             href := paramsHref(UrlParams(Some("focus_wrap"))),
             phx.onClick(
-              JS.patch(ParamsCodec, UrlParams(Some("focus_wrap"))).push(Msg.SetTab("focus_wrap"))
+              JS.patch(paramsHref(UrlParams(Some("focus_wrap")))).push(Msg.SetTab("focus_wrap"))
             ),
             styleAttr :=
               (if model.activeTab == "focus_wrap" then
@@ -141,15 +139,7 @@ object ComponentsLiveView:
 
   final case class UrlParams(tab: Option[String]) derives Schema
 
-  val ParamsCodec = LiveQueryCodec[UrlParams]
-
   def paramsHref(params: UrlParams): String =
-    ParamsCodec.href(params) match
-      case Right(url)  => url
-      case Left(error) =>
-        throw new IllegalArgumentException(
-          s"Could not encode ComponentsLiveView params: ${error.message}",
-          error
-        )
+    params.tab.fold("/components")(tab => s"/components?tab=$tab")
 
   final case class Model(activeTab: String)

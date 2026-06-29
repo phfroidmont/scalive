@@ -8,9 +8,7 @@ import zio.schema.derived
 import scalive.*
 import scalive.LiveIO.given
 
-class ListLiveView() extends LiveView[Msg, Model]:
-
-  override val queryCodec: LiveQueryCodec[ListParams] = ParamsCodec
+class ListLiveView() extends RoutedLiveView[Msg, Model, ListParams]:
 
   def mount(ctx: MountContext) =
     Model(
@@ -80,9 +78,6 @@ object ListLiveView:
     case IncAge(value: Int)
 
   final case class ListParams(q: Option[String]) derives Schema
-
-  val ParamsCodec: LiveQueryCodec[ListParams] =
-    LiveQueryCodec[ListParams]
 
   final case class Model(
     paramText: String,

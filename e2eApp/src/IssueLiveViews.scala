@@ -378,37 +378,41 @@ object Issue3047LiveView:
   private val ResetItems     = (5 to 15).map(id => Item(id, s"item-$id")).toList
 end Issue3047LiveView
 
-class Issue3529LiveView(page: String) extends LiveView[Unit, String]:
-  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
+class Issue3529LiveView extends RoutedLiveView[Unit, Issue3529LiveView.Model, Option[String]]:
+  import Issue3529LiveView.*
 
   def mount(ctx: MountContext) =
-    UUID.randomUUID().toString
+    Model(mounted = UUID.randomUUID().toString, next = UUID.randomUUID().toString)
 
-  override def handleParams(model: String, params: Unit, url: URL, ctx: ParamsContext) =
-    model
-
-  def handleMessage(model: String, ctx: MessageContext) =
-    (_: Unit) => model
-
-  def render(model: String) =
-    div(
-      h1(s"$page $model"),
-      link.navigate("/issues/3529/navigated", "Navigate"),
-      link.patch("/issues/3529/navigated?patched=true", "Patch")
+  override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
+    model.copy(
+      mounted = params.fold(UUID.randomUUID().toString)(_ => model.mounted),
+      next = UUID.randomUUID().toString
     )
 
-class Issue3530LiveView extends LiveView[Unit, Issue3530LiveView.Model]:
-  import Issue3530LiveView.*
+  def handleMessage(model: Model, ctx: MessageContext) =
+    (_: Unit) => model
 
-  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
+  def render(model: Model) =
+    div(
+      h1(s"Mounted at ${model.mounted}"),
+      link.navigate(s"/issues/3529?param=${model.next}", "Navigate"),
+      link.patch(s"/issues/3529?param=${model.next}", "Patch")
+    )
+
+object Issue3529LiveView:
+  final case class Model(mounted: String, next: String)
+
+class Issue3530LiveView extends RoutedLiveView[Unit, Issue3530LiveView.Model, Option[String]]:
+  import Issue3530LiveView.*
 
   def mount(ctx: MountContext) =
     ctx.streams
       .init(ItemsStream, List.empty[Item])
       .map(items => Model(count = 3, items = items))
 
-  override def handleParams(model: Model, params: Unit, url: URL, ctx: ParamsContext) =
-    val itemIds = url.queryParam("q") match
+  override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
+    val itemIds = params match
       case Some("a") => List(1, 3)
       case Some("b") => List(2, 3)
       case _         => List(1, 2, 3)
@@ -843,19 +847,16 @@ class Issue3194OtherLiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) = h2("Another LiveView")
 
-class Issue3200LiveView extends LiveView[Issue3200LiveView.Msg, Issue3200LiveView.Model]:
+class Issue3200LiveView
+    extends RoutedLiveView[Issue3200LiveView.Msg, Issue3200LiveView.Model, String]:
   import Issue3200LiveView.*
-
-  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
   def mount(ctx: MountContext) =
     Model()
 
-  override def handleParams(model: Model, params: Unit, url: URL, ctx: ParamsContext) =
-    val _   = (params, ctx)
-    val tab = url.path.segments.toList match
-      case "issues" :: "3200" :: "messages" :: Nil => Tab.Messages
-      case _                                       => Tab.Settings
+  override def handleParams(model: Model, params: String, url: URL, ctx: ParamsContext) =
+    val _   = (url, ctx)
+    val tab = if params == "messages" then Tab.Messages else Tab.Settings
     model.copy(tab = tab)
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -1551,13 +1552,8 @@ end Issue3684LiveView
 class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg.type, Unit]:
   import Issue3686LiveView.*
 
-  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
-
   def mount(ctx: MountContext) =
     ()
-
-  override def handleParams(model: Unit, params: Unit, url: URL, ctx: ParamsContext) =
-    model
 
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Msg.type) =>
@@ -1580,21 +1576,18 @@ class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg
       button(phx.onClick(Msg), s"To $next"),
       div(idAttr := "flash", "%{}", flash("info")(message => span(message)))
     )
-end Issue3686LiveView
 
 object Issue3686LiveView:
   case object Msg
 
-class Issue3709LiveView extends LiveView[Unit, String]:
+class Issue3709LiveView extends RoutedLiveView[Unit, String, Option[String]]:
   import Issue3709LiveView.*
-
-  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
 
   def mount(ctx: MountContext) =
     ""
 
-  override def handleParams(model: String, params: Unit, url: URL, ctx: ParamsContext) =
-    idFromPath(url).getOrElse("")
+  override def handleParams(model: String, params: Option[String], url: URL, ctx: ParamsContext) =
+    params.getOrElse("")
 
   def handleMessage(model: String, ctx: MessageContext) =
     (_: Unit) => model
@@ -1619,10 +1612,6 @@ class Issue3709LiveView extends LiveView[Unit, String]:
       )
     )
 
-  private def idFromPath(url: URL): Option[String] =
-    url.path.segments.toList match
-      case "issues" :: "3709" :: id :: Nil => Some(id)
-      case _                               => None
 end Issue3709LiveView
 
 object Issue3709LiveView:
@@ -1887,10 +1876,13 @@ object Issue3979LiveView:
     def render(props: CounterProps, model: CounterProps, self: ComponentRef[Unit]) =
       div(idAttr := s"hello-${model.id}-${model.domCounter}", model.counter.toString)
 
-class Issue4027LiveView extends LiveView[Issue4027LiveView.Msg, Issue4027LiveView.Model]:
+class Issue4027LiveView
+    extends RoutedLiveView[
+      Issue4027LiveView.Msg,
+      Issue4027LiveView.Model,
+      Issue4027LiveView.QueryParams
+    ]:
   import Issue4027LiveView.*
-
-  override val queryCodec: LiveQueryCodec[QueryParams] = QueryParams.codec
 
   def mount(ctx: MountContext) =
     Model()
@@ -1931,13 +1923,6 @@ end Issue4027LiveView
 
 object Issue4027LiveView:
   final case class QueryParams(caseName: String = "first")
-
-  object QueryParams:
-    val codec: LiveQueryCodec[QueryParams] =
-      LiveQueryCodec.custom(
-        decodeFn = url => Right(QueryParams(url.queryParam("case").getOrElse("first"))),
-        encodeFn = params => Right(s"?case=${params.caseName}")
-      )
 
   final case class Item(id: Int, value: String)
   final case class Model(
@@ -2010,10 +1995,13 @@ object Issue4027LiveView:
     items.splitBy(_.id)((_, item) => p(item.value))
 end Issue4027LiveView
 
-class Issue4066LiveView extends LiveView[Issue4066LiveView.Msg, Issue4066LiveView.Model]:
+class Issue4066LiveView
+    extends RoutedLiveView[
+      Issue4066LiveView.Msg,
+      Issue4066LiveView.Model,
+      Issue4066LiveView.QueryParams
+    ]:
   import Issue4066LiveView.*
-
-  override val queryCodec: LiveQueryCodec[QueryParams] = QueryParams.codec
 
   def mount(ctx: MountContext) =
     Model(renderTime = java.time.Instant.now.toString)
@@ -2035,14 +2023,6 @@ class Issue4066LiveView extends LiveView[Issue4066LiveView.Msg, Issue4066LiveVie
 
 object Issue4066LiveView:
   final case class QueryParams(delay: Int = 3000)
-
-  object QueryParams:
-    val codec: LiveQueryCodec[QueryParams] =
-      LiveQueryCodec.custom(
-        decodeFn =
-          url => Right(QueryParams(url.queryParam("delay").flatMap(_.toIntOption).getOrElse(3000))),
-        encodeFn = params => Right(s"?delay=${params.delay}")
-      )
 
   final case class Model(renderTime: String, renderInput: Boolean = true, delay: Int = 3000)
 
@@ -2069,7 +2049,6 @@ object Issue4066LiveView:
         phx.target(self),
         dataAttr("delay") := delay.toString
       )
-end Issue4066LiveView
 
 class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveView.Model]:
   import Issue4078LiveView.*
@@ -2179,14 +2158,12 @@ object Issue4088LiveView:
   enum Msg:
     case Noop
 
-class Issue4094LiveView extends LiveView[Unit, Unit]:
-  override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
-
+class Issue4094LiveView extends RoutedLiveView[Unit, Unit, Option[String]]:
   def mount(ctx: MountContext) =
     ()
 
-  override def handleParams(model: Unit, params: Unit, url: URL, ctx: ParamsContext) =
-    if url.queryParam("foo").contains("bar") then ctx.nav.redirect("/navigation/a").as(model)
+  override def handleParams(model: Unit, params: Option[String], url: URL, ctx: ParamsContext) =
+    if params.contains("bar") then ctx.nav.redirect("/navigation/a").as(model)
     else model
 
   def handleMessage(model: Unit, ctx: MessageContext) =

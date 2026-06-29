@@ -131,12 +131,6 @@ object JSCommands:
         Args.Href(href, Option.when(replace)(replace))
       )
 
-    def patch[A](to: LiveQueryCodec[A], value: A): JSCommand[Msg] =
-      patch(to, value, replace = false)
-
-    def patch[A](to: LiveQueryCodec[A], value: A, replace: Boolean): JSCommand[Msg] =
-      patch(requireHref(to, value, "JS.patch"): String, replace)
-
     def popFocus() =
       ops.addOp("pop_focus", Json.Obj.empty)
 
@@ -247,14 +241,6 @@ object JSCommands:
         )
       )
 
-    private def requireHref[A](to: LiveQueryCodec[A], value: A, operation: String): String =
-      to.href(value) match
-        case Right(url)  => url
-        case Left(error) =>
-          throw new IllegalArgumentException(
-            s"Could not encode URL for $operation: ${error.message}",
-            error
-          )
   end extension
 
   final private[scalive] class ClassOp[Msg](kind: String, ops: JSCommand[Msg]):

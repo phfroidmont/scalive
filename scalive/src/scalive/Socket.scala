@@ -45,6 +45,8 @@ private[scalive] object Socket:
     initialUrl: URL = URL.root,
     initialFlash: Map[String, String] = Map.empty,
     renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None,
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model] =
+      LiveRouteParamsRuntime.none[Any, Msg, Model],
     enqueueInitReply: Boolean = true,
     onCrash: UIO[Unit] = ZIO.unit
   ): RIO[Scope, Socket[Msg, Model]] =
@@ -59,6 +61,7 @@ private[scalive] object Socket:
                    initialUrl,
                    initialFlash,
                    rootRenderer,
+                   paramsRuntime,
                    onCrash
                  )
         clientFiber <- SocketInbound.startClientFiber(state)

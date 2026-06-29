@@ -446,10 +446,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
       )
     },
     test("component pushPatch emits navigation and updates parent params on live_patch") {
-      val parent = new LiveView[Unit, String]:
-        override val queryCodec: LiveQueryCodec[Option[String]] =
-          LiveQueryCodec.fromZioHttp(zio.http.codec.HttpCodec.query[String]("redirect").optional)
-
+      val parent = new RoutedLiveView[Unit, String, Option[String]]:
         def mount(ctx: MountContext) =
           ZIO.succeed("none")
         override def handleParams(model: String, redirect: Option[String], _url: URL, ctx: ParamsContext) =
@@ -461,7 +458,21 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
 
       for
         initialUrl <- ZIO.fromEither(URL.decode("/components?redirect=none")).orDie
-        socket     <- Socket.start("lv:root", "token", parent, LiveContext(staticChanged = false), meta, initialUrl = initialUrl)
+        paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, String, Option[String]](
+                          zio.http.codec.PathCodec.empty / "components",
+                          LiveParamsCodec.fromQuery[Unit, Option[String]](
+                            zio.http.codec.HttpCodec.query[String]("redirect").optional
+                          )
+                        )
+        socket <- Socket.start(
+                    "lv:root",
+                    "token",
+                    parent,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    initialUrl = initialUrl,
+                    paramsRuntime = paramsRuntime
+                  )
         navigationFiber <- socket.outbox.drop(1).collect {
                              case (payload @ Payload.LiveNavigation(_, _), _) => payload
                            }.runHead.fork

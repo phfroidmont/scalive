@@ -333,7 +333,10 @@ final private[scalive] class LiveRoutesRuntime[R](
     val ctx           = LiveContext(
       staticChanged = staticChanged,
       connectParams = connectParams,
-      nestedLiveViews = liveChannel.nestedRuntime(message.topic)
+      nestedLiveViews = liveChannel.nestedRuntime(
+        message.topic,
+        loadingOnInitialNestedRender(connectParams)
+      )
     )
     val lv         = route.buildLiveView(pathParams, req, mountContext)
     val renderRoot = route.socketRenderRoot(
@@ -362,7 +365,8 @@ final private[scalive] class LiveRoutesRuntime[R](
             message.meta,
             decodedUrl,
             initialFlash,
-            Some(renderRoot)
+            Some(renderRoot),
+            route.paramsRuntime
           )(using route.msgClassTag)
           .as(None)
           .catchAllCause(cause =>
@@ -564,6 +568,13 @@ final private[scalive] class LiveRoutesRuntime[R](
         case (tokenTopic, session) if tokenTopic == topic || tokenTopic == topicId =>
           session
       }
+
+  private def loadingOnInitialNestedRender(connectParams: Map[String, Json]): Boolean =
+    connectParams.get("_mounts").exists {
+      case Json.Num(value) => value.signum() > 0
+      case Json.Str(value) => value.toIntOption.exists(_ > 0)
+      case _               => false
+    }
 
   val routes: Routes[R, Nothing] =
     Routes

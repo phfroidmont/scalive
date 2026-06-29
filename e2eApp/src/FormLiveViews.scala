@@ -21,9 +21,9 @@ final case class FormQueryParams(
   latencyMode: Boolean = false)
 
 object FormQueryParams:
-  val codec: LiveQueryCodec[FormQueryParams] =
-    LiveQueryCodec.custom(
-      decodeFn = url =>
+  val codec: LiveParamsCodec[Unit, FormQueryParams] =
+    LiveParamsCodec.custom(
+      decodeFn = (_, url) =>
         Right(
           FormQueryParams(
             liveComponent = url.queryParam("live-component").isDefined,
@@ -36,17 +36,15 @@ object FormQueryParams:
             portal = url.queryParam("portal").isDefined,
             latencyMode = url.queryParam("phx-change").contains("validate")
           )
-        ),
-      encodeFn = _ => Right("?")
+        )
     )
 
-class FormLiveView extends LiveView[FormLiveView.Msg, FormLiveView.Model]:
+class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
+    extends RoutedLiveView[FormLiveView.Msg, FormLiveView.Model, FormQueryParams]:
   import FormLiveView.*
 
-  override val queryCodec: LiveQueryCodec[FormQueryParams] = FormQueryParams.codec
-
   def mount(ctx: MountContext) =
-    Model()
+    Model(query = initialQuery)
 
   override def handleParams(model: Model, params: FormQueryParams, _url: URL, ctx: ParamsContext) =
     model.copy(query = params)
@@ -293,21 +291,31 @@ object FormLiveView:
   end FormComponent
 end FormLiveView
 
-class NestedFormLiveView extends LiveView[Unit, Unit]:
+class NestedFormLiveView extends RoutedLiveView[Unit, FormQueryParams, FormQueryParams]:
   def mount(ctx: MountContext) =
-    ()
+    FormQueryParams()
 
-  def handleMessage(model: Unit, ctx: MessageContext) =
+  override def handleParams(
+    model: FormQueryParams,
+    params: FormQueryParams,
+    _url: URL,
+    ctx: ParamsContext
+  ) =
+    params
+
+  def handleMessage(model: FormQueryParams, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
-    div(liveView("nested", FormLiveView()))
+  def render(model: FormQueryParams) =
+    div(liveView("nested", FormLiveView(model)))
 
 class FormDynamicInputsLiveView
-    extends LiveView[FormDynamicInputsLiveView.Msg, FormDynamicInputsLiveView.Model]:
+    extends RoutedLiveView[
+      FormDynamicInputsLiveView.Msg,
+      FormDynamicInputsLiveView.Model,
+      FormQueryParams
+    ]:
   import FormDynamicInputsLiveView.*
-
-  override val queryCodec: LiveQueryCodec[FormQueryParams] = FormQueryParams.codec
 
   def mount(ctx: MountContext) =
     Model()

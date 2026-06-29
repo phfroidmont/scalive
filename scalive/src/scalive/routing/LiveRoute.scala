@@ -35,6 +35,7 @@ private[scalive] object LiveSessionGroup:
 final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
   private[scalive] val pathCodec: PathCodec[A],
   private val liveViewBuilder: (A, Request, Ctx) => LiveView[Msg, Model],
+  private[scalive] val paramsRuntime: LiveRouteParamsRuntime[A, Msg, Model],
   private[scalive] val msgClassTag: ClassTag[Msg],
   private[scalive] val mountPipeline: LiveMountPipeline[R, A, Need, Ctx],
   private[scalive] val liveLayouts: List[LiveLayoutLayer[A, Ctx, ?]] = Nil,
@@ -54,6 +55,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
     new LiveRoute(
       pathCodec,
       liveViewBuilder,
+      paramsRuntime,
       msgClassTag,
       mountPipeline,
       liveLayouts,
@@ -88,6 +90,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
     new LiveRoute(
       pathCodec,
       (params, request, context) => liveViewBuilder(params, request, context._2),
+      paramsRuntime.asInstanceOf[LiveRouteParamsRuntime[A, Msg, Model]],
       msgClassTag,
       new LiveMountPipeline[R & R1, A, Any, (SessionCtx, Ctx)]:
         def runDisconnected(request: LiveMountRequest[A], input: Any) =
@@ -156,7 +159,17 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
     globalLayouts: List[LiveLayout[Any, Any]]
   ): (Model, URL) => HtmlElement[Msg] =
     (model, currentUrl) =>
-      renderLiveRoot(lv, model, params, request, currentUrl, mountContext, globalLayouts)
+      val currentParams  = pathCodec.decode(currentUrl.path).getOrElse(params)
+      val currentRequest = request.copy(url = currentUrl)
+      renderLiveRoot(
+        lv,
+        model,
+        currentParams,
+        currentRequest,
+        currentUrl,
+        mountContext,
+        globalLayouts
+      )
 
   private def applyLiveLayouts[Msg](
     content: HtmlElement[Msg],
@@ -262,7 +275,8 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                              ctx,
                              navigationRef,
                              flashRef,
-                             mountNavigation
+                             mountNavigation,
+                             paramsRuntime
                            )
               response <- lifecycle match
                             case LiveRoute.InitialLifecycleOutcome.Render(model) =>
@@ -397,7 +411,8 @@ object LiveRoute:
     ctx: LiveContext,
     navigationRef: Ref[Option[LiveNavigationCommand]],
     flashRef: Ref[FlashRuntimeState],
-    initialNavigation: Option[LiveNavigationCommand]
+    initialNavigation: Option[LiveNavigationCommand],
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model]
   ): Task[InitialLifecycleOutcome[Model]] =
     def applyNavigation(model: Model, command: LiveNavigationCommand)
       : Task[InitialLifecycleOutcome[Model]] =
@@ -423,7 +438,7 @@ object LiveRoute:
         for
           _          <- SocketFlashRuntime.resetNavigation(flashRef)
           _          <- navigationRef.set(None)
-          model      <- LiveViewParamsRuntime.runHandleParams(lv, initModel, url, ctx)
+          model      <- paramsRuntime.run(lv, initModel, url, ctx)
           navigation <- navigationRef.getAndSet(None)
           result     <- navigation match
                       case None          => ZIO.succeed(InitialLifecycleOutcome.Render(model))

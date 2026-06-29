@@ -19,6 +19,7 @@ private[scalive] object SocketBootstrap:
     initialUrl: URL,
     initialFlash: Map[String, String],
     renderRoot: (Model, URL) => HtmlElement[Msg],
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
     onCrash: UIO[Unit]
   ): Task[RuntimeState[Msg, Model]] =
     for
@@ -67,7 +68,8 @@ private[scalive] object SocketBootstrap:
           tokenConfig,
           initModel,
           initialUrl,
-          mountNavigation
+          mountNavigation,
+          paramsRuntime
         )
       initRoot <-
         SocketComponentRuntime.renderRoot(
@@ -104,6 +106,7 @@ private[scalive] object SocketBootstrap:
     yield RuntimeState(
       lv = lv,
       renderRoot = renderRoot,
+      paramsRuntime = paramsRuntime,
       msgClassTag = summon[ClassTag[Msg]],
       ctx = runtimeCtx,
       meta = meta,
@@ -141,7 +144,8 @@ private[scalive] object SocketBootstrap:
     tokenConfig: TokenConfig,
     initialModel: Model,
     initialUrl: URL,
-    initialNavigation: Option[LiveNavigationCommand]
+    initialNavigation: Option[LiveNavigationCommand],
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model]
   ): Task[(Model, Chunk[WebSocketMessage.Payload], URL)] =
     def loop(
       model: Model,
@@ -153,7 +157,7 @@ private[scalive] object SocketBootstrap:
       for
         _ <- ZIO.unless(preserveNavigationFlash)(SocketFlashRuntime.resetNavigation(flashRef))
         _ <- navigationRef.set(None)
-        nextModel  <- LiveViewParamsRuntime.runHandleParams(lv, model, url, runtimeCtx)
+        nextModel  <- paramsRuntime.run(lv, model, url, runtimeCtx)
         navigation <- navigationRef.getAndSet(None)
         result     <- navigation match
                     case None =>

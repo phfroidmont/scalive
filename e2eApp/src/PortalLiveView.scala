@@ -2,14 +2,15 @@ import zio.*
 import zio.http.URL
 import zio.json.*
 import zio.json.ast.Json
+import zio.schema.Schema
+import zio.schema.derived
 
 import scalive.*
 import scalive.LiveIO.given
 
-class PortalLiveView extends LiveView[PortalLiveView.Msg, PortalLiveView.Model]:
+class PortalLiveView
+    extends RoutedLiveView[PortalLiveView.Msg, PortalLiveView.Model, PortalLiveView.QueryParams]:
   import PortalLiveView.*
-
-  override val queryCodec: LiveQueryCodec[QueryParams] = QueryParams.codec
 
   def mount(ctx: MountContext) =
     Model()
@@ -82,14 +83,7 @@ end PortalLiveView
 object PortalLiveView:
   private val mainTag = HtmlTag("main")
 
-  final case class QueryParams(param: Option[String] = None)
-
-  object QueryParams:
-    val codec: LiveQueryCodec[QueryParams] =
-      LiveQueryCodec.custom(
-        decodeFn = url => Right(QueryParams(param = url.queryParam("param"))),
-        encodeFn = params => Right(params.param.fold("?")(param => s"?param=$param"))
-      )
+  final case class QueryParams(param: Option[String] = None) derives Schema
 
   enum Msg:
     case ToggleModal

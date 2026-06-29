@@ -62,7 +62,8 @@ final private[scalive] class SocketNestedLiveViewRuntime(
   parentTopic: String,
   parentDomId: String,
   tokenConfig: TokenConfig,
-  entriesRef: Ref[Map[String, NestedLiveViewEntry]])
+  entriesRef: Ref[Map[String, NestedLiveViewEntry]],
+  loadingOnInitialParentRender: Boolean)
     extends NestedLiveViewRuntime:
 
   private val initialParentRender = new AtomicBoolean(true)
@@ -108,7 +109,7 @@ final private[scalive] class SocketNestedLiveViewRuntime(
         topic,
         token,
         spec.sticky,
-        loading = initialParentRender.get()
+        loading = loadingOnInitialParentRender && initialParentRender.get()
       )
 
       registration -> entries.updated(topic, entry)
@@ -160,7 +161,8 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
                      ctx,
                      navigationRef,
                      flashRef,
-                     mountNavigation
+                     mountNavigation,
+                     LiveRouteParamsRuntime.none[Any, Msg, Model]
                    )
       rendered <- lifecycle match
                     case LiveRoute.InitialLifecycleOutcome.Render(model) =>

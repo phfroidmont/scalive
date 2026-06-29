@@ -13,6 +13,12 @@ import scalive.WebSocketMessage.ReplyStatus
 object FlashSpec extends ZIOSpecDefault:
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
 
+  private def flashParamsRuntime[Msg, Model]: LiveRouteParamsRuntime[?, Msg, Model] =
+    LiveRouteParamsRuntime.routed(
+      zio.http.codec.PathCodec.empty / zio.http.codec.PathCodec.string("page"),
+      LiveParamsCodec.path[String]
+    )
+
   private enum Msg:
     case Show
     case ShowBoth
@@ -212,11 +218,11 @@ object FlashSpec extends ZIOSpecDefault:
         case SetError
         case Patch
 
-      val lv = new LiveView[RootMsg, String]:
+      val lv = new RoutedLiveView[RootMsg, String, String]:
         def mount(ctx: MountContext) =
           ZIO.succeed("start")
 
-        override def handleParams(model: String, query: queryCodec.Out, url: URL, ctx: ParamsContext) =
+        override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
           ZIO.succeed(url.encode)
 
         def handleMessage(model: String, ctx: MessageContext) =
@@ -243,7 +249,8 @@ object FlashSpec extends ZIOSpecDefault:
                     lv,
                     LiveContext(staticChanged = false),
                     meta,
-                    initialUrl = initialUrl
+                    initialUrl = initialUrl,
+                    paramsRuntime = flashParamsRuntime
                   )
         result <- withOutbox(socket) { outbox =>
                     for
@@ -268,11 +275,11 @@ object FlashSpec extends ZIOSpecDefault:
         case Patch
 
       val tokenConfig = TokenConfig.default
-      val lv = new LiveView[RootMsg, String]:
+      val lv = new RoutedLiveView[RootMsg, String, String]:
         def mount(ctx: MountContext) =
           ZIO.succeed("start")
 
-        override def handleParams(model: String, query: queryCodec.Out, url: URL, ctx: ParamsContext) =
+        override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
           if url.path.encode == "/redirecting" then ctx.nav.redirect("/target").as(model)
           else ZIO.succeed(url.encode)
 
@@ -297,7 +304,8 @@ object FlashSpec extends ZIOSpecDefault:
                     LiveContext(staticChanged = false),
                     meta,
                     tokenConfig = tokenConfig,
-                    initialUrl = initialUrl
+                    initialUrl = initialUrl,
+                    paramsRuntime = flashParamsRuntime
                   )
         result <- withOutbox(socket) { outbox =>
                     for
@@ -386,11 +394,11 @@ object FlashSpec extends ZIOSpecDefault:
             flash("error")(message => p(idAttr := "component-error", message))
           )
 
-      val lv = new LiveView[Unit, String]:
+      val lv = new RoutedLiveView[Unit, String, String]:
         def mount(ctx: MountContext) =
           ZIO.succeed("start")
 
-        override def handleParams(model: String, query: queryCodec.Out, url: URL, ctx: ParamsContext) =
+        override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
           ZIO.succeed(url.encode)
 
         def handleMessage(model: String, ctx: MessageContext) =
@@ -422,7 +430,8 @@ object FlashSpec extends ZIOSpecDefault:
                     lv,
                     LiveContext(staticChanged = false),
                     meta,
-                    initialUrl = initialUrl
+                    initialUrl = initialUrl,
+                    paramsRuntime = flashParamsRuntime
                   )
         result <- withOutbox(socket) { outbox =>
                     for

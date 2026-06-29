@@ -42,7 +42,7 @@ private[scalive] object SocketInbound:
         _                   <- state.currentUrlRef.set(decodedUrl)
         (model, navigation) <-
           SocketModelRuntime.captureNavigation(state, resetFlash = false)(
-            LiveViewParamsRuntime.runHandleParams(state.lv, currentModel, decodedUrl, state.ctx)
+            state.paramsRuntime.run(state.lv, currentModel, decodedUrl, state.ctx)
           )
         diffOpt <- navigation match
                      case Some(
@@ -109,12 +109,7 @@ private[scalive] object SocketInbound:
               _                       <- state.currentUrlRef.set(nextUrl)
               (nextModel, navigation) <-
                 SocketModelRuntime.captureNavigation(state, resetFlash = false)(
-                  LiveViewParamsRuntime.runHandleParams(
-                    state.lv,
-                    currentModel,
-                    nextUrl,
-                    state.ctx
-                  )
+                  state.paramsRuntime.run(state.lv, currentModel, nextUrl, state.ctx)
                 )
               diffOpt <- navigation match
                            case Some(

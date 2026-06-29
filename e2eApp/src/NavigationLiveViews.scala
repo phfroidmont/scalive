@@ -6,9 +6,7 @@ import zio.schema.derived
 import scalive.*
 import scalive.LiveIO.given
 
-class NavigationALiveView() extends LiveView[Msg, Model]:
-
-  override val queryCodec: LiveQueryCodec[AParams] = AParamsCodec
+class NavigationALiveView() extends RoutedLiveView[Msg, Model, AParams]:
 
   def mount(ctx: MountContext) =
     Model(paramCurrent = None, paramNext = 1)
@@ -25,14 +23,12 @@ class NavigationALiveView() extends LiveView[Msg, Model]:
         h1("This is page A"),
         p("Current param: ", model.paramCurrent.getOrElse("")),
         link.patch(
-          AParamsCodec,
-          AParams(Some(model.paramNext)),
+          s"/navigation/a?param=${model.paramNext}",
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch this LiveView"
         ),
         link.patchReplace(
-          AParamsCodec,
-          AParams(Some(model.paramNext)),
+          s"/navigation/a?param=${model.paramNext}",
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch (Replace)"
         ),
@@ -46,9 +42,7 @@ class NavigationALiveView() extends LiveView[Msg, Model]:
 
 end NavigationALiveView
 
-class NavigationBLiveView() extends LiveView[Msg, Model]:
-
-  override val queryCodec: LiveQueryCodec[BParams] = BParamsCodec
+class NavigationBLiveView() extends RoutedLiveView[Msg, Model, BParams]:
 
   def mount(ctx: MountContext) =
     Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
@@ -56,10 +50,10 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
   def handleMessage(model: Model, ctx: MessageContext) =
     _ => model
 
-  override def handleParams(model: Model, params: BParams, url: URL, ctx: ParamsContext) =
+  override def handleParams(model: Model, params: BParams, _url: URL, ctx: ParamsContext) =
     val _             = ctx
     val containerFlow = params.withContainerRequested || model.withContainer
-    val selectedItem  = if containerFlow then selectedItemFromPath(url) else None
+    val selectedItem  = if containerFlow then params.itemId else None
     model.copy(
       withContainer = params.withContainerRequested,
       selectedItem = selectedItem
@@ -106,19 +100,12 @@ class NavigationBLiveView() extends LiveView[Msg, Model]:
       )
     )
 
-  private def selectedItemFromPath(url: URL): Option[String] =
-    url.path.segments.toList match
-      case "navigation" :: "b" :: id :: Nil if id.nonEmpty => Some(id)
-      case _                                               => None
-
   private def itemHref(id: String, withContainer: Boolean): String =
     val base = s"/navigation/b/$id"
     if withContainer then s"$base?container=1" else base
 end NavigationBLiveView
 
-class RedirectLoopLiveView() extends LiveView[Msg, Model]:
-
-  override val queryCodec: LiveQueryCodec[RedirectLoopParams] = RedirectLoopParamsCodec
+class RedirectLoopLiveView() extends RoutedLiveView[Msg, Model, RedirectLoopParams]:
 
   def mount(ctx: MountContext) =
     Model(shouldLoop = false, message = None)
@@ -135,8 +122,7 @@ class RedirectLoopLiveView() extends LiveView[Msg, Model]:
     ctx: ParamsContext
   ) =
     if params.loop.contains(true) then
-      if model.shouldLoop then
-        ctx.nav.pushPatch(RedirectLoopParamsCodec, RedirectLoopParams(Some(true))).as(model)
+      if model.shouldLoop then ctx.nav.pushPatch("?loop=true").as(model)
       else model.copy(message = Some("Too many redirects"), shouldLoop = false)
     else model.copy(message = None, shouldLoop = true)
 
@@ -150,8 +136,7 @@ class RedirectLoopLiveView() extends LiveView[Msg, Model]:
           )
         else "",
         link.patch(
-          RedirectLoopParamsCodec,
-          RedirectLoopParams(Some(true)),
+          "?loop=true",
           "Redirect Loop"
         )
       )
@@ -167,26 +152,9 @@ object NavigationLiveViews:
 
   final case class AParams(param: Option[Int]) derives Schema
 
-  val AParamsCodec: LiveQueryCodec[AParams] =
-    LiveQueryCodec[AParams]
-
-  final case class BParams(withContainerRequested: Boolean)
-
-  val BParamsCodec: LiveQueryCodec[BParams] =
-    LiveQueryCodec.custom(
-      decodeFn =
-        url => Right(BParams(withContainerRequested = url.queryParam("container").contains("1"))),
-      encodeFn = params =>
-        Right(
-          if params.withContainerRequested then "?container=1"
-          else "?"
-        )
-    )
+  final case class BParams(withContainerRequested: Boolean, itemId: Option[String] = None)
 
   final case class RedirectLoopParams(loop: Option[Boolean]) derives Schema
-
-  val RedirectLoopParamsCodec: LiveQueryCodec[RedirectLoopParams] =
-    LiveQueryCodec[RedirectLoopParams]
 
   final case class Item(id: String, name: Int)
   final case class Model(
@@ -197,4 +165,3 @@ object NavigationLiveViews:
     withContainer: Boolean = false,
     shouldLoop: Boolean = false,
     message: Option[String] = None)
-end NavigationLiveViews

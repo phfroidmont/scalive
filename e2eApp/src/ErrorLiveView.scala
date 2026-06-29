@@ -7,10 +7,9 @@ import zio.json.ast.Json
 import scalive.*
 import scalive.LiveIO.given
 
-class ErrorLiveView extends LiveView[ErrorLiveView.Msg, ErrorLiveView.Model]:
+class ErrorLiveView
+    extends RoutedLiveView[ErrorLiveView.Msg, ErrorLiveView.Model, ErrorLiveView.QueryParams]:
   import ErrorLiveView.*
-
-  override val queryCodec: LiveQueryCodec[QueryParams] = QueryParams.codec
 
   def mount(ctx: MountContext) =
     Model()
@@ -89,9 +88,9 @@ object ErrorLiveView:
     child: Boolean = false)
 
   object QueryParams:
-    val codec: LiveQueryCodec[QueryParams] =
-      LiveQueryCodec.custom(
-        decodeFn = url =>
+    val codec: LiveParamsCodec[Unit, QueryParams] =
+      LiveParamsCodec.custom(
+        decodeFn = (_, url) =>
           Right(
             QueryParams(
               deadMountRaise = url.queryParam("dead-mount").contains("raise"),
@@ -99,19 +98,13 @@ object ErrorLiveView:
               connectedChildMountRaise = url.queryParam("connected-child-mount-raise"),
               child = url.queryParam("child").isDefined
             )
-          ),
-        encodeFn = _ => Right("?")
+          )
       )
 
   class ChildLiveView(behavior: ChildBehavior) extends LiveView[ChildMsg, ChildModel]:
-    override val queryCodec: LiveQueryCodec[Unit] = LiveQueryCodec.none
-
     def mount(ctx: MountContext) =
-      ChildModel(connected = ctx.connected)
-
-    override def handleParams(model: ChildModel, params: Unit, _url: URL, ctx: ParamsContext) =
       if ctx.connected && behavior.failNextConnectedMount then ZIO.fail(RuntimeException("boom"))
-      else model
+      else ChildModel(connected = ctx.connected)
 
     def handleMessage(model: ChildModel, ctx: MessageContext) =
       case ChildMsg.CrashChild => ZIO.fail(RuntimeException("boom"))

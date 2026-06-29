@@ -79,7 +79,9 @@ final private[scalive] class LiveChannel(
     meta: WebSocketMessage.Meta,
     initialUrl: URL,
     initialFlash: Map[String, String] = Map.empty,
-    renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None
+    renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None,
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model] =
+      LiveRouteParamsRuntime.none[Any, Msg, Model]
   )(using ClassTag[Msg]
   ): RIO[Scope, Unit] =
     val rootRenderer = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
@@ -98,7 +100,8 @@ final private[scalive] class LiveChannel(
                   tokenConfig,
                   initialUrl,
                   initialFlash,
-                  Some(rootRenderer)
+                  Some(rootRenderer),
+                  paramsRuntime
                 )
                 .map(m.updated(id, _))
           case None =>
@@ -112,17 +115,31 @@ final private[scalive] class LiveChannel(
                 tokenConfig,
                 initialUrl,
                 initialFlash,
-                Some(rootRenderer)
+                Some(rootRenderer),
+                paramsRuntime
               )
               .map(m.updated(id, _))
       }.flatMap(_ => ZIO.logDebug(s"LiveView joined $id"))
   end join
 
-  def nestedRuntime(parentTopic: String): NestedLiveViewRuntime =
-    nestedRuntime(parentTopic, parentTopic.stripPrefix("lv:"))
+  def nestedRuntime(
+    parentTopic: String,
+    loadingOnInitialRender: Boolean = false
+  ): NestedLiveViewRuntime =
+    nestedRuntime(parentTopic, parentTopic.stripPrefix("lv:"), loadingOnInitialRender)
 
-  private def nestedRuntime(parentTopic: String, parentDomId: String): NestedLiveViewRuntime =
-    new SocketNestedLiveViewRuntime(parentTopic, parentDomId, tokenConfig, nestedEntries)
+  private def nestedRuntime(
+    parentTopic: String,
+    parentDomId: String,
+    loadingOnInitialRender: Boolean
+  ): NestedLiveViewRuntime =
+    new SocketNestedLiveViewRuntime(
+      parentTopic,
+      parentDomId,
+      tokenConfig,
+      nestedEntries,
+      loadingOnInitialRender
+    )
 
   private[scalive] def nestedEntry(topic: String): UIO[Option[NestedLiveViewEntry]] =
     nestedEntries.get.map(_.get(topic))
@@ -187,7 +204,11 @@ final private[scalive] class LiveChannel(
               val ctx = LiveContext(
                 staticChanged = staticChanged,
                 connectParams = connectParams,
-                nestedLiveViews = nestedRuntime(topic, entry.id)
+                nestedLiveViews = nestedRuntime(
+                  topic,
+                  entry.id,
+                  loadingOnInitialRender(connectParams)
+                )
               )
               sockets
                 .modifyZIO { m =>
@@ -270,6 +291,13 @@ final private[scalive] class LiveChannel(
       .verify[String](tokenConfig.secret, token, tokenConfig.maxAge)
       .toOption
       .exists { case (tokenTopic, payload) => tokenTopic == topic && payload == "nested" }
+
+  private def loadingOnInitialRender(connectParams: Map[String, Json]): Boolean =
+    connectParams.get("_mounts").exists {
+      case Json.Num(value) => value.signum() > 0
+      case Json.Str(value) => value.toIntOption.exists(_ > 0)
+      case _               => false
+    }
 
   def leave(id: String): UIO[Unit] =
     nestedEntries.get.flatMap { entries =>

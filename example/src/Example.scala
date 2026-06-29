@@ -32,10 +32,10 @@ object Example extends ZIOAppDefault:
 
   def liveRoutes(assets: StaticAssets) =
     (Live.router @@ RootLayout(assets))(
-      live             -> HomeLiveView(),
-      live / "counter" -> CounterLiveView(),
-      live / "list"    -> ListLiveView(),
-      live / "todo"    -> TodoLiveView()
+      live                                           -> HomeLiveView(),
+      live / "counter"                               -> CounterLiveView(),
+      (live / "list").query[ListLiveView.ListParams] -> ListLiveView(),
+      live / "todo"                                  -> TodoLiveView()
     )
 
   override val run =

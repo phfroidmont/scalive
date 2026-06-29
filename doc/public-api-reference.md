@@ -28,7 +28,6 @@ There is no supported `scalive.testing.*` package yet. Test helpers should be in
 trait LiveView[Msg, Model]:
   type MountContext = scalive.MountContext[Msg, Model]
   type MessageContext = scalive.MessageContext[Msg, Model]
-  type ParamsContext = scalive.ParamsContext[Msg, Model]
   type AfterRenderContext = scalive.AfterRenderContext[Msg, Model]
 
   def hooks: LiveHooks[Msg, Model] = LiveHooks.empty
@@ -36,22 +35,6 @@ trait LiveView[Msg, Model]:
   def mount(ctx: MountContext): LiveIO[Model]
   def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
   def render(model: Model): HtmlElement[Msg]
-
-  val queryCodec: LiveQueryCodec[?] = LiveQueryCodec.none
-
-  def handleParams(
-    model: Model,
-    query: queryCodec.Out,
-    url: zio.http.URL,
-    ctx: ParamsContext
-  ): LiveIO[Model]
-
-  def handleParamsDecodeError(
-    model: Model,
-    error: LiveQueryCodec.DecodeError,
-    url: zio.http.URL,
-    ctx: ParamsContext
-  ): LiveIO[Model]
 ```
 
 Lifecycle methods:
@@ -59,11 +42,37 @@ Lifecycle methods:
 - `mount` creates the initial model for disconnected and connected lifecycle phases.
 - `handleMessage` handles typed messages produced by HTML bindings, JS push commands, async tasks, and subscriptions.
 - `render` returns the current HTML tree.
-- `queryCodec` decodes query parameters for `handleParams`.
-- `handleParams` runs when URL parameters are decoded successfully.
-- `handleParamsDecodeError` runs when `queryCodec` cannot decode the current URL.
 - `hooks` installs static lifecycle hooks, including raw client-event interception through `LiveHooks.rawEvent`.
 - Runtime subscriptions are started explicitly from phase contexts with `ctx.subscriptions.start`.
+
+### `RoutedLiveView[Msg, Model, Params]`
+
+`RoutedLiveView` is a `LiveView` whose route declares typed URL params. Plain `LiveView`s do not run the params lifecycle.
+
+```scala
+trait RoutedLiveView[Msg, Model, Params] extends LiveView[Msg, Model]:
+  type ParamsContext = scalive.ParamsContext[Msg, Model]
+
+  def handleParams(
+    model: Model,
+    params: Params,
+    url: zio.http.URL,
+    ctx: ParamsContext
+  ): LiveIO[Model]
+
+  def handleParamsDecodeError(
+    model: Model,
+    error: LiveParamsCodec.DecodeError,
+    url: zio.http.URL,
+    ctx: ParamsContext
+  ): LiveIO[Model]
+```
+
+Params lifecycle methods:
+
+- `handleParams` runs when route path and query params decode successfully.
+- `handleParamsDecodeError` runs when route params cannot decode the current URL.
+- Params are decoded by the route declaration, not by the LiveView itself.
 
 ### `LiveComponent[Props, Msg, Model]`
 
@@ -196,17 +205,12 @@ trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext:
 ```scala
 trait MountNavigation:
   def pushNavigate(to: String): LiveIO[Unit]
-  def pushNavigate[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
   def replaceNavigate(to: String): LiveIO[Unit]
-  def replaceNavigate[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
   def redirect(to: String): LiveIO[Unit]
-  def redirect[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
 
 trait Navigation extends MountNavigation:
   def pushPatch(to: String): LiveIO[Unit]
-  def pushPatch[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
   def replacePatch(to: String): LiveIO[Unit]
-  def replacePatch[A](to: LiveQueryCodec[A], value: A): LiveIO[Unit]
 ```
 
 ### Flash
@@ -672,6 +676,12 @@ seed / pathCodec
 seed @@ aspect
 seed @@ layout
 seed @@ rootLayout
+seed.params
+seed.params(codec)
+seed.query[QueryParams]
+seed.query[QueryParam]("name")
+seed.queryOptional[QueryParam]("name")
+seed.query(codec)
 seed(view)
 seed -> view
 seed((params, request, context) => view)
@@ -686,10 +696,49 @@ seed((params, request, c1, c2) => view)
 builder @@ aspect
 builder @@ layout
 builder @@ rootLayout
+builder.params
+builder.params(codec)
+builder.query[QueryParams]
+builder.query[QueryParam]("name")
+builder.queryOptional[QueryParam]("name")
+builder.query(codec)
 builder(view)
 builder -> view
 builder((params, request, context) => view)
 builder((params, request, c1, c2) => view)
+```
+
+`params` and `query` produce a `LiveRouteParamsBuilder` whose `apply` methods accept a `RoutedLiveView[Msg, Model, Params]`.
+
+```scala
+paramsBuilder.mapParams(decode)
+paramsBuilder @@ aspect
+paramsBuilder @@ layout
+paramsBuilder @@ rootLayout
+paramsBuilder(view)
+paramsBuilder -> view
+paramsBuilder((params, request, context) => view)
+```
+
+Use `query[A]` for schema-derived query objects and named helpers for single query params:
+
+```scala
+(live / "search").query[SearchQuery] -> SearchLiveView()
+
+(live / "stream").queryOptional[String]("empty_item") -> StreamLiveView()
+```
+
+For path-plus-query routes, use `query[A]` or a named query helper and `mapParams` to map the tuple-shaped input into an application type:
+
+```scala
+final case class UserQuery(tab: Option[String]) derives Schema
+final case class UserParams(userId: Int, tab: Option[String])
+
+(live / "users" / PathCodec.int("userId"))
+  .query[UserQuery]
+  .mapParams { case (userId, query) =>
+    UserParams(userId, query.tab)
+  } -> UserLiveView()
 ```
 
 ### Live sessions
@@ -813,29 +862,29 @@ trait ContextAppend[In, Out]
 object ContextAppend
 ```
 
-## Query Codec API
+## Route Params Codec API
 
 ```scala
-trait LiveQueryCodec[A]:
-  type Out = A
-  def decode(url: zio.http.URL): IO[LiveQueryCodec.DecodeError, A]
-  def href(value: A): Either[LiveQueryCodec.EncodeError, String]
+trait LiveParamsCodec[PathParams, Params]:
+  type Out = Params
+  def decode(pathParams: PathParams, url: zio.http.URL): IO[LiveParamsCodec.DecodeError, Params]
 ```
 
 Errors:
 
 ```scala
-LiveQueryCodec.DecodeError(message, cause = None)
-LiveQueryCodec.EncodeError(message, cause = None)
+LiveParamsCodec.DecodeError(message, cause = None)
 ```
 
 Constructors:
 
 ```scala
-LiveQueryCodec.none
-LiveQueryCodec[A]
-LiveQueryCodec.fromZioHttp(codec)
-LiveQueryCodec.custom(decodeFn, encodeFn)
+LiveParamsCodec.path[A]
+LiveParamsCodec.none
+LiveParamsCodec.query[A]
+LiveParamsCodec.fromZioHttp(codec)
+LiveParamsCodec.fromQuery(codec)
+LiveParamsCodec.custom(decodeFn)
 ```
 
 ## Forms API

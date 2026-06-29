@@ -7,6 +7,8 @@ import zio.http.Request
 import zio.http.Routes
 import zio.http.codec.Combiner
 import zio.http.codec.PathCodec
+import zio.http.codec.QueryCodec
+import zio.schema.Schema
 
 class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
   def /[B](that: PathCodec[B])(using combiner: Combiner[A, B]): LiveRouteSeed[combiner.Out] =
@@ -20,6 +22,43 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
       None,
       hasRouteMountAspect = false
     )
+
+  def params: LiveRouteParamsBuilder[Any, A, Any, Any, A] =
+    base[Any].params
+
+  def params[Params](
+    codec: LiveParamsCodec[A, Params]
+  ): LiveRouteParamsBuilder[Any, A, Any, Any, Params] =
+    base[Any].params(codec)
+
+  def query[QueryParams](
+    codec: QueryCodec[QueryParams]
+  )(using combiner: Combiner[A, QueryParams]
+  ): LiveRouteParamsBuilder[Any, A, Any, Any, combiner.Out] =
+    base[Any].query(codec)
+
+  def query[QueryParam](
+    name: String
+  )(using
+    schema: Schema[QueryParam],
+    combiner: Combiner[A, QueryParam]
+  ): LiveRouteParamsBuilder[Any, A, Any, Any, combiner.Out] =
+    base[Any].query[QueryParam](name)
+
+  def queryOptional[QueryParam](
+    name: String
+  )(using
+    schema: Schema[QueryParam],
+    combiner: Combiner[A, Option[QueryParam]]
+  ): LiveRouteParamsBuilder[Any, A, Any, Any, combiner.Out] =
+    base[Any].queryOptional[QueryParam](name)
+
+  def query[QueryParams](
+    using
+    schema: Schema[QueryParams],
+    combiner: Combiner[A, QueryParams]
+  ): LiveRouteParamsBuilder[Any, A, Any, Any, combiner.Out] =
+    base[Any].query[QueryParams]
 
   infix def @@[R, In, Claims, Out, Result](
     aspect: LiveMountAspect[R, A, In, Claims, Out]
@@ -139,6 +178,50 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
       hasRouteMountAspect
     )
 
+  def params: LiveRouteParamsBuilder[R, A, Need, Ctx, A] =
+    params(LiveParamsCodec.path[A])
+
+  def params[Params](
+    codec: LiveParamsCodec[A, Params]
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params] =
+    LiveRouteParamsBuilder(
+      pathCodec,
+      codec,
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      hasRouteMountAspect
+    )
+
+  def query[QueryParams](
+    codec: QueryCodec[QueryParams]
+  )(using combiner: Combiner[A, QueryParams]
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+    params(LiveParamsCodec.fromQuery[A, QueryParams](codec))
+
+  def query[QueryParam](
+    name: String
+  )(using
+    schema: Schema[QueryParam],
+    combiner: Combiner[A, QueryParam]
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+    query(zio.http.codec.HttpCodec.query[QueryParam](name))
+
+  def queryOptional[QueryParam](
+    name: String
+  )(using
+    schema: Schema[QueryParam],
+    combiner: Combiner[A, Option[QueryParam]]
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+    query(zio.http.codec.HttpCodec.query[QueryParam](name).optional)
+
+  def query[QueryParams](
+    using
+    schema: Schema[QueryParams],
+    combiner: Combiner[A, QueryParams]
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+    query(zio.http.codec.HttpCodec.query[QueryParams])
+
   def apply[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
     : LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply((_, _, _) => view)
@@ -155,6 +238,7 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
     new LiveRoute(
       pathCodec,
       builder,
+      LiveRouteParamsRuntime.none[A, Msg, Model],
       summon[ClassTag[Msg]],
       mountPipeline,
       liveLayouts,
@@ -185,6 +269,137 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
 end LiveRouteBuilder
+
+final class LiveRouteParamsBuilder[R, A, -Need, Ctx, Params] private[scalive] (
+  pathCodec: PathCodec[A],
+  paramsCodec: LiveParamsCodec[A, Params],
+  mountPipeline: LiveMountPipeline[R, A, Need, Ctx],
+  liveLayouts: List[LiveLayoutLayer[A, Ctx, ?]],
+  rootLayout: Option[LiveRootLayoutLayer[A, Ctx, ?]],
+  hasRouteMountAspect: Boolean):
+
+  def mapParams[Params2](
+    decodeParams: Params => Params2
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params2] =
+    LiveRouteParamsBuilder(
+      pathCodec,
+      paramsCodec.map(decodeParams),
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      hasRouteMountAspect
+    )
+
+  infix def @@[R1, Claims, Out, Result](
+    aspect: LiveMountAspect[R1, A, Ctx, Claims, Out]
+  )(using append: ContextAppend.Aux[Ctx, Out, Result]
+  ): LiveRouteParamsBuilder[R & R1, A, Need, Result, Params] =
+    val projectPrevious = (result: Result) => append.left(result)
+    LiveRouteParamsBuilder(
+      pathCodec,
+      paramsCodec,
+      mountPipeline ++ aspect.runtime,
+      liveLayouts.map(_.mapContext(projectPrevious)),
+      rootLayout.map(_.mapContext(projectPrevious)),
+      hasRouteMountAspect = true
+    )
+
+  infix def @@(layout: LiveLayout[A, Ctx]): LiveRouteParamsBuilder[R, A, Need, Ctx, Params] =
+    LiveRouteParamsBuilder(
+      pathCodec,
+      paramsCodec,
+      mountPipeline,
+      liveLayouts :+ LiveLayoutLayer[A, Ctx, Ctx](layout, identity),
+      rootLayout,
+      hasRouteMountAspect
+    )
+
+  @targetName("rootLayoutModifier")
+  infix def @@(
+    layout: LiveRootLayout[A, Ctx]
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params] =
+    LiveRouteParamsBuilder(
+      pathCodec,
+      paramsCodec,
+      mountPipeline,
+      liveLayouts,
+      Some(LiveRootLayoutLayer[A, Ctx, Ctx](layout, identity)),
+      hasRouteMountAspect
+    )
+
+  def apply[Msg: ClassTag, Model](view: => RoutedLiveView[Msg, Model, Params])
+    : LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply((_, _, _) => view)
+
+  @targetName("arrowRoutedView")
+  infix def ->[Msg: ClassTag, Model](view: => RoutedLiveView[Msg, Model, Params])
+    : LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply(view)
+
+  @targetName("applyRoutedFull")
+  def apply[Msg: ClassTag, Model](
+    builder: (A, Request, Ctx) => RoutedLiveView[Msg, Model, Params]
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    new LiveRoute(
+      pathCodec,
+      builder,
+      LiveRouteParamsRuntime.routed[A, Msg, Model, Params](pathCodec, paramsCodec),
+      summon[ClassTag[Msg]],
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      hasRouteMountAspect = hasRouteMountAspect
+    )
+
+  @targetName("arrowRoutedFull")
+  infix def ->[Msg: ClassTag, Model](
+    builder: (A, Request, Ctx) => RoutedLiveView[Msg, Model, Params]
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply(builder)
+
+  @targetName("applyRoutedRequestParams")
+  def apply[Msg: ClassTag, Model](
+    builder: (A, Request) => RoutedLiveView[Msg, Model, Params]
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply((params, request, _) => builder(params, request))
+
+  @targetName("arrowRoutedRequestParams")
+  infix def ->[Msg: ClassTag, Model](
+    builder: (A, Request) => RoutedLiveView[Msg, Model, Params]
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply(builder)
+
+  @targetName("applyRoutedRequest")
+  def apply[Msg: ClassTag, Model](
+    builder: Request => RoutedLiveView[Msg, Model, Params]
+  )(using A =:= Unit
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply((_, request, _) => builder(request))
+
+  @targetName("arrowRoutedRequest")
+  infix def ->[Msg: ClassTag, Model](
+    builder: Request => RoutedLiveView[Msg, Model, Params]
+  )(using A =:= Unit
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply(builder)
+
+  @targetName("applyRoutedTuple2")
+  def apply[C1, C2, Msg: ClassTag, Model](
+    builder: (A, Request, C1, C2) => RoutedLiveView[Msg, Model, Params]
+  )(using ev: Ctx <:< (C1, C2)
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply((params, request, context) =>
+      val tuple = ev(context)
+      builder(params, request, tuple._1, tuple._2)
+    )
+
+  @targetName("arrowRoutedTuple2")
+  infix def ->[C1, C2, Msg: ClassTag, Model](
+    builder: (A, Request, C1, C2) => RoutedLiveView[Msg, Model, Params]
+  )(using ev: Ctx <:< (C1, C2)
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply(builder)
+end LiveRouteParamsBuilder
 
 final class LiveSessionSeed private[scalive] (val name: String):
   private val group = LiveSessionGroup.named(name)

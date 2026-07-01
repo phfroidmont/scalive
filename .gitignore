@@ -12,3 +12,4 @@ opencode.json
 .e2e-upstream
 test-results
 monocart-report
+.worktrees/

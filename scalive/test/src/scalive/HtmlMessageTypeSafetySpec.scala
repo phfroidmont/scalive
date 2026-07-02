@@ -66,6 +66,62 @@ object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("withValue uses an empty string when the payload has no value") {
+      val attr = phx.onBlur.withValue(identity)
+
+      val result = attr match
+        case Mod.Attr.Binding(_, f) => f(Map.empty)
+        case other                  => throw new AssertionError(s"expected binding, got $other")
+
+      assertTrue(result == "")
+    },
+    test("withValueOption preserves missing and present values") {
+      val attr = phx.onBlur.withValueOption(identity)
+
+      val missing = attr match
+        case Mod.Attr.Binding(_, f) => f(Map.empty)
+        case other                  => throw new AssertionError(s"expected binding, got $other")
+
+      val present = attr match
+        case Mod.Attr.Binding(_, f) => f(Map("value" -> "hello"))
+        case other                  => throw new AssertionError(s"expected binding, got $other")
+
+      assertTrue(missing == None, present == Some("hello"))
+    },
+    test("withBoolValue decodes accepted values and defaults invalid values to false") {
+      val attr = phx.onBlur.withBoolValue(identity)
+
+      def decode(payload: Map[String, String]) =
+        attr match
+          case Mod.Attr.Binding(_, f) => f(payload)
+          case other                  => throw new AssertionError(s"expected binding, got $other")
+
+      assertTrue(
+        decode(Map("value" -> "on")),
+        decode(Map("value" -> "yes")),
+        decode(Map("value" -> "true")),
+        !decode(Map("value" -> "off")),
+        !decode(Map("value" -> "no")),
+        !decode(Map("value" -> "false")),
+        !decode(Map("value" -> "unexpected")),
+        !decode(Map.empty)
+      )
+    },
+    test("withBoolValueOption preserves invalid and missing values") {
+      val attr = phx.onBlur.withBoolValueOption(identity)
+
+      def decode(payload: Map[String, String]) =
+        attr match
+          case Mod.Attr.Binding(_, f) => f(payload)
+          case other                  => throw new AssertionError(s"expected binding, got $other")
+
+      assertTrue(
+        decode(Map("value" -> "true")) == Some(true),
+        decode(Map("value" -> "false")) == Some(false),
+        decode(Map("value" -> "unexpected")) == None,
+        decode(Map.empty) == None
+      )
     }
   )
 end HtmlMessageTypeSafetySpec

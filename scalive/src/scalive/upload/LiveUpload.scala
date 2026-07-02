@@ -4,6 +4,8 @@ package upload
 import zio.*
 import zio.json.ast.Json
 
+import scala.reflect.ClassTag
+
 final case class LiveUploadedEntry(
   ref: String,
   name: String,
@@ -108,7 +110,11 @@ enum LiveUploadWriterCloseReason:
   case Cancel
   case Error(reason: String)
 
-final case class LiveUploadWriterState private[scalive] (value: Any)
+final case class LiveUploadWriterState(value: Any):
+  def valueAs[A: ClassTag]: Option[A] =
+    value match
+      case typed: A => Some(typed)
+      case _        => None
 
 trait LiveUploadWriter:
   def init(uploadName: String, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState]

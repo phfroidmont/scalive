@@ -128,6 +128,7 @@ Lifecycle callbacks receive explicit phase contexts. Contexts expose domain faca
 trait LifecycleContext:
   def connected: Boolean
   def staticChanged: Boolean
+  def connectParams: Map[String, Json]
 
 trait MountContext[Msg, Model] extends LifecycleContext:
   def nav: MountNavigation
@@ -426,9 +427,16 @@ class HtmlAttrBinding(val name: String):
   def apply[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg]
   def form[Msg](f: FormData => Msg): Mod.Attr[Msg]
   def form[A, Msg](codec: FormCodec[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def withValueOption[Msg](f: Option[String] => Msg): Mod.Attr[Msg]
   def withValue[Msg](f: String => Msg): Mod.Attr[Msg]
+  def withBoolValueOption[Msg](f: Option[Boolean] => Msg): Mod.Attr[Msg]
   def withBoolValue[Msg](f: Boolean => Msg): Mod.Attr[Msg]
 ```
+
+`withValue` is non-throwing and passes `""` when the client payload has no
+`value`. `withBoolValue` is non-throwing and passes `false` for missing or
+unrecognized values. Use the `Option` variants when application code must
+distinguish missing or invalid values.
 
 ### `Mod[Msg]`
 
@@ -559,9 +567,7 @@ The `link` object renders LiveView-aware anchors.
 ```scala
 link.navigate(path, mods*)
 link.patch(path, mods*)
-link.patch(codec, value, mods*)
 link.patchReplace(path, mods*)
-link.patchReplace(codec, value, mods*)
 ```
 
 ## JS Command API
@@ -608,33 +614,6 @@ JS.transition(transition = "", to = "", time = 200, blocking = true)
 `transition` arguments accept either a space-separated class string or a tuple of three class strings.
 
 ## Components API
-
-### `LiveComponent[Props, Msg, Model]`
-
-```scala
-trait LiveComponent[Props, Msg, Model]:
-  def mount(props: Props): LiveIO[LiveComponent.InitContext, Model]
-  def update(props: Props, model: Model): LiveIO[LiveComponent.UpdateContext, Model]
-  def handleMessage(model: Model): Msg => LiveIO[LiveComponent.UpdateContext, Model]
-  def render(model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
-```
-
-Context aliases:
-
-```scala
-object LiveComponent:
-  type InitContext = LiveContext.BaseCapabilities
-  type UpdateContext = LiveContext.NavigationCapabilities
-  type PropsOf[C]
-  type MsgOf[C]
-```
-
-Supporting types:
-
-```scala
-final case class ComponentRef[Msg] private[scalive] (cid: Int)
-final case class ComponentTargetMessage private[scalive] (componentClass: Class[?], message: Any)
-```
 
 ### Built-in component helpers
 
@@ -1249,7 +1228,7 @@ enum LiveExternalUploadResult:
 
 ```scala
 trait LiveUploadExternalUploader:
-  def preflight(entry: LiveExternalUploadEntry): RIO[LiveContext, LiveExternalUploadResult]
+  def preflight(entry: LiveExternalUploadEntry): LiveIO[LiveExternalUploadResult]
 ```
 
 ```scala
@@ -1260,8 +1239,13 @@ enum LiveUploadWriterCloseReason:
 ```
 
 ```scala
-final case class LiveUploadWriterState private[scalive] (value: Any)
+final case class LiveUploadWriterState(value: Any):
+  def valueAs[A: ClassTag]: Option[A]
 ```
+
+Custom upload writers can store their own state value in `LiveUploadWriterState`.
+Use `valueAs[A]` to recover the expected state type in `meta`, `writeChunk`, and
+`close`.
 
 ```scala
 trait LiveUploadWriter:
@@ -1281,7 +1265,7 @@ LiveUploadWriter.InMemory
 
 ```scala
 trait LiveUploadProgress:
-  def onProgress(uploadName: String, entry: LiveUploadEntry): RIO[LiveContext, Unit]
+  def onProgress(uploadName: String, entry: LiveUploadEntry): LiveIO[Unit]
 ```
 
 ```scala

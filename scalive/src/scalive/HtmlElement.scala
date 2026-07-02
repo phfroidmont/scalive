@@ -57,15 +57,23 @@ class HtmlAttrBinding(val name: String):
   def form[A, Msg](codec: FormCodec[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg] =
     Mod.Attr.FormEventBinding(name, codec, f)
 
+  def withValueOption[Msg](f: Option[String] => Msg): Mod.Attr[Msg] =
+    apply(m => f(m.get("value")))
+
   def withValue[Msg](f: String => Msg): Mod.Attr[Msg] =
-    apply(m => f(m("value")))
+    withValueOption(value => f(value.getOrElse("")))
+
+  def withBoolValueOption[Msg](f: Option[Boolean] => Msg): Mod.Attr[Msg] =
+    withValueOption(value =>
+      f(value.flatMap {
+        case "on" | "yes" | "true"  => Some(true)
+        case "off" | "no" | "false" => Some(false)
+        case _                       => None
+      })
+    )
 
   def withBoolValue[Msg](f: Boolean => Msg): Mod.Attr[Msg] =
-    apply(m =>
-      f(m("value") match
-        case "on" | "yes" | "true"  => true
-        case "off" | "no" | "false" => false)
-    )
+    withBoolValueOption(value => f(value.getOrElse(false)))
 
 sealed trait Mod[+Msg]
 

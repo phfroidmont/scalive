@@ -190,7 +190,7 @@ object SocketSpec extends ZIOSpecDefault:
         initialUrl <- ZIO.fromEither(URL.decode("/?q=1")).orDie
         paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, Int, (Option[String], String)](
                           PathCodec.empty,
-                          LiveParamsCodec.custom[Unit, (Option[String], String)](
+                          LiveParamsDecoder.custom[Unit, (Option[String], String)](
                             decodeFn = (_, url) => Right(url.queryParam("q") -> url.path.encode)
                           )
                         )
@@ -225,7 +225,7 @@ object SocketSpec extends ZIOSpecDefault:
                   val _    = page
                   val path = url.path.encode
                   callsRef.update(_ :+ path) *>
-                   (if path == "/start" then ctx.nav.pushPatch("/done").as(model + 1)
+                   (if path == "/start" then ctx.nav.pushPatchUnsafe("/done").as(model + 1)
                     else ZIO.succeed(model + 10))
 
                def handleMessage(model: Int, ctx: MessageContext) =
@@ -268,7 +268,7 @@ object SocketSpec extends ZIOSpecDefault:
                 ) =
                   val current = s"${url.path.encode}:${query.getOrElse("")}"
                   callsRef.update(_ :+ current) *>
-                    (if query.isEmpty then ctx.nav.pushPatch("?q=1").as(model)
+                    (if query.isEmpty then ctx.nav.pushPatchUnsafe("?q=1").as(model)
                      else ZIO.succeed(model))
 
                def handleMessage(model: Int, ctx: MessageContext) =
@@ -317,7 +317,7 @@ object SocketSpec extends ZIOSpecDefault:
         ) =
           val _ = params
           if url.queryParam("loop").contains("true") then
-            if model.shouldLoop then ctx.nav.pushPatch("?loop=true").as(model)
+            if model.shouldLoop then ctx.nav.pushPatchUnsafe("?loop=true").as(model)
             else ZIO.succeed(model.copy(shouldLoop = false))
           else ZIO.succeed(model.copy(shouldLoop = true))
 

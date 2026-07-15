@@ -1,10 +1,10 @@
 package scalive
 package upload
 
+import scala.reflect.ClassTag
+
 import zio.*
 import zio.json.ast.Json
-
-import scala.reflect.ClassTag
 
 final case class LiveUploadedEntry(
   ref: String,

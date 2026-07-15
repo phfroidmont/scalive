@@ -28,20 +28,17 @@ Ideas:
 - Move command-recording and mounted runtime test helpers to a separate `scalive-test` module.
 - Update `doc/public-api-reference.md` once the implementation lands.
 
-### Add typed outbound routes and locations
+### Implemented - Typed outbound routes and locations
 
-Current issue:
+Status:
 
-- Inbound routes use typed `PathCodec[A]`, but outbound links and navigation mostly use raw strings.
-- Route params are typed for inbound lifecycle handling, but there is no route-safe outbound renderer yet.
+- Implemented by the [Typed Outbound Navigation Design](superpowers/specs/2026-07-15-typed-outbound-navigation-design.md).
+- Named route builders construct `LiveLocation` values from the same path and query codecs used for inbound matching.
+- Safe link, lifecycle, JS, and mount-failure redirect methods require full `LiveLocation` values.
+- External, dead-route, and raw query-only destinations remain available through explicitly named unsafe methods.
+- `paramsDecodeOnly` and `mapParamsDecodeOnly` keep irreversible inbound routing explicit and prevent those builders from constructing locations.
 
-Ideas:
-
-- Introduce a typed `LiveLocation[A]` or `LiveRouteRef[A]` that can render full paths with route params and query params.
-- Let route declarations expose typed link builders.
-- Add overloads for `link.navigate`, `link.patch`, `ctx.nav.pushNavigate`, `ctx.nav.redirect`, `JS.navigate`, and `JS.patch` that accept typed locations.
-- Keep string overloads for escape hatches, but make typed APIs the documented path.
-- Separate query-only patching from full navigation in method names and accepted types.
+The implemented API deliberately does not pass query codecs to full navigate or redirect methods. Callers first construct a full route-derived location, then reuse that value with any safe navigation consumer.
 
 ### Fix the upload writer extension point
 

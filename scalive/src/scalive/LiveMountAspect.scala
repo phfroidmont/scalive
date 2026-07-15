@@ -14,13 +14,17 @@ final case class LiveMountRequest[+A](params: A, request: Request):
   * Optional reasons are kept server-side for debugging and logs.
   */
 enum LiveMountFailure:
-  case Redirect(to: URL)
+  case Redirect(to: LiveLocation)
+  case RedirectUnsafe(to: URL)
   case Unauthorized(reason: Option[String])
   case Stale(reason: Option[String])
 
 object LiveMountFailure:
-  def redirect(to: URL): LiveMountFailure =
+  def redirect(to: LiveLocation): LiveMountFailure =
     LiveMountFailure.Redirect(to)
+
+  def redirectUnsafe(to: URL): LiveMountFailure =
+    LiveMountFailure.RedirectUnsafe(to)
 
   def unauthorized: LiveMountFailure =
     LiveMountFailure.Unauthorized(None)

@@ -25,7 +25,7 @@ private[scalive] object LiveRouteParamsRuntime:
 
   def routed[A, Msg, Model, Params](
     pathCodec: PathCodec[A],
-    paramsCodec: LiveParamsCodec[A, Params]
+    paramsDecoder: LiveParamsDecoder[A, Params]
   ): LiveRouteParamsRuntime[A, Msg, Model] =
     new LiveRouteParamsRuntime[A, Msg, Model]:
       def run(
@@ -38,7 +38,7 @@ private[scalive] object LiveRouteParamsRuntime:
         ctx.hooks.runParams[Msg, Model](model, url, ctx).flatMap {
           case LiveHookResult.Halt(hookModel)     => ZIO.succeed(hookModel)
           case LiveHookResult.Continue(hookModel) =>
-            decode(pathCodec, paramsCodec, url)
+            decode(pathCodec, paramsDecoder, url)
               .flatMap(params =>
                 routed.handleParams(hookModel, params, url, ctx.paramsContext[Msg, Model])
               )
@@ -49,7 +49,7 @@ private[scalive] object LiveRouteParamsRuntime:
 
   private def decode[A, Params](
     pathCodec: PathCodec[A],
-    paramsCodec: LiveParamsCodec[A, Params],
+    paramsDecoder: LiveParamsDecoder[A, Params],
     url: URL
   ): IO[LiveParamsCodec.DecodeError, Params] =
     ZIO
@@ -61,5 +61,5 @@ private[scalive] object LiveRouteParamsRuntime:
             )
           )
       )
-      .flatMap(pathParams => paramsCodec.decode(pathParams, url))
+      .flatMap(pathParams => paramsDecoder.decode(pathParams, url))
 end LiveRouteParamsRuntime

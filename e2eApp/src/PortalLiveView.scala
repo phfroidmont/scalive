@@ -45,7 +45,14 @@ class PortalLiveView
         styleAttr := "flex: 1; padding: 2rem;",
         h1("Modal example"),
         p("Current param: ", model.param.getOrElse("")),
-        button(phx.onClick(JS.patch(s"/portal?param=${model.count + 1}")), "Patch this LiveView"),
+        button(
+          phx.onClick(
+            JS.patch(
+              E2ERoutes.portal.location(QueryParams(Some((model.count + 1).toString)))
+            )
+          ),
+          "Patch this LiveView"
+        ),
         button(phx.onClick(showModal("my-modal")), "Open modal"),
         button(phx.onClick(Msg.ToggleModal), "Toggle modal render"),
         button(
@@ -53,7 +60,7 @@ class PortalLiveView
           "Open second modal"
         ),
         button(phx.onClick(Msg.Tick), "Tick"),
-        button(phx.onClick(JS.navigate("/form")), "Live navigate"),
+        button(phx.onClick(JS.navigate(E2ERoutes.formLocation.location)), "Live navigate"),
         liveView("nested", NestedLive()),
         tooltip("tooltip-example-portal", "Hover me", portal = true, model.count),
         tooltip("tooltip-example-no-portal", "Hover me (no portal)", portal = false, model.count),
@@ -109,7 +116,12 @@ object PortalLiveView:
         Vector(
           span("This is a modal."),
           p("DOM patching works as expected: ", count.toString),
-          button(phx.onClick(JS.patch(s"/portal?param=${count + 1}")), "Patch this LiveView")
+          button(
+            phx.onClick(
+              JS.patch(E2ERoutes.portal.location(QueryParams(Some((count + 1).toString))))
+            ),
+            "Patch this LiveView"
+          )
         )
       else
         val text =

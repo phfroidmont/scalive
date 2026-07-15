@@ -88,8 +88,8 @@ object ErrorLiveView:
     child: Boolean = false)
 
   object QueryParams:
-    val codec: LiveParamsCodec[Unit, QueryParams] =
-      LiveParamsCodec.custom(
+    val decoder: LiveParamsDecoder[Unit, QueryParams] =
+      LiveParamsDecoder.custom(
         decodeFn = (_, url) =>
           Right(
             QueryParams(

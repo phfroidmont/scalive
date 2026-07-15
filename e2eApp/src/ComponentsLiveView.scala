@@ -20,6 +20,7 @@ class ComponentsLiveView() extends RoutedLiveView[Msg, Model, UrlParams]:
     case Msg.SetTab(tab) => model.copy(activeTab = tab)
 
   def render(model: Model) =
+    val focusWrap = E2ERoutes.components.location(UrlParams(Some("focus_wrap")))
     div(
       styleAttr := "padding: 1.5rem;",
       h1(
@@ -31,9 +32,9 @@ class ComponentsLiveView() extends RoutedLiveView[Msg, Model, UrlParams]:
         navTag(
           styleAttr := "margin-bottom: -1px; display: flex; gap: 2rem;",
           a(
-            href := paramsHref(UrlParams(Some("focus_wrap"))),
+            href := focusWrap.href,
             phx.onClick(
-              JS.patch(paramsHref(UrlParams(Some("focus_wrap")))).push(Msg.SetTab("focus_wrap"))
+              JS.patch(focusWrap).push(Msg.SetTab("focus_wrap"))
             ),
             styleAttr :=
               (if model.activeTab == "focus_wrap" then
@@ -138,8 +139,5 @@ object ComponentsLiveView:
     case SetTab(tab: String)
 
   final case class UrlParams(tab: Option[String]) derives Schema
-
-  def paramsHref(params: UrlParams): String =
-    params.tab.fold("/components")(tab => s"/components?tab=$tab")
 
   final case class Model(activeTab: String)

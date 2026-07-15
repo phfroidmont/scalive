@@ -23,17 +23,17 @@ class NavigationALiveView() extends RoutedLiveView[Msg, Model, AParams]:
         h1("This is page A"),
         p("Current param: ", model.paramCurrent.getOrElse("")),
         link.patch(
-          s"/navigation/a?param=${model.paramNext}",
+          E2ERoutes.navigationA.location(AParams(Some(model.paramNext))),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch this LiveView"
         ),
         link.patchReplace(
-          s"/navigation/a?param=${model.paramNext}",
+          E2ERoutes.navigationA.location(AParams(Some(model.paramNext))),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch (Replace)"
         ),
         link.navigate(
-          "/navigation/b#items-item-42",
+          E2ERoutes.navigationB.location(BParams(false)).withFragment("items-item-42"),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2",
           "Navigate to 42"
         )
@@ -83,7 +83,9 @@ class NavigationBLiveView() extends RoutedLiveView[Msg, Model, BParams]:
                   idAttr    := s"items-${item.id}",
                   styleAttr := "padding: 0.5rem; border-bottom: 1px solid #e2e8f0;",
                   link.patch(
-                    itemHref(item.id, model.withContainer),
+                    E2ERoutes.navigationBItemLocation.location(
+                      item.id -> Option.when(model.withContainer)("1")
+                    ),
                     "Item ",
                     item.name.toString
                   )
@@ -99,10 +101,6 @@ class NavigationBLiveView() extends RoutedLiveView[Msg, Model, BParams]:
         else ""
       )
     )
-
-  private def itemHref(id: String, withContainer: Boolean): String =
-    val base = s"/navigation/b/$id"
-    if withContainer then s"$base?container=1" else base
 end NavigationBLiveView
 
 class RedirectLoopLiveView() extends RoutedLiveView[Msg, Model, RedirectLoopParams]:
@@ -122,7 +120,7 @@ class RedirectLoopLiveView() extends RoutedLiveView[Msg, Model, RedirectLoopPara
     ctx: ParamsContext
   ) =
     if params.loop.contains(true) then
-      if model.shouldLoop then ctx.nav.pushPatch("?loop=true").as(model)
+      if model.shouldLoop then ctx.nav.pushPatchUnsafe("?loop=true").as(model)
       else model.copy(message = Some("Too many redirects"), shouldLoop = false)
     else model.copy(message = None, shouldLoop = true)
 
@@ -135,7 +133,7 @@ class RedirectLoopLiveView() extends RoutedLiveView[Msg, Model, RedirectLoopPara
             model.message.getOrElse("")
           )
         else "",
-        link.patch(
+        link.patchUnsafe(
           "?loop=true",
           "Redirect Loop"
         )

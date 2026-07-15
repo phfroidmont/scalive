@@ -513,15 +513,9 @@ final private[scalive] class LiveRoutesRuntime[R](
     : UIO[WebSocketMessage] =
     failure match
       case LiveMountFailure.Redirect(to) =>
-        ZIO.succeed(
-          WebSocketMessage(
-            message.joinRef,
-            message.messageRef,
-            message.topic,
-            Protocol.EventRedirect,
-            Payload.Redirect(to.encode, None)
-          )
-        )
+        ZIO.succeed(redirectMessage(message, to.href))
+      case LiveMountFailure.RedirectUnsafe(to) =>
+        ZIO.succeed(redirectMessage(message, to.encode))
       // Phoenix LiveView clients know unauthorized and stale join failures; keep details server-side.
       case LiveMountFailure.Unauthorized(reason) =>
         logConnectedMountFailure("unauthorized", message, reason).as(
@@ -531,6 +525,15 @@ final private[scalive] class LiveRoutesRuntime[R](
         logConnectedMountFailure("stale", message, reason).as(
           joinErrorReply(message, JoinErrorReason.Stale)
         )
+
+  private def redirectMessage(message: WebSocketMessage, href: String): WebSocketMessage =
+    WebSocketMessage(
+      message.joinRef,
+      message.messageRef,
+      message.topic,
+      Protocol.EventRedirect,
+      Payload.Redirect(href, None)
+    )
 
   private def logConnectedMountFailure(
     kind: String,

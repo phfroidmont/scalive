@@ -81,13 +81,22 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     )
 
   object link:
-    def navigate[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
+    def navigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
+      navigateUnsafe(to.href, mods*)
+
+    def navigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "redirect", phx.linkState := "push", mods)
 
-    def patch[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
+    def patch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
+      patchUnsafe(to.href, mods*)
+
+    def patchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "patch", phx.linkState := "push", mods)
 
-    def patchReplace[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
+    def patchReplace[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
+      patchReplaceUnsafe(to.href, mods*)
+
+    def patchReplaceUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
 
   object phx:

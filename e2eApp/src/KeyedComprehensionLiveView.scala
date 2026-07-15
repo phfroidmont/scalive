@@ -48,17 +48,17 @@ class KeyedComprehensionLiveView(assets: StaticAssets)
           role := "tablist",
           cls  := "tabs tabs-border",
           link.patch(
-            "/keyed-comprehension?tab=all_keyed",
+            E2ERoutes.keyedComprehension.location(UrlParams(Some("all_keyed"))),
             cls := tabClass(model.activeTab, "all_keyed"),
             "All keyed"
           ),
           link.patch(
-            "/keyed-comprehension?tab=rows_keyed",
+            E2ERoutes.keyedComprehension.location(UrlParams(Some("rows_keyed"))),
             cls := tabClass(model.activeTab, "rows_keyed"),
             "Rows keyed"
           ),
           link.patch(
-            "/keyed-comprehension?tab=no_keyed",
+            E2ERoutes.keyedComprehension.location(UrlParams(Some("no_keyed"))),
             cls := tabClass(model.activeTab, "no_keyed"),
             "No keyed"
           )

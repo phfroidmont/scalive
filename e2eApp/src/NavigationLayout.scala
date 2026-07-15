@@ -21,21 +21,21 @@ object NavigationLayout:
             "Navigation"
           ),
           link.navigate(
-            "/navigation/a",
+            E2ERoutes.navigationA.location(NavigationLiveViews.AParams(None)),
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "LiveView A"
           ),
           link.navigate(
-            "/navigation/b",
+            E2ERoutes.navigationB.location(NavigationLiveViews.BParams(false)),
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "LiveView B"
           ),
           link.navigate(
-            "/stream",
+            E2ERoutes.stream.location(None),
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "LiveView (other session)"
           ),
-          link.navigate(
+          link.navigateUnsafe(
             "/navigation/dead",
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "Dead View"

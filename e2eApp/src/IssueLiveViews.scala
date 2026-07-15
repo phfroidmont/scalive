@@ -337,8 +337,8 @@ object Issue3047LiveView:
   val Layout: LiveLayout[Any, Any] = LiveLayout[Any, Any]((content, _) =>
     div(
       div(
-        link.navigate("/issues/3047/a", "Page A"),
-        link.navigate("/issues/3047/b", "Page B")
+        link.navigate(E2ERoutes.issue3047A.location, "Page A"),
+        link.navigate(E2ERoutes.issue3047B.location, "Page B")
       ),
       content,
       liveView("test", Issue3047LiveView.Sticky(), sticky = true)
@@ -396,8 +396,8 @@ class Issue3529LiveView extends RoutedLiveView[Unit, Issue3529LiveView.Model, Op
   def render(model: Model) =
     div(
       h1(s"Mounted at ${model.mounted}"),
-      link.navigate(s"/issues/3529?param=${model.next}", "Navigate"),
-      link.patch(s"/issues/3529?param=${model.next}", "Patch")
+      link.navigate(E2ERoutes.issue3529.location(Some(model.next)), "Navigate"),
+      link.patch(E2ERoutes.issue3529.location(Some(model.next)), "Patch")
     )
 
 object Issue3529LiveView:
@@ -450,8 +450,8 @@ class Issue3530LiveView extends RoutedLiveView[Unit, Issue3530LiveView.Model, Op
           )
         )
       ),
-      link.patch("/issues/3530?q=a", "patch a"),
-      link.patch("/issues/3530?q=b", "patch b"),
+      link.patch(E2ERoutes.issue3530.location(Some("a")), "patch a"),
+      link.patch(E2ERoutes.issue3530.location(Some("b")), "patch b"),
       div(phxClickAttr := "inc", "+")
     )
 
@@ -820,7 +820,7 @@ class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg, Unit]:
 
   def handleMessage(model: Unit, ctx: MessageContext) =
     case Msg.Validate => model
-    case Msg.Submit   => ctx.nav.pushNavigate("/issues/3194/other").as(model)
+    case Msg.Submit   => ctx.nav.pushNavigate(E2ERoutes.issue3194Other.location).as(model)
 
   def render(model: Unit) =
     form(
@@ -864,12 +864,21 @@ class Issue3200LiveView
 
   def render(model: Model) =
     div(
-      button(typ := "button", phx.onClick(JS.patch("/issues/3200/messages")), "Messages tab"),
-      button(typ := "button", phx.onClick(JS.patch("/issues/3200/settings")), "Settings tab"),
+      button(
+        typ := "button",
+        phx.onClick(JS.patch(E2ERoutes.issue3200.location("messages"))),
+        "Messages tab"
+      ),
+      button(
+        typ := "button",
+        phx.onClick(JS.patch(E2ERoutes.issue3200.location("settings"))),
+        "Settings tab"
+      ),
       model.tab match
         case Tab.Settings => liveComponent(SettingsTab, id = "settings_tab", props = ())
         case Tab.Messages => liveComponent(MessagesTab, id = "messages_tab", props = ())
     )
+end Issue3200LiveView
 
 object Issue3200LiveView:
   enum Tab:
@@ -1037,7 +1046,7 @@ class Issue3117LiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      link.navigate("/issues/3117?nav", idAttr := "navigate", "Navigate"),
+      link.navigateUnsafe("/issues/3117?nav", idAttr := "navigate", "Navigate"),
       (1 to 2).map(i =>
         div(liveComponent(Issue3117LiveView.Row, id = s"row-$i", props = s"row-$i"))
       )
@@ -1239,7 +1248,8 @@ class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends Li
   def render(model: Unit) =
     div(
       h1(s"Page $pageName"),
-      if pageName == "A" then link.navigate("/issues/3496/b", "Go to page B") else "",
+      if pageName == "A" then link.navigate(E2ERoutes.issue3496B.location, "Go to page B")
+      else "",
       if includeStickyHook then liveView("sticky", Issue3496LiveView.StickyLive(), sticky = true)
       else Issue3496LiveView.myComponent
     )
@@ -1282,8 +1292,8 @@ object Issue3612LiveView:
       ()
 
     def handleMessage(model: Unit, ctx: MessageContext) =
-      case NavigateToA => ctx.nav.pushNavigate("/issues/3612/a").as(model)
-      case NavigateToB => ctx.nav.pushNavigate("/issues/3612/b").as(model)
+      case NavigateToA => ctx.nav.pushNavigate(E2ERoutes.issue3612A.location).as(model)
+      case NavigateToB => ctx.nav.pushNavigate(E2ERoutes.issue3612B.location).as(model)
 
     def render(model: Unit) =
       div(
@@ -1378,7 +1388,7 @@ class Issue3658LiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      link.navigate("/issues/3658?navigated=true", "Link 1"),
+      link.navigateUnsafe("/issues/3658?navigated=true", "Link 1"),
       liveView("sticky", Issue3658LiveView.Sticky(), sticky = true)
     )
 
@@ -1430,7 +1440,7 @@ object Issue3656LiveView:
 
     def render(model: Unit) =
       navTag(
-        link.navigate("/issues/3656?navigated=true", "Link 1")
+        link.navigateUnsafe("/issues/3656?navigated=true", "Link 1")
       )
 
 class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveView.Model]:
@@ -1455,7 +1465,10 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
         div(
           h3("A liveview with a stream configured twice"),
           h4("This causes the nested liveview in the layout above to be reset by the client."),
-          link.navigate("/issues/3681", "Go back to (the now borked) LV without a stream"),
+          link.navigate(
+            E2ERoutes.issue3681.location,
+            "Go back to (the now borked) LV without a stream"
+          ),
           h1("Normal Stream"),
           div(
             idAttr       := "msgs-normal",
@@ -1468,7 +1481,10 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
       else
         div(
           h3("A LiveView that does nothing but render it's layout."),
-          link.navigate("/issues/3681/away", "Go to a different LV with a (funcky) stream")
+          link.navigate(
+            E2ERoutes.issue3681Away.location,
+            "Go to a different LV with a (funcky) stream"
+          )
         )
       ,
       hr()
@@ -1559,11 +1575,14 @@ class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg
     (_: Msg.type) =>
       pageName match
         case "A" =>
-          ctx.flash.put("info", "Flash from A") *> ctx.nav.pushNavigate("/issues/3686/b").as(model)
+          ctx.flash.put("info", "Flash from A") *>
+            ctx.nav.pushNavigate(E2ERoutes.issue3686B.location).as(model)
         case "B" =>
-          ctx.flash.put("info", "Flash from B") *> ctx.nav.redirect("/issues/3686/c").as(model)
+          ctx.flash.put("info", "Flash from B") *>
+            ctx.nav.redirect(E2ERoutes.issue3686C.location).as(model)
         case _ =>
-          ctx.flash.put("info", "Flash from C") *> ctx.nav.pushNavigate("/issues/3686/a").as(model)
+          ctx.flash.put("info", "Flash from C") *>
+            ctx.nav.pushNavigate(E2ERoutes.issue3686A.location).as(model)
 
   def render(model: Unit) =
     val next = pageName match
@@ -1576,6 +1595,7 @@ class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg
       button(phx.onClick(Msg), s"To $next"),
       div(idAttr := "flash", "%{}", flash("info")(message => span(message)))
     )
+end Issue3686LiveView
 
 object Issue3686LiveView:
   case object Msg
@@ -1596,7 +1616,7 @@ class Issue3709LiveView extends RoutedLiveView[Unit, String, Option[String]]:
     div(
       ul(
         (1 to 10).map { i =>
-          li(link.patch(s"/issues/3709/$i", s"Link $i"))
+          li(link.patch(E2ERoutes.issue3709Id.location(i), s"Link $i"))
         }
       ),
       div(
@@ -2163,14 +2183,15 @@ class Issue4094LiveView extends RoutedLiveView[Unit, Unit, Option[String]]:
     ()
 
   override def handleParams(model: Unit, params: Option[String], url: URL, ctx: ParamsContext) =
-    if params.contains("bar") then ctx.nav.redirect("/navigation/a").as(model)
+    if params.contains("bar") then
+      ctx.nav.redirect(E2ERoutes.navigationA.location(NavigationLiveViews.AParams(None))).as(model)
     else model
 
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
   def render(model: Unit) =
-    link.patch("/issues/4094?foo=bar", "Patch")
+    link.patch(E2ERoutes.issue4094.location(Some("bar")), "Patch")
 
 class Issue4095LiveView extends LiveView[Issue4095LiveView.Msg, String]:
   import Issue4095LiveView.*

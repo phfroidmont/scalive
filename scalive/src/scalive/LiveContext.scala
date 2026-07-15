@@ -84,16 +84,21 @@ trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext:
   def hooks: ComponentHooks[Props, Msg, Model]
 
 trait MountNavigation:
-  def pushNavigate(to: String): LiveIO[Unit]
+  def pushNavigate(to: LiveLocation): LiveIO[Unit] = pushNavigateUnsafe(to.href)
+  def pushNavigateUnsafe(to: String): LiveIO[Unit]
 
-  def replaceNavigate(to: String): LiveIO[Unit]
+  def replaceNavigate(to: LiveLocation): LiveIO[Unit] = replaceNavigateUnsafe(to.href)
+  def replaceNavigateUnsafe(to: String): LiveIO[Unit]
 
-  def redirect(to: String): LiveIO[Unit]
+  def redirect(to: LiveLocation): LiveIO[Unit] = redirectUnsafe(to.href)
+  def redirectUnsafe(to: String): LiveIO[Unit]
 
 trait Navigation extends MountNavigation:
-  def pushPatch(to: String): LiveIO[Unit]
+  def pushPatch(to: LiveLocation): LiveIO[Unit] = pushPatchUnsafe(to.href)
+  def pushPatchUnsafe(to: String): LiveIO[Unit]
 
-  def replacePatch(to: String): LiveIO[Unit]
+  def replacePatch(to: LiveLocation): LiveIO[Unit] = replacePatchUnsafe(to.href)
+  def replacePatchUnsafe(to: String): LiveIO[Unit]
 
 trait Flash:
   def put(kind: String, message: String): LiveIO[Unit]
@@ -297,22 +302,22 @@ end LiveContext
 
 private[scalive] object LiveContext:
   private class RuntimeMountNavigation(runtime: LiveContext) extends MountNavigation:
-    def pushNavigate(to: String): LiveIO[Unit] =
+    def pushNavigateUnsafe(to: String): LiveIO[Unit] =
       runtime.navigation.request(LiveNavigationCommand.PushNavigate(to))
 
-    def replaceNavigate(to: String): LiveIO[Unit] =
+    def replaceNavigateUnsafe(to: String): LiveIO[Unit] =
       runtime.navigation.request(LiveNavigationCommand.ReplaceNavigate(to))
 
-    def redirect(to: String): LiveIO[Unit] =
+    def redirectUnsafe(to: String): LiveIO[Unit] =
       runtime.navigation.request(LiveNavigationCommand.Redirect(to))
 
   final private class RuntimeNavigation(runtime: LiveContext)
       extends RuntimeMountNavigation(runtime)
       with Navigation:
-    def pushPatch(to: String): LiveIO[Unit] =
+    def pushPatchUnsafe(to: String): LiveIO[Unit] =
       runtime.navigation.request(LiveNavigationCommand.PushPatch(to))
 
-    def replacePatch(to: String): LiveIO[Unit] =
+    def replacePatchUnsafe(to: String): LiveIO[Unit] =
       runtime.navigation.request(LiveNavigationCommand.ReplacePatch(to))
 
   final private class RuntimeFlash(runtime: LiveContext) extends Flash:

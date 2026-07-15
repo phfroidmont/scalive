@@ -536,7 +536,40 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
         redirectUrl <- ZIO.fromEither(URL.decode("/login")).orDie
         aspect = LiveMountAspect.fromRequest[Any, Unit, MountClaims, MountUser](
                    _ => ZIO.succeed(MountClaims("signed") -> MountUser("disconnected")),
-                   (_, _) => ZIO.fail(LiveMountFailure.redirect(redirectUrl))
+                   (_, _) => ZIO.fail(LiveMountFailure.redirectUnsafe(redirectUrl))
+                 )
+        route = (scalive.live @@ aspect) { (_, _, user) => liveView(callsRef, user) }
+        runtime = runtimeFor(route, tokenConfig)
+        response <- runRequest(runtime.routes, "/")
+        body     <- response.body.asString
+        session  <- extractAttr(body, "data-phx-session")
+        liveViewId <- ZIO
+                        .fromEither(LiveSessionPayload.verify(tokenConfig, session))
+                        .map(_._1)
+                        .mapError(new IllegalArgumentException(_))
+        topic = s"lv:$liveViewId"
+        channel <- LiveChannel.make(tokenConfig)
+        reply   <- runtime.handleMessage(joinMessage(topic, session, "/"), channel)
+        socket  <- channel.socket(topic)
+        calls   <- callsRef.get
+      yield assertTrue(
+        response.status == Status.Ok,
+        reply.exists(message =>
+          message.eventType == Protocol.EventRedirect &&
+            message.payload == Payload.Redirect("/login", None)
+        ),
+        socket.isEmpty,
+        calls == List("mount:disconnected")
+      )
+    },
+    test("connected mount aspect typed redirect returns websocket redirect") {
+      for
+        callsRef   <- Ref.make(List.empty[String])
+        tokenConfig = TokenConfig("typed-redirect-secret", 1.hour)
+        login       = (scalive.live / "login").location
+        aspect = LiveMountAspect.fromRequest[Any, Unit, MountClaims, MountUser](
+                   _ => ZIO.succeed(MountClaims("signed") -> MountUser("disconnected")),
+                   (_, _) => ZIO.fail(LiveMountFailure.redirect(login))
                  )
         route = (scalive.live @@ aspect) { (_, _, user) => liveView(callsRef, user) }
         runtime = runtimeFor(route, tokenConfig)

@@ -174,7 +174,7 @@ object FlashSpec extends ZIOSpecDefault:
               case RootMsg.SetError => ctx.flash.put("error", "stale").as(model)
               case RootMsg.Redirect =>
                 ctx.flash.put("info", "fresh") *>
-                  ctx.nav.redirect("/target").as(model)
+                  ctx.nav.redirectUnsafe("/target").as(model)
 
         def render(model: Unit): HtmlElement[RootMsg] =
           div(
@@ -229,7 +229,7 @@ object FlashSpec extends ZIOSpecDefault:
               case RootMsg.SetError => ctx.flash.put("error", "stale").as(model)
               case RootMsg.Patch =>
                 ctx.flash.put("info", "fresh") *>
-                  ctx.nav.pushPatch("/flash-root?patched=true").as(model)
+                  ctx.nav.pushPatchUnsafe("/flash-root?patched=true").as(model)
 
         def render(model: String): HtmlElement[RootMsg] =
           div(
@@ -280,13 +280,13 @@ object FlashSpec extends ZIOSpecDefault:
           ZIO.succeed("start")
 
         override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
-          if url.path.encode == "/redirecting" then ctx.nav.redirect("/target").as(model)
+          if url.path.encode == "/redirecting" then ctx.nav.redirectUnsafe("/target").as(model)
           else ZIO.succeed(url.encode)
 
         def handleMessage(model: String, ctx: MessageContext) =
               case RootMsg.Patch =>
                 ctx.flash.put("info", "Patched") *>
-                  ctx.nav.pushPatch("/redirecting").as(model)
+                  ctx.nav.pushPatchUnsafe("/redirecting").as(model)
 
         def render(model: String): HtmlElement[RootMsg] =
           div(
@@ -384,7 +384,7 @@ object FlashSpec extends ZIOSpecDefault:
               case Msg.SetError => ctx.flash.put("error", "stale").as(model)
               case Msg.Patch =>
                 ctx.flash.put("info", "fresh") *>
-                  ctx.nav.pushPatch("/flash-root?patched=true").as(model)
+                  ctx.nav.pushPatchUnsafe("/flash-root?patched=true").as(model)
 
         def render(props: Unit, model: Unit, self: ComponentRef[Msg]) =
           div(
@@ -458,7 +458,7 @@ object FlashSpec extends ZIOSpecDefault:
       val source = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
           ctx.flash.put("info", "Mounted") *>
-            ctx.nav.redirect("/target")
+            ctx.nav.redirectUnsafe("/target")
 
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)

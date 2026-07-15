@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Scalive exposes a compact Scala-first LiveView API centered on typed `LiveView[Msg, Model]`, typed `LiveComponent[Props, Msg, Model]`, an HTML DSL exported through `scalive.*`, and phase-specific lifecycle contexts. The strongest current API qualities are typed messages, typed models, route param decoding, and explicit capability facades. The main remaining assessment risks are narrower documentation drift, stringly typed escape points, and parity areas whose behavior is implemented but not fully mapped to upstream evidence.
+Scalive exposes a compact Scala-first LiveView API centered on typed `LiveView[Msg, Model]`, typed `LiveComponent[Props, Msg, Model]`, an HTML DSL exported through `scalive.*`, and phase-specific lifecycle contexts. The strongest current API qualities are typed messages, typed models, bidirectional route-derived locations, and explicit capability facades. The main remaining assessment risks are repeated string identifiers outside safe navigation, narrower documentation gaps, and parity areas whose behavior is implemented but not fully mapped to upstream evidence.
 
 This report is a current-state audit. It does not define implementation order or a roadmap.
 
@@ -61,7 +61,7 @@ Method:
 
 ### Navigation And Routing
 
-- Navigation is available through `link.navigate`, `link.patch`, `link.patchReplace`, `MountNavigation`, and `Navigation`. Evidence: `scalive/src/scalive/Scalive.scala:83`, `scalive/src/scalive/Scalive.scala:84`, `scalive/src/scalive/Scalive.scala:87`, `scalive/src/scalive/Scalive.scala:90`, `scalive/src/scalive/LiveContext.scala:86`, `scalive/src/scalive/LiveContext.scala:93`.
+- Safe navigation is available through route-derived `LiveLocation` values consumed by `link.navigate`, `link.patch`, `link.patchReplace`, `MountNavigation`, `Navigation`, and JS commands. Raw destinations remain available only through explicitly named unsafe methods. Evidence: `scalive/src/scalive/LiveLocation.scala:6`, `scalive/src/scalive/Scalive.scala:83`, `scalive/src/scalive/LiveContext.scala:86`, `scalive/src/scalive/JS.scala:125`.
 - Routing starts from `Live.route`/`live`, composes ZIO HTTP `PathCodec` and query codecs, and can build plain, request-aware, params-aware, and context-aware routes. Evidence: `scalive/src/scalive/routing/LiveRouteDsl.scala:13`, `scalive/src/scalive/routing/LiveRouteDsl.scala:14`, `scalive/src/scalive/routing/LiveRouteDsl.scala:26`, `scalive/src/scalive/routing/LiveRouteDsl.scala:34`, `scalive/src/scalive/routing/LiveRouteDsl.scala:82`, `scalive/src/scalive/routing/LiveRouteDsl.scala:91`, `scalive/src/scalive/routing/LiveRouteDsl.scala:103`, `scalive/src/scalive/routing/LiveRouteDsl.scala:546`, `scalive/src/scalive/routing/LiveRouteDsl.scala:558`.
 
 ### Layouts And Mount Aspects
@@ -84,13 +84,15 @@ Method:
 
 ## Ergonomics Findings
 
-### High - API Design - Outbound navigation is less typed than inbound routing
+### Addressed - API Design - Outbound navigation derives from inbound routes
 
-Evidence: `scalive/src/scalive/Scalive.scala:84`, `scalive/src/scalive/Scalive.scala:87`, `scalive/src/scalive/Scalive.scala:90`, `scalive/src/scalive/LiveContext.scala:87`, `scalive/src/scalive/LiveContext.scala:89`, `scalive/src/scalive/LiveContext.scala:91`, `scalive/src/scalive/LiveContext.scala:94`, `scalive/src/scalive/LiveContext.scala:96`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/JS.scala:128`, `doc/api-improvement-ideas.md:31`.
+Evidence: `scalive/src/scalive/LiveLocation.scala:6`, `scalive/src/scalive/routing/LiveRouteDsl.scala:23`, `scalive/src/scalive/routing/LiveRouteDsl.scala:478`, `scalive/src/scalive/Scalive.scala:83`, `scalive/src/scalive/LiveContext.scala:86`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/LiveMountAspect.scala:16`.
 
-Inbound routes and route params use typed codecs, but `link.navigate`, `link.patch`, `ctx.nav.pushNavigate`, `ctx.nav.pushPatch`, redirects, and JS navigation accept raw strings. Application authors get strong safety when decoding incoming URLs but not when rendering links or navigation effects.
+Named route builders now encode `LiveLocation` values from the same path and query codecs used for inbound matching. Safe link, lifecycle, JS, and redirect APIs require those locations; raw destinations are explicit unsafe escape hatches.
 
-Impact: route refactors can silently break outbound links, patches, and redirects.
+Remaining boundary: the API does not prove current-view patch validity or live-session membership, and typed query-only patches remain out of scope.
+
+Impact: path and query refactors now flow through named route builders to their outbound locations; external, dead-route, and query-only destinations remain deliberately unchecked.
 
 Confidence: High.
 
@@ -156,13 +158,13 @@ Impact: users can understand the project and find the right source material, but
 
 Confidence: High.
 
-### Medium - Docs - Public API reference has stale or conflicting sections
+### Addressed - Docs - Public API reference navigation drift
 
-Evidence: `doc/public-api-reference.md:599`, `doc/public-api-reference.md:1316`, `scalive/src/scalive/JS.scala:128`, `scalive/src/scalive/lifecycle/LiveHooks.scala:37`.
+Evidence: `doc/public-api-reference.md:204`, `doc/public-api-reference.md:573`, `doc/public-api-reference.md:627`, `doc/public-api-reference.md:653`, `doc/public-api-reference.md:1418`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/lifecycle/LiveHooks.scala:37`.
 
-The public API reference still documents typed `JS.patch(codec, value)` and `JS.patch(codec, value, replace = true)` overloads, while the implementation accepts string paths. It also uses the obsolete `LiveEventResult` name where the implementation exposes `LiveEventHookResult`.
+The public API reference now documents route-derived and explicitly unsafe navigation signatures, and consistently uses the compiled `LiveEventHookResult` name.
 
-Impact: users can copy API shapes that no longer match implementation.
+Impact: the known copy-paste signature drift identified by this audit is addressed.
 
 Confidence: High.
 
@@ -230,13 +232,13 @@ Confidence: High.
 
 ## Documentation And Example Findings
 
-### High - Docs - Reference breadth is strong but needs freshness checks
+### Addressed - Docs - Navigation reference refreshed against implementation
 
-Evidence: `doc/public-api-reference.md:1`, `doc/public-api-reference.md:13`, `doc/public-api-reference.md:121`, `doc/public-api-reference.md:599`, `doc/public-api-reference.md:869`, `doc/public-api-reference.md:1127`, `doc/public-api-reference.md:1316`.
+Evidence: `doc/public-api-reference.md:1`, `doc/public-api-reference.md:13`, `doc/public-api-reference.md:121`, `doc/public-api-reference.md:204`, `doc/public-api-reference.md:653`, `doc/public-api-reference.md:922`.
 
-The public API reference covers a large portion of the intended API surface, including lifecycle, contexts, HTML, routing, forms, streams, uploads, hooks, assets, and tokens. Its main weakness is not breadth but drift from current implementation.
+The public API reference covers a large portion of the intended API surface, including lifecycle, contexts, HTML, routing, forms, streams, uploads, hooks, assets, and tokens. Its navigation, route-location, and params-codec sections have now been reconciled with the compiled implementation.
 
-Impact: the project has enough raw material for good docs, but users need a trusted, current entry point.
+Impact: the reference now presents route-derived locations as the default and identifies unchecked destinations without implying they are safe route APIs.
 
 Confidence: High.
 
@@ -272,29 +274,29 @@ Impact: over-claiming parity can create user trust issues when edge cases fail.
 
 Confidence: High.
 
-### High - Documentation drift can make the API feel less polished than it is
+### Addressed - Outbound navigation documentation drift
 
-Evidence: `doc/public-api-reference.md:599`, `doc/public-api-reference.md:1316`, `scalive/src/scalive/JS.scala:128`, `scalive/src/scalive/lifecycle/LiveHooks.scala:37`.
+Evidence: `doc/public-api-reference.md:204`, `doc/public-api-reference.md:573`, `doc/public-api-reference.md:627`, `doc/public-api-reference.md:653`, `doc/public-api-reference.md:1418`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/lifecycle/LiveHooks.scala:37`.
 
-The remaining stale `JS.patch` signatures and `LiveEventResult` name prevent users from reliably distinguishing intended API from old design notes.
+The stale JS patch overloads, raw-string safe navigation signatures, and obsolete hook-result name identified by this audit have been replaced with the compiled API shapes.
 
-Impact: users waste time trying APIs that do not compile or miss APIs that already exist.
+Impact: route-derived full locations and explicit unsafe/query-only behavior are now distinguishable in the public reference.
 
 Confidence: High.
 
 ### Medium - Stringly typed concepts concentrate runtime risk in otherwise typed APIs
 
-Evidence: `scalive/src/scalive/LiveContext.scala:98`, `scalive/src/scalive/LiveContext.scala:105`, `scalive/src/scalive/LiveContext.scala:134`, `scalive/src/scalive/Scalive.scala:83`.
+Evidence: `scalive/src/scalive/LiveContext.scala:103`, `scalive/src/scalive/LiveContext.scala:110`, `scalive/src/scalive/LiveContext.scala:139`.
 
-The core model is strongly typed, but many boundary concepts remain plain strings.
+The core model and safe outbound navigation are strongly typed, but many runtime identifier concepts remain plain strings.
 
-Impact: the API can feel inconsistent: safe in lifecycle modeling, less safe in navigation and runtime identifiers.
+Impact: upload, async, subscription, flash, event, hook, and selector identifiers can still be mixed accidentally.
 
 Confidence: Medium.
 
 ## Open Questions And Confidence Notes
 
-- High confidence: core public API inventory, typed inbound versus string outbound navigation, remaining public-reference drift, and the `Issue4088LiveView` parity caveat.
+- High confidence: core public API inventory, route-derived outbound locations, the addressed navigation-reference drift, and the `Issue4088LiveView` parity caveat.
 - Medium confidence: severity of repeated string identifiers; some strings may be acceptable escape hatches, and wrappers should be justified by concrete user errors.
 - Medium confidence: exact completeness of JS command, form recovery, upload, and stream edge-case parity; the compatibility matrix identifies these areas, but this audit does not execute every upstream scenario.
 - Open question: which intentional Phoenix divergences need user-facing migration documentation first is outside this report's scope because that becomes roadmap sequencing.

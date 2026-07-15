@@ -3,9 +3,9 @@ import scalive.LiveIO.given
 
 class HomeLiveView() extends LiveView[String, Unit]:
   val links = List(
-    "/counter"     -> "Counter",
-    "/list?q=test" -> "List",
-    "/todo"        -> "Todo"
+    ExampleRoutes.counter.location                                     -> "Counter",
+    ExampleRoutes.list.location(ListLiveView.ListParams(Some("test"))) -> "List",
+    ExampleRoutes.todo.location                                        -> "Todo"
   )
 
   def mount(ctx: MountContext) =
@@ -17,9 +17,5 @@ class HomeLiveView() extends LiveView[String, Unit]:
   def render(model: Unit) =
     ul(
       cls := "mx-auto menu bg-base-100 rounded-box shadow-xl w-56",
-      links.map((path, name) =>
-        li(
-          link.navigate(path, name)
-        )
-      )
+      links.map((location, name) => li(link.navigate(location, name)))
     )

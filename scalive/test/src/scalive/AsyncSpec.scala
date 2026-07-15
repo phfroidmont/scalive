@@ -105,14 +105,14 @@ object AsyncSpec extends ZIOSpecDefault:
             model.action match
               case Action.Ok => ZIO.succeed(model.copy(result = value))
               case Action.Navigate =>
-                ctx.nav.pushNavigate("/start_async?test=ok").as(model)
+                ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
               case Action.Patch =>
-                ctx.nav.pushPatch("/start_async?test=ok").as(model)
+                ctx.nav.pushPatchUnsafe("/start_async?test=ok").as(model)
               case Action.Redirect =>
-                ctx.nav.redirect("/not_found").as(model)
+                ctx.nav.redirectUnsafe("/not_found").as(model)
               case Action.NavigateFlash =>
                 ctx.flash.put("info", value) *>
-                  ctx.nav.pushNavigate("/start_async?test=ok").as(model)
+                  ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
 
     def render(props: Action, model: Model, self: ComponentRef[Msg]) =
       div(s"lc: ${model.result}")
@@ -179,7 +179,7 @@ object AsyncSpec extends ZIOSpecDefault:
             .as("/start")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.PatchLoaded(_) => ctx.nav.pushPatch("/async-done").as(model)
+              case Msg.PatchLoaded(_) => ctx.nav.pushPatchUnsafe("/async-done").as(model)
               case _                  => ZIO.succeed(model)
 
         override def handleParams(model: String, page: String, url: URL, ctx: ParamsContext) =
@@ -215,7 +215,8 @@ object AsyncSpec extends ZIOSpecDefault:
           ctx.async.start(Tasks.Navigate)(ZIO.unit)(Msg.NavigateLoaded(_)).as("loading")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.NavigateLoaded(_) => ctx.nav.pushNavigate("/start_async?test=ok").as(model)
+              case Msg.NavigateLoaded(_) =>
+                ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
               case _                     => ZIO.succeed(model)
 
         def render(model: String): HtmlElement[Msg] =
@@ -234,7 +235,7 @@ object AsyncSpec extends ZIOSpecDefault:
           ctx.async.start(Tasks.Redirect)(ZIO.unit)(Msg.RedirectLoaded(_)).as("loading")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.RedirectLoaded(_) => ctx.nav.redirect("/not_found").as(model)
+              case Msg.RedirectLoaded(_) => ctx.nav.redirectUnsafe("/not_found").as(model)
               case _                     => ZIO.succeed(model)
 
         def render(model: String): HtmlElement[Msg] =

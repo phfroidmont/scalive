@@ -79,11 +79,11 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
       def handleMessage(model: Int, ctx: MessageContext) =
             case ChildMsg.Increment           => ZIO.succeed(model + 1)
-            case ChildMsg.PushPatch(to)       => ctx.nav.pushPatch(to).as(model + 1)
-            case ChildMsg.ReplacePatch(to)    => ctx.nav.replacePatch(to).as(model + 1)
-            case ChildMsg.PushNavigate(to)    => ctx.nav.pushNavigate(to).as(model + 1)
-            case ChildMsg.ReplaceNavigate(to) => ctx.nav.replaceNavigate(to).as(model + 1)
-            case ChildMsg.Redirect(to)        => ctx.nav.redirect(to).as(model + 1)
+            case ChildMsg.PushPatch(to)       => ctx.nav.pushPatchUnsafe(to).as(model + 1)
+            case ChildMsg.ReplacePatch(to)    => ctx.nav.replacePatchUnsafe(to).as(model + 1)
+            case ChildMsg.PushNavigate(to)    => ctx.nav.pushNavigateUnsafe(to).as(model + 1)
+            case ChildMsg.ReplaceNavigate(to) => ctx.nav.replaceNavigateUnsafe(to).as(model + 1)
+            case ChildMsg.Redirect(to)        => ctx.nav.redirectUnsafe(to).as(model + 1)
             case ChildMsg.Crash               => ZIO.fail(RuntimeException("boom"))
 
       def render(model: Int): HtmlElement[ChildMsg] =
@@ -270,7 +270,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           .query[UserQuery]
           .mapParams { case (userId, query) =>
             UserParams(userId, query.tab)
-          }(lv)
+          }(params => params.userId -> UserQuery(params.tab))(lv)
       )
 
       for
@@ -284,7 +284,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           ZIO.unit
 
         override def handleParams(model: Unit, params: Unit, _url: URL, ctx: ParamsContext) =
-          ctx.nav.pushPatch("/target").as(model)
+          ctx.nav.pushPatchUnsafe("/target").as(model)
 
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
@@ -950,7 +950,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           ZIO.succeed(0)
 
         def handleMessage(model: Int, ctx: MessageContext) =
-              case ParentMsg.Rerender => ctx.nav.pushPatch("/parent-next").as(model + 1)
+              case ParentMsg.Rerender => ctx.nav.pushPatchUnsafe("/parent-next").as(model + 1)
               case ParentMsg.HideChild => ZIO.succeed(model)
               case _                   => ZIO.succeed(model)
 

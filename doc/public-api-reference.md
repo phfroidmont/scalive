@@ -205,14 +205,24 @@ trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext:
 
 ```scala
 trait MountNavigation:
-  def pushNavigate(to: String): LiveIO[Unit]
-  def replaceNavigate(to: String): LiveIO[Unit]
-  def redirect(to: String): LiveIO[Unit]
+  def pushNavigate(to: LiveLocation): LiveIO[Unit]
+  def pushNavigateUnsafe(to: String): LiveIO[Unit]
+
+  def replaceNavigate(to: LiveLocation): LiveIO[Unit]
+  def replaceNavigateUnsafe(to: String): LiveIO[Unit]
+
+  def redirect(to: LiveLocation): LiveIO[Unit]
+  def redirectUnsafe(to: String): LiveIO[Unit]
 
 trait Navigation extends MountNavigation:
-  def pushPatch(to: String): LiveIO[Unit]
-  def replacePatch(to: String): LiveIO[Unit]
+  def pushPatch(to: LiveLocation): LiveIO[Unit]
+  def pushPatchUnsafe(to: String): LiveIO[Unit]
+
+  def replacePatch(to: LiveLocation): LiveIO[Unit]
+  def replacePatchUnsafe(to: String): LiveIO[Unit]
 ```
+
+The methods without an `Unsafe` suffix require a full location derived from a Live route declaration. Use the explicit unsafe methods for external or dead routes and raw query-only patches such as `ctx.nav.pushPatchUnsafe("?page=2")`.
 
 ### Flash
 
@@ -562,13 +572,20 @@ phx.trackStatic
 
 ## Link API
 
-The `link` object renders LiveView-aware anchors.
+The `link` object renders LiveView-aware anchors. Its default methods require full route-derived locations.
 
 ```scala
-link.navigate(path, mods*)
-link.patch(path, mods*)
-link.patchReplace(path, mods*)
+object link:
+  def navigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def patch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def patchReplace[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+
+  def navigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def patchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def patchReplaceUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
 ```
+
+Unsafe links are the explicit escape hatch for destinations that cannot be derived from a Live route. Query-only patches remain unsafe and explicit, for example `link.patchUnsafe("?page=2", "Next")`.
 
 ## JS Command API
 
@@ -596,10 +613,6 @@ JS.focus(to = "")
 JS.focusFirst(to = "")
 JS.hide(to = "", transition = "", time = 200, blocking = true)
 JS.ignoreAttributes(attrs = Seq.empty, to = "")
-JS.navigate(href, replace = false)
-JS.patch(href, replace = false)
-JS.patch(codec, value)
-JS.patch(codec, value, replace)
 JS.popFocus()
 JS.push(event, target = "", loading = "", pageLoading = false)
 JS.pushFocus(to = "")
@@ -609,6 +622,16 @@ JS.show(to = "", transition = "", time = 200, blocking = true, display = "block"
 JS.toggle(to = "", in = "", out = "", time = 200, blocking = true, display = "block")
 JS.toggleAttribute(name, value, altValue = "", to = "")
 JS.transition(transition = "", to = "", time = 200, blocking = true)
+```
+
+Navigation command signatures:
+
+```scala
+extension [Msg](ops: JSCommand[Msg])
+  def navigate(to: LiveLocation, replace: Boolean = false): JSCommand[Msg]
+  def navigateUnsafe(href: String, replace: Boolean = false): JSCommand[Msg]
+  def patch(to: LiveLocation, replace: Boolean = false): JSCommand[Msg]
+  def patchUnsafe(href: String, replace: Boolean = false): JSCommand[Msg]
 ```
 
 `transition` arguments accept either a space-separated class string or a tuple of three class strings.
@@ -626,6 +649,34 @@ uploadErrors(entry)
 ```
 
 ## Routing API
+
+### `LiveLocation`
+
+`LiveLocation` is an immutable relative URL produced by an encodable route builder. Its constructor is not public, so path and query values always come from the same codecs used for inbound route matching.
+
+```scala
+final class LiveLocation private[scalive] (...):
+  def href: String
+  def withFragment(fragment: String): LiveLocation
+  def withFragmentEither(
+    fragment: String
+  ): Either[LiveLocation.EncodeError, LiveLocation]
+
+object LiveLocation:
+  enum EncodeError:
+    case Path(details: String)
+    case Query(cause: Throwable)
+    case Fragment(details: String)
+
+    def message: String
+
+  final class EncodingException(val error: EncodeError)
+      extends IllegalArgumentException(error.message)
+```
+
+`href` exposes the encoded relative URL for diagnostics and APIs outside Scalive's navigation helpers. `withFragment` and `withFragmentEither` accept already percent-encoded URI-fragment syntax. They validate but do not encode decoded text; the caller must encode spaces, for example by passing `"profile%20details"` instead of `"profile details"`. `withFragment` is the direct fragment API; `withFragmentEither` preserves a checked `EncodeError.Fragment`.
+
+Direct `location`, `withFragment`, and no-argument `Unit` variants use `LiveLocation.EncodingException` only for path, query, fragment, or domain invariant violations reported as `EncodeError`. Use the corresponding `Either` methods for deliberately partial codecs. A `LiveLocation` does not prove that a patch targets the current view or that navigation remains in the same live session.
 
 ### `Live`
 
@@ -652,11 +703,16 @@ val live: LiveRouteSeed[Unit]
 
 ```scala
 seed / pathCodec
+seed.location(value)
+seed.locationEither(value)
+seed.location                 // when the path value is Unit
+seed.locationEither           // when the path value is Unit
 seed @@ aspect
 seed @@ layout
 seed @@ rootLayout
 seed.params
 seed.params(codec)
+seed.paramsDecodeOnly(decoder)
 seed.query[QueryParams]
 seed.query[QueryParam]("name")
 seed.queryOptional[QueryParam]("name")
@@ -675,8 +731,13 @@ seed((params, request, c1, c2) => view)
 builder @@ aspect
 builder @@ layout
 builder @@ rootLayout
+builder.location(value)
+builder.locationEither(value)
+builder.location                 // when the path value is Unit
+builder.locationEither           // when the path value is Unit
 builder.params
 builder.params(codec)
+builder.paramsDecodeOnly(decoder)
 builder.query[QueryParams]
 builder.query[QueryParam]("name")
 builder.queryOptional[QueryParam]("name")
@@ -690,7 +751,12 @@ builder((params, request, c1, c2) => view)
 `params` and `query` produce a `LiveRouteParamsBuilder` whose `apply` methods accept a `RoutedLiveView[Msg, Model, Params]`.
 
 ```scala
-paramsBuilder.mapParams(decode)
+paramsBuilder.mapParams(decode)(encode)
+paramsBuilder.mapParamsDecodeOnly(decode)
+paramsBuilder.location(params)
+paramsBuilder.locationEither(params)
+paramsBuilder.location                 // when Params is Unit
+paramsBuilder.locationEither           // when Params is Unit
 paramsBuilder @@ aspect
 paramsBuilder @@ layout
 paramsBuilder @@ rootLayout
@@ -707,18 +773,27 @@ Use `query[A]` for schema-derived query objects and named helpers for single que
 (live / "stream").queryOptional[String]("empty_item") -> StreamLiveView()
 ```
 
-For path-plus-query routes, use `query[A]` or a named query helper and `mapParams` to map the tuple-shaped input into an application type:
+For path-plus-query routes, use `query[A]` or a named query helper and bidirectional `mapParams` to map the tuple-shaped codec value into an application type. Keep the builder as a named route reference and construct full locations from it:
 
 ```scala
-final case class UserQuery(tab: Option[String]) derives Schema
-final case class UserParams(userId: Int, tab: Option[String])
+object Routes:
+  final case class UserLocation(id: Int, tab: Option[String])
 
-(live / "users" / PathCodec.int("userId"))
-  .query[UserQuery]
-  .mapParams { case (userId, query) =>
-    UserParams(userId, query.tab)
-  } -> UserLiveView()
+  val user =
+    (live / "users" / PathCodec.int("id"))
+      .queryOptional[String]("tab")
+      .mapParams { case (id, tab) => UserLocation(id, tab) }(
+        location => location.id -> location.tab
+      )
+
+val settings = Routes.user.location(UserLocation(42, Some("settings")))
+
+link.navigate(settings, "Settings")
+ctx.nav.pushNavigate(settings)
+JS.patch(settings)
 ```
+
+`locationEither` returns `Either[LiveLocation.EncodeError, LiveLocation]`. Encodable builders expose both location methods using the final parameter type after `mapParams`. `paramsDecodeOnly` and `mapParamsDecodeOnly` return builders that can still mount a `RoutedLiveView` but do not expose location construction; this is enforced by the builder's `LiveRouteParamsCapability` type.
 
 ### Live sessions
 
@@ -806,7 +881,8 @@ final case class LiveMountRequest[+A](params: A, request: zio.http.Request):
 
 ```scala
 enum LiveMountFailure:
-  case Redirect(to: zio.http.URL)
+  case Redirect(to: LiveLocation)
+  case RedirectUnsafe(to: zio.http.URL)
   case Unauthorized(reason: Option[String])
   case Stale(reason: Option[String])
 ```
@@ -814,11 +890,13 @@ enum LiveMountFailure:
 Constructors:
 
 ```scala
-LiveMountFailure.redirect(to)
-LiveMountFailure.unauthorized
-LiveMountFailure.unauthorized(reason)
-LiveMountFailure.stale
-LiveMountFailure.stale(reason)
+object LiveMountFailure:
+  def redirect(to: LiveLocation): LiveMountFailure
+  def redirectUnsafe(to: zio.http.URL): LiveMountFailure
+  def unauthorized: LiveMountFailure
+  def unauthorized(reason: String): LiveMountFailure
+  def stale: LiveMountFailure
+  def stale(reason: String): LiveMountFailure
 ```
 
 ```scala
@@ -844,9 +922,30 @@ object ContextAppend
 ## Route Params Codec API
 
 ```scala
-trait LiveParamsCodec[PathParams, Params]:
-  type Out = Params
+trait LiveParamsDecoder[PathParams, Params]:
   def decode(pathParams: PathParams, url: zio.http.URL): IO[LiveParamsCodec.DecodeError, Params]
+  def mapDecodeOnly[Params2](
+    decodeParams: Params => Params2
+  ): LiveParamsDecoder[PathParams, Params2]
+
+trait LiveParamsCodec[PathParams, Params]
+    extends LiveParamsDecoder[PathParams, Params]:
+  def encode(
+    params: Params
+  ): Either[LiveLocation.EncodeError, LiveParamsCodec.Encoded[PathParams]]
+  def imap[Params2](decodeParams: Params => Params2)(
+    encodeParams: Params2 => Params
+  ): LiveParamsCodec[PathParams, Params2]
+```
+
+Encoded path and query values:
+
+```scala
+object LiveParamsCodec:
+  final case class Encoded[PathParams](
+    pathParams: PathParams,
+    queryParams: zio.http.QueryParams
+  )
 ```
 
 Errors:
@@ -858,13 +957,16 @@ LiveParamsCodec.DecodeError(message, cause = None)
 Constructors:
 
 ```scala
+LiveParamsDecoder.custom(decodeFn)
 LiveParamsCodec.path[A]
 LiveParamsCodec.none
 LiveParamsCodec.query[A]
 LiveParamsCodec.fromZioHttp(codec)
 LiveParamsCodec.fromQuery(codec)
-LiveParamsCodec.custom(decodeFn)
+LiveParamsCodec.custom(decodeFn, encodeFn)
 ```
+
+`LiveParamsDecoder` is the explicit inbound-only contract used by `paramsDecodeOnly`. `LiveParamsCodec` adds outbound encoding. Standard path and query route builders supply a bidirectional codec automatically; custom irreversible decoding must stay decode-only rather than failing later with an unavailable encoder.
 
 ## Forms API
 
@@ -1313,7 +1415,7 @@ LiveHookResult.halt(model)
 ```
 
 ```scala
-enum LiveEventResult[+Model]:
+enum LiveEventHookResult[+Model]:
   case Continue(model: Model)
   case Halt(model: Model, reply: Option[zio.json.ast.Json] = None)
 ```
@@ -1321,9 +1423,9 @@ enum LiveEventResult[+Model]:
 Constructors:
 
 ```scala
-LiveEventResult.cont(model)
-LiveEventResult.halt(model)
-LiveEventResult.haltReply(model, value)
+LiveEventHookResult.cont(model)
+LiveEventHookResult.halt(model)
+LiveEventHookResult.haltReply(model, value)
 ```
 
 ## Static Assets API

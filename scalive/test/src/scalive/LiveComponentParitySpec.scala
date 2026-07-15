@@ -42,9 +42,12 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     def mount(props: Unit, ctx: MountContext) =
       ZIO.unit
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-          case NavMsg.PushNavigate => ctx.nav.pushNavigate("/components?redirect=push").as(model)
-          case NavMsg.PushPatch    => ctx.nav.pushPatch("/components?redirect=patch").as(model)
-          case NavMsg.Redirect     => ctx.nav.redirect("/components?redirect=redirect").as(model)
+          case NavMsg.PushNavigate =>
+            ctx.nav.pushNavigateUnsafe("/components?redirect=push").as(model)
+          case NavMsg.PushPatch =>
+            ctx.nav.pushPatchUnsafe("/components?redirect=patch").as(model)
+          case NavMsg.Redirect =>
+            ctx.nav.redirectUnsafe("/components?redirect=redirect").as(model)
     def render(props: Unit, model: Unit, self: ComponentRef[NavMsg]) =
       div(
         button(phx.onClick(NavMsg.PushNavigate), phx.target(self), "push navigate"),

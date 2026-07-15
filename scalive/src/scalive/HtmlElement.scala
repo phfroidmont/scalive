@@ -68,12 +68,13 @@ class HtmlAttrBinding(val name: String):
       f(value.flatMap {
         case "on" | "yes" | "true"  => Some(true)
         case "off" | "no" | "false" => Some(false)
-        case _                       => None
+        case _                      => None
       })
     )
 
   def withBoolValue[Msg](f: Boolean => Msg): Mod.Attr[Msg] =
     withBoolValueOption(value => f(value.getOrElse(false)))
+end HtmlAttrBinding
 
 sealed trait Mod[+Msg]
 

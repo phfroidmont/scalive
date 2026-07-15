@@ -399,7 +399,7 @@ class HealthyLiveView(initialCategory: String)
   def render(model: Model) =
     div(
       p(
-        link.patch(s"/healthy/${otherCategory(model.category)}", "Switch")
+        link.patch(E2ERoutes.healthy.location(otherCategory(model.category)), "Switch")
       ),
       h1(model.category.capitalize),
       ul(

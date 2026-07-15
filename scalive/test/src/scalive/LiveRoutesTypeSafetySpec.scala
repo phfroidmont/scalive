@@ -156,6 +156,101 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         rendered <- response
         body     <- rendered.body.asString
       yield assertTrue(rendered.status == Status.Ok, body.contains("alice:hardware"))
+    },
+    test("encodable route params expose final-domain location methods") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.http.codec.PathCodec
+
+        final case class UserLocation(id: Int, tab: Option[String])
+
+        val route =
+          (live / "users" / PathCodec.int("id"))
+            .queryOptional[String]("tab")
+            .mapParams { case (id, tab) => UserLocation(id, tab) }(
+              location => location.id -> location.tab
+            )
+
+        val location: LiveLocation = route.location(UserLocation(42, Some("settings")))
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("decode-only route params do not expose location methods") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        val route = live.paramsDecodeOnly(
+          LiveParamsDecoder.custom[Unit, String]((_, url) => Right(url.path.encode))
+        )
+
+        route.location("/")
+      """)
+
+      assertTrue(errors.nonEmpty)
+    },
+    test("decode-only route params do not expose checked location methods") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        val route = live.paramsDecodeOnly(
+          LiveParamsDecoder.custom[Unit, String]((_, url) => Right(url.path.encode))
+        )
+
+        val location: Either[LiveLocation.EncodeError, LiveLocation] =
+          route.locationEither("/")
+      """)
+
+      assertTrue(errors.exists(_.message.contains(
+        "LiveRouteParamsCapability.DecodeOnly =:= scalive.LiveRouteParamsCapability.Encodable"
+      )))
+    },
+    test("decode-only route params do not expose bidirectional mappings") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        val route = live.paramsDecodeOnly(
+          LiveParamsDecoder.custom[Unit, String]((_, url) => Right(url.path.encode))
+        )
+
+        val mapped: LiveRouteParamsBuilder[
+          Any,
+          Unit,
+          Any,
+          Any,
+          String,
+          LiveRouteParamsCapability.Encodable
+        ] = route.mapParams(identity[String])(identity[String])
+      """)
+
+      assertTrue(errors.exists(_.message.contains(
+        "LiveRouteParamsCapability.DecodeOnly =:= scalive.LiveRouteParamsCapability.Encodable"
+      )))
+    },
+    test("decode-only route params can still be mounted") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        val route = live.paramsDecodeOnly(
+          LiveParamsDecoder.custom[Unit, String]((_, url) => Right(url.path.encode))
+        )
+
+        val view = new RoutedLiveView[Unit, Unit, String]:
+          def mount(ctx: MountContext) = ZIO.unit
+          override def handleParams(
+            model: Unit,
+            params: String,
+            url: zio.http.URL,
+            ctx: ParamsContext
+          ) = ZIO.succeed(model)
+          def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
+          def render(model: Unit): HtmlElement[Unit] = div()
+
+        val mounted = route -> view
+      """)
+
+      assertTrue(errors.isEmpty)
     }
   )
 end LiveRoutesTypeSafetySpec

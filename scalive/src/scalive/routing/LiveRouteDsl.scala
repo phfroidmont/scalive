@@ -10,9 +10,29 @@ import zio.http.codec.PathCodec
 import zio.http.codec.QueryCodec
 import zio.schema.Schema
 
+sealed trait LiveRouteParamsCapability
+
+object LiveRouteParamsCapability:
+  sealed trait Encodable  extends LiveRouteParamsCapability
+  sealed trait DecodeOnly extends LiveRouteParamsCapability
+
 class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
   def /[B](that: PathCodec[B])(using combiner: Combiner[A, B]): LiveRouteSeed[combiner.Out] =
     LiveRouteSeed(pathCodec / that)
+
+  def location(value: A): LiveLocation =
+    locationEither(value).fold(error => throw new LiveLocation.EncodingException(error), identity)
+
+  def locationEither(value: A): Either[LiveLocation.EncodeError, LiveLocation] =
+    LiveLocation.encode(pathCodec, LiveParamsCodec.Encoded(value, zio.http.QueryParams.empty))
+
+  @targetName("unitLocation")
+  def location(using ev: A =:= Unit): LiveLocation =
+    location(ev.flip(()))
+
+  @targetName("unitLocationEither")
+  def locationEither(using ev: A =:= Unit): Either[LiveLocation.EncodeError, LiveLocation] =
+    locationEither(ev.flip(()))
 
   private def base[Ctx]: LiveRouteBuilder[Any, A, Ctx, Ctx] =
     LiveRouteBuilder(
@@ -23,18 +43,44 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
       hasRouteMountAspect = false
     )
 
-  def params: LiveRouteParamsBuilder[Any, A, Any, Any, A] =
+  def params: LiveRouteParamsBuilder[Any, A, Any, Any, A, LiveRouteParamsCapability.Encodable] =
     base[Any].params
 
   def params[Params](
     codec: LiveParamsCodec[A, Params]
-  ): LiveRouteParamsBuilder[Any, A, Any, Any, Params] =
+  ): LiveRouteParamsBuilder[
+    Any,
+    A,
+    Any,
+    Any,
+    Params,
+    LiveRouteParamsCapability.Encodable
+  ] =
     base[Any].params(codec)
+
+  def paramsDecodeOnly[Params](
+    decoder: LiveParamsDecoder[A, Params]
+  ): LiveRouteParamsBuilder[
+    Any,
+    A,
+    Any,
+    Any,
+    Params,
+    LiveRouteParamsCapability.DecodeOnly
+  ] =
+    base[Any].paramsDecodeOnly(decoder)
 
   def query[QueryParams](
     codec: QueryCodec[QueryParams]
   )(using combiner: Combiner[A, QueryParams]
-  ): LiveRouteParamsBuilder[Any, A, Any, Any, combiner.Out] =
+  ): LiveRouteParamsBuilder[
+    Any,
+    A,
+    Any,
+    Any,
+    combiner.Out,
+    LiveRouteParamsCapability.Encodable
+  ] =
     base[Any].query(codec)
 
   def query[QueryParam](
@@ -42,7 +88,14 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
   )(using
     schema: Schema[QueryParam],
     combiner: Combiner[A, QueryParam]
-  ): LiveRouteParamsBuilder[Any, A, Any, Any, combiner.Out] =
+  ): LiveRouteParamsBuilder[
+    Any,
+    A,
+    Any,
+    Any,
+    combiner.Out,
+    LiveRouteParamsCapability.Encodable
+  ] =
     base[Any].query[QueryParam](name)
 
   def queryOptional[QueryParam](
@@ -50,14 +103,28 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
   )(using
     schema: Schema[QueryParam],
     combiner: Combiner[A, Option[QueryParam]]
-  ): LiveRouteParamsBuilder[Any, A, Any, Any, combiner.Out] =
+  ): LiveRouteParamsBuilder[
+    Any,
+    A,
+    Any,
+    Any,
+    combiner.Out,
+    LiveRouteParamsCapability.Encodable
+  ] =
     base[Any].queryOptional[QueryParam](name)
 
   def query[QueryParams](
     using
     schema: Schema[QueryParams],
     combiner: Combiner[A, QueryParams]
-  ): LiveRouteParamsBuilder[Any, A, Any, Any, combiner.Out] =
+  ): LiveRouteParamsBuilder[
+    Any,
+    A,
+    Any,
+    Any,
+    combiner.Out,
+    LiveRouteParamsCapability.Encodable
+  ] =
     base[Any].query[QueryParams]
 
   infix def @@[R, In, Claims, Out, Result](
@@ -146,6 +213,20 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   rootLayout: Option[LiveRootLayoutLayer[A, Ctx, ?]],
   hasRouteMountAspect: Boolean):
 
+  def location(value: A): LiveLocation =
+    locationEither(value).fold(error => throw new LiveLocation.EncodingException(error), identity)
+
+  def locationEither(value: A): Either[LiveLocation.EncodeError, LiveLocation] =
+    LiveLocation.encode(pathCodec, LiveParamsCodec.Encoded(value, zio.http.QueryParams.empty))
+
+  @targetName("unitLocation")
+  def location(using ev: A =:= Unit): LiveLocation =
+    location(ev.flip(()))
+
+  @targetName("unitLocationEither")
+  def locationEither(using ev: A =:= Unit): Either[LiveLocation.EncodeError, LiveLocation] =
+    locationEither(ev.flip(()))
+
   infix def @@[R1, Claims, Out, Result](
     aspect: LiveMountAspect[R1, A, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
@@ -178,15 +259,50 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
       hasRouteMountAspect
     )
 
-  def params: LiveRouteParamsBuilder[R, A, Need, Ctx, A] =
+  def params: LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    A,
+    LiveRouteParamsCapability.Encodable
+  ] =
     params(LiveParamsCodec.path[A])
 
   def params[Params](
     codec: LiveParamsCodec[A, Params]
-  ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params] =
+  ): LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    Params,
+    LiveRouteParamsCapability.Encodable
+  ] =
     LiveRouteParamsBuilder(
       pathCodec,
       codec,
+      Some(codec.encode),
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      hasRouteMountAspect
+    )
+
+  def paramsDecodeOnly[Params](
+    decoder: LiveParamsDecoder[A, Params]
+  ): LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    Params,
+    LiveRouteParamsCapability.DecodeOnly
+  ] =
+    LiveRouteParamsBuilder(
+      pathCodec,
+      decoder,
+      None,
       mountPipeline,
       liveLayouts,
       rootLayout,
@@ -196,7 +312,14 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   def query[QueryParams](
     codec: QueryCodec[QueryParams]
   )(using combiner: Combiner[A, QueryParams]
-  ): LiveRouteParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+  ): LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    combiner.Out,
+    LiveRouteParamsCapability.Encodable
+  ] =
     params(LiveParamsCodec.fromQuery[A, QueryParams](codec))
 
   def query[QueryParam](
@@ -204,7 +327,14 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   )(using
     schema: Schema[QueryParam],
     combiner: Combiner[A, QueryParam]
-  ): LiveRouteParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+  ): LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    combiner.Out,
+    LiveRouteParamsCapability.Encodable
+  ] =
     query(zio.http.codec.HttpCodec.query[QueryParam](name))
 
   def queryOptional[QueryParam](
@@ -212,14 +342,28 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   )(using
     schema: Schema[QueryParam],
     combiner: Combiner[A, Option[QueryParam]]
-  ): LiveRouteParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+  ): LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    combiner.Out,
+    LiveRouteParamsCapability.Encodable
+  ] =
     query(zio.http.codec.HttpCodec.query[QueryParam](name).optional)
 
   def query[QueryParams](
     using
     schema: Schema[QueryParams],
     combiner: Combiner[A, QueryParams]
-  ): LiveRouteParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+  ): LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    combiner.Out,
+    LiveRouteParamsCapability.Encodable
+  ] =
     query(zio.http.codec.HttpCodec.query[QueryParams])
 
   def apply[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
@@ -270,9 +414,19 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
     apply(builder)
 end LiveRouteBuilder
 
-final class LiveRouteParamsBuilder[R, A, -Need, Ctx, Params] private[scalive] (
+final class LiveRouteParamsBuilder[
+  R,
+  A,
+  -Need,
+  Ctx,
+  Params,
+  Capability <: LiveRouteParamsCapability
+] private[scalive] (
   pathCodec: PathCodec[A],
-  paramsCodec: LiveParamsCodec[A, Params],
+  paramsDecoder: LiveParamsDecoder[A, Params],
+  paramsEncoder: Option[
+    Params => Either[LiveLocation.EncodeError, LiveParamsCodec.Encoded[A]]
+  ],
   mountPipeline: LiveMountPipeline[R, A, Need, Ctx],
   liveLayouts: List[LiveLayoutLayer[A, Ctx, ?]],
   rootLayout: Option[LiveRootLayoutLayer[A, Ctx, ?]],
@@ -280,34 +434,91 @@ final class LiveRouteParamsBuilder[R, A, -Need, Ctx, Params] private[scalive] (
 
   def mapParams[Params2](
     decodeParams: Params => Params2
-  ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params2] =
+  )(
+    encodeParams: Params2 => Params
+  )(using Capability =:= LiveRouteParamsCapability.Encodable
+  ): LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    Params2,
+    LiveRouteParamsCapability.Encodable
+  ] =
     LiveRouteParamsBuilder(
       pathCodec,
-      paramsCodec.map(decodeParams),
+      paramsDecoder.mapDecodeOnly(decodeParams),
+      paramsEncoder.map(baseEncode => params => baseEncode(encodeParams(params))),
       mountPipeline,
       liveLayouts,
       rootLayout,
       hasRouteMountAspect
     )
 
+  def mapParamsDecodeOnly[Params2](
+    decodeParams: Params => Params2
+  ): LiveRouteParamsBuilder[
+    R,
+    A,
+    Need,
+    Ctx,
+    Params2,
+    LiveRouteParamsCapability.DecodeOnly
+  ] =
+    LiveRouteParamsBuilder(
+      pathCodec,
+      paramsDecoder.mapDecodeOnly(decodeParams),
+      None,
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      hasRouteMountAspect
+    )
+
+  def location(params: Params)(using Capability =:= LiveRouteParamsCapability.Encodable)
+    : LiveLocation =
+    locationEither(params).fold(
+      error => throw new LiveLocation.EncodingException(error),
+      identity
+    )
+
+  def locationEither(
+    params: Params
+  )(using Capability =:= LiveRouteParamsCapability.Encodable
+  ): Either[LiveLocation.EncodeError, LiveLocation] =
+    paramsEncoder.get.apply(params).flatMap(LiveLocation.encode(pathCodec, _))
+
+  @targetName("unitParamsLocation")
+  def location(using Params =:= Unit, Capability =:= LiveRouteParamsCapability.Encodable)
+    : LiveLocation =
+    location(summon[Params =:= Unit].flip(()))
+
+  @targetName("unitParamsLocationEither")
+  def locationEither(using Params =:= Unit, Capability =:= LiveRouteParamsCapability.Encodable)
+    : Either[LiveLocation.EncodeError, LiveLocation] =
+    locationEither(summon[Params =:= Unit].flip(()))
+
   infix def @@[R1, Claims, Out, Result](
     aspect: LiveMountAspect[R1, A, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
-  ): LiveRouteParamsBuilder[R & R1, A, Need, Result, Params] =
+  ): LiveRouteParamsBuilder[R & R1, A, Need, Result, Params, Capability] =
     val projectPrevious = (result: Result) => append.left(result)
     LiveRouteParamsBuilder(
       pathCodec,
-      paramsCodec,
+      paramsDecoder,
+      paramsEncoder,
       mountPipeline ++ aspect.runtime,
       liveLayouts.map(_.mapContext(projectPrevious)),
       rootLayout.map(_.mapContext(projectPrevious)),
       hasRouteMountAspect = true
     )
 
-  infix def @@(layout: LiveLayout[A, Ctx]): LiveRouteParamsBuilder[R, A, Need, Ctx, Params] =
+  infix def @@(layout: LiveLayout[A, Ctx])
+    : LiveRouteParamsBuilder[R, A, Need, Ctx, Params, Capability] =
     LiveRouteParamsBuilder(
       pathCodec,
-      paramsCodec,
+      paramsDecoder,
+      paramsEncoder,
       mountPipeline,
       liveLayouts :+ LiveLayoutLayer[A, Ctx, Ctx](layout, identity),
       rootLayout,
@@ -317,10 +528,11 @@ final class LiveRouteParamsBuilder[R, A, -Need, Ctx, Params] private[scalive] (
   @targetName("rootLayoutModifier")
   infix def @@(
     layout: LiveRootLayout[A, Ctx]
-  ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params] =
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params, Capability] =
     LiveRouteParamsBuilder(
       pathCodec,
-      paramsCodec,
+      paramsDecoder,
+      paramsEncoder,
       mountPipeline,
       liveLayouts,
       Some(LiveRootLayoutLayer[A, Ctx, Ctx](layout, identity)),
@@ -343,7 +555,7 @@ final class LiveRouteParamsBuilder[R, A, -Need, Ctx, Params] private[scalive] (
     new LiveRoute(
       pathCodec,
       builder,
-      LiveRouteParamsRuntime.routed[A, Msg, Model, Params](pathCodec, paramsCodec),
+      LiveRouteParamsRuntime.routed[A, Msg, Model, Params](pathCodec, paramsDecoder),
       summon[ClassTag[Msg]],
       mountPipeline,
       liveLayouts,

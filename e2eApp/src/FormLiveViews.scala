@@ -21,8 +21,8 @@ final case class FormQueryParams(
   latencyMode: Boolean = false)
 
 object FormQueryParams:
-  val codec: LiveParamsCodec[Unit, FormQueryParams] =
-    LiveParamsCodec.custom(
+  val decoder: LiveParamsDecoder[Unit, FormQueryParams] =
+    LiveParamsDecoder.custom(
       decodeFn = (_, url) =>
         Right(
           FormQueryParams(
@@ -56,7 +56,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
       maybeAwait(model, "save").as(model.copy(submitted = true))
     case Msg.CustomRecovery(_) =>
       model.query.autoRecover match
-        case Some("patch-recovery") => ctx.nav.pushPatch("/form?patched=true").as(model)
+        case Some("patch-recovery") => ctx.nav.pushPatchUnsafe("/form?patched=true").as(model)
         case _ => model.copy(values = model.values.updated("b", "custom value from server"))
     case Msg.ButtonTest => model
 
@@ -85,7 +85,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
                 model.copy(values = model.values.updated("b", "custom value from server"))
               )
             case "patch-recovery" =>
-              ctx.nav.pushPatch("/form?patched=true").as(LiveEventHookResult.halt(model))
+              ctx.nav.pushPatchUnsafe("/form?patched=true").as(LiveEventHookResult.halt(model))
             case "button-test" => LiveEventHookResult.halt(model)
             case _             => LiveEventHookResult.cont(model)
       }
@@ -263,7 +263,7 @@ object FormLiveView:
               model.copy(values = model.values.updated("b", "custom value from server"))
             )
           case "patch-recovery" =>
-            ctx.nav.pushPatch("/form?patched=true").as(LiveEventHookResult.halt(model))
+            ctx.nav.pushPatchUnsafe("/form?patched=true").as(LiveEventHookResult.halt(model))
           case "button-test"             => LiveEventHookResult.halt(model)
           case _ if event.kind == "form" =>
             maybeAwait(model.query, "validate").map { _ =>

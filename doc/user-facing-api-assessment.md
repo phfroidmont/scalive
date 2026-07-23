@@ -45,8 +45,8 @@ Method:
 
 ### Streams
 
-- Streams expose `LiveStreamDef`, `LiveStream`, `LiveStreamEntry`, `StreamAt`, and `StreamLimit`, with public operations through the `Streams` phase facade. Evidence: `scalive/src/scalive/streams/LiveStream.scala:6`, `scalive/src/scalive/streams/LiveStream.scala:18`, `scalive/src/scalive/streams/LiveStream.scala:28`, `scalive/src/scalive/streams/LiveStream.scala:43`, `scalive/src/scalive/streams/LiveStream.scala:51`, `scalive/src/scalive/LiveContext.scala:114`.
-- Stream rendering integrates with keyed content state exposed by the HTML model. Evidence: `scalive/src/scalive/HtmlElement.scala:99`, `scalive/src/scalive/streams/LiveStream.scala:62`.
+- Streams expose `LiveStreamDef`, `LiveStream`, `StreamAt`, and `StreamLimit`, with public operations through the `Streams` phase facade. Evidence: `scalive/src/scalive/streams/LiveStream.scala:6`, `scalive/src/scalive/streams/LiveStream.scala:18`, `scalive/src/scalive/streams/LiveStream.scala:28`, `scalive/src/scalive/streams/LiveStream.scala:51`, `scalive/src/scalive/LiveContext.scala:114`.
+- Stream rendering integrates with keyed content state exposed by the HTML model. Evidence: `scalive/src/scalive/HtmlElement.scala:99`, `scalive/src/scalive/CollectionOps.scala:15-36`.
 
 ### Uploads
 
@@ -93,16 +93,6 @@ Named route builders now encode `LiveLocation` values from the same path and que
 Remaining boundary: the API does not prove current-view patch validity or live-session membership, and typed query-only patches remain out of scope.
 
 Impact: path and query refactors now flow through named route builders to their outbound locations; external, dead-route, and query-only destinations remain deliberately unchecked.
-
-Confidence: High.
-
-### Medium - API Design - Stream public state mixes durable state and pending commands
-
-Evidence: `scalive/src/scalive/streams/LiveStream.scala:51`, `doc/api-improvement-ideas.md:60`.
-
-`LiveStream.entries` is public but represents pending insert entries, not the full durable stream contents. That name invites application authors to treat stream runtime command state as business state.
-
-Impact: users can write code that appears natural but depends on implementation details and becomes confusing under deletes, resets, and limits.
 
 Confidence: High.
 

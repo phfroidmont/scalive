@@ -54,21 +54,6 @@ Ideas:
 - Keep the in-memory writer as a built-in implementation.
 - Add examples for filesystem, S3-compatible, and external upload writers.
 
-### Clarify public stream state versus stream commands
-
-Current issue:
-
-- `LiveStream.entries` currently means pending insert entries, not current stream contents.
-- The current snapshot exists internally as `snapshotEntries`.
-- The phase context design keeps stream command recording out of app-author lifecycle contexts.
-
-Ideas:
-
-- Rename pending insert entries to `pendingInserts` or make them private.
-- Keep durable business state in the app model, not in public stream runtime state.
-- Expose stream command assertions only from the future `scalive-test` module.
-- Update examples that use `model.items.entries.find(...)` as state lookup.
-
 ### Add first-class documentation
 
 Current issue:

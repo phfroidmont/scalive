@@ -1210,19 +1210,15 @@ Constructor:
 LiveStreamDef.byId(name)(id)
 ```
 
-```scala
-final case class LiveStreamEntry[+A](domId: String, value: A)
-```
+`LiveStream[A]` is an opaque rendering handle returned by the `Streams` facade. Render it with the `.stream` extension:
 
 ```scala
-final case class LiveStream[+A] private[scalive] (
-  name: String,
-  entries: Vector[LiveStreamEntry[A]],
-  ...
-):
-  def isEmpty: Boolean
-  def nonEmpty: Boolean
+items.stream { (domId, item) =>
+  li(idAttr := domId, item.toString)
+}
 ```
+
+`LiveStream` does not expose its entries or pending commands. Keep queryable, durable items in the application model rather than treating stream runtime state as business state.
 
 Stream APIs are exported from `scalive.streams.api` into `scalive.*`.
 

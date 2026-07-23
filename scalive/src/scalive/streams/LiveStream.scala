@@ -40,7 +40,7 @@ object LiveStreamDef:
   def byId[A: ClassTag, Id](name: String)(id: A => Id): LiveStreamDef[A] =
     LiveStreamDef(name, value => s"$name-${id(value)}")
 
-final case class LiveStreamEntry[+A](domId: String, value: A)
+final private[scalive] case class LiveStreamEntry[+A](domId: String, value: A)
 
 final private[scalive] case class LiveStreamInsert(
   domId: String,
@@ -48,16 +48,16 @@ final private[scalive] case class LiveStreamInsert(
   limit: Option[Int],
   updateOnly: Option[Boolean])
 
-final case class LiveStream[+A] private[scalive] (
-  name: String,
-  entries: Vector[LiveStreamEntry[A]],
-  private[scalive] snapshotEntries: Vector[LiveStreamEntry[A]],
-  private[scalive] ref: String,
-  private[scalive] inserts: Vector[LiveStreamInsert],
-  private[scalive] deleteIds: Vector[String],
-  private[scalive] reset: Boolean):
-  def isEmpty: Boolean  = snapshotEntries.isEmpty
-  def nonEmpty: Boolean = snapshotEntries.nonEmpty
+final class LiveStream[+A] private[scalive] (
+  private[scalive] val name: String,
+  private[scalive] val entries: Vector[LiveStreamEntry[A]],
+  private[scalive] val snapshotEntries: Vector[LiveStreamEntry[A]],
+  private[scalive] val ref: String,
+  private[scalive] val inserts: Vector[LiveStreamInsert],
+  private[scalive] val deleteIds: Vector[String],
+  private[scalive] val reset: Boolean):
+  private[scalive] def withName(name: String): LiveStream[A] =
+    new LiveStream(name, entries, snapshotEntries, ref, inserts, deleteIds, reset)
 
 object api:
-  export _root_.scalive.streams.{LiveStream, LiveStreamDef, LiveStreamEntry, StreamAt, StreamLimit}
+  export _root_.scalive.streams.{LiveStream, LiveStreamDef, StreamAt, StreamLimit}

@@ -839,12 +839,16 @@ class StreamNestedComponentResetLiveView
 
   def mount(ctx: MountContext) =
     for
-      a     <- buildParentItem("a", "A", ctx.streams)
-      b     <- buildParentItem("b", "B", ctx.streams)
-      c     <- buildParentItem("c", "C", ctx.streams)
-      d     <- buildParentItem("d", "D", ctx.streams)
-      items <- ctx.streams.init(ItemsStreamDef, List(a, b, c, d))
-    yield Model(items = items)
+      a <- buildParentItem("a", "A", ctx.streams)
+      b <- buildParentItem("b", "B", ctx.streams)
+      c <- buildParentItem("c", "C", ctx.streams)
+      d <- buildParentItem("d", "D", ctx.streams)
+      parents = List(a, b, c, d)
+      items <- ctx.streams.init(ItemsStreamDef, parents)
+    yield Model(
+      items = items,
+      parentsById = parents.iterator.map(parent => parent.id -> parent).toMap
+    )
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ReorderNested(id) =>
@@ -893,38 +897,40 @@ class StreamNestedComponentResetLiveView
   ): LiveIO[Model] =
     if id.isEmpty then model
     else
-      for
-        nested <- streams.init(
-                    nestedStreamDef(id),
-                    reorderedNestedItems,
-                    reset = true
-                  )
-        maybeCurrent = model.items.entries.find(_.value.id == id).map(_.value)
-        current <- maybeCurrent match
-                     case Some(value) => ZIO.succeed(value)
-                     case None        => buildParentItem(id, id.toUpperCase, streams)
-        updatedParent = current.copy(nested = nested)
-        items <- streams.insert(
-                   ItemsStreamDef,
-                   updatedParent,
-                   updateOnly = true
-                 )
-      yield model.copy(items = items)
+      model.parentsById.get(id) match
+        case None          => model
+        case Some(current) =>
+          for
+            nested <- streams.init(
+                        nestedStreamDef(id),
+                        reorderedNestedItems,
+                        reset = true
+                      )
+            updatedParent = current.copy(nested = nested)
+            items <- streams.insert(
+                       ItemsStreamDef,
+                       updatedParent,
+                       updateOnly = true
+                     )
+          yield model.copy(
+            items = items,
+            parentsById = model.parentsById.updated(id, updatedParent)
+          )
 
   private def reorderParents(model: Model, streams: Streams): LiveIO[Model] =
     for
-      parentA <- model.items.entries.find(_.value.id == "a").map(_.value) match
+      parentA <- model.parentsById.get("a") match
                    case Some(value) => ZIO.succeed(value)
                    case None        => buildParentItem("a", "A", streams)
       parentE <- buildParentItem("e", "E", streams)
       parentF <- buildParentItem("f", "F", streams)
       parentG <- buildParentItem("g", "G", streams)
-      items   <- streams.init(
-                 ItemsStreamDef,
-                 List(parentE, parentA, parentF, parentG),
-                 reset = true
-               )
-    yield model.copy(items = items)
+      parents = List(parentE, parentA, parentF, parentG)
+      items <- streams.init(ItemsStreamDef, parents, reset = true)
+    yield model.copy(
+      items = items,
+      parentsById = parents.iterator.map(parent => parent.id -> parent).toMap
+    )
 
   private def buildParentItem(
     id: String,
@@ -939,7 +945,9 @@ end StreamNestedComponentResetLiveView
 object StreamNestedComponentResetLiveView:
   final case class NestedItem(id: String, name: String)
   final case class ParentItem(id: String, name: String, nested: LiveStream[NestedItem])
-  final case class Model(items: LiveStream[ParentItem])
+  final case class Model(
+    items: LiveStream[ParentItem],
+    parentsById: Map[String, ParentItem])
 
   enum Msg:
     case ReorderNested(id: String)

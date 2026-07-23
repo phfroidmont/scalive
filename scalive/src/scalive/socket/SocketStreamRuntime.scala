@@ -6,7 +6,7 @@ import scala.util.control.NonFatal
 import zio.*
 
 import scalive.*
-import scalive.streams.StreamRuntime
+import scalive.streams.{LiveStreamEntry, StreamRuntime}
 
 final private[scalive] class SocketStreamRuntime(
   streamRef: Ref[StreamRuntimeState])
@@ -294,7 +294,7 @@ final private[scalive] class SocketStreamRuntime(
     for
       decodedEntries    <- entries
       decodedAllEntries <- snapshotEntries
-    yield LiveStream(
+    yield new LiveStream(
       name = stream.name,
       entries = decodedEntries,
       snapshotEntries = decodedAllEntries,
@@ -410,6 +410,6 @@ private[scalive] object SocketStreamRuntime:
       definition.withName(scope + definition.name)
 
     private def unscoped[A](stream: LiveStream[A], definition: LiveStreamDef[A]): LiveStream[A] =
-      stream.copy(name = definition.name)
+      stream.withName(definition.name)
   end ScopedStreamRuntime
 end SocketStreamRuntime

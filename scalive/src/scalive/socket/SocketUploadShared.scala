@@ -46,7 +46,7 @@ private[socket] object SocketUploadShared:
     config: UploadConfigState
   ): LiveUpload =
     LiveUpload(
-      name = config.name,
+      name = UploadKey(config.name),
       ref = config.ref,
       accept = config.options.accept,
       maxEntries = config.options.maxEntries,
@@ -106,7 +106,7 @@ private[socket] object SocketUploadShared:
       case Some(_) => ZIO.succeed(entry)
       case None    =>
         entry.writer
-          .init(entry.uploadName, toExternalUploadEntry(entry))
+          .init(UploadKey(entry.uploadName), toExternalUploadEntry(entry))
           .map(state => entry.copy(writerState = Some(state)))
 
   def toExternalUploadEntry(entry: UploadEntryState): LiveExternalUploadEntry =

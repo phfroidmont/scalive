@@ -11,6 +11,15 @@ import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.ReplyStatus
 
 object ClientEventsSpec extends ZIOSpecDefault:
+  private final case class ReadyPayload(ok: Boolean) derives JsonEncoder
+  private final case class TickPayload(value: Int) derives JsonEncoder
+
+  private val ReadyEvent     = ClientEvent[ReadyPayload]("ready")
+  private val TickEvent      = ClientEvent[TickPayload]("tick")
+  private val ComponentEvent = ClientEvent[ReadyPayload]("component")
+
+  private val EmitSubscription   = SubscriptionKey("emit")
+  private val EmitJsSubscription = SubscriptionKey("emit-js")
 
   enum Msg:
     case EmitEvent
@@ -43,7 +52,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
     test("includes init pushEvent in join diff") {
       val lv = new LiveView[Msg, Model]:
         def mount(ctx: MountContext) =
-          ctx.client.pushEvent("ready", Map("ok" -> true)).as(Model())
+          ctx.client.push(ReadyEvent, ReadyPayload(ok = true)).as(Model())
 
         def handleMessage(model: Model, ctx: MessageContext) =
               case Msg.EmitEvent => ZIO.succeed(model)
@@ -73,11 +82,11 @@ object ClientEventsSpec extends ZIOSpecDefault:
     test("emits diff when only pushEvent changes") {
       val lv = new LiveView[Msg, Model]:
         def mount(ctx: MountContext) =
-          ctx.subscriptions.start("emit")(ZStream.succeed(Msg.EmitEvent)).as(Model())
+          ctx.subscriptions.start(EmitSubscription)(ZStream.succeed(Msg.EmitEvent)).as(Model())
 
         def handleMessage(model: Model, ctx: MessageContext) =
               case Msg.EmitEvent =>
-                ctx.client.pushEvent("tick", Map("value" -> 1)).as(model)
+                ctx.client.push(TickEvent, TickPayload(value = 1)).as(model)
               case Msg.EmitJs => ZIO.succeed(model)
 
         def render(model: Model): HtmlElement[Msg] =
@@ -106,7 +115,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
     test("pushJs sends js:exec event with encoded command") {
       val lv = new LiveView[Msg, Model]:
         def mount(ctx: MountContext) =
-          ctx.subscriptions.start("emit-js")(ZStream.succeed(Msg.EmitJs)).as(Model())
+          ctx.subscriptions.start(EmitJsSubscription)(ZStream.succeed(Msg.EmitJs)).as(Model())
 
         def handleMessage(model: Model, ctx: MessageContext) =
               case Msg.EmitEvent => ZIO.succeed(model)
@@ -146,7 +155,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
 
         def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
           (_: Msg.type) =>
-            ctx.client.pushEvent("component", Map("ok" -> true)).as(model)
+            ctx.client.push(ComponentEvent, ReadyPayload(ok = true)).as(model)
 
         def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) =
           button(phx.onClick(Msg), phx.target(self), "emit")

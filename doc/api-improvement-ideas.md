@@ -109,17 +109,6 @@ Ideas:
 - Preserve empty bracket segments during parsing.
 - Add round-trip tests for dynamic nested forms.
 
-### Make client event encoding failure observable
-
-Current issue:
-
-- Client event pushes log JSON encoding failures and return `Unit` in the current API.
-
-Ideas:
-
-- Make `ctx.client.pushEvent` fail its `LiveIO` when payload encoding fails.
-- Add tests for encoding failures once client events move behind phase contexts.
-
 ## Ergonomics Improvements
 
 ### Reduce boilerplate for simple LiveViews
@@ -183,31 +172,6 @@ Ideas:
 - Keep `@@` for route/session modifiers if desired.
 - Add named alternatives such as `.withLayout`, `.withRootLayout`, `.withMount`, `.socketAt`, `.withTokenConfig`.
 - Use named alternatives in documentation to improve discoverability.
-
-### Add typed wrappers for repeated string concepts
-
-Current issue:
-
-- Upload names, stream names, DOM IDs, selectors, event names, flash kinds, hook IDs, async task names, and paths are all strings.
-
-Ideas:
-
-- Introduce lightweight value classes where they prevent common mixups.
-- Avoid wrapping every string by default.
-- Start with the highest-risk concepts: async keys, stream names, upload names, and route locations.
-
-### Add typed async keys
-
-Current issue:
-
-- Async start and cancel operations use string task names.
-- `assignAsync` derives field-based string keys internally.
-
-Ideas:
-
-- Add `AsyncKey[A]` or `AsyncName[A]`.
-- Keep string overloads for quick use.
-- Expose field-derived assign async keys only through typed field selectors.
 
 ### Simplify `cancelAssignAsync`
 

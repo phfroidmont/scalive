@@ -33,7 +33,7 @@ object ComponentsSpec extends ZIOSpecDefault:
     entries: List[LiveUploadEntry]
   ): LiveUpload =
     LiveUpload(
-      name = "avatar",
+      name = UploadKey("avatar"),
       ref = "phx-upload-ref",
       accept = LiveUploadAccept.Exactly(List(".jpg", ".png")),
       maxEntries = maxEntries,

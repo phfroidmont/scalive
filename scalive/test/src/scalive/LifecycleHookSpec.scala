@@ -259,6 +259,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       enum Msg:
         case Tick
 
+      val tick = SubscriptionKey("tick")
       val lv = new LiveView[Msg, Int]:
         override def hooks: LiveHooks[Msg, Int] =
           LiveHooks.empty[Msg, Int].info("halt") { (model, msg, _) =>
@@ -267,7 +268,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
           }
 
         def mount(ctx: MountContext) =
-          ctx.subscriptions.start("tick")(ZStream.succeed(Msg.Tick)).as(0)
+          ctx.subscriptions.start(tick)(ZStream.succeed(Msg.Tick)).as(0)
 
         def handleMessage(model: Int, ctx: MessageContext) =
               case Msg.Tick => ZIO.succeed(model + 1)
@@ -283,17 +284,18 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       enum Msg:
         case Loaded(value: String)
 
+      val load = AsyncKey[String]("load")
       val lv = new LiveView[Msg, String]:
         override def hooks: LiveHooks[Msg, String] =
           LiveHooks.empty[Msg, String].async("prefix") { (model, event, _) =>
             event.result match
-              case LiveAsyncResult.Succeeded(Msg.Loaded(value)) if event.name == "load" =>
+              case LiveAsyncResult.Succeeded(Msg.Loaded(value)) if event.name == load =>
                 ZIO.succeed(LiveHookResult.cont(s"$model|hook:$value"))
               case _ => ZIO.succeed(LiveHookResult.cont(model))
           }
 
         def mount(ctx: MountContext) =
-          ctx.async.start("load")(ZIO.succeed("loaded"))(Msg.Loaded(_)).as("mount")
+          ctx.async.start(load)(ZIO.succeed("loaded"))(Msg.Loaded(_)).as("mount")
 
         def handleMessage(model: String, ctx: MessageContext) =
               case Msg.Loaded(value) => ZIO.succeed(s"$model|handle:$value")

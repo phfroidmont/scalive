@@ -11,6 +11,7 @@ import scalive.WebSocketMessage.Payload
 
 object AsyncSpec extends ZIOSpecDefault:
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
+  private val Info = FlashKind("info")
 
   private def oneSegmentParamsRuntime[Msg, Model]: LiveRouteParamsRuntime[?, Msg, Model] =
     LiveRouteParamsRuntime.routed(
@@ -19,11 +20,11 @@ object AsyncSpec extends ZIOSpecDefault:
     )
 
   private object Tasks:
-    val Load     = "load"
-    val Patch    = "patch"
-    val Navigate = "navigate"
-    val Redirect = "redirect"
-    val Flash    = "flash"
+    val Load     = AsyncKey[String]("load")
+    val Patch    = AsyncKey[String]("patch")
+    val Navigate = AsyncKey[Unit]("navigate")
+    val Redirect = AsyncKey[Unit]("redirect")
+    val Flash    = AsyncKey[String]("flash")
 
   private enum Msg:
     case Start
@@ -87,7 +88,7 @@ object AsyncSpec extends ZIOSpecDefault:
       started: Boolean = false,
       result: String = "loading")
 
-    private val TaskName = "component-update-task"
+    private val TaskName = AsyncKey[String]("component-update-task")
 
     def mount(props: Action, ctx: MountContext) =
       ZIO.succeed(Model(props))
@@ -111,7 +112,7 @@ object AsyncSpec extends ZIOSpecDefault:
               case Action.Redirect =>
                 ctx.nav.redirectUnsafe("/not_found").as(model)
               case Action.NavigateFlash =>
-                ctx.flash.put("info", value) *>
+                ctx.flash.put(Info, value) *>
                   ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
 
     def render(props: Action, model: Model, self: ComponentRef[Msg]) =
@@ -252,14 +253,14 @@ object AsyncSpec extends ZIOSpecDefault:
           ctx.async.start(Tasks.Flash)(ZIO.succeed("hello"))(Msg.FlashLoaded(_)).as("loading")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.FlashLoaded(message) => ctx.flash.put("info", message).as("loaded")
+              case Msg.FlashLoaded(message) => ctx.flash.put(Info, message).as("loaded")
               case _                        => ZIO.succeed(model)
 
         def render(model: String): HtmlElement[Msg] =
           div(
             idAttr := "root",
             span(model),
-            flash("info")(message => span(idAttr := "flash", s"flash:$message"))
+            flash(Info)(message => span(idAttr := "flash", s"flash:$message"))
           )
 
       for
@@ -465,7 +466,7 @@ object AsyncSpec extends ZIOSpecDefault:
     test("live components can start scoped async tasks") {
       object AsyncComponent
           extends LiveComponent[Promise[Nothing, Unit], AsyncComponent.Msg, (Promise[Nothing, Unit], String)]:
-        private val Load = "component-load"
+        private val Load = AsyncKey[String]("component-load")
 
         enum Msg:
           case Start
@@ -560,7 +561,7 @@ object AsyncSpec extends ZIOSpecDefault:
     },
     test("confirmed component removal interrupts component async tasks") {
       object InterruptComponent extends LiveComponent[Promise[Nothing, Unit], Unit, Boolean]:
-        private val Load = "component-interrupt"
+        private val Load = AsyncKey[Unit]("component-interrupt")
 
         def mount(props: Promise[Nothing, Unit], ctx: MountContext) =
           ZIO.succeed(false)

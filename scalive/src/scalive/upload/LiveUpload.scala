@@ -77,7 +77,7 @@ final case class LiveUploadEntry(
   meta: Option[Json.Obj])
 
 final case class LiveUpload(
-  name: String,
+  name: UploadKey,
   ref: String,
   accept: LiveUploadAccept,
   maxEntries: Int,
@@ -117,7 +117,7 @@ final case class LiveUploadWriterState(value: Any):
       case _        => None
 
 trait LiveUploadWriter:
-  def init(uploadName: String, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState]
+  def init(uploadKey: UploadKey, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState]
   def meta(state: LiveUploadWriterState): Json.Obj
   def writeChunk(data: Chunk[Byte], state: LiveUploadWriterState): Task[LiveUploadWriterState]
   def close(
@@ -129,7 +129,7 @@ object LiveUploadWriter:
   final private[scalive] case class InMemoryState(bytes: Chunk[Byte])
 
   val InMemory: LiveUploadWriter = new LiveUploadWriter:
-    def init(uploadName: String, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState] =
+    def init(uploadKey: UploadKey, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState] =
       ZIO.succeed(LiveUploadWriterState(InMemoryState(Chunk.empty)))
 
     def meta(state: LiveUploadWriterState): Json.Obj =
@@ -151,7 +151,7 @@ object LiveUploadWriter:
       ZIO.succeed(state)
 
 trait LiveUploadProgress:
-  def onProgress(uploadName: String, entry: LiveUploadEntry): LiveIO[Unit]
+  def onProgress(uploadKey: UploadKey, entry: LiveUploadEntry): LiveIO[Unit]
 
 final case class LiveUploadOptions(
   accept: LiveUploadAccept,
@@ -165,6 +165,7 @@ final case class LiveUploadOptions(
   writer: LiveUploadWriter = LiveUploadWriter.InMemory)
 
 object api:
+  export _root_.scalive.upload.UploadKey.value
   export _root_.scalive.upload.{
     LiveExternalUploadEntry,
     LiveExternalUploadResult,
@@ -178,5 +179,6 @@ object api:
     LiveUploadProgress,
     LiveUploadWriter,
     LiveUploadWriterState,
-    LiveUploadWriterCloseReason
+    LiveUploadWriterCloseReason,
+    UploadKey
   }

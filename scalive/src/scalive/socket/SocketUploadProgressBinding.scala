@@ -134,14 +134,15 @@ private[scalive] object SocketUploadProgressBinding:
   ): Task[Unit] =
     for
       runtime <- state.uploadRef.get
-      _       <- runtime
-             .configByRef(uploadRef)
-             .flatMap(_.options.progress)
-             .map(callback =>
-               callback
-                 .onProgress(entry.uploadName, SocketUploadShared.toLiveUploadEntry(entry))
-             )
-             .getOrElse(ZIO.unit)
+      _       <-
+        runtime
+          .configByRef(uploadRef)
+          .flatMap(_.options.progress)
+          .map(callback =>
+            callback
+              .onProgress(UploadKey(entry.uploadName), SocketUploadShared.toLiveUploadEntry(entry))
+          )
+          .getOrElse(ZIO.unit)
     yield ()
 
   private def uploadProgressEvent(eventRef: String, payload: Payload.Progress): LiveEvent =

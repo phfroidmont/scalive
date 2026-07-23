@@ -46,7 +46,7 @@ object LiveUploadSpec extends ZIOSpecDefault:
         final case class WriterState(chunks: Int, closed: Boolean)
 
         val writer = new LiveUploadWriter:
-          def init(uploadName: String, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState] =
+          def init(uploadKey: UploadKey, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState] =
             ZIO.succeed(LiveUploadWriterState(WriterState(0, closed = false)))
 
           def meta(state: LiveUploadWriterState): Json.Obj =
@@ -75,7 +75,7 @@ object LiveUploadSpec extends ZIOSpecDefault:
         )
 
         for
-          initial <- writer.init("avatar", entry)
+          initial <- writer.init(UploadKey("avatar"), entry)
           written <- writer.writeChunk(Chunk[Byte](1, 2, 3), initial)
           closed  <- writer.close(written, LiveUploadWriterCloseReason.Done)
         yield assertTrue(

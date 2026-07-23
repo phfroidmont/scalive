@@ -136,7 +136,7 @@ private[scalive] object SocketComponentRuntime:
                        hooksRef <- Ref.make(instance.hooks)
                        componentCtx = componentContext(state.ctx, cid, hooksRef)
                        asyncEvent   = LiveAsyncEvent(
-                                      name,
+                                      AsyncKey[Any](name),
                                       message match
                                         case Some(value) => LiveAsyncResult.Succeeded(value)
                                         case None        => LiveAsyncResult.Failed(cause.get)

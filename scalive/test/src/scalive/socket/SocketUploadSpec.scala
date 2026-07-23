@@ -14,7 +14,7 @@ import scalive.WebSocketMessage.ReplyStatus
 
 object SocketUploadSpec extends ZIOSpecDefault:
 
-  private val uploadName = "avatar"
+  private val uploadName = UploadKey("avatar")
   private val meta       = WebSocketMessage.Meta(None, None, topic = "lv:test", eventType = "event")
 
   private def makeSocket(
@@ -309,5 +309,60 @@ object SocketUploadSpec extends ZIOSpecDefault:
           uploaded.exists(_.progress == 100),
           uploaded.exists(_.done)
         )
+    },
+    test("writer and progress callbacks receive the declared upload key") {
+      for
+        writerKeys   <- Queue.unbounded[UploadKey]
+        progressKeys <- Queue.unbounded[UploadKey]
+        writer = new LiveUploadWriter:
+                   def init(uploadKey: UploadKey, entry: LiveExternalUploadEntry) =
+                     writerKeys.offer(uploadKey).as(LiveUploadWriterState(()))
+                   def meta(state: LiveUploadWriterState) = Json.Obj.empty
+                   def writeChunk(data: Chunk[Byte], state: LiveUploadWriterState) =
+                     ZIO.succeed(state)
+                   def close(state: LiveUploadWriterState, reason: LiveUploadWriterCloseReason) =
+                     ZIO.succeed(state)
+        progress = new LiveUploadProgress:
+                     def onProgress(uploadKey: UploadKey, entry: LiveUploadEntry) =
+                       progressKeys.offer(uploadKey).unit
+        options = LiveUploadOptions(
+                    accept = LiveUploadAccept.Any,
+                    maxEntries = 1,
+                    writer = writer,
+                    progress = Some(progress)
+                  )
+        allowedUploadPromise <- Promise.make[Throwable, LiveUpload]
+        snapshots            <- Queue.unbounded[Option[LiveUpload]]
+        socket               <- makeSocket(options, allowedUploadPromise, snapshots)
+        upload               <- waitForAllowedUpload(allowedUploadPromise)
+        preflightReply       <- socket.allowUpload(
+                                  Payload.AllowUpload(
+                                    upload.ref,
+                                    List(preflightEntry("entry-1", name = "a.txt", size = 10L)),
+                                    None
+                                  )
+                                )
+        token                <- ZIO.fromOption(preflightReply match
+                                  case Payload.Reply(
+                                        ReplyStatus.Ok,
+                                        LiveResponse.UploadPreflightSuccess(_, _, entries, _)
+                                      ) =>
+                                    entries.get("entry-1").flatMap(_.asString)
+                                  case _ => None
+                                ).orElseFail(new RuntimeException("Missing upload token"))
+        _           <- socket.uploadJoin("lvu:entry-1", token)
+        _           <- socket.uploadChunk("lvu:entry-1", Chunk.fill(10)(1.toByte))
+        _           <- socket.progressUpload(
+                         Payload.Progress(
+                           event = None,
+                           ref = upload.ref,
+                           entry_ref = "entry-1",
+                           progress = Json.Num(100),
+                           cid = None
+                         )
+                       )
+        writerKey   <- zio.test.Live.live(writerKeys.take.timeoutFail(new RuntimeException("Missing writer key"))(5.seconds))
+        progressKey <- zio.test.Live.live(progressKeys.take.timeoutFail(new RuntimeException("Missing progress key"))(5.seconds))
+      yield assertTrue(writerKey == uploadName, progressKey == uploadName)
     }
   )

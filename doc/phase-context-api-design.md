@@ -37,7 +37,7 @@ This document records the user-facing phase-context API that replaced the public
 - Expose limited afterRender contexts: root afterRender has `connected`, `staticChanged`, `client`, and `hooks`; component afterRender has `connected`, `staticChanged`, and `hooks`.
 - Use fail-fast semantics for programmer or configuration errors, idempotent no-op semantics for cleanup and cancellation of missing targets, domain state for runtime/user failures, and phase-specific context types for unsupported operations.
 - Define phase contexts as traits so runtime implementations and `scalive-test` recording contexts can implement the same public API.
-- Define `ctx.async.start(name)(task)(toMsg)` with `toMsg: A => Msg` for successful task completion.
+- Define `ctx.async.start(key)(task)(toMsg)` with `AsyncKey[A]` and `toMsg: A => Msg` for successful task completion.
 - Represent async hook execution with `LiveAsyncEvent[Msg]`, carrying `LiveAsyncResult.Succeeded(msg)` or `LiveAsyncResult.Failed(cause)`; failed tasks do not call `toMsg` or `handleMessage`.
 - Treat representative context snippets as abbreviated unless explicitly marked as complete.
 
@@ -109,7 +109,7 @@ Typical usage:
 def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model] =
   case Save =>
     for
-      _ <- ctx.flash.put("info", "Saved")
+      _ <- ctx.flash.put(FlashKind("info"), "Saved")
       _ <- ctx.nav.pushPatch("/items")
     yield model.copy(saved = true)
 ```
@@ -137,7 +137,7 @@ Generic helpers outside a `LiveView` can use the explicit parameterized form whe
 ```scala
 def attachAudit[Msg, Model](ctx: scalive.MessageContext[Msg, Model]): LiveIO[Unit] =
   ctx.hooks.event.attach("audit") { (model, msg, event, ctx) =>
-    ctx.client.pushEvent("audit", event.kind).as(LiveEventHookResult.cont(model))
+    ctx.client.push(ClientEvent[String]("audit"), event.kind).as(LiveEventHookResult.cont(model))
   }
 ```
 
@@ -191,7 +191,7 @@ ctx.subscriptions.start(...)
 ctx.subscriptions.replace(...)
 ctx.subscriptions.cancel(...)
 
-ctx.client.pushEvent(...)
+ctx.client.push(...)
 ctx.client.exec(JS...)
 
 ctx.title.set(...)
@@ -219,11 +219,11 @@ ctx.flash.clearAll
 ctx.flash.get(kind)
 ctx.flash.snapshot
 
-ctx.uploads.allow(name, options)
-ctx.uploads.disallow(name)
-ctx.uploads.get(name)
-ctx.uploads.cancel(name, entryRef)
-ctx.uploads.consumeCompleted(name)
+ctx.uploads.allow(key, options)
+ctx.uploads.disallow(key)
+ctx.uploads.get(key)
+ctx.uploads.cancel(key, entryRef)
+ctx.uploads.consumeCompleted(key)
 ctx.uploads.consume(entryRef)
 ctx.uploads.drop(entryRef)
 
@@ -232,14 +232,14 @@ ctx.streams.insert(definition, item, ...)
 ctx.streams.delete(definition, item)
 ctx.streams.deleteByDomId(definition, domId)
 
-ctx.async.start(name)(task)(toMsg: A => Msg)
-ctx.async.cancel(name)
+ctx.async.start(key)(task)(toMsg: A => Msg)
+ctx.async.cancel(key)
 
-ctx.subscriptions.start(name)(stream)
-ctx.subscriptions.replace(name)(stream)
-ctx.subscriptions.cancel(name)
+ctx.subscriptions.start(key)(stream)
+ctx.subscriptions.replace(key)(stream)
+ctx.subscriptions.cancel(key)
 
-ctx.client.pushEvent(name, payload)
+ctx.client.push(event, payload)
 ctx.client.exec(js)
 
 ctx.title.set(value)
@@ -458,10 +458,10 @@ Example:
 override def hooks: LiveHooks[Msg, Model] =
   LiveHooks
     .onEvent("audit") { (model, msg, event, ctx) =>
-      ctx.client.pushEvent("audit", event.kind).as(LiveEventHookResult.cont(model))
+      ctx.client.push(ClientEvent[String]("audit"), event.kind).as(LiveEventHookResult.cont(model))
     }
     .afterRender("metrics") { (model, ctx) =>
-      ctx.client.pushEvent("rendered", model.id).as(model)
+      ctx.client.push(ClientEvent("rendered"), model.id).as(model)
     }
 ```
 
@@ -544,7 +544,7 @@ ctx.hooks.async.attach("load") {
 
 ctx.hooks.afterRender.attach("metrics") {
   (model: Model, ctx: AfterRenderContext) =>
-    ctx.client.pushEvent("rendered", model.id).as(model)
+    ctx.client.push(ClientEvent("rendered"), model.id).as(model)
 }
 ```
 
@@ -595,7 +595,7 @@ object LiveHookResult:
   def halt[Model](model: Model): LiveHookResult[Model]
 
 final case class LiveAsyncEvent[+Msg](
-  name: String,
+  name: AsyncKey[Any],
   result: LiveAsyncResult[Msg]
 )
 
@@ -614,7 +614,7 @@ import scalive.LiveIO.given
 def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model] =
   case EnableAudit =>
     ctx.hooks.event.attach("audit") { (model, msg, event, ctx) =>
-      ctx.client.pushEvent("audit", event.kind).as(LiveEventHookResult.cont(model))
+      ctx.client.push(ClientEvent[String]("audit"), event.kind).as(LiveEventHookResult.cont(model))
     }.as(model)
 
   case DisableAudit =>
@@ -640,7 +640,7 @@ Root `afterRender` hooks should be effectful callbacks:
 ```scala
 ctx.hooks.afterRender.attach("metrics") {
   (model: Model, ctx: AfterRenderContext) =>
-    ctx.client.pushEvent("rendered", model.id).as(model)
+    ctx.client.push(ClientEvent("rendered"), model.id).as(model)
 }
 ```
 
@@ -697,7 +697,9 @@ This keeps mount code simple while preserving an explicit escape hatch:
 ```scala
 def mount(ctx: MountContext): LiveIO[Model] =
   for
-    _ <- if ctx.connected then ctx.client.pushEvent("mounted", Map.empty) else LiveIO.succeed(())
+    _ <- if ctx.connected then
+           ctx.client.push(ClientEvent[Map[String, String]]("mounted"), Map.empty)
+         else LiveIO.succeed(())
   yield Model.empty
 ```
 
@@ -710,7 +712,9 @@ def mount(ctx: MountContext): LiveIO[Model] =
 Async starts should map successful task results into typed messages with `toMsg: A => Msg`:
 
 ```scala
-ctx.async.start("load")(loadData) { data =>
+val Load = AsyncKey[Data]("load")
+
+ctx.async.start(Load)(loadData) { data =>
   Msg.Loaded(data)
 }
 ```
@@ -746,15 +750,18 @@ Failed completions should not call `toMsg`, because no `Msg` exists. Async hooks
 Subscriptions should not be a dedicated `LiveView` lifecycle method. They should be explicit, named runtime resources managed through phase contexts:
 
 ```scala
-ctx.subscriptions.start("clock")(
+val Clock = SubscriptionKey("clock")
+val Room  = SubscriptionKey("room")
+
+ctx.subscriptions.start(Clock)(
   ZStream.tick(1.second).as(Msg.Tick)
 )
 
-ctx.subscriptions.replace("room")(
+ctx.subscriptions.replace(Room)(
   roomEvents(roomId).map(Msg.RoomEvent(_))
 )
 
-ctx.subscriptions.cancel("room")
+ctx.subscriptions.cancel(Room)
 ```
 
 Each subscription emits typed `Msg` values into the normal message pipeline:
@@ -773,11 +780,13 @@ Managed starts that require a connected LiveView process should be safe no-ops d
 
 ```scala
 def mount(ctx: MountContext): LiveIO[Model] =
+  val Clock = SubscriptionKey("clock")
+  val Load  = AsyncKey[Data]("load")
   for
-    _ <- ctx.subscriptions.start("clock")(
+    _ <- ctx.subscriptions.start(Clock)(
            ZStream.tick(1.second).as(Msg.Tick)
          )
-    _ <- ctx.async.start("load")(loadData)(Msg.Loaded(_))
+    _ <- ctx.async.start(Load)(loadData)(Msg.Loaded(_))
   yield Model.empty
 ```
 
@@ -829,16 +838,16 @@ def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model] =
 
   case Save =>
     for
-      _ <- ctx.flash.put("info", "Saved")
+      _ <- ctx.flash.put(FlashKind("info"), "Saved")
     yield model.copy(saved = true)
 ```
 
 Context operations should also return `LiveIO[A]` where they are part of lifecycle code:
 
 ```scala
-ctx.flash.put("info", "Saved"): LiveIO[Unit]
+ctx.flash.put(FlashKind("info"), "Saved"): LiveIO[Unit]
 ctx.nav.pushPatch("/items"): LiveIO[Unit]
-ctx.uploads.consumeCompleted("avatar"): LiveIO[List[LiveUploadedEntry]]
+ctx.uploads.consumeCompleted(UploadKey("avatar")): LiveIO[List[LiveUploadedEntry]]
 ```
 
 Internally, Scalive may still use `RIO`, services, or other runtime machinery. Those details should not appear in app-author callback signatures.

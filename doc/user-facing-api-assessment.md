@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Scalive exposes a compact Scala-first LiveView API centered on typed `LiveView[Msg, Model]`, typed `LiveComponent[Props, Msg, Model]`, an HTML DSL exported through `scalive.*`, and phase-specific lifecycle contexts. The strongest current API qualities are typed messages, typed models, bidirectional route-derived locations, and explicit capability facades. The main remaining assessment risks are repeated string identifiers outside safe navigation, narrower documentation gaps, and parity areas whose behavior is implemented but not fully mapped to upstream evidence.
+Scalive exposes a compact Scala-first LiveView API centered on typed `LiveView[Msg, Model]`, typed `LiveComponent[Props, Msg, Model]`, an HTML DSL exported through `scalive.*`, and phase-specific lifecycle contexts. The strongest current API qualities are typed messages, typed models, typed runtime identifiers, bidirectional route-derived locations, and explicit capability facades. The main remaining assessment risks are narrower documentation gaps and parity areas whose behavior is implemented but not fully mapped to upstream evidence.
 
 This report is a current-state audit. It does not define implementation order or a roadmap.
 
@@ -74,7 +74,7 @@ Method:
 - Async tasks are exposed through `AsyncValue`, `LiveAsyncEvent`, `LiveAsyncResult`, and the `ctx.async` facade. Evidence: `scalive/src/scalive/LiveAsync.scala:7`, `scalive/src/scalive/LiveAsync.scala:61`, `scalive/src/scalive/LiveAsync.scala:65`, `scalive/src/scalive/LiveContext.scala:134`.
 - Subscriptions are exposed through `ctx.subscriptions.start`, `replace`, and `cancel`. Evidence: `scalive/src/scalive/LiveContext.scala:138`, `scalive/src/scalive/SubscriptionRuntime.scala:6`.
 - Flash is available through the `ctx.flash` facade and the render-time `flash(kind)` helper. Evidence: `scalive/src/scalive/LiveContext.scala:98`, `scalive/src/scalive/Scalive.scala:43`.
-- Client events are exposed as `ctx.client.pushEvent` and client JS execution is exposed as `ctx.client.exec`. Evidence: `scalive/src/scalive/LiveContext.scala:143`, `scalive/src/scalive/ClientEventRuntime.scala:6`.
+- Typed client events are exposed as `ctx.client.push`, and client JS execution is exposed as `ctx.client.exec`. Evidence: `scalive/src/scalive/ClientEvent.scala:3`, `scalive/src/scalive/LiveContext.scala:148`, `scalive/src/scalive/ClientEventRuntime.scala:6`.
 
 ### Static Assets And Token/Session Configuration
 
@@ -96,15 +96,17 @@ Impact: path and query refactors now flow through named route builders to their 
 
 Confidence: High.
 
-### Medium - API Design - Repeated string identifiers make invalid states easy
+### Addressed - API Design - Durable runtime identifiers are typed
 
-Evidence: `scalive/src/scalive/LiveContext.scala:99`, `scalive/src/scalive/LiveContext.scala:106`, `scalive/src/scalive/LiveContext.scala:135`, `scalive/src/scalive/LiveContext.scala:144`, `doc/api-improvement-ideas.md:205`.
+Evidence: `scalive/src/scalive/AsyncKey.scala:3`, `scalive/src/scalive/ClientEvent.scala:3`, `scalive/src/scalive/FlashKind.scala:3`, `scalive/src/scalive/SubscriptionKey.scala:3`, `scalive/src/scalive/upload/UploadKey.scala:4`, `scalive/src/scalive/LiveContext.scala:103`.
 
-Flash kinds, upload names, stream definitions, async names, subscription names, client event names, selectors, hook IDs, and paths are largely represented as plain strings.
+Flash kinds, upload names, async names, subscription names, and client event payload contracts now use domain-specific declarations. `AsyncKey[A]` fixes the task result type, `ClientEvent[A]` fixes the Scala payload type, and streams and outbound locations already carry typed definitions.
 
-Impact: app code can accidentally mix unrelated identifiers, with failures appearing only at runtime or in the browser.
+Remaining boundary: lifecycle hook registries already provide structural namespacing, while client hook names, selectors, DOM IDs, and explicitly unsafe paths remain strings because nominal wrappers would not validate their browser syntax. JavaScript client-event handling remains unchecked.
 
-Confidence: Medium.
+Impact: app code cannot mix durable identifier families or emit incompatible Scala payloads under one declared client event. Free-form browser values remain explicit unchecked boundaries.
+
+Confidence: High.
 
 ### Medium - Discoverability - Component rendering and component targeting share the same helper name
 
@@ -274,20 +276,20 @@ Impact: route-derived full locations and explicit unsafe/query-only behavior are
 
 Confidence: High.
 
-### Medium - Stringly typed concepts concentrate runtime risk in otherwise typed APIs
+### Addressed - Durable runtime identifiers no longer concentrate stringly typed risk
 
-Evidence: `scalive/src/scalive/LiveContext.scala:103`, `scalive/src/scalive/LiveContext.scala:110`, `scalive/src/scalive/LiveContext.scala:139`.
+Evidence: `scalive/src/scalive/LiveContext.scala:103`, `scalive/src/scalive/LiveContext.scala:110`, `scalive/src/scalive/LiveContext.scala:139`, `scalive/test/src/scaliveapi/RuntimeIdentifierTypesSpec.scala:7`.
 
-The core model and safe outbound navigation are strongly typed, but many runtime identifier concepts remain plain strings.
+The core model, safe outbound navigation, durable runtime resource keys, and Scala-side client event payloads are strongly typed.
 
-Impact: upload, async, subscription, flash, event, hook, and selector identifiers can still be mixed accidentally.
+Impact: upload, async, subscription, flash, and client event identifiers cannot be mixed accidentally. Hook IDs and browser syntax remain strings only where additional nominal types would provide little or misleading safety.
 
-Confidence: Medium.
+Confidence: High.
 
 ## Open Questions And Confidence Notes
 
 - High confidence: core public API inventory, route-derived outbound locations, the addressed navigation-reference drift, and the `Issue4088LiveView` parity caveat.
-- Medium confidence: severity of repeated string identifiers; some strings may be acceptable escape hatches, and wrappers should be justified by concrete user errors.
+- High confidence: typed runtime identifier scope follows explicit criteria; remaining strings are structurally namespaced IDs, browser syntax, external data, or unsafe escape hatches.
 - Medium confidence: exact completeness of JS command, form recovery, upload, and stream edge-case parity; the compatibility matrix identifies these areas, but this audit does not execute every upstream scenario.
 - Open question: which intentional Phoenix divergences need user-facing migration documentation first is outside this report's scope because that becomes roadmap sequencing.
 - Open question: whether Scalive should expose direct typed equivalents for every partial Phoenix feature is outside this report's scope because API quality can override direct shape parity.

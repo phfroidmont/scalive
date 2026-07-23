@@ -145,7 +145,11 @@ private[scalive] object SocketOutbound:
       case MessageHookStage.Info =>
         ctx.hooks.runInfo(model, msg, ctx)
       case MessageHookStage.Async(name) =>
-        ctx.hooks.runAsync(model, LiveAsyncEvent(name, LiveAsyncResult.Succeeded(msg)), ctx)
+        ctx.hooks.runAsync(
+          model,
+          LiveAsyncEvent(AsyncKey[Any](name), LiveAsyncResult.Succeeded(msg)),
+          ctx
+        )
 
   private def handleAsyncCompletion[Msg, Model](
     completion: LiveAsyncCompletion,
@@ -203,7 +207,7 @@ private[scalive] object SocketOutbound:
         SocketModelRuntime.captureNavigation(state)(
           state.ctx.hooks.runAsync(
             currentModel,
-            LiveAsyncEvent(name, LiveAsyncResult.Failed(cause)),
+            LiveAsyncEvent(AsyncKey[Any](name), LiveAsyncResult.Failed(cause)),
             state.ctx
           )
         )

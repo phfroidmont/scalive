@@ -101,18 +101,18 @@ trait Navigation extends MountNavigation:
   def replacePatchUnsafe(to: String): LiveIO[Unit]
 
 trait Flash:
-  def put(kind: String, message: String): LiveIO[Unit]
-  def clear(kind: String): LiveIO[Unit]
+  def put(kind: FlashKind, message: String): LiveIO[Unit]
+  def clear(kind: FlashKind): LiveIO[Unit]
   def clearAll: LiveIO[Unit]
-  def get(kind: String): LiveIO[Option[String]]
-  def snapshot: LiveIO[Map[String, String]]
+  def get(kind: FlashKind): LiveIO[Option[String]]
+  def snapshot: LiveIO[Map[FlashKind, String]]
 
 trait Uploads:
-  def allow(name: String, options: LiveUploadOptions): LiveIO[LiveUpload]
-  def disallow(name: String): LiveIO[Unit]
-  def get(name: String): LiveIO[Option[LiveUpload]]
-  def cancel(name: String, entryRef: String): LiveIO[Unit]
-  def consumeCompleted(name: String): LiveIO[List[LiveUploadedEntry]]
+  def allow(key: UploadKey, options: LiveUploadOptions): LiveIO[LiveUpload]
+  def disallow(key: UploadKey): LiveIO[Unit]
+  def get(key: UploadKey): LiveIO[Option[LiveUpload]]
+  def cancel(key: UploadKey, entryRef: String): LiveIO[Unit]
+  def consumeCompleted(key: UploadKey): LiveIO[List[LiveUploadedEntry]]
   def consume(entryRef: String): LiveIO[Option[LiveUploadedEntry]]
   def drop(entryRef: String): LiveIO[Unit]
 
@@ -137,16 +137,16 @@ trait Streams:
   def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]]
 
 trait Async[Msg]:
-  def start[A](name: String)(task: Task[A])(toMsg: A => Msg): LiveIO[Unit]
-  def cancel(name: String): LiveIO[Unit]
+  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: A => Msg): LiveIO[Unit]
+  def cancel[A](key: AsyncKey[A]): LiveIO[Unit]
 
 trait Subscriptions[Msg]:
-  def start(name: String)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def replace(name: String)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def cancel(name: String): LiveIO[Unit]
+  def start(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def replace(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def cancel(key: SubscriptionKey): LiveIO[Unit]
 
 trait Client:
-  def pushEvent[A: JsonEncoder](name: String, payload: A): LiveIO[Unit]
+  def push[A: JsonEncoder](event: ClientEvent[A], payload: A): LiveIO[Unit]
   def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
 
 trait Title:
@@ -321,21 +321,23 @@ private[scalive] object LiveContext:
       runtime.navigation.request(LiveNavigationCommand.ReplacePatch(to))
 
   final private class RuntimeFlash(runtime: LiveContext) extends Flash:
-    def put(kind: String, message: String): LiveIO[Unit] = runtime.flash.put(kind, message)
-    def clear(kind: String): LiveIO[Unit]                = runtime.flash.clear(kind)
-    def clearAll: LiveIO[Unit]                           = runtime.flash.clearAll
-    def get(kind: String): LiveIO[Option[String]]        = runtime.flash.get(kind)
-    def snapshot: LiveIO[Map[String, String]]            = runtime.flash.snapshot
+    def put(kind: FlashKind, message: String): LiveIO[Unit] =
+      runtime.flash.put(kind.value, message)
+    def clear(kind: FlashKind): LiveIO[Unit]         = runtime.flash.clear(kind.value)
+    def clearAll: LiveIO[Unit]                       = runtime.flash.clearAll
+    def get(kind: FlashKind): LiveIO[Option[String]] = runtime.flash.get(kind.value)
+    def snapshot: LiveIO[Map[FlashKind, String]]     =
+      runtime.flash.snapshot.map(_.map { case (kind, message) => FlashKind(kind) -> message })
 
   final private class RuntimeUploads(runtime: LiveContext) extends Uploads:
-    def allow(name: String, options: LiveUploadOptions): LiveIO[LiveUpload] =
-      runtime.uploads.allow(name, options)
-    def disallow(name: String): LiveIO[Unit]                 = runtime.uploads.disallow(name)
-    def get(name: String): LiveIO[Option[LiveUpload]]        = runtime.uploads.get(name)
-    def cancel(name: String, entryRef: String): LiveIO[Unit] =
-      runtime.uploads.cancel(name, entryRef)
-    def consumeCompleted(name: String): LiveIO[List[LiveUploadedEntry]] =
-      runtime.uploads.consumeCompleted(name)
+    def allow(key: UploadKey, options: LiveUploadOptions): LiveIO[LiveUpload] =
+      runtime.uploads.allow(key.value, options)
+    def disallow(key: UploadKey): LiveIO[Unit]                 = runtime.uploads.disallow(key.value)
+    def get(key: UploadKey): LiveIO[Option[LiveUpload]]        = runtime.uploads.get(key.value)
+    def cancel(key: UploadKey, entryRef: String): LiveIO[Unit] =
+      runtime.uploads.cancel(key.value, entryRef)
+    def consumeCompleted(key: UploadKey): LiveIO[List[LiveUploadedEntry]] =
+      runtime.uploads.consumeCompleted(key.value)
     def consume(entryRef: String): LiveIO[Option[LiveUploadedEntry]] =
       runtime.uploads.consume(entryRef)
     def drop(entryRef: String): LiveIO[Unit] = runtime.uploads.drop(entryRef)
@@ -366,34 +368,41 @@ private[scalive] object LiveContext:
       runtime.streams.deleteByDomId(definition, domId)
 
   final private class RuntimeAsync[Msg](runtime: LiveContext) extends Async[Msg]:
-    def start[A](name: String)(task: Task[A])(toMsg: A => Msg): LiveIO[Unit] =
-      runtime.async.start(name)(task)(toMsg)
+    def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: A => Msg): LiveIO[Unit] =
+      runtime.async.start(key.value)(task)(toMsg)
 
-    def cancel(name: String): LiveIO[Unit] =
-      runtime.async.cancel(name)
+    def cancel[A](key: AsyncKey[A]): LiveIO[Unit] =
+      runtime.async.cancel(key.value)
 
   final private class RuntimeSubscriptions[Msg](runtime: LiveContext) extends Subscriptions[Msg]:
-    def start(name: String)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit] =
-      runtime.subscriptions.asInstanceOf[SubscriptionRuntime[Msg]].start(name)(stream)
+    private def subscriptions = runtime.subscriptions.asInstanceOf[SubscriptionRuntime[Msg]]
 
-    def replace(name: String)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit] =
-      runtime.subscriptions.asInstanceOf[SubscriptionRuntime[Msg]].replace(name)(stream)
+    def start(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit] =
+      subscriptions.start(key.value)(stream)
 
-    def cancel(name: String): LiveIO[Unit] =
-      runtime.subscriptions.asInstanceOf[SubscriptionRuntime[Msg]].cancel(name)
+    def replace(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit] =
+      subscriptions.replace(key.value)(stream)
+
+    def cancel(key: SubscriptionKey): LiveIO[Unit] =
+      subscriptions.cancel(key.value)
+
+  final private case class PushJsPayload(cmd: String) derives JsonEncoder
+  private val PushJsEvent = ClientEvent[PushJsPayload]("js:exec")
 
   final private class RuntimeClient(runtime: LiveContext) extends Client:
-    def pushEvent[A: JsonEncoder](name: String, payload: A): LiveIO[Unit] =
+    def push[A: JsonEncoder](event: ClientEvent[A], payload: A): LiveIO[Unit] =
       payload.toJsonAST match
-        case Right(encoded) => runtime.clientEvents.push(name, encoded)
+        case Right(encoded) => runtime.clientEvents.push(event.value, encoded)
         case Left(error)    =>
-          ZIO.fail(new IllegalArgumentException(s"Could not encode client event '$name': $error"))
+          ZIO.fail(
+            new IllegalArgumentException(
+              s"Could not encode client event '${event.value}': $error"
+            )
+          )
 
     def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit] =
       import JSCommands.JSCommand.given
-      pushEvent("js:exec", PushJsPayload(js.toJson))
-
-  final private case class PushJsPayload(cmd: String) derives JsonEncoder
+      push(PushJsEvent, PushJsPayload(js.toJson))
 
   final private class RuntimeTitle(runtime: LiveContext) extends Title:
     def set(value: String): LiveIO[Unit] = runtime.title.set(value)

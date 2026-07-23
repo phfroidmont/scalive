@@ -125,7 +125,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
 
     ZIO
       .foreachDiscard(newRefs)(_ =>
-        ctx.client.pushEvent("upload_send_next_file", Map.empty[String, String])
+        ctx.client.push(UploadSendNextFileEvent, Map.empty[String, String])
       )
       .as(
         model.copy(
@@ -196,7 +196,9 @@ object Issue2965LiveView:
     case CancelUpload(ref: String)
     case Save
 
-  private val UploadName    = "files"
+  private val UploadName              = UploadKey("files")
+  private val UploadSendNextFileEvent =
+    ClientEvent[Map[String, String]]("upload_send_next_file")
   private val UploadOptions = LiveUploadOptions(
     accept = LiveUploadAccept.Any,
     maxEntries = 1500,
@@ -209,7 +211,7 @@ object Issue2965LiveView:
   private def disconnectedUpload =
     LiveUpload(
       name = UploadName,
-      ref = s"$UploadName-upload",
+      ref = s"${UploadName.value}-upload",
       accept = UploadOptions.accept,
       maxEntries = UploadOptions.maxEntries,
       maxFileSize = UploadOptions.maxFileSize,
@@ -238,8 +240,8 @@ object Issue2965LiveView:
       case _                           => "unknown error"
 
   private object NoOpWriter extends LiveUploadWriter:
-    def init(uploadName: String, entry: LiveExternalUploadEntry) =
-      LiveUploadWriter.InMemory.init(uploadName, entry)
+    def init(uploadKey: UploadKey, entry: LiveExternalUploadEntry) =
+      LiveUploadWriter.InMemory.init(uploadKey, entry)
 
     def meta(state: LiveUploadWriterState) =
       LiveUploadWriter.InMemory.meta(state)
@@ -585,7 +587,7 @@ object Issue3647LiveView:
     userName: String = "",
     uploadedFiles: List[String] = Nil)
 
-  private val UploadName = "avatar"
+  private val UploadName = UploadKey("avatar")
 
   private val UploadOptions = LiveUploadOptions(
     accept = LiveUploadAccept.Exactly(List(".txt", ".md")),
@@ -596,7 +598,7 @@ object Issue3647LiveView:
   private def disconnectedUpload =
     LiveUpload(
       name = UploadName,
-      ref = s"$UploadName-upload",
+      ref = s"${UploadName.value}-upload",
       accept = UploadOptions.accept,
       maxEntries = UploadOptions.maxEntries,
       maxFileSize = UploadOptions.maxFileSize,
@@ -1000,6 +1002,7 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
 end Issue3026LiveView
 
 object Issue3026LiveView:
+  private val Load = AsyncKey[LoadResult]("load")
   enum Status(val value: String):
     case Connecting extends Status("connecting")
     case Loading    extends Status("loading")
@@ -1015,7 +1018,7 @@ object Issue3026LiveView:
     case Loaded(result: LoadResult)
 
   private def startLoad(async: Async[Msg]) =
-    async.start("load")(ZIO.sleep(200.millis).as(LoadResult("John", "")))(Msg.Loaded(_))
+    async.start(Load)(ZIO.sleep(200.millis).as(LoadResult("John", "")))(Msg.Loaded(_))
 
   object Issue3026FormComponent extends LiveComponent[FormProps, Unit, Unit]:
     def mount(props: FormProps, ctx: MountContext) =
@@ -1054,6 +1057,7 @@ class Issue3117LiveView extends LiveView[Unit, Unit]:
 
 object Issue3117LiveView:
   object Row extends LiveComponent[String, Row.Msg, Row.Model]:
+    private val Load = AsyncKey[String]("foo")
     enum Msg:
       case Loaded(value: String)
 
@@ -1064,7 +1068,7 @@ object Issue3117LiveView:
 
     override def update(props: String, model: Model, ctx: UpdateContext) =
       if model.started then model
-      else ctx.async.start("foo")(ZIO.succeed("bar"))(Msg.Loaded(_)).as(model.copy(started = true))
+      else ctx.async.start(Load)(ZIO.succeed("bar"))(Msg.Loaded(_)).as(model.copy(started = true))
 
     def handleMessage(props: String, model: Model, ctx: MessageContext) =
       case Msg.Loaded(value) => model.copy(result = Some(value))
@@ -1118,6 +1122,7 @@ object Issue3169LiveView:
   final case class Record(id: Int, name: String)
 
   object FormComponent extends LiveComponent[Option[String], FormComponent.Msg, Option[Record]]:
+    private val Load = AsyncKey[Record]("load")
     enum Msg:
       case Loaded(record: Record)
 
@@ -1128,7 +1133,7 @@ object Issue3169LiveView:
       props match
         case Some(name) =>
           ctx.async
-            .start("load")(
+            .start(Load)(
               ZIO.sleep(50.millis).as(Record(scala.util.Random.nextInt(1000000), s"Record $name"))
             )(Msg.Loaded(_))
             .as(None)
@@ -1321,8 +1326,8 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
   def mount(ctx: MountContext) =
     val init = Model()
     if ctx.connected then
-      ctx.async.start("change-id")(ZIO.unit)(_ => Msg.ChangeId) *>
-        ctx.client.pushEvent("myevent", Map.empty[String, String]).as(init)
+      ctx.async.start(ChangeId)(ZIO.unit)(_ => Msg.ChangeId) *>
+        ctx.client.push(MyEvent, Map.empty[String, String]).as(init)
     else init
 
   override def hooks: LiveHooks[Msg, Model] =
@@ -1333,7 +1338,7 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
         case "reload" =>
           val next = model.copy(counter = model.counter + 1)
           ctx.client
-            .pushEvent("myevent", Map.empty[String, String]).as(LiveEventHookResult.halt(next))
+            .push(MyEvent, Map.empty[String, String]).as(LiveEventHookResult.halt(next))
         case _ =>
           LiveEventHookResult.cont(model)
     }
@@ -1374,6 +1379,8 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
 end Issue3651LiveView
 
 object Issue3651LiveView:
+  private val ChangeId = AsyncKey[Unit]("change-id")
+  private val MyEvent  = ClientEvent[Map[String, String]]("myevent")
   enum Msg:
     case ChangeId
 
@@ -1575,13 +1582,13 @@ class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg
     (_: Msg.type) =>
       pageName match
         case "A" =>
-          ctx.flash.put("info", "Flash from A") *>
+          ctx.flash.put(Info, "Flash from A") *>
             ctx.nav.pushNavigate(E2ERoutes.issue3686B.location).as(model)
         case "B" =>
-          ctx.flash.put("info", "Flash from B") *>
+          ctx.flash.put(Info, "Flash from B") *>
             ctx.nav.redirect(E2ERoutes.issue3686C.location).as(model)
         case _ =>
-          ctx.flash.put("info", "Flash from C") *>
+          ctx.flash.put(Info, "Flash from C") *>
             ctx.nav.pushNavigate(E2ERoutes.issue3686A.location).as(model)
 
   def render(model: Unit) =
@@ -1593,11 +1600,12 @@ class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg
     div(
       h1(pageName),
       button(phx.onClick(Msg), s"To $next"),
-      div(idAttr := "flash", "%{}", flash("info")(message => span(message)))
+      div(idAttr := "flash", "%{}", flash(Info)(message => span(message)))
     )
 end Issue3686LiveView
 
 object Issue3686LiveView:
+  private val Info = FlashKind("info")
   case object Msg
 
 class Issue3709LiveView extends RoutedLiveView[Unit, String, Option[String]]:
@@ -1750,7 +1758,7 @@ object Issue3941LiveView:
 
   object ItemHeaderComponent
       extends LiveComponent[String, ItemHeaderComponent.Msg, ItemHeaderComponent.Model]:
-    private val Load = "async_assign"
+    private val Load = AsyncKey[String]("async_assign")
 
     enum Msg:
       case Loaded(item: String)
@@ -1848,7 +1856,9 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
         else component
       }
       ctx.async
-        .start(s"update-$target")(ZIO.sleep(100.millis).as(target))(Msg.DelayedUpdate(_))
+        .start(AsyncKey[Int](s"update-$target"))(ZIO.sleep(100.millis).as(target))(
+          Msg.DelayedUpdate(_)
+        )
         .as(model.copy(counter = target + 1, components = nextComponents))
     case Msg.DelayedUpdate(id) =>
       model.components.find(_.id == id) match
@@ -1942,6 +1952,7 @@ class Issue4027LiveView
 end Issue4027LiveView
 
 object Issue4027LiveView:
+  private val Load = AsyncKey[Vector[Item]]("data")
   final case class QueryParams(caseName: String = "first")
 
   final case class Item(id: Int, value: String)
@@ -1956,7 +1967,7 @@ object Issue4027LiveView:
   private val InitialItems = Vector(Item(1, "First"), Item(2, "Second"), Item(3, "Third"))
 
   private def startLoad(async: Async[Msg], items: Vector[Item]) =
-    async.start("data")(ZIO.sleep(100.millis).as(items))(Msg.Loaded(_))
+    async.start(Load)(ZIO.sleep(100.millis).as(items))(Msg.Loaded(_))
 
   object ReproLiveComponent extends LiveComponent[Vector[Item], Unit, Vector[Item]]:
     def mount(props: Vector[Item], ctx: MountContext) =
@@ -2134,7 +2145,7 @@ object Issue4078LiveView:
     disabled: Boolean = true,
     customClass: String = "initial-class")
 
-  private val UploadName    = "avatar"
+  private val UploadName    = UploadKey("avatar")
   private val UploadOptions = LiveUploadOptions(
     accept = LiveUploadAccept.Exactly(List(".jpg", ".jpeg", ".png", ".txt")),
     maxEntries = 2
@@ -2143,7 +2154,7 @@ object Issue4078LiveView:
   private def disconnectedUpload =
     LiveUpload(
       name = UploadName,
-      ref = s"$UploadName-upload",
+      ref = s"${UploadName.value}-upload",
       accept = UploadOptions.accept,
       maxEntries = UploadOptions.maxEntries,
       maxFileSize = UploadOptions.maxFileSize,

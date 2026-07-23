@@ -59,7 +59,7 @@ object AsyncValue:
 end AsyncValue
 
 final case class LiveAsyncEvent[+Msg](
-  name: String,
+  name: AsyncKey[Any],
   result: LiveAsyncResult[Msg])
 
 enum LiveAsyncResult[+Msg]:

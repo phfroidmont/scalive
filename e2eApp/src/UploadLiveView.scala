@@ -127,7 +127,7 @@ class UploadLiveView() extends RoutedLiveView[Msg, Model, Option[String]]:
     val options = uploadOptions(autoUpload)
     LiveUpload(
       name = UploadName,
-      ref = s"$UploadName-upload",
+      ref = s"${UploadName.value}-upload",
       accept = options.accept,
       maxEntries = options.maxEntries,
       maxFileSize = options.maxFileSize,
@@ -155,7 +155,7 @@ class UploadLiveView() extends RoutedLiveView[Msg, Model, Option[String]]:
 end UploadLiveView
 
 object UploadLiveView:
-  private val UploadName                       = "avatar"
+  private val UploadName                       = UploadKey("avatar")
   private val MaxEntries                       = 2
   private val MaxFileSize: Long                = 8_000_000L
   private val AcceptedExtensions: List[String] = List(".txt", ".md")

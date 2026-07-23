@@ -12,6 +12,8 @@ import scalive.WebSocketMessage.ReplyStatus
 
 object FlashSpec extends ZIOSpecDefault:
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
+  private val Info  = FlashKind("info")
+  private val Error = FlashKind("error")
 
   private def flashParamsRuntime[Msg, Model]: LiveRouteParamsRuntime[?, Msg, Model] =
     LiveRouteParamsRuntime.routed(
@@ -76,28 +78,37 @@ object FlashSpec extends ZIOSpecDefault:
     yield value
 
   override def spec = suite("FlashSpec")(
+    test("snapshot exposes typed flash kinds") {
+      for
+        ref <- Ref.make(scalive.socket.FlashRuntimeState.empty)
+        runtime = new scalive.socket.SocketFlashRuntime(ref)
+        ctx = LiveContext(staticChanged = false, flash = runtime).messageContext[Unit, Unit]
+        _        <- ctx.flash.put(Info, "Saved")
+        snapshot <- ctx.flash.snapshot
+      yield assertTrue(snapshot == Map(Info -> "Saved"))
+    },
     test("root events can put and client-clear keyed flash") {
       val lv = new LiveView[Msg, Unit]:
         def mount(ctx: MountContext) =
           ZIO.unit
 
         def handleMessage(model: Unit, ctx: MessageContext) =
-              case Msg.Show => ctx.flash.put("info", "Saved").as(model)
+              case Msg.Show => ctx.flash.put(Info, "Saved").as(model)
               case _        => ZIO.succeed(model)
 
         def render(model: Unit): HtmlElement[Msg] =
           div(
             idAttr := "root",
             button(phx.onClick(Msg.Show), "show"),
-            flash("info")(message =>
-              p(idAttr := "flash", phx.clearFlash, phx.value("key") := "info", message)
+            flash(Info)(message =>
+              p(idAttr := "flash", phx.clearFlash, phx.value("key") := Info.value, message)
             )
           )
 
       val clear: Payload.Event = Payload.Event(
         `type` = "click",
         event = "lv:clear-flash",
-        value = Json.Obj("key" -> Json.Str("info"))
+        value = Json.Obj("key" -> Json.Str(Info.value))
       )
 
       for
@@ -122,9 +133,9 @@ object FlashSpec extends ZIOSpecDefault:
 
         def handleMessage(model: Unit, ctx: MessageContext) =
               case Msg.ShowBoth =>
-                ctx.flash.put("info", "Info") *>
-                  ctx.flash.put("error", "Error").as(model)
-              case Msg.ClearInfo => ctx.flash.clear("info").as(model)
+                ctx.flash.put(Info, "Info") *>
+                  ctx.flash.put(Error, "Error").as(model)
+              case Msg.ClearInfo => ctx.flash.clear(Info).as(model)
               case Msg.ClearAll  => ctx.flash.clearAll.as(model)
               case _             => ZIO.succeed(model)
 
@@ -134,8 +145,8 @@ object FlashSpec extends ZIOSpecDefault:
             button(idAttr := "show", phx.onClick(Msg.ShowBoth), "show"),
             button(idAttr := "clear-info", phx.onClick(Msg.ClearInfo), "clear-info"),
             button(idAttr := "clear-all", phx.onClick(Msg.ClearAll), "clear-all"),
-            flash("info")(message => p(idAttr := "info", message)),
-            flash("error")(message => p(idAttr := "error", message))
+            flash(Info)(message => p(idAttr := "info", message)),
+            flash(Error)(message => p(idAttr := "error", message))
           )
 
       for
@@ -171,9 +182,9 @@ object FlashSpec extends ZIOSpecDefault:
           ZIO.unit
 
         def handleMessage(model: Unit, ctx: MessageContext) =
-              case RootMsg.SetError => ctx.flash.put("error", "stale").as(model)
+              case RootMsg.SetError => ctx.flash.put(Error, "stale").as(model)
               case RootMsg.Redirect =>
-                ctx.flash.put("info", "fresh") *>
+                ctx.flash.put(Info, "fresh") *>
                   ctx.nav.redirectUnsafe("/target").as(model)
 
         def render(model: Unit): HtmlElement[RootMsg] =
@@ -181,8 +192,8 @@ object FlashSpec extends ZIOSpecDefault:
             idAttr := "root",
             button(phx.onClick(RootMsg.SetError), "set-error"),
             button(phx.onClick(RootMsg.Redirect), "redirect"),
-            flash("info")(message => p(idAttr := "info", message)),
-            flash("error")(message => p(idAttr := "error", message))
+            flash(Info)(message => p(idAttr := "info", message)),
+            flash(Error)(message => p(idAttr := "error", message))
           )
 
       for
@@ -226,9 +237,9 @@ object FlashSpec extends ZIOSpecDefault:
           ZIO.succeed(url.encode)
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case RootMsg.SetError => ctx.flash.put("error", "stale").as(model)
+              case RootMsg.SetError => ctx.flash.put(Error, "stale").as(model)
               case RootMsg.Patch =>
-                ctx.flash.put("info", "fresh") *>
+                ctx.flash.put(Info, "fresh") *>
                   ctx.nav.pushPatchUnsafe("/flash-root?patched=true").as(model)
 
         def render(model: String): HtmlElement[RootMsg] =
@@ -237,8 +248,8 @@ object FlashSpec extends ZIOSpecDefault:
             button(phx.onClick(RootMsg.SetError), "set-error"),
             button(phx.onClick(RootMsg.Patch), "patch"),
             span(idAttr := "url", model),
-            flash("info")(message => p(idAttr := "info", message)),
-            flash("error")(message => p(idAttr := "error", message))
+            flash(Info)(message => p(idAttr := "info", message)),
+            flash(Error)(message => p(idAttr := "error", message))
           )
 
       for
@@ -285,14 +296,14 @@ object FlashSpec extends ZIOSpecDefault:
 
         def handleMessage(model: String, ctx: MessageContext) =
               case RootMsg.Patch =>
-                ctx.flash.put("info", "Patched") *>
+                ctx.flash.put(Info, "Patched") *>
                   ctx.nav.pushPatchUnsafe("/redirecting").as(model)
 
         def render(model: String): HtmlElement[RootMsg] =
           div(
             idAttr := "root",
             button(phx.onClick(RootMsg.Patch), "patch"),
-            flash("info")(message => p(idAttr := "info", message))
+            flash(Info)(message => p(idAttr := "info", message))
           )
 
       for
@@ -335,7 +346,7 @@ object FlashSpec extends ZIOSpecDefault:
           ZIO.unit
 
         def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-          (_: Msg.type) => ctx.flash.put("info", "Component saved").as(model)
+          (_: Msg.type) => ctx.flash.put(Info, "Component saved").as(model)
 
         def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) =
           button(phx.onClick(Msg), phx.target(self), "show")
@@ -351,7 +362,7 @@ object FlashSpec extends ZIOSpecDefault:
           div(
             idAttr := "root",
             liveComponent(FlashComponent, id = "flash", props = ()),
-            flash("info")(message => p(idAttr := "flash-message", message))
+            flash(Info)(message => p(idAttr := "flash-message", message))
           )
 
       val event = Payload.Event(
@@ -381,17 +392,17 @@ object FlashSpec extends ZIOSpecDefault:
           ZIO.unit
 
         def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-              case Msg.SetError => ctx.flash.put("error", "stale").as(model)
+              case Msg.SetError => ctx.flash.put(Error, "stale").as(model)
               case Msg.Patch =>
-                ctx.flash.put("info", "fresh") *>
+                ctx.flash.put(Info, "fresh") *>
                   ctx.nav.pushPatchUnsafe("/flash-root?patched=true").as(model)
 
         def render(props: Unit, model: Unit, self: ComponentRef[Msg]) =
           div(
             button(phx.onClick(Msg.SetError), phx.target(self), "set-error"),
             button(phx.onClick(Msg.Patch), phx.target(self), "patch"),
-            flash("info")(message => p(idAttr := "component-info", message)),
-            flash("error")(message => p(idAttr := "component-error", message))
+            flash(Info)(message => p(idAttr := "component-info", message)),
+            flash(Error)(message => p(idAttr := "component-error", message))
           )
 
       val lv = new RoutedLiveView[Unit, String, String]:
@@ -457,7 +468,7 @@ object FlashSpec extends ZIOSpecDefault:
 
       val source = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
-          ctx.flash.put("info", "Mounted") *>
+          ctx.flash.put(Info, "Mounted") *>
             ctx.nav.redirectUnsafe("/target")
 
         def handleMessage(model: Unit, ctx: MessageContext) =
@@ -473,7 +484,7 @@ object FlashSpec extends ZIOSpecDefault:
           (_: Unit) => ZIO.succeed(model)
 
         def render(model: Unit): HtmlElement[Unit] =
-          div(flash("info")(message => p(idAttr := "flash", message)))
+          div(flash(Info)(message => p(idAttr := "flash", message)))
 
       val routes = (scalive.Live.router @@ scalive.Live.tokenConfig(tokenConfig))(
         (scalive.live / "source")(source),
@@ -517,13 +528,13 @@ object FlashSpec extends ZIOSpecDefault:
           ZIO.unit
 
         def handleMessage(model: Unit, ctx: MessageContext) =
-              case ChildMsg.Show => ctx.flash.put("info", "Child flash").as(model)
+              case ChildMsg.Show => ctx.flash.put(Info, "Child flash").as(model)
 
         def render(model: Unit): HtmlElement[ChildMsg] =
           div(
             idAttr := "child",
             button(phx.onClick(ChildMsg.Show), "show"),
-            flash("info")(message => p(idAttr := "child-flash", message))
+            flash(Info)(message => p(idAttr := "child-flash", message))
           )
 
       val parent = new LiveView[Msg, Int]:
@@ -538,7 +549,7 @@ object FlashSpec extends ZIOSpecDefault:
           div(
             idAttr := "parent",
             button(phx.onClick(Msg.Rerender), model.toString),
-            flash("info")(message => p(idAttr := "parent-flash", message)),
+            flash(Info)(message => p(idAttr := "parent-flash", message)),
             liveView("child", child)
           )
 

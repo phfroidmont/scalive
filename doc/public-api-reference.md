@@ -226,24 +226,34 @@ The methods without an `Unsafe` suffix require a full location derived from a Li
 
 ### Flash
 
+Runtime resources and client payload contracts use explicit typed identifiers. Each companion provides `apply(String)` and each value exposes `.value: String`; there are no implicit string conversions.
+
+```scala
+opaque type FlashKind = String
+opaque type AsyncKey[A] = String
+opaque type SubscriptionKey = String
+opaque type ClientEvent[A] = String
+opaque type UploadKey = String
+```
+
 ```scala
 trait Flash:
-  def put(kind: String, message: String): LiveIO[Unit]
-  def clear(kind: String): LiveIO[Unit]
+  def put(kind: FlashKind, message: String): LiveIO[Unit]
+  def clear(kind: FlashKind): LiveIO[Unit]
   def clearAll: LiveIO[Unit]
-  def get(kind: String): LiveIO[Option[String]]
-  def snapshot: LiveIO[Map[String, String]]
+  def get(kind: FlashKind): LiveIO[Option[String]]
+  def snapshot: LiveIO[Map[FlashKind, String]]
 ```
 
 ### Uploads
 
 ```scala
 trait Uploads:
-  def allow(name: String, options: LiveUploadOptions): LiveIO[LiveUpload]
-  def disallow(name: String): LiveIO[Unit]
-  def get(name: String): LiveIO[Option[LiveUpload]]
-  def cancel(name: String, entryRef: String): LiveIO[Unit]
-  def consumeCompleted(name: String): LiveIO[List[LiveUploadedEntry]]
+  def allow(key: UploadKey, options: LiveUploadOptions): LiveIO[LiveUpload]
+  def disallow(key: UploadKey): LiveIO[Unit]
+  def get(key: UploadKey): LiveIO[Option[LiveUpload]]
+  def cancel(key: UploadKey, entryRef: String): LiveIO[Unit]
+  def consumeCompleted(key: UploadKey): LiveIO[List[LiveUploadedEntry]]
   def consume(entryRef: String): LiveIO[Option[LiveUploadedEntry]]
   def drop(entryRef: String): LiveIO[Unit]
 ```
@@ -262,20 +272,20 @@ trait Streams:
 
 ```scala
 trait Async[Msg]:
-  def start[A](name: String)(task: zio.Task[A])(toMsg: A => Msg): LiveIO[Unit]
-  def cancel(name: String): LiveIO[Unit]
+  def start[A](key: AsyncKey[A])(task: zio.Task[A])(toMsg: A => Msg): LiveIO[Unit]
+  def cancel[A](key: AsyncKey[A]): LiveIO[Unit]
 
 trait Subscriptions[Msg]:
-  def start(name: String)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def replace(name: String)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def cancel(name: String): LiveIO[Unit]
+  def start(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def replace(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def cancel(key: SubscriptionKey): LiveIO[Unit]
 ```
 
 ### Client, Title, And Components
 
 ```scala
 trait Client:
-  def pushEvent[A: JsonEncoder](name: String, payload: A): LiveIO[Unit]
+  def push[A: JsonEncoder](event: ClientEvent[A], payload: A): LiveIO[Unit]
   def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
 
 trait Title:
@@ -284,6 +294,8 @@ trait Title:
 trait ComponentUpdates:
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](id: String, props: LiveComponent.PropsOf[C]): LiveIO[Unit]
 ```
+
+`ClientEvent[A]` guarantees that Scala push sites use the declared payload type and have a matching JSON encoder. JavaScript still subscribes by string and interprets the encoded payload dynamically.
 
 ### Hook Results
 
@@ -489,7 +501,7 @@ component[C <: LiveComponent[?, ?, ?]: ClassTag](message): ComponentTargetMessag
 liveComponent(component, id: String, props): Mod[Nothing]
 liveComponent(component, id: Int, props): Mod[Nothing]
 liveView(id, liveView, sticky = false): Mod[Nothing]
-flash(kind)(f): Mod[Nothing]
+flash(kind: FlashKind)(f): Mod[Nothing]
 portal(id, target, container = "div", wrapperClass = None)(mods*): HtmlElement[Msg]
 ```
 
@@ -1290,7 +1302,7 @@ final case class LiveUploadEntry(
 
 ```scala
 final case class LiveUpload(
-  name: String,
+  name: UploadKey,
   ref: String,
   accept: LiveUploadAccept,
   maxEntries: Int,
@@ -1347,7 +1359,7 @@ Use `valueAs[A]` to recover the expected state type in `meta`, `writeChunk`, and
 
 ```scala
 trait LiveUploadWriter:
-  def init(uploadName: String, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState]
+  def init(uploadKey: UploadKey, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState]
   def meta(state: LiveUploadWriterState): zio.json.ast.Json.Obj
   def writeChunk(data: Chunk[Byte], state: LiveUploadWriterState): Task[LiveUploadWriterState]
   def close(state: LiveUploadWriterState, reason: LiveUploadWriterCloseReason): Task[LiveUploadWriterState]
@@ -1363,7 +1375,7 @@ LiveUploadWriter.InMemory
 
 ```scala
 trait LiveUploadProgress:
-  def onProgress(uploadName: String, entry: LiveUploadEntry): LiveIO[Unit]
+  def onProgress(uploadKey: UploadKey, entry: LiveUploadEntry): LiveIO[Unit]
 ```
 
 ```scala
@@ -1394,7 +1406,10 @@ final case class LiveEvent(
 ```
 
 ```scala
-final case class LiveAsyncEvent(name: String)
+final case class LiveAsyncEvent[+Msg](
+  name: AsyncKey[Any],
+  result: LiveAsyncResult[Msg]
+)
 ```
 
 ```scala

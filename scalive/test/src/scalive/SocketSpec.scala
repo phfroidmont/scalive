@@ -4,7 +4,7 @@ import zio.*
 import zio.http.URL
 import zio.http.codec.{HttpCodec, PathCodec}
 import zio.json.ast.Json
-import zio.stream.ZStream
+import zio.stream.{SubscriptionRef, ZStream}
 import zio.test.*
 
 import scalive.WebSocketMessage.LivePatchKind
@@ -13,6 +13,7 @@ import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.ReplyStatus
 
 object SocketSpec extends ZIOSpecDefault:
+  private val ServerSubscription = SubscriptionKey("server")
 
   enum Msg:
     case FromClient
@@ -33,7 +34,7 @@ object SocketSpec extends ZIOSpecDefault:
     new LiveView[Msg, Model]:
       def mount(ctx: MountContext) =
         ctx.subscriptions
-          .start("server")(serverStream).as(Model(staticFlag = Some(ctx.staticChanged)))
+          .start(ServerSubscription)(serverStream).as(Model(staticFlag = Some(ctx.staticChanged)))
 
       def handleMessage(model: Model, ctx: MessageContext) =
         case Msg.FromClient => ZIO.succeed(model.copy(counter = model.counter + 1))
@@ -473,6 +474,32 @@ object SocketSpec extends ZIOSpecDefault:
                     yield assertTrue(diffFromPayload(reply._1).exists(containsValue(_, "updated")))
                   }
       yield result
+    },
+    test("typed subscription keys preserve replace and cancel identity") {
+      val key = SubscriptionKey("managed")
+
+      for
+        ref <- SubscriptionRef.make(Map.empty[String, ZStream[Any, Nothing, Msg]])
+        runtime = new socket.SocketSubscriptionRuntime[Msg](ref)
+        ctx = LiveContext(
+                staticChanged = false,
+                subscriptions = runtime.asInstanceOf[SubscriptionRuntime[Any]]
+              ).messageContext[Msg, Unit]
+        _             <- ctx.subscriptions.start(key)(ZStream.succeed(Msg.FromClient))
+        started       <- ref.get
+        startedValues <- started(key.value).runCollect
+        _             <- ctx.subscriptions.replace(key)(ZStream.succeed(Msg.FromServer))
+        replaced      <- ref.get
+        replacedValues <- replaced(key.value).runCollect
+        _         <- ctx.subscriptions.cancel(key)
+        cancelled <- ref.get
+      yield assertTrue(
+        started.keySet == Set(key.value),
+        startedValues == Chunk(Msg.FromClient),
+        replaced.keySet == Set(key.value),
+        replacedValues == Chunk(Msg.FromServer),
+        cancelled.isEmpty
+      )
     }
   )
 end SocketSpec

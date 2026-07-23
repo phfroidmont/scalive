@@ -10,7 +10,7 @@ class CounterLiveView() extends LiveView[Msg, Model]:
 
   def mount(ctx: MountContext) =
     ctx.subscriptions
-      .start("counter")(
+      .start(CounterSubscription)(
         ZStream.tick(1.second).map(_ => Msg.IncCounter).drop(1)
       ).as(
         Model(
@@ -71,6 +71,7 @@ class CounterLiveView() extends LiveView[Msg, Model]:
 end CounterLiveView
 
 object CounterLiveView:
+  private val CounterSubscription = SubscriptionKey("counter")
 
   enum Msg:
     case ToggleCounter

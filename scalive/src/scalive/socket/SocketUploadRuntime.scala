@@ -171,6 +171,7 @@ private[scalive] object SocketUploadRuntime:
     private def scoped(name: String): String = scope + name
 
     private def unscoped(upload: LiveUpload): LiveUpload =
-      if upload.name.startsWith(scope) then upload.copy(name = upload.name.drop(scope.length))
+      val name = upload.name.value
+      if name.startsWith(scope) then upload.copy(name = UploadKey(name.drop(scope.length)))
       else upload
 end SocketUploadRuntime

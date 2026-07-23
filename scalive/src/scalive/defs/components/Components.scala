@@ -29,7 +29,7 @@ trait Components:
     input(
       idAttr                           := upload.ref,
       typ                              := "file",
-      nameAttr                         := upload.name,
+      nameAttr                         := upload.name.value,
       accept                           := upload.accept.toHtmlValue,
       dataAttr("phx-hook")             := "Phoenix.LiveFileUpload",
       dataAttr("phx-upload-ref")       := upload.ref,

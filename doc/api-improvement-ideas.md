@@ -137,17 +137,18 @@ Ideas:
 - Add examples for route-level auth, session-level auth, and request-derived context.
 - Keep the fully generic API available for advanced composition.
 
-### Make component targeting names clearer
+### Addressed - Keep low-level component rendering internal
 
-Current issue:
+Previous issue:
 
 - `component(cid, element)` renders component content.
 - `component[C](message)` creates a routed component event target.
 
-Ideas:
+Resolution:
 
-- Rename routed event helper to `toComponent[C](message)`, `componentMsg[C](message)`, or `targetComponent[C](message)`.
-- Keep render helper names focused on rendering.
+- Remove `component(cid, element)` from production code; component diff construction is a runtime
+  concern, and its test convenience helper now lives in `TreeDiffSpec`.
+- Keep `component[C](message)` as the sole package-level `component` helper.
 
 ### Improve root layout ergonomics
 

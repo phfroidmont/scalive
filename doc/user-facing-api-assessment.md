@@ -30,7 +30,7 @@ Method:
 ### Package-Level DSL
 
 - `scalive.*` exports generated tags, attrs, streams, uploads, components, HTML helpers, `link`, and `phx` bindings. Evidence: `scalive/src/scalive/Scalive.scala:12`.
-- `component`, `liveComponent`, `liveView`, `flash`, `portal`, and implicit text/tag conversions are available as top-level helpers. Evidence: `scalive/src/scalive/Scalive.scala:18`, `scalive/src/scalive/Scalive.scala:19`, `scalive/src/scalive/Scalive.scala:21`, `scalive/src/scalive/Scalive.scala:26`, `scalive/src/scalive/Scalive.scala:33`, `scalive/src/scalive/Scalive.scala:43`, `scalive/src/scalive/Scalive.scala:56`, `scalive/src/scalive/Scalive.scala:189`.
+- `component`, `liveComponent`, `liveView`, `flash`, `portal`, and implicit text/tag conversions are available as top-level helpers. Evidence: `scalive/src/scalive/Scalive.scala:18`, `scalive/src/scalive/Scalive.scala:19`, `scalive/src/scalive/Scalive.scala:24`, `scalive/src/scalive/Scalive.scala:31`, `scalive/src/scalive/Scalive.scala:41`, `scalive/src/scalive/Scalive.scala:54`, `scalive/src/scalive/Scalive.scala:196`.
 
 ### HTML DSL, Bindings, And JS Commands
 
@@ -108,13 +108,13 @@ Impact: app code cannot mix durable identifier families or emit incompatible Sca
 
 Confidence: High.
 
-### Medium - Discoverability - Component rendering and component targeting share the same helper name
+### Addressed - Discoverability - Component rendering and component targeting shared the same helper name
 
-Evidence: `scalive/src/scalive/Scalive.scala:19`, `scalive/src/scalive/Scalive.scala:21`, `doc/api-improvement-ideas.md:169`.
+Evidence: `scalive/src/scalive/Scalive.scala:19`, `scalive/test/src/scalive/TreeDiffSpec.scala:11`, `scalive/test/src/scaliveapi/ComponentApiSpec.scala:6`, `doc/api-improvement-ideas.md:140`.
 
-`component(cid, element)` renders component diff content internally, while `component[C](message)` creates a component event target. The shared name hides two different concepts behind overloads.
+The low-level `component(cid, element)` wrapper was used only by renderer tests and has been removed from production code. Its test-local replacement constructs `Mod.Content.Component` fixtures, while `component[C](message)` remains the sole package-level helper under that name.
 
-Impact: app authors may struggle to discover the correct helper for component event routing.
+Impact: app authors now see only the typed component event-routing helper; test fixture convenience no longer expands the production API.
 
 Confidence: High.
 

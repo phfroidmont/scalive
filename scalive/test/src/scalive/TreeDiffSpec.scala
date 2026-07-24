@@ -8,6 +8,9 @@ object TreeDiffSpec extends ZIOSpecDefault:
 
   final case class KeyedRow(id: String, value: String)
 
+  private def component[Msg](cid: Int, element: HtmlElement[Msg]): Mod[Msg] =
+    Mod.Content.Component(cid, element)
+
   private def asJson(diff: Diff): Json =
     diff.toJsonAST.getOrElse(throw new IllegalArgumentException("Unable to encode diff"))
 

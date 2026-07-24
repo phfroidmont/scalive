@@ -492,11 +492,10 @@ Mod.Content.Flash(kind, f)
 Mod.Content.Keyed(entries, stream = None, allEntries = None)
 ```
 
-### Package-level rendering helpers
+### Package-level helpers
 
 ```scala
 rawHtml(html): Mod[Nothing]
-component(cid, element): Mod[Msg]
 component[C <: LiveComponent[?, ?, ?]: ClassTag](message): ComponentTargetMessage
 liveComponent(component, id: String, props): Mod[Nothing]
 liveComponent(component, id: Int, props): Mod[Nothing]
@@ -504,6 +503,10 @@ liveView(id, liveView, sticky = false): Mod[Nothing]
 flash(kind: FlashKind)(f): Mod[Nothing]
 portal(id, target, container = "div", wrapperClass = None)(mods*): HtmlElement[Msg]
 ```
+
+`component[C](message)` creates a typed message for an event routed to instances of component
+type `C`. Use it with a selector-based `phx.target`; events rendered by a component normally use
+the component message directly with `phx.target(self)`.
 
 Implicit conversions:
 

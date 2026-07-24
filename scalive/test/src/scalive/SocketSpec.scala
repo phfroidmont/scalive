@@ -432,6 +432,53 @@ object SocketSpec extends ZIOSpecDefault:
                   }
       yield result
     },
+    test("routes selector-targeted typed events to the selected component") {
+      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+        object Msg
+
+        def mount(props: Unit, ctx: MountContext) =
+          ZIO.succeed(0)
+
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+          (_: Msg.type) => ZIO.succeed(model + 1)
+
+        def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
+          div(idAttr := "counter", model.toString)
+
+      val lv = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) =
+          ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            button(
+              phx.onClick.toComponent(CounterComponent)(CounterComponent.Msg),
+              phx.target("#counter"),
+              "increment"
+            ),
+            liveComponent(CounterComponent, id = "counter", props = ())
+          )
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty,
+        cid = Some(1)
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _     <- socket.inbox.offer(event -> meta)
+                      reply <- outbox.take
+                    yield assertTrue(diffFromPayload(reply._1).exists(containsValue(_, "1")))
+                  }
+      yield result
+    },
     test("sendUpdate applies typed props to an existing live component") {
       object LabelComponent extends LiveComponent[String, Unit, String]:
         def mount(props: String, ctx: MountContext) =

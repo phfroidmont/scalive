@@ -30,7 +30,7 @@ Method:
 ### Package-Level DSL
 
 - `scalive.*` exports generated tags, attrs, streams, uploads, components, HTML helpers, `link`, and `phx` bindings. Evidence: `scalive/src/scalive/Scalive.scala:12`.
-- `component`, `liveComponent`, `liveView`, `flash`, `portal`, and implicit text/tag conversions are available as top-level helpers. Evidence: `scalive/src/scalive/Scalive.scala:18`, `scalive/src/scalive/Scalive.scala:19`, `scalive/src/scalive/Scalive.scala:24`, `scalive/src/scalive/Scalive.scala:31`, `scalive/src/scalive/Scalive.scala:41`, `scalive/src/scalive/Scalive.scala:54`, `scalive/src/scalive/Scalive.scala:196`.
+- `liveComponent`, `liveView`, `flash`, `portal`, and implicit text/tag conversions are available as top-level helpers. Evidence: `scalive/src/scalive/Scalive.scala:18`, `scalive/src/scalive/Scalive.scala:19`, `scalive/src/scalive/Scalive.scala:26`, `scalive/src/scalive/Scalive.scala:36`, `scalive/src/scalive/Scalive.scala:49`, `scalive/src/scalive/Scalive.scala:191`.
 
 ### HTML DSL, Bindings, And JS Commands
 
@@ -105,16 +105,6 @@ Flash kinds, upload names, async names, subscription names, and client event pay
 Remaining boundary: lifecycle hook registries already provide structural namespacing, while client hook names, selectors, DOM IDs, and explicitly unsafe paths remain strings because nominal wrappers would not validate their browser syntax. JavaScript client-event handling remains unchecked.
 
 Impact: app code cannot mix durable identifier families or emit incompatible Scala payloads under one declared client event. Free-form browser values remain explicit unchecked boundaries.
-
-Confidence: High.
-
-### Addressed - Discoverability - Component rendering and component targeting shared the same helper name
-
-Evidence: `scalive/src/scalive/Scalive.scala:19`, `scalive/test/src/scalive/TreeDiffSpec.scala:11`, `scalive/test/src/scaliveapi/ComponentApiSpec.scala:6`, `doc/api-improvement-ideas.md:140`.
-
-The low-level `component(cid, element)` wrapper was used only by renderer tests and has been removed from production code. Its test-local replacement constructs `Mod.Content.Component` fixtures, while `component[C](message)` remains the sole package-level helper under that name.
-
-Impact: app authors now see only the typed component event-routing helper; test fixture convenience no longer expands the production API.
 
 Confidence: High.
 

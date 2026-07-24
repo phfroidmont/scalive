@@ -443,7 +443,9 @@ Namespaced attributes are available under `aria` and `xlink`.
 
 ```scala
 class HtmlAttrBinding(val name: String):
-  def apply(message: ComponentTargetMessage): Mod.Attr[Nothing]
+  def toComponent[Props, Msg, Model](
+    component: LiveComponent[Props, Msg, Model]
+  )(message: Msg): Mod.Attr[Nothing]
   def apply[Msg](cmd: JSCommand[Msg]): Mod.Attr[Msg]
   def apply[Msg](msg: Msg): Mod.Attr[Msg]
   def apply[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg]
@@ -459,6 +461,21 @@ class HtmlAttrBinding(val name: String):
 `value`. `withBoolValue` is non-throwing and passes `false` for missing or
 unrecognized values. Use the `Option` variants when application code must
 distinguish missing or invalid values.
+
+`toComponent(component)(message)` routes the binding's typed message to component instances selected
+by a separate `phx.target`. The component value determines both the accepted message type and the
+runtime component class:
+
+```scala
+button(
+  phx.onClick.toComponent(CounterComponent)(CounterComponent.Msg.Increment),
+  phx.target("#counter")
+)
+```
+
+Keeping `phx.target` separate preserves Phoenix targeting semantics, including `ComponentRef`, CSS
+selectors, and selectors that match multiple component instances. Events rendered inside a component
+normally use the component message directly with `phx.target(self)`.
 
 ### `Mod[Msg]`
 
@@ -496,17 +513,12 @@ Mod.Content.Keyed(entries, stream = None, allEntries = None)
 
 ```scala
 rawHtml(html): Mod[Nothing]
-component[C <: LiveComponent[?, ?, ?]: ClassTag](message): ComponentTargetMessage
 liveComponent(component, id: String, props): Mod[Nothing]
 liveComponent(component, id: Int, props): Mod[Nothing]
 liveView(id, liveView, sticky = false): Mod[Nothing]
 flash(kind: FlashKind)(f): Mod[Nothing]
 portal(id, target, container = "div", wrapperClass = None)(mods*): HtmlElement[Msg]
 ```
-
-`component[C](message)` creates a typed message for an event routed to instances of component
-type `C`. Use it with a selector-based `phx.target`; events rendered by a component normally use
-the component message directly with `phx.target(self)`.
 
 Implicit conversions:
 

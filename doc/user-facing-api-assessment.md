@@ -84,30 +84,6 @@ Method:
 
 ## Ergonomics Findings
 
-### Addressed - API Design - Outbound navigation derives from inbound routes
-
-Evidence: `scalive/src/scalive/LiveLocation.scala:6`, `scalive/src/scalive/routing/LiveRouteDsl.scala:23`, `scalive/src/scalive/routing/LiveRouteDsl.scala:478`, `scalive/src/scalive/Scalive.scala:83`, `scalive/src/scalive/LiveContext.scala:86`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/LiveMountAspect.scala:16`.
-
-Named route builders now encode `LiveLocation` values from the same path and query codecs used for inbound matching. Safe link, lifecycle, JS, and redirect APIs require those locations; raw destinations are explicit unsafe escape hatches.
-
-Remaining boundary: the API does not prove current-view patch validity or live-session membership, and typed query-only patches remain out of scope.
-
-Impact: path and query refactors now flow through named route builders to their outbound locations; external, dead-route, and query-only destinations remain deliberately unchecked.
-
-Confidence: High.
-
-### Addressed - API Design - Durable runtime identifiers are typed
-
-Evidence: `scalive/src/scalive/AsyncKey.scala:3`, `scalive/src/scalive/ClientEvent.scala:3`, `scalive/src/scalive/FlashKind.scala:3`, `scalive/src/scalive/SubscriptionKey.scala:3`, `scalive/src/scalive/upload/UploadKey.scala:4`, `scalive/src/scalive/LiveContext.scala:103`.
-
-Flash kinds, upload names, async names, subscription names, and client event payload contracts now use domain-specific declarations. `AsyncKey[A]` fixes the task result type, `ClientEvent[A]` fixes the Scala payload type, and streams and outbound locations already carry typed definitions.
-
-Remaining boundary: lifecycle hook registries already provide structural namespacing, while client hook names, selectors, DOM IDs, and explicitly unsafe paths remain strings because nominal wrappers would not validate their browser syntax. JavaScript client-event handling remains unchecked.
-
-Impact: app code cannot mix durable identifier families or emit incompatible Scala payloads under one declared client event. Free-form browser values remain explicit unchecked boundaries.
-
-Confidence: High.
-
 ### Medium - Discoverability - Route and session modifiers rely heavily on symbolic `@@`
 
 Evidence: `scalive/src/scalive/routing/LiveRouteDsl.scala:63`, `scalive/src/scalive/routing/LiveRouteDsl.scala:75`, `scalive/src/scalive/routing/LiveRouteDsl.scala:79`, `scalive/src/scalive/routing/LiveRouteDsl.scala:517`, `scalive/src/scalive/routing/LiveRouteDsl.scala:521`, `doc/api-improvement-ideas.md:193`.
@@ -137,16 +113,6 @@ Evidence: `README.md:1`, `README.md:10`, `README.md:39`, `README.md:46`, `README
 The root README now introduces Scalive, shows a first LiveView, points to server and client setup examples, gives project test commands, and distinguishes human examples from parity fixtures. It does not provide dependency coordinates or a minimal application setup that a new user can follow without consulting the example and build files.
 
 Impact: users can understand the project and find the right source material, but creating a new application still requires reverse-engineering repository setup.
-
-Confidence: High.
-
-### Addressed - Docs - Public API reference navigation drift
-
-Evidence: `doc/public-api-reference.md:204`, `doc/public-api-reference.md:573`, `doc/public-api-reference.md:627`, `doc/public-api-reference.md:653`, `doc/public-api-reference.md:1418`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/lifecycle/LiveHooks.scala:37`.
-
-The public API reference now documents route-derived and explicitly unsafe navigation signatures, and consistently uses the compiled `LiveEventHookResult` name.
-
-Impact: the known copy-paste signature drift identified by this audit is addressed.
 
 Confidence: High.
 
@@ -214,16 +180,6 @@ Confidence: High.
 
 ## Documentation And Example Findings
 
-### Addressed - Docs - Navigation reference refreshed against implementation
-
-Evidence: `doc/public-api-reference.md:1`, `doc/public-api-reference.md:13`, `doc/public-api-reference.md:121`, `doc/public-api-reference.md:204`, `doc/public-api-reference.md:653`, `doc/public-api-reference.md:922`.
-
-The public API reference covers a large portion of the intended API surface, including lifecycle, contexts, HTML, routing, forms, streams, uploads, hooks, assets, and tokens. Its navigation, route-location, and params-codec sections have now been reconciled with the compiled implementation.
-
-Impact: the reference now presents route-derived locations as the default and identifies unchecked destinations without implying they are safe route APIs.
-
-Confidence: High.
-
 ### Medium - Docs - Compatibility guidance exists but is not a user-facing Phoenix migration guide
 
 Evidence: `UPSTREAM_COMPATIBILITY.md:62`, `UPSTREAM_COMPATIBILITY.md:66`, `UPSTREAM_COMPATIBILITY.md:70`, `doc/api-improvement-ideas.md:87`.
@@ -256,30 +212,9 @@ Impact: over-claiming parity can create user trust issues when edge cases fail.
 
 Confidence: High.
 
-### Addressed - Outbound navigation documentation drift
-
-Evidence: `doc/public-api-reference.md:204`, `doc/public-api-reference.md:573`, `doc/public-api-reference.md:627`, `doc/public-api-reference.md:653`, `doc/public-api-reference.md:1418`, `scalive/src/scalive/JS.scala:125`, `scalive/src/scalive/lifecycle/LiveHooks.scala:37`.
-
-The stale JS patch overloads, raw-string safe navigation signatures, and obsolete hook-result name identified by this audit have been replaced with the compiled API shapes.
-
-Impact: route-derived full locations and explicit unsafe/query-only behavior are now distinguishable in the public reference.
-
-Confidence: High.
-
-### Addressed - Durable runtime identifiers no longer concentrate stringly typed risk
-
-Evidence: `scalive/src/scalive/LiveContext.scala:103`, `scalive/src/scalive/LiveContext.scala:110`, `scalive/src/scalive/LiveContext.scala:139`, `scalive/test/src/scaliveapi/RuntimeIdentifierTypesSpec.scala:7`.
-
-The core model, safe outbound navigation, durable runtime resource keys, and Scala-side client event payloads are strongly typed.
-
-Impact: upload, async, subscription, flash, and client event identifiers cannot be mixed accidentally. Hook IDs and browser syntax remain strings only where additional nominal types would provide little or misleading safety.
-
-Confidence: High.
-
 ## Open Questions And Confidence Notes
 
-- High confidence: core public API inventory, route-derived outbound locations, the addressed navigation-reference drift, and the `Issue4088LiveView` parity caveat.
-- High confidence: typed runtime identifier scope follows explicit criteria; remaining strings are structurally namespaced IDs, browser syntax, external data, or unsafe escape hatches.
+- High confidence: core public API inventory and the `Issue4088LiveView` parity caveat.
 - Medium confidence: exact completeness of JS command, form recovery, upload, and stream edge-case parity; the compatibility matrix identifies these areas, but this audit does not execute every upstream scenario.
 - Open question: which intentional Phoenix divergences need user-facing migration documentation first is outside this report's scope because that becomes roadmap sequencing.
 - Open question: whether Scalive should expose direct typed equivalents for every partial Phoenix feature is outside this report's scope because API quality can override direct shape parity.

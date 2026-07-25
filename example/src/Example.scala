@@ -31,7 +31,7 @@ object Example extends ZIOAppDefault:
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
   def liveRoutes(assets: StaticAssets) =
-    (Live.router @@ RootLayout(assets))(
+    Live.router.withRootLayout(RootLayout(assets))(
       ExampleRoutes.home    -> HomeLiveView(),
       ExampleRoutes.counter -> CounterLiveView(),
       ExampleRoutes.list    -> ListLiveView(),

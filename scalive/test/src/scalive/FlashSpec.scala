@@ -486,7 +486,7 @@ object FlashSpec extends ZIOSpecDefault:
         def render(model: Unit): HtmlElement[Unit] =
           div(flash(Info)(message => p(idAttr := "flash", message)))
 
-      val routes = (scalive.Live.router @@ scalive.Live.tokenConfig(tokenConfig))(
+      val routes = scalive.Live.router.withTokenConfig(tokenConfig)(
         (scalive.live / "source")(source),
         (scalive.live / "target")(target)
       )

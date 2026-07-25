@@ -66,7 +66,7 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         )
 
         val routes = scalive.Live.router(
-          (scalive.Live.session("admin") @@ aspect)(
+          scalive.Live.session("admin").withMountAspect(aspect)(
             scalive.live { (_: Unit, _: Request, role: Role) => view }
           )
         )
@@ -92,10 +92,10 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
       )
 
       val routes = scalive.Live.router(
-        ((scalive.live / "users") @@ userAspect) { (_, _, user: TypeUser) =>
+        (scalive.live / "users").withMountAspect(userAspect) { (_, _, user: TypeUser) =>
           view(user.name)
         },
-        ((scalive.live / "orgs") @@ orgAspect) { (_, _, org: TypeOrg) =>
+        (scalive.live / "orgs").withMountAspect(orgAspect) { (_, _, org: TypeOrg) =>
           view(org.name)
         }
       )
@@ -134,8 +134,8 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
       )
 
       val routes = scalive.Live.router(
-        (scalive.Live.session("admin") @@ authAspect)(
-          ((scalive.live / "catalog") @@ catalogAspect) {
+        scalive.Live.session("admin").withMountAspect(authAspect)(
+          (scalive.live / "catalog").withMountAspect(catalogAspect) {
             (_, _, user: TypeUser, section: TypeSection) =>
               view(s"${user.name}:${section.name}")
           }
@@ -251,6 +251,125 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("named modifiers compile across supported builder stages") {
+      val routeErrors: List[scala.compiletime.testing.Error] =
+        scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.json.*
+
+        final case class Claims(value: String) derives JsonCodec
+        final case class User(name: String)
+        final case class Section(name: String)
+
+        val routeUserAspect = LiveMountAspect.fromRequest[Any, Unit, Claims, User](
+          _ => ZIO.succeed(Claims("user") -> User("disconnected")),
+          (_, _) => ZIO.succeed(User("connected"))
+        )
+        val routeSectionAspect = LiveMountAspect.make[Any, Unit, User, Claims, Section](
+          (_, user) => ZIO.succeed(Claims(user.name) -> Section("disconnected")),
+          (_, _, _) => ZIO.succeed(Section("connected"))
+        )
+        val anyLayout = LiveLayout.identity
+        val anyRoot = LiveRootLayout.identity
+        val routeUserLayout = LiveLayout[Unit, User]((content, _) => content)
+        val routeUserRoot = LiveRootLayout[Unit, User]("route-user-root")((content, _) => content)
+
+        val seedWithAspect = live.withMountAspect(routeUserAspect)
+        val seedWithLayout = live.withLayout(anyLayout)
+        val seedWithRoot = live.withRootLayout(anyRoot)
+
+        val routeBuilder = seedWithAspect
+          .withLayout(routeUserLayout)
+          .withRootLayout(routeUserRoot)
+          .withMountAspect(routeSectionAspect)
+
+        val paramsBuilder = live.params
+          .withMountAspect(routeUserAspect)
+          .withLayout(routeUserLayout)
+          .withRootLayout(routeUserRoot)
+      """)
+      val sessionErrors: List[scala.compiletime.testing.Error] =
+        scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.json.*
+
+        final case class Claims(value: String) derives JsonCodec
+        final case class User(name: String)
+        final case class Section(name: String)
+
+        val sessionUserAspect = LiveMountAspect.fromRequest[Any, Any, Claims, User](
+          _ => ZIO.succeed(Claims("user") -> User("disconnected")),
+          (_, _) => ZIO.succeed(User("connected"))
+        )
+        val sessionSectionAspect = LiveMountAspect.make[Any, Any, User, Claims, Section](
+          (_, user) => ZIO.succeed(Claims(user.name) -> Section("disconnected")),
+          (_, _, _) => ZIO.succeed(Section("connected"))
+        )
+
+        val anyLayout = LiveLayout.identity
+        val anyRoot = LiveRootLayout.identity
+        val sessionUserLayout = LiveLayout[Any, User]((content, _) => content)
+        val sessionUserRoot = LiveRootLayout[Any, User]("session-user-root")((content, _) => content)
+
+        val sessionSeedWithAspect = Live.session("admin").withMountAspect(sessionUserAspect)
+        val sessionSeedWithLayout = Live.session("layout").withLayout(anyLayout)
+        val sessionSeedWithRoot = Live.session("root").withRootLayout(anyRoot)
+        val sessionBuilder = sessionSeedWithAspect
+          .withLayout(sessionUserLayout)
+          .withRootLayout(sessionUserRoot)
+          .withMountAspect(sessionSectionAspect)
+      """)
+      val routerErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.http.codec.PathCodec
+
+        val anyLayout = LiveLayout.identity
+        val anyRoot = LiveRootLayout.identity
+        val router = Live.router
+          .withLayout(anyLayout)
+          .withRootLayout(anyRoot)
+          .withSocketPath(PathCodec.empty / "socket")
+          .withTokenConfig(TokenConfig.default)
+      """)
+
+      assertTrue(routeErrors.isEmpty, sessionErrors.isEmpty, routerErrors.isEmpty)
+    },
+    test("router-only modifiers are unavailable on routes and sessions") {
+      val routeErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.http.codec.PathCodec
+        val route = live.withSocketPath(PathCodec.empty / "socket")
+      """)
+      val sessionErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val session = Live.session("admin").withTokenConfig(TokenConfig.default)
+      """)
+
+      assertTrue(routeErrors.nonEmpty, sessionErrors.nonEmpty)
+    },
+    test("symbolic and wrapper route modifiers are unavailable") {
+      val operatorErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val route = live @@ LiveLayout.identity
+      """)
+      val socketWrapperErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.http.codec.PathCodec
+        val mount = Live.socketAt(PathCodec.empty / "socket")
+      """)
+      val tokenWrapperErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val config = Live.tokenConfig(TokenConfig.default)
+      """)
+
+      assertTrue(
+        operatorErrors.nonEmpty,
+        socketWrapperErrors.nonEmpty,
+        tokenWrapperErrors.nonEmpty
+      )
     }
   )
 end LiveRoutesTypeSafetySpec

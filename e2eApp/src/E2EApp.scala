@@ -32,7 +32,7 @@ object E2EApp extends ZIOAppDefault:
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
   def liveRoutes(rootLayout: E2ERootLayout, assets: StaticAssets) =
-    (Live.router @@ rootLayout)(
+    Live.router.withRootLayout(rootLayout)(
       live / "select"              -> SelectLiveView(),
       E2ERoutes.keyedComprehension -> KeyedComprehensionLiveView(assets),
       Live.session("navigation")(
@@ -67,10 +67,11 @@ object E2EApp extends ZIOAppDefault:
       live / "issues" / "2965"                                              -> Issue2965LiveView(),
       live / "issues" / "2787"                                              -> Issue2787LiveView(),
       live / "issues" / "3040"                                              -> Issue3040LiveView(),
-      (Live.session("issue-3047") @@ Issue3047LiveView.Layout)(
-        E2ERoutes.issue3047A -> Issue3047LiveView(pageName = "A"),
-        E2ERoutes.issue3047B -> Issue3047LiveView(pageName = "B")
-      ),
+      Live
+        .session("issue-3047").withLayout(Issue3047LiveView.Layout)(
+          E2ERoutes.issue3047A -> Issue3047LiveView(pageName = "A"),
+          E2ERoutes.issue3047B -> Issue3047LiveView(pageName = "B")
+        ),
       live / "issues" / "3026"       -> Issue3026LiveView(),
       live / "issues" / "3083"       -> Issue3083LiveView(),
       live / "issues" / "3117"       -> Issue3117LiveView(),

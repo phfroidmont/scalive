@@ -127,7 +127,7 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
   ] =
     base[Any].query[QueryParams]
 
-  infix def @@[R, In, Claims, Out, Result](
+  def withMountAspect[R, In, Claims, Out, Result](
     aspect: LiveMountAspect[R, A, In, Claims, Out]
   )(using append: ContextAppend.Aux[In, Out, Result]
   ): LiveRouteBuilder[R, A, In, Result] =
@@ -139,12 +139,11 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
       hasRouteMountAspect = true
     )
 
-  infix def @@[Ctx](layout: LiveLayout[A, Ctx]): LiveRouteBuilder[Any, A, Ctx, Ctx] =
-    base[Ctx] @@ layout
+  def withLayout[Ctx](layout: LiveLayout[A, Ctx]): LiveRouteBuilder[Any, A, Ctx, Ctx] =
+    base[Ctx].withLayout(layout)
 
-  @targetName("rootLayoutModifier")
-  infix def @@[Ctx](layout: LiveRootLayout[A, Ctx]): LiveRouteBuilder[Any, A, Ctx, Ctx] =
-    base[Ctx] @@ layout
+  def withRootLayout[Ctx](layout: LiveRootLayout[A, Ctx]): LiveRouteBuilder[Any, A, Ctx, Ctx] =
+    base[Ctx].withRootLayout(layout)
 
   def apply[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
     : LiveRoute[Any, A, Any, Any, Msg, Model] =
@@ -227,7 +226,7 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   def locationEither(using ev: A =:= Unit): Either[LiveLocation.EncodeError, LiveLocation] =
     locationEither(ev.flip(()))
 
-  infix def @@[R1, Claims, Out, Result](
+  def withMountAspect[R1, Claims, Out, Result](
     aspect: LiveMountAspect[R1, A, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
   ): LiveRouteBuilder[R & R1, A, Need, Result] =
@@ -240,7 +239,7 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
       hasRouteMountAspect = true
     )
 
-  infix def @@(layout: LiveLayout[A, Ctx]): LiveRouteBuilder[R, A, Need, Ctx] =
+  def withLayout(layout: LiveLayout[A, Ctx]): LiveRouteBuilder[R, A, Need, Ctx] =
     LiveRouteBuilder(
       pathCodec,
       mountPipeline,
@@ -249,8 +248,7 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
       hasRouteMountAspect
     )
 
-  @targetName("rootLayoutModifier")
-  infix def @@(layout: LiveRootLayout[A, Ctx]): LiveRouteBuilder[R, A, Need, Ctx] =
+  def withRootLayout(layout: LiveRootLayout[A, Ctx]): LiveRouteBuilder[R, A, Need, Ctx] =
     LiveRouteBuilder(
       pathCodec,
       mountPipeline,
@@ -498,7 +496,7 @@ final class LiveRouteParamsBuilder[
     : Either[LiveLocation.EncodeError, LiveLocation] =
     locationEither(summon[Params =:= Unit].flip(()))
 
-  infix def @@[R1, Claims, Out, Result](
+  def withMountAspect[R1, Claims, Out, Result](
     aspect: LiveMountAspect[R1, A, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
   ): LiveRouteParamsBuilder[R & R1, A, Need, Result, Params, Capability] =
@@ -513,8 +511,9 @@ final class LiveRouteParamsBuilder[
       hasRouteMountAspect = true
     )
 
-  infix def @@(layout: LiveLayout[A, Ctx])
-    : LiveRouteParamsBuilder[R, A, Need, Ctx, Params, Capability] =
+  def withLayout(
+    layout: LiveLayout[A, Ctx]
+  ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params, Capability] =
     LiveRouteParamsBuilder(
       pathCodec,
       paramsDecoder,
@@ -525,8 +524,7 @@ final class LiveRouteParamsBuilder[
       hasRouteMountAspect
     )
 
-  @targetName("rootLayoutModifier")
-  infix def @@(
+  def withRootLayout(
     layout: LiveRootLayout[A, Ctx]
   ): LiveRouteParamsBuilder[R, A, Need, Ctx, Params, Capability] =
     LiveRouteParamsBuilder(
@@ -626,7 +624,7 @@ final class LiveSessionSeed private[scalive] (val name: String):
       group
     )(route, routes*)
 
-  infix def @@[R, Claims, Out, Result](
+  def withMountAspect[R, Claims, Out, Result](
     aspect: LiveMountAspect[R, Any, Any, Claims, Out]
   )(using ContextAppend.Aux[Any, Out, Result]
   ): LiveSessionBuilder[R, Result] =
@@ -638,7 +636,7 @@ final class LiveSessionSeed private[scalive] (val name: String):
       group
     )
 
-  infix def @@(layout: LiveLayout[Any, Any]): LiveSessionBuilder[Any, Any] =
+  def withLayout(layout: LiveLayout[Any, Any]): LiveSessionBuilder[Any, Any] =
     LiveSessionBuilder[Any, Any](
       name,
       LiveMountPipeline.identity[Any, Any],
@@ -647,8 +645,7 @@ final class LiveSessionSeed private[scalive] (val name: String):
       group
     )
 
-  @targetName("rootLayoutModifier")
-  infix def @@(layout: LiveRootLayout[Any, Any]): LiveSessionBuilder[Any, Any] =
+  def withRootLayout(layout: LiveRootLayout[Any, Any]): LiveSessionBuilder[Any, Any] =
     LiveSessionBuilder[Any, Any](
       name,
       LiveMountPipeline.identity[Any, Any],
@@ -656,6 +653,7 @@ final class LiveSessionSeed private[scalive] (val name: String):
       Some(LiveRootLayoutLayer[Any, Any, Any](layout, identity)),
       group
     )
+
 end LiveSessionSeed
 
 final class LiveSessionBuilder[R, Ctx] private[scalive] (
@@ -676,7 +674,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       .map(_.withSession(this))
     new LiveRouteGroup[R & R1, Any](liveRoutes)
 
-  infix def @@[R1, Claims, Out, Result](
+  def withMountAspect[R1, Claims, Out, Result](
     aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
   ): LiveSessionBuilder[R & R1, Result] =
@@ -689,7 +687,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       group
     )
 
-  infix def @@(layout: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
+  def withLayout(layout: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(
       name,
       mountPipeline,
@@ -698,8 +696,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       group
     )
 
-  @targetName("rootLayoutModifier")
-  infix def @@(layout: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
+  def withRootLayout(layout: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(
       name,
       mountPipeline,
@@ -707,10 +704,8 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       Some(LiveRootLayoutLayer[Any, Ctx, Ctx](layout, identity)),
       group
     )
-end LiveSessionBuilder
 
-final case class LiveSocketMount(pathCodec: PathCodec[Unit])
-final case class LiveTokenConfig(config: TokenConfig)
+end LiveSessionBuilder
 
 final class LiveRouter[R] private[scalive] (
   globalLayouts: List[LiveLayout[Any, Any]],
@@ -718,20 +713,17 @@ final class LiveRouter[R] private[scalive] (
   liveSocketMount: PathCodec[Unit],
   tokenConfig: TokenConfig):
 
-  infix def @@(layout: LiveLayout[Any, Any]): LiveRouter[R] =
+  def withLayout(layout: LiveLayout[Any, Any]): LiveRouter[R] =
     LiveRouter(globalLayouts :+ layout, globalRootLayout, liveSocketMount, tokenConfig)
 
-  @targetName("rootLayoutModifier")
-  infix def @@(layout: LiveRootLayout[Any, Any]): LiveRouter[R] =
+  def withRootLayout(layout: LiveRootLayout[Any, Any]): LiveRouter[R] =
     LiveRouter(globalLayouts, layout, liveSocketMount, tokenConfig)
 
-  @targetName("socketMountModifier")
-  infix def @@(mount: LiveSocketMount): LiveRouter[R] =
-    LiveRouter(globalLayouts, globalRootLayout, mount.pathCodec, tokenConfig)
+  def withSocketPath(path: PathCodec[Unit]): LiveRouter[R] =
+    LiveRouter(globalLayouts, globalRootLayout, path, tokenConfig)
 
-  @targetName("tokenConfigModifier")
-  infix def @@(config: LiveTokenConfig): LiveRouter[R] =
-    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, config.config)
+  def withTokenConfig(config: TokenConfig): LiveRouter[R] =
+    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, config)
 
   def apply[R1](route: LiveRouteFragment[R1, Any], routes: LiveRouteFragment[R1, Any]*)
     : Routes[R & R1, Nothing] =
@@ -760,11 +752,5 @@ object Live:
 
   def session(name: String): LiveSessionSeed =
     LiveSessionSeed(name)
-
-  def socketAt(path: PathCodec[Unit]): LiveSocketMount =
-    LiveSocketMount(path)
-
-  def tokenConfig(config: TokenConfig): LiveTokenConfig =
-    LiveTokenConfig(config)
 
 val live: LiveRouteSeed[Unit] = LiveRouteSeed(PathCodec.empty)

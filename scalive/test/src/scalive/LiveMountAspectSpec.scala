@@ -102,7 +102,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                      callsRef.update(_ :+ s"connected:${claims.value}:${request.url.path.encode}") *>
                        ZIO.succeed(MountUser(s"connected:${claims.value}"))
                  )
-        route = (scalive.live @@ aspect) { (_, _, user) => liveView(callsRef, user) }
+        route = scalive.live.withMountAspect(aspect) { (_, _, user) => liveView(callsRef, user) }
         runtime = runtimeFor(route, tokenConfig)
         response <- runRequest(runtime.routes, "/")
         body     <- response.body.asString
@@ -141,7 +141,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                      callsRef.update(_ :+ s"session-connected:${claims.value}:${request.url.path.encode}") *>
                        ZIO.succeed(MountUser(s"session-connected:${claims.value}"))
                  )
-        route = (scalive.Live.session("admin") @@ aspect)(
+        route = scalive.Live.session("admin").withMountAspect(aspect)(
                   (scalive.live / "admin") { (_, _, user: MountUser) => liveView(callsRef, user) }
                 )
         runtime = runtimeFor(route, tokenConfig)
@@ -187,7 +187,8 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                      callsRef.update(_ :+ s"connected:${request.params}:${claims.value}") *>
                        ZIO.succeed(MountUser(s"connected:${request.params}"))
                  )
-        route = ((scalive.live / "users" / PathCodec.int("id")) @@ aspect) { (_, _, user) =>
+        route = (scalive.live / "users" / PathCodec.int("id")).withMountAspect(aspect) {
+          (_, _, user) =>
                   liveView(callsRef, user)
                 }
         runtime = runtimeFor(route, tokenConfig)
@@ -231,7 +232,8 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                           ZIO.succeed(MountUser("allowed-connected"))
                         else ZIO.fail(LiveMountFailure.unauthorized("forbidden id")))
                  )
-        route = ((scalive.live / "secure" / PathCodec.int("id")) @@ aspect) { (_, _, user) =>
+        route = (scalive.live / "secure" / PathCodec.int("id")).withMountAspect(aspect) {
+          (_, _, user) =>
                   liveView(callsRef, user)
                 }
         runtime = runtimeFor(route, tokenConfig)
@@ -289,8 +291,8 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                           callsRef.update(_ :+ s"route-connected:${request.params}:${claims.value}") *>
                             ZIO.succeed(s"route:${claims.value}")
                       )
-        route = (scalive.Live.session("combined") @@ sessionAspect)(
-                  ((scalive.live / "combined" / PathCodec.int("id")) @@ routeAspect) {
+        route = scalive.Live.session("combined").withMountAspect(sessionAspect)(
+                  (scalive.live / "combined" / PathCodec.int("id")).withMountAspect(routeAspect) {
                     (_, _, sessionCtx, routeCtx) =>
                       liveView(callsRef, MountUser(s"$sessionCtx/$routeCtx"))
                   }
@@ -360,10 +362,12 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                        ZIO.succeed(MountClaims("signed") -> MountUser("aspected")),
                    (_, _) => ZIO.succeed(MountUser("connected"))
                  )
-        routes = (scalive.Live.router @@ scalive.Live.tokenConfig(tokenConfig))(
+        routes = scalive.Live.router.withTokenConfig(tokenConfig)(
                    (scalive.live / "plain")(liveView(callsRef, MountUser("plain"))),
-                   ((scalive.live / "aspected") @@ aspect) { (_, _, user) => liveView(callsRef, user) },
-                   ((scalive.live / "guarded") @@ aspect)(
+                   (scalive.live / "aspected").withMountAspect(aspect) { (_, _, user) =>
+                     liveView(callsRef, user)
+                   },
+                   (scalive.live / "guarded").withMountAspect(aspect)(
                       liveView(callsRef, MountUser("guarded"))
                     )
                   )
@@ -404,7 +408,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                      callsRef.update(_ :+ s"session-connected:${claims.value}:${request.url.path.encode}") *>
                        ZIO.succeed(MountUser(s"connected:${request.url.path.encode}"))
                  )
-        route = (scalive.Live.session("navigation") @@ aspect)(
+        route = scalive.Live.session("navigation").withMountAspect(aspect)(
                   (scalive.live / "nav" / "a") { (_, _, user: MountUser) => liveView(callsRef, user) },
                   (scalive.live / "nav" / "b") { (_, _, user: MountUser) => liveView(callsRef, user) }
                 )
@@ -446,7 +450,8 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                        ZIO.succeed(MountUser("connected"))
                  )
         route = scalive.Live.session("navigation")(
-                  ((scalive.live / "route-claims" / "source") @@ aspect) { (_, _, user) =>
+                  (scalive.live / "route-claims" / "source").withMountAspect(aspect) {
+                    (_, _, user) =>
                     liveView(callsRef, user)
                   },
                   (scalive.live / "route-claims" / "target")(
@@ -497,7 +502,8 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                   (scalive.live / "target-claims" / "source")(
                     liveView(callsRef, MountUser("source"))
                   ),
-                  ((scalive.live / "target-claims" / "target") @@ aspect) { (_, _, user) =>
+                  (scalive.live / "target-claims" / "target").withMountAspect(aspect) {
+                    (_, _, user) =>
                     liveView(callsRef, user)
                   }
                 )
@@ -538,7 +544,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                    _ => ZIO.succeed(MountClaims("signed") -> MountUser("disconnected")),
                    (_, _) => ZIO.fail(LiveMountFailure.redirectUnsafe(redirectUrl))
                  )
-        route = (scalive.live @@ aspect) { (_, _, user) => liveView(callsRef, user) }
+        route = scalive.live.withMountAspect(aspect) { (_, _, user) => liveView(callsRef, user) }
         runtime = runtimeFor(route, tokenConfig)
         response <- runRequest(runtime.routes, "/")
         body     <- response.body.asString
@@ -571,7 +577,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                    _ => ZIO.succeed(MountClaims("signed") -> MountUser("disconnected")),
                    (_, _) => ZIO.fail(LiveMountFailure.redirect(login))
                  )
-        route = (scalive.live @@ aspect) { (_, _, user) => liveView(callsRef, user) }
+        route = scalive.live.withMountAspect(aspect) { (_, _, user) => liveView(callsRef, user) }
         runtime = runtimeFor(route, tokenConfig)
         response <- runRequest(runtime.routes, "/")
         body     <- response.body.asString
@@ -603,7 +609,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                    _ => ZIO.succeed(MountClaims("signed") -> MountUser("disconnected")),
                    (_, _) => ZIO.fail(LiveMountFailure.unauthorized)
                  )
-        route = (scalive.live @@ aspect) { (_, _, user) => liveView(callsRef, user) }
+        route = scalive.live.withMountAspect(aspect) { (_, _, user) => liveView(callsRef, user) }
         runtime = runtimeFor(route, tokenConfig)
         response <- runRequest(runtime.routes, "/")
         body     <- response.body.asString
@@ -632,7 +638,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                    _ => ZIO.succeed(MountClaims("signed") -> MountUser("disconnected")),
                    (_, _) => ZIO.fail(LiveMountFailure.unauthorized("forbidden"))
                  )
-        route = (scalive.live @@ aspect) { (_, _, user) => liveView(callsRef, user) }
+        route = scalive.live.withMountAspect(aspect) { (_, _, user) => liveView(callsRef, user) }
         runtime = runtimeFor(route, tokenConfig)
         response <- runRequest(runtime.routes, "/")
         body     <- response.body.asString
@@ -661,7 +667,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
                    _ => ZIO.succeed(MountClaims("signed") -> MountUser("disconnected")),
                    (_, _) => ZIO.fail(LiveMountFailure.stale("server failure"))
                  )
-        route = (scalive.live @@ aspect) { (_, _, user) => liveView(callsRef, user) }
+        route = scalive.live.withMountAspect(aspect) { (_, _, user) => liveView(callsRef, user) }
         runtime = runtimeFor(route, tokenConfig)
         response <- runRequest(runtime.routes, "/")
         body     <- response.body.asString

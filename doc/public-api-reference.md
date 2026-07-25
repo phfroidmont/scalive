@@ -714,8 +714,6 @@ object Live:
   val router: LiveRouter[Any]
   def route[A](path: PathCodec[A]): LiveRouteSeed[A]
   def session(name: String): LiveSessionSeed
-  def socketAt(path: PathCodec[Unit]): LiveSocketMount
-  def tokenConfig(config: TokenConfig): LiveTokenConfig
 ```
 
 The package-level `live` value is equivalent to an empty route seed.
@@ -734,9 +732,9 @@ seed.location(value)
 seed.locationEither(value)
 seed.location                 // when the path value is Unit
 seed.locationEither           // when the path value is Unit
-seed @@ aspect
-seed @@ layout
-seed @@ rootLayout
+seed.withMountAspect(aspect)
+seed.withLayout(layout)
+seed.withRootLayout(rootLayout)
 seed.params
 seed.params(codec)
 seed.paramsDecodeOnly(decoder)
@@ -755,9 +753,9 @@ seed((params, request, c1, c2) => view)
 `LiveRouteBuilder[R, A, Need, Ctx]` is produced after modifiers are applied.
 
 ```scala
-builder @@ aspect
-builder @@ layout
-builder @@ rootLayout
+builder.withMountAspect(aspect)
+builder.withLayout(layout)
+builder.withRootLayout(rootLayout)
 builder.location(value)
 builder.locationEither(value)
 builder.location                 // when the path value is Unit
@@ -784,9 +782,9 @@ paramsBuilder.location(params)
 paramsBuilder.locationEither(params)
 paramsBuilder.location                 // when Params is Unit
 paramsBuilder.locationEither           // when Params is Unit
-paramsBuilder @@ aspect
-paramsBuilder @@ layout
-paramsBuilder @@ rootLayout
+paramsBuilder.withMountAspect(aspect)
+paramsBuilder.withLayout(layout)
+paramsBuilder.withRootLayout(rootLayout)
 paramsBuilder(view)
 paramsBuilder -> view
 paramsBuilder((params, request, context) => view)
@@ -826,20 +824,20 @@ JS.patch(settings)
 
 ```scala
 Live.session(name)(route, routes*)
-Live.session(name) @@ aspect
-Live.session(name) @@ layout
-Live.session(name) @@ rootLayout
+Live.session(name).withMountAspect(aspect)
+Live.session(name).withLayout(layout)
+Live.session(name).withRootLayout(rootLayout)
 ```
 
-`LiveSessionBuilder` supports additional `@@` composition and then applies to one or more routes.
+`LiveSessionBuilder` supports additional named modifier composition and then applies to one or more routes.
 
 ### Router
 
 ```scala
-Live.router @@ layout
-Live.router @@ rootLayout
-Live.router @@ Live.socketAt(path)
-Live.router @@ Live.tokenConfig(config)
+Live.router.withLayout(layout)
+Live.router.withRootLayout(rootLayout)
+Live.router.withSocketPath(path)
+Live.router.withTokenConfig(config)
 Live.router(route, routes*)
 ```
 
@@ -850,8 +848,6 @@ Supporting route types:
 ```scala
 trait LiveRouteFragment[-R, -Need]
 final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (...)
-final case class LiveSocketMount(pathCodec: PathCodec[Unit])
-final case class LiveTokenConfig(config: TokenConfig)
 ```
 
 Initial lifecycle outcome:

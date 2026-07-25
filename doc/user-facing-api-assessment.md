@@ -79,20 +79,10 @@ Method:
 ### Static Assets And Token/Session Configuration
 
 - Static assets expose classpath and directory configuration, manifest entries, digested path helpers, tracked stylesheet/script helpers, and asset routes. Evidence: `scalive/src/scalive/StaticAssets.scala:12`, `scalive/src/scalive/StaticAssets.scala:18`, `scalive/src/scalive/StaticAssets.scala:32`, `scalive/src/scalive/StaticAssets.scala:71`, `scalive/src/scalive/StaticAssets.scala:78`, `scalive/src/scalive/StaticAssets.scala:96`, `scalive/src/scalive/StaticAssets.scala:102`, `scalive/src/scalive/StaticAssets.scala:111`, `scalive/src/scalive/StaticAssets.scala:114`, `scalive/src/scalive/StaticAssets.scala:117`, `scalive/src/scalive/StaticAssets.scala:120`, `scalive/src/scalive/StaticAssets.scala:123`.
-- Token/session configuration is public through `TokenConfig`, `Live.session`, `Live.socketAt`, `Live.tokenConfig`, and router/session `@@` modifiers. Evidence: `scalive/src/scalive/protocol/Token.scala:22`, `scalive/src/scalive/protocol/Token.scala:24`, `scalive/src/scalive/routing/LiveRouteDsl.scala:449`, `scalive/src/scalive/routing/LiveRouteDsl.scala:500`, `scalive/src/scalive/routing/LiveRouteDsl.scala:501`, `scalive/src/scalive/routing/LiveRouteDsl.scala:517`, `scalive/src/scalive/routing/LiveRouteDsl.scala:520`, `scalive/src/scalive/routing/LiveRouteDsl.scala:549`, `scalive/src/scalive/routing/LiveRouteDsl.scala:552`, `scalive/src/scalive/routing/LiveRouteDsl.scala:555`.
+- Token/session configuration is public through `TokenConfig`, `Live.session`, named route/session modifiers, `LiveRouter.withSocketPath`, and `LiveRouter.withTokenConfig`. Evidence: `scalive/src/scalive/protocol/Token.scala:22`, `scalive/src/scalive/protocol/Token.scala:24`, `scalive/src/scalive/routing/LiveRouteDsl.scala:130`, `scalive/src/scalive/routing/LiveRouteDsl.scala:627`, `scalive/src/scalive/routing/LiveRouteDsl.scala:722`, `scalive/src/scalive/routing/LiveRouteDsl.scala:725`.
 - Signed live session payloads carry session name, flash, mount claims, route mount claim metadata, and root layout key. Evidence: `scalive/src/scalive/routing/LiveSessionPayload.scala:6`, `scalive/src/scalive/routing/LiveSessionPayload.scala:23`, `scalive/src/scalive/routing/LiveSessionPayload.scala:38`.
 
 ## Ergonomics Findings
-
-### Medium - Discoverability - Route and session modifiers rely heavily on symbolic `@@`
-
-Evidence: `scalive/src/scalive/routing/LiveRouteDsl.scala:63`, `scalive/src/scalive/routing/LiveRouteDsl.scala:75`, `scalive/src/scalive/routing/LiveRouteDsl.scala:79`, `scalive/src/scalive/routing/LiveRouteDsl.scala:517`, `scalive/src/scalive/routing/LiveRouteDsl.scala:521`, `doc/api-improvement-ideas.md:193`.
-
-The `@@` operator composes mount aspects, live layouts, root layouts, socket mount configuration, and token configuration. This keeps declarations compact but makes the API harder to search and harder to learn without examples.
-
-Impact: new users may need to read implementation or examples to understand route composition.
-
-Confidence: Medium.
 
 ### Low - Ergonomics - Static and eventless views still require message-handler boilerplate
 

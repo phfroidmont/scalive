@@ -149,18 +149,6 @@ Ideas:
 - Add a named constructor such as `LiveRootLayout.static("key")`.
 - Document when root layout keys must change.
 
-### Reconsider broad use of `@@`
-
-Current issue:
-
-- `@@` is used for mount aspects, live layouts, root layouts, socket mount, and token config.
-
-Ideas:
-
-- Keep `@@` for route/session modifiers if desired.
-- Add named alternatives such as `.withLayout`, `.withRootLayout`, `.withMount`, `.socketAt`, `.withTokenConfig`.
-- Use named alternatives in documentation to improve discoverability.
-
 ### Simplify `cancelAssignAsync`
 
 Current issue:

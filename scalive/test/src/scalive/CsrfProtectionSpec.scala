@@ -96,7 +96,7 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
   override def spec = suite("CsrfProtectionSpec")(
     test("emits csrf meta token and matching HttpOnly cookie on disconnected render") {
       val routes =
-        (scalive.Live.router @@ scalive.Live.tokenConfig(tokenConfig) @@ rootLayout)(
+        scalive.Live.router.withTokenConfig(tokenConfig).withRootLayout(rootLayout)(
           scalive.live(view)
         )
 

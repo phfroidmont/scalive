@@ -120,13 +120,15 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
                         )
                       )
         route =
-          (scalive.Live.session("layout") @@ userAspect @@ sessionLayout)(
-            ((scalive.live / "orgs" / PathCodec.int("id")) @@ orgAspect @@ routeLayout) {
+          scalive.Live.session("layout").withMountAspect(userAspect).withLayout(sessionLayout)(
+            (scalive.live / "orgs" / PathCodec.int("id"))
+              .withMountAspect(orgAspect)
+              .withLayout(routeLayout) {
               (id, _, user: User, org: Org) => view(s"view:$id:${user.name}:${org.name}")
             }
           )
         routes =
-          (scalive.Live.router @@ scalive.Live.tokenConfig(tokenConfig) @@ globalLayout)(route)
+          scalive.Live.router.withTokenConfig(tokenConfig).withLayout(globalLayout)(route)
         response   <- runRequest(routes, "/orgs/42")
         body       <- response.body.asString
         session    <- extractAttr(body, "data-phx-session")
@@ -162,8 +164,8 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
       val rightRoot =
         LiveRootLayout("right-root")((content, _) => div(idAttr := "right-root", content))
       val route = scalive.Live.session("navigation")(
-        ((scalive.live / "left") @@ leftRoot)(view("left")),
-        ((scalive.live / "right") @@ rightRoot)(view("right"))
+        (scalive.live / "left").withRootLayout(leftRoot)(view("left")),
+        (scalive.live / "right").withRootLayout(rightRoot)(view("right"))
       )
       val runtime = runtimeFor(route, tokenConfig)
 

@@ -85,7 +85,7 @@ trait LiveView[Msg, Model]:
 
   def render(model: Model): HtmlElement[Msg]
 
-trait RoutedLiveView[Msg, Model, Params] extends LiveView[Msg, Model]:
+trait LiveView.Routed[Msg, Model, Params] extends LiveView[Msg, Model]:
   type ParamsContext = scalive.ParamsContext[Msg, Model]
 
   def handleParams(

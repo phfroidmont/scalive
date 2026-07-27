@@ -111,19 +111,6 @@ Ideas:
 
 ## Ergonomics Improvements
 
-### Reduce boilerplate for simple LiveViews
-
-Current issue:
-
-- Static or eventless views still define `handleMessage`.
-- The current `subscriptions` boilerplate should go away when managed subscriptions move into phase contexts.
-
-Ideas:
-
-- Provide a default no-op `handleMessage` when `Msg = Unit` or `Msg = Nothing`.
-- Add `StaticLiveView` or `SimpleLiveView` helpers.
-- Consider a `NoMsg` type alias or object for views without server messages.
-
 ### Add common mount aspect builders
 
 Current issue:

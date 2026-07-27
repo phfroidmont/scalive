@@ -6,7 +6,7 @@ import zio.schema.derived
 import scalive.*
 import scalive.LiveIO.given
 
-class ComponentsLiveView() extends RoutedLiveView[Msg, Model, UrlParams]:
+class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
 
   def mount(ctx: MountContext) =
     Model(activeTab = "focus_wrap")

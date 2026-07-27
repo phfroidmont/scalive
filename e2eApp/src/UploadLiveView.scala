@@ -12,7 +12,7 @@ import zio.http.URL
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
 
-class UploadLiveView() extends RoutedLiveView[Msg, Model, Option[String]]:
+class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
 
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 

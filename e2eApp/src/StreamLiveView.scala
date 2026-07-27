@@ -9,7 +9,7 @@ import scalive.LiveIO.given
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
 class StreamLiveView()
-    extends RoutedLiveView[StreamLiveView.Msg, StreamLiveView.Model, Option[String]]:
+    extends LiveView.Routed[StreamLiveView.Msg, StreamLiveView.Model, Option[String]]:
   import StreamLiveView.*
 
   private val onlyChild = htmlAttr("only-child", BooleanAsAttrPresenceEncoder)
@@ -374,7 +374,7 @@ object StreamLiveView:
 end StreamLiveView
 
 class HealthyLiveView(initialCategory: String)
-    extends RoutedLiveView[HealthyLiveView.Msg, HealthyLiveView.Model, String]:
+    extends LiveView.Routed[HealthyLiveView.Msg, HealthyLiveView.Model, String]:
   import HealthyLiveView.*
 
   def mount(ctx: MountContext) =
@@ -442,7 +442,7 @@ object HealthyLiveView:
     if category == "fruits" then "veggies" else "fruits"
 
 class StreamResetLiveView()
-    extends RoutedLiveView[StreamResetLiveView.Msg, StreamResetLiveView.Model, Option[String]]:
+    extends LiveView.Routed[StreamResetLiveView.Msg, StreamResetLiveView.Model, Option[String]]:
   import StreamResetLiveView.*
 
   def mount(ctx: MountContext) =

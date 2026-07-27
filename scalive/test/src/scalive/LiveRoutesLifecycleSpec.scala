@@ -90,7 +90,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         button(phx.onClick(command), model.toString)
 
   private def redirectAwareParent(child: LiveView[ChildMsg, Int]) =
-    new RoutedLiveView[Unit, String, Option[String]]:
+    new LiveView.Routed[Unit, String, Option[String]]:
       def mount(ctx: MountContext) =
         ZIO.succeed("none")
 
@@ -233,7 +233,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
     test("runs mount then handleParams before disconnected render") {
       for
         callsRef <- Ref.make(List.empty[String])
-        lv = new RoutedLiveView[Unit, Unit, Option[String]]:
+        lv = new LiveView.Routed[Unit, Unit, Option[String]]:
                def mount(ctx: MountContext) =
                   callsRef.update(_ :+ "mount").as(())
 
@@ -253,7 +253,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       final case class UserQuery(tab: Option[String]) derives Schema
       final case class UserParams(userId: Int, tab: Option[String])
 
-      val lv = new RoutedLiveView[Unit, String, UserParams]:
+      val lv = new LiveView.Routed[Unit, String, UserParams]:
         def mount(ctx: MountContext) =
           ZIO.succeed("none")
 
@@ -279,7 +279,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       yield assertTrue(response.status == Status.Ok, body.contains("42:settings"))
     },
     test("honors initial pushPatch with HTTP redirect") {
-      val lv = new RoutedLiveView[Unit, Unit, Unit]:
+      val lv = new LiveView.Routed[Unit, Unit, Unit]:
         def mount(ctx: MountContext) =
           ZIO.unit
 

@@ -380,7 +380,7 @@ object Issue3047LiveView:
   private val ResetItems     = (5 to 15).map(id => Item(id, s"item-$id")).toList
 end Issue3047LiveView
 
-class Issue3529LiveView extends RoutedLiveView[Unit, Issue3529LiveView.Model, Option[String]]:
+class Issue3529LiveView extends LiveView.Routed[Unit, Issue3529LiveView.Model, Option[String]]:
   import Issue3529LiveView.*
 
   def mount(ctx: MountContext) =
@@ -405,7 +405,7 @@ class Issue3529LiveView extends RoutedLiveView[Unit, Issue3529LiveView.Model, Op
 object Issue3529LiveView:
   final case class Model(mounted: String, next: String)
 
-class Issue3530LiveView extends RoutedLiveView[Unit, Issue3530LiveView.Model, Option[String]]:
+class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, Option[String]]:
   import Issue3530LiveView.*
 
   def mount(ctx: MountContext) =
@@ -850,7 +850,7 @@ class Issue3194OtherLiveView extends LiveView[Unit, Unit]:
   def render(model: Unit) = h2("Another LiveView")
 
 class Issue3200LiveView
-    extends RoutedLiveView[Issue3200LiveView.Msg, Issue3200LiveView.Model, String]:
+    extends LiveView.Routed[Issue3200LiveView.Msg, Issue3200LiveView.Model, String]:
   import Issue3200LiveView.*
 
   def mount(ctx: MountContext) =
@@ -1608,7 +1608,7 @@ object Issue3686LiveView:
   private val Info = FlashKind("info")
   case object Msg
 
-class Issue3709LiveView extends RoutedLiveView[Unit, String, Option[String]]:
+class Issue3709LiveView extends LiveView.Routed[Unit, String, Option[String]]:
   import Issue3709LiveView.*
 
   def mount(ctx: MountContext) =
@@ -1742,12 +1742,9 @@ object Issue3941LiveView:
   enum Msg:
     case Toggle(id: String)
 
-  object ItemComponent extends LiveComponent[String, Nothing, Unit]:
+  object ItemComponent extends LiveComponent.Eventless[String, Unit]:
     def mount(props: String, ctx: MountContext) =
       ()
-
-    def handleMessage(props: String, model: Unit, ctx: MessageContext) =
-      (_: Nothing) => model
 
     def render(props: String, model: Unit, self: ComponentRef[Nothing]) =
       div(
@@ -1907,7 +1904,7 @@ object Issue3979LiveView:
       div(idAttr := s"hello-${model.id}-${model.domCounter}", model.counter.toString)
 
 class Issue4027LiveView
-    extends RoutedLiveView[
+    extends LiveView.Routed[
       Issue4027LiveView.Msg,
       Issue4027LiveView.Model,
       Issue4027LiveView.QueryParams
@@ -2027,7 +2024,7 @@ object Issue4027LiveView:
 end Issue4027LiveView
 
 class Issue4066LiveView
-    extends RoutedLiveView[
+    extends LiveView.Routed[
       Issue4066LiveView.Msg,
       Issue4066LiveView.Model,
       Issue4066LiveView.QueryParams
@@ -2189,7 +2186,7 @@ object Issue4088LiveView:
   enum Msg:
     case Noop
 
-class Issue4094LiveView extends RoutedLiveView[Unit, Unit, Option[String]]:
+class Issue4094LiveView extends LiveView.Routed[Unit, Unit, Option[String]]:
   def mount(ctx: MountContext) =
     ()
 

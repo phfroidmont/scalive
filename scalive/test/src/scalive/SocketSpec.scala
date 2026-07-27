@@ -170,7 +170,7 @@ object SocketSpec extends ZIOSpecDefault:
       val ctx = LiveContext(staticChanged = false)
       for
         callsRef <- Ref.make(List.empty[String])
-        lv = new RoutedLiveView[Unit, Int, (Option[String], String)]:
+        lv = new LiveView.Routed[Unit, Int, (Option[String], String)]:
                def mount(ctx: MountContext) =
                  callsRef.update(_ :+ "mount").as(0)
 
@@ -213,7 +213,7 @@ object SocketSpec extends ZIOSpecDefault:
       val ctx = LiveContext(staticChanged = false)
       for
         callsRef <- Ref.make(List.empty[String])
-        lv = new RoutedLiveView[Unit, Int, String]:
+        lv = new LiveView.Routed[Unit, Int, String]:
                def mount(ctx: MountContext) =
                  ZIO.succeed(0)
 
@@ -257,7 +257,7 @@ object SocketSpec extends ZIOSpecDefault:
       val ctx = LiveContext(staticChanged = false)
       for
         callsRef <- Ref.make(List.empty[String])
-        lv = new RoutedLiveView[Unit, Int, Option[String]]:
+        lv = new LiveView.Routed[Unit, Int, Option[String]]:
                def mount(ctx: MountContext) =
                  ZIO.succeed(0)
 
@@ -306,7 +306,7 @@ object SocketSpec extends ZIOSpecDefault:
       final case class LoopModel(shouldLoop: Boolean)
 
       val ctx = LiveContext(staticChanged = false)
-      val lv  = new RoutedLiveView[Unit, LoopModel, Unit]:
+      val lv  = new LiveView.Routed[Unit, LoopModel, Unit]:
         def mount(ctx: MountContext) =
           ZIO.succeed(LoopModel(shouldLoop = false))
 

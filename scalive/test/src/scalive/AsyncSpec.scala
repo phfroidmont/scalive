@@ -128,7 +128,7 @@ object AsyncSpec extends ZIOSpecDefault:
 
   override def spec = suite("AsyncSpec")(
     test("completed async task sends typed message and pushes diff") {
-      val lv = new RoutedLiveView[Msg, String, String]:
+      val lv = new LiveView.Routed[Msg, String, String]:
         def mount(ctx: MountContext) =
           ctx.async
             .start(Tasks.Load)(ZIO.succeed("loaded"))(Msg.Loaded(_))
@@ -147,7 +147,7 @@ object AsyncSpec extends ZIOSpecDefault:
       yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "loaded")))
     },
     test("failed async task is exposed to async hooks") {
-      val lv = new RoutedLiveView[Msg, String, String]:
+      val lv = new LiveView.Routed[Msg, String, String]:
         override def hooks: LiveHooks[Msg, String] =
           LiveHooks.empty.async("failure") { (model, event, _) =>
             event.result match
@@ -173,7 +173,7 @@ object AsyncSpec extends ZIOSpecDefault:
       yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "failed")))
     },
     test("async completion message can push patch") {
-      val lv = new RoutedLiveView[Msg, String, String]:
+      val lv = new LiveView.Routed[Msg, String, String]:
         def mount(ctx: MountContext) =
           ctx.async
             .start(Tasks.Patch)(ZIO.succeed("done"))(Msg.PatchLoaded(_))
@@ -384,7 +384,7 @@ object AsyncSpec extends ZIOSpecDefault:
       )
     },
     test("live component async completion can push patch") {
-      val lv = new RoutedLiveView[Unit, String, Option[String]]:
+      val lv = new LiveView.Routed[Unit, String, Option[String]]:
         def mount(ctx: MountContext) =
           ZIO.succeed("none")
 

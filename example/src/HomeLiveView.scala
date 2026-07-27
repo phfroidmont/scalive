@@ -1,7 +1,7 @@
 import scalive.*
 import scalive.LiveIO.given
 
-class HomeLiveView() extends LiveView[String, Unit]:
+class HomeLiveView() extends LiveView.Eventless[Unit]:
   val links = List(
     ExampleRoutes.counter.location                                     -> "Counter",
     ExampleRoutes.list.location(ListLiveView.ListParams(Some("test"))) -> "List",
@@ -10,9 +10,6 @@ class HomeLiveView() extends LiveView[String, Unit]:
 
   def mount(ctx: MountContext) =
     ()
-
-  def handleMessage(model: Unit, ctx: MessageContext) =
-    _ => model
 
   def render(model: Unit) =
     ul(

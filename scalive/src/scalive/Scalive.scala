@@ -1,5 +1,3 @@
-import scala.reflect.ClassTag
-
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 import scalive.codecs.Encoder
 import scalive.codecs.IntAsStringEncoder
@@ -23,14 +21,20 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): Mod[Nothing] =
     Mod.Content.LiveComponent(LiveComponentSpec(component, id, props))
 
-  def liveView[Msg: ClassTag, Model](
+  def liveView[Msg: LiveMessageTag, Model](
     id: String,
     liveView: => LiveView[Msg, Model],
     sticky: Boolean = false,
     linkParentOnCrash: Boolean = false
   ): Mod[Nothing] =
     Mod.Content.LiveView(
-      NestedLiveViewSpec(id, () => liveView, summon[ClassTag[Msg]], sticky, linkParentOnCrash)
+      NestedLiveViewSpec(
+        id,
+        () => liveView,
+        summon[LiveMessageTag[Msg]].classTag,
+        sticky,
+        linkParentOnCrash
+      )
     )
 
   def flash(kind: FlashKind)(f: String => HtmlElement[Nothing]): Mod[Nothing] =

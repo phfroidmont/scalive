@@ -9,7 +9,7 @@ import scalive.*
 import scalive.LiveIO.given
 
 class KeyedComprehensionLiveView(assets: StaticAssets)
-    extends RoutedLiveView[Msg, Model, UrlParams]:
+    extends LiveView.Routed[Msg, Model, UrlParams]:
 
   def mount(ctx: MountContext) =
     Model(

@@ -229,7 +229,7 @@ object FlashSpec extends ZIOSpecDefault:
         case SetError
         case Patch
 
-      val lv = new RoutedLiveView[RootMsg, String, String]:
+      val lv = new LiveView.Routed[RootMsg, String, String]:
         def mount(ctx: MountContext) =
           ZIO.succeed("start")
 
@@ -286,7 +286,7 @@ object FlashSpec extends ZIOSpecDefault:
         case Patch
 
       val tokenConfig = TokenConfig.default
-      val lv = new RoutedLiveView[RootMsg, String, String]:
+      val lv = new LiveView.Routed[RootMsg, String, String]:
         def mount(ctx: MountContext) =
           ZIO.succeed("start")
 
@@ -405,7 +405,7 @@ object FlashSpec extends ZIOSpecDefault:
             flash(Error)(message => p(idAttr := "component-error", message))
           )
 
-      val lv = new RoutedLiveView[Unit, String, String]:
+      val lv = new LiveView.Routed[Unit, String, String]:
         def mount(ctx: MountContext) =
           ZIO.succeed("start")
 

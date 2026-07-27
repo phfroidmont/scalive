@@ -23,9 +23,9 @@ Method:
 
 ### Core Lifecycle
 
-- `LiveView[Msg, Model]` defines `mount`, `handleMessage`, `render`, and optional `hooks`. Evidence: `scalive/src/scalive/LiveView.scala:6`.
-- `RoutedLiveView[Msg, Model, Params]` adds `handleParams` and `handleParamsDecodeError`. Evidence: `scalive/src/scalive/LiveView.scala:19`.
-- `LiveComponent[Props, Msg, Model]` defines typed props, typed messages, typed model lifecycle, and `ComponentRef[Msg]` rendering. Evidence: `scalive/src/scalive/LiveComponent.scala:5`.
+- `LiveView[Msg, Model]` defines `mount`, `handleMessage`, `render`, and optional `hooks`; `LiveView.Eventless[Model]` removes message-handler boilerplate when a view has no server events. Evidence: `scalive/src/scalive/LiveView.scala:6`, `scalive/src/scalive/LiveView.scala:20`.
+- `LiveView.Routed[Msg, Model, Params]` adds `handleParams` and `handleParamsDecodeError`, while `LiveView.Routed.Eventless[Model, Params]` combines routed params with an eventless message type. Evidence: `scalive/src/scalive/LiveView.scala:24`, `scalive/src/scalive/LiveView.scala:43`.
+- `LiveComponent[Props, Msg, Model]` defines typed props, typed messages, typed model lifecycle, and `ComponentRef[Msg]` rendering; `LiveComponent.Eventless[Props, Model]` removes message-handler boilerplate for components without component events. Evidence: `scalive/src/scalive/LiveComponent.scala:5`, `scalive/src/scalive/LiveComponent.scala:23`.
 
 ### Package-Level DSL
 
@@ -62,11 +62,11 @@ Method:
 ### Navigation And Routing
 
 - Safe navigation is available through route-derived `LiveLocation` values consumed by `link.navigate`, `link.patch`, `link.patchReplace`, `MountNavigation`, `Navigation`, and JS commands. Raw destinations remain available only through explicitly named unsafe methods. Evidence: `scalive/src/scalive/LiveLocation.scala:6`, `scalive/src/scalive/Scalive.scala:83`, `scalive/src/scalive/LiveContext.scala:86`, `scalive/src/scalive/JS.scala:125`.
-- Routing starts from `Live.route`/`live`, composes ZIO HTTP `PathCodec` and query codecs, and can build plain, request-aware, params-aware, and context-aware routes. Evidence: `scalive/src/scalive/routing/LiveRouteDsl.scala:13`, `scalive/src/scalive/routing/LiveRouteDsl.scala:14`, `scalive/src/scalive/routing/LiveRouteDsl.scala:26`, `scalive/src/scalive/routing/LiveRouteDsl.scala:34`, `scalive/src/scalive/routing/LiveRouteDsl.scala:82`, `scalive/src/scalive/routing/LiveRouteDsl.scala:91`, `scalive/src/scalive/routing/LiveRouteDsl.scala:103`, `scalive/src/scalive/routing/LiveRouteDsl.scala:546`, `scalive/src/scalive/routing/LiveRouteDsl.scala:558`.
+- Routing starts from `Live.route`/`live`, composes ZIO HTTP `PathCodec` and query codecs, and can build plain, request-aware, params-aware, and context-aware routes. Evidence: `scalive/src/scalive/routing/LiveRouteDsl.scala:19`, `scalive/src/scalive/routing/LiveRouteDsl.scala:46`, `scalive/src/scalive/routing/LiveRouteDsl.scala:73`, `scalive/src/scalive/routing/LiveRouteDsl.scala:101`, `scalive/src/scalive/routing/LiveRouteDsl.scala:158`, `scalive/src/scalive/routing/LiveRouteDsl.scala:167`, `scalive/src/scalive/routing/LiveRouteDsl.scala:386`, `scalive/src/scalive/routing/LiveRouteDsl.scala:569`, `scalive/src/scalive/routing/LiveRouteDsl.scala:578`.
 
 ### Layouts And Mount Aspects
 
-- Layouts are public `LiveLayout`, `LiveRootLayout`, and `LiveLayoutContext` APIs and can be applied at route, session, or router scope. Evidence: `scalive/src/scalive/routing/LiveLayouts.scala:6`, `scalive/src/scalive/routing/LiveLayouts.scala:12`, `scalive/src/scalive/routing/LiveLayouts.scala:27`, `scalive/src/scalive/routing/LiveRouteDsl.scala:75`, `scalive/src/scalive/routing/LiveRouteDsl.scala:78`, `scalive/src/scalive/routing/LiveRouteDsl.scala:429`, `scalive/src/scalive/routing/LiveRouteDsl.scala:438`, `scalive/src/scalive/routing/LiveRouteDsl.scala:509`, `scalive/src/scalive/routing/LiveRouteDsl.scala:512`.
+- Layouts are public `LiveLayout`, `LiveRootLayout`, and `LiveLayoutContext` APIs and can be applied at route, session, or router scope. Evidence: `scalive/src/scalive/routing/LiveLayouts.scala:6`, `scalive/src/scalive/routing/LiveLayouts.scala:12`, `scalive/src/scalive/routing/LiveLayouts.scala:27`, `scalive/src/scalive/routing/LiveRouteDsl.scala:142`, `scalive/src/scalive/routing/LiveRouteDsl.scala:145`, `scalive/src/scalive/routing/LiveRouteDsl.scala:252`, `scalive/src/scalive/routing/LiveRouteDsl.scala:261`, `scalive/src/scalive/routing/LiveRouteDsl.scala:533`, `scalive/src/scalive/routing/LiveRouteDsl.scala:546`, `scalive/src/scalive/routing/LiveRouteDsl.scala:668`, `scalive/src/scalive/routing/LiveRouteDsl.scala:677`, `scalive/src/scalive/routing/LiveRouteDsl.scala:745`, `scalive/src/scalive/routing/LiveRouteDsl.scala:748`.
 - Mount aspects expose disconnected and connected mount phases, signed claims, failure outcomes, composition, and request-derived context helpers. Evidence: `scalive/src/scalive/LiveMountAspect.scala:8`, `scalive/src/scalive/LiveMountAspect.scala:16`, `scalive/src/scalive/LiveMountAspect.scala:37`, `scalive/src/scalive/LiveMountAspect.scala:44`, `scalive/src/scalive/LiveMountAspect.scala:49`, `scalive/src/scalive/LiveMountAspect.scala:56`, `scalive/src/scalive/LiveMountAspect.scala:114`, `scalive/src/scalive/LiveMountAspect.scala:120`.
 
 ### Async, Subscriptions, Flash, And Client Events
@@ -79,20 +79,8 @@ Method:
 ### Static Assets And Token/Session Configuration
 
 - Static assets expose classpath and directory configuration, manifest entries, digested path helpers, tracked stylesheet/script helpers, and asset routes. Evidence: `scalive/src/scalive/StaticAssets.scala:12`, `scalive/src/scalive/StaticAssets.scala:18`, `scalive/src/scalive/StaticAssets.scala:32`, `scalive/src/scalive/StaticAssets.scala:71`, `scalive/src/scalive/StaticAssets.scala:78`, `scalive/src/scalive/StaticAssets.scala:96`, `scalive/src/scalive/StaticAssets.scala:102`, `scalive/src/scalive/StaticAssets.scala:111`, `scalive/src/scalive/StaticAssets.scala:114`, `scalive/src/scalive/StaticAssets.scala:117`, `scalive/src/scalive/StaticAssets.scala:120`, `scalive/src/scalive/StaticAssets.scala:123`.
-- Token/session configuration is public through `TokenConfig`, `Live.session`, named route/session modifiers, `LiveRouter.withSocketPath`, and `LiveRouter.withTokenConfig`. Evidence: `scalive/src/scalive/protocol/Token.scala:22`, `scalive/src/scalive/protocol/Token.scala:24`, `scalive/src/scalive/routing/LiveRouteDsl.scala:130`, `scalive/src/scalive/routing/LiveRouteDsl.scala:627`, `scalive/src/scalive/routing/LiveRouteDsl.scala:722`, `scalive/src/scalive/routing/LiveRouteDsl.scala:725`.
+- Token/session configuration is public through `TokenConfig`, `Live.session`, named route/session modifiers, `LiveRouter.withSocketPath`, and `LiveRouter.withTokenConfig`. Evidence: `scalive/src/scalive/protocol/Token.scala:22`, `scalive/src/scalive/protocol/Token.scala:24`, `scalive/src/scalive/routing/LiveRouteDsl.scala:656`, `scalive/src/scalive/routing/LiveRouteDsl.scala:706`, `scalive/src/scalive/routing/LiveRouteDsl.scala:751`, `scalive/src/scalive/routing/LiveRouteDsl.scala:754`, `scalive/src/scalive/routing/LiveRouteDsl.scala:782`.
 - Signed live session payloads carry session name, flash, mount claims, route mount claim metadata, and root layout key. Evidence: `scalive/src/scalive/routing/LiveSessionPayload.scala:6`, `scalive/src/scalive/routing/LiveSessionPayload.scala:23`, `scalive/src/scalive/routing/LiveSessionPayload.scala:38`.
-
-## Ergonomics Findings
-
-### Low - Ergonomics - Static and eventless views still require message-handler boilerplate
-
-Evidence: `scalive/src/scalive/LiveView.scala:15`, `example/src/HomeLiveView.scala:14`, `doc/api-improvement-ideas.md:143`.
-
-`LiveView` requires `handleMessage` even when a view has no meaningful server messages.
-
-Impact: simple pages look heavier than their behavior requires.
-
-Confidence: High.
 
 ## Polish And Discoverability Findings
 

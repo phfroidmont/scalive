@@ -6,7 +6,7 @@ import zio.schema.derived
 import scalive.*
 import scalive.LiveIO.given
 
-class NavigationALiveView() extends RoutedLiveView[Msg, Model, AParams]:
+class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
 
   def mount(ctx: MountContext) =
     Model(paramCurrent = None, paramNext = 1)
@@ -42,7 +42,7 @@ class NavigationALiveView() extends RoutedLiveView[Msg, Model, AParams]:
 
 end NavigationALiveView
 
-class NavigationBLiveView() extends RoutedLiveView[Msg, Model, BParams]:
+class NavigationBLiveView() extends LiveView.Routed[Msg, Model, BParams]:
 
   def mount(ctx: MountContext) =
     Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
@@ -103,7 +103,7 @@ class NavigationBLiveView() extends RoutedLiveView[Msg, Model, BParams]:
     )
 end NavigationBLiveView
 
-class RedirectLoopLiveView() extends RoutedLiveView[Msg, Model, RedirectLoopParams]:
+class RedirectLoopLiveView() extends LiveView.Routed[Msg, Model, RedirectLoopParams]:
 
   def mount(ctx: MountContext) =
     Model(shouldLoop = false, message = None)

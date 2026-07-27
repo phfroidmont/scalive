@@ -8,7 +8,7 @@ import zio.schema.derived
 import scalive.*
 import scalive.LiveIO.given
 
-class ListLiveView() extends RoutedLiveView[Msg, Model, ListParams]:
+class ListLiveView() extends LiveView.Routed[Msg, Model, ListParams]:
 
   def mount(ctx: MountContext) =
     Model(

@@ -45,12 +45,22 @@ Lifecycle methods:
 - `hooks` installs static lifecycle hooks, including raw client-event interception through `LiveHooks.rawEvent`.
 - Runtime subscriptions are started explicitly from phase contexts with `ctx.subscriptions.start`.
 
-### `RoutedLiveView[Msg, Model, Params]`
+### `LiveView.Eventless[Model]`
 
-`RoutedLiveView` is a `LiveView` whose route declares typed URL params. Plain `LiveView`s do not run the params lifecycle.
+Use `LiveView.Eventless` when a view has no server messages. It fixes the message type to `Nothing` and supplies the no-op `handleMessage`, so application code only needs to define `mount` and `render`. The `Nothing` message type also prevents server event bindings from appearing in the rendered HTML.
 
 ```scala
-trait RoutedLiveView[Msg, Model, Params] extends LiveView[Msg, Model]:
+trait LiveView.Eventless[Model] extends LiveView[Nothing, Model]
+```
+
+Routes, route factories, and nested `liveView` content accept eventless views directly, including values widened to `LiveView[Nothing, Model]`. These APIs use `LiveMessageTag[Msg]`: its companion supplies the exact `Nothing` tag for eventless views and derives all other tags from `ClassTag[Msg]`, preserving runtime binding validation for message-bearing views.
+
+### `LiveView.Routed[Msg, Model, Params]`
+
+`LiveView.Routed` is a `LiveView` whose route declares typed URL params. Plain `LiveView`s do not run the params lifecycle.
+
+```scala
+trait LiveView.Routed[Msg, Model, Params] extends LiveView[Msg, Model]:
   type ParamsContext = scalive.ParamsContext[Msg, Model]
 
   def handleParams(
@@ -74,6 +84,16 @@ Params lifecycle methods:
 - `handleParamsDecodeError` runs when route params cannot decode the current URL.
 - Params are decoded by the route declaration, not by the LiveView itself.
 
+### `LiveView.Routed.Eventless[Model, Params]`
+
+Use `LiveView.Routed.Eventless` for a routed view with typed params but no server messages. It combines `LiveView.Eventless[Model]` with `LiveView.Routed[Nothing, Model, Params]`.
+
+```scala
+trait LiveView.Routed.Eventless[Model, Params]
+    extends LiveView.Eventless[Model],
+      LiveView.Routed[Nothing, Model, Params]
+```
+
 ### `LiveComponent[Props, Msg, Model]`
 
 `LiveComponent` is a stateful component abstraction. A component receives typed props, owns a typed model, and receives typed component messages.
@@ -91,6 +111,15 @@ trait LiveComponent[Props, Msg, Model]:
   def update(props: Props, model: Model, ctx: UpdateContext): LiveIO[Model]
   def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => LiveIO[Model]
   def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
+```
+
+### `LiveComponent.Eventless[Props, Model]`
+
+Use `LiveComponent.Eventless` when a component receives props and owns state but has no component messages. It fixes the message type and `ComponentRef` type to `Nothing` and supplies the no-op `handleMessage`.
+
+```scala
+trait LiveComponent.Eventless[Props, Model]
+    extends LiveComponent[Props, Nothing, Model]
 ```
 
 ### `LiveIO[A]`
@@ -515,7 +544,7 @@ Mod.Content.Keyed(entries, stream = None, allEntries = None)
 rawHtml(html): Mod[Nothing]
 liveComponent(component, id: String, props): Mod[Nothing]
 liveComponent(component, id: Int, props): Mod[Nothing]
-liveView(id, liveView, sticky = false): Mod[Nothing]
+liveView(id, liveView, sticky = false, linkParentOnCrash = false): Mod[Nothing]
 flash(kind: FlashKind)(f): Mod[Nothing]
 portal(id, target, container = "div", wrapperClass = None)(mods*): HtmlElement[Msg]
 ```
@@ -773,7 +802,9 @@ builder((params, request, context) => view)
 builder((params, request, c1, c2) => view)
 ```
 
-`params` and `query` produce a `LiveRouteParamsBuilder` whose `apply` methods accept a `RoutedLiveView[Msg, Model, Params]`.
+`params` and `query` produce a `LiveRouteParamsBuilder` whose `apply` methods accept a `LiveView.Routed[Msg, Model, Params]`.
+
+All direct and factory route forms accept `LiveView.Eventless`, `LiveView.Routed.Eventless`, and widened `Nothing`-message values without an explicit tag. Ordinary message-bearing views still require an implicit `ClassTag[Msg]`.
 
 ```scala
 paramsBuilder.mapParams(decode)(encode)
@@ -818,7 +849,7 @@ ctx.nav.pushNavigate(settings)
 JS.patch(settings)
 ```
 
-`locationEither` returns `Either[LiveLocation.EncodeError, LiveLocation]`. Encodable builders expose both location methods using the final parameter type after `mapParams`. `paramsDecodeOnly` and `mapParamsDecodeOnly` return builders that can still mount a `RoutedLiveView` but do not expose location construction; this is enforced by the builder's `LiveRouteParamsCapability` type.
+`locationEither` returns `Either[LiveLocation.EncodeError, LiveLocation]`. Encodable builders expose both location methods using the final parameter type after `mapParams`. `paramsDecodeOnly` and `mapParamsDecodeOnly` return builders that can still mount a `LiveView.Routed` but do not expose location construction; this is enforced by the builder's `LiveRouteParamsCapability` type.
 
 ### Live sessions
 

@@ -20,6 +20,14 @@ trait LiveComponent[Props, Msg, Model]:
   def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
 
 object LiveComponent:
+  trait Eventless[Props, Model] extends LiveComponent[Props, Nothing, Model]:
+    final def handleMessage(
+      props: Props,
+      model: Model,
+      ctx: MessageContext
+    ): Nothing => LiveIO[Model] =
+      _ => ZIO.succeed(model)
+
   type PropsOf[C] = C match
     case LiveComponent[props, msg, model] => props
 

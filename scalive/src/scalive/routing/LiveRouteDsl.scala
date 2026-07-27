@@ -1,7 +1,6 @@
 package scalive
 
 import scala.annotation.targetName
-import scala.reflect.ClassTag
 
 import zio.http.Request
 import zio.http.Routes
@@ -145,64 +144,65 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
   def withRootLayout[Ctx](layout: LiveRootLayout[A, Ctx]): LiveRouteBuilder[Any, A, Ctx, Ctx] =
     base[Ctx].withRootLayout(layout)
 
-  def apply[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
+  def apply[Msg: LiveMessageTag, Model](view: => LiveView[Msg, Model])
     : LiveRoute[Any, A, Any, Any, Msg, Model] =
     base[Any].apply(view)
 
   @targetName("arrowView")
-  infix def ->[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
+  infix def ->[Msg: LiveMessageTag, Model](view: => LiveView[Msg, Model])
     : LiveRoute[Any, A, Any, Any, Msg, Model] =
     apply(view)
 
   @targetName("applyFull")
-  def apply[Ctx, Msg: ClassTag, Model](
+  def apply[Ctx, Msg: LiveMessageTag, Model](
     builder: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[Any, A, Ctx, Ctx, Msg, Model] =
     base[Ctx].apply(builder)
 
   @targetName("arrowFull")
-  infix def ->[Ctx, Msg: ClassTag, Model](
+  infix def ->[Ctx, Msg: LiveMessageTag, Model](
     builder: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[Any, A, Ctx, Ctx, Msg, Model] =
     apply(builder)
 
   @targetName("applyRequestParams")
-  def apply[Msg: ClassTag, Model](
+  def apply[Msg: LiveMessageTag, Model](
     builder: (A, Request) => LiveView[Msg, Model]
   ): LiveRoute[Any, A, Any, Any, Msg, Model] =
     base[Any].apply((params, request, _) => builder(params, request))
 
   @targetName("arrowRequestParams")
-  infix def ->[Msg: ClassTag, Model](
+  infix def ->[Msg: LiveMessageTag, Model](
     builder: (A, Request) => LiveView[Msg, Model]
   ): LiveRoute[Any, A, Any, Any, Msg, Model] =
     apply(builder)
 
   @targetName("applyRequest")
-  def apply[Msg: ClassTag, Model](
+  def apply[Msg: LiveMessageTag, Model](
     builder: Request => LiveView[Msg, Model]
   )(using A =:= Unit
   ): LiveRoute[Any, A, Any, Any, Msg, Model] =
     base[Any].apply((_, request, _) => builder(request))
 
   @targetName("arrowRequest")
-  infix def ->[Msg: ClassTag, Model](
+  infix def ->[Msg: LiveMessageTag, Model](
     builder: Request => LiveView[Msg, Model]
   )(using A =:= Unit
   ): LiveRoute[Any, A, Any, Any, Msg, Model] =
     apply(builder)
 
   @targetName("applyTuple2")
-  def apply[C1, C2, Msg: ClassTag, Model](
+  def apply[C1, C2, Msg: LiveMessageTag, Model](
     builder: (A, Request, C1, C2) => LiveView[Msg, Model]
   ): LiveRoute[Any, A, (C1, C2), (C1, C2), Msg, Model] =
     base[(C1, C2)].apply(builder)
 
   @targetName("arrowTuple2")
-  infix def ->[C1, C2, Msg: ClassTag, Model](
+  infix def ->[C1, C2, Msg: LiveMessageTag, Model](
     builder: (A, Request, C1, C2) => LiveView[Msg, Model]
   ): LiveRoute[Any, A, (C1, C2), (C1, C2), Msg, Model] =
     apply(builder)
+
 end LiveRouteSeed
 
 final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
@@ -364,24 +364,24 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   ] =
     query(zio.http.codec.HttpCodec.query[QueryParams])
 
-  def apply[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
+  def apply[Msg: LiveMessageTag, Model](view: => LiveView[Msg, Model])
     : LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply((_, _, _) => view)
 
   @targetName("arrowView")
-  infix def ->[Msg: ClassTag, Model](view: => LiveView[Msg, Model])
+  infix def ->[Msg: LiveMessageTag, Model](view: => LiveView[Msg, Model])
     : LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(view)
 
   @targetName("applyFull")
-  def apply[Msg: ClassTag, Model](
+  def apply[Msg: LiveMessageTag, Model](
     builder: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     new LiveRoute(
       pathCodec,
       builder,
       LiveRouteParamsRuntime.none[A, Msg, Model],
-      summon[ClassTag[Msg]],
+      summon[LiveMessageTag[Msg]].classTag,
       mountPipeline,
       liveLayouts,
       rootLayout,
@@ -389,13 +389,13 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
     )
 
   @targetName("arrowFull")
-  infix def ->[Msg: ClassTag, Model](
+  infix def ->[Msg: LiveMessageTag, Model](
     builder: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
 
   @targetName("applyTuple2")
-  def apply[C1, C2, Msg: ClassTag, Model](
+  def apply[C1, C2, Msg: LiveMessageTag, Model](
     builder: (A, Request, C1, C2) => LiveView[Msg, Model]
   )(using ev: Ctx <:< (C1, C2)
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
@@ -405,11 +405,12 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
     )
 
   @targetName("arrowTuple2")
-  infix def ->[C1, C2, Msg: ClassTag, Model](
+  infix def ->[C1, C2, Msg: LiveMessageTag, Model](
     builder: (A, Request, C1, C2) => LiveView[Msg, Model]
   )(using ev: Ctx <:< (C1, C2)
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
+
 end LiveRouteBuilder
 
 final class LiveRouteParamsBuilder[
@@ -537,24 +538,24 @@ final class LiveRouteParamsBuilder[
       hasRouteMountAspect
     )
 
-  def apply[Msg: ClassTag, Model](view: => RoutedLiveView[Msg, Model, Params])
+  def apply[Msg: LiveMessageTag, Model](view: => LiveView.Routed[Msg, Model, Params])
     : LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply((_, _, _) => view)
 
   @targetName("arrowRoutedView")
-  infix def ->[Msg: ClassTag, Model](view: => RoutedLiveView[Msg, Model, Params])
+  infix def ->[Msg: LiveMessageTag, Model](view: => LiveView.Routed[Msg, Model, Params])
     : LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(view)
 
   @targetName("applyRoutedFull")
-  def apply[Msg: ClassTag, Model](
-    builder: (A, Request, Ctx) => RoutedLiveView[Msg, Model, Params]
+  def apply[Msg: LiveMessageTag, Model](
+    builder: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     new LiveRoute(
       pathCodec,
       builder,
       LiveRouteParamsRuntime.routed[A, Msg, Model, Params](pathCodec, paramsDecoder),
-      summon[ClassTag[Msg]],
+      summon[LiveMessageTag[Msg]].classTag,
       mountPipeline,
       liveLayouts,
       rootLayout,
@@ -562,40 +563,40 @@ final class LiveRouteParamsBuilder[
     )
 
   @targetName("arrowRoutedFull")
-  infix def ->[Msg: ClassTag, Model](
-    builder: (A, Request, Ctx) => RoutedLiveView[Msg, Model, Params]
+  infix def ->[Msg: LiveMessageTag, Model](
+    builder: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
 
   @targetName("applyRoutedRequestParams")
-  def apply[Msg: ClassTag, Model](
-    builder: (A, Request) => RoutedLiveView[Msg, Model, Params]
+  def apply[Msg: LiveMessageTag, Model](
+    builder: (A, Request) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply((params, request, _) => builder(params, request))
 
   @targetName("arrowRoutedRequestParams")
-  infix def ->[Msg: ClassTag, Model](
-    builder: (A, Request) => RoutedLiveView[Msg, Model, Params]
+  infix def ->[Msg: LiveMessageTag, Model](
+    builder: (A, Request) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
 
   @targetName("applyRoutedRequest")
-  def apply[Msg: ClassTag, Model](
-    builder: Request => RoutedLiveView[Msg, Model, Params]
+  def apply[Msg: LiveMessageTag, Model](
+    builder: Request => LiveView.Routed[Msg, Model, Params]
   )(using A =:= Unit
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply((_, request, _) => builder(request))
 
   @targetName("arrowRoutedRequest")
-  infix def ->[Msg: ClassTag, Model](
-    builder: Request => RoutedLiveView[Msg, Model, Params]
+  infix def ->[Msg: LiveMessageTag, Model](
+    builder: Request => LiveView.Routed[Msg, Model, Params]
   )(using A =:= Unit
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
 
   @targetName("applyRoutedTuple2")
-  def apply[C1, C2, Msg: ClassTag, Model](
-    builder: (A, Request, C1, C2) => RoutedLiveView[Msg, Model, Params]
+  def apply[C1, C2, Msg: LiveMessageTag, Model](
+    builder: (A, Request, C1, C2) => LiveView.Routed[Msg, Model, Params]
   )(using ev: Ctx <:< (C1, C2)
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply((params, request, context) =>
@@ -604,11 +605,12 @@ final class LiveRouteParamsBuilder[
     )
 
   @targetName("arrowRoutedTuple2")
-  infix def ->[C1, C2, Msg: ClassTag, Model](
-    builder: (A, Request, C1, C2) => RoutedLiveView[Msg, Model, Params]
+  infix def ->[C1, C2, Msg: LiveMessageTag, Model](
+    builder: (A, Request, C1, C2) => LiveView.Routed[Msg, Model, Params]
   )(using ev: Ctx <:< (C1, C2)
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
+
 end LiveRouteParamsBuilder
 
 final class LiveSessionSeed private[scalive] (val name: String):

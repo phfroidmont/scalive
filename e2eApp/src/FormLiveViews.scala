@@ -40,7 +40,7 @@ object FormQueryParams:
     )
 
 class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
-    extends RoutedLiveView[FormLiveView.Msg, FormLiveView.Model, FormQueryParams]:
+    extends LiveView.Routed[FormLiveView.Msg, FormLiveView.Model, FormQueryParams]:
   import FormLiveView.*
 
   def mount(ctx: MountContext) =
@@ -291,7 +291,7 @@ object FormLiveView:
   end FormComponent
 end FormLiveView
 
-class NestedFormLiveView extends RoutedLiveView[Unit, FormQueryParams, FormQueryParams]:
+class NestedFormLiveView extends LiveView.Routed[Unit, FormQueryParams, FormQueryParams]:
   def mount(ctx: MountContext) =
     FormQueryParams()
 
@@ -310,7 +310,7 @@ class NestedFormLiveView extends RoutedLiveView[Unit, FormQueryParams, FormQuery
     div(liveView("nested", FormLiveView(model)))
 
 class FormDynamicInputsLiveView
-    extends RoutedLiveView[
+    extends LiveView.Routed[
       FormDynamicInputsLiveView.Msg,
       FormDynamicInputsLiveView.Model,
       FormQueryParams

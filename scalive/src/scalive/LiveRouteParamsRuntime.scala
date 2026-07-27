@@ -34,7 +34,7 @@ private[scalive] object LiveRouteParamsRuntime:
         url: URL,
         ctx: LiveContext
       ): Task[Model] =
-        val routed = lv.asInstanceOf[RoutedLiveView[Msg, Model, Params]]
+        val routed = lv.asInstanceOf[LiveView.Routed[Msg, Model, Params]]
         ctx.hooks.runParams[Msg, Model](model, url, ctx).flatMap {
           case LiveHookResult.Halt(hookModel)     => ZIO.succeed(hookModel)
           case LiveHookResult.Continue(hookModel) =>

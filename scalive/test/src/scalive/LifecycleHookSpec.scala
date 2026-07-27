@@ -215,7 +215,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       yield result)
     },
     test("params hooks can transform the model around handleParams") {
-      val lv = new RoutedLiveView[Unit, String, String]:
+      val lv = new LiveView.Routed[Unit, String, String]:
         override def hooks: LiveHooks[Unit, String] =
           LiveHooks.empty[Unit, String].params("url") { (model, url, _) =>
             ZIO.succeed(LiveHookResult.cont(s"$model|hook:${url.path.encode}"))

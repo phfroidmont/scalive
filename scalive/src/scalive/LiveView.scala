@@ -16,21 +16,31 @@ trait LiveView[Msg, Model]:
 
   def render(model: Model): HtmlElement[Msg]
 
-trait RoutedLiveView[Msg, Model, Params] extends LiveView[Msg, Model]:
-  type ParamsContext = scalive.ParamsContext[Msg, Model]
+object LiveView:
+  trait Eventless[Model] extends LiveView[Nothing, Model]:
+    final def handleMessage(model: Model, ctx: MessageContext): Nothing => LiveIO[Model] =
+      _ => ZIO.succeed(model)
 
-  def handleParams(
-    model: Model,
-    params: Params,
-    url: URL,
-    ctx: ParamsContext
-  ): LiveIO[Model] =
-    ZIO.succeed(model)
+  trait Routed[Msg, Model, Params] extends LiveView[Msg, Model]:
+    type ParamsContext = scalive.ParamsContext[Msg, Model]
 
-  def handleParamsDecodeError(
-    model: Model,
-    error: LiveParamsCodec.DecodeError,
-    url: URL,
-    ctx: ParamsContext
-  ): LiveIO[Model] =
-    zio.ZIO.fail(error)
+    def handleParams(
+      model: Model,
+      params: Params,
+      url: URL,
+      ctx: ParamsContext
+    ): LiveIO[Model] =
+      ZIO.succeed(model)
+
+    def handleParamsDecodeError(
+      model: Model,
+      error: LiveParamsCodec.DecodeError,
+      url: URL,
+      ctx: ParamsContext
+    ): LiveIO[Model] =
+      ZIO.fail(error)
+
+  object Routed:
+    trait Eventless[Model, Params]
+        extends LiveView.Eventless[Model],
+          LiveView.Routed[Nothing, Model, Params]

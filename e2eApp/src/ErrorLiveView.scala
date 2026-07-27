@@ -8,7 +8,7 @@ import scalive.*
 import scalive.LiveIO.given
 
 class ErrorLiveView
-    extends RoutedLiveView[ErrorLiveView.Msg, ErrorLiveView.Model, ErrorLiveView.QueryParams]:
+    extends LiveView.Routed[ErrorLiveView.Msg, ErrorLiveView.Model, ErrorLiveView.QueryParams]:
   import ErrorLiveView.*
 
   def mount(ctx: MountContext) =

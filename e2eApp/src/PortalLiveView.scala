@@ -9,7 +9,7 @@ import scalive.*
 import scalive.LiveIO.given
 
 class PortalLiveView
-    extends RoutedLiveView[PortalLiveView.Msg, PortalLiveView.Model, PortalLiveView.QueryParams]:
+    extends LiveView.Routed[PortalLiveView.Msg, PortalLiveView.Model, PortalLiveView.QueryParams]:
   import PortalLiveView.*
 
   def mount(ctx: MountContext) =

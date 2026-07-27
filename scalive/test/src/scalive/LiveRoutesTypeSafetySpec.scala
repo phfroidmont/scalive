@@ -236,7 +236,7 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
           LiveParamsDecoder.custom[Unit, String]((_, url) => Right(url.path.encode))
         )
 
-        val view = new RoutedLiveView[Unit, Unit, String]:
+        val view = new LiveView.Routed[Unit, Unit, String]:
           def mount(ctx: MountContext) = ZIO.unit
           override def handleParams(
             model: Unit,

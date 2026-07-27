@@ -14,59 +14,12 @@ The phase-specific context API is specified in `doc/phase-context-api-design.md`
 
 ## Highest Priority
 
-### Implement the phase context API design
-
-Current issue:
-
-- The current public lifecycle API still exposes broad `LiveContext` operations and ZIO environment capabilities.
-- The target API is now locked in `doc/phase-context-api-design.md`.
-
-Ideas:
-
-- Implement explicit phase-specific context values and domain facades.
-- Keep `LiveIO[A]` as the public lifecycle effect without exposing ZIO environment capabilities.
-- Move command-recording and mounted runtime test helpers to a separate `scalive-test` module.
-- Update `doc/public-api-reference.md` once the implementation lands.
-
-### Implemented - Typed outbound routes and locations
-
-Status:
-
-- Implemented by the [Typed Outbound Navigation Design](superpowers/specs/2026-07-15-typed-outbound-navigation-design.md).
-- Named route builders construct `LiveLocation` values from the same path and query codecs used for inbound matching.
-- Safe link, lifecycle, JS, and mount-failure redirect methods require full `LiveLocation` values.
-- External, dead-route, and raw query-only destinations remain available through explicitly named unsafe methods.
-- `paramsDecodeOnly` and `mapParamsDecodeOnly` keep irreversible inbound routing explicit and prevent those builders from constructing locations.
-
-The implemented API deliberately does not pass query codecs to full navigate or redirect methods. Callers first construct a full route-derived location, then reuse that value with any safe navigation consumer.
-
 ### Fix the upload writer extension point
 
 Current issue:
 
 - `LiveUploadWriter.init` returns `LiveUploadWriterState`, but `LiveUploadWriterState` has a `private[scalive]` constructor.
 - External users cannot implement custom upload writers cleanly.
-
-Ideas:
-
-- Make `LiveUploadWriter` type-parameterized by its state type.
-- Alternatively expose safe `LiveUploadWriterState.apply(value)` and `valueAs[A]` helpers.
-- Keep the in-memory writer as a built-in implementation.
-- Add examples for filesystem, S3-compatible, and external upload writers.
-
-### Add first-class documentation
-
-Current issue:
-
-- There is no newcomer-facing README, installation guide, first LiveView tutorial, or public API guide.
-- JS setup, socket path, static asset hashing, and routing setup are only discoverable from examples.
-
-Ideas:
-
-- Add a root `README.md` with quickstart, dependency setup, and a minimal LiveView.
-- Add guides for routing/layouts, events, forms, streams, uploads, components, JS commands, static assets, and deployment configuration.
-- Keep e2e fixtures separate from human-oriented examples.
-- Add a compatibility guide that maps Phoenix concepts to Scalive concepts.
 
 ## Correctness Fixes With API Impact
 
@@ -290,33 +243,3 @@ Ideas:
 - Document the required JavaScript setup in the quickstart.
 - Add a minimal generated JS snippet.
 - Consider a helper package or template for common LiveSocket options.
-
-## Testing Improvements
-
-### Implement the `scalive-test` module
-
-Current issue:
-
-- The test API design is locked in `doc/phase-context-api-design.md`, but no separate test-support module exists yet.
-- Current tests still use internal socket/protocol helpers directly.
-
-Ideas:
-
-- Add a `scalive-test` module that exposes `scalive.testing.*`.
-- Provide recording phase contexts and a mounted LiveView harness.
-- Keep tests typed around `Msg` and `Model` rather than string-only event helpers.
-- Reuse the existing protocol runtime internally without exposing it as core app API.
-
-## Documentation Work Queue
-
-- Root README with install, first LiveView, run command, and browser setup.
-- Core concepts guide for model, message, render, effects, and managed subscriptions.
-- Routing guide for `Live.router`, `live`, sessions, layouts, root layouts, and mount aspects.
-- Events guide for `phx` bindings, values, forms, JS push, and raw/typed event hooks.
-- Forms guide for `FormData`, `FormCodec`, `FormEvent`, helpers, errors, used fields, and dynamic inputs.
-- Components guide for props, model, `ComponentRef`, `liveComponent`, targets, and `sendUpdate`.
-- Streams guide for definitions, inserts, deletes, reset, limits, and rendering.
-- Uploads guide for allow/cancel/consume, validation, external upload, writers, and progress.
-- JS guide for commands, transitions, dispatch, exec, patch, navigate, and push.
-- Static assets guide for hashing, tracked static assets, root layouts, and middleware.
-- Migration/parity guide mapping Phoenix LiveView concepts to Scalive concepts.

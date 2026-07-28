@@ -119,7 +119,7 @@ final class DocumentUploadLiveView(store: UploadStore)
         typ             := "submit",
         cls             := "btn btn-primary",
         phx.disableWith := "Saving...",
-        "Save completed documents"
+        "Upload and save documents"
       )
     )
 

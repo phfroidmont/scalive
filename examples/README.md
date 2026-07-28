@@ -160,7 +160,7 @@ browser profile when checking authentication.
       or submit the blank form, to mark fields used and reveal their errors; enter a
       malformed email and a biography over 500 characters to confirm path-specific
       errors; then submit valid values and confirm the saved-profile success alert.
-- [ ] **Uploads, `/uploads/documents`:** select a disallowed extension, a file over
+- [x] **Uploads, `/uploads/documents`:** select a disallowed extension, a file over
       1 MiB, and more than two files to confirm each constraint message. Select a valid
       `.txt` or `.md` file and observe progress, cancel an in-progress or completed
       entry, upload again, save the completed document into Stored documents, and delete

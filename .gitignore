@@ -6,7 +6,7 @@ secrets.env
 out
 
 node_modules
-example/dist
+examples/dist
 e2eApp/dist
 opencode.json
 .e2e-upstream

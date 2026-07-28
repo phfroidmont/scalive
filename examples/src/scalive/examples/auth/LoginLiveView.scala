@@ -1,0 +1,90 @@
+package scalive.examples.auth
+
+import zio.*
+
+import scalive.*
+
+final class LoginLiveView(
+  loginContext: LoginContext,
+  invalidLogin: Boolean)
+    extends LiveView.Eventless[LoginLiveView.Model]:
+  import AuthHttpRoutes.*
+  import LoginLiveView.*
+
+  def mount(ctx: MountContext) =
+    ZIO.succeed(Model(loginContext.csrfToken, invalidLogin))
+
+  def render(model: Model) =
+    div(
+      headerTag(
+        cls := "mb-8 border-b border-base-300 pb-7",
+        div(cls := "badge badge-primary badge-outline mb-4", "Authentication"),
+        h1(cls  := "text-4xl font-bold tracking-tight", "Sign in to the protected example"),
+        p(
+          cls := "mt-4 max-w-3xl text-lg leading-8 text-base-content/70",
+          "This LiveView renders a normal HTML form. An ordinary HTTP handler validates its one-time CSRF token and credentials before setting an opaque session cookie."
+        )
+      ),
+      div(
+        cls := "grid gap-6 lg:grid-cols-[minmax(0,32rem)_minmax(0,1fr)]",
+        sectionTag(
+          cls := "rounded-box border border-base-300 bg-base-100 p-7 shadow-sm",
+          if model.invalidLogin then
+            div(
+              role := "alert",
+              cls  := "alert alert-error mb-6",
+              span("The sign-in request was invalid. Please try again.")
+            )
+          else div(),
+          form(
+            action := SessionPath,
+            method := "post",
+            cls    := "space-y-5",
+            input(
+              typ      := "hidden",
+              nameAttr := LoginCsrfField,
+              value    := model.csrfToken.value
+            ),
+            label(
+              cls := "form-control w-full",
+              span(cls := "label-text mb-2 font-semibold", "Email"),
+              input(
+                typ          := "email",
+                nameAttr     := EmailField,
+                value        := "alice@example.com",
+                autoComplete := "username",
+                required     := true,
+                cls          := "input input-bordered w-full"
+              )
+            ),
+            label(
+              cls := "form-control w-full",
+              span(cls := "label-text mb-2 font-semibold", "Password"),
+              input(
+                typ          := "password",
+                nameAttr     := PasswordField,
+                autoComplete := "current-password",
+                required     := true,
+                cls          := "input input-bordered w-full"
+              )
+            ),
+            button(typ := "submit", cls := "btn btn-primary w-full", "Sign in")
+          )
+        ),
+        asideTag(
+          cls := "rounded-box border border-base-300 bg-base-200 p-7",
+          h2(cls := "text-lg font-semibold", "Demo credentials"),
+          dl(
+            cls := "mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm",
+            dt(cls := "font-semibold text-base-content/60", "Email"),
+            dd(cls := "font-mono", "alice@example.com"),
+            dt(cls := "font-semibold text-base-content/60", "Password"),
+            dd(cls := "font-mono", "scalive")
+          )
+        )
+      )
+    )
+end LoginLiveView
+
+object LoginLiveView:
+  final case class Model(csrfToken: LoginCsrfToken, invalidLogin: Boolean = false)

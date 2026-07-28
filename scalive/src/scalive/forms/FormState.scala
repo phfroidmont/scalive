@@ -28,20 +28,23 @@ object FormState:
     FormState(raw, value, usedPaths(raw, submitted), submitted)
 
   private def usedPaths(raw: FormData, submitted: Boolean): Set[FormPath] =
-    val paths = raw.raw.iterator
+    val parsedPaths = raw.raw.iterator
       .map(_._1)
-      .filterNot(_.startsWith(unusedPrefix))
       .map(FormPath.parse)
       .filter(_.nonEmpty)
+      .toVector
+    val paths = parsedPaths.iterator
+      .filter(path => unusedPath(path).isEmpty)
       .toSet
 
     if submitted then paths
-    else paths -- unusedPaths(raw)
+    else paths -- parsedPaths.flatMap(unusedPath)
 
-  private def unusedPaths(raw: FormData): Set[FormPath] =
-    raw.raw.iterator.collect {
-      case (name, _) if name.startsWith(unusedPrefix) =>
-        FormPath.parse(name.stripPrefix(unusedPrefix))
-    }.toSet
+  private def unusedPath(path: FormPath): Option[FormPath] =
+    path.segments.lastOption
+      .filter(_.startsWith(unusedPrefix))
+      .map(_.stripPrefix(unusedPrefix))
+      .filter(_.nonEmpty)
+      .map(field => FormPath(path.segments.init :+ field))
 
   private val unusedPrefix = "_unused_"

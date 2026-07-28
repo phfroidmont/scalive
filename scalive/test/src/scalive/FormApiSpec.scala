@@ -45,7 +45,13 @@ object FormApiSpec extends ZIOSpecDefault:
 
       val binding = BindingRegistry.collect[Changed](view).values.head
       val payload = BindingPayload.Form(
-        FormData(Vector("_unused_profile[name]" -> "", "profile[name]" -> "")),
+        FormData(
+          Vector(
+            "profile[name]"          -> "",
+            "profile[_unused_email]" -> "",
+            "profile[email]"         -> ""
+          )
+        ),
         FormEvent.Meta(target = Some(FormPath("profile", "name")))
       )
 
@@ -54,7 +60,7 @@ object FormApiSpec extends ZIOSpecDefault:
           Changed(
             Left(FormErrors.one("profile[name]", "required")),
             Some(FormPath("profile", "name")),
-            Set.empty
+            Set(FormPath("profile", "name"))
           )
         )
       )

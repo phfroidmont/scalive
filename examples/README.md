@@ -156,7 +156,7 @@ browser profile when checking authentication.
       **Sign out and revoke session** and confirm the redirect to `/`. Reopen
       `/auth/profile` and confirm it redirects to login. Also confirm an unauthenticated
       fresh browser cannot open `/auth/profile` directly.
-- [ ] **Profile form, `/forms/profile`:** type and erase content in required fields,
+- [x] **Profile form, `/forms/profile`:** type and erase content in required fields,
       or submit the blank form, to mark fields used and reveal their errors; enter a
       malformed email and a biography over 500 characters to confirm path-specific
       errors; then submit valid values and confirm the saved-profile success alert.

@@ -2,6 +2,7 @@ package scalive
 
 import scala.annotation.targetName
 
+import zio.*
 import zio.http.Request
 import zio.http.Routes
 import zio.http.codec.Combiner
@@ -152,6 +153,18 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
   infix def ->[Msg: LiveMessageTag, Model](view: => LiveView[Msg, Model])
     : LiveRoute[Any, A, Any, Any, Msg, Model] =
     apply(view)
+
+  @targetName("applyLayer")
+  def apply[R, Msg: LiveMessageTag, Model, View <: LiveView[Msg, Model]: Tag](
+    layer: => ZLayer[R, Nothing, View]
+  ): LiveRoute[R, A, Any, Any, Msg, Model] =
+    base[Any].apply(layer)
+
+  @targetName("arrowLayer")
+  infix def ->[R, Msg: LiveMessageTag, Model, View <: LiveView[Msg, Model]: Tag](
+    layer: => ZLayer[R, Nothing, View]
+  ): LiveRoute[R, A, Any, Any, Msg, Model] =
+    apply(layer)
 
   @targetName("applyFull")
   def apply[Ctx, Msg: LiveMessageTag, Model](
@@ -379,7 +392,7 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     new LiveRoute(
       pathCodec,
-      builder,
+      (params, request, context) => ZIO.succeed(builder(params, request, context)),
       LiveRouteParamsRuntime.none[A, Msg, Model],
       summon[LiveMessageTag[Msg]].classTag,
       mountPipeline,
@@ -387,6 +400,27 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
       rootLayout,
       hasRouteMountAspect = hasRouteMountAspect
     )
+
+  @targetName("applyLayer")
+  def apply[R1, Msg: LiveMessageTag, Model, View <: LiveView[Msg, Model]: Tag](
+    layer: => ZLayer[R1, Nothing, View]
+  ): LiveRoute[R & R1, A, Need, Ctx, Msg, Model] =
+    new LiveRoute[R & R1, A, Need, Ctx, Msg, Model](
+      pathCodec,
+      (_, _, _) => layer.build.map(_.get[View]),
+      LiveRouteParamsRuntime.none[A, Msg, Model],
+      summon[LiveMessageTag[Msg]].classTag,
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      hasRouteMountAspect = hasRouteMountAspect
+    )
+
+  @targetName("arrowLayer")
+  infix def ->[R1, Msg: LiveMessageTag, Model, View <: LiveView[Msg, Model]: Tag](
+    layer: => ZLayer[R1, Nothing, View]
+  ): LiveRoute[R & R1, A, Need, Ctx, Msg, Model] =
+    apply(layer)
 
   @targetName("arrowFull")
   infix def ->[Msg: LiveMessageTag, Model](
@@ -553,7 +587,7 @@ final class LiveRouteParamsBuilder[
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     new LiveRoute(
       pathCodec,
-      builder,
+      (pathParams, request, context) => ZIO.succeed(builder(pathParams, request, context)),
       LiveRouteParamsRuntime.routed[A, Msg, Model, Params](pathCodec, paramsDecoder),
       summon[LiveMessageTag[Msg]].classTag,
       mountPipeline,
@@ -561,6 +595,27 @@ final class LiveRouteParamsBuilder[
       rootLayout,
       hasRouteMountAspect = hasRouteMountAspect
     )
+
+  @targetName("applyRoutedLayer")
+  def apply[R1, Msg: LiveMessageTag, Model, View <: LiveView.Routed[Msg, Model, Params]: Tag](
+    layer: => ZLayer[R1, Nothing, View]
+  ): LiveRoute[R & R1, A, Need, Ctx, Msg, Model] =
+    new LiveRoute[R & R1, A, Need, Ctx, Msg, Model](
+      pathCodec,
+      (_, _, _) => layer.build.map(_.get[View]),
+      LiveRouteParamsRuntime.routed[A, Msg, Model, Params](pathCodec, paramsDecoder),
+      summon[LiveMessageTag[Msg]].classTag,
+      mountPipeline,
+      liveLayouts,
+      rootLayout,
+      hasRouteMountAspect = hasRouteMountAspect
+    )
+
+  @targetName("arrowRoutedLayer")
+  infix def ->[R1, Msg: LiveMessageTag, Model, View <: LiveView.Routed[Msg, Model, Params]: Tag](
+    layer: => ZLayer[R1, Nothing, View]
+  ): LiveRoute[R & R1, A, Need, Ctx, Msg, Model] =
+    apply(layer)
 
   @targetName("arrowRoutedFull")
   infix def ->[Msg: LiveMessageTag, Model](

@@ -1,5 +1,7 @@
 package scalive.examples.services
 
+import zio.*
+
 import scalive.*
 
 final class GuestbookLiveView(guestbook: Guestbook)
@@ -21,7 +23,7 @@ final class GuestbookLiveView(guestbook: Guestbook)
         h1(cls  := "text-4xl font-bold tracking-tight", "Shared guestbook service"),
         p(
           cls := "mt-4 max-w-3xl text-lg leading-8 text-base-content/70",
-          "ExamplesApp builds one Guestbook ZLayer and injects the resulting service into every view. Each mutation reloads a fresh UI snapshot."
+          "ExamplesApp provides one Guestbook service layer. GuestbookLiveView.layer constructor-injects that shared service into each view. Each mutation reloads a fresh UI snapshot."
         )
       ),
       div(
@@ -66,6 +68,8 @@ final class GuestbookLiveView(guestbook: Guestbook)
 end GuestbookLiveView
 
 object GuestbookLiveView:
+  val layer = ZLayer.fromFunction(GuestbookLiveView.apply)
+
   final case class Model(entries: Vector[Guestbook.Entry])
 
   enum Msg:

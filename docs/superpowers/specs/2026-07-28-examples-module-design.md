@@ -10,7 +10,7 @@ The module is one runnable showcase. Each route teaches one focused concept whil
 
 Rename the Mill module and directory from `example` to `examples`. Move Scala sources into named packages rooted at `scalive.examples` and organize them by feature area.
 
-`ExamplesApp` owns server startup, shared service construction, ordinary HTTP routes, Live route registration, static assets, and logging. LiveView callbacks use `LiveIO`, which is a `Task`, so application services needed by callbacks are captured through constructor injection. Route authentication uses a ZIO environment through `LiveMountAspect`.
+`ExamplesApp` owns server startup, shared service construction, ordinary HTTP routes, Live route registration, static assets, and logging. LiveView callbacks use `LiveIO`, which is a `Task`, so application services needed by callbacks are captured through constructor injection. Dependency-backed LiveViews expose constructor-derived layers at route registration, and their shared input service layers are provided at the server boundary. Route authentication uses a ZIO environment through `LiveMountAspect`.
 
 The catalog is data-driven only for presentation. Each entry contains a category, title, description, and typed `LiveLocation`; route registration remains explicit so readers can see the normal Scalive composition style.
 
@@ -22,7 +22,7 @@ The first version contains these focused examples:
 | --- | --- | --- |
 | Getting started | Catalog | `ZIOAppDefault`, assets, layouts, eventless LiveView, typed routes |
 | State | Shopping cart | typed model/messages, synchronous updates, keyed rendering |
-| Services | Guestbook | service trait, in-memory `ZLayer`, constructor injection, shared server state |
+| Services | Guestbook | service trait, route-level LiveView `ZLayer`, inferred constructor injection, shared server state |
 | Subscriptions | Clock | `ZStream`, typed subscription key, start, replace, and cancellation |
 | Async work | Report generator | start, replace, cancel, retry, success, failure, and `AsyncValue` |
 | Authentication | Login and profile | ordinary HTTP login/logout, CSRF, opaque session cookie, session mount aspect, typed user context |

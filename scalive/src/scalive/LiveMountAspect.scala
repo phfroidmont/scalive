@@ -172,7 +172,7 @@ private[scalive] trait LiveMountAspectRuntime[R, A, -In, Ctx]:
       ): ZIO[R, LiveMountFailure, Ctx2] =
         self.runConnected(claims, request, input).map(f)
 
-private[scalive] trait LiveMountPipeline[R, A, -In, Ctx]:
+private[scalive] trait LiveMountPipeline[-R, A, -In, Ctx]:
   def runDisconnected(request: LiveMountRequest[A], input: In): ZIO[R, Response, (Json, Ctx)]
   def runConnected(claims: Option[Json], request: LiveMountRequest[A], input: In)
     : ZIO[R, LiveMountFailure, Ctx]

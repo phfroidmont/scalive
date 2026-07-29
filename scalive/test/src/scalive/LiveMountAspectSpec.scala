@@ -1,5 +1,6 @@
 package scalive
 
+import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.duration.*
 
 import zio.*
@@ -90,6 +91,51 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
     )
 
   def spec = suite("LiveMountAspectSpec")(
+    test("builds a fresh layered LiveView for disconnected and connected mount") {
+      trait Dependency:
+        def value: String
+
+      val builds = AtomicInteger()
+      final class LayeredView(dependency: Dependency) extends LiveView[Unit, Int]:
+        private val instance = builds.incrementAndGet()
+
+        def mount(ctx: MountContext) = ZIO.succeed(instance)
+        def handleMessage(model: Int, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
+        def render(model: Int): HtmlElement[Unit] = div(s"${dependency.value}:$model")
+
+      val dependency = new Dependency:
+        def value = "dependency"
+      val route      = scalive.live -> ZLayer.fromFunction(LayeredView.apply)
+      val runtime    = new LiveRoutesRuntime[Dependency](
+        Nil,
+        LiveRootLayout.identity,
+        route.liveRoutes.asInstanceOf[List[LiveRoute[Dependency, ?, Any, ?, ?, ?]]],
+        PathCodec.empty / "live",
+        TokenConfig.default
+      )
+
+      (for
+        response <- ZIO.scoped(runtime.routes.runZIO(Request.get(URL.root)))
+        body     <- response.body.asString
+        session  <- extractAttr(body, "data-phx-session")
+        liveViewId <- ZIO
+                        .fromEither(LiveSessionPayload.verify(TokenConfig.default, session))
+                        .map(_._1)
+                        .mapError(new IllegalArgumentException(_))
+        channel <- LiveChannel.make(TokenConfig.default)
+        reply <- ZIO.scoped(
+                   runtime.handleMessage(
+                     joinMessage(s"lv:$liveViewId", session, "/"),
+                     channel
+                   )
+                 )
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains(">dependency:1<"),
+        reply.isEmpty,
+        builds.get() == 2
+      )).provide(ZLayer.succeed(dependency))
+    },
     test("runs route mount aspect before disconnected and connected mount") {
       for
         callsRef <- Ref.make(List.empty[String])

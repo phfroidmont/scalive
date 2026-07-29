@@ -773,6 +773,8 @@ seed.queryOptional[QueryParam]("name")
 seed.query(codec)
 seed(view)
 seed -> view
+seed(viewLayer)
+seed -> viewLayer
 seed((params, request, context) => view)
 seed((params, request) => view)
 seed(request => view)
@@ -798,6 +800,8 @@ builder.queryOptional[QueryParam]("name")
 builder.query(codec)
 builder(view)
 builder -> view
+builder(viewLayer)
+builder -> viewLayer
 builder((params, request, context) => view)
 builder((params, request, c1, c2) => view)
 ```
@@ -818,8 +822,28 @@ paramsBuilder.withLayout(layout)
 paramsBuilder.withRootLayout(rootLayout)
 paramsBuilder(view)
 paramsBuilder -> view
+paramsBuilder(viewLayer)
+paramsBuilder -> viewLayer
 paramsBuilder((params, request, context) => view)
 ```
+
+Route seeds and builders also accept an infallible `ZLayer` that constructs the
+LiveView. `ZLayer.fromFunction` infers all constructor dependencies and propagates
+their intersection as the route environment:
+
+```scala
+final class DashboardLiveView(reports: Reports, metrics: Metrics)
+    extends LiveView[DashboardLiveView.Msg, DashboardLiveView.Model]
+
+object DashboardLiveView:
+  val layer = ZLayer.fromFunction(DashboardLiveView.apply)
+
+val route = (live / "dashboard") -> DashboardLiveView.layer
+```
+
+Scalive builds a fresh layer output for disconnected and connected mount. Provide
+the shared input service layers once at the application boundary; do not put a
+prebuilt LiveView instance in the application environment.
 
 Use `query[A]` for schema-derived query objects and named helpers for single query params:
 

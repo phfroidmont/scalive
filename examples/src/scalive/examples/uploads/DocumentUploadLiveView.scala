@@ -220,6 +220,8 @@ final class DocumentUploadLiveView(store: UploadStore)
 end DocumentUploadLiveView
 
 object DocumentUploadLiveView:
+  val layer = ZLayer.fromFunction(DocumentUploadLiveView.apply)
+
   private val UploadName    = UploadKey("documents")
   private val UploadOptions = LiveUploadOptions(
     accept = LiveUploadAccept.Exactly(List(".txt", ".md")),

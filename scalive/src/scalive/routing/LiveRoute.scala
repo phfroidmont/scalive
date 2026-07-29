@@ -34,7 +34,7 @@ private[scalive] object LiveSessionGroup:
 
 final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
   private[scalive] val pathCodec: PathCodec[A],
-  private val liveViewBuilder: (A, Request, Ctx) => LiveView[Msg, Model],
+  private val liveViewBuilder: (A, Request, Ctx) => URIO[R & Scope, LiveView[Msg, Model]],
   private[scalive] val paramsRuntime: LiveRouteParamsRuntime[A, Msg, Model],
   private[scalive] val msgClassTag: ClassTag[Msg],
   private[scalive] val mountPipeline: LiveMountPipeline[R, A, Need, Ctx],
@@ -137,7 +137,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
     params: A,
     request: Request,
     mountContext: Ctx
-  ): LiveView[Msg, Model] =
+  ): URIO[R & Scope, LiveView[Msg, Model]] =
     liveViewBuilder(params, request, mountContext)
 
   private[scalive] def renderLiveRoot(
@@ -239,121 +239,123 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
       val id: String   =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
       val initialFlash = LiveRoute.flashFromRequest(req, tokenConfig)
-      val response     = mountPipeline
-        .runDisconnected(LiveMountRequest(params, req), initialInput).foldZIO(
-          ZIO.succeed,
-          { case (mountClaims, mountContext) =>
-            val lv = buildLiveView(params, req, mountContext)
-            for
-              streamRef     <- Ref.make(StreamRuntimeState.empty)
-              flashRef      <- Ref.make(FlashRuntimeState(initialFlash))
-              componentsRef <- Ref.make(ComponentRuntimeState.empty)
-              navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
-              hooksRef      <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
-              ctx = LiveContext(
-                      staticChanged = false,
-                      streams = new SocketStreamRuntime(streamRef),
-                      navigation = new SocketNavigationRuntime(navigationRef),
-                      flash = new SocketFlashRuntime(flashRef),
-                      components = new scalive.socket.SocketComponentUpdateRuntime(componentsRef),
-                      hooks = new SocketLiveHookRuntime(hooksRef),
-                      nestedLiveViews = new DisconnectedNestedLiveViewRuntime(
-                        s"lv:$id",
-                        id,
-                        tokenConfig,
-                        req.url
+      val response     = ZIO.scoped(
+        mountPipeline
+          .runDisconnected(LiveMountRequest(params, req), initialInput).foldZIO(
+            ZIO.succeed,
+            { case (mountClaims, mountContext) =>
+              for
+                lv            <- buildLiveView(params, req, mountContext)
+                streamRef     <- Ref.make(StreamRuntimeState.empty)
+                flashRef      <- Ref.make(FlashRuntimeState(initialFlash))
+                componentsRef <- Ref.make(ComponentRuntimeState.empty)
+                navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
+                hooksRef      <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
+                ctx = LiveContext(
+                        staticChanged = false,
+                        streams = new SocketStreamRuntime(streamRef),
+                        navigation = new SocketNavigationRuntime(navigationRef),
+                        flash = new SocketFlashRuntime(flashRef),
+                        components = new scalive.socket.SocketComponentUpdateRuntime(componentsRef),
+                        hooks = new SocketLiveHookRuntime(hooksRef),
+                        nestedLiveViews = new DisconnectedNestedLiveViewRuntime(
+                          s"lv:$id",
+                          id,
+                          tokenConfig,
+                          req.url
+                        )
                       )
-                    )
-              _               <- SocketFlashRuntime.resetNavigation(flashRef)
-              _               <- navigationRef.set(None)
-              initModel       <- lv.mount(ctx.mountContext[Msg, Model])
-              mountNavigation <- navigationRef.getAndSet(None)
-              lifecycle       <- LiveRoute.runInitialHandleParams(
-                             lv,
-                             initModel,
-                             req.url,
-                             ctx,
-                             navigationRef,
-                             flashRef,
-                             mountNavigation,
-                             paramsRuntime
-                           )
-              response <- lifecycle match
-                            case LiveRoute.InitialLifecycleOutcome.Render(model) =>
-                              for
-                                flash <- flashRef.get
-                                rootKey = rootLayoutKey(
-                                            params,
-                                            req,
-                                            req.url,
-                                            mountContext,
-                                            globalRootLayout
-                                          )
-                                token = LiveSessionPayload.sign(
-                                          tokenConfig,
-                                          id,
-                                          sessionName,
-                                          FlashToken.encode(tokenConfig, flash.values),
-                                          Some(mountClaims),
-                                          hasRouteMountAspect,
-                                          rootKey
-                                        )
-                                el = applyLiveLayouts(
-                                       lv.render(model),
-                                       params,
-                                       req,
-                                       req.url,
-                                       mountContext,
-                                       globalLayouts
-                                     )
-                                rendered <- SocketComponentRuntime.renderRoot(
-                                              div(
-                                                idAttr      := id,
-                                                phx.main    := true,
-                                                phx.session := token,
-                                                el
-                                              ),
-                                              componentsRef,
-                                              ctx
+                _               <- SocketFlashRuntime.resetNavigation(flashRef)
+                _               <- navigationRef.set(None)
+                initModel       <- lv.mount(ctx.mountContext[Msg, Model])
+                mountNavigation <- navigationRef.getAndSet(None)
+                lifecycle       <- LiveRoute.runInitialHandleParams(
+                               lv,
+                               initModel,
+                               req.url,
+                               ctx,
+                               navigationRef,
+                               flashRef,
+                               mountNavigation,
+                               paramsRuntime
+                             )
+                response <- lifecycle match
+                              case LiveRoute.InitialLifecycleOutcome.Render(model) =>
+                                for
+                                  flash <- flashRef.get
+                                  rootKey = rootLayoutKey(
+                                              params,
+                                              req,
+                                              req.url,
+                                              mountContext,
+                                              globalRootLayout
                                             )
-                                document = renderRootHtml(
-                                             rendered,
-                                             params,
-                                             req,
-                                             req.url,
-                                             mountContext,
-                                             globalRootLayout
-                                           )
-                                csrf             = CsrfProtection.prepare(tokenConfig, req)
-                                documentWithCsrf = CsrfProtection.injectMeta(document, csrf.value)
-                                _ <- ctx.hooks.runAfterRender[Msg, Model](model, ctx)
-                              yield LiveRoute.clearFlashCookie(
-                                CsrfProtection.addCookie(
-                                  Response.html(
-                                    Html.raw(
-                                      HtmlBuilder.build(
-                                        documentWithCsrf,
-                                        isRoot = false
+                                  token = LiveSessionPayload.sign(
+                                            tokenConfig,
+                                            id,
+                                            sessionName,
+                                            FlashToken.encode(tokenConfig, flash.values),
+                                            Some(mountClaims),
+                                            hasRouteMountAspect,
+                                            rootKey
+                                          )
+                                  el = applyLiveLayouts(
+                                         lv.render(model),
+                                         params,
+                                         req,
+                                         req.url,
+                                         mountContext,
+                                         globalLayouts
+                                       )
+                                  rendered <- SocketComponentRuntime.renderRoot(
+                                                div(
+                                                  idAttr      := id,
+                                                  phx.main    := true,
+                                                  phx.session := token,
+                                                  el
+                                                ),
+                                                componentsRef,
+                                                ctx
+                                              )
+                                  document = renderRootHtml(
+                                               rendered,
+                                               params,
+                                               req,
+                                               req.url,
+                                               mountContext,
+                                               globalRootLayout
+                                             )
+                                  csrf             = CsrfProtection.prepare(tokenConfig, req)
+                                  documentWithCsrf = CsrfProtection.injectMeta(document, csrf.value)
+                                  _ <- ctx.hooks.runAfterRender[Msg, Model](model, ctx)
+                                yield LiveRoute.clearFlashCookie(
+                                  CsrfProtection.addCookie(
+                                    Response.html(
+                                      Html.raw(
+                                        HtmlBuilder.build(
+                                          documentWithCsrf,
+                                          isRoot = false
+                                        )
                                       )
-                                    )
+                                    ),
+                                    csrf.cookie
                                   ),
-                                  csrf.cookie
-                                ),
-                                req
-                              )
-                            case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
-                              SocketFlashRuntime
-                                .navigationValues(flashRef).map(flash =>
-                                  LiveRoute.addFlashCookie(
-                                    Response.redirect(url),
-                                    tokenConfig,
-                                    flash
-                                  )
+                                  req
                                 )
-            yield response
-            end for
-          }
-        )
+                              case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
+                                SocketFlashRuntime
+                                  .navigationValues(flashRef).map(flash =>
+                                    LiveRoute.addFlashCookie(
+                                      Response.redirect(url),
+                                      tokenConfig,
+                                      flash
+                                    )
+                                  )
+              yield response
+              end for
+            }
+          )
+      )
       response.catchAllCause { cause =>
         ZIO.logErrorCause(cause) *>
           ZIO.succeed(Response.text("Internal Server Error").status(Status.InternalServerError))

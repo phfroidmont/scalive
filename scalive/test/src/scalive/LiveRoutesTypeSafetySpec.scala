@@ -115,6 +115,36 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         body     <- rendered.body.asString
       yield assertTrue(rendered.status == Status.Ok, body.contains("alice"))
     },
+    test("LiveView layers infer their constructor dependencies") {
+      trait Users:
+        def name: String
+
+      trait Orgs:
+        def name: String
+
+      final class LayeredView(users: Users, orgs: Orgs) extends LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
+        def render(model: Unit): HtmlElement[Unit] = div(s"${users.name}:${orgs.name}")
+
+      val viewLayer = ZLayer.fromFunction(LayeredView.apply)
+      val routes    = scalive.Live.router((scalive.live / "layered") -> viewLayer)
+      val usersLayer = ZLayer.succeed(new Users:
+        def name = "alice"
+      )
+      val orgsLayer = ZLayer.succeed(new Orgs:
+        def name = "acme"
+      )
+
+      val response = ZIO
+        .scoped(routes.runZIO(Request.get(url("/layered"))))
+        .provide(usersLayer, orgsLayer)
+
+      for
+        rendered <- response
+        body     <- rendered.body.asString
+      yield assertTrue(rendered.status == Status.Ok, body.contains("alice:acme"))
+    },
     test("session and route environments infer an intersection environment") {
       trait Auth:
         def user: String

@@ -313,7 +313,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     pathParams: A,
     session: LiveSessionPayload,
     mountContext: Ctx
-  ): RIO[Scope, Option[WebSocketMessage]] =
+  ): RIO[R & Scope, Option[WebSocketMessage]] =
     val rootKey = route.rootLayoutKey(
       pathParams,
       req,
@@ -338,41 +338,44 @@ final private[scalive] class LiveRoutesRuntime[R](
         loadingOnInitialNestedRender(connectParams)
       )
     )
-    val lv         = route.buildLiveView(pathParams, req, mountContext)
-    val renderRoot = route.socketRenderRoot(
-      lv,
-      pathParams,
-      req,
-      mountContext,
-      globalLayouts
-    )
-
     if rootKey != session.rootLayoutKey then
-      ZIO.logWarning(
-        s"Rejecting live redirect to ${decodedUrl.path.encode}: root layout changed from ${session.rootLayoutKey} to $rootKey"
-      ) *>
-        ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+      val rejection: RIO[R & Scope, Option[WebSocketMessage]] =
+        ZIO.logWarning(
+          s"Rejecting live redirect to ${decodedUrl.path.encode}: root layout changed from ${session.rootLayoutKey} to $rootKey"
+        ) *>
+          ZIO.succeed(Some(joinErrorReply(message, JoinErrorReason.Unauthorized)))
+      rejection
     else
-      ZIO.logDebug(
-        s"Joining LiveView ${route.pathCodec} ${message.topic}"
-      ) *>
-        liveChannel
-          .join(
-            message.topic,
-            join.session,
+      route
+        .buildLiveView(pathParams, req, mountContext).flatMap { lv =>
+          val renderRoot = route.socketRenderRoot(
             lv,
-            ctx,
-            message.meta,
-            decodedUrl,
-            initialFlash,
-            Some(renderRoot),
-            route.paramsRuntime
-          )(using route.msgClassTag)
-          .as(None)
-          .catchAllCause(cause =>
-            ZIO.logErrorCause(cause) *>
-              ZIO.succeed(Some(errorReply(message, LiveResponse.Empty)))
+            pathParams,
+            req,
+            mountContext,
+            globalLayouts
           )
+          ZIO.logDebug(
+            s"Joining LiveView ${route.pathCodec} ${message.topic}"
+          ) *>
+            liveChannel
+              .join(
+                message.topic,
+                join.session,
+                lv,
+                ctx,
+                message.meta,
+                decodedUrl,
+                initialFlash,
+                Some(renderRoot),
+                route.paramsRuntime
+              )(using route.msgClassTag)
+              .as(None)
+        }.catchAllCause(cause =>
+          ZIO.logErrorCause(cause) *>
+            ZIO.succeed(Some(errorReply(message, LiveResponse.Empty)))
+        )
+    end if
   end joinMountedRootRoute
 
   private def isAuthorizedRootJoin(

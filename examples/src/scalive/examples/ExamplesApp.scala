@@ -45,17 +45,17 @@ object ExamplesApp extends ZIOAppDefault:
   override val bootstrap =
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
-  def liveRoutes(assets: StaticAssets, guestbook: Guestbook, uploadStore: UploadStore) =
+  def liveRoutes(assets: StaticAssets) =
     Live.router
       .withRootLayout(ExamplesRootLayout(assets))
       .withLayout(ExamplesLayout)(
         ExamplesRoutes.home           -> HomeLiveView(),
         ExamplesRoutes.shoppingCart   -> ShoppingCartLiveView(),
-        ExamplesRoutes.guestbook      -> GuestbookLiveView(guestbook),
+        ExamplesRoutes.guestbook      -> GuestbookLiveView.layer,
         ExamplesRoutes.subscriptions  -> ClockLiveView(),
         ExamplesRoutes.async          -> AsyncReportLiveView(),
         ExamplesRoutes.profileForm    -> ProfileFormLiveView(),
-        ExamplesRoutes.documents      -> DocumentUploadLiveView(uploadStore),
+        ExamplesRoutes.documents      -> DocumentUploadLiveView.layer,
         ExamplesRoutes.search         -> SearchLiveView(),
         ExamplesRoutes.activity       -> ActivityStreamLiveView(),
         ExamplesRoutes.voting         -> ComponentsLiveView(),
@@ -82,15 +82,16 @@ object ExamplesApp extends ZIOAppDefault:
     for
       assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.css", "app.js")))
       authHttpConfig <- AuthHttpConfig.fromEnvironment(sys.env)
-      guestbook      <- ZIO.service[Guestbook].provide(Guestbook.live)
       authService    <- ZIO.service[AuthService].provide(AuthService.live(authServiceConfig))
-      _              <- ZIO
-             .serviceWithZIO[UploadStore] { uploadStore =>
-               val routes = liveRoutes(assets, guestbook, uploadStore) ++
+      routes = liveRoutes(assets) ++
                  AuthHttpRoutes(authService, authHttpConfig).routes ++ assets.routes
-               Server
-                 .serve(routes)
-                 .provide(Server.defaultWithPort(serverPort), ZLayer.succeed(authService))
-             }.provide(UploadStore.live)
+      _ <- Server
+             .serve(routes)
+             .provide(
+               Server.defaultWithPort(serverPort),
+               ZLayer.succeed(authService),
+               Guestbook.live,
+               UploadStore.live
+             )
     yield ()
 end ExamplesApp

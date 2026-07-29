@@ -106,9 +106,55 @@ private[scalive] object SocketComponentRuntime:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Boolean] =
-    handleComponentAsync(cid, name, Some(message), None, rendered, meta, state)
+    handleComponentAsync(
+      cid,
+      name,
+      Some(message),
+      LiveAsyncResult.Succeeded(message),
+      rendered,
+      meta,
+      state
+    )
 
   def handleComponentAsyncFailure[Msg, Model](
+    cid: Int,
+    name: String,
+    cause: Throwable,
+    message: Any,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    handleComponentAsync(
+      cid,
+      name,
+      Some(message),
+      LiveAsyncResult.Failed(cause),
+      rendered,
+      meta,
+      state
+    )
+
+  def handleComponentAsyncCancelled[Msg, Model](
+    cid: Int,
+    name: String,
+    reason: Option[String],
+    message: Any,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    handleComponentAsync(
+      cid,
+      name,
+      Some(message),
+      LiveAsyncResult.Cancelled(reason),
+      rendered,
+      meta,
+      state
+    )
+
+  def handleComponentAsyncMappingFailure[Msg, Model](
     cid: Int,
     name: String,
     cause: Throwable,
@@ -116,13 +162,25 @@ private[scalive] object SocketComponentRuntime:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Boolean] =
-    handleComponentAsync(cid, name, None, Some(cause), rendered, meta, state)
+    ZIO.logErrorCause(
+      s"Component async task '$name' could not map its result to a message",
+      Cause.fail(cause)
+    ) *>
+      handleComponentAsync(
+        cid,
+        name,
+        None,
+        LiveAsyncResult.Failed(cause),
+        rendered,
+        meta,
+        state
+      )
 
   private def handleComponentAsync[Msg, Model](
     cid: Int,
     name: String,
     message: Option[Any],
-    cause: Option[Throwable],
+    result: LiveAsyncResult[Any],
     rendered: RenderedView,
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
@@ -135,12 +193,7 @@ private[scalive] object SocketComponentRuntime:
                      for
                        hooksRef <- Ref.make(instance.hooks)
                        componentCtx = componentContext(state.ctx, cid, hooksRef)
-                       asyncEvent   = LiveAsyncEvent(
-                                      AsyncKey[Any](name),
-                                      message match
-                                        case Some(value) => LiveAsyncResult.Succeeded(value)
-                                        case None        => LiveAsyncResult.Failed(cause.get)
-                                    )
+                       asyncEvent   = LiveAsyncEvent(AsyncKey[Any](name), result)
                        (result, navigation) <-
                          SocketModelRuntime.captureNavigation(state)(
                            componentCtx.hooks

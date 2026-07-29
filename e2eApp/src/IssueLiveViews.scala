@@ -972,8 +972,9 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeStatus(data) =>
       model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
-    case Msg.Loaded(result) =>
+    case Msg.Loaded(LiveAsyncResult.Succeeded(result)) =>
       model.copy(status = Status.Loaded, name = result.name, email = result.email)
+    case Msg.Loaded(_) => model
 
   def render(model: Model) =
     div(
@@ -1015,7 +1016,7 @@ object Issue3026LiveView:
 
   enum Msg:
     case ChangeStatus(data: FormData)
-    case Loaded(result: LoadResult)
+    case Loaded(result: LiveAsyncResult[LoadResult])
 
   private def startLoad(async: Async[Msg]) =
     async.start(Load)(ZIO.sleep(200.millis).as(LoadResult("John", "")))(Msg.Loaded(_))
@@ -1059,7 +1060,7 @@ object Issue3117LiveView:
   object Row extends LiveComponent[String, Row.Msg, Row.Model]:
     private val Load = AsyncKey[String]("foo")
     enum Msg:
-      case Loaded(value: String)
+      case Loaded(result: LiveAsyncResult[String])
 
     final case class Model(result: Option[String] = None, started: Boolean = false)
 
@@ -1071,7 +1072,8 @@ object Issue3117LiveView:
       else ctx.async.start(Load)(ZIO.succeed("bar"))(Msg.Loaded(_)).as(model.copy(started = true))
 
     def handleMessage(props: String, model: Model, ctx: MessageContext) =
-      case Msg.Loaded(value) => model.copy(result = Some(value))
+      case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => model.copy(result = Some(value))
+      case Msg.Loaded(_)                                => model
 
     def render(props: String, model: Model, self: ComponentRef[Msg]) =
       val result = model.result.map(value => s"Some($value)").getOrElse("None")
@@ -1124,7 +1126,7 @@ object Issue3169LiveView:
   object FormComponent extends LiveComponent[Option[String], FormComponent.Msg, Option[Record]]:
     private val Load = AsyncKey[Record]("load")
     enum Msg:
-      case Loaded(record: Record)
+      case Loaded(result: LiveAsyncResult[Record])
 
     def mount(props: Option[String], ctx: MountContext) =
       None
@@ -1140,7 +1142,8 @@ object Issue3169LiveView:
         case None => model
 
     def handleMessage(props: Option[String], model: Option[Record], ctx: MessageContext) =
-      case Msg.Loaded(record) => Some(record)
+      case Msg.Loaded(LiveAsyncResult.Succeeded(record)) => Some(record)
+      case Msg.Loaded(_)                                 => model
 
     def render(props: Option[String], model: Option[Record], self: ComponentRef[Msg]) =
       div(
@@ -1758,7 +1761,7 @@ object Issue3941LiveView:
     private val Load = AsyncKey[String]("async_assign")
 
     enum Msg:
-      case Loaded(item: String)
+      case Loaded(result: LiveAsyncResult[String])
 
     final case class Model(item: String, asyncAssign: AsyncValue[String] = AsyncValue.empty)
 
@@ -1773,7 +1776,10 @@ object Issue3941LiveView:
       ctx.async.start(Load)(ZIO.succeed(props))(Msg.Loaded(_)).as(loading)
 
     def handleMessage(props: String, model: Model, ctx: MessageContext) =
-      case Msg.Loaded(item) => model.copy(item = item, asyncAssign = AsyncValue.ok(item))
+      case Msg.Loaded(result @ LiveAsyncResult.Succeeded(item)) =>
+        model.copy(item = item, asyncAssign = model.asyncAssign.updated(result))
+      case Msg.Loaded(result) =>
+        model.copy(asyncAssign = model.asyncAssign.updated(result))
 
     def render(props: String, model: Model, self: ComponentRef[Msg]) =
       div(
@@ -1857,7 +1863,7 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
           Msg.DelayedUpdate(_)
         )
         .as(model.copy(counter = target + 1, components = nextComponents))
-    case Msg.DelayedUpdate(id) =>
+    case Msg.DelayedUpdate(LiveAsyncResult.Succeeded(id)) =>
       model.components.find(_.id == id) match
         case Some(component) =>
           ctx.components
@@ -1866,6 +1872,7 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
               CounterProps(id = id, domCounter = component.counter, counter = 10)
             ).as(model)
         case None => model
+    case Msg.DelayedUpdate(_) => model
 
   def render(model: Model) =
     div(
@@ -1888,7 +1895,7 @@ object Issue3979LiveView:
 
   enum Msg:
     case Bump
-    case DelayedUpdate(id: Int)
+    case DelayedUpdate(result: LiveAsyncResult[Int])
 
   object CounterComponent extends LiveComponent[CounterProps, Unit, CounterProps]:
     def mount(props: CounterProps, ctx: MountContext) =
@@ -1924,7 +1931,7 @@ class Issue4027LiveView
       startLoad(ctx.async, InitialItems.tail).as(
         model.copy(data = AsyncValue.markLoading(model.data))
       )
-    case Msg.Loaded(items) => model.copy(data = AsyncValue.ok(items))
+    case Msg.Loaded(result) => model.copy(data = model.data.updated(result))
 
   def render(model: Model) =
     div(
@@ -1959,7 +1966,7 @@ object Issue4027LiveView:
 
   enum Msg:
     case Load, Remove
-    case Loaded(items: Vector[Item])
+    case Loaded(result: LiveAsyncResult[Vector[Item]])
 
   private val InitialItems = Vector(Item(1, "First"), Item(2, "Second"), Item(3, "Third"))
 

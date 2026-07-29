@@ -42,8 +42,9 @@ object AsyncValue:
   def applyResult[A](current: AsyncValue[A], result: LiveAsyncResult[A]): AsyncValue[A] =
     val previous = currentValue(current)
     result match
-      case LiveAsyncResult.Succeeded(value) => AsyncValue.Ok(value)
-      case LiveAsyncResult.Failed(cause)    => AsyncValue.Failed(previous, cause)
+      case LiveAsyncResult.Succeeded(value)  => AsyncValue.Ok(value)
+      case LiveAsyncResult.Failed(cause)     => AsyncValue.Failed(previous, cause)
+      case LiveAsyncResult.Cancelled(reason) => AsyncValue.Cancelled(previous, reason)
 
   extension [A](value: AsyncValue[A])
     @targetName("asyncValueOption")
@@ -62,20 +63,27 @@ final case class LiveAsyncEvent[+Msg](
   name: AsyncKey[Any],
   result: LiveAsyncResult[Msg])
 
-enum LiveAsyncResult[+Msg]:
-  case Succeeded(message: Msg)
+enum LiveAsyncResult[+A]:
+  case Succeeded(value: A)
   case Failed(cause: Throwable)
+  case Cancelled(reason: Option[String])
 
 private[scalive] trait LiveAsyncRuntime:
-  def start[A, Msg](name: String)(effect: Task[A])(toMsg: A => Msg): UIO[Unit]
-  def cancel(name: String): UIO[Unit]
+  def start[A, Msg](name: String)(effect: Task[A])(toMsg: LiveAsyncResult[A] => Msg): UIO[Unit]
+  def cancel(name: String, reason: Option[String]): UIO[Unit]
 
 private[scalive] object LiveAsyncRuntime:
   object Disabled extends LiveAsyncRuntime:
-    def start[A, Msg](name: String)(effect: Task[A])(toMsg: A => Msg): UIO[Unit] =
+    def start[A, Msg](
+      name: String
+    )(
+      effect: Task[A]
+    )(
+      toMsg: LiveAsyncResult[A] => Msg
+    ): UIO[Unit] =
       ZIO.unit
 
-    def cancel(name: String): UIO[Unit] =
+    def cancel(name: String, reason: Option[String]): UIO[Unit] =
       ZIO.unit
 
 private[scalive] enum LiveAsyncOwner:
@@ -86,7 +94,8 @@ final private[scalive] case class LiveAsyncTaskId(owner: LiveAsyncOwner, name: S
 
 final private[scalive] case class LiveAsyncTaskState(
   token: String,
-  fiber: Fiber.Runtime[Nothing, Unit])
+  fiber: Fiber.Runtime[Nothing, Unit],
+  cancelledEvent: Option[String] => LiveAsyncCompletionEvent)
 
 final private[scalive] case class LiveAsyncRuntimeState(
   tasks: Map[LiveAsyncTaskId, LiveAsyncTaskState])
@@ -96,7 +105,9 @@ private[scalive] object LiveAsyncRuntimeState:
 
 private[scalive] enum LiveAsyncCompletionEvent:
   case Succeeded(name: String, message: Any)
-  case Failed(name: String, cause: Throwable)
+  case Failed(name: String, cause: Throwable, message: Any)
+  case Cancelled(name: String, reason: Option[String], message: Any)
+  case MappingFailed(name: String, cause: Throwable)
 
 final private[scalive] case class LiveAsyncCompletion(
   owner: LiveAsyncOwner,

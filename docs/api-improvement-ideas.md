@@ -89,17 +89,17 @@ Ideas:
 - Add a named constructor such as `LiveRootLayout.static("key")`.
 - Document when root layout keys must change.
 
-### Simplify `cancelAssignAsync`
+### Add typed async assignments
 
 Current issue:
 
-- `cancelAssignAsync(model)(field, reason)` accepts `model`, but the macro only uses the selected field name and model type.
+- `AsyncValue` transitions currently require an explicit completion message and model update.
 
 Ideas:
 
-- Remove the model argument if the type can be inferred another way.
-- Or use an explicit typed field key returned by `assignAsync`.
-- Document the current field-selection rule if the method remains unchanged.
+- Consider a typed field-level helper for the common single-field case.
+- Keep the explicit result-message API available for arbitrary async work.
+- Avoid selector macros or hidden model mutation unless they are clearly safer and simpler than explicit messages.
 
 ## Forms Improvements
 

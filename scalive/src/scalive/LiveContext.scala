@@ -137,8 +137,14 @@ trait Streams:
   def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]]
 
 trait Async[Msg]:
-  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: A => Msg): LiveIO[Unit]
-  def cancel[A](key: AsyncKey[A]): LiveIO[Unit]
+  def start[A](
+    key: AsyncKey[A]
+  )(
+    task: Task[A]
+  )(
+    toMsg: LiveAsyncResult[A] => Msg
+  ): LiveIO[Unit]
+  def cancel[A](key: AsyncKey[A], reason: Option[String] = None): LiveIO[Unit]
 
 trait Subscriptions[Msg]:
   def start(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
@@ -368,11 +374,17 @@ private[scalive] object LiveContext:
       runtime.streams.deleteByDomId(definition, domId)
 
   final private class RuntimeAsync[Msg](runtime: LiveContext) extends Async[Msg]:
-    def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: A => Msg): LiveIO[Unit] =
+    def start[A](
+      key: AsyncKey[A]
+    )(
+      task: Task[A]
+    )(
+      toMsg: LiveAsyncResult[A] => Msg
+    ): LiveIO[Unit] =
       runtime.async.start(key.value)(task)(toMsg)
 
-    def cancel[A](key: AsyncKey[A]): LiveIO[Unit] =
-      runtime.async.cancel(key.value)
+    def cancel[A](key: AsyncKey[A], reason: Option[String]): LiveIO[Unit] =
+      runtime.async.cancel(key.value, reason)
 
   final private class RuntimeSubscriptions[Msg](runtime: LiveContext) extends Subscriptions[Msg]:
     private def subscriptions = runtime.subscriptions.asInstanceOf[SubscriptionRuntime[Msg]]

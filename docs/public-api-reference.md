@@ -301,14 +301,19 @@ trait Streams:
 
 ```scala
 trait Async[Msg]:
-  def start[A](key: AsyncKey[A])(task: zio.Task[A])(toMsg: A => Msg): LiveIO[Unit]
-  def cancel[A](key: AsyncKey[A]): LiveIO[Unit]
+  def start[A](key: AsyncKey[A])(task: zio.Task[A])(toMsg: LiveAsyncResult[A] => Msg): LiveIO[Unit]
+  def cancel[A](key: AsyncKey[A], reason: Option[String] = None): LiveIO[Unit]
 
 trait Subscriptions[Msg]:
   def start(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
   def replace(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
   def cancel(key: SubscriptionKey): LiveIO[Unit]
 ```
+
+`start` converts every task outcome into a typed message. Async hooks run before
+that message reaches `handleMessage` and may halt delivery. Explicit cancellation
+produces `LiveAsyncResult.Cancelled`; socket shutdown, task replacement, and
+component removal interrupt obsolete work without producing application messages.
 
 ### Client, Title, And Components
 
@@ -419,8 +424,9 @@ value.updated(result)
 
 ```scala
 enum LiveAsyncResult[+A]:
-  case Succeeded(message: A)
+  case Succeeded(value: A)
   case Failed(cause: Throwable)
+  case Cancelled(reason: Option[String])
 ```
 
 ## HTML Rendering API

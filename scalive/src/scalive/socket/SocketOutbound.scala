@@ -12,9 +12,9 @@ private[scalive] object SocketOutbound:
     case Message(value: Msg)
     case Async(value: LiveAsyncCompletion)
 
-  private enum MessageHookStage:
+  private enum MessageHookStage[+Msg]:
     case Info
-    case Async(name: String)
+    case Async(name: String, result: LiveAsyncResult[Msg])
 
   def startServerFiber[Msg, Model](
     state: RuntimeState[Msg, Model]
@@ -80,7 +80,7 @@ private[scalive] object SocketOutbound:
     msg: Msg,
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model],
-    hookStage: MessageHookStage
+    hookStage: MessageHookStage[Msg]
   ): Task[Unit] =
     for
       (currentModel, rendered)   <- state.ref.get
@@ -138,16 +138,16 @@ private[scalive] object SocketOutbound:
   private def runMessageHooks[Msg, Model](
     model: Model,
     msg: Msg,
-    hookStage: MessageHookStage,
+    hookStage: MessageHookStage[Msg],
     ctx: LiveContext
   ): Task[LiveHookResult[Model]] =
     hookStage match
       case MessageHookStage.Info =>
         ctx.hooks.runInfo(model, msg, ctx)
-      case MessageHookStage.Async(name) =>
+      case MessageHookStage.Async(name, result) =>
         ctx.hooks.runAsync(
           model,
-          LiveAsyncEvent(AsyncKey[Any](name), LiveAsyncResult.Succeeded(msg)),
+          LiveAsyncEvent(AsyncKey[Any](name), result),
           ctx
         )
 
@@ -160,14 +160,31 @@ private[scalive] object SocketOutbound:
       case LiveAsyncOwner.Root =>
         completion.event match
           case LiveAsyncCompletionEvent.Succeeded(name, message) =>
-            state.msgClassTag.unapply(message) match
-              case Some(msg) => handleServerMsg(msg, meta, state, MessageHookStage.Async(name))
-              case None      =>
-                ZIO.logWarning(
-                  s"Ignoring async message ${message.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"
-                )
-          case LiveAsyncCompletionEvent.Failed(name, cause) =>
-            handleAsyncFailure(name, cause, meta, state)
+            handleRootAsyncMessage[Msg, Model](
+              name,
+              message,
+              LiveAsyncResult.Succeeded(message),
+              meta,
+              state
+            )
+          case LiveAsyncCompletionEvent.Failed(name, cause, message) =>
+            handleRootAsyncMessage[Msg, Model](
+              name,
+              message,
+              LiveAsyncResult.Failed(cause),
+              meta,
+              state
+            )
+          case LiveAsyncCompletionEvent.Cancelled(name, reason, message) =>
+            handleRootAsyncMessage[Msg, Model](
+              name,
+              message,
+              LiveAsyncResult.Cancelled(reason),
+              meta,
+              state
+            )
+          case LiveAsyncCompletionEvent.MappingFailed(name, cause) =>
+            handleUnmappedAsyncFailure(name, cause, meta, state)
       case LiveAsyncOwner.Component(cid) =>
         completion.event match
           case LiveAsyncCompletionEvent.Succeeded(name, message) =>
@@ -182,10 +199,36 @@ private[scalive] object SocketOutbound:
                      state
                    )
             yield ()
-          case LiveAsyncCompletionEvent.Failed(name, cause) =>
+          case LiveAsyncCompletionEvent.Failed(name, cause, message) =>
             for
               (_, rendered) <- state.ref.get
               _             <- SocketComponentRuntime.handleComponentAsyncFailure(
+                     cid,
+                     name,
+                     cause,
+                     message,
+                     rendered,
+                     meta,
+                     state
+                   )
+            yield ()
+          case LiveAsyncCompletionEvent.Cancelled(name, reason, message) =>
+            for
+              (_, rendered) <- state.ref.get
+              _             <- SocketComponentRuntime.handleComponentAsyncCancelled(
+                     cid,
+                     name,
+                     reason,
+                     message,
+                     rendered,
+                     meta,
+                     state
+                   )
+            yield ()
+          case LiveAsyncCompletionEvent.MappingFailed(name, cause) =>
+            for
+              (_, rendered) <- state.ref.get
+              _             <- SocketComponentRuntime.handleComponentAsyncMappingFailure(
                      cid,
                      name,
                      cause,
@@ -195,13 +238,41 @@ private[scalive] object SocketOutbound:
                    )
             yield ()
 
-  private def handleAsyncFailure[Msg, Model](
+  private def handleRootAsyncMessage[Msg, Model](
+    name: String,
+    message: Any,
+    result: LiveAsyncResult[Any],
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    state.msgClassTag.unapply(message) match
+      case Some(msg) =>
+        val typedResult = result match
+          case LiveAsyncResult.Succeeded(_)      => LiveAsyncResult.Succeeded(msg)
+          case LiveAsyncResult.Failed(cause)     => LiveAsyncResult.Failed(cause)
+          case LiveAsyncResult.Cancelled(reason) => LiveAsyncResult.Cancelled(reason)
+        handleServerMsg[Msg, Model](
+          msg,
+          meta,
+          state,
+          MessageHookStage.Async(name, typedResult)
+        )
+      case None =>
+        ZIO.logWarning(
+          s"Ignoring async message ${message.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"
+        )
+
+  private def handleUnmappedAsyncFailure[Msg, Model](
     name: String,
     cause: Throwable,
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     for
+      _ <- ZIO.logErrorCause(
+             s"Async task '$name' could not map its result to a message",
+             Cause.fail(cause)
+           )
       (currentModel, rendered)   <- state.ref.get
       (updatedModel, navigation) <-
         SocketModelRuntime.captureNavigation(state)(

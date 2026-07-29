@@ -8,15 +8,6 @@ final class AsyncReportLiveView
     extends LiveView[AsyncReportLiveView.Msg, AsyncReportLiveView.Model]:
   import AsyncReportLiveView.*
 
-  override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty[Msg, Model].async("report-failure") { (model, event, _) =>
-      event.result match
-        case LiveAsyncResult.Failed(cause) if event.name == ReportTask =>
-          val failed = model.report.updated(LiveAsyncResult.Failed(cause))
-          ZIO.succeed(LiveHookResult.halt(model.copy(report = failed)))
-        case _ => ZIO.succeed(LiveHookResult.cont(model))
-    }
-
   def mount(ctx: MountContext) =
     ZIO.succeed(Model())
 
@@ -27,11 +18,10 @@ final class AsyncReportLiveView
     case Msg.Retry      => start(model, ctx, retryReport)
     case Msg.Cancel     =>
       if model.report.isLoading then
-        val cancelled =
-          AsyncValue.Cancelled(model.report.valueOption, Some("Cancelled by the user"))
-        ctx.async.cancel(ReportTask).as(model.copy(report = cancelled))
+        ctx.async.cancel(ReportTask, Some("Cancelled by the user")).as(model)
       else ZIO.succeed(model)
-    case Msg.ReportReady(report) => ZIO.succeed(model.copy(report = AsyncValue.ok(report)))
+    case Msg.ReportCompleted(result) =>
+      ZIO.succeed(model.copy(report = model.report.updated(result)))
 
   def render(model: Model) =
     div(
@@ -41,7 +31,7 @@ final class AsyncReportLiveView
         h1(cls  := "text-4xl font-bold tracking-tight", "Deterministic report generator"),
         p(
           cls := "mt-4 max-w-3xl text-lg leading-8 text-base-content/70",
-          "One typed AsyncKey replaces stale work. AsyncValue renders progress and results, while LiveHooks.async turns task failures into recoverable UI state."
+          "One typed AsyncKey replaces stale work, while AsyncValue renders progress, failures, cancellation, and results."
         )
       ),
       div(
@@ -83,7 +73,7 @@ final class AsyncReportLiveView
 
   private def start(model: Model, ctx: MessageContext, task: Task[Report]) =
     ctx.async
-      .start(ReportTask)(task)(Msg.ReportReady(_))
+      .start(ReportTask)(task)(Msg.ReportCompleted(_))
       .as(model.copy(report = model.report.loading()))
 
   private def renderReportState(value: AsyncValue[Report]) =
@@ -155,7 +145,7 @@ object AsyncReportLiveView:
     case Replace
     case Retry
     case Cancel
-    case ReportReady(report: Report)
+    case ReportCompleted(result: LiveAsyncResult[Report])
 
   private val ReportTask = AsyncKey[Report]("example-report")
 

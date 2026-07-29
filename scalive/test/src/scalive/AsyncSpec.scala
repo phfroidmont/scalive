@@ -29,11 +29,11 @@ object AsyncSpec extends ZIOSpecDefault:
   private enum Msg:
     case Start
     case Cancel
-    case Loaded(value: String)
-    case PatchLoaded(value: String)
-    case NavigateLoaded(value: Unit)
-    case RedirectLoaded(value: Unit)
-    case FlashLoaded(value: String)
+    case Loaded(result: LiveAsyncResult[String])
+    case PatchLoaded(result: LiveAsyncResult[String])
+    case NavigateLoaded(result: LiveAsyncResult[Unit])
+    case RedirectLoaded(result: LiveAsyncResult[Unit])
+    case FlashLoaded(result: LiveAsyncResult[String])
 
   private def containsValue(diff: Diff, value: String): Boolean =
     diff match
@@ -41,9 +41,9 @@ object AsyncSpec extends ZIOSpecDefault:
         dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
           containsValue(_, value)
         )
-      case Diff.Value(current)  => current == value
+      case Diff.Value(current)   => current == value
       case Diff.Dynamic(_, diff) => containsValue(diff, value)
-      case _                    => false
+      case _                     => false
 
   private def diffFromPayload(payload: Payload): Option[Diff] =
     payload match
@@ -58,7 +58,9 @@ object AsyncSpec extends ZIOSpecDefault:
       value = Json.Obj.empty
     )
 
-  private def withOutbox[Msg, Model, A](socket: Socket[Msg, Model])(
+  private def withOutbox[Msg, Model, A](
+    socket: Socket[Msg, Model]
+  )(
     f: Queue[(Payload, WebSocketMessage.Meta)] => Task[A]
   ): Task[A] =
     for
@@ -72,16 +74,21 @@ object AsyncSpec extends ZIOSpecDefault:
     zio.test.Live.live(effect.timeout(duration))
 
   private object UpdateAsyncComponent
-      extends LiveComponent[UpdateAsyncComponent.Action, UpdateAsyncComponent.Msg, UpdateAsyncComponent.Model]:
+      extends LiveComponent[
+        UpdateAsyncComponent.Action,
+        UpdateAsyncComponent.Msg,
+        UpdateAsyncComponent.Model
+      ]:
     enum Action:
       case Ok
       case Navigate
       case Patch
       case Redirect
       case NavigateFlash
+      case Fail
 
     enum Msg:
-      case Done(value: String)
+      case Done(result: LiveAsyncResult[String])
 
     final case class Model(
       action: Action,
@@ -102,18 +109,23 @@ object AsyncSpec extends ZIOSpecDefault:
           .as(next.copy(started = true, result = "loading"))
 
     def handleMessage(props: Action, model: Model, ctx: MessageContext) =
-          case Msg.Done(value) =>
-            model.action match
-              case Action.Ok => ZIO.succeed(model.copy(result = value))
-              case Action.Navigate =>
-                ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
-              case Action.Patch =>
-                ctx.nav.pushPatchUnsafe("/start_async?test=ok").as(model)
-              case Action.Redirect =>
-                ctx.nav.redirectUnsafe("/not_found").as(model)
-              case Action.NavigateFlash =>
-                ctx.flash.put(Info, value) *>
-                  ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
+      case Msg.Done(LiveAsyncResult.Succeeded(value)) =>
+        model.action match
+          case Action.Ok       => ZIO.succeed(model.copy(result = value))
+          case Action.Navigate =>
+            ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
+          case Action.Patch =>
+            ctx.nav.pushPatchUnsafe("/start_async?test=ok").as(model)
+          case Action.Redirect =>
+            ctx.nav.redirectUnsafe("/not_found").as(model)
+          case Action.NavigateFlash =>
+            ctx.flash.put(Info, value) *>
+              ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
+          case Action.Fail => ZIO.succeed(model.copy(result = value))
+      case Msg.Done(LiveAsyncResult.Failed(cause)) =>
+        ZIO.succeed(model.copy(result = s"failed:${cause.getMessage}"))
+      case Msg.Done(LiveAsyncResult.Cancelled(reason)) =>
+        ZIO.succeed(model.copy(result = s"cancelled:${reason.getOrElse("none")}"))
 
     def render(props: Action, model: Model, self: ComponentRef[Msg]) =
       div(s"lc: ${model.result}")
@@ -125,6 +137,8 @@ object AsyncSpec extends ZIOSpecDefault:
         case Action.Patch         => ZIO.succeed("patch")
         case Action.Redirect      => ZIO.succeed("redirect")
         case Action.NavigateFlash => ZIO.succeed("hello")
+        case Action.Fail          => ZIO.fail(new RuntimeException("component boom"))
+  end UpdateAsyncComponent
 
   override def spec = suite("AsyncSpec")(
     test("completed async task sends typed message and pushes diff") {
@@ -135,8 +149,8 @@ object AsyncSpec extends ZIOSpecDefault:
             .as("loading")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.Loaded(value) => ZIO.succeed(value)
-              case _                 => ZIO.succeed(model)
+          case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => ZIO.succeed(value)
+          case _                                            => ZIO.succeed(model)
 
         def render(model: String): HtmlElement[Msg] =
           div(idAttr := "root", model)
@@ -146,31 +160,29 @@ object AsyncSpec extends ZIOSpecDefault:
         update <- socket.outbox.drop(1).runHead.some
       yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "loaded")))
     },
-    test("failed async task is exposed to async hooks") {
-      val lv = new LiveView.Routed[Msg, String, String]:
-        override def hooks: LiveHooks[Msg, String] =
-          LiveHooks.empty.async("failure") { (model, event, _) =>
-            event.result match
-              case LiveAsyncResult.Failed(_) if event.name == Tasks.Load =>
-                ZIO.succeed(LiveHookResult.cont("failed"))
-              case _ => ZIO.succeed(LiveHookResult.cont(model))
-          }
+    test("failed async task sends typed result message") {
+      enum ResultMsg:
+        case Completed(result: LiveAsyncResult[String])
+
+      val lv = new LiveView.Routed[ResultMsg, String, String]:
 
         def mount(ctx: MountContext) =
           ctx.async
-            .start(Tasks.Load)(ZIO.fail(new RuntimeException("boom")))(Msg.Loaded(_))
+            .start(Tasks.Load)(ZIO.fail(new RuntimeException("boom")))(ResultMsg.Completed(_))
             .as("loading")
 
         def handleMessage(model: String, ctx: MessageContext) =
-          (_: Msg) => ZIO.succeed(model)
+          case ResultMsg.Completed(LiveAsyncResult.Failed(cause)) =>
+            ZIO.succeed(s"failed:${cause.getMessage}")
+          case ResultMsg.Completed(_) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Msg] =
+        def render(model: String): HtmlElement[ResultMsg] =
           div(idAttr := "root", model)
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         update <- socket.outbox.drop(1).runHead.some
-      yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "failed")))
+      yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "failed:boom")))
     },
     test("async completion message can push patch") {
       val lv = new LiveView.Routed[Msg, String, String]:
@@ -180,8 +192,9 @@ object AsyncSpec extends ZIOSpecDefault:
             .as("/start")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.PatchLoaded(_) => ctx.nav.pushPatchUnsafe("/async-done").as(model)
-              case _                  => ZIO.succeed(model)
+          case Msg.PatchLoaded(LiveAsyncResult.Succeeded(_)) =>
+            ctx.nav.pushPatchUnsafe("/async-done").as(model)
+          case _ => ZIO.succeed(model)
 
         override def handleParams(model: String, page: String, url: URL, ctx: ParamsContext) =
           val _ = page
@@ -192,7 +205,7 @@ object AsyncSpec extends ZIOSpecDefault:
 
       for
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
-        socket <- Socket.start(
+        socket     <- Socket.start(
                     "id",
                     "token",
                     lv,
@@ -207,7 +220,7 @@ object AsyncSpec extends ZIOSpecDefault:
         navigation._1 == Payload.LiveNavigation("/async-done", LivePatchKind.Push),
         patchReply.response match
           case WebSocketMessage.LiveResponse.Diff(diff) => containsValue(diff, "/async-done")
-          case _                                       => false
+          case _                                        => false
       )
     },
     test("async completion message can push navigate") {
@@ -216,9 +229,9 @@ object AsyncSpec extends ZIOSpecDefault:
           ctx.async.start(Tasks.Navigate)(ZIO.unit)(Msg.NavigateLoaded(_)).as("loading")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.NavigateLoaded(_) =>
-                ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
-              case _                     => ZIO.succeed(model)
+          case Msg.NavigateLoaded(LiveAsyncResult.Succeeded(_)) =>
+            ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
+          case _ => ZIO.succeed(model)
 
         def render(model: String): HtmlElement[Msg] =
           div(idAttr := "root", model)
@@ -236,8 +249,9 @@ object AsyncSpec extends ZIOSpecDefault:
           ctx.async.start(Tasks.Redirect)(ZIO.unit)(Msg.RedirectLoaded(_)).as("loading")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.RedirectLoaded(_) => ctx.nav.redirectUnsafe("/not_found").as(model)
-              case _                     => ZIO.succeed(model)
+          case Msg.RedirectLoaded(LiveAsyncResult.Succeeded(_)) =>
+            ctx.nav.redirectUnsafe("/not_found").as(model)
+          case _ => ZIO.succeed(model)
 
         def render(model: String): HtmlElement[Msg] =
           div(idAttr := "root", model)
@@ -253,8 +267,9 @@ object AsyncSpec extends ZIOSpecDefault:
           ctx.async.start(Tasks.Flash)(ZIO.succeed("hello"))(Msg.FlashLoaded(_)).as("loading")
 
         def handleMessage(model: String, ctx: MessageContext) =
-              case Msg.FlashLoaded(message) => ctx.flash.put(Info, message).as("loaded")
-              case _                        => ZIO.succeed(model)
+          case Msg.FlashLoaded(LiveAsyncResult.Succeeded(message)) =>
+            ctx.flash.put(Info, message).as("loaded")
+          case _ => ZIO.succeed(model)
 
         def render(model: String): HtmlElement[Msg] =
           div(
@@ -276,19 +291,19 @@ object AsyncSpec extends ZIOSpecDefault:
                  ZIO.succeed("idle")
 
                def handleMessage(model: String, ctx: MessageContext) =
-                     case Msg.Start =>
-                       ctx.async
-                         .start(Tasks.Load)(release.await.as("event-loaded"))(Msg.Loaded(_))
-                         .as("loading")
-                     case Msg.Loaded(value) => ZIO.succeed(value)
-                     case _                 => ZIO.succeed(model)
+                 case Msg.Start =>
+                   ctx.async
+                     .start(Tasks.Load)(release.await.as("event-loaded"))(Msg.Loaded(_))
+                     .as("loading")
+                 case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => ZIO.succeed(value)
+                 case _                                            => ZIO.succeed(model)
 
                def render(model: String): HtmlElement[Msg] =
                  div(idAttr := "root", button(phx.onClick(Msg.Start), "start"), span(model))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
-                      _       <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
                       loading <- outbox.take
                       _       <- release.succeed(())
                       loaded  <- outbox.take
@@ -306,21 +321,21 @@ object AsyncSpec extends ZIOSpecDefault:
                def mount(ctx: MountContext) =
                  ctx.async
                    .start(Tasks.Load)(
-                      ZIO.never.as("loaded").ensuring(stopped.succeed(()).unit)
+                     ZIO.never.as("loaded").ensuring(stopped.succeed(()).unit)
                    )(Msg.Loaded(_))
                    .as("loading")
 
                def handleMessage(model: String, ctx: MessageContext) =
-                     case Msg.Cancel => ctx.async.cancel(Tasks.Load).as("cancelled")
-                     case Msg.Loaded(value) => ZIO.succeed(value)
-                     case _                 => ZIO.succeed(model)
+                 case Msg.Cancel => ctx.async.cancel(Tasks.Load).as("cancelled")
+                 case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => ZIO.succeed(value)
+                 case _                                            => ZIO.succeed(model)
 
                def render(model: String): HtmlElement[Msg] =
                  div(idAttr := "root", button(phx.onClick(Msg.Cancel), "cancel"), span(model))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
-                      _      <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
                       update <- outbox.take
                       done   <- awaitWithin(stopped.await, 1.second)
                     yield assertTrue(
@@ -329,6 +344,46 @@ object AsyncSpec extends ZIOSpecDefault:
                     )
                   }
       yield result
+    },
+    test("cancelAsync sends typed cancellation result message") {
+      enum CancelMsg:
+        case Cancel
+        case Completed(result: LiveAsyncResult[String])
+
+      for
+        stopped <- Promise.make[Nothing, Unit]
+        lv = new LiveView[CancelMsg, String]:
+               def mount(ctx: MountContext) =
+                 ctx.async
+                   .start(Tasks.Load)(
+                     ZIO.never.as("loaded").ensuring(stopped.succeed(()).unit)
+                   )(CancelMsg.Completed(_))
+                   .as("loading")
+
+               def handleMessage(model: String, ctx: MessageContext) =
+                 case CancelMsg.Cancel =>
+                   ctx.async.cancel(Tasks.Load, Some("user")).as("cancelling")
+                 case CancelMsg.Completed(LiveAsyncResult.Cancelled(reason)) =>
+                   ZIO.succeed(s"cancelled:${reason.getOrElse("none")}")
+                 case CancelMsg.Completed(_) => ZIO.succeed(model)
+
+               def render(model: String): HtmlElement[CancelMsg] =
+                 div(idAttr := "root", button(phx.onClick(CancelMsg.Cancel), "cancel"), span(model))
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+                      cancelling <- outbox.take
+                      cancelled  <- outbox.take
+                      done       <- awaitWithin(stopped.await, 1.second)
+                    yield assertTrue(
+                      diffFromPayload(cancelling._1).exists(containsValue(_, "cancelling")),
+                      diffFromPayload(cancelled._1).exists(containsValue(_, "cancelled:user")),
+                      done.contains(())
+                    )
+                  }
+      yield result
+      end for
     },
     test("restarting an async task suppresses the previous completion") {
       for
@@ -341,8 +396,8 @@ object AsyncSpec extends ZIOSpecDefault:
                  yield "loading"
 
                def handleMessage(model: String, ctx: MessageContext) =
-                     case Msg.Loaded(value) => ZIO.succeed(value)
-                     case _                 => ZIO.succeed(model)
+                 case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => ZIO.succeed(value)
+                 case _                                            => ZIO.succeed(model)
 
                def render(model: String): HtmlElement[Msg] =
                  div(idAttr := "root", model)
@@ -364,21 +419,34 @@ object AsyncSpec extends ZIOSpecDefault:
           (_: Unit) => ZIO.succeed(model)
 
         def render(model: Unit): HtmlElement[Unit] =
-          div(liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.Ok))
+          div(
+            liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.Ok)
+          )
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         update <- socket.outbox.drop(1).runHead.some
       yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "lc: good")))
     },
+    test("live component async failure sends typed result message") {
+      val lv = componentNavigationView(UpdateAsyncComponent.Action.Fail)
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        update <- socket.outbox.drop(1).runHead.some
+      yield assertTrue(
+        diffFromPayload(update._1).exists(containsValue(_, "lc: failed:component boom"))
+      )
+    },
     test("live component async completion can push navigate") {
       val lv = componentNavigationView(UpdateAsyncComponent.Action.Navigate)
 
       for
-        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        navigation <- socket.outbox.drop(1).collect {
-                        case (payload @ Payload.LiveRedirect(_, _, _), _) => payload
-                      }.runHead.some
+        socket     <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        navigation <- socket.outbox
+                        .drop(1).collect { case (payload @ Payload.LiveRedirect(_, _, _), _) =>
+                          payload
+                        }.runHead.some
       yield assertTrue(
         navigation == Payload.LiveRedirect("/start_async?test=ok", LivePatchKind.Push, None)
       )
@@ -388,7 +456,12 @@ object AsyncSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) =
           ZIO.succeed("none")
 
-        override def handleParams(model: String, test: Option[String], _url: URL, ctx: ParamsContext) =
+        override def handleParams(
+          model: String,
+          test: Option[String],
+          _url: URL,
+          ctx: ParamsContext
+        ) =
           ZIO.succeed(test.getOrElse("none"))
 
         def handleMessage(model: String, ctx: MessageContext) =
@@ -397,7 +470,11 @@ object AsyncSpec extends ZIOSpecDefault:
         def render(model: String): HtmlElement[Unit] =
           div(
             p(s"test:$model"),
-            liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.Patch)
+            liveComponent(
+              UpdateAsyncComponent,
+              id = "lc",
+              props = UpdateAsyncComponent.Action.Patch
+            )
           )
 
       for
@@ -417,25 +494,27 @@ object AsyncSpec extends ZIOSpecDefault:
                     initialUrl = initialUrl,
                     paramsRuntime = paramsRuntime
                   )
-        navigation <- socket.outbox.drop(1).collect {
-                        case (payload @ Payload.LiveNavigation(_, _), _) => payload
-                      }.runHead.some
+        navigation <- socket.outbox
+                        .drop(1).collect { case (payload @ Payload.LiveNavigation(_, _), _) =>
+                          payload
+                        }.runHead.some
         patchReply <- socket.livePatch("/start_async?test=ok", meta)
       yield assertTrue(
         navigation == Payload.LiveNavigation("/start_async?test=ok", LivePatchKind.Push),
         patchReply.response match
           case WebSocketMessage.LiveResponse.Diff(diff) => containsValue(diff, "test:ok")
-          case _                                       => false
+          case _                                        => false
       )
     },
     test("live component async completion can redirect") {
       val lv = componentNavigationView(UpdateAsyncComponent.Action.Redirect)
 
       for
-        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-        redirect <- socket.outbox.drop(1).collect {
-                      case (payload @ Payload.Redirect(_, _), _) => payload
-                    }.runHead.some
+        socket   <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        redirect <- socket.outbox
+                      .drop(1).collect { case (payload @ Payload.Redirect(_, _), _) =>
+                        payload
+                      }.runHead.some
       yield assertTrue(redirect == Payload.Redirect("/not_found", None))
     },
     test("live component async completion can navigate with flash") {
@@ -451,26 +530,32 @@ object AsyncSpec extends ZIOSpecDefault:
                     meta,
                     tokenConfig = tokenConfig
                   )
-        navigation <- socket.outbox.drop(1).collect {
-                        case (payload @ Payload.LiveRedirect(_, _, _), _) => payload
-                      }.runHead.some
+        navigation <- socket.outbox
+                        .drop(1).collect { case (payload @ Payload.LiveRedirect(_, _, _), _) =>
+                          payload
+                        }.runHead.some
         flashValues = navigation match
                         case Payload.LiveRedirect(
                               "/start_async?test=ok",
                               LivePatchKind.Push,
                               Some(token)
-                            ) => FlashToken.decode(tokenConfig, token)
+                            ) =>
+                          FlashToken.decode(tokenConfig, token)
                         case _ => None
       yield assertTrue(flashValues.contains(Map("info" -> "hello")))
     },
     test("live components can start scoped async tasks") {
       object AsyncComponent
-          extends LiveComponent[Promise[Nothing, Unit], AsyncComponent.Msg, (Promise[Nothing, Unit], String)]:
+          extends LiveComponent[
+            Promise[Nothing, Unit],
+            AsyncComponent.Msg,
+            (Promise[Nothing, Unit], String)
+          ]:
         private val Load = AsyncKey[String]("component-load")
 
         enum Msg:
           case Start
-          case Loaded(value: String)
+          case Loaded(result: LiveAsyncResult[String])
 
         def mount(props: Promise[Nothing, Unit], ctx: MountContext) =
           ZIO.succeed(props -> "idle")
@@ -480,11 +565,13 @@ object AsyncSpec extends ZIOSpecDefault:
           model: (Promise[Nothing, Unit], String),
           ctx: MessageContext
         ) =
-              case Msg.Start =>
-                ctx.async
-                  .start(Load)(model._1.await.as("component-loaded"))(Msg.Loaded(_))
-                  .as(model._1 -> "loading")
-              case Msg.Loaded(value) => ZIO.succeed(model._1 -> value)
+          case Msg.Start =>
+            ctx.async
+              .start(Load)(model._1.await.as("component-loaded"))(Msg.Loaded(_))
+              .as(model._1 -> "loading")
+          case Msg.Loaded(LiveAsyncResult.Succeeded(value)) =>
+            ZIO.succeed(model._1 -> value)
+          case Msg.Loaded(_) => ZIO.succeed(model)
 
         override def update(
           props: Promise[Nothing, Unit],
@@ -499,6 +586,7 @@ object AsyncSpec extends ZIOSpecDefault:
           self: ComponentRef[Msg]
         ) =
           button(phx.onClick(Msg.Start), phx.target(self), model._2)
+      end AsyncComponent
 
       for
         release <- Promise.make[Nothing, Unit]
@@ -538,8 +626,8 @@ object AsyncSpec extends ZIOSpecDefault:
                def mount(ctx: MountContext) =
                  ctx.async
                    .start(Tasks.Load)(
-                      ZIO.acquireReleaseWith(ZIO.unit)(_ => stopped.succeed(()).unit) { _ =>
-                        started.succeed(()) *> ZIO.never.as("loaded")
+                     ZIO.acquireReleaseWith(ZIO.unit)(_ => stopped.succeed(()).unit) { _ =>
+                       started.succeed(()) *> ZIO.never.as("loaded")
                      }
                    )(Msg.Loaded(_))
                    .as("loading")
@@ -550,13 +638,14 @@ object AsyncSpec extends ZIOSpecDefault:
                def render(model: String): HtmlElement[Msg] =
                  div(idAttr := "root", model)
         result <- ZIO.scoped {
-                     for
-                       socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
-                       ready  <- awaitWithin(started.await, 1.second)
-                       _      <- socket.shutdown
-                       done   <- awaitWithin(stopped.await, 1.second)
+                    for
+                      socket <-
+                        Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+                      ready <- awaitWithin(started.await, 1.second)
+                      _     <- socket.shutdown
+                      done  <- awaitWithin(stopped.await, 1.second)
                     yield assertTrue(ready.contains(()), done.contains(()))
-                   }
+                  }
       yield result
     },
     test("confirmed component removal interrupts component async tasks") {
@@ -591,12 +680,13 @@ object AsyncSpec extends ZIOSpecDefault:
                  ZIO.succeed(true)
 
                def handleMessage(model: Boolean, ctx: MessageContext) =
-                     case ParentMsg.Toggle => ZIO.succeed(!model)
+                 case ParentMsg.Toggle => ZIO.succeed(!model)
 
                def render(model: Boolean): HtmlElement[ParentMsg] =
                  div(
                    button(phx.onClick(ParentMsg.Toggle), "toggle"),
-                   if model then liveComponent(InterruptComponent, id = "interrupt", props = stopped)
+                   if model then
+                     liveComponent(InterruptComponent, id = "interrupt", props = stopped)
                    else "gone"
                  )
         destroyed: Payload.Event = Payload.Event(
@@ -615,6 +705,7 @@ object AsyncSpec extends ZIOSpecDefault:
                     yield assertTrue(done.contains(()))
                   }
       yield result
+      end for
     }
   )
 

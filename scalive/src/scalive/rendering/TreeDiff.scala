@@ -30,13 +30,20 @@ private[scalive] object TreeDiff:
   def diff(previous: Compiled, current: Compiled): Diff =
     val previousComponents = collectComponents(previous.root)
     val currentComponents  = collectComponents(current.root)
+    val parentDiff         = diffNode(previous.root, current.root).getOrElse(Diff.Tag())
 
-    val raw = withComponentDiffs(
-      diff = diffNode(previous.root, current.root).getOrElse(Diff.Tag()),
+    val componentDiff = withComponentDiffs(
+      diff = parentDiff,
       previous = previousComponents,
       current = currentComponents,
       includeAll = false
     )
+    val raw = componentDiff match
+      case tag: Diff.Tag if !parentDiff.isEmpty && tag.components.nonEmpty =>
+        diffNode(previous.root, current.root, tag.components.keySet) match
+          case Some(forced: Diff.Tag) => forced.copy(components = tag.components)
+          case _                      => tag
+      case other => other
 
     withComponentStaticSharing(
       previous = previousComponents,
@@ -48,8 +55,12 @@ private[scalive] object TreeDiff:
     left.static == right.static &&
       left.slots.length == right.slots.length
 
-  private def diffNode(previous: CompiledNode, current: CompiledNode): Option[Diff] =
-    if previous.fingerprint == current.fingerprint then None
+  private def diffNode(
+    previous: CompiledNode,
+    current: CompiledNode,
+    forcedComponentRefs: Set[Int] = Set.empty
+  ): Option[Diff] =
+    if forcedComponentRefs.isEmpty && previous.fingerprint == current.fingerprint then None
     else
       (previous, current) match
         case (left: TagNode, right: TagNode) =>
@@ -57,7 +68,7 @@ private[scalive] object TreeDiff:
           else
             val dynamic: Vector[Diff.Dynamic] = right.slots.zipWithIndex.flatMap {
               case (slot, index) =>
-                diffSlot(left.slots(index), slot)
+                diffSlot(left.slots(index), slot, forcedComponentRefs)
                   .map(diff => Diff.Dynamic(index, diff))
             }
             Option.when(dynamic.nonEmpty)(
@@ -67,20 +78,26 @@ private[scalive] object TreeDiff:
               )
             )
         case (left: KeyedNode, right: KeyedNode) =>
-          diffKeyed(left, right)
+          diffKeyed(left, right, forcedComponentRefs)
         case _ =>
           Some(fullNode(current, includeStatic = true))
 
-  private def diffSlot(previous: CompiledSlot, current: CompiledSlot): Option[Diff] =
+  private def diffSlot(
+    previous: CompiledSlot,
+    current: CompiledSlot,
+    forcedComponentRefs: Set[Int]
+  ): Option[Diff] =
     (previous, current) match
       case (StringSlot(left), StringSlot(right)) =>
         Option.when(left != right)(Diff.Value(right))
       case (NodeSlot(left), NodeSlot(right)) =>
-        diffNode(left, right)
+        diffNode(left, right, forcedComponentRefs)
       case (KeyedSlot(left), KeyedSlot(right)) =>
-        diffKeyed(left, right)
+        diffKeyed(left, right, forcedComponentRefs)
       case (ComponentSlot(left), ComponentSlot(right)) =>
-        Option.when(left.cid != right.cid)(Diff.ComponentRef(right.cid))
+        Option.when(left.cid != right.cid || forcedComponentRefs.contains(right.cid))(
+          Diff.ComponentRef(right.cid)
+        )
       case _ =>
         Some(fullSlot(current))
 
@@ -134,8 +151,12 @@ private[scalive] object TreeDiff:
       stream = node.stream
     )
 
-  private def diffKeyed(previous: KeyedNode, current: KeyedNode): Option[Diff] =
-    if previous.fingerprint == current.fingerprint then None
+  private def diffKeyed(
+    previous: KeyedNode,
+    current: KeyedNode,
+    forcedComponentRefs: Set[Int]
+  ): Option[Diff] =
+    if forcedComponentRefs.isEmpty && previous.fingerprint == current.fingerprint then None
     else
       val previousStatic = keyedSharedStatic(previous.entries)
       val currentStatic  = keyedSharedStatic(current.entries)
@@ -166,11 +187,12 @@ private[scalive] object TreeDiff:
                 )
               case Some((previousIndex, previousNode, previousFingerprint)) =>
                 val unchanged =
-                  previousFingerprint.nonEmpty && previousFingerprint == entry.fingerprint
+                  forcedComponentRefs.isEmpty && previousFingerprint.nonEmpty &&
+                    previousFingerprint == entry.fingerprint
                 if unchanged then
                   Option.when(previousIndex != index)(Diff.IndexChange(index, previousIndex))
                 else
-                  val maybeDiff = diffNode(previousNode, entry.node)
+                  val maybeDiff = diffNode(previousNode, entry.node, forcedComponentRefs)
                   if previousIndex == index then maybeDiff.map(diff => Diff.Dynamic(index, diff))
                   else
                     maybeDiff match

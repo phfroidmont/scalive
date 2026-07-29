@@ -176,7 +176,7 @@ browser profile when checking authentication.
       exceed five visible stream rows while Durable history continues to grow. Delete a
       visible row, then reset the stream and confirm only the latest three model entries
       are rendered.
-- [ ] **Voting components, `/components/voting`:** vote independently in both
+- [x] **Voting components, `/components/voting`:** vote independently in both
       components and reset one without changing the other. Send a typed parent vote to
       the Scala component, then send updated props and confirm its title changes while
       its local count is preserved.

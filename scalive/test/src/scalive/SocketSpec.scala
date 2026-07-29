@@ -87,6 +87,20 @@ object SocketSpec extends ZIOSpecDefault:
       case Diff.Dynamic(_, diff) => containsValue(diff, value)
       case _                     => false
 
+  private def containsComponentRef(diff: Diff, cid: Int): Boolean =
+    diff match
+      case Diff.Tag(_, dynamic, _, _, _, _, _, _) =>
+        dynamic.exists(d => containsComponentRef(d.diff, cid))
+      case Diff.Comprehension(_, entries, _, _, _) =>
+        entries.exists {
+          case Diff.Dynamic(_, diff)       => containsComponentRef(diff, cid)
+          case Diff.IndexMerge(_, _, diff) => containsComponentRef(diff, cid)
+          case _                           => false
+        }
+      case Diff.ComponentRef(current) => current == cid
+      case Diff.Dynamic(_, current)   => containsComponentRef(current, cid)
+      case _                          => false
+
   private def diffFromPayload(payload: Payload): Option[Diff] =
     payload match
       case Payload.Reply(ReplyStatus.Ok, LiveResponse.InitDiff(diff))          => Some(diff)
@@ -519,6 +533,58 @@ object SocketSpec extends ZIOSpecDefault:
                       _     <- socket.inbox.offer(event -> meta)
                       reply <- outbox.take
                     yield assertTrue(diffFromPayload(reply._1).exists(containsValue(_, "updated")))
+                  }
+      yield result
+    },
+    test("sendUpdate immediately renders updated props while preserving component state") {
+      object StatefulLabelComponent extends LiveComponent[String, Unit, Int]:
+        def mount(props: String, ctx: MountContext) =
+          ZIO.succeed(0)
+
+        override def update(props: String, model: Int, ctx: UpdateContext) =
+          ZIO.succeed(model)
+
+        def handleMessage(props: String, model: Int, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model + 1)
+
+        def render(props: String, model: Int, self: ComponentRef[Unit]) =
+          articleTag(h2(props), p(s"Votes: $model"))
+
+      val lv = new LiveView[Unit, Int]:
+        def mount(ctx: MountContext) =
+          ZIO.succeed(0)
+
+        def handleMessage(model: Int, ctx: MessageContext) =
+          (_: Unit) =>
+            ctx.components
+              .sendUpdate[StatefulLabelComponent.type]("label", "Revision 1").as(model + 1)
+
+        def render(model: Int): HtmlElement[Unit] =
+          div(
+            p(s"Revision: $model"),
+            button(phx.onClick(()), "update props"),
+            div(liveComponent(StatefulLabelComponent, id = "label", props = "Initial"))
+          )
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:1:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _     <- socket.inbox.offer(event -> meta)
+                      reply <- outbox.take
+                    yield
+                      val diff = diffFromPayload(reply._1)
+                      assertTrue(
+                        diff.exists(containsValue(_, "Revision: 1")),
+                        diff.exists(containsValue(_, "Revision 1")),
+                        diff.exists(containsComponentRef(_, cid = 1))
+                      )
                   }
       yield result
     },

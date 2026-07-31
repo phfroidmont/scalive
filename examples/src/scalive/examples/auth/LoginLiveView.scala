@@ -13,16 +13,7 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
     ZIO.unit
 
   def render(model: Unit) =
-    val initialData = FormData(
-      Vector(
-        Email.name -> DemoEmail
-      )
-    )
-    val loginForm = Form.of(
-      Root.name,
-      FormState(initialData, codec.decode(initialData), submitted = false),
-      codec
-    )
+    val loginForm     = Definition.initial(Email.initial(DemoEmail))
     val emailField    = loginForm.field(Email)
     val passwordField = loginForm.field(Password)
 

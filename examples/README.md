@@ -45,6 +45,13 @@ For example, behind an HTTPS endpoint:
 SCALIVE_SECURE_COOKIES=true mill examples.run
 ```
 
+`TokenConfig.default` also reads deployment configuration. Set a stable,
+high-entropy `SCALIVE_TOKEN_SECRET` in every non-local deployment; when it is absent
+or empty, Scalive generates a process-local secret and a restart invalidates signed
+Live sessions, CSRF values, and HTTP flash. `SCALIVE_TOKEN_MAX_AGE_SECONDS` accepts a
+positive whole number of seconds. Missing, empty, non-numeric, zero, and negative
+values use the seven-day default.
+
 The single demo account is:
 
 ```text
@@ -67,8 +74,8 @@ live in [`ExampleCatalog.scala`](src/scalive/examples/ExampleCatalog.scala).
 | `GET /services/guestbook`       | [`GuestbookLiveView.scala`](src/scalive/examples/services/GuestbookLiveView.scala), [`Guestbook.scala`](src/scalive/examples/services/Guestbook.scala)                                                                                                                           | A route-level LiveView layer, inferred constructor dependencies, and state shared across connections                     |
 | `GET /processing/subscriptions` | [`ClockLiveView.scala`](src/scalive/examples/processing/ClockLiveView.scala)                                                                                                                                                                                                     | A typed `SubscriptionKey` controlling `ZStream` start, replacement, and cancellation                                      |
 | `GET /processing/async`         | [`AsyncReportLiveView.scala`](src/scalive/examples/processing/AsyncReportLiveView.scala)                                                                                                                                                                                         | `AsyncKey`, `AsyncValue`, typed success, failure, and cancellation messages, task replacement, and retry                  |
-| `GET /auth/login`               | [`LoginForm.scala`](src/scalive/examples/auth/LoginForm.scala), [`LoginLiveView.scala`](src/scalive/examples/auth/LoginLiveView.scala), [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala)                                                                 | Typed field declarations shared by rendering and staged HTTP decoding, automatic framework CSRF, and HTTP-to-Live flash   |
-| `GET /auth/profile`             | [`AuthService.scala`](src/scalive/examples/auth/AuthService.scala), [`ProfileLiveView.scala`](src/scalive/examples/auth/ProfileLiveView.scala), [`AuthMountAspect.scala`](src/scalive/examples/auth/AuthMountAspect.scala)                                                      | `LiveMountAspect.authenticated`, cookie authentication during disconnected mount, and claims-based connected resumption   |
+| `GET /auth/login`               | [`LoginForm.scala`](src/scalive/examples/auth/LoginForm.scala), [`LoginLiveView.scala`](src/scalive/examples/auth/LoginLiveView.scala), [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala), [`ExamplesApp.scala`](src/scalive/examples/ExamplesApp.scala) | A rooted form definition shared by rendering and bounded HTTP decoding, automatic framework CSRF, and HTTP-to-Live flash   |
+| `GET /auth/profile`             | [`AuthService.scala`](src/scalive/examples/auth/AuthService.scala), [`ProfileLiveView.scala`](src/scalive/examples/auth/ProfileLiveView.scala), [`AuthMountAspect.scala`](src/scalive/examples/auth/AuthMountAspect.scala), [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala), [`ExamplesApp.scala`](src/scalive/examples/ExamplesApp.scala) | `LiveMountAspect.authenticated`, cookie authentication, claims-based resumption, and one shared route-environment service  |
 | `GET /forms/profile`            | [`ProfileFormLiveView.scala`](src/scalive/examples/forms/ProfileFormLiveView.scala)                                                                                                                                                                                              | `Form`, `FormCodec`, accumulated path-specific validation, used fields, and typed submit values                           |
 | `GET /uploads/documents`        | [`DocumentUploadLiveView.scala`](src/scalive/examples/uploads/DocumentUploadLiveView.scala), [`UploadStore.scala`](src/scalive/examples/uploads/UploadStore.scala)                                                                                                               | Upload constraints, validation, progress, cancellation, consumption, application storage, retry, and deletion             |
 | `GET /navigation/search`        | [`SearchLiveView.scala`](src/scalive/examples/navigation/SearchLiveView.scala)                                                                                                                                                                                                   | Schema-derived query params, complete typed locations, `handleParams`, navigate, patch, and replace-patch                 |
@@ -83,10 +90,15 @@ Authentication also uses two ordinary HTTP endpoints in
 The session and logout `RoutePattern` values are shared by HTTP dispatch and
 their rendered `FormAction`s, so browser methods and paths cannot drift apart.
 
-| Endpoint             | Lesson                                                                                                      |
-| -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `POST /auth/session` | Decode a bounded typed form, validate browser-bound framework CSRF and credentials, then redirect with a session or generic typed flash |
-| `POST /auth/logout`  | Validate framework CSRF, revoke the server session, expire the cookie, and redirect home                    |
+| Endpoint             | Principal source                                                           | Lesson                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `POST /auth/session` | [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala)     | Decode a bounded typed form, validate browser-bound framework CSRF and credentials, then redirect with a session or generic typed flash |
+| `POST /auth/logout`  | [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala)     | Validate framework CSRF, revoke any matching server session, always expire the cookie, and redirect home    |
+
+Both `AuthMountAspect.authenticated` and `AuthHttpRoutes.routes` require
+`AuthService` in their route environment. `ExamplesApp` composes the Live and HTTP
+routes first, then provides `AuthService.live` once at the server boundary so both
+paths observe the same in-memory session store.
 
 ## Data Lifetime
 
@@ -97,10 +109,15 @@ There is no database or durable persistence in this module.
   that example is mounted again.
 - The guestbook is one process-wide in-memory service. Its entries are shared by
   browser connections but disappear when the examples server restarts.
-- Sessions are bounded, in-memory server records and disappear on restart. An
-  authenticated session lasts 30 minutes and can be revoked by logout. The default
-  is `maxSessions = 1024`. Auth operations opportunistically prune expired records;
-  an insertion at capacity deterministically evicts the oldest session.
+- Framework signed values use `TokenConfig.maxAge`, seven days by default. This
+  lifetime covers Live session signatures and the reusable browser-bound CSRF cookie
+  and form tokens.
+- HTTP flash is deliberately shorter-lived: its cookie lasts at most 60 seconds and
+  never longer than `TokenConfig.maxAge`.
+- Authentication sessions are bounded, in-memory server records and disappear on
+  restart. A session lasts 30 minutes and can be revoked by logout. The default is
+  `maxSessions = 1024`. Auth operations opportunistically prune expired records; an
+  insertion at capacity deterministically evicts the oldest session.
 - Stored documents are shared through one process-scoped `UploadStore`. Each
   process creates its own `scalive-documents-*` temporary directory. UI deletion
   removes an individual file; the layer finalizer recursively removes the whole
@@ -112,11 +129,31 @@ There is no database or durable persistence in this module.
 The auth example teaches flow and API composition: an ordinary HTTP login/logout
 boundary, browser-bound signed framework CSRF, opaque high-entropy cookies, hashed token
 lookup, one hardened `CookiePolicy`, revocation, signed non-secret claims, typed
-HTTP-to-Live flash, and typed route context. Typed `FormField` declarations own the
-rooted `login[...]` paths used by both rendering and decoding. `HttpFormDecoder` preserves
-body, representation, CSRF, and application-validation failures as separate categories.
-Invalid credentials redirect to the parameterless login route and the next Live render
-consumes the generic flash.
+HTTP-to-Live flash, and typed route context. `LoginForm.Root` owns the rooted
+`login[...]` field declarations and form definition used by both rendering and
+decoding. `HttpFormDecoder` preserves body, representation, CSRF, and
+application-validation failures as separate categories.
+
+The complete request flow is:
+
+1. `GET /auth/login` renders `LoginForm.Definition.initial(...)` as an ordinary
+   `POST /auth/session` form.
+2. Finalized Live rendering adds `_csrf_token` and sets the corresponding signed,
+   browser-bound framework CSRF cookie when needed.
+3. `POST /auth/session` uses `HttpFormDecoder` to bound and decode the URL-encoded
+   body, validate framework CSRF, and decode `LoginCredentials`.
+4. Invalid input or credentials redirects to the parameterless login route with a
+   generic signed flash; the next successful Live render consumes that flash.
+5. Valid credentials create a 30-minute in-memory session, return an opaque cookie
+   token, and redirect with `LiveLocation.seeOther` to `/auth/profile`.
+6. The protected route authenticates the cookie during disconnected mount, signs
+   only the public session ID into Live claims, and resumes the server record during
+   connected mount.
+7. The logout form posts to `POST /auth/logout` with the same framework CSRF
+   mechanism. After valid CSRF, logout is idempotent: a present live session is
+   revoked, while a missing or stale cookie is already logged out.
+8. Every successful logout response expires the session cookie and redirects home,
+   including requests with no cookie or a stale cookie.
 
 It is not a production identity system. It has one hard-coded account and no
 database, password hashing, account management, rate limiting, audit trail, TLS

@@ -82,5 +82,56 @@ object HttpFormDecoderSpec extends ZIOSpecDefault:
         _ <- decoder.decode(request("value=%ZZ")).either
         _ <- decoder.decode(request("value=ok", includeCsrf = false)).either
       yield assertTrue(calls.get() == 0)
+    },
+    test("maps transport errors while delegating application validation") {
+      val validationErrors = FormErrors.one(Name.path, "invalid")
+      val validationCalls  = AtomicInteger()
+      val errors = Vector[HttpFormDecoder.Error](
+        HttpFormDecoder.Error.Body(FormData.BodyError.TooLarge(10)),
+        HttpFormDecoder.Error.Body(FormData.BodyError.Read(new RuntimeException("read"))),
+        HttpFormDecoder.Error.Representation(
+          FormData.RepresentationError.InvalidContentType(Some(MediaType.application.json))
+        ),
+        HttpFormDecoder.Error.Representation(
+          FormData.RepresentationError.InvalidUrlEncoding("bad encoding")
+        ),
+        HttpFormDecoder.Error.Representation(
+          FormData.RepresentationError.UnsupportedField(
+            "upload",
+            FormData.UnsupportedFieldKind.Binary
+          )
+        ),
+        HttpFormDecoder.Error.Csrf(CsrfProtection.ValidationError.MissingToken),
+        HttpFormDecoder.Error.Validation(validationErrors)
+      )
+      val responses = errors.map(
+        _.toResponse { actual =>
+          validationCalls.incrementAndGet()
+          Predef.assert(actual == validationErrors)
+          Status.UnprocessableEntity.toResponse
+        }
+      )
+
+      assertTrue(
+        errors.map(_.code) == Vector(
+          "body_too_large",
+          "body_read",
+          "invalid_content_type",
+          "invalid_url_encoding",
+          "unsupported_binary",
+          "csrf",
+          "validation"
+        ),
+        responses.map(_.status) == Vector(
+          Status.RequestEntityTooLarge,
+          Status.BadRequest,
+          Status.UnsupportedMediaType,
+          Status.BadRequest,
+          Status.BadRequest,
+          Status.Forbidden,
+          Status.UnprocessableEntity
+        ),
+        validationCalls.get() == 1
+      )
     }
   )

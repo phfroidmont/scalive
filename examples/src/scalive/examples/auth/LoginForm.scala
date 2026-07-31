@@ -6,20 +6,19 @@ final case class LoginCredentials(email: String, password: String)
 
 object LoginForm:
   val FormId = "login-form"
-  val Root   = FormPath("login")
+  val Root   = FormRoot("login")
 
   val EmailMaxLength    = 254
   val PasswordMaxLength = 1024
 
-  val Email = FormField
-    .requiredString(Root / "email")
+  val Email = Root
+    .requiredString("email")
     .validate(s"must be $EmailMaxLength characters or fewer")(_.length <= EmailMaxLength)
 
-  val Password = FormField
-    .requiredString(Root / "password")
+  val Password = Root
+    .requiredString("password")
     .validate(s"must be $PasswordMaxLength characters or fewer")(
       _.length <= PasswordMaxLength
     )
 
-  val codec: FormCodec[LoginCredentials] =
-    Email.codec.zip(Password.codec).map(LoginCredentials.apply)
+  val Definition = Root.form(Email.codec.zip(Password.codec).map(LoginCredentials.apply))

@@ -75,18 +75,17 @@ object ExamplesApp extends ZIOAppDefault:
     for
       assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.css", "app.js")))
       authHttpConfig <- AuthHttpConfig.fromEnvironment(sys.env)
-      authService    <- ZIO.service[AuthService].provide(AuthService.live(authServiceConfig))
       security = LiveSecurity(
                    TokenConfig.default,
                    CookiePolicy(secure = authHttpConfig.secureCookies)
                  )
       routes = liveRoutes(assets, security) ++
-                 AuthHttpRoutes(authService, security).routes ++ assets.routes
+                 AuthHttpRoutes(security).routes ++ assets.routes
       _ <- Server
              .serve(routes)
              .provide(
                Server.defaultWithPort(serverPort),
-               ZLayer.succeed(authService),
+               AuthService.live(authServiceConfig),
                Guestbook.live,
                UploadStore.live
              )

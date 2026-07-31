@@ -25,6 +25,35 @@ object TokenSpec extends ZIOSpecDefault:
       case _ => token
 
   override def spec = suite("TokenSpec")(
+    test("resolves default token configuration from the environment") {
+      val generated = "generated-secret"
+      val absent    = TokenConfig.fromEnvironment(Map.empty, generated)
+      val emptySecret = TokenConfig.fromEnvironment(
+        Map("SCALIVE_TOKEN_SECRET" -> ""),
+        generated
+      )
+      val configured = TokenConfig.fromEnvironment(
+        Map(
+          "SCALIVE_TOKEN_SECRET"          -> "configured-secret",
+          "SCALIVE_TOKEN_MAX_AGE_SECONDS" -> "60"
+        ),
+        generated
+      )
+      val invalidAges = List("", "invalid", "0", "-1").map(value =>
+        TokenConfig.fromEnvironment(
+          Map("SCALIVE_TOKEN_MAX_AGE_SECONDS" -> value),
+          generated
+        )
+      )
+
+      assertTrue(
+        absent == TokenConfig(generated, TokenConfig.DefaultMaxAge),
+        emptySecret.secret == generated,
+        configured == TokenConfig("configured-secret", 60.seconds),
+        invalidAges.forall(_.maxAge == TokenConfig.DefaultMaxAge),
+        TokenConfig.default eq TokenConfig.default
+      )
+    },
     test("returns Left for invalid base64 payload") {
       val token  = s"%%%25.${base64("signature")}" 
       val result = Token.verify[String](secret, token, 7.days)

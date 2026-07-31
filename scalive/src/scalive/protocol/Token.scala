@@ -22,22 +22,28 @@ final private[scalive] case class Token[T] private (
 final case class TokenConfig(secret: String, maxAge: Duration)
 
 object TokenConfig:
-  private val defaultMaxAge = 7.days
+  private[scalive] val DefaultMaxAge = 7.days
 
-  private def maxAgeFromEnv: Option[Duration] =
-    sys.env
+  private def maxAgeFromEnvironment(environment: Map[String, String]): Option[Duration] =
+    environment
       .get("SCALIVE_TOKEN_MAX_AGE_SECONDS")
       .flatMap(_.toLongOption)
       .filter(_ > 0)
       .map(_.seconds)
 
   val default: TokenConfig =
+    fromEnvironment(sys.env, java.util.UUID.randomUUID().toString)
+
+  private[scalive] def fromEnvironment(
+    environment: Map[String, String],
+    generatedSecret: => String
+  ): TokenConfig =
     TokenConfig(
-      secret = sys.env
+      secret = environment
         .get("SCALIVE_TOKEN_SECRET")
         .filter(_.nonEmpty)
-        .getOrElse(java.util.UUID.randomUUID().toString),
-      maxAge = maxAgeFromEnv.getOrElse(defaultMaxAge)
+        .getOrElse(generatedSecret),
+      maxAge = maxAgeFromEnvironment(environment).getOrElse(DefaultMaxAge)
     )
 
 private[scalive] object Token:

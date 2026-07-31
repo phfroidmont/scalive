@@ -57,11 +57,10 @@ object AuthServiceSpec extends ZIOSpecDefault:
       Cookie.Request(csrf.cookie.name, csrf.cookie.content)
     )
 
-  private def run(routes: Routes[Any, Nothing], request: Request): UIO[Response] =
-    ZIO.scoped(routes.runZIO(request))
-
-  private def httpRoutes(auth: AuthService): Routes[Any, Nothing] =
-    AuthHttpRoutes(auth, security).routes
+  private def run(auth: AuthService, request: Request): UIO[Response] =
+    ZIO
+      .scoped(AuthHttpRoutes(security).routes.runZIO(request))
+      .provideEnvironment(ZEnvironment(auth))
 
   private def responseCookies(response: Response): Chunk[Cookie.Response] =
     response.headers(Header.SetCookie).map(_.value)
@@ -98,7 +97,9 @@ object AuthServiceSpec extends ZIOSpecDefault:
       )
 
       assertTrue(
-        LoginForm.codec.decode(data) == Right(LoginCredentials(DemoEmail, DemoPassword))
+        LoginForm.Definition.codec.decode(data) == Right(
+          LoginCredentials(DemoEmail, DemoPassword)
+        )
       )
     },
     test("rejects incomplete, oversized, and duplicated credentials") {
@@ -118,13 +119,13 @@ object AuthServiceSpec extends ZIOSpecDefault:
       )
 
       assertTrue(
-        LoginForm.codec.decode(incomplete).left.exists(
+        LoginForm.Definition.codec.decode(incomplete).left.exists(
           _.forPath(LoginForm.Password.path).nonEmpty
         ),
-        LoginForm.codec.decode(oversized).left.exists(
+        LoginForm.Definition.codec.decode(oversized).left.exists(
           _.forPath(LoginForm.Email.path).nonEmpty
         ),
-        LoginForm.codec.decode(duplicated).left.exists(
+        LoginForm.Definition.codec.decode(duplicated).left.exists(
           _.forPath(LoginForm.Email.path).nonEmpty
         )
       )
@@ -152,10 +153,11 @@ object AuthServiceSpec extends ZIOSpecDefault:
       for
         auth     <- authService
         loggedIn <- login(auth)
-        loggedOut <- auth.logout(loggedIn.cookieToken)
+        _ <- auth.logout(loggedIn.cookieToken)
+        _ <- auth.logout(loggedIn.cookieToken)
         authenticated <- auth.authenticate(loggedIn.cookieToken)
         resumed       <- auth.resume(loggedIn.currentSession.publicSessionId)
-      yield assertTrue(loggedOut, authenticated.isEmpty, resumed.isEmpty)
+      yield assertTrue(authenticated.isEmpty, resumed.isEmpty)
     },
     test("expires sessions") {
       val config = AuthServiceConfig.default.copy(sessionTtl = 1.minute)
@@ -211,7 +213,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
       val csrf = prepareCsrf
       for
         auth     <- authService
-        response <- run(httpRoutes(auth), loginRequest(csrf))
+        response <- run(auth, loginRequest(csrf))
         sessionCookie = responseCookies(response).find(
                           _.name == AuthHttpRoutes.SessionCookieName
                         )
@@ -253,9 +255,9 @@ object AuthServiceSpec extends ZIOSpecDefault:
 
       for
         auth                <- authService
-        missingResponse     <- run(httpRoutes(auth), missing)
-        tamperedResponse    <- run(httpRoutes(auth), tampered)
-        transferredResponse <- run(httpRoutes(auth), transferred)
+        missingResponse     <- run(auth, missing)
+        tamperedResponse    <- run(auth, tampered)
+        transferredResponse <- run(auth, transferred)
       yield assertTrue(
         missingResponse.status == Status.Forbidden,
         tamperedResponse.status == Status.Forbidden,
@@ -269,7 +271,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
       val csrf = prepareCsrf
       for
         auth     <- authService
-        response <- run(httpRoutes(auth), loginRequest(csrf, password = "incorrect"))
+        response <- run(auth, loginRequest(csrf, password = "incorrect"))
         redirect = response.header(Header.Location).map(_.url.encode)
         flashCookie = responseCookies(response).find(_.name == FlashToken.CookieName)
         flashValues = flashCookie.flatMap(cookie =>
@@ -293,15 +295,15 @@ object AuthServiceSpec extends ZIOSpecDefault:
       for
         auth <- authService
         malformed <- run(
-                       httpRoutes(auth),
+                       auth,
                         rawLoginRequest(csrf, s"${LoginForm.Email.name}=%ZZ")
                      )
         oversized <- run(
-                       httpRoutes(auth),
+                       auth,
                        rawLoginRequest(csrf, "x" * (AuthHttpRoutes.FormMaxBytes.toInt + 1))
                      )
         wrongType <- run(
-                       httpRoutes(auth),
+                       auth,
                        rawLoginRequest(csrf, "{}", MediaType.application.json)
                      )
       yield assertTrue(
@@ -321,7 +323,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
                   ).addCookie(
                     Cookie.Request(AuthHttpRoutes.SessionCookieName, loggedIn.cookieToken.value)
                   )
-        response      <- run(httpRoutes(auth), request)
+        response      <- run(auth, request)
         authenticated <- auth.authenticate(loggedIn.cookieToken)
       yield assertTrue(
         response.status == Status.Forbidden,
@@ -337,7 +339,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
         request = protectedPost(logoutAction, csrf).addCookie(
                     Cookie.Request(AuthHttpRoutes.SessionCookieName, loggedIn.cookieToken.value)
                   )
-        response <- run(httpRoutes(auth), request)
+        response <- run(auth, request)
         cookie = responseCookies(response).find(_.name == AuthHttpRoutes.SessionCookieName)
         authenticated <- auth.authenticate(loggedIn.cookieToken)
       yield assertTrue(
@@ -350,6 +352,34 @@ object AuthServiceSpec extends ZIOSpecDefault:
         cookie.exists(_.maxAge.contains(zio.Duration.Zero)),
         cookie.exists(_.sameSite.contains(Cookie.SameSite.Lax)),
         authenticated.isEmpty
+      )
+    },
+    test("HTTP logout clears missing and stale sessions idempotently") {
+      val csrf = prepareCsrf
+      for
+        auth     <- authService
+        loggedIn <- login(auth)
+        _        <- auth.logout(loggedIn.cookieToken)
+        staleRequest = protectedPost(logoutAction, csrf).addCookie(
+                         Cookie.Request(
+                           AuthHttpRoutes.SessionCookieName,
+                           loggedIn.cookieToken.value
+                         )
+                       )
+        staleResponse  <- run(auth, staleRequest)
+        missingResponse <- run(auth, protectedPost(logoutAction, csrf))
+        repeatedResponse <- run(auth, staleRequest)
+        responses = List(staleResponse, missingResponse, repeatedResponse)
+      yield assertTrue(
+        responses.forall(_.status == Status.SeeOther),
+        responses.forall(
+          _.header(Header.Location).exists(_.url.encode == ExamplesRoutes.home.location.href)
+        ),
+        responses.forall(response =>
+          responseCookies(response)
+            .find(_.name == AuthHttpRoutes.SessionCookieName)
+            .exists(_.maxAge.contains(zio.Duration.Zero))
+        )
       )
     },
     test("mount authentication uses the cookie disconnected and public claims connected") {

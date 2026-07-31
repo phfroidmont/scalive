@@ -6,6 +6,8 @@ import zio.http.codec.PathCodec
 final class LiveLocation private[scalive] (private[scalive] val url: URL):
   def href: String = url.encode
 
+  def seeOther: Response = Response.seeOther(url)
+
   /** Returns a copy with `fragment` as its URI fragment.
     *
     * `fragment` must already use percent-encoded URI-fragment syntax. This method validates but

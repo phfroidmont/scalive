@@ -17,7 +17,7 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
 
   def spec = suite("ProfileFormCodecSpec")(
     test("rejects blank fields with path-specific messages") {
-      val result = Profile.codec.decode(formData(" ", "", "\t"))
+      val result = Profile.Definition.codec.decode(formData(" ", "", "\t"))
 
       assertTrue(
         result == Left(
@@ -32,7 +32,7 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
       )
     },
     test("rejects a malformed email address") {
-      val result = Profile.codec.decode(
+      val result = Profile.Definition.codec.decode(
         formData("Ada Lovelace", "ada.example.com", "Analytical engine pioneer.")
       )
 
@@ -41,7 +41,7 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
       )
     },
     test("rejects a biography longer than 500 characters") {
-      val result = Profile.codec.decode(
+      val result = Profile.Definition.codec.decode(
         formData("Ada Lovelace", "ada@example.com", "a" * 501)
       )
 
@@ -52,7 +52,7 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
       )
     },
     test("accumulates every validation error in field order") {
-      val result = Profile.codec.decode(formData("", "invalid", "a" * 501))
+      val result = Profile.Definition.codec.decode(formData("", "invalid", "a" * 501))
 
       assertTrue(
         result == Left(
@@ -67,7 +67,7 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
       )
     },
     test("decodes valid trimmed profile input") {
-      val result = Profile.codec.decode(
+      val result = Profile.Definition.codec.decode(
         formData(
           "  Ada Lovelace  ",
           "  ada@example.com  ",
@@ -82,12 +82,11 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
     test("keeps initial validation errors hidden until fields are used") {
       for
         model <- ProfileFormLiveView().mount(null)
-        form = Form.of(Profile.Root.name, model.form, Profile.codec)
       yield assertTrue(
-        model.form.errors.nonEmpty,
-        !form.field(Profile.Name).isUsed,
-        !form.field(Profile.Email).isUsed,
-        !form.field(Profile.Biography).isUsed
+        model.form.state.errors.nonEmpty,
+        !model.form.field(Profile.Name).isUsed,
+        !model.form.field(Profile.Email).isUsed,
+        !model.form.field(Profile.Biography).isUsed
       )
     }
   )

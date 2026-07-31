@@ -39,7 +39,7 @@ trait AuthService:
   def login(credentials: LoginCredentials): UIO[Option[LoginResult]]
   def authenticate(cookieToken: SessionCookieToken): UIO[Option[CurrentSession]]
   def resume(publicSessionId: PublicSessionId): UIO[Option[CurrentSession]]
-  def logout(cookieToken: SessionCookieToken): UIO[Boolean]
+  def logout(cookieToken: SessionCookieToken): UIO[Unit]
 
 object AuthService:
   private val DemoEmail    = "alice@example.com"
@@ -92,13 +92,12 @@ object AuthService:
               }
             }
 
-          def logout(cookieToken: SessionCookieToken): UIO[Boolean] =
+          def logout(cookieToken: SessionCookieToken): UIO[Unit] =
             Clock.instant.flatMap { now =>
-              stateRef.modify { state =>
+              stateRef.update { state =>
                 val pruned     = prune(state, now)
                 val cookieHash = hash(cookieToken.value)
-                val existed    = pruned.sessionsByCookieHash.contains(cookieHash)
-                existed -> pruned.copy(
+                pruned.copy(
                   sessionsByCookieHash = pruned.sessionsByCookieHash - cookieHash
                 )
               }

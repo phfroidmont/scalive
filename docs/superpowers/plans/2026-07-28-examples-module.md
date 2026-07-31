@@ -8,6 +8,15 @@
 
 **Tech Stack:** Scala 3.7.3, ZIO 2, ZIO HTTP 3, ZIO JSON, ZIO Test, Mill, Tailwind 4, DaisyUI 5, Phoenix LiveView client 1.1.28
 
+> **Current implementation note:** This plan is a historical execution record. The
+> implemented auth flow now uses reusable browser-bound framework CSRF,
+> `AuthHttpRoutes` and the authenticated Live routes share one `AuthService` route
+> environment provided once at the server boundary, and logout is idempotent after
+> valid CSRF while always expiring the cookie. Forms now prefer rooted
+> `FormRoot`/`FormDefinition`/`RootedForm`; `Form.of` remains the low-level API. See
+> [`examples/README.md`](../../../examples/README.md) and
+> [`docs/public-api-reference.md`](../../public-api-reference.md) for current usage.
+
 ## Global Constraints
 
 - Rename `example` to `examples`; do not retain a compatibility module or duplicate sources.

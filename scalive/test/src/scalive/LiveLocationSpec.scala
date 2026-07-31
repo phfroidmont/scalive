@@ -109,6 +109,14 @@ object LiveLocationSpec extends ZIOSpecDefault:
 
       assertTrue(home.location.href == "/home", home.locationEither.isRight)
     },
+    test("creates an HTTP see-other response") {
+      val response = (scalive.live / "home").location.seeOther
+
+      assertTrue(
+        response.status == Status.SeeOther,
+        response.header(Header.Location).exists(_.url.encode == "/home")
+      )
+    },
     test("builds required query locations") {
       val search = (scalive.live / "search").query[Int]("page")
 

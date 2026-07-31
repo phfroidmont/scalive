@@ -796,6 +796,7 @@ uploadErrors(entry)
 ```scala
 final class LiveLocation private[scalive] (...):
   def href: String
+  def seeOther: zio.http.Response
   def withFragment(fragment: String): LiveLocation
   def withFragmentEither(
     fragment: String
@@ -813,7 +814,7 @@ object LiveLocation:
       extends IllegalArgumentException(error.message)
 ```
 
-`href` exposes the encoded relative URL for diagnostics and APIs outside Scalive's navigation helpers. `withFragment` and `withFragmentEither` accept already percent-encoded URI-fragment syntax. They validate but do not encode decoded text; the caller must encode spaces, for example by passing `"profile%20details"` instead of `"profile details"`. `withFragment` is the direct fragment API; `withFragmentEither` preserves a checked `EncodeError.Fragment`.
+`href` exposes the encoded relative URL for diagnostics and APIs outside Scalive's navigation helpers. `seeOther` creates a typed HTTP 303 redirect to the location without converting it through a raw URL. `withFragment` and `withFragmentEither` accept already percent-encoded URI-fragment syntax. They validate but do not encode decoded text; the caller must encode spaces, for example by passing `"profile%20details"` instead of `"profile details"`. `withFragment` is the direct fragment API; `withFragmentEither` preserves a checked `EncodeError.Fragment`.
 
 Direct `location`, `withFragment`, and no-argument `Unit` variants use `LiveLocation.EncodingException` only for path, query, fragment, or domain invariant violations reported as `EncodeError`. Use the corresponding `Either` methods for deliberately partial codecs. A `LiveLocation` does not prove that a patch targets the current view or that navigation remains in the same live session.
 
@@ -991,11 +992,13 @@ val security = LiveSecurity(
 )
 
 val liveRoutes = Live.router.withSecurity(security)(loginRoute, protectedRoutes)
-val httpRoutes = AuthHttpRoutes(authService, security).routes
+val httpRoutes = AuthHttpRoutes(security).routes
 val routes     = liveRoutes ++ httpRoutes
+
+Server.serve(routes).provide(AuthService.live)
 ```
 
-`AuthHttpRoutes` is application code from the runnable authentication example, not a framework type. See [`ExamplesApp.scala`](../examples/src/scalive/examples/ExamplesApp.scala), [`AuthHttpRoutes.scala`](../examples/src/scalive/examples/auth/AuthHttpRoutes.scala), and [`AuthMountAspect.scala`](../examples/src/scalive/examples/auth/AuthMountAspect.scala) for the complete composition.
+`AuthHttpRoutes` is application code from the runnable authentication example, not a framework type. Its routes and the authenticated mount aspect both require `AuthService` in the route environment. Compose them first and provide `AuthService.live` once so HTTP login/logout and Live authentication share one session store. See [`ExamplesApp.scala`](../examples/src/scalive/examples/ExamplesApp.scala), [`AuthHttpRoutes.scala`](../examples/src/scalive/examples/auth/AuthHttpRoutes.scala), and [`AuthMountAspect.scala`](../examples/src/scalive/examples/auth/AuthMountAspect.scala) for the complete composition.
 
 `withTokenConfig` remains the direct configuration path when no ordinary handler needs to share security capabilities.
 
@@ -1152,6 +1155,72 @@ LiveParamsCodec.custom(decodeFn, encodeFn)
 
 ## Forms API
 
+### Rooted form definitions
+
+The preferred application API declares one root and derives fields, a codec, initial
+state, event state, and rendered fields from that root:
+
+```scala
+val Profile = FormRoot("profile")
+val Name    = Profile.requiredString("name")
+val Email   = Profile.optionalString("email")
+val Tags    = Profile.strings("tags")
+
+val Definition = Profile.form(
+  Name.codec.zip(Email.codec).map(ProfileData.apply)
+)
+
+val empty     = Definition.initial()
+val populated = Definition.initial(Name.initial("Ada"), Email.initial("ada@example.com"))
+val changed   = Definition.from(event)
+
+val nameField = changed.field(Name)
+```
+
+```scala
+final class FormRoot:
+  val path: FormPath
+  def field[A](path)(decode: Vector[String] => Either[FormErrors, A]): RootedFormField[self.type, A]
+  def requiredString(path, blankMessage = "can't be blank", duplicateMessage = "must be submitted exactly once"): RootedFormField[self.type, String]
+  def optionalString(path, duplicateMessage = "must be submitted at most once"): RootedFormField[self.type, Option[String]]
+  def strings(path): RootedFormField[self.type, Vector[String]]
+  def form[A](codec: RootedFormCodec[self.type, A]): FormDefinition[self.type, A]
+
+final class RootedFormField[Owner, A]:
+  def path: FormPath
+  def name: String
+  def id: String
+  def codec: RootedFormCodec[Owner, A]
+  def map[B](f: A => B): RootedFormField[Owner, B]
+  def validate(message: String, code: Option[String] = None)(predicate: A => Boolean): RootedFormField[Owner, A]
+  def initial(values: String*): FormInitialValue[Owner]
+
+final class RootedFormCodec[Owner, A]:
+  def map[B](f: A => B): RootedFormCodec[Owner, B]
+  def emap[B](f: A => Either[FormErrors, B]): RootedFormCodec[Owner, B]
+  def zip[B](that: RootedFormCodec[Owner, B]): RootedFormCodec[Owner, (A, B)]
+
+final class FormDefinition[Owner, A]:
+  val root: FormPath
+  val codec: FormCodec[A]
+  def initial(values: FormInitialValue[Owner]*): RootedForm[Owner, A]
+  def from(state: FormState[A]): RootedForm[Owner, A]
+  def from(event: FormEvent[A]): RootedForm[Owner, A]
+
+final class RootedForm[Owner, A]:
+  def state: FormState[A]
+  def http[Msg](target: FormAction)(mods*): HtmlElement[Msg]
+  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def field[B](definition: RootedFormField[Owner, B]): Form.Field[B]
+```
+
+The path-dependent `Owner` type prevents fields and initial values from one
+`FormRoot` being used with another root's definition or rendered form. Relative
+field paths become absolute browser names such as `profile[name]` when declared.
+Use `FormDefinition.initial` for fresh or pre-populated state and
+`FormDefinition.from` after a Live form event or when restoring a `FormState`.
+
 ### `FormData`
 
 ```scala
@@ -1243,7 +1312,9 @@ FormField.optionalString(path, duplicateMessage)
 FormField.strings(path)
 ```
 
-Typed fields use absolute paths and own the browser name, generated ID, and decoder. Scalar constructors reject duplicate values instead of silently choosing one.
+`FormField` is the low-level, absolute-path field API used when a rooted definition
+does not fit. It owns the browser name, generated ID, and decoder. Scalar
+constructors reject duplicate values instead of silently choosing one.
 
 ### `FormCodec[A]`
 
@@ -1347,7 +1418,9 @@ Form.of(name, event, codec)
 Form.http(action)(mods*)
 ```
 
-`http` renders a normal browser form whose `action` and `method` come from a `FormAction`. The companion form supports action-only forms; the instance method combines the same wrapper with field helpers. Neither form adds `phx-change`, `phx-submit`, `phx-trigger-action`, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `phx.triggerAction`.
+`Form.of` remains the low-level escape hatch for manually pairing a root name,
+`FormState`, and `FormCodec`; prefer `FormRoot` and `FormDefinition` for application
+forms. `http` renders a normal browser form whose `action` and `method` come from a `FormAction`. The companion form supports action-only forms; the instance method combines the same wrapper with field helpers. Neither form adds `phx-change`, `phx-submit`, `phx-trigger-action`, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `phx.triggerAction`.
 
 Finalized Live renders automatically add `_csrf_token` to checked POST actions. GET and `FormAction.unsafe` targets do not receive a token. The helper rejects caller-supplied `action` or `method` attributes; use `FormAction.unsafe` and the raw `form` tag when those attributes or CSRF behavior must be controlled manually.
 
@@ -1387,10 +1460,11 @@ val routes = zio.http.Routes(
   createSession -> zio.http.handler(login)
 )
 
-val email    = FormField.requiredString(FormPath("login", "email"))
-val password = FormField.requiredString(FormPath("login", "password"))
-val codec    = email.codec.zip(password.codec).map(LoginCredentials.apply)
-val loginForm = Form.of("login", state, codec)
+val Login      = FormRoot("login")
+val email      = Login.requiredString("email")
+val password   = Login.requiredString("password")
+val definition = Login.form(email.codec.zip(password.codec).map(LoginCredentials.apply))
+val loginForm  = definition.initial()
 
 loginForm.http(FormAction.from(createSession))(
   loginForm.field(email).email(),
@@ -1453,7 +1527,18 @@ enum HttpFormDecoder.Error:
   case Representation(error: FormData.RepresentationError)
   case Csrf(error: CsrfProtection.ValidationError)
   case Validation(errors: FormErrors)
+
+  def code: String
+  def toResponse(onValidation: FormErrors => zio.http.Response): zio.http.Response
 ```
+
+`code` supplies a stable category suitable for structured logs:
+`body_too_large`, `body_read`, `invalid_content_type`,
+`invalid_url_encoding`, `unsupported_binary`, `unsupported_streaming_binary`,
+`csrf`, or `validation`. `toResponse` maps an oversized body to 413, an invalid
+content type to 415, other body or representation failures to 400, and CSRF to
+403. Application validation is delegated to `onValidation`, allowing a handler to
+redirect, render, or otherwise apply its own validation policy.
 
 The capability uses two purpose-bound signed values containing the same random browser secret: an `HttpOnly` cookie and the submitted token. Validation requires exactly one bounded `_csrf_token` and compares secrets in constant time. Tokens are reusable until `TokenConfig.maxAge`; they are not one-time application tokens.
 
@@ -1876,7 +1961,18 @@ Default configuration:
 TokenConfig.default
 ```
 
-`TokenConfig.default` reads `SCALIVE_TOKEN_SECRET` and `SCALIVE_TOKEN_MAX_AGE_SECONDS` when present.
+`TokenConfig.default` is resolved once per process. For `SCALIVE_TOKEN_SECRET`, a
+missing or exactly empty value generates a random process-local secret; every other
+value is used verbatim, including whitespace. `SCALIVE_TOKEN_MAX_AGE_SECONDS` is
+used only when `String.toLongOption` parses it as a positive `Long`; missing, empty,
+whitespace-padded, non-numeric, overflowing, zero, and negative values use seven
+days. Set a stable, high-entropy secret in deployments where signed values must
+remain valid across process restarts or multiple instances.
+
+The secret authenticates but does not encrypt framework values. Changing it
+invalidates existing Live sessions, CSRF values, HTTP flash, and other signed
+framework tokens. `TokenConfig.maxAge` does not configure application-owned
+authentication session records.
 
 ## Attribute Encoding API
 

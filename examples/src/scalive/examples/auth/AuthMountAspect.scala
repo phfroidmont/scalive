@@ -19,11 +19,11 @@ object AuthMountAspect:
             case Some(currentSession) =>
               ZIO.succeed(AuthClaims(currentSession.publicSessionId) -> currentSession)
             case None =>
-              ZIO.fail(AuthHttpRoutes.seeOther(ExamplesRoutes.login.location(None)))
+              ZIO.fail(AuthHttpRoutes.seeOther(ExamplesRoutes.login.location))
           },
       (claims, _) =>
         ZIO.serviceWithZIO[AuthService](_.resume(claims.publicSessionId)).flatMap {
           case Some(currentSession) => ZIO.succeed(currentSession)
-          case None => ZIO.fail(LiveMountFailure.redirect(ExamplesRoutes.login.location(None)))
+          case None => ZIO.fail(LiveMountFailure.redirect(ExamplesRoutes.login.location))
         }
     )

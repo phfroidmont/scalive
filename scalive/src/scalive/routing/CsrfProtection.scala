@@ -13,9 +13,9 @@ import zio.http.Response
 import scalive.Mod.Attr
 import scalive.Mod.Content
 
-final class CsrfProtection private (
-  private[scalive] val tokenConfig: TokenConfig,
-  private[scalive] val secureCookie: Boolean):
+final class CsrfProtection private[scalive] (
+  tokenConfig: TokenConfig,
+  secureCookie: Boolean):
   import CsrfProtection.*
 
   def validate(request: Request, data: FormData): Either[ValidationError, Unit] =
@@ -38,9 +38,6 @@ final class CsrfProtection private (
       .queryParam(ParamName)
       .filter(_.length <= MaxTokenLength)
       .filter(token => validateToken(request, token).isRight)
-
-  private[scalive] def withTokenConfig(config: TokenConfig): CsrfProtection =
-    new CsrfProtection(config, secureCookie)
 
   private def validateToken(
     request: Request,
@@ -94,12 +91,6 @@ object CsrfProtection:
   final private[scalive] case class RenderToken(
     value: String,
     cookie: Option[Cookie.Response])
-
-  def apply(
-    tokenConfig: TokenConfig,
-    secureCookie: Boolean = false
-  ): CsrfProtection =
-    new CsrfProtection(tokenConfig, secureCookie)
 
   private[scalive] def addCookie(
     response: Response,

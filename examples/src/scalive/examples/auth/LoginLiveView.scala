@@ -4,23 +4,15 @@ import zio.*
 
 import scalive.*
 
-final class LoginLiveView extends LiveView.Routed.Eventless[LoginLiveView.Model, Option[Boolean]]:
+final class LoginLiveView extends LiveView.Eventless[Unit]:
   import AuthHttpRoutes.*
   import LoginForm.*
   import LoginLiveView.*
 
   def mount(ctx: MountContext) =
-    ZIO.succeed(Model())
+    ZIO.unit
 
-  override def handleParams(
-    model: Model,
-    invalid: Option[Boolean],
-    url: zio.http.URL,
-    ctx: ParamsContext
-  ) =
-    ZIO.succeed(model.copy(invalidLogin = invalid.contains(true)))
-
-  def render(model: Model) =
+  def render(model: Unit) =
     val initialData = FormData(
       Vector(
         EmailPath.name -> DemoEmail
@@ -46,13 +38,13 @@ final class LoginLiveView extends LiveView.Routed.Eventless[LoginLiveView.Model,
         cls := "grid gap-6 lg:grid-cols-[minmax(0,32rem)_minmax(0,1fr)]",
         sectionTag(
           cls := "rounded-box border border-base-300 bg-base-100 p-7 shadow-sm",
-          if model.invalidLogin then
+          flash(InvalidLoginFlash) { message =>
             div(
               role := "alert",
               cls  := "alert alert-error mb-6",
-              span("The sign-in request was invalid. Please try again.")
+              span(message)
             )
-          else div(),
+          },
           loginForm.http(FormAction.from(SessionRoute))(
             idAttr := FormId,
             cls    := "space-y-5",
@@ -100,4 +92,5 @@ end LoginLiveView
 object LoginLiveView:
   private val DemoEmail = "alice@example.com"
 
-  final case class Model(invalidLogin: Boolean = false)
+  private[auth] val InvalidLoginFlash   = FlashKind("error")
+  private[auth] val InvalidLoginMessage = "The sign-in request was invalid. Please try again."

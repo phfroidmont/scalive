@@ -54,11 +54,11 @@ object FlashSpec extends ZIOSpecDefault:
       case Payload.Diff(diff)                                         => Some(diff)
       case _                                                          => None
 
-  private def responseCookie(response: Response, name: String): Option[String] =
+  private def responseCookie(response: Response, name: String): Option[Cookie.Response] =
     response
-      .rawHeader("set-cookie")
-      .flatMap(_.split(";", 2).headOption)
-      .collect { case value if value.startsWith(s"$name=") => value.drop(name.length + 1) }
+      .rawHeaders("set-cookie")
+      .flatMap(Cookie.Response.decode(_).toOption)
+      .find(_.name == name)
 
   private def click(path: Vector[String], attrIndex: Int = 0): Payload.Event =
     Payload.Event(
@@ -502,14 +502,17 @@ object FlashSpec extends ZIOSpecDefault:
 
       for
         redirected <- run("/source")
-        flashToken = responseCookie(redirected, FlashToken.CookieName)
-        flashValues = flashToken.flatMap(FlashToken.decode(tokenConfig, _))
-        rendered <- run("/target", flashToken)
+        flashCookie = responseCookie(redirected, FlashToken.CookieName)
+        flashValues = flashCookie.flatMap(cookie => FlashToken.decode(tokenConfig, cookie.content))
+        rendered <- run("/target", flashCookie.map(_.content))
         body     <- rendered.body.asString
       yield assertTrue(
         redirected.status.isRedirection,
         redirected.rawHeader("location").contains("/target"),
         flashValues.contains(Map("info" -> "Mounted")),
+        flashCookie.exists(_.path.contains(Path.root)),
+        flashCookie.exists(_.isHttpOnly),
+        flashCookie.exists(_.sameSite.contains(Cookie.SameSite.Lax)),
         rendered.status == Status.Ok,
         body.contains("Mounted")
       )

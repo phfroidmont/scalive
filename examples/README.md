@@ -67,7 +67,7 @@ live in [`ExampleCatalog.scala`](src/scalive/examples/ExampleCatalog.scala).
 | `GET /services/guestbook`       | [`GuestbookLiveView.scala`](src/scalive/examples/services/GuestbookLiveView.scala), [`Guestbook.scala`](src/scalive/examples/services/Guestbook.scala)                                                                                                                           | A route-level LiveView layer, inferred constructor dependencies, and state shared across connections                     |
 | `GET /processing/subscriptions` | [`ClockLiveView.scala`](src/scalive/examples/processing/ClockLiveView.scala)                                                                                                                                                                                                     | A typed `SubscriptionKey` controlling `ZStream` start, replacement, and cancellation                                      |
 | `GET /processing/async`         | [`AsyncReportLiveView.scala`](src/scalive/examples/processing/AsyncReportLiveView.scala)                                                                                                                                                                                         | `AsyncKey`, `AsyncValue`, typed success, failure, and cancellation messages, task replacement, and retry                  |
-| `GET /auth/login`               | [`LoginLiveView.scala`](src/scalive/examples/auth/LoginLiveView.scala), [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala)                                                                                                                                 | A normal HTML login form with automatic framework CSRF and bounded typed HTTP decoding                                    |
+| `GET /auth/login`               | [`LoginLiveView.scala`](src/scalive/examples/auth/LoginLiveView.scala), [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala)                                                                                                                                 | A normal HTML login form with automatic framework CSRF, bounded typed HTTP decoding, and HTTP-to-Live flash              |
 | `GET /auth/profile`             | [`ProfileLiveView.scala`](src/scalive/examples/auth/ProfileLiveView.scala), [`AuthMountAspect.scala`](src/scalive/examples/auth/AuthMountAspect.scala)                                                                                                                           | A protected Live route, cookie authentication during disconnected mount, and claims-based connected mount resumption      |
 | `GET /forms/profile`            | [`ProfileFormLiveView.scala`](src/scalive/examples/forms/ProfileFormLiveView.scala)                                                                                                                                                                                              | `Form`, `FormCodec`, accumulated path-specific validation, used fields, and typed submit values                           |
 | `GET /uploads/documents`        | [`DocumentUploadLiveView.scala`](src/scalive/examples/uploads/DocumentUploadLiveView.scala), [`UploadStore.scala`](src/scalive/examples/uploads/UploadStore.scala)                                                                                                               | Upload constraints, validation, progress, cancellation, consumption, application storage, retry, and deletion             |
@@ -85,7 +85,7 @@ their rendered `FormAction`s, so browser methods and paths cannot drift apart.
 
 | Endpoint             | Lesson                                                                                                      |
 | -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `POST /auth/session` | Decode a bounded typed form, validate browser-bound framework CSRF and credentials, set a cookie, and redirect |
+| `POST /auth/session` | Decode a bounded typed form, validate browser-bound framework CSRF and credentials, then redirect with a session or generic typed flash |
 | `POST /auth/logout`  | Validate framework CSRF, revoke the server session, expire the cookie, and redirect home                    |
 
 ## Data Lifetime
@@ -112,10 +112,11 @@ There is no database or durable persistence in this module.
 The auth example teaches flow and API composition: an ordinary HTTP login/logout
 boundary, browser-bound signed framework CSRF, opaque high-entropy cookies, hashed token
 lookup, `HttpOnly`, `SameSite=Lax`, configurable `Secure`, revocation, signed
-non-secret claims, and typed route context. The login boundary preserves repeated
+non-secret claims, typed HTTP-to-Live flash, and typed route context. The login boundary preserves repeated
 URL-encoded fields during transport decoding, then validates singular rooted
 `login[...]` fields through `FormCodec`; malformed, oversized, and wrong-content-type
-requests remain distinct from domain validation failures.
+requests remain distinct from domain validation failures. Invalid credentials redirect
+to the parameterless login route and the next Live render consumes the generic flash.
 
 It is not a production identity system. It has one hard-coded account and no
 database, password hashing, account management, rate limiting, audit trail, TLS

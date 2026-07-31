@@ -4,7 +4,7 @@ import zio.*
 import zio.http.*
 
 import scalive.examples.ExamplesRoutes
-import scalive.{CsrfProtection, FormData, LiveLocation}
+import scalive.{FormData, LiveLocation, LiveSecurity}
 
 final case class AuthHttpConfig(secureCookies: Boolean)
 final case class AuthHttpConfigError(message: String) extends Exception(message)
@@ -32,7 +32,7 @@ object AuthHttpConfig:
 final class AuthHttpRoutes(
   authService: AuthService,
   config: AuthHttpConfig,
-  csrfProtection: CsrfProtection):
+  security: LiveSecurity):
   import AuthHttpRoutes.*
 
   val routes: Routes[Any, Nothing] =
@@ -53,7 +53,7 @@ final class AuthHttpRoutes(
             s"Rejected malformed login form: ${formDecodeErrorName(error)}"
           ).as(formDecodeErrorResponse(error))
       case Right(data) =>
-        csrfProtection.validate(request, data) match
+        security.csrf.validate(request, data) match
           case Left(_)  => ZIO.succeed(Response.forbidden)
           case Right(_) =>
             LoginForm.codec.decode(data) match
@@ -76,7 +76,7 @@ final class AuthHttpRoutes(
           .cookie(SessionCookieName)
           .map(cookie => SessionCookieToken(cookie.content))
 
-        (csrfProtection.validate(request, data), cookieToken) match
+        (security.csrf.validate(request, data), cookieToken) match
           case (Right(_), Some(token)) =>
             authService.logout(token).map {
               case true =>
@@ -89,7 +89,10 @@ final class AuthHttpRoutes(
     }
 
   private def invalidLoginResponse: Response =
-    seeOther(ExamplesRoutes.login.location(Some(true)))
+    security.flash.seeOther(
+      ExamplesRoutes.login.location,
+      LoginLiveView.InvalidLoginFlash -> LoginLiveView.InvalidLoginMessage
+    )
 end AuthHttpRoutes
 
 object AuthHttpRoutes:
@@ -101,7 +104,7 @@ object AuthHttpRoutes:
   private[auth] val FormMaxBytes = 4096L
 
   private[auth] def seeOther(location: LiveLocation): Response =
-    URL.decode(location.href).fold(_ => Response.internalServerError, Response.seeOther)
+    Response.seeOther(location.url)
 
   private def formDecodeErrorResponse(error: FormData.DecodeError): Response =
     val status = error match

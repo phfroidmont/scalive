@@ -768,27 +768,27 @@ final class LiveRouter[R] private[scalive] (
   globalLayouts: List[LiveLayout[Any, Any]],
   globalRootLayout: LiveRootLayout[Any, Any],
   liveSocketMount: PathCodec[Unit],
-  csrfProtection: CsrfProtection):
+  security: LiveSecurity):
 
   def withLayout(layout: LiveLayout[Any, Any]): LiveRouter[R] =
-    LiveRouter(globalLayouts :+ layout, globalRootLayout, liveSocketMount, csrfProtection)
+    LiveRouter(globalLayouts :+ layout, globalRootLayout, liveSocketMount, security)
 
   def withRootLayout(layout: LiveRootLayout[Any, Any]): LiveRouter[R] =
-    LiveRouter(globalLayouts, layout, liveSocketMount, csrfProtection)
+    LiveRouter(globalLayouts, layout, liveSocketMount, security)
 
   def withSocketPath(path: PathCodec[Unit]): LiveRouter[R] =
-    LiveRouter(globalLayouts, globalRootLayout, path, csrfProtection)
+    LiveRouter(globalLayouts, globalRootLayout, path, security)
 
   def withTokenConfig(config: TokenConfig): LiveRouter[R] =
     LiveRouter(
       globalLayouts,
       globalRootLayout,
       liveSocketMount,
-      csrfProtection.withTokenConfig(config)
+      security.withTokenConfig(config)
     )
 
-  def withCsrfProtection(protection: CsrfProtection): LiveRouter[R] =
-    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, protection)
+  def withSecurity(value: LiveSecurity): LiveRouter[R] =
+    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, value)
 
   def apply[R1](route: LiveRouteFragment[R1, Any], routes: LiveRouteFragment[R1, Any]*)
     : Routes[R & R1, Nothing] =
@@ -804,7 +804,7 @@ final class LiveRouter[R] private[scalive] (
       globalRootLayout,
       liveRoutes,
       liveSocketMount,
-      csrfProtection
+      security
     ).routes
 end LiveRouter
 
@@ -814,7 +814,7 @@ object Live:
       Nil,
       LiveRootLayout.identity,
       PathCodec.empty / "live",
-      CsrfProtection(TokenConfig.default)
+      LiveSecurity(TokenConfig.default)
     )
 
   def route[A](path: PathCodec[A]): LiveRouteSeed[A] =

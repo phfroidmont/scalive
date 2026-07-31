@@ -16,10 +16,11 @@ object AuthServiceSpec extends ZIOSpecDefault:
   private val secureHttpConfig = AuthHttpConfig(secureCookies = true)
   private val sessionAction    = FormAction.from(AuthHttpRoutes.SessionRoute)
   private val logoutAction     = FormAction.from(AuthHttpRoutes.LogoutRoute)
-  private val csrfProtection = CsrfProtection(
+  private val security = LiveSecurity(
     TokenConfig("auth-service-spec-secret", 1.hour),
-    secureCookie = true
+    secureCookies = true
   )
+  private val csrfProtection = security.csrf
 
   private final case class PreparedCsrf(cookie: Cookie.Response, token: String)
 
@@ -61,7 +62,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
     ZIO.scoped(routes.runZIO(request))
 
   private def httpRoutes(auth: AuthService): Routes[Any, Nothing] =
-    AuthHttpRoutes(auth, secureHttpConfig, csrfProtection).routes
+    AuthHttpRoutes(auth, secureHttpConfig, security).routes
 
   private def responseCookies(response: Response): Chunk[Cookie.Response] =
     response.headers(Header.SetCookie).map(_.value)
@@ -265,17 +266,27 @@ object AuthServiceSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("HTTP invalid credentials use one generic typed redirect") {
+    test("HTTP invalid credentials use one generic flash redirect") {
       val csrf = prepareCsrf
       for
         auth     <- authService
         response <- run(httpRoutes(auth), loginRequest(csrf, password = "incorrect"))
         redirect = response.header(Header.Location).map(_.url.encode)
+        flashCookie = responseCookies(response).find(_.name == FlashToken.CookieName)
+        flashValues = flashCookie.flatMap(cookie =>
+                        FlashToken.decode(security.tokenConfig, cookie.content)
+                      )
       yield assertTrue(
         response.status == Status.SeeOther,
-        redirect.contains(ExamplesRoutes.login.location(Some(true)).href),
+        redirect.contains(ExamplesRoutes.login.location.href),
         redirect.forall(value => !value.contains(DemoEmail) && !value.contains("incorrect")),
-        responseCookies(response).forall(_.name != AuthHttpRoutes.SessionCookieName)
+        responseCookies(response).forall(_.name != AuthHttpRoutes.SessionCookieName),
+        flashValues.contains(
+          Map(LoginLiveView.InvalidLoginFlash.value -> LoginLiveView.InvalidLoginMessage)
+        ),
+        flashCookie.exists(_.isSecure),
+        flashCookie.exists(_.isHttpOnly),
+        flashCookie.exists(_.sameSite.contains(Cookie.SameSite.Lax))
       )
     },
     test("HTTP malformed, oversized, and wrong-content-type login bodies stay distinct") {
@@ -389,7 +400,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
       yield assertTrue(
         response.exists(_.status == Status.SeeOther),
         response.flatMap(_.header(Header.Location)).exists(
-          _.url.encode == ExamplesRoutes.login.location(None).href
+          _.url.encode == ExamplesRoutes.login.location.href
         )
       )
     },
@@ -409,7 +420,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
       yield assertTrue(
         result.left.exists {
           case LiveMountFailure.Redirect(location) =>
-            location.href == ExamplesRoutes.login.location(None).href
+            location.href == ExamplesRoutes.login.location.href
           case _ => false
         }
       )

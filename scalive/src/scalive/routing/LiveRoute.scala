@@ -231,15 +231,16 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
   private[scalive] def toZioRoute(
     globalLayouts: List[LiveLayout[Any, Any]],
     globalRootLayout: LiveRootLayout[Any, Any],
-    csrfProtection: CsrfProtection
+    security: LiveSecurity
   )(using Any <:< Need
   ): Route[R, Throwable] =
     Method.GET / pathCodec -> handler { (params: A, req: Request) =>
-      val tokenConfig  = csrfProtection.tokenConfig
-      val initialInput = summon[Any <:< Need](())
-      val id: String   =
+      val tokenConfig    = security.tokenConfig
+      val csrfProtection = security.csrf
+      val initialInput   = summon[Any <:< Need](())
+      val id: String     =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
-      val initialFlash = LiveRoute.flashFromRequest(req, tokenConfig)
+      val initialFlash = security.flash.fromRequest(req)
       val response     = ZIO.scoped(
         mountPipeline
           .runDisconnected(LiveMountRequest(params, req), initialInput).foldZIO(
@@ -330,7 +331,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                                              )
                                   documentWithCsrf = CsrfProtection.inject(document, csrf.value)
                                   _ <- ctx.hooks.runAfterRender[Msg, Model](model, ctx)
-                                yield LiveRoute.clearFlashCookie(
+                                yield security.flash.clearCookie(
                                   CsrfProtection.addCookie(
                                     Response.html(
                                       Html.raw(
@@ -347,9 +348,8 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                               case LiveRoute.InitialLifecycleOutcome.Redirect(url) =>
                                 SocketFlashRuntime
                                   .navigationValues(flashRef).map(flash =>
-                                    LiveRoute.addFlashCookie(
+                                    security.flash.addCookie(
                                       Response.redirect(url),
-                                      tokenConfig,
                                       flash
                                     )
                                   )
@@ -369,44 +369,6 @@ object LiveRoute:
   enum InitialLifecycleOutcome[+Model]:
     case Render(model: Model)
     case Redirect(url: URL)
-
-  private[scalive] def flashFromRequest(
-    request: Request,
-    tokenConfig: TokenConfig
-  ): Map[String, String] =
-    request
-      .cookie(FlashToken.CookieName)
-      .flatMap(cookie => FlashToken.decode(tokenConfig, cookie.content))
-      .getOrElse(Map.empty)
-
-  private[scalive] def addFlashCookie(
-    response: Response,
-    tokenConfig: TokenConfig,
-    values: Map[String, String]
-  ): Response =
-    FlashToken.encode(tokenConfig, values) match
-      case Some(token) =>
-        response.addCookie(
-          Cookie.Response(
-            FlashToken.CookieName,
-            token,
-            path = Some(Path.root),
-            maxAge = Some(60.seconds)
-          )
-        )
-      case None => response
-
-  private[scalive] def clearFlashCookie(response: Response, request: Request): Response =
-    if request.cookie(FlashToken.CookieName).isDefined then
-      response.addCookie(
-        Cookie.Response(
-          FlashToken.CookieName,
-          "",
-          path = Some(Path.root),
-          maxAge = Some(Duration.Zero)
-        )
-      )
-    else response
 
   private[scalive] def runInitialHandleParams[Msg, Model](
     lv: LiveView[Msg, Model],

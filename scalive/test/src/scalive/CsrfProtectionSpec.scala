@@ -17,7 +17,8 @@ import scalive.socket.SocketComponentRuntime
 
 object CsrfProtectionSpec extends ZIOSpecDefault:
   private val tokenConfig = TokenConfig("csrf-spec-secret", 1.hour)
-  private val protection  = CsrfProtection(tokenConfig)
+  private val security    = LiveSecurity(tokenConfig)
+  private val protection  = security.csrf
 
   private val SubmitRoute = Method.POST / "submit"
   private val SearchRoute = Method.GET / "search"
@@ -146,7 +147,7 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
     test("injects matching tokens into checked POST forms only") {
       val routes =
         scalive.Live.router
-          .withCsrfProtection(protection)
+          .withSecurity(security)
           .withRootLayout(rootLayout)(scalive.live(ordinaryFormsView))
 
       for
@@ -190,7 +191,7 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
       )
     },
     test("configures the CSRF cookie Secure attribute explicitly") {
-      val secure = CsrfProtection(tokenConfig, secureCookie = true)
+      val secure = LiveSecurity(tokenConfig, secureCookies = true).csrf
       assertTrue(secure.prepare(Request.get(URL.root)).cookie.exists(_.isSecure))
     },
     test("keeps the verified token in connected render finalization") {

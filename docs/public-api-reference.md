@@ -976,25 +976,25 @@ Live.router.withLayout(layout)
 Live.router.withRootLayout(rootLayout)
 Live.router.withSocketPath(path)
 Live.router.withTokenConfig(config)
-Live.router.withCsrfProtection(protection)
+Live.router.withSecurity(security)
 Live.router(route, routes*)
 ```
 
 The resulting value is a `zio.http.Routes` value.
 
-Use one `CsrfProtection` value for the Live router and sibling ordinary HTTP handlers that accept protected forms:
+Use one `LiveSecurity` value for the Live router and sibling ordinary HTTP handlers that validate protected forms or redirect with flash:
 
 ```scala
-val csrf = CsrfProtection(
+val security = LiveSecurity(
   TokenConfig.default,
-  secureCookie = true
+  secureCookies = true
 )
 
-val liveRoutes = Live.router.withCsrfProtection(csrf)(loginRoute)
-val httpRoutes = AuthHttpRoutes(csrf)
+val liveRoutes = Live.router.withSecurity(security)(loginRoute)
+val httpRoutes = AuthHttpRoutes(security)
 ```
 
-`withTokenConfig` remains the direct configuration path when no ordinary handler needs to share the CSRF capability.
+`withTokenConfig` remains the direct configuration path when no ordinary handler needs to share security capabilities.
 
 Supporting route types:
 
@@ -1357,7 +1357,21 @@ loginForm.http(FormAction.from(createSession))(
 )
 ```
 
-### `CsrfProtection`
+### `LiveSecurity`, `CsrfProtection`, and `HttpFlash`
+
+```scala
+final class LiveSecurity:
+  val csrf: CsrfProtection
+  val flash: HttpFlash
+
+object LiveSecurity:
+  def apply(
+    tokenConfig: TokenConfig,
+    secureCookies: Boolean = false
+  ): LiveSecurity
+```
+
+`LiveSecurity` keeps the router, ordinary-form CSRF, and HTTP flash transport on one signing and cookie policy. Pass the same value to `LiveRouter.withSecurity` and sibling ordinary HTTP handlers.
 
 ```scala
 final class CsrfProtection:
@@ -1377,11 +1391,6 @@ object CsrfProtection:
     case MissingToken
     case DuplicateToken
     case InvalidToken
-
-  def apply(
-    tokenConfig: TokenConfig,
-    secureCookie: Boolean = false
-  ): CsrfProtection
 ```
 
 Decode the request body with an explicit bound, validate CSRF, and only then run application decoding:
@@ -1389,14 +1398,29 @@ Decode the request body with an explicit bound, validate CSRF, and only then run
 ```scala
 for
   data <- FormData.fromUrlEncodedBody(request.body, maxBytes)
-  _    <- ZIO.fromEither(csrf.validate(request, data))
+  _    <- ZIO.fromEither(security.csrf.validate(request, data))
   form <- ZIO.fromEither(LoginForm.codec.decode(data))
 yield form
 ```
 
 The capability uses two purpose-bound signed values containing the same random browser secret: an `HttpOnly` cookie and the submitted token. Validation requires exactly one bounded `_csrf_token` and compares secrets in constant time. Tokens are reusable until `TokenConfig.maxAge`; they are not one-time application tokens.
 
-The cookie is host-only, scoped to `/`, `HttpOnly`, and `SameSite=Lax`. `secureCookie` must be enabled whenever the browser-facing endpoint is HTTPS; Scalive does not infer deployment TLS from forwarding headers. The token check binds a form to the browser cookie but does not add a separate `Origin` or `Referer` policy.
+The cookie is host-only, scoped to `/`, `HttpOnly`, and `SameSite=Lax`. `secureCookies` must be enabled whenever the browser-facing endpoint is HTTPS; Scalive does not infer deployment TLS from forwarding headers. The token check binds a form to the browser cookie but does not add a separate `Origin` or `Referer` policy.
+
+```scala
+final class HttpFlash:
+  def seeOther(
+    to: LiveLocation,
+    values: (FlashKind, String)*
+  ): zio.http.Response
+
+  def seeOtherUnsafe(
+    to: zio.http.URL,
+    values: (FlashKind, String)*
+  ): zio.http.Response
+```
+
+`seeOther` returns a 303 response with purpose-bound signed flash values in a short-lived, root-scoped, `HttpOnly`, `SameSite=Lax` cookie. Use `seeOtherUnsafe` only for validated local URLs that do not have a typed Live route. The next successfully rendered Live route embeds valid values in its Live session and expires the browser cookie; redirect chains preserve it until then. This is browser-level consume-once behavior, not server-side replay prevention, and flash values are signed rather than encrypted.
 
 ### `Form.Field`
 

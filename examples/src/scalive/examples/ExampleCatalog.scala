@@ -48,7 +48,7 @@ object ExampleCatalog:
       title = "Login and profile",
       description =
         "Ordinary HTTP login and logout, framework CSRF, an opaque cookie, and protected Live routes.",
-      location = ExamplesRoutes.login.location(None)
+      location = ExamplesRoutes.login.location
     ),
     ExampleEntry(
       category = "Forms",

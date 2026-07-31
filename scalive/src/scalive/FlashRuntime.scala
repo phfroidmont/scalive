@@ -29,11 +29,12 @@ private[scalive] object FlashRuntime:
 private[scalive] object FlashToken:
   val CookieName = "__phoenix_flash__"
 
+  private val TokenId = "flash"
+
   def encode(config: TokenConfig, values: Map[String, String]): Option[String] =
-    Option.when(values.nonEmpty)(Token.sign(config.secret, "flash", values))
+    Option.when(values.nonEmpty)(Token.sign(config.secret, TokenId, values))
 
   def decode(config: TokenConfig, token: String): Option[Map[String, String]] =
     Token
       .verify[Map[String, String]](config.secret, token, config.maxAge)
-      .toOption
-      .map { case (_, values) => values }
+      .toOption.collect { case (`TokenId`, values) => values }

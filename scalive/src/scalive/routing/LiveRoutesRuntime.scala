@@ -17,9 +17,10 @@ final private[scalive] class LiveRoutesRuntime[R](
   globalRootLayout: LiveRootLayout[Any, Any],
   liveRoutes: List[LiveRoute[R, ?, Any, ?, ?, ?]],
   liveSocketMount: PathCodec[Unit],
-  csrfProtection: CsrfProtection):
+  security: LiveSecurity):
 
-  private val tokenConfig = csrfProtection.tokenConfig
+  private val tokenConfig    = security.tokenConfig
+  private val csrfProtection = security.csrf
 
   def this(
     globalLayouts: List[LiveLayout[Any, Any]],
@@ -32,7 +33,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     globalRootLayout,
     liveRoutes,
     liveSocketMount,
-    CsrfProtection(tokenConfig)
+    LiveSecurity(tokenConfig)
   )
 
   private val websocketConfig =
@@ -603,7 +604,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     Routes
       .fromIterable(
         liveRoutes
-          .map(route => route.toZioRoute(globalLayouts, globalRootLayout, csrfProtection))
+          .map(route => route.toZioRoute(globalLayouts, globalRootLayout, security))
           .prepended(
             Method.GET / liveSocketMount / "websocket" -> handler { (request: Request) =>
               socketApp(csrfProtection.validateWebSocket(request)).toResponse

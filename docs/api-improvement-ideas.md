@@ -150,7 +150,7 @@ Boundaries:
 
 Implemented:
 
-- `CsrfProtection` is a first-class capability shared by `LiveRouter` and ordinary HTTP handlers without exposing token signing operations.
+- `LiveSecurity` shares one token and cookie policy across `LiveRouter`, ordinary-form `CsrfProtection`, and HTTP flash redirects without exposing signing operations.
 - Checked POST `FormAction`s receive an automatic `_csrf_token` field during disconnected and connected rendering; GET and unsafe actions remain unmanaged.
 - Validation requires exactly one bounded submitted token, verifies the signed browser cookie and parameter purposes, and compares their secrets in constant time.
 - The cookie is host-only, root-scoped, `HttpOnly`, `SameSite=Lax`, expiry-bounded, and explicitly configurable as `Secure`.
@@ -165,18 +165,19 @@ Boundaries:
 
 ### Bridge ordinary HTTP redirects into Live flash
 
-Current issue:
+Implemented:
 
-- `ctx.flash` is public inside LiveView lifecycle callbacks, but an ordinary HTTP handler cannot produce a flash consumed by the next Live route.
-- Applications fall back to ad hoc query parameters such as `?invalid=true`.
+- `LiveSecurity.flash` exposes typed `HttpFlash.seeOther(LiveLocation, values*)` and an explicit `seeOtherUnsafe(URL, values*)` escape hatch.
+- HTTP and Live-originated redirects share the existing purpose-bound signed flash transport and one hardened cookie policy.
+- The flash cookie is host-only, root-scoped, `HttpOnly`, `SameSite=Lax`, explicitly configurable as `Secure`, and expires after at most 60 seconds.
+- Valid flash survives redirect chains, is embedded in the next rendered Live session, and the browser cookie is then expired; malformed, expired, and wrong-purpose cookies render nothing and are cleaned up.
+- The auth example uses the bridge for generic invalid-login feedback and no longer transports state through `?invalid=true`.
 
-Ideas:
+Boundaries:
 
-- Add a public helper or service that attaches typed flash values to an ordinary redirect response.
-- Accept `LiveLocation` for redirects and preserve an explicit unsafe URL escape hatch.
-- Reuse the existing signed flash transport without exposing `TokenConfig` secrets to application code.
-- Preserve consume-once and stale-cookie cleanup behavior across HTTP-to-Live and Live-to-Live navigation.
-- Apply appropriate `HttpOnly`, `SameSite`, `Secure`, path, and expiry policy to the flash cookie.
+- Consume-once is enforced by normal browser cookie expiry, not server-side nonce storage; a copied signed token can be replayed until it expires.
+- Flash values are signed but not encrypted and must not contain secrets.
+- Redirects preserve incoming flash until a Live route renders successfully.
 
 ### Expand typed form helpers carefully
 
@@ -212,22 +213,6 @@ Ideas:
 
 - Update beginner examples to use `Form.of`, `FormCodec`, and `FormEvent`.
 - Keep raw payload examples in advanced or parity-focused docs.
-
-### Migrate the authentication example incrementally
-
-Current issue:
-
-- The auth example correctly uses an ordinary HTTP boundary, but raw query, action, and field strings obscure which gaps belong to the example and which belong to Scalive.
-
-Ideas:
-
-- First, declare the invalid-login query through the existing typed query route API and use `LiveView.Routed.Eventless`.
-- Decode login submissions into a valid ADT with `FormCodec`; do not construct empty token wrappers for missing input.
-- Add bounded credential and token inputs before hashing or comparison.
-- Add stable form/input IDs and render assertions while retaining direct HTTP submission.
-- Share typed ordinary HTTP actions between route dispatch and rendered login/logout forms.
-- Ordinary-form CSRF removed the bootstrap round-trip and custom login context; remove the remaining `invalid=true` transport after the flash bridge exists.
-- Keep the example explicitly educational; do not turn these API improvements into a general authentication framework.
 
 ## Routing and Navigation Improvements
 
@@ -342,7 +327,7 @@ Ideas:
 Current state:
 
 - The separate `scalive-testing` artifact can execute finalized routes through the disconnected lifecycle and query rendered forms, ordered named fields, values, and binding modes semantically.
-- `LoginLiveView` has disconnected render coverage for its typed ordinary HTTP action, rooted fields, stable IDs, automatic framework CSRF, and typed invalid-login route marker.
+- `LoginLiveView` has disconnected render coverage for its typed ordinary HTTP action, rooted fields, stable IDs, automatic framework CSRF, and consumed HTTP-to-Live invalid-login flash.
 - Connected events, ordinary HTTP form submission, and following `phx-trigger-action` are not supported yet.
 
 Ideas:
@@ -351,12 +336,3 @@ Ideas:
 - Add connected mount and typed event submission only after the render API is stable.
 - Support ordinary HTTP form submission and `phx.triggerAction` as separate, explicit test paths.
 - Design a Scala-native API around typed messages and models instead of copying Phoenix `LiveViewTest` function names.
-
-## Suggested Login API Work Order
-
-1. [x] Add checked, bounded HTTP-to-`FormData` decoding and decode the rooted login submission with `FormCodec`.
-2. [x] Move the invalid-login marker to the existing typed query route API.
-3. [x] Add minimal disconnected render and form-query test support, then cover `LoginLiveView`.
-4. [x] Design typed ordinary HTTP actions and the ordinary form mode together.
-5. [x] Add ordinary-form CSRF generation and validation, then remove the login bootstrap context.
-6. Add the HTTP-to-Live flash bridge, then remove the invalid-login query marker.

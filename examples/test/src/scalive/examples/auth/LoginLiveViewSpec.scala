@@ -12,28 +12,33 @@ import scalive.testing.*
 
 object LoginLiveViewSpec extends ZIOSpecDefault:
 
-  private val InvalidLoginMessage = "The sign-in request was invalid. Please try again."
+  private val InvalidLoginMessage = LoginLiveView.InvalidLoginMessage
   private val SessionAction       = FormAction.from(AuthHttpRoutes.SessionRoute)
-  private val csrfProtection = CsrfProtection(
+  private val security = LiveSecurity(
     TokenConfig("login-live-view-spec-secret", 1.hour),
-    secureCookie = true
+    secureCookies = true
   )
+  private val csrfProtection = security.csrf
 
   private val routes =
     scalive.Live.router
-      .withCsrfProtection(csrfProtection)(ExamplesRoutes.login(_ => LoginLiveView()))
+      .withSecurity(security)(ExamplesRoutes.login(LoginLiveView()))
 
   private def url(value: String): URL =
     URL.decode(value).fold(throw _, identity)
 
-  private def render(invalid: Boolean) =
-    val location = ExamplesRoutes.login.location(Option.when(invalid)(true))
-    DisconnectedRender.run(routes, Request.get(url(location.href)))
+  private def render(flashCookie: Option[Cookie.Response] = None) =
+    val request = flashCookie.fold(Request.get(url(ExamplesRoutes.login.location.href)))(cookie =>
+      Request
+        .get(url(ExamplesRoutes.login.location.href))
+        .addCookie(Cookie.Request(cookie.name, cookie.content))
+    )
+    DisconnectedRender.run(routes, request)
 
   def spec = suite("LoginLiveViewSpec")(
     test("renders a directly usable CSRF-protected login form") {
       for
-        page <- render(invalid = false)
+        page <- render()
         renderedForm <- ZIO
                           .fromEither(
                             page.form(
@@ -85,11 +90,23 @@ object LoginLiveViewSpec extends ZIOSpecDefault:
         !renderedForm.triggersAction
       )
     },
-    test("renders the invalid-login notice from typed route params") {
-      for page <- render(invalid = true)
+    test("renders and consumes an invalid-login flash from an HTTP redirect") {
+      val redirect = security.flash.seeOther(
+        ExamplesRoutes.login.location,
+        LoginLiveView.InvalidLoginFlash -> InvalidLoginMessage
+      )
+      val cookie = redirect
+        .headers(Header.SetCookie).map(_.value)
+        .find(_.name == FlashToken.CookieName)
+
+      for page <- render(cookie)
       yield assertTrue(
         page.response.status == Status.Ok,
-        page.text.contains(InvalidLoginMessage)
+        page.text.contains(InvalidLoginMessage),
+        page.response
+          .headers(Header.SetCookie).map(_.value)
+          .find(_.name == FlashToken.CookieName)
+          .exists(_.maxAge.contains(zio.Duration.Zero))
       )
     }
   )

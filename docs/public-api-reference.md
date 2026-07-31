@@ -16,7 +16,84 @@ The app-author API lives in `scalive.*` and the explicitly public subpackages us
 
 Runtime, websocket protocol, diff rendering, socket orchestration, and disabled runtime implementation types are internal implementation details. They are kept package-private in code and are not supported as application APIs.
 
-There is no supported `scalive.testing.*` package yet. Test helpers should be introduced there when Scalive-native testing APIs are designed.
+Test helpers live in the separate `scalive-testing` artifact under `scalive.testing.*`, so HTML parsing dependencies do not become application runtime dependencies.
+
+## Testing API
+
+Import the first Scalive-native testing helpers with:
+
+```scala
+import scalive.testing.*
+```
+
+### `DisconnectedRender.run`
+
+`DisconnectedRender.run` executes finalized ZIO HTTP routes directly without starting a server:
+
+```scala
+object DisconnectedRender:
+  def run[R](
+    routes: zio.http.Routes[R, Nothing],
+    request: zio.http.Request
+  ): zio.ZIO[R, Throwable, RenderedPage]
+```
+
+This is a disconnected render through the production route lifecycle. It includes route decoding, mount aspects, `mount`, `handleParams`, layouts, components, nested LiveViews, session metadata, and CSRF response handling. It does not connect a LiveSocket, dispatch events, or run connected subscriptions and async work.
+
+The complete `Request` is accepted so tests can supply typed locations, query parameters, headers, and authentication cookies. The route environment remains in the returned effect and can be provided with normal ZIO layers.
+
+### `RenderedPage`
+
+```scala
+final class RenderedPage:
+  val response: zio.http.Response
+  val html: String
+
+  def text: String
+  def forms: Vector[RenderedForm]
+  def form(query: FormQuery = FormQuery()): Either[FormQueryError, RenderedForm]
+```
+
+`response` preserves the status and headers and contains a replayable body. `html` exposes the complete rendered response when a low-level assertion is necessary. Prefer `text`, `forms`, and `form` for deterministic semantic assertions because LiveView IDs, signed session values, and CSRF values are intentionally opaque and may change between renders.
+
+`form` requires exactly one match. `FormQuery` can match an action attribute, an effective HTTP method, or both:
+
+```scala
+final case class FormQuery(
+  action: Option[String] = None,
+  method: Option[zio.http.Method] = None
+)
+
+enum FormQueryError:
+  case NotFound(query: FormQuery)
+  case MultipleMatches(query: FormQuery, count: Int)
+```
+
+### `RenderedForm` and `RenderedField`
+
+```scala
+final class RenderedForm:
+  def id: Option[String]
+  def action: Option[String]
+  def method: zio.http.Method
+  def fields: Vector[RenderedField]
+  def names: Vector[String]
+  def values(name: String): Vector[String]
+  def values(path: FormPath): Vector[String]
+  def hasChangeBinding: Boolean
+  def hasSubmitBinding: Boolean
+  def triggersAction: Boolean
+
+final class RenderedField:
+  def tagName: String
+  def id: Option[String]
+  def name: String
+  def value: String
+  def inputType: Option[String]
+  def required: Boolean
+```
+
+Named controls and repeated values retain document order. `POST` is reported explicitly; an absent or non-HTTP form method has the browser-effective `GET` method. Binding accessors report whether the rendered form uses Live change or submit handling, or requests an ordinary action through `phx-trigger-action`; they do not expose internal binding IDs or handlers.
 
 ## Core LiveView API
 

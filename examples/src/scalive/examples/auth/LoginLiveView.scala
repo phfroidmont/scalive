@@ -44,11 +44,13 @@ final class LoginLiveView(loginContext: LoginContext)
             )
           else div(),
           form(
+            idAttr := FormId,
             action := SessionPath,
             method := "post",
             cls    := "space-y-5",
             input(
               typ      := "hidden",
+              idAttr   := CsrfId,
               nameAttr := CsrfPath.name,
               value    := model.csrfToken.value
             ),
@@ -57,6 +59,7 @@ final class LoginLiveView(loginContext: LoginContext)
               span(cls := "label-text mb-2 font-semibold", "Email"),
               input(
                 typ          := "email",
+                idAttr       := EmailId,
                 nameAttr     := EmailPath.name,
                 value        := "alice@example.com",
                 autoComplete := "username",
@@ -70,6 +73,7 @@ final class LoginLiveView(loginContext: LoginContext)
               span(cls := "label-text mb-2 font-semibold", "Password"),
               input(
                 typ          := "password",
+                idAttr       := PasswordId,
                 nameAttr     := PasswordPath.name,
                 autoComplete := "current-password",
                 maxLength    := PasswordMaxLength,

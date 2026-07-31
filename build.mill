@@ -48,6 +48,15 @@ object scalive extends ScalaCommon with PublishCommon:
   object test extends ScalaTests with scalalib.TestModule.ZioTest:
     def zioTestVersion = "2.1.25"
 
+object scaliveTesting extends ScalaCommon with PublishCommon:
+  override def artifactName = "scalive-testing"
+
+  def moduleDeps = Seq(scalive)
+  def mvnDeps    = Seq(mvn"org.jsoup:jsoup:1.23.1")
+
+  object test extends ScalaTests with scalalib.TestModule.ZioTest:
+    def zioTestVersion = "2.1.25"
+
 object examples extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)
   def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.1")
@@ -57,7 +66,8 @@ object examples extends ScalaCommon with NpmAssets:
   }
 
   object test extends ScalaTests with scalalib.TestModule.ZioTest:
-    def zioTestVersion = "2.1.25"
+    override def moduleDeps = super.moduleDeps ++ Seq(scaliveTesting)
+    def zioTestVersion      = "2.1.25"
 
 object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)

@@ -339,15 +339,15 @@ Ideas:
 
 ### Add Scalive-native LiveView form test support
 
-Current issue:
+Current state:
 
-- Scalive has no supported application-facing test API for mounting a LiveView, selecting a form, inspecting rendered fields, or following a triggered HTTP action.
-- The auth tests cover services, HTTP routes, cookies, and mount aspects but do not render `LoginLiveView` or exercise the complete browser flow.
+- The separate `scalive-testing` artifact can execute finalized routes through the disconnected lifecycle and query rendered forms, ordered named fields, values, and binding modes semantically.
+- `LoginLiveView` has disconnected render coverage for its ordinary HTTP form, rooted fields, stable IDs, one-time CSRF value, and typed invalid-login route marker.
+- Connected events, ordinary HTTP form submission, and following `phx-trigger-action` are not supported yet.
 
 Ideas:
 
-- Start with deterministic disconnected rendering and semantic HTML/form queries.
-- Add helpers to inspect form action, method, names, values, and event bindings without string-fragment assertions.
+- Keep disconnected assertions semantic because transport IDs and signed tokens are intentionally opaque.
 - Add connected mount and typed event submission only after the render API is stable.
 - Support ordinary HTTP form submission and `phx.triggerAction` as separate, explicit test paths.
 - Design a Scala-native API around typed messages and models instead of copying Phoenix `LiveViewTest` function names.
@@ -356,7 +356,7 @@ Ideas:
 
 1. [x] Add checked, bounded HTTP-to-`FormData` decoding and decode the rooted login submission with `FormCodec`.
 2. [x] Move the invalid-login marker to the existing typed query route API.
-3. Add minimal disconnected render and form-query test support, then cover `LoginLiveView`.
+3. [x] Add minimal disconnected render and form-query test support, then cover `LoginLiveView`.
 4. Design typed ordinary HTTP actions and the ordinary form mode together.
 5. Add ordinary-form CSRF generation and validation, then remove the login bootstrap context.
 6. Add the HTTP-to-Live flash bridge, then remove the invalid-login query marker.

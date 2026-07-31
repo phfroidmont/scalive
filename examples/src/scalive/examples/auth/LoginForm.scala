@@ -9,10 +9,15 @@ final case class LoginSubmission(
   credentials: LoginCredentials)
 
 object LoginForm:
+  val FormId       = "login-form"
   val Root         = FormPath("login")
   val CsrfPath     = Root / "csrf"
   val EmailPath    = Root / "email"
   val PasswordPath = Root / "password"
+
+  val CsrfId     = CsrfPath.segments.mkString("_")
+  val EmailId    = EmailPath.segments.mkString("_")
+  val PasswordId = PasswordPath.segments.mkString("_")
 
   val CsrfMaxLength     = 256
   val EmailMaxLength    = 254

@@ -7,24 +7,7 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
     target: FormAction
   )(
     mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
-  ): HtmlElement[Msg] =
-    val flattened = mods.toVector.flatMap {
-      case mod: Mod[Msg]                => Some(mod)
-      case mods: IterableOnce[Mod[Msg]] => mods
-    }
-    val overrides = flattened
-      .flatMap(Form.attributeName)
-      .filter(name => Form.httpAttributes.exists(_.equalsIgnoreCase(name)))
-    require(
-      overrides.isEmpty,
-      s"ordinary HTTP forms own the ${overrides.distinct.mkString(" and ")} attribute"
-    )
-
-    _root_.scalive.form(
-      _root_.scalive.action := target.href,
-      _root_.scalive.method := target.method.attributeValue,
-      flattened
-    )
+  ): HtmlElement[Msg] = Form.http(target)(mods*)
 
   def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
     phx.onChangeForm(codec)(f)
@@ -156,6 +139,31 @@ object Form:
   private val feedbackFor    = htmlAttr("phx-feedback-for", StringAsIsEncoder)
   private val textareaTag    = HtmlTag("textarea")
   private val httpAttributes = Set("action", "method")
+  private val csrfMarker     = htmlAttr(CsrfProtection.MarkerName, StringAsIsEncoder)
+
+  def http[Msg](
+    target: FormAction
+  )(
+    mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
+  ): HtmlElement[Msg] =
+    val flattened = mods.toVector.flatMap {
+      case mod: Mod[Msg]                => Some(mod)
+      case mods: IterableOnce[Mod[Msg]] => mods
+    }
+    val overrides = flattened
+      .flatMap(Form.attributeName)
+      .filter(name => Form.httpAttributes.exists(_.equalsIgnoreCase(name)))
+    require(
+      overrides.isEmpty,
+      s"ordinary HTTP forms own the ${overrides.distinct.mkString(" and ")} attribute"
+    )
+
+    _root_.scalive.form(
+      _root_.scalive.action := target.href,
+      _root_.scalive.method := target.method.attributeValue,
+      Option.when(target.protectFromCsrf)(Form.csrfMarker := "true"),
+      flattened
+    )
 
   private def attributeName(mod: Mod[?]): Option[String] =
     mod match

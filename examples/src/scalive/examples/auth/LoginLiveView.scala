@@ -4,14 +4,13 @@ import zio.*
 
 import scalive.*
 
-final class LoginLiveView(loginContext: LoginContext)
-    extends LiveView.Routed.Eventless[LoginLiveView.Model, Option[Boolean]]:
+final class LoginLiveView extends LiveView.Routed.Eventless[LoginLiveView.Model, Option[Boolean]]:
   import AuthHttpRoutes.*
   import LoginForm.*
   import LoginLiveView.*
 
   def mount(ctx: MountContext) =
-    ZIO.succeed(Model(loginContext.csrfToken))
+    ZIO.succeed(Model())
 
   override def handleParams(
     model: Model,
@@ -24,7 +23,6 @@ final class LoginLiveView(loginContext: LoginContext)
   def render(model: Model) =
     val initialData = FormData(
       Vector(
-        CsrfPath.name  -> model.csrfToken.value,
         EmailPath.name -> DemoEmail
       )
     )
@@ -41,7 +39,7 @@ final class LoginLiveView(loginContext: LoginContext)
         h1(cls  := "text-4xl font-bold tracking-tight", "Sign in to the protected example"),
         p(
           cls := "mt-4 max-w-3xl text-lg leading-8 text-base-content/70",
-          "This LiveView renders a normal HTML form. An ordinary HTTP handler validates its one-time CSRF token and credentials before setting an opaque session cookie."
+          "This LiveView renders a normal HTML form. Scalive adds browser-bound CSRF protection, then an ordinary HTTP handler validates the token and credentials before setting an opaque session cookie."
         )
       ),
       div(
@@ -58,7 +56,6 @@ final class LoginLiveView(loginContext: LoginContext)
           loginForm.http(FormAction.from(SessionRoute))(
             idAttr := FormId,
             cls    := "space-y-5",
-            loginForm.hidden("csrf"),
             label(
               cls := "form-control w-full",
               span(cls := "label-text mb-2 font-semibold", "Email"),
@@ -103,4 +100,4 @@ end LoginLiveView
 object LoginLiveView:
   private val DemoEmail = "alice@example.com"
 
-  final case class Model(csrfToken: LoginCsrfToken, invalidLogin: Boolean = false)
+  final case class Model(invalidLogin: Boolean = false)

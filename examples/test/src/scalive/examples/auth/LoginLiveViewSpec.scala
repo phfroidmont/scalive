@@ -1,5 +1,7 @@
 package scalive.examples.auth
 
+import scala.concurrent.duration.*
+
 import zio.*
 import zio.http.*
 import zio.test.*
@@ -12,41 +14,26 @@ object LoginLiveViewSpec extends ZIOSpecDefault:
 
   private val InvalidLoginMessage = "The sign-in request was invalid. Please try again."
   private val SessionAction       = FormAction.from(AuthHttpRoutes.SessionRoute)
+  private val csrfProtection = CsrfProtection(
+    TokenConfig("login-live-view-spec-secret", 1.hour),
+    secureCookie = true
+  )
 
   private val routes =
-    scalive.Live.router(
-      scalive.Live.session("login")(
-        ExamplesRoutes.login.withMountAspect(LoginMountAspect.prepared) { (_, _, loginContext) =>
-          LoginLiveView(loginContext)
-        }
-      )
-    )
+    scalive.Live.router
+      .withCsrfProtection(csrfProtection)(ExamplesRoutes.login(_ => LoginLiveView()))
 
   private def url(value: String): URL =
     URL.decode(value).fold(throw _, identity)
 
-  private def render(
-    authService: AuthService,
-    cookieToken: LoginContextCookieToken,
-    invalid: Boolean
-  ) =
+  private def render(invalid: Boolean) =
     val location = ExamplesRoutes.login.location(Option.when(invalid)(true))
-    val request = Request
-      .get(url(location.href)).addCookie(
-        Cookie.Request(AuthHttpRoutes.LoginContextCookieName, cookieToken.value)
-      )
-
-    DisconnectedRender.run(routes, request).provideEnvironment(ZEnvironment(authService))
+    DisconnectedRender.run(routes, Request.get(url(location.href)))
 
   def spec = suite("LoginLiveViewSpec")(
-    test("renders the ordinary login form with stable typed fields") {
+    test("renders a directly usable CSRF-protected login form") {
       for
-        authService <- ZIO.service[AuthService]
-        bootstrap   <- authService.beginLogin
-        loginContext <- authService
-                          .prepareLogin(bootstrap.cookieToken)
-                          .someOrFail(new IllegalStateException("login context was not prepared"))
-        page         <- render(authService, bootstrap.cookieToken, invalid = false)
+        page <- render(invalid = false)
         renderedForm <- ZIO
                           .fromEither(
                             page.form(
@@ -56,20 +43,35 @@ object LoginLiveViewSpec extends ZIOSpecDefault:
                               )
                             )
                           ).orDieWith(error => new AssertionError(error.toString))
+        csrfCookie = page.response
+                       .headers(Header.SetCookie).map(_.value)
+                       .find(_.name == CsrfProtection.CookieName)
         fieldsByName = renderedForm.fields.map(field => field.name -> field).toMap
+        csrfToken     = renderedForm.values(CsrfProtection.ParamName).headOption
+        validation = (csrfCookie, csrfToken) match
+                       case (Some(cookie), Some(token)) =>
+                         val request = Request.get(URL.root).addCookie(
+                           Cookie.Request(cookie.name, cookie.content)
+                         )
+                         csrfProtection
+                           .validate(
+                             request,
+                             FormData(Vector(CsrfProtection.ParamName -> token))
+                           ).left.map(_ => ())
+                       case _ => Left(())
       yield assertTrue(
         page.response.status == Status.Ok,
         !page.text.contains(InvalidLoginMessage),
         renderedForm.id.contains(LoginForm.FormId),
         renderedForm.names == Vector(
-          LoginForm.CsrfPath.name,
+          CsrfProtection.ParamName,
           LoginForm.EmailPath.name,
           LoginForm.PasswordPath.name
         ),
-        renderedForm.values(LoginForm.CsrfPath) == Vector(loginContext.csrfToken.value),
+        validation.isRight,
+        csrfCookie.exists(_.isSecure),
         renderedForm.values(LoginForm.EmailPath) == Vector("alice@example.com"),
         renderedForm.values(LoginForm.PasswordPath) == Vector(""),
-        fieldsByName.get(LoginForm.CsrfPath.name).exists(_.id.contains(LoginForm.CsrfId)),
         fieldsByName.get(LoginForm.EmailPath.name).exists(field =>
           field.id.contains(LoginForm.EmailId) &&
             field.inputType.contains("email") && field.required
@@ -84,14 +86,11 @@ object LoginLiveViewSpec extends ZIOSpecDefault:
       )
     },
     test("renders the invalid-login notice from typed route params") {
-      for
-        authService <- ZIO.service[AuthService]
-        bootstrap   <- authService.beginLogin
-        page         <- render(authService, bootstrap.cookieToken, invalid = true)
+      for page <- render(invalid = true)
       yield assertTrue(
         page.response.status == Status.Ok,
         page.text.contains(InvalidLoginMessage)
       )
     }
-  ).provide(AuthService.live(AuthServiceConfig.default))
+  )
 end LoginLiveViewSpec

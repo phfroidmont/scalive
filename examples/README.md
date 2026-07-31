@@ -67,7 +67,7 @@ live in [`ExampleCatalog.scala`](src/scalive/examples/ExampleCatalog.scala).
 | `GET /services/guestbook`       | [`GuestbookLiveView.scala`](src/scalive/examples/services/GuestbookLiveView.scala), [`Guestbook.scala`](src/scalive/examples/services/Guestbook.scala)                                                                                                                           | A route-level LiveView layer, inferred constructor dependencies, and state shared across connections                     |
 | `GET /processing/subscriptions` | [`ClockLiveView.scala`](src/scalive/examples/processing/ClockLiveView.scala)                                                                                                                                                                                                     | A typed `SubscriptionKey` controlling `ZStream` start, replacement, and cancellation                                      |
 | `GET /processing/async`         | [`AsyncReportLiveView.scala`](src/scalive/examples/processing/AsyncReportLiveView.scala)                                                                                                                                                                                         | `AsyncKey`, `AsyncValue`, typed success, failure, and cancellation messages, task replacement, and retry                  |
-| `GET /auth/login`               | [`LoginLiveView.scala`](src/scalive/examples/auth/LoginLiveView.scala), [`AuthMountAspect.scala`](src/scalive/examples/auth/AuthMountAspect.scala)                                                                                                                               | A normal HTML login form prepared by a session `LiveMountAspect` with typed login context                                 |
+| `GET /auth/login`               | [`LoginLiveView.scala`](src/scalive/examples/auth/LoginLiveView.scala), [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala)                                                                                                                                 | A normal HTML login form with automatic framework CSRF and bounded typed HTTP decoding                                    |
 | `GET /auth/profile`             | [`ProfileLiveView.scala`](src/scalive/examples/auth/ProfileLiveView.scala), [`AuthMountAspect.scala`](src/scalive/examples/auth/AuthMountAspect.scala)                                                                                                                           | A protected Live route, cookie authentication during disconnected mount, and claims-based connected mount resumption      |
 | `GET /forms/profile`            | [`ProfileFormLiveView.scala`](src/scalive/examples/forms/ProfileFormLiveView.scala)                                                                                                                                                                                              | `Form`, `FormCodec`, accumulated path-specific validation, used fields, and typed submit values                           |
 | `GET /uploads/documents`        | [`DocumentUploadLiveView.scala`](src/scalive/examples/uploads/DocumentUploadLiveView.scala), [`UploadStore.scala`](src/scalive/examples/uploads/UploadStore.scala)                                                                                                               | Upload constraints, validation, progress, cancellation, consumption, application storage, retry, and deletion             |
@@ -77,17 +77,16 @@ live in [`ExampleCatalog.scala`](src/scalive/examples/ExampleCatalog.scala).
 | `GET /interop/browser`          | [`BrowserInteropLiveView.scala`](src/scalive/examples/interop/BrowserInteropLiveView.scala), [`app.js`](assets/js/app.js)                                                                                                                                                        | Composed client-only `JS`, a typed server-to-client event, a JavaScript hook, and validated raw hook replies              |
 | `GET /lifecycle/notifications`  | [`NotificationsLiveView.scala`](src/scalive/examples/lifecycle/NotificationsLiveView.scala)                                                                                                                                                                                      | Connected state, client connection bindings, keyed flash, document titles, and an after-render hook                       |
 
-Authentication also uses three ordinary HTTP endpoints in
+Authentication also uses two ordinary HTTP endpoints in
 [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala):
 
 The session and logout `RoutePattern` values are shared by HTTP dispatch and
 their rendered `FormAction`s, so browser methods and paths cannot drift apart.
 
-| Endpoint                    | Lesson                                                                                                   |
-| --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `GET /auth/login/bootstrap` | Create a short-lived login context and redirect with an opaque pre-authentication cookie                 |
-| `POST /auth/session`        | Decode a bounded typed form, validate one-time CSRF and credentials, rotate cookies, and redirect         |
-| `POST /auth/logout`         | Validate session-specific CSRF, revoke the server session, expire the cookie, and redirect home          |
+| Endpoint             | Lesson                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `POST /auth/session` | Decode a bounded typed form, validate browser-bound framework CSRF and credentials, set a cookie, and redirect |
+| `POST /auth/logout`  | Validate framework CSRF, revoke the server session, expire the cookie, and redirect home                    |
 
 ## Data Lifetime
 
@@ -98,12 +97,10 @@ There is no database or durable persistence in this module.
   that example is mounted again.
 - The guestbook is one process-wide in-memory service. Its entries are shared by
   browser connections but disappear when the examples server restarts.
-- Login contexts and sessions are bounded, in-memory server records and also
-  disappear on restart. A login context lasts 5 minutes and its CSRF token is
-  consumed by the first login attempt. An authenticated session lasts 30 minutes
-  and can be revoked by logout. The defaults are `maxLoginContexts = 256` and
-  `maxSessions = 1024`. Auth operations opportunistically prune expired records;
-  an insertion at capacity deterministically evicts that store's oldest record.
+- Sessions are bounded, in-memory server records and disappear on restart. An
+  authenticated session lasts 30 minutes and can be revoked by logout. The default
+  is `maxSessions = 1024`. Auth operations opportunistically prune expired records;
+  an insertion at capacity deterministically evicts the oldest session.
 - Stored documents are shared through one process-scoped `UploadStore`. Each
   process creates its own `scalive-documents-*` temporary directory. UI deletion
   removes an individual file; the layer finalizer recursively removes the whole
@@ -113,7 +110,7 @@ There is no database or durable persistence in this module.
 ## Authentication Boundary
 
 The auth example teaches flow and API composition: an ordinary HTTP login/logout
-boundary, one-time application CSRF, opaque high-entropy cookies, hashed token
+boundary, browser-bound signed framework CSRF, opaque high-entropy cookies, hashed token
 lookup, `HttpOnly`, `SameSite=Lax`, configurable `Secure`, revocation, signed
 non-secret claims, and typed route context. The login boundary preserves repeated
 URL-encoded fields during transport decoding, then validates singular rooted
@@ -153,10 +150,9 @@ browser profile when checking authentication.
       state, use Retry to reach a retried result, start slow work then Replace it and
       confirm the replacement wins, and start work then Cancel to see the cancelled
       state.
-- [x] **Auth bootstrap and invalid login, `/auth/login`:** clear site cookies and
-      open the route directly; confirm the ordinary `GET /auth/login/bootstrap`
-      round-trip returns to the login page. Submit a wrong password and confirm only the
-      generic invalid sign-in message appears after a fresh bootstrap.
+- [x] **Auth CSRF and invalid login, `/auth/login`:** clear site cookies and open the
+      route directly; confirm the login form renders without an intermediate redirect.
+      Submit a wrong password and confirm only the generic invalid sign-in message appears.
 - [x] **Auth login, profile, and logout:** sign in with `alice@example.com` /
       `scalive`, confirm `/auth/profile` shows Alice and a public session ID, then use
       **Sign out and revoke session** and confirm the redirect to `/`. Reopen

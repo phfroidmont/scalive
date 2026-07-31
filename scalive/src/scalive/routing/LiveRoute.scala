@@ -231,10 +231,11 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
   private[scalive] def toZioRoute(
     globalLayouts: List[LiveLayout[Any, Any]],
     globalRootLayout: LiveRootLayout[Any, Any],
-    tokenConfig: TokenConfig
+    csrfProtection: CsrfProtection
   )(using Any <:< Need
   ): Route[R, Throwable] =
     Method.GET / pathCodec -> handler { (params: A, req: Request) =>
+      val tokenConfig  = csrfProtection.tokenConfig
       val initialInput = summon[Any <:< Need](())
       val id: String   =
         s"phx-${Base64.getUrlEncoder().withoutPadding().encodeToString(Random().nextBytes(12))}"
@@ -251,8 +252,10 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                 componentsRef <- Ref.make(ComponentRuntimeState.empty)
                 navigationRef <- Ref.make(Option.empty[LiveNavigationCommand])
                 hooksRef      <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
-                ctx = LiveContext(
+                csrf = csrfProtection.prepare(req)
+                ctx  = LiveContext(
                         staticChanged = false,
+                        csrfToken = Some(csrf.value),
                         streams = new SocketStreamRuntime(streamRef),
                         navigation = new SocketNavigationRuntime(navigationRef),
                         flash = new SocketFlashRuntime(flashRef),
@@ -325,8 +328,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                                                mountContext,
                                                globalRootLayout
                                              )
-                                  csrf             = CsrfProtection.prepare(tokenConfig, req)
-                                  documentWithCsrf = CsrfProtection.injectMeta(document, csrf.value)
+                                  documentWithCsrf = CsrfProtection.inject(document, csrf.value)
                                   _ <- ctx.hooks.runAfterRender[Msg, Model](model, ctx)
                                 yield LiveRoute.clearFlashCookie(
                                   CsrfProtection.addCookie(

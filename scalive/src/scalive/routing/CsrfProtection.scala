@@ -13,58 +13,167 @@ import zio.http.Response
 import scalive.Mod.Attr
 import scalive.Mod.Content
 
-private[scalive] object CsrfProtection:
+final class CsrfProtection private (
+  private[scalive] val tokenConfig: TokenConfig,
+  private[scalive] val secureCookie: Boolean):
+  import CsrfProtection.*
+
+  def validate(request: Request, data: FormData): Either[ValidationError, Unit] =
+    data.values(ParamName) match
+      case Vector()                                        => Left(ValidationError.MissingToken)
+      case Vector(token) if token.length <= MaxTokenLength => validateToken(request, token)
+      case Vector(_)                                       => Left(ValidationError.InvalidToken)
+      case _                                               => Left(ValidationError.DuplicateToken)
+
+  private[scalive] def prepare(request: Request): RenderToken =
+    val existingSecret = request.cookie(CookieName).flatMap(cookieSecret(tokenConfig, _))
+    val secret         = existingSecret.getOrElse(newSecret())
+    RenderToken(
+      value = Token.sign[String](tokenConfig.secret, ParamTokenId, secret),
+      cookie = Option.when(existingSecret.isEmpty)(responseCookie(secret))
+    )
+
+  private[scalive] def validateWebSocket(request: Request): Option[String] =
+    request
+      .queryParam(ParamName)
+      .filter(_.length <= MaxTokenLength)
+      .filter(token => validateToken(request, token).isRight)
+
+  private[scalive] def withTokenConfig(config: TokenConfig): CsrfProtection =
+    new CsrfProtection(config, secureCookie)
+
+  private def validateToken(
+    request: Request,
+    token: String
+  ): Either[ValidationError, Unit] =
+    val verified = for
+      cookie       <- request.cookie(CookieName).toRight(ValidationError.MissingCookie)
+      cookieSecret <- cookieSecret(tokenConfig, cookie).toRight(ValidationError.InvalidCookie)
+      paramSecret  <- paramSecret(tokenConfig, token).toRight(ValidationError.InvalidToken)
+      _            <- Either.cond(
+             constantTimeEquals(cookieSecret, paramSecret),
+             (),
+             ValidationError.InvalidToken
+           )
+    yield ()
+
+    verified
+
+  private def responseCookie(secret: String): Cookie.Response =
+    Cookie.Response(
+      CookieName,
+      Token.sign[String](tokenConfig.secret, CookieTokenId, secret),
+      path = Some(Path.root),
+      isSecure = secureCookie,
+      isHttpOnly = true,
+      maxAge = Some(zio.Duration.fromMillis(tokenConfig.maxAge.toMillis)),
+      sameSite = Some(Cookie.SameSite.Lax)
+    )
+end CsrfProtection
+
+object CsrfProtection:
   val CookieName = "_scalive_csrf"
   val ParamName  = "_csrf_token"
   val MetaName   = "csrf-token"
 
-  private val CookieTokenId = "csrf:cookie"
-  private val ParamTokenId  = "csrf:param"
-  private val RandomBytes   = 32
-  private val secureRandom  = new SecureRandom()
+  private[scalive] val MarkerName = "data-scalive-csrf"
 
-  final case class RenderToken(value: String, cookie: Option[Cookie.Response])
+  private val CookieTokenId  = "csrf:cookie"
+  private val ParamTokenId   = "csrf:param"
+  private val RandomBytes    = 32
+  private val MaxTokenLength = 1024
+  private val secureRandom   = new SecureRandom()
 
-  def prepare(config: TokenConfig, request: Request): RenderToken =
-    val existingSecret = request.cookie(CookieName).flatMap(cookieSecret(config, _))
-    val secret         = existingSecret.getOrElse(newSecret())
-    RenderToken(
-      value = Token.sign[String](config.secret, ParamTokenId, secret),
-      cookie = Option.when(existingSecret.isEmpty)(responseCookie(config, secret))
-    )
+  enum ValidationError:
+    case MissingCookie
+    case InvalidCookie
+    case MissingToken
+    case DuplicateToken
+    case InvalidToken
 
-  def validate(config: TokenConfig, request: Request): Boolean =
-    val verified = for
-      cookie       <- request.cookie(CookieName)
-      cookieSecret <- cookieSecret(config, cookie)
-      param        <- request.queryParam(ParamName)
-      paramSecret  <- paramSecret(config, param)
-    yield constantTimeEquals(cookieSecret, paramSecret)
+  final private[scalive] case class RenderToken(
+    value: String,
+    cookie: Option[Cookie.Response])
 
-    verified.contains(true)
+  def apply(
+    tokenConfig: TokenConfig,
+    secureCookie: Boolean = false
+  ): CsrfProtection =
+    new CsrfProtection(tokenConfig, secureCookie)
 
-  def addCookie(response: Response, cookie: Option[Cookie.Response]): Response =
+  private[scalive] def addCookie(
+    response: Response,
+    cookie: Option[Cookie.Response]
+  ): Response =
     cookie.fold(response)(response.addCookie)
 
-  def injectMeta[Msg](document: HtmlElement[Msg], token: String): HtmlElement[Msg] =
-    transform(document, token)
+  private[scalive] def inject[Msg](
+    document: HtmlElement[Msg],
+    token: String
+  ): HtmlElement[Msg] =
+    transform(document, token, injectMeta = true)
 
-  private def transform[Msg](element: HtmlElement[Msg], token: String): HtmlElement[Msg] =
-    if element.tag.name == "head" then withCsrfMeta(element, token)
-    else HtmlElement(element.tag, element.mods.map(transformMod(_, token)))
+  private[scalive] def injectForms[Msg](
+    root: HtmlElement[Msg],
+    token: String
+  ): HtmlElement[Msg] =
+    transform(root, token, injectMeta = false)
 
-  private def transformMod[Msg](mod: Mod[Msg], token: String): Mod[Msg] =
+  private def transform[Msg](
+    element: HtmlElement[Msg],
+    token: String,
+    injectMeta: Boolean
+  ): HtmlElement[Msg] =
+    val transformed = HtmlElement(
+      element.tag,
+      element.mods.map(transformMod(_, token, injectMeta))
+    )
+    val withFormToken =
+      if isProtectedForm(transformed) then protectForm(transformed, token)
+      else transformed
+
+    if injectMeta && withFormToken.tag.name == "head" then withCsrfMeta(withFormToken, token)
+    else withFormToken
+
+  private def transformMod[Msg](
+    mod: Mod[Msg],
+    token: String,
+    injectMeta: Boolean
+  ): Mod[Msg] =
     mod match
-      case Content.Tag(element)            => Content.Tag(transform(element, token))
-      case Content.Component(cid, element) => Content.Component(cid, transform(element, token))
+      case Content.Tag(element) =>
+        Content.Tag(transform(element, token, injectMeta))
+      case Content.Component(cid, element) =>
+        Content.Component(cid, transform(element, token, injectMeta))
       case Content.Keyed(entries, stream, allEntries) =>
         val transformedEntries =
-          entries.map(entry => entry.copy(element = transform(entry.element, token)))
+          entries.map(entry => entry.copy(element = transform(entry.element, token, injectMeta)))
         val transformedAllEntries = allEntries.map(
-          _.map(entry => entry.copy(element = transform(entry.element, token)))
+          _.map(entry => entry.copy(element = transform(entry.element, token, injectMeta)))
         )
         Content.Keyed(transformedEntries, stream, transformedAllEntries)
       case other => other
+
+  private def isProtectedForm(element: HtmlElement[?]): Boolean =
+    element.tag.name == "form" && element.attrMods.exists {
+      case Attr.Static(MarkerName, "true") => true
+      case _                               => false
+    }
+
+  private def protectForm[Msg](form: HtmlElement[Msg], token: String): HtmlElement[Msg] =
+    val hidden = input(
+      typ      := "hidden",
+      nameAttr := ParamName,
+      value    := token
+    )
+    HtmlElement(
+      form.tag,
+      form.mods
+        .filterNot {
+          case Attr.Static(MarkerName, _) => true
+          case _                          => false
+        }.prepended(Content.Tag(hidden))
+    )
 
   private def withCsrfMeta[Msg](head: HtmlElement[Msg], token: String): HtmlElement[Msg] =
     val meta = metaTag(nameAttr := MetaName, contentAttr := token)
@@ -94,16 +203,6 @@ private[scalive] object CsrfProtection:
       .verify[String](config.secret, token, config.maxAge)
       .toOption
       .collect { case (`ParamTokenId`, secret) if secret.nonEmpty => secret }
-
-  private def responseCookie(config: TokenConfig, secret: String): Cookie.Response =
-    Cookie.Response(
-      CookieName,
-      Token.sign[String](config.secret, CookieTokenId, secret),
-      path = Some(Path.root),
-      isHttpOnly = true,
-      maxAge = Some(zio.Duration.fromMillis(config.maxAge.toMillis)),
-      sameSite = Some(Cookie.SameSite.Lax)
-    )
 
   private def newSecret(): String =
     val bytes = Array.ofDim[Byte](RandomBytes)

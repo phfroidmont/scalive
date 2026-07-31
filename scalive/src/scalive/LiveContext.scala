@@ -268,6 +268,7 @@ final private[scalive] case class LiveContext(
   staticChanged: Boolean,
   connected: Boolean = false,
   connectParams: Map[String, Json] = Map.empty,
+  csrfToken: Option[String] = None,
   uploads: UploadRuntime = UploadRuntime.Disabled,
   streams: StreamRuntime = StreamRuntime.Disabled,
   clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,

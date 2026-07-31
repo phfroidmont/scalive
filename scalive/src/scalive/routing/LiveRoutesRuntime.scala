@@ -17,18 +17,34 @@ final private[scalive] class LiveRoutesRuntime[R](
   globalRootLayout: LiveRootLayout[Any, Any],
   liveRoutes: List[LiveRoute[R, ?, Any, ?, ?, ?]],
   liveSocketMount: PathCodec[Unit],
-  tokenConfig: TokenConfig):
+  csrfProtection: CsrfProtection):
+
+  private val tokenConfig = csrfProtection.tokenConfig
+
+  def this(
+    globalLayouts: List[LiveLayout[Any, Any]],
+    globalRootLayout: LiveRootLayout[Any, Any],
+    liveRoutes: List[LiveRoute[R, ?, Any, ?, ?, ?]],
+    liveSocketMount: PathCodec[Unit],
+    tokenConfig: TokenConfig
+  ) = this(
+    globalLayouts,
+    globalRootLayout,
+    liveRoutes,
+    liveSocketMount,
+    CsrfProtection(tokenConfig)
+  )
 
   private val websocketConfig =
     WebSocketConfig.default.decoderConfig(
       SocketDecoder.default.maxFramePayloadLength(16 * 1024 * 1024)
     )
 
-  private def socketApp(connectAuthorized: Boolean): WebSocketApp[R] =
+  private def socketApp(csrfToken: Option[String]): WebSocketApp[R] =
     val app = Handler.webSocket { channel =>
       ZIO
         .scoped(for
-          liveChannel <- LiveChannel.make(tokenConfig, connectAuthorized)
+          liveChannel <- LiveChannel.make(tokenConfig, csrfToken = csrfToken)
           _           <- liveChannel.diffsStream
                  .runForeach((payload, meta) =>
                    channel
@@ -333,6 +349,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     val ctx           = LiveContext(
       staticChanged = staticChanged,
       connectParams = connectParams,
+      csrfToken = liveChannel.csrfToken,
       nestedLiveViews = liveChannel.nestedRuntime(
         message.topic,
         loadingOnInitialNestedRender(connectParams)
@@ -586,10 +603,10 @@ final private[scalive] class LiveRoutesRuntime[R](
     Routes
       .fromIterable(
         liveRoutes
-          .map(route => route.toZioRoute(globalLayouts, globalRootLayout, tokenConfig))
+          .map(route => route.toZioRoute(globalLayouts, globalRootLayout, csrfProtection))
           .prepended(
             Method.GET / liveSocketMount / "websocket" -> handler { (request: Request) =>
-              socketApp(CsrfProtection.validate(tokenConfig, request)).toResponse
+              socketApp(csrfProtection.validateWebSocket(request)).toResponse
             }
           )
       ).handleErrorZIO(e =>

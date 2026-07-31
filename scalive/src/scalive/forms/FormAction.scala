@@ -4,7 +4,8 @@ import zio.http.{Method as HttpMethod, RoutePattern, URL}
 
 final class FormAction private (
   val method: FormAction.Method,
-  val href: String)
+  val href: String,
+  private[scalive] val protectFromCsrf: Boolean)
 
 object FormAction:
   enum Method(val attributeValue: String):
@@ -36,13 +37,17 @@ object FormAction:
     for
       method <- formMethod(pattern.method)
       path   <- pattern.format(params).left.map(EncodeError.Path.apply)
-    yield new FormAction(method, URL(path.addLeadingSlash).encode)
+    yield new FormAction(
+      method,
+      URL(path.addLeadingSlash).encode,
+      protectFromCsrf = method == Method.Post
+    )
 
   def fromEither(pattern: RoutePattern[Unit]): Either[EncodeError, FormAction] =
     fromEither(pattern, ())
 
   def unsafe(method: Method, href: String): FormAction =
-    new FormAction(method, href)
+    new FormAction(method, href, protectFromCsrf = false)
 
   private def formMethod(method: HttpMethod): Either[EncodeError, Method] =
     method match

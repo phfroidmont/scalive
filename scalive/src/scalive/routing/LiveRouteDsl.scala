@@ -768,19 +768,27 @@ final class LiveRouter[R] private[scalive] (
   globalLayouts: List[LiveLayout[Any, Any]],
   globalRootLayout: LiveRootLayout[Any, Any],
   liveSocketMount: PathCodec[Unit],
-  tokenConfig: TokenConfig):
+  csrfProtection: CsrfProtection):
 
   def withLayout(layout: LiveLayout[Any, Any]): LiveRouter[R] =
-    LiveRouter(globalLayouts :+ layout, globalRootLayout, liveSocketMount, tokenConfig)
+    LiveRouter(globalLayouts :+ layout, globalRootLayout, liveSocketMount, csrfProtection)
 
   def withRootLayout(layout: LiveRootLayout[Any, Any]): LiveRouter[R] =
-    LiveRouter(globalLayouts, layout, liveSocketMount, tokenConfig)
+    LiveRouter(globalLayouts, layout, liveSocketMount, csrfProtection)
 
   def withSocketPath(path: PathCodec[Unit]): LiveRouter[R] =
-    LiveRouter(globalLayouts, globalRootLayout, path, tokenConfig)
+    LiveRouter(globalLayouts, globalRootLayout, path, csrfProtection)
 
   def withTokenConfig(config: TokenConfig): LiveRouter[R] =
-    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, config)
+    LiveRouter(
+      globalLayouts,
+      globalRootLayout,
+      liveSocketMount,
+      csrfProtection.withTokenConfig(config)
+    )
+
+  def withCsrfProtection(protection: CsrfProtection): LiveRouter[R] =
+    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, protection)
 
   def apply[R1](route: LiveRouteFragment[R1, Any], routes: LiveRouteFragment[R1, Any]*)
     : Routes[R & R1, Nothing] =
@@ -796,13 +804,18 @@ final class LiveRouter[R] private[scalive] (
       globalRootLayout,
       liveRoutes,
       liveSocketMount,
-      tokenConfig
+      csrfProtection
     ).routes
 end LiveRouter
 
 object Live:
   val router: LiveRouter[Any] =
-    LiveRouter(Nil, LiveRootLayout.identity, PathCodec.empty / "live", TokenConfig.default)
+    LiveRouter(
+      Nil,
+      LiveRootLayout.identity,
+      PathCodec.empty / "live",
+      CsrfProtection(TokenConfig.default)
+    )
 
   def route[A](path: PathCodec[A]): LiveRouteSeed[A] =
     LiveRouteSeed(path)

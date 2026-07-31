@@ -12,14 +12,38 @@ import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 import scalive.WebSocketMessage.Protocol
 import scalive.WebSocketMessage.ReplyStatus
+import scalive.socket.ComponentRuntimeState
+import scalive.socket.SocketComponentRuntime
 
 object CsrfProtectionSpec extends ZIOSpecDefault:
   private val tokenConfig = TokenConfig("csrf-spec-secret", 1.hour)
+  private val protection  = CsrfProtection(tokenConfig)
+
+  private val SubmitRoute = Method.POST / "submit"
+  private val SearchRoute = Method.GET / "search"
 
   private def view = new LiveView[Unit, Unit]:
     def mount(ctx: MountContext) = ZIO.unit
     def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
     def render(model: Unit): HtmlElement[Unit] = div("ok")
+
+  private def ordinaryFormsView = new LiveView[Unit, Unit]:
+    private val formModel = scalive.Form.of(
+      "login",
+      FormState(FormData.empty, Right(FormData.empty), submitted = false),
+      FormCodec.formData
+    )
+
+    def mount(ctx: MountContext) = ZIO.unit
+    def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
+    def render(model: Unit): HtmlElement[Unit] =
+      div(
+        formModel.http(FormAction.from(SubmitRoute))(idAttr := "checked-post"),
+        formModel.http(FormAction.from(SearchRoute))(idAttr := "checked-get"),
+        formModel.http(FormAction.unsafe(FormAction.Method.Post, "https://example.com/submit"))(
+          idAttr := "unsafe-post"
+        )
+      )
 
   private val rootLayout = LiveRootLayout("csrf-root")((content, _) =>
     htmlRootTag(
@@ -51,6 +75,12 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
     val pattern = s"""<meta name="${CsrfProtection.MetaName}" content="([^"]+)""".r
     ZIO.fromOption(pattern.findFirstMatchIn(body).map(_.group(1))).orElseFail(
       new NoSuchElementException("csrf meta")
+    )
+
+  private def extractFormToken(body: String): Task[String] =
+    val pattern = s"""<input type="hidden" name="${CsrfProtection.ParamName}" value="([^"]+)""".r
+    ZIO.fromOption(pattern.findFirstMatchIn(body).map(_.group(1))).orElseFail(
+      new NoSuchElementException("csrf form field")
     )
 
   private def extractAttr(body: String, attr: String): Task[String] =
@@ -110,12 +140,82 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
         response.status == Status.Ok,
         cookie.isHttpOnly,
         cookie.sameSite.contains(Cookie.SameSite.Lax),
-        CsrfProtection.validate(tokenConfig, request)
+        protection.validateWebSocket(request).isDefined
+      )
+    },
+    test("injects matching tokens into checked POST forms only") {
+      val routes =
+        scalive.Live.router
+          .withCsrfProtection(protection)
+          .withRootLayout(rootLayout)(scalive.live(ordinaryFormsView))
+
+      for
+        response  <- runRequest(routes, Request.get(URL.root))
+        body      <- response.body.asString
+        metaToken <- extractMetaToken(body)
+        formToken <- extractFormToken(body)
+      yield assertTrue(
+        formToken == metaToken,
+        body.split(s"name=\"${CsrfProtection.ParamName}\"", -1).length - 1 == 1,
+        !body.contains("data-scalive-csrf")
+      )
+    },
+    test("validates exactly one ordinary form token from the same browser context") {
+      val first       = protection.prepare(Request.get(URL.root))
+      val second      = protection.prepare(Request.get(URL.root))
+      val firstCookie = first.cookie.get
+      val request = Request.get(URL.root).addCookie(
+        Cookie.Request(firstCookie.name, firstCookie.content)
+      )
+      val valid       = FormData(Vector(CsrfProtection.ParamName -> first.value))
+      val missing     = FormData.empty
+      val duplicated  = FormData(Vector.fill(2)(CsrfProtection.ParamName -> first.value))
+      val tampered    = FormData(Vector(CsrfProtection.ParamName -> s"${first.value}x"))
+      val transferred = FormData(Vector(CsrfProtection.ParamName -> second.value))
+
+      assertTrue(
+        protection.validate(request, valid) == Right(()),
+        protection.validate(request, missing) == Left(
+          CsrfProtection.ValidationError.MissingToken
+        ),
+        protection.validate(request, duplicated) == Left(
+          CsrfProtection.ValidationError.DuplicateToken
+        ),
+        protection.validate(request, tampered) == Left(
+          CsrfProtection.ValidationError.InvalidToken
+        ),
+        protection.validate(request, transferred) == Left(
+          CsrfProtection.ValidationError.InvalidToken
+        )
+      )
+    },
+    test("configures the CSRF cookie Secure attribute explicitly") {
+      val secure = CsrfProtection(tokenConfig, secureCookie = true)
+      assertTrue(secure.prepare(Request.get(URL.root)).cookie.exists(_.isSecure))
+    },
+    test("keeps the verified token in connected render finalization") {
+      val token = "connected-csrf-token"
+      for
+        components <- Ref.make(ComponentRuntimeState.empty)
+        rendered <- SocketComponentRuntime.renderRoot(
+                      scalive.Form.http(FormAction.from(SubmitRoute))(idAttr := "logout"),
+                      components,
+                      LiveContext(
+                        staticChanged = false,
+                        connected = true,
+                        csrfToken = Some(token)
+                      )
+                    )
+        html = HtmlBuilder.build(rendered)
+      yield assertTrue(
+        html.contains(s"name=\"${CsrfProtection.ParamName}\""),
+        html.contains(s"value=\"$token\""),
+        !html.contains(CsrfProtection.MarkerName)
       )
     },
     test("rejects missing, tampered, and mismatched csrf tokens") {
-      val first  = CsrfProtection.prepare(tokenConfig, Request.get(URL.root))
-      val second = CsrfProtection.prepare(tokenConfig, Request.get(URL.root))
+      val first  = protection.prepare(Request.get(URL.root))
+      val second = protection.prepare(Request.get(URL.root))
       val cookie = first.cookie.get
 
       for
@@ -123,23 +223,23 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
         tampered   <- websocketRequest(s"${first.value}x", cookie)
         mismatched <- websocketRequest(second.value, cookie)
       yield assertTrue(
-        !CsrfProtection.validate(tokenConfig, missing),
-        !CsrfProtection.validate(tokenConfig, tampered),
-        !CsrfProtection.validate(tokenConfig, mismatched)
+        protection.validateWebSocket(missing).isEmpty,
+        protection.validateWebSocket(tampered).isEmpty,
+        protection.validateWebSocket(mismatched).isEmpty
       )
     },
     test("reuses a valid csrf cookie without resetting it") {
-      val first      = CsrfProtection.prepare(tokenConfig, Request.get(URL.root))
+      val first      = protection.prepare(Request.get(URL.root))
       val firstCookie = first.cookie.get
       val request = Request.get(URL.root).addCookie(
         Cookie.Request(firstCookie.name, firstCookie.content)
       )
-      val second = CsrfProtection.prepare(tokenConfig, request)
+      val second = protection.prepare(request)
 
       for wsRequest <- websocketRequest(second.value, firstCookie)
       yield assertTrue(
         second.cookie.isEmpty,
-        CsrfProtection.validate(tokenConfig, wsRequest)
+        protection.validateWebSocket(wsRequest).isDefined
       )
     },
     test("invalid websocket csrf causes stale liveview join") {

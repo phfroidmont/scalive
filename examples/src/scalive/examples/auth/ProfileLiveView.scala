@@ -33,18 +33,10 @@ final class ProfileLiveView(currentSession: CurrentSession)
           dt(cls := "font-semibold text-base-content/60", "Public session ID"),
           dd(cls := "break-all font-mono text-sm", model.publicSessionId.value)
         ),
-        form(
-          action := logoutAction.href,
-          method := logoutAction.method.attributeValue,
-          cls    := "mt-8 border-t border-base-300 pt-6",
-          input(
-            typ      := "hidden",
-            nameAttr := LogoutCsrfField,
-            value    := model.logoutCsrfToken.value
-          ),
+        Form.http(logoutAction)(
+          cls := "mt-8 border-t border-base-300 pt-6",
           button(typ := "submit", cls := "btn btn-outline btn-error", "Sign out and revoke session")
         )
       )
     )
-  end render
 end ProfileLiveView

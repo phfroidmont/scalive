@@ -45,8 +45,9 @@ object ExamplesApp extends ZIOAppDefault:
   override val bootstrap =
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
-  def liveRoutes(assets: StaticAssets) =
+  def liveRoutes(assets: StaticAssets, csrfProtection: CsrfProtection) =
     Live.router
+      .withCsrfProtection(csrfProtection)
       .withRootLayout(ExamplesRootLayout(assets))
       .withLayout(ExamplesLayout)(
         ExamplesRoutes.home           -> HomeLiveView(),
@@ -61,11 +62,7 @@ object ExamplesApp extends ZIOAppDefault:
         ExamplesRoutes.voting         -> ComponentsLiveView(),
         ExamplesRoutes.browserInterop -> BrowserInteropLiveView(),
         ExamplesRoutes.notifications  -> NotificationsLiveView(),
-        Live.session("login")(
-          ExamplesRoutes.login.withMountAspect(LoginMountAspect.prepared) { (_, _, loginContext) =>
-            LoginLiveView(loginContext)
-          }
-        ),
+        ExamplesRoutes.login(_ => LoginLiveView()),
         Live
           .session("authenticated").withMountAspect(AuthMountAspect.authenticated)(
             ExamplesRoutes.profile { (_, _, currentSession: CurrentSession) =>
@@ -79,8 +76,12 @@ object ExamplesApp extends ZIOAppDefault:
       assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.css", "app.js")))
       authHttpConfig <- AuthHttpConfig.fromEnvironment(sys.env)
       authService    <- ZIO.service[AuthService].provide(AuthService.live(authServiceConfig))
-      routes = liveRoutes(assets) ++
-                 AuthHttpRoutes(authService, authHttpConfig).routes ++ assets.routes
+      csrfProtection = CsrfProtection(
+                         TokenConfig.default,
+                         secureCookie = authHttpConfig.secureCookies
+                       )
+      routes = liveRoutes(assets, csrfProtection) ++
+                 AuthHttpRoutes(authService, authHttpConfig, csrfProtection).routes ++ assets.routes
       _ <- Server
              .serve(routes)
              .provide(

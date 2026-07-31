@@ -26,7 +26,7 @@ private[scalive] object SocketComponentRuntime:
       rendered <- renderElement(root, cursor, ctx)
       _        <- ctx.nestedLiveViews.afterParentRender
       _        <- componentsRef.set(cursor.state)
-    yield rendered
+    yield ctx.csrfToken.fold(rendered)(CsrfProtection.injectForms(rendered, _))
 
   def handleComponentMessage[Msg, Model](
     cid: Int,

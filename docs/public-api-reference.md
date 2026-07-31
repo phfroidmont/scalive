@@ -976,10 +976,25 @@ Live.router.withLayout(layout)
 Live.router.withRootLayout(rootLayout)
 Live.router.withSocketPath(path)
 Live.router.withTokenConfig(config)
+Live.router.withCsrfProtection(protection)
 Live.router(route, routes*)
 ```
 
 The resulting value is a `zio.http.Routes` value.
+
+Use one `CsrfProtection` value for the Live router and sibling ordinary HTTP handlers that accept protected forms:
+
+```scala
+val csrf = CsrfProtection(
+  TokenConfig.default,
+  secureCookie = true
+)
+
+val liveRoutes = Live.router.withCsrfProtection(csrf)(loginRoute)
+val httpRoutes = AuthHttpRoutes(csrf)
+```
+
+`withTokenConfig` remains the direct configuration path when no ordinary handler needs to share the CSRF capability.
 
 Supporting route types:
 
@@ -1290,9 +1305,12 @@ Constructors:
 ```scala
 Form.of(name, state, codec)
 Form.of(name, event, codec)
+Form.http(action)(mods*)
 ```
 
-`http` renders a normal browser form whose `action` and `method` come from a `FormAction`. It does not add `phx-change`, `phx-submit`, `phx-trigger-action`, CSRF fields, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `phx.triggerAction`. The helper rejects caller-supplied `action` or `method` attributes; use the raw `form` tag when those attributes must be controlled manually.
+`http` renders a normal browser form whose `action` and `method` come from a `FormAction`. The companion form supports action-only forms; the instance method combines the same wrapper with typed field helpers. Neither form adds `phx-change`, `phx-submit`, `phx-trigger-action`, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `phx.triggerAction`.
+
+Finalized Live renders automatically add `_csrf_token` to checked POST actions. GET and `FormAction.unsafe` targets do not receive a token. The helper rejects caller-supplied `action` or `method` attributes; use `FormAction.unsafe` and the raw `form` tag when those attributes or CSRF behavior must be controlled manually.
 
 ### `FormAction`
 
@@ -1338,6 +1356,47 @@ loginForm.http(FormAction.from(createSession))(
   button(typ := "submit", "Sign in")
 )
 ```
+
+### `CsrfProtection`
+
+```scala
+final class CsrfProtection:
+  def validate(
+    request: zio.http.Request,
+    data: FormData
+  ): Either[CsrfProtection.ValidationError, Unit]
+
+object CsrfProtection:
+  val CookieName: String
+  val ParamName: String
+  val MetaName: String
+
+  enum ValidationError:
+    case MissingCookie
+    case InvalidCookie
+    case MissingToken
+    case DuplicateToken
+    case InvalidToken
+
+  def apply(
+    tokenConfig: TokenConfig,
+    secureCookie: Boolean = false
+  ): CsrfProtection
+```
+
+Decode the request body with an explicit bound, validate CSRF, and only then run application decoding:
+
+```scala
+for
+  data <- FormData.fromUrlEncodedBody(request.body, maxBytes)
+  _    <- ZIO.fromEither(csrf.validate(request, data))
+  form <- ZIO.fromEither(LoginForm.codec.decode(data))
+yield form
+```
+
+The capability uses two purpose-bound signed values containing the same random browser secret: an `HttpOnly` cookie and the submitted token. Validation requires exactly one bounded `_csrf_token` and compares secrets in constant time. Tokens are reusable until `TokenConfig.maxAge`; they are not one-time application tokens.
+
+The cookie is host-only, scoped to `/`, `HttpOnly`, and `SameSite=Lax`. `secureCookie` must be enabled whenever the browser-facing endpoint is HTTPS; Scalive does not infer deployment TLS from forwarding headers. The token check binds a form to the browser cookie but does not add a separate `Origin` or `Referer` policy.
 
 ### `Form.Field`
 

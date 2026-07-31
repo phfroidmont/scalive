@@ -1,5 +1,7 @@
 package scalive.examples.auth
 
+import scala.concurrent.duration.*
+
 import zio.*
 import zio.http.*
 import zio.test.*
@@ -9,15 +11,17 @@ import scalive.examples.ExamplesRoutes
 
 object AuthServiceSpec extends ZIOSpecDefault:
 
-  private val DemoEmail    = "alice@example.com"
-  private val DemoPassword = "scalive"
+  private val DemoEmail        = "alice@example.com"
+  private val DemoPassword     = "scalive"
   private val secureHttpConfig = AuthHttpConfig(secureCookies = true)
   private val sessionAction    = FormAction.from(AuthHttpRoutes.SessionRoute)
   private val logoutAction     = FormAction.from(AuthHttpRoutes.LogoutRoute)
+  private val csrfProtection = CsrfProtection(
+    TokenConfig("auth-service-spec-secret", 1.hour),
+    secureCookie = true
+  )
 
-  private final case class PreparedLogin(
-    bootstrap: LoginBootstrap,
-    context: LoginContext)
+  private final case class PreparedCsrf(cookie: Cookie.Response, token: String)
 
   private def authService: UIO[AuthService] =
     authService(AuthServiceConfig.default)
@@ -25,27 +29,15 @@ object AuthServiceSpec extends ZIOSpecDefault:
   private def authService(config: AuthServiceConfig): UIO[AuthService] =
     ZIO.service[AuthService].provide(AuthService.live(config))
 
-  private def prepareLogin(auth: AuthService): UIO[PreparedLogin] =
-    for
-      bootstrap <- auth.beginLogin
-      context <- auth
-                   .prepareLogin(bootstrap.cookieToken)
-                   .someOrFail(new IllegalStateException("login context was not prepared"))
-                   .orDie
-    yield PreparedLogin(bootstrap, context)
-
   private def login(auth: AuthService): UIO[LoginResult] =
-    for
-      prepared <- prepareLogin(auth)
-      result <- auth
-                  .login(
-                    prepared.bootstrap.cookieToken,
-                    prepared.context.csrfToken,
-                    LoginCredentials(DemoEmail, DemoPassword)
-                  )
-                  .someOrFail(new IllegalStateException("demo login failed"))
-                  .orDie
-    yield result
+    auth
+      .login(LoginCredentials(DemoEmail, DemoPassword))
+      .someOrFail(new IllegalStateException("demo login failed"))
+      .orDie
+
+  private def prepareCsrf: PreparedCsrf =
+    val prepared = csrfProtection.prepare(Request.get(URL.root))
+    PreparedCsrf(prepared.cookie.get, prepared.value)
 
   private def url(value: String): URL =
     URL.decode(value).fold(throw _, identity)
@@ -56,45 +48,37 @@ object AuthServiceSpec extends ZIOSpecDefault:
       Body.fromURLEncodedForm(zio.http.Form.fromStrings(fields*))
     )
 
+  private def protectedPost(
+    action: FormAction,
+    csrf: PreparedCsrf,
+    fields: (String, String)*
+  ): Request =
+    postForm(action.href, (CsrfProtection.ParamName -> csrf.token) +: fields*).addCookie(
+      Cookie.Request(csrf.cookie.name, csrf.cookie.content)
+    )
+
   private def run(routes: Routes[Any, Nothing], request: Request): UIO[Response] =
     ZIO.scoped(routes.runZIO(request))
 
   private def httpRoutes(auth: AuthService): Routes[Any, Nothing] =
-    AuthHttpRoutes(auth, secureHttpConfig).routes
+    AuthHttpRoutes(auth, secureHttpConfig, csrfProtection).routes
 
   private def responseCookies(response: Response): Chunk[Cookie.Response] =
     response.headers(Header.SetCookie).map(_.value)
 
-  private def beginHttpLogin(auth: AuthService): UIO[PreparedLogin] =
-    for
-      response <- run(
-                    httpRoutes(auth),
-                    Request.get(url("/auth/login/bootstrap"))
-                  )
-      cookie <- ZIO
-                  .fromOption(
-                    responseCookies(response).find(_.name == AuthHttpRoutes.LoginContextCookieName)
-                  ).orElseFail(new IllegalStateException("login context cookie was not set"))
-                  .orDie
-      context <- auth
-                   .prepareLogin(LoginContextCookieToken(cookie.content))
-                   .someOrFail(new IllegalStateException("HTTP login context was not prepared"))
-                   .orDie
-    yield PreparedLogin(LoginBootstrap(LoginContextCookieToken(cookie.content)), context)
-
-  private def loginRequest(prepared: PreparedLogin, fields: (String, String)*): Request =
-    postForm(
-      sessionAction.href,
-      fields*
-    ).addCookie(
-      Cookie.Request(
-        AuthHttpRoutes.LoginContextCookieName,
-        prepared.bootstrap.cookieToken.value
-      )
+  private def loginRequest(
+    csrf: PreparedCsrf,
+    password: String = DemoPassword
+  ): Request =
+    protectedPost(
+      sessionAction,
+      csrf,
+      LoginForm.EmailPath.name    -> DemoEmail,
+      LoginForm.PasswordPath.name -> password
     )
 
   private def rawLoginRequest(
-    prepared: PreparedLogin,
+    csrf: PreparedCsrf,
     body: String,
     mediaType: MediaType = MediaType.application.`x-www-form-urlencoded`
   ): Request =
@@ -102,69 +86,31 @@ object AuthServiceSpec extends ZIOSpecDefault:
       .post(
         url(sessionAction.href),
         Body.fromString(body).contentType(mediaType)
-      )
-      .addCookie(
-        Cookie.Request(
-          AuthHttpRoutes.LoginContextCookieName,
-          prepared.bootstrap.cookieToken.value
-        )
-      )
-
-  private def loginMountRequest(cookieToken: Option[LoginContextCookieToken]) =
-    val request = cookieToken.fold(Request.get(url("/auth/login")))(token =>
-      Request
-        .get(url("/auth/login"))
-        .addCookie(Cookie.Request(AuthHttpRoutes.LoginContextCookieName, token.value))
-    )
-    LiveMountRequest((), request)
-
-  private def redirectsToLoginBootstrap(response: Response): Boolean =
-    response.status == Status.SeeOther && response.header(Header.Location).exists(
-      _.url.encode == AuthHttpRoutes.loginBootstrapUrl(invalid = false).encode
-    )
-
-  private def redirectsToLoginBootstrap(failure: LiveMountFailure): Boolean =
-    failure match
-      case LiveMountFailure.RedirectUnsafe(location) =>
-        location.encode == AuthHttpRoutes.loginBootstrapUrl(invalid = false).encode
-      case _ => false
+      ).addCookie(Cookie.Request(csrf.cookie.name, csrf.cookie.content))
 
   def spec = suite("AuthServiceSpec")(
-    test("decodes a rooted login form into a typed submission") {
+    test("decodes rooted credentials without application-owned CSRF") {
       val data = FormData(
         Vector(
-          LoginForm.CsrfPath.name     -> "csrf",
           LoginForm.EmailPath.name    -> DemoEmail,
           LoginForm.PasswordPath.name -> DemoPassword
         )
       )
 
       assertTrue(
-        LoginForm.codec.decode(data) == Right(
-          LoginSubmission(
-            LoginCsrfToken("csrf"),
-            LoginCredentials(DemoEmail, DemoPassword)
-          )
-        )
+        LoginForm.codec.decode(data) == Right(LoginCredentials(DemoEmail, DemoPassword))
       )
     },
-    test("rejects incomplete and oversized rooted login forms") {
-      val incomplete = FormData(
-        Vector(
-          LoginForm.CsrfPath.name  -> "csrf",
-          LoginForm.EmailPath.name -> DemoEmail
-        )
-      )
+    test("rejects incomplete, oversized, and duplicated credentials") {
+      val incomplete = FormData(Vector(LoginForm.EmailPath.name -> DemoEmail))
       val oversized = FormData(
         Vector(
-          LoginForm.CsrfPath.name     -> "csrf",
           LoginForm.EmailPath.name    -> ("a" * (LoginForm.EmailMaxLength + 1)),
           LoginForm.PasswordPath.name -> DemoPassword
         )
       )
       val duplicated = FormData(
         Vector(
-          LoginForm.CsrfPath.name     -> "csrf",
           LoginForm.EmailPath.name    -> "first@example.com",
           LoginForm.EmailPath.name    -> DemoEmail,
           LoginForm.PasswordPath.name -> DemoPassword
@@ -185,111 +131,33 @@ object AuthServiceSpec extends ZIOSpecDefault:
     },
     test("rejects invalid credentials") {
       for
-        auth     <- authService
-        prepared <- prepareLogin(auth)
-        result <- auth.login(
-                    prepared.bootstrap.cookieToken,
-                    prepared.context.csrfToken,
-                    LoginCredentials(DemoEmail, "incorrect")
-                  )
+        auth   <- authService
+        result <- auth.login(LoginCredentials(DemoEmail, "incorrect"))
       yield assertTrue(result.isEmpty)
     },
-    test("consumes a login context and CSRF token after one attempt") {
-      for
-        auth     <- authService
-        prepared <- prepareLogin(auth)
-        _ <- auth.login(
-               prepared.bootstrap.cookieToken,
-               prepared.context.csrfToken,
-               LoginCredentials(DemoEmail, "incorrect")
-             )
-        reuse <- auth.login(
-                   prepared.bootstrap.cookieToken,
-                   prepared.context.csrfToken,
-                   LoginCredentials(DemoEmail, DemoPassword)
-                 )
-      yield assertTrue(reuse.isEmpty)
-    },
-    test("rejects a login CSRF token transferred to another browser context") {
-      for
-        auth   <- authService
-        first  <- prepareLogin(auth)
-        second <- prepareLogin(auth)
-        transferred <- auth.login(
-                         second.bootstrap.cookieToken,
-                         first.context.csrfToken,
-                         LoginCredentials(DemoEmail, DemoPassword)
-                       )
-        consumed <- auth.prepareLogin(second.bootstrap.cookieToken)
-        original <- auth.login(
-                      first.bootstrap.cookieToken,
-                      first.context.csrfToken,
-                      LoginCredentials(DemoEmail, DemoPassword)
-                    )
-      yield assertTrue(transferred.isEmpty, consumed.isEmpty, original.isDefined)
-    },
-    test("authenticates an opaque session cookie token") {
+    test("authenticates and resumes an opaque session") {
       for
         auth          <- authService
         loggedIn      <- login(auth)
         authenticated <- auth.authenticate(loggedIn.cookieToken)
+        resumed       <- auth.resume(loggedIn.currentSession.publicSessionId)
       yield assertTrue(
         authenticated.contains(loggedIn.currentSession),
+        resumed.contains(loggedIn.currentSession),
         loggedIn.cookieToken.value.length >= 43,
         loggedIn.cookieToken.value != loggedIn.currentSession.publicSessionId.value
       )
     },
-    test("resumes a session from its public session ID") {
+    test("logout invalidates cookie authentication and claims resumption") {
       for
         auth     <- authService
         loggedIn <- login(auth)
-        resumed  <- auth.resume(loggedIn.currentSession.publicSessionId)
-      yield assertTrue(resumed.contains(loggedIn.currentSession))
-    },
-    test("rejects an invalid logout CSRF token without revoking the session") {
-      for
-        auth     <- authService
-        loggedIn <- login(auth)
-        loggedOut <- auth.logout(
-                       loggedIn.cookieToken,
-                       LogoutCsrfToken("invalid")
-                     )
+        loggedOut <- auth.logout(loggedIn.cookieToken)
         authenticated <- auth.authenticate(loggedIn.cookieToken)
-      yield assertTrue(!loggedOut, authenticated.contains(loggedIn.currentSession))
+        resumed       <- auth.resume(loggedIn.currentSession.publicSessionId)
+      yield assertTrue(loggedOut, authenticated.isEmpty, resumed.isEmpty)
     },
-    test("revokes claims-based session resumption on logout") {
-      for
-        auth     <- authService
-        loggedIn <- login(auth)
-        loggedOut <- auth.logout(
-                       loggedIn.cookieToken,
-                       loggedIn.currentSession.logoutCsrfToken
-                     )
-        resumed <- auth.resume(loggedIn.currentSession.publicSessionId)
-      yield assertTrue(loggedOut, resumed.isEmpty)
-    },
-    test("invalidates session cookie authentication on logout") {
-      for
-        auth     <- authService
-        loggedIn <- login(auth)
-        loggedOut <- auth.logout(
-                       loggedIn.cookieToken,
-                       loggedIn.currentSession.logoutCsrfToken
-                     )
-        authenticated <- auth.authenticate(loggedIn.cookieToken)
-      yield assertTrue(loggedOut, authenticated.isEmpty)
-    },
-    test("expires pending login contexts") {
-      val config = AuthServiceConfig.default.copy(loginContextTtl = 1.minute)
-      for
-        auth     <- authService(config)
-        prepared <- prepareLogin(auth)
-        _        <- TestClock.adjust(config.loginContextTtl)
-        byCookie <- auth.prepareLogin(prepared.bootstrap.cookieToken)
-        byPublic <- auth.resumeLogin(prepared.context.publicId)
-      yield assertTrue(byCookie.isEmpty, byPublic.isEmpty)
-    },
-    test("expires session authentication and claims resumption") {
+    test("expires sessions") {
       val config = AuthServiceConfig.default.copy(sessionTtl = 1.minute)
       for
         auth     <- authService(config)
@@ -299,24 +167,6 @@ object AuthServiceSpec extends ZIOSpecDefault:
         byPublic <- auth.resume(loggedIn.currentSession.publicSessionId)
       yield assertTrue(byCookie.isEmpty, byPublic.isEmpty)
     },
-    test("evicts the oldest pending login context at the configured bound") {
-      val config = AuthServiceConfig.default.copy(maxLoginContexts = 2)
-      for
-        auth   <- authService(config)
-        first  <- prepareLogin(auth)
-        second <- prepareLogin(auth)
-        third  <- prepareLogin(auth)
-        firstByCookie <- auth.prepareLogin(first.bootstrap.cookieToken)
-        firstByPublic <- auth.resumeLogin(first.context.publicId)
-        secondByCookie <- auth.prepareLogin(second.bootstrap.cookieToken)
-        thirdByCookie  <- auth.prepareLogin(third.bootstrap.cookieToken)
-      yield assertTrue(
-        firstByCookie.isEmpty,
-        firstByPublic.isEmpty,
-        secondByCookie.isDefined,
-        thirdByCookie.isDefined
-      )
-    },
     test("evicts the oldest session at the configured bound") {
       val config = AuthServiceConfig.default.copy(maxSessions = 2)
       for
@@ -324,8 +174,8 @@ object AuthServiceSpec extends ZIOSpecDefault:
         first  <- login(auth)
         second <- login(auth)
         third  <- login(auth)
-        firstByCookie <- auth.authenticate(first.cookieToken)
-        firstByPublic <- auth.resume(first.currentSession.publicSessionId)
+        firstByCookie  <- auth.authenticate(first.cookieToken)
+        firstByPublic  <- auth.resume(first.currentSession.publicSessionId)
         secondByCookie <- auth.authenticate(second.cookieToken)
         thirdByCookie  <- auth.authenticate(third.cookieToken)
       yield assertTrue(
@@ -335,104 +185,38 @@ object AuthServiceSpec extends ZIOSpecDefault:
         thirdByCookie.isDefined
       )
     },
-    test("secure-cookie config defaults to false when the environment variable is absent") {
-      for
-        config <- AuthHttpConfig.fromEnvironment(Map.empty)
-      yield assertTrue(!config.secureCookies)
-    },
-    test("secure-cookie config accepts case-insensitive true") {
-      for
-        configs <- ZIO.foreach(List("true", "TRUE", "TrUe"))(value =>
-                     AuthHttpConfig.fromEnvironment(
-                       Map(AuthHttpConfig.SecureCookiesEnvironmentVariable -> value)
-                     )
-                   )
-      yield assertTrue(configs.forall(_.secureCookies))
-    },
-    test("secure-cookie config accepts case-insensitive false") {
-      for
-        configs <- ZIO.foreach(List("false", "FALSE", "FaLsE"))(value =>
-                     AuthHttpConfig.fromEnvironment(
-                       Map(AuthHttpConfig.SecureCookiesEnvironmentVariable -> value)
-                     )
-                   )
-      yield assertTrue(configs.forall(config => !config.secureCookies))
-    },
-    test("secure-cookie config rejects supplied invalid values without echoing them") {
-      val invalidValues = List("not-a-boolean-secret", " true ", "1", "")
+    test("secure-cookie config parses strict boolean values") {
       val expectedMessage =
         s"${AuthHttpConfig.SecureCookiesEnvironmentVariable} must be either true or false when set"
       for
-        results <- ZIO.foreach(invalidValues)(invalidValue =>
-                     AuthHttpConfig
-                       .fromEnvironment(
-                         Map(AuthHttpConfig.SecureCookiesEnvironmentVariable -> invalidValue)
-                       )
-                       .either
+        absent <- AuthHttpConfig.fromEnvironment(Map.empty)
+        enabled <- AuthHttpConfig.fromEnvironment(
+                     Map(AuthHttpConfig.SecureCookiesEnvironmentVariable -> "TrUe")
                    )
-      yield assertTrue(
-        results.forall(_.left.exists(_.getMessage == expectedMessage)),
-        !expectedMessage.contains(invalidValues.head)
-      )
-    },
-    test("login route generates typed valid and invalid locations") {
-      assertTrue(
-        ExamplesRoutes.login.location(None).href == "/auth/login",
-        ExamplesRoutes.login.location(Some(true)).href == "/auth/login?invalid=true"
-      )
-    },
-    test("HTTP bootstrap creates a hardened pre-authentication cookie") {
-      for
-        auth <- authService
-        response <- run(
-                      httpRoutes(auth),
-                      Request.get(url("/auth/login/bootstrap"))
+        disabled <- AuthHttpConfig.fromEnvironment(
+                      Map(AuthHttpConfig.SecureCookiesEnvironmentVariable -> "FALSE")
                     )
-        cookie = responseCookies(response).find(
-                   _.name == AuthHttpRoutes.LoginContextCookieName
-                 )
+        invalid <- AuthHttpConfig
+                     .fromEnvironment(
+                       Map(AuthHttpConfig.SecureCookiesEnvironmentVariable -> "1")
+                     ).either
       yield assertTrue(
-        response.status == Status.SeeOther,
-        response.header(Header.Location).exists(
-          _.url.encode == ExamplesRoutes.login.location(None).href
-        ),
-        cookie.exists(_.path.contains(Path.root)),
-        cookie.exists(_.isHttpOnly),
-        cookie.exists(_.isSecure),
-        cookie.exists(_.sameSite.contains(Cookie.SameSite.Lax)),
-        cookie.exists(_.maxAge.isDefined)
+        !absent.secureCookies,
+        enabled.secureCookies,
+        !disabled.secureCookies,
+        invalid.left.exists(_.getMessage == expectedMessage)
       )
     },
-    test("HTTP bootstrap carries the invalid marker into the typed login location") {
-      for
-        auth <- authService
-        response <- run(
-                      httpRoutes(auth),
-                      Request.get(url("/auth/login/bootstrap?invalid=true"))
-                    )
-      yield assertTrue(
-        response.status == Status.SeeOther,
-        response.header(Header.Location).exists(
-          _.url.encode == ExamplesRoutes.login.location(Some(true)).href
-        )
-      )
-    },
-    test("HTTP login binds CSRF to pre-auth cookie and rotates into a session cookie") {
+    test("HTTP login validates framework CSRF and sets a hardened session cookie") {
+      val csrf = prepareCsrf
       for
         auth     <- authService
-        prepared <- beginHttpLogin(auth)
-        request = loginRequest(
-                    prepared,
-                    LoginForm.CsrfPath.name     -> prepared.context.csrfToken.value,
-                    LoginForm.EmailPath.name    -> DemoEmail,
-                    LoginForm.PasswordPath.name -> DemoPassword
-                  )
-        response <- run(httpRoutes(auth), request)
-        cookies   = responseCookies(response)
-        sessionCookie = cookies.find(_.name == AuthHttpRoutes.SessionCookieName)
-        loginCookie   = cookies.find(_.name == AuthHttpRoutes.LoginContextCookieName)
-        authenticated <- ZIO.foreach(sessionCookie)(value =>
-                           auth.authenticate(SessionCookieToken(value.content))
+        response <- run(httpRoutes(auth), loginRequest(csrf))
+        sessionCookie = responseCookies(response).find(
+                          _.name == AuthHttpRoutes.SessionCookieName
+                        )
+        authenticated <- ZIO.foreach(sessionCookie)(cookie =>
+                           auth.authenticate(SessionCookieToken(cookie.content))
                          )
       yield assertTrue(
         response.status == Status.SeeOther,
@@ -443,138 +227,87 @@ object AuthServiceSpec extends ZIOSpecDefault:
         sessionCookie.exists(_.isHttpOnly),
         sessionCookie.exists(_.isSecure),
         sessionCookie.exists(_.sameSite.contains(Cookie.SameSite.Lax)),
-        loginCookie.exists(_.content.isEmpty),
-        loginCookie.exists(_.maxAge.contains(Duration.Zero)),
         authenticated.flatten.isDefined
       )
     },
-    test("HTTP login failures use one generic redirect without setting a session cookie") {
+    test("HTTP login rejects missing, tampered, and transferred CSRF") {
+      val first  = prepareCsrf
+      val second = prepareCsrf
+      val fields = Vector(
+        LoginForm.EmailPath.name    -> DemoEmail,
+        LoginForm.PasswordPath.name -> DemoPassword
+      )
+      val missing = postForm(sessionAction.href, fields*).addCookie(
+        Cookie.Request(first.cookie.name, first.cookie.content)
+      )
+      val tampered = protectedPost(
+        sessionAction,
+        first.copy(token = s"${first.token}x"),
+        fields*
+      )
+      val transferred = protectedPost(
+        sessionAction,
+        first.copy(cookie = second.cookie),
+        fields*
+      )
+
+      for
+        auth                <- authService
+        missingResponse     <- run(httpRoutes(auth), missing)
+        tamperedResponse    <- run(httpRoutes(auth), tampered)
+        transferredResponse <- run(httpRoutes(auth), transferred)
+      yield assertTrue(
+        missingResponse.status == Status.Forbidden,
+        tamperedResponse.status == Status.Forbidden,
+        transferredResponse.status == Status.Forbidden,
+        List(missingResponse, tamperedResponse, transferredResponse).forall(response =>
+          responseCookies(response).forall(_.name != AuthHttpRoutes.SessionCookieName)
+        )
+      )
+    },
+    test("HTTP invalid credentials use one generic typed redirect") {
+      val csrf = prepareCsrf
       for
         auth     <- authService
-        prepared <- beginHttpLogin(auth)
-        request = loginRequest(
-                    prepared,
-                    LoginForm.CsrfPath.name     -> prepared.context.csrfToken.value,
-                    LoginForm.EmailPath.name    -> DemoEmail,
-                    LoginForm.PasswordPath.name -> "incorrect"
-                  )
-        response <- run(httpRoutes(auth), request)
+        response <- run(httpRoutes(auth), loginRequest(csrf, password = "incorrect"))
         redirect = response.header(Header.Location).map(_.url.encode)
       yield assertTrue(
         response.status == Status.SeeOther,
-        redirect.contains("/auth/login/bootstrap?invalid=true"),
+        redirect.contains(ExamplesRoutes.login.location(Some(true)).href),
         redirect.forall(value => !value.contains(DemoEmail) && !value.contains("incorrect")),
         responseCookies(response).forall(_.name != AuthHttpRoutes.SessionCookieName)
       )
     },
-    test("HTTP login consumes its browser context when credentials are incomplete") {
+    test("HTTP malformed, oversized, and wrong-content-type login bodies stay distinct") {
+      val csrf = prepareCsrf
       for
-        auth     <- authService
-        prepared <- beginHttpLogin(auth)
-        request = loginRequest(
-                    prepared,
-                    LoginForm.CsrfPath.name  -> prepared.context.csrfToken.value,
-                    LoginForm.EmailPath.name -> DemoEmail
-                  )
-        response <- run(httpRoutes(auth), request)
-        reuse    <- auth.prepareLogin(prepared.bootstrap.cookieToken)
-      yield assertTrue(response.status == Status.SeeOther, reuse.isEmpty)
-    },
-    test("HTTP missing login CSRF fails generically and consumes the browser context") {
-      for
-        auth     <- authService
-        prepared <- beginHttpLogin(auth)
-        request = loginRequest(
-                    prepared,
-                    LoginForm.EmailPath.name    -> DemoEmail,
-                    LoginForm.PasswordPath.name -> DemoPassword
-                  )
-        response <- run(httpRoutes(auth), request)
-        reuse    <- auth.prepareLogin(prepared.bootstrap.cookieToken)
+        auth <- authService
+        malformed <- run(
+                       httpRoutes(auth),
+                       rawLoginRequest(csrf, s"${LoginForm.EmailPath.name}=%ZZ")
+                     )
+        oversized <- run(
+                       httpRoutes(auth),
+                       rawLoginRequest(csrf, "x" * (AuthHttpRoutes.FormMaxBytes.toInt + 1))
+                     )
+        wrongType <- run(
+                       httpRoutes(auth),
+                       rawLoginRequest(csrf, "{}", MediaType.application.json)
+                     )
       yield assertTrue(
-        response.status == Status.SeeOther,
-        response.header(Header.Location).exists(
-          _.url.encode == "/auth/login/bootstrap?invalid=true"
-        ),
-        responseCookies(response).forall(_.name != AuthHttpRoutes.SessionCookieName),
-        reuse.isEmpty
+        malformed.status == Status.BadRequest,
+        oversized.status == Status.RequestEntityTooLarge,
+        wrongType.status == Status.UnsupportedMediaType
       )
     },
-    test("HTTP invalid login CSRF fails generically and consumes the browser context") {
-      for
-        auth     <- authService
-        prepared <- beginHttpLogin(auth)
-        request = loginRequest(
-                    prepared,
-                    LoginForm.CsrfPath.name     -> "invalid",
-                    LoginForm.EmailPath.name    -> DemoEmail,
-                    LoginForm.PasswordPath.name -> DemoPassword
-                  )
-        response <- run(httpRoutes(auth), request)
-        reuse    <- auth.prepareLogin(prepared.bootstrap.cookieToken)
-      yield assertTrue(
-        response.status == Status.SeeOther,
-        response.header(Header.Location).exists(
-          _.url.encode == "/auth/login/bootstrap?invalid=true"
-        ),
-        responseCookies(response).forall(_.name != AuthHttpRoutes.SessionCookieName),
-        reuse.isEmpty
-      )
-    },
-    test("HTTP malformed login form fails as a bad request and consumes its context") {
-      for
-        auth     <- authService
-        prepared <- beginHttpLogin(auth)
-        response <- run(
-                      httpRoutes(auth),
-                      rawLoginRequest(prepared, s"${LoginForm.EmailPath.name}=%ZZ")
-                    )
-        reuse <- auth.prepareLogin(prepared.bootstrap.cookieToken)
-        cookie = responseCookies(response).find(_.name == AuthHttpRoutes.LoginContextCookieName)
-      yield assertTrue(
-        response.status == Status.BadRequest,
-        cookie.exists(_.maxAge.contains(Duration.Zero)),
-        reuse.isEmpty
-      )
-    },
-    test("HTTP oversized login form fails before decoding and consumes its context") {
-      for
-        auth     <- authService
-        prepared <- beginHttpLogin(auth)
-        response <- run(
-                      httpRoutes(auth),
-                      rawLoginRequest(
-                        prepared,
-                        "x" * (AuthHttpRoutes.LoginFormMaxBytes.toInt + 1)
-                      )
-                    )
-        reuse <- auth.prepareLogin(prepared.bootstrap.cookieToken)
-      yield assertTrue(
-        response.status == Status.RequestEntityTooLarge,
-        reuse.isEmpty
-      )
-    },
-    test("HTTP login rejects the wrong content type and consumes its context") {
-      for
-        auth     <- authService
-        prepared <- beginHttpLogin(auth)
-        response <- run(
-                      httpRoutes(auth),
-                      rawLoginRequest(prepared, "{}", MediaType.application.json)
-                    )
-        reuse <- auth.prepareLogin(prepared.bootstrap.cookieToken)
-      yield assertTrue(
-        response.status == Status.UnsupportedMediaType,
-        reuse.isEmpty
-      )
-    },
-    test("HTTP invalid logout preserves the session and emits no cookie") {
+    test("HTTP logout rejects invalid CSRF without revoking the session") {
+      val csrf = prepareCsrf
       for
         auth     <- authService
         loggedIn <- login(auth)
-        request = postForm(
-                    logoutAction.href,
-                    AuthHttpRoutes.LogoutCsrfField -> "invalid"
+        request = protectedPost(
+                    logoutAction,
+                    csrf.copy(token = s"${csrf.token}x")
                   ).addCookie(
                     Cookie.Request(AuthHttpRoutes.SessionCookieName, loggedIn.cookieToken.value)
                   )
@@ -587,13 +320,11 @@ object AuthServiceSpec extends ZIOSpecDefault:
       )
     },
     test("HTTP logout revokes the session and expires its cookie") {
+      val csrf = prepareCsrf
       for
         auth     <- authService
         loggedIn <- login(auth)
-        request = postForm(
-                    logoutAction.href,
-                    AuthHttpRoutes.LogoutCsrfField -> loggedIn.currentSession.logoutCsrfToken.value
-                  ).addCookie(
+        request = protectedPost(logoutAction, csrf).addCookie(
                     Cookie.Request(AuthHttpRoutes.SessionCookieName, loggedIn.cookieToken.value)
                   )
         response <- run(httpRoutes(auth), request)
@@ -606,94 +337,10 @@ object AuthServiceSpec extends ZIOSpecDefault:
         cookie.exists(_.path.contains(Path.root)),
         cookie.exists(_.isHttpOnly),
         cookie.exists(_.isSecure),
-        cookie.exists(_.maxAge.contains(Duration.Zero)),
+        cookie.exists(_.maxAge.contains(zio.Duration.Zero)),
         cookie.exists(_.sameSite.contains(Cookie.SameSite.Lax)),
         authenticated.isEmpty
       )
-    },
-    test("login disconnected mount redirects a missing pre-auth cookie") {
-      for
-        auth <- authService
-        result <- LoginMountAspect.prepared
-                    .disconnected(loginMountRequest(None), ())
-                    .provideEnvironment(ZEnvironment(auth))
-                    .either
-      yield assertTrue(result.swap.toOption.exists(redirectsToLoginBootstrap))
-    },
-    test("login disconnected mount redirects an invalid pre-auth cookie") {
-      for
-        auth <- authService
-        result <- LoginMountAspect.prepared
-                    .disconnected(
-                      loginMountRequest(Some(LoginContextCookieToken("invalid"))),
-                      ()
-                    )
-                    .provideEnvironment(ZEnvironment(auth))
-                    .either
-      yield assertTrue(result.swap.toOption.exists(redirectsToLoginBootstrap))
-    },
-    test("login disconnected mount produces claims and the typed login context") {
-      for
-        auth     <- authService
-        prepared <- prepareLogin(auth)
-        result <- LoginMountAspect.prepared
-                    .disconnected(
-                      loginMountRequest(Some(prepared.bootstrap.cookieToken)),
-                      ()
-                    )
-                    .provideEnvironment(ZEnvironment(auth))
-      yield assertTrue(
-        result._1 == LoginClaims(prepared.context.publicId),
-        result._2 == prepared.context
-      )
-    },
-    test("login connected mount resumes the typed context without the original cookie") {
-      for
-        auth     <- authService
-        prepared <- prepareLogin(auth)
-        connectedRequest = loginMountRequest(None)
-        result <- LoginMountAspect.prepared
-                    .connected(
-                      LoginClaims(prepared.context.publicId),
-                      connectedRequest,
-                      ()
-                    )
-                    .provideEnvironment(ZEnvironment(auth))
-      yield assertTrue(
-        result == prepared.context,
-        connectedRequest.request.cookie(AuthHttpRoutes.LoginContextCookieName).isEmpty
-      )
-    },
-    test("login disconnected mount redirects an expired context") {
-      val config = AuthServiceConfig.default.copy(loginContextTtl = 1.minute)
-      for
-        auth     <- authService(config)
-        prepared <- prepareLogin(auth)
-        _        <- TestClock.adjust(config.loginContextTtl)
-        result <- LoginMountAspect.prepared
-                    .disconnected(
-                      loginMountRequest(Some(prepared.bootstrap.cookieToken)),
-                      ()
-                    )
-                    .provideEnvironment(ZEnvironment(auth))
-                    .either
-      yield assertTrue(result.swap.toOption.exists(redirectsToLoginBootstrap))
-    },
-    test("login connected mount redirects an evicted context") {
-      val config = AuthServiceConfig.default.copy(maxLoginContexts = 1)
-      for
-        auth     <- authService(config)
-        evicted  <- prepareLogin(auth)
-        _        <- prepareLogin(auth)
-        result <- LoginMountAspect.prepared
-                    .connected(
-                      LoginClaims(evicted.context.publicId),
-                      loginMountRequest(None),
-                      ()
-                    )
-                    .provideEnvironment(ZEnvironment(auth))
-                    .either
-      yield assertTrue(result.swap.toOption.exists(redirectsToLoginBootstrap))
     },
     test("mount authentication uses the cookie disconnected and public claims connected") {
       for
@@ -751,14 +398,13 @@ object AuthServiceSpec extends ZIOSpecDefault:
         auth     <- authService
         loggedIn <- login(auth)
         claims    = AuthClaims(loggedIn.currentSession.publicSessionId)
-        _ <- auth.logout(loggedIn.cookieToken, loggedIn.currentSession.logoutCsrfToken)
+        _ <- auth.logout(loggedIn.cookieToken)
         result <- AuthMountAspect.authenticated
                     .connected(
                       claims,
                       LiveMountRequest((), Request.get(url("/auth/profile"))),
                       ()
-                    )
-                    .provideEnvironment(ZEnvironment(auth))
+                    ).provideEnvironment(ZEnvironment(auth))
                     .either
       yield assertTrue(
         result.left.exists {

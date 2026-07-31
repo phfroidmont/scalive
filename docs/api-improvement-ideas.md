@@ -148,20 +148,20 @@ Boundaries:
 
 ### Support CSRF-protected ordinary HTTP forms
 
-Current issue:
+Implemented:
 
-- Scalive's built-in CSRF implementation protects the LiveSocket connection and is private to the routing runtime.
-- Applications that mutate cookies or sessions through ordinary HTTP must build their own CSRF token, cookie, hidden input, and validator.
-- The auth example needs a pre-authentication context and two extra redirects primarily to establish this protection.
+- `CsrfProtection` is a first-class capability shared by `LiveRouter` and ordinary HTTP handlers without exposing token signing operations.
+- Checked POST `FormAction`s receive an automatic `_csrf_token` field during disconnected and connected rendering; GET and unsafe actions remain unmanaged.
+- Validation requires exactly one bounded submitted token, verifies the signed browser cookie and parameter purposes, and compares their secrets in constant time.
+- The cookie is host-only, root-scoped, `HttpOnly`, `SameSite=Lax`, expiry-bounded, and explicitly configurable as `Secure`.
+- The auth example validates framework CSRF before `FormCodec`, uses no pre-authentication cookie or login bootstrap context, and covers login-CSRF transfer between browsers.
 
-Ideas:
+Boundaries:
 
-- Provide a public ordinary-form CSRF capability integrated with the Live route render and ZIO HTTP handler boundary.
-- Generate the hidden input automatically for non-GET same-origin actions unless explicitly disabled.
-- Validate missing, malformed, expired, transferred, and mismatched tokens before application form decoding.
-- Ensure token rendering remains stable across disconnected render and connected mount.
-- Keep token internals and signing secrets private, and document cookie, origin, host, expiry, and `Secure` semantics.
-- Test login CSRF specifically; preventing state changes is not sufficient if an attacker can log a victim into the attacker's account.
+- Transport decoding remains separate so body, representation, CSRF, and application validation failures retain distinct error channels.
+- Tokens are browser-bound and reusable until expiry, not consume-once application tokens.
+- Scalive does not infer public HTTPS from forwarding headers and does not add a separate `Origin` or `Referer` policy.
+- Multipart ordinary forms remain deferred until their transport semantics are designed.
 
 ### Bridge ordinary HTTP redirects into Live flash
 
@@ -226,7 +226,7 @@ Ideas:
 - Add bounded credential and token inputs before hashing or comparison.
 - Add stable form/input IDs and render assertions while retaining direct HTTP submission.
 - Share typed ordinary HTTP actions between route dispatch and rendered login/logout forms.
-- After ordinary-form CSRF and flash bridges exist, remove the bootstrap round-trip, custom login context, and `invalid=true` transport.
+- Ordinary-form CSRF removed the bootstrap round-trip and custom login context; remove the remaining `invalid=true` transport after the flash bridge exists.
 - Keep the example explicitly educational; do not turn these API improvements into a general authentication framework.
 
 ## Routing and Navigation Improvements
@@ -342,7 +342,7 @@ Ideas:
 Current state:
 
 - The separate `scalive-testing` artifact can execute finalized routes through the disconnected lifecycle and query rendered forms, ordered named fields, values, and binding modes semantically.
-- `LoginLiveView` has disconnected render coverage for its typed ordinary HTTP action, rooted fields, stable IDs, one-time CSRF value, and typed invalid-login route marker.
+- `LoginLiveView` has disconnected render coverage for its typed ordinary HTTP action, rooted fields, stable IDs, automatic framework CSRF, and typed invalid-login route marker.
 - Connected events, ordinary HTTP form submission, and following `phx-trigger-action` are not supported yet.
 
 Ideas:
@@ -358,5 +358,5 @@ Ideas:
 2. [x] Move the invalid-login marker to the existing typed query route API.
 3. [x] Add minimal disconnected render and form-query test support, then cover `LoginLiveView`.
 4. [x] Design typed ordinary HTTP actions and the ordinary form mode together.
-5. Add ordinary-form CSRF generation and validation, then remove the login bootstrap context.
+5. [x] Add ordinary-form CSRF generation and validation, then remove the login bootstrap context.
 6. Add the HTTP-to-Live flash bridge, then remove the invalid-login query marker.

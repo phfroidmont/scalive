@@ -25,7 +25,8 @@ final private[scalive] class LiveChannel(
   uploadOwners: Ref[Map[String, String]],
   nestedEntries: Ref[Map[String, NestedLiveViewEntry]],
   tokenConfig: TokenConfig,
-  private[scalive] val connectAuthorized: Boolean):
+  private[scalive] val connectAuthorized: Boolean,
+  private[scalive] val csrfToken: Option[String]):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
     ZStream.unwrapScoped {
       for
@@ -204,6 +205,7 @@ final private[scalive] class LiveChannel(
               val ctx = LiveContext(
                 staticChanged = staticChanged,
                 connectParams = connectParams,
+                csrfToken = csrfToken,
                 nestedLiveViews = nestedRuntime(
                   topic,
                   entry.id,
@@ -426,8 +428,25 @@ end LiveChannel
 
 private[scalive] object LiveChannel:
   def make(tokenConfig: TokenConfig, connectAuthorized: Boolean = true): UIO[LiveChannel] =
+    make(tokenConfig, connectAuthorized, csrfToken = None)
+
+  def make(tokenConfig: TokenConfig, csrfToken: Option[String]): UIO[LiveChannel] =
+    make(tokenConfig, csrfToken.isDefined, csrfToken)
+
+  private def make(
+    tokenConfig: TokenConfig,
+    connectAuthorized: Boolean,
+    csrfToken: Option[String]
+  ): UIO[LiveChannel] =
     for
       sockets      <- SubscriptionRef.make(Map.empty[String, Socket[?, ?]])
       uploadOwners <- Ref.make(Map.empty[String, String])
       nested       <- Ref.make(Map.empty[String, NestedLiveViewEntry])
-    yield new LiveChannel(sockets, uploadOwners, nested, tokenConfig, connectAuthorized)
+    yield new LiveChannel(
+      sockets,
+      uploadOwners,
+      nested,
+      tokenConfig,
+      connectAuthorized,
+      csrfToken
+    )

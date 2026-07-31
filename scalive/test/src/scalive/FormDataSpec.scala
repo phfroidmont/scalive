@@ -48,8 +48,8 @@ object FormDataSpec extends ZIOSpecDefault:
     test("reports malformed URL encoding") {
       assertTrue(
         FormData.fromUrlEncoded("name=%ZZ").left.exists {
-          case FormData.DecodeError.InvalidUrlEncoding(_) => true
-          case _                                           => false
+          case FormData.RepresentationError.InvalidUrlEncoding(_) => true
+          case _                                                     => false
         }
       )
     },
@@ -70,7 +70,9 @@ object FormDataSpec extends ZIOSpecDefault:
         .contentType(MediaType.application.`x-www-form-urlencoded`)
 
       for result <- FormData.fromUrlEncodedBody(body, maxBytes = 4).either
-      yield assertTrue(result == Left(FormData.DecodeError.BodyTooLarge(4)))
+      yield assertTrue(
+        result == Left(FormData.DecodeError.Body(FormData.BodyError.TooLarge(4)))
+      )
     },
     test("rejects bodies with the wrong content type") {
       val body = Body.fromString("name=Alice").contentType(MediaType.application.json)
@@ -78,7 +80,9 @@ object FormDataSpec extends ZIOSpecDefault:
       for result <- FormData.fromUrlEncodedBody(body, maxBytes = 1024).either
       yield assertTrue(
         result.left.exists {
-          case FormData.DecodeError.InvalidContentType(Some(actual)) =>
+          case FormData.DecodeError.Representation(
+                FormData.RepresentationError.InvalidContentType(Some(actual))
+              ) =>
             actual.matches(MediaType.application.json)
           case _ => false
         }
@@ -91,7 +95,9 @@ object FormDataSpec extends ZIOSpecDefault:
         .contentType(MediaType.application.`x-www-form-urlencoded`)
 
       for result <- FormData.fromUrlEncodedBody(body, maxBytes = 1024).either
-      yield assertTrue(result == Left(FormData.DecodeError.BodyRead(failure)))
+      yield assertTrue(
+        result == Left(FormData.DecodeError.Body(FormData.BodyError.Read(failure)))
+      )
     },
     test("adapts ordered textual ZIO HTTP form fields") {
       val form = HttpForm(
@@ -122,7 +128,7 @@ object FormDataSpec extends ZIOSpecDefault:
 
       assertTrue(
         FormData.fromZioHttpForm(form) == Left(
-          FormData.DecodeError.UnsupportedField(
+          FormData.RepresentationError.UnsupportedField(
             "avatar",
             FormData.UnsupportedFieldKind.Binary
           )
@@ -144,7 +150,7 @@ object FormDataSpec extends ZIOSpecDefault:
         wasConsumed <- consumed.get
       yield assertTrue(
         result == Left(
-          FormData.DecodeError.UnsupportedField(
+          FormData.RepresentationError.UnsupportedField(
             "avatar",
             FormData.UnsupportedFieldKind.StreamingBinary
           )

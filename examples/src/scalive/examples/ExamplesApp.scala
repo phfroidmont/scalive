@@ -78,10 +78,10 @@ object ExamplesApp extends ZIOAppDefault:
       authService    <- ZIO.service[AuthService].provide(AuthService.live(authServiceConfig))
       security = LiveSecurity(
                    TokenConfig.default,
-                   secureCookies = authHttpConfig.secureCookies
+                   CookiePolicy(secure = authHttpConfig.secureCookies)
                  )
       routes = liveRoutes(assets, security) ++
-                 AuthHttpRoutes(authService, authHttpConfig, security).routes ++ assets.routes
+                 AuthHttpRoutes(authService, security).routes ++ assets.routes
       _ <- Server
              .serve(routes)
              .provide(

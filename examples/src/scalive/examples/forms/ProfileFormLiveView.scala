@@ -8,29 +8,30 @@ final case class Profile(name: String, email: String, biography: String)
 
 object Profile:
   val BiographyMaxLength = 500
+  val Root               = FormPath("profile")
+
+  val Name = FormField
+    .requiredString(Root / "name", "Name is required.")
+    .map(_.trim)
+    .validate("Name is required.")(_.nonEmpty)
+
+  val Email = FormField
+    .requiredString(Root / "email", "Email is required.")
+    .map(_.trim)
+    .validate("Email is required.")(_.nonEmpty)
+    .validate("Enter a valid email address.")(EmailPattern.matches)
+
+  val Biography = FormField
+    .requiredString(Root / "biography", "Biography is required.")
+    .map(_.trim)
+    .validate("Biography is required.")(_.nonEmpty)
+    .validate(s"Biography must be $BiographyMaxLength characters or fewer.")(
+      _.length <= BiographyMaxLength
+    )
 
   val codec: FormCodec[Profile] =
-    FormCodec { data =>
-      val fields    = data.nested("profile")
-      val name      = fields.string("name").getOrElse("").trim
-      val email     = fields.string("email").getOrElse("").trim
-      val biography = fields.string("biography").getOrElse("").trim
-      val errors    = Vector.newBuilder[FormError]
-
-      if name.isEmpty then errors += FormError("name", "Name is required.")
-      if email.isEmpty then errors += FormError("email", "Email is required.")
-      else if !EmailPattern.matches(email) then
-        errors += FormError("email", "Enter a valid email address.")
-      if biography.isEmpty then errors += FormError("biography", "Biography is required.")
-      else if biography.length > BiographyMaxLength then
-        errors += FormError(
-          "biography",
-          s"Biography must be $BiographyMaxLength characters or fewer."
-        )
-
-      val accumulated = errors.result()
-      if accumulated.isEmpty then Right(Profile(name, email, biography))
-      else Left(FormErrors(accumulated))
+    Name.codec.zip(Email.codec).zip(Biography.codec).map { case ((name, email), biography) =>
+      Profile(name, email, biography)
     }
 
   private val EmailPattern = """^[^\s@]+@[^\s@]+\.[^\s@]+$""".r
@@ -50,7 +51,10 @@ final class ProfileFormLiveView
         case Left(_)        => ZIO.succeed(model.copy(form = event.state, saved = None))
 
   def render(model: Model) =
-    val profileForm = Form.of("profile", model.form, Profile.codec)
+    val profileForm    = Form.of(Profile.Root.name, model.form, Profile.codec)
+    val nameField      = profileForm.field(Profile.Name)
+    val emailField     = profileForm.field(Profile.Email)
+    val biographyField = profileForm.field(Profile.Biography)
 
     div(
       headerTag(
@@ -73,39 +77,36 @@ final class ProfileFormLiveView
         profileForm.onChange(Msg.Validate(_)),
         profileForm.onSubmit(Msg.Save(_)),
         field(
-          label(forId := profileForm.id("name"), cls := "label", span(cls := "label-text", "Name")),
-          profileForm.text(
-            "name",
+          label(forId := nameField.id, cls := "label", span(cls := "label-text", "Name")),
+          nameField.text(
             cls         := "input input-bordered w-full",
             placeholder := "Ada Lovelace"
           ),
-          fieldErrors(profileForm, "name")
+          fieldErrors(nameField)
         ),
         field(
           label(
-            forId := profileForm.id("email"),
+            forId := emailField.id,
             cls   := "label",
             span(cls := "label-text", "Email")
           ),
-          profileForm.email(
-            "email",
+          emailField.email(
             cls         := "input input-bordered w-full",
             placeholder := "ada@example.com"
           ),
-          fieldErrors(profileForm, "email")
+          fieldErrors(emailField)
         ),
         field(
           label(
-            forId := profileForm.id("biography"),
+            forId := biographyField.id,
             cls   := "label",
             span(cls := "label-text", "Biography")
           ),
-          profileForm.textarea(
-            "biography",
+          biographyField.textarea(
             cls         := "textarea textarea-bordered min-h-36 w-full",
             placeholder := s"Up to ${Profile.BiographyMaxLength} characters"
           ),
-          fieldErrors(profileForm, "biography")
+          fieldErrors(biographyField)
         ),
         button(
           typ             := "submit",
@@ -134,9 +135,9 @@ object ProfileFormLiveView:
   private def field(form: Mod[Msg]*): HtmlElement[Msg] =
     div(cls := "form-control", form)
 
-  private def fieldErrors(form: Form[Profile], path: String): HtmlElement[Nothing] =
-    if form.isUsed(path) then
+  private def fieldErrors(field: Form.Field[?]): HtmlElement[Nothing] =
+    if field.isUsed then
       div(
-        form.errorsFor(path).map(error => p(cls := "mt-2 text-sm text-error", error.message))
+        field.errorsFor.map(error => p(cls := "mt-2 text-sm text-error", error.message))
       )
     else div()

@@ -4,7 +4,7 @@ import zio.*
 import zio.http.*
 
 import scalive.examples.ExamplesRoutes
-import scalive.{FormData, LiveLocation, LiveSecurity}
+import scalive.{FormCodec, FormData, HttpFormDecoder, LiveLocation, LiveSecurity}
 
 final case class AuthHttpConfig(secureCookies: Boolean)
 final case class AuthHttpConfigError(message: String) extends Exception(message)
@@ -31,7 +31,6 @@ object AuthHttpConfig:
 
 final class AuthHttpRoutes(
   authService: AuthService,
-  config: AuthHttpConfig,
   security: LiveSecurity):
   import AuthHttpRoutes.*
 
@@ -45,47 +44,59 @@ final class AuthHttpRoutes(
       }
     )
 
+  private val loginDecoder =
+    HttpFormDecoder.urlEncoded(LoginForm.codec, FormMaxBytes, security.csrf)
+
+  private val logoutDecoder =
+    HttpFormDecoder.urlEncoded(FormCodec.formData, FormMaxBytes, security.csrf)
+
   private def login(request: Request): UIO[Response] =
-    FormData.fromUrlEncodedBody(request.body, FormMaxBytes).either.flatMap {
-      case Left(error) =>
+    loginDecoder.decode(request).either.flatMap {
+      case Left(error @ HttpFormDecoder.Error.Body(_)) =>
         ZIO
           .logWarning(
             s"Rejected malformed login form: ${formDecodeErrorName(error)}"
           ).as(formDecodeErrorResponse(error))
-      case Right(data) =>
-        security.csrf.validate(request, data) match
-          case Left(_)  => ZIO.succeed(Response.forbidden)
-          case Right(_) =>
-            LoginForm.codec.decode(data) match
-              case Left(_)            => ZIO.succeed(invalidLoginResponse)
-              case Right(credentials) =>
-                authService.login(credentials).map {
-                  case Some(result) =>
-                    seeOther(ExamplesRoutes.profile.location).addCookie(
-                      sessionCookie(result.cookieToken, config.secureCookies)
-                    )
-                  case None => invalidLoginResponse
-                }
+      case Left(error @ HttpFormDecoder.Error.Representation(_)) =>
+        ZIO
+          .logWarning(
+            s"Rejected malformed login form: ${formDecodeErrorName(error)}"
+          ).as(formDecodeErrorResponse(error))
+      case Left(HttpFormDecoder.Error.Csrf(_))       => ZIO.succeed(Response.forbidden)
+      case Left(HttpFormDecoder.Error.Validation(_)) => ZIO.succeed(invalidLoginResponse)
+      case Right(credentials)                        =>
+        authService.login(credentials).map {
+          case Some(result) =>
+            seeOther(ExamplesRoutes.profile.location).addCookie(
+              security.cookies.make(SessionCookieName, result.cookieToken.value)
+            )
+          case None => invalidLoginResponse
+        }
     }
 
   private def logout(request: Request): UIO[Response] =
-    FormData.fromUrlEncodedBody(request.body, FormMaxBytes).either.flatMap {
-      case Left(error) => ZIO.succeed(formDecodeErrorResponse(error))
-      case Right(data) =>
+    logoutDecoder.decode(request).either.flatMap {
+      case Left(error @ HttpFormDecoder.Error.Body(_)) =>
+        ZIO.succeed(formDecodeErrorResponse(error))
+      case Left(error @ HttpFormDecoder.Error.Representation(_)) =>
+        ZIO.succeed(formDecodeErrorResponse(error))
+      case Left(HttpFormDecoder.Error.Csrf(_))       => ZIO.succeed(Response.forbidden)
+      case Left(HttpFormDecoder.Error.Validation(_)) => ZIO.succeed(Response.forbidden)
+      case Right(_)                                  =>
         val cookieToken = request
           .cookie(SessionCookieName)
           .map(cookie => SessionCookieToken(cookie.content))
 
-        (security.csrf.validate(request, data), cookieToken) match
-          case (Right(_), Some(token)) =>
+        cookieToken match
+          case Some(token) =>
             authService.logout(token).map {
               case true =>
                 seeOther(ExamplesRoutes.home.location).addCookie(
-                  expiredSessionCookie(config.secureCookies)
+                  security.cookies.expire(SessionCookieName)
                 )
               case false => Response.forbidden
             }
-          case _ => ZIO.succeed(Response.forbidden)
+          case None => ZIO.succeed(Response.forbidden)
     }
 
   private def invalidLoginResponse: Response =
@@ -106,42 +117,33 @@ object AuthHttpRoutes:
   private[auth] def seeOther(location: LiveLocation): Response =
     Response.seeOther(location.url)
 
-  private def formDecodeErrorResponse(error: FormData.DecodeError): Response =
+  private def formDecodeErrorResponse(error: HttpFormDecoder.Error): Response =
     val status = error match
-      case FormData.DecodeError.InvalidContentType(_) => Status.UnsupportedMediaType
-      case FormData.DecodeError.BodyTooLarge(_)       => Status.RequestEntityTooLarge
-      case _                                          => Status.BadRequest
+      case HttpFormDecoder.Error.Representation(
+            FormData.RepresentationError.InvalidContentType(_)
+          ) =>
+        Status.UnsupportedMediaType
+      case HttpFormDecoder.Error.Body(FormData.BodyError.TooLarge(_)) =>
+        Status.RequestEntityTooLarge
+      case _ => Status.BadRequest
     status.toResponse
 
-  private def formDecodeErrorName(error: FormData.DecodeError): String =
+  private def formDecodeErrorName(error: HttpFormDecoder.Error): String =
     error match
-      case FormData.DecodeError.InvalidContentType(_)     => "invalid_content_type"
-      case FormData.DecodeError.BodyTooLarge(_)           => "body_too_large"
-      case FormData.DecodeError.BodyRead(_)               => "body_read"
-      case FormData.DecodeError.InvalidUrlEncoding(_)     => "invalid_url_encoding"
-      case FormData.DecodeError.UnsupportedField(_, kind) => s"unsupported_$kind"
-
-  private def sessionCookie(
-    token: SessionCookieToken,
-    secureCookies: Boolean
-  ): Cookie.Response =
-    Cookie.Response(
-      SessionCookieName,
-      token.value,
-      path = Some(Path.root),
-      isSecure = secureCookies,
-      isHttpOnly = true,
-      sameSite = Some(Cookie.SameSite.Lax)
-    )
-
-  private def expiredSessionCookie(secureCookies: Boolean): Cookie.Response =
-    Cookie.Response(
-      SessionCookieName,
-      "",
-      path = Some(Path.root),
-      isSecure = secureCookies,
-      isHttpOnly = true,
-      maxAge = Some(Duration.Zero),
-      sameSite = Some(Cookie.SameSite.Lax)
-    )
+      case HttpFormDecoder.Error.Representation(
+            FormData.RepresentationError.InvalidContentType(_)
+          ) =>
+        "invalid_content_type"
+      case HttpFormDecoder.Error.Body(FormData.BodyError.TooLarge(_)) => "body_too_large"
+      case HttpFormDecoder.Error.Body(FormData.BodyError.Read(_))     => "body_read"
+      case HttpFormDecoder.Error.Representation(
+            FormData.RepresentationError.InvalidUrlEncoding(_)
+          ) =>
+        "invalid_url_encoding"
+      case HttpFormDecoder.Error.Representation(
+            FormData.RepresentationError.UnsupportedField(_, kind)
+          ) =>
+        s"unsupported_$kind"
+      case HttpFormDecoder.Error.Csrf(_)       => "csrf"
+      case HttpFormDecoder.Error.Validation(_) => "validation"
 end AuthHttpRoutes

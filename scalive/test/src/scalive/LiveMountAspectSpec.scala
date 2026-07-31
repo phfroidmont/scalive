@@ -22,6 +22,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
 
   private final case class FirstClaims(value: String) derives JsonCodec
   private final case class SecondClaims(value: String) derives JsonCodec
+  private val LoginRoute = scalive.live / "login"
 
   private def runRequest(routes: Routes[Any, Nothing], path: String) =
     URL.decode(path) match
@@ -91,6 +92,63 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
     )
 
   def spec = suite("LiveMountAspectSpec")(
+    test("authenticated aspect reads the cookie and resumes signed claims") {
+      val aspect = LiveMountAspect.authenticated[Any, MountClaims, MountUser](
+        "session",
+        LoginRoute.location
+      )(
+        token =>
+          ZIO.succeed(
+            Option.when(token == "valid")(MountClaims("alice") -> MountUser("alice"))
+          ),
+        claims => ZIO.succeed(Option.when(claims.value == "alice")(MountUser(claims.value)))
+      )
+      val disconnectedRequest = LiveMountRequest(
+        (),
+        Request.get(URL.root).addCookie(Cookie.Request("session", "valid"))
+      )
+      val connectedRequest = LiveMountRequest((), Request.get(URL.root))
+
+      for
+        disconnected <- aspect.disconnected(disconnectedRequest, ())
+        connected    <- aspect.connected(disconnected._1, connectedRequest, ())
+      yield assertTrue(
+        disconnected == (MountClaims("alice") -> MountUser("alice")),
+        connected == MountUser("alice"),
+        connectedRequest.request.cookie("session").isEmpty
+      )
+    },
+    test("authenticated aspect redirects missing, invalid, and revoked sessions") {
+      val aspect = LiveMountAspect.authenticated[Any, MountClaims, MountUser](
+        "session",
+        LoginRoute.location
+      )(
+        (_: String) => ZIO.succeed(Option.empty[(MountClaims, MountUser)]),
+        (_: MountClaims) => ZIO.succeed(Option.empty[MountUser])
+      )
+      val missing = LiveMountRequest((), Request.get(URL.root))
+      val invalid = LiveMountRequest(
+        (),
+        Request.get(URL.root).addCookie(Cookie.Request("session", "invalid"))
+      )
+
+      for
+        missingResult <- aspect.disconnected(missing, ()).either
+        invalidResult <- aspect.disconnected(invalid, ()).either
+        revokedResult <- aspect.connected(MountClaims("revoked"), missing, ()).either
+      yield assertTrue(
+        List(missingResult, invalidResult).forall(
+          _.left.exists(response =>
+            response.status == Status.SeeOther &&
+              response.header(Header.Location).exists(_.url.encode == LoginRoute.location.href)
+          )
+        ),
+        revokedResult.left.exists {
+          case LiveMountFailure.Redirect(location) => location.href == LoginRoute.location.href
+          case _                                   => false
+        }
+      )
+    },
     test("builds a fresh layered LiveView for disconnected and connected mount") {
       trait Dependency:
         def value: String

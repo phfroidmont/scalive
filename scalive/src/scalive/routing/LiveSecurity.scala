@@ -2,17 +2,17 @@ package scalive
 
 final class LiveSecurity private[scalive] (
   private[scalive] val tokenConfig: TokenConfig,
-  private[scalive] val secureCookies: Boolean):
+  val cookies: CookiePolicy):
 
-  val csrf: CsrfProtection = new CsrfProtection(tokenConfig, secureCookies)
-  val flash: HttpFlash     = new HttpFlash(tokenConfig, secureCookies)
+  val csrf: CsrfProtection = new CsrfProtection(tokenConfig, cookies)
+  val flash: HttpFlash     = new HttpFlash(tokenConfig, cookies)
 
   private[scalive] def withTokenConfig(config: TokenConfig): LiveSecurity =
-    new LiveSecurity(config, secureCookies)
+    new LiveSecurity(config, cookies)
 
 object LiveSecurity:
   def apply(
     tokenConfig: TokenConfig,
-    secureCookies: Boolean = false
+    cookies: CookiePolicy = CookiePolicy(secure = false)
   ): LiveSecurity =
-    new LiveSecurity(tokenConfig, secureCookies)
+    new LiveSecurity(tokenConfig, cookies)

@@ -11,7 +11,7 @@ object HttpFlashSpec extends ZIOSpecDefault:
   private val TargetRoute = scalive.live / "target"
   private val SourceRoute = scalive.live / "source"
   private val tokenConfig = TokenConfig("http-flash-spec-secret", 1.hour)
-  private val security    = LiveSecurity(tokenConfig, secureCookies = true)
+  private val security    = LiveSecurity(tokenConfig, CookiePolicy(secure = true))
 
   private val target = new LiveView.Eventless[Unit]:
     def mount(ctx: MountContext) = ZIO.unit

@@ -11,6 +11,15 @@ trait FormCodec[A]:
   def emap[B](f: A => Either[FormErrors, B]): FormCodec[B] =
     FormCodec(data => self.decode(data).flatMap(f))
 
+  def zip[B](that: FormCodec[B]): FormCodec[(A, B)] =
+    FormCodec { data =>
+      (self.decode(data), that.decode(data)) match
+        case (Right(left), Right(right)) => Right(left -> right)
+        case (Left(left), Left(right))   => Left(left ++ right)
+        case (Left(errors), _)           => Left(errors)
+        case (_, Left(errors))           => Left(errors)
+    }
+
 object FormCodec:
   val formData: FormCodec[FormData] =
     FormCodec(data => Right(data))

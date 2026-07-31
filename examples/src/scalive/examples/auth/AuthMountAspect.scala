@@ -6,24 +6,14 @@ import scalive.*
 import scalive.examples.ExamplesRoutes
 
 object AuthMountAspect:
-  val authenticated: LiveMountAspect[AuthService, Any, Any, AuthClaims, CurrentSession] =
-    LiveMountAspect.fromRequest[AuthService, Any, AuthClaims, CurrentSession](
-      request =>
+  val authenticated =
+    LiveMountAspect.authenticated(
+      AuthHttpRoutes.SessionCookieName,
+      ExamplesRoutes.login.location
+    )(
+      token =>
         ZIO
-          .serviceWithZIO[AuthService] { authService =>
-            request.request.cookie(AuthHttpRoutes.SessionCookieName) match
-              case Some(cookie) =>
-                authService.authenticate(SessionCookieToken(cookie.content))
-              case None => ZIO.none
-          }.flatMap {
-            case Some(currentSession) =>
-              ZIO.succeed(AuthClaims(currentSession.publicSessionId) -> currentSession)
-            case None =>
-              ZIO.fail(AuthHttpRoutes.seeOther(ExamplesRoutes.login.location))
-          },
-      (claims, _) =>
-        ZIO.serviceWithZIO[AuthService](_.resume(claims.publicSessionId)).flatMap {
-          case Some(currentSession) => ZIO.succeed(currentSession)
-          case None => ZIO.fail(LiveMountFailure.redirect(ExamplesRoutes.login.location))
-        }
+          .serviceWithZIO[AuthService](_.authenticate(SessionCookieToken(token)))
+          .map(_.map(current => AuthClaims(current.publicSessionId) -> current)),
+      claims => ZIO.serviceWithZIO[AuthService](_.resume(claims.publicSessionId))
     )

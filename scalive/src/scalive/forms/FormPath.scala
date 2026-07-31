@@ -16,6 +16,12 @@ final case class FormPath(segments: Vector[String]):
       first + segments.tail.map(segment => s"[$segment]").mkString
     }
 
+  def id: String =
+    segments.filter(_.nonEmpty).mkString("_")
+
+  def startsWith(prefix: FormPath): Boolean =
+    segments.startsWith(prefix.segments)
+
   override def toString: String = name
 
 object FormPath:

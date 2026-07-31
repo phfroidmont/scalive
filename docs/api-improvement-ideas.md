@@ -66,16 +66,15 @@ Ideas:
 
 ### Add common mount aspect builders
 
-Current issue:
+Implemented:
 
-- `LiveMountAspect` is expressive but type-heavy.
+- `LiveMountAspect.authenticated` handles named-cookie extraction, disconnected authentication, signed claims transfer, connected resumption, and typed redirects.
+- The auth example uses the builder without explicit aspect type parameters.
+- `make` and `fromRequest` remain available for advanced composition.
 
-Ideas:
+Remaining:
 
-- Add builders for common auth/session/request-context cases.
-- Provide aliases for common signatures.
-- Add examples for route-level auth, session-level auth, and request-derived context.
-- Keep the fully generic API available for advanced composition.
+- Add request-context or route-parameter-specific builders only when concrete usage patterns justify them.
 
 ### Improve root layout ergonomics
 
@@ -112,11 +111,13 @@ Implemented foundation:
 - `FormData.fromZioHttpForm` preserves existing textual fields and rejects binary or streaming fields explicitly.
 - Websocket form payloads use the same checked parser and report malformed payloads as binding failures.
 - The auth example composes the transport decoder with a rooted `LoginForm.codec` and keeps transport errors distinct from `FormErrors`.
+- `HttpFormDecoder` composes bounded body decoding, representation parsing, CSRF validation, and application decoding while preserving four exhaustive error categories.
+- Typed `FormField` declarations share exact paths between rendering and application decoding.
 
-Remaining integration work:
+Boundaries:
 
-- Decide how typed form declarations expose transport decoding without hiding its error channel.
-- Do not add a one-line `FormCodec` HTTP convenience until it can keep body, representation, and validation failures explicit.
+- `HttpFormDecoder` intentionally requires an explicit body bound and `CsrfProtection` capability.
+- Multipart and GET query-form decoding remain separate future designs.
 
 ### Add an ordinary HTTP form mode
 
@@ -129,7 +130,6 @@ Implemented:
 
 Remaining:
 
-- Keep transport decoding separate until body, representation, and validation failures can stay explicit.
 - Add multipart and additional ordinary-form capabilities only when their transport semantics are designed.
 
 ### Add typed ordinary HTTP form actions
@@ -150,7 +150,7 @@ Boundaries:
 
 Implemented:
 
-- `LiveSecurity` shares one token and cookie policy across `LiveRouter`, ordinary-form `CsrfProtection`, and HTTP flash redirects without exposing signing operations.
+- `LiveSecurity` exposes one hardened `CookiePolicy` shared by application sessions, ordinary-form `CsrfProtection`, and HTTP flash redirects without exposing signing operations.
 - Checked POST `FormAction`s receive an automatic `_csrf_token` field during disconnected and connected rendering; GET and unsafe actions remain unmanaged.
 - Validation requires exactly one bounded submitted token, verifies the signed browser cookie and parameter purposes, and compares their secrets in constant time.
 - The cookie is host-only, root-scoped, `HttpOnly`, `SameSite=Lax`, expiry-bounded, and explicitly configurable as `Secure`.
@@ -193,25 +193,26 @@ Ideas:
 
 ### Improve `FormCodec` composition
 
-Current issue:
+Implemented:
 
-- `FormCodec` has basic `map` and `emap`, but complex forms currently require manual decoding.
+- `FormCodec.zip` accumulates errors in field declaration order.
+- `FormField.requiredString`, `optionalString`, and `strings` provide reusable path-bound decoders.
+- `FormField.map` and `validate` support focused field transformations and validation.
 
-Ideas:
+Remaining:
 
-- Add combinators for required/optional fields, repeated fields, nested objects, and validated values.
-- Keep the underlying `FormData => Either[FormErrors, A]` constructor as the escape hatch.
+- Add richer field types only as concrete forms require them.
 - Avoid introducing a large validation framework unless usage proves it necessary.
 
 ### Make example forms lead with typed APIs
 
-Current issue:
+Implemented:
 
-- Some examples use raw maps and manual names even where typed form APIs exist.
+- The login and profile examples declare typed fields once and reuse them for decoding, names, IDs, rendering, errors, and used state.
+- Raw string and `FormPath` helpers remain available as escape hatches and for dynamic forms.
 
-Ideas:
+Remaining:
 
-- Update beginner examples to use `Form.of`, `FormCodec`, and `FormEvent`.
 - Keep raw payload examples in advanced or parity-focused docs.
 
 ## Routing and Navigation Improvements

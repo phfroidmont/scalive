@@ -16,7 +16,7 @@ object LoginLiveViewSpec extends ZIOSpecDefault:
   private val SessionAction       = FormAction.from(AuthHttpRoutes.SessionRoute)
   private val security = LiveSecurity(
     TokenConfig("login-live-view-spec-secret", 1.hour),
-    secureCookies = true
+    CookiePolicy(secure = true)
   )
   private val csrfProtection = security.csrf
 
@@ -70,19 +70,19 @@ object LoginLiveViewSpec extends ZIOSpecDefault:
         renderedForm.id.contains(LoginForm.FormId),
         renderedForm.names == Vector(
           CsrfProtection.ParamName,
-          LoginForm.EmailPath.name,
-          LoginForm.PasswordPath.name
+          LoginForm.Email.name,
+          LoginForm.Password.name
         ),
         validation.isRight,
         csrfCookie.exists(_.isSecure),
-        renderedForm.values(LoginForm.EmailPath) == Vector("alice@example.com"),
-        renderedForm.values(LoginForm.PasswordPath) == Vector(""),
-        fieldsByName.get(LoginForm.EmailPath.name).exists(field =>
-          field.id.contains(LoginForm.EmailId) &&
+        renderedForm.values(LoginForm.Email.path) == Vector("alice@example.com"),
+        renderedForm.values(LoginForm.Password.path) == Vector(""),
+        fieldsByName.get(LoginForm.Email.name).exists(field =>
+          field.id.contains(LoginForm.Email.id) &&
             field.inputType.contains("email") && field.required
         ),
-        fieldsByName.get(LoginForm.PasswordPath.name).exists(field =>
-          field.id.contains(LoginForm.PasswordId) &&
+        fieldsByName.get(LoginForm.Password.name).exists(field =>
+          field.id.contains(LoginForm.Password.id) &&
             field.inputType.contains("password") && field.required
         ),
         !renderedForm.hasChangeBinding,

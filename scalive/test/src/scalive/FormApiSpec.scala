@@ -19,6 +19,8 @@ object FormApiSpec extends ZIOSpecDefault:
         case None       => Left(FormErrors.one("profile[name]", "required"))
     }
 
+  private val NameField = FormField.requiredString(FormPath("profile", "name"))
+
   private def formData(value: String): FormData =
     FormData.fromUrlEncoded(value).fold(error => throw new AssertionError(error), identity)
 
@@ -156,6 +158,51 @@ object FormApiSpec extends ZIOSpecDefault:
         html.contains("is invalid"),
         html.contains("phx-feedback-for=\"profile[name]\"")
       )
+    },
+    test("typed field declarations own decoding names ids and rendering") {
+      val data = formData("profile%5Bname%5D=Alice")
+      val state = FormState(
+        raw = data,
+        value = Right(Profile("Alice")),
+        submitted = false,
+        used = Set(NameField.path)
+      )
+      val form  = Form.of("profile", state, NameField.codec.map(Profile.apply))
+      val field = form.field(NameField)
+      val html  = HtmlBuilder.build(field.text())
+
+      assertTrue(
+        NameField.codec.decode(data).contains("Alice"),
+        field.path == NameField.path,
+        field.name == "profile[name]",
+        field.id == "profile_name",
+        field.rawValues == Vector("Alice"),
+        field.decoded.contains("Alice"),
+        field.isUsed,
+        html.contains("name=\"profile[name]\""),
+        html.contains("id=\"profile_name\""),
+        html.contains("value=\"Alice\"")
+      )
+    },
+    test("typed scalar fields reject duplicates and codecs accumulate errors") {
+      val EmailField = FormField.requiredString(FormPath("profile", "email"))
+      val codec      = NameField.codec.zip(EmailField.codec)
+      val missing    = codec.decode(FormData.empty)
+      val duplicate = NameField.codec.decode(
+        FormData(Vector(NameField.name -> "first", NameField.name -> "second"))
+      )
+
+      assertTrue(
+        missing.left.exists(_.all.map(_.path) == Vector(NameField.path, EmailField.path)),
+        duplicate.left.exists(_.forPath(NameField.path).nonEmpty)
+      )
+    },
+    test("typed fields must belong to their form root") {
+      val state = FormState(FormData.empty, Right(Profile("")), submitted = false)
+      val form  = Form.of("profile", state, profileCodec)
+      val outside = FormField.requiredString(FormPath("account", "name"))
+
+      assertTrue(Try(form.field(outside)).isFailure)
     },
     test("render-side form bindings dispatch typed events") {
       final case class Changed(value: Either[FormErrors, Profile])

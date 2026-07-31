@@ -191,7 +191,7 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
       )
     },
     test("configures the CSRF cookie Secure attribute explicitly") {
-      val secure = LiveSecurity(tokenConfig, secureCookies = true).csrf
+      val secure = LiveSecurity(tokenConfig, CookiePolicy(secure = true)).csrf
       assertTrue(secure.prepare(Request.get(URL.root)).cookie.exists(_.isSecure))
     },
     test("keeps the verified token in connected render finalization") {

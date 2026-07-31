@@ -15,11 +15,18 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
     phx.onSubmitForm(codec)(f)
 
-  def field(path: String): Form.Field =
+  def field(path: String): Form.Field[Vector[String]] =
     field(FormPath.parse(path))
 
-  def field(path: FormPath): Form.Field =
-    Form.Field(this, path)
+  def field(path: FormPath): Form.Field[Vector[String]] =
+    Form.Field(this, FormField.strings(fullPath(path)), Some(path))
+
+  def field[B](definition: FormField[B]): Form.Field[B] =
+    require(
+      root.isEmpty || definition.path.startsWith(root),
+      s"field ${definition.name} is outside form root ${root.name}"
+    )
+    Form.Field(this, definition, None)
 
   def name(path: String): String =
     name(FormPath.parse(path))
@@ -31,7 +38,7 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
     id(FormPath.parse(path))
 
   def id(path: FormPath): String =
-    fullPath(path).segments.filter(_.nonEmpty).mkString("_")
+    fullPath(path).id
 
   def value(path: String): String =
     value(FormPath.parse(path))
@@ -182,10 +189,30 @@ object Form:
   def of[A](name: String, event: FormEvent[A], codec: FormCodec[A]): Form[A] =
     of(name, event.state, codec)
 
-  final case class Field(form: Form[?], path: FormPath):
-    def name: String       = form.name(path)
-    def id: String         = form.id(path)
-    def fieldValue: String = form.value(path)
+  final case class Field[A] private[scalive] (
+    form: Form[?],
+    definition: FormField[A],
+    legacyPath: Option[FormPath]):
+
+    def path: FormPath = definition.path
+    def name: String   = definition.name
+    def id: String     = definition.id
+
+    def rawValues: Vector[String] =
+      legacyPath match
+        case Some(relative) =>
+          val fullValues = form.state.raw.values(form.fullPath(relative))
+          if fullValues.nonEmpty then fullValues else form.state.raw.values(relative)
+        case None => form.state.raw.values(path)
+
+    def fieldValue: String             = rawValues.lastOption.getOrElse("")
+    def decoded: Either[FormErrors, A] = definition.codec.decode(form.state.raw)
+
+    def errorsFor: Vector[FormError] =
+      legacyPath.fold(form.state.errors.forPath(path))(form.errorsFor)
+
+    def isUsed: Boolean =
+      legacyPath.fold(form.state.isUsed(path))(form.isUsed)
 
     def text(mods: Mod[Nothing]*): HtmlElement[Nothing] =
       input(typ := "text", idAttr := id, nameAttr := name, value := fieldValue, mods)
@@ -211,7 +238,7 @@ object Form:
         idAttr   := id,
         nameAttr := name,
         value    := checkedValue,
-        checked  := form.state.raw.values(form.fullPath(path)).contains(checkedValue),
+        checked  := rawValues.contains(checkedValue),
         mods
       )
 
@@ -219,7 +246,7 @@ object Form:
       Form.textareaTag(idAttr := id, nameAttr := name, mods, fieldValue)
 
     def select(options: Iterable[(String, String)], mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      val selectedValues = form.state.raw.values(form.fullPath(path)).toSet
+      val selectedValues = rawValues.toSet
       _root_.scalive.select(
         idAttr   := id,
         nameAttr := name,
@@ -231,9 +258,12 @@ object Form:
       )
 
     def errors: HtmlElement[Nothing] =
-      form.errors(path)
+      val messages = errorsFor.map { error =>
+        Mod.Content.Tag(span(cls := "form-error", error.message))
+      }
+      div(cls := "form-errors", messages)
 
     def feedback(mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      form.feedback(path, mods*)
+      div(Form.feedbackFor := name, mods)
   end Field
 end Form

@@ -9,9 +9,9 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
   private def formData(name: String, email: String, biography: String): FormData =
     FormData(
       Vector(
-        "profile[name]"      -> name,
-        "profile[email]"     -> email,
-        "profile[biography]" -> biography
+        Profile.Name.name      -> name,
+        Profile.Email.name     -> email,
+        Profile.Biography.name -> biography
       )
     )
 
@@ -23,9 +23,9 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
         result == Left(
           FormErrors(
             Vector(
-              FormError("name", "Name is required."),
-              FormError("email", "Email is required."),
-              FormError("biography", "Biography is required.")
+              FormError(Profile.Name.path, "Name is required."),
+              FormError(Profile.Email.path, "Email is required."),
+              FormError(Profile.Biography.path, "Biography is required.")
             )
           )
         )
@@ -37,7 +37,7 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
       )
 
       assertTrue(
-        result == Left(FormErrors.one("email", "Enter a valid email address."))
+        result == Left(FormErrors.one(Profile.Email.path, "Enter a valid email address."))
       )
     },
     test("rejects a biography longer than 500 characters") {
@@ -46,7 +46,9 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
       )
 
       assertTrue(
-        result == Left(FormErrors.one("biography", "Biography must be 500 characters or fewer."))
+        result == Left(
+          FormErrors.one(Profile.Biography.path, "Biography must be 500 characters or fewer.")
+        )
       )
     },
     test("accumulates every validation error in field order") {
@@ -56,9 +58,9 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
         result == Left(
           FormErrors(
             Vector(
-              FormError("name", "Name is required."),
-              FormError("email", "Enter a valid email address."),
-              FormError("biography", "Biography must be 500 characters or fewer.")
+              FormError(Profile.Name.path, "Name is required."),
+              FormError(Profile.Email.path, "Enter a valid email address."),
+              FormError(Profile.Biography.path, "Biography must be 500 characters or fewer.")
             )
           )
         )
@@ -80,12 +82,12 @@ object ProfileFormCodecSpec extends ZIOSpecDefault:
     test("keeps initial validation errors hidden until fields are used") {
       for
         model <- ProfileFormLiveView().mount(null)
-        form = Form.of("profile", model.form, Profile.codec)
+        form = Form.of(Profile.Root.name, model.form, Profile.codec)
       yield assertTrue(
         model.form.errors.nonEmpty,
-        !form.isUsed("name"),
-        !form.isUsed("email"),
-        !form.isUsed("biography")
+        !form.field(Profile.Name).isUsed,
+        !form.field(Profile.Email).isUsed,
+        !form.field(Profile.Biography).isUsed
       )
     }
   )

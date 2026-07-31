@@ -10,8 +10,8 @@ import zio.http.{Body, Form as HttpForm, FormField as HttpFormField, MediaType}
 
 /** Ordered browser form payload with a lossless raw view and convenience accessors. */
 final case class FormData private (raw: Vector[(String, String)]):
-  lazy val fields: Map[String, FormField] =
-    raw.groupMap(_._1)(_._2).view.mapValues(values => FormField(values.toVector)).toMap
+  lazy val fields: Map[String, FormValues] =
+    raw.groupMap(_._1)(_._2).view.mapValues(values => FormValues(values.toVector)).toMap
 
   def get(name: String): Option[String] =
     values(name).lastOption
@@ -54,7 +54,7 @@ final case class FormData private (raw: Vector[(String, String)]):
     else segments.head + segments.tail.map(segment => s"[$segment]").mkString
 end FormData
 
-final case class FormField(values: Vector[String]):
+final case class FormValues(values: Vector[String]):
   def value: String = values.lastOption.getOrElse("")
 
 object FormData:
@@ -62,12 +62,18 @@ object FormData:
     case Binary
     case StreamingBinary
 
-  enum DecodeError:
+  enum BodyError:
+    case TooLarge(maxBytes: Long)
+    case Read(cause: Throwable)
+
+  enum RepresentationError:
     case InvalidContentType(actual: Option[MediaType])
-    case BodyTooLarge(maxBytes: Long)
-    case BodyRead(cause: Throwable)
     case InvalidUrlEncoding(details: String)
     case UnsupportedField(name: String, kind: UnsupportedFieldKind)
+
+  enum DecodeError:
+    case Body(error: BodyError)
+    case Representation(error: RepresentationError)
 
   val empty: FormData = FormData(Vector.empty)
 
@@ -77,7 +83,7 @@ object FormData:
   def fromMap(values: Map[String, String]): FormData =
     FormData(values.toVector)
 
-  def fromUrlEncoded(value: String): Either[DecodeError, FormData] =
+  def fromUrlEncoded(value: String): Either[RepresentationError, FormData] =
     fromUrlEncoded(value, StandardCharsets.UTF_8)
 
   def fromUrlEncodedBody(body: Body, maxBytes: Long): IO[DecodeError, FormData] =
@@ -90,26 +96,32 @@ object FormData:
       case Some(actual) if actual.matches(MediaType.application.`x-www-form-urlencoded`) =>
         body.knownContentLength match
           case Some(length) if length > maxBytes =>
-            ZIO.fail(DecodeError.BodyTooLarge(maxBytes))
+            ZIO.fail(DecodeError.Body(BodyError.TooLarge(maxBytes)))
           case _ =>
             body.asStream
               .take(maxBytes + 1)
               .runCollect
-              .mapError(DecodeError.BodyRead(_))
+              .mapError(error => DecodeError.Body(BodyError.Read(error)))
               .flatMap { bytes =>
-                if bytes.length.toLong > maxBytes then ZIO.fail(DecodeError.BodyTooLarge(maxBytes))
+                if bytes.length.toLong > maxBytes then
+                  ZIO.fail(DecodeError.Body(BodyError.TooLarge(maxBytes)))
                 else
                   val charset =
                     body.contentType.flatMap(_.charset).getOrElse(StandardCharsets.UTF_8)
-                  ZIO.fromEither(fromUrlEncoded(new String(bytes.toArray, charset), charset))
+                  ZIO
+                    .fromEither(fromUrlEncoded(new String(bytes.toArray, charset), charset))
+                    .mapError(DecodeError.Representation(_))
               }
       case actual =>
-        ZIO.fail(DecodeError.InvalidContentType(actual))
+        ZIO.fail(
+          DecodeError.Representation(RepresentationError.InvalidContentType(actual))
+        )
+  end fromUrlEncodedBody
 
-  def fromZioHttpForm(form: HttpForm): Either[DecodeError, FormData] =
+  def fromZioHttpForm(form: HttpForm): Either[RepresentationError, FormData] =
     val fields   = Vector.newBuilder[(String, String)]
     val iterator = form.formData.iterator
-    var error    = Option.empty[DecodeError]
+    var error    = Option.empty[RepresentationError]
 
     while iterator.hasNext && error.isEmpty do
       iterator.next() match
@@ -118,10 +130,10 @@ object FormData:
         case HttpFormField.Text(name, value, _, _) =>
           val _ = fields.addOne(name -> value)
         case HttpFormField.Binary(name, _, _, _, _) =>
-          error = Some(DecodeError.UnsupportedField(name, UnsupportedFieldKind.Binary))
+          error = Some(RepresentationError.UnsupportedField(name, UnsupportedFieldKind.Binary))
         case HttpFormField.StreamingBinary(name, _, _, _, _) =>
           error = Some(
-            DecodeError.UnsupportedField(name, UnsupportedFieldKind.StreamingBinary)
+            RepresentationError.UnsupportedField(name, UnsupportedFieldKind.StreamingBinary)
           )
 
     error.toLeft(FormData(fields.result()))
@@ -129,7 +141,7 @@ object FormData:
   private def fromUrlEncoded(
     value: String,
     charset: Charset
-  ): Either[DecodeError, FormData] =
+  ): Either[RepresentationError, FormData] =
     if value.isEmpty then Right(empty)
     else
       try
@@ -148,7 +160,7 @@ object FormData:
       catch
         case NonFatal(error) =>
           Left(
-            DecodeError.InvalidUrlEncoding(
+            RepresentationError.InvalidUrlEncoding(
               Option(error.getMessage).getOrElse("Invalid URL-encoded form data")
             )
           )

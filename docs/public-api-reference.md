@@ -987,12 +987,15 @@ Use one `LiveSecurity` value for the Live router and sibling ordinary HTTP handl
 ```scala
 val security = LiveSecurity(
   TokenConfig.default,
-  secureCookies = true
+  CookiePolicy(secure = true)
 )
 
-val liveRoutes = Live.router.withSecurity(security)(loginRoute)
-val httpRoutes = AuthHttpRoutes(security)
+val liveRoutes = Live.router.withSecurity(security)(loginRoute, protectedRoutes)
+val httpRoutes = AuthHttpRoutes(authService, security).routes
+val routes     = liveRoutes ++ httpRoutes
 ```
+
+`AuthHttpRoutes` is application code from the runnable authentication example, not a framework type. See [`ExamplesApp.scala`](../examples/src/scalive/examples/ExamplesApp.scala), [`AuthHttpRoutes.scala`](../examples/src/scalive/examples/auth/AuthHttpRoutes.scala), and [`AuthMountAspect.scala`](../examples/src/scalive/examples/auth/AuthMountAspect.scala) for the complete composition.
 
 `withTokenConfig` remains the direct configuration path when no ordinary handler needs to share security capabilities.
 
@@ -1086,7 +1089,10 @@ Constructors:
 ```scala
 LiveMountAspect.make(disconnected, connected)
 LiveMountAspect.fromRequest(disconnected, connected)
+LiveMountAspect.authenticated(cookieName, onUnauthenticated)(authenticate, resume)
 ```
+
+`authenticated` reads the named cookie during disconnected mount, signs the returned claims into the Live session, and calls `resume` during connected mount. Missing, invalid, and no-longer-resumable sessions redirect to `onUnauthenticated`. Claims are signed but not encrypted and must not contain secrets. Use `fromRequest` when authentication depends on route parameters or requires custom failure behavior.
 
 Context composition support:
 
@@ -1150,7 +1156,7 @@ LiveParamsCodec.custom(decodeFn, encodeFn)
 
 ```scala
 final case class FormData private (raw: Vector[(String, String)]):
-  def fields: Map[String, FormField]
+  def fields: Map[String, FormValues]
   def get(name): Option[String]
   def get(path): Option[String]
   def string(name): Option[String]
@@ -1170,14 +1176,14 @@ Constructors:
 FormData.empty
 FormData(raw)
 FormData.fromMap(values)
-FormData.fromUrlEncoded(value): Either[FormData.DecodeError, FormData]
+FormData.fromUrlEncoded(value): Either[FormData.RepresentationError, FormData]
 FormData.fromUrlEncodedBody(
   body: zio.http.Body,
   maxBytes: Long
 ): IO[FormData.DecodeError, FormData]
 FormData.fromZioHttpForm(
   form: zio.http.Form
-): Either[FormData.DecodeError, FormData]
+): Either[FormData.RepresentationError, FormData]
 ```
 
 HTTP decoding errors are transport and representation failures, not domain validation errors:
@@ -1187,26 +1193,57 @@ enum FormData.UnsupportedFieldKind:
   case Binary
   case StreamingBinary
 
-enum FormData.DecodeError:
+enum FormData.BodyError:
+  case TooLarge(maxBytes: Long)
+  case Read(cause: Throwable)
+
+enum FormData.RepresentationError:
   case InvalidContentType(actual: Option[zio.http.MediaType])
-  case BodyTooLarge(maxBytes: Long)
-  case BodyRead(cause: Throwable)
   case InvalidUrlEncoding(details: String)
   case UnsupportedField(name: String, kind: FormData.UnsupportedFieldKind)
+
+enum FormData.DecodeError:
+  case Body(error: FormData.BodyError)
+  case Representation(error: FormData.RepresentationError)
 ```
 
 `fromUrlEncoded` preserves source order, repeated names, empty values, and nested bracket names. `fromUrlEncodedBody` additionally requires an `application/x-www-form-urlencoded` body and reads at most `maxBytes + 1` bytes, so streaming bodies cannot bypass the configured limit. It defaults to UTF-8 unless the body declares a charset.
 
 `fromZioHttpForm` preserves the order of `Simple` and `Text` fields already present in a ZIO HTTP form. It rejects the whole conversion when it encounters `Binary` or `StreamingBinary`; it never drops, materializes, or coerces those fields. For URL-encoded request bodies, prefer `fromUrlEncodedBody` because ZIO HTTP 3.10.1 collapses repeated query-style values while constructing `zio.http.Form`.
 
-After transport decoding, pass the resulting `FormData` to `FormCodec.decode`. Keeping these operations separate preserves the distinction between malformed HTTP input and application validation errors.
+Pure representation decoders expose only `RepresentationError`; bounded body decoding additionally exposes `BodyError` through `DecodeError`.
 
-### `FormField`
+### `FormValues`
 
 ```scala
-final case class FormField(values: Vector[String]):
+final case class FormValues(values: Vector[String]):
   def value: String
 ```
+
+### `FormField[A]`
+
+```scala
+final class FormField[A]:
+  val path: FormPath
+  val codec: FormCodec[A]
+  def name: String
+  def id: String
+  def map[B](f: A => B): FormField[B]
+  def validate(message: String, code: Option[String] = None)(
+    predicate: A => Boolean
+  ): FormField[A]
+```
+
+Constructors:
+
+```scala
+FormField(path)(decodeValues)
+FormField.requiredString(path, blankMessage, duplicateMessage)
+FormField.optionalString(path, duplicateMessage)
+FormField.strings(path)
+```
+
+Typed fields use absolute paths and own the browser name, generated ID, and decoder. Scalar constructors reject duplicate values instead of silently choosing one.
 
 ### `FormCodec[A]`
 
@@ -1215,6 +1252,7 @@ trait FormCodec[A]:
   def decode(data: FormData): Either[FormErrors, A]
   def map[B](f: A => B): FormCodec[B]
   def emap[B](f: A => Either[FormErrors, B]): FormCodec[B]
+  def zip[B](that: FormCodec[B]): FormCodec[(A, B)]
 ```
 
 Constructors:
@@ -1282,6 +1320,7 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   def onChange(f): Mod.Attr[Msg]
   def onSubmit(f): Mod.Attr[Msg]
   def field(path): Form.Field
+  def field[B](definition: FormField[B]): Form.Field[B]
   def name(path): String
   def id(path): String
   def value(path): String
@@ -1308,7 +1347,7 @@ Form.of(name, event, codec)
 Form.http(action)(mods*)
 ```
 
-`http` renders a normal browser form whose `action` and `method` come from a `FormAction`. The companion form supports action-only forms; the instance method combines the same wrapper with typed field helpers. Neither form adds `phx-change`, `phx-submit`, `phx-trigger-action`, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `phx.triggerAction`.
+`http` renders a normal browser form whose `action` and `method` come from a `FormAction`. The companion form supports action-only forms; the instance method combines the same wrapper with field helpers. Neither form adds `phx-change`, `phx-submit`, `phx-trigger-action`, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `phx.triggerAction`.
 
 Finalized Live renders automatically add `_csrf_token` to checked POST actions. GET and `FormAction.unsafe` targets do not receive a token. The helper rejects caller-supplied `action` or `method` attributes; use `FormAction.unsafe` and the raw `form` tag when those attributes or CSRF behavior must be controlled manually.
 
@@ -1348,11 +1387,14 @@ val routes = zio.http.Routes(
   createSession -> zio.http.handler(login)
 )
 
-val loginForm = Form.of("login", state, LoginForm.codec)
+val email    = FormField.requiredString(FormPath("login", "email"))
+val password = FormField.requiredString(FormPath("login", "password"))
+val codec    = email.codec.zip(password.codec).map(LoginCredentials.apply)
+val loginForm = Form.of("login", state, codec)
 
 loginForm.http(FormAction.from(createSession))(
-  loginForm.email("email"),
-  loginForm.password("password"),
+  loginForm.field(email).email(),
+  loginForm.field(password).password(),
   button(typ := "submit", "Sign in")
 )
 ```
@@ -1361,17 +1403,24 @@ loginForm.http(FormAction.from(createSession))(
 
 ```scala
 final class LiveSecurity:
+  val cookies: CookiePolicy
   val csrf: CsrfProtection
   val flash: HttpFlash
 
 object LiveSecurity:
   def apply(
     tokenConfig: TokenConfig,
-    secureCookies: Boolean = false
+    cookies: CookiePolicy = CookiePolicy(secure = false)
   ): LiveSecurity
 ```
 
-`LiveSecurity` keeps the router, ordinary-form CSRF, and HTTP flash transport on one signing and cookie policy. Pass the same value to `LiveRouter.withSecurity` and sibling ordinary HTTP handlers.
+```scala
+final case class CookiePolicy(secure: Boolean):
+  def make(name: String, content: String, maxAge: Option[zio.Duration] = None): Cookie.Response
+  def expire(name: String): Cookie.Response
+```
+
+`LiveSecurity` keeps the router, ordinary-form CSRF, HTTP flash, and application cookies on one hardened policy. Pass the same value to `LiveRouter.withSecurity` and sibling ordinary HTTP handlers, and create application cookies through `security.cookies`.
 
 ```scala
 final class CsrfProtection:
@@ -1393,19 +1442,22 @@ object CsrfProtection:
     case InvalidToken
 ```
 
-Decode the request body with an explicit bound, validate CSRF, and only then run application decoding:
+`HttpFormDecoder` composes bounded URL-encoded body decoding, CSRF validation, and application decoding while keeping every failure category explicit:
 
 ```scala
-for
-  data <- FormData.fromUrlEncodedBody(request.body, maxBytes)
-  _    <- ZIO.fromEither(security.csrf.validate(request, data))
-  form <- ZIO.fromEither(LoginForm.codec.decode(data))
-yield form
+val decoder = HttpFormDecoder.urlEncoded(LoginForm.codec, maxBytes, security.csrf)
+decoder.decode(request)
+
+enum HttpFormDecoder.Error:
+  case Body(error: FormData.BodyError)
+  case Representation(error: FormData.RepresentationError)
+  case Csrf(error: CsrfProtection.ValidationError)
+  case Validation(errors: FormErrors)
 ```
 
 The capability uses two purpose-bound signed values containing the same random browser secret: an `HttpOnly` cookie and the submitted token. Validation requires exactly one bounded `_csrf_token` and compares secrets in constant time. Tokens are reusable until `TokenConfig.maxAge`; they are not one-time application tokens.
 
-The cookie is host-only, scoped to `/`, `HttpOnly`, and `SameSite=Lax`. `secureCookies` must be enabled whenever the browser-facing endpoint is HTTPS; Scalive does not infer deployment TLS from forwarding headers. The token check binds a form to the browser cookie but does not add a separate `Origin` or `Referer` policy.
+Cookies created by `CookiePolicy` are host-only, scoped to `/`, `HttpOnly`, and `SameSite=Lax`. `secure` must be enabled whenever the browser-facing endpoint is HTTPS; Scalive does not infer deployment TLS from forwarding headers. The token check binds a form to the browser cookie but does not add a separate `Origin` or `Referer` policy.
 
 ```scala
 final class HttpFlash:
@@ -1425,10 +1477,15 @@ final class HttpFlash:
 ### `Form.Field`
 
 ```scala
-final case class Form.Field(form: Form[?], path: FormPath):
+final case class Form.Field[A] private[scalive] (...):
+  def path: FormPath
   def name: String
   def id: String
+  def rawValues: Vector[String]
   def fieldValue: String
+  def decoded: Either[FormErrors, A]
+  def errorsFor: Vector[FormError]
+  def isUsed: Boolean
   def text(mods*): HtmlElement[Nothing]
   def text(explicitId, mods*): HtmlElement[Nothing]
   def email(mods*): HtmlElement[Nothing]
@@ -1451,6 +1508,8 @@ final case class FormPath(segments: Vector[String]):
   def isEmpty: Boolean
   def nonEmpty: Boolean
   def name: String
+  def id: String
+  def startsWith(prefix: FormPath): Boolean
   override def toString: String
 ```
 

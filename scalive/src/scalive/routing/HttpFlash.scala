@@ -6,7 +6,7 @@ import zio.http.*
 
 final class HttpFlash private[scalive] (
   tokenConfig: TokenConfig,
-  secureCookie: Boolean):
+  cookies: CookiePolicy):
 
   def seeOther(to: LiveLocation, values: (FlashKind, String)*): Response =
     addCookie(Response.seeOther(to.url), toValues(values))
@@ -37,14 +37,10 @@ final class HttpFlash private[scalive] (
     content: String,
     maxAge: zio.Duration = flashMaxAge
   ): Cookie.Response =
-    Cookie.Response(
+    cookies.make(
       FlashToken.CookieName,
       content,
-      path = Some(Path.root),
-      isSecure = secureCookie,
-      isHttpOnly = true,
-      maxAge = Some(maxAge),
-      sameSite = Some(Cookie.SameSite.Lax)
+      maxAge = Some(maxAge)
     )
 
   private def flashMaxAge: zio.Duration =

@@ -13,12 +13,11 @@ object AuthServiceSpec extends ZIOSpecDefault:
 
   private val DemoEmail        = "alice@example.com"
   private val DemoPassword     = "scalive"
-  private val secureHttpConfig = AuthHttpConfig(secureCookies = true)
   private val sessionAction    = FormAction.from(AuthHttpRoutes.SessionRoute)
   private val logoutAction     = FormAction.from(AuthHttpRoutes.LogoutRoute)
   private val security = LiveSecurity(
     TokenConfig("auth-service-spec-secret", 1.hour),
-    secureCookies = true
+    CookiePolicy(secure = true)
   )
   private val csrfProtection = security.csrf
 
@@ -62,7 +61,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
     ZIO.scoped(routes.runZIO(request))
 
   private def httpRoutes(auth: AuthService): Routes[Any, Nothing] =
-    AuthHttpRoutes(auth, secureHttpConfig, security).routes
+    AuthHttpRoutes(auth, security).routes
 
   private def responseCookies(response: Response): Chunk[Cookie.Response] =
     response.headers(Header.SetCookie).map(_.value)
@@ -74,8 +73,8 @@ object AuthServiceSpec extends ZIOSpecDefault:
     protectedPost(
       sessionAction,
       csrf,
-      LoginForm.EmailPath.name    -> DemoEmail,
-      LoginForm.PasswordPath.name -> password
+      LoginForm.Email.name    -> DemoEmail,
+      LoginForm.Password.name -> password
     )
 
   private def rawLoginRequest(
@@ -93,8 +92,8 @@ object AuthServiceSpec extends ZIOSpecDefault:
     test("decodes rooted credentials without application-owned CSRF") {
       val data = FormData(
         Vector(
-          LoginForm.EmailPath.name    -> DemoEmail,
-          LoginForm.PasswordPath.name -> DemoPassword
+          LoginForm.Email.name    -> DemoEmail,
+          LoginForm.Password.name -> DemoPassword
         )
       )
 
@@ -103,30 +102,30 @@ object AuthServiceSpec extends ZIOSpecDefault:
       )
     },
     test("rejects incomplete, oversized, and duplicated credentials") {
-      val incomplete = FormData(Vector(LoginForm.EmailPath.name -> DemoEmail))
+      val incomplete = FormData(Vector(LoginForm.Email.name -> DemoEmail))
       val oversized = FormData(
         Vector(
-          LoginForm.EmailPath.name    -> ("a" * (LoginForm.EmailMaxLength + 1)),
-          LoginForm.PasswordPath.name -> DemoPassword
+          LoginForm.Email.name    -> ("a" * (LoginForm.EmailMaxLength + 1)),
+          LoginForm.Password.name -> DemoPassword
         )
       )
       val duplicated = FormData(
         Vector(
-          LoginForm.EmailPath.name    -> "first@example.com",
-          LoginForm.EmailPath.name    -> DemoEmail,
-          LoginForm.PasswordPath.name -> DemoPassword
+          LoginForm.Email.name    -> "first@example.com",
+          LoginForm.Email.name    -> DemoEmail,
+          LoginForm.Password.name -> DemoPassword
         )
       )
 
       assertTrue(
         LoginForm.codec.decode(incomplete).left.exists(
-          _.forPath(LoginForm.PasswordPath).nonEmpty
+          _.forPath(LoginForm.Password.path).nonEmpty
         ),
         LoginForm.codec.decode(oversized).left.exists(
-          _.forPath(LoginForm.EmailPath).nonEmpty
+          _.forPath(LoginForm.Email.path).nonEmpty
         ),
         LoginForm.codec.decode(duplicated).left.exists(
-          _.forPath(LoginForm.EmailPath).nonEmpty
+          _.forPath(LoginForm.Email.path).nonEmpty
         )
       )
     },
@@ -235,8 +234,8 @@ object AuthServiceSpec extends ZIOSpecDefault:
       val first  = prepareCsrf
       val second = prepareCsrf
       val fields = Vector(
-        LoginForm.EmailPath.name    -> DemoEmail,
-        LoginForm.PasswordPath.name -> DemoPassword
+        LoginForm.Email.name    -> DemoEmail,
+        LoginForm.Password.name -> DemoPassword
       )
       val missing = postForm(sessionAction.href, fields*).addCookie(
         Cookie.Request(first.cookie.name, first.cookie.content)
@@ -295,7 +294,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
         auth <- authService
         malformed <- run(
                        httpRoutes(auth),
-                       rawLoginRequest(csrf, s"${LoginForm.EmailPath.name}=%ZZ")
+                        rawLoginRequest(csrf, s"${LoginForm.Email.name}=%ZZ")
                      )
         oversized <- run(
                        httpRoutes(auth),

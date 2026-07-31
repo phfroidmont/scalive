@@ -6,7 +6,6 @@ import java.security.SecureRandom
 import java.util.Base64
 
 import zio.http.Cookie
-import zio.http.Path
 import zio.http.Request
 import zio.http.Response
 
@@ -15,7 +14,7 @@ import scalive.Mod.Content
 
 final class CsrfProtection private[scalive] (
   tokenConfig: TokenConfig,
-  secureCookie: Boolean):
+  cookies: CookiePolicy):
   import CsrfProtection.*
 
   def validate(request: Request, data: FormData): Either[ValidationError, Unit] =
@@ -57,14 +56,10 @@ final class CsrfProtection private[scalive] (
     verified
 
   private def responseCookie(secret: String): Cookie.Response =
-    Cookie.Response(
+    cookies.make(
       CookieName,
       Token.sign[String](tokenConfig.secret, CookieTokenId, secret),
-      path = Some(Path.root),
-      isSecure = secureCookie,
-      isHttpOnly = true,
-      maxAge = Some(zio.Duration.fromMillis(tokenConfig.maxAge.toMillis)),
-      sameSite = Some(Cookie.SameSite.Lax)
+      maxAge = Some(zio.Duration.fromMillis(tokenConfig.maxAge.toMillis))
     )
 end CsrfProtection
 

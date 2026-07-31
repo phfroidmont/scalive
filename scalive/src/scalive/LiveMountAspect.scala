@@ -130,10 +130,38 @@ object LiveMountAspect:
       (claims, request, _) => connected(claims, request)
     )
 
+  /** Authenticates a named cookie during disconnected mount and resumes its signed claims during
+    * connected mount. Claims are signed but not encrypted and must not contain secrets.
+    */
+  def authenticated[R, Claims: JsonCodec, Ctx](
+    cookieName: String,
+    onUnauthenticated: LiveLocation
+  )(
+    authenticate: String => URIO[R, Option[(Claims, Ctx)]],
+    resume: Claims => URIO[R, Option[Ctx]]
+  ): LiveMountAspect[R, Any, Any, Claims, Ctx] =
+    fromRequest[R, Any, Claims, Ctx](
+      request =>
+        request.request.cookie(cookieName) match
+          case Some(cookie) =>
+            authenticate(cookie.content).flatMap {
+              case Some(result) => ZIO.succeed(result)
+              case None         => ZIO.fail(Response.seeOther(onUnauthenticated.url))
+            }
+          case None =>
+            ZIO.fail(Response.seeOther(onUnauthenticated.url)),
+      (claims, _) =>
+        resume(claims).flatMap {
+          case Some(context) => ZIO.succeed(context)
+          case None          => ZIO.fail(LiveMountFailure.redirect(onUnauthenticated))
+        }
+    )
+
   final private[scalive] case class EmptyClaims() derives JsonCodec
 
   private[scalive] def identityPipeline[A, Ctx]: LiveMountPipeline[Any, A, Ctx, Ctx] =
     LiveMountPipeline.identity[A, Ctx]
+end LiveMountAspect
 
 trait ContextAppend[In, Out]:
   type Result

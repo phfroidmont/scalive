@@ -15,7 +15,7 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
   def render(model: Unit) =
     val initialData = FormData(
       Vector(
-        EmailPath.name -> DemoEmail
+        Email.name -> DemoEmail
       )
     )
     val loginForm = Form.of(
@@ -23,6 +23,8 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
       FormState(initialData, codec.decode(initialData), submitted = false),
       codec
     )
+    val emailField    = loginForm.field(Email)
+    val passwordField = loginForm.field(Password)
 
     div(
       headerTag(
@@ -51,8 +53,7 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
             label(
               cls := "form-control w-full",
               span(cls := "label-text mb-2 font-semibold", "Email"),
-              loginForm.email(
-                "email",
+              emailField.email(
                 autoComplete := "username",
                 maxLength    := EmailMaxLength,
                 required     := true,
@@ -62,8 +63,7 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
             label(
               cls := "form-control w-full",
               span(cls := "label-text mb-2 font-semibold", "Password"),
-              loginForm.password(
-                "password",
+              passwordField.password(
                 autoComplete := "current-password",
                 maxLength    := PasswordMaxLength,
                 required     := true,

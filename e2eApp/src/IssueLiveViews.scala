@@ -957,7 +957,8 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
       event.bindingId match
         case "validate" =>
           val data = event.value.asString
-            .map(FormData.fromUrlEncoded).getOrElse(FormData.fromMap(event.params))
+            .flatMap(raw => FormData.fromUrlEncoded(raw).toOption)
+            .getOrElse(FormData.fromMap(event.params))
           LiveEventHookResult.halt(
             model.copy(
               name = data.getOrElse("name", model.name),

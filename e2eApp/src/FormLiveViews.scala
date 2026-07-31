@@ -110,11 +110,16 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
 
   private def applyRawFormValue(model: Model, value: Json): Model =
     value match
-      case Json.Str(raw) => model.copy(values = model.values ++ FormData.fromUrlEncoded(raw).asMap)
-      case _             => model
+      case Json.Str(raw) =>
+        FormData
+          .fromUrlEncoded(raw)
+          .fold(_ => model, data => model.copy(values = model.values ++ data.asMap))
+      case _ => model
 
   private def rawFormData(event: LiveEvent): FormData =
-    event.value.asString.map(FormData.fromUrlEncoded).getOrElse(FormData.fromMap(event.params))
+    event.value.asString
+      .flatMap(raw => FormData.fromUrlEncoded(raw).toOption)
+      .getOrElse(FormData.fromMap(event.params))
 
   private def maybeAwait(model: Model, event: String) =
     FormLiveView.maybeAwait(model.query, event)
@@ -151,7 +156,9 @@ object FormLiveView:
     if query.latencyMode then E2ELatencyGate.await(event) else ZIO.unit
 
   private def rawFormData(event: LiveEvent): FormData =
-    event.value.asString.map(FormData.fromUrlEncoded).getOrElse(FormData.fromMap(event.params))
+    event.value.asString
+      .flatMap(raw => FormData.fromUrlEncoded(raw).toOption)
+      .getOrElse(FormData.fromMap(event.params))
 
   private def renderForm[Msg](
     query: FormQueryParams,
@@ -556,8 +563,13 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
         E2ESandboxEval.handle(model, event.bindingId, event.value)
       else
         val usedFeedback = event.value match
-          case Json.Str(raw) => FormData.fromUrlEncoded(raw).string("myfeedback").exists(_.nonEmpty)
-          case _             => false
+          case Json.Str(raw) =>
+            FormData
+              .fromUrlEncoded(raw)
+              .toOption
+              .flatMap(_.string("myfeedback"))
+              .exists(_.nonEmpty)
+          case _ => false
         LiveEventHookResult.cont(model.copy(feedbackUsed = model.feedbackUsed || usedFeedback))
     }
 

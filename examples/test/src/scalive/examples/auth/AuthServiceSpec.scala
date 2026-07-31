@@ -39,8 +39,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
                   .login(
                     prepared.bootstrap.cookieToken,
                     prepared.context.csrfToken,
-                    DemoEmail,
-                    DemoPassword
+                    LoginCredentials(DemoEmail, DemoPassword)
                   )
                   .someOrFail(new IllegalStateException("demo login failed"))
                   .orDie
@@ -92,6 +91,23 @@ object AuthServiceSpec extends ZIOSpecDefault:
       )
     )
 
+  private def rawLoginRequest(
+    prepared: PreparedLogin,
+    body: String,
+    mediaType: MediaType = MediaType.application.`x-www-form-urlencoded`
+  ): Request =
+    Request
+      .post(
+        url(AuthHttpRoutes.SessionPath),
+        Body.fromString(body).contentType(mediaType)
+      )
+      .addCookie(
+        Cookie.Request(
+          AuthHttpRoutes.LoginContextCookieName,
+          prepared.bootstrap.cookieToken.value
+        )
+      )
+
   private def loginMountRequest(cookieToken: Option[LoginContextCookieToken]) =
     val request = cookieToken.fold(Request.get(url("/auth/login")))(token =>
       Request
@@ -112,6 +128,59 @@ object AuthServiceSpec extends ZIOSpecDefault:
       case _ => false
 
   def spec = suite("AuthServiceSpec")(
+    test("decodes a rooted login form into a typed submission") {
+      val data = FormData(
+        Vector(
+          LoginForm.CsrfPath.name     -> "csrf",
+          LoginForm.EmailPath.name    -> DemoEmail,
+          LoginForm.PasswordPath.name -> DemoPassword
+        )
+      )
+
+      assertTrue(
+        LoginForm.codec.decode(data) == Right(
+          LoginSubmission(
+            LoginCsrfToken("csrf"),
+            LoginCredentials(DemoEmail, DemoPassword)
+          )
+        )
+      )
+    },
+    test("rejects incomplete and oversized rooted login forms") {
+      val incomplete = FormData(
+        Vector(
+          LoginForm.CsrfPath.name  -> "csrf",
+          LoginForm.EmailPath.name -> DemoEmail
+        )
+      )
+      val oversized = FormData(
+        Vector(
+          LoginForm.CsrfPath.name     -> "csrf",
+          LoginForm.EmailPath.name    -> ("a" * (LoginForm.EmailMaxLength + 1)),
+          LoginForm.PasswordPath.name -> DemoPassword
+        )
+      )
+      val duplicated = FormData(
+        Vector(
+          LoginForm.CsrfPath.name     -> "csrf",
+          LoginForm.EmailPath.name    -> "first@example.com",
+          LoginForm.EmailPath.name    -> DemoEmail,
+          LoginForm.PasswordPath.name -> DemoPassword
+        )
+      )
+
+      assertTrue(
+        LoginForm.codec.decode(incomplete).left.exists(
+          _.forPath(LoginForm.PasswordPath).nonEmpty
+        ),
+        LoginForm.codec.decode(oversized).left.exists(
+          _.forPath(LoginForm.EmailPath).nonEmpty
+        ),
+        LoginForm.codec.decode(duplicated).left.exists(
+          _.forPath(LoginForm.EmailPath).nonEmpty
+        )
+      )
+    },
     test("rejects invalid credentials") {
       for
         auth     <- authService
@@ -119,8 +188,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
         result <- auth.login(
                     prepared.bootstrap.cookieToken,
                     prepared.context.csrfToken,
-                    DemoEmail,
-                    "incorrect"
+                    LoginCredentials(DemoEmail, "incorrect")
                   )
       yield assertTrue(result.isEmpty)
     },
@@ -131,14 +199,12 @@ object AuthServiceSpec extends ZIOSpecDefault:
         _ <- auth.login(
                prepared.bootstrap.cookieToken,
                prepared.context.csrfToken,
-               DemoEmail,
-               "incorrect"
+               LoginCredentials(DemoEmail, "incorrect")
              )
         reuse <- auth.login(
                    prepared.bootstrap.cookieToken,
                    prepared.context.csrfToken,
-                   DemoEmail,
-                   DemoPassword
+                   LoginCredentials(DemoEmail, DemoPassword)
                  )
       yield assertTrue(reuse.isEmpty)
     },
@@ -150,15 +216,13 @@ object AuthServiceSpec extends ZIOSpecDefault:
         transferred <- auth.login(
                          second.bootstrap.cookieToken,
                          first.context.csrfToken,
-                         DemoEmail,
-                         DemoPassword
+                         LoginCredentials(DemoEmail, DemoPassword)
                        )
         consumed <- auth.prepareLogin(second.bootstrap.cookieToken)
         original <- auth.login(
                       first.bootstrap.cookieToken,
                       first.context.csrfToken,
-                      DemoEmail,
-                      DemoPassword
+                      LoginCredentials(DemoEmail, DemoPassword)
                     )
       yield assertTrue(transferred.isEmpty, consumed.isEmpty, original.isDefined)
     },
@@ -337,9 +401,9 @@ object AuthServiceSpec extends ZIOSpecDefault:
         prepared <- beginHttpLogin(auth)
         request = loginRequest(
                     prepared,
-                    AuthHttpRoutes.LoginCsrfField -> prepared.context.csrfToken.value,
-                    AuthHttpRoutes.EmailField     -> DemoEmail,
-                    AuthHttpRoutes.PasswordField  -> DemoPassword
+                    LoginForm.CsrfPath.name     -> prepared.context.csrfToken.value,
+                    LoginForm.EmailPath.name    -> DemoEmail,
+                    LoginForm.PasswordPath.name -> DemoPassword
                   )
         response <- run(httpRoutes(auth), request)
         cookies   = responseCookies(response)
@@ -368,9 +432,9 @@ object AuthServiceSpec extends ZIOSpecDefault:
         prepared <- beginHttpLogin(auth)
         request = loginRequest(
                     prepared,
-                    AuthHttpRoutes.LoginCsrfField -> prepared.context.csrfToken.value,
-                    AuthHttpRoutes.EmailField     -> DemoEmail,
-                    AuthHttpRoutes.PasswordField  -> "incorrect"
+                    LoginForm.CsrfPath.name     -> prepared.context.csrfToken.value,
+                    LoginForm.EmailPath.name    -> DemoEmail,
+                    LoginForm.PasswordPath.name -> "incorrect"
                   )
         response <- run(httpRoutes(auth), request)
         redirect = response.header(Header.Location).map(_.url.encode)
@@ -387,8 +451,8 @@ object AuthServiceSpec extends ZIOSpecDefault:
         prepared <- beginHttpLogin(auth)
         request = loginRequest(
                     prepared,
-                    AuthHttpRoutes.LoginCsrfField -> prepared.context.csrfToken.value,
-                    AuthHttpRoutes.EmailField     -> DemoEmail
+                    LoginForm.CsrfPath.name  -> prepared.context.csrfToken.value,
+                    LoginForm.EmailPath.name -> DemoEmail
                   )
         response <- run(httpRoutes(auth), request)
         reuse    <- auth.prepareLogin(prepared.bootstrap.cookieToken)
@@ -400,8 +464,8 @@ object AuthServiceSpec extends ZIOSpecDefault:
         prepared <- beginHttpLogin(auth)
         request = loginRequest(
                     prepared,
-                    AuthHttpRoutes.EmailField    -> DemoEmail,
-                    AuthHttpRoutes.PasswordField -> DemoPassword
+                    LoginForm.EmailPath.name    -> DemoEmail,
+                    LoginForm.PasswordPath.name -> DemoPassword
                   )
         response <- run(httpRoutes(auth), request)
         reuse    <- auth.prepareLogin(prepared.bootstrap.cookieToken)
@@ -420,9 +484,9 @@ object AuthServiceSpec extends ZIOSpecDefault:
         prepared <- beginHttpLogin(auth)
         request = loginRequest(
                     prepared,
-                    AuthHttpRoutes.LoginCsrfField -> "invalid",
-                    AuthHttpRoutes.EmailField     -> DemoEmail,
-                    AuthHttpRoutes.PasswordField  -> DemoPassword
+                    LoginForm.CsrfPath.name     -> "invalid",
+                    LoginForm.EmailPath.name    -> DemoEmail,
+                    LoginForm.PasswordPath.name -> DemoPassword
                   )
         response <- run(httpRoutes(auth), request)
         reuse    <- auth.prepareLogin(prepared.bootstrap.cookieToken)
@@ -432,6 +496,53 @@ object AuthServiceSpec extends ZIOSpecDefault:
           _.url.encode == "/auth/login/bootstrap?invalid=true"
         ),
         responseCookies(response).forall(_.name != AuthHttpRoutes.SessionCookieName),
+        reuse.isEmpty
+      )
+    },
+    test("HTTP malformed login form fails as a bad request and consumes its context") {
+      for
+        auth     <- authService
+        prepared <- beginHttpLogin(auth)
+        response <- run(
+                      httpRoutes(auth),
+                      rawLoginRequest(prepared, s"${LoginForm.EmailPath.name}=%ZZ")
+                    )
+        reuse <- auth.prepareLogin(prepared.bootstrap.cookieToken)
+        cookie = responseCookies(response).find(_.name == AuthHttpRoutes.LoginContextCookieName)
+      yield assertTrue(
+        response.status == Status.BadRequest,
+        cookie.exists(_.maxAge.contains(Duration.Zero)),
+        reuse.isEmpty
+      )
+    },
+    test("HTTP oversized login form fails before decoding and consumes its context") {
+      for
+        auth     <- authService
+        prepared <- beginHttpLogin(auth)
+        response <- run(
+                      httpRoutes(auth),
+                      rawLoginRequest(
+                        prepared,
+                        "x" * (AuthHttpRoutes.LoginFormMaxBytes.toInt + 1)
+                      )
+                    )
+        reuse <- auth.prepareLogin(prepared.bootstrap.cookieToken)
+      yield assertTrue(
+        response.status == Status.RequestEntityTooLarge,
+        reuse.isEmpty
+      )
+    },
+    test("HTTP login rejects the wrong content type and consumes its context") {
+      for
+        auth     <- authService
+        prepared <- beginHttpLogin(auth)
+        response <- run(
+                      httpRoutes(auth),
+                      rawLoginRequest(prepared, "{}", MediaType.application.json)
+                    )
+        reuse <- auth.prepareLogin(prepared.bootstrap.cookieToken)
+      yield assertTrue(
+        response.status == Status.UnsupportedMediaType,
         reuse.isEmpty
       )
     },

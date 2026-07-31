@@ -9,6 +9,7 @@ final class LoginLiveView(
   invalidLogin: Boolean)
     extends LiveView.Eventless[LoginLiveView.Model]:
   import AuthHttpRoutes.*
+  import LoginForm.*
   import LoginLiveView.*
 
   def mount(ctx: MountContext) =
@@ -42,7 +43,7 @@ final class LoginLiveView(
             cls    := "space-y-5",
             input(
               typ      := "hidden",
-              nameAttr := LoginCsrfField,
+              nameAttr := CsrfPath.name,
               value    := model.csrfToken.value
             ),
             label(
@@ -50,9 +51,10 @@ final class LoginLiveView(
               span(cls := "label-text mb-2 font-semibold", "Email"),
               input(
                 typ          := "email",
-                nameAttr     := EmailField,
+                nameAttr     := EmailPath.name,
                 value        := "alice@example.com",
                 autoComplete := "username",
+                maxLength    := EmailMaxLength,
                 required     := true,
                 cls          := "input input-bordered w-full"
               )
@@ -62,8 +64,9 @@ final class LoginLiveView(
               span(cls := "label-text mb-2 font-semibold", "Password"),
               input(
                 typ          := "password",
-                nameAttr     := PasswordField,
+                nameAttr     := PasswordPath.name,
                 autoComplete := "current-password",
+                maxLength    := PasswordMaxLength,
                 required     := true,
                 cls          := "input input-bordered w-full"
               )

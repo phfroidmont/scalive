@@ -11,6 +11,13 @@ import zio.json.*
 
 final case class LoginCsrfToken(value: String)
 final case class LoginContextCookieToken(value: String)
+
+object LoginContextCookieToken:
+  val MaxLength = 128
+
+  def fromUntrusted(value: String): Option[LoginContextCookieToken] =
+    Option.when(value.nonEmpty && value.length <= MaxLength)(LoginContextCookieToken(value))
+
 final case class PublicLoginContextId(value: String) derives JsonCodec
 final case class LoginBootstrap(cookieToken: LoginContextCookieToken)
 final case class LoginContext(publicId: PublicLoginContextId, csrfToken: LoginCsrfToken)
@@ -61,9 +68,9 @@ trait AuthService:
   def login(
     cookieToken: LoginContextCookieToken,
     csrfToken: LoginCsrfToken,
-    email: String,
-    password: String
+    credentials: LoginCredentials
   ): UIO[Option[LoginResult]]
+  def rejectLoginAttempt(cookieToken: LoginContextCookieToken): UIO[Unit]
   def authenticate(cookieToken: SessionCookieToken): UIO[Option[CurrentSession]]
   def resume(publicSessionId: PublicSessionId): UIO[Option[CurrentSession]]
   def logout(cookieToken: SessionCookieToken, csrfToken: LogoutCsrfToken): UIO[Boolean]
@@ -152,8 +159,7 @@ object AuthService:
           def login(
             cookieToken: LoginContextCookieToken,
             csrfToken: LoginCsrfToken,
-            email: String,
-            password: String
+            credentials: LoginCredentials
           ): UIO[Option[LoginResult]] =
             Clock.instant.flatMap { now =>
               stateRef
@@ -168,10 +174,21 @@ object AuthService:
                     loginContextsByCookieHash = pruned.loginContextsByCookieHash - cookieHash
                   )
                 }.flatMap { csrfWasValid =>
-                  if csrfWasValid && validCredentials(email, password) then
+                  if csrfWasValid && validCredentials(credentials) then
                     createSession(stateRef, config)
                   else ZIO.none
                 }
+            }
+
+          def rejectLoginAttempt(cookieToken: LoginContextCookieToken): UIO[Unit] =
+            Clock.instant.flatMap { now =>
+              stateRef.update { state =>
+                val pruned = prune(state, now)
+                pruned.copy(
+                  loginContextsByCookieHash =
+                    pruned.loginContextsByCookieHash - hash(cookieToken.value)
+                )
+              }
             }
 
           def authenticate(cookieToken: SessionCookieToken): UIO[Option[CurrentSession]] =
@@ -287,8 +304,9 @@ object AuthService:
       Base64.getUrlEncoder.withoutPadding().encodeToString(bytes)
     }
 
-  private def validCredentials(email: String, password: String): Boolean =
-    constantTimeEquals(email, DemoEmail) & constantTimeEquals(password, DemoPassword)
+  private def validCredentials(credentials: LoginCredentials): Boolean =
+    constantTimeEquals(credentials.email, DemoEmail) &
+      constantTimeEquals(credentials.password, DemoPassword)
 
   private def hash(value: String): String =
     val digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))

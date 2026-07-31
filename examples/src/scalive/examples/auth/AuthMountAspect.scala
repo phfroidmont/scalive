@@ -42,7 +42,9 @@ object LoginMountAspect:
           .serviceWithZIO[AuthService] { authService =>
             request.request.cookie(AuthHttpRoutes.LoginContextCookieName) match
               case Some(cookie) =>
-                authService.prepareLogin(LoginContextCookieToken(cookie.content))
+                LoginContextCookieToken
+                  .fromUntrusted(cookie.content)
+                  .fold(ZIO.none)(authService.prepareLogin)
               case None => ZIO.none
           }.flatMap {
             case Some(context) =>

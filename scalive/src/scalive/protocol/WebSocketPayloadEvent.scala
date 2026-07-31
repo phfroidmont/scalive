@@ -4,19 +4,26 @@ import zio.json.*
 import zio.json.ast.Json
 
 private[scalive] object WebSocketPayloadEvent:
-  def bindingPayload(p: WebSocketMessage.Payload.Event): BindingPayload =
+  def bindingPayload(p: WebSocketMessage.Payload.Event): Either[String, BindingPayload] =
     p.`type` match
-      case "form" => BindingPayload.Form(formData(p), formMeta(p))
-      case _      => BindingPayload.Params(params(p))
+      case "form" =>
+        decodeFormData(p).map(data => BindingPayload.Form(data, formMeta(p, data)))
+      case _ => Right(BindingPayload.Params(params(p)))
 
   def formMeta(p: WebSocketMessage.Payload.Event): FormEvent.Meta =
+    formMeta(p, formData(p))
+
+  private def formMeta(
+    p: WebSocketMessage.Payload.Event,
+    data: FormData
+  ): FormEvent.Meta =
     val fields = p.meta match
       case Some(meta: Json.Obj) => meta.fields.toMap
       case _                    => Map.empty[String, Json]
 
     FormEvent.Meta(
       target = fields.get("_target").flatMap(decodeFormTarget),
-      submitter = decodeFormSubmitter(fields, formData(p)),
+      submitter = decodeFormSubmitter(fields, data),
       recovery = fields
         .get("_recover")
         .orElse(fields.get("_recovery"))
@@ -28,12 +35,21 @@ private[scalive] object WebSocketPayloadEvent:
     )
 
   def formData(p: WebSocketMessage.Payload.Event): FormData =
+    decodeFormData(p).getOrElse(FormData.empty)
+
+  private def decodeFormData(
+    p: WebSocketMessage.Payload.Event
+  ): Either[String, FormData] =
     p.`type` match
       case "form" =>
         p.value.asString
-          .map(FormData.fromUrlEncoded)
-          .getOrElse(FormData.empty)
-      case _ => FormData.fromMap(decodeObjectToStringMap(p.value))
+          .toRight("Form event payload must be a URL-encoded string")
+          .flatMap(
+            FormData
+              .fromUrlEncoded(_)
+              .left.map(error => s"Could not decode form event payload: $error")
+          )
+      case _ => Right(FormData.fromMap(decodeObjectToStringMap(p.value)))
 
   def params(p: WebSocketMessage.Payload.Event): Map[String, String] =
     val base =

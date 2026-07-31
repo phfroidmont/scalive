@@ -3,8 +3,8 @@ package scalive.examples.auth
 import zio.*
 import zio.http.*
 
-import scalive.LiveLocation
 import scalive.examples.ExamplesRoutes
+import scalive.{FormData, LiveLocation}
 
 final case class AuthHttpConfig(secureCookies: Boolean)
 final case class AuthHttpConfigError(message: String) extends Exception(message)
@@ -55,30 +55,33 @@ final class AuthHttpRoutes(authService: AuthService, config: AuthHttpConfig):
     }
 
   private def login(request: Request): UIO[Response] =
-    request.body.asURLEncodedForm.option.flatMap { form =>
-      val cookieToken = request
-        .cookie(LoginContextCookieName)
-        .map(cookie => LoginContextCookieToken(cookie.content))
-
-      cookieToken match
-        case Some(cookieToken) =>
-          val csrf = form
-            .flatMap(field(_, LoginCsrfField))
-            .map(LoginCsrfToken(_))
-            .getOrElse(LoginCsrfToken(""))
-          val email    = form.flatMap(field(_, EmailField)).getOrElse("")
-          val password = form.flatMap(field(_, PasswordField)).getOrElse("")
-
-          authService.login(cookieToken, csrf, email, password).map {
-            case Some(result) =>
-              seeOther(ExamplesRoutes.profile.location).addCookies(
-                sessionCookie(result.cookieToken, config.secureCookies),
-                expiredLoginContextCookie(config.secureCookies)
-              )
-            case None => invalidLoginResponse
-          }
-        case None => ZIO.succeed(invalidLoginResponse)
-    }
+    request
+      .cookie(LoginContextCookieName)
+      .flatMap(cookie => LoginContextCookieToken.fromUntrusted(cookie.content)) match
+      case Some(cookieToken) =>
+        FormData.fromUrlEncodedBody(request.body, LoginFormMaxBytes).either.flatMap {
+          case Right(data) =>
+            LoginForm.codec.decode(data) match
+              case Right(submission) =>
+                authService
+                  .login(cookieToken, submission.csrfToken, submission.credentials).map {
+                    case Some(result) =>
+                      seeOther(ExamplesRoutes.profile.location).addCookies(
+                        sessionCookie(result.cookieToken, config.secureCookies),
+                        expiredLoginContextCookie(config.secureCookies)
+                      )
+                    case None => invalidLoginResponse
+                  }
+              case Left(_) =>
+                authService.rejectLoginAttempt(cookieToken).as(invalidLoginResponse)
+          case Left(error) =>
+            authService.rejectLoginAttempt(cookieToken) *>
+              ZIO.logWarning(
+                s"Rejected malformed login form: ${loginFormDecodeErrorName(error)}"
+              ) *>
+              ZIO.succeed(invalidLoginFormResponse(error))
+        }
+      case None => ZIO.succeed(invalidLoginResponse)
 
   private def logout(request: Request): UIO[Response] =
     request.body.asURLEncodedForm.option.flatMap { form =>
@@ -103,6 +106,22 @@ final class AuthHttpRoutes(authService: AuthService, config: AuthHttpConfig):
   private def field(form: Form, name: String): Option[String] =
     form.get(name).flatMap(_.stringValue)
 
+  private def invalidLoginFormResponse(error: FormData.DecodeError): Response =
+    val status = error match
+      case FormData.DecodeError.InvalidContentType(_) => Status.UnsupportedMediaType
+      case FormData.DecodeError.BodyTooLarge(_)       => Status.RequestEntityTooLarge
+      case _                                          => Status.BadRequest
+
+    status.toResponse.addCookie(expiredLoginContextCookie(config.secureCookies))
+
+  private def loginFormDecodeErrorName(error: FormData.DecodeError): String =
+    error match
+      case FormData.DecodeError.InvalidContentType(_)     => "invalid_content_type"
+      case FormData.DecodeError.BodyTooLarge(_)           => "body_too_large"
+      case FormData.DecodeError.BodyRead(_)               => "body_read"
+      case FormData.DecodeError.InvalidUrlEncoding(_)     => "invalid_url_encoding"
+      case FormData.DecodeError.UnsupportedField(_, kind) => s"unsupported_$kind"
+
   private def invalidLoginResponse: Response =
     Response
       .seeOther(loginBootstrapUrl(invalid = true))
@@ -115,10 +134,9 @@ object AuthHttpRoutes:
   val LoginBootstrapPath     = "/auth/login/bootstrap"
   val SessionPath            = "/auth/session"
   val LogoutPath             = "/auth/logout"
-  val LoginCsrfField         = "login_csrf"
   val LogoutCsrfField        = "logout_csrf"
-  val EmailField             = "email"
-  val PasswordField          = "password"
+
+  private[auth] val LoginFormMaxBytes = 4096L
 
   private val LoginContextCookieMaxAge = AuthServiceConfig.DefaultLoginContextTtl
 

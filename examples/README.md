@@ -83,7 +83,7 @@ Authentication also uses three ordinary HTTP endpoints in
 | Endpoint                    | Lesson                                                                                                   |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `GET /auth/login/bootstrap` | Create a short-lived login context and redirect with an opaque pre-authentication cookie                 |
-| `POST /auth/session`        | Validate a one-time CSRF token and credentials, rotate cookies, and redirect to the protected Live route |
+| `POST /auth/session`        | Decode a bounded typed form, validate one-time CSRF and credentials, rotate cookies, and redirect         |
 | `POST /auth/logout`         | Validate session-specific CSRF, revoke the server session, expire the cookie, and redirect home          |
 
 ## Data Lifetime
@@ -112,7 +112,10 @@ There is no database or durable persistence in this module.
 The auth example teaches flow and API composition: an ordinary HTTP login/logout
 boundary, one-time application CSRF, opaque high-entropy cookies, hashed token
 lookup, `HttpOnly`, `SameSite=Lax`, configurable `Secure`, revocation, signed
-non-secret claims, and typed route context.
+non-secret claims, and typed route context. The login boundary preserves repeated
+URL-encoded fields during transport decoding, then validates singular rooted
+`login[...]` fields through `FormCodec`; malformed, oversized, and wrong-content-type
+requests remain distinct from domain validation failures.
 
 It is not a production identity system. It has one hard-coded account and no
 database, password hashing, account management, rate limiting, audit trail, TLS

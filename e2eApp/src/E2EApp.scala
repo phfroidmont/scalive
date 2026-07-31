@@ -147,12 +147,16 @@ object E2EApp extends ZIOAppDefault:
       },
       Method.POST / "submit" -> handler { (req: Request) =>
         req.body.asString.orDie.map { body =>
-          val fields = FormData.fromUrlEncoded(body).raw
-          val json   = fields
-            .map { case (key, value) => s"\"$key\":\"$value\"" }
-            .mkString("{", ",", "}")
+          FormData
+            .fromUrlEncoded(body).fold(
+              _ => Response.badRequest,
+              data =>
+                val json = data.raw
+                  .map { case (key, value) => s"\"$key\":\"$value\"" }
+                  .mkString("{", ",", "}")
 
-          Response.text(json)
+                Response.text(json)
+            )
         }
       },
       Method.POST / "api" / "test" -> handler(Response.text("OK")),

@@ -224,7 +224,7 @@ private[scalive] object WebSocketMessage:
     given JsonEncoder[Payload.Diff]  = JsonEncoder[scalive.Diff].contramap(_.diff)
 
     extension (p: Payload.Event)
-      def bindingPayload: BindingPayload =
+      def bindingPayload: Either[String, BindingPayload] =
         WebSocketPayloadEvent.bindingPayload(p)
 
       def formMeta: FormEvent.Meta =

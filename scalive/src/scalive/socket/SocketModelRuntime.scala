@@ -60,7 +60,7 @@ private[scalive] object SocketModelRuntime:
   ): Task[Unit] =
     rendered.bindings.get(event.event) match
       case Some(binding) =>
-        binding(event.bindingPayload) match
+        event.bindingPayload.flatMap(binding(_)) match
           case Right(ComponentMessage(cid, message)) if event.cid.contains(cid) =>
             SocketComponentRuntime
               .handleComponentMessage(

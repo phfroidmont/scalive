@@ -16,6 +16,9 @@ object FormApiSpec extends ZIOSpecDefault:
         case None       => Left(FormErrors.one("profile[name]", "required"))
     }
 
+  private def formData(value: String): FormData =
+    FormData.fromUrlEncoded(value).fold(error => throw new AssertionError(error), identity)
+
   override def spec = suite("FormApiSpec")(
     test("parses nested and array form paths") {
       assertTrue(
@@ -26,8 +29,7 @@ object FormApiSpec extends ZIOSpecDefault:
           "name"
         ),
         FormPath("profile", "name").name == "profile[name]",
-        FormData
-          .fromUrlEncoded("profile%5Bname%5D=Alice")
+        formData("profile%5Bname%5D=Alice")
           .string(FormPath("profile", "name"))
           .contains("Alice")
       )
@@ -105,7 +107,7 @@ object FormApiSpec extends ZIOSpecDefault:
         meta = Some(Json.Obj("_target" -> Json.Str("profile[name]")))
       )
 
-      val BindingPayload.Form(data, meta) = event.bindingPayload: @unchecked
+      val Right(BindingPayload.Form(data, meta)) = event.bindingPayload: @unchecked
 
       assertTrue(
         data.string("profile[name]").contains("Alice"),
@@ -114,9 +116,20 @@ object FormApiSpec extends ZIOSpecDefault:
         meta.metadata.get("_target").contains("profile[name]")
       )
     },
+    test("websocket form payload reports malformed URL encoding") {
+      val event: Payload.Event = Payload.Event(
+        `type` = "form",
+        event = "validate",
+        value = Json.Str("profile%5Bname%5D=%ZZ")
+      )
+
+      assertTrue(
+        event.bindingPayload.left.exists(_.startsWith("Could not decode form event payload:"))
+      )
+    },
     test("render-side form helpers generate names ids values and errors") {
       val state = FormState(
-        raw = FormData.fromUrlEncoded("profile%5Bname%5D=Alice"),
+        raw = formData("profile%5Bname%5D=Alice"),
         value = Left(FormErrors.one("profile[name]", "is invalid")),
         submitted = false
       )
@@ -152,7 +165,7 @@ object FormApiSpec extends ZIOSpecDefault:
       )
 
       val binding = BindingRegistry.collect[Changed](view).values.head
-      val payload = BindingPayload.Form(FormData.fromUrlEncoded("profile%5Bname%5D=Alice"))
+      val payload = BindingPayload.Form(formData("profile%5Bname%5D=Alice"))
 
       assertTrue(binding(payload) == Right(Changed(Right(Profile("Alice")))))
     },

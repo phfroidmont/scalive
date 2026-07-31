@@ -103,6 +103,82 @@ Ideas:
 
 ## Forms Improvements
 
+### Decode ordinary HTTP forms with `FormCodec`
+
+Implemented foundation:
+
+- `FormData.fromUrlEncoded` reports malformed encoding and preserves ordered repeated and nested fields.
+- `FormData.fromUrlEncodedBody` enforces content type and an explicit byte limit without using ZIO HTTP's lossy query-form conversion.
+- `FormData.fromZioHttpForm` preserves existing textual fields and rejects binary or streaming fields explicitly.
+- Websocket form payloads use the same checked parser and report malformed payloads as binding failures.
+- The auth example composes the transport decoder with a rooted `LoginForm.codec` and keeps transport errors distinct from `FormErrors`.
+
+Remaining work belongs to the ordinary HTTP form mode:
+
+- Decide how typed form declarations expose transport decoding without hiding its error channel.
+- Do not add a one-line `FormCodec` HTTP convenience until the ordinary form API can keep body, representation, and validation failures explicit.
+
+### Add an ordinary HTTP form mode
+
+Current issue:
+
+- `Form` provides typed rendering helpers and LiveView event bindings, but it does not model a normal browser form that submits directly to an HTTP handler.
+- Applications manually keep rendered field names, HTTP decoding, method, and action in sync.
+
+Ideas:
+
+- Build the ordinary mode on `Form`, `FormPath`, `FormData`, and `FormCodec` rather than creating a second form system.
+- Let one form definition drive rendered names and IDs plus HTTP body decoding.
+- Do not add a `phx-submit` binding by default; direct HTTP submission must remain the simplest path for session-mutating operations.
+- Keep `phx.triggerAction` as an explicit opt-in for applications that need LiveView validation before the final HTTP submission.
+- Preserve raw HTML form construction as an escape hatch.
+
+### Add typed ordinary HTTP form actions
+
+Current issue:
+
+- `LiveLocation` gives Live routes checked outbound locations, but ordinary form actions such as `POST /auth/session` remain raw strings.
+- Route matching and outbound action construction can drift apart.
+
+Ideas:
+
+- Introduce or adapt a small typed representation containing the HTTP method and an encodable relative location.
+- Investigate adapting ZIO HTTP endpoints before adding a parallel general-purpose HTTP routing DSL.
+- Make the ordinary form helper derive its `action` and `method` from that representation.
+- Keep an explicitly unsafe string/URL action for external targets and unusual integrations.
+
+### Support CSRF-protected ordinary HTTP forms
+
+Current issue:
+
+- Scalive's built-in CSRF implementation protects the LiveSocket connection and is private to the routing runtime.
+- Applications that mutate cookies or sessions through ordinary HTTP must build their own CSRF token, cookie, hidden input, and validator.
+- The auth example needs a pre-authentication context and two extra redirects primarily to establish this protection.
+
+Ideas:
+
+- Provide a public ordinary-form CSRF capability integrated with the Live route render and ZIO HTTP handler boundary.
+- Generate the hidden input automatically for non-GET same-origin actions unless explicitly disabled.
+- Validate missing, malformed, expired, transferred, and mismatched tokens before application form decoding.
+- Ensure token rendering remains stable across disconnected render and connected mount.
+- Keep token internals and signing secrets private, and document cookie, origin, host, expiry, and `Secure` semantics.
+- Test login CSRF specifically; preventing state changes is not sufficient if an attacker can log a victim into the attacker's account.
+
+### Bridge ordinary HTTP redirects into Live flash
+
+Current issue:
+
+- `ctx.flash` is public inside LiveView lifecycle callbacks, but an ordinary HTTP handler cannot produce a flash consumed by the next Live route.
+- Applications fall back to ad hoc query parameters such as `?invalid=true`.
+
+Ideas:
+
+- Add a public helper or service that attaches typed flash values to an ordinary redirect response.
+- Accept `LiveLocation` for redirects and preserve an explicit unsafe URL escape hatch.
+- Reuse the existing signed flash transport without exposing `TokenConfig` secrets to application code.
+- Preserve consume-once and stale-cookie cleanup behavior across HTTP-to-Live and Live-to-Live navigation.
+- Apply appropriate `HttpOnly`, `SameSite`, `Secure`, path, and expiry policy to the flash cookie.
+
 ### Expand typed form helpers carefully
 
 Current issue:
@@ -137,6 +213,21 @@ Ideas:
 
 - Update beginner examples to use `Form.of`, `FormCodec`, and `FormEvent`.
 - Keep raw payload examples in advanced or parity-focused docs.
+
+### Migrate the authentication example incrementally
+
+Current issue:
+
+- The auth example correctly uses an ordinary HTTP boundary, but raw query, action, and field strings obscure which gaps belong to the example and which belong to Scalive.
+
+Ideas:
+
+- First, declare the invalid-login query through the existing typed query route API and use `LiveView.Routed.Eventless`.
+- Decode login submissions into a valid ADT with `FormCodec`; do not construct empty token wrappers for missing input.
+- Add bounded credential and token inputs before hashing or comparison.
+- Add stable form/input IDs and render assertions while retaining direct HTTP submission.
+- After ordinary-form CSRF and flash bridges exist, remove the bootstrap round-trip, custom login context, and `invalid=true` transport.
+- Keep the example explicitly educational; do not turn these API improvements into a general authentication framework.
 
 ## Routing and Navigation Improvements
 
@@ -243,3 +334,29 @@ Ideas:
 - Document the required JavaScript setup in the quickstart.
 - Add a minimal generated JS snippet.
 - Consider a helper package or template for common LiveSocket options.
+
+## Testing Improvements
+
+### Add Scalive-native LiveView form test support
+
+Current issue:
+
+- Scalive has no supported application-facing test API for mounting a LiveView, selecting a form, inspecting rendered fields, or following a triggered HTTP action.
+- The auth tests cover services, HTTP routes, cookies, and mount aspects but do not render `LoginLiveView` or exercise the complete browser flow.
+
+Ideas:
+
+- Start with deterministic disconnected rendering and semantic HTML/form queries.
+- Add helpers to inspect form action, method, names, values, and event bindings without string-fragment assertions.
+- Add connected mount and typed event submission only after the render API is stable.
+- Support ordinary HTTP form submission and `phx.triggerAction` as separate, explicit test paths.
+- Design a Scala-native API around typed messages and models instead of copying Phoenix `LiveViewTest` function names.
+
+## Suggested Login API Work Order
+
+1. [x] Add checked, bounded HTTP-to-`FormData` decoding and decode the rooted login submission with `FormCodec`.
+2. Move the invalid-login marker to the existing typed query route API.
+3. Add minimal disconnected render and form-query test support, then cover `LoginLiveView`.
+4. Design typed ordinary HTTP actions and the ordinary form mode together.
+5. Add ordinary-form CSRF generation and validation, then remove the login bootstrap context.
+6. Add the HTTP-to-Live flash bridge, then remove the invalid-login query marker.

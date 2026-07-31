@@ -113,39 +113,38 @@ Implemented foundation:
 - Websocket form payloads use the same checked parser and report malformed payloads as binding failures.
 - The auth example composes the transport decoder with a rooted `LoginForm.codec` and keeps transport errors distinct from `FormErrors`.
 
-Remaining work belongs to the ordinary HTTP form mode:
+Remaining integration work:
 
 - Decide how typed form declarations expose transport decoding without hiding its error channel.
-- Do not add a one-line `FormCodec` HTTP convenience until the ordinary form API can keep body, representation, and validation failures explicit.
+- Do not add a one-line `FormCodec` HTTP convenience until it can keep body, representation, and validation failures explicit.
 
 ### Add an ordinary HTTP form mode
 
-Current issue:
+Implemented:
 
-- `Form` provides typed rendering helpers and LiveView event bindings, but it does not model a normal browser form that submits directly to an HTTP handler.
-- Applications manually keep rendered field names, HTTP decoding, method, and action in sync.
+- `Form.http` renders an ordinary browser form from a `FormAction` and the existing typed field helpers.
+- The helper owns `action` and `method` and adds no Live binding by default.
+- `onChange`, `onSubmit`, and `phx.triggerAction` remain explicit opt-ins.
+- Raw HTML form construction remains the escape hatch.
 
-Ideas:
+Remaining:
 
-- Build the ordinary mode on `Form`, `FormPath`, `FormData`, and `FormCodec` rather than creating a second form system.
-- Let one form definition drive rendered names and IDs plus HTTP body decoding.
-- Do not add a `phx-submit` binding by default; direct HTTP submission must remain the simplest path for session-mutating operations.
-- Keep `phx.triggerAction` as an explicit opt-in for applications that need LiveView validation before the final HTTP submission.
-- Preserve raw HTML form construction as an escape hatch.
+- Keep transport decoding separate until body, representation, and validation failures can stay explicit.
+- Add multipart and additional ordinary-form capabilities only when their transport semantics are designed.
 
 ### Add typed ordinary HTTP form actions
 
-Current issue:
+Implemented:
 
-- `LiveLocation` gives Live routes checked outbound locations, but ordinary form actions such as `POST /auth/session` remain raw strings.
-- Route matching and outbound action construction can drift apart.
+- `FormAction` derives a checked browser method and encoded root-relative path from a ZIO HTTP `RoutePattern`.
+- Only GET and POST are representable through checked construction; path and method failures have an explicit error channel.
+- `FormAction.unsafe` supports external URLs, fixed query strings, and unusual integrations explicitly.
+- The auth example shares its session and logout route declarations between dispatch and rendered actions.
 
-Ideas:
+Boundaries:
 
-- Introduce or adapt a small typed representation containing the HTTP method and an encodable relative location.
-- Investigate adapting ZIO HTTP endpoints before adding a parallel general-purpose HTTP routing DSL.
-- Make the ordinary form helper derive its `action` and `method` from that representation.
-- Keep an explicitly unsafe string/URL action for external targets and unusual integrations.
+- ZIO HTTP endpoints are not the baseline action abstraction because their inputs can also require bodies, headers, cookies, and authentication.
+- Checked actions intentionally model paths only. Fixed query strings remain unsafe because GET form submission replaces the action query with successful controls.
 
 ### Support CSRF-protected ordinary HTTP forms
 
@@ -226,6 +225,7 @@ Ideas:
 - Decode login submissions into a valid ADT with `FormCodec`; do not construct empty token wrappers for missing input.
 - Add bounded credential and token inputs before hashing or comparison.
 - Add stable form/input IDs and render assertions while retaining direct HTTP submission.
+- Share typed ordinary HTTP actions between route dispatch and rendered login/logout forms.
 - After ordinary-form CSRF and flash bridges exist, remove the bootstrap round-trip, custom login context, and `invalid=true` transport.
 - Keep the example explicitly educational; do not turn these API improvements into a general authentication framework.
 
@@ -342,7 +342,7 @@ Ideas:
 Current state:
 
 - The separate `scalive-testing` artifact can execute finalized routes through the disconnected lifecycle and query rendered forms, ordered named fields, values, and binding modes semantically.
-- `LoginLiveView` has disconnected render coverage for its ordinary HTTP form, rooted fields, stable IDs, one-time CSRF value, and typed invalid-login route marker.
+- `LoginLiveView` has disconnected render coverage for its typed ordinary HTTP action, rooted fields, stable IDs, one-time CSRF value, and typed invalid-login route marker.
 - Connected events, ordinary HTTP form submission, and following `phx-trigger-action` are not supported yet.
 
 Ideas:
@@ -357,6 +357,6 @@ Ideas:
 1. [x] Add checked, bounded HTTP-to-`FormData` decoding and decode the rooted login submission with `FormCodec`.
 2. [x] Move the invalid-login marker to the existing typed query route API.
 3. [x] Add minimal disconnected render and form-query test support, then cover `LoginLiveView`.
-4. Design typed ordinary HTTP actions and the ordinary form mode together.
+4. [x] Design typed ordinary HTTP actions and the ordinary form mode together.
 5. Add ordinary-form CSRF generation and validation, then remove the login bootstrap context.
 6. Add the HTTP-to-Live flash bridge, then remove the invalid-login query marker.

@@ -1,5 +1,8 @@
 package scalive
 
+import scala.util.Try
+
+import zio.http.Method
 import zio.json.ast.Json
 import zio.test.*
 
@@ -215,6 +218,67 @@ object FormApiSpec extends ZIOSpecDefault:
         sortPath.name == "users_sort[]",
         form.name(sortPath) == "profile[users_sort][]",
         form.id(sortPath) == "profile_users_sort"
+      )
+    },
+    test("ordinary forms derive action method and rooted controls") {
+      val state = FormState(
+        formData("profile%5Bname%5D=Alice"),
+        Right(Profile("Alice")),
+        submitted = false
+      )
+      val formModel = Form.of("profile", state, profileCodec)
+      val target    = FormAction.from(Method.POST / "profiles")
+      val html = HtmlBuilder.build(
+        formModel.http(target)(
+          idAttr := "profile-form",
+          formModel.text("name")
+        )
+      )
+
+      assertTrue(
+        html.contains("<form action=\"/profiles\" method=\"post\""),
+        html.contains("id=\"profile-form\""),
+        html.contains("id=\"profile_name\""),
+        html.contains("name=\"profile[name]\""),
+        html.contains("value=\"Alice\""),
+        !html.contains("phx-change"),
+        !html.contains("phx-submit"),
+        !html.contains("phx-trigger-action")
+      )
+    },
+    test("ordinary forms keep Live submission and trigger action explicit") {
+      final case class Submitted(value: Either[FormErrors, Profile])
+
+      val state = FormState(FormData.empty, Right(Profile("")), submitted = false)
+      val formModel = Form.of("profile", state, profileCodec)
+      val view: HtmlElement[Submitted] = formModel.http(
+        FormAction.from(Method.POST / "profiles")
+      )(
+        formModel.onSubmit(event => Submitted(event.value)),
+        phx.triggerAction := true,
+        formModel.text("name")
+      )
+      val html = HtmlBuilder.build(view)
+
+      assertTrue(
+        BindingRegistry.collect[Submitted](view).size == 1,
+        html.contains("phx-submit"),
+        html.contains("phx-trigger-action")
+      )
+    },
+    test("ordinary forms reject action and method overrides") {
+      val state = FormState(FormData.empty, Right(Profile("")), submitted = false)
+      val formModel = Form.of("profile", state, profileCodec)
+      val target    = FormAction.from(Method.POST / "profiles")
+
+      assertTrue(
+        Try(formModel.http(target)(action := "/other")).isFailure,
+        Try(formModel.http(target)(method := "get")).isFailure,
+        Try(
+          formModel.http(target)(
+            htmlAttr("ACTION", scalive.codecs.StringAsIsEncoder) := "/other"
+          )
+        ).isFailure
       )
     }
   )

@@ -12,6 +12,8 @@ object AuthServiceSpec extends ZIOSpecDefault:
   private val DemoEmail    = "alice@example.com"
   private val DemoPassword = "scalive"
   private val secureHttpConfig = AuthHttpConfig(secureCookies = true)
+  private val sessionAction    = FormAction.from(AuthHttpRoutes.SessionRoute)
+  private val logoutAction     = FormAction.from(AuthHttpRoutes.LogoutRoute)
 
   private final case class PreparedLogin(
     bootstrap: LoginBootstrap,
@@ -82,7 +84,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
 
   private def loginRequest(prepared: PreparedLogin, fields: (String, String)*): Request =
     postForm(
-      "/auth/session",
+      sessionAction.href,
       fields*
     ).addCookie(
       Cookie.Request(
@@ -98,7 +100,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
   ): Request =
     Request
       .post(
-        url(AuthHttpRoutes.SessionPath),
+        url(sessionAction.href),
         Body.fromString(body).contentType(mediaType)
       )
       .addCookie(
@@ -571,7 +573,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
         auth     <- authService
         loggedIn <- login(auth)
         request = postForm(
-                    "/auth/logout",
+                    logoutAction.href,
                     AuthHttpRoutes.LogoutCsrfField -> "invalid"
                   ).addCookie(
                     Cookie.Request(AuthHttpRoutes.SessionCookieName, loggedIn.cookieToken.value)
@@ -589,7 +591,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
         auth     <- authService
         loggedIn <- login(auth)
         request = postForm(
-                    "/auth/logout",
+                    logoutAction.href,
                     AuthHttpRoutes.LogoutCsrfField -> loggedIn.currentSession.logoutCsrfToken.value
                   ).addCookie(
                     Cookie.Request(AuthHttpRoutes.SessionCookieName, loggedIn.cookieToken.value)

@@ -80,6 +80,9 @@ live in [`ExampleCatalog.scala`](src/scalive/examples/ExampleCatalog.scala).
 Authentication also uses three ordinary HTTP endpoints in
 [`AuthHttpRoutes.scala`](src/scalive/examples/auth/AuthHttpRoutes.scala):
 
+The session and logout `RoutePattern` values are shared by HTTP dispatch and
+their rendered `FormAction`s, so browser methods and paths cannot drift apart.
+
 | Endpoint                    | Lesson                                                                                                   |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `GET /auth/login/bootstrap` | Create a short-lived login context and redirect with an opaque pre-authentication cookie                 |

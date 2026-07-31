@@ -3,6 +3,29 @@ package scalive
 import scalive.codecs.StringAsIsEncoder
 
 final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A]):
+  def http[Msg](
+    target: FormAction
+  )(
+    mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
+  ): HtmlElement[Msg] =
+    val flattened = mods.toVector.flatMap {
+      case mod: Mod[Msg]                => Some(mod)
+      case mods: IterableOnce[Mod[Msg]] => mods
+    }
+    val overrides = flattened
+      .flatMap(Form.attributeName)
+      .filter(name => Form.httpAttributes.exists(_.equalsIgnoreCase(name)))
+    require(
+      overrides.isEmpty,
+      s"ordinary HTTP forms own the ${overrides.distinct.mkString(" and ")} attribute"
+    )
+
+    _root_.scalive.form(
+      _root_.scalive.action := target.href,
+      _root_.scalive.method := target.method.attributeValue,
+      flattened
+    )
+
   def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
     phx.onChangeForm(codec)(f)
 
@@ -130,8 +153,20 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
 end Form
 
 object Form:
-  private val feedbackFor = htmlAttr("phx-feedback-for", StringAsIsEncoder)
-  private val textareaTag = HtmlTag("textarea")
+  private val feedbackFor    = htmlAttr("phx-feedback-for", StringAsIsEncoder)
+  private val textareaTag    = HtmlTag("textarea")
+  private val httpAttributes = Set("action", "method")
+
+  private def attributeName(mod: Mod[?]): Option[String] =
+    mod match
+      case Mod.Attr.Static(name, _)                => Some(name)
+      case Mod.Attr.StaticValueAsPresence(name, _) => Some(name)
+      case Mod.Attr.Binding(name, _)               => Some(name)
+      case Mod.Attr.FormBinding(name, _)           => Some(name)
+      case Mod.Attr.FormEventBinding(name, _, _)   => Some(name)
+      case Mod.Attr.JsBinding(name, _)             => Some(name)
+      case Mod.Attr.RoutedBinding(name, _)         => Some(name)
+      case _: Mod.Content[?]                       => None
 
   def of[A](name: String, state: FormState[A], codec: FormCodec[A]): Form[A] =
     Form(FormPath.parse(name), state, codec)

@@ -12,6 +12,8 @@ final class ProfileLiveView(currentSession: CurrentSession)
     ZIO.succeed(currentSession)
 
   def render(model: CurrentSession) =
+    val logoutAction = FormAction.from(LogoutRoute)
+
     div(
       headerTag(
         cls := "mb-8 border-b border-base-300 pb-7",
@@ -32,8 +34,8 @@ final class ProfileLiveView(currentSession: CurrentSession)
           dd(cls := "break-all font-mono text-sm", model.publicSessionId.value)
         ),
         form(
-          action := LogoutPath,
-          method := "post",
+          action := logoutAction.href,
+          method := logoutAction.method.attributeValue,
           cls    := "mt-8 border-t border-base-300 pt-6",
           input(
             typ      := "hidden",
@@ -44,4 +46,5 @@ final class ProfileLiveView(currentSession: CurrentSession)
         )
       )
     )
+  end render
 end ProfileLiveView

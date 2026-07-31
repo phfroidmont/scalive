@@ -1263,6 +1263,7 @@ FormState(raw, value, submitted)
 
 ```scala
 final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A]):
+  def http(action: FormAction)(mods*): HtmlElement[Msg]
   def onChange(f): Mod.Attr[Msg]
   def onSubmit(f): Mod.Attr[Msg]
   def field(path): Form.Field
@@ -1289,6 +1290,53 @@ Constructors:
 ```scala
 Form.of(name, state, codec)
 Form.of(name, event, codec)
+```
+
+`http` renders a normal browser form whose `action` and `method` come from a `FormAction`. It does not add `phx-change`, `phx-submit`, `phx-trigger-action`, CSRF fields, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `phx.triggerAction`. The helper rejects caller-supplied `action` or `method` attributes; use the raw `form` tag when those attributes must be controlled manually.
+
+### `FormAction`
+
+```scala
+final class FormAction:
+  def method: FormAction.Method
+  def href: String
+
+object FormAction:
+  enum Method:
+    case Get
+    case Post
+
+    def attributeValue: String
+
+  enum EncodeError:
+    case UnsupportedMethod(method: zio.http.Method)
+    case Path(details: String)
+
+  final class EncodingException(error: EncodeError)
+
+  def from[A](pattern: zio.http.RoutePattern[A], params: A): FormAction
+  def from(pattern: zio.http.RoutePattern[Unit]): FormAction
+  def fromEither[A](pattern, params): Either[EncodeError, FormAction]
+  def fromEither(pattern): Either[EncodeError, FormAction]
+  def unsafe(method: FormAction.Method, href: String): FormAction
+```
+
+`FormAction` reuses the same ZIO HTTP `RoutePattern` used for request dispatch, encodes its path as a root-relative URL, and accepts only the GET and POST methods browsers can submit faithfully. Direct construction throws `EncodingException` for route-definition invariant failures; `fromEither` preserves them explicitly. `unsafe` is the escape hatch for external URLs, fixed query strings, and unusual integrations.
+
+```scala
+val createSession = zio.http.Method.POST / "auth" / "session"
+
+val routes = zio.http.Routes(
+  createSession -> zio.http.handler(login)
+)
+
+val loginForm = Form.of("login", state, LoginForm.codec)
+
+loginForm.http(FormAction.from(createSession))(
+  loginForm.email("email"),
+  loginForm.password("password"),
+  button(typ := "submit", "Sign in")
+)
 ```
 
 ### `Form.Field`

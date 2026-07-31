@@ -22,6 +22,18 @@ final class LoginLiveView(loginContext: LoginContext)
     ZIO.succeed(model.copy(invalidLogin = invalid.contains(true)))
 
   def render(model: Model) =
+    val initialData = FormData(
+      Vector(
+        CsrfPath.name  -> model.csrfToken.value,
+        EmailPath.name -> DemoEmail
+      )
+    )
+    val loginForm = Form.of(
+      Root.name,
+      FormState(initialData, codec.decode(initialData), submitted = false),
+      codec
+    )
+
     div(
       headerTag(
         cls := "mb-8 border-b border-base-300 pb-7",
@@ -43,25 +55,15 @@ final class LoginLiveView(loginContext: LoginContext)
               span("The sign-in request was invalid. Please try again.")
             )
           else div(),
-          form(
+          loginForm.http(FormAction.from(SessionRoute))(
             idAttr := FormId,
-            action := SessionPath,
-            method := "post",
             cls    := "space-y-5",
-            input(
-              typ      := "hidden",
-              idAttr   := CsrfId,
-              nameAttr := CsrfPath.name,
-              value    := model.csrfToken.value
-            ),
+            loginForm.hidden("csrf"),
             label(
               cls := "form-control w-full",
               span(cls := "label-text mb-2 font-semibold", "Email"),
-              input(
-                typ          := "email",
-                idAttr       := EmailId,
-                nameAttr     := EmailPath.name,
-                value        := "alice@example.com",
+              loginForm.email(
+                "email",
                 autoComplete := "username",
                 maxLength    := EmailMaxLength,
                 required     := true,
@@ -71,10 +73,8 @@ final class LoginLiveView(loginContext: LoginContext)
             label(
               cls := "form-control w-full",
               span(cls := "label-text mb-2 font-semibold", "Password"),
-              input(
-                typ          := "password",
-                idAttr       := PasswordId,
-                nameAttr     := PasswordPath.name,
+              loginForm.password(
+                "password",
                 autoComplete := "current-password",
                 maxLength    := PasswordMaxLength,
                 required     := true,
@@ -90,14 +90,17 @@ final class LoginLiveView(loginContext: LoginContext)
           dl(
             cls := "mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm",
             dt(cls := "font-semibold text-base-content/60", "Email"),
-            dd(cls := "font-mono", "alice@example.com"),
+            dd(cls := "font-mono", DemoEmail),
             dt(cls := "font-semibold text-base-content/60", "Password"),
             dd(cls := "font-mono", "scalive")
           )
         )
       )
     )
+  end render
 end LoginLiveView
 
 object LoginLiveView:
+  private val DemoEmail = "alice@example.com"
+
   final case class Model(csrfToken: LoginCsrfToken, invalidLogin: Boolean = false)

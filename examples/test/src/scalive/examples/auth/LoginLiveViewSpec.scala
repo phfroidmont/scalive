@@ -11,6 +11,7 @@ import scalive.testing.*
 object LoginLiveViewSpec extends ZIOSpecDefault:
 
   private val InvalidLoginMessage = "The sign-in request was invalid. Please try again."
+  private val SessionAction       = FormAction.from(AuthHttpRoutes.SessionRoute)
 
   private val routes =
     scalive.Live.router(
@@ -50,7 +51,7 @@ object LoginLiveViewSpec extends ZIOSpecDefault:
                           .fromEither(
                             page.form(
                               FormQuery(
-                                action = Some(AuthHttpRoutes.SessionPath),
+                                action = Some(SessionAction.href),
                                 method = Some(Method.POST)
                               )
                             )

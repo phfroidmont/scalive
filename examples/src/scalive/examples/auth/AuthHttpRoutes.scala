@@ -34,13 +34,13 @@ final class AuthHttpRoutes(authService: AuthService, config: AuthHttpConfig):
 
   val routes: Routes[Any, Nothing] =
     Routes(
-      Method.GET / "auth" / "login" / "bootstrap" -> handler { (request: Request) =>
+      LoginBootstrapRoute -> handler { (request: Request) =>
         bootstrap(request)
       },
-      Method.POST / "auth" / "session" -> handler { (request: Request) =>
+      SessionRoute -> handler { (request: Request) =>
         login(request)
       },
-      Method.POST / "auth" / "logout" -> handler { (request: Request) =>
+      LogoutRoute -> handler { (request: Request) =>
         logout(request)
       }
     )
@@ -130,10 +130,11 @@ end AuthHttpRoutes
 object AuthHttpRoutes:
   val LoginContextCookieName = "__scalive_examples_login"
   val SessionCookieName      = "__scalive_examples_session"
-  val LoginBootstrapPath     = "/auth/login/bootstrap"
-  val SessionPath            = "/auth/session"
-  val LogoutPath             = "/auth/logout"
   val LogoutCsrfField        = "logout_csrf"
+
+  val LoginBootstrapRoute = Method.GET / "auth" / "login" / "bootstrap"
+  val SessionRoute        = Method.POST / "auth" / "session"
+  val LogoutRoute         = Method.POST / "auth" / "logout"
 
   private[auth] val LoginFormMaxBytes = 4096L
 

@@ -48,10 +48,9 @@ final class AuthHttpRoutes(authService: AuthService, config: AuthHttpConfig):
   private def bootstrap(request: Request): UIO[Response] =
     authService.beginLogin.map { loginBootstrap =>
       val invalid = request.queryParam("invalid").contains("true")
-      Response
-        .seeOther(loginUrl(invalid)).addCookie(
-          loginContextCookie(loginBootstrap.cookieToken, config.secureCookies)
-        )
+      seeOther(loginUrl(invalid)).addCookie(
+        loginContextCookie(loginBootstrap.cookieToken, config.secureCookies)
+      )
     }
 
   private def login(request: Request): UIO[Response] =
@@ -147,9 +146,8 @@ object AuthHttpRoutes:
     val base = URL(Path.root / "auth" / "login" / "bootstrap")
     if invalid then base.addQueryParam("invalid", "true") else base
 
-  private def loginUrl(invalid: Boolean): URL =
-    val base = URL.decode(ExamplesRoutes.login.location.href).getOrElse(URL.root)
-    if invalid then base.addQueryParam("invalid", "true") else base
+  private def loginUrl(invalid: Boolean): LiveLocation =
+    ExamplesRoutes.login.location(Option.when(invalid)(true))
 
   private def loginContextCookie(
     token: LoginContextCookieToken,

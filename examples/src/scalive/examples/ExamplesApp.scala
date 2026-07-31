@@ -61,15 +61,11 @@ object ExamplesApp extends ZIOAppDefault:
         ExamplesRoutes.voting         -> ComponentsLiveView(),
         ExamplesRoutes.browserInterop -> BrowserInteropLiveView(),
         ExamplesRoutes.notifications  -> NotificationsLiveView(),
-        Live
-          .session("login").withMountAspect(LoginMountAspect.prepared)(
-            ExamplesRoutes.login { (_, request, loginContext: LoginContext) =>
-              LoginLiveView(
-                loginContext,
-                request.queryParam("invalid").contains("true")
-              )
-            }
-          ),
+        Live.session("login")(
+          ExamplesRoutes.login.withMountAspect(LoginMountAspect.prepared) { (_, _, loginContext) =>
+            LoginLiveView(loginContext)
+          }
+        ),
         Live
           .session("authenticated").withMountAspect(AuthMountAspect.authenticated)(
             ExamplesRoutes.profile { (_, _, currentSession: CurrentSession) =>

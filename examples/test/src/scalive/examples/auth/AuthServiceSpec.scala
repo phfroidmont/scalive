@@ -373,6 +373,12 @@ object AuthServiceSpec extends ZIOSpecDefault:
         !expectedMessage.contains(invalidValues.head)
       )
     },
+    test("login route generates typed valid and invalid locations") {
+      assertTrue(
+        ExamplesRoutes.login.location(None).href == "/auth/login",
+        ExamplesRoutes.login.location(Some(true)).href == "/auth/login?invalid=true"
+      )
+    },
     test("HTTP bootstrap creates a hardened pre-authentication cookie") {
       for
         auth <- authService
@@ -386,13 +392,27 @@ object AuthServiceSpec extends ZIOSpecDefault:
       yield assertTrue(
         response.status == Status.SeeOther,
         response.header(Header.Location).exists(
-          _.url.encode == ExamplesRoutes.login.location.href
+          _.url.encode == ExamplesRoutes.login.location(None).href
         ),
         cookie.exists(_.path.contains(Path.root)),
         cookie.exists(_.isHttpOnly),
         cookie.exists(_.isSecure),
         cookie.exists(_.sameSite.contains(Cookie.SameSite.Lax)),
         cookie.exists(_.maxAge.isDefined)
+      )
+    },
+    test("HTTP bootstrap carries the invalid marker into the typed login location") {
+      for
+        auth <- authService
+        response <- run(
+                      httpRoutes(auth),
+                      Request.get(url("/auth/login/bootstrap?invalid=true"))
+                    )
+      yield assertTrue(
+        response.status == Status.SeeOther,
+        response.header(Header.Location).exists(
+          _.url.encode == ExamplesRoutes.login.location(Some(true)).href
+        )
       )
     },
     test("HTTP login binds CSRF to pre-auth cookie and rotates into a session cookie") {
@@ -720,7 +740,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
       yield assertTrue(
         response.exists(_.status == Status.SeeOther),
         response.flatMap(_.header(Header.Location)).exists(
-          _.url.encode == ExamplesRoutes.login.location.href
+          _.url.encode == ExamplesRoutes.login.location(None).href
         )
       )
     },
@@ -741,7 +761,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
       yield assertTrue(
         result.left.exists {
           case LiveMountFailure.Redirect(location) =>
-            location.href == ExamplesRoutes.login.location.href
+            location.href == ExamplesRoutes.login.location(None).href
           case _ => false
         }
       )

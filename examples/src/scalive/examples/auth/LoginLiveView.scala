@@ -4,16 +4,22 @@ import zio.*
 
 import scalive.*
 
-final class LoginLiveView(
-  loginContext: LoginContext,
-  invalidLogin: Boolean)
-    extends LiveView.Eventless[LoginLiveView.Model]:
+final class LoginLiveView(loginContext: LoginContext)
+    extends LiveView.Routed.Eventless[LoginLiveView.Model, Option[Boolean]]:
   import AuthHttpRoutes.*
   import LoginForm.*
   import LoginLiveView.*
 
   def mount(ctx: MountContext) =
-    ZIO.succeed(Model(loginContext.csrfToken, invalidLogin))
+    ZIO.succeed(Model(loginContext.csrfToken))
+
+  override def handleParams(
+    model: Model,
+    invalid: Option[Boolean],
+    url: zio.http.URL,
+    ctx: ParamsContext
+  ) =
+    ZIO.succeed(model.copy(invalidLogin = invalid.contains(true)))
 
   def render(model: Model) =
     div(

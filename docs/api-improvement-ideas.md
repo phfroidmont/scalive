@@ -355,7 +355,7 @@ Ideas:
 ## Suggested Login API Work Order
 
 1. [x] Add checked, bounded HTTP-to-`FormData` decoding and decode the rooted login submission with `FormCodec`.
-2. Move the invalid-login marker to the existing typed query route API.
+2. [x] Move the invalid-login marker to the existing typed query route API.
 3. Add minimal disconnected render and form-query test support, then cover `LoginLiveView`.
 4. Design typed ordinary HTTP actions and the ordinary form mode together.
 5. Add ordinary-form CSRF generation and validation, then remove the login bootstrap context.

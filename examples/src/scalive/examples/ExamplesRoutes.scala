@@ -9,7 +9,7 @@ object ExamplesRoutes:
   val guestbook      = live / "services" / "guestbook"
   val subscriptions  = live / "processing" / "subscriptions"
   val async          = live / "processing" / "async"
-  val login          = live / "auth" / "login"
+  val login          = (live / "auth" / "login").queryOptional[Boolean]("invalid")
   val profile        = live / "auth" / "profile"
   val profileForm    = live / "forms" / "profile"
   val documents      = live / "uploads" / "documents"

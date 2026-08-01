@@ -197,6 +197,55 @@ object FormApiSpec extends ZIOSpecDefault:
         duplicate.left.exists(_.forPath(NameField.path).nonEmpty)
       )
     },
+    test("string fields normalize before required validation and reject duplicates") {
+      val field = FormField
+        .string(FormPath("profile", "name"))
+        .map(_.trim)
+        .required("Name is required.", Some("required"))
+      val missing   = field.codec.decode(FormData.empty)
+      val blank     = field.codec.decode(FormData(Vector(field.name -> "   ")))
+      val valid     = field.codec.decode(FormData(Vector(field.name -> "  Alice  ")))
+      val duplicate = field.codec.decode(FormData(Vector(field.name -> "Alice", field.name -> "Bob")))
+
+      assertTrue(
+        missing == Left(FormErrors.one(field.path, "Name is required.", Some("required"))),
+        blank == Left(FormErrors.one(field.path, "Name is required.", Some("required"))),
+        valid == Right("Alice"),
+        duplicate.left.exists(_.forPath(field.path).map(_.message) == Vector("must be submitted at most once"))
+      )
+    },
+    test("field views expose visible errors and matching accessibility markup") {
+      val unusedState = FormState(
+        raw = FormData.empty,
+        value = Left(FormErrors.one(NameField.path, "is invalid")),
+        submitted = false,
+        used = Set.empty
+      )
+      val usedState = unusedState.copy(used = Set(NameField.path))
+      val unused    = Form.of("profile", unusedState, profileCodec).field(NameField)
+      val used      = Form.of("profile", usedState, profileCodec).field(NameField)
+      val html = HtmlBuilder.build(
+        div(
+          used.text(used.validationAttributes),
+          used.errorFeedback()
+        )
+      )
+
+      assertTrue(
+        unused.errors.map(_.message) == Vector("is invalid"),
+        unused.visibleErrors.isEmpty,
+        !unused.hasVisibleErrors,
+        used.visibleErrors.map(_.message) == Vector("is invalid"),
+        used.hasVisibleErrors,
+        used.errorId == "profile_name_errors",
+        html.contains("aria-describedby=\"profile_name_errors\""),
+        html.contains("aria-invalid=\"true\""),
+        html.contains("id=\"profile_name_errors\""),
+        html.contains("aria-live=\"polite\""),
+        html.contains("phx-feedback-for=\"profile[name]\""),
+        html.contains("is invalid")
+      )
+    },
     test("typed fields must belong to their form root") {
       val state = FormState(FormData.empty, Right(Profile("")), submitted = false)
       val form  = Form.of("profile", state, profileCodec)

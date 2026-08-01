@@ -15,18 +15,18 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
     phx.onSubmitForm(codec)(f)
 
-  def field(path: String): Form.Field[Vector[String]] =
+  def field(path: String): FormFieldView[Vector[String]] =
     field(FormPath.parse(path))
 
-  def field(path: FormPath): Form.Field[Vector[String]] =
-    Form.Field(this, FormField.strings(fullPath(path)), Some(path))
+  def field(path: FormPath): FormFieldView[Vector[String]] =
+    FormFieldView(this, FormField.strings(fullPath(path)), Some(path))
 
-  def field[B](definition: FormField[B]): Form.Field[B] =
+  def field[B](definition: FormField[B]): FormFieldView[B] =
     require(
       root.isEmpty || definition.path.startsWith(root),
       s"field ${definition.name} is outside form root ${root.name}"
     )
-    Form.Field(this, definition, None)
+    FormFieldView(this, definition, None)
 
   def name(path: String): String =
     name(FormPath.parse(path))
@@ -143,10 +143,10 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
 end Form
 
 object Form:
-  private val feedbackFor    = htmlAttr("phx-feedback-for", StringAsIsEncoder)
-  private val textareaTag    = HtmlTag("textarea")
-  private val httpAttributes = Set("action", "method")
-  private val csrfMarker     = htmlAttr(CsrfProtection.MarkerName, StringAsIsEncoder)
+  private[scalive] val feedbackFor = htmlAttr("phx-feedback-for", StringAsIsEncoder)
+  private[scalive] val textareaTag = HtmlTag("textarea")
+  private val httpAttributes       = Set("action", "method")
+  private val csrfMarker           = htmlAttr(CsrfProtection.MarkerName, StringAsIsEncoder)
 
   def http[Msg](
     target: FormAction
@@ -189,81 +189,118 @@ object Form:
   def of[A](name: String, event: FormEvent[A], codec: FormCodec[A]): Form[A] =
     of(name, event.state, codec)
 
-  final case class Field[A] private[scalive] (
-    form: Form[?],
-    definition: FormField[A],
-    legacyPath: Option[FormPath]):
-
-    def path: FormPath = definition.path
-    def name: String   = definition.name
-    def id: String     = definition.id
-
-    def rawValues: Vector[String] =
-      legacyPath match
-        case Some(relative) =>
-          val fullValues = form.state.raw.values(form.fullPath(relative))
-          if fullValues.nonEmpty then fullValues else form.state.raw.values(relative)
-        case None => form.state.raw.values(path)
-
-    def fieldValue: String             = rawValues.lastOption.getOrElse("")
-    def decoded: Either[FormErrors, A] = definition.codec.decode(form.state.raw)
-
-    def errorsFor: Vector[FormError] =
-      legacyPath.fold(form.state.errors.forPath(path))(form.errorsFor)
-
-    def isUsed: Boolean =
-      legacyPath.fold(form.state.isUsed(path))(form.isUsed)
-
-    def text(mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      input(typ := "text", idAttr := id, nameAttr := name, value := fieldValue, mods)
-
-    def text(explicitId: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      input(typ := "text", idAttr := explicitId, nameAttr := name, value := fieldValue, mods)
-
-    def email(mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      input(typ := "email", idAttr := id, nameAttr := name, value := fieldValue, mods)
-
-    def password(mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      input(typ := "password", idAttr := id, nameAttr := name, value := fieldValue, mods)
-
-    def hidden(mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      input(typ := "hidden", idAttr := id, nameAttr := name, value := fieldValue, mods)
-
-    def checkbox(mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      checkbox("true", mods*)
-
-    def checkbox(checkedValue: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      input(
-        typ      := "checkbox",
-        idAttr   := id,
-        nameAttr := name,
-        value    := checkedValue,
-        checked  := rawValues.contains(checkedValue),
-        mods
-      )
-
-    def textarea(mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      Form.textareaTag(idAttr := id, nameAttr := name, mods, fieldValue)
-
-    def select(options: Iterable[(String, String)], mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      val selectedValues = rawValues.toSet
-      _root_.scalive.select(
-        idAttr   := id,
-        nameAttr := name,
-        mods,
-        options.map { case (optionValue, label) =>
-          _root_.scalive
-            .option(value := optionValue, selected := selectedValues.contains(optionValue), label)
-        }
-      )
-
-    def errors: HtmlElement[Nothing] =
-      val messages = errorsFor.map { error =>
-        Mod.Content.Tag(span(cls := "form-error", error.message))
-      }
-      div(cls := "form-errors", messages)
-
-    def feedback(mods: Mod[Nothing]*): HtmlElement[Nothing] =
-      div(Form.feedbackFor := name, mods)
-  end Field
 end Form
+
+final class FormFieldView[A] private[scalive] (
+  private val form: Form[?],
+  private val definition: FormField[A],
+  private val legacyPath: Option[FormPath]):
+
+  def path: FormPath  = definition.path
+  def name: String    = definition.name
+  def id: String      = definition.id
+  def errorId: String = s"${id}_errors"
+
+  def rawValues: Vector[String] =
+    legacyPath match
+      case Some(relative) =>
+        val fullValues = form.state.raw.values(form.fullPath(relative))
+        if fullValues.nonEmpty then fullValues else form.state.raw.values(relative)
+      case None => form.state.raw.values(path)
+
+  def fieldValue: String             = rawValues.lastOption.getOrElse("")
+  def decoded: Either[FormErrors, A] = definition.codec.decode(form.state.raw)
+
+  def errors: Vector[FormError] =
+    legacyPath.fold(form.state.errors.forPath(path))(form.errorsFor)
+
+  def isUsed: Boolean =
+    legacyPath.fold(form.state.isUsed(path))(form.isUsed)
+
+  def visibleErrors: Vector[FormError] =
+    if isUsed then errors else Vector.empty
+
+  def hasVisibleErrors: Boolean = visibleErrors.nonEmpty
+
+  def validationAttributes: Vector[Mod.Attr[Nothing]] =
+    Vector(aria.describedby := errorId) ++
+      Option.when(hasVisibleErrors)(aria.invalid := "true").toVector
+
+  def text(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+    input(typ := "text", idAttr := id, nameAttr := name, value := fieldValue, flatten(mods))
+
+  def text(
+    explicitId: String,
+    mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
+  ): HtmlElement[Nothing] =
+    input(typ := "text", idAttr := explicitId, nameAttr := name, value := fieldValue, flatten(mods))
+
+  def email(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+    input(typ := "email", idAttr := id, nameAttr := name, value := fieldValue, flatten(mods))
+
+  def password(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+    input(typ := "password", idAttr := id, nameAttr := name, value := fieldValue, flatten(mods))
+
+  def hidden(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+    input(typ := "hidden", idAttr := id, nameAttr := name, value := fieldValue, flatten(mods))
+
+  def checkbox(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+    checkbox("true", flatten(mods))
+
+  def checkbox(
+    checkedValue: String,
+    mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
+  ): HtmlElement[Nothing] =
+    input(
+      typ      := "checkbox",
+      idAttr   := id,
+      nameAttr := name,
+      value    := checkedValue,
+      checked  := rawValues.contains(checkedValue),
+      flatten(mods)
+    )
+
+  def textarea(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+    Form.textareaTag(idAttr := id, nameAttr := name, flatten(mods), fieldValue)
+
+  def select(
+    options: Iterable[(String, String)],
+    mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
+  ): HtmlElement[Nothing] =
+    val selectedValues = rawValues.toSet
+    _root_.scalive.select(
+      idAttr   := id,
+      nameAttr := name,
+      flatten(mods),
+      options.map { case (optionValue, label) =>
+        _root_.scalive
+          .option(value := optionValue, selected := selectedValues.contains(optionValue), label)
+      }
+    )
+
+  def errorFeedback(
+    mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
+  ): HtmlElement[Nothing] =
+    val messages = visibleErrors.map { error =>
+      Mod.Content.Tag(span(cls := "form-error", error.message))
+    }
+    div(
+      idAttr           := errorId,
+      Form.feedbackFor := name,
+      aria.live        := "polite",
+      cls              := "form-errors",
+      flatten(mods),
+      messages
+    )
+
+  def feedback(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+    div(Form.feedbackFor := name, flatten(mods))
+
+  private def flatten(
+    mods: Seq[Mod[Nothing] | IterableOnce[Mod[Nothing]]]
+  ): Vector[Mod[Nothing]] =
+    mods.toVector.flatMap {
+      case mod: Mod[Nothing]                => Some(mod)
+      case mods: IterableOnce[Mod[Nothing]] => mods
+    }
+end FormFieldView

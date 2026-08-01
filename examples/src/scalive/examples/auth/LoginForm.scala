@@ -21,4 +21,4 @@ object LoginForm:
       _.length <= PasswordMaxLength
     )
 
-  val Definition = Root.form(Email.codec.zip(Password.codec).map(LoginCredentials.apply))
+  val Definition = Root.form(LoginCredentials.apply)(Email, Password)

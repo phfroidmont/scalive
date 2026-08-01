@@ -1174,13 +1174,11 @@ state, event state, and rendered fields from that root:
 
 ```scala
 val Profile = FormRoot("profile")
-val Name    = Profile.requiredString("name")
+val Name    = Profile.string("name").map(_.trim).required()
 val Email   = Profile.optionalString("email")
 val Tags    = Profile.strings("tags")
 
-val Definition = Profile.form(
-  Name.codec.zip(Email.codec).map(ProfileData.apply)
-)
+val Definition = Profile.form(ProfileData.apply)(Name, Email)
 
 val empty     = Definition.initial()
 val populated = Definition.initial(Name.initial("Ada"), Email.initial("ada@example.com"))
@@ -1192,11 +1190,17 @@ val nameField = changed.field(Name)
 ```scala
 final class FormRoot:
   val path: FormPath
-  def field[A](path)(decode: Vector[String] => Either[FormErrors, A]): RootedFormField[self.type, A]
-  def requiredString(path, blankMessage = "can't be blank", duplicateMessage = "must be submitted exactly once"): RootedFormField[self.type, String]
-  def optionalString(path, duplicateMessage = "must be submitted at most once"): RootedFormField[self.type, Option[String]]
-  def strings(path): RootedFormField[self.type, Vector[String]]
-  def form[A](codec: RootedFormCodec[self.type, A]): FormDefinition[self.type, A]
+  type Field[A] = RootedFormField[self.type, A]
+  type Codec[A] = RootedFormCodec[self.type, A]
+  type InitialValue = FormInitialValue[self.type]
+  def field[A](path)(decode: Vector[String] => Either[FormErrors, A]): Field[A]
+  def string(path, duplicateMessage = "must be submitted at most once"): Field[String]
+  def requiredString(path, blankMessage = "can't be blank", duplicateMessage = "must be submitted exactly once"): Field[String]
+  def optionalString(path, duplicateMessage = "must be submitted at most once"): Field[Option[String]]
+  def strings(path): Field[Vector[String]]
+  def form[A](codec: Codec[A]): FormDefinition[self.type, A]
+  def form[A1, Result](construct: A1 => Result)(field1: Field[A1]): FormDefinition[self.type, Result]
+  // Constructor overloads are available for two through five fields.
 
 final class RootedFormField[Owner, A]:
   def path: FormPath
@@ -1205,6 +1209,7 @@ final class RootedFormField[Owner, A]:
   def codec: RootedFormCodec[Owner, A]
   def map[B](f: A => B): RootedFormField[Owner, B]
   def validate(message: String, code: Option[String] = None)(predicate: A => Boolean): RootedFormField[Owner, A]
+  def required(message: String = "can't be blank", code: Option[String] = None)(using A =:= String): RootedFormField[Owner, String]
   def initial(values: String*): FormInitialValue[Owner]
 
 final class RootedFormCodec[Owner, A]:
@@ -1213,18 +1218,21 @@ final class RootedFormCodec[Owner, A]:
   def zip[B](that: RootedFormCodec[Owner, B]): RootedFormCodec[Owner, (A, B)]
 
 final class FormDefinition[Owner, A]:
+  type Form = RootedForm[Owner, A]
+  type Field[B] = RootedFormField[Owner, B]
+  type InitialValue = FormInitialValue[Owner]
   val root: FormPath
   val codec: FormCodec[A]
-  def initial(values: FormInitialValue[Owner]*): RootedForm[Owner, A]
-  def from(state: FormState[A]): RootedForm[Owner, A]
-  def from(event: FormEvent[A]): RootedForm[Owner, A]
+  def initial(values: InitialValue*): Form
+  def from(state: FormState[A]): Form
+  def from(event: FormEvent[A]): Form
 
 final class RootedForm[Owner, A]:
   def state: FormState[A]
   def http[Msg](target: FormAction)(mods*): HtmlElement[Msg]
   def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
   def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
-  def field[B](definition: RootedFormField[Owner, B]): Form.Field[B]
+  def field[B](definition: RootedFormField[Owner, B]): FormFieldView[B]
 ```
 
 The path-dependent `Owner` type prevents fields and initial values from one
@@ -1232,6 +1240,8 @@ The path-dependent `Owner` type prevents fields and initial values from one
 field paths become absolute browser names such as `profile[name]` when declared.
 Use `FormDefinition.initial` for fresh or pre-populated state and
 `FormDefinition.from` after a Live form event or when restoring a `FormState`.
+Use a stable definition's `Form` alias, such as `ProfileDefinition.Form`, in
+application model types instead of spelling its owner type.
 
 ### `FormData`
 
@@ -1313,12 +1323,16 @@ final class FormField[A]:
   def validate(message: String, code: Option[String] = None)(
     predicate: A => Boolean
   ): FormField[A]
+  def required(message: String = "can't be blank", code: Option[String] = None)(
+    using A =:= String
+  ): FormField[String]
 ```
 
 Constructors:
 
 ```scala
 FormField(path)(decodeValues)
+FormField.string(path, duplicateMessage)
 FormField.requiredString(path, blankMessage, duplicateMessage)
 FormField.optionalString(path, duplicateMessage)
 FormField.strings(path)
@@ -1327,6 +1341,8 @@ FormField.strings(path)
 `FormField` is the low-level, absolute-path field API used when a rooted definition
 does not fit. It owns the browser name, generated ID, and decoder. Scalar
 constructors reject duplicate values instead of silently choosing one.
+Use `string(...).map(...)` followed by `required(...)` when normalization must
+happen before blank validation.
 
 ### `FormCodec[A]`
 
@@ -1402,8 +1418,8 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   def http(action: FormAction)(mods*): HtmlElement[Msg]
   def onChange(f): Mod.Attr[Msg]
   def onSubmit(f): Mod.Attr[Msg]
-  def field(path): Form.Field
-  def field[B](definition: FormField[B]): Form.Field[B]
+  def field(path): FormFieldView
+  def field[B](definition: FormField[B]): FormFieldView[B]
   def name(path): String
   def id(path): String
   def value(path): String
@@ -1475,7 +1491,7 @@ val routes = zio.http.Routes(
 val Login      = FormRoot("login")
 val email      = Login.requiredString("email")
 val password   = Login.requiredString("password")
-val definition = Login.form(email.codec.zip(password.codec).map(LoginCredentials.apply))
+val definition = Login.form(LoginCredentials.apply)(email, password)
 val loginForm  = definition.initial()
 
 loginForm.http(FormAction.from(createSession))(
@@ -1581,18 +1597,22 @@ final class HttpFlash:
 
 `seeOther` returns a 303 response with purpose-bound signed flash values in a short-lived, root-scoped, `HttpOnly`, `SameSite=Lax` cookie. Use `seeOtherUnsafe` only for validated local URLs that do not have a typed Live route. The next successfully rendered Live route embeds valid values in its Live session and expires the browser cookie; redirect chains preserve it until then. This is browser-level consume-once behavior, not server-side replay prevention, and flash values are signed rather than encrypted.
 
-### `Form.Field`
+### `FormFieldView[A]`
 
 ```scala
-final case class Form.Field[A] private[scalive] (...):
+final class FormFieldView[A] private[scalive] (...):
   def path: FormPath
   def name: String
   def id: String
+  def errorId: String
   def rawValues: Vector[String]
   def fieldValue: String
   def decoded: Either[FormErrors, A]
-  def errorsFor: Vector[FormError]
+  def errors: Vector[FormError]
   def isUsed: Boolean
+  def visibleErrors: Vector[FormError]
+  def hasVisibleErrors: Boolean
+  def validationAttributes: Vector[Mod.Attr[Nothing]]
   def text(mods*): HtmlElement[Nothing]
   def text(explicitId, mods*): HtmlElement[Nothing]
   def email(mods*): HtmlElement[Nothing]
@@ -1602,9 +1622,14 @@ final case class Form.Field[A] private[scalive] (...):
   def checkbox(checkedValue, mods*): HtmlElement[Nothing]
   def textarea(mods*): HtmlElement[Nothing]
   def select(options, mods*): HtmlElement[Nothing]
-  def errors: HtmlElement[Nothing]
+  def errorFeedback(mods*): HtmlElement[Nothing]
   def feedback(mods*): HtmlElement[Nothing]
 ```
+
+`visibleErrors` hides validation errors until the field is used or the form is
+submitted. Pass `validationAttributes` to the rendered control and render
+`errorFeedback` beside it to produce matching `aria-describedby`,
+`aria-invalid`, `aria-live`, and `phx-feedback-for` markup.
 
 ### `FormPath`
 

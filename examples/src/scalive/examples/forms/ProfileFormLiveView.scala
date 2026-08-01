@@ -11,32 +11,27 @@ object Profile:
   val Root               = FormRoot("profile")
 
   val Name = Root
-    .requiredString("name", "Name is required.")
+    .string("name")
     .map(_.trim)
-    .validate("Name is required.")(_.nonEmpty)
+    .required("Name is required.")
 
   val Email = Root
-    .requiredString("email", "Email is required.")
+    .string("email")
     .map(_.trim)
-    .validate("Email is required.")(_.nonEmpty)
+    .required("Email is required.")
     .validate("Enter a valid email address.")(EmailPattern.matches)
 
   val Biography = Root
-    .requiredString("biography", "Biography is required.")
+    .string("biography")
     .map(_.trim)
-    .validate("Biography is required.")(_.nonEmpty)
+    .required("Biography is required.")
     .validate(s"Biography must be $BiographyMaxLength characters or fewer.")(
       _.length <= BiographyMaxLength
     )
 
-  val Definition = Root.form(
-    Name.codec.zip(Email.codec).zip(Biography.codec).map { case ((name, email), biography) =>
-      Profile(name, email, biography)
-    }
-  )
+  val Definition = Root.form(Profile.apply)(Name, Email, Biography)
 
   private val EmailPattern = """^[^\s@]+@[^\s@]+\.[^\s@]+$""".r
-end Profile
 
 final class ProfileFormLiveView
     extends LiveView[ProfileFormLiveView.Msg, ProfileFormLiveView.Model]:
@@ -86,10 +81,11 @@ final class ProfileFormLiveView
         field(
           label(forId := nameField.id, cls := "label", span(cls := "label-text", "Name")),
           nameField.text(
+            nameField.validationAttributes,
             cls         := "input input-bordered w-full",
             placeholder := "Ada Lovelace"
           ),
-          fieldErrors(nameField)
+          nameField.errorFeedback(cls := "mt-2 text-sm text-error")
         ),
         field(
           label(
@@ -98,10 +94,11 @@ final class ProfileFormLiveView
             span(cls := "label-text", "Email")
           ),
           emailField.email(
+            emailField.validationAttributes,
             cls         := "input input-bordered w-full",
             placeholder := "ada@example.com"
           ),
-          fieldErrors(emailField)
+          emailField.errorFeedback(cls := "mt-2 text-sm text-error")
         ),
         field(
           label(
@@ -110,10 +107,11 @@ final class ProfileFormLiveView
             span(cls := "label-text", "Biography")
           ),
           biographyField.textarea(
+            biographyField.validationAttributes,
             cls         := "textarea textarea-bordered min-h-36 w-full",
             placeholder := s"Up to ${Profile.BiographyMaxLength} characters"
           ),
-          fieldErrors(biographyField)
+          biographyField.errorFeedback(cls := "mt-2 text-sm text-error")
         ),
         button(
           typ             := "submit",
@@ -128,7 +126,7 @@ end ProfileFormLiveView
 
 object ProfileFormLiveView:
   final case class Model(
-    form: RootedForm[Profile.Root.type, Profile],
+    form: Profile.Definition.Form,
     saved: Option[Profile] = None)
 
   enum Msg:
@@ -137,10 +135,3 @@ object ProfileFormLiveView:
 
   private def field(form: Mod[Msg]*): HtmlElement[Msg] =
     div(cls := "form-control", form)
-
-  private def fieldErrors(field: Form.Field[?]): HtmlElement[Nothing] =
-    if field.isUsed then
-      div(
-        field.errorsFor.map(error => p(cls := "mt-2 text-sm text-error", error.message))
-      )
-    else div()

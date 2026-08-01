@@ -3,31 +3,96 @@ package scalive
 final class FormRoot private (val path: FormPath):
   self =>
 
+  type Field[A]     = RootedFormField[self.type, A]
+  type Codec[A]     = RootedFormCodec[self.type, A]
+  type InitialValue = FormInitialValue[self.type]
+
   def field[A](
     path: String
   )(
     decode: Vector[String] => Either[FormErrors, A]
-  ): RootedFormField[self.type, A] =
+  ): Field[A] =
     RootedFormField(FormField(fullPath(path))(decode))
+
+  def string(
+    path: String,
+    duplicateMessage: String = "must be submitted at most once"
+  ): Field[String] =
+    RootedFormField(FormField.string(fullPath(path), duplicateMessage))
 
   def requiredString(
     path: String,
     blankMessage: String = "can't be blank",
     duplicateMessage: String = "must be submitted exactly once"
-  ): RootedFormField[self.type, String] =
+  ): Field[String] =
     RootedFormField(FormField.requiredString(fullPath(path), blankMessage, duplicateMessage))
 
   def optionalString(
     path: String,
     duplicateMessage: String = "must be submitted at most once"
-  ): RootedFormField[self.type, Option[String]] =
+  ): Field[Option[String]] =
     RootedFormField(FormField.optionalString(fullPath(path), duplicateMessage))
 
-  def strings(path: String): RootedFormField[self.type, Vector[String]] =
+  def strings(path: String): Field[Vector[String]] =
     RootedFormField(FormField.strings(fullPath(path)))
 
-  def form[A](codec: RootedFormCodec[self.type, A]): FormDefinition[self.type, A] =
+  def form[A](codec: Codec[A]): FormDefinition[self.type, A] =
     FormDefinition(path, codec.underlying)
+
+  def form[A1, Result](construct: A1 => Result)(field1: Field[A1])
+    : FormDefinition[self.type, Result] =
+    form(field1.codec.map(construct))
+
+  def form[A1, A2, Result](
+    construct: (A1, A2) => Result
+  )(
+    field1: Field[A1],
+    field2: Field[A2]
+  ): FormDefinition[self.type, Result] =
+    form(field1.codec.zip(field2.codec).map(construct.tupled))
+
+  def form[A1, A2, A3, Result](
+    construct: (A1, A2, A3) => Result
+  )(
+    field1: Field[A1],
+    field2: Field[A2],
+    field3: Field[A3]
+  ): FormDefinition[self.type, Result] =
+    form(
+      field1.codec.zip(field2.codec).zip(field3.codec).map { case ((value1, value2), value3) =>
+        construct(value1, value2, value3)
+      }
+    )
+
+  def form[A1, A2, A3, A4, Result](
+    construct: (A1, A2, A3, A4) => Result
+  )(
+    field1: Field[A1],
+    field2: Field[A2],
+    field3: Field[A3],
+    field4: Field[A4]
+  ): FormDefinition[self.type, Result] =
+    form(
+      field1.codec.zip(field2.codec).zip(field3.codec).zip(field4.codec).map {
+        case (((value1, value2), value3), value4) => construct(value1, value2, value3, value4)
+      }
+    )
+
+  def form[A1, A2, A3, A4, A5, Result](
+    construct: (A1, A2, A3, A4, A5) => Result
+  )(
+    field1: Field[A1],
+    field2: Field[A2],
+    field3: Field[A3],
+    field4: Field[A4],
+    field5: Field[A5]
+  ): FormDefinition[self.type, Result] =
+    form(
+      field1.codec.zip(field2.codec).zip(field3.codec).zip(field4.codec).zip(field5.codec).map {
+        case ((((value1, value2), value3), value4), value5) =>
+          construct(value1, value2, value3, value4, value5)
+      }
+    )
 
   private def fullPath(relative: String): FormPath =
     val parsed = FormPath.parse(relative)
@@ -78,6 +143,13 @@ final class RootedFormField[Owner, A] private[scalive] (
   ): RootedFormField[Owner, A] =
     RootedFormField(underlying.validate(message, code)(predicate))
 
+  def required(
+    message: String = "can't be blank",
+    code: Option[String] = None
+  )(using A =:= String
+  ): RootedFormField[Owner, String] =
+    RootedFormField(underlying.required(message, code))
+
   def initial(values: String*): FormInitialValue[Owner] =
     FormInitialValue(path, values.toVector)
 
@@ -93,7 +165,11 @@ final class FormDefinition[Owner, A] private[scalive] (
   val root: FormPath,
   val codec: FormCodec[A]):
 
-  def initial(values: FormInitialValue[Owner]*): RootedForm[Owner, A] =
+  type Form         = RootedForm[Owner, A]
+  type Field[B]     = RootedFormField[Owner, B]
+  type InitialValue = FormInitialValue[Owner]
+
+  def initial(values: InitialValue*): Form =
     val raw   = FormData(values.flatMap(value => value.values.map(value.path.name -> _)))
     val state = FormState(
       raw = raw,
@@ -103,10 +179,10 @@ final class FormDefinition[Owner, A] private[scalive] (
     )
     from(state)
 
-  def from(state: FormState[A]): RootedForm[Owner, A] =
+  def from(state: FormState[A]): Form =
     RootedForm(Form(root, state, codec))
 
-  def from(event: FormEvent[A]): RootedForm[Owner, A] =
+  def from(event: FormEvent[A]): Form =
     from(event.state)
 
 private[scalive] object FormDefinition:
@@ -130,7 +206,7 @@ final class RootedForm[Owner, A] private[scalive] (
   def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
     underlying.onSubmit(f)
 
-  def field[B](definition: RootedFormField[Owner, B]): Form.Field[B] =
+  def field[B](definition: RootedFormField[Owner, B]): FormFieldView[B] =
     underlying.field(definition.underlying)
 
 private[scalive] object RootedForm:

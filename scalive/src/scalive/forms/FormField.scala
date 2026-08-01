@@ -21,6 +21,13 @@ final class FormField[A] private (
       codec.emap(value => Either.cond(predicate(value), value, FormErrors.one(path, message, code)))
     )
 
+  def required(
+    message: String = "can't be blank",
+    code: Option[String] = None
+  )(using ev: A =:= String
+  ): FormField[String] =
+    map(ev).validate(message, code)(_.nonEmpty)
+
 object FormField:
   def apply[A](
     path: FormPath
@@ -29,16 +36,22 @@ object FormField:
   ): FormField[A] =
     FormField(path, FormCodec(data => decode(data.values(path))))
 
+  def string(
+    path: FormPath,
+    duplicateMessage: String = "must be submitted at most once"
+  ): FormField[String] =
+    FormField(path) {
+      case Vector()      => Right("")
+      case Vector(value) => Right(value)
+      case _             => Left(FormErrors.one(path, duplicateMessage))
+    }
+
   def requiredString(
     path: FormPath,
     blankMessage: String = "can't be blank",
     duplicateMessage: String = "must be submitted exactly once"
   ): FormField[String] =
-    FormField(path) {
-      case Vector(value) if value.nonEmpty => Right(value)
-      case Vector() | Vector(_)            => Left(FormErrors.one(path, blankMessage))
-      case _                               => Left(FormErrors.one(path, duplicateMessage))
-    }
+    string(path, duplicateMessage).required(blankMessage)
 
   def optionalString(
     path: FormPath,

@@ -50,43 +50,35 @@ final class AuthHttpRoutes(
     HttpFormDecoder.urlEncoded(FormCodec.formData, FormMaxBytes, security.csrf)
 
   private def login(request: Request): URIO[AuthService, Response] =
-    loginDecoder.decode(request).either.flatMap {
-      case Left(error @ HttpFormDecoder.Error.Body(_)) =>
-        ZIO
-          .logWarning(
-            s"Rejected malformed login form: ${error.code}"
-          ).as(error.toResponse(_ => invalidLoginResponse))
-      case Left(error @ HttpFormDecoder.Error.Representation(_)) =>
-        ZIO
-          .logWarning(
-            s"Rejected malformed login form: ${error.code}"
-          ).as(error.toResponse(_ => invalidLoginResponse))
-      case Left(error)        => ZIO.succeed(error.toResponse(_ => invalidLoginResponse))
-      case Right(credentials) =>
-        ZIO.serviceWithZIO[AuthService](_.login(credentials)).map {
-          case Some(result) =>
-            ExamplesRoutes.profile.location.seeOther.addCookie(
-              security.cookies.make(SessionCookieName, result.cookieToken.value)
-            )
-          case None => invalidLoginResponse
-        }
+    loginDecoder.respond(request, _ => invalidLoginResponse, logMalformedLogin) { credentials =>
+      ZIO.serviceWithZIO[AuthService](_.login(credentials)).map {
+        case Some(result) =>
+          ExamplesRoutes.profile.location.seeOther.addCookie(
+            security.cookies.make(SessionCookieName, result.cookieToken.value)
+          )
+        case None => invalidLoginResponse
+      }
     }
 
   private def logout(request: Request): URIO[AuthService, Response] =
-    logoutDecoder.decode(request).either.flatMap {
-      case Left(error) => ZIO.succeed(error.toResponse(_ => Response.forbidden))
-      case Right(_)    =>
-        val cookieToken = request
-          .cookie(SessionCookieName)
-          .map(cookie => SessionCookieToken(cookie.content))
-        ZIO
-          .foreachDiscard(cookieToken)(token => ZIO.serviceWithZIO[AuthService](_.logout(token)))
-          .as(
-            ExamplesRoutes.home.location.seeOther.addCookie(
-              security.cookies.expire(SessionCookieName)
-            )
+    logoutDecoder.respond(request, _ => Response.forbidden) { _ =>
+      val cookieToken = request
+        .cookie(SessionCookieName)
+        .map(cookie => SessionCookieToken(cookie.content))
+      ZIO
+        .foreachDiscard(cookieToken)(token => ZIO.serviceWithZIO[AuthService](_.logout(token)))
+        .as(
+          ExamplesRoutes.home.location.seeOther.addCookie(
+            security.cookies.expire(SessionCookieName)
           )
+        )
     }
+
+  private def logMalformedLogin(error: HttpFormDecoder.Error): UIO[Unit] =
+    error match
+      case HttpFormDecoder.Error.Body(_) | HttpFormDecoder.Error.Representation(_) =>
+        ZIO.logWarning(s"Rejected malformed login form: ${error.code}")
+      case _ => ZIO.unit
 
   private def invalidLoginResponse: Response =
     security.flash.seeOther(

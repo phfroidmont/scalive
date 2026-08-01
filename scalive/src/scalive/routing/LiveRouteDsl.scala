@@ -178,6 +178,11 @@ class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A]):
   ): LiveRoute[Any, A, Ctx, Ctx, Msg, Model] =
     apply(builder)
 
+  def context[Ctx, Msg: LiveMessageTag, Model](
+    builder: Ctx => LiveView[Msg, Model]
+  ): LiveRoute[Any, A, Ctx, Ctx, Msg, Model] =
+    base[Ctx].context(builder)
+
   @targetName("applyRequestParams")
   def apply[Msg: LiveMessageTag, Model](
     builder: (A, Request) => LiveView[Msg, Model]
@@ -428,6 +433,11 @@ final class LiveRouteBuilder[R, A, -Need, Ctx] private[scalive] (
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
 
+  def context[Msg: LiveMessageTag, Model](
+    builder: Ctx => LiveView[Msg, Model]
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply((_, _, context) => builder(context))
+
   @targetName("applyTuple2")
   def apply[C1, C2, Msg: LiveMessageTag, Model](
     builder: (A, Request, C1, C2) => LiveView[Msg, Model]
@@ -622,6 +632,11 @@ final class LiveRouteParamsBuilder[
     builder: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
     apply(builder)
+
+  def context[Msg: LiveMessageTag, Model](
+    builder: Ctx => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[R, A, Need, Ctx, Msg, Model] =
+    apply((_, _, context) => builder(context))
 
   @targetName("applyRoutedRequestParams")
   def apply[Msg: LiveMessageTag, Model](

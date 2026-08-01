@@ -58,7 +58,7 @@ object SecurityApiSpec extends ZIOSpecDefault:
       val routes: Routes[Auth, Nothing] = scalive.Live.router.withSecurity(security)(
         Login(LoginView()),
         scalive.Live.session("authenticated").withMountAspect(aspect)(
-          Protected { (_, _, user: User) => ProtectedView(user) }
+          Protected.context(ProtectedView.apply)
         )
       )
 

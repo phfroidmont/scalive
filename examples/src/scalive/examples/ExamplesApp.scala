@@ -65,9 +65,7 @@ object ExamplesApp extends ZIOAppDefault:
         ExamplesRoutes.login(LoginLiveView()),
         Live
           .session("authenticated").withMountAspect(AuthMountAspect.authenticated)(
-            ExamplesRoutes.profile { (_, _, currentSession: CurrentSession) =>
-              ProfileLiveView(currentSession)
-            }
+            ExamplesRoutes.profile.context(ProfileLiveView.apply)
           )
       )
 

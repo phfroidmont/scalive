@@ -92,10 +92,10 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
       )
 
       val routes = scalive.Live.router(
-        (scalive.live / "users").withMountAspect(userAspect) { (_, _, user: TypeUser) =>
+        (scalive.live / "users").withMountAspect(userAspect).context { user =>
           view(user.name)
         },
-        (scalive.live / "orgs").withMountAspect(orgAspect) { (_, _, org: TypeOrg) =>
+        (scalive.live / "orgs").withMountAspect(orgAspect).context { org =>
           view(org.name)
         }
       )

@@ -24,6 +24,19 @@ final class HttpFormDecoder[A] private (
                  .mapError(HttpFormDecoder.Error.Validation(_))
     yield value
 
+  def respond[R, E](
+    request: Request,
+    onValidation: FormErrors => Response,
+    onRejected: HttpFormDecoder.Error => URIO[R, Unit] = _ => ZIO.unit
+  )(
+    onDecoded: A => ZIO[R, E, Response]
+  ): ZIO[R, E, Response] =
+    decode(request).foldZIO(
+      error => onRejected(error).as(error.toResponse(onValidation)),
+      onDecoded
+    )
+end HttpFormDecoder
+
 object HttpFormDecoder:
   enum Error:
     case Body(error: FormData.BodyError)

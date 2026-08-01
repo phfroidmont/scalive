@@ -83,6 +83,38 @@ object HttpFormDecoderSpec extends ZIOSpecDefault:
         _ <- decoder.decode(request("value=ok", includeCsrf = false)).either
       yield assertTrue(calls.get() == 0)
     },
+    test("responds to decoded values and observes mapped rejections") {
+      val decoder = HttpFormDecoder.urlEncoded(Name.codec, 1024, security.csrf)
+      val wrongType = Request.post(
+        URL.root,
+        Body.fromString("{}").contentType(MediaType.application.json)
+      )
+
+      for
+        accepted <- decoder.respond(
+                      request("profile%5Bname%5D=Alice"),
+                      _ => Status.UnprocessableEntity.toResponse
+                    )(name => ZIO.succeed(Response.text(name)))
+        acceptedBody <- accepted.body.asString
+        rejectionCode <- Ref.make(Option.empty[String])
+        rejected <- decoder.respond(
+                      wrongType,
+                      _ => Status.UnprocessableEntity.toResponse,
+                      error => rejectionCode.set(Some(error.code))
+                    )(_ => ZIO.dieMessage("invalid form must not be decoded"))
+        observedCode <- rejectionCode.get
+        invalid <- decoder.respond(
+                     request("profile%5Bname%5D="),
+                     _ => Status.UnprocessableEntity.toResponse
+                   )(_ => ZIO.dieMessage("invalid form must not be decoded"))
+      yield assertTrue(
+        accepted.status == Status.Ok,
+        acceptedBody == "Alice",
+        rejected.status == Status.UnsupportedMediaType,
+        observedCode.contains("invalid_content_type"),
+        invalid.status == Status.UnprocessableEntity
+      )
+    },
     test("maps transport errors while delegating application validation") {
       val validationErrors = FormErrors.one(Name.path, "invalid")
       val validationCalls  = AtomicInteger()

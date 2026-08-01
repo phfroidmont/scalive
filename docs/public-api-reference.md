@@ -859,6 +859,7 @@ seed(view)
 seed -> view
 seed(viewLayer)
 seed -> viewLayer
+seed.context(context => view)
 seed((params, request, context) => view)
 seed((params, request) => view)
 seed(request => view)
@@ -886,6 +887,7 @@ builder(view)
 builder -> view
 builder(viewLayer)
 builder -> viewLayer
+builder.context(context => view)
 builder((params, request, context) => view)
 builder((params, request, c1, c2) => view)
 ```
@@ -908,7 +910,17 @@ paramsBuilder(view)
 paramsBuilder -> view
 paramsBuilder(viewLayer)
 paramsBuilder -> viewLayer
+paramsBuilder.context(context => view)
 paramsBuilder((params, request, context) => view)
+```
+
+Use `context` when a mount aspect or LiveSession supplies everything needed to
+construct the view and route parameters and the HTTP request are not needed:
+
+```scala
+Live.session("authenticated").withMountAspect(authenticated)(
+  profile.context(ProfileLiveView.apply)
+)
 ```
 
 Route seeds and builders also accept an infallible `ZLayer` that constructs the
@@ -1519,8 +1531,12 @@ object CsrfProtection:
 `HttpFormDecoder` composes bounded URL-encoded body decoding, CSRF validation, and application decoding while keeping every failure category explicit:
 
 ```scala
-val decoder = HttpFormDecoder.urlEncoded(LoginForm.codec, maxBytes, security.csrf)
+val decoder = HttpFormDecoder.urlEncoded(LoginForm.Definition.codec, maxBytes, security.csrf)
 decoder.decode(request)
+
+decoder.respond(request, _ => invalidLoginResponse) { credentials =>
+  authenticate(credentials)
+}
 
 enum HttpFormDecoder.Error:
   case Body(error: FormData.BodyError)
@@ -1531,6 +1547,12 @@ enum HttpFormDecoder.Error:
   def code: String
   def toResponse(onValidation: FormErrors => zio.http.Response): zio.http.Response
 ```
+
+`respond` maps transport and CSRF failures to their standard HTTP responses, delegates
+application validation to the supplied function, and runs the successful decoded-value
+handler. Its optional `onRejected` callback observes any rejected request for logging or
+metrics without changing the response mapping. Use `decode` when the full error channel
+must remain available to application code.
 
 `code` supplies a stable category suitable for structured logs:
 `body_too_large`, `body_read`, `invalid_content_type`,

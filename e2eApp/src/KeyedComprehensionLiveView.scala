@@ -11,7 +11,7 @@ import scalive.LiveIO.given
 class KeyedComprehensionLiveView(assets: StaticAssets)
     extends LiveView.Routed[Msg, Model, UrlParams]:
 
-  def mount(ctx: MountContext) =
+  def mount(_params: UrlParams, ctx: MountContext) =
     Model(
       activeTab = "all_keyed",
       items = randomItems(10),
@@ -47,17 +47,17 @@ class KeyedComprehensionLiveView(assets: StaticAssets)
         navTag(
           role := "tablist",
           cls  := "tabs tabs-border",
-          link.patch(
+          link.pushPatch(
             E2ERoutes.keyedComprehension.location(UrlParams(Some("all_keyed"))),
             cls := tabClass(model.activeTab, "all_keyed"),
             "All keyed"
           ),
-          link.patch(
+          link.pushPatch(
             E2ERoutes.keyedComprehension.location(UrlParams(Some("rows_keyed"))),
             cls := tabClass(model.activeTab, "rows_keyed"),
             "Rows keyed"
           ),
-          link.patch(
+          link.pushPatch(
             E2ERoutes.keyedComprehension.location(UrlParams(Some("no_keyed"))),
             cls := tabClass(model.activeTab, "no_keyed"),
             "No keyed"

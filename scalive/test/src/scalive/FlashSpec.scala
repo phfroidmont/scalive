@@ -230,7 +230,7 @@ object FlashSpec extends ZIOSpecDefault:
         case Patch
 
       val lv = new LiveView.Routed[RootMsg, String, String]:
-        def mount(ctx: MountContext) =
+        def mount(params: String, ctx: MountContext) =
           ZIO.succeed("start")
 
         override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
@@ -287,7 +287,7 @@ object FlashSpec extends ZIOSpecDefault:
 
       val tokenConfig = TokenConfig.default
       val lv = new LiveView.Routed[RootMsg, String, String]:
-        def mount(ctx: MountContext) =
+        def mount(params: String, ctx: MountContext) =
           ZIO.succeed("start")
 
         override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
@@ -406,7 +406,7 @@ object FlashSpec extends ZIOSpecDefault:
           )
 
       val lv = new LiveView.Routed[Unit, String, String]:
-        def mount(ctx: MountContext) =
+        def mount(params: String, ctx: MountContext) =
           ZIO.succeed("start")
 
         override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =

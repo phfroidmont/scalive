@@ -17,8 +17,8 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
   def spec = suite("DisconnectedRenderSpec")(
     test("renders the disconnected lifecycle and queries a form semantically") {
       val view = new LiveView.Routed[Msg, Option[String], Option[String]]:
-        def mount(ctx: MountContext) =
-          ZIO.none
+        def mount(notice: Option[String], ctx: MountContext) =
+          ZIO.succeed(notice)
 
         override def handleParams(
           model: Option[String],

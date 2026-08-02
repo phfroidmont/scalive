@@ -29,7 +29,7 @@ final class HomeLiveView extends LiveView.Eventless[Unit]:
           div(
             cls := "grid gap-4 md:grid-cols-2 xl:grid-cols-3",
             entries.map { entry =>
-              link.navigate(
+              link.pushNavigate(
                 entry.location,
                 cls := "card border border-base-300 bg-base-100 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md",
                 articleTag(

@@ -16,7 +16,7 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
 
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 
-  def mount(ctx: MountContext) =
+  def mount(_params: Option[String], ctx: MountContext) =
     ctx.uploads.allow(uploadDefinition(autoUpload = false)).map(upload => Model(upload = upload))
 
   override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =

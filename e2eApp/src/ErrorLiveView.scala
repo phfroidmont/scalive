@@ -11,7 +11,7 @@ class ErrorLiveView
     extends LiveView.Routed[ErrorLiveView.Msg, ErrorLiveView.Model, ErrorLiveView.QueryParams]:
   import ErrorLiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: QueryParams, ctx: MountContext) =
     Model()
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =

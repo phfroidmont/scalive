@@ -275,17 +275,15 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                       )
                 _               <- SocketFlashRuntime.resetNavigation(flashRef)
                 _               <- navigationRef.set(None)
-                initModel       <- lv.mount(ctx.mountContext[Msg, Model])
+                mounted         <- paramsRuntime.mount(lv, req.url, ctx)
                 mountNavigation <- navigationRef.getAndSet(None)
                 lifecycle       <- LiveRoute.runInitialHandleParams(
-                               lv,
-                               initModel,
+                               mounted.model,
                                req.url,
-                               ctx,
                                navigationRef,
                                flashRef,
                                mountNavigation,
-                               paramsRuntime
+                               mounted.handleInitialParams
                              )
                 response <- lifecycle match
                               case LiveRoute.InitialLifecycleOutcome.Render(model) =>
@@ -374,15 +372,13 @@ object LiveRoute:
     case Render(model: Model)
     case Redirect(url: URL)
 
-  private[scalive] def runInitialHandleParams[Msg, Model](
-    lv: LiveView[Msg, Model],
+  private[scalive] def runInitialHandleParams[Model](
     initModel: Model,
     url: URL,
-    ctx: LiveContext,
     navigationRef: Ref[Option[LiveNavigationCommand]],
     flashRef: Ref[FlashRuntimeState],
     initialNavigation: Option[LiveNavigationCommand],
-    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model]
+    handleInitialParams: Model => Task[Model]
   ): Task[InitialLifecycleOutcome[Model]] =
     def applyNavigation(model: Model, command: LiveNavigationCommand)
       : Task[InitialLifecycleOutcome[Model]] =
@@ -408,7 +404,7 @@ object LiveRoute:
         for
           _          <- SocketFlashRuntime.resetNavigation(flashRef)
           _          <- navigationRef.set(None)
-          model      <- paramsRuntime.run(lv, initModel, url, ctx)
+          model      <- handleInitialParams(initModel)
           navigation <- navigationRef.getAndSet(None)
           result     <- navigation match
                       case None          => ZIO.succeed(InitialLifecycleOutcome.Render(model))

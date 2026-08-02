@@ -140,6 +140,8 @@ Routes, route factories, and nested `liveView` content accept eventless views di
 trait LiveView.Routed[Msg, Model, Params] extends LiveView[Msg, Model]:
   type ParamsContext = scalive.ParamsContext[Msg, Model]
 
+  def mount(params: Params, ctx: MountContext): LiveIO[Model]
+
   def handleParams(
     model: Model,
     params: Params,
@@ -157,8 +159,10 @@ trait LiveView.Routed[Msg, Model, Params] extends LiveView[Msg, Model]:
 
 Params lifecycle methods:
 
-- `handleParams` runs when route path and query params decode successfully.
-- `handleParamsDecodeError` runs when route params cannot decode the current URL.
+- `mount` receives successfully decoded route parameters and constructs the initial model directly from them.
+- `handleParams` runs after mount and whenever a live patch changes the current URL.
+- Initial decode failures fail before mount because no model exists yet. Use a permissive raw parameter schema with `mapParams` when malformed external query values should normalize to valid domain values.
+- `handleParamsDecodeError` runs for subsequent parameter changes that cannot decode, when an existing model is available.
 - Params are decoded by the route declaration, not by the LiveView itself.
 
 ### `LiveView.Routed.Eventless[Model, Params]`
@@ -717,16 +721,18 @@ The `link` object renders LiveView-aware anchors. Its default methods require fu
 
 ```scala
 object link:
-  def navigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
-  def patch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
-  def patchReplace[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
 
-  def navigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
-  def patchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
-  def patchReplaceUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushNavigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def replaceNavigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushPatchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def replacePatchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
 ```
 
-Unsafe links are the explicit escape hatch for destinations that cannot be derived from a Live route. Query-only patches remain unsafe and explicit, for example `link.patchUnsafe("?page=2", "Next")`.
+Unsafe links are the explicit escape hatch for destinations that cannot be derived from a Live route. Query-only patches remain unsafe and explicit, for example `link.pushPatchUnsafe("?page=2", "Next")`.
 
 ## JS Command API
 
@@ -769,10 +775,14 @@ Navigation command signatures:
 
 ```scala
 extension [Msg](ops: JSCommand[Msg])
-  def navigate(to: LiveLocation, replace: Boolean = false): JSCommand[Msg]
-  def navigateUnsafe(href: String, replace: Boolean = false): JSCommand[Msg]
-  def patch(to: LiveLocation, replace: Boolean = false): JSCommand[Msg]
-  def patchUnsafe(href: String, replace: Boolean = false): JSCommand[Msg]
+  def pushNavigate(to: LiveLocation): JSCommand[Msg]
+  def replaceNavigate(to: LiveLocation): JSCommand[Msg]
+  def pushNavigateUnsafe(href: String): JSCommand[Msg]
+  def replaceNavigateUnsafe(href: String): JSCommand[Msg]
+  def pushPatch(to: LiveLocation): JSCommand[Msg]
+  def replacePatch(to: LiveLocation): JSCommand[Msg]
+  def pushPatchUnsafe(href: String): JSCommand[Msg]
+  def replacePatchUnsafe(href: String): JSCommand[Msg]
 ```
 
 `transition` arguments accept either a space-separated class string or a tuple of three class strings.
@@ -966,9 +976,9 @@ object Routes:
 
 val settings = Routes.user.location(UserLocation(42, Some("settings")))
 
-link.navigate(settings, "Settings")
+link.pushNavigate(settings, "Settings")
 ctx.nav.pushNavigate(settings)
-JS.patch(settings)
+JS.pushPatch(settings)
 ```
 
 `locationEither` returns `Either[LiveLocation.EncodeError, LiveLocation]`. Encodable builders expose both location methods using the final parameter type after `mapParams`. `paramsDecodeOnly` and `mapParamsDecodeOnly` return builders that can still mount a `LiveView.Routed` but do not expose location construction; this is enforced by the builder's `LiveRouteParamsCapability` type.

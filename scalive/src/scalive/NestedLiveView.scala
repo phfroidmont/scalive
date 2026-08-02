@@ -156,17 +156,15 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
             )
       _               <- SocketFlashRuntime.resetNavigation(flashRef)
       _               <- navigationRef.set(None)
-      initModel       <- lv.mount(ctx.mountContext[Msg, Model])
+      mounted         <- LiveRouteParamsRuntime.none[Any, Msg, Model].mount(lv, initialUrl, ctx)
       mountNavigation <- navigationRef.getAndSet(None)
       lifecycle       <- LiveRoute.runInitialHandleParams(
-                     lv,
-                     initModel,
+                     mounted.model,
                      initialUrl,
-                     ctx,
                      navigationRef,
                      flashRef,
                      mountNavigation,
-                     LiveRouteParamsRuntime.none[Any, Msg, Model]
+                     mounted.handleInitialParams
                    )
       rendered <- lifecycle match
                     case LiveRoute.InitialLifecycleOutcome.Render(model) =>

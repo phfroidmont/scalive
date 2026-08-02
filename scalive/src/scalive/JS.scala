@@ -122,17 +122,29 @@ object JSCommands:
         )
       )
 
-    def navigate(to: LiveLocation, replace: Boolean = false) =
-      navigateUnsafe(to.href, replace)
+    def pushNavigate(to: LiveLocation) =
+      pushNavigateUnsafe(to.href)
 
-    def navigateUnsafe(href: String, replace: Boolean = false) =
-      ops.addOp("navigate", Args.Href(href, Option.when(replace)(replace)))
+    def pushNavigateUnsafe(href: String) =
+      ops.addOp("navigate", Args.Href(href, None))
 
-    def patch(to: LiveLocation, replace: Boolean = false) =
-      patchUnsafe(to.href, replace)
+    def replaceNavigate(to: LiveLocation) =
+      replaceNavigateUnsafe(to.href)
 
-    def patchUnsafe(href: String, replace: Boolean = false) =
-      ops.addOp("patch", Args.Href(href, Option.when(replace)(replace)))
+    def replaceNavigateUnsafe(href: String) =
+      ops.addOp("navigate", Args.Href(href, Some(true)))
+
+    def pushPatch(to: LiveLocation) =
+      pushPatchUnsafe(to.href)
+
+    def pushPatchUnsafe(href: String) =
+      ops.addOp("patch", Args.Href(href, None))
+
+    def replacePatch(to: LiveLocation) =
+      replacePatchUnsafe(to.href)
+
+    def replacePatchUnsafe(href: String) =
+      ops.addOp("patch", Args.Href(href, Some(true)))
 
     def popFocus() =
       ops.addOp("pop_focus", Json.Obj.empty)

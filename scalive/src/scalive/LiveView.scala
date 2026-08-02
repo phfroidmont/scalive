@@ -24,6 +24,11 @@ object LiveView:
   trait Routed[Msg, Model, Params] extends LiveView[Msg, Model]:
     type ParamsContext = scalive.ParamsContext[Msg, Model]
 
+    final def mount(ctx: MountContext): LiveIO[Model] =
+      ZIO.dieMessage("Routed LiveViews must be mounted through a parameterized Live route")
+
+    def mount(params: Params, ctx: MountContext): LiveIO[Model]
+
     def handleParams(
       model: Model,
       params: Params,
@@ -44,3 +49,4 @@ object LiveView:
     trait Eventless[Model, Params]
         extends LiveView.Eventless[Model],
           LiveView.Routed[Nothing, Model, Params]
+end LiveView

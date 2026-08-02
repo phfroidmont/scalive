@@ -24,7 +24,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView.Routed.Eventless[String, Int]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(params: Int, ctx: MountContext) = LiveIO.succeed(s"mounted:$params")
           def render(model: String) = div(model)
 
         val view: LiveView.Routed[Nothing, String, Int] = View
@@ -56,7 +56,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import zio.http.Request
 
         object View extends LiveView.Routed.Eventless[String, Int]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(params: Int, ctx: MountContext) = LiveIO.succeed(s"mounted:$params")
           def render(model: String) = div(model)
 
         val requestRoute = live.query[Int]("id")((_: Request) => View)
@@ -76,7 +76,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
           def render(model: String) = div(model)
 
         object Routed extends LiveView.Routed.Eventless[String, Int]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(params: Int, ctx: MountContext) = LiveIO.succeed(s"mounted:$params")
           def render(model: String) = div(model)
 
         val plain: LiveView[Nothing, String] = Plain

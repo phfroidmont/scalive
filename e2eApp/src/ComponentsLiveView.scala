@@ -8,7 +8,7 @@ import scalive.LiveIO.given
 
 class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
 
-  def mount(ctx: MountContext) =
+  def mount(_params: UrlParams, ctx: MountContext) =
     Model(activeTab = "focus_wrap")
 
   override def handleParams(model: Model, params: UrlParams, _url: URL, ctx: ParamsContext) =
@@ -34,7 +34,7 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
           a(
             href := focusWrap.href,
             phx.onClick(
-              JS.patch(focusWrap).push(Msg.SetTab("focus_wrap"))
+              JS.pushPatch(focusWrap).push(Msg.SetTab("focus_wrap"))
             ),
             styleAttr :=
               (if model.activeTab == "focus_wrap" then

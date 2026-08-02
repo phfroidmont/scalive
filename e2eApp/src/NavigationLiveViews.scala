@@ -8,7 +8,7 @@ import scalive.LiveIO.given
 
 class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
 
-  def mount(ctx: MountContext) =
+  def mount(_params: AParams, ctx: MountContext) =
     Model(paramCurrent = None, paramNext = 1)
 
   override def handleParams(model: Model, params: AParams, _url: URL, ctx: ParamsContext) =
@@ -22,17 +22,17 @@ class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
       div(
         h1("This is page A"),
         p("Current param: ", model.paramCurrent.getOrElse("")),
-        link.patch(
+        link.pushPatch(
           E2ERoutes.navigationA.location(AParams(Some(model.paramNext))),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch this LiveView"
         ),
-        link.patchReplace(
+        link.replacePatch(
           E2ERoutes.navigationA.location(AParams(Some(model.paramNext))),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch (Replace)"
         ),
-        link.navigate(
+        link.pushNavigate(
           E2ERoutes.navigationB.location(BParams(false)).withFragment("items-item-42"),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2",
           "Navigate to 42"
@@ -44,7 +44,7 @@ end NavigationALiveView
 
 class NavigationBLiveView() extends LiveView.Routed[Msg, Model, BParams]:
 
-  def mount(ctx: MountContext) =
+  def mount(_params: BParams, ctx: MountContext) =
     Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -82,7 +82,7 @@ class NavigationBLiveView() extends LiveView.Routed[Msg, Model, BParams]:
                 li(
                   idAttr    := s"items-${item.id}",
                   styleAttr := "padding: 0.5rem; border-bottom: 1px solid #e2e8f0;",
-                  link.patch(
+                  link.pushPatch(
                     E2ERoutes.navigationBItemLocation.location(
                       item.id -> Option.when(model.withContainer)("1")
                     ),
@@ -105,7 +105,7 @@ end NavigationBLiveView
 
 class RedirectLoopLiveView() extends LiveView.Routed[Msg, Model, RedirectLoopParams]:
 
-  def mount(ctx: MountContext) =
+  def mount(_params: RedirectLoopParams, ctx: MountContext) =
     Model(shouldLoop = false, message = None)
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -133,7 +133,7 @@ class RedirectLoopLiveView() extends LiveView.Routed[Msg, Model, RedirectLoopPar
             model.message.getOrElse("")
           )
         else "",
-        link.patchUnsafe(
+        link.pushPatchUnsafe(
           "?loop=true",
           "Redirect Loop"
         )

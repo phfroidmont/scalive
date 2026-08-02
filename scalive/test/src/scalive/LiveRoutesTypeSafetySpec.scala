@@ -267,7 +267,7 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         )
 
         val view = new LiveView.Routed[Unit, Unit, String]:
-          def mount(ctx: MountContext) = ZIO.unit
+          def mount(params: String, ctx: MountContext) = ZIO.unit
           override def handleParams(
             model: Unit,
             params: String,

@@ -12,7 +12,7 @@ class PortalLiveView
     extends LiveView.Routed[PortalLiveView.Msg, PortalLiveView.Model, PortalLiveView.QueryParams]:
   import PortalLiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: QueryParams, ctx: MountContext) =
     Model()
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
@@ -47,7 +47,7 @@ class PortalLiveView
         p("Current param: ", model.param.getOrElse("")),
         button(
           phx.onClick(
-            JS.patch(
+            JS.pushPatch(
               E2ERoutes.portal.location(QueryParams(Some((model.count + 1).toString)))
             )
           ),
@@ -60,7 +60,7 @@ class PortalLiveView
           "Open second modal"
         ),
         button(phx.onClick(Msg.Tick), "Tick"),
-        button(phx.onClick(JS.navigate(E2ERoutes.formLocation.location)), "Live navigate"),
+        button(phx.onClick(JS.pushNavigate(E2ERoutes.formLocation.location)), "Live navigate"),
         liveView("nested", NestedLive()),
         tooltip("tooltip-example-portal", "Hover me", portal = true, model.count),
         tooltip("tooltip-example-no-portal", "Hover me (no portal)", portal = false, model.count),
@@ -118,7 +118,7 @@ object PortalLiveView:
           p("DOM patching works as expected: ", count.toString),
           button(
             phx.onClick(
-              JS.patch(E2ERoutes.portal.location(QueryParams(Some((count + 1).toString))))
+              JS.pushPatch(E2ERoutes.portal.location(QueryParams(Some((count + 1).toString))))
             ),
             "Patch this LiveView"
           )

@@ -10,7 +10,7 @@ object ExamplesLayout extends LiveLayout[Any, Any]:
         cls := "border-b border-base-300 bg-base-100 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r",
         div(
           cls := "px-5 pb-3 pt-5 lg:px-6 lg:pb-6 lg:pt-8",
-          link.navigate(
+          link.pushNavigate(
             ExamplesRoutes.home.location,
             cls := "inline-flex items-baseline gap-2 text-xl font-bold tracking-tight",
             span(cls := "text-primary", "Scalive"),
@@ -45,7 +45,7 @@ object ExamplesLayout extends LiveLayout[Any, Any]:
             entries.map { entry =>
               val entryPath = entry.location.href.takeWhile(char => char != '?' && char != '#')
               li(
-                link.navigate(
+                link.pushNavigate(
                   entry.location,
                   cls := (if entryPath == currentPath then "active font-medium" else "font-medium"),
                   entry.title

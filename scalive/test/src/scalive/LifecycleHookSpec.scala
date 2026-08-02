@@ -224,7 +224,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
             ZIO.succeed(LiveHookResult.cont(s"$model|hook:${url.path.encode}"))
           }
 
-        def mount(ctx: MountContext) =
+        def mount(params: String, ctx: MountContext) =
           ZIO.succeed("mount")
 
         override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =

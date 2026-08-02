@@ -319,8 +319,8 @@ object Issue3047LiveView:
   val Layout: LiveLayout[Any, Any] = LiveLayout[Any, Any]((content, _) =>
     div(
       div(
-        link.navigate(E2ERoutes.issue3047A.location, "Page A"),
-        link.navigate(E2ERoutes.issue3047B.location, "Page B")
+        link.pushNavigate(E2ERoutes.issue3047A.location, "Page A"),
+        link.pushNavigate(E2ERoutes.issue3047B.location, "Page B")
       ),
       content,
       liveView("test", Issue3047LiveView.Sticky(), sticky = true)
@@ -363,7 +363,7 @@ end Issue3047LiveView
 class Issue3529LiveView extends LiveView.Routed[Unit, Issue3529LiveView.Model, Option[String]]:
   import Issue3529LiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: Option[String], ctx: MountContext) =
     Model(mounted = UUID.randomUUID().toString, next = UUID.randomUUID().toString)
 
   override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
@@ -378,8 +378,8 @@ class Issue3529LiveView extends LiveView.Routed[Unit, Issue3529LiveView.Model, O
   def render(model: Model) =
     div(
       h1(s"Mounted at ${model.mounted}"),
-      link.navigate(E2ERoutes.issue3529.location(Some(model.next)), "Navigate"),
-      link.patch(E2ERoutes.issue3529.location(Some(model.next)), "Patch")
+      link.pushNavigate(E2ERoutes.issue3529.location(Some(model.next)), "Navigate"),
+      link.pushPatch(E2ERoutes.issue3529.location(Some(model.next)), "Patch")
     )
 
 object Issue3529LiveView:
@@ -388,7 +388,7 @@ object Issue3529LiveView:
 class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, Option[String]]:
   import Issue3530LiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: Option[String], ctx: MountContext) =
     ctx.streams
       .init(ItemsStream, List.empty[Item])
       .map(items => Model(count = 3, items = items))
@@ -432,8 +432,8 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
           )
         )
       ),
-      link.patch(E2ERoutes.issue3530.location(Some("a")), "patch a"),
-      link.patch(E2ERoutes.issue3530.location(Some("b")), "patch b"),
+      link.pushPatch(E2ERoutes.issue3530.location(Some("a")), "patch a"),
+      link.pushPatch(E2ERoutes.issue3530.location(Some("b")), "patch b"),
       div(phxClickAttr := "inc", "+")
     )
 
@@ -822,7 +822,7 @@ class Issue3200LiveView
     extends LiveView.Routed[Issue3200LiveView.Msg, Issue3200LiveView.Model, String]:
   import Issue3200LiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: String, ctx: MountContext) =
     Model()
 
   override def handleParams(model: Model, params: String, url: URL, ctx: ParamsContext) =
@@ -837,12 +837,12 @@ class Issue3200LiveView
     div(
       button(
         typ := "button",
-        phx.onClick(JS.patch(E2ERoutes.issue3200.location("messages"))),
+        phx.onClick(JS.pushPatch(E2ERoutes.issue3200.location("messages"))),
         "Messages tab"
       ),
       button(
         typ := "button",
-        phx.onClick(JS.patch(E2ERoutes.issue3200.location("settings"))),
+        phx.onClick(JS.pushPatch(E2ERoutes.issue3200.location("settings"))),
         "Settings tab"
       ),
       model.tab match
@@ -1020,7 +1020,7 @@ class Issue3117LiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      link.navigateUnsafe("/issues/3117?nav", idAttr := "navigate", "Navigate"),
+      link.pushNavigateUnsafe("/issues/3117?nav", idAttr := "navigate", "Navigate"),
       (1 to 2).map(i =>
         div(liveComponent(Issue3117LiveView.Row, id = s"row-$i", props = s"row-$i"))
       )
@@ -1226,7 +1226,7 @@ class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends Li
   def render(model: Unit) =
     div(
       h1(s"Page $pageName"),
-      if pageName == "A" then link.navigate(E2ERoutes.issue3496B.location, "Go to page B")
+      if pageName == "A" then link.pushNavigate(E2ERoutes.issue3496B.location, "Go to page B")
       else "",
       if includeStickyHook then liveView("sticky", Issue3496LiveView.StickyLive(), sticky = true)
       else Issue3496LiveView.myComponent
@@ -1368,7 +1368,7 @@ class Issue3658LiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      link.navigateUnsafe("/issues/3658?navigated=true", "Link 1"),
+      link.pushNavigateUnsafe("/issues/3658?navigated=true", "Link 1"),
       liveView("sticky", Issue3658LiveView.Sticky(), sticky = true)
     )
 
@@ -1420,7 +1420,7 @@ object Issue3656LiveView:
 
     def render(model: Unit) =
       navTag(
-        link.navigateUnsafe("/issues/3656?navigated=true", "Link 1")
+        link.pushNavigateUnsafe("/issues/3656?navigated=true", "Link 1")
       )
 
 class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveView.Model]:
@@ -1445,7 +1445,7 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
         div(
           h3("A liveview with a stream configured twice"),
           h4("This causes the nested liveview in the layout above to be reset by the client."),
-          link.navigate(
+          link.pushNavigate(
             E2ERoutes.issue3681.location,
             "Go back to (the now borked) LV without a stream"
           ),
@@ -1461,7 +1461,7 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
       else
         div(
           h3("A LiveView that does nothing but render it's layout."),
-          link.navigate(
+          link.pushNavigate(
             E2ERoutes.issue3681Away.location,
             "Go to a different LV with a (funcky) stream"
           )
@@ -1584,8 +1584,8 @@ object Issue3686LiveView:
 class Issue3709LiveView extends LiveView.Routed[Unit, String, Option[String]]:
   import Issue3709LiveView.*
 
-  def mount(ctx: MountContext) =
-    ""
+  def mount(params: Option[String], ctx: MountContext) =
+    params.getOrElse("")
 
   override def handleParams(model: String, params: Option[String], url: URL, ctx: ParamsContext) =
     params.getOrElse("")
@@ -1597,7 +1597,7 @@ class Issue3709LiveView extends LiveView.Routed[Unit, String, Option[String]]:
     div(
       ul(
         (1 to 10).map { i =>
-          li(link.patch(E2ERoutes.issue3709Id.location(i), s"Link $i"))
+          li(link.pushPatch(E2ERoutes.issue3709Id.location(i), s"Link $i"))
         }
       ),
       div(
@@ -1888,7 +1888,7 @@ class Issue4027LiveView
     ]:
   import Issue4027LiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: QueryParams, ctx: MountContext) =
     Model()
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
@@ -2008,7 +2008,7 @@ class Issue4066LiveView
     ]:
   import Issue4066LiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: QueryParams, ctx: MountContext) =
     Model(renderTime = java.time.Instant.now.toString)
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
@@ -2145,7 +2145,7 @@ object Issue4088LiveView:
     case Noop
 
 class Issue4094LiveView extends LiveView.Routed[Unit, Unit, Option[String]]:
-  def mount(ctx: MountContext) =
+  def mount(_params: Option[String], ctx: MountContext) =
     ()
 
   override def handleParams(model: Unit, params: Option[String], url: URL, ctx: ParamsContext) =
@@ -2157,7 +2157,7 @@ class Issue4094LiveView extends LiveView.Routed[Unit, Unit, Option[String]]:
     (_: Unit) => model
 
   def render(model: Unit) =
-    link.patch(E2ERoutes.issue4094.location(Some("bar")), "Patch")
+    link.pushPatch(E2ERoutes.issue4094.location(Some("bar")), "Patch")
 
 class Issue4095LiveView extends LiveView[Issue4095LiveView.Msg, String]:
   import Issue4095LiveView.*

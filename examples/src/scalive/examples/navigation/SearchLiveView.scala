@@ -8,14 +8,52 @@ import zio.schema.derived
 import scalive.*
 import scalive.examples.ExamplesRoutes
 
-final case class SearchParams(query: Option[String], page: Option[Int]) derives Schema
+final private[examples] case class RawSearchParams(query: Option[String], page: Option[String])
+    derives Schema
+
+final class SearchTerm private (val value: String) extends AnyVal
+
+object SearchTerm:
+  def from(raw: String): Option[SearchTerm] =
+    Option(raw.trim).filter(_.nonEmpty).map(new SearchTerm(_))
+
+final class SearchPage private (val value: Int) extends AnyVal:
+  def previous: Option[SearchPage] = SearchPage.from(value - 1)
+  def next: SearchPage             = SearchPage.from(value + 1).getOrElse(this)
+
+object SearchPage:
+  val First: SearchPage = new SearchPage(1)
+
+  def from(value: Int): Option[SearchPage] =
+    Option.when(value > 0)(new SearchPage(value))
+
+  def from(raw: String): Option[SearchPage] =
+    raw.trim.toIntOption.flatMap(from)
+
+final case class SearchParams(query: Option[SearchTerm], page: SearchPage):
+  def withPage(page: SearchPage): SearchParams = copy(page = page)
+
+  private[examples] def toRaw: RawSearchParams =
+    RawSearchParams(
+      query.map(_.value),
+      Option.when(page != SearchPage.First)(page.value.toString)
+    )
+
+object SearchParams:
+  val Empty: SearchParams = SearchParams(None, SearchPage.First)
+
+  private[examples] def fromRaw(raw: RawSearchParams): SearchParams =
+    SearchParams(
+      raw.query.flatMap(SearchTerm.from),
+      raw.page.flatMap(SearchPage.from).getOrElse(SearchPage.First)
+    )
 
 final class SearchLiveView
     extends LiveView.Routed[SearchLiveView.Msg, SearchLiveView.Model, SearchParams]:
   import SearchLiveView.*
 
-  def mount(ctx: MountContext) =
-    ZIO.succeed(Model(SearchParams(None, None), page = 1))
+  def mount(params: SearchParams, ctx: MountContext) =
+    ZIO.succeed(Model(params))
 
   override def handleParams(
     model: Model,
@@ -23,16 +61,24 @@ final class SearchLiveView
     url: URL,
     ctx: ParamsContext
   ) =
-    ZIO.succeed(model.copy(params = params, page = normalizePage(params.page)))
+    val canonical = ExamplesRoutes.search.location(params)
+    val current   = URL(url.path, queryParams = url.queryParams).encode
+    val updated   = model.copy(params = params)
+    if current == canonical.href then ZIO.succeed(updated)
+    else ctx.nav.replacePatch(canonical).as(updated)
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Search(rawQuery) =>
-      val query    = Option(rawQuery.trim).filter(_.nonEmpty)
-      val location = ExamplesRoutes.search.location(SearchParams(query, Some(1)))
-      ctx.nav.pushNavigate(location).as(model)
+    case Msg.Search(event) =>
+      event.value match
+        case Right(query) =>
+          val location = ExamplesRoutes.search.location(SearchParams(query, SearchPage.First))
+          ctx.nav.pushNavigate(location).as(model)
+        case Left(_) =>
+          ZIO.succeed(model)
 
   def render(model: Model) =
-    val query   = model.params.query.map(_.trim).filter(_.nonEmpty)
+    val query   = model.params.query.map(_.value)
+    val page    = model.params.page
     val matches = query match
       case None        => Articles
       case Some(value) =>
@@ -43,31 +89,25 @@ final class SearchLiveView
         )
 
     val resultCount = matches.size.toLong
-    val pageStart   = (model.page.toLong - 1L) * PageSize.toLong
+    val pageStart   = (page.value.toLong - 1L) * PageSize.toLong
     val pageEnd     = (pageStart + PageSize.toLong).min(resultCount)
     val pageResults =
       if pageStart >= resultCount then Vector.empty
       else matches.slice(pageStart.toInt, pageEnd.toInt)
 
     val previousPage =
-      if model.page > 1 then
-        Some(
-          ExamplesRoutes.search.location(
-            SearchParams(model.params.query, Some(model.page - 1))
-          )
-        )
-      else None
+      page.previous.map(previous => ExamplesRoutes.search.location(model.params.withPage(previous)))
 
     val nextPage =
       if pageEnd < resultCount then
         Some(
           ExamplesRoutes.search.location(
-            SearchParams(model.params.query, Some(model.page + 1))
+            model.params.withPage(page.next)
           )
         )
       else None
 
-    val clearSearch = ExamplesRoutes.search.location(SearchParams(None, None))
+    val clearSearch = ExamplesRoutes.search.location(SearchParams.Empty)
 
     div(
       headerTag(
@@ -81,14 +121,14 @@ final class SearchLiveView
       ),
       form(
         cls := "mb-6 flex flex-col gap-3 rounded-box border border-base-300 bg-base-100 p-5 sm:flex-row",
-        phx.onSubmit(params => Msg.Search(params.getOrElse("query", ""))),
+        phx.onSubmitForm(QueryField)(Msg.Search.apply),
         label(
           cls := "form-control flex-1",
           span(cls := "label-text mb-2 font-medium", "Search the example notes"),
           input(
             typ         := "search",
-            nameAttr    := "query",
-            value       := model.params.query.getOrElse(""),
+            nameAttr    := QueryField.name,
+            value       := query.getOrElse(""),
             placeholder := "Try streams or forms",
             cls         := "input input-bordered w-full"
           )
@@ -108,10 +148,10 @@ final class SearchLiveView
           ),
           p(
             cls := "text-sm text-base-content/60",
-            s"Page ${model.page}; absent and non-positive page values display as page 1."
+            s"Page ${page.value}; noncanonical search URLs are replaced with their normalized form."
           )
         ),
-        link.patchReplace(
+        link.replacePatch(
           clearSearch,
           cls := "btn btn-ghost btn-sm",
           "Clear with replace-patch"
@@ -137,10 +177,10 @@ final class SearchLiveView
       navTag(
         cls := "mt-6 flex items-center justify-between",
         previousPage.fold(span())(location =>
-          link.patch(location, cls := "btn btn-outline", "Previous page")
+          link.pushPatch(location, cls := "btn btn-outline", "Previous page")
         ),
         nextPage.fold(span())(location =>
-          link.patch(location, cls := "btn btn-outline", "Next page")
+          link.pushPatch(location, cls := "btn btn-outline", "Next page")
         )
       )
     )
@@ -150,12 +190,13 @@ end SearchLiveView
 object SearchLiveView:
   final case class Article(title: String, summary: String)
 
-  final case class Model(params: SearchParams, page: Int)
+  final case class Model(params: SearchParams)
 
   enum Msg:
-    case Search(query: String)
+    case Search(event: FormEvent[Option[SearchTerm]])
 
-  private val PageSize = 3
+  private val PageSize   = 3
+  private val QueryField = FormField.string(FormPath("query")).map(SearchTerm.from)
 
   private val Articles = Vector(
     Article("Typed routes", "Schema-derived query values produce complete, reusable locations."),
@@ -166,6 +207,3 @@ object SearchLiveView:
     Article("Async work", "Typed task keys replace stale work and report deterministic outcomes."),
     Article("Uploads", "Scoped storage keeps accepted files separate from temporary entries.")
   )
-
-  private def normalizePage(page: Option[Int]): Int =
-    page.filter(_ > 0).getOrElse(1)

@@ -185,8 +185,9 @@ object SocketSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView.Routed[Unit, Int, (Option[String], String)]:
-               def mount(ctx: MountContext) =
-                 callsRef.update(_ :+ "mount").as(0)
+               def mount(params: (Option[String], String), ctx: MountContext) =
+                 val (q, path) = params
+                 callsRef.update(_ :+ s"mount:${q.getOrElse("")}:$path").as(0)
 
                override def handleParams(
                  model: Int,
@@ -220,7 +221,7 @@ object SocketSpec extends ZIOSpecDefault:
                   )
         _          <- socket.outbox.take(1).runCollect
         calls      <- callsRef.get
-      yield assertTrue(calls == List("mount", "params:1:/"))
+      yield assertTrue(calls == List("mount:1:/", "params:1:/"))
       end for
     },
     test("emits live navigation when bootstrap handleParams patches") {
@@ -228,7 +229,7 @@ object SocketSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView.Routed[Unit, Int, String]:
-               def mount(ctx: MountContext) =
+               def mount(params: String, ctx: MountContext) =
                  ZIO.succeed(0)
 
                override def handleParams(
@@ -272,7 +273,7 @@ object SocketSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView.Routed[Unit, Int, Option[String]]:
-               def mount(ctx: MountContext) =
+               def mount(params: Option[String], ctx: MountContext) =
                  ZIO.succeed(0)
 
                override def handleParams(
@@ -321,7 +322,7 @@ object SocketSpec extends ZIOSpecDefault:
 
       val ctx = LiveContext(staticChanged = false)
       val lv  = new LiveView.Routed[Unit, LoopModel, Unit]:
-        def mount(ctx: MountContext) =
+        def mount(params: Unit, ctx: MountContext) =
           ZIO.succeed(LoopModel(shouldLoop = false))
 
         override def handleParams(

@@ -103,6 +103,20 @@ object FormApiSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("typed submit bindings accept a form field directly") {
+      final case class Submitted(value: Either[FormErrors, String])
+
+      val view: HtmlElement[Submitted] = form(
+        phx.onSubmitForm(NameField)(event => Submitted(event.value)),
+        input(nameAttr := NameField.name)
+      )
+      val binding = BindingRegistry.collect[Submitted](view).values.head
+
+      assertTrue(
+        binding(BindingPayload.Form(formData("profile%5Bname%5D=Alice"))) ==
+          Right(Submitted(Right("Alice")))
+      )
+    },
     test("websocket form payload extracts target metadata") {
       val event = Payload.Event(
         `type` = "form",

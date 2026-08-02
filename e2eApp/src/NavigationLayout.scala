@@ -20,22 +20,22 @@ object NavigationLayout:
             styleAttr := "margin-bottom: 1rem; font-size: 1.125rem; line-height: 1.75rem;",
             "Navigation"
           ),
-          link.navigate(
+          link.pushNavigate(
             E2ERoutes.navigationA.location(NavigationLiveViews.AParams(None)),
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "LiveView A"
           ),
-          link.navigate(
+          link.pushNavigate(
             E2ERoutes.navigationB.location(NavigationLiveViews.BParams(false)),
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "LiveView B"
           ),
-          link.navigate(
+          link.pushNavigate(
             E2ERoutes.stream.location(None),
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "LiveView (other session)"
           ),
-          link.navigateUnsafe(
+          link.pushNavigateUnsafe(
             "/navigation/dead",
             styleAttr := "background-color: #f1f5f9; padding: 0.5rem;",
             "Dead View"

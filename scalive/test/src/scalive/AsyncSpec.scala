@@ -142,7 +142,7 @@ object AsyncSpec extends ZIOSpecDefault:
 
   override def spec = suite("AsyncSpec")(
     test("completed async task sends typed message and pushes diff") {
-      val lv = new LiveView.Routed[Msg, String, String]:
+      val lv = new LiveView[Msg, String]:
         def mount(ctx: MountContext) =
           ctx.async
             .start(Tasks.Load)(ZIO.succeed("loaded"))(Msg.Loaded(_))
@@ -164,7 +164,7 @@ object AsyncSpec extends ZIOSpecDefault:
       enum ResultMsg:
         case Completed(result: LiveAsyncResult[String])
 
-      val lv = new LiveView.Routed[ResultMsg, String, String]:
+      val lv = new LiveView[ResultMsg, String]:
 
         def mount(ctx: MountContext) =
           ctx.async
@@ -186,7 +186,7 @@ object AsyncSpec extends ZIOSpecDefault:
     },
     test("async completion message can push patch") {
       val lv = new LiveView.Routed[Msg, String, String]:
-        def mount(ctx: MountContext) =
+        def mount(params: String, ctx: MountContext) =
           ctx.async
             .start(Tasks.Patch)(ZIO.succeed("done"))(Msg.PatchLoaded(_))
             .as("/start")
@@ -453,7 +453,7 @@ object AsyncSpec extends ZIOSpecDefault:
     },
     test("live component async completion can push patch") {
       val lv = new LiveView.Routed[Unit, String, Option[String]]:
-        def mount(ctx: MountContext) =
+        def mount(params: Option[String], ctx: MountContext) =
           ZIO.succeed("none")
 
         override def handleParams(

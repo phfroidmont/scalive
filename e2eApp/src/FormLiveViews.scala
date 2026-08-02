@@ -43,7 +43,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
     extends LiveView.Routed[FormLiveView.Msg, FormLiveView.Model, FormQueryParams]:
   import FormLiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: FormQueryParams, ctx: MountContext) =
     Model(query = initialQuery)
 
   override def handleParams(model: Model, params: FormQueryParams, _url: URL, ctx: ParamsContext) =
@@ -299,8 +299,8 @@ object FormLiveView:
 end FormLiveView
 
 class NestedFormLiveView extends LiveView.Routed[Unit, FormQueryParams, FormQueryParams]:
-  def mount(ctx: MountContext) =
-    FormQueryParams()
+  def mount(params: FormQueryParams, ctx: MountContext) =
+    params
 
   override def handleParams(
     model: FormQueryParams,
@@ -314,7 +314,22 @@ class NestedFormLiveView extends LiveView.Routed[Unit, FormQueryParams, FormQuer
     (_: Unit) => model
 
   def render(model: FormQueryParams) =
-    div(liveView("nested", FormLiveView(model)))
+    div(liveView("nested", NestedFormContentLiveView(model)))
+
+private class NestedFormContentLiveView(initialQuery: FormQueryParams)
+    extends LiveView[FormLiveView.Msg, FormLiveView.Model]:
+  private val delegate = FormLiveView(initialQuery)
+
+  def mount(ctx: MountContext) =
+    FormLiveView.Model(query = initialQuery)
+
+  override def hooks = delegate.hooks
+
+  def handleMessage(model: FormLiveView.Model, ctx: MessageContext) =
+    delegate.handleMessage(model, ctx)
+
+  def render(model: FormLiveView.Model) =
+    delegate.render(model)
 
 class FormDynamicInputsLiveView
     extends LiveView.Routed[
@@ -324,7 +339,7 @@ class FormDynamicInputsLiveView
     ]:
   import FormDynamicInputsLiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: FormQueryParams, ctx: MountContext) =
     Model()
 
   override def handleParams(model: Model, params: FormQueryParams, _url: URL, ctx: ParamsContext) =

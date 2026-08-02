@@ -450,7 +450,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     },
     test("component pushPatch emits navigation and updates parent params on live_patch") {
       val parent = new LiveView.Routed[Unit, String, Option[String]]:
-        def mount(ctx: MountContext) =
+        def mount(params: Option[String], ctx: MountContext) =
           ZIO.succeed("none")
         override def handleParams(model: String, redirect: Option[String], _url: URL, ctx: ParamsContext) =
           ZIO.succeed(redirect.getOrElse("none"))

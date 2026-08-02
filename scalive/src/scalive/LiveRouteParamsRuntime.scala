@@ -5,6 +5,12 @@ import zio.http.URL
 import zio.http.codec.PathCodec
 
 private[scalive] trait LiveRouteParamsRuntime[A, Msg, Model]:
+  def mount(
+    lv: LiveView[Msg, Model],
+    url: URL,
+    ctx: LiveContext
+  ): Task[LiveRouteParamsRuntime.Mounted[Model]]
+
   def run(
     lv: LiveView[Msg, Model],
     model: Model,
@@ -13,8 +19,19 @@ private[scalive] trait LiveRouteParamsRuntime[A, Msg, Model]:
   ): Task[Model]
 
 private[scalive] object LiveRouteParamsRuntime:
+  final case class Mounted[Model](
+    model: Model,
+    handleInitialParams: Model => Task[Model])
+
   def none[A, Msg, Model]: LiveRouteParamsRuntime[A, Msg, Model] =
     new LiveRouteParamsRuntime[A, Msg, Model]:
+      def mount(
+        lv: LiveView[Msg, Model],
+        url: URL,
+        ctx: LiveContext
+      ): Task[Mounted[Model]] =
+        lv.mount(ctx.mountContext[Msg, Model]).map(Mounted(_, ZIO.succeed(_)))
+
       def run(
         lv: LiveView[Msg, Model],
         model: Model,
@@ -28,6 +45,18 @@ private[scalive] object LiveRouteParamsRuntime:
     paramsDecoder: LiveParamsDecoder[A, Params]
   ): LiveRouteParamsRuntime[A, Msg, Model] =
     new LiveRouteParamsRuntime[A, Msg, Model]:
+      def mount(
+        lv: LiveView[Msg, Model],
+        url: URL,
+        ctx: LiveContext
+      ): Task[Mounted[Model]] =
+        val routed = lv.asInstanceOf[LiveView.Routed[Msg, Model, Params]]
+        decode(pathCodec, paramsDecoder, url).flatMap { params =>
+          routed.mount(params, ctx.mountContext[Msg, Model]).map { model =>
+            Mounted(model, runDecoded(routed, _, params, url, ctx))
+          }
+        }
+
       def run(
         lv: LiveView[Msg, Model],
         model: Model,
@@ -35,13 +64,22 @@ private[scalive] object LiveRouteParamsRuntime:
         ctx: LiveContext
       ): Task[Model] =
         val routed = lv.asInstanceOf[LiveView.Routed[Msg, Model, Params]]
+        decode(pathCodec, paramsDecoder, url).flatMap(params =>
+          runDecoded(routed, model, params, url, ctx)
+        )
+
+      private def runDecoded(
+        routed: LiveView.Routed[Msg, Model, Params],
+        model: Model,
+        params: Params,
+        url: URL,
+        ctx: LiveContext
+      ): Task[Model] =
         ctx.hooks.runParams[Msg, Model](model, url, ctx).flatMap {
           case LiveHookResult.Halt(hookModel)     => ZIO.succeed(hookModel)
           case LiveHookResult.Continue(hookModel) =>
-            decode(pathCodec, paramsDecoder, url)
-              .flatMap(params =>
-                routed.handleParams(hookModel, params, url, ctx.paramsContext[Msg, Model])
-              )
+            routed
+              .handleParams(hookModel, params, url, ctx.paramsContext[Msg, Model])
               .catchSome { case error: LiveParamsCodec.DecodeError =>
                 routed.handleParamsDecodeError(hookModel, error, url, ctx.paramsContext[Msg, Model])
               }

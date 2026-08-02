@@ -14,7 +14,7 @@ class StreamLiveView()
 
   private val onlyChild = htmlAttr("only-child", BooleanAsAttrPresenceEncoder)
 
-  def mount(ctx: MountContext) =
+  def mount(_params: Option[String], ctx: MountContext) =
     for
       users          <- ctx.streams.init(UsersStreamDef, InitialUsers)
       admins         <- ctx.streams.init(AdminsStreamDef, InitialAdmins)
@@ -377,7 +377,7 @@ class HealthyLiveView(initialCategory: String)
     extends LiveView.Routed[HealthyLiveView.Msg, HealthyLiveView.Model, String]:
   import HealthyLiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: String, ctx: MountContext) =
     val category = normalizeCategory(initialCategory)
     ctx.streams
       .init(ItemsStreamDef, itemsFor(category))
@@ -399,7 +399,7 @@ class HealthyLiveView(initialCategory: String)
   def render(model: Model) =
     div(
       p(
-        link.patch(E2ERoutes.healthy.location(otherCategory(model.category)), "Switch")
+        link.pushPatch(E2ERoutes.healthy.location(otherCategory(model.category)), "Switch")
       ),
       h1(model.category.capitalize),
       ul(
@@ -445,7 +445,7 @@ class StreamResetLiveView()
     extends LiveView.Routed[StreamResetLiveView.Msg, StreamResetLiveView.Model, Option[String]]:
   import StreamResetLiveView.*
 
-  def mount(ctx: MountContext) =
+  def mount(_params: Option[String], ctx: MountContext) =
     ctx.streams
       .init(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items, usePhxRemove = false))

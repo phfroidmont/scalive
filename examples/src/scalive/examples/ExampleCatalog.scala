@@ -69,7 +69,7 @@ object ExampleCatalog:
       title = "Search navigation",
       description =
         "Schema-derived query parameters, complete typed locations, patch links, and server-driven navigation.",
-      location = ExamplesRoutes.search.location(SearchParams(None, None))
+      location = ExamplesRoutes.search.location(SearchParams.Empty)
     ),
     ExampleEntry(
       category = "Collections",

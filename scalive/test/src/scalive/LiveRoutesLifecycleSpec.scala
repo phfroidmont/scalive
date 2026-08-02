@@ -91,8 +91,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
   private def redirectAwareParent(child: LiveView[ChildMsg, Int]) =
     new LiveView.Routed[Unit, String, Option[String]]:
-      def mount(ctx: MountContext) =
-        ZIO.succeed("none")
+      def mount(redirect: Option[String], ctx: MountContext) =
+        ZIO.succeed(redirect.getOrElse("none"))
 
       override def handleParams(model: String, redirect: Option[String], _url: URL, ctx: ParamsContext) =
         ZIO.succeed(redirect.getOrElse("none"))
@@ -272,8 +272,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       for
         callsRef <- Ref.make(List.empty[String])
         lv = new LiveView.Routed[Unit, Unit, Option[String]]:
-               def mount(ctx: MountContext) =
-                  callsRef.update(_ :+ "mount").as(())
+               def mount(params: Option[String], ctx: MountContext) =
+                 callsRef.update(_ :+ s"mount:${params.getOrElse("")}").as(())
 
                override def handleParams(model: Unit, params: Option[String], _url: URL, ctx: ParamsContext) =
                  callsRef.update(_ :+ s"params:${params.getOrElse("")}").as(model)
@@ -285,15 +285,63 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         routes   = scalive.Live.router(scalive.live.queryOptional[String]("q")(lv))
         response <- runRequest(routes, "/?q=1")
         calls    <- callsRef.get
-      yield assertTrue(response.status == Status.Ok, calls == List("mount", "params:1"))
+      yield assertTrue(response.status == Status.Ok, calls == List("mount:1", "params:1"))
+    },
+    test("fails initial malformed params before mount") {
+      for
+        callsRef <- Ref.make(List.empty[String])
+        lv = new LiveView.Routed[Unit, Unit, Int]:
+               def mount(params: Int, ctx: MountContext) =
+                 callsRef.update(_ :+ s"mount:$params")
+
+               override def handleParams(model: Unit, params: Int, _url: URL, ctx: ParamsContext) =
+                 callsRef.update(_ :+ s"params:$params").as(model)
+
+               override def handleParamsDecodeError(
+                 model: Unit,
+                 error: LiveParamsCodec.DecodeError,
+                 _url: URL,
+                 ctx: ParamsContext
+               ) =
+                 callsRef.update(_ :+ s"decode-error:${error.message}").as(model)
+
+               def handleMessage(model: Unit, ctx: MessageContext) =
+                 (_: Unit) => ZIO.succeed(model)
+
+               def render(model: Unit): HtmlElement[Unit] = div("ok")
+        paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, Unit, Int](
+                          PathCodec.empty,
+                          LiveParamsDecoder.custom[Unit, Int]((_, _) => Left("malformed initial params"))
+                        )
+        exit <- Socket
+                  .start(
+                    "id",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    rootMeta,
+                    paramsRuntime = paramsRuntime
+                  )
+                  .exit
+        calls <- callsRef.get
+      yield
+        val failedWithInitialDecodeError = exit match
+          case Exit.Failure(cause) =>
+            cause.failureOption.exists {
+              case error: LiveParamsCodec.DecodeError => error.message == "malformed initial params"
+              case _                                  => false
+            }
+          case Exit.Success(_) => false
+
+        assertTrue(failedWithInitialDecodeError, calls.isEmpty)
     },
     test("transforms path and query params into domain params") {
       final case class UserQuery(tab: Option[String]) derives Schema
       final case class UserParams(userId: Int, tab: Option[String])
 
       val lv = new LiveView.Routed[Unit, String, UserParams]:
-        def mount(ctx: MountContext) =
-          ZIO.succeed("none")
+        def mount(params: UserParams, ctx: MountContext) =
+          ZIO.succeed(s"mounted:${params.userId}:${params.tab.getOrElse("")}")
 
         override def handleParams(model: String, params: UserParams, _url: URL, ctx: ParamsContext) =
           ZIO.succeed(s"${params.userId}:${params.tab.getOrElse("")}")
@@ -318,7 +366,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
     },
     test("honors initial pushPatch with HTTP redirect") {
       val lv = new LiveView.Routed[Unit, Unit, Unit]:
-        def mount(ctx: MountContext) =
+        def mount(params: Unit, ctx: MountContext) =
           ZIO.unit
 
         override def handleParams(model: Unit, params: Unit, _url: URL, ctx: ParamsContext) =

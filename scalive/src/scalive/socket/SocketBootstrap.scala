@@ -57,7 +57,7 @@ private[scalive] object SocketBootstrap:
                    )
       _               <- SocketFlashRuntime.resetNavigation(flashRef)
       _               <- navigationRef.set(None)
-      initModel       <- lv.mount(runtimeCtx.mountContext[Msg, Model])
+      mounted         <- paramsRuntime.mount(lv, initialUrl, runtimeCtx)
       mountNavigation <- navigationRef.getAndSet(None)
       (bootstrapModel, bootstrapPayloads, bootstrapUrl) <-
         runInitialLifecycle(
@@ -66,10 +66,11 @@ private[scalive] object SocketBootstrap:
           navigationRef,
           flashRef,
           tokenConfig,
-          initModel,
+          mounted.model,
           initialUrl,
           mountNavigation,
-          paramsRuntime
+          paramsRuntime,
+          mounted.handleInitialParams
         )
       initRoot <-
         SocketComponentRuntime.renderRoot(
@@ -145,19 +146,23 @@ private[scalive] object SocketBootstrap:
     initialModel: Model,
     initialUrl: URL,
     initialNavigation: Option[LiveNavigationCommand],
-    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model]
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
+    handleInitialParams: Model => Task[Model]
   ): Task[(Model, Chunk[WebSocketMessage.Payload], URL)] =
     def loop(
       model: Model,
       url: URL,
       redirectCount: Int,
       payloads: Chunk[WebSocketMessage.Payload],
-      preserveNavigationFlash: Boolean = false
+      preserveNavigationFlash: Boolean = false,
+      initial: Boolean = false
     ): Task[(Model, Chunk[WebSocketMessage.Payload], URL)] =
       for
         _ <- ZIO.unless(preserveNavigationFlash)(SocketFlashRuntime.resetNavigation(flashRef))
         _ <- navigationRef.set(None)
-        nextModel  <- paramsRuntime.run(lv, model, url, runtimeCtx)
+        nextModel <-
+          if initial then handleInitialParams(model)
+          else paramsRuntime.run(lv, model, url, runtimeCtx)
         navigation <- navigationRef.getAndSet(None)
         result     <- navigation match
                     case None =>
@@ -314,7 +319,7 @@ private[scalive] object SocketBootstrap:
       case Some(LiveNavigationCommand.Redirect(to)) =>
         handleBootstrapRedirect(initialModel, initialUrl, Chunk.empty, to)
       case None =>
-        loop(initialModel, initialUrl, 0, Chunk.empty)
+        loop(initialModel, initialUrl, 0, Chunk.empty, initial = true)
     end match
   end runInitialLifecycle
 end SocketBootstrap

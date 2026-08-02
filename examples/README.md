@@ -123,6 +123,13 @@ There is no database or durable persistence in this module.
   removes an individual file; the layer finalizer recursively removes the whole
   directory during scoped shutdown. An abrupt process or machine failure can leave
   temporary files for normal operating-system cleanup.
+- The document upload is declared as `LiveUploadDef[Chunk[Byte]]` with
+  `LiveUploadAccept.only`. Mount always renders the runtime-provided snapshot,
+  including disconnected rendering; transfer and progress begin after connection.
+  Saving happens inside `consumeCompleted`: successful persistence returns `Consume`,
+  while storage failure returns `Postpone`, so the runtime retains ownership for the
+  Retry storage action. Cancel and consume operations return the fresh snapshot used
+  by the model.
 
 ## Authentication Boundary
 

@@ -47,10 +47,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
   import Issue2965LiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.uploads
-      .allow(UploadName, UploadOptions)
-      .map(upload => Model(upload = upload))
-      .catchAll(_ => ZIO.succeed(Model(upload = disconnectedUpload)))
+    ctx.uploads.allow(Upload).map(upload => Model(upload = upload))
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks.empty.rawEvent("issue-2965") { (model, event, _) =>
@@ -64,8 +61,8 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate => refreshUpload(model, ctx.uploads)
     case Msg.Progress => refreshUpload(model, ctx.uploads).flatMap(pushNextFileEvents(_, ctx))
-    case Msg.CancelUpload(ref) =>
-      ctx.uploads.cancel(UploadName, ref) *> refreshUpload(model, ctx.uploads)
+    case Msg.CancelUpload(entry) =>
+      ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
     case Msg.Save => model
 
   def render(model: Model) =
@@ -114,14 +111,17 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
     )
 
   private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
-    uploads.get(UploadName).map {
+    uploads.get(Upload).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
     }
 
   private def pushNextFileEvents(model: Model, ctx: MessageContext): LiveIO[Model] =
-    val completedRefs = model.upload.entries.filter(_.done).map(_.ref).toSet
-    val newRefs       = completedRefs -- model.nextFileSentFor
+    val completedRefs = model.upload.entries
+      .filter(_.status == LiveUploadEntryStatus.Completed)
+      .map(_.ref)
+      .toSet
+    val newRefs = completedRefs -- model.nextFileSentFor
 
     ZIO
       .foreachDiscard(newRefs)(_ =>
@@ -134,8 +134,8 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
         )
       )
 
-  private def filePickerDisabled(upload: LiveUpload): Boolean =
-    upload.entries.exists(entry => !entry.done)
+  private def filePickerDisabled(upload: LiveUpload[Unit]): Boolean =
+    upload.entries.exists(_.status != LiveUploadEntryStatus.Completed)
 
   private def uploadRows(model: Model): Mod[Msg] =
     if model.fileNames.nonEmpty then
@@ -144,7 +144,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
           queuedUploadRow(fileName, if index < model.completedCount then 100 else 0)
       }
     else
-      model.upload.entries.filter(_.clientName.nonEmpty).splitBy(_.ref) { (_, entry) =>
+      model.upload.entries.filter(_.client.fileName.nonEmpty).splitBy(_.ref) { (_, entry) =>
         uploadEntryRow(model.upload, entry)
       }
 
@@ -156,9 +156,9 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
       td()
     )
 
-  private def uploadEntryRow(upload: LiveUpload, entry: LiveUploadEntry) =
+  private def uploadEntryRow(upload: LiveUpload[Unit], entry: LiveUploadEntry[Unit]) =
     tr(
-      td(entry.clientName),
+      td(entry.client.fileName),
       td(
         progressTag(
           value   := entry.progress.toString,
@@ -169,8 +169,8 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
       td(
         button(
           typ := "button",
-          phx.onClick(params => Msg.CancelUpload(params.getOrElse("ref", ""))),
-          phx.value("ref") := entry.ref,
+          phx.onClick(Msg.CancelUpload(entry)),
+          phx.value("ref") := entry.ref.value,
           aria.label       := "cancel",
           span("x")
         )
@@ -185,43 +185,28 @@ end Issue2965LiveView
 
 object Issue2965LiveView:
   final case class Model(
-    upload: LiveUpload,
+    upload: LiveUpload[Unit],
     fileNames: Vector[String] = Vector.empty,
     completedCount: Int = 0,
-    nextFileSentFor: Set[String] = Set.empty)
+    nextFileSentFor: Set[UploadEntryRef] = Set.empty)
 
   enum Msg:
     case Validate
     case Progress
-    case CancelUpload(ref: String)
+    case CancelUpload(entry: LiveUploadEntry[Unit])
     case Save
 
-  private val UploadName              = UploadKey("files")
   private val UploadSendNextFileEvent =
     ClientEvent[Map[String, String]]("upload_send_next_file")
-  private val UploadOptions = LiveUploadOptions(
+  private val Upload: LiveUploadDef[Unit] = LiveUploadDef.hosted(
+    name = "files",
     accept = LiveUploadAccept.Any,
+    writer = NoOpWriter,
     maxEntries = 1500,
     maxFileSize = 10_000_000_000L,
     chunkSize = 5 * 1024 * 1024,
-    autoUpload = true,
-    writer = NoOpWriter
+    autoUpload = true
   )
-
-  private def disconnectedUpload =
-    LiveUpload(
-      name = UploadName,
-      ref = s"${UploadName.value}-upload",
-      accept = UploadOptions.accept,
-      maxEntries = UploadOptions.maxEntries,
-      maxFileSize = UploadOptions.maxFileSize,
-      chunkSize = UploadOptions.chunkSize,
-      chunkTimeout = UploadOptions.chunkTimeout,
-      autoUpload = UploadOptions.autoUpload,
-      external = UploadOptions.external.nonEmpty,
-      entries = Nil,
-      errors = Nil
-    )
 
   private def fileNamesFromScrubEvent(value: Json): List[String] =
     value match
@@ -239,21 +224,16 @@ object Issue2965LiveView:
       case LiveUploadError.External(_) => "Error on writing to cloudflare"
       case _                           => "unknown error"
 
-  private object NoOpWriter extends LiveUploadWriter:
-    def init(uploadKey: UploadKey, entry: LiveExternalUploadEntry) =
-      LiveUploadWriter.InMemory.init(uploadKey, entry)
+  private object NoOpWriter extends LiveUploadWriter[Unit, Unit]:
+    def init(client: UploadClientMetadata) = ZIO.unit
 
-    def meta(state: LiveUploadWriterState) =
-      LiveUploadWriter.InMemory.meta(state)
-
-    def writeChunk(data: Chunk[Byte], state: LiveUploadWriterState) =
+    def writeChunk(data: Chunk[Byte], state: Unit) =
       zio.Random
-        .nextIntBetween(1, 201).flatMap(delay =>
-          ZIO.sleep(delay.millis) *> LiveUploadWriter.InMemory.writeChunk(data, state)
-        )
+        .nextIntBetween(1, 201).flatMap(delay => ZIO.sleep(delay.millis).as(()))
 
-    def close(state: LiveUploadWriterState, reason: LiveUploadWriterCloseReason) =
-      LiveUploadWriter.InMemory.close(state, reason)
+    def complete(state: Unit)                             = ZIO.unit
+    def abort(state: Unit, reason: LiveUploadAbortReason) = ZIO.unit
+    def discard(result: Unit)                             = ZIO.unit
 end Issue2965LiveView
 
 class Issue3814LiveView extends LiveView[Issue3814LiveView.Msg, Issue3814LiveView.Model]:
@@ -485,20 +465,24 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
   import Issue3647LiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.uploads
-      .allow(UploadName, UploadOptions)
-      .map(upload => Model(upload = upload))
-      .catchAll(_ => ZIO.succeed(Model(upload = disconnectedUpload)))
+    ctx.uploads.allow(Upload).map(upload => Model(upload = upload))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ValidateUser(event) =>
       model.copy(userName = event.raw.getOrElse("user[name]", ""))
     case Msg.Validate =>
       refreshUpload(model, ctx.uploads)
-    case Msg.Progress =>
-      saveCompletedEntries(model, ctx.uploads)
-    case Msg.CancelUpload(ref) =>
-      ctx.uploads.cancel(UploadName, ref) *> refreshUpload(model, ctx.uploads)
+    case Msg.Progress(entryRef) =>
+      ctx.uploads.get(Upload).flatMap {
+        case Some(upload) =>
+          upload.entries.find(_.ref.value == entryRef) match
+            case Some(entry) if entry.status == LiveUploadEntryStatus.Completed =>
+              saveCompletedEntry(model, entry, ctx.uploads)
+            case _ => ZIO.succeed(model.copy(upload = upload))
+        case None => ZIO.succeed(model)
+      }
+    case Msg.CancelUpload(entry) =>
+      ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
 
   def render(model: Model) =
     div(
@@ -522,7 +506,7 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
         liveFileInput(
           model.upload,
           formId := "auto-form",
-          phx.onProgress(_ => Msg.Progress)
+          phx.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", "")))
         )
       ),
       form(idAttr := "auto-form", phx.onChange(_ => Msg.Validate)),
@@ -539,12 +523,12 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
               s"${entry.progress}%"
             ),
             div(
-              entry.ref,
+              entry.ref.value,
               br(),
               a(
                 href := "#",
-                phx.onClick(params => Msg.CancelUpload(params.getOrElse("ref", ""))),
-                phx.value("ref") := entry.ref,
+                phx.onClick(Msg.CancelUpload(entry)),
+                phx.value("ref") := entry.ref.value,
                 cls              := "upload-entry__cancel",
                 "Cancel Upload"
               )
@@ -560,56 +544,41 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
     )
 
   private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
-    uploads.get(UploadName).map {
+    uploads.get(Upload).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
     }
 
-  private def saveCompletedEntries(model: Model, uploads: Uploads): LiveIO[Model] =
-    for
-      consumed  <- uploads.consumeCompleted(UploadName)
-      refreshed <- uploads.get(UploadName)
-    yield model.copy(
-      upload = refreshed.getOrElse(model.upload),
-      uploadedFiles = model.uploadedFiles ++ consumed.map(_.name)
-    )
+  private def saveCompletedEntry(
+    model: Model,
+    entry: LiveUploadEntry[Chunk[Byte]],
+    uploads: Uploads
+  ): LiveIO[Model] =
+    uploads
+      .consume(entry)(upload => ZIO.succeed(ConsumeDecision.Consume(upload.client.fileName))).map {
+        case (fileName, upload) =>
+          model.copy(upload = upload, uploadedFiles = model.uploadedFiles :+ fileName)
+      }
 end Issue3647LiveView
 
 object Issue3647LiveView:
   enum Msg:
     case ValidateUser(event: FormEvent[FormData])
     case Validate
-    case Progress
-    case CancelUpload(ref: String)
+    case Progress(entryRef: String)
+    case CancelUpload(entry: LiveUploadEntry[Chunk[Byte]])
 
   final case class Model(
-    upload: LiveUpload,
+    upload: LiveUpload[Chunk[Byte]],
     userName: String = "",
     uploadedFiles: List[String] = Nil)
 
-  private val UploadName = UploadKey("avatar")
-
-  private val UploadOptions = LiveUploadOptions(
-    accept = LiveUploadAccept.Exactly(List(".txt", ".md")),
+  private val Upload: LiveUploadDef[Chunk[Byte]] = LiveUploadDef.inMemory(
+    name = "avatar",
+    accept = LiveUploadAccept.only(".txt", ".md"),
     maxEntries = 2,
     autoUpload = true
   )
-
-  private def disconnectedUpload =
-    LiveUpload(
-      name = UploadName,
-      ref = s"${UploadName.value}-upload",
-      accept = UploadOptions.accept,
-      maxEntries = UploadOptions.maxEntries,
-      maxFileSize = UploadOptions.maxFileSize,
-      chunkSize = UploadOptions.chunkSize,
-      chunkTimeout = UploadOptions.chunkTimeout,
-      autoUpload = UploadOptions.autoUpload,
-      external = UploadOptions.external.nonEmpty,
-      entries = Nil,
-      errors = Nil
-    )
-end Issue3647LiveView
 
 class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
   import Issue3819LiveView.*
@@ -2090,10 +2059,7 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
   import Issue4078LiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.uploads
-      .allow(UploadName, UploadOptions)
-      .map(upload => Model(upload = upload))
-      .catchAll(_ => ZIO.succeed(Model(upload = disconnectedUpload)))
+    ctx.uploads.allow(Upload).map(upload => Model(upload = upload))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate       => refreshUpload(model, ctx.uploads)
@@ -2127,12 +2093,12 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
         "Toggle Class"
       ),
       model.upload.entries.splitBy(_.ref) { (_, entry) =>
-        articleTag(cls := "upload-entry", span(cls := "entry-name", entry.clientName))
+        articleTag(cls := "upload-entry", span(cls := "entry-name", entry.client.fileName))
       }
     )
 
   private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
-    uploads.get(UploadName).map {
+    uploads.get(Upload).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
     }
@@ -2146,31 +2112,15 @@ object Issue4078LiveView:
     case ToggleClass
 
   final case class Model(
-    upload: LiveUpload,
+    upload: LiveUpload[Chunk[Byte]],
     disabled: Boolean = true,
     customClass: String = "initial-class")
 
-  private val UploadName    = UploadKey("avatar")
-  private val UploadOptions = LiveUploadOptions(
-    accept = LiveUploadAccept.Exactly(List(".jpg", ".jpeg", ".png", ".txt")),
+  private val Upload: LiveUploadDef[Chunk[Byte]] = LiveUploadDef.inMemory(
+    name = "avatar",
+    accept = LiveUploadAccept.only(".jpg", ".jpeg", ".png", ".txt"),
     maxEntries = 2
   )
-
-  private def disconnectedUpload =
-    LiveUpload(
-      name = UploadName,
-      ref = s"${UploadName.value}-upload",
-      accept = UploadOptions.accept,
-      maxEntries = UploadOptions.maxEntries,
-      maxFileSize = UploadOptions.maxFileSize,
-      chunkSize = UploadOptions.chunkSize,
-      chunkTimeout = UploadOptions.chunkTimeout,
-      autoUpload = UploadOptions.autoUpload,
-      external = UploadOptions.external.nonEmpty,
-      entries = Nil,
-      errors = Nil
-    )
-end Issue4078LiveView
 
 class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
   import Issue4088LiveView.*

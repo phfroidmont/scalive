@@ -108,13 +108,20 @@ trait Flash:
   def snapshot: LiveIO[Map[FlashKind, String]]
 
 trait Uploads:
-  def allow(key: UploadKey, options: LiveUploadOptions): LiveIO[LiveUpload]
-  def disallow(key: UploadKey): LiveIO[Unit]
-  def get(key: UploadKey): LiveIO[Option[LiveUpload]]
-  def cancel(key: UploadKey, entryRef: String): LiveIO[Unit]
-  def consumeCompleted(key: UploadKey): LiveIO[List[LiveUploadedEntry]]
-  def consume(entryRef: String): LiveIO[Option[LiveUploadedEntry]]
-  def drop(entryRef: String): LiveIO[Unit]
+  def allow[R](definition: LiveUploadDef[R]): LiveIO[LiveUpload[R]]
+  def disallow[R](definition: LiveUploadDef[R]): LiveIO[Unit]
+  def get[R](definition: LiveUploadDef[R]): LiveIO[Option[LiveUpload[R]]]
+  def cancel[R](entry: LiveUploadEntry[R]): LiveIO[LiveUpload[R]]
+  def consume[R, A](
+    entry: LiveUploadEntry[R]
+  )(
+    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+  ): LiveIO[(A, LiveUpload[R])]
+  def consumeCompleted[R, A](
+    definition: LiveUploadDef[R]
+  )(
+    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+  ): LiveIO[(List[A], LiveUpload[R])]
 
 trait Streams:
   def init[A](
@@ -337,17 +344,24 @@ private[scalive] object LiveContext:
       runtime.flash.snapshot.map(_.map { case (kind, message) => FlashKind(kind) -> message })
 
   final private class RuntimeUploads(runtime: LiveContext) extends Uploads:
-    def allow(key: UploadKey, options: LiveUploadOptions): LiveIO[LiveUpload] =
-      runtime.uploads.allow(key.value, options)
-    def disallow(key: UploadKey): LiveIO[Unit]                 = runtime.uploads.disallow(key.value)
-    def get(key: UploadKey): LiveIO[Option[LiveUpload]]        = runtime.uploads.get(key.value)
-    def cancel(key: UploadKey, entryRef: String): LiveIO[Unit] =
-      runtime.uploads.cancel(key.value, entryRef)
-    def consumeCompleted(key: UploadKey): LiveIO[List[LiveUploadedEntry]] =
-      runtime.uploads.consumeCompleted(key.value)
-    def consume(entryRef: String): LiveIO[Option[LiveUploadedEntry]] =
-      runtime.uploads.consume(entryRef)
-    def drop(entryRef: String): LiveIO[Unit] = runtime.uploads.drop(entryRef)
+    def allow[R](definition: LiveUploadDef[R]): LiveIO[LiveUpload[R]] =
+      runtime.uploads.allow(definition)
+    def disallow[R](definition: LiveUploadDef[R]): LiveIO[Unit] =
+      runtime.uploads.disallow(definition)
+    def get[R](definition: LiveUploadDef[R]): LiveIO[Option[LiveUpload[R]]] =
+      runtime.uploads.get(definition)
+    def cancel[R](entry: LiveUploadEntry[R]): LiveIO[LiveUpload[R]] =
+      runtime.uploads.cancel(entry)
+    def consume[R, A](
+      entry: LiveUploadEntry[R]
+    )(
+      callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+    ): LiveIO[(A, LiveUpload[R])] = runtime.uploads.consume(entry)(callback)
+    def consumeCompleted[R, A](
+      definition: LiveUploadDef[R]
+    )(
+      callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+    ): LiveIO[(List[A], LiveUpload[R])] = runtime.uploads.consumeCompleted(definition)(callback)
 
   final private class RuntimeStreams(runtime: LiveContext) extends Streams:
     def init[A](

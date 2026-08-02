@@ -9,28 +9,18 @@ final class DocumentUploadLiveView(store: UploadStore)
   import DocumentUploadLiveView.*
 
   def mount(ctx: MountContext) =
-    if ctx.connected then
-      for
-        upload  <- ctx.uploads.allow(UploadName, UploadOptions)
-        entries <- store.entries
-      yield Model(upload = Some(upload), stored = entries)
-    else ZIO.succeed(Model(upload = None, stored = Vector.empty))
+    for
+      upload  <- ctx.uploads.allow(Upload)
+      entries <- store.entries
+    yield Model(upload = upload, stored = entries)
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate    => refreshUpload(model, ctx.uploads)
-    case Msg.Progress    => refreshUpload(model, ctx.uploads)
-    case Msg.Cancel(ref) =>
-      ctx.uploads.cancel(UploadName, ref) *> refreshUpload(model, ctx.uploads)
-    case Msg.Save =>
-      for
-        consumed  <- ctx.uploads.consumeCompleted(UploadName)
-        refreshed <- refreshUpload(
-                       model.copy(pending = model.pending ++ consumed),
-                       ctx.uploads
-                     )
-        saved <- persistPending(refreshed)
-      yield saved
-    case Msg.RetryStore        => persistPending(model)
+    case Msg.Validate      => refreshUpload(model, ctx.uploads)
+    case Msg.Progress      => refreshUpload(model, ctx.uploads)
+    case Msg.Cancel(entry) =>
+      ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
+    case Msg.Save              => saveCompleted(model, ctx.uploads)
+    case Msg.RetryStore        => saveCompleted(model, ctx.uploads)
     case Msg.Delete(storageId) =>
       store
         .delete(storageId)
@@ -40,10 +30,10 @@ final class DocumentUploadLiveView(store: UploadStore)
               .logErrorCause(
                 s"UploadStore operation=delete storageId=$storageId",
                 Cause.fail(error)
-              ).as(model.copy(storeFailure = true)),
-          _ => store.entries.map(entries => model.copy(stored = entries, storeFailure = false))
+              ).as(model.copy(storeFailure = Some(StoreFailure.Delete))),
+          _ => store.entries.map(entries => model.copy(stored = entries, storeFailure = None))
         )
-    case Msg.DismissStoreFailure => ZIO.succeed(model.copy(storeFailure = false))
+    case Msg.DismissStoreFailure => ZIO.succeed(model.copy(storeFailure = None))
 
   def render(model: Model) =
     div(
@@ -56,14 +46,12 @@ final class DocumentUploadLiveView(store: UploadStore)
           "Upload at most two small text documents, follow server-reported progress, consume completed entries, and manage application-owned files."
         )
       ),
-      Option.when(model.storeFailure)(storeFailureAlert(model.pending.nonEmpty)),
-      model.upload match
-        case None         => connecting
-        case Some(upload) => uploader(upload),
+      model.storeFailure.map(storeFailureAlert),
+      uploader(model.upload),
       storedEntries(model.stored)
     )
 
-  private def uploader(upload: LiveUpload): HtmlElement[Msg] =
+  private def uploader(upload: LiveUpload[Chunk[Byte]]): HtmlElement[Msg] =
     form(
       cls := "space-y-6",
       phx.onChange(_ => Msg.Validate),
@@ -90,13 +78,13 @@ final class DocumentUploadLiveView(store: UploadStore)
               div(
                 cls := "flex flex-wrap items-start justify-between gap-3",
                 div(
-                  p(cls := "font-medium", entry.clientName),
-                  p(cls := "text-xs text-base-content/55", formatBytes(entry.clientSize))
+                  p(cls := "font-medium", entry.client.fileName),
+                  p(cls := "text-xs text-base-content/55", formatBytes(entry.client.sizeBytes))
                 ),
                 button(
                   typ := "button",
                   cls := "btn btn-ghost btn-sm text-error",
-                  phx.onClick(Msg.Cancel(entry.ref)),
+                  phx.onClick(Msg.Cancel(entry)),
                   "Cancel"
                 )
               ),
@@ -108,7 +96,8 @@ final class DocumentUploadLiveView(store: UploadStore)
               ),
               p(
                 cls := "mt-1 text-xs text-base-content/55",
-                if entry.done then "Ready to save" else s"${entry.progress}% uploaded"
+                if entry.status == LiveUploadEntryStatus.Completed then "Ready to save"
+                else s"${entry.progress}% uploaded"
               ),
               errorList(uploadErrors(entry))
             )
@@ -123,20 +112,13 @@ final class DocumentUploadLiveView(store: UploadStore)
       )
     )
 
-  private def connecting: HtmlElement[Msg] =
-    div(
-      cls := "alert alert-info",
-      span(cls := "loading loading-spinner loading-sm"),
-      span("Connecting before uploads are enabled...")
-    )
-
-  private def storeFailureAlert(canRetry: Boolean): HtmlElement[Msg] =
+  private def storeFailureAlert(failure: StoreFailure): HtmlElement[Msg] =
     div(
       cls := "alert alert-error mb-6",
       span("The document store could not complete that operation. Please try again."),
       div(
         cls := "flex gap-2",
-        Option.when(canRetry)(
+        Option.when(failure == StoreFailure.Save)(
           button(
             typ := "button",
             cls := "btn btn-sm",
@@ -193,27 +175,27 @@ final class DocumentUploadLiveView(store: UploadStore)
     )
 
   private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
-    uploads.get(UploadName).map(upload => model.copy(upload = upload))
+    uploads.get(Upload).map(_.fold(model)(upload => model.copy(upload = upload)))
 
-  private def persistPending(model: Model): UIO[Model] =
-    ZIO
-      .foreach(model.pending) { upload =>
+  private def saveCompleted(model: Model, uploads: Uploads): LiveIO[Model] =
+    uploads
+      .consumeCompleted(Upload) { upload =>
         store
-          .save(upload).either.tap {
-            case Left(error) =>
-              ZIO.logErrorCause(
-                s"UploadStore operation=save uploadRef=${upload.ref}",
-                Cause.fail(error)
-              )
-            case Right(_) => ZIO.unit
-          }.map(upload -> _)
-      }.flatMap { attempts =>
-        val failed = attempts.collect { case (upload, Left(_)) => upload }
+          .save(upload).foldZIO(
+            error =>
+              ZIO
+                .logErrorCause(
+                  s"UploadStore operation=save uploadRef=${upload.ref.value}",
+                  Cause.fail(error)
+                ).as(ConsumeDecision.Postpone(false)),
+            _ => ZIO.succeed(ConsumeDecision.Consume(true))
+          )
+      }.flatMap { case (attempts, upload) =>
         store.entries.map(entries =>
           model.copy(
+            upload = upload,
             stored = entries,
-            pending = failed,
-            storeFailure = failed.nonEmpty
+            storeFailure = Option.when(attempts.contains(false))(StoreFailure.Save)
           )
         )
       }
@@ -222,9 +204,9 @@ end DocumentUploadLiveView
 object DocumentUploadLiveView:
   val layer = ZLayer.fromFunction(DocumentUploadLiveView.apply)
 
-  private val UploadName    = UploadKey("documents")
-  private val UploadOptions = LiveUploadOptions(
-    accept = LiveUploadAccept.Exactly(List(".txt", ".md")),
+  private val Upload: LiveUploadDef[Chunk[Byte]] = LiveUploadDef.inMemory(
+    name = "documents",
+    accept = LiveUploadAccept.only(".txt", ".md"),
     maxEntries = 2,
     maxFileSize = 1024L * 1024L
   )
@@ -232,17 +214,20 @@ object DocumentUploadLiveView:
   enum Msg:
     case Validate
     case Progress
-    case Cancel(ref: String)
+    case Cancel(entry: LiveUploadEntry[Chunk[Byte]])
     case Save
     case RetryStore
     case Delete(storageId: String)
     case DismissStoreFailure
 
+  enum StoreFailure:
+    case Save
+    case Delete
+
   final case class Model(
-    upload: Option[LiveUpload],
+    upload: LiveUpload[Chunk[Byte]],
     stored: Vector[UploadStore.Entry],
-    pending: List[LiveUploadedEntry] = Nil,
-    storeFailure: Boolean = false)
+    storeFailure: Option[StoreFailure] = None)
 
   private def errorMessage(error: LiveUploadError): String =
     error match

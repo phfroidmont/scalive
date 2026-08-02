@@ -18,21 +18,30 @@ trait Components:
 
   private val dataPhxAutoUpload = htmlAttr("data-phx-auto-upload", BooleanAsAttrPresenceEncoder)
 
-  def liveFileInput[Msg](upload: LiveUpload, mods: Mod[Msg]*): HtmlElement[Msg] =
-    val activeRefs      = upload.entries.map(_.ref).mkString(",")
-    val doneRefs        = upload.entries.filter(_.done).map(_.ref).mkString(",")
+  def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod[Msg]*): HtmlElement[Msg] =
+    val activeRefs = upload.entries.map(_.ref.value).mkString(",")
+    val doneRefs   = upload.entries
+      .filter(_.status == LiveUploadEntryStatus.Completed)
+      .map(_.ref.value)
+      .mkString(",")
     val preflightedRefs = upload.entries
-      .filter(entry => entry.preflighted || entry.done)
-      .map(_.ref)
+      .filter(entry =>
+        entry.status match
+          case LiveUploadEntryStatus.Preflighted | LiveUploadEntryStatus.Uploading(_) |
+              LiveUploadEntryStatus.Completed =>
+            true
+          case _ => false
+      )
+      .map(_.ref.value)
       .mkString(",")
 
     input(
-      idAttr                           := upload.ref,
+      idAttr                           := upload.ref.value,
       typ                              := "file",
-      nameAttr                         := upload.name.value,
+      nameAttr                         := upload.name,
       accept                           := upload.accept.toHtmlValue,
       dataAttr("phx-hook")             := "Phoenix.LiveFileUpload",
-      dataAttr("phx-upload-ref")       := upload.ref,
+      dataAttr("phx-upload-ref")       := upload.ref.value,
       dataAttr("phx-active-refs")      := activeRefs,
       dataAttr("phx-done-refs")        := doneRefs,
       dataAttr("phx-preflighted-refs") := preflightedRefs,
@@ -40,12 +49,13 @@ trait Components:
       multiple                         := upload.maxEntries > 1,
       mods
     )
+  end liveFileInput
 
-  def uploadErrors(upload: LiveUpload): List[LiveUploadError] = upload.errors
+  def uploadErrors[R](upload: LiveUpload[R]): List[LiveUploadError] = upload.errors
 
-  def uploadErrors(upload: LiveUpload, entry: LiveUploadEntry): List[LiveUploadError] =
+  def uploadErrors[R](upload: LiveUpload[R], entry: LiveUploadEntry[R]): List[LiveUploadError] =
     upload.entries.find(_.ref == entry.ref).map(_.errors).getOrElse(Nil)
 
-  def uploadErrors(entry: LiveUploadEntry): List[LiveUploadError] = entry.errors
+  def uploadErrors[R](entry: LiveUploadEntry[R]): List[LiveUploadError] = entry.errors
 
 end Components

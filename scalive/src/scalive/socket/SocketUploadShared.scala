@@ -12,131 +12,102 @@ import scalive.*
 private[socket] object SocketUploadShared:
   private val UploadRefLength = 12
 
-  def validateUploadOptions(
-    name: String,
-    options: LiveUploadOptions
-  ): Task[LiveUploadOptions] =
-    if name.isEmpty then ZIO.fail(new IllegalArgumentException("Upload name must not be empty"))
-    else if options.maxEntries <= 0 then
-      ZIO.fail(new IllegalArgumentException(s"Upload $name maxEntries must be > 0"))
-    else if options.maxFileSize <= 0 then
-      ZIO.fail(new IllegalArgumentException(s"Upload $name maxFileSize must be > 0"))
-    else if options.chunkSize <= 0 then
-      ZIO.fail(new IllegalArgumentException(s"Upload $name chunkSize must be > 0"))
-    else if options.chunkTimeout <= 0 then
-      ZIO.fail(new IllegalArgumentException(s"Upload $name chunkTimeout must be > 0"))
-    else
-      options.accept match
-        case LiveUploadAccept.Exactly(values) if values.isEmpty =>
-          ZIO.fail(new IllegalArgumentException(s"Upload $name accept list must not be empty"))
-        case _ =>
-          ZIO.succeed(options)
-
   def randomUploadRef(length: Int = UploadRefLength): String =
-    val bytes   = Random.nextBytes(length)
     val encoded = Base64
       .getUrlEncoder()
       .withoutPadding()
-      .encodeToString(bytes)
-    if encoded.length >= length then encoded.take(length)
-    else encoded
+      .encodeToString(Random.nextBytes(length))
+    encoded.take(length)
 
-  def buildLiveUpload(
+  def buildLiveUpload[R](
     state: UploadRuntimeState,
-    config: UploadConfigState
-  ): LiveUpload =
-    LiveUpload(
-      name = UploadKey(config.name),
-      ref = config.ref,
-      accept = config.options.accept,
-      maxEntries = config.options.maxEntries,
-      maxFileSize = config.options.maxFileSize,
-      chunkSize = config.options.chunkSize,
-      chunkTimeout = config.options.chunkTimeout,
-      autoUpload = config.options.autoUpload,
-      external = config.options.external.nonEmpty,
-      entries = config.entryOrder.flatMap(state.entries.get).map(toLiveUploadEntry).toList,
+    config: UploadConfigState,
+    definition: LiveUploadDef[R]
+  ): LiveUpload[R] =
+    new LiveUpload(
+      definition = definition,
+      ref = UploadRef(config.ref),
+      entries = config.entryOrder.flatMap(state.entries.get).map(toLiveUploadEntry[R]).toList,
       errors = config.errors.map(_._2).map(LiveUploadError.fromJson)
     )
 
-  def consumeEntry(
-    uploadRef: Ref[UploadRuntimeState],
-    entryRef: String
-  ): UIO[Option[LiveUploadedEntry]] =
-    uploadRef.modify { current =>
-      current.entries.get(entryRef) match
-        case Some(entry) if isUploadEntryDone(entry) && entry.valid =>
-          val uploadedEntry = LiveUploadedEntry(
-            ref = entry.ref,
-            name = entry.name,
-            contentType = entry.contentType,
-            bytes = entry.bytes,
-            meta = entry.externalMeta.orElse(entry.writerMeta).getOrElse(Json.Obj.empty)
-          )
-          Some(uploadedEntry) -> current.removeEntry(entryRef)
-        case _ =>
-          None -> current
-    }
-
-  def closeWriter(
-    entry: UploadEntryState,
-    reason: LiveUploadWriterCloseReason
-  ): Task[UploadEntryState] =
-    if entry.writerClosed then ZIO.succeed(entry)
-    else
-      entry.writerState match
-        case Some(state) =>
-          entry.writer
-            .close(state, reason)
-            .either
-            .map {
-              case Right(closedState) =>
-                entry.copy(
-                  writerState = Some(closedState),
-                  writerMeta = Some(entry.writer.meta(closedState)),
-                  writerClosed = true
-                )
-              case Left(_) =>
-                entry.copy(writerClosed = true)
-            }
-        case None => ZIO.succeed(entry.copy(writerClosed = true))
-
-  def ensureWriterState(entry: UploadEntryState): Task[UploadEntryState] =
-    entry.writerState match
-      case Some(_) => ZIO.succeed(entry)
-      case None    =>
-        entry.writer
-          .init(UploadKey(entry.uploadName), toExternalUploadEntry(entry))
-          .map(state => entry.copy(writerState = Some(state)))
-
-  def toExternalUploadEntry(entry: UploadEntryState): LiveExternalUploadEntry =
-    LiveExternalUploadEntry(
-      ref = entry.ref,
-      name = entry.name,
+  def clientMetadata(entry: UploadEntryState): UploadClientMetadata =
+    new UploadClientMetadata(
+      fileName = entry.name,
       relativePath = entry.relativePath,
-      size = entry.size,
-      contentType = entry.contentType,
-      lastModified = entry.lastModified,
-      clientMeta = entry.clientMeta
+      sizeBytes = entry.size,
+      mediaType = entry.contentType,
+      lastModifiedMillis = entry.lastModified,
+      metadata = entry.clientMeta
     )
 
-  def isUploadEntryDone(entry: UploadEntryState): Boolean =
-    entry.progress >= 100 || entry.bytes.length == entry.size
+  def ensureDestinationState(entry: UploadEntryState): Task[UploadEntryState] =
+    entry.destinationState match
+      case Some(_) => ZIO.succeed(entry)
+      case None    =>
+        entry.destination
+          .init(clientMetadata(entry))
+          .map(state => entry.copy(destinationState = Some(state)))
 
-  def toLiveUploadEntry(entry: UploadEntryState): LiveUploadEntry =
-    LiveUploadEntry(
-      ref = entry.ref,
-      clientName = entry.name,
-      clientRelativePath = entry.relativePath,
-      clientSize = entry.size,
-      clientType = entry.contentType,
-      clientLastModified = entry.lastModified,
-      progress = entry.progress,
-      preflighted = entry.preflighted,
-      done = isUploadEntryDone(entry),
-      cancelled = false,
-      valid = entry.valid && entry.errors.isEmpty,
-      errors = entry.errors.map(LiveUploadError.fromJson),
-      meta = entry.externalMeta.orElse(entry.writerMeta)
+  def complete(entry: UploadEntryState): Task[UploadEntryState] =
+    entry.completedResult match
+      case Some(_) => ZIO.succeed(entry)
+      case None    =>
+        entry.destinationState match
+          case Some(state) =>
+            entry.destination.complete(state).map { result =>
+              entry.copy(
+                destinationState = None,
+                completedResult = Some(result),
+                resultMeta = Some(entry.destination.metadata(result))
+              )
+            }
+          case None =>
+            ZIO.fail(new IllegalStateException(s"Upload entry ${entry.ref} has no writer state"))
+
+  def cleanupEntry(entry: UploadEntryState, reason: LiveUploadAbortReason): UIO[Unit] =
+    val cleanup = entry.completedResult match
+      case Some(result) => entry.destination.discard(result)
+      case None         =>
+        entry.destinationState match
+          case Some(state) => entry.destination.abort(state, reason)
+          case None        => ZIO.unit
+
+    cleanup.catchAllCause(cause =>
+      ZIO.logErrorCause(s"Upload cleanup failed for entry ${entry.ref}", cause)
+    )
+
+  def cleanupEntries(entries: Iterable[UploadEntryState], reason: LiveUploadAbortReason)
+    : UIO[Unit] =
+    ZIO.foreachDiscard(entries)(cleanupEntry(_, reason))
+
+  def isUploadEntryDone(entry: UploadEntryState): Boolean =
+    entry.progress >= 100 && entry.completedResult.nonEmpty
+
+  def toLiveUploadEntry[R](entry: UploadEntryState): LiveUploadEntry[R] =
+    val uploadErrors = entry.errors.map(LiveUploadError.fromJson)
+    val status       =
+      if uploadErrors.nonEmpty || !entry.valid then LiveUploadEntryStatus.Invalid(uploadErrors)
+      else if isUploadEntryDone(entry) then LiveUploadEntryStatus.Completed
+      else if entry.progress > 0 then LiveUploadEntryStatus.Uploading(entry.progress)
+      else if entry.preflighted then LiveUploadEntryStatus.Preflighted
+      else LiveUploadEntryStatus.Selected
+
+    new LiveUploadEntry(
+      ref = UploadEntryRef(entry.ref),
+      client = clientMetadata(entry),
+      status = status,
+      metadata = entry.externalMeta.orElse(entry.resultMeta),
+      uploadName = entry.uploadName
+    )
+
+  def toCompletedUpload[R](entry: UploadEntryState): Option[CompletedUpload[R]] =
+    entry.completedResult.map(result =>
+      new CompletedUpload(
+        ref = UploadEntryRef(entry.ref),
+        client = clientMetadata(entry),
+        result = result.asInstanceOf[R],
+        metadata = entry.resultMeta.orElse(entry.externalMeta).getOrElse(Json.Obj.empty)
+      )
     )
 end SocketUploadShared

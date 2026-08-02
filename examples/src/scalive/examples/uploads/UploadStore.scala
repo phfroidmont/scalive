@@ -11,10 +11,10 @@ import scala.jdk.CollectionConverters.*
 
 import zio.*
 
-import scalive.LiveUploadedEntry
+import scalive.CompletedUpload
 
 trait UploadStore:
-  def save(upload: LiveUploadedEntry): Task[UploadStore.Entry]
+  def save(upload: CompletedUpload[Chunk[Byte]]): Task[UploadStore.Entry]
   def delete(storageId: String): Task[Unit]
   def entries: UIO[Vector[UploadStore.Entry]]
 
@@ -44,7 +44,7 @@ object UploadStore:
 
   final private case class Live(directory: Path, entriesRef: Ref[Vector[Entry]])
       extends UploadStore:
-    def save(upload: LiveUploadedEntry): Task[Entry] =
+    def save(upload: CompletedUpload[Chunk[Byte]]): Task[Entry] =
       ZIO.uninterruptible {
         for
           pending <- ZIO.attemptBlocking(publish(upload))
@@ -53,7 +53,7 @@ object UploadStore:
         yield entry
       }
 
-    private def publish(upload: LiveUploadedEntry): PendingEntry =
+    private def publish(upload: CompletedUpload[Chunk[Byte]]): PendingEntry =
       var storageId        = ""
       var finalPath        = directory
       var reservationOwned = false
@@ -73,7 +73,7 @@ object UploadStore:
         stagingOwned = true
         val _ = Files.write(
           stagingPath,
-          upload.bytes.toArray,
+          upload.result.toArray,
           StandardOpenOption.TRUNCATE_EXISTING,
           StandardOpenOption.WRITE
         )
@@ -91,9 +91,9 @@ object UploadStore:
         PendingEntry(
           entry = Entry(
             storageId = storageId,
-            clientName = upload.name,
-            contentType = upload.contentType,
-            size = upload.bytes.length.toLong
+            clientName = upload.client.fileName,
+            contentType = upload.client.mediaType,
+            size = upload.client.sizeBytes
           ),
           stagingPath = stagingPath,
           finalPath = finalPath

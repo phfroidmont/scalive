@@ -230,6 +230,44 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       .timeoutFail(new RuntimeException("Timed out waiting for matching socket payload"))(3.seconds)
 
   override def spec = suite("LiveRoutesLifecycleSpec")(
+    test("root upload renders while disconnected and gets a fresh ref when connected") {
+      val definition = LiveUploadDef.inMemory("document", LiveUploadAccept.only(".txt"))
+      for
+        refs <- Queue.unbounded[(Boolean, String)]
+        liveView = new LiveView[Unit, LiveUpload[Chunk[Byte]]]:
+                     def mount(ctx: MountContext) =
+                       ctx.uploads.allow(definition).tap(upload =>
+                         refs.offer(ctx.connected -> upload.ref.value)
+                       )
+
+                     def handleMessage(model: LiveUpload[Chunk[Byte]], ctx: MessageContext) =
+                       (_: Unit) => ZIO.succeed(model)
+
+                     def render(model: LiveUpload[Chunk[Byte]]) =
+                       div(liveFileInput(model))
+        runtime     = runtimeFor(scalive.live(liveView))
+        response   <- runRequest(runtime.routes, "/")
+        body       <- response.body.asString
+        session    <- extractAttr(body, "data-phx-session")
+        (disconnected, disconnectedRef) <- refs.take
+        liveViewId <- ZIO
+                        .fromEither(LiveSessionPayload.verify(tokenConfig, session))
+                        .map(_._1)
+                        .mapError(new IllegalArgumentException(_))
+        topic   = s"lv:$liveViewId"
+        channel <- LiveChannel.make(tokenConfig)
+        _       <- runtime.handleMessage(joinMessage(topic, session, "/"), channel)
+        (connected, connectedRef) <- refs.take
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains(s"<input id=\"$disconnectedRef\""),
+        !disconnected,
+        connected,
+        disconnectedRef.nonEmpty,
+        connectedRef.nonEmpty,
+        connectedRef != disconnectedRef
+      )
+    },
     test("runs mount then handleParams before disconnected render") {
       for
         callsRef <- Ref.make(List.empty[String])

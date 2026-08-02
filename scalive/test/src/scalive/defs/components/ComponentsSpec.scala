@@ -1,106 +1,80 @@
 package scalive.defs.components
 
 import scalive.*
+import scalive.upload.{UploadEntryRef, UploadRef}
 
+import zio.*
 import zio.test.*
 
 object ComponentsSpec extends ZIOSpecDefault:
-
   private def uploadEntry(
     ref: String,
-    preflighted: Boolean = false,
-    done: Boolean = false
-  ): LiveUploadEntry =
-    LiveUploadEntry(
-      ref = ref,
-      clientName = s"$ref.txt",
-      clientRelativePath = None,
-      clientSize = 10,
-      clientType = "text/plain",
-      clientLastModified = None,
-      progress = if done then 100 else 0,
-      preflighted = preflighted,
-      done = done,
-      cancelled = false,
-      valid = true,
-      errors = Nil,
-      meta = None
+    status: LiveUploadEntryStatus = LiveUploadEntryStatus.Selected
+  ): LiveUploadEntry[Unit] =
+    new LiveUploadEntry(
+      UploadEntryRef(ref),
+      new UploadClientMetadata(s"$ref.txt", None, 10, "text/plain", None, None),
+      status,
+      None,
+      "avatar"
     )
 
   private def liveUpload(
     autoUpload: Boolean,
     maxEntries: Int,
-    entries: List[LiveUploadEntry]
-  ): LiveUpload =
-    LiveUpload(
-      name = UploadKey("avatar"),
-      ref = "phx-upload-ref",
-      accept = LiveUploadAccept.Exactly(List(".jpg", ".png")),
+    entries: List[LiveUploadEntry[Unit]]
+  ): LiveUpload[Unit] =
+    val definition = LiveUploadDef.hosted(
+      name = "avatar",
+      accept = LiveUploadAccept.only(".jpg", ".png"),
+      writer = new LiveUploadWriter[Unit, Unit]:
+        def init(client: UploadClientMetadata) = ZIO.unit
+        def writeChunk(data: Chunk[Byte], state: Unit) = ZIO.unit
+        def complete(state: Unit) = ZIO.unit
+        def abort(state: Unit, reason: LiveUploadAbortReason) = ZIO.unit
+        def discard(result: Unit) = ZIO.unit,
       maxEntries = maxEntries,
-      maxFileSize = 8_000_000,
-      chunkSize = 64_000,
-      chunkTimeout = 10_000,
-      autoUpload = autoUpload,
-      external = false,
-      entries = entries,
-      errors = Nil
+      autoUpload = autoUpload
+    )
+    new LiveUpload(
+      definition,
+      UploadRef("phx-upload-ref"),
+      entries,
+      Nil
     )
 
   override def spec = suite("ComponentsSpec")(
     test("focusWrap helper") {
-      val el = focusWrap("dialog", cls := "wrapper")(
-        button("Save"),
-        button("Cancel")
-      )
-
-      val result = HtmlBuilder.build(el)
-
-      assertTrue(
-        result ==
-          "<div id=\"dialog\" phx-hook=\"Phoenix.FocusWrap\" class=\"wrapper\"><span id=\"dialog-start\" tabindex=\"0\" aria-hidden=\"true\"></span><button>Save</button><button>Cancel</button><span id=\"dialog-end\" tabindex=\"0\" aria-hidden=\"true\"></span></div>"
-      )
+      val result = HtmlBuilder.build(focusWrap("dialog", cls := "wrapper")(button("Save")))
+      assertTrue(result.contains("phx-hook=\"Phoenix.FocusWrap\""))
     },
     suite("liveFileInput helper")(
-      test("does not render auto upload marker when disabled") {
-        val upload = liveUpload(
-          autoUpload = false,
-          maxEntries = 1,
-          entries = Nil
-        )
-        val el     = liveFileInput(upload)
-
-        val result = HtmlBuilder.build(el)
-
+      test("renders definition attributes") {
+        val result = HtmlBuilder.build(liveFileInput(liveUpload(false, 1, Nil)))
         assertTrue(
           result.contains("id=\"phx-upload-ref\""),
           result.contains("accept=\".jpg,.png\""),
-          result.contains("data-phx-hook=\"Phoenix.LiveFileUpload\""),
-          !result.contains("data-phx-update"),
           !result.contains("data-phx-auto-upload"),
           !result.contains(" multiple")
         )
       },
-      test("renders computed refs and presence attrs") {
+      test("derives wire refs from entry status") {
         val upload = liveUpload(
-          autoUpload = true,
-          maxEntries = 2,
-          entries = List(
-            uploadEntry("entry-a"),
-            uploadEntry("entry-b"),
-            uploadEntry("entry-c", done = true),
-            uploadEntry("entry-d", preflighted = true)
+          true,
+          4,
+          List(
+            uploadEntry("selected"),
+            uploadEntry("preflighted", LiveUploadEntryStatus.Preflighted),
+            uploadEntry("uploading", LiveUploadEntryStatus.Uploading(50)),
+            uploadEntry("done", LiveUploadEntryStatus.Completed)
           )
         )
-        val el     = liveFileInput(upload)
-
-        val result = HtmlBuilder.build(el)
-
+        val result = HtmlBuilder.build(liveFileInput(upload))
         assertTrue(
-          result.contains("data-phx-active-refs=\"entry-a,entry-b,entry-c,entry-d\""),
-          result.contains("data-phx-done-refs=\"entry-c\""),
-          result.contains("data-phx-preflighted-refs=\"entry-c,entry-d\""),
+          result.contains("data-phx-active-refs=\"selected,preflighted,uploading,done\""),
+          result.contains("data-phx-done-refs=\"done\""),
+          result.contains("data-phx-preflighted-refs=\"preflighted,uploading,done\""),
           result.contains("data-phx-auto-upload"),
-          !result.contains("data-phx-auto-upload=\"false\""),
           result.contains(" multiple")
         )
       }

@@ -14,7 +14,9 @@ import scalive.socket.SocketComponentUpdateRuntime
 import scalive.socket.SocketFlashRuntime
 import scalive.socket.SocketNavigationRuntime
 import scalive.socket.SocketStreamRuntime
+import scalive.socket.SocketUploadRuntime
 import scalive.socket.StreamRuntimeState
+import scalive.socket.UploadRuntimeState
 
 final private[scalive] case class NestedLiveViewSpec[Msg, Model](
   id: String,
@@ -130,6 +132,7 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
     val topic = s"lv:${spec.id}"
     for
       token         <- ZIO.succeed(Token.sign(tokenConfig.secret, topic, "nested"))
+      uploadRef     <- Ref.make(UploadRuntimeState.empty)
       streamRef     <- Ref.make(StreamRuntimeState.empty)
       flashRef      <- Ref.make(FlashRuntimeState.empty)
       componentsRef <- Ref.make(ComponentRuntimeState.empty)
@@ -138,6 +141,7 @@ final private[scalive] class DisconnectedNestedLiveViewRuntime(
       hooksRef      <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
       ctx = LiveContext(
               staticChanged = false,
+              uploads = new SocketUploadRuntime(uploadRef),
               streams = new SocketStreamRuntime(streamRef),
               navigation = new SocketNavigationRuntime(navigationRef),
               flash = new SocketFlashRuntime(flashRef),

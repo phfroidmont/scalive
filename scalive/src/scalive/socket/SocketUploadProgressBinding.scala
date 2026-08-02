@@ -137,10 +137,11 @@ private[scalive] object SocketUploadProgressBinding:
       _       <-
         runtime
           .configByRef(uploadRef)
-          .flatMap(_.options.progress)
+          .flatMap(_.definition.progress)
           .map(callback =>
             callback
-              .onProgress(UploadKey(entry.uploadName), SocketUploadShared.toLiveUploadEntry(entry))
+              .asInstanceOf[LiveUploadProgress[Object]]
+              .onProgress(SocketUploadShared.toLiveUploadEntry[Object](entry))
           )
           .getOrElse(ZIO.unit)
     yield ()

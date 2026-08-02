@@ -11,11 +11,12 @@ import zio.stream.ZStream
 
 import scalive.*
 import scalive.WebSocketMessage.Payload
+import scalive.upload.UploadDestinationRuntime
 
 final private[scalive] case class UploadConfigState(
   name: String,
   ref: String,
-  options: LiveUploadOptions,
+  definition: LiveUploadDef[?],
   errors: List[(String, Json)] = Nil,
   entryOrder: Vector[String] = Vector.empty,
   cancelledRefs: Set[String] = Set.empty)
@@ -32,16 +33,16 @@ final private[scalive] case class UploadEntryState(
   clientMeta: Option[Json],
   token: Option[String],
   joined: Boolean,
-  bytes: Chunk[Byte],
+  bytesReceived: Long,
   progress: Int,
   preflighted: Boolean,
   valid: Boolean,
   errors: List[Json],
   externalMeta: Option[Json.Obj],
-  writer: LiveUploadWriter,
-  writerState: Option[LiveUploadWriterState],
-  writerMeta: Option[Json.Obj],
-  writerClosed: Boolean)
+  destination: UploadDestinationRuntime,
+  destinationState: Option[Object],
+  completedResult: Option[Object],
+  resultMeta: Option[Json.Obj])
 
 final private[scalive] case class UploadRuntimeState(
   configs: Map[String, UploadConfigState],

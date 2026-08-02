@@ -11,22 +11,13 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
         AsyncKey[Int]("load").value == "load",
         ClientEvent[Int]("counter:changed").value == "counter:changed",
         FlashKind("info").value == "info",
-        SubscriptionKey("clock").value == "clock",
-        UploadKey("avatar").value == "avatar"
+        SubscriptionKey("clock").value == "clock"
       )
     },
     test("runtime identifiers remain nominal and invariant") {
-      val stringToKeyErrors = scala.compiletime.testing.typeCheckErrors("""
-        import scalive.*
-        val key: UploadKey = "avatar"
-      """)
       val keyToStringErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         val value: String = FlashKind("info")
-      """)
-      val crossFamilyErrors = scala.compiletime.testing.typeCheckErrors("""
-        import scalive.*
-        val key: UploadKey = FlashKind("avatar")
       """)
       val asyncVarianceErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
@@ -38,9 +29,7 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(
-        stringToKeyErrors.nonEmpty,
         keyToStringErrors.nonEmpty,
-        crossFamilyErrors.nonEmpty,
         asyncVarianceErrors.nonEmpty,
         eventVarianceErrors.nonEmpty
       )
@@ -104,6 +93,26 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(rawNameErrors.nonEmpty)
+    },
+    test("upload definitions fix result types") {
+      val wrongResultErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        val definition: LiveUploadDef[String] =
+          LiveUploadDef.inMemory("avatar", LiveUploadAccept.Any)
+      """)
+      assertTrue(wrongResultErrors.nonEmpty)
+    },
+    test("upload drop targets reject raw references") {
+      val rawReferenceErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val target = phx.dropTarget := "upload-ref"
+      """)
+      val typedReferenceErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def target(ref: UploadRef) = phx.dropTarget := ref
+      """)
+      assertTrue(rawReferenceErrors.nonEmpty, typedReferenceErrors.isEmpty)
     },
     test("flash APIs reject raw kinds") {
       val rawContextErrors = scala.compiletime.testing.typeCheckErrors("""

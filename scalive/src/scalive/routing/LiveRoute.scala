@@ -17,7 +17,9 @@ import scalive.socket.SocketComponentRuntime
 import scalive.socket.SocketFlashRuntime
 import scalive.socket.SocketNavigationRuntime
 import scalive.socket.SocketStreamRuntime
+import scalive.socket.SocketUploadRuntime
 import scalive.socket.StreamRuntimeState
+import scalive.socket.UploadRuntimeState
 
 trait LiveRouteFragment[-R, -Need]:
   private[scalive] def liveRoutes: List[LiveRoute[?, ?, ?, ?, ?, ?]]
@@ -248,6 +250,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
             { case (mountClaims, mountContext) =>
               for
                 lv            <- buildLiveView(params, req, mountContext)
+                uploadRef     <- Ref.make(UploadRuntimeState.empty)
                 streamRef     <- Ref.make(StreamRuntimeState.empty)
                 flashRef      <- Ref.make(FlashRuntimeState(initialFlash))
                 componentsRef <- Ref.make(ComponentRuntimeState.empty)
@@ -257,6 +260,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                 ctx  = LiveContext(
                         staticChanged = false,
                         csrfToken = Some(csrf.value),
+                        uploads = new SocketUploadRuntime(uploadRef),
                         streams = new SocketStreamRuntime(streamRef),
                         navigation = new SocketNavigationRuntime(navigationRef),
                         flash = new SocketFlashRuntime(flashRef),

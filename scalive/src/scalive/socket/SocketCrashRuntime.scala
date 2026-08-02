@@ -26,6 +26,7 @@ private[scalive] object SocketCrashRuntime:
             state.outQueue.offer(Payload.Error -> state.meta.copy(messageRef = None)).unit *>
             state.subscriptionsRef.set(Map.empty) *>
             SocketAsyncRuntime.interruptAll(state.asyncTasksRef) *>
+            SocketUploadRuntime.shutdown(state.uploadRef) *>
             state.inbox.shutdown *>
             state.asyncQueue.shutdown *>
             state.onCrash

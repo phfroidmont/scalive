@@ -339,7 +339,6 @@ opaque type FlashKind = String
 opaque type AsyncKey[A] = String
 opaque type SubscriptionKey = String
 opaque type ClientEvent[A] = String
-opaque type UploadKey = String
 ```
 
 ```scala
@@ -355,13 +354,16 @@ trait Flash:
 
 ```scala
 trait Uploads:
-  def allow(key: UploadKey, options: LiveUploadOptions): LiveIO[LiveUpload]
-  def disallow(key: UploadKey): LiveIO[Unit]
-  def get(key: UploadKey): LiveIO[Option[LiveUpload]]
-  def cancel(key: UploadKey, entryRef: String): LiveIO[Unit]
-  def consumeCompleted(key: UploadKey): LiveIO[List[LiveUploadedEntry]]
-  def consume(entryRef: String): LiveIO[Option[LiveUploadedEntry]]
-  def drop(entryRef: String): LiveIO[Unit]
+  def allow[R](definition: LiveUploadDef[R]): LiveIO[LiveUpload[R]]
+  def disallow[R](definition: LiveUploadDef[R]): LiveIO[Unit]
+  def get[R](definition: LiveUploadDef[R]): LiveIO[Option[LiveUpload[R]]]
+  def cancel[R](entry: LiveUploadEntry[R]): LiveIO[LiveUpload[R]]
+  def consume[R, A](entry: LiveUploadEntry[R])(
+    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+  ): LiveIO[(A, LiveUpload[R])]
+  def consumeCompleted[R, A](definition: LiveUploadDef[R])(
+    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+  ): LiveIO[(List[A], LiveUpload[R])]
 ```
 
 ### Streams
@@ -1737,25 +1739,33 @@ Stream APIs are exported from `scalive.streams.api` into `scalive.*`.
 
 Upload APIs are exported from `scalive.upload.api` into `scalive.*`.
 
-### Uploaded entries
+### Typed declarations
 
 ```scala
-final case class LiveUploadedEntry(
-  ref: String,
-  name: String,
-  contentType: String,
-  bytes: Chunk[Byte],
-  meta: zio.json.ast.Json.Obj = Json.Obj.empty
+val Documents: LiveUploadDef[Chunk[Byte]] = LiveUploadDef.inMemory(
+  name = "documents",
+  accept = LiveUploadAccept.only(".txt", ".md"),
+  maxEntries = 2,
+  maxFileSize = 1024L * 1024L
 )
 ```
+
+`LiveUploadDef[Result]` is both the declaration and the typed runtime identity. Define it
+once and pass the same value to `allow`, `get`, `disallow`, and
+`consumeCompleted`. The result type records what the configured destination produces.
+Available constructors are `inMemory`, `hosted`, `external`, and `validated`.
+Chunk timeout configuration uses `zio.Duration`; sizes are explicitly named in bytes.
 
 ### Upload accept values
 
 ```scala
-enum LiveUploadAccept:
-  case Any
-  case Exactly(values: List[String])
+sealed trait LiveUploadAccept:
   def toHtmlValue: String
+
+object LiveUploadAccept:
+  case object Any
+  def only(first: String, rest: String*): LiveUploadAccept
+  def validated(values: Iterable[String]): Either[IllegalArgumentException, LiveUploadAccept]
 ```
 
 ### Upload errors
@@ -1782,113 +1792,118 @@ LiveUploadError.toJson(error)
 ### Upload state
 
 ```scala
-final case class LiveUploadEntry(
-  ref: String,
-  clientName: String,
-  clientRelativePath: Option[String],
-  clientSize: Long,
-  clientType: String,
-  clientLastModified: Option[Long],
-  progress: Int,
-  preflighted: Boolean,
-  done: Boolean,
-  cancelled: Boolean,
-  valid: Boolean,
-  errors: List[LiveUploadError],
-  meta: Option[zio.json.ast.Json.Obj]
-)
+enum LiveUploadEntryStatus:
+  case Selected
+  case Preflighted
+  case Uploading(progress: Int)
+  case Completed
+  case Invalid(errors: List[LiveUploadError])
 ```
 
 ```scala
-final case class LiveUpload(
-  name: UploadKey,
-  ref: String,
-  accept: LiveUploadAccept,
-  maxEntries: Int,
-  maxFileSize: Long,
-  chunkSize: Int,
-  chunkTimeout: Int,
-  autoUpload: Boolean,
-  external: Boolean,
-  entries: List[LiveUploadEntry],
-  errors: List[LiveUploadError]
-)
+final class LiveUploadEntry[Result]:
+  val ref: UploadEntryRef
+  val client: UploadClientMetadata
+  val status: LiveUploadEntryStatus
+  val metadata: Option[zio.json.ast.Json.Obj]
+  def progress: Int
+  def errors: List[LiveUploadError]
+
+final class LiveUpload[Result]:
+  val definition: LiveUploadDef[Result]
+  val ref: UploadRef
+  val entries: List[LiveUploadEntry[Result]]
+  val errors: List[LiveUploadError]
 ```
+
+`UploadRef` and `UploadEntryRef` expose `.value` only for wire-facing attributes.
+Snapshots are runtime-owned and cannot be fabricated. `allow`, `cancel`, `consume`, and
+`consumeCompleted` return fresh snapshots; use `get` for generic validate/progress
+messages when the model needs refreshing.
+
+Expected lifecycle failures use the sealed `LiveUploadOperationError` hierarchy, including
+active entries, definition mismatches, stale entries, incomplete entries, and uploads with
+entries still in progress.
+
+Call `allow` during mount without an `Option` model or a hand-built connecting
+placeholder. Disconnected rendering receives the runtime snapshot needed to render
+`liveFileInput`; file transfer and progress begin after connection.
+
+### Completion and ownership
+
+```scala
+final class CompletedUpload[Result]:
+  val ref: UploadEntryRef
+  val client: UploadClientMetadata
+  val result: Result
+  val metadata: zio.json.ast.Json.Obj
+
+enum ConsumeDecision[+A]:
+  case Consume(value: A)
+  case Postpone(value: A)
+```
+
+Consumption is callback-based so ownership is explicit. Return `Consume(value)` only
+after application persistence succeeds; the runtime then removes the entry and transfers
+its result to the application. Return `Postpone(value)` when persistence should be retried, leaving the
+completed entry runtime-owned and available to a later consume call.
 
 ### External uploads and writers
 
 ```scala
-final case class LiveExternalUploadEntry(
-  ref: String,
-  name: String,
-  relativePath: Option[String],
-  size: Long,
-  contentType: String,
-  lastModified: Option[Long],
-  clientMeta: Option[zio.json.ast.Json]
-)
+final class UploadClientMetadata:
+  val fileName: String
+  val relativePath: Option[String]
+  val sizeBytes: Long
+  val mediaType: String
+  val lastModifiedMillis: Option[Long]
+  val metadata: Option[zio.json.ast.Json]
 ```
 
 ```scala
-enum LiveExternalUploadResult:
-  case Ok(meta: zio.json.ast.Json.Obj)
+enum LiveExternalUploadResult[+Result]:
+  case Ready(clientConfig: ExternalUploadClientConfig, result: Result)
   case Error(meta: zio.json.ast.Json.Obj)
 ```
 
+`ExternalUploadClientConfig` validates that the client configuration contains a
+non-empty `uploader` identifier before preflight can succeed.
+
 ```scala
-trait LiveUploadExternalUploader:
-  def preflight(entry: LiveExternalUploadEntry): LiveIO[LiveExternalUploadResult]
+trait LiveUploadExternalUploader[Result]:
+  def preflight(client: UploadClientMetadata): LiveIO[LiveExternalUploadResult[Result]]
+  def discard(result: Result): Task[Unit]
 ```
 
 ```scala
-enum LiveUploadWriterCloseReason:
-  case Done
-  case Cancel
-  case Error(reason: String)
+enum LiveUploadAbortReason:
+  case Cancelled
+  case Disallowed
+  case ComponentRemoved
+  case SocketShutdown
+  case Failed(reason: String)
 ```
 
 ```scala
-final case class LiveUploadWriterState(value: Any):
-  def valueAs[A: ClassTag]: Option[A]
+trait LiveUploadWriter[State, Result]:
+  def init(client: UploadClientMetadata): Task[State]
+  def writeChunk(data: Chunk[Byte], state: State): Task[State]
+  def complete(state: State): Task[Result]
+  def abort(state: State, reason: LiveUploadAbortReason): Task[Unit]
+  def discard(result: Result): Task[Unit]
+  def metadata(result: Result): zio.json.ast.Json.Obj
 ```
 
-Custom upload writers can store their own state value in `LiveUploadWriterState`.
-Use `valueAs[A]` to recover the expected state type in `meta`, `writeChunk`, and
-`close`.
-
-```scala
-trait LiveUploadWriter:
-  def init(uploadKey: UploadKey, entry: LiveExternalUploadEntry): Task[LiveUploadWriterState]
-  def meta(state: LiveUploadWriterState): zio.json.ast.Json.Obj
-  def writeChunk(data: Chunk[Byte], state: LiveUploadWriterState): Task[LiveUploadWriterState]
-  def close(state: LiveUploadWriterState, reason: LiveUploadWriterCloseReason): Task[LiveUploadWriterState]
-```
-
-Built-in writer:
-
-```scala
-LiveUploadWriter.InMemory
-```
+Writer state and completed results are independently typed; no `Any` state wrapper or
+runtime cast is part of the public extension point. `complete` transfers the writer
+state into its application-facing result. `discard` releases a completed result when
+runtime ownership ends without application consumption.
 
 ### Upload progress and options
 
 ```scala
-trait LiveUploadProgress:
-  def onProgress(uploadKey: UploadKey, entry: LiveUploadEntry): LiveIO[Unit]
-```
-
-```scala
-final case class LiveUploadOptions(
-  accept: LiveUploadAccept,
-  maxEntries: Int = 1,
-  maxFileSize: Long = 8000000L,
-  chunkSize: Int = 64000,
-  chunkTimeout: Int = 10000,
-  autoUpload: Boolean = false,
-  external: Option[LiveUploadExternalUploader] = None,
-  progress: Option[LiveUploadProgress] = None,
-  writer: LiveUploadWriter = LiveUploadWriter.InMemory
-)
+trait LiveUploadProgress[Result]:
+  def onProgress(entry: LiveUploadEntry[Result]): LiveIO[Unit]
 ```
 
 ## Lifecycle Hooks API

@@ -4,29 +4,37 @@ package upload
 import zio.*
 
 private[scalive] trait UploadRuntime:
-  def allow(name: String, options: LiveUploadOptions): Task[LiveUpload]
-  def disallow(name: String): Task[Unit]
-  def get(name: String): UIO[Option[LiveUpload]]
-  def cancel(name: String, entryRef: String): Task[Unit]
-  def consumeCompleted(name: String): UIO[List[LiveUploadedEntry]]
-  def consume(entryRef: String): UIO[Option[LiveUploadedEntry]]
-  def drop(entryRef: String): UIO[Unit]
+  def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]]
+  def disallow[R](definition: LiveUploadDef[R]): Task[Unit]
+  def get[R](definition: LiveUploadDef[R]): UIO[Option[LiveUpload[R]]]
+  def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]]
+  def consume[R, A](
+    entry: LiveUploadEntry[R]
+  )(
+    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+  ): Task[(A, LiveUpload[R])]
+  def consumeCompleted[R, A](
+    definition: LiveUploadDef[R]
+  )(
+    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+  ): Task[(List[A], LiveUpload[R])]
 
 private[scalive] object UploadRuntime:
   val Disabled: UploadRuntime = new UploadRuntime:
-    def allow(name: String, options: LiveUploadOptions): Task[LiveUpload] =
+    private def unavailable[A]: Task[A] =
       ZIO.fail(new IllegalStateException("Upload runtime is not available"))
 
-    def disallow(name: String): Task[Unit] =
-      ZIO.fail(new IllegalStateException("Upload runtime is not available"))
-
-    def get(name: String): UIO[Option[LiveUpload]] = ZIO.none
-
-    def cancel(name: String, entryRef: String): Task[Unit] =
-      ZIO.fail(new IllegalStateException("Upload runtime is not available"))
-
-    def consumeCompleted(name: String): UIO[List[LiveUploadedEntry]] = ZIO.succeed(Nil)
-
-    def consume(entryRef: String): UIO[Option[LiveUploadedEntry]] = ZIO.none
-
-    def drop(entryRef: String): UIO[Unit] = ZIO.unit
+    def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]]      = unavailable
+    def disallow[R](definition: LiveUploadDef[R]): Task[Unit]            = unavailable
+    def get[R](definition: LiveUploadDef[R]): UIO[Option[LiveUpload[R]]] = ZIO.none
+    def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]]        = unavailable
+    def consume[R, A](
+      entry: LiveUploadEntry[R]
+    )(
+      callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+    ): Task[(A, LiveUpload[R])] = unavailable
+    def consumeCompleted[R, A](
+      definition: LiveUploadDef[R]
+    )(
+      callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+    ): Task[(List[A], LiveUpload[R])] = unavailable

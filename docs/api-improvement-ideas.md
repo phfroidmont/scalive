@@ -12,15 +12,6 @@ The phase-specific context API is specified in `doc/phase-context-api-design.md`
 - Keep app-author APIs small and obvious.
 - Move runtime/protocol details behind explicit internal APIs or separate test-support modules.
 
-## Highest Priority
-
-### Fix the upload writer extension point
-
-Current issue:
-
-- `LiveUploadWriter.init` returns `LiveUploadWriterState`, but `LiveUploadWriterState` has a `private[scalive]` constructor.
-- External users cannot implement custom upload writers cleanly.
-
 ## Correctness Fixes With API Impact
 
 ### Fix `JS.push(pageLoading)` encoding
@@ -279,18 +270,6 @@ Ideas:
 - Reuse `AsyncValue` or typed async keys where possible.
 
 ## Upload Improvements
-
-### Simplify disconnected upload rendering
-
-Current issue:
-
-- Examples hand-build fallback `LiveUpload` values when upload runtime is unavailable during disconnected render.
-
-Ideas:
-
-- Add a helper that creates a disconnected placeholder from `LiveUploadOptions`.
-- Make `ctx.uploads.allow` usable in disconnected mount without catch/fallback boilerplate if runtime semantics allow it.
-- Document disconnected versus connected upload state.
 
 ### Complete upload edge-case API coverage
 

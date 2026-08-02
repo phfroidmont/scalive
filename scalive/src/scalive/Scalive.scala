@@ -139,7 +139,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val onViewportBottom = phxAttrBinding("viewport-bottom")
 
     // Upload
-    lazy val dropTarget = phxAttr("drop-target")
+    lazy val dropTarget = new HtmlAttr[UploadRef]("phx-drop-target", Encoder(_.value))
     lazy val onProgress = phxAttrBinding("progress")
 
     // Form

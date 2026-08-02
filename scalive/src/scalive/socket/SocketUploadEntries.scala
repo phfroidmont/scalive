@@ -1,9 +1,6 @@
 package scalive
 package socket
 
-import zio.Chunk
-import zio.json.ast.Json
-
 private[scalive] object SocketUploadEntries:
   def buildUploadEntryState(
     config: UploadConfigState,
@@ -25,16 +22,16 @@ private[scalive] object SocketUploadEntries:
       clientMeta = entry.meta,
       token = None,
       joined = false,
-      bytes = Chunk.empty,
+      bytesReceived = 0L,
       progress = 0,
       preflighted = preflighted,
       valid = valid,
       errors = errors.map(SocketUploadValidation.errorJson),
       externalMeta = None,
-      writer = config.options.writer,
-      writerState = None,
-      writerMeta = None,
-      writerClosed = false
+      destination = config.definition.destination,
+      destinationState = None,
+      completedResult = None,
+      resultMeta = None
     )
 
   def withEntryErrors(
@@ -43,9 +40,4 @@ private[scalive] object SocketUploadEntries:
   ): UploadEntryState =
     entry.copy(valid = false, errors = errors.map(SocketUploadValidation.errorJson))
 
-  def hasExternalUploader(meta: Json.Obj): Boolean =
-    meta.fields.exists {
-      case ("uploader", Json.Str(value)) => value.nonEmpty
-      case _                             => false
-    }
 end SocketUploadEntries

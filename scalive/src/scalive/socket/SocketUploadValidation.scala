@@ -6,7 +6,7 @@ import zio.json.ast.Json
 private[scalive] object SocketUploadValidation:
   def validationErrorsByEntry(
     entries: List[WebSocketMessage.UploadPreflightEntry],
-    options: LiveUploadOptions
+    options: LiveUploadDef[?]
   ): Map[String, List[LiveUploadError]] =
     validateUploadEntries(entries, options).groupMap(_._1)(_._2)
 
@@ -18,7 +18,7 @@ private[scalive] object SocketUploadValidation:
 
   private def validateUploadEntries(
     entries: List[WebSocketMessage.UploadPreflightEntry],
-    options: LiveUploadOptions
+    options: LiveUploadDef[?]
   ): List[(String, LiveUploadError)] =
     entries.zipWithIndex.flatMap { case (entry, index) =>
       if index >= options.maxEntries then Some(entry.ref -> LiveUploadError.TooManyFiles)
@@ -33,16 +33,16 @@ private[scalive] object SocketUploadValidation:
     accept: LiveUploadAccept
   ): Boolean =
     accept match
-      case LiveUploadAccept.Any              => true
-      case LiveUploadAccept.Exactly(filters) =>
+      case LiveUploadAccept.Any => true
+      case accepted             =>
         val normalizedName = entry.name.toLowerCase
         val normalizedType = entry.`type`.toLowerCase
-        filters.exists { filter =>
+        accepted.values.exists(_.exists { filter =>
           val normalizedFilter = filter.toLowerCase
           if normalizedFilter.startsWith(".") then normalizedName.endsWith(normalizedFilter)
           else if normalizedFilter.endsWith("/*") then
             val prefix = normalizedFilter.dropRight(1)
             normalizedType.startsWith(prefix)
           else normalizedType == normalizedFilter
-        }
+        })
 end SocketUploadValidation

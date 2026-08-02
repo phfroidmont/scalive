@@ -38,7 +38,10 @@ private[scalive] object SocketUploadProtocol:
                    val incomingRefs     = activeEntries.map(_.ref).toSet
                    val baseState        = current.removeEntries(incomingRefs)
                    val validationErrors =
-                     SocketUploadValidation.validationErrorsByEntry(activeEntries, config.options)
+                     SocketUploadValidation.validationErrorsByEntry(
+                       activeEntries,
+                       config.definition
+                     )
                    val preflightEntries = activeEntries.map(entry =>
                      entry.ref -> SocketUploadEntries.buildUploadEntryState(
                        config = config,
@@ -61,52 +64,52 @@ private[scalive] object SocketUploadProtocol:
                                           )
                                         )
                                       case None =>
-                                        config.options.external match
-                                          case Some(uploader) =>
-                                            uploader
-                                              .preflight(
-                                                SocketUploadShared.toExternalUploadEntry(entryState)
-                                              )
-                                              .either
-                                              .map {
-                                                case Right(LiveExternalUploadResult.Ok(meta))
-                                                    if SocketUploadEntries.hasExternalUploader(
-                                                      meta
-                                                    ) =>
-                                                  entryRef -> entryState
-                                                    .copy(externalMeta = Some(meta))
-                                                case Right(LiveExternalUploadResult.Ok(_)) =>
-                                                  entryRef -> SocketUploadEntries.withEntryErrors(
-                                                    entryState,
-                                                    List(LiveUploadError.ExternalClientFailure)
-                                                  )
-                                                case Right(LiveExternalUploadResult.Error(meta)) =>
-                                                  entryRef -> SocketUploadEntries.withEntryErrors(
-                                                    entryState,
-                                                    List(LiveUploadError.External(meta))
-                                                  )
-                                                case Left(_) =>
-                                                  entryRef -> SocketUploadEntries.withEntryErrors(
-                                                    entryState,
-                                                    List(LiveUploadError.ExternalClientFailure)
-                                                  )
-                                              }
-                                          case None =>
-                                            val tokenPayload: UploadJoinToken =
-                                              UploadJoinToken(
-                                                state.meta.topic,
-                                                payload.ref,
-                                                entryRef
-                                              )
-                                            val token =
-                                              Token.sign[UploadJoinToken](
-                                                state.tokenConfig.secret,
-                                                state.meta.topic,
-                                                tokenPayload
-                                              )
-                                            ZIO.succeed(
-                                              entryRef -> entryState.copy(token = Some(token))
+                                        if config.definition.destination.external then
+                                          config.definition.destination
+                                            .preflight(
+                                              SocketUploadShared.clientMetadata(entryState)
                                             )
+                                            .either
+                                            .map {
+                                              case Right(
+                                                    Some(
+                                                      LiveExternalUploadResult.Ready(config, result)
+                                                    )
+                                                  ) =>
+                                                entryRef -> entryState
+                                                  .copy(
+                                                    externalMeta = Some(config.json),
+                                                    completedResult = Some(result)
+                                                  )
+                                              case Right(
+                                                    Some(LiveExternalUploadResult.Error(meta))
+                                                  ) =>
+                                                entryRef -> SocketUploadEntries.withEntryErrors(
+                                                  entryState,
+                                                  List(LiveUploadError.External(meta))
+                                                )
+                                              case Right(None) | Left(_) =>
+                                                entryRef -> SocketUploadEntries.withEntryErrors(
+                                                  entryState,
+                                                  List(LiveUploadError.ExternalClientFailure)
+                                                )
+                                            }
+                                        else
+                                          val tokenPayload: UploadJoinToken =
+                                            UploadJoinToken(
+                                              state.meta.topic,
+                                              payload.ref,
+                                              entryRef
+                                            )
+                                          val token =
+                                            Token.sign[UploadJoinToken](
+                                              state.tokenConfig.secret,
+                                              state.meta.topic,
+                                              tokenPayload
+                                            )
+                                          ZIO.succeed(
+                                            entryRef -> entryState.copy(token = Some(token))
+                                          )
                                   }
                      entriesMap      = processed.toMap
                      responseEntries =
@@ -126,7 +129,7 @@ private[scalive] object SocketUploadProtocol:
                        )
                      globalErrors =
                        Option
-                         .when(entryOrder.length > config.options.maxEntries)(
+                         .when(entryOrder.length > config.definition.maxEntries)(
                            config.ref -> SocketUploadValidation.errorJson(
                              LiveUploadError.TooManyFiles
                            )
@@ -147,10 +150,10 @@ private[scalive] object SocketUploadProtocol:
                      LiveResponse.UploadPreflightSuccess(
                        ref = payload.ref,
                        config = WebSocketMessage.UploadClientConfig(
-                         max_file_size = config.options.maxFileSize,
-                         max_entries = config.options.maxEntries,
-                         chunk_size = config.options.chunkSize,
-                         chunk_timeout = config.options.chunkTimeout
+                         max_file_size = config.definition.maxFileSize,
+                         max_entries = config.definition.maxEntries,
+                         chunk_size = config.definition.chunkSize,
+                         chunk_timeout = config.definition.chunkTimeout.toMillis.toInt
                        ),
                        entries = responseEntries,
                        errors = responseErrors
@@ -162,7 +165,7 @@ private[scalive] object SocketUploadProtocol:
   def handleProgressUpload[Msg, Model](
     payload: Payload.Progress,
     state: RuntimeState[Msg, Model]
-  ): Task[Payload.Reply] =
+  ): Task[Payload.Reply] = state.lifecycleLock.withPermit {
     for
       maybeUpdated <- state.uploadRef.get.flatMap { current =>
                         current.entries.get(payload.entry_ref) match
@@ -180,10 +183,8 @@ private[scalive] object SocketUploadProtocol:
                                 )
                                 val updateEffect =
                                   if normalized >= 100 then
-                                    SocketUploadShared.closeWriter(
-                                      next,
-                                      LiveUploadWriterCloseReason.Done
-                                    )
+                                    if next.completedResult.nonEmpty then ZIO.succeed(next)
+                                    else SocketUploadShared.complete(next)
                                   else ZIO.succeed(next)
 
                                 updateEffect.flatMap { updated =>
@@ -200,13 +201,15 @@ private[scalive] object SocketUploadProtocol:
                                     .collectFirst { case ("error", Json.Str(reason)) =>
                                       Json.Str(reason)
                                     }.getOrElse(obj)
+                                val failed = entry.copy(valid = false, errors = List(errorJson))
                                 SocketUploadShared
-                                  .closeWriter(
-                                    entry.copy(valid = false, errors = List(errorJson)),
-                                    LiveUploadWriterCloseReason.Error(
+                                  .cleanupEntry(
+                                    failed,
+                                    LiveUploadAbortReason.Failed(
                                       SocketUploadProgressBinding.progressToParamValue(errorJson)
                                     )
-                                  ).flatMap { updated =>
+                                  ).flatMap { _ =>
+                                    val updated = failed.copy(destinationState = None)
                                     state.uploadRef
                                       .update { st =>
                                         st.copy(entries =
@@ -231,6 +234,7 @@ private[scalive] object SocketUploadProtocol:
                  case _ =>
                    ZIO.succeed(Payload.okReply(LiveResponse.Empty))
     yield reply
+  }
 
   def handleUploadJoin[Msg, Model](
     uploadTopic: String,
@@ -268,7 +272,7 @@ private[scalive] object SocketUploadProtocol:
                              )
                            )
                          else
-                           SocketUploadShared.ensureWriterState(entry).either.flatMap {
+                           SocketUploadShared.ensureDestinationState(entry).either.flatMap {
                              case Right(withWriter) =>
                                state.uploadRef
                                  .update { st =>
@@ -321,7 +325,7 @@ private[scalive] object SocketUploadProtocol:
       current <- state.uploadRef.get
       reply   <- current.entries.get(entryRef) match
                  case Some(entry) if entry.joined =>
-                   val updatedSize = entry.bytes.length + bytes.length
+                   val updatedSize = entry.bytesReceived + bytes.length
                    if updatedSize > entry.size then
                      ZIO.succeed(
                        Payload.errorReply(
@@ -332,11 +336,11 @@ private[scalive] object SocketUploadProtocol:
                        )
                      )
                    else
-                     SocketUploadShared.ensureWriterState(entry).either.flatMap {
+                     SocketUploadShared.ensureDestinationState(entry).either.flatMap {
                        case Right(withWriter) =>
-                         withWriter.writerState match
+                         withWriter.destinationState match
                            case Some(writerState) =>
-                             withWriter.writer
+                             withWriter.destination
                                .writeChunk(bytes, writerState)
                                .either
                                .flatMap {
@@ -344,30 +348,40 @@ private[scalive] object SocketUploadProtocol:
                                    val progress =
                                      if withWriter.size <= 0 then 100
                                      else ((updatedSize * 100) / withWriter.size).toInt.min(100)
-                                   val updatedEntry = withWriter.copy(
-                                     bytes = withWriter.bytes ++ bytes,
+                                   val writtenEntry = withWriter.copy(
+                                     bytesReceived = updatedSize,
                                      progress = progress,
-                                     writerState = Some(nextWriterState)
+                                     destinationState = Some(nextWriterState)
                                    )
-                                   state.uploadRef
-                                     .update { st =>
-                                       st.copy(entries = st.entries.updated(entryRef, updatedEntry))
-                                     }.as(Payload.okReply(LiveResponse.Empty))
-                                 case Left(_) =>
-                                   SocketUploadShared
-                                     .closeWriter(
-                                       withWriter.copy(
-                                         valid = false,
-                                         errors = List(
-                                           SocketUploadValidation.errorJson(
-                                             SocketUploadValidation.WriterError
-                                           )
+                                   val finish =
+                                     if updatedSize == withWriter.size then
+                                       SocketUploadShared.complete(writtenEntry)
+                                     else ZIO.succeed(writtenEntry)
+                                   finish.flatMap(updatedEntry =>
+                                     state.uploadRef
+                                       .update { st =>
+                                         st.copy(entries =
+                                           st.entries.updated(entryRef, updatedEntry)
                                          )
-                                       ),
-                                       LiveUploadWriterCloseReason.Error(
+                                       }.as(Payload.okReply(LiveResponse.Empty))
+                                   )
+                                 case Left(_) =>
+                                   val failed = withWriter.copy(
+                                     valid = false,
+                                     errors = List(
+                                       SocketUploadValidation.errorJson(
+                                         SocketUploadValidation.WriterError
+                                       )
+                                     )
+                                   )
+                                   SocketUploadShared
+                                     .cleanupEntry(
+                                       failed,
+                                       LiveUploadAbortReason.Failed(
                                          SocketUploadValidation.WriterErrorReason
                                        )
-                                     ).flatMap { errored =>
+                                     ).flatMap { _ =>
+                                       val errored = failed.copy(destinationState = None)
                                        state.uploadRef
                                          .update { st =>
                                            st.copy(entries = st.entries.updated(entryRef, errored))
@@ -433,24 +447,30 @@ private[scalive] object SocketUploadProtocol:
                     )
                     val validationErrors = SocketUploadValidation.validationErrorsByEntry(
                       visibleEntries,
-                      config.options
+                      config.definition
                     )
                     val syncedEntries =
                       visibleEntries
                         .map(entry =>
                           val errors = validationErrors.getOrElse(entry.ref, Nil)
-                          entry.ref -> SocketUploadEntries.buildUploadEntryState(
-                            config = config,
-                            uploadRef = uploadRef,
-                            entry = entry,
-                            preflighted = false,
-                            valid = errors.isEmpty,
-                            errors = errors
-                          )
+                          val synced = runtime.entries.get(entry.ref) match
+                            case Some(existing)
+                                if existing.uploadRef == uploadRef && existing.preflighted =>
+                              existing
+                            case _ =>
+                              SocketUploadEntries.buildUploadEntryState(
+                                config = config,
+                                uploadRef = uploadRef,
+                                entry = entry,
+                                preflighted = false,
+                                valid = errors.isEmpty,
+                                errors = errors
+                              )
+                          entry.ref -> synced
                         ).toMap
                     val globalErrors =
                       Option
-                        .when(visibleEntries.length > config.options.maxEntries)(
+                        .when(visibleEntries.length > config.definition.maxEntries)(
                           config.ref -> SocketUploadValidation.errorJson(
                             LiveUploadError.TooManyFiles
                           )

@@ -47,6 +47,7 @@ private[scalive] object SocketOutbound:
     ZIO.uninterruptible(
       state.outQueue.offer(Payload.Close -> state.meta) *>
         SocketAsyncRuntime.interruptAll(state.asyncTasksRef) *>
+        SocketUploadRuntime.shutdown(state.uploadRef) *>
         state.inbox.shutdown *>
         state.asyncQueue.shutdown *>
         state.outQueue.shutdown *>

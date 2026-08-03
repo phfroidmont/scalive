@@ -174,6 +174,11 @@ trait Title:
   def set(value: String): LiveIO[Unit]
 
 trait ComponentUpdates:
+  def sendUpdate[Props, Msg, Model](
+    instance: LiveComponentInstance[Props, Msg, Model],
+    props: Props
+  ): LiveIO[Unit]
+
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
     id: String,
     props: LiveComponent.PropsOf[C]
@@ -454,6 +459,12 @@ private[scalive] object LiveContext:
     def set(value: String): LiveIO[Unit] = runtime.title.set(value)
 
   final private class RuntimeComponents(runtime: LiveContext) extends ComponentUpdates:
+    def sendUpdate[Props, Msg, Model](
+      instance: LiveComponentInstance[Props, Msg, Model],
+      props: Props
+    ): LiveIO[Unit] =
+      runtime.components.sendUpdate(instance.component.getClass, instance.id, props)
+
     def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
       id: String,
       props: LiveComponent.PropsOf[C]

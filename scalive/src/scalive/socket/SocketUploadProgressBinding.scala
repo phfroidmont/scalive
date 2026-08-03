@@ -37,6 +37,23 @@ private[scalive] object SocketUploadProgressBinding:
                          s"upload_progress binding '$eventRef' targets component $cid without matching event cid"
                        ) *>
                          ZIO.succeed(Payload.okReply(LiveResponse.Empty))
+                     case Right(ComponentInstanceMessage(identity, message)) =>
+                       SocketComponentRuntime
+                         .handleComponentInstanceMessage(
+                           identity,
+                           message,
+                           uploadProgressEvent(eventRef, payload),
+                           rendered,
+                           state.meta,
+                           state
+                         ).flatMap {
+                           case true  => ZIO.succeed(Payload.okReply(LiveResponse.Empty))
+                           case false =>
+                             ZIO.logWarning(
+                               s"upload_progress binding '$eventRef' targets ${identity.componentClass.getName} with id '${identity.id}', but that instance does not exist"
+                             ) *>
+                               ZIO.succeed(Payload.okReply(LiveResponse.Empty))
+                         }
                      case Right(ComponentTargetMessage(componentClass, message)) =>
                        payload.cid match
                          case Some(cid) =>

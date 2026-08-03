@@ -83,6 +83,29 @@ private[scalive] object SocketModelRuntime:
               meta,
               state
             )
+          case Right(ComponentInstanceMessage(identity, message)) =>
+            SocketComponentRuntime
+              .handleComponentInstanceMessage(
+                identity,
+                message,
+                LiveEvent.fromPayload(event),
+                rendered,
+                meta,
+                state
+              ).flatMap {
+                case true  => ZIO.unit
+                case false =>
+                  handleInvalidOrMissingBinding(
+                    event.event,
+                    Some(
+                      s"Binding '${event.event}' targets ${identity.componentClass.getName} with id '${identity.id}', but that instance does not exist"
+                    ),
+                    interceptModel,
+                    carriedNavigation,
+                    meta,
+                    state
+                  )
+              }
           case Right(ComponentTargetMessage(componentClass, message)) =>
             event.cid match
               case Some(cid) =>

@@ -192,7 +192,28 @@ trait LiveComponent[Props, Msg, Model]:
   def update(props: Props, model: Model, ctx: UpdateContext): LiveIO[Model]
   def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => LiveIO[Model]
   def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
+
+final case class LiveComponentInstance[Props, Msg, Model](
+  component: LiveComponent[Props, Msg, Model],
+  id: String
+):
+  def render(props: Props): Mod[Nothing]
 ```
+
+Create one stable instance handle when a parent needs to render, target, or update a specific
+component instance:
+
+```scala
+val counter = component(CounterComponent, "counter")
+
+counter.render(CounterComponent.Props(...))
+phx.onClick.to(counter)(CounterComponent.Msg.Increment)
+ctx.components.sendUpdate(counter, CounterComponent.Props(...))
+```
+
+The handle keeps the component type, logical ID, props, and message type aligned. Instance-targeted
+events resolve the mounted component by logical identity and do not require a DOM ID, CSS selector,
+or client-provided component ID.
 
 ### `LiveComponent.Eventless[Props, Model]`
 
@@ -416,6 +437,7 @@ trait Title:
   def set(value: String): LiveIO[Unit]
 
 trait ComponentUpdates:
+  def sendUpdate[Props, Msg, Model](instance: LiveComponentInstance[Props, Msg, Model], props: Props): LiveIO[Unit]
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](id: String, props: LiveComponent.PropsOf[C]): LiveIO[Unit]
 ```
 
@@ -568,6 +590,9 @@ Namespaced attributes are available under `aria` and `xlink`.
 
 ```scala
 class HtmlAttrBinding(val name: String):
+  def to[Props, Msg, Model](
+    instance: LiveComponentInstance[Props, Msg, Model]
+  )(message: Msg): Mod.Attr[Nothing]
   def toComponent[Props, Msg, Model](
     component: LiveComponent[Props, Msg, Model]
   )(message: Msg): Mod.Attr[Nothing]
@@ -601,6 +626,15 @@ button(
 Keeping `phx.target` separate preserves Phoenix targeting semantics, including `ComponentRef`, CSS
 selectors, and selectors that match multiple component instances. Events rendered inside a component
 normally use the component message directly with `phx.target(self)`.
+
+For a single known instance, prefer `to(instance)(message)`. It targets the instance's stable logical
+identity without a selector:
+
+```scala
+val counter = component(CounterComponent, "counter")
+
+button(phx.onClick.to(counter)(CounterComponent.Msg.Increment))
+```
 
 ### `Mod[Msg]`
 
@@ -638,6 +672,7 @@ Mod.Content.Keyed(entries, stream = None, allEntries = None)
 
 ```scala
 rawHtml(html): Mod[Nothing]
+component(liveComponent, id: String): LiveComponentInstance[Props, Msg, Model]
 liveComponent(component, id: String, props): Mod[Nothing]
 liveComponent(component, id: Int, props): Mod[Nothing]
 liveView(id, liveView, sticky = false, linkParentOnCrash = false): Mod[Nothing]

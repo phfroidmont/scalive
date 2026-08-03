@@ -19,6 +19,12 @@ trait LiveComponent[Props, Msg, Model]:
 
   def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
 
+final case class LiveComponentInstance[Props, Msg, Model](
+  component: LiveComponent[Props, Msg, Model],
+  id: String):
+  def render(props: Props): Mod[Nothing] =
+    Mod.Content.LiveComponent(LiveComponentSpec(component, id, props))
+
 object LiveComponent:
   trait Eventless[Props, Model] extends LiveComponent[Props, Nothing, Model]:
     final def handleMessage(
@@ -43,9 +49,17 @@ final private[scalive] case class ComponentIdentity(componentClass: Class[?], id
 
 final private[scalive] case class ComponentMessage(cid: Int, message: Any)
 
+sealed private[scalive] trait ComponentRoutedMessage
+
 final private[scalive] case class ComponentTargetMessage(
   componentClass: Class[?],
   message: Any)
+    extends ComponentRoutedMessage
+
+final private[scalive] case class ComponentInstanceMessage(
+  identity: ComponentIdentity,
+  message: Any)
+    extends ComponentRoutedMessage
 
 private[scalive] trait ComponentUpdateRuntime:
   def sendUpdate[Props](

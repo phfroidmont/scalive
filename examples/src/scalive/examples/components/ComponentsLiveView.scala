@@ -14,11 +14,11 @@ final class ComponentsLiveView extends LiveView[ComponentsLiveView.Msg, Componen
     case Msg.UpdateScalaProps =>
       val revision = model.propRevision + 1
       ctx.components
-        .sendUpdate[VoteComponent.type](ScalaComponentId, scalaProps(revision))
+        .sendUpdate(ScalaVote, scalaProps(revision))
         .as(
           model.copy(
             propRevision = revision,
-            status = s"The parent sent props revision $revision to '$ScalaComponentId'."
+            status = s"The parent sent props revision $revision to '${ScalaVote.id}'."
           )
         )
 
@@ -30,7 +30,7 @@ final class ComponentsLiveView extends LiveView[ComponentsLiveView.Msg, Componen
         h1(cls  := "text-4xl font-bold tracking-tight", "Stateful voting components"),
         p(
           cls := "mt-4 max-w-3xl text-lg leading-8 text-base-content/70",
-          "Each VoteComponent owns its vote count. The parent can send typed messages and props inward, but the example does not model child-to-parent callbacks."
+          "Each VoteComponent owns its vote count. The parent can route typed browser events and props to an exact component instance."
         )
       ),
       div(
@@ -42,9 +42,8 @@ final class ComponentsLiveView extends LiveView[ComponentsLiveView.Msg, Componen
           button(
             typ := "button",
             cls := "btn btn-primary",
-            phx.onClick.toComponent(VoteComponent)(VoteComponent.Msg.Vote),
-            phx.target(s"#$ScalaDomId"),
-            "Parent sends a typed vote"
+            phx.onClick.to(ScalaVote)(VoteComponent.Msg.Vote),
+            "Send a targeted vote"
           ),
           button(
             typ := "button",
@@ -56,16 +55,9 @@ final class ComponentsLiveView extends LiveView[ComponentsLiveView.Msg, Componen
       ),
       div(
         cls := "grid gap-5 lg:grid-cols-2",
-        liveComponent(
-          VoteComponent,
-          id = ScalaComponentId,
-          props = scalaProps(revision = 0)
-        ),
-        liveComponent(
-          VoteComponent,
-          id = ZioComponentId,
-          props = VoteComponent.Props(
-            domId = ZioDomId,
+        ScalaVote.render(scalaProps(revision = 0)),
+        ZioVote.render(
+          VoteComponent.Props(
             title = "ZIO ecosystem",
             description =
               "This second instance proves that local state is isolated by component identity."
@@ -81,14 +73,11 @@ object ComponentsLiveView:
   enum Msg:
     case UpdateScalaProps
 
-  private val ScalaComponentId = "scala-vote"
-  private val ScalaDomId       = "vote-scala"
-  private val ZioComponentId   = "zio-vote"
-  private val ZioDomId         = "vote-zio"
+  private val ScalaVote = component(VoteComponent, "scala-vote")
+  private val ZioVote   = component(VoteComponent, "zio-vote")
 
   private def scalaProps(revision: Int): VoteComponent.Props =
     VoteComponent.Props(
-      domId = ScalaDomId,
       title = if revision == 0 then "Scala language" else s"Scala language, revision $revision",
       description =
         if revision == 0 then

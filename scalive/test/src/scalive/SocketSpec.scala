@@ -494,6 +494,55 @@ object SocketSpec extends ZIOSpecDefault:
                   }
       yield result
     },
+    test("routes instance-targeted events without a client component id") {
+      object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, Int]:
+        object Msg
+
+        def mount(props: String, ctx: MountContext) =
+          ZIO.succeed(0)
+
+        def handleMessage(props: String, model: Int, ctx: MessageContext) =
+          (_: Msg.type) => ZIO.succeed(model + 1)
+
+        def render(props: String, model: Int, self: ComponentRef[Msg.type]) =
+          div(s"$props:$model")
+
+      val first  = component(CounterComponent, "first")
+      val second = component(CounterComponent, "second")
+      val lv     = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) =
+          ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: Unit): HtmlElement[Unit] =
+          div(
+            button(phx.onClick.to(first)(CounterComponent.Msg), "increment first"),
+            first.render("first"),
+            second.render("second")
+          )
+
+      val event: Payload.Event = Payload.Event(
+        `type` = "click",
+        event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
+        value = Json.Obj.empty
+      )
+
+      for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _     <- socket.inbox.offer(event -> meta)
+                      reply <- outbox.take
+                      diff = diffFromPayload(reply._1)
+                    yield assertTrue(
+                      diff.exists(containsValue(_, "first:1")),
+                      !diff.exists(containsValue(_, "second:1"))
+                    )
+                  }
+      yield result
+    },
     test("sendUpdate applies typed props to an existing live component") {
       object LabelComponent extends LiveComponent[String, Unit, String]:
         def mount(props: String, ctx: MountContext) =
@@ -508,17 +557,18 @@ object SocketSpec extends ZIOSpecDefault:
         def render(props: String, model: String, self: ComponentRef[Unit]) =
           div(model)
 
+      val label = component(LabelComponent, "label")
       val lv = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
           ZIO.unit
 
         def handleMessage(model: Unit, ctx: MessageContext) =
-          (_: Unit) => ctx.components.sendUpdate[LabelComponent.type]("label", "updated").as(model)
+          (_: Unit) => ctx.components.sendUpdate(label, "updated").as(model)
 
         def render(model: Unit): HtmlElement[Unit] =
           div(
             button(phx.onClick(()), "update"),
-            liveComponent(LabelComponent, id = "label", props = "initial")
+            label.render("initial")
           )
 
       val event: Payload.Event = Payload.Event(

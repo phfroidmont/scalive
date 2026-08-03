@@ -14,6 +14,12 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
   lazy val defer                          = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
   def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
+  def component[Props, Msg, Model](
+    liveComponent: LiveComponent[Props, Msg, Model],
+    id: String
+  ): LiveComponentInstance[Props, Msg, Model] =
+    LiveComponentInstance(liveComponent, id)
+
   def liveComponent[Props, Msg, Model](
     component: LiveComponent[Props, Msg, Model],
     id: String,

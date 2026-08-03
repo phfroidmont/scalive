@@ -411,6 +411,29 @@ private[scalive] object SocketComponentRuntime:
                      ZIO.succeed(false)
     yield handled
 
+  def handleComponentInstanceMessage[Msg, Model](
+    identity: ComponentIdentity,
+    message: Any,
+    event: LiveEvent,
+    rendered: RenderedView,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Boolean] =
+    for
+      runtime <- state.componentsRef.get
+      handled <- runtime.instances.get(identity) match
+                   case Some(instance) =>
+                     handleComponentMessage(
+                       instance.cid,
+                       message,
+                       event.copy(cid = Some(instance.cid)),
+                       rendered,
+                       meta,
+                       state
+                     )
+                   case None => ZIO.succeed(false)
+    yield handled
+
   def handleComponentRawEvent[Msg, Model](
     cid: Int,
     event: LiveEvent,

@@ -8,11 +8,42 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
   override def spec = suite("RuntimeIdentifierTypesSpec")(
     test("runtime identifiers expose explicit string values") {
       assertTrue(
+        DomRef("profile_form").value == "profile_form",
         AsyncKey[Int]("load").value == "load",
         ServerToBrowserEvent[Int]("counter:changed").value == "counter:changed",
         BrowserToServerEvent[Int]("counter:clicked").value == "counter:clicked",
         FlashKind("info").value == "info",
         SubscriptionKey("clock").value == "clock"
+      )
+    },
+    test("DOM references validate identifiers and selectors remain nominal") {
+      def runtimeRef(value: String) = DomRef(value)
+
+      val invalidLiteralErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val ref = DomRef("profile.form")
+      """)
+      val rawSelectorErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val command = JS.show(to = "#profile")
+      """)
+      val rawTargetErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val target = phx.target("#profile")
+      """)
+      val typedErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val ref = DomRef("profile_form")
+        val command = JS.show(to = ref.selector)
+        val target = phx.target(DomSelector.css("[data-profile]"))
+      """)
+
+      assertTrue(
+        invalidLiteralErrors.nonEmpty,
+        rawSelectorErrors.nonEmpty,
+        rawTargetErrors.nonEmpty,
+        typedErrors.isEmpty,
+        scala.util.Try(runtimeRef("profile.form")).isFailure
       )
     },
     test("runtime identifiers remain nominal and invariant") {

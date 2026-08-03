@@ -9,20 +9,16 @@ final class NotificationsLiveView
   import NotificationsLiveView.*
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty[Msg, Model].afterRender(AfterRenderHookId) { (model, ctx) =>
+    LiveHooks.afterRender[Msg, Model] { (model, ctx) =>
       if ctx.connected then
-        ZIO
-          .logDebug(s"Notifications afterRender requestedTitle=${model.currentTitle}")
-          .as(model)
-      else ZIO.succeed(model)
+        ZIO.logDebug(s"Notifications afterRender requestedTitle=${model.currentTitle}")
+      else ZIO.unit
     }
 
+  override def pageTitle(model: Model): Option[String] = Some(model.currentTitle)
+
   def mount(ctx: MountContext) =
-    if ctx.connected then
-      ctx.title
-        .set(DefaultTitle)
-        .as(Model(connectedMount = true, currentTitle = DefaultTitle))
-    else ZIO.succeed(Model(connectedMount = false, currentTitle = StaticFallbackTitle))
+    ZIO.succeed(Model(connectedMount = ctx.connected, currentTitle = DefaultTitle))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.PutNotification =>
@@ -34,19 +30,12 @@ final class NotificationsLiveView
         .clear(NotificationFlash)
         .as(model)
     case Msg.RequestAttention =>
-      ctx.title
-        .set(AttentionTitle)
-        .as(model.copy(currentTitle = AttentionTitle))
+      ZIO.succeed(model.copy(currentTitle = AttentionTitle))
     case Msg.RestoreTitle =>
-      ctx.title
-        .set(DefaultTitle)
-        .as(model.copy(currentTitle = DefaultTitle))
+      ZIO.succeed(model.copy(currentTitle = DefaultTitle))
 
   def render(model: Model) =
     div(
-      idAttr := "notifications-lifecycle",
-      phx.onConnected(ShowConnectedState),
-      phx.onDisconnected(ShowDisconnectedState),
       headerTag(
         cls := "mb-8 border-b border-base-300 pb-7",
         div(cls := "badge badge-primary badge-outline mb-4", "Lifecycle UX"),
@@ -82,16 +71,12 @@ final class NotificationsLiveView
           div(
             cls := "mt-3",
             span(
-              idAttr    := ConnectedBadgeId,
-              styleAttr := (if model.connectedMount then "display: inline-flex;"
-                            else "display: none;"),
+              phx.visibleWhenConnected,
               cls := "badge badge-success badge-lg",
               "Connected"
             ),
             span(
-              idAttr    := DisconnectedBadgeId,
-              styleAttr := (if model.connectedMount then "display: none;"
-                            else "display: inline-flex;"),
+              phx.visibleWhenDisconnected,
               cls := "badge badge-error badge-lg",
               "Disconnected"
             )
@@ -110,7 +95,7 @@ final class NotificationsLiveView
           h2(cls  := "text-2xl font-bold", "Put and clear one notification key"),
           p(
             cls := "mt-3 leading-7 text-base-content/70",
-            "Both actions use the same FlashKind. A static afterRender hook observes connected renders with useful title context and returns the model unchanged."
+            "Both actions use the same FlashKind. A static afterRender hook observes connected renders with useful title context as a side effect."
           ),
           div(
             cls := "mt-5 flex flex-wrap gap-3",
@@ -141,7 +126,7 @@ final class NotificationsLiveView
           h2(cls  := "text-2xl font-bold", "Change and restore the title"),
           p(
             cls := "mt-3 leading-7 text-base-content/70",
-            "Title.set updates the browser title while the root layout keeps its static Scalive Examples fallback."
+            "pageTitle derives the browser title from the model for both static HTML and live updates."
           ),
           div(
             cls := "mt-5 rounded-box bg-base-200 p-4",
@@ -182,18 +167,6 @@ object NotificationsLiveView:
     case RequestAttention
     case RestoreTitle
 
-  private val NotificationFlash   = FlashKind("notification")
-  private val StaticFallbackTitle = "Scalive Examples"
-  private val DefaultTitle        = "Notifications | Scalive Examples"
-  private val AttentionTitle      = "Attention needed | Scalive Examples"
-  private val AfterRenderHookId   = "notifications-render-observer"
-  private val ConnectedBadgeId    = "notifications-connected"
-  private val DisconnectedBadgeId = "notifications-disconnected"
-
-  private val ShowConnectedState =
-    JS.show(to = s"#$ConnectedBadgeId", display = "inline-flex")
-      .hide(to = s"#$DisconnectedBadgeId")
-
-  private val ShowDisconnectedState =
-    JS.show(to = s"#$DisconnectedBadgeId", display = "inline-flex")
-      .hide(to = s"#$ConnectedBadgeId")
+  private val NotificationFlash = FlashKind("notification")
+  private val DefaultTitle      = "Notifications"
+  private val AttentionTitle    = "Attention needed"

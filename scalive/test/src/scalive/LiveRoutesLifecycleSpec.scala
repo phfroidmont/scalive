@@ -137,9 +137,9 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       value = Json.Obj.empty
     )
 
-  private val rootLayout = LiveRootLayout("lifecycle-root")((content, _) =>
+  private val rootLayout = LiveRootLayout("lifecycle-root")((content, pageTitle, _) =>
     htmlRootTag(
-      headTag(titleTag("Lifecycle")),
+      headTag(liveTitle(pageTitle, default = "Lifecycle", suffix = " | Test")),
       bodyTag(content)
     )
   )
@@ -230,6 +230,20 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       .timeoutFail(new RuntimeException("Timed out waiting for matching socket payload"))(3.seconds)
 
   override def spec = suite("LiveRoutesLifecycleSpec")(
+    test("renders the model-derived page title during disconnected rendering") {
+      val liveView = new LiveView.Eventless[String]:
+        def mount(ctx: MountContext) = ZIO.succeed("Notifications")
+        override def pageTitle(model: String) = Some(model)
+        def render(model: String) = div(model)
+
+      for
+        response <- runRequest(runtimeFor(scalive.live(liveView)).routes, "/")
+        body     <- response.body.asString
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains(">Notifications | Test</title>")
+      )
+    },
     test("root upload renders while disconnected and gets a fresh ref when connected") {
       val definition = LiveUploadDef.inMemory("document", LiveUploadAccept.only(".txt"))
       for

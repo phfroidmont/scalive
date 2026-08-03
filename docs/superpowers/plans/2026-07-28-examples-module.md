@@ -174,7 +174,7 @@
 
 **Interfaces:**
 - One `ClientEvent[CopyRequest]` carries a typed server-to-client payload; a named raw hook event reports the browser result to Scala.
-- The lifecycle page uses connected state, flash, title, and an after-render hook that returns the unchanged model.
+- The lifecycle page uses connected state, flash, title, and a side-effect-only after-render hook.
 
 - [ ] Register one focused JavaScript hook in `LiveSocket`; keep the current CSRF, topbar, and debug setup.
 - [ ] Add `/interop/browser` with a composed show/hide command, typed client push, JavaScript `handleEvent`, hook `pushEvent`, and `LiveHooks.rawEvent` result handling.

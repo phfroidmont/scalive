@@ -304,7 +304,8 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         val anyLayout = LiveLayout.identity
         val anyRoot = LiveRootLayout.identity
         val routeUserLayout = LiveLayout[Unit, User]((content, _) => content)
-        val routeUserRoot = LiveRootLayout[Unit, User]("route-user-root")((content, _) => content)
+        val routeUserRoot =
+          LiveRootLayout[Unit, User]("route-user-root")((content, _, _) => content)
 
         val seedWithAspect = live.withMountAspect(routeUserAspect)
         val seedWithLayout = live.withLayout(anyLayout)
@@ -342,7 +343,8 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         val anyLayout = LiveLayout.identity
         val anyRoot = LiveRootLayout.identity
         val sessionUserLayout = LiveLayout[Any, User]((content, _) => content)
-        val sessionUserRoot = LiveRootLayout[Any, User]("session-user-root")((content, _) => content)
+        val sessionUserRoot =
+          LiveRootLayout[Any, User]("session-user-root")((content, _, _) => content)
 
         val sessionSeedWithAspect = Live.session("admin").withMountAspect(sessionUserAspect)
         val sessionSeedWithLayout = Live.session("layout").withLayout(anyLayout)

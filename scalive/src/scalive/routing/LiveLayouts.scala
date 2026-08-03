@@ -26,33 +26,48 @@ object LiveLayout:
 
 trait LiveRootLayout[-A, -Ctx]:
   def key(ctx: LiveLayoutContext[A, Ctx]): String
-  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
+  def render[Msg](
+    content: HtmlElement[Msg],
+    pageTitle: Option[String],
+    ctx: LiveLayoutContext[A, Ctx]
+  ): HtmlElement[Msg]
 
 object LiveRootLayout:
   val identity: LiveRootLayout[Any, Any] =
     new LiveRootLayout[Any, Any]:
       def key(ctx: LiveLayoutContext[Any, Any]) = "scalive:identity-root"
-      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]) = content
+      def render[Msg](
+        content: HtmlElement[Msg],
+        pageTitle: Option[String],
+        ctx: LiveLayoutContext[Any, Any]
+      ) = content
 
   def apply[A, Ctx](
     rootKey: String
   )(
-    f: (HtmlElement[?], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
+    f: (HtmlElement[?], Option[String], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
   ): LiveRootLayout[A, Ctx] =
     new LiveRootLayout[A, Ctx]:
-      def key(ctx: LiveLayoutContext[A, Ctx])                                    = rootKey
-      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]) =
-        f(content, ctx).asInstanceOf[HtmlElement[Msg]]
+      def key(ctx: LiveLayoutContext[A, Ctx]) = rootKey
+      def render[Msg](
+        content: HtmlElement[Msg],
+        pageTitle: Option[String],
+        ctx: LiveLayoutContext[A, Ctx]
+      ) = f(content, pageTitle, ctx).asInstanceOf[HtmlElement[Msg]]
 
   def dynamic[A, Ctx](
     rootKey: LiveLayoutContext[A, Ctx] => String
   )(
-    f: (HtmlElement[?], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
+    f: (HtmlElement[?], Option[String], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
   ): LiveRootLayout[A, Ctx] =
     new LiveRootLayout[A, Ctx]:
-      def key(ctx: LiveLayoutContext[A, Ctx])                                    = rootKey(ctx)
-      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]) =
-        f(content, ctx).asInstanceOf[HtmlElement[Msg]]
+      def key(ctx: LiveLayoutContext[A, Ctx]) = rootKey(ctx)
+      def render[Msg](
+        content: HtmlElement[Msg],
+        pageTitle: Option[String],
+        ctx: LiveLayoutContext[A, Ctx]
+      ) = f(content, pageTitle, ctx).asInstanceOf[HtmlElement[Msg]]
+end LiveRootLayout
 
 final private[scalive] case class LiveLayoutLayer[A, Ctx, LayerCtx](
   layout: LiveLayout[A, LayerCtx],
@@ -77,12 +92,17 @@ final private[scalive] case class LiveRootLayoutLayer[A, Ctx, LayerCtx](
 
   def render[Msg](
     content: HtmlElement[Msg],
+    pageTitle: Option[String],
     params: A,
     request: Request,
     currentUrl: URL,
     context: Ctx
   ): HtmlElement[Msg] =
-    layout.render(content, LiveLayoutContext(params, request, currentUrl, project(context)))
+    layout.render(
+      content,
+      pageTitle,
+      LiveLayoutContext(params, request, currentUrl, project(context))
+    )
 
   def mapContext[Ctx2](f: Ctx2 => Ctx): LiveRootLayoutLayer[A, Ctx2, LayerCtx] =
     copy(project = project.compose(f))

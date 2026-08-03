@@ -155,7 +155,7 @@ class KeyedComprehensionLiveView(assets: StaticAssets)
     )
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent("sandbox") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent { (model, event, _) =>
       E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
 

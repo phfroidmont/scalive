@@ -62,12 +62,12 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks
-      .empty[Msg, Model].onRawEvent("form-raw") { (model: Model, event: LiveEvent, _) =>
+      .empty[Msg, Model].onRawEvent { (model: Model, event: LiveEvent, _) =>
         if event.cid.nonEmpty then LiveEventHookResult.cont(model)
         else if event.bindingId == "sandbox:eval" then
           E2ESandboxEval.handle(model, event.bindingId, event.value)
         else LiveEventHookResult.cont(applyRawFormValue(model, event.value))
-      }.onRawEvent("form-e2e-events") { (model: Model, event: LiveEvent, ctx: MessageContext) =>
+      }.onRawEvent { (model: Model, event: LiveEvent, ctx: MessageContext) =>
         if event.cid.nonEmpty then LiveEventHookResult.cont(model)
         else
           event.bindingId match
@@ -94,7 +94,8 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
     val formContent = renderFormContent(model)
     div(
       if model.query.portal then h1("Form") else "",
-      if model.query.portal then portal("form-portal", target = "body")(formContent)
+      if model.query.portal then
+        portal("form-portal", target = DomSelector.css("body"))(formContent)
       else formContent,
       if model.submitted then p("Form was submitted!") else ""
     )
@@ -254,7 +255,7 @@ object FormLiveView:
       model.copy(query = props.query)
 
     override def hooks: ComponentLiveHooks[Props, Msg, Model] =
-      ComponentLiveHooks.empty.onRawEvent("form-component-events") { (_, model, event, ctx) =>
+      ComponentLiveHooks.empty.onRawEvent { (_, model, event, ctx) =>
         event.bindingId match
           case "validate" =>
             maybeAwait(model.query, "validate").map { _ =>
@@ -509,7 +510,7 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
     case Msg.Ping        => model
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent("sandbox") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent { (model, event, _) =>
       E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
 
@@ -573,7 +574,7 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
       model.copy(feedback = !model.feedback, feedbackUsed = false)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent("feedback-raw") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent { (model, event, _) =>
       if event.bindingId == "sandbox:eval" then
         E2ESandboxEval.handle(model, event.bindingId, event.value)
       else

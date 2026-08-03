@@ -14,11 +14,11 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     attach(
       id,
       "rawEvent",
-      _.rawEventHooks.exists(_.id == id),
+      _.rawEventHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(rawEventHooks =
           state.rawEventHooks :+ StoredRawEventHook(
-            id,
+            HookOrigin.Dynamic(id),
             (_, model, event, ctx) =>
               hook(model.asInstanceOf[Model], event, ctx.messageContext[Msg, Model])
                 .map(_.asInstanceOf[LiveEventHookResult[Any]])
@@ -36,11 +36,11 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     attach(
       id,
       "rawEvent",
-      _.rawEventHooks.exists(_.id == id),
+      _.rawEventHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(rawEventHooks =
           state.rawEventHooks :+ StoredRawEventHook(
-            id,
+            HookOrigin.Dynamic(id),
             (props, model, event, ctx) =>
               hook(
                 props.get.asInstanceOf[Props],
@@ -54,7 +54,9 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     )
 
   def detachRawEvent(id: String): Task[Unit] =
-    ref.update(state => state.copy(rawEventHooks = state.rawEventHooks.filterNot(_.id == id)))
+    ref.update(state =>
+      state.copy(rawEventHooks = state.rawEventHooks.filterNot(_.origin.isDynamic(id)))
+    )
 
   def attachEvent[Msg, Model](
     id: String
@@ -66,11 +68,11 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     attach(
       id,
       "event",
-      _.eventHooks.exists(_.id == id),
+      _.eventHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(eventHooks =
           state.eventHooks :+ StoredEventHook(
-            id,
+            HookOrigin.Dynamic(id),
             (_, model, message, event, ctx) =>
               hook(
                 model.asInstanceOf[Model],
@@ -93,11 +95,11 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     attach(
       id,
       "event",
-      _.eventHooks.exists(_.id == id),
+      _.eventHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(eventHooks =
           state.eventHooks :+ StoredEventHook(
-            id,
+            HookOrigin.Dynamic(id),
             (props, model, message, event, ctx) =>
               hook(
                 props.get.asInstanceOf[Props],
@@ -112,7 +114,7 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     )
 
   def detachEvent(id: String): Task[Unit] =
-    ref.update(state => state.copy(eventHooks = state.eventHooks.filterNot(_.id == id)))
+    ref.update(state => state.copy(eventHooks = state.eventHooks.filterNot(_.origin.isDynamic(id))))
 
   def attachParams[Msg, Model](
     id: String
@@ -122,11 +124,11 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     attach(
       id,
       "params",
-      _.paramsHooks.exists(_.id == id),
+      _.paramsHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(paramsHooks =
           state.paramsHooks :+ StoredParamsHook(
-            id,
+            HookOrigin.Dynamic(id),
             (model, url, ctx) =>
               hook(model.asInstanceOf[Model], url, ctx.paramsContext[Msg, Model])
                 .map(_.asInstanceOf[LiveHookResult[Any]])
@@ -135,7 +137,9 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     )
 
   def detachParams(id: String): Task[Unit] =
-    ref.update(state => state.copy(paramsHooks = state.paramsHooks.filterNot(_.id == id)))
+    ref.update(state =>
+      state.copy(paramsHooks = state.paramsHooks.filterNot(_.origin.isDynamic(id)))
+    )
 
   def attachInfo[Msg, Model](
     id: String
@@ -145,11 +149,11 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     attach(
       id,
       "info",
-      _.infoHooks.exists(_.id == id),
+      _.infoHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(infoHooks =
           state.infoHooks :+ StoredInfoHook(
-            id,
+            HookOrigin.Dynamic(id),
             (model, message, ctx) =>
               hook(
                 model.asInstanceOf[Model],
@@ -162,7 +166,7 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     )
 
   def detachInfo(id: String): Task[Unit] =
-    ref.update(state => state.copy(infoHooks = state.infoHooks.filterNot(_.id == id)))
+    ref.update(state => state.copy(infoHooks = state.infoHooks.filterNot(_.origin.isDynamic(id))))
 
   def attachAsync[Msg, Model](
     id: String
@@ -174,11 +178,11 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     attach(
       id,
       "async",
-      _.asyncHooks.exists(_.id == id),
+      _.asyncHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(asyncHooks =
           state.asyncHooks :+ StoredAsyncHook(
-            id,
+            HookOrigin.Dynamic(id),
             (_, model, event, ctx) =>
               hook(
                 model.asInstanceOf[Model],
@@ -200,11 +204,11 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     attach(
       id,
       "async",
-      _.asyncHooks.exists(_.id == id),
+      _.asyncHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(asyncHooks =
           state.asyncHooks :+ StoredAsyncHook(
-            id,
+            HookOrigin.Dynamic(id),
             (props, model, event, ctx) =>
               hook(
                 props.get.asInstanceOf[Props],
@@ -218,24 +222,22 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     )
 
   def detachAsync(id: String): Task[Unit] =
-    ref.update(state => state.copy(asyncHooks = state.asyncHooks.filterNot(_.id == id)))
+    ref.update(state => state.copy(asyncHooks = state.asyncHooks.filterNot(_.origin.isDynamic(id))))
 
   def attachAfterRender[Msg, Model](
     id: String
   )(
-    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model]
+    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
   ): Task[Unit] =
     attach(
       id,
       "afterRender",
-      _.afterRenderHooks.exists(_.id == id),
+      _.afterRenderHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(afterRenderHooks =
           state.afterRenderHooks :+ StoredAfterRenderHook(
-            id,
-            (_, model, ctx) =>
-              hook(model.asInstanceOf[Model], ctx.afterRenderContext[Msg, Model])
-                .map(_.asInstanceOf[Any])
+            HookOrigin.Dynamic(id),
+            (_, model, ctx) => hook(model.asInstanceOf[Model], ctx.afterRenderContext[Msg, Model])
           )
         )
     )
@@ -243,29 +245,30 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
   def attachComponentAfterRender[Props, Msg, Model](
     id: String
   )(
-    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Model]
+    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Unit]
   ): Task[Unit] =
     attach(
       id,
       "afterRender",
-      _.afterRenderHooks.exists(_.id == id),
+      _.afterRenderHooks.exists(_.origin.isDynamic(id)),
       state =>
         state.copy(afterRenderHooks =
           state.afterRenderHooks :+ StoredAfterRenderHook(
-            id,
+            HookOrigin.Dynamic(id),
             (props, model, ctx) =>
               hook(
                 props.get.asInstanceOf[Props],
                 model.asInstanceOf[Model],
                 ctx.componentAfterRenderContext[Props, Msg, Model]
               )
-                .map(_.asInstanceOf[Any])
           )
         )
     )
 
   def detachAfterRender(id: String): Task[Unit] =
-    ref.update(state => state.copy(afterRenderHooks = state.afterRenderHooks.filterNot(_.id == id)))
+    ref.update(state =>
+      state.copy(afterRenderHooks = state.afterRenderHooks.filterNot(_.origin.isDynamic(id)))
+    )
 
   private[scalive] def runRawEvent[Msg, Model](
     model: Model,
@@ -332,14 +335,14 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
   ): Task[LiveHookResult[Model]] =
     ref.get.flatMap(state => reduceAsyncHooks(state.asyncHooks, Some(props), model, event, ctx))
 
-  private[scalive] def runAfterRender[Msg, Model](model: Model, ctx: LiveContext): Task[Model] =
+  private[scalive] def runAfterRender[Msg, Model](model: Model, ctx: LiveContext): Task[Unit] =
     ref.get.flatMap(state => reduceAfterRenderHooks(state.afterRenderHooks, None, model, ctx))
 
   private[scalive] def runComponentAfterRender[Props, Msg, Model](
     props: Props,
     model: Model,
     ctx: LiveContext
-  ): Task[Model] =
+  ): Task[Unit] =
     ref.get.flatMap(state =>
       reduceAfterRenderHooks(state.afterRenderHooks, Some(props), model, ctx)
     )
@@ -456,11 +459,8 @@ private[scalive] class SocketLiveHookRuntime(ref: Ref[LiveHookRuntimeState])
     props: Option[Any],
     initialModel: Model,
     ctx: LiveContext
-  ): Task[Model] =
-    hooks
-      .foldLeft(ZIO.succeed(initialModel.asInstanceOf[Any]): Task[Any]) { case (current, hook) =>
-        current.flatMap(model => hook.run(props, model, ctx))
-      }.map(_.asInstanceOf[Model])
+  ): Task[Unit] =
+    ZIO.foreachDiscard(hooks)(_.run(props, initialModel, ctx))
 
   private def duplicateError(id: String, stage: String): IllegalArgumentException =
     new IllegalArgumentException(s"$stage hook '$id' is already attached")

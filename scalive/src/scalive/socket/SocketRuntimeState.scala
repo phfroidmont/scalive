@@ -126,7 +126,8 @@ private[scalive] object FlashRuntimeState:
 
 final private[scalive] case class RenderedView(
   compiled: RenderSnapshot.Compiled,
-  bindings: Map[String, BindingHandler[Any]])
+  bindings: Map[String, BindingHandler[Any]],
+  pageTitle: Option[String])
 
 final private[scalive] case class RuntimeState[Msg, Model](
   lv: LiveView[Msg, Model],
@@ -147,7 +148,6 @@ final private[scalive] case class RuntimeState[Msg, Model](
   uploadRef: Ref[UploadRuntimeState],
   streamRef: Ref[StreamRuntimeState],
   clientEventsRef: Ref[Vector[Diff.Event]],
-  titleRef: Ref[Option[String]],
   flashRef: Ref[FlashRuntimeState],
   asyncTasksRef: Ref[LiveAsyncRuntimeState],
   componentsRef: Ref[ComponentRuntimeState],
@@ -155,5 +155,6 @@ final private[scalive] case class RuntimeState[Msg, Model](
   patchRedirectCountRef: Ref[Int],
   crashedRef: Ref[Boolean],
   onCrash: UIO[Unit],
+  ownsPageTitle: Boolean,
   bootstrapPayloads: Chunk[(Payload, WebSocketMessage.Meta)],
   initDiff: Diff)

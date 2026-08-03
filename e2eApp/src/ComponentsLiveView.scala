@@ -75,7 +75,10 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
           styleAttr := "position: relative; display: inline-block;",
           button(
             idAttr := "dropdown-button",
-            phx.onClick(JS.toggle(to = "#dropdown-menu").focusFirst(to = "#dropdown-content")),
+            phx.onClick(
+              JS.toggle(to = DomSelector.css("#dropdown-menu"))
+                .focusFirst(to = DomSelector.css("#dropdown-content"))
+            ),
             styleAttr := "padding: 0.5rem 1rem; background-color: #4b5563; color: white; border-radius: 0.25rem;",
             "Options ▼"
           ),
@@ -128,7 +131,7 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
 
   private def menuButton(label: String) =
     button(
-      phx.onClick(JS.hide(to = "#dropdown-menu")),
+      phx.onClick(JS.hide(to = DomSelector.css("#dropdown-menu"))),
       styleAttr := "display: block; width: 100%; text-align: left; padding: 0.5rem 1rem; font-size: 0.875rem;",
       label
     )

@@ -14,32 +14,32 @@ class JsLiveView extends LiveView[Msg, Model]:
   def render(model: Model) =
     div(
       div(
-        idAttr        := "my-modal",
+        Modal.attr,
         aria.expanded := false,
         styleAttr     := "display: none;",
         "Test"
       ),
       button(
         phx.onClick(
-          JS.show(to = "#my-modal", transition = "fade-in", time = 50)
-            .setAttribute(("aria-expanded", "true"), to = "#my-modal")
-            .setAttribute(("open", "true"), to = "#my-modal")
+          JS.show(to = Modal.selector, transition = "fade-in", time = 50)
+            .setAttribute(("aria-expanded", "true"), to = Modal.selector)
+            .setAttribute(("open", "true"), to = Modal.selector)
         ),
         "show modal"
       ),
       button(
         phx.onClick(
-          JS.hide(to = "#my-modal", transition = "fade-out", time = 50)
-            .setAttribute(("aria-expanded", "false"), to = "#my-modal")
-            .removeAttribute("open", to = "#my-modal")
+          JS.hide(to = Modal.selector, transition = "fade-out", time = 50)
+            .setAttribute(("aria-expanded", "false"), to = Modal.selector)
+            .removeAttribute("open", to = Modal.selector)
         ),
         "hide modal"
       ),
       button(
         phx.onClick(
-          JS.toggle(to = "#my-modal", in = "fade-in", out = "fade-out", time = 50)
-            .toggleAttribute("aria-expanded", "true", "false", to = "#my-modal")
-            .toggleAttribute("open", "true", to = "#my-modal")
+          JS.toggle(to = Modal.selector, in = "fade-in", out = "fade-out", time = 50)
+            .toggleAttribute("aria-expanded", "true", "false", to = Modal.selector)
+            .toggleAttribute("open", "true", to = Modal.selector)
         ),
         "toggle modal"
       ),
@@ -56,6 +56,8 @@ class JsLiveView extends LiveView[Msg, Model]:
 end JsLiveView
 
 object JsLiveView:
+
+  private val Modal = DomRef("my-modal")
 
   enum Msg:
     case Increment

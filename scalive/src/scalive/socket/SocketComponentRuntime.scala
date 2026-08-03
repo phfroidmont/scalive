@@ -634,16 +634,12 @@ private[scalive] object SocketComponentRuntime:
       ref = ComponentRef[Any](cid)
       rendered <-
         renderElement(component.render(renderProps, updatedModel, ref), cursor, componentCtx)
-      afterRenderModel <- componentCtx.hooks.runComponentAfterRender(
-                            updateProps,
-                            updatedModel,
-                            componentCtx
-                          )
+      _ <- componentCtx.hooks.runComponentAfterRender(updateProps, updatedModel, componentCtx)
       afterRenderHooks <- hooksRef.get
       _ = cursor.state = cursor.state.copy(instances =
             cursor.state.instances.updated(
               identity,
-              instance.copy(model = afterRenderModel, hooks = afterRenderHooks)
+              instance.copy(model = updatedModel, hooks = afterRenderHooks)
             )
           )
       wrapped <- wrapComponentMessages(cid, rendered.prepended(phx.component := cid.toString))

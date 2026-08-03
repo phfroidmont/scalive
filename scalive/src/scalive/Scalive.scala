@@ -14,6 +14,24 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
   lazy val defer                          = htmlAttr("defer", codecs.BooleanAsAttrPresenceEncoder)
   def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
+
+  def liveTitle(
+    pageTitle: Option[String],
+    default: String,
+    prefix: String = "",
+    suffix: String = ""
+  ): HtmlElement[Nothing] =
+    val title = normalizePageTitle(pageTitle).getOrElse(default)
+    titleTag(
+      dataAttr("prefix")  := prefix,
+      dataAttr("default") := default,
+      dataAttr("suffix")  := suffix,
+      s"$prefix$title$suffix"
+    )
+
+  private[scalive] def normalizePageTitle(pageTitle: Option[String]): Option[String] =
+    pageTitle.filter(_.trim.nonEmpty)
+
   def component[Props, Msg, Model](
     liveComponent: LiveComponent[Props, Msg, Model],
     id: String
@@ -58,7 +76,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
   def portal[Msg](
     id: String,
-    target: String,
+    target: DomSelector,
     container: String = "div",
     wrapperClass: Option[String] = None
   )(
@@ -79,7 +97,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
     portalTemplateTag(
       idAttr    := id,
-      phxPortal := target,
+      phxPortal := target.requiredValue,
       HtmlTag(container)(wrapperMods.result())
     )
 
@@ -175,8 +193,18 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val disableWith = phxAttr("disable-with")
 
     // Socket connection lifecycle
-    lazy val onConnected    = phxAttrBinding("connected")
-    lazy val onDisconnected = phxAttrBinding("disconnected")
+    lazy val onConnected                                = phxAttrBinding("connected")
+    lazy val onDisconnected                             = phxAttrBinding("disconnected")
+    lazy val visibleWhenConnected: Vector[Mod[Nothing]] = Vector(
+      hidden := true,
+      onConnected(JS.removeAttribute("hidden")),
+      onDisconnected(JS.setAttribute("hidden" -> ""))
+    )
+    lazy val visibleWhenDisconnected: Vector[Mod[Nothing]] = Vector(
+      hidden := false,
+      onConnected(JS.setAttribute("hidden" -> "")),
+      onDisconnected(JS.removeAttribute("hidden"))
+    )
 
     // DOM element lifecycle
     lazy val onMounted = phxAttrBinding("mounted")
@@ -193,8 +221,8 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val clearFlash: Mod.Attr[Nothing] = phxAttr("click") := "lv:clear-flash"
     def target[Msg](ref: ComponentRef[Msg]): Mod.Attr[Nothing] =
       phxAttr("target") := ref.toString
-    def target(selector: String): Mod.Attr[Nothing] =
-      phxAttr("target") := selector
+    def target(selector: DomSelector): Mod.Attr[Nothing] =
+      phxAttr("target") := selector.requiredValue
 
     // Rate limiting
     lazy val debounce = new HtmlAttr["blur" | Int](

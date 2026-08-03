@@ -6,10 +6,15 @@ final class E2ERootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]
   def apply[Msg](content: HtmlElement[Msg]): HtmlElement[Msg] =
     render(
       content,
+      None,
       LiveLayoutContext((), zio.http.Request.get(zio.http.URL.root), zio.http.URL.root, ())
     )
 
-  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
+  def render[Msg](
+    content: HtmlElement[Msg],
+    pageTitle: Option[String],
+    ctx: LiveLayoutContext[Any, Any]
+  ): HtmlElement[Msg] =
     htmlRootTag(
       lang := "en",
       headTag(
@@ -21,7 +26,7 @@ final class E2ERootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]
           typ   := "text/javascript"
         ),
         assets.trackedStylesheet("app.css"),
-        titleTag("Scalive E2E")
+        liveTitle(pageTitle, default = "Scalive E2E")
       ),
       bodyTag(
         hookOutsideLiveView(ctx),

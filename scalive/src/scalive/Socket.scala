@@ -48,7 +48,8 @@ private[scalive] object Socket:
     paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model] =
       LiveRouteParamsRuntime.none[Any, Msg, Model],
     enqueueInitReply: Boolean = true,
-    onCrash: UIO[Unit] = ZIO.unit
+    onCrash: UIO[Unit] = ZIO.unit,
+    ownsPageTitle: Boolean = true
   ): RIO[Scope, Socket[Msg, Model]] =
     val rootRenderer = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
     ZIO.logAnnotate("lv", id) {
@@ -62,7 +63,8 @@ private[scalive] object Socket:
                    initialFlash,
                    rootRenderer,
                    paramsRuntime,
-                   onCrash
+                   onCrash,
+                   ownsPageTitle
                  )
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
@@ -88,7 +90,14 @@ private[scalive] object Socket:
         stickyRejoinReply = state.lifecycleLock.withPermit {
                               state.ref.get.map { case (_, rendered) =>
                                 Payload.okReply(
-                                  LiveResponse.InitDiff(TreeDiff.initial(rendered.compiled))
+                                  LiveResponse.InitDiff(
+                                    if state.ownsPageTitle then
+                                      socket.SocketModelRuntime.withTitle(
+                                        TreeDiff.initial(rendered.compiled),
+                                        Some(rendered.pageTitle.getOrElse(""))
+                                      )
+                                    else TreeDiff.initial(rendered.compiled)
+                                  )
                                 )
                               }
                             }

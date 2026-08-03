@@ -100,7 +100,8 @@ final private[scalive] class SocketNestedLiveViewRuntime(
             tokenConfig,
             initialUrl,
             enqueueInitReply = enqueueInitReply,
-            onCrash = onCrash
+            onCrash = onCrash,
+            ownsPageTitle = false
           )(using spec.msgClassTag)
       )
 

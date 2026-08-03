@@ -10,6 +10,8 @@ trait LiveView[Msg, Model]:
 
   def hooks: LiveHooks[Msg, Model] = LiveHooks.empty
 
+  def pageTitle(model: Model): Option[String] = None
+
   def mount(ctx: MountContext): LiveIO[Model]
 
   def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]

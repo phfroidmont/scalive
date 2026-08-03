@@ -1,5 +1,7 @@
 # Typed Runtime Identifiers Design
 
+> Update (2026-08-03): the original decision to leave every DOM ID and selector as a raw string is superseded for reusable references. `DomRef` now pairs a validated ID attribute with its selector, and JS selector parameters require `DomSelector`. One-off `idAttr` values remain strings.
+
 ## Goal
 
 Replace repeated string identifiers with typed declarations where doing so removes a concrete class of invalid Scala programs. Preserve strings where the value is free-form browser syntax, external input, or a local label for which a wrapper would add ceremony without meaningful safety.

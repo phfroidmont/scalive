@@ -19,8 +19,12 @@ object SocketSpec extends ZIOSpecDefault:
     case FromClient
     case FromServer
     case SetTitle
+    case ResetTitle
 
-  final case class Model(counter: Int = 0, staticFlag: Option[Boolean] = None)
+  final case class Model(
+    counter: Int = 0,
+    staticFlag: Option[Boolean] = None,
+    pageTitle: Option[String] = Some("Initial title"))
 
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
 
@@ -32,6 +36,8 @@ object SocketSpec extends ZIOSpecDefault:
 
   private def makeLiveView(serverStream: ZStream[Any, Nothing, Msg]) =
     new LiveView[Msg, Model]:
+      override def pageTitle(model: Model) = model.pageTitle
+
       def mount(ctx: MountContext) =
         ctx.subscriptions
           .start(ServerSubscription)(serverStream).as(Model(staticFlag = Some(ctx.staticChanged)))
@@ -39,7 +45,8 @@ object SocketSpec extends ZIOSpecDefault:
       def handleMessage(model: Model, ctx: MessageContext) =
         case Msg.FromClient => ZIO.succeed(model.copy(counter = model.counter + 1))
         case Msg.FromServer => ZIO.succeed(model.copy(counter = model.counter + 10))
-        case Msg.SetTitle   => ctx.title.set("Updated title").as(model)
+        case Msg.SetTitle   => ZIO.succeed(model.copy(pageTitle = Some("Updated title")))
+        case Msg.ResetTitle => ZIO.succeed(model.copy(pageTitle = None))
 
       def render(model: Model): HtmlElement[Msg] =
         div(
@@ -179,6 +186,42 @@ object SocketSpec extends ZIOSpecDefault:
             value
           case _ => None
         assertTrue(title.contains("Updated title"))
+    },
+    test("emits an empty title to restore the layout fallback") {
+      val lv = makeLiveView(ZStream.succeed(Msg.ResetTitle))
+
+      for
+        socket <- makeSocket(LiveContext(staticChanged = false), lv)
+        update <- socket.outbox.drop(1).runHead.some
+      yield
+        val title = update._1 match
+          case Payload.Diff(Diff.Tag(_, _, _, _, value, _, _, _)) => value
+          case Payload
+                .Reply(ReplyStatus.Ok, LiveResponse.Diff(Diff.Tag(_, _, _, _, value, _, _, _))) =>
+            value
+          case _ => None
+        assertTrue(title.contains(""))
+    },
+    test("nested sockets do not emit document title metadata") {
+      val lv = makeLiveView(ZStream.empty)
+
+      for
+        socket <- Socket.start(
+                    "nested",
+                    "token",
+                    lv,
+                    LiveContext(staticChanged = false),
+                    meta,
+                    ownsPageTitle = false
+                  )
+      yield
+        val title = socket.initReply match
+          case Payload.Reply(
+                ReplyStatus.Ok,
+                LiveResponse.InitDiff(Diff.Tag(_, _, _, _, value, _, _, _))
+              ) => value
+          case _ => None
+        assertTrue(title.isEmpty)
     },
     test("runs handleParams during connected bootstrap") {
       val ctx = LiveContext(staticChanged = false)
@@ -372,7 +415,7 @@ object SocketSpec extends ZIOSpecDefault:
       val replyValue = Json.Obj("ok" -> Json.Bool(true))
       val lv         = new LiveView[Unit, String]:
         override def hooks: LiveHooks[Unit, String] =
-          LiveHooks.empty.onRawEvent("intercept") { (model, event, _) =>
+          LiveHooks.empty.onRawEvent { (model, event, _) =>
             if event.bindingId == "intercept" then
               ZIO.succeed(LiveEventHookResult.haltReply("intercepted", replyValue))
             else ZIO.succeed(LiveEventHookResult.cont(model))
@@ -471,7 +514,7 @@ object SocketSpec extends ZIOSpecDefault:
           div(
             button(
               phx.onClick.toComponent(CounterComponent)(CounterComponent.Msg),
-              phx.target("#counter"),
+              phx.target(DomSelector.css("#counter")),
               "increment"
             ),
             liveComponent(CounterComponent, id = "counter", props = ())

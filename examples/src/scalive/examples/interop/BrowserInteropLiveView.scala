@@ -36,7 +36,7 @@ final class BrowserInteropLiveView
 
   def render(model: Model) =
     div(
-      phx.hook(HookName, id = HookDomId),
+      phx.hook(HookName, id = HookDomRef.value),
       headerTag(
         cls := "mb-8 border-b border-base-300 pb-7",
         div(cls := "badge badge-primary badge-outline mb-4", "Client interop"),
@@ -63,17 +63,17 @@ final class BrowserInteropLiveView
             "Run composed command"
           ),
           p(
-            idAttr := CommandPlaceholderId,
+            CommandPlaceholderRef.attr,
             cls := "mt-5 rounded-box border border-dashed border-base-300 p-4 text-sm text-base-content/60",
             "The command will hide this placeholder."
           ),
           div(
-            idAttr    := CommandPanelId,
+            CommandPanelRef.attr,
             styleAttr := "display: none;",
             cls       := "mt-5 rounded-box bg-primary/10 p-5",
             p(cls := "font-semibold text-primary", "The command showed this panel."),
             p(
-              idAttr    := CommandDetailId,
+              CommandDetailRef.attr,
               styleAttr := "display: none;",
               cls       := "mt-2 text-sm leading-6 text-base-content/70",
               "Run it again to toggle this detail while the panel stays visible."
@@ -103,8 +103,8 @@ final class BrowserInteropLiveView
             if model.operation.isPending then "Retry copy" else "Copy sample text"
           ),
           div(
-            idAttr := CopyStatusId,
-            cls    := s"alert mt-5 ${model.operation.alertClass}",
+            CopyStatusRef.attr,
+            cls := s"alert mt-5 ${model.operation.alertClass}",
             span(model.operation.label)
           )
         )
@@ -135,20 +135,20 @@ object BrowserInteropLiveView:
 
   final private case class CopyResult(requestId: String, ok: Boolean) derives JsonDecoder
 
-  private val HookName             = "BrowserInterop"
-  private val HookDomId            = "browser-interop-hook"
-  private val CopyResultEvent      = BrowserToServerEvent[CopyResult]("browser-copy-result")
-  private val CopyRequestEvent     = ServerToBrowserEvent[CopyRequest]("browser-copy-request")
-  private val SampleText           = "Scalive keeps server-to-client event payloads typed."
-  private val CommandPanelId       = "browser-command-panel"
-  private val CommandPlaceholderId = "browser-command-placeholder"
-  private val CommandDetailId      = "browser-command-detail"
-  private val CopyStatusId         = "browser-copy-status"
-  private val codeTag              = HtmlTag("code")
+  private val HookName              = "BrowserInterop"
+  private val HookDomRef            = DomRef("browser-interop-hook")
+  private val CopyResultEvent       = BrowserToServerEvent[CopyResult]("browser-copy-result")
+  private val CopyRequestEvent      = ServerToBrowserEvent[CopyRequest]("browser-copy-request")
+  private val SampleText            = "Scalive keeps server-to-client event payloads typed."
+  private val CommandPanelRef       = DomRef("browser-command-panel")
+  private val CommandPlaceholderRef = DomRef("browser-command-placeholder")
+  private val CommandDetailRef      = DomRef("browser-command-detail")
+  private val CopyStatusRef         = DomRef("browser-copy-status")
+  private val codeTag               = HtmlTag("code")
 
   private val ClientOnlyCommand =
-    JS.show(to = s"#$CommandPanelId")
-      .hide(to = s"#$CommandPlaceholderId")
-      .toggle(to = s"#$CommandDetailId")
+    JS.show(to = CommandPanelRef.selector)
+      .hide(to = CommandPlaceholderRef.selector)
+      .toggle(to = CommandDetailRef.selector)
 
 end BrowserInteropLiveView

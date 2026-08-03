@@ -190,13 +190,15 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
 
   private[scalive] def renderRootHtml[Msg](
     content: HtmlElement[Msg],
+    pageTitle: Option[String],
     params: A,
     request: Request,
     currentUrl: URL,
     mountContext: Ctx,
     globalRootLayout: LiveRootLayout[Any, Any]
   ): HtmlElement[Msg] =
-    rootLayer(globalRootLayout).render(content, params, request, currentUrl, mountContext)
+    rootLayer(globalRootLayout)
+      .render(content, pageTitle, params, request, currentUrl, mountContext)
 
   private[scalive] def rootLayoutKey(
     params: A,
@@ -217,7 +219,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
   ): List[String] =
     val live = applyLiveLayouts(div(), params, request, currentUrl, mountContext, globalLayouts)
     StaticTracking.collect(
-      renderRootHtml(live, params, request, currentUrl, mountContext, globalRootLayout)
+      renderRootHtml(live, None, params, request, currentUrl, mountContext, globalRootLayout)
     )
 
   private def rootLayer(
@@ -325,6 +327,7 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                                               )
                                   document = renderRootHtml(
                                                rendered,
+                                               normalizePageTitle(lv.pageTitle(model)),
                                                params,
                                                req,
                                                req.url,

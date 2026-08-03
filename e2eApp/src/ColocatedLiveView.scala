@@ -10,7 +10,8 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.SubmitPhone(phone) => model.copy(phone = phone)
-    case Msg.PushJs             => ctx.client.exec(JS.toggle(to = "#hello")).as(model)
+    case Msg.PushJs             =>
+      ctx.client.exec(JS.toggle(to = DomSelector.css("#hello"))).as(model)
 
   def render(model: Model) =
     div(

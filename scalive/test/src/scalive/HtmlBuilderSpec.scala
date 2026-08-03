@@ -33,6 +33,19 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
         val result = HtmlBuilder.build(el)
         assertTrue(result == "<div class=\"container\">Content</div>")
       },
+      test("Live title renders page state with browser update metadata") {
+        val titled = HtmlBuilder.build(
+          liveTitle(Some("Notifications"), default = "Scalive", suffix = " | Scalive")
+        )
+        val fallback = HtmlBuilder.build(
+          liveTitle(Some("  "), default = "Scalive", suffix = " | Scalive")
+        )
+
+        assertTrue(
+          titled == "<title data-prefix=\"\" data-default=\"Scalive\" data-suffix=\" | Scalive\">Notifications | Scalive</title>",
+          fallback == "<title data-prefix=\"\" data-default=\"Scalive\" data-suffix=\" | Scalive\">Scalive | Scalive</title>"
+        )
+      },
       test("Multiple attributes") {
         val el = div(
           cls    := "container",
@@ -43,7 +56,7 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
         assertTrue(result == "<div class=\"container\" id=\"main\">Content</div>")
       },
       test("Portal wraps content in a template") {
-        val el = portal("portal-source", target = "#root-portal")(
+        val el = portal("portal-source", target = DomSelector.css("#root-portal"))(
           div(idAttr := "my-modal", "Modal"),
           div(phx.hook("InsidePortal", "hook-test"))
         )
@@ -65,10 +78,21 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
           scala.util.Try(phx.hook("MyHook", "")).isFailure
         )
       },
+      test("Connection visibility modifiers target their own element") {
+        val connected    = HtmlBuilder.build(span(phx.visibleWhenConnected, "Connected"))
+        val disconnected = HtmlBuilder.build(span(phx.visibleWhenDisconnected, "Disconnected"))
+
+        assertTrue(
+          connected ==
+            "<span hidden phx-connected='[[&quot;remove_attr&quot;,{&quot;attr&quot;:&quot;hidden&quot;}]]' phx-disconnected='[[&quot;set_attr&quot;,{&quot;attr&quot;:[&quot;hidden&quot;,&quot;&quot;]}]]'>Connected</span>",
+          disconnected ==
+            "<span phx-connected='[[&quot;set_attr&quot;,{&quot;attr&quot;:[&quot;hidden&quot;,&quot;&quot;]}]]' phx-disconnected='[[&quot;remove_attr&quot;,{&quot;attr&quot;:&quot;hidden&quot;}]]'>Disconnected</span>"
+        )
+      },
       test("Portal supports custom wrapper container and class") {
         val el = portal(
           id = "portal-source",
-          target = "body",
+          target = DomSelector.css("body"),
           container = "section",
           wrapperClass = Some("contents-wrapper")
         )(
@@ -83,8 +107,21 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
       },
       test("Portal rejects invalid wrapper container") {
         assertTrue(
-          scala.util.Try(portal("portal-source", target = "body", container = "not a tag")()).isFailure
+          scala.util.Try(
+            portal(
+              "portal-source",
+              target = DomSelector.css("body"),
+              container = "not a tag"
+            )()
+          ).isFailure
         )
+      },
+      test("Portal requires an explicit target") {
+        val result = scala.util.Try(
+          portal("portal-source", target = DomSelector.current)(div())
+        )
+
+        assertTrue(result.isFailure)
       }
     ),
     suite("Dynamic HTML rendering")(

@@ -58,18 +58,16 @@ final case class LiveHooks[Msg, Model] private[scalive] (
   private[scalive] val afterRenderHooks: Vector[LiveHooks.AfterRender[Msg, Model]]):
 
   def onRawEvent(
-    hookId: String
-  )(
     hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
   ): LiveHooks[Msg, Model] =
-    copy(rawEventHooks = rawEventHooks :+ LiveHooks.RawEvent(hookId, hook))
+    copy(rawEventHooks = rawEventHooks :+ LiveHooks.RawEvent(hook))
 
   def onBrowserEvent[A: JsonDecoder](
     browserEvent: BrowserToServerEvent[A]
   )(
     handler: (Model, A, MessageContext[Msg, Model]) => LiveIO[Model]
   ): LiveHooks[Msg, Model] =
-    onRawEvent(s"browser-event:${browserEvent.value}") { (model, event, ctx) =>
+    onRawEvent { (model, event, ctx) =>
       if event.bindingId != browserEvent.value || event.cid.nonEmpty then
         ZIO.succeed(LiveEventHookResult.cont(model))
       else
@@ -83,125 +81,73 @@ final case class LiveHooks[Msg, Model] private[scalive] (
               ).as(LiveEventHookResult.halt(model))
     }
 
-  def event(
-    id: String
-  )(
-    hook: (Model, Msg, LiveEvent, MessageContext[Msg, Model]) => LiveIO[
-      LiveEventHookResult[Model]
-    ]
-  ): LiveHooks[Msg, Model] =
-    copy(eventHooks = eventHooks :+ LiveHooks.Event(id, hook))
-
   def onEvent(
-    id: String
-  )(
     hook: (Model, Msg, LiveEvent, MessageContext[Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ]
   ): LiveHooks[Msg, Model] =
-    event(id)(hook)
-
-  def params(
-    id: String
-  )(
-    hook: (Model, URL, ParamsContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
-  ): LiveHooks[Msg, Model] =
-    copy(paramsHooks = paramsHooks :+ LiveHooks.Params(id, hook))
+    copy(eventHooks = eventHooks :+ LiveHooks.Event(hook))
 
   def onParams(
-    id: String
-  )(
     hook: (Model, URL, ParamsContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
   ): LiveHooks[Msg, Model] =
-    params(id)(hook)
-
-  def info(
-    id: String
-  )(
-    hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
-  ): LiveHooks[Msg, Model] =
-    copy(infoHooks = infoHooks :+ LiveHooks.Info(id, hook))
+    copy(paramsHooks = paramsHooks :+ LiveHooks.Params(hook))
 
   def onInfo(
-    id: String
-  )(
     hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
   ): LiveHooks[Msg, Model] =
-    info(id)(hook)
-
-  def async(
-    id: String
-  )(
-    hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => LiveIO[
-      LiveHookResult[Model]
-    ]
-  ): LiveHooks[Msg, Model] =
-    copy(asyncHooks = asyncHooks :+ LiveHooks.Async(id, hook))
+    copy(infoHooks = infoHooks :+ LiveHooks.Info(hook))
 
   def onAsync(
-    id: String
-  )(
     hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => LiveIO[
       LiveHookResult[Model]
     ]
   ): LiveHooks[Msg, Model] =
-    async(id)(hook)
+    copy(asyncHooks = asyncHooks :+ LiveHooks.Async(hook))
 
   def afterRender(
-    id: String
-  )(
-    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model]
+    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
   ): LiveHooks[Msg, Model] =
-    copy(afterRenderHooks = afterRenderHooks :+ LiveHooks.AfterRender(id, hook))
+    copy(afterRenderHooks = afterRenderHooks :+ LiveHooks.AfterRender(hook))
 end LiveHooks
 
 object LiveHooks:
   final private[scalive] case class RawEvent[Msg, Model](
-    id: String,
     hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]])
 
   final private[scalive] case class Event[Msg, Model](
-    id: String,
     hook: (Model, Msg, LiveEvent, MessageContext[Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ])
 
   final private[scalive] case class Params[Msg, Model](
-    id: String,
     hook: (Model, URL, ParamsContext[Msg, Model]) => LiveIO[LiveHookResult[Model]])
 
   final private[scalive] case class Info[Msg, Model](
-    id: String,
     hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]])
 
   final private[scalive] case class Async[Msg, Model](
-    id: String,
     hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => LiveIO[
       LiveHookResult[Model]
     ])
 
   final private[scalive] case class AfterRender[Msg, Model](
-    id: String,
-    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model])
+    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit])
 
   def empty[Msg, Model]: LiveHooks[Msg, Model] =
     LiveHooks(Vector.empty, Vector.empty, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
 
   def onEvent[Msg, Model](
-    id: String
-  )(
     hook: (Model, Msg, LiveEvent, MessageContext[Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ]
   ): LiveHooks[Msg, Model] =
-    empty[Msg, Model].onEvent(id)(hook)
+    empty[Msg, Model].onEvent(hook)
 
   def afterRender[Msg, Model](
-    id: String
-  )(
-    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model]
+    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
   ): LiveHooks[Msg, Model] =
-    empty[Msg, Model].afterRender(id)(hook)
+    empty[Msg, Model].afterRender(hook)
 end LiveHooks
 
 final case class ComponentLiveHooks[Props, Msg, Model] private[scalive] (
@@ -213,20 +159,18 @@ final case class ComponentLiveHooks[Props, Msg, Model] private[scalive] (
   ]):
 
   def onRawEvent(
-    hookId: String
-  )(
     hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ]
   ): ComponentLiveHooks[Props, Msg, Model] =
-    copy(rawEventHooks = rawEventHooks :+ ComponentLiveHooks.RawEvent(hookId, hook))
+    copy(rawEventHooks = rawEventHooks :+ ComponentLiveHooks.RawEvent(hook))
 
   def onBrowserEvent[A: JsonDecoder](
     browserEvent: BrowserToServerEvent[A]
   )(
     handler: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => LiveIO[Model]
   ): ComponentLiveHooks[Props, Msg, Model] =
-    onRawEvent(s"browser-event:${browserEvent.value}") { (props, model, event, ctx) =>
+    onRawEvent { (props, model, event, ctx) =>
       if event.bindingId != browserEvent.value then ZIO.succeed(LiveEventHookResult.cont(model))
       else
         event.value.as[A] match
@@ -239,54 +183,44 @@ final case class ComponentLiveHooks[Props, Msg, Model] private[scalive] (
               ).as(LiveEventHookResult.halt(model))
     }
 
-  def event(
-    id: String
-  )(
+  def onEvent(
     hook: (Props, Model, Msg, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ]
   ): ComponentLiveHooks[Props, Msg, Model] =
-    copy(eventHooks = eventHooks :+ ComponentLiveHooks.Event(id, hook))
+    copy(eventHooks = eventHooks :+ ComponentLiveHooks.Event(hook))
 
-  def async(
-    id: String
-  )(
+  def onAsync(
     hook: (Props, Model, LiveAsyncEvent[Msg], ComponentMessageContext[Props, Msg, Model]) => LiveIO[
       LiveHookResult[Model]
     ]
   ): ComponentLiveHooks[Props, Msg, Model] =
-    copy(asyncHooks = asyncHooks :+ ComponentLiveHooks.Async(id, hook))
+    copy(asyncHooks = asyncHooks :+ ComponentLiveHooks.Async(hook))
 
   def afterRender(
-    id: String
-  )(
-    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Model]
+    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Unit]
   ): ComponentLiveHooks[Props, Msg, Model] =
-    copy(afterRenderHooks = afterRenderHooks :+ ComponentLiveHooks.AfterRender(id, hook))
+    copy(afterRenderHooks = afterRenderHooks :+ ComponentLiveHooks.AfterRender(hook))
 end ComponentLiveHooks
 
 object ComponentLiveHooks:
   final private[scalive] case class RawEvent[Props, Msg, Model](
-    id: String,
     hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ])
 
   final private[scalive] case class Event[Props, Msg, Model](
-    id: String,
     hook: (Props, Model, Msg, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ])
 
   final private[scalive] case class Async[Props, Msg, Model](
-    id: String,
     hook: (Props, Model, LiveAsyncEvent[Msg], ComponentMessageContext[Props, Msg, Model]) => LiveIO[
       LiveHookResult[Model]
     ])
 
   final private[scalive] case class AfterRender[Props, Msg, Model](
-    id: String,
-    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Model])
+    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Unit])
 
   def empty[Props, Msg, Model]: ComponentLiveHooks[Props, Msg, Model] =
     ComponentLiveHooks(Vector.empty, Vector.empty, Vector.empty, Vector.empty)
@@ -363,13 +297,13 @@ private[scalive] trait LiveHookRuntime:
   def attachAfterRender[Msg, Model](
     id: String
   )(
-    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model]
+    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
   ): Task[Unit]
 
   def attachComponentAfterRender[Props, Msg, Model](
     id: String
   )(
-    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Model]
+    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Unit]
   ): Task[Unit]
 
   def detachAfterRender(id: String): Task[Unit]
@@ -430,13 +364,13 @@ private[scalive] trait LiveHookRuntime:
   private[scalive] def runAfterRender[Msg, Model](
     model: Model,
     ctx: LiveContext
-  ): Task[Model]
+  ): Task[Unit]
 
   private[scalive] def runComponentAfterRender[Props, Msg, Model](
     props: Props,
     model: Model,
     ctx: LiveContext
-  ): Task[Model]
+  ): Task[Unit]
 end LiveHookRuntime
 
 private[scalive] object LiveHookRuntime:
@@ -528,14 +462,14 @@ private[scalive] object LiveHookRuntime:
     def attachAfterRender[Msg, Model](
       id: String
     )(
-      hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model]
+      hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
     ): Task[Unit] =
       unavailable
 
     def attachComponentAfterRender[Props, Msg, Model](
       id: String
     )(
-      hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Model]
+      hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Unit]
     ): Task[Unit] =
       unavailable
 
@@ -602,14 +536,14 @@ private[scalive] object LiveHookRuntime:
     ): Task[LiveHookResult[Model]] =
       ZIO.succeed(LiveHookResult.Continue(model))
 
-    private[scalive] def runAfterRender[Msg, Model](model: Model, ctx: LiveContext): Task[Model] =
-      ZIO.succeed(model)
+    private[scalive] def runAfterRender[Msg, Model](model: Model, ctx: LiveContext): Task[Unit] =
+      ZIO.unit
 
     private[scalive] def runComponentAfterRender[Props, Msg, Model](
       props: Props,
       model: Model,
       ctx: LiveContext
-    ): Task[Model] =
-      ZIO.succeed(model)
+    ): Task[Unit] =
+      ZIO.unit
   end Disabled
 end LiveHookRuntime

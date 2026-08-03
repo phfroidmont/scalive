@@ -1,5 +1,6 @@
 package scalive
 
+import zio.json.*
 import zio.test.*
 
 object BindingRegistrySpec extends ZIOSpecDefault:
@@ -40,6 +41,17 @@ object BindingRegistrySpec extends ZIOSpecDefault:
       assertTrue(
         first.keySet == second.keySet,
         first.values.flatMap(_(Map.empty).toOption).toSet == Set("one", "two")
+      )
+    },
+    test("DOM selectors serialize explicit CSS and omit the current element") {
+      val target = DomRef("target")
+
+      assertTrue(
+        JS.show().toJson == "[[\"show\",{}]]",
+        JS.show(to = target.selector).toJson ==
+          "[[\"show\",{\"to\":\"#target\"}]]",
+        JS.push("save", target = target.selector).toJson ==
+          "[[\"push\",{\"event\":\"__scalive_pending_binding_id__\",\"target\":\"#target\",\"pageLoading\":false}]]"
       )
     },
     test("form bindings receive lossless form data") {

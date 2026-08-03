@@ -160,9 +160,9 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
     test("root layout key changes reject websocket live navigation") {
       val tokenConfig = TokenConfig("root-layout-secret", 1.hour)
       val leftRoot    =
-        LiveRootLayout("left-root")((content, _) => div(idAttr := "left-root", content))
+        LiveRootLayout("left-root")((content, _, _) => div(idAttr := "left-root", content))
       val rightRoot =
-        LiveRootLayout("right-root")((content, _) => div(idAttr := "right-root", content))
+        LiveRootLayout("right-root")((content, _, _) => div(idAttr := "right-root", content))
       val route = scalive.Live.session("navigation")(
         (scalive.live / "left").withRootLayout(leftRoot)(view("left")),
         (scalive.live / "right").withRootLayout(rightRoot)(view("right"))

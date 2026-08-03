@@ -108,6 +108,7 @@ trait LiveView[Msg, Model]:
   type AfterRenderContext = scalive.AfterRenderContext[Msg, Model]
 
   def hooks: LiveHooks[Msg, Model] = LiveHooks.empty
+  def pageTitle(model: Model): Option[String] = None
 
   def mount(ctx: MountContext): LiveIO[Model]
   def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
@@ -119,6 +120,7 @@ Lifecycle methods:
 - `mount` creates the initial model for disconnected and connected lifecycle phases.
 - `handleMessage` handles typed messages produced by HTML bindings, JS push commands, async tasks, and subscriptions.
 - `render` returns the current HTML tree.
+- `pageTitle` derives optional document-title state from the model. Root layouts render it during the disconnected request and connected diffs update `document.title`.
 - `hooks` installs static lifecycle hooks, including typed browser events and low-level raw event interception.
 - Runtime subscriptions are started explicitly from phase contexts with `ctx.subscriptions.start`.
 
@@ -269,7 +271,6 @@ trait MountContext[Msg, Model] extends LifecycleContext:
   def async: Async[Msg]
   def subscriptions: Subscriptions[Msg]
   def client: Client
-  def title: Title
   def hooks: RootHooks[Msg, Model]
 
 trait MessageContext[Msg, Model] extends LifecycleContext:
@@ -280,7 +281,6 @@ trait MessageContext[Msg, Model] extends LifecycleContext:
   def async: Async[Msg]
   def subscriptions: Subscriptions[Msg]
   def client: Client
-  def title: Title
   def components: ComponentUpdates
   def hooks: RootHooks[Msg, Model]
 
@@ -292,7 +292,6 @@ trait ParamsContext[Msg, Model] extends LifecycleContext:
   def async: Async[Msg]
   def subscriptions: Subscriptions[Msg]
   def client: Client
-  def title: Title
   def components: ComponentUpdates
   def hooks: RootHooks[Msg, Model]
 
@@ -427,15 +426,12 @@ that message reaches `handleMessage` and may halt delivery. Explicit cancellatio
 produces `LiveAsyncResult.Cancelled`; socket shutdown, task replacement, and
 component removal interrupt obsolete work without producing application messages.
 
-### Client, Title, And Components
+### Client And Components
 
 ```scala
 trait Client:
   def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit]
   def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
-
-trait Title:
-  def set(value: String): LiveIO[Unit]
 
 trait ComponentUpdates:
   def sendUpdate[Props, Msg, Model](instance: LiveComponentInstance[Props, Msg, Model], props: Props): LiveIO[Unit]
@@ -473,18 +469,21 @@ LiveEventHookResult.haltReply(model, value)
 ```scala
 LiveHooks.empty
 LiveHooks.empty.onBrowserEvent(event)(handler)
-LiveHooks.empty.onRawEvent(hookId)(hook)
-LiveHooks.empty.event(id)(hook)
-LiveHooks.empty.params(id)(hook)
-LiveHooks.empty.info(id)(hook)
-LiveHooks.empty.async(id)(hook)
-LiveHooks.empty.afterRender(id)(hook)
+LiveHooks.empty.onRawEvent(hook)
+LiveHooks.empty.onEvent(hook)
+LiveHooks.empty.onParams(hook)
+LiveHooks.empty.onInfo(hook)
+LiveHooks.empty.onAsync(hook)
+LiveHooks.empty.afterRender(effect)
 
 ComponentLiveHooks.empty.onBrowserEvent(event)(handler)
-ComponentLiveHooks.empty.onRawEvent(hookId)(hook)
+ComponentLiveHooks.empty.onRawEvent(hook)
+ComponentLiveHooks.empty.onEvent(hook)
+ComponentLiveHooks.empty.onAsync(hook)
+ComponentLiveHooks.empty.afterRender(effect)
 ```
 
-`onRawEvent` is the protocol-level escape hatch. Its `hookId` identifies the registration for duplicate detection and detachment; it does not filter event names. Raw hooks receive every event in attachment order until one halts.
+Static hooks are unnamed, immutable, and run in declaration order. `onRawEvent` is the protocol-level escape hatch; it does not filter event names. Raw hooks receive every event in declaration order until one halts. `afterRender` effects return `LiveIO[Unit]`, observe the rendered model, and cannot replace it.
 
 ### Dynamic Hooks
 
@@ -686,8 +685,11 @@ liveComponent(component, id: String, props): Mod[Nothing]
 liveComponent(component, id: Int, props): Mod[Nothing]
 liveView(id, liveView, sticky = false, linkParentOnCrash = false): Mod[Nothing]
 flash(kind: FlashKind)(f): Mod[Nothing]
-portal(id, target, container = "div", wrapperClass = None)(mods*): HtmlElement[Msg]
+liveTitle(pageTitle, default, prefix = "", suffix = ""): HtmlElement[Nothing]
+portal(id, target: DomSelector, container = "div", wrapperClass = None)(mods*): HtmlElement[Msg]
 ```
+
+`liveTitle` renders the root `<title>` with Phoenix-compatible default, prefix, and suffix metadata. Blank or missing page titles use `default`.
 
 Implicit conversions:
 
@@ -745,6 +747,8 @@ phx.triggerAction
 ```scala
 phx.onConnected
 phx.onDisconnected
+phx.visibleWhenConnected
+phx.visibleWhenDisconnected
 phx.onMounted
 phx.onRemove
 phx.onUpdate
@@ -759,7 +763,7 @@ phx.disableWith
 phx.hook(name, id)
 phx.clearFlash
 phx.target(ref)
-phx.target(selector)
+phx.target(selector: DomSelector)
 phx.debounce
 phx.throttle
 phx.value(key)
@@ -767,6 +771,8 @@ phx.trackStatic
 ```
 
 `phx.hook(name, id)` emits the `phx-hook` and required stable DOM `id` together. Both values must be non-empty.
+
+`visibleWhenConnected` and `visibleWhenDisconnected` use sticky current-element `hidden` updates, so they require no DOM ID or display-style duplication.
 
 ## Link API
 
@@ -801,27 +807,41 @@ val JS: JSCommands.JSCommand[Nothing]
 opaque type JSCommand[+Msg] = List[Op[Msg]]
 ```
 
+Reusable DOM references and explicit selectors are nominal:
+
+```scala
+opaque type DomRef = String
+opaque type DomSelector
+
+val panel = DomRef("settings-panel")
+div(panel.attr)
+JS.show(to = panel.selector)
+JS.hide(to = DomSelector.css("[data-temporary]"))
+```
+
+`DomRef` validates a CSS-safe identifier and keeps `id` assignment paired with its exact selector. `DomSelector.current` targets the command source and is the default for selector parameters. Raw strings are not accepted as selectors.
+
 Command builder methods:
 
 ```scala
-JS.addClass(names, to = "", transition = "", time = 200, blocking = true)
-JS.toggleClass(names, to = "", transition = "", time = 200, blocking = true)
-JS.removeClass(names, to = "", transition = "", time = 200, blocking = true)
-JS.dispatch(event, to = "", detail = Map.empty, bubbles = true, blocking = false)
-JS.exec(attr, to = "")
-JS.focus(to = "")
-JS.focusFirst(to = "")
-JS.hide(to = "", transition = "", time = 200, blocking = true)
-JS.ignoreAttributes(attrs = Seq.empty, to = "")
+JS.addClass(names, to = DomSelector.current, transition = "", time = 200, blocking = true)
+JS.toggleClass(names, to = DomSelector.current, transition = "", time = 200, blocking = true)
+JS.removeClass(names, to = DomSelector.current, transition = "", time = 200, blocking = true)
+JS.dispatch(event, to = DomSelector.current, detail = Map.empty, bubbles = true, blocking = false)
+JS.exec(attr, to = DomSelector.current)
+JS.focus(to = DomSelector.current)
+JS.focusFirst(to = DomSelector.current)
+JS.hide(to = DomSelector.current, transition = "", time = 200, blocking = true)
+JS.ignoreAttributes(attrs = Seq.empty, to = DomSelector.current)
 JS.popFocus()
-JS.push(event, target = "", loading = "", pageLoading = false)
-JS.pushFocus(to = "")
-JS.removeAttribute(attr, to = "")
-JS.setAttribute((name, value), to = "")
-JS.show(to = "", transition = "", time = 200, blocking = true, display = "block")
-JS.toggle(to = "", in = "", out = "", time = 200, blocking = true, display = "block")
-JS.toggleAttribute(name, value, altValue = "", to = "")
-JS.transition(transition = "", to = "", time = 200, blocking = true)
+JS.push(event, target = DomSelector.current, loading = DomSelector.current, pageLoading = false)
+JS.pushFocus(to = DomSelector.current)
+JS.removeAttribute(attr, to = DomSelector.current)
+JS.setAttribute((name, value), to = DomSelector.current)
+JS.show(to = DomSelector.current, transition = "", time = 200, blocking = true, display = "block")
+JS.toggle(to = DomSelector.current, in = "", out = "", time = 200, blocking = true, display = "block")
+JS.toggleAttribute(name, value, altValue = "", to = DomSelector.current)
+JS.transition(transition = "", to = DomSelector.current, time = 200, blocking = true)
 ```
 
 Navigation command signatures:
@@ -1120,15 +1140,15 @@ LiveLayout((content, ctx) => html)
 ```scala
 trait LiveRootLayout[-A, -Ctx]:
   def key(ctx: LiveLayoutContext[A, Ctx]): String
-  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
+  def render[Msg](content: HtmlElement[Msg], pageTitle: Option[String], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
 ```
 
 Helpers:
 
 ```scala
 LiveRootLayout.identity
-LiveRootLayout(rootKey)((content, ctx) => html)
-LiveRootLayout.dynamic(rootKeyFn)((content, ctx) => html)
+LiveRootLayout(rootKey)((content, pageTitle, ctx) => html)
+LiveRootLayout.dynamic(rootKeyFn)((content, pageTitle, ctx) => html)
 ```
 
 ### Mount aspects

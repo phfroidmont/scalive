@@ -60,7 +60,7 @@ object JSCommands:
 
     def dispatch(
       event: String,
-      to: String = "",
+      to: DomSelector = DomSelector.current,
       detail: Map[String, String] = Map.empty,
       bubbles: Boolean = true,
       blocking: Boolean = false
@@ -69,36 +69,36 @@ object JSCommands:
         "dispatch",
         Args.Dispatch(
           event,
-          Option.when(to.nonEmpty)(to),
+          to.jsonValue,
           Option.when(detail.nonEmpty)(detail),
           Option.when(!bubbles)(bubbles),
           Option.when(blocking)(blocking)
         )
       )
 
-    def exec(attr: String, to: String = "") =
+    def exec(attr: String, to: DomSelector = DomSelector.current) =
       ops.addOp(
         "exec",
         Args.Attr(
           attr,
-          Option.when(to.nonEmpty)(to)
+          to.jsonValue
         )
       )
 
-    def focus(to: String = "") =
+    def focus(to: DomSelector = DomSelector.current) =
       ops.addOp(
         "focus",
-        Args.To(Option.when(to.nonEmpty)(to))
+        Args.To(to.jsonValue)
       )
 
-    def focusFirst(to: String = "") =
+    def focusFirst(to: DomSelector = DomSelector.current) =
       ops.addOp(
         "focus_first",
-        Args.To(Option.when(to.nonEmpty)(to))
+        Args.To(to.jsonValue)
       )
 
     def hide(
-      to: String = "",
+      to: DomSelector = DomSelector.current,
       transition: String | (String, String, String) = "",
       time: Int = 200,
       blocking: Boolean = true
@@ -106,19 +106,22 @@ object JSCommands:
       ops.addOp(
         "hide",
         Args.Hide(
-          Option.when(to.nonEmpty)(to),
+          to.jsonValue,
           transitionClasses(transition),
           Option.when(time != 200)(time),
           Option.when(!blocking)(blocking)
         )
       )
 
-    def ignoreAttributes(attrs: Seq[String] = Seq.empty, to: String = "") =
+    def ignoreAttributes(
+      attrs: Seq[String] = Seq.empty,
+      to: DomSelector = DomSelector.current
+    ) =
       ops.addOp(
         "ignore_attrs",
         Args.IgnoreAttributes(
           Option.when(attrs.nonEmpty)(attrs),
-          Option.when(to.nonEmpty)(to)
+          to.jsonValue
         )
       )
 
@@ -151,8 +154,8 @@ object JSCommands:
 
     def push[Msg2 >: Msg](
       event: Msg2,
-      target: String = "",
-      loading: String = "",
+      target: DomSelector = DomSelector.current,
+      loading: DomSelector = DomSelector.current,
       pageLoading: Boolean = false
     ): JSCommand[Msg2] =
       val binding = Binding(event)
@@ -162,8 +165,8 @@ object JSCommands:
             "push",
             Args.Push(
               maybeBindingId.getOrElse(BindingId.unresolved()),
-              Option.when(target.nonEmpty)(target),
-              Option.when(loading.nonEmpty)(loading),
+              target.jsonValue,
+              loading.jsonValue,
               Option.when(!pageLoading)(pageLoading)
             )
           ),
@@ -171,23 +174,23 @@ object JSCommands:
       )
         :: ops
 
-    def pushFocus(to: String = "") =
-      ops.addOp("push_focus", Args.To(Option.when(to.nonEmpty)(to)))
+    def pushFocus(to: DomSelector = DomSelector.current) =
+      ops.addOp("push_focus", Args.To(to.jsonValue))
 
-    def removeAttribute(attr: String, to: String = "") =
+    def removeAttribute(attr: String, to: DomSelector = DomSelector.current) =
       ops.addOp(
         "remove_attr",
         Args.Attr(
           attr,
-          Option.when(to.nonEmpty)(to)
+          to.jsonValue
         )
       )
 
-    def setAttribute(arg: (String, String), to: String = "") =
-      ops.addOp("set_attr", Args.SetAttribute(attr = arg, to = Option.when(to.nonEmpty)(to)))
+    def setAttribute(arg: (String, String), to: DomSelector = DomSelector.current) =
+      ops.addOp("set_attr", Args.SetAttribute(attr = arg, to = to.jsonValue))
 
     def show(
-      to: String = "",
+      to: DomSelector = DomSelector.current,
       transition: String | (String, String, String) = "",
       time: Int = 200,
       blocking: Boolean = true,
@@ -196,7 +199,7 @@ object JSCommands:
       ops.addOp(
         "show",
         Args.Show(
-          Option.when(to.nonEmpty)(to),
+          to.jsonValue,
           transitionClasses(transition),
           Option.when(time != 200)(time),
           Option.when(!blocking)(blocking),
@@ -205,7 +208,7 @@ object JSCommands:
       )
 
     def toggle(
-      to: String = "",
+      to: DomSelector = DomSelector.current,
       in: String | (String, String, String) = "",
       out: String | (String, String, String) = "",
       time: Int = 200,
@@ -215,7 +218,7 @@ object JSCommands:
       ops.addOp(
         "toggle",
         Args.Toggle(
-          Option.when(to.nonEmpty)(to),
+          to.jsonValue,
           ins = transitionClasses(in),
           outs = transitionClasses(out),
           Option.when(time != 200)(time),
@@ -228,19 +231,19 @@ object JSCommands:
       name: String,
       value: String,
       altValue: String = "",
-      to: String = ""
+      to: DomSelector = DomSelector.current
     ) =
       ops.addOp(
         "toggle_attr",
         Args.ToggleAttribute(
           attr = Seq(name, value).appendedAll(Option.when(altValue.nonEmpty)(altValue)),
-          Option.when(to.nonEmpty)(to)
+          to.jsonValue
         )
       )
 
     def transition(
       transition: String | (String, String, String) = "",
-      to: String = "",
+      to: DomSelector = DomSelector.current,
       time: Int = 200,
       blocking: Boolean = true
     ) =
@@ -250,7 +253,7 @@ object JSCommands:
           transition match
             case names: String               => Seq(classNames(names), Seq.empty, Seq.empty)
             case t: (String, String, String) => t.toList.map(classNames),
-          Option.when(to.nonEmpty)(to),
+          to.jsonValue,
           Option.when(time != 200)(time),
           Option.when(!blocking)(blocking)
         )
@@ -261,7 +264,7 @@ object JSCommands:
   final private[scalive] class ClassOp[Msg](kind: String, ops: JSCommand[Msg]):
     def apply(
       names: String,
-      to: String = "",
+      to: DomSelector = DomSelector.current,
       transition: String | (String, String, String) = "",
       time: Int = 200,
       blocking: Boolean = true
@@ -270,7 +273,7 @@ object JSCommands:
         kind,
         Args.ClassChange(
           classNames(names),
-          Option.when(to.nonEmpty)(to),
+          to.jsonValue,
           transitionClasses(transition),
           Option.when(time != 200)(time),
           Option.when(!blocking)(blocking)

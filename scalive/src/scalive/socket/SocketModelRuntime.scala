@@ -259,16 +259,22 @@ private[scalive] object SocketModelRuntime:
     for
       currentUrl <- state.currentUrlRef.get
       nextRoot   <- SocketComponentRuntime.renderRoot(state.renderRoot(model, currentUrl), state)
-      nextCompiled = RenderSnapshot.compile(nextRoot)
-      diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
+      nextCompiled  = RenderSnapshot.compile(nextRoot)
+      diff          = TreeDiff.diff(rendered.compiled, nextCompiled)
+      nextPageTitle =
+        Option.when(state.ownsPageTitle)(normalizePageTitle(state.lv.pageTitle(model))).flatten
       nextRendered = RenderedView(
                        compiled = nextCompiled,
-                       bindings = BindingRegistry.collect[Any](nextCompiled)
+                       bindings = BindingRegistry.collect[Any](nextCompiled),
+                       pageTitle = nextPageTitle
                      )
+      _      <- state.ctx.hooks.runAfterRender[Msg, Model](model, state.ctx)
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)
-      title  <- state.titleRef.getAndSet(None)
       _      <- SocketStreamRuntime.prune(state.streamRef)
-      renderedDiff = withTitle(withClientEvents(diff, events), title)
+      titleUpdate = Option.when(
+                      state.ownsPageTitle && nextPageTitle != rendered.pageTitle
+                    )(nextPageTitle.getOrElse(""))
+      renderedDiff = withTitle(withClientEvents(diff, events), titleUpdate)
       _ <- state.componentCidsRef.update(
              _ ++ (
                renderedDiff match
@@ -276,8 +282,7 @@ private[scalive] object SocketModelRuntime:
                  case _                                         => Set.empty[Int]
              )
            )
-      afterRenderModel <- state.ctx.hooks.runAfterRender[Msg, Model](model, state.ctx)
-      _                <- state.ref.set((afterRenderModel, nextRendered))
+      _ <- state.ref.set((model, nextRendered))
     yield renderedDiff
 
   def publishPayload[Msg, Model](
@@ -348,7 +353,7 @@ private[scalive] object SocketModelRuntime:
       case _ =>
         diff
 
-  private[socket] def withTitle(diff: Diff, title: Option[String]): Diff =
+  private[scalive] def withTitle(diff: Diff, title: Option[String]): Diff =
     (diff, title) match
       case (
             Diff.Tag(

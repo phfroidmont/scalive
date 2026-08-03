@@ -23,7 +23,6 @@ trait MountContext[Msg, Model] extends LifecycleContext:
   def async: Async[Msg]
   def subscriptions: Subscriptions[Msg]
   def client: Client
-  def title: Title
   def hooks: RootHooks[Msg, Model]
 
 trait MessageContext[Msg, Model] extends LifecycleContext:
@@ -34,7 +33,6 @@ trait MessageContext[Msg, Model] extends LifecycleContext:
   def async: Async[Msg]
   def subscriptions: Subscriptions[Msg]
   def client: Client
-  def title: Title
   def components: ComponentUpdates
   def hooks: RootHooks[Msg, Model]
 
@@ -46,7 +44,6 @@ trait ParamsContext[Msg, Model] extends LifecycleContext:
   def async: Async[Msg]
   def subscriptions: Subscriptions[Msg]
   def client: Client
-  def title: Title
   def components: ComponentUpdates
   def hooks: RootHooks[Msg, Model]
 
@@ -170,9 +167,6 @@ trait Client:
   def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit]
   def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
 
-trait Title:
-  def set(value: String): LiveIO[Unit]
-
 trait ComponentUpdates:
   def sendUpdate[Props, Msg, Model](
     instance: LiveComponentInstance[Props, Msg, Model],
@@ -236,7 +230,7 @@ trait RootAfterRenderHooks[Msg, Model]:
   def attach(
     id: String
   )(
-    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model]
+    hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
   ): LiveIO[Unit]
   def detach(id: String): LiveIO[Unit]
 
@@ -280,7 +274,7 @@ trait ComponentAfterRenderHooks[Props, Msg, Model]:
   def attach(
     id: String
   )(
-    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Model]
+    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Unit]
   ): LiveIO[Unit]
   def detach(id: String): LiveIO[Unit]
 
@@ -293,7 +287,6 @@ final private[scalive] case class LiveContext(
   streams: StreamRuntime = StreamRuntime.Disabled,
   clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
   navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
-  title: TitleRuntime = TitleRuntime.Disabled,
   components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
   nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled,
   flash: FlashRuntime = FlashRuntime.Disabled,
@@ -455,9 +448,6 @@ private[scalive] object LiveContext:
       import JSCommands.JSCommand.given
       push(PushJsEvent, PushJsPayload(js.toJson))
 
-  final private class RuntimeTitle(runtime: LiveContext) extends Title:
-    def set(value: String): LiveIO[Unit] = runtime.title.set(value)
-
   final private class RuntimeComponents(runtime: LiveContext) extends ComponentUpdates:
     def sendUpdate[Props, Msg, Model](
       instance: LiveComponentInstance[Props, Msg, Model],
@@ -487,7 +477,6 @@ private[scalive] object LiveContext:
     val async: Async[Msg]                 = RuntimeAsync(runtime)
     val subscriptions: Subscriptions[Msg] = RuntimeSubscriptions(runtime)
     val client: Client                    = RuntimeClient(runtime)
-    val title: Title                      = RuntimeTitle(runtime)
     val hooks: RootHooks[Msg, Model]      = RuntimeRootHooks(runtime)
 
   final private[scalive] class RuntimeMessageContext[Msg, Model](protected val runtime: LiveContext)
@@ -500,7 +489,6 @@ private[scalive] object LiveContext:
     val async: Async[Msg]                 = RuntimeAsync(runtime)
     val subscriptions: Subscriptions[Msg] = RuntimeSubscriptions(runtime)
     val client: Client                    = RuntimeClient(runtime)
-    val title: Title                      = RuntimeTitle(runtime)
     val components: ComponentUpdates      = RuntimeComponents(runtime)
     val hooks: RootHooks[Msg, Model]      = RuntimeRootHooks(runtime)
 
@@ -514,7 +502,6 @@ private[scalive] object LiveContext:
     val async: Async[Msg]                 = RuntimeAsync(runtime)
     val subscriptions: Subscriptions[Msg] = RuntimeSubscriptions(runtime)
     val client: Client                    = RuntimeClient(runtime)
-    val title: Title                      = RuntimeTitle(runtime)
     val components: ComponentUpdates      = RuntimeComponents(runtime)
     val hooks: RootHooks[Msg, Model]      = RuntimeRootHooks(runtime)
 
@@ -629,7 +616,7 @@ private[scalive] object LiveContext:
     def attach(
       id: String
     )(
-      hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Model]
+      hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
     ): LiveIO[Unit] = runtime.hooks.attachAfterRender(id)(hook)
     def detach(id: String): LiveIO[Unit] = runtime.hooks.detachAfterRender(id)
 
@@ -685,7 +672,7 @@ private[scalive] object LiveContext:
     def attach(
       id: String
     )(
-      hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Model]
+      hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => LiveIO[Unit]
     ): LiveIO[Unit] = runtime.hooks.attachComponentAfterRender(id)(hook)
     def detach(id: String): LiveIO[Unit] = runtime.hooks.detachAfterRender(id)
 end LiveContext

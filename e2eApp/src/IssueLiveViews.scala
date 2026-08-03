@@ -50,7 +50,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
     ctx.uploads.allow(Upload).map(upload => Model(upload = upload))
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent("issue-2965") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent { (model, event, _) =>
       if event.bindingId == "upload_scrub_list" then
         val fileNames = fileNamesFromScrubEvent(event.value).toVector
         val reply     = Json.Obj("deduped_filenames" -> Json.Arr(fileNames.map(Json.Str(_))*))
@@ -287,7 +287,7 @@ class Issue3040LiveView extends LiveView[Issue3040LiveView.Msg, Issue3040LiveVie
           div(
             styleAttr := "margin: 320px 0 0 300px; width: 300px; padding: 20px",
             phx.onClickAway(Msg.Close),
-            phx.onMounted(JS.focusFirst(to = "#my-modal-container")),
+            phx.onMounted(JS.focusFirst(to = DomSelector.css("#my-modal-container"))),
             form(
               phx.onSubmit(Msg.Submit),
               if model.submitted then "Form was submitted!" else input(nameAttr := "name")
@@ -403,7 +403,7 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
       .map(items => model.copy(items = items))
 
   override def hooks: LiveHooks[Unit, Model] =
-    LiveHooks.empty.onRawEvent("inc") { (model, event, ctx) =>
+    LiveHooks.empty.onRawEvent { (model, event, ctx) =>
       if event.bindingId == "inc" then
         val nextCount = model.count + 1
         ctx.streams
@@ -588,7 +588,7 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
     case Msg.Noop(_) => model
 
   override def hooks: LiveHooks[Msg, Boolean] =
-    LiveHooks.empty.onRawEvent("reconnected") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent { (model, event, _) =>
       if event.bindingId == "reconnected" then LiveEventHookResult.halt(true)
       else LiveEventHookResult.cont(model)
     }
@@ -638,7 +638,7 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
     (_: Msg.type) => model
 
   override def hooks: LiveHooks[Msg.type, Model] =
-    LiveHooks.empty.onRawEvent("sandbox") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent { (model, event, _) =>
       if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
       else
         val code = event.value match
@@ -769,7 +769,7 @@ class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
             nameAttr := "a[]",
             value    := optionValue,
             checked  := selectedValues.contains(optionValue),
-            phx.onClick(JS.dispatch("input").focus(to = "#search"))
+            phx.onClick(JS.dispatch("input").focus(to = DomSelector.css("#search")))
           )
         )
       )
@@ -887,7 +887,7 @@ object Issue3200LiveView:
           idAttr := "full_add_message_form",
           phx.onChangeForm(Msg.Change(_)),
           phx.onSubmit(Msg.Submit),
-          phx.target("#full_add_message_form"),
+          phx.target(DomSelector.css("#full_add_message_form")),
           inputComponent(model)
         )
       )
@@ -920,7 +920,7 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
     else Model(status = Status.Connecting)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent("issue-3026-form") { (model, event, ctx) =>
+    LiveHooks.empty.onRawEvent { (model, event, ctx) =>
       event.bindingId match
         case "validate" =>
           val data = event.value.asString
@@ -1302,7 +1302,7 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
     else init
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent("issue-3651") { (model, event, ctx) =>
+    LiveHooks.empty.onRawEvent { (model, event, ctx) =>
       event.bindingId match
         case "lol" =>
           LiveEventHookResult.halt(model)
@@ -1665,7 +1665,7 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
     Model()
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent("issue-3941") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent { (model, event, _) =>
       if event.bindingId == "page_position_update" then LiveEventHookResult.halt(model)
       else LiveEventHookResult.cont(model)
     }
@@ -2032,7 +2032,7 @@ object Issue4066LiveView:
 
   object DelayedInputComponent extends LiveComponent[Int, Unit, Unit]:
     override def hooks: ComponentLiveHooks[Int, Unit, Unit] =
-      ComponentLiveHooks.empty.onRawEvent("issue-4066") { (_, model, event, _) =>
+      ComponentLiveHooks.empty.onRawEvent { (_, model, event, _) =>
         if event.bindingId == "do-something" then LiveEventHookResult.halt(model)
         else LiveEventHookResult.cont(model)
       }
@@ -2124,7 +2124,7 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
     "value"
 
   override def hooks: LiveHooks[Msg, String] =
-    LiveHooks.empty.onRawEvent("issue-4088") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent { (model, event, _) =>
       if event.bindingId == "my_update" then LiveEventHookResult.halt(System.nanoTime.toString)
       else LiveEventHookResult.cont(model)
     }
@@ -2169,7 +2169,7 @@ class Issue4095LiveView extends LiveView[Issue4095LiveView.Msg, String]:
         idAttr := "issue-4095-form",
         phx.onChangeForm(Msg.Validate(_)),
         input(typ := "text", nameAttr := "show?", idAttr := "show?", value := show),
-        portal("portal", target = "#portal_target")(
+        portal("portal", target = DomSelector.css("#portal_target"))(
           div(Option.when(show.nonEmpty)(button("Show?")))
         )
       ),
@@ -2222,7 +2222,7 @@ class Issue4107LiveView extends LiveView[Unit, Unit]:
 
   def render(model: Unit) =
     div(
-      portal("test-form-portal", target = "body")(
+      portal("test-form-portal", target = DomSelector.css("body"))(
         form(
           idAttr := "test-form",
           action := "/api/test",
@@ -2247,7 +2247,7 @@ class Issue4121LiveView extends LiveView[Issue4121LiveView.Msg.type, Issue4121Li
   def render(model: Model) =
     div(
       button(phx.onClick(Msg), "Reset teleported stream"),
-      portal("teleported-stream", target = "body")(
+      portal("teleported-stream", target = DomSelector.css("body"))(
         ul(
           idAttr       := "stream-in-lv",
           phx.onUpdate := "stream",

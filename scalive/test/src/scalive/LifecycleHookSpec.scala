@@ -15,7 +15,9 @@ object LifecycleHookSpec extends ZIOSpecDefault:
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
 
   private final case class BrowserPayload(amount: Int) derives JsonDecoder
+  private final case class RenderedPayload(model: Int) derives JsonEncoder
   private val BrowserIncrement = BrowserToServerEvent[BrowserPayload]("browser:increment")
+  private val RenderedEvent    = ServerToBrowserEvent[RenderedPayload]("rendered")
 
   private def click(
     path: Vector[String],
@@ -149,13 +151,13 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         override def hooks: LiveHooks[Msg, Int] =
           LiveHooks
             .empty[Msg, Int]
-            .event("add") { (model, msg, event, _) =>
+            .onEvent { (model, msg, event, _) =>
               msg match
                 case Msg.Inc if event.params.get("amount").contains("10") =>
                   ZIO.succeed(LiveEventHookResult.cont(model + 10))
                 case _ => ZIO.succeed(LiveEventHookResult.cont(model))
             }
-            .event("double") { (model, msg, _, _) =>
+            .onEvent { (model, msg, _, _) =>
               msg match
                 case Msg.Inc => ZIO.succeed(LiveEventHookResult.cont(model * 2))
             }
@@ -192,7 +194,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       val replyValue = Json.Obj("msg" -> Json.Str("halted"))
       val lv         = new LiveView[Msg, Int]:
         override def hooks: LiveHooks[Msg, Int] =
-          LiveHooks.empty[Msg, Int].event("halt") { (model, _, _, _) =>
+          LiveHooks.empty[Msg, Int].onEvent { (model, _, _, _) =>
             ZIO.succeed(LiveEventHookResult.haltReply(model + 5, replyValue))
           }
 
@@ -231,14 +233,20 @@ object LifecycleHookSpec extends ZIOSpecDefault:
 
       val lv = new LiveView[Msg, Int]:
         override def hooks: LiveHooks[Msg, Int] =
-          LiveHooks.empty[Msg, Int].event("add") { (model, msg, _, _) =>
+          LiveHooks.empty[Msg, Int].onEvent { (model, msg, _, _) =>
             msg match
               case Msg.Inc    => ZIO.succeed(LiveEventHookResult.cont(model + 10))
               case Msg.Detach => ZIO.succeed(LiveEventHookResult.cont(model))
           }
 
         def mount(ctx: MountContext) =
-          ZIO.succeed(0)
+          ctx.hooks.event
+            .attach("add") { (model, msg, _, _) =>
+              msg match
+                case Msg.Inc    => ZIO.succeed(LiveEventHookResult.cont(model + 100))
+                case Msg.Detach => ZIO.succeed(LiveEventHookResult.cont(model))
+            }
+            .as(0)
 
         def handleMessage(model: Int, ctx: MessageContext) =
           case Msg.Inc    => ZIO.succeed(model + 1)
@@ -263,8 +271,8 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                       _     <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
                       second <- outbox.take
                     yield assertTrue(
-                      diffFromPayload(first._1).exists(containsValue(_, "11")),
-                      diffFromPayload(second._1).exists(containsValue(_, "12"))
+                       diffFromPayload(first._1).exists(containsValue(_, "111")),
+                       diffFromPayload(second._1).exists(containsValue(_, "122"))
                     )
                   }
       yield result)
@@ -272,7 +280,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
     test("params hooks can transform the model around handleParams") {
       val lv = new LiveView.Routed[Unit, String, String]:
         override def hooks: LiveHooks[Unit, String] =
-          LiveHooks.empty[Unit, String].params("url") { (model, url, _) =>
+          LiveHooks.empty[Unit, String].onParams { (model, url, _) =>
             ZIO.succeed(LiveHookResult.cont(s"$model|hook:${url.path.encode}"))
           }
 
@@ -317,7 +325,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       val tick = SubscriptionKey("tick")
       val lv   = new LiveView[Msg, Int]:
         override def hooks: LiveHooks[Msg, Int] =
-          LiveHooks.empty[Msg, Int].info("halt") { (model, msg, _) =>
+          LiveHooks.empty[Msg, Int].onInfo { (model, msg, _) =>
             msg match
               case Msg.Tick => ZIO.succeed(LiveHookResult.halt(model + 10))
           }
@@ -342,7 +350,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
       val load = AsyncKey[String]("load")
       val lv   = new LiveView[Msg, String]:
         override def hooks: LiveHooks[Msg, String] =
-          LiveHooks.empty[Msg, String].async("prefix") { (model, event, _) =>
+          LiveHooks.empty[Msg, String].onAsync { (model, event, _) =>
             event.result match
               case LiveAsyncResult.Succeeded(
                     Msg.Completed(LiveAsyncResult.Succeeded(value))
@@ -378,9 +386,13 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         calls <- Ref.make(Vector.empty[Int])
         lv = new LiveView[Msg, Int]:
                override def hooks: LiveHooks[Msg, Int] =
-                 LiveHooks.empty[Msg, Int].afterRender("record") { (model, _) =>
-                   calls.update(_ :+ model).as(model)
-                 }
+                  LiveHooks.empty[Msg, Int]
+                    .afterRender((model, ctx) =>
+                      calls.update(_ :+ model) *> ctx.client.push(RenderedEvent, RenderedPayload(model))
+                    )
+                    .afterRender((model, ctx) =>
+                      calls.update(_ :+ model) *> ctx.client.push(RenderedEvent, RenderedPayload(model))
+                    )
 
                def mount(ctx: MountContext) =
                  ZIO.succeed(0)
@@ -395,9 +407,18 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                     for
                       _ <- outbox.take
                       _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
-                      _ <- outbox.take
-                      recorded <- calls.get
-                    yield assertTrue(recorded == Vector(0, 1))
+                       reply <- outbox.take
+                       recorded <- calls.get
+                     yield
+                       val renderedEvents = diffFromPayload(reply._1).toVector.flatMap {
+                         case Diff.Tag(_, _, events, _, _, _, _, _) =>
+                           events.filter(_.name == RenderedEvent.value)
+                         case _ => Vector.empty
+                       }
+                       assertTrue(
+                         recorded == Vector(0, 0, 1, 1),
+                         renderedEvents.map(_.payload) == Vector.fill(2)(Json.Obj("model" -> Json.Num(1)))
+                       )
                   }
       yield result
     },
@@ -407,7 +428,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
           case Inc
 
         override def hooks: ComponentLiveHooks[Unit, Msg, Int] =
-          ComponentLiveHooks.empty[Unit, Msg, Int].event("add") { (_, model, msg, _, _) =>
+          ComponentLiveHooks.empty[Unit, Msg, Int].onEvent { (_, model, msg, _, _) =>
             msg match
               case Msg.Inc => ZIO.succeed(LiveEventHookResult.cont(model + 10))
           }

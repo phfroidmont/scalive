@@ -20,7 +20,8 @@ private[scalive] object SocketBootstrap:
     initialFlash: Map[String, String],
     renderRoot: (Model, URL) => HtmlElement[Msg],
     paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
-    onCrash: UIO[Unit]
+    onCrash: UIO[Unit],
+    ownsPageTitle: Boolean
   ): Task[RuntimeState[Msg, Model]] =
     for
       inbox            <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
@@ -30,7 +31,6 @@ private[scalive] object SocketBootstrap:
       uploadRef        <- Ref.make(UploadRuntimeState.empty)
       streamRef        <- Ref.make(StreamRuntimeState.empty)
       clientEventsRef  <- Ref.make(Vector.empty[Diff.Event])
-      titleRef         <- Ref.make(Option.empty[String])
       flashRef         <- Ref.make(FlashRuntimeState(initialFlash))
       asyncTasksRef    <- Ref.make(LiveAsyncRuntimeState.empty)
       navigationRef    <- Ref.make(Option.empty[LiveNavigationCommand])
@@ -43,7 +43,6 @@ private[scalive] object SocketBootstrap:
                      streams = new SocketStreamRuntime(streamRef),
                      clientEvents = new SocketClientEventRuntime(clientEventsRef),
                      navigation = new SocketNavigationRuntime(navigationRef),
-                     title = new SocketTitleRuntime(titleRef),
                      flash = new SocketFlashRuntime(flashRef),
                      async = new SocketAsyncRuntime(
                        asyncQueue,
@@ -78,21 +77,24 @@ private[scalive] object SocketBootstrap:
           componentsRef,
           runtimeCtx
         )
-      initCompiled = RenderSnapshot.compile(initRoot)
-      initView     = RenderedView(
+      initCompiled  = RenderSnapshot.compile(initRoot)
+      initPageTitle =
+        Option.when(ownsPageTitle)(normalizePageTitle(lv.pageTitle(bootstrapModel))).flatten
+      initView = RenderedView(
                    compiled = initCompiled,
-                   bindings = BindingRegistry.collect[Any](initCompiled)
+                   bindings = BindingRegistry.collect[Any](initCompiled),
+                   pageTitle = initPageTitle
                  )
-      afterRenderModel <- runtimeCtx.hooks.runAfterRender[Msg, Model](bootstrapModel, runtimeCtx)
-      ref              <- Ref.make((afterRenderModel, initView))
-      currentUrlRef    <- Ref.make(bootstrapUrl)
+      _             <- runtimeCtx.hooks.runAfterRender[Msg, Model](bootstrapModel, runtimeCtx)
+      ref           <- Ref.make((bootstrapModel, initView))
+      currentUrlRef <- Ref.make(bootstrapUrl)
       rawInitDiff = TreeDiff.initial(initCompiled)
       initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
-      initTitle  <- titleRef.getAndSet(None)
-      initDiff = SocketModelRuntime.withTitle(
-                   SocketModelRuntime.withClientEvents(rawInitDiff, initEvents),
-                   initTitle
-                 )
+      initDiffWithoutTitle = SocketModelRuntime.withClientEvents(rawInitDiff, initEvents)
+      initDiff             =
+        if ownsPageTitle then
+          SocketModelRuntime.withTitle(initDiffWithoutTitle, Some(initPageTitle.getOrElse("")))
+        else initDiffWithoutTitle
       _                <- SocketFlashRuntime.resetNavigation(flashRef)
       componentCidsRef <- Ref.make(
                             initDiff match
@@ -123,7 +125,6 @@ private[scalive] object SocketBootstrap:
       uploadRef = uploadRef,
       streamRef = streamRef,
       clientEventsRef = clientEventsRef,
-      titleRef = titleRef,
       flashRef = flashRef,
       asyncTasksRef = asyncTasksRef,
       componentsRef = componentsRef,
@@ -131,6 +132,7 @@ private[scalive] object SocketBootstrap:
       patchRedirectCountRef = patchRedirectCountRef,
       crashedRef = crashedRef,
       onCrash = onCrash,
+      ownsPageTitle = ownsPageTitle,
       bootstrapPayloads = bootstrapPayloadEnvelopes,
       initDiff = initDiff
     )

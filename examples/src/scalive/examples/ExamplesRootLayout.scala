@@ -5,7 +5,11 @@ import scalive.*
 final class ExamplesRootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]:
   def key(ctx: LiveLayoutContext[Any, Any]): String = "examples-root"
 
-  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
+  def render[Msg](
+    content: HtmlElement[Msg],
+    pageTitle: Option[String],
+    ctx: LiveLayoutContext[Any, Any]
+  ): HtmlElement[Msg] =
     htmlRootTag(
       lang              := "en",
       dataAttr("theme") := "business",
@@ -19,7 +23,7 @@ final class ExamplesRootLayout(assets: StaticAssets) extends LiveRootLayout[Any,
           typ   := "text/javascript"
         ),
         assets.trackedStylesheet("app.css"),
-        titleTag("Scalive Examples")
+        liveTitle(pageTitle, default = "Scalive Examples", suffix = " | Scalive Examples")
       ),
       bodyTag(
         cls := "min-h-screen bg-base-200 text-base-content antialiased",

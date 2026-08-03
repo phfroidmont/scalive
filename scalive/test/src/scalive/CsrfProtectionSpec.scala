@@ -46,7 +46,7 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
         )
       )
 
-  private val rootLayout = LiveRootLayout("csrf-root")((content, _) =>
+  private val rootLayout = LiveRootLayout("csrf-root")((content, _, _) =>
     htmlRootTag(
       headTag(titleTag("CSRF")),
       bodyTag(content)

@@ -34,7 +34,7 @@ class StreamLiveView()
     (msg: Msg) => handle(model, msg, ctx.streams)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent("sandbox") { (model, event, ctx) =>
+    LiveHooks.empty.onRawEvent { (model, event, ctx) =>
       if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
       else
         evalCode(event.value) match
@@ -79,7 +79,7 @@ class StreamLiveView()
               "make last"
             ),
             button(
-              phx.onClick(JS.hide(to = "#users > *")),
+              phx.onClick(JS.hide(to = DomSelector.css("#users > *"))),
               "JS Hide"
             )
           )

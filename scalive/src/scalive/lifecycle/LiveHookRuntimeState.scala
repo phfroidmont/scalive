@@ -86,7 +86,7 @@ private[scalive] object LiveHookRuntimeState:
     hook: LiveHooks.RawEvent[Msg, Model]
   ): StoredRawEventHook =
     StoredRawEventHook(
-      hook.id,
+      HookOrigin.Static,
       (_, model, event, ctx) =>
         hook
           .hook(
@@ -101,7 +101,7 @@ private[scalive] object LiveHookRuntimeState:
     hook: ComponentLiveHooks.RawEvent[Props, Msg, Model]
   ): StoredRawEventHook =
     StoredRawEventHook(
-      hook.id,
+      HookOrigin.Static,
       (props, model, event, ctx) =>
         hook
           .hook(
@@ -115,7 +115,7 @@ private[scalive] object LiveHookRuntimeState:
 
   private def rootEvent[Msg, Model](hook: LiveHooks.Event[Msg, Model]): StoredEventHook =
     StoredEventHook(
-      hook.id,
+      HookOrigin.Static,
       (_, model, message, event, ctx) =>
         hook
           .hook(
@@ -131,7 +131,7 @@ private[scalive] object LiveHookRuntimeState:
     hook: ComponentLiveHooks.Event[Props, Msg, Model]
   ): StoredEventHook =
     StoredEventHook(
-      hook.id,
+      HookOrigin.Static,
       (props, model, message, event, ctx) =>
         hook
           .hook(
@@ -146,7 +146,7 @@ private[scalive] object LiveHookRuntimeState:
 
   private def rootParams[Msg, Model](hook: LiveHooks.Params[Msg, Model]): StoredParamsHook =
     StoredParamsHook(
-      hook.id,
+      HookOrigin.Static,
       (model, url, ctx) =>
         hook
           .hook(model.asInstanceOf[Model], url, ctx.paramsContext[Msg, Model])
@@ -155,7 +155,7 @@ private[scalive] object LiveHookRuntimeState:
 
   private def rootInfo[Msg, Model](hook: LiveHooks.Info[Msg, Model]): StoredInfoHook =
     StoredInfoHook(
-      hook.id,
+      HookOrigin.Static,
       (model, message, ctx) =>
         hook
           .hook(
@@ -168,7 +168,7 @@ private[scalive] object LiveHookRuntimeState:
 
   private def rootAsync[Msg, Model](hook: LiveHooks.Async[Msg, Model]): StoredAsyncHook =
     StoredAsyncHook(
-      hook.id,
+      HookOrigin.Static,
       (_, model, event, ctx) =>
         hook
           .hook(
@@ -183,7 +183,7 @@ private[scalive] object LiveHookRuntimeState:
     hook: ComponentLiveHooks.Async[Props, Msg, Model]
   ): StoredAsyncHook =
     StoredAsyncHook(
-      hook.id,
+      HookOrigin.Static,
       (props, model, event, ctx) =>
         hook
           .hook(
@@ -199,18 +199,17 @@ private[scalive] object LiveHookRuntimeState:
     hook: LiveHooks.AfterRender[Msg, Model]
   ): StoredAfterRenderHook =
     StoredAfterRenderHook(
-      hook.id,
+      HookOrigin.Static,
       (_, model, ctx) =>
         hook
           .hook(model.asInstanceOf[Model], ctx.afterRenderContext[Msg, Model])
-          .map(_.asInstanceOf[Any])
     )
 
   private def componentAfterRender[Props, Msg, Model](
     hook: ComponentLiveHooks.AfterRender[Props, Msg, Model]
   ): StoredAfterRenderHook =
     StoredAfterRenderHook(
-      hook.id,
+      HookOrigin.Static,
       (props, model, ctx) =>
         hook
           .hook(
@@ -218,30 +217,38 @@ private[scalive] object LiveHookRuntimeState:
             model.asInstanceOf[Model],
             ctx.componentAfterRenderContext[Props, Msg, Model]
           )
-          .map(_.asInstanceOf[Any])
     )
 end LiveHookRuntimeState
 
 final private[scalive] case class StoredRawEventHook(
-  id: String,
+  origin: HookOrigin,
   run: (Option[Any], Any, LiveEvent, LiveContext) => Task[LiveEventHookResult[Any]])
 
 final private[scalive] case class StoredEventHook(
-  id: String,
+  origin: HookOrigin,
   run: (Option[Any], Any, Any, LiveEvent, LiveContext) => Task[LiveEventHookResult[Any]])
 
 final private[scalive] case class StoredParamsHook(
-  id: String,
+  origin: HookOrigin,
   run: (Any, URL, LiveContext) => Task[LiveHookResult[Any]])
 
 final private[scalive] case class StoredInfoHook(
-  id: String,
+  origin: HookOrigin,
   run: (Any, Any, LiveContext) => Task[LiveHookResult[Any]])
 
 final private[scalive] case class StoredAsyncHook(
-  id: String,
+  origin: HookOrigin,
   run: (Option[Any], Any, LiveAsyncEvent[Any], LiveContext) => Task[LiveHookResult[Any]])
 
 final private[scalive] case class StoredAfterRenderHook(
-  id: String,
-  run: (Option[Any], Any, LiveContext) => Task[Any])
+  origin: HookOrigin,
+  run: (Option[Any], Any, LiveContext) => Task[Unit])
+
+private[scalive] enum HookOrigin:
+  case Static
+  case Dynamic(id: String)
+
+  def isDynamic(id: String): Boolean =
+    this match
+      case Dynamic(current) => current == id
+      case Static           => false

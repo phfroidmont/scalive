@@ -120,7 +120,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
         def handleMessage(model: Model, ctx: MessageContext) =
               case Msg.EmitEvent => ZIO.succeed(model)
               case Msg.EmitJs    =>
-                ctx.client.exec(JS.show(to = "#modal")).as(model)
+                ctx.client.exec(JS.show(to = DomSelector.css("#modal"))).as(model)
 
         def render(model: Model): HtmlElement[Msg] =
           div(idAttr := "root", "constant")

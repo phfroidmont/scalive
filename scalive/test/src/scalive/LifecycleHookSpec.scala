@@ -2,6 +2,7 @@ package scalive
 
 import zio.*
 import zio.http.*
+import zio.json.*
 import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
@@ -12,6 +13,9 @@ import scalive.WebSocketMessage.ReplyStatus
 
 object LifecycleHookSpec extends ZIOSpecDefault:
   private val meta = WebSocketMessage.Meta(None, None, topic = "t", eventType = "event")
+
+  private final case class BrowserPayload(amount: Int) derives JsonDecoder
+  private val BrowserIncrement = BrowserToServerEvent[BrowserPayload]("browser:increment")
 
   private def click(
     path: Vector[String],
@@ -88,6 +92,54 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         body.contains("false"),
         calls == Vector("mount:false", "mount:true")
       )
+    },
+    test("typed browser events decode, consume malformed payloads, and ignore component targets") {
+      val lv = new LiveView[Unit, Int]:
+        override def hooks: LiveHooks[Unit, Int] =
+          LiveHooks.empty.onBrowserEvent(BrowserIncrement) { (model, payload, _) =>
+            ZIO.succeed(model + payload.amount)
+          }
+
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+
+        def handleMessage(model: Int, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        def render(model: Int): HtmlElement[Unit] = div(model.toString)
+
+      def browserEvent(value: Json, cid: Option[Int] = None) =
+        Payload.Event(
+          `type` = "hook",
+          event = BrowserIncrement.value,
+          value = value,
+          cid = cid
+        )
+
+      ZIO.scoped(for
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        result <- withOutbox(socket) { outbox =>
+                    for
+                      _ <- outbox.take
+                      _ <- socket.inbox.offer(browserEvent(Json.Str("invalid")) -> meta)
+                      malformedReply <- outbox.take
+                      _ <- socket.inbox.offer(
+                             browserEvent(
+                               Json.Obj("amount" -> Json.Num(100)),
+                               cid = Some(999)
+                             ) -> meta
+                           )
+                      componentReply <- outbox.take
+                      _ <- socket.inbox.offer(
+                             browserEvent(Json.Obj("amount" -> Json.Num(5))) -> meta
+                           )
+                      validReply <- outbox.take
+                    yield assertTrue(
+                      malformedReply._1 == Payload.okReply(LiveResponse.Empty),
+                      componentReply._1 == Payload.okReply(LiveResponse.Empty),
+                      diffFromPayload(validReply._1).exists(containsValue(_, "5"))
+                    )
+                  }
+      yield result)
     },
     test("event hooks continue in attach order before handleMessage") {
       enum Msg:

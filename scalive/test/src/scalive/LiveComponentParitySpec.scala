@@ -18,6 +18,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
   private val meta = Meta(None, None, "lv:root", "event")
   private val childTopic = "lv:child"
   private val phxChangeAttr = htmlAttr("phx-change", scalive.codecs.StringAsIsEncoder)
+  private val ComponentValidate = BrowserToServerEvent[String]("validate")
 
   private enum ParentMsg:
     case Toggle
@@ -67,9 +68,8 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
 
   private object RawTargetComponent extends LiveComponent[Unit, Unit, String]:
     override def hooks: ComponentLiveHooks[Unit, Unit, String] =
-      ComponentLiveHooks.empty.rawEvent("raw-target") { (_, model, event, _) =>
-        if event.bindingId == "validate" then ZIO.succeed(LiveEventHookResult.halt("handled"))
-        else ZIO.succeed(LiveEventHookResult.cont(model))
+      ComponentLiveHooks.empty.onBrowserEvent(ComponentValidate) { (_, _, _, _) =>
+        ZIO.succeed("handled")
       }
 
     def mount(props: Unit, ctx: MountContext) =
@@ -151,7 +151,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     test("component refs stringify to their cid") {
       assertTrue(ComponentRef[Unit](123).toString == "123")
     },
-    test("cid-targeted static events reach component raw hooks") {
+    test("cid-targeted browser events reach typed component hooks") {
       val parent = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
           ZIO.unit

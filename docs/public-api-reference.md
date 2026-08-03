@@ -119,7 +119,7 @@ Lifecycle methods:
 - `mount` creates the initial model for disconnected and connected lifecycle phases.
 - `handleMessage` handles typed messages produced by HTML bindings, JS push commands, async tasks, and subscriptions.
 - `render` returns the current HTML tree.
-- `hooks` installs static lifecycle hooks, including raw client-event interception through `LiveHooks.rawEvent`.
+- `hooks` installs static lifecycle hooks, including typed browser events and low-level raw event interception.
 - Runtime subscriptions are started explicitly from phase contexts with `ctx.subscriptions.start`.
 
 ### `LiveView.Eventless[Model]`
@@ -363,7 +363,8 @@ Runtime resources and client payload contracts use explicit typed identifiers. E
 opaque type FlashKind = String
 opaque type AsyncKey[A] = String
 opaque type SubscriptionKey = String
-opaque type ClientEvent[A] = String
+opaque type ServerToBrowserEvent[A] = String
+opaque type BrowserToServerEvent[A] = String
 ```
 
 ```scala
@@ -430,7 +431,7 @@ component removal interrupt obsolete work without producing application messages
 
 ```scala
 trait Client:
-  def push[A: JsonEncoder](event: ClientEvent[A], payload: A): LiveIO[Unit]
+  def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit]
   def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
 
 trait Title:
@@ -441,7 +442,9 @@ trait ComponentUpdates:
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](id: String, props: LiveComponent.PropsOf[C]): LiveIO[Unit]
 ```
 
-`ClientEvent[A]` guarantees that Scala push sites use the declared payload type and have a matching JSON encoder. JavaScript still subscribes by string and interprets the encoded payload dynamically.
+`ServerToBrowserEvent[A]` guarantees that Scala push sites use the declared payload type and have a matching JSON encoder. JavaScript still subscribes by string and interprets the encoded payload dynamically.
+
+`BrowserToServerEvent[A]` declares the payload expected from a JavaScript hook. Register it with `onBrowserEvent`; the hook requires a `JsonDecoder[A]`, receives the decoded payload, and returns the next model. Matching events are consumed automatically. Malformed matching payloads are logged and consumed without changing the model. Root handlers ignore component-targeted events.
 
 ### Hook Results
 
@@ -469,19 +472,25 @@ LiveEventHookResult.haltReply(model, value)
 
 ```scala
 LiveHooks.empty
-LiveHooks.empty.rawEvent(id)(hook)
+LiveHooks.empty.onBrowserEvent(event)(handler)
+LiveHooks.empty.onRawEvent(hookId)(hook)
 LiveHooks.empty.event(id)(hook)
 LiveHooks.empty.params(id)(hook)
 LiveHooks.empty.info(id)(hook)
 LiveHooks.empty.async(id)(hook)
 LiveHooks.empty.afterRender(id)(hook)
+
+ComponentLiveHooks.empty.onBrowserEvent(event)(handler)
+ComponentLiveHooks.empty.onRawEvent(hookId)(hook)
 ```
+
+`onRawEvent` is the protocol-level escape hatch. Its `hookId` identifies the registration for duplicate detection and detachment; it does not filter event names. Raw hooks receive every event in attachment order until one halts.
 
 ### Dynamic Hooks
 
 ```scala
-ctx.hooks.rawEvent.attach(id)(hook)
-ctx.hooks.rawEvent.detach(id)
+ctx.hooks.rawEvent.attach(hookId)(hook)
+ctx.hooks.rawEvent.detach(hookId)
 ctx.hooks.event.attach(id)(hook)
 ctx.hooks.event.detach(id)
 ctx.hooks.params.attach(id)(hook)
@@ -747,7 +756,7 @@ phx.onUpdate
 phx.key
 phx.dropTarget
 phx.disableWith
-phx.hook
+phx.hook(name, id)
 phx.clearFlash
 phx.target(ref)
 phx.target(selector)
@@ -756,6 +765,8 @@ phx.throttle
 phx.value(key)
 phx.trackStatic
 ```
+
+`phx.hook(name, id)` emits the `phx-hook` and required stable DOM `id` together. Both values must be non-empty.
 
 ## Link API
 

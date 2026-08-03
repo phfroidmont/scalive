@@ -89,7 +89,7 @@ object ExampleCatalog:
       category = "Client interop",
       title = "Browser integration",
       description =
-        "Client-only JS commands, a typed server event, and a validated raw hook reply.",
+        "Client-only JS commands and directional typed events across a JavaScript hook.",
       location = ExamplesRoutes.browserInterop.location
     ),
     ExampleEntry(

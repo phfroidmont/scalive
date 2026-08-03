@@ -14,9 +14,9 @@ object ClientEventsSpec extends ZIOSpecDefault:
   private final case class ReadyPayload(ok: Boolean) derives JsonEncoder
   private final case class TickPayload(value: Int) derives JsonEncoder
 
-  private val ReadyEvent     = ClientEvent[ReadyPayload]("ready")
-  private val TickEvent      = ClientEvent[TickPayload]("tick")
-  private val ComponentEvent = ClientEvent[ReadyPayload]("component")
+  private val ReadyEvent     = ServerToBrowserEvent[ReadyPayload]("ready")
+  private val TickEvent      = ServerToBrowserEvent[TickPayload]("tick")
+  private val ComponentEvent = ServerToBrowserEvent[ReadyPayload]("component")
 
   private val EmitSubscription   = SubscriptionKey("emit")
   private val EmitJsSubscription = SubscriptionKey("emit-js")

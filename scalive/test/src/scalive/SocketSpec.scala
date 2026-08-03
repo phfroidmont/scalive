@@ -372,7 +372,7 @@ object SocketSpec extends ZIOSpecDefault:
       val replyValue = Json.Obj("ok" -> Json.Bool(true))
       val lv         = new LiveView[Unit, String]:
         override def hooks: LiveHooks[Unit, String] =
-          LiveHooks.empty.rawEvent("intercept") { (model, event, _) =>
+          LiveHooks.empty.onRawEvent("intercept") { (model, event, _) =>
             if event.bindingId == "intercept" then
               ZIO.succeed(LiveEventHookResult.haltReply("intercepted", replyValue))
             else ZIO.succeed(LiveEventHookResult.cont(model))

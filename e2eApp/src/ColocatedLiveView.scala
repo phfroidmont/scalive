@@ -17,17 +17,15 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
       form(
         phx.onSubmit(params => Msg.SubmitPhone(params.getOrElse("user[phone_number]", ""))),
         input(
-          typ         := "text",
-          idAttr      := "user-phone-number",
+          typ := "text",
+          phx.hook(".PhoneNumber", "user-phone-number"),
           nameAttr    := "user[phone_number]",
-          phx.hook    := ".PhoneNumber",
           placeholder := "phone"
         )
       ),
       p(idAttr := "phone", model.phone),
       div(
-        idAttr    := "runtime",
-        phx.hook  := ".Runtime",
+        phx.hook(".Runtime", "runtime"),
         styleAttr := "display: none;",
         "Runtime hook works!"
       ),

@@ -185,7 +185,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       new HtmlAttr["update" | "stream" | "ignore"](s"phx-update", Encoder(identity))
 
     // Client hooks
-    lazy val hook                          = phxAttr("hook")
+    private lazy val hookAttr                                     = phxAttr("hook")
+    def hook(name: String, id: String): Vector[Mod.Attr[Nothing]] =
+      require(name.nonEmpty, "hook name must not be empty")
+      require(id.nonEmpty, "hook id must not be empty")
+      Vector(idAttr := id, hookAttr := name)
     lazy val clearFlash: Mod.Attr[Nothing] = phxAttr("click") := "lv:clear-flash"
     def target[Msg](ref: ComponentRef[Msg]): Mod.Attr[Nothing] =
       phxAttr("target") := ref.toString

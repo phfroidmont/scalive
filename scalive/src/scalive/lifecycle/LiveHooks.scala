@@ -2,6 +2,7 @@ package scalive
 
 import zio.*
 import zio.http.URL
+import zio.json.*
 import zio.json.ast.Json
 
 final case class LiveEvent(
@@ -56,19 +57,31 @@ final case class LiveHooks[Msg, Model] private[scalive] (
   private[scalive] val asyncHooks: Vector[LiveHooks.Async[Msg, Model]],
   private[scalive] val afterRenderHooks: Vector[LiveHooks.AfterRender[Msg, Model]]):
 
-  def rawEvent(
-    id: String
-  )(
-    hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
-  ): LiveHooks[Msg, Model] =
-    copy(rawEventHooks = rawEventHooks :+ LiveHooks.RawEvent(id, hook))
-
   def onRawEvent(
-    id: String
+    hookId: String
   )(
     hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
   ): LiveHooks[Msg, Model] =
-    rawEvent(id)(hook)
+    copy(rawEventHooks = rawEventHooks :+ LiveHooks.RawEvent(hookId, hook))
+
+  def onBrowserEvent[A: JsonDecoder](
+    browserEvent: BrowserToServerEvent[A]
+  )(
+    handler: (Model, A, MessageContext[Msg, Model]) => LiveIO[Model]
+  ): LiveHooks[Msg, Model] =
+    onRawEvent(s"browser-event:${browserEvent.value}") { (model, event, ctx) =>
+      if event.bindingId != browserEvent.value || event.cid.nonEmpty then
+        ZIO.succeed(LiveEventHookResult.cont(model))
+      else
+        event.value.as[A] match
+          case Right(payload) =>
+            handler(model, payload, ctx).map(LiveEventHookResult.halt(_))
+          case Left(error) =>
+            ZIO
+              .logWarning(
+                s"Ignoring malformed browser event '${browserEvent.value}': $error"
+              ).as(LiveEventHookResult.halt(model))
+    }
 
   def event(
     id: String
@@ -199,14 +212,32 @@ final case class ComponentLiveHooks[Props, Msg, Model] private[scalive] (
     ComponentLiveHooks.AfterRender[Props, Msg, Model]
   ]):
 
-  def rawEvent(
-    id: String
+  def onRawEvent(
+    hookId: String
   )(
     hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ]
   ): ComponentLiveHooks[Props, Msg, Model] =
-    copy(rawEventHooks = rawEventHooks :+ ComponentLiveHooks.RawEvent(id, hook))
+    copy(rawEventHooks = rawEventHooks :+ ComponentLiveHooks.RawEvent(hookId, hook))
+
+  def onBrowserEvent[A: JsonDecoder](
+    browserEvent: BrowserToServerEvent[A]
+  )(
+    handler: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => LiveIO[Model]
+  ): ComponentLiveHooks[Props, Msg, Model] =
+    onRawEvent(s"browser-event:${browserEvent.value}") { (props, model, event, ctx) =>
+      if event.bindingId != browserEvent.value then ZIO.succeed(LiveEventHookResult.cont(model))
+      else
+        event.value.as[A] match
+          case Right(payload) =>
+            handler(props, model, payload, ctx).map(LiveEventHookResult.halt(_))
+          case Left(error) =>
+            ZIO
+              .logWarning(
+                s"Ignoring malformed browser event '${browserEvent.value}': $error"
+              ).as(LiveEventHookResult.halt(model))
+    }
 
   def event(
     id: String

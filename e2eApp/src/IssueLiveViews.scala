@@ -50,7 +50,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
     ctx.uploads.allow(Upload).map(upload => Model(upload = upload))
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("issue-2965") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent("issue-2965") { (model, event, _) =>
       if event.bindingId == "upload_scrub_list" then
         val fileNames = fileNamesFromScrubEvent(event.value).toVector
         val reply     = Json.Obj("deduped_filenames" -> Json.Arr(fileNames.map(Json.Str(_))*))
@@ -78,10 +78,9 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
             phx.onProgress(_ => Msg.Progress)
           ),
           input(
-            idAttr                      := "fileinput",
+            phx.hook("QueuedUploaderHook", "fileinput"),
             typ                         := "file",
             multiple                    := true,
-            phx.hook                    := "QueuedUploaderHook",
             dataAttr("max-concurrency") := "3",
             disabled                    := filePickerDisabled(model.upload)
           ),
@@ -197,7 +196,7 @@ object Issue2965LiveView:
     case Save
 
   private val UploadSendNextFileEvent =
-    ClientEvent[Map[String, String]]("upload_send_next_file")
+    ServerToBrowserEvent[Map[String, String]]("upload_send_next_file")
   private val Upload: LiveUploadDef[Unit] = LiveUploadDef.hosted(
     name = "files",
     accept = LiveUploadAccept.Any,
@@ -404,7 +403,7 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
       .map(items => model.copy(items = items))
 
   override def hooks: LiveHooks[Unit, Model] =
-    LiveHooks.empty.rawEvent("inc") { (model, event, ctx) =>
+    LiveHooks.empty.onRawEvent("inc") { (model, event, ctx) =>
       if event.bindingId == "inc" then
         val nextCount = model.count + 1
         ctx.streams
@@ -458,7 +457,7 @@ object Issue3530LiveView:
       div(
         idAttr := s"item-outer-$itemId",
         "test hook with nested liveview",
-        div(idAttr := s"test-hook-$itemId", phx.hook := "test")
+        div(phx.hook("test", s"test-hook-$itemId"))
       )
 
 class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveView.Model]:
@@ -495,11 +494,10 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
           value    := model.userName,
           typ      := "text"
         ),
-        button(idAttr := "x", typ := "button", phx.hook := "JsUpload", "Upload then Input"),
+        button(phx.hook("JsUpload", "x"), typ := "button", "Upload then Input"),
         button(
-          idAttr             := "y",
+          phx.hook("JsUpload", "y"),
           typ                := "button",
-          phx.hook           := "JsUpload",
           dataAttr("before") := "true",
           "Input then Upload"
         ),
@@ -590,7 +588,7 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
     case Msg.Noop(_) => model
 
   override def hooks: LiveHooks[Msg, Boolean] =
-    LiveHooks.empty.rawEvent("reconnected") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent("reconnected") { (model, event, _) =>
       if event.bindingId == "reconnected" then LiveEventHookResult.halt(true)
       else LiveEventHookResult.cont(model)
     }
@@ -640,7 +638,7 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
     (_: Msg.type) => model
 
   override def hooks: LiveHooks[Msg.type, Model] =
-    LiveHooks.empty.rawEvent("sandbox") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent("sandbox") { (model, event, _) =>
       if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
       else
         val code = event.value match
@@ -922,7 +920,7 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
     else Model(status = Status.Connecting)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("issue-3026-form") { (model, event, ctx) =>
+    LiveHooks.empty.onRawEvent("issue-3026-form") { (model, event, ctx) =>
       event.bindingId match
         case "validate" =>
           val data = event.value.asString
@@ -1234,7 +1232,7 @@ class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends Li
 
 object Issue3496LiveView:
   def myComponent =
-    div(idAttr := "my-component", phx.hook := "MyHook")
+    div(phx.hook("MyHook", "my-component"))
 
   class StickyLive extends LiveView[Unit, Unit]:
     def mount(ctx: MountContext) =
@@ -1304,7 +1302,7 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
     else init
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("issue-3651") { (model, event, ctx) =>
+    LiveHooks.empty.onRawEvent("issue-3651") { (model, event, ctx) =>
       event.bindingId match
         case "lol" =>
           LiveEventHookResult.halt(model)
@@ -1322,9 +1320,8 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
   def render(model: Model) =
     div(
       div(
-        idAttr   := "main",
-        phx.hook := "OuterHook",
-        div(phx.hook := "InnerHook", idAttr := s"id-${model.id}"),
+        phx.hook("OuterHook", "main"),
+        div(phx.hook("InnerHook", s"id-${model.id}")),
         "This is an example of nested hooks resulting in a ghost element that isn't on the DOM, and is never cleaned up.",
         p("Doing any of the following things fixes it:"),
         ol(
@@ -1353,7 +1350,7 @@ end Issue3651LiveView
 
 object Issue3651LiveView:
   private val ChangeId = AsyncKey[Unit]("change-id")
-  private val MyEvent  = ClientEvent[Map[String, String]]("myevent")
+  private val MyEvent  = ServerToBrowserEvent[Map[String, String]]("myevent")
   enum Msg:
     case ChangeId
 
@@ -1668,7 +1665,7 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
     Model()
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("issue-3941") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent("issue-3941") { (model, event, _) =>
       if event.bindingId == "page_position_update" then LiveEventHookResult.halt(model)
       else LiveEventHookResult.cont(model)
     }
@@ -1721,8 +1718,7 @@ object Issue3941LiveView:
 
     def render(props: String, model: Unit, self: ComponentRef[Nothing]) =
       div(
-        idAttr   := s"item-$props",
-        phx.hook := "PagePositionNotifier",
+        phx.hook("PagePositionNotifier", s"item-$props"),
         liveComponent(ItemHeaderComponent, id = s"item-header-$props", props = props)
       )
 
@@ -2036,7 +2032,7 @@ object Issue4066LiveView:
 
   object DelayedInputComponent extends LiveComponent[Int, Unit, Unit]:
     override def hooks: ComponentLiveHooks[Int, Unit, Unit] =
-      ComponentLiveHooks.empty.rawEvent("issue-4066") { (_, model, event, _) =>
+      ComponentLiveHooks.empty.onRawEvent("issue-4066") { (_, model, event, _) =>
         if event.bindingId == "do-something" then LiveEventHookResult.halt(model)
         else LiveEventHookResult.cont(model)
       }
@@ -2049,8 +2045,7 @@ object Issue4066LiveView:
 
     def render(delay: Int, model: Unit, self: ComponentRef[Unit]) =
       input(
-        idAttr   := "foo",
-        phx.hook := "Issue4066Hook",
+        phx.hook("Issue4066Hook", "foo"),
         phx.target(self),
         dataAttr("delay") := delay.toString
       )
@@ -2129,7 +2124,7 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
     "value"
 
   override def hooks: LiveHooks[Msg, String] =
-    LiveHooks.empty.rawEvent("issue-4088") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent("issue-4088") { (model, event, _) =>
       if event.bindingId == "my_update" then LiveEventHookResult.halt(System.nanoTime.toString)
       else LiveEventHookResult.cont(model)
     }
@@ -2138,7 +2133,7 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
     (_: Msg) => model
 
   def render(value: String) =
-    div(idAttr := "foo", phx.hook := "Issue4088Hook", value)
+    div(phx.hook("Issue4088Hook", "foo"), value)
 
 object Issue4088LiveView:
   enum Msg:

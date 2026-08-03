@@ -9,7 +9,7 @@ trait Components:
     val endSentinel   = span(idAttr := s"$id-end", tabIndex := 0, aria.hidden := true)
 
     div(
-      Vector(idAttr := id, phx.hook := "Phoenix.FocusWrap") ++
+      phx.hook("Phoenix.FocusWrap", id) ++
         mods ++
         Vector(Mod.Content.Tag(startSentinel)) ++
         content ++
@@ -36,11 +36,10 @@ trait Components:
       .mkString(",")
 
     input(
-      idAttr                           := upload.ref.value,
+      phx.hook("Phoenix.LiveFileUpload", upload.ref.value),
       typ                              := "file",
       nameAttr                         := upload.name,
       accept                           := upload.accept.toHtmlValue,
-      dataAttr("phx-hook")             := "Phoenix.LiveFileUpload",
       dataAttr("phx-upload-ref")       := upload.ref.value,
       dataAttr("phx-active-refs")      := activeRefs,
       dataAttr("phx-done-refs")        := doneRefs,

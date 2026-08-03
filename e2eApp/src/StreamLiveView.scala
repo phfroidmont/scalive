@@ -34,7 +34,7 @@ class StreamLiveView()
     (msg: Msg) => handle(model, msg, ctx.streams)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("sandbox") { (model, event, ctx) =>
+    LiveHooks.empty.onRawEvent("sandbox") { (model, event, ctx) =>
       if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
       else
         evalCode(event.value) match

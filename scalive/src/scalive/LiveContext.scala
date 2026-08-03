@@ -167,7 +167,7 @@ trait Subscriptions[Msg]:
   def cancel(key: SubscriptionKey): LiveIO[Unit]
 
 trait Client:
-  def push[A: JsonEncoder](event: ClientEvent[A], payload: A): LiveIO[Unit]
+  def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit]
   def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
 
 trait Title:
@@ -194,11 +194,11 @@ trait RootHooks[Msg, Model]:
 
 trait RootRawEventHooks[Msg, Model]:
   def attach(
-    id: String
+    hookId: String
   )(
     hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
   ): LiveIO[Unit]
-  def detach(id: String): LiveIO[Unit]
+  def detach(hookId: String): LiveIO[Unit]
 
 trait RootEventHooks[Msg, Model]:
   def attach(
@@ -248,13 +248,13 @@ trait ComponentHooks[Props, Msg, Model]:
 
 trait ComponentRawEventHooks[Props, Msg, Model]:
   def attach(
-    id: String
+    hookId: String
   )(
     hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
       LiveEventHookResult[Model]
     ]
   ): LiveIO[Unit]
-  def detach(id: String): LiveIO[Unit]
+  def detach(hookId: String): LiveIO[Unit]
 
 trait ComponentEventHooks[Props, Msg, Model]:
   def attach(
@@ -438,10 +438,10 @@ private[scalive] object LiveContext:
       subscriptions.cancel(key.value)
 
   final private case class PushJsPayload(cmd: String) derives JsonEncoder
-  private val PushJsEvent = ClientEvent[PushJsPayload]("js:exec")
+  private val PushJsEvent = ServerToBrowserEvent[PushJsPayload]("js:exec")
 
   final private class RuntimeClient(runtime: LiveContext) extends Client:
-    def push[A: JsonEncoder](event: ClientEvent[A], payload: A): LiveIO[Unit] =
+    def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit] =
       payload.toJsonAST match
         case Right(encoded) => runtime.clientEvents.push(event.value, encoded)
         case Left(error)    =>
@@ -578,11 +578,11 @@ private[scalive] object LiveContext:
   final private class RuntimeRootRawEventHooks[Msg, Model](runtime: LiveContext)
       extends RootRawEventHooks[Msg, Model]:
     def attach(
-      id: String
+      hookId: String
     )(
       hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
-    ): LiveIO[Unit] = runtime.hooks.attachRawEvent(id)(hook)
-    def detach(id: String): LiveIO[Unit] = runtime.hooks.detachRawEvent(id)
+    ): LiveIO[Unit] = runtime.hooks.attachRawEvent(hookId)(hook)
+    def detach(hookId: String): LiveIO[Unit] = runtime.hooks.detachRawEvent(hookId)
 
   final private class RuntimeRootEventHooks[Msg, Model](runtime: LiveContext)
       extends RootEventHooks[Msg, Model]:
@@ -645,13 +645,13 @@ private[scalive] object LiveContext:
   final private class RuntimeComponentRawEventHooks[Props, Msg, Model](runtime: LiveContext)
       extends ComponentRawEventHooks[Props, Msg, Model]:
     def attach(
-      id: String
+      hookId: String
     )(
       hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
         LiveEventHookResult[Model]
       ]
-    ): LiveIO[Unit] = runtime.hooks.attachComponentRawEvent(id)(hook)
-    def detach(id: String): LiveIO[Unit] = runtime.hooks.detachRawEvent(id)
+    ): LiveIO[Unit] = runtime.hooks.attachComponentRawEvent(hookId)(hook)
+    def detach(hookId: String): LiveIO[Unit] = runtime.hooks.detachRawEvent(hookId)
 
   final private class RuntimeComponentEventHooks[Props, Msg, Model](runtime: LiveContext)
       extends ComponentEventHooks[Props, Msg, Model]:

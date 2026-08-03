@@ -49,7 +49,7 @@ object SocketUploadSpec extends ZIOSpecDefault:
         div("upload")
 
       override def hooks: LiveHooks[Unit, Unit] =
-        LiveHooks.empty.rawEvent("uploads") { (model, event, ctx) =>
+        LiveHooks.empty.onRawEvent("uploads") { (model, event, ctx) =>
           event.bindingId match
           case "capture" =>
             ctx.uploads.get(definition)

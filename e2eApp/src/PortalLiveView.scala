@@ -19,7 +19,7 @@ class PortalLiveView
     model.copy(param = params.param)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("sandbox") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent("sandbox") { (model, event, _) =>
       if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
       else
         evalCode(event.value) match
@@ -70,7 +70,7 @@ class PortalLiveView
       if model.renderModal then
         portal("portal-source", target = "#root-portal")(
           modal("my-modal", model.count, first = true),
-          div(idAttr := "hook-test", phx.hook := "InsidePortal", "This should get a data attribute")
+          div(phx.hook("InsidePortal", "hook-test"), "This should get a data attribute")
         )
       else "",
       portal("portal-with-live-component", target = "#root-portal")(
@@ -221,8 +221,7 @@ object PortalLiveView:
 
   private def tooltip(id: String, label: String, portal: Boolean, count: Int) =
     div(
-      idAttr           := s"$id-wrapper",
-      phx.hook         := "PortalTooltip",
+      phx.hook("PortalTooltip", s"$id-wrapper"),
       dataAttr("id")   := id,
       dataAttr("show") := JS.show(to = s"#$id", blocking = false).toJson,
       dataAttr("hide") := JS.hide(to = s"#$id", blocking = false).toJson,
@@ -300,7 +299,7 @@ object PortalLiveView:
       (_: Msg.type) => prependItem(model, ctx.streams)
 
     override def hooks: ComponentLiveHooks[Unit, Msg.type, Model] =
-      ComponentLiveHooks.empty.rawEvent("portal-lc") { (_, model, event, ctx) =>
+      ComponentLiveHooks.empty.onRawEvent("portal-lc") { (_, model, event, ctx) =>
         if event.bindingId == "prepend" then
           prependItem(model, ctx.streams).map(LiveEventHookResult.halt)
         else LiveEventHookResult.cont(model)
@@ -319,8 +318,7 @@ object PortalLiveView:
         button(phx.onClick(Msg), phx.target(self), "Prepend item"),
         portal("teleported-from-lc-button", target = "body")(
           button(
-            idAttr   := "lcbtn",
-            phx.hook := "TeleportedLCButton",
+            phx.hook("TeleportedLCButton", "lcbtn"),
             "Prepend item (teleported)"
           )
         )

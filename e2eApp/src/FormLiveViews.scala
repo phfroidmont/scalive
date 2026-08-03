@@ -62,12 +62,12 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks
-      .empty[Msg, Model].rawEvent("form-raw") { (model: Model, event: LiveEvent, _) =>
+      .empty[Msg, Model].onRawEvent("form-raw") { (model: Model, event: LiveEvent, _) =>
         if event.cid.nonEmpty then LiveEventHookResult.cont(model)
         else if event.bindingId == "sandbox:eval" then
           E2ESandboxEval.handle(model, event.bindingId, event.value)
         else LiveEventHookResult.cont(applyRawFormValue(model, event.value))
-      }.rawEvent("form-e2e-events") { (model: Model, event: LiveEvent, ctx: MessageContext) =>
+      }.onRawEvent("form-e2e-events") { (model: Model, event: LiveEvent, ctx: MessageContext) =>
         if event.cid.nonEmpty then LiveEventHookResult.cont(model)
         else
           event.bindingId match
@@ -254,7 +254,7 @@ object FormLiveView:
       model.copy(query = props.query)
 
     override def hooks: ComponentLiveHooks[Props, Msg, Model] =
-      ComponentLiveHooks.empty.rawEvent("form-component-events") { (_, model, event, ctx) =>
+      ComponentLiveHooks.empty.onRawEvent("form-component-events") { (_, model, event, ctx) =>
         event.bindingId match
           case "validate" =>
             maybeAwait(model.query, "validate").map { _ =>
@@ -509,7 +509,7 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
     case Msg.Ping        => model
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("sandbox") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent("sandbox") { (model, event, _) =>
       E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
 
@@ -525,12 +525,12 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
         formModel.onSubmit(Msg.Save(_)),
         formModel.text("myname"),
         formModel.text("other"),
-        div(idAttr := "form-stream-hook", phx.hook := "FormHook", phx.onUpdate := "ignore"),
+        div(phx.hook("FormHook", "form-stream-hook"), phx.onUpdate := "ignore"),
         ul(
           idAttr       := "form-stream",
           phx.onUpdate := "stream",
           model.items.stream { (domId, item) =>
-            li(idAttr := domId, phx.hook := "FormStreamHook", s"*%{id: ${item.id}}")
+            li(phx.hook("FormStreamHook", domId), s"*%{id: ${item.id}}")
           }
         ),
         button(idAttr := "submit", phx.disableWith := "Saving...", "Submit")
@@ -573,7 +573,7 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
       model.copy(feedback = !model.feedback, feedbackUsed = false)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.rawEvent("feedback-raw") { (model, event, _) =>
+    LiveHooks.empty.onRawEvent("feedback-raw") { (model, event, _) =>
       if event.bindingId == "sandbox:eval" then
         E2ESandboxEval.handle(model, event.bindingId, event.value)
       else

@@ -2,7 +2,6 @@ package scalive.examples.interop
 
 import zio.*
 import zio.json.*
-import zio.json.ast.Json
 
 import scalive.*
 
@@ -11,27 +10,18 @@ final class BrowserInteropLiveView
   import BrowserInteropLiveView.*
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty[Msg, Model].rawEvent(CopyResultEvent) { (model, event, _) =>
-      if event.bindingId != CopyResultEvent || event.cid.nonEmpty then
-        ZIO.succeed(LiveEventHookResult.cont(model))
-      else
-        decodeCopyResult(event.value, model.pendingRequestId) match
-          case Some(result) =>
-            val nextModel = model.copy(
-              pendingRequestId = None,
-              copyStatus = if result.ok then CopyStatus.Succeeded else CopyStatus.Failed
-            )
-            ZIO.succeed(LiveEventHookResult.halt(nextModel))
-          case None =>
-            ZIO.succeed(LiveEventHookResult.halt(model))
+    LiveHooks.empty[Msg, Model].onBrowserEvent(CopyResultEvent) { (model, result, _) =>
+      val nextOperation = model.operation match
+        case CopyOperation.Pending(requestId) if requestId == result.requestId =>
+          if result.ok then CopyOperation.Succeeded else CopyOperation.Failed
+        case current => current
+      ZIO.succeed(model.copy(operation = nextOperation))
     }
 
   def mount(ctx: MountContext) =
     ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.CopySample if model.pendingRequestId.nonEmpty =>
-      ZIO.succeed(model)
     case Msg.CopySample =>
       val requestNumber = model.requestNumber + 1
       val requestId     = s"copy-$requestNumber"
@@ -40,22 +30,20 @@ final class BrowserInteropLiveView
         .as(
           model.copy(
             requestNumber = requestNumber,
-            pendingRequestId = Some(requestId),
-            copyStatus = CopyStatus.Pending
+            operation = CopyOperation.Pending(requestId)
           )
         )
 
   def render(model: Model) =
     div(
-      idAttr   := HookDomId,
-      phx.hook := HookName,
+      phx.hook(HookName, id = HookDomId),
       headerTag(
         cls := "mb-8 border-b border-base-300 pb-7",
         div(cls := "badge badge-primary badge-outline mb-4", "Client interop"),
         h1(cls  := "text-4xl font-bold tracking-tight", "Browser integration"),
         p(
           cls := "mt-4 max-w-3xl text-lg leading-8 text-base-content/70",
-          "Compose browser-only JS commands and send one typed payload from Scala to a focused JavaScript hook. The hook reply is raw JSON, not a typed client-to-server channel, so Scala validates it at runtime."
+          "Compose browser-only JS commands and exchange typed payloads between Scala and a focused JavaScript hook."
         )
       ),
       div(
@@ -98,7 +86,7 @@ final class BrowserInteropLiveView
           h2(cls  := "text-2xl font-bold", "Request a browser operation"),
           p(
             cls := "mt-3 leading-7 text-base-content/70",
-            "A typed LiveView message asks Scala to push ClientEvent[CopyRequest]. JavaScript handles it, attempts a clipboard write, and returns only a request ID and success flag through hook.pushEvent."
+            "A typed LiveView message asks Scala to push ServerToBrowserEvent[CopyRequest]. JavaScript handles it, attempts a clipboard write, and returns BrowserToServerEvent[CopyResult] through hook.pushEvent."
           ),
           div(
             cls := "mt-5 rounded-box bg-base-200 p-4",
@@ -109,16 +97,15 @@ final class BrowserInteropLiveView
             codeTag(cls := "mt-2 block break-words text-sm", SampleText)
           ),
           button(
-            typ      := "button",
-            cls      := "btn btn-secondary mt-5",
-            disabled := model.pendingRequestId.nonEmpty,
+            typ := "button",
+            cls := "btn btn-secondary mt-5",
             phx.onClick(Msg.CopySample),
-            "Copy sample text"
+            if model.operation.isPending then "Retry copy" else "Copy sample text"
           ),
           div(
             idAttr := CopyStatusId,
-            cls    := s"alert mt-5 ${model.copyStatus.alertClass}",
-            span(model.copyStatus.label)
+            cls    := s"alert mt-5 ${model.operation.alertClass}",
+            span(model.operation.label)
           )
         )
       )
@@ -130,30 +117,33 @@ object BrowserInteropLiveView:
 
   final case class Model(
     requestNumber: Long = 0,
-    pendingRequestId: Option[String] = None,
-    copyStatus: CopyStatus = CopyStatus.Idle)
+    operation: CopyOperation = CopyOperation.Idle)
 
   enum Msg:
     case CopySample
 
-  enum CopyStatus(val label: String, val alertClass: String):
-    case Idle      extends CopyStatus("No browser operation requested yet.", "alert-info")
-    case Pending   extends CopyStatus("Waiting for the browser result...", "alert-info")
-    case Succeeded extends CopyStatus("Browser operation completed.", "alert-success")
-    case Failed    extends CopyStatus("Browser operation could not be completed.", "alert-error")
+  enum CopyOperation(val label: String, val alertClass: String):
+    case Idle extends CopyOperation("No browser operation requested yet.", "alert-info")
+    case Pending(requestId: String)
+        extends CopyOperation("Waiting for the browser result. Retry if needed.", "alert-info")
+    case Succeeded extends CopyOperation("Browser operation completed.", "alert-success")
+    case Failed    extends CopyOperation("Browser operation could not be completed.", "alert-error")
 
-  final private case class CopyResult(requestId: String, ok: Boolean)
+    def isPending: Boolean = this match
+      case Pending(_) => true
+      case _          => false
+
+  final private case class CopyResult(requestId: String, ok: Boolean) derives JsonDecoder
 
   private val HookName             = "BrowserInterop"
   private val HookDomId            = "browser-interop-hook"
-  private val CopyResultEvent      = "browser-copy-result"
-  private val CopyRequestEvent     = ClientEvent[CopyRequest]("browser-copy-request")
+  private val CopyResultEvent      = BrowserToServerEvent[CopyResult]("browser-copy-result")
+  private val CopyRequestEvent     = ServerToBrowserEvent[CopyRequest]("browser-copy-request")
   private val SampleText           = "Scalive keeps server-to-client event payloads typed."
   private val CommandPanelId       = "browser-command-panel"
   private val CommandPlaceholderId = "browser-command-placeholder"
   private val CommandDetailId      = "browser-command-detail"
   private val CopyStatusId         = "browser-copy-status"
-  private val CopyResultFields     = Set("requestId", "ok")
   private val codeTag              = HtmlTag("code")
 
   private val ClientOnlyCommand =
@@ -161,15 +151,4 @@ object BrowserInteropLiveView:
       .hide(to = s"#$CommandPlaceholderId")
       .toggle(to = s"#$CommandDetailId")
 
-  private def decodeCopyResult(value: Json, expectedRequestId: Option[String]): Option[CopyResult] =
-    value match
-      case Json.Obj(fields)
-          if fields.length == CopyResultFields.size && fields.map(_._1).toSet == CopyResultFields =>
-        for
-          requestId <- fields.collectFirst { case ("requestId", Json.Str(value)) => value }
-          ok        <- fields.collectFirst { case ("ok", Json.Bool(value)) => value }
-          if requestId.length <= 64
-          if expectedRequestId.contains(requestId)
-        yield CopyResult(requestId, ok)
-      case _ => None
 end BrowserInteropLiveView

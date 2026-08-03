@@ -45,13 +45,24 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
       test("Portal wraps content in a template") {
         val el = portal("portal-source", target = "#root-portal")(
           div(idAttr := "my-modal", "Modal"),
-          div(idAttr := "hook-test", phx.hook := "InsidePortal")
+          div(phx.hook("InsidePortal", "hook-test"))
         )
 
         val result = HtmlBuilder.build(el)
 
         assertTrue(
           result == "<template id=\"portal-source\" data-phx-portal=\"#root-portal\"><div id=\"_lv_portal_wrap_portal-source\"><div id=\"my-modal\">Modal</div><div id=\"hook-test\" phx-hook=\"InsidePortal\"></div></div></template>"
+        )
+      },
+      test("Hook helper renders the required DOM id") {
+        val result = HtmlBuilder.build(div(phx.hook("MyHook", "my-hook")))
+
+        assertTrue(result == "<div id=\"my-hook\" phx-hook=\"MyHook\"></div>")
+      },
+      test("Hook helper rejects empty names and ids") {
+        assertTrue(
+          scala.util.Try(phx.hook("", "my-hook")).isFailure,
+          scala.util.Try(phx.hook("MyHook", "")).isFailure
         )
       },
       test("Portal supports custom wrapper container and class") {

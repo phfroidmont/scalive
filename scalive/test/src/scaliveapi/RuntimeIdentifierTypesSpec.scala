@@ -9,7 +9,8 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
     test("runtime identifiers expose explicit string values") {
       assertTrue(
         AsyncKey[Int]("load").value == "load",
-        ClientEvent[Int]("counter:changed").value == "counter:changed",
+        ServerToBrowserEvent[Int]("counter:changed").value == "counter:changed",
+        BrowserToServerEvent[Int]("counter:clicked").value == "counter:clicked",
         FlashKind("info").value == "info",
         SubscriptionKey("clock").value == "clock"
       )
@@ -25,13 +26,18 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
       """)
       val eventVarianceErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val event: ClientEvent[Any] = ClientEvent[String]("changed")
+        val event: ServerToBrowserEvent[Any] = ServerToBrowserEvent[String]("changed")
+      """)
+      val inboundEventVarianceErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val event: BrowserToServerEvent[Any] = BrowserToServerEvent[String]("changed")
       """)
 
       assertTrue(
         keyToStringErrors.nonEmpty,
         asyncVarianceErrors.nonEmpty,
-        eventVarianceErrors.nonEmpty
+        eventVarianceErrors.nonEmpty,
+        inboundEventVarianceErrors.nonEmpty
       )
     },
     test("async keys fix task result types and reject raw names") {
@@ -76,15 +82,51 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
         import scalive.*
         import zio.json.*
         case class Payload(value: Int) derives JsonEncoder
-        val event = ClientEvent[Payload]("counter:changed")
+        val event = ServerToBrowserEvent[Payload]("counter:changed")
         def push(ctx: MessageContext[Unit, Unit]) = ctx.client.push(event, "wrong")
+      """)
+      val directionErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.json.*
+        case class Payload(value: Int) derives JsonEncoder
+        val event = BrowserToServerEvent[Payload]("counter:changed")
+        def push(ctx: MessageContext[Unit, Unit]) = ctx.client.push(event, Payload(1))
       """)
       val removedMethodErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         def push(ctx: MessageContext[Unit, Unit]) = ctx.client.pushEvent("ready", 1)
       """)
 
-      assertTrue(payloadErrors.nonEmpty, removedMethodErrors.nonEmpty)
+      assertTrue(payloadErrors.nonEmpty, directionErrors.nonEmpty, removedMethodErrors.nonEmpty)
+    },
+    test("browser event handlers require inbound events and payload decoders") {
+      val directionErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.json.*
+        case class Payload(value: Int) derives JsonEncoder, JsonDecoder
+        val event = ServerToBrowserEvent[Payload]("counter:changed")
+        val hooks = LiveHooks.empty[Unit, Unit].onBrowserEvent(event)((model, _, _) => zio.ZIO.succeed(model))
+      """)
+      val decoderErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        case class Payload(value: Int)
+        val event = BrowserToServerEvent[Payload]("counter:changed")
+        val hooks = LiveHooks.empty[Unit, Unit].onBrowserEvent(event)((model, _, _) => zio.ZIO.succeed(model))
+      """)
+
+      assertTrue(directionErrors.nonEmpty, decoderErrors.nonEmpty)
+    },
+    test("hook markup requires a name and DOM id together") {
+      val oldSyntaxErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val markup = div(phx.hook := "MyHook")
+      """)
+      val helperErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val markup = div(phx.hook("MyHook", id = "my-hook"))
+      """)
+
+      assertTrue(oldSyntaxErrors.nonEmpty, helperErrors.isEmpty)
     },
     test("upload operations reject raw names") {
       val rawNameErrors = scala.compiletime.testing.typeCheckErrors("""

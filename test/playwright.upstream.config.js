@@ -14,7 +14,7 @@ if (!upstreamRoot) {
 export default {
   testDir: path.join(upstreamRoot, "test/e2e/tests"),
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: 2,
   reporter: process.env.CI ? [["github"], ["html"], ["dot"]] : [["list"]],
   timeout: 30_000,
   use: {

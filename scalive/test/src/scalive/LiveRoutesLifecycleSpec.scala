@@ -960,7 +960,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       ZIO.scoped(for
         streamRef     <- Ref.make(StreamRuntimeState.empty)
         streams       = new SocketStreamRuntime(streamRef)
-        stream        <- streams.stream(items, List(Item(1), Item(2)), StreamAt.Last, false, None)
+        stream        <- streams.create(items, List(Item(1), Item(2)))
         componentsRef <- Ref.make(ComponentRuntimeState.empty)
         channel       <- LiveChannel.make(TokenConfig.default)
         rendered <- SocketComponentRuntime.renderRoot(
@@ -999,7 +999,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
       val parent = new LiveView[Unit, LiveStream[Item]]:
         def mount(ctx: MountContext) =
-          ctx.streams.init(items, List(Item(1), Item(2), Item(3)))
+          ctx.streams.create(items, List(Item(1), Item(2), Item(3)))
 
         def handleMessage(model: LiveStream[Item], ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)

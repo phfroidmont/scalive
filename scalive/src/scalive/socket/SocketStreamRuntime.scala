@@ -11,73 +11,102 @@ import scalive.streams.{LiveStreamEntry, StreamRuntime}
 final private[scalive] class SocketStreamRuntime(
   streamRef: Ref[StreamRuntimeState])
     extends StreamRuntime:
-  def stream[A](
+  def create[A](
+    definition: LiveStreamDef[A],
+    items: Iterable[A]
+  ): Task[LiveStream[A]] =
+    for
+      _         <- validateName(definition.name)
+      limitWire <- normalizeLimit(definition.limit)
+      next      <- streamRef.modify { current =>
+                if current.streams.contains(definition.name) then
+                  Left(existingStreamError(definition.name)) -> current
+                else
+                  val ref = current.nextRef.toString
+                  collectStreamInserts(
+                    definition = definition,
+                    items = items,
+                    at = -1,
+                    limit = limitWire,
+                    updateOnly = None
+                  ) match
+                    case Left(error)       => Left(error) -> current
+                    case Right(newInserts) =>
+                      val dedupedInserts = dedupeInserts(newInserts)
+                      val state          = StreamState(
+                        name = definition.name,
+                        ref = ref,
+                        inserts = newInserts,
+                        deleteIds = Nil,
+                        reset = false,
+                        entries = applyInserts(Vector.empty, dedupedInserts)
+                      )
+                      toLiveStream(state, definition) ->
+                        current.copy(
+                          streams = current.streams.updated(definition.name, state),
+                          nextRef = current.nextRef + 1
+                        )
+              }
+      out <- ZIO.fromEither(next)
+    yield out
+
+  def insertAll[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
-    at: StreamAt,
-    reset: Boolean,
-    limit: Option[StreamLimit]
+    at: StreamAt
   ): Task[LiveStream[A]] =
     for
       _         <- validateName(definition.name)
       atWire    <- normalizeAt(at)
-      limitWire <- normalizeLimit(limit)
-      next      <- streamRef.modify { current =>
-                current.streams.get(definition.name) match
-                  case Some(existing) =>
-                    val base =
-                      if reset then
-                        existing.copy(
-                          inserts = Nil,
-                          deleteIds = Nil,
-                          reset = true,
-                          entries = Vector.empty
-                        )
-                      else existing
-                    collectStreamInserts(
-                      definition = definition,
-                      items = items,
-                      at = atWire,
-                      limit = limitWire,
-                      updateOnly = None
-                    ) match
-                      case Left(error)       => Left(error) -> current
-                      case Right(newInserts) =>
-                        val dedupedInserts = dedupeInserts(newInserts)
-                        val updated        = base.copy(
-                          inserts = newInserts ++ base.inserts,
-                          entries = applyInserts(base.entries, dedupedInserts)
-                        )
-                        toLiveStream(updated, definition) -> current.copy(
-                          streams = current.streams.updated(definition.name, updated)
-                        )
+      limitWire <- normalizeLimit(definition.limit)
+      next      <- streamRef.modify(current =>
+                updateExistingStream(current, definition) { existing =>
+                  collectStreamInserts(
+                    definition,
+                    items,
+                    atWire,
+                    limitWire,
+                    updateOnly = None
+                  ).map { newInserts =>
+                    val dedupedInserts = dedupeInserts(newInserts)
+                    existing.copy(
+                      inserts = newInserts ++ existing.inserts,
+                      entries = applyInserts(existing.entries, dedupedInserts)
+                    )
+                  }
+                }
+              )
+      out <- ZIO.fromEither(next)
+    yield out
 
-                  case None =>
-                    val ref = current.nextRef.toString
-                    collectStreamInserts(
-                      definition = definition,
-                      items = items,
-                      at = -1,
-                      limit = limitWire,
-                      updateOnly = None
-                    ) match
-                      case Left(error)       => Left(error) -> current
-                      case Right(newInserts) =>
-                        val dedupedInserts = dedupeInserts(newInserts)
-                        val state          = StreamState(
-                          name = definition.name,
-                          ref = ref,
-                          inserts = newInserts,
-                          deleteIds = Nil,
-                          reset = false,
-                          entries = applyInserts(Vector.empty, dedupedInserts)
-                        )
-                        toLiveStream(state, definition) ->
-                          current.copy(
-                            streams = current.streams.updated(definition.name, state),
-                            nextRef = current.nextRef + 1
-                          )
-              }
+  def reset[A](
+    definition: LiveStreamDef[A],
+    items: Iterable[A],
+    at: StreamAt
+  ): Task[LiveStream[A]] =
+    for
+      _         <- validateName(definition.name)
+      atWire    <- normalizeAt(at)
+      limitWire <- normalizeLimit(definition.limit)
+      next      <- streamRef.modify(current =>
+                updateExistingStream(current, definition) { existing =>
+                  collectStreamInserts(
+                    definition = definition,
+                    items = items,
+                    at = atWire,
+                    limit = limitWire,
+                    updateOnly = None
+                  ).map { newInserts =>
+                    val dedupedInserts = dedupeInserts(newInserts)
+                    existing.copy(
+                      inserts = newInserts,
+                      deleteIds = Nil,
+                      reset = true,
+                      entries = applyInserts(Vector.empty, dedupedInserts)
+                    )
+                  }
+                }
+              )
       out <- ZIO.fromEither(next)
     yield out
 
@@ -85,13 +114,12 @@ final private[scalive] class SocketStreamRuntime(
     definition: LiveStreamDef[A],
     item: A,
     at: StreamAt,
-    limit: Option[StreamLimit],
     updateOnly: Boolean
   ): Task[LiveStream[A]] =
     for
       _         <- validateName(definition.name)
       atWire    <- normalizeAt(at)
-      limitWire <- normalizeLimit(limit)
+      limitWire <- normalizeLimit(definition.limit)
       next      <- streamRef.modify(current =>
                 updateExistingStream(current, definition) { existing =>
                   safeDomId(definition.name)(definition.domId(item)).map { domId =>
@@ -180,6 +208,9 @@ final private[scalive] class SocketStreamRuntime(
 
   private def missingStreamError(name: String): Throwable =
     new IllegalArgumentException(s"No stream with name $name has been defined")
+
+  private def existingStreamError(name: String): Throwable =
+    new IllegalArgumentException(s"A stream with name $name has already been defined")
 
   private def updateExistingStream[A](
     current: StreamRuntimeState,
@@ -379,23 +410,33 @@ private[scalive] object SocketStreamRuntime:
 
   final private class ScopedStreamRuntime(runtime: StreamRuntime, scope: String)
       extends StreamRuntime:
-    def stream[A](
+    def create[A](
+      definition: LiveStreamDef[A],
+      items: Iterable[A]
+    ): Task[LiveStream[A]] =
+      runtime.create(scoped(definition), items).map(unscoped(_, definition))
+
+    def insertAll[A](
       definition: LiveStreamDef[A],
       items: Iterable[A],
-      at: StreamAt,
-      reset: Boolean,
-      limit: Option[StreamLimit]
+      at: StreamAt
     ): Task[LiveStream[A]] =
-      runtime.stream(scoped(definition), items, at, reset, limit).map(unscoped(_, definition))
+      runtime.insertAll(scoped(definition), items, at).map(unscoped(_, definition))
+
+    def reset[A](
+      definition: LiveStreamDef[A],
+      items: Iterable[A],
+      at: StreamAt
+    ): Task[LiveStream[A]] =
+      runtime.reset(scoped(definition), items, at).map(unscoped(_, definition))
 
     def insert[A](
       definition: LiveStreamDef[A],
       item: A,
       at: StreamAt,
-      limit: Option[StreamLimit],
       updateOnly: Boolean
     ): Task[LiveStream[A]] =
-      runtime.insert(scoped(definition), item, at, limit, updateOnly).map(unscoped(_, definition))
+      runtime.insert(scoped(definition), item, at, updateOnly).map(unscoped(_, definition))
 
     def delete[A](definition: LiveStreamDef[A], item: A): Task[LiveStream[A]] =
       runtime.delete(scoped(definition), item).map(unscoped(_, definition))

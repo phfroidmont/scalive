@@ -506,25 +506,33 @@ private[scalive] object SocketComponentRuntime:
       case Content.LiveView(spec)                     => renderLiveView(spec, cursor, ctx)
       case Content.Flash(kind, f)                     => renderFlash(kind, f, cursor, ctx)
       case Content.Keyed(entries, stream, allEntries) =>
-        for
-          renderedEntries <- ZIO.foreach(entries)(entry => renderKeyedEntry(entry, cursor, ctx))
-          renderedAll     <- renderStreamSnapshotEntries(allEntries, cursor, ctx)
-        yield Content.Keyed(renderedEntries, stream, renderedAll)
+        renderKeyed(entries, stream, allEntries, cursor, ctx)
 
-  private def renderStreamSnapshotEntries[Msg](
+  private def renderKeyed[Msg](
+    entries: Vector[Content.Keyed.Entry[Msg]],
+    stream: Option[Diff.Stream],
     allEntries: Option[Vector[Content.Keyed.Entry[Msg]]],
     cursor: ComponentCursor,
     ctx: LiveContext
-  ): Task[Option[Vector[Content.Keyed.Entry[Any]]]] =
+  ): Task[Content.Keyed[Any]] =
     allEntries match
-      case None          => ZIO.none
-      case Some(entries) =>
-        val renderedLiveViewIds = cursor.renderedLiveViewIds
+      case None =>
+        ZIO
+          .foreach(entries)(entry => renderKeyedEntry(entry, cursor, ctx)).map(renderedEntries =>
+            Content.Keyed(renderedEntries, stream, None)
+          )
+      case Some(snapshotEntries) =>
         for
-          _        <- ZIO.succeed(cursor.renderedLiveViewIds = Set.empty)
-          rendered <- ZIO.foreach(entries)(entry => renderKeyedEntry(entry, cursor, ctx))
-          _        <- ZIO.succeed(cursor.renderedLiveViewIds = renderedLiveViewIds)
-        yield Some(rendered)
+          renderedSnapshot <-
+            ZIO.foreach(snapshotEntries)(entry => renderKeyedEntry(entry, cursor, ctx))
+          renderedByKey = renderedSnapshot.iterator.map(entry => entry.key -> entry).toMap
+          renderedEntries <- ZIO.foreach(entries)(entry =>
+                               renderedByKey.get(entry.key) match
+                                 case Some(rendered) => ZIO.succeed(rendered)
+                                 case None           => renderKeyedEntry(entry, cursor, ctx)
+                             )
+        yield Content.Keyed(renderedEntries, stream, Some(renderedSnapshot))
+  end renderKeyed
 
   private def renderKeyedEntry[Msg](
     entry: Content.Keyed.Entry[Msg],

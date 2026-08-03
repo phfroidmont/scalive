@@ -50,4 +50,36 @@ extension [T](stream: streams.LiveStream[T])
       )
 
     Mod.Content.Keyed(entries, stream = streamPatch, allEntries = Some(snapshotEntries))
+  end stream
+
+  def renderIn[Msg](
+    container: HtmlTag,
+    mods: Mod[Msg]*
+  )(
+    project: T => HtmlElement[Msg]
+  ): HtmlElement[Msg] =
+    val containerMods = mods.filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
+    val entries       = stream.stream { (domId, item) =>
+      val element = project(item)
+      HtmlElement(
+        element.tag,
+        element.mods.filterNot(isAttr(_, "id")).prepended(idAttr := domId)
+      )
+    }
+
+    HtmlElement(
+      container,
+      Vector(idAttr := stream.name, phx.onUpdate := "stream") ++ containerMods :+ entries
+    )
 end extension
+
+private def isAttr(mod: Mod[?], expectedName: String): Boolean =
+  mod match
+    case Mod.Attr.Static(name, _)                => name == expectedName
+    case Mod.Attr.StaticValueAsPresence(name, _) => name == expectedName
+    case Mod.Attr.Binding(name, _)               => name == expectedName
+    case Mod.Attr.FormBinding(name, _)           => name == expectedName
+    case Mod.Attr.FormEventBinding(name, _, _)   => name == expectedName
+    case Mod.Attr.JsBinding(name, _)             => name == expectedName
+    case Mod.Attr.RoutedBinding(name, _)         => name == expectedName
+    case _: Mod.Content[?]                       => false

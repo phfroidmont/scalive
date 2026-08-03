@@ -27,7 +27,8 @@ object StreamLimit:
 
 final case class LiveStreamDef[A](
   name: String,
-  domId: A => String
+  domId: A => String,
+  limit: Option[StreamLimit] = None
 )(using
   private val itemClassTag: ClassTag[A]):
   private[scalive] def decode(value: Any): Option[A] =
@@ -35,6 +36,18 @@ final case class LiveStreamDef[A](
 
   private[scalive] def withName(name: String): LiveStreamDef[A] =
     copy(name = name)
+
+  def keepFirst(count: Int): LiveStreamDef[A] =
+    copy(limit = Some(StreamLimit.KeepFirst(count)))
+
+  def keepLast(count: Int): LiveStreamDef[A] =
+    copy(limit = Some(StreamLimit.KeepLast(count)))
+
+  def withLimit(limit: Option[StreamLimit]): LiveStreamDef[A] =
+    copy(limit = limit)
+
+  def withoutLimit: LiveStreamDef[A] =
+    copy(limit = None)
 
 object LiveStreamDef:
   def byId[A: ClassTag, Id](name: String)(id: A => Id): LiveStreamDef[A] =

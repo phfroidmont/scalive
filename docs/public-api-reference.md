@@ -374,11 +374,18 @@ trait Uploads:
 
 ```scala
 trait Streams:
-  def init[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt = StreamAt.Last, reset: Boolean = false, limit: Option[StreamLimit] = None): LiveIO[LiveStream[A]]
-  def insert[A](definition: LiveStreamDef[A], item: A, at: StreamAt = StreamAt.Last, limit: Option[StreamLimit] = None, updateOnly: Boolean = false): LiveIO[LiveStream[A]]
+  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): LiveIO[LiveStream[A]]
+  def insertAll[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt = StreamAt.Last): LiveIO[LiveStream[A]]
+  def reset[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt = StreamAt.Last): LiveIO[LiveStream[A]]
+  def insert[A](definition: LiveStreamDef[A], item: A, at: StreamAt = StreamAt.Last, updateOnly: Boolean = false): LiveIO[LiveStream[A]]
   def delete[A](definition: LiveStreamDef[A], item: A): LiveIO[LiveStream[A]]
   def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]]
 ```
+
+`create` requires a new stream name. The remaining mutation operations require an existing stream.
+`create` preserves item iteration order and does not accept placement. `insertAll` and `reset` match
+Phoenix semantics by inserting each item at the requested position; batches at a non-terminal index
+therefore appear in reverse iteration order.
 
 ### Async And Subscriptions
 
@@ -1724,16 +1731,35 @@ enum StreamLimit:
 ### Stream definitions and values
 
 ```scala
-final case class LiveStreamDef[A](name: String, domId: A => String)
+final case class LiveStreamDef[A](
+  name: String,
+  domId: A => String,
+  limit: Option[StreamLimit] = None
+)
 ```
 
 Constructor:
 
 ```scala
 LiveStreamDef.byId(name)(id)
+
+definition.keepFirst(count)
+definition.keepLast(count)
+definition.withLimit(limit)
+definition.withoutLimit
 ```
 
-`LiveStream[A]` is an opaque rendering handle returned by the `Streams` facade. Render it with the `.stream` extension:
+`LiveStream[A]` is an opaque rendering handle returned by the `Streams` facade. `renderIn` is the
+preferred rendering API. It derives the container ID from the stream, sets `phx-update="stream"`, and
+applies each generated DOM ID to its projected root element:
+
+```scala
+items.renderIn(ul, cls := "items") { item =>
+  li(item.toString)
+}
+```
+
+Use the lower-level `.stream` extension when the container needs unusual stream-aware markup:
 
 ```scala
 items.stream { (domId, item) =>

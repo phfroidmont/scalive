@@ -329,12 +329,12 @@ object Issue3047LiveView:
 
   class Sticky extends LiveView[Reset.type, Model]:
     def mount(ctx: MountContext) =
-      ctx.streams.init(ItemsStreamDef, InitialItems).map(items => Model(items))
+      ctx.streams.create(ItemsStreamDef, InitialItems).map(items => Model(items))
 
     def handleMessage(model: Model, ctx: MessageContext) =
       (_: Reset.type) =>
         ctx.streams
-          .init(ItemsStreamDef, ResetItems, reset = true)
+          .reset(ItemsStreamDef, ResetItems)
           .map(items => model.copy(items = items))
 
     def render(model: Model) =
@@ -390,7 +390,7 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
 
   def mount(_params: Option[String], ctx: MountContext) =
     ctx.streams
-      .init(ItemsStream, List.empty[Item])
+      .create(ItemsStream, List.empty[Item])
       .map(items => Model(count = 3, items = items))
 
   override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
@@ -400,7 +400,7 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
       case _         => List(1, 2, 3)
 
     ctx.streams
-      .init(ItemsStream, itemIds.map(Item(_)), reset = true)
+      .reset(ItemsStream, itemIds.map(Item(_)))
       .map(items => model.copy(items = items))
 
   override def hooks: LiveHooks[Unit, Model] =
@@ -1201,7 +1201,7 @@ object Issue3378LiveView:
 
   class NotificationsLive extends LiveView[Unit, LiveStream[Notification]]:
     def mount(ctx: MountContext) =
-      ctx.streams.init(NotificationsStream, List(Notification(1, "Hello")))
+      ctx.streams.create(NotificationsStream, List(Notification(1, "Hello")))
 
     def handleMessage(model: LiveStream[Notification], ctx: MessageContext) =
       (_: Unit) => model
@@ -1429,8 +1429,8 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
   def mount(ctx: MountContext) =
     if onAway then
       for
-        _        <- ctx.streams.init(MessagesStream, List.empty[Message])
-        messages <- ctx.streams.init(MessagesStream, List(Message(4, 4)), reset = true)
+        _        <- ctx.streams.create(MessagesStream, List.empty[Message])
+        messages <- ctx.streams.reset(MessagesStream, List(Message(4, 4)))
       yield Model(Some(messages))
     else Model(None)
 
@@ -1479,7 +1479,7 @@ object Issue3681LiveView:
 
   class StickyLive extends LiveView[Unit, LiveStream[Message]]:
     def mount(ctx: MountContext) =
-      ctx.streams.init(MessagesStream, List(Message(1, 1), Message(2, 2), Message(3, 3)))
+      ctx.streams.create(MessagesStream, List(Message(1, 1), Message(2, 2), Message(3, 3)))
 
     def handleMessage(model: LiveStream[Message], ctx: MessageContext) =
       (_: Unit) => model
@@ -2242,12 +2242,12 @@ class Issue4121LiveView extends LiveView[Issue4121LiveView.Msg.type, Issue4121Li
   import Issue4121LiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.streams.init(ItemsStream, InitialItems).map(items => Model(items))
+    ctx.streams.create(ItemsStream, InitialItems).map(items => Model(items))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Msg.type) =>
       val id = System.nanoTime.toInt
-      ctx.streams.init(ItemsStream, Vector(Item(id, s"Item $id")), reset = true).map(Model(_))
+      ctx.streams.reset(ItemsStream, Vector(Item(id, s"Item $id"))).map(Model(_))
 
   def render(model: Model) =
     div(

@@ -16,9 +16,9 @@ class StreamLiveView()
 
   def mount(_params: Option[String], ctx: MountContext) =
     for
-      users          <- ctx.streams.init(UsersStreamDef, InitialUsers)
-      admins         <- ctx.streams.init(AdminsStreamDef, InitialAdmins)
-      componentUsers <- ctx.streams.init(ComponentUsersStreamDef, InitialUsers)
+      users          <- ctx.streams.create(UsersStreamDef, InitialUsers)
+      admins         <- ctx.streams.create(AdminsStreamDef, InitialAdmins)
+      componentUsers <- ctx.streams.create(ComponentUsersStreamDef, InitialUsers)
     yield Model(
       users = users,
       admins = admins,
@@ -250,23 +250,22 @@ class StreamLiveView()
         )(componentUsers => model.copy(componentUsers = componentUsers))
       case Msg.ResetUsers =>
         streams
-          .init(UsersStreamDef, Nil, reset = true)
+          .reset(UsersStreamDef, Nil)
           .map(users => model.copy(users = users, count = model.count + 1))
       case Msg.ReorderUsers =>
         streams
-          .init(
+          .reset(
             UsersStreamDef,
             List(
               User("3", "peter"),
               User("1", "chris"),
               User("4", "mona")
-            ),
-            reset = true
+            )
           )
           .map(users => model.copy(users = users, count = model.count + 1))
       case Msg.AppendUsers =>
         streams
-          .init(
+          .insertAll(
             UsersStreamDef,
             AppendUsers,
             at = StreamAt.Last
@@ -380,7 +379,7 @@ class HealthyLiveView(initialCategory: String)
   def mount(_params: String, ctx: MountContext) =
     val category = normalizeCategory(initialCategory)
     ctx.streams
-      .init(ItemsStreamDef, itemsFor(category))
+      .create(ItemsStreamDef, itemsFor(category))
       .map(items => Model(category = category, items = items))
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -389,10 +388,9 @@ class HealthyLiveView(initialCategory: String)
   override def handleParams(model: Model, params: String, url: URL, ctx: ParamsContext) =
     val category = normalizeCategory(params)
     ctx.streams
-      .init(
+      .reset(
         ItemsStreamDef,
-        itemsFor(category),
-        reset = true
+        itemsFor(category)
       )
       .map(items => model.copy(category = category, items = items))
 
@@ -447,7 +445,7 @@ class StreamResetLiveView()
 
   def mount(_params: Option[String], ctx: MountContext) =
     ctx.streams
-      .init(ItemsStreamDef, InitialItems)
+      .create(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items, usePhxRemove = false))
 
   override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
@@ -456,15 +454,15 @@ class StreamResetLiveView()
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Filter =>
       ctx.streams
-        .init(ItemsStreamDef, FilteredItems, reset = true)
+        .reset(ItemsStreamDef, FilteredItems)
         .map(items => model.copy(items = items))
     case Msg.Reorder =>
       ctx.streams
-        .init(ItemsStreamDef, ReorderedItems, reset = true)
+        .reset(ItemsStreamDef, ReorderedItems)
         .map(items => model.copy(items = items))
     case Msg.Reset =>
       ctx.streams
-        .init(ItemsStreamDef, InitialItems, reset = true)
+        .reset(ItemsStreamDef, InitialItems)
         .map(items => model.copy(items = items))
     case Msg.Prepend =>
       ctx.streams
@@ -484,7 +482,7 @@ class StreamResetLiveView()
         .map(items => model.copy(items = items))
     case Msg.BulkInsert =>
       ctx.streams
-        .init(
+        .insertAll(
           ItemsStreamDef,
           List(
             Item("g", "G"),
@@ -643,13 +641,13 @@ class StreamResetLCLiveView
 
   def mount(ctx: MountContext) =
     ctx.streams
-      .init(ItemsStreamDef, InitialItems)
+      .create(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Reorder =>
       ctx.streams
-        .init(ItemsStreamDef, ReorderedItems, reset = true)
+        .reset(ItemsStreamDef, ReorderedItems)
         .map(items => model.copy(items = items))
 
   def render(model: Model) =
@@ -697,11 +695,9 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
     val initialAt    = -1
     val initialLimit = -5
     ctx.streams
-      .init(
-        ItemsStreamDef,
-        (1 to 10).toList.map(Item.apply),
-        at = streamAt(initialAt),
-        limit = streamLimit(initialLimit)
+      .create(
+        ItemsStreamDef.withLimit(streamLimit(initialLimit)),
+        (1 to 10).toList.map(Item.apply)
       )
       .map(items =>
         Model(
@@ -717,40 +713,35 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
       val nextAt    = parseIntOrDefault(atRaw, model.at)
       val nextLimit = parseIntOrDefault(limitRaw, model.limit)
       ctx.streams
-        .init(
-          ItemsStreamDef,
+        .reset(
+          ItemsStreamDef.withLimit(streamLimit(nextLimit)),
           (1 to 10).toList.map(Item.apply),
-          at = streamAt(nextAt),
-          reset = true,
-          limit = streamLimit(nextLimit)
+          at = streamAt(nextAt)
         )
         .map(items => model.copy(items = items, at = nextAt, limit = nextLimit, lastId = 10))
     case Msg.Insert10 =>
       val items = (1 to 10).toList.map(index => Item(model.lastId + index))
       ctx.streams
-        .init(
-          ItemsStreamDef,
+        .insertAll(
+          ItemsStreamDef.withLimit(streamLimit(model.limit)),
           items,
-          at = streamAt(model.at),
-          limit = streamLimit(model.limit)
+          at = streamAt(model.at)
         )
         .map(nextItems => model.copy(items = nextItems, lastId = model.lastId + 10))
     case Msg.Insert1 =>
       val item = Item(model.lastId + 1)
       ctx.streams
         .insert(
-          ItemsStreamDef,
+          ItemsStreamDef.withLimit(streamLimit(model.limit)),
           item,
-          at = streamAt(model.at),
-          limit = streamLimit(model.limit)
+          at = streamAt(model.at)
         )
         .map(nextItems => model.copy(items = nextItems, lastId = model.lastId + 1))
     case Msg.Clear =>
       ctx.streams
-        .init(
+        .reset(
           ItemsStreamDef,
-          Nil,
-          reset = true
+          Nil
         )
         .map(nextItems => model.copy(items = nextItems, lastId = 0))
   end handleMessage
@@ -844,7 +835,7 @@ class StreamNestedComponentResetLiveView
       c <- buildParentItem("c", "C", ctx.streams)
       d <- buildParentItem("d", "D", ctx.streams)
       parents = List(a, b, c, d)
-      items <- ctx.streams.init(ItemsStreamDef, parents)
+      items <- ctx.streams.create(ItemsStreamDef, parents)
     yield Model(
       items = items,
       parentsById = parents.iterator.map(parent => parent.id -> parent).toMap
@@ -901,10 +892,9 @@ class StreamNestedComponentResetLiveView
         case None          => model
         case Some(current) =>
           for
-            nested <- streams.init(
+            nested <- streams.reset(
                         nestedStreamDef(id),
-                        reorderedNestedItems,
-                        reset = true
+                        reorderedNestedItems
                       )
             updatedParent = current.copy(nested = nested)
             items <- streams.insert(
@@ -926,7 +916,7 @@ class StreamNestedComponentResetLiveView
       parentF <- buildParentItem("f", "F", streams)
       parentG <- buildParentItem("g", "G", streams)
       parents = List(parentE, parentA, parentF, parentG)
-      items <- streams.init(ItemsStreamDef, parents, reset = true)
+      items <- streams.reset(ItemsStreamDef, parents)
     yield model.copy(
       items = items,
       parentsById = parents.iterator.map(parent => parent.id -> parent).toMap
@@ -938,7 +928,7 @@ class StreamNestedComponentResetLiveView
     streams: Streams
   ): LiveIO[ParentItem] =
     streams
-      .init(nestedStreamDef(id), defaultNestedItems)
+      .create(nestedStreamDef(id), defaultNestedItems)
       .map(nested => ParentItem(id = id, name = name, nested = nested))
 end StreamNestedComponentResetLiveView
 
@@ -982,7 +972,7 @@ class StreamInsideForLiveView
 
   def mount(ctx: MountContext) =
     ctx.streams
-      .init(ItemsStreamDef, InitialItems)
+      .create(ItemsStreamDef, InitialItems)
       .map(items => Model(items = items))
 
   def handleMessage(model: Model, ctx: MessageContext) =

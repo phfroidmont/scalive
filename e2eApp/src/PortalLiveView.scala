@@ -294,7 +294,7 @@ object PortalLiveView:
     import LiveComponentFixture.*
 
     def mount(props: Unit, ctx: MountContext) =
-      ctx.streams.init(ItemsStream, InitialItems).map(items => Model(items = items))
+      ctx.streams.create(ItemsStream, InitialItems).map(items => Model(items = items))
 
     def handleMessage(props: Unit, model: Model, ctx: MessageContext) =
       (_: Msg.type) => prependItem(model, ctx.streams)

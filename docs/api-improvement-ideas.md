@@ -246,17 +246,16 @@ Ideas:
 
 ## Streams Improvements
 
-### Add stream configuration APIs
+### Expand stream configuration APIs
 
 Current issue:
 
-- Stream definitions contain name and DOM ID generation, but stream configuration parity is incomplete.
+- Stream definitions contain name, DOM ID generation, and retention policy, but async stream parity is incomplete.
 
 Ideas:
 
-- Add typed equivalents for `stream_configure` if useful.
-- Add a `LiveStreamDef` builder with optional configuration.
-- Add tests for reset, limits, update-only, nested streams, and component-scoped streams.
+- Add further typed definition configuration only when a stable policy belongs to the whole stream.
+- Expand tests for update-only, nested streams, and component-scoped streams.
 
 ### Add stream async APIs
 

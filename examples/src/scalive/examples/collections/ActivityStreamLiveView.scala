@@ -8,7 +8,7 @@ final class ActivityStreamLiveView
 
   def mount(ctx: MountContext) =
     ctx.streams
-      .init(ActivityStreamDef, InitialActivities, limit = RecentLimit)
+      .create(ActivityStreamDef, InitialActivities)
       .map(stream =>
         Model(
           activities = InitialActivities,
@@ -22,12 +22,7 @@ final class ActivityStreamLiveView
       val template = NewActivityTemplates((model.nextId - 1) % NewActivityTemplates.size)
       val activity = Activity(model.nextId, template._1, template._2)
       ctx.streams
-        .insert(
-          ActivityStreamDef,
-          activity,
-          at = StreamAt.Last,
-          limit = RecentLimit
-        )
+        .insert(ActivityStreamDef, activity)
         .map(stream =>
           model.copy(
             activities = model.activities :+ activity,
@@ -46,14 +41,11 @@ final class ActivityStreamLiveView
         )
     case Msg.ResetWindow =>
       ctx.streams
-        .init(
+        .reset(
           ActivityStreamDef,
-          model.activities.takeRight(ResetWindowSize),
-          reset = true,
-          limit = RecentLimit
+          model.activities.takeRight(ResetWindowSize)
         )
         .map(stream => model.copy(activityStream = stream))
-  end handleMessage
 
   def render(model: Model) =
     val categoryCounts = model.activities
@@ -113,28 +105,25 @@ final class ActivityStreamLiveView
           "Reset stream to latest 3"
         )
       ),
-      ol(
-        idAttr       := "activity",
-        phx.onUpdate := "stream",
-        cls          := "grid gap-3",
-        model.activityStream.stream { (domId, activity) =>
-          li(
-            idAttr := domId,
-            cls := "flex items-start justify-between gap-4 rounded-box border border-base-300 bg-base-100 p-5 shadow-sm",
-            div(
-              div(cls := "badge badge-ghost badge-sm mb-2", activity.category),
-              p(cls   := "font-medium", activity.summary),
-              p(cls   := "mt-1 font-mono text-xs text-base-content/50", s"Activity #${activity.id}")
-            ),
-            button(
-              typ := "button",
-              cls := "btn btn-ghost btn-sm",
-              phx.onClick(Msg.Delete(activity)),
-              "Delete"
-            )
+      model.activityStream.renderIn(
+        ol,
+        cls := "grid gap-3"
+      ) { activity =>
+        li(
+          cls := "flex items-start justify-between gap-4 rounded-box border border-base-300 bg-base-100 p-5 shadow-sm",
+          div(
+            div(cls := "badge badge-ghost badge-sm mb-2", activity.category),
+            p(cls   := "font-medium", activity.summary),
+            p(cls   := "mt-1 font-mono text-xs text-base-content/50", s"Activity #${activity.id}")
+          ),
+          button(
+            typ := "button",
+            cls := "btn btn-ghost btn-sm",
+            phx.onClick(Msg.Delete(activity)),
+            "Delete"
           )
-        }
-      )
+        )
+      }
     )
   end render
 end ActivityStreamLiveView
@@ -152,9 +141,9 @@ object ActivityStreamLiveView:
     case Delete(activity: Activity)
     case ResetWindow
 
-  private val ActivityStreamDef = LiveStreamDef.byId[Activity, Int]("activity")(_.id)
-  private val RecentLimit       = Some(StreamLimit.KeepLast(5))
-  private val ResetWindowSize   = 3
+  private val ActivityStreamDef =
+    LiveStreamDef.byId[Activity, Int]("activity")(_.id).keepLast(5)
+  private val ResetWindowSize = 3
 
   private val InitialActivities = Vector(
     Activity(1, "Navigation", "Opened the typed search example"),

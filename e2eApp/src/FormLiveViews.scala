@@ -501,7 +501,7 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
   import FormStreamLiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.streams.init(ItemsStream, InitialItems).map(items => Model(items = items))
+    ctx.streams.create(ItemsStream, InitialItems).map(items => Model(items = items))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(_) => E2ELatencyGate.await("validate") *> inc(model, ctx)

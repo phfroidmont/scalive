@@ -7,6 +7,8 @@ import zio.test.*
 
 import scalive.socket.SocketStreamRuntime
 import scalive.socket.StreamRuntimeState
+import scalive.socket.ComponentRuntimeState
+import scalive.socket.SocketComponentRuntime
 
 object StreamApiSpec extends ZIOSpecDefault:
 
@@ -19,13 +21,7 @@ object StreamApiSpec extends ZIOSpecDefault:
       for
         streamRef <- Ref.make(StreamRuntimeState.empty)
         runtime = new SocketStreamRuntime(streamRef)
-        users <- runtime.stream(
-                   usersDef,
-                   List(User(1, "chris"), User(2, "callan")),
-                   at = StreamAt.Last,
-                   reset = false,
-                   limit = None
-                 )
+        users <- runtime.create(usersDef, List(User(1, "chris"), User(2, "callan")))
         rendered <- diffFor(users)
       yield
         val streamPayload = extractStreamPayload(rendered)
@@ -41,13 +37,7 @@ object StreamApiSpec extends ZIOSpecDefault:
       for
         streamRef <- Ref.make(StreamRuntimeState.empty)
         runtime = new SocketStreamRuntime(streamRef)
-        _ <- runtime.stream(
-               usersDef,
-               List(User(1, "chris"), User(2, "callan")),
-               at = StreamAt.Last,
-               reset = false,
-               limit = None
-             )
+        _ <- runtime.create(usersDef, List(User(1, "chris"), User(2, "callan")))
         _      <- SocketStreamRuntime.prune(streamRef)
         pruned <- runtime.get(usersDef).some
       yield assertTrue(pruned.entries.isEmpty)
@@ -56,13 +46,7 @@ object StreamApiSpec extends ZIOSpecDefault:
       for
         streamRef <- Ref.make(StreamRuntimeState.empty)
         runtime = new SocketStreamRuntime(streamRef)
-        _ <- runtime.stream(
-               usersDef,
-               List(User(1, "chris"), User(2, "callan")),
-               at = StreamAt.Last,
-               reset = false,
-               limit = None
-             )
+        _ <- runtime.create(usersDef, List(User(1, "chris"), User(2, "callan")))
         _        <- SocketStreamRuntime.prune(streamRef)
         deleted  <- runtime.deleteByDomId(usersDef, "users-1")
         rendered <- diffFor(deleted)
@@ -80,20 +64,15 @@ object StreamApiSpec extends ZIOSpecDefault:
       for
         streamRef <- Ref.make(StreamRuntimeState.empty)
         runtime = new SocketStreamRuntime(streamRef)
-        _ <- runtime.stream(
+        _ <- runtime.create(
                usersDef,
-               List(User(1, "chris"), User(2, "callan"), User(3, "jose")),
-               at = StreamAt.Last,
-               reset = false,
-               limit = None
+               List(User(1, "chris"), User(2, "callan"), User(3, "jose"))
              )
         _ <- SocketStreamRuntime.prune(streamRef)
-        reset <- runtime.stream(
+        reset <- runtime.reset(
                    usersDef,
                    List(User(1, "chris"), User(3, "jose")),
-                   at = StreamAt.Last,
-                   reset = true,
-                   limit = None
+                   StreamAt.Last
                  )
         rendered <- diffFor(reset)
       yield
@@ -105,6 +84,98 @@ object StreamApiSpec extends ZIOSpecDefault:
           streamPayload.deleteIds.isEmpty,
           streamPayload.reset
         )
+    },
+    test("create rejects an existing stream") {
+      for
+        streamRef <- Ref.make(StreamRuntimeState.empty)
+        runtime = new SocketStreamRuntime(streamRef)
+        _         <- runtime.create(usersDef, List(User(1, "chris")))
+        duplicate <- runtime.create(usersDef, List(User(2, "callan"))).exit
+      yield assertTrue(duplicate.isFailure)
+    },
+    test("insertAll matches repeated insertion at the same index") {
+      for
+        streamRef <- Ref.make(StreamRuntimeState.empty)
+        runtime = new SocketStreamRuntime(streamRef)
+        _ <- runtime.create(usersDef, List(User(1, "chris"), User(2, "callan")))
+        _ <- SocketStreamRuntime.prune(streamRef)
+        users <- runtime.insertAll(
+                   usersDef,
+                   List(User(3, "jose"), User(4, "mona")),
+                   StreamAt.First
+                 )
+      yield assertTrue(users.snapshotEntries.map(_.value.id) == Vector(4, 3, 1, 2))
+    },
+    test("definition limit applies to every stream operation") {
+      for
+        streamRef <- Ref.make(StreamRuntimeState.empty)
+        runtime = new SocketStreamRuntime(streamRef)
+        definition = usersDef.keepLast(2)
+        created <- runtime.create(
+                     definition,
+                     List(User(1, "chris"), User(2, "callan"), User(3, "jose"))
+                   )
+        _        <- SocketStreamRuntime.prune(streamRef)
+        inserted <- runtime.insert(definition, User(4, "mona"), StreamAt.Last, updateOnly = false)
+        reset <- runtime.reset(
+                   definition,
+                   List(User(1, "chris"), User(2, "callan"), User(3, "jose")),
+                   StreamAt.Last
+                 )
+      yield assertTrue(
+        created.snapshotEntries.map(_.value.id) == Vector(2, 3),
+        inserted.snapshotEntries.map(_.value.id) == Vector(3, 4),
+        reset.snapshotEntries.map(_.value.id) == Vector(2, 3)
+      )
+    },
+    test("renderIn owns container and row stream attributes") {
+      for
+        streamRef <- Ref.make(StreamRuntimeState.empty)
+        runtime = new SocketStreamRuntime(streamRef)
+        users <- runtime.create(usersDef, List(User(1, "chris")))
+      yield
+        val html = HtmlBuilder.build(
+          users.renderIn(ul, idAttr := "wrong", phx.onUpdate := "ignore") { user =>
+            li(idAttr := "wrong-row", user.name)
+          }
+        )
+        assertTrue(
+          html.contains("<ul id=\"users\" phx-update=\"stream\">"),
+          html.contains("<li id=\"users-1\">chris</li>"),
+          !html.contains("wrong")
+        )
+    },
+    test("stream snapshots register nested LiveViews only once") {
+      val child = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
+        def render(model: Unit) = div("child")
+
+      for
+        streamRef     <- Ref.make(StreamRuntimeState.empty)
+        runtime       = new SocketStreamRuntime(streamRef)
+        users         <- runtime.create(usersDef, List(User(1, "chris")))
+        registrations <- Ref.make(0)
+        nestedRuntime = new NestedLiveViewRuntime:
+                          def register[Msg, Model](spec: NestedLiveViewSpec[Msg, Model]) =
+                            registrations.update(_ + 1).as(
+                              NestedLiveViewRegistration(
+                                id = spec.id,
+                                parentTopic = "lv:parent",
+                                parentDomId = "parent",
+                                topic = s"lv:${spec.id}",
+                                session = "token",
+                                sticky = false
+                              )
+                            )
+        componentsRef <- Ref.make(ComponentRuntimeState.empty)
+        _ <- SocketComponentRuntime.renderRoot(
+               users.renderIn(ul)(user => div(liveView(s"user-${user.id}", child))),
+               componentsRef,
+               LiveContext(staticChanged = false, nestedLiveViews = nestedRuntime)
+             )
+        count <- registrations.get
+      yield assertTrue(count == 1)
     }
   )
 
@@ -119,13 +190,7 @@ object StreamApiSpec extends ZIOSpecDefault:
       .fromEither(
         TreeDiff
           .initial(
-            ul(
-              idAttr       := "users",
-              phx.onUpdate := "stream",
-              users.stream { (domId, user) =>
-                li(idAttr := domId, user.name)
-              }
-            )
+            users.renderIn(ul)(user => li(user.name))
           ).toJsonAST
       )
       .mapError(error => new IllegalArgumentException(error))

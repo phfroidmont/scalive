@@ -124,19 +124,27 @@ trait Uploads:
   ): LiveIO[(List[A], LiveUpload[R])]
 
 trait Streams:
-  def init[A](
+  def create[A](
+    definition: LiveStreamDef[A],
+    items: Iterable[A]
+  ): LiveIO[LiveStream[A]]
+
+  def insertAll[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
-    at: StreamAt = StreamAt.Last,
-    reset: Boolean = false,
-    limit: Option[StreamLimit] = None
+    at: StreamAt = StreamAt.Last
+  ): LiveIO[LiveStream[A]]
+
+  def reset[A](
+    definition: LiveStreamDef[A],
+    items: Iterable[A],
+    at: StreamAt = StreamAt.Last
   ): LiveIO[LiveStream[A]]
 
   def insert[A](
     definition: LiveStreamDef[A],
     item: A,
     at: StreamAt = StreamAt.Last,
-    limit: Option[StreamLimit] = None,
     updateOnly: Boolean = false
   ): LiveIO[LiveStream[A]]
 
@@ -364,29 +372,40 @@ private[scalive] object LiveContext:
     ): LiveIO[(List[A], LiveUpload[R])] = runtime.uploads.consumeCompleted(definition)(callback)
 
   final private class RuntimeStreams(runtime: LiveContext) extends Streams:
-    def init[A](
+    def create[A](
+      definition: LiveStreamDef[A],
+      items: Iterable[A]
+    ): LiveIO[LiveStream[A]] =
+      runtime.streams.create(definition, items)
+
+    def insertAll[A](
       definition: LiveStreamDef[A],
       items: Iterable[A],
-      at: StreamAt,
-      reset: Boolean,
-      limit: Option[StreamLimit]
+      at: StreamAt
     ): LiveIO[LiveStream[A]] =
-      runtime.streams.stream(definition, items, at, reset, limit)
+      runtime.streams.insertAll(definition, items, at)
+
+    def reset[A](
+      definition: LiveStreamDef[A],
+      items: Iterable[A],
+      at: StreamAt
+    ): LiveIO[LiveStream[A]] =
+      runtime.streams.reset(definition, items, at)
 
     def insert[A](
       definition: LiveStreamDef[A],
       item: A,
       at: StreamAt,
-      limit: Option[StreamLimit],
       updateOnly: Boolean
     ): LiveIO[LiveStream[A]] =
-      runtime.streams.insert(definition, item, at, limit, updateOnly)
+      runtime.streams.insert(definition, item, at, updateOnly)
 
     def delete[A](definition: LiveStreamDef[A], item: A): LiveIO[LiveStream[A]] =
       runtime.streams.delete(definition, item)
 
     def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]] =
       runtime.streams.deleteByDomId(definition, domId)
+  end RuntimeStreams
 
   final private class RuntimeAsync[Msg](runtime: LiveContext) extends Async[Msg]:
     def start[A](

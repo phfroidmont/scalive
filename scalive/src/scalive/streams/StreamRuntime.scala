@@ -4,19 +4,27 @@ package streams
 import zio.*
 
 private[scalive] trait StreamRuntime:
-  def stream[A](
+  def create[A](
+    definition: LiveStreamDef[A],
+    items: Iterable[A]
+  ): Task[LiveStream[A]]
+
+  def insertAll[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
-    at: StreamAt,
-    reset: Boolean,
-    limit: Option[StreamLimit]
+    at: StreamAt
+  ): Task[LiveStream[A]]
+
+  def reset[A](
+    definition: LiveStreamDef[A],
+    items: Iterable[A],
+    at: StreamAt
   ): Task[LiveStream[A]]
 
   def insert[A](
     definition: LiveStreamDef[A],
     item: A,
     at: StreamAt,
-    limit: Option[StreamLimit],
     updateOnly: Boolean
   ): Task[LiveStream[A]]
 
@@ -25,15 +33,27 @@ private[scalive] trait StreamRuntime:
   def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): Task[LiveStream[A]]
 
   def get[A](definition: LiveStreamDef[A]): UIO[Option[LiveStream[A]]]
+end StreamRuntime
 
 private[scalive] object StreamRuntime:
   val Disabled: StreamRuntime = new StreamRuntime:
-    def stream[A](
+    def create[A](
+      definition: LiveStreamDef[A],
+      items: Iterable[A]
+    ): Task[LiveStream[A]] =
+      ZIO.fail(new IllegalStateException("Stream runtime is not available"))
+
+    def insertAll[A](
       definition: LiveStreamDef[A],
       items: Iterable[A],
-      at: StreamAt,
-      reset: Boolean,
-      limit: Option[StreamLimit]
+      at: StreamAt
+    ): Task[LiveStream[A]] =
+      ZIO.fail(new IllegalStateException("Stream runtime is not available"))
+
+    def reset[A](
+      definition: LiveStreamDef[A],
+      items: Iterable[A],
+      at: StreamAt
     ): Task[LiveStream[A]] =
       ZIO.fail(new IllegalStateException("Stream runtime is not available"))
 
@@ -41,7 +61,6 @@ private[scalive] object StreamRuntime:
       definition: LiveStreamDef[A],
       item: A,
       at: StreamAt,
-      limit: Option[StreamLimit],
       updateOnly: Boolean
     ): Task[LiveStream[A]] =
       ZIO.fail(new IllegalStateException("Stream runtime is not available"))
@@ -53,3 +72,4 @@ private[scalive] object StreamRuntime:
       ZIO.fail(new IllegalStateException("Stream runtime is not available"))
 
     def get[A](definition: LiveStreamDef[A]): UIO[Option[LiveStream[A]]] = ZIO.none
+end StreamRuntime

@@ -21,14 +21,14 @@ mill --ticker false documentation.pipeline.generate
 mill --ticker false documentation.site.bundle
 ```
 
-The runnable site command will be added with the application shell in Phase 3.
+Run the documentation site with `mill documentation.site.run`.
 
 ## Progress
 
 - [x] Phase 0: Build graph and risk gates
 - [x] Phase 1: Content model and Laika pipeline
 - [x] Phase 2: Generated API reference
-- [ ] Phase 3: Documentation application shell
+- [x] Phase 3: Documentation application shell
 - [ ] Phase 4: Search and metadata
 - [ ] Phase 5: Interactive example foundation
 - [ ] Phase 6: Runtime X-ray inspector
@@ -238,28 +238,28 @@ initial checked-in snapshot contains 1,265 logical public symbols.
 
 **Depends on:** Phase 1.
 
-- [ ] Create the `scalive.docs` application package.
-- [ ] Port the useful server, CSRF, static-asset, and LiveSocket bootstrap from
+- [x] Create the `scalive.docs` application package.
+- [x] Port the useful server, CSRF, static-asset, and LiveSocket bootstrap from
   `ExamplesApp`.
-- [ ] Load generated content once during application startup.
-- [ ] Construct exact Live routes from the generated page manifest.
-- [ ] Test dynamic literal `PathCodec[Unit]` construction for every content route.
-- [ ] Ensure unknown paths reach a real HTTP 404 rather than a successful catch-all
+- [x] Load generated content once during application startup.
+- [x] Construct exact Live routes from the generated page manifest.
+- [x] Test dynamic literal `PathCodec[Unit]` construction for every content route.
+- [x] Ensure unknown paths reach a real HTTP 404 rather than a successful catch-all
   page.
-- [ ] Implement one page LiveView capable of rendering typed documentation
+- [x] Implement one page LiveView capable of rendering typed documentation
   content.
-- [ ] Implement typed renderers for all supported block and inline nodes.
-- [ ] Implement root and documentation layouts.
-- [ ] Add primary navigation for Learn, Guides, Examples, API, and Project.
-- [ ] Add left section navigation and a right in-page outline.
-- [ ] Render internal navigation as real HTTP links enhanced by Scalive
+- [x] Implement typed renderers for all supported block and inline nodes.
+- [x] Implement root and documentation layouts.
+- [x] Add primary navigation for Learn, Guides, Examples, API, and Project.
+- [x] Add left section navigation and a right in-page outline.
+- [x] Render internal navigation as real HTTP links enhanced by Scalive
   navigation.
-- [ ] Add source-edit and prefilled issue links.
-- [ ] Add a subtle connected, reconnecting, and offline indicator.
-- [ ] Freeze examples and explain unavailable interaction during disconnects.
-- [ ] Add light, dark, and system theme handling with a local override.
-- [ ] Add disconnected-render tests for every generated page route.
-- [ ] Assert titles, descriptions, navigation, headings, canonical links, and
+- [x] Add source-edit and prefilled issue links.
+- [x] Add a subtle connected, reconnecting, and offline indicator.
+- [x] Freeze examples and explain unavailable interaction during disconnects.
+- [x] Add light, dark, and system theme handling with a local override.
+- [x] Add disconnected-render tests for every generated page route.
+- [x] Assert titles, descriptions, navigation, headings, canonical links, and
   meaningful page text without JavaScript.
 
 **Verification:**
@@ -272,8 +272,11 @@ mill documentation.site.run
 
 **Completion gate:**
 
-- [ ] Generated Markdown pages are readable, navigable, and correctly routed
+- [x] Generated Markdown pages are readable, navigable, and correctly routed
   before the live connection starts.
+
+Canonical links remain route-relative until the validated public-origin
+configuration is introduced in Phase 10.
 
 ## Phase 4: Search And Metadata
 

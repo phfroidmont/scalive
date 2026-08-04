@@ -1,0 +1,161 @@
+package scalive.docs
+
+import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
+
+import org.jsoup.Jsoup
+import zio.*
+import zio.http.*
+import zio.test.*
+
+import scalive.*
+import scalive.docs.model.Section
+import scalive.testing.DisconnectedRender
+
+object DocumentationApplicationSpec extends ZIOSpecDefault:
+  private val security = LiveSecurity(
+    TokenConfig("documentation-site-spec-secret", 1.hour),
+    CookiePolicy(secure = false)
+  )
+
+  private def url(value: String): URL =
+    URL.decode(value).fold(throw _, identity)
+
+  private def loadApplication: Task[DocumentationApplication] =
+    for
+      bundle <- ZIO
+                  .fromEither(GeneratedDocumentation.load(getClass.getClassLoader))
+                  .mapError(new IllegalArgumentException(_))
+      application <- ZIO
+                       .fromEither(DocumentationApplication.from(bundle))
+                       .mapError(new IllegalArgumentException(_))
+    yield application
+
+  override def spec = suite("DocumentationApplicationSpec")(
+    test("constructs a literal route and location for every generated page") {
+      for application <- loadApplication
+      yield assertTrue(
+        application.pages.nonEmpty,
+        application.pages.map(_.page.route).distinct.size == application.pages.size,
+        application.pages.forall(entry => entry.codec.render == entry.page.route),
+        application.pages.forall(entry => entry.codec.decode(Path(entry.page.route)).contains(())),
+        application.pages.forall(entry => entry.location.href == entry.page.route),
+        Set(Section.Learn, Section.Guides, Section.Examples, Section.Api, Section.Project)
+          .subsetOf(application.bundle.navigation.items.map(_.section).toSet)
+      )
+    },
+    test("renders every generated page as meaningful disconnected HTML") {
+      for
+        application <- loadApplication
+        assets <- StaticAssets.load(
+                    StaticAssetConfig.classpath("public", Seq("app.css", "app.js"))
+                  )
+        routes = application.routes(assets, security)
+        failures <- ZIO.foreach(application.pages) { entry =>
+                      DisconnectedRender
+                        .run(routes, Request.get(url(entry.page.route)))
+                        .map { rendered =>
+                          val document = Jsoup.parse(rendered.html, entry.page.route)
+                          val expectedTitle =
+                            if entry.page.route == "/" then "Scalive"
+                            else s"${entry.page.metadata.title} | Scalive"
+                          val outlineIds = entry.page.outline.items.flatMap(flattenOutline).map(_.id)
+                          val missingOutlineIds = outlineIds.filter(id => document.getElementById(id) == null)
+                          val substantiveContent = document.selectFirst("main").clone()
+                          substantiveContent.select("h1, .docs-page-links").remove()
+                          val failedChecks = Vector(
+                            Option.when(rendered.response.status != Status.Ok)("status"),
+                            Option.when(document.title() != expectedTitle)(s"title '${document.title()}'"),
+                            Option.when(
+                              document.select("meta[name=description]").attr("content") != entry.page.metadata.description
+                            )("description"),
+                            Option.when(
+                              document.select("link[rel=canonical]").attr("href") != entry.page.route
+                            )(s"canonical '${document.select("link[rel=canonical]").attr("href")}'"),
+                            Option.when(document.select("h1").size() != 1)("h1 count"),
+                            Option.when(document.selectFirst("h1").text() != entry.page.metadata.title)("h1 title"),
+                            Option.when(
+                              document.select("nav[aria-label='Primary navigation'] a").size() != 5
+                            )(s"primary nav ${document.select("nav[aria-label='Primary navigation'] a").size()}"),
+                            Option.when(
+                              substantiveContent.text().trim.isEmpty
+                            )("meaningful text"),
+                            Option.when(missingOutlineIds.nonEmpty)(s"outline ${missingOutlineIds.mkString(",")}"),
+                            Option.when(
+                              document.select("#docs-connection-status[phx-hook=ConnectionStatus]").size() != 1
+                            )("connection hook"),
+                            Option.when(
+                              document.select("#docs-theme-selector[phx-hook=ThemeSelector]").size() != 1
+                            )("theme hook"),
+                            Option.when(
+                              document.select("#docs-page-metadata[phx-hook=PageMetadata]").size() != 1
+                            )("metadata hook"),
+                            Option.when(
+                              !document.select(".docs-page-links").text().contains("Report a documentation issue")
+                            )("issue link")
+                          ).flatten
+                          Option.when(failedChecks.nonEmpty)(s"${entry.page.route}: ${failedChecks.mkString(", ")}")
+                        }
+                    }.map(_.flatten)
+      yield assertTrue(failures.isEmpty)
+    },
+    test("renders generated API summaries, signatures, and pinned sources") {
+      for
+        application <- loadApplication
+        assets <- StaticAssets.load(
+                    StaticAssetConfig.classpath("public", Seq("app.css", "app.js"))
+                  )
+        rendered <- DisconnectedRender.run(
+                      application.routes(assets, security),
+                      Request.get(url("/api/scalive/live-view"))
+                    )
+        expectedSources = application.bundle.apiReference.symbols
+                            .filter(_.route == "/api/scalive/live-view")
+                            .flatMap(_.signatures)
+                            .map(signature => application.bundle.apiReference.metadata.sourceLink(signature.source).url)
+                            .toSet
+        renderedSources = Jsoup
+                            .parse(rendered.html)
+                            .select("[data-api-symbol] a")
+                            .asScala.toVector
+                            .filter(_.text() == "View source")
+                            .map(_.attr("href"))
+                            .toSet
+      yield assertTrue(
+        rendered.response.status == Status.Ok,
+        rendered.text.contains("scalive.LiveView"),
+        rendered.text.contains("View source"),
+        renderedSources == expectedSources,
+        rendered.html.contains("data-api-symbol")
+      )
+    },
+    test("serves tracked assets and leaves unknown paths as real 404 responses") {
+      for
+        application <- loadApplication
+        assets <- StaticAssets.load(
+                    StaticAssetConfig.classpath("public", Seq("app.css", "app.js"))
+                  )
+        routes = application.routes(assets, security) ++ assets.routes
+        home    <- DisconnectedRender.run(routes, Request.get(URL.root))
+        missing <- ZIO.scoped(routes.runZIO(Request.get(url("/not-a-documentation-page"))))
+        extra   <- ZIO.scoped(routes.runZIO(Request.get(url("/learn/extra"))))
+        assetPaths = Jsoup
+                       .parse(home.html)
+                       .select("script[src], link[rel=stylesheet]")
+                       .asScala.toVector.map(element =>
+                         Option(element.attr("src")).filter(_.nonEmpty).getOrElse(element.attr("href"))
+                       )
+      yield assertTrue(
+        home.response.status == Status.Ok,
+        assetPaths.size == 2,
+        assetPaths.forall(_.startsWith("/static/")),
+        missing.status == Status.NotFound,
+        extra.status == Status.NotFound
+      )
+    }
+  )
+
+  private def flattenOutline(item: scalive.docs.model.OutlineItem)
+    : Vector[scalive.docs.model.OutlineItem] =
+    item +: item.children.flatMap(flattenOutline)
+end DocumentationApplicationSpec

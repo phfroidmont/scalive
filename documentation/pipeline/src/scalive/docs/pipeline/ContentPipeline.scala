@@ -581,7 +581,7 @@ object ContentPipeline:
           val sortedPages = (pages ++ apiPages).sortBy(pageSortKey)
           Right(
             DocumentationBundle(
-              formatVersion = 2,
+              formatVersion = DocumentationBundle.CurrentFormatVersion,
               navigation = buildNavigation(sortedPages),
               pages = sortedPages,
               apiReference = apiReference,

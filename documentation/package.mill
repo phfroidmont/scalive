@@ -187,6 +187,7 @@ object `package` extends Module:
     }
 
     object test extends ScalaTests with TestModule.ZioTest:
+      override def moduleDeps = super.moduleDeps ++ Seq(build.scaliveTesting)
       def zioTestVersion = "2.1.25"
 
   def check = Task {

@@ -10,6 +10,9 @@ final case class DocumentationBundle(
   searchEntries: Vector[SearchEntry])
     derives JsonCodec
 
+object DocumentationBundle:
+  val CurrentFormatVersion = 2
+
 final case class Page(
   route: String,
   metadata: PageMetadata,

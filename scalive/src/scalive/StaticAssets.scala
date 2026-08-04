@@ -75,7 +75,7 @@ final case class StaticAssetEntry(
   size: Long,
   mediaType: MediaType)
 
-final case class StaticAssetManifest(entries: Map[String, StaticAssetEntry]):
+final private[scalive] case class StaticAssetManifest(entries: Map[String, StaticAssetEntry]):
   private val digestedEntries: Map[String, StaticAssetEntry] =
     entries.valuesIterator.map(entry => entry.digestedPath -> entry).toMap
 
@@ -94,8 +94,8 @@ final case class StaticAssetManifest(entries: Map[String, StaticAssetEntry]):
     }
 
 final class StaticAssets private (
-  val config: StaticAssetConfig,
-  val manifest: StaticAssetManifest):
+  private[scalive] val config: StaticAssetConfig,
+  private[scalive] val manifest: StaticAssetManifest):
 
   private val mountPrefix = StaticAssets.mountPrefix(config.mountPath)
 

@@ -14,6 +14,33 @@ object ContentPipelineSpec extends ZIOSpecDefault:
       .getOrElse(throw new IllegalStateException("ContentPipeline fixtures are missing"))
     Path.of(resource.toURI)
 
+  private val apiMetadata = ApiReferenceMetadata(
+    "https://github.com/phfroidmont/scalive",
+    "0123456789abcdef0123456789abcdef01234567",
+    "18.1.0",
+    "DomDefsGenerator.mill"
+  )
+  private val emptyApiReference = ApiReference(apiMetadata, Vector.empty)
+  private val liveViewSymbol = ApiSymbol(
+    id = "trait:scalive.LiveView",
+    ownerId = Some("package:scalive"),
+    name = "LiveView",
+    qualifiedName = "scalive.LiveView",
+    kind = ApiSymbolKind.Trait,
+    summary = "Defines a stateful server-rendered view.",
+    signatures = Vector(
+      ApiSignature(
+        "trait:scalive.LiveView:signature",
+        "trait LiveView[Msg, Model]",
+        ApiOrigin("scalive.LiveView", ApiExposure.Direct),
+        ApiSource.Repository(SourceRegion("scalive/src/scalive/LiveView.scala", 1, 2))
+      )
+    ),
+    route = "/api/scalive/live-view",
+    fragment = None
+  )
+  private val validApiReference = ApiReference(apiMetadata, Vector(liveViewSymbol))
+
   override def spec = suite("ContentPipelineSpec")(
     test("generates a deterministic bundle from a resolved Laika document tree") {
       val first  = generate("valid")
@@ -32,14 +59,16 @@ object ContentPipelineSpec extends ZIOSpecDefault:
           val inlines = home.content.collect { case Block.Paragraph(content) => content }.flatten
 
           assertTrue(
-            bundle.formatVersion == 1,
+            bundle.formatVersion == 2,
             bundle.pages.map(_.route) == Vector("/", "/learn", "/guides/first-guide"),
-            bundle.apiSymbols.isEmpty,
+            bundle.apiReference.symbols == Vector(liveViewSymbol),
             bundle.searchEntries.isEmpty,
             bundle.navigation.items.map(_.section) ==
               Vector(Section.Home, Section.Learn, Section.Guides),
             bundle.navigation.items.find(_.section == Section.Learn).exists(_.route == "/learn"),
-            home.source == SourceLocation("documentation/content/index.md", 1),
+            home.source == PageSource.Authored(
+              SourceLocation("documentation/content/index.md", 1)
+            ),
             home.outline.items.head.id == "overview",
             home.outline.items.head.title == "Overview with emphasis",
             home.outline.items.head.children.head.id == "details",
@@ -66,13 +95,43 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             source.language.contains("scala"),
             source.text == "val greeting = \"hello\"\nprintln(greeting)",
             home.content.contains(Block.ExampleRef("counter")),
-            home.content.contains(Block.ApiSymbolRef("scalive.LiveView")),
+            home.content.contains(Block.ApiSymbolRef("trait:scalive.LiveView")),
             home.content.contains(Block.CompatibilityRef("server-navigation")),
             home.content.collect { case callout: Block.Callout => callout.kind }.toSet ==
               CalloutKind.values.toSet
           )
 
       assertions && assertTrue(first == second)
+    },
+    test("generates typed API pages and search entries") {
+      generate("api-reference", validApiReference) match
+        case Left(error) => assertTrue(error.messages.isEmpty)
+        case Right(bundle) =>
+          val generated = bundle.pages.find(_.route == "/api/scalive/live-view")
+          assertTrue(
+            generated.exists(_.source == PageSource.GeneratedApi("trait:scalive.LiveView")),
+            generated.exists(_.content == Vector(Block.ApiSymbolRef("trait:scalive.LiveView"))),
+            bundle.searchEntries.exists(entry =>
+              entry.kind == SearchEntryKind.ApiSymbol &&
+                entry.route == "/api/scalive/live-view" &&
+                entry.title == "scalive.LiveView"
+            ),
+            bundle.searchEntries.forall(entry =>
+              entry.fragment.forall(fragment =>
+                bundle.pages.find(_.route == entry.route)
+                  .exists(_.outline.items.exists(_.id == fragment))
+              )
+            ),
+            bundle.navigation.items.exists(item =>
+              item.section == Section.Api &&
+                item.children.exists(_.route == "/api/scalive/live-view")
+            )
+          )
+    },
+    test("rejects unknown API symbol directives") {
+      generate("valid", emptyApiReference) match
+        case Right(_)    => assertTrue(false)
+        case Left(error) => assertTrue(error.message.contains("unknown API symbol 'trait:scalive.LiveView'"))
     },
     suite("authoring failures")(
       failureTest(
@@ -162,7 +221,12 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     ),
     test("rejects content roots outside documentation/content") {
       val repository = fixtures.resolve("valid").resolve("repository")
-      ContentPipeline.generate(repository, repository, Seq(Path.of("examples"))) match
+      ContentPipeline.generate(
+        repository,
+        repository,
+        Seq(Path.of("examples")),
+        emptyApiReference
+      ) match
         case Right(_)    => assertTrue(false)
         case Left(error) =>
           assertTrue(error.messages.contains("Content root must be under documentation/content."))
@@ -176,7 +240,12 @@ object ContentPipelineSpec extends ZIOSpecDefault:
           val _          = Files.writeString(outside, "outside")
           val _          = Files.createSymbolicLink(docs.resolve("escaped.md"), outside)
 
-          ContentPipeline.generate(repository, docs, Seq(Path.of("documentation/site/src"))) match
+          ContentPipeline.generate(
+            repository,
+            docs,
+            Seq(Path.of("documentation/site/src")),
+            emptyApiReference
+          ) match
             case Right(_)    => assertTrue(false)
             case Left(error) =>
               assertTrue(
@@ -198,11 +267,18 @@ object ContentPipelineSpec extends ZIOSpecDefault:
   }
 
   private def generate(fixture: String): Either[PipelineError, DocumentationBundle] =
+    generate(fixture, if fixture == "valid" then validApiReference else emptyApiReference)
+
+  private def generate(
+    fixture: String,
+    apiReference: ApiReference
+  ): Either[PipelineError, DocumentationBundle] =
     val repository = fixtures.resolve(fixture).resolve("repository")
     ContentPipeline.generate(
       repositoryRoot = repository,
       contentRoot = repository.resolve("documentation/content"),
-      allowedSourceRoots = Seq(Path.of("examples"))
+      allowedSourceRoots = Seq(Path.of("examples")),
+      apiReference = apiReference
     )
 
   private def withTempDirectory[A](prefix: String)(use: Path => Task[A]): Task[A] =

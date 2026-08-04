@@ -33,7 +33,8 @@ object `package` extends Module:
     def moduleDeps = Seq(model)
     def mvnDeps = Seq(
       mvn"org.typelevel::laika-io:1.3.2",
-      mvn"ch.epfl.scala::tasty-query:1.8.0"
+      mvn"ch.epfl.scala::tasty-query:1.8.0",
+      mvn"org.scala-lang::scala3-tasty-inspector:3.8.3"
     )
 
     private def repositoryRoot = moduleDir / os.up / os.up
@@ -50,9 +51,91 @@ object `package` extends Module:
     def extractedSourceInputs =
       Task.Sources(allowedSourceRoots.map(repositoryRoot / _)*)
 
+    def apiSettings = Task.Source(moduleDir / "api" / "reference.json")
+
+    def apiSnapshot = Task.Source(moduleDir / "api" / "public-api.snapshot.json")
+
+    def apiTargetRoots = Task {
+      Seq(build.scalive.compile().classes, build.scaliveTesting.compile().classes)
+    }
+
+    def apiDependencyClasspath = Task {
+      (build.scalive.compileClasspath() ++ build.scaliveTesting.compileClasspath()).distinct
+    }
+
+    def sourceRevision = Task.Input {
+      sys.env.get("SCALIVE_DOCS_REVISION").getOrElse {
+        os.proc("git", "rev-parse", "HEAD").call(cwd = repositoryRoot).out.text().trim
+      }
+    }
+
+    def checkApi = Task {
+      val classpath = runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
+      val targets = apiTargetRoots().map(_.path).mkString(java.io.File.pathSeparator)
+      val dependencies = apiDependencyClasspath().map(_.path).mkString(java.io.File.pathSeparator)
+      os.proc(
+        "java",
+        "-cp",
+        classpath,
+        "scalive.docs.pipeline.ApiReferenceTool",
+        "check",
+        repositoryRoot,
+        sourceRevision(),
+        apiSettings().path,
+        apiSnapshot().path,
+        targets,
+        dependencies
+      ).call(cwd = repositoryRoot)
+    }
+
+    def updateApiSnapshot = Task {
+      val classpath = runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
+      val targets = apiTargetRoots().map(_.path).mkString(java.io.File.pathSeparator)
+      val dependencies = apiDependencyClasspath().map(_.path).mkString(java.io.File.pathSeparator)
+      os.proc(
+        "java",
+        "-cp",
+        classpath,
+        "scalive.docs.pipeline.ApiReferenceTool",
+        "update",
+        repositoryRoot,
+        sourceRevision(),
+        apiSettings().path,
+        apiSnapshot().path,
+        targets,
+        dependencies
+      ).call(cwd = repositoryRoot)
+    }
+
+    def apiReport = Task {
+      val classpath = runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
+      val targets = apiTargetRoots().map(_.path).mkString(java.io.File.pathSeparator)
+      val dependencies = apiDependencyClasspath().map(_.path).mkString(java.io.File.pathSeparator)
+      val output = Task.dest / "api-reference.json"
+      os.proc(
+        "java",
+        "-cp",
+        classpath,
+        "scalive.docs.pipeline.ApiReferenceTool",
+        "report",
+        repositoryRoot,
+        sourceRevision(),
+        apiSettings().path,
+        apiSnapshot().path,
+        targets,
+        dependencies,
+        output
+      ).call(cwd = repositoryRoot)
+      PathRef(output)
+    }
+
     def generate = Task {
       contentSources()
       extractedSourceInputs()
+      val settings = apiSettings()
+      val snapshot = apiSnapshot()
+      val targets = apiTargetRoots().map(_.path).mkString(java.io.File.pathSeparator)
+      val dependencies = apiDependencyClasspath().map(_.path).mkString(java.io.File.pathSeparator)
 
       val output = Task.dest / "scalive" / "docs" / "generated" / "content.json"
       val classpath = runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
@@ -63,7 +146,12 @@ object `package` extends Module:
         "scalive.docs.pipeline.GenerateDocumentation",
         repositoryRoot.toString,
         (repositoryRoot / "documentation" / "content").toString,
-        output.toString
+        output.toString,
+        sourceRevision(),
+        settings.path.toString,
+        snapshot.path.toString,
+        targets,
+        dependencies
       ) ++ allowedSourceRoots.map(_.toString)
 
       os.proc(arguments).call(cwd = repositoryRoot)
@@ -71,6 +159,7 @@ object `package` extends Module:
     }
 
     object test extends ScalaTests with TestModule.ZioTest:
+      override def moduleDeps = super.moduleDeps ++ Seq(build.scalive, build.scaliveTesting)
       def zioTestVersion = "2.1.25"
 
   object site extends build.ScalaCommon with build.NpmAssets:
@@ -85,7 +174,11 @@ object `package` extends Module:
     def checkRuntimeClasspath = Task {
       val forbidden = runClasspath()
         .map(_.path.last)
-        .filter(name => name.contains("laika-") || name.contains("tasty-query"))
+        .filter(name =>
+          name.contains("laika-") ||
+            name.contains("tasty-query") ||
+            name.contains("tasty-inspector")
+        )
 
       if forbidden.nonEmpty then
         throw new IllegalArgumentException(
@@ -99,6 +192,7 @@ object `package` extends Module:
   def check = Task {
     model.test.testCached()
     pipeline.test.testCached()
+    pipeline.checkApi()
     pipeline.generate()
     site.test.testCached()
     site.checkRuntimeClasspath()

@@ -24,9 +24,10 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
     },
     test("keeps pipeline dependencies off the site runtime classpath") {
       for
-        laika <- resources("laika/api/MarkupParser.class")
-        tasty <- resources("tastyquery/Contexts$Context.class")
-      yield assertTrue(laika.isEmpty, tasty.isEmpty)
+        laika     <- resources("laika/api/MarkupParser.class")
+        query     <- resources("tastyquery/Contexts$Context.class")
+        inspector <- resources("scala/tasty/inspector/TastyInspector.class")
+      yield assertTrue(laika.isEmpty, query.isEmpty, inspector.isEmpty)
     }
   )
 end ClasspathResourcesSpec

@@ -69,14 +69,15 @@ object ContentPipeline:
   def generate(
     repositoryRoot: Path,
     contentRoot: Path,
-    allowedSourceRoots: Seq[Path]
+    allowedSourceRoots: Seq[Path],
+    apiReference: ApiReference
   ): Either[PipelineError, DocumentationBundle] =
     try
       for
         paths     <- validatePaths(repositoryRoot, contentRoot, allowedSourceRoots)
         authored  <- readAndValidate(paths)
         parsed    <- parseTree(authored, paths)
-        converted <- convertTree(parsed, authored, paths)
+        converted <- convertTree(parsed, authored, paths, apiReference)
       yield converted
     catch
       case NonFatal(_) => Left(PipelineError(Vector("Unexpected documentation pipeline failure.")))
@@ -541,7 +542,8 @@ object ContentPipeline:
   private def convertTree(
     tree: laika.ast.DocumentTreeRoot,
     authored: Vector[AuthoredDocument],
-    paths: ValidatedPaths
+    paths: ValidatedPaths,
+    apiReference: ApiReference
   ): Either[PipelineError, DocumentationBundle] =
     val routeByPath =
       authored.map(document => document.virtualPath.toString -> document.route).toMap
@@ -555,7 +557,7 @@ object ContentPipeline:
             Page(
               route = source.route,
               metadata = source.metadata,
-              source = SourceLocation(source.sourcePath, 1),
+              source = PageSource.Authored(SourceLocation(source.sourcePath, 1)),
               outline = buildOutline(collectHeadings(blocks)),
               content = blocks
             )
@@ -564,17 +566,96 @@ object ContentPipeline:
     val (failures, pages) = pageResults.partitionMap(identity)
     if failures.nonEmpty then Left(PipelineError(failures.flatten.sorted))
     else
-      val sortedPages = pages.sortBy(pageSortKey)
-      Right(
-        DocumentationBundle(
-          formatVersion = 1,
-          navigation = buildNavigation(sortedPages),
-          pages = sortedPages,
-          apiSymbols = Vector.empty,
-          searchEntries = Vector.empty
-        )
-      )
+      val referenceErrors = validateApiReferences(pages, apiReference)
+      if referenceErrors.nonEmpty then Left(PipelineError(referenceErrors))
+      else
+        val hasApiLanding  = pages.exists(_.route == "/api")
+        val apiPages       = if hasApiLanding then generatedApiPages(apiReference) else Vector.empty
+        val authoredRoutes = pages.map(_.route).toSet
+        val collisions     = apiPages.collect {
+          case page if authoredRoutes(page.route) =>
+            s"generated API route collides with an authored page: '${page.route}'."
+        }
+        if collisions.nonEmpty then Left(PipelineError(collisions))
+        else
+          val sortedPages = (pages ++ apiPages).sortBy(pageSortKey)
+          Right(
+            DocumentationBundle(
+              formatVersion = 2,
+              navigation = buildNavigation(sortedPages),
+              pages = sortedPages,
+              apiReference = apiReference,
+              searchEntries = if hasApiLanding then apiSearchEntries(apiReference) else Vector.empty
+            )
+          )
   end convertTree
+
+  private def validateApiReferences(
+    pages: Vector[Page],
+    apiReference: ApiReference
+  ): Vector[String] =
+    val symbols = apiReference.symbols.map(_.id).toSet
+    pages
+      .flatMap { page =>
+        collectApiReferences(page.content).collect {
+          case id if !symbols(id) => s"${pageSourceName(page)}: unknown API symbol '$id'."
+        }
+      }.distinct.sorted
+
+  private def collectApiReferences(blocks: Vector[Block]): Vector[String] =
+    blocks.flatMap {
+      case Block.ApiSymbolRef(id)       => Vector(id)
+      case Block.BulletList(items)      => items.flatMap(item => collectApiReferences(item.content))
+      case Block.OrderedList(_, items)  => items.flatMap(item => collectApiReferences(item.content))
+      case Block.Quote(content)         => collectApiReferences(content)
+      case Block.Callout(_, _, content) => collectApiReferences(content)
+      case _                            => Vector.empty
+    }
+
+  private def generatedApiPages(apiReference: ApiReference): Vector[Page] =
+    val symbolsByRoute = apiReference.symbols.groupBy(_.route).toVector.sortBy(_._1)
+    symbolsByRoute.zipWithIndex.map { case ((route, routeSymbols), index) =>
+      val symbols        = routeSymbols.sortBy(symbol => (symbol.fragment.nonEmpty, symbol.id))
+      val owners         = symbols.filter(_.fragment.isEmpty)
+      val representative = owners.headOption.getOrElse(symbols.head)
+      val description    = owners.map(_.summary).find(_.nonEmpty).getOrElse(representative.summary)
+      val outline        = symbols.flatMap { symbol =>
+        symbol.fragment.map(fragment => OutlineItem(fragment, symbol.name, 2, Vector.empty))
+      }
+      Page(
+        route = route,
+        metadata = PageMetadata(
+          title = representative.qualifiedName,
+          description = description,
+          order = index,
+          section = Section.Api
+        ),
+        source = PageSource.GeneratedApi(representative.id),
+        outline = PageOutline(outline),
+        content = symbols.map(symbol => Block.ApiSymbolRef(symbol.id))
+      )
+    }
+
+  private def apiSearchEntries(apiReference: ApiReference): Vector[SearchEntry] =
+    apiReference.symbols.sortBy(_.id).map { symbol =>
+      SearchEntry(
+        id = s"api:${symbol.id}",
+        kind = SearchEntryKind.ApiSymbol,
+        title = symbol.qualifiedName,
+        description = symbol.summary,
+        route = symbol.route,
+        fragment = symbol.fragment,
+        section = Section.Api,
+        text = (Vector(symbol.qualifiedName, symbol.summary) ++
+          symbol.signatures.flatMap(signature =>
+            Vector(signature.signature, signature.origin.qualifiedName)
+          )).mkString(" ")
+      )
+    }
+
+  private def pageSourceName(page: Page): String = page.source match
+    case PageSource.Authored(location) => location.path
+    case PageSource.GeneratedApi(id)   => s"generated API page '$id'"
 
   private def convertBlocks(
     blocks: Seq[LaikaBlock],
@@ -882,7 +963,10 @@ object ContentPipeline:
     NavigationItem(page.metadata.title, page.route, page.metadata.section, children)
 
   private def pageSortKey(page: Page): (Int, Int, String) =
-    (SectionOrder.indexOf(page.metadata.section), page.metadata.order, page.source.path)
+    val sourceKey = page.source match
+      case PageSource.Authored(location) => location.path
+      case PageSource.GeneratedApi(id)   => id
+    (SectionOrder.indexOf(page.metadata.section), page.metadata.order, sourceKey)
 
   private def routeFor(relative: Path): Either[String, String] =
     val segments      = relative.iterator().asScala.map(_.toString).toVector

@@ -10,8 +10,8 @@ application artifact.
 model, a build-time pipeline, and the Scalive site application.
 
 **Core stack:** Scala 3.8.3, Mill, Scalive, ZIO, Laika 1.3.2, TASTy Query 1.8.0,
-ZIO JSON, Tailwind 4, minimal JavaScript hooks, Phoenix LiveView client 1.1.28,
-and Playwright.
+TASTy Inspector 3.8.3, ZIO JSON, Tailwind 4, minimal JavaScript hooks, Phoenix
+LiveView client 1.1.28, and Playwright.
 
 **Development commands:**
 
@@ -27,7 +27,7 @@ The runnable site command will be added with the application shell in Phase 3.
 
 - [x] Phase 0: Build graph and risk gates
 - [x] Phase 1: Content model and Laika pipeline
-- [ ] Phase 2: Generated API reference
+- [x] Phase 2: Generated API reference
 - [ ] Phase 3: Documentation application shell
 - [ ] Phase 4: Search and metadata
 - [ ] Phase 5: Interactive example foundation
@@ -43,7 +43,7 @@ The runnable site command will be added with the application shell in Phase 3.
 
 - [x] Keep public content under `documentation/content`; never scan all of `docs`.
 - [x] Keep internal specifications and plans under `docs`.
-- [ ] Use package-convention API inclusion for exact packages `scalive`,
+- [x] Use package-convention API inclusion for exact packages `scalive`,
   `scalive.codecs`, and `scalive.testing`.
 - [x] Keep Laika and TASTy dependencies out of the deployed site classpath.
 - [x] Render Laika AST through typed Scalive nodes; do not render generated HTML
@@ -190,29 +190,29 @@ mill --ticker false documentation.check
 
 **Depends on:** Phase 0. May proceed alongside Phase 1.
 
-- [ ] Prove TASTy Query can inspect opaque types, extensions, overloads, exports,
-  inherited members, source spans, and documentation comments.
-- [ ] Prove extraction works for generated DOM definitions.
-- [ ] Include exact packages `scalive`, `scalive.codecs`, and `scalive.testing`.
-- [ ] Include APIs exported through `import scalive.*`.
-- [ ] Exclude `private`, `private[scalive]`, synthetic, bridge, and
+- [x] Prove TASTy Query and TASTy Inspector can inspect opaque types, extensions,
+  overloads, exports, inherited members, source spans, and documentation comments.
+- [x] Prove extraction works for generated DOM definitions.
+- [x] Include exact packages `scalive`, `scalive.codecs`, and `scalive.testing`.
+- [x] Include APIs exported through `import scalive.*`.
+- [x] Exclude `private`, `private[scalive]`, synthetic, bridge, and
   implementation-only members.
-- [ ] Normalize stable symbol IDs and signatures.
-- [ ] Group overloads under one owner while retaining distinct signature IDs.
-- [ ] Generate a checked-in normalized public API snapshot.
-- [ ] Fail validation when visible symbols are added, removed, or change signature
+- [x] Normalize stable symbol IDs and signatures.
+- [x] Group overloads under one owner while retaining distinct signature IDs.
+- [x] Generate a checked-in normalized public API snapshot.
+- [x] Fail validation when visible symbols are added, removed, or change signature
   until the snapshot is explicitly updated.
-- [ ] Require new public symbols to have a generated or curated summary before
+- [x] Require new public symbols to have a generated or curated summary before
   validation passes.
-- [ ] Keep presentation grouping separate from API inclusion so grouping cannot
+- [x] Keep presentation grouping separate from API inclusion so grouping cannot
   hide public symbols.
-- [ ] Generate source links using an explicit documented repository revision.
-- [ ] Link generated DOM entries to the pinned `DomDefsGenerator.mill` revision
+- [x] Generate source links using an explicit documented repository revision.
+- [x] Link generated DOM entries to the pinned `DomDefsGenerator.mill` revision
   and DOM Types version.
-- [ ] Do not check generated DOM Scala sources into Git.
-- [ ] Generate typed API content nodes rather than standalone Scaladoc HTML.
-- [ ] Add API pages and symbols to the unified search index.
-- [ ] Add focused tests for source links, visibility filtering, package exports,
+- [x] Do not check generated DOM Scala sources into Git.
+- [x] Generate typed API content nodes rather than standalone Scaladoc HTML.
+- [x] Add API pages and symbols to the unified search index.
+- [x] Add focused tests for source links, visibility filtering, package exports,
   overloads, generated definitions, and drift failures.
 
 **Verification:**
@@ -226,8 +226,13 @@ mill --ticker false documentation.pipeline.checkApi
 
 **Completion gate:**
 
-- [ ] The generated reference covers the package-convention boundary and a
+- [x] The generated reference covers the package-convention boundary and a
   deliberate API change fails validation.
+
+TASTy Query supplies the normalized semantic inventory and signatures, while
+TASTy Inspector loads compiled documentation comments. Source revisions come
+from `SCALIVE_DOCS_REVISION`, defaulting to the current full Git revision. The
+initial checked-in snapshot contains 1,265 logical public symbols.
 
 ## Phase 3: Documentation Application Shell
 

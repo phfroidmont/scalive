@@ -683,7 +683,7 @@ final class LiveRouteParamsBuilder[
 
 end LiveRouteParamsBuilder
 
-final class LiveSessionSeed private[scalive] (val name: String):
+final class LiveSessionSeed private[scalive] (private[scalive] val name: String):
   private val group = LiveSessionGroup.named(name)
 
   def apply[R](route: LiveRouteFragment[R, Any], routes: LiveRouteFragment[R, Any]*)

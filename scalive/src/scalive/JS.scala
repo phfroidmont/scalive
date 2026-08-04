@@ -12,9 +12,9 @@ object JSCommands:
     renderJson: Option[String] => Json,
     binding: Option[Binding[Msg]])
 
-  final case class Binding[+Msg](msg: Msg)
+  final private case class Binding[+Msg](msg: Msg)
 
-  def empty: JSCommand[Nothing] = List.empty
+  private[scalive] def empty: JSCommand[Nothing] = List.empty
 
   object JSCommand:
     given [Msg]: JsonEncoder[JSCommand[Msg]] =

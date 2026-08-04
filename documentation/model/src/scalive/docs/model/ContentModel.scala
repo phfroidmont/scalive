@@ -6,14 +6,14 @@ final case class DocumentationBundle(
   formatVersion: Int,
   navigation: Navigation,
   pages: Vector[Page],
-  apiSymbols: Vector[ApiSymbol],
+  apiReference: ApiReference,
   searchEntries: Vector[SearchEntry])
     derives JsonCodec
 
 final case class Page(
   route: String,
   metadata: PageMetadata,
-  source: SourceLocation,
+  source: PageSource,
   outline: PageOutline,
   content: Vector[Block])
     derives JsonCodec
@@ -68,6 +68,16 @@ final case class OutlineItem(
     derives JsonCodec
 
 final case class SourceLocation(path: String, line: Int) derives JsonCodec
+
+@jsonDiscriminator("type")
+sealed trait PageSource derives JsonCodec
+
+object PageSource:
+  @jsonHint("authored")
+  final case class Authored(location: SourceLocation) extends PageSource
+
+  @jsonHint("generatedApi")
+  final case class GeneratedApi(symbolId: String) extends PageSource
 
 final case class SourceRegion(
   path: String,
@@ -203,15 +213,124 @@ object LinkTarget:
   @jsonHint("external")
   final case class External(url: String) extends LinkTarget
 
+final case class ApiReference(
+  metadata: ApiReferenceMetadata,
+  symbols: Vector[ApiSymbol])
+    derives JsonCodec
+
+final case class ApiReferenceMetadata(
+  repositoryUrl: String,
+  revision: String,
+  domTypesVersion: String,
+  domGeneratorPath: String)
+    derives JsonCodec:
+  def sourceLink(source: ApiSource): ApiSourceLink =
+    val repository = repositoryUrl.stripSuffix("/")
+    source match
+      case ApiSource.Repository(region) =>
+        val lines =
+          if region.startLine == region.endLineInclusive then s"#L${region.startLine}"
+          else s"#L${region.startLine}-L${region.endLineInclusive}"
+        ApiSourceLink(
+          s"$repository/blob/$revision/${region.path}$lines",
+          s"${region.path}:${region.startLine}-${region.endLineInclusive}"
+        )
+      case ApiSource.GeneratedDom =>
+        ApiSourceLink(
+          s"$repository/blob/$revision/$domGeneratorPath",
+          s"Generated from Scala DOM Types $domTypesVersion"
+        )
+
+final case class ApiSourceLink(url: String, label: String) derives JsonCodec
+
 final case class ApiSymbol(
   id: String,
+  ownerId: Option[String],
   name: String,
   qualifiedName: String,
-  kind: String,
-  signature: String,
+  kind: ApiSymbolKind,
+  summary: String,
+  signatures: Vector[ApiSignature],
   route: String,
-  source: SourceRegion)
+  fragment: Option[String])
     derives JsonCodec
+
+final case class ApiSignature(
+  id: String,
+  signature: String,
+  origin: ApiOrigin,
+  source: ApiSource)
+    derives JsonCodec
+
+final case class ApiOrigin(qualifiedName: String, exposure: ApiExposure) derives JsonCodec
+
+@jsonDiscriminator("type")
+sealed trait ApiSource derives JsonCodec
+
+object ApiSource:
+  @jsonHint("repository")
+  final case class Repository(region: SourceRegion) extends ApiSource
+
+  @jsonHint("generatedDom")
+  case object GeneratedDom extends ApiSource
+
+enum ApiSymbolKind:
+  case Package, Class, Trait, Object, Enum, OpaqueType, TypeAlias
+  case Def, Extension, Val, LazyVal, Var, Given
+
+object ApiSymbolKind:
+  given JsonCodec[ApiSymbolKind] = JsonCodec[String].transformOrFail(
+    {
+      case "package"    => Right(ApiSymbolKind.Package)
+      case "class"      => Right(ApiSymbolKind.Class)
+      case "trait"      => Right(ApiSymbolKind.Trait)
+      case "object"     => Right(ApiSymbolKind.Object)
+      case "enum"       => Right(ApiSymbolKind.Enum)
+      case "opaqueType" => Right(ApiSymbolKind.OpaqueType)
+      case "typeAlias"  => Right(ApiSymbolKind.TypeAlias)
+      case "def"        => Right(ApiSymbolKind.Def)
+      case "extension"  => Right(ApiSymbolKind.Extension)
+      case "val"        => Right(ApiSymbolKind.Val)
+      case "lazyVal"    => Right(ApiSymbolKind.LazyVal)
+      case "var"        => Right(ApiSymbolKind.Var)
+      case "given"      => Right(ApiSymbolKind.Given)
+      case other        => Left(s"Unknown API symbol kind: $other")
+    },
+    {
+      case ApiSymbolKind.Package    => "package"
+      case ApiSymbolKind.Class      => "class"
+      case ApiSymbolKind.Trait      => "trait"
+      case ApiSymbolKind.Object     => "object"
+      case ApiSymbolKind.Enum       => "enum"
+      case ApiSymbolKind.OpaqueType => "opaqueType"
+      case ApiSymbolKind.TypeAlias  => "typeAlias"
+      case ApiSymbolKind.Def        => "def"
+      case ApiSymbolKind.Extension  => "extension"
+      case ApiSymbolKind.Val        => "val"
+      case ApiSymbolKind.LazyVal    => "lazyVal"
+      case ApiSymbolKind.Var        => "var"
+      case ApiSymbolKind.Given      => "given"
+    }
+  )
+end ApiSymbolKind
+
+enum ApiExposure:
+  case Direct, Exported, Inherited
+
+object ApiExposure:
+  given JsonCodec[ApiExposure] = JsonCodec[String].transformOrFail(
+    {
+      case "direct"    => Right(ApiExposure.Direct)
+      case "exported"  => Right(ApiExposure.Exported)
+      case "inherited" => Right(ApiExposure.Inherited)
+      case other       => Left(s"Unknown API exposure: $other")
+    },
+    {
+      case ApiExposure.Direct    => "direct"
+      case ApiExposure.Exported  => "exported"
+      case ApiExposure.Inherited => "inherited"
+    }
+  )
 
 final case class SearchEntry(
   id: String,

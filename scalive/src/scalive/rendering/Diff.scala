@@ -26,7 +26,7 @@ private[scalive] enum Diff:
   case Deleted
 
 extension (diff: Diff)
-  def isEmpty: Boolean = diff match
+  private[scalive] def isEmpty: Boolean = diff match
     case Diff.Tag(static, dynamic, events, root, title, components, templates, templateRef) =>
       static.isEmpty && dynamic.isEmpty && events.isEmpty && !root && title.isEmpty && components.isEmpty && templates.isEmpty && templateRef.isEmpty
     case _: Diff.Comprehension => false

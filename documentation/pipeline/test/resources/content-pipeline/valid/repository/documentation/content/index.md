@@ -34,7 +34,7 @@ val answer: Int = 42
 
 @:sourceRegion(examples/Sample.scala, greeting)
 
-@:apiSymbol(scalive.LiveView)
+@:apiSymbol(trait:scalive.LiveView)
 
 @:compatibility(server-navigation)
 

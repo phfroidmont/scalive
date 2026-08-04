@@ -125,10 +125,15 @@ object ContentModelSpec extends ZIOSpecDefault:
         order = index,
         section = section
       ),
-      source = SourceLocation(
-        path = s"documentation/content/${section.toString.toLowerCase}.md",
-        line = 1
-      ),
+      source =
+        if section == Section.Api then PageSource.GeneratedApi("trait:scalive.LiveView")
+        else
+          PageSource.Authored(
+            SourceLocation(
+              path = s"documentation/content/${section.toString.toLowerCase}.md",
+              line = 1
+            )
+          ),
       outline = PageOutline(
         Vector(
           OutlineItem(
@@ -146,18 +151,43 @@ object ContentModelSpec extends ZIOSpecDefault:
   }
 
   private val bundle = DocumentationBundle(
-    formatVersion = 1,
+    formatVersion = 2,
     navigation = Navigation(navigationItems),
     pages = pages,
-    apiSymbols = Vector(
-      ApiSymbol(
-        id = "scalive.LiveView",
-        name = "LiveView",
-        qualifiedName = "scalive.LiveView",
-        kind = "trait",
-        signature = "trait LiveView[Env, Model, Msg]",
-        route = "/api/scalive/LiveView",
-        source = SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82)
+    apiReference = ApiReference(
+      metadata = ApiReferenceMetadata(
+        repositoryUrl = "https://github.com/phfroidmont/scalive",
+        revision = "0123456789abcdef0123456789abcdef01234567",
+        domTypesVersion = "18.1.0",
+        domGeneratorPath = "DomDefsGenerator.mill"
+      ),
+      symbols = Vector(
+        ApiSymbol(
+          id = "trait:scalive.LiveView",
+          ownerId = None,
+          name = "LiveView",
+          qualifiedName = "scalive.LiveView",
+          kind = ApiSymbolKind.Trait,
+          summary = "Defines a stateful server-rendered view.",
+          signatures = Vector(
+            ApiSignature(
+              id = "trait:scalive.LiveView:8f57c1c6",
+              signature = "trait LiveView[Msg, Model]",
+              origin = ApiOrigin("scalive.LiveView", ApiExposure.Direct),
+              source = ApiSource.Repository(
+                SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82)
+              )
+            ),
+            ApiSignature(
+              id = "trait:scalive.LiveView:generated",
+              signature = "lazy val div: HtmlTag",
+              origin = ApiOrigin("scalive.defs.tags.HtmlTags.div", ApiExposure.Inherited),
+              source = ApiSource.GeneratedDom
+            )
+          ),
+          route = "/api/scalive/live-view",
+          fragment = None
+        )
       )
     ),
     searchEntries = Vector(
@@ -183,7 +213,8 @@ object ContentModelSpec extends ZIOSpecDefault:
         encoded.contains("\"type\":\"internal\""),
         encoded.contains("\"section\":\"home\""),
         encoded.contains("\"kind\":\"info\""),
-        encoded.contains("\"kind\":\"heading\"")
+        encoded.contains("\"kind\":\"heading\""),
+        encoded.contains("\"type\":\"generatedApi\"")
       )
     },
     test("encodes the same bundle byte-identically") {
@@ -195,14 +226,27 @@ object ContentModelSpec extends ZIOSpecDefault:
       val decoded = bundle.toJson.fromJson[DocumentationBundle]
       assertTrue(
         decoded.map(_.pages.head.source) == Right(
-          SourceLocation("documentation/content/home.md", 1)
+          PageSource.Authored(SourceLocation("documentation/content/home.md", 1))
         ),
-        decoded.map(_.apiSymbols.head.source) == Right(
-          SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82)
+        decoded.map(_.apiReference.symbols.head.signatures.head.source) == Right(
+          ApiSource.Repository(SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82))
         ),
         decoded.map(_.pages.head.content.collectFirst { case Block.SourceCode(region, _, _, _) =>
           region
         }) == Right(Some(sourceRegion))
+      )
+    },
+    test("builds pinned repository and generated DOM source links") {
+      val metadata = bundle.apiReference.metadata
+      assertTrue(
+        metadata.sourceLink(
+          ApiSource.Repository(SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82))
+        ).url ==
+          "https://github.com/phfroidmont/scalive/blob/0123456789abcdef0123456789abcdef01234567/scalive/src/scalive/LiveView.scala#L8-L82",
+        metadata.sourceLink(ApiSource.GeneratedDom) == ApiSourceLink(
+          "https://github.com/phfroidmont/scalive/blob/0123456789abcdef0123456789abcdef01234567/DomDefsGenerator.mill",
+          "Generated from Scala DOM Types 18.1.0"
+        )
       )
     }
   )

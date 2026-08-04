@@ -37,7 +37,7 @@ object LiveComponent:
   type PropsOf[C] = C match
     case LiveComponent[props, msg, model] => props
 
-final case class ComponentRef[Msg] private[scalive] (cid: Int):
+final case class ComponentRef[Msg] private[scalive] (private[scalive] val cid: Int):
   override def toString: String = cid.toString
 
 final private[scalive] case class LiveComponentSpec[Props, Msg, Model](

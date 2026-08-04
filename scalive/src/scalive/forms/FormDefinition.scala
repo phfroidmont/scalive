@@ -168,8 +168,8 @@ private[scalive] object RootedFormField:
     new RootedFormField(field)
 
 final case class FormInitialValue[Owner] private[scalive] (
-  path: FormPath,
-  values: Vector[String])
+  private[scalive] val path: FormPath,
+  private[scalive] val values: Vector[String])
 
 final class FormDefinition[Owner, A] private[scalive] (
   val root: FormPath,

@@ -10,9 +10,13 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
       GeneratedDocumentation.load(getClass.getClassLoader) match
         case Left(error) => assertTrue(error.isEmpty)
         case Right(bundle) =>
-          val rendered = bundle.pages.map(page => HtmlBuilder.build(renderPage(page))).mkString
+          val representativeRoutes = Set("/", "/learn", "/api/scalive/live-view")
+          val rendered = bundle.pages.filter(page => representativeRoutes(page.route))
+            .map(page => HtmlBuilder.build(renderPage(page))).mkString
           assertTrue(
-            bundle.pages.map(_.route) == Vector("/", "/learn"),
+            representativeRoutes.subsetOf(bundle.pages.map(_.route).toSet),
+            bundle.apiReference.symbols.exists(_.qualifiedName == "scalive.LiveView"),
+            bundle.searchEntries.exists(_.title == "scalive.LiveView"),
             rendered.contains("<h1>Scalive</h1>"),
             rendered.contains("<h2 id=\"why-scalive\">Why Scalive</h2>"),
             rendered.contains("href=\"/learn#start-here\""),

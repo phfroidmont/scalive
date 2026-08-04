@@ -46,8 +46,8 @@ object LiveMountFailure:
   * If the connected phase fails, `LiveMountFailure` is mapped to the matching websocket reply.
   */
 final case class LiveMountAspect[R, A, -In, Claims, Ctx] private[scalive] (
-  disconnected: (LiveMountRequest[A], In) => ZIO[R, Response, (Claims, Ctx)],
-  connected: (Claims, LiveMountRequest[A], In) => ZIO[R, LiveMountFailure, Ctx]
+  private[scalive] val disconnected: (LiveMountRequest[A], In) => ZIO[R, Response, (Claims, Ctx)],
+  private[scalive] val connected: (Claims, LiveMountRequest[A], In) => ZIO[R, LiveMountFailure, Ctx]
 )(using private[scalive] val claimsCodec: JsonCodec[Claims]):
 
   def map[Ctx2](f: Ctx => Ctx2): LiveMountAspect[R, A, In, Claims, Ctx2] =

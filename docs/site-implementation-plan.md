@@ -26,7 +26,7 @@ The runnable site command will be added with the application shell in Phase 3.
 ## Progress
 
 - [x] Phase 0: Build graph and risk gates
-- [ ] Phase 1: Content model and Laika pipeline
+- [x] Phase 1: Content model and Laika pipeline
 - [ ] Phase 2: Generated API reference
 - [ ] Phase 3: Documentation application shell
 - [ ] Phase 4: Search and metadata
@@ -41,22 +41,22 @@ The runnable site command will be added with the application shell in Phase 3.
 
 ## Global Constraints
 
-- [ ] Keep public content under `documentation/content`; never scan all of `docs`.
-- [ ] Keep internal specifications and plans under `docs`.
+- [x] Keep public content under `documentation/content`; never scan all of `docs`.
+- [x] Keep internal specifications and plans under `docs`.
 - [ ] Use package-convention API inclusion for exact packages `scalive`,
   `scalive.codecs`, and `scalive.testing`.
-- [ ] Keep Laika and TASTy dependencies out of the deployed site classpath.
-- [ ] Render Laika AST through typed Scalive nodes; do not render generated HTML
+- [x] Keep Laika and TASTy dependencies out of the deployed site classpath.
+- [x] Render Laika AST through typed Scalive nodes; do not render generated HTML
   through `rawHtml`.
-- [ ] Reject raw HTML in Markdown.
+- [x] Reject raw HTML in Markdown.
 - [ ] Use nested LiveViews as the isolation boundary for embedded examples.
 - [ ] Add no arbitrary code-execution service.
 - [ ] Preserve `e2eApp` as upstream parity infrastructure.
 - [ ] Do not remove `examples` until its useful behavior and tests have migrated.
 - [ ] Do not introduce publication-provider configuration or a deployment workflow.
-- [ ] Follow test-first development for runtime, parsing, validation, and example
+- [x] Follow test-first development for runtime, parsing, validation, and example
   behavior changes.
-- [ ] Update this checklist as work is completed.
+- [x] Update this checklist as work is completed.
 
 ## Target Structure
 
@@ -146,31 +146,31 @@ mill --ticker false e2eApp.bundle
 
 **Depends on:** Phase 0.
 
-- [ ] Define JSON-serializable page, metadata, navigation, block, inline, code,
+- [x] Define JSON-serializable page, metadata, navigation, block, inline, code,
   directive, source-region, API-reference, and search-entry models.
-- [ ] Define required Laika HOCON metadata: title, description, order, and section.
-- [ ] Derive page routes from relative content paths.
-- [ ] Require explicit IDs for linkable section headings.
-- [ ] Configure Laika Markdown with GitHub-flavored tables and fenced code.
-- [ ] Keep Laika raw-content support disabled.
-- [ ] Convert supported Laika AST nodes into the shared typed content model.
-- [ ] Fail conversion for unsupported or raw HTML nodes.
-- [ ] Register fixed directives for examples, source regions, API symbols,
+- [x] Define required Laika HOCON metadata: title, description, order, and section.
+- [x] Derive page routes from relative content paths.
+- [x] Require explicit IDs for linkable section headings.
+- [x] Configure Laika Markdown with GitHub-flavored tables and fenced code.
+- [x] Keep Laika raw-content support disabled.
+- [x] Convert supported Laika AST nodes into the shared typed content model.
+- [x] Fail conversion for unsupported or raw HTML nodes.
+- [x] Register fixed directives for examples, source regions, API symbols,
   compatibility entries, and callouts.
-- [ ] Reject unknown directives, attributes, and metadata properties.
-- [ ] Implement source markers using `// docs:start <name>` and
+- [x] Reject unknown directives, attributes, and metadata properties.
+- [x] Implement source markers using `// docs:start <name>` and
   `// docs:end <name>`.
-- [ ] Restrict source extraction to repository-relative whitelisted roots.
-- [ ] Reject escaped paths, symlinks outside the repository, missing markers,
+- [x] Restrict source extraction to repository-relative whitelisted roots.
+- [x] Reject escaped paths, symlinks outside the repository, missing markers,
   duplicate markers, reversed markers, and nested markers.
-- [ ] Preserve source line ranges for pinned repository links.
-- [ ] Use Laika's document tree to resolve internal links and fragment links.
-- [ ] Fail validation for duplicate routes, anchors, titles, or navigation
+- [x] Preserve source line ranges for pinned repository links.
+- [x] Use Laika's document tree to resolve internal links and fragment links.
+- [x] Fail validation for duplicate routes, anchors, titles, or navigation
   positions.
-- [ ] Serialize output deterministically without timestamps or machine-specific
+- [x] Serialize output deterministically without timestamps or machine-specific
   paths.
-- [ ] Add parser fixtures covering valid pages and every validation failure.
-- [ ] Add a minimal homepage and Learn page as the first real content inputs.
+- [x] Add parser fixtures covering valid pages and every validation failure.
+- [x] Add a minimal homepage and Learn page as the first real content inputs.
 
 **Verification:**
 
@@ -182,7 +182,7 @@ mill --ticker false documentation.check
 
 **Completion gate:**
 
-- [ ] A validated content tree containing Markdown, directives, links,
+- [x] A validated content tree containing Markdown, directives, links,
   highlighted code, and extracted source is loaded and rendered by a test
   consumer.
 

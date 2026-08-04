@@ -36,9 +36,37 @@ object `package` extends Module:
       mvn"ch.epfl.scala::tasty-query:1.8.0"
     )
 
+    private def repositoryRoot = moduleDir / os.up / os.up
+
+    private def allowedSourceRoots = Seq(
+      os.sub / "scalive" / "src",
+      os.sub / "scaliveTesting" / "src",
+      os.sub / "documentation" / "site" / "src",
+      os.sub / "examples" / "src"
+    )
+
+    def contentSources = Task.Sources(repositoryRoot / "documentation" / "content")
+
+    def extractedSourceInputs =
+      Task.Sources(allowedSourceRoots.map(repositoryRoot / _)*)
+
     def generate = Task {
-      val marker = Task.dest / "scalive" / "docs" / "generated" / "pipeline.txt"
-      os.write(marker, "scalive-documentation-pipeline-v1\n", createFolders = true)
+      contentSources()
+      extractedSourceInputs()
+
+      val output = Task.dest / "scalive" / "docs" / "generated" / "content.json"
+      val classpath = runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
+      val arguments = Seq(
+        "java",
+        "-cp",
+        classpath,
+        "scalive.docs.pipeline.GenerateDocumentation",
+        repositoryRoot.toString,
+        (repositoryRoot / "documentation" / "content").toString,
+        output.toString
+      ) ++ allowedSourceRoots.map(_.toString)
+
+      os.proc(arguments).call(cwd = repositoryRoot)
       PathRef(Task.dest)
     }
 
@@ -71,6 +99,7 @@ object `package` extends Module:
   def check = Task {
     model.test.testCached()
     pipeline.test.testCached()
+    pipeline.generate()
     site.test.testCached()
     site.checkRuntimeClasspath()
   }

@@ -1,0 +1,209 @@
+package scalive.docs.model
+
+import java.nio.charset.StandardCharsets
+import zio.json.*
+import zio.test.*
+
+object ContentModelSpec extends ZIOSpecDefault:
+  private val sourceRegion = SourceRegion(
+    path = "documentation/content/learn/quick-start.md",
+    startLine = 12,
+    endLineInclusive = 24
+  )
+
+  private val allInlines = Vector[Inline](
+    Inline.Text("Build "),
+    Inline.Emphasis(Vector(Inline.Text("interactive"))),
+    Inline.Strong(Vector(Inline.Text("Scala"))),
+    Inline.Strike(Vector(Inline.Text("static"))),
+    Inline.Code("LiveView"),
+    Inline.Link(
+      content = Vector(Inline.Text("quick start")),
+      target = LinkTarget.Internal("/learn/quick-start", Some("run-it")),
+      title = Some("Run Scalive")
+    ),
+    Inline.Link(
+      content = Vector(Inline.Text("ZIO")),
+      target = LinkTarget.External("https://zio.dev"),
+      title = None
+    ),
+    Inline.LineBreak
+  )
+
+  private val tokens = Vector(
+    CodeToken("val", Vector("keyword")),
+    CodeToken(" count = 0", Vector.empty)
+  )
+
+  private val allBlocks = Vector[Block](
+    Block.Paragraph(allInlines),
+    Block.Heading(level = 2, id = "run-it", content = Vector(Inline.Text("Run it"))),
+    Block.Code(
+      language = Some("scala"),
+      text = "val count = 0",
+      tokens = tokens,
+      sourceRegion = Some(sourceRegion)
+    ),
+    Block.Code(language = None, text = "plain text", tokens = Vector.empty, sourceRegion = None),
+    Block.BulletList(
+      Vector(ListItem(Vector(Block.Paragraph(Vector(Inline.Text("First bullet"))))))
+    ),
+    Block.OrderedList(
+      start = 3,
+      items = Vector(ListItem(Vector(Block.Paragraph(Vector(Inline.Text("Third step"))))))
+    ),
+    Block.Quote(Vector(Block.Paragraph(Vector(Inline.Text("Typed and testable."))))),
+    Block.Table(
+      header =
+        Vector(TableCell(Vector(Inline.Text("Feature"))), TableCell(Vector(Inline.Text("Status")))),
+      rows = Vector(
+        TableRow(
+          Vector(
+            TableCell(Vector(Inline.Text("Navigation"))),
+            TableCell(Vector(Inline.Strong(Vector(Inline.Text("Ready")))))
+          )
+        )
+      )
+    ),
+    Block.Rule,
+    Block.Image(
+      source = "/assets/docs/counter.png",
+      alt = "Counter example",
+      title = Some("Counter")
+    ),
+    Block.Callout(
+      kind = CalloutKind.Info,
+      title = Some("Connection behavior"),
+      content = Vector(Block.Paragraph(Vector(Inline.Text("Content remains readable offline."))))
+    ),
+    Block.ExampleRef("counter"),
+    Block.SourceCode(
+      region = sourceRegion,
+      language = Some("scala"),
+      text = "val count = 0",
+      tokens = tokens
+    ),
+    Block.ApiSymbolRef("scalive.LiveView"),
+    Block.CompatibilityRef("server-rendered-navigation")
+  )
+
+  private val sections = Vector(
+    Section.Home,
+    Section.Learn,
+    Section.Guides,
+    Section.Examples,
+    Section.Api,
+    Section.Project
+  )
+
+  private val navigationItems = sections.map { section =>
+    NavigationItem(
+      title = section.toString,
+      route = if section == Section.Home then "/" else s"/${section.toString.toLowerCase}",
+      section = section,
+      children =
+        if section == Section.Learn then
+          Vector(
+            NavigationItem(
+              title = "Quick start",
+              route = "/learn/quick-start",
+              section = Section.Learn,
+              children = Vector.empty
+            )
+          )
+        else Vector.empty
+    )
+  }
+
+  private val pages = sections.zipWithIndex.map { case (section, index) =>
+    val route = if section == Section.Home then "/" else s"/${section.toString.toLowerCase}"
+    Page(
+      route = route,
+      metadata = PageMetadata(
+        title = section.toString,
+        description = s"$section documentation",
+        order = index,
+        section = section
+      ),
+      source = SourceLocation(
+        path = s"documentation/content/${section.toString.toLowerCase}.md",
+        line = 1
+      ),
+      outline = PageOutline(
+        Vector(
+          OutlineItem(
+            id = "run-it",
+            title = "Run it",
+            level = 2,
+            children = Vector(
+              OutlineItem("details", "Details", level = 3, children = Vector.empty)
+            )
+          )
+        )
+      ),
+      content = if section == Section.Home then allBlocks else Vector.empty
+    )
+  }
+
+  private val bundle = DocumentationBundle(
+    formatVersion = 1,
+    navigation = Navigation(navigationItems),
+    pages = pages,
+    apiSymbols = Vector(
+      ApiSymbol(
+        id = "scalive.LiveView",
+        name = "LiveView",
+        qualifiedName = "scalive.LiveView",
+        kind = "trait",
+        signature = "trait LiveView[Env, Model, Msg]",
+        route = "/api/scalive/LiveView",
+        source = SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82)
+      )
+    ),
+    searchEntries = Vector(
+      SearchEntry(
+        id = "learn-quick-start-run-it",
+        kind = SearchEntryKind.Heading,
+        title = "Run it",
+        description = "Run the quick-start application.",
+        route = "/learn/quick-start",
+        fragment = Some("run-it"),
+        section = Section.Learn,
+        text = "Run the Scalive quick-start application with Mill."
+      )
+    )
+  )
+
+  override def spec = suite("ContentModelSpec")(
+    test("round trips every content model variant in one bundle") {
+      val encoded = bundle.toJson
+      assertTrue(
+        encoded.fromJson[DocumentationBundle] == Right(bundle),
+        encoded.contains("\"type\":\"paragraph\""),
+        encoded.contains("\"type\":\"internal\""),
+        encoded.contains("\"section\":\"home\""),
+        encoded.contains("\"kind\":\"info\""),
+        encoded.contains("\"kind\":\"heading\"")
+      )
+    },
+    test("encodes the same bundle byte-identically") {
+      val first  = bundle.toJson.getBytes(StandardCharsets.UTF_8)
+      val second = bundle.toJson.getBytes(StandardCharsets.UTF_8)
+      assertTrue(first.sameElements(second))
+    },
+    test("preserves repository-relative source paths and inclusive line ranges") {
+      val decoded = bundle.toJson.fromJson[DocumentationBundle]
+      assertTrue(
+        decoded.map(_.pages.head.source) == Right(
+          SourceLocation("documentation/content/home.md", 1)
+        ),
+        decoded.map(_.apiSymbols.head.source) == Right(
+          SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82)
+        ),
+        decoded.map(_.pages.head.content.collectFirst { case Block.SourceCode(region, _, _, _) =>
+          region
+        }) == Right(Some(sourceRegion))
+      )
+    }
+  )
+end ContentModelSpec

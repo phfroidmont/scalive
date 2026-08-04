@@ -1,0 +1,5 @@
+{%
+title = [
+%}
+
+Malformed metadata.

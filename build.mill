@@ -10,7 +10,7 @@ import mill.scalalib.scalafmt.ScalafmtModule
 import com.goyeau.mill.scalafix.ScalafixModule
 
 trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
-  def scalaVersion  = "3.7.3"
+  def scalaVersion  = "3.8.3"
   def scalacOptions = Seq(
     "-Wunused:all",
     "-preview",

@@ -1,0 +1,76 @@
+package build.documentation
+
+import mill.*, scalalib.*
+
+private def validateResourcePaths(roots: Seq[PathRef]): Unit =
+  val files = roots.flatMap { root =>
+    if os.exists(root.path) then
+      os.walk(root.path)
+        .filter(os.isFile)
+        .map(path => path.relativeTo(root.path).toString -> root.path)
+    else Seq.empty
+  }
+  val duplicates = files
+    .groupMap(_._1)(_._2)
+    .collect { case (path, owners) if owners.sizeIs > 1 => path -> owners }
+    .toSeq
+    .sortBy(_._1)
+
+  if duplicates.nonEmpty then
+    val details = duplicates
+      .map { case (path, owners) => s"$path: ${owners.mkString(", ")}" }
+      .mkString("\n")
+    throw new IllegalArgumentException(s"Duplicate documentation resource paths:\n$details")
+
+object `package` extends Module:
+  object model extends build.ScalaCommon:
+    def mvnDeps = Seq(mvn"dev.zio::zio-json:0.9.0")
+
+    object test extends ScalaTests with TestModule.ZioTest:
+      def zioTestVersion = "2.1.25"
+
+  object pipeline extends build.ScalaCommon:
+    def moduleDeps = Seq(model)
+    def mvnDeps = Seq(
+      mvn"org.typelevel::laika-io:1.3.2",
+      mvn"ch.epfl.scala::tasty-query:1.8.0"
+    )
+
+    def generate = Task {
+      val marker = Task.dest / "scalive" / "docs" / "generated" / "pipeline.txt"
+      os.write(marker, "scalive-documentation-pipeline-v1\n", createFolders = true)
+      PathRef(Task.dest)
+    }
+
+    object test extends ScalaTests with TestModule.ZioTest:
+      def zioTestVersion = "2.1.25"
+
+  object site extends build.ScalaCommon with build.NpmAssets:
+    def moduleDeps = Seq(build.scalive, model)
+
+    def resources = Task {
+      val roots = super.resources() ++ Seq(pipeline.generate(), bundle())
+      validateResourcePaths(roots)
+      roots
+    }
+
+    def checkRuntimeClasspath = Task {
+      val forbidden = runClasspath()
+        .map(_.path.last)
+        .filter(name => name.contains("laika-") || name.contains("tasty-query"))
+
+      if forbidden.nonEmpty then
+        throw new IllegalArgumentException(
+          s"Build-time dependencies found on the documentation site classpath: ${forbidden.mkString(", ")}"
+        )
+    }
+
+    object test extends ScalaTests with TestModule.ZioTest:
+      def zioTestVersion = "2.1.25"
+
+  def check = Task {
+    model.test.testCached()
+    pipeline.test.testCached()
+    site.test.testCached()
+    site.checkRuntimeClasspath()
+  }

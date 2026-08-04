@@ -9,13 +9,23 @@ application artifact.
 **Architecture:** Three nested Mill modules under `documentation`: a shared
 model, a build-time pipeline, and the Scalive site application.
 
-**Core stack:** Scala 3.7.3, Mill, Scalive, ZIO, Laika 1.3.2, TASTy Query 1.8.0,
+**Core stack:** Scala 3.8.3, Mill, Scalive, ZIO, Laika 1.3.2, TASTy Query 1.8.0,
 ZIO JSON, Tailwind 4, minimal JavaScript hooks, Phoenix LiveView client 1.1.28,
 and Playwright.
 
+**Development commands:**
+
+```bash
+mill --ticker false documentation.check
+mill --ticker false documentation.pipeline.generate
+mill --ticker false documentation.site.bundle
+```
+
+The runnable site command will be added with the application shell in Phase 3.
+
 ## Progress
 
-- [ ] Phase 0: Build graph and risk gates
+- [x] Phase 0: Build graph and risk gates
 - [ ] Phase 1: Content model and Laika pipeline
 - [ ] Phase 2: Generated API reference
 - [ ] Phase 3: Documentation application shell
@@ -88,25 +98,32 @@ documentation.checkExternalLinks
 
 **Depends on:** Nothing.
 
-- [ ] Record the existing test, bundle, and upstream E2E baseline before changing
+- [x] Record the existing test, bundle, and upstream E2E baseline before changing
   modules.
-- [ ] Add nested `documentation.model`, `documentation.pipeline`, and
+- [x] Add nested `documentation.model`, `documentation.pipeline`, and
   `documentation.site` Mill modules.
-- [ ] Make `documentation.model` depend only on runtime-safe serialization
+- [x] Make `documentation.model` depend only on runtime-safe serialization
   libraries.
-- [ ] Make `documentation.pipeline` depend on the model, Laika IO 1.3.2, and TASTy
+- [x] Make `documentation.pipeline` depend on the model, Laika IO 1.3.2, and TASTy
   Query 1.8.0.
-- [ ] Make `documentation.site` depend on Scalive and the model, but not Laika or
+- [x] Make `documentation.site` depend on Scalive and the model, but not Laika or
   TASTy Query.
-- [ ] Add nested ZIO Test modules for the model, pipeline, and site.
-- [ ] Generate one test resource in the pipeline and load it from the site
+- [x] Add nested ZIO Test modules for the model, pipeline, and site.
+- [x] Generate one test resource in the pipeline and load it from the site
   classpath.
-- [ ] Verify generated resources and npm assets can coexist without duplicate
+- [x] Verify generated resources and npm assets can coexist without duplicate
   paths.
-- [ ] Add an outer `documentation.check` task aggregating deterministic
+- [x] Add an outer `documentation.check` task aggregating deterministic
   validation.
-- [ ] Preserve `e2eApp.bundle` behavior when extending shared asset tooling.
-- [ ] Document intended development commands in the plan header once confirmed.
+- [x] Preserve `e2eApp.bundle` behavior when extending shared asset tooling.
+- [x] Document intended development commands in the plan header once confirmed.
+
+**Baseline:** Recorded on 2026-08-04 at `48db44d`. All Scala tests,
+`examples.bundle`, and `e2eApp.bundle` passed. The upstream E2E suite reported
+171 passed tests and one test that passed on retry.
+
+The TASTy Query compatibility probe confirmed that version 1.8.0 requires Scala
+3.8.3 TASTy support, so the repository was upgraded from Scala 3.7.3 to 3.8.3.
 
 **Verification:**
 
@@ -114,13 +131,15 @@ documentation.checkExternalLinks
 mill --ticker false documentation.model.test
 mill --ticker false documentation.pipeline.test
 mill --ticker false documentation.site.compile
+mill --ticker false documentation.site.test
 mill --ticker false documentation.site.bundle
+mill --ticker false documentation.check
 mill --ticker false e2eApp.bundle
 ```
 
 **Completion gate:**
 
-- [ ] All three modules compile and the site reads a pipeline-generated classpath
+- [x] All three modules compile and the site reads a pipeline-generated classpath
   resource.
 
 ## Phase 1: Content Model And Laika Pipeline

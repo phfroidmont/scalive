@@ -1,0 +1,19 @@
+{
+  "name": "scalive-documentation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:js && npm run build:css",
+    "build:js": "esbuild assets/js/app.js --bundle --platform=browser --format=iife --target=es2020 --outfile=dist/app.js",
+    "build:css": "tailwindcss -i assets/css/app.css -o dist/app.css --minify"
+  },
+  "dependencies": {
+    "phoenix": "1.7.21",
+    "phoenix_live_view": "1.1.28"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.1.12",
+    "esbuild": "0.28.1",
+    "tailwindcss": "4.1.12"
+  }
+}

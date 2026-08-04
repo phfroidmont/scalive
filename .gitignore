@@ -8,6 +8,7 @@ out
 node_modules
 examples/dist
 e2eApp/dist
+documentation/site/dist
 opencode.json
 .e2e-upstream
 test-results

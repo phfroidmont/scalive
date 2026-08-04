@@ -751,6 +751,10 @@ private[scalive] object SocketComponentRuntime:
               Attr.JsBinding(name, command.map(message => ComponentMessage(cid, message)))
             )
           case _ => ZIO.succeed(mod)
+      case Attr.Group(attrs) =>
+        ZIO.foreach(attrs)(attr => wrapComponentMod(cid, attr)).map { wrapped =>
+          Attr.Group(wrapped.collect { case attr: Attr[Any] => attr })
+        }
       case attr: Attr[Any] =>
         ZIO.succeed(attr)
       case Content.Text(_, _) =>

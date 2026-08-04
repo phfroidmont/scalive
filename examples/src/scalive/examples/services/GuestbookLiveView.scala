@@ -31,19 +31,19 @@ final class GuestbookLiveView(guestbook: Guestbook)
         button(
           typ := "button",
           cls := "btn btn-primary",
-          phx.onClick(Msg.Add("Ada", "Typed services keep effects explicit.")),
+          on.click(Msg.Add("Ada", "Typed services keep effects explicit.")),
           "Add Ada's note"
         ),
         button(
           typ := "button",
           cls := "btn btn-outline",
-          phx.onClick(Msg.Add("Grace", "Shared state is visible to every connection.")),
+          on.click(Msg.Add("Grace", "Shared state is visible to every connection.")),
           "Add Grace's note"
         ),
         button(
           typ := "button",
           cls := "btn btn-ghost",
-          phx.onClick(Msg.Reload),
+          on.click(Msg.Reload),
           "Reload shared entries"
         )
       ),

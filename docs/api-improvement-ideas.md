@@ -14,31 +14,14 @@ The phase-specific context API is specified in `doc/phase-context-api-design.md`
 
 ## Correctness Fixes With API Impact
 
-### Fix `JS.push(pageLoading)` encoding
+### `JS.push(pageLoading)` encoding
 
-Current issue:
+Implemented: `pageLoading` is omitted when false and encoded when true, with regression coverage.
 
-- `pageLoading = false` is serialized and `pageLoading = true` is omitted.
+### Attribute value bindings
 
-Ideas:
-
-- Encode `pageLoading` only when true.
-- Add a JS command encoding test.
-- Add an example showing `JS.push(..., pageLoading = true)`.
-
-### Make attribute value bindings safe
-
-Current issue:
-
-- `withValue` indexes the params map directly.
-- `withBoolValue` can throw on missing or unexpected values.
-
-Ideas:
-
-- Add `withValueOption(f: Option[String] => Msg)`.
-- Change `withValue` to use an empty string fallback or return a validation result.
-- Add `withBooleanValueOption` or `withChecked` for checkbox-style values.
-- Keep the existing methods only if their throwing behavior is intentional and documented.
+Implemented: optional variants preserve missing or invalid values; convenience variants use safe
+defaults and do not throw.
 
 ### Preserve array form path segments
 
@@ -116,7 +99,7 @@ Implemented:
 
 - `Form.http` renders an ordinary browser form from a `FormAction` and the existing typed field helpers.
 - The helper owns `action` and `method` and adds no Live binding by default.
-- `onChange`, `onSubmit`, and `phx.triggerAction` remain explicit opt-ins.
+- `onChange`, `onSubmit`, and `triggerHttpSubmitWhen` remain explicit opt-ins.
 - Raw HTML form construction remains the escape hatch.
 
 Remaining:
@@ -313,5 +296,5 @@ Ideas:
 
 - Keep disconnected assertions semantic because transport IDs and signed tokens are intentionally opaque.
 - Add connected mount and typed event submission only after the render API is stable.
-- Support ordinary HTTP form submission and `phx.triggerAction` as separate, explicit test paths.
+- Support ordinary HTTP form submission and triggered HTTP submission as separate, explicit test paths.
 - Design a Scala-native API around typed messages and models instead of copying Phoenix `LiveViewTest` function names.

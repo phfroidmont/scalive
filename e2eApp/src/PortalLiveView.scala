@@ -46,33 +46,36 @@ class PortalLiveView
         h1("Modal example"),
         p("Current param: ", model.param.getOrElse("")),
         button(
-          phx.onClick(
+          on.click(
             JS.pushPatch(
               E2ERoutes.portal.location(QueryParams(Some((model.count + 1).toString)))
             )
           ),
           "Patch this LiveView"
         ),
-        button(phx.onClick(showModal("my-modal")), "Open modal"),
-        button(phx.onClick(Msg.ToggleModal), "Toggle modal render"),
+        button(on.click(showModal("my-modal")), "Open modal"),
+        button(on.click(Msg.ToggleModal), "Toggle modal render"),
         button(
-          phx.onClick(
+          on.click(
             showModal("my-modal-2").show(to = DomSelector.css("#inner-red-box"))
           ),
           "Open second modal"
         ),
-        button(phx.onClick(Msg.Tick), "Tick"),
-        button(phx.onClick(JS.pushNavigate(E2ERoutes.formLocation.location)), "Live navigate"),
+        button(on.click(Msg.Tick), "Tick"),
+        button(on.click(JS.pushNavigate(E2ERoutes.formLocation.location)), "Live navigate"),
         liveView("nested", NestedLive()),
         tooltip("tooltip-example-portal", "Hover me", portal = true, model.count),
         tooltip("tooltip-example-no-portal", "Hover me (no portal)", portal = false, model.count),
         nestedPortalExample(model),
-        button(phx.onClick(showModal("non-teleported-modal")), "Open non-teleported modal")
+        button(on.click(showModal("non-teleported-modal")), "Open non-teleported modal")
       ),
       if model.renderModal then
         portal("portal-source", target = DomSelector.css("#root-portal"))(
           modal("my-modal", model.count, first = true),
-          div(phx.hook("InsidePortal", "hook-test"), "This should get a data attribute")
+          div(
+            dom.hook("InsidePortal", DomRef("hook-test")),
+            "This should get a data attribute"
+          )
         )
       else "",
       portal("portal-with-live-component", target = DomSelector.css("#root-portal"))(
@@ -119,7 +122,7 @@ object PortalLiveView:
           span("This is a modal."),
           p("DOM patching works as expected: ", count.toString),
           button(
-            phx.onClick(
+            on.click(
               JS.pushPatch(E2ERoutes.portal.location(QueryParams(Some((count + 1).toString))))
             ),
             "Patch this LiveView"
@@ -142,12 +145,12 @@ object PortalLiveView:
         div(
           cls       := "fixed",
           styleAttr := "position: fixed; inset: 0; z-index: 0;",
-          phx.onClick(hideModal(id))
+          on.click(hideModal(id))
         ),
         div(
           idAttr    := s"$id-container",
           styleAttr := "display: none; position: relative; z-index: 1; margin: 4rem;",
-          phx.onClickAway(hideModal(id)),
+          on.clickAway(hideModal(id)),
           div(idAttr := s"$id-content", copy, inner)
         )
       )
@@ -168,7 +171,7 @@ object PortalLiveView:
     div(
       cls := "border border-purple-600 mt-8 p-4",
       h2("Nested Portal Test"),
-      button(phx.onClick(Msg.ToggleNestedPortals), "Toggle nested portals"),
+      button(on.click(Msg.ToggleNestedPortals), "Toggle nested portals"),
       p(
         "Nested portal count: ",
         span(idAttr := "nested-portal-count", model.nestedPortalCount.toString)
@@ -183,7 +186,7 @@ object PortalLiveView:
                 idAttr := "inner-portal",
                 h4("Inner Portal (nested inside outer)"),
                 p(idAttr := "nested-portal-content", "Tick count: ", model.count.toString),
-                button(phx.onClick(Msg.NestedPortalClick), "Click nested portal button")
+                button(on.click(Msg.NestedPortalClick), "Click nested portal button")
               )
             )
           )
@@ -194,7 +197,7 @@ object PortalLiveView:
   private def nonTeleportedModalMenu: Vector[Mod[Msg]] =
     Vector(
       button(
-        phx.onClick(JS.show(to = DomSelector.css("#teleported-menu-content"))),
+        on.click(JS.show(to = DomSelector.css("#teleported-menu-content"))),
         "Open menu"
       ),
       portal("teleported-menu", target = DomSelector.css("body"))(
@@ -203,7 +206,7 @@ object PortalLiveView:
           cls       := "hidden z-[100] fixed top-0 left-0 border border-red-500 p-4 bg-white",
           styleAttr := "display: none; position: fixed; top: 0; left: 0; z-index: 1000;",
           button(
-            phx.onClick(JS.hide(to = DomSelector.css("#teleported-menu-content"))),
+            on.click(JS.hide(to = DomSelector.css("#teleported-menu-content"))),
             "Close menu"
           )
         )
@@ -228,7 +231,7 @@ object PortalLiveView:
             idAttr := "inner-red-box",
             cls    := "absolute top-0 right-0 bg-red-500 size-32",
             styleAttr := "display: none; width: 8rem; height: 8rem; background-color: rgb(239 68 68); position: absolute; top: 0; right: 0;",
-            phx.onClickAway(JS.hide()),
+            on.clickAway(JS.hide()),
             "test"
           )
         )
@@ -237,7 +240,7 @@ object PortalLiveView:
 
   private def tooltip(id: String, label: String, portal: Boolean, count: Int) =
     div(
-      phx.hook("PortalTooltip", s"$id-wrapper"),
+      dom.hook("PortalTooltip", DomRef(s"$id-wrapper")),
       dataAttr("id")   := id,
       dataAttr("show") := JS.show(to = DomSelector.css(s"#$id"), blocking = false).toJson,
       dataAttr("hide") := JS.hide(to = DomSelector.css(s"#$id"), blocking = false).toJson,
@@ -272,10 +275,10 @@ object PortalLiveView:
         cls := "border border-orange-200",
         h1("Nested LiveView"),
         p(idAttr := "nested-event-count", count.toString),
-        button(phx.onClick(NestedLive.Msg), "Trigger event in nested LV"),
+        button(on.click(NestedLive.Msg), "Trigger event in nested LV"),
         portal("nested-lv-button", target = DomSelector.css("body"))(
           button(
-            phx.onClick(NestedLive.Msg),
+            on.click(NestedLive.Msg),
             "Trigger event in nested LV (from teleported button)"
           )
         ),
@@ -298,7 +301,7 @@ object PortalLiveView:
       div(
         cls := "border border-green-200",
         h1("Nested teleport LiveView"),
-        button(phx.onClick(NestedTeleportedLive.Msg), "Toggle event in teleported LV")
+        button(on.click(NestedTeleportedLive.Msg), "Toggle event in teleported LV")
       )
 
   object NestedTeleportedLive:
@@ -327,14 +330,14 @@ object PortalLiveView:
         cls    := "border border-red-200",
         h1("LiveComponent"),
         ul(
-          idAttr       := "stream-in-lc",
-          phx.onUpdate := "stream",
+          idAttr     := "stream-in-lc",
+          phx.update := PhxUpdate.Stream,
           model.items.stream((domId, item) => li(idAttr := domId, item.name))
         ),
-        button(phx.onClick(Msg), phx.target(self), "Prepend item"),
+        button(on.click(Msg), phx.target(self), "Prepend item"),
         portal("teleported-from-lc-button", target = DomSelector.css("body"))(
           button(
-            phx.hook("TeleportedLCButton", "lcbtn"),
+            dom.hook("TeleportedLCButton", DomRef("lcbtn")),
             "Prepend item (teleported)"
           )
         )

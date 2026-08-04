@@ -29,9 +29,9 @@ object CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
 
   def render(model: Int): HtmlElement[Msg] =
     div(
-      button(phx.onClick(Msg.Decrement), "-"),
+      button(on.click(Msg.Decrement), "-"),
       span(s"Count: $model"),
-      button(phx.onClick(Msg.Increment), "+")
+      button(on.click(Msg.Increment), "+")
     )
 ```
 

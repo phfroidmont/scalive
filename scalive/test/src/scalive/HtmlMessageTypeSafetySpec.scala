@@ -5,6 +5,18 @@ import zio.test.*
 object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
 
   override def spec = suite("HtmlMessageTypeSafetySpec")(
+    test("live remains exclusively the root route seed") {
+      val routeErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val route: LiveRouteSeed[Unit] = live
+      """)
+      val bindingErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val binding = live.onClick("clicked")
+      """)
+
+      assertTrue(routeErrors.isEmpty, bindingErrors.nonEmpty)
+    },
     test("event bindings must produce the element message type") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
@@ -15,7 +27,7 @@ object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
         enum Other:
           case Unexpected
 
-        val view: HtmlElement[Msg] = button(phx.onClick(Other.Unexpected))
+        val view: HtmlElement[Msg] = button(scalive.on.click(Other.Unexpected))
       """)
 
       assertTrue(errors.nonEmpty)
@@ -30,7 +42,7 @@ object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
         enum Other:
           case Unexpected(value: String)
 
-        val view: HtmlElement[Msg] = input(phx.onBlur.withValue(Other.Unexpected.apply))
+        val view: HtmlElement[Msg] = input(scalive.on.blur.withValue(Other.Unexpected.apply))
       """)
 
       assertTrue(errors.nonEmpty)
@@ -45,7 +57,7 @@ object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
         enum Other:
           case Unexpected
 
-        val view: HtmlElement[Msg] = button(phx.onClick(JS.push(Other.Unexpected)))
+        val view: HtmlElement[Msg] = button(scalive.on.click(JS.push(Other.Unexpected)))
       """)
 
       assertTrue(errors.nonEmpty)
@@ -59,16 +71,16 @@ object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
           case Changed(value: String)
 
         val view: HtmlElement[Msg] = div(
-          button(phx.onClick(Msg.Clicked)),
-          input(phx.onBlur.withValue(Msg.Changed.apply)),
-          button(phx.onClick(JS.push(Msg.Clicked)))
+          button(scalive.on.click(Msg.Clicked)),
+          input(scalive.on.blur.withValue(Msg.Changed.apply)),
+          button(scalive.on.click(JS.push(Msg.Clicked)))
         )
       """)
 
       assertTrue(errors.isEmpty)
     },
     test("withValue uses an empty string when the payload has no value") {
-      val attr = phx.onBlur.withValue(identity)
+      val attr = scalive.on.blur.withValue(identity)
 
       val result = attr match
         case Mod.Attr.Binding(_, f) => f(Map.empty)
@@ -77,7 +89,7 @@ object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
       assertTrue(result == "")
     },
     test("withValueOption preserves missing and present values") {
-      val attr = phx.onBlur.withValueOption(identity)
+      val attr = scalive.on.blur.withValueOption(identity)
 
       val missing = attr match
         case Mod.Attr.Binding(_, f) => f(Map.empty)
@@ -90,7 +102,7 @@ object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
       assertTrue(missing == None, present == Some("hello"))
     },
     test("withBoolValue decodes accepted values and defaults invalid values to false") {
-      val attr = phx.onBlur.withBoolValue(identity)
+      val attr = scalive.on.blur.withBoolValue(identity)
 
       def decode(payload: Map[String, String]) =
         attr match
@@ -109,7 +121,7 @@ object HtmlMessageTypeSafetySpec extends ZIOSpecDefault:
       )
     },
     test("withBoolValueOption preserves invalid and missing values") {
-      val attr = phx.onBlur.withBoolValueOption(identity)
+      val attr = scalive.on.blur.withBoolValueOption(identity)
 
       def decode(payload: Map[String, String]) =
         attr match

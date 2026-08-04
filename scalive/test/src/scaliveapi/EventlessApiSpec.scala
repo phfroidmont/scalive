@@ -121,7 +121,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
 
         object View extends LiveView.Eventless[Unit]:
           def mount(ctx: MountContext) = LiveIO.succeed(())
-          def render(model: Unit) = button(phx.onClick(()), "click")
+          def render(model: Unit) = button(scalive.on.click(()), "click")
       """)
 
       assertTrue(errors.nonEmpty)

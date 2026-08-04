@@ -147,17 +147,42 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
 
       assertTrue(directionErrors.nonEmpty, decoderErrors.nonEmpty)
     },
-    test("hook markup requires a name and DOM id together") {
-      val oldSyntaxErrors = scala.compiletime.testing.typeCheckErrors("""
+    test("raw hooks remain typed attributes and semantic hooks require a DOM reference") {
+      val rawHookErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         val markup = div(phx.hook := "MyHook")
       """)
-      val helperErrors = scala.compiletime.testing.typeCheckErrors("""
+      val rawHookTypeErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val markup = div(phx.hook("MyHook", id = "my-hook"))
+        val markup = div(phx.hook := 42)
+      """)
+      val rawIdErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val markup = div(scalive.dom.hook("MyHook", "my-hook"))
+      """)
+      val semanticHookErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val markup = div(scalive.dom.hook("MyHook", DomRef("my-hook")))
       """)
 
-      assertTrue(oldSyntaxErrors.nonEmpty, helperErrors.isEmpty)
+      assertTrue(
+        rawHookErrors.isEmpty,
+        rawHookTypeErrors.nonEmpty,
+        rawIdErrors.nonEmpty,
+        semanticHookErrors.isEmpty
+      )
+    },
+    test("phx.update rejects raw strings") {
+      val rawUpdateErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val markup = div(phx.update := "append")
+      """)
+      val typedUpdateErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val markup = div(phx.update := PhxUpdate.Stream)
+      """)
+
+      assertTrue(rawUpdateErrors.nonEmpty, typedUpdateErrors.isEmpty)
     },
     test("upload operations reject raw names") {
       val rawNameErrors = scala.compiletime.testing.typeCheckErrors("""

@@ -167,9 +167,9 @@ private[scalive] object RenderSnapshot:
           )
         case Attr.JsBinding(name, command) =>
           val scope = BindingId.jsBindingScope(path, attrIndex)
-          staticFragment += s" $name='"
+          staticFragment += s" $name=\""
           pushStringSlot(Escaping.escape(command.renderJson(scope)))
-          staticFragment += "'"
+          staticFragment += "\""
           command.bindings(scope).foreach { case (id, msg) =>
             bindings.update(id, _ => msg)
           }
@@ -179,6 +179,8 @@ private[scalive] object RenderSnapshot:
           pushStringSlot(Escaping.escape(id))
           staticFragment += "\""
           bindings.update(id, f)
+        case Attr.Group(_) =>
+          throw new IllegalStateException("attribute groups must be flattened before rendering")
     }
 
     staticFragment += (if el.tag.void then "/>" else ">")

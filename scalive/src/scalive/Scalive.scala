@@ -61,8 +61,14 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       )
     )
 
-  def flash(kind: FlashKind)(f: String => HtmlElement[Nothing]): Mod[Nothing] =
-    Mod.Content.Flash(kind.value, f)
+  object flash:
+    def apply(kind: FlashKind)(f: String => HtmlElement[Nothing]): Mod[Nothing] =
+      Mod.Content.Flash(kind.value, f)
+
+    lazy val clearOnClick: Mod.Attr[Nothing] = phx.click := "lv:clear-flash"
+
+    def clearOnClick(kind: FlashKind): Vector[Mod.Attr[Nothing]] =
+      Vector(clearOnClick, phx.value("key") := kind.value)
 
   def liveComponent[Props, Msg, Model](
     component: LiveComponent[Props, Msg, Model],
@@ -133,8 +139,6 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       new HtmlAttr(s"phx-$suffix", BooleanAsAttrPresenceEncoder)
     private def phxAttrInt(suffix: String): HtmlAttr[Int] =
       new HtmlAttr(s"phx-$suffix", IntAsStringEncoder)
-    private def phxAttrBinding(suffix: String): HtmlAttrBinding =
-      new HtmlAttrBinding(s"phx-$suffix")
     private def dataPhxAttr(suffix: String): HtmlAttr[String] =
       dataAttr(s"phx-$suffix")
 
@@ -147,78 +151,34 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     private[scalive] lazy val linkState = dataPhxAttr("link-state")
     private[scalive] lazy val component = dataPhxAttr("component")
 
-    // Click
-    lazy val onClick     = phxAttrBinding("click")
-    lazy val onClickAway = phxAttrBinding("click-away")
+    lazy val click          = phxAttr("click")
+    lazy val clickAway      = phxAttr("click-away")
+    lazy val blur           = phxAttr("blur")
+    lazy val focus          = phxAttr("focus")
+    lazy val windowBlur     = phxAttr("window-blur")
+    lazy val windowFocus    = phxAttr("window-focus")
+    lazy val keyDown        = phxAttr("keydown")
+    lazy val keyUp          = phxAttr("keyup")
+    lazy val windowKeyDown  = phxAttr("window-keydown")
+    lazy val windowKeyUp    = phxAttr("window-keyup")
+    lazy val key            = phxAttr("key")
+    lazy val viewportTop    = phxAttr("viewport-top")
+    lazy val viewportBottom = phxAttr("viewport-bottom")
+    lazy val progress       = phxAttr("progress")
+    lazy val change         = phxAttr("change")
+    lazy val submit         = phxAttr("submit")
+    lazy val autoRecover    = phxAttr("auto-recover")
+    lazy val feedbackFor    = phxAttr("feedback-for")
+    lazy val triggerAction  = phxAttrBool("trigger-action")
+    lazy val disableWith    = phxAttr("disable-with")
+    lazy val connected      = phxAttr("connected")
+    lazy val disconnected   = phxAttr("disconnected")
+    lazy val mounted        = phxAttr("mounted")
+    lazy val remove         = phxAttr("remove")
+    lazy val update         = new HtmlAttr[PhxUpdate]("phx-update", Encoder(_.value))
+    lazy val hook           = phxAttr("hook")
+    lazy val dropTarget     = new HtmlAttr[UploadRef]("phx-drop-target", Encoder(_.value))
 
-    // Focus
-    lazy val onBlur       = phxAttrBinding("blur")
-    lazy val onFocus      = phxAttrBinding("focus")
-    lazy val onWindowBlur = phxAttrBinding("window-blur")
-
-    // Keyboard
-    lazy val onKeydown       = phxAttrBinding("keydown")
-    lazy val onKeyup         = phxAttrBinding("keyup")
-    lazy val onWindowKeydown = phxAttrBinding("window-keydown")
-    lazy val onWindowKeyup   = phxAttrBinding("window-keyup")
-    // For accepted values, see https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values
-    lazy val key = phxAttr("key")
-
-    // Scroll
-    lazy val onViewportTop    = phxAttrBinding("viewport-top")
-    lazy val onViewportBottom = phxAttrBinding("viewport-bottom")
-
-    // Upload
-    lazy val dropTarget = new HtmlAttr[UploadRef]("phx-drop-target", Encoder(_.value))
-    lazy val onProgress = phxAttrBinding("progress")
-
-    // Form
-    lazy val onChange                                        = phxAttrBinding("change")
-    lazy val onSubmit                                        = phxAttrBinding("submit")
-    def onChangeForm[Msg](f: FormData => Msg): Mod.Attr[Msg] =
-      onChange.form(f)
-    def onChangeForm[A, Msg](codec: FormCodec[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-      onChange.form(codec)(f)
-    def onSubmitForm[Msg](f: FormData => Msg): Mod.Attr[Msg] =
-      onSubmit.form(f)
-    def onSubmitForm[A, Msg](field: FormField[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-      onSubmit.form(field.codec)(f)
-    def onSubmitForm[A, Msg](codec: FormCodec[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-      onSubmit.form(codec)(f)
-    lazy val autoRecover   = phxAttrBinding("auto-recover")
-    lazy val feedbackFor   = phxAttr("feedback-for")
-    lazy val triggerAction = phxAttrBool("trigger-action")
-
-    // Button
-    lazy val disableWith = phxAttr("disable-with")
-
-    // Socket connection lifecycle
-    lazy val onConnected                                = phxAttrBinding("connected")
-    lazy val onDisconnected                             = phxAttrBinding("disconnected")
-    lazy val visibleWhenConnected: Vector[Mod[Nothing]] = Vector(
-      hidden := true,
-      onConnected(JS.removeAttribute("hidden")),
-      onDisconnected(JS.setAttribute("hidden" -> ""))
-    )
-    lazy val visibleWhenDisconnected: Vector[Mod[Nothing]] = Vector(
-      hidden := false,
-      onConnected(JS.setAttribute("hidden" -> "")),
-      onDisconnected(JS.removeAttribute("hidden"))
-    )
-
-    // DOM element lifecycle
-    lazy val onMounted = phxAttrBinding("mounted")
-    lazy val onRemove  = phxAttrBinding("remove")
-    lazy val onUpdate  =
-      new HtmlAttr["update" | "stream" | "ignore"](s"phx-update", Encoder(identity))
-
-    // Client hooks
-    private lazy val hookAttr                                     = phxAttr("hook")
-    def hook(name: String, id: String): Vector[Mod.Attr[Nothing]] =
-      require(name.nonEmpty, "hook name must not be empty")
-      require(id.nonEmpty, "hook id must not be empty")
-      Vector(idAttr := id, hookAttr := name)
-    lazy val clearFlash: Mod.Attr[Nothing] = phxAttr("click") := "lv:clear-flash"
     def target[Msg](ref: ComponentRef[Msg]): Mod.Attr[Nothing] =
       phxAttr("target") := ref.toString
     def target(selector: DomSelector): Mod.Attr[Nothing] =
@@ -237,6 +197,75 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def value(key: String) = phxAttr(s"value-$key")
     lazy val trackStatic   = htmlAttr("phx-track-static", BooleanAsAttrPresenceEncoder)
   end phx
+
+  object on:
+    private def binding(suffix: String): HtmlAttrBinding =
+      new HtmlAttrBinding(s"phx-$suffix")
+    private def keyBinding(suffix: String): KeyHtmlAttrBinding =
+      new KeyHtmlAttrBinding(s"phx-$suffix")
+
+    lazy val click     = binding("click")
+    lazy val clickAway = binding("click-away")
+
+    lazy val blur        = binding("blur")
+    lazy val focus       = binding("focus")
+    lazy val windowBlur  = binding("window-blur")
+    lazy val windowFocus = binding("window-focus")
+
+    lazy val keyDown       = keyBinding("keydown")
+    lazy val keyUp         = keyBinding("keyup")
+    lazy val windowKeyDown = keyBinding("window-keydown")
+    lazy val windowKeyUp   = keyBinding("window-keyup")
+
+    lazy val viewportTop    = binding("viewport-top")
+    lazy val viewportBottom = binding("viewport-bottom")
+
+    lazy val change = binding("change")
+    lazy val submit = binding("submit")
+
+    private[scalive] lazy val recover        = binding("auto-recover")
+    private[scalive] lazy val uploadProgress = binding("progress")
+
+  object connection:
+    lazy val onConnect                                  = new HtmlAttrBinding("phx-connected")
+    lazy val onDisconnect                               = new HtmlAttrBinding("phx-disconnected")
+    lazy val visibleWhenConnected: Vector[Mod[Nothing]] = Vector(
+      hidden := true,
+      onConnect(JS.removeAttribute("hidden")),
+      onDisconnect(JS.setAttribute("hidden" -> ""))
+    )
+    lazy val visibleWhenDisconnected: Vector[Mod[Nothing]] = Vector(
+      hidden := false,
+      onConnect(JS.setAttribute("hidden" -> "")),
+      onDisconnect(JS.removeAttribute("hidden"))
+    )
+
+  object dom:
+    lazy val onMount  = new HtmlAttrBinding("phx-mounted")
+    lazy val onRemove = new HtmlAttrBinding("phx-remove")
+
+    def hook(name: String, id: DomRef): Vector[Mod.Attr[Nothing]] =
+      require(name.nonEmpty, "hook name must not be empty")
+      Vector(id.attr, phx.hook := name)
+
+    def ignoreUpdates(id: DomRef): Vector[Mod.Attr[Nothing]] =
+      Vector(id.attr, phx.update := PhxUpdate.Ignore)
+
+  object submission:
+    lazy val disable: Mod.Attr[Nothing] =
+      htmlAttr("phx-disable-with", BooleanAsAttrPresenceEncoder) := true
+
+    def replaceTextWith(text: String): Mod.Attr[Nothing] =
+      phx.disableWith := text
+
+  extension [R](upload: LiveUpload[R])
+    def dropTarget: Mod.Attr[Nothing] = phx.dropTarget := upload.ref
+
+    def onProgress[Msg](message: Msg): Mod.Attr[Msg] =
+      on.uploadProgress(message)
+
+    def onProgress[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] =
+      on.uploadProgress(f)
 
   implicit def stringToMod(v: String): Mod[Nothing]                  = Mod.Content.Text(v)
   implicit def htmlElementToMod[Msg](el: HtmlElement[Msg]): Mod[Msg] = Mod.Content.Tag(el)

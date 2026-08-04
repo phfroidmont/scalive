@@ -7,6 +7,15 @@ final class FormField[A] private (
   def name: String = path.name
   def id: String   = path.id
 
+  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    on.change.form(codec)(f)
+
+  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    on.submit.form(codec)(f)
+
+  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    on.recover.form(codec)(f)
+
   def map[B](f: A => B): FormField[B] =
     FormField(path, codec.map(f))
 
@@ -27,6 +36,7 @@ final class FormField[A] private (
   )(using ev: A =:= String
   ): FormField[String] =
     map(ev).validate(message, code)(_.nonEmpty)
+end FormField
 
 object FormField:
   def apply[A](

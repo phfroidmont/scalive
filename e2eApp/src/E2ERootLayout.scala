@@ -37,6 +37,6 @@ final class E2ERootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]
 
   private def hookOutsideLiveView(ctx: LiveLayoutContext[Any, Any]): Mod[Nothing] =
     if ctx.currentUrl.path.encode == "/issues/4147" then
-      Mod.Content.Tag(div(phx.hook("HookOutside", "foobar")))
+      Mod.Content.Tag(div(dom.hook("HookOutside", DomRef("foobar"))))
     else Mod.Content.Text("")
 end E2ERootLayout

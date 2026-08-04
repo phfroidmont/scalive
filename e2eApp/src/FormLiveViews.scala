@@ -172,7 +172,7 @@ object FormLiveView:
     formAttrs += (phxSubmitAttr              := "save")
     if !query.noChangeEvent then
       formAttrs += (
-        if query.jsChange then phx.onChange(JS.push(jsChangeMessage.get))
+        if query.jsChange then on.change(JS.push(jsChangeMessage.get))
         else phxChangeAttr := "validate"
       )
     query.autoRecover.foreach(event => formAttrs += (phxAutoRecoverAttr := event))
@@ -208,21 +208,21 @@ object FormLiveView:
           )
         ),
         button(
-          typ             := "submit",
-          phx.disableWith := "Submitting",
-          phx.onClick(JS.dispatch("test")),
+          typ := "submit",
+          submission.replaceTextWith("Submitting"),
+          on.click(JS.dispatch("test")),
           "Submit with JS"
         ),
         button(
-          idAttr          := "submit",
-          typ             := "submit",
-          phx.disableWith := "Submitting",
+          idAttr := "submit",
+          typ    := "submit",
+          submission.replaceTextWith("Submitting"),
           "Submit"
         ),
         button(
-          typ             := "button",
-          phxClickAttr    := "button-test",
-          phx.disableWith := "Loading",
+          typ          := "button",
+          phxClickAttr := "button-test",
+          submission.replaceTextWith("Loading"),
           "Non-form Button"
         )
       ),
@@ -398,7 +398,7 @@ class FormDynamicInputsLiveView
                   typ      := "button",
                   nameAttr := usersDropName,
                   value    := index.toString,
-                  phx.onClick(JS.dispatch("change")),
+                  on.click(JS.dispatch("change")),
                   "Remove"
                 )
             )
@@ -415,7 +415,7 @@ class FormDynamicInputsLiveView
             typ      := "button",
             nameAttr := usersSortName,
             value    := "new",
-            phx.onClick(JS.dispatch("change")),
+            on.click(JS.dispatch("change")),
             "add more"
           )
       ),
@@ -526,15 +526,18 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
         formModel.onSubmit(Msg.Save(_)),
         formModel.text("myname"),
         formModel.text("other"),
-        div(phx.hook("FormHook", "form-stream-hook"), phx.onUpdate := "ignore"),
+        div(
+          dom.hook("FormHook", DomRef("form-stream-hook")),
+          phx.update := PhxUpdate.Ignore
+        ),
         ul(
-          idAttr       := "form-stream",
-          phx.onUpdate := "stream",
+          idAttr     := "form-stream",
+          phx.update := PhxUpdate.Stream,
           model.items.stream { (domId, item) =>
-            li(phx.hook("FormStreamHook", domId), s"*%{id: ${item.id}}")
+            li(dom.hook("FormStreamHook", DomRef(domId)), s"*%{id: ${item.id}}")
           }
         ),
-        button(idAttr := "submit", phx.disableWith := "Saving...", "Submit")
+        button(idAttr := "submit", submission.replaceTextWith("Saving..."), "Submit")
       )
     )
 
@@ -598,8 +601,8 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
       p("Button Count: ", model.count.toString),
       p("Validate Count: ", model.validateCount.toString),
       p("Submit Count: ", model.submitCount.toString),
-      button(phx.onClick(Msg.Inc), cls := "bg-blue-500 text-white p-4", "+"),
-      button(phx.onClick(Msg.Dec), cls := "bg-blue-500 text-white p-4", "-"),
+      button(on.click(Msg.Inc), cls := "bg-blue-500 text-white p-4", "+"),
+      button(on.click(Msg.Dec), cls := "bg-blue-500 text-white p-4", "-"),
       form(
         idAttr   := "myform",
         nameAttr := "test",
@@ -616,7 +619,7 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
         dataAttr("feedback-container") := "",
         "I am visible, because phx-no-feedback is not set for myfeedback!"
       ),
-      button(phx.onClick(Msg.ToggleFeedback), "Toggle feedback")
+      button(on.click(Msg.ToggleFeedback), "Toggle feedback")
     )
 end FormFeedbackLiveView
 

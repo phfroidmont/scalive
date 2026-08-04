@@ -42,13 +42,13 @@ final class ComponentsLiveView extends LiveView[ComponentsLiveView.Msg, Componen
           button(
             typ := "button",
             cls := "btn btn-primary",
-            phx.onClick.to(ScalaVote)(VoteComponent.Msg.Vote),
+            on.click.to(ScalaVote)(VoteComponent.Msg.Vote),
             "Send a targeted vote"
           ),
           button(
             typ := "button",
             cls := "btn btn-outline",
-            phx.onClick(Msg.UpdateScalaProps),
+            on.click(Msg.UpdateScalaProps),
             "Parent sends updated props"
           )
         )

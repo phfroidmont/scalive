@@ -38,8 +38,8 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
               idAttr            := "profile-form",
               action            := "/profiles",
               method            := "post",
-              phx.onChange(Msg.Changed),
-              phx.onSubmit(Msg.Submitted),
+              scalive.on.change(Msg.Changed),
+              scalive.on.submit(Msg.Submitted),
               phx.triggerAction := true,
               input(nameAttr := "profile[tag]", value := "first"),
               input(nameAttr := "profile[tag]", value := "second")

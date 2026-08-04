@@ -158,7 +158,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
             ctx.client.push(ComponentEvent, ReadyPayload(ok = true)).as(model)
 
         def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), phx.target(self), "emit")
+          button(scalive.on.click(Msg), phx.target(self), "emit")
 
       val lv = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =

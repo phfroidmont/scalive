@@ -69,7 +69,7 @@ extension [T](stream: streams.LiveStream[T])
 
     HtmlElement(
       container,
-      Vector(idAttr := stream.name, phx.onUpdate := "stream") ++ containerMods :+ entries
+      Vector(idAttr := stream.name, phx.update := PhxUpdate.Stream) ++ containerMods :+ entries
     )
 end extension
 
@@ -82,4 +82,5 @@ private def isAttr(mod: Mod[?], expectedName: String): Boolean =
     case Mod.Attr.FormEventBinding(name, _, _)   => name == expectedName
     case Mod.Attr.JsBinding(name, _)             => name == expectedName
     case Mod.Attr.RoutedBinding(name, _)         => name == expectedName
+    case Mod.Attr.Group(attrs)                   => attrs.exists(isAttr(_, expectedName))
     case _: Mod.Content[?]                       => false

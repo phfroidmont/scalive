@@ -47,7 +47,7 @@ object ComponentApiSpec extends ZIOSpecDefault:
 
           def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) = div()
 
-        val binding = phx.onClick.toComponent(CounterComponent)(CounterComponent.Msg)
+        val binding = scalive.on.click.toComponent(CounterComponent)(CounterComponent.Msg)
       """)
 
       assertTrue(errors.isEmpty)
@@ -67,7 +67,7 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) = div()
 
         object OtherMsg
-        val binding = phx.onClick.toComponent(CounterComponent)(OtherMsg)
+        val binding = scalive.on.click.toComponent(CounterComponent)(OtherMsg)
       """)
 
       assertTrue(errors.nonEmpty)
@@ -88,7 +88,7 @@ object ComponentApiSpec extends ZIOSpecDefault:
 
         val counter = component(CounterComponent, "counter")
         val rendered = counter.render("Counter")
-        val binding = phx.onClick.to(counter)(CounterComponent.Msg)
+        val binding = scalive.on.click.to(counter)(CounterComponent.Msg)
 
         def update(ctx: MessageContext[Unit, Unit]) =
           ctx.components.sendUpdate(counter, "Updated counter")
@@ -112,7 +112,7 @@ object ComponentApiSpec extends ZIOSpecDefault:
 
         object OtherMsg
         val counter = component(CounterComponent, "counter")
-        val binding = phx.onClick.to(counter)(OtherMsg)
+        val binding = scalive.on.click.to(counter)(OtherMsg)
       """)
 
       assertTrue(errors.nonEmpty)

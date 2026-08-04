@@ -95,13 +95,13 @@ final class ActivityStreamLiveView
         button(
           typ := "button",
           cls := "btn btn-primary",
-          phx.onClick(Msg.Add),
+          on.click(Msg.Add),
           "Insert activity"
         ),
         button(
           typ := "button",
           cls := "btn btn-outline",
-          phx.onClick(Msg.ResetWindow),
+          on.click(Msg.ResetWindow),
           "Reset stream to latest 3"
         )
       ),
@@ -119,7 +119,7 @@ final class ActivityStreamLiveView
           button(
             typ := "button",
             cls := "btn btn-ghost btn-sm",
-            phx.onClick(Msg.Delete(activity)),
+            on.click(Msg.Delete(activity)),
             "Delete"
           )
         )

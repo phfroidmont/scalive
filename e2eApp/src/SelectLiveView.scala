@@ -27,7 +27,7 @@ class SelectLiveView extends LiveView[Msg, Model]:
             "Sadly, we cannot test all of them automatically, as there is no way to assert the state of an open select's native UI."
         ),
         form(
-          phx.onChange(params => Msg.ChangeSelected(params.getOrElse("select_form[select3]", "2"))),
+          on.change(params => Msg.ChangeSelected(params.getOrElse("select_form[select3]", "2"))),
           h2("Select 3"),
           p(
             "Error classes are correctly applied to the third select. " +

@@ -26,7 +26,7 @@ class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveVie
   def render(model: Model) =
     div(
       form(
-        phx.onChangeForm(FormCodec.formData)(Msg.Change(_)),
+        on.change.form(FormCodec.formData)(Msg.Change(_)),
         input(idAttr := "a", typ := "text", nameAttr := "foo"),
         input(idAttr := "b", typ := "text", nameAttr := "foo[bar]")
       ),
@@ -69,16 +69,16 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
     mainTag(
       h1("Uploader reproduction"),
       form(
-        phx.onSubmit(Msg.Save),
-        phx.onChange(_ => Msg.Validate),
+        on.submit(Msg.Save),
+        on.change(_ => Msg.Validate),
         sectionTag(
           liveFileInput(
             model.upload,
             styleAttr := "display: none;",
-            phx.onProgress(_ => Msg.Progress)
+            model.upload.onProgress(_ => Msg.Progress)
           ),
           input(
-            phx.hook("QueuedUploaderHook", "fileinput"),
+            dom.hook("QueuedUploaderHook", DomRef("fileinput")),
             typ                         := "file",
             multiple                    := true,
             dataAttr("max-concurrency") := "3",
@@ -168,7 +168,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
       td(
         button(
           typ := "button",
-          phx.onClick(Msg.CancelUpload(entry)),
+          on.click(Msg.CancelUpload(entry)),
           phx.value("ref") := entry.ref.value,
           aria.label       := "cancel",
           span("x")
@@ -246,7 +246,7 @@ class Issue3814LiveView extends LiveView[Issue3814LiveView.Msg, Issue3814LiveVie
 
   def render(model: Model) =
     form(
-      phx.onSubmit(Msg.Submit),
+      on.submit(Msg.Submit),
       phx.triggerAction := model.triggerSubmit,
       action            := "/submit",
       method            := "post",
@@ -277,19 +277,18 @@ class Issue3040LiveView extends LiveView[Issue3040LiveView.Msg, Issue3040LiveVie
 
   def render(model: Model) =
     div(
-      a(href := "#", phx.onClick(Msg.Open), "Add new"),
+      a(href := "#", on.click(Msg.Open), "Add new"),
       div(
         idAttr    := "my-modal-container",
         styleAttr := (if model.open then "position: fixed; inset: 0" else "display: none"),
-        phx.onWindowKeydown(Msg.Close),
-        phx.key := "Escape",
+        on.windowKeyDown.key(Key.Escape)(Msg.Close),
         if model.open then
           div(
             styleAttr := "margin: 320px 0 0 300px; width: 300px; padding: 20px",
-            phx.onClickAway(Msg.Close),
-            phx.onMounted(JS.focusFirst(to = DomSelector.css("#my-modal-container"))),
+            on.clickAway(Msg.Close),
+            dom.onMount(JS.focusFirst(to = DomSelector.css("#my-modal-container"))),
             form(
-              phx.onSubmit(Msg.Submit),
+              on.submit(Msg.Submit),
               if model.submitted then "Form was submitted!" else input(nameAttr := "name")
             )
           )
@@ -341,12 +340,12 @@ object Issue3047LiveView:
         styleAttr := "border: 2px solid black;",
         h1("This is the sticky liveview"),
         div(
-          idAttr       := "items",
-          phx.onUpdate := "stream",
-          styleAttr    := "display: flex; flex-direction: column; gap: 4px;",
+          idAttr     := "items",
+          phx.update := PhxUpdate.Stream,
+          styleAttr  := "display: flex; flex-direction: column; gap: 4px;",
           model.items.stream((domId, item) => span(idAttr := domId, item.name))
         ),
-        button(phx.onClick(Reset), "Reset")
+        button(on.click(Reset), "Reset")
       )
 
   final case class Item(id: Int, name: String)
@@ -422,8 +421,8 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
   def render(model: Model) =
     div(
       ul(
-        idAttr       := "stream-list",
-        phx.onUpdate := "stream",
+        idAttr     := "stream-list",
+        phx.update := PhxUpdate.Stream,
         model.items.stream((domId, item) =>
           div(
             idAttr := domId,
@@ -457,7 +456,7 @@ object Issue3530LiveView:
       div(
         idAttr := s"item-outer-$itemId",
         "test hook with nested liveview",
-        div(phx.hook("test", s"test-hook-$itemId"))
+        div(dom.hook("test", DomRef(s"test-hook-$itemId")))
       )
 
 class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveView.Model]:
@@ -487,16 +486,16 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
     div(
       form(
         idAttr := "user-form",
-        phx.onChangeForm(FormCodec.formData)(Msg.ValidateUser(_)),
+        on.change.form(FormCodec.formData)(Msg.ValidateUser(_)),
         input(
           idAttr   := "user_name",
           nameAttr := "user[name]",
           value    := model.userName,
           typ      := "text"
         ),
-        button(phx.hook("JsUpload", "x"), typ := "button", "Upload then Input"),
+        button(dom.hook("JsUpload", DomRef("x")), typ := "button", "Upload then Input"),
         button(
-          phx.hook("JsUpload", "y"),
+          dom.hook("JsUpload", DomRef("y")),
           typ                := "button",
           dataAttr("before") := "true",
           "Input then Upload"
@@ -504,14 +503,14 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
         liveFileInput(
           model.upload,
           formId := "auto-form",
-          phx.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", "")))
+          model.upload.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", "")))
         )
       ),
-      form(idAttr := "auto-form", phx.onChange(_ => Msg.Validate)),
+      form(idAttr := "auto-form", on.change(_ => Msg.Validate)),
       sectionTag(
-        cls            := "pending-uploads",
-        phx.dropTarget := model.upload.ref,
-        styleAttr      := "min-height: 100%;",
+        cls := "pending-uploads",
+        model.upload.dropTarget,
+        styleAttr := "min-height: 100%;",
         h3(s"Pending Uploads (${model.upload.entries.length})"),
         model.upload.entries.splitBy(_.ref) { (_, entry) =>
           div(
@@ -525,7 +524,7 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
               br(),
               a(
                 href := "#",
-                phx.onClick(Msg.CancelUpload(entry)),
+                on.click(Msg.CancelUpload(entry)),
                 phx.value("ref") := entry.ref.value,
                 cls              := "upload-entry__cancel",
                 "Cancel Upload"
@@ -597,8 +596,8 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
     div(
       form(
         idAttr := "recover",
-        phx.onChangeForm(Msg.Noop(_)),
-        phx.onSubmitForm(Msg.Noop(_)),
+        on.change.form(Msg.Noop(_)),
+        on.submit.form(Msg.Noop(_)),
         button("Submit")
       ),
       if reconnected then p(idAttr := "reconnected", "Reconnected!") else ""
@@ -617,7 +616,7 @@ class Issue3107LiveView extends LiveView[Issue3107LiveView.Msg.type, Boolean]:
 
   def render(disabledButton: Boolean) =
     form(
-      phx.onChange(Issue3107LiveView.Msg),
+      on.change(Issue3107LiveView.Msg),
       select(
         option(value := "ONE", "ONE"),
         option(value := "TWO", "TWO")
@@ -663,7 +662,7 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
   def render(model: Model) =
     form(
       idAttr := "form",
-      phx.onChange(Msg),
+      on.change(Msg),
       select(
         idAttr   := "ids",
         nameAttr := "ids[]",
@@ -700,8 +699,8 @@ class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveVie
   def render(model: Model) =
     div(
       form(
-        phx.onChangeForm(Msg.Updated(_)),
-        phx.onSubmitForm(Msg.Submitted(_)),
+        on.change.form(Msg.Updated(_)),
+        on.submit.form(Msg.Submitted(_)),
         select(
           idAttr   := "demo_select1",
           nameAttr := "demo[select1]",
@@ -757,10 +756,10 @@ class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
   def render(selectedValues: Vector[String]) =
     form(
       idAttr := "my_form",
-      phx.onChangeForm(Msg.Validate(_)),
+      on.change.form(Msg.Validate(_)),
       div(
         selectedValues.map(value => div(value)),
-        input(idAttr := "search", typ := "search", nameAttr := "value", phx.onChange(Msg.Search))
+        input(idAttr := "search", typ := "search", nameAttr := "value", on.change(Msg.Search))
       ),
       div(
         Vector("settings", "content").map(optionValue =>
@@ -769,7 +768,7 @@ class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
             nameAttr := "a[]",
             value    := optionValue,
             checked  := selectedValues.contains(optionValue),
-            phx.onClick(JS.dispatch("input").focus(to = DomSelector.css("#search")))
+            on.click(JS.dispatch("input").focus(to = DomSelector.css("#search")))
           )
         )
       )
@@ -793,8 +792,8 @@ class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg, Unit]:
 
   def render(model: Unit) =
     form(
-      phx.onChange(Msg.Validate),
-      phx.onSubmit(Msg.Submit),
+      on.change(Msg.Validate),
+      on.submit(Msg.Submit),
       input(
         idAttr       := "foo_store_number",
         nameAttr     := "foo[store_number]",
@@ -835,12 +834,12 @@ class Issue3200LiveView
     div(
       button(
         typ := "button",
-        phx.onClick(JS.pushPatch(E2ERoutes.issue3200.location("messages"))),
+        on.click(JS.pushPatch(E2ERoutes.issue3200.location("messages"))),
         "Messages tab"
       ),
       button(
         typ := "button",
-        phx.onClick(JS.pushPatch(E2ERoutes.issue3200.location("settings"))),
+        on.click(JS.pushPatch(E2ERoutes.issue3200.location("settings"))),
         "Settings tab"
       ),
       model.tab match
@@ -885,8 +884,8 @@ object Issue3200LiveView:
         liveComponent(MessageComponent, id = "some_unique_message_id", props = "Example message"),
         form(
           idAttr := "full_add_message_form",
-          phx.onChangeForm(Msg.Change(_)),
-          phx.onSubmit(Msg.Submit),
+          on.change.form(Msg.Change(_)),
+          on.submit(Msg.Submit),
           phx.target(DomSelector.css("#full_add_message_form")),
           inputComponent(model)
         )
@@ -947,7 +946,7 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
   def render(model: Model) =
     div(
       form(
-        phx.onChangeForm(Msg.ChangeStatus(_)),
+        on.change.form(Msg.ChangeStatus(_)),
         select(
           nameAttr := "status",
           Vector(Status.Connecting, Status.Loading, Status.Connected, Status.Loaded).map(status =>
@@ -1067,19 +1066,19 @@ class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
       button(
         idAttr            := "select-a",
         phx.value("name") := "a",
-        phx.onClick(params => Msg.Select(params.getOrElse("name", ""))),
+        on.click(params => Msg.Select(params.getOrElse("name", ""))),
         "Select A"
       ),
       button(
         idAttr            := "select-b",
         phx.value("name") := "b",
-        phx.onClick(params => Msg.Select(params.getOrElse("name", ""))),
+        on.click(params => Msg.Select(params.getOrElse("name", ""))),
         "Select B"
       ),
       button(
         idAttr            := "select-z",
         phx.value("name") := "z",
-        phx.onClick(params => Msg.Select(params.getOrElse("name", ""))),
+        on.click(params => Msg.Select(params.getOrElse("name", ""))),
         "Select Z"
       )
     )
@@ -1207,8 +1206,8 @@ object Issue3378LiveView:
     def render(model: LiveStream[Notification]) =
       div(
         ul(
-          idAttr       := "notifications_list",
-          phx.onUpdate := "stream",
+          idAttr     := "notifications_list",
+          phx.update := PhxUpdate.Stream,
           model.stream((domId, _) => div(idAttr := domId, p("big!")))
         )
       )
@@ -1232,7 +1231,7 @@ class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends Li
 
 object Issue3496LiveView:
   def myComponent =
-    div(phx.hook("MyHook", "my-component"))
+    div(dom.hook("MyHook", DomRef("my-component")))
 
   class StickyLive extends LiveView[Unit, Unit]:
     def mount(ctx: MountContext) =
@@ -1273,8 +1272,8 @@ object Issue3612LiveView:
 
     def render(model: Unit) =
       div(
-        a(href := "#", phx.onClick(NavigateToA), "Go to page A"),
-        a(href := "#", phx.onClick(NavigateToB), "Go to page B")
+        a(href := "#", on.click(NavigateToA), "Go to page A"),
+        a(href := "#", on.click(NavigateToB), "Go to page B")
       )
 
 class Issue3636LiveView extends LiveView[Unit, Unit]:
@@ -1320,8 +1319,8 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
   def render(model: Model) =
     div(
       div(
-        phx.hook("OuterHook", "main"),
-        div(phx.hook("InnerHook", s"id-${model.id}")),
+        dom.hook("OuterHook", DomRef("main")),
+        div(dom.hook("InnerHook", DomRef(s"id-${model.id}"))),
         "This is an example of nested hooks resulting in a ghost element that isn't on the DOM, and is never cleaned up.",
         p("Doing any of the following things fixes it:"),
         ol(
@@ -1340,9 +1339,9 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
         span(idAttr := "total", model.counter.toString)
       ),
       div(
-        styleAttr    := "color: red; font-size: 72px",
-        idAttr       := "notice",
-        phx.onUpdate := "ignore",
+        styleAttr  := "color: red; font-size: 72px",
+        idAttr     := "notice",
+        phx.update := PhxUpdate.Ignore,
         "I will disappear if the bug is not present."
       )
     )
@@ -1379,7 +1378,7 @@ object Issue3658LiveView:
 
     def render(model: Unit) =
       div(
-        div(idAttr := "foo", phx.onRemove(JS.dispatch("my-event")), "Hi")
+        div(idAttr := "foo", dom.onRemove(JS.dispatch("my-event")), "Hi")
       )
 
 class Issue3656LiveView extends LiveView[Unit, Unit]:
@@ -1448,8 +1447,8 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
           ),
           h1("Normal Stream"),
           div(
-            idAttr       := "msgs-normal",
-            phx.onUpdate := "stream",
+            idAttr     := "msgs-normal",
+            phx.update := PhxUpdate.Stream,
             model.messages.map(
               _.stream((domId, message) => div(idAttr := domId, div(message.value.toString)))
             )
@@ -1483,8 +1482,8 @@ object Issue3681LiveView:
 
     def render(messages: LiveStream[Message]) =
       div(
-        idAttr       := "msgs-sticky",
-        phx.onUpdate := "stream",
+        idAttr     := "msgs-sticky",
+        phx.update := PhxUpdate.Stream,
         messages.stream((domId, message) => div(idAttr := domId, div(message.value.toString)))
       )
 
@@ -1525,7 +1524,7 @@ object Issue3684LiveView:
         legend("Radio example:"),
         Vector("huey", "dewey").map(radioType =>
           div(
-            phx.onClick(Msg.ChangeType(radioType)),
+            on.click(Msg.ChangeType(radioType)),
             phx.target(self),
             phx.value("type") := radioType,
             input(
@@ -1569,7 +1568,7 @@ class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg
 
     div(
       h1(pageName),
-      button(phx.onClick(Msg), s"To $next"),
+      button(on.click(Msg), s"To $next"),
       div(idAttr := "flash", "%{}", flash(Info)(message => span(message)))
     )
 end Issue3686LiveView
@@ -1642,7 +1641,7 @@ class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Issue3919LiveVie
 
     div(
       renderedComponent,
-      button(phx.onClick(Msg.Toggle), "toggle")
+      button(on.click(Msg.Toggle), "toggle")
     )
 
   private def myComponent(attrs: ComponentAttrs = ComponentAttrs())(inner: String) =
@@ -1698,7 +1697,7 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
         nameAttr := "select",
         value    := id,
         checked  := selected.contains(id),
-        phx.onClick(Msg.Toggle(id))
+        on.click(Msg.Toggle(id))
       ),
       id
     )
@@ -1718,7 +1717,8 @@ object Issue3941LiveView:
 
     def render(props: String, model: Unit, self: ComponentRef[Nothing]) =
       div(
-        phx.hook("PagePositionNotifier", s"item-$props"),
+        idAttr   := s"item-$props",
+        phx.hook := "PagePositionNotifier",
         liveComponent(ItemHeaderComponent, id = s"item-header-$props", props = props)
       )
 
@@ -1780,7 +1780,7 @@ class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
   def render(model: Boolean) =
     div(
       liveComponent(Component, id = "comp", props = ()),
-      button(phx.onClick(Msg.Toggle), "Show"),
+      button(on.click(Msg.Toggle), "Show"),
       if model then liveView("nested_view", NestedViewLive()) else ""
     )
 
@@ -1850,7 +1850,7 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
             CounterProps(component.id, domCounter = component.counter, counter = component.counter)
         )
       },
-      button(phx.onClick(Msg.Bump), "Bump ID (and counter)")
+      button(on.click(Msg.Bump), "Bump ID (and counter)")
     )
 end Issue3979LiveView
 
@@ -1915,8 +1915,8 @@ class Issue4027LiveView
           case None        => ""
       else liveComponent(ReproLiveComponentWithAsyncResult, id = "repro_async", props = model.data),
       div(
-        button(phx.onClick(Msg.Load), "Load data"),
-        button(phx.onClick(Msg.Remove), "Remove first entry")
+        button(on.click(Msg.Load), "Load data"),
+        button(on.click(Msg.Remove), "Remove first entry")
       )
     )
 end Issue4027LiveView
@@ -2016,7 +2016,7 @@ class Issue4066LiveView
   def render(model: Model) =
     div(
       p(idAttr := "render-time", model.renderTime),
-      button(phx.onClick(Msg.Toggle), "Toggle"),
+      button(on.click(Msg.Toggle), "Toggle"),
       Option.when(model.renderInput)(
         liveComponent(DelayedInputComponent, id = "foo", props = model.delay)
       )
@@ -2045,7 +2045,7 @@ object Issue4066LiveView:
 
     def render(delay: Int, model: Unit, self: ComponentRef[Unit]) =
       input(
-        phx.hook("Issue4066Hook", "foo"),
+        dom.hook("Issue4066Hook", DomRef("foo")),
         phx.target(self),
         dataAttr("delay") := delay.toString
       )
@@ -2068,7 +2068,7 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
     div(
       form(
         idAttr := "upload-form",
-        phx.onChange(_ => Msg.Validate),
+        on.change(_ => Msg.Validate),
         liveFileInput(
           model.upload,
           disabled := model.disabled,
@@ -2078,13 +2078,13 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
       button(
         idAttr := "toggle-disabled",
         typ    := "button",
-        phx.onClick(Msg.ToggleDisabled),
+        on.click(Msg.ToggleDisabled),
         "Toggle Disabled"
       ),
       button(
         idAttr := "toggle-class",
         typ    := "button",
-        phx.onClick(Msg.ToggleClass),
+        on.click(Msg.ToggleClass),
         "Toggle Class"
       ),
       model.upload.entries.splitBy(_.ref) { (_, entry) =>
@@ -2133,7 +2133,7 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
     (_: Msg) => model
 
   def render(value: String) =
-    div(phx.hook("Issue4088Hook", "foo"), value)
+    div(dom.hook("Issue4088Hook", DomRef("foo")), value)
 
 object Issue4088LiveView:
   enum Msg:
@@ -2167,7 +2167,7 @@ class Issue4095LiveView extends LiveView[Issue4095LiveView.Msg, String]:
     div(
       form(
         idAttr := "issue-4095-form",
-        phx.onChangeForm(Msg.Validate(_)),
+        on.change.form(Msg.Validate(_)),
         input(typ := "text", nameAttr := "show?", idAttr := "show?", value := show),
         portal("portal", target = DomSelector.css("#portal_target"))(
           div(Option.when(show.nonEmpty)(button("Show?")))
@@ -2202,9 +2202,9 @@ class Issue4102LiveView extends LiveView[Issue4102LiveView.Msg, String]:
       ),
       form(
         idAttr := "my-form",
-        phx.onChangeForm(Msg.Validate(_)),
-        phx.onSubmitForm(Msg.Submit(_)),
-        button(typ := "submit", phx.disableWith := "Submitting...", "Submit")
+        on.change.form(Msg.Validate(_)),
+        on.submit.form(Msg.Submit(_)),
+        button(typ := "submit", submission.replaceTextWith("Submitting..."), "Submit")
       )
     )
 
@@ -2246,11 +2246,11 @@ class Issue4121LiveView extends LiveView[Issue4121LiveView.Msg.type, Issue4121Li
 
   def render(model: Model) =
     div(
-      button(phx.onClick(Msg), "Reset teleported stream"),
+      button(on.click(Msg), "Reset teleported stream"),
       portal("teleported-stream", target = DomSelector.css("body"))(
         ul(
-          idAttr       := "stream-in-lv",
-          phx.onUpdate := "stream",
+          idAttr     := "stream-in-lv",
+          phx.update := PhxUpdate.Stream,
           model.items.stream((domId, item) => li(idAttr := domId, item.name))
         )
       )

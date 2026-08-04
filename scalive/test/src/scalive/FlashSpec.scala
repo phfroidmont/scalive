@@ -99,9 +99,13 @@ object FlashSpec extends ZIOSpecDefault:
         def render(model: Unit): HtmlElement[Msg] =
           div(
             idAttr := "root",
-            button(phx.onClick(Msg.Show), "show"),
+            button(scalive.on.click(Msg.Show), "show"),
             flash(Info)(message =>
-              p(idAttr := "flash", phx.clearFlash, phx.value("key") := Info.value, message)
+              p(
+                idAttr := "flash",
+                scalive.flash.clearOnClick(Info),
+                message
+              )
             )
           )
 
@@ -142,9 +146,9 @@ object FlashSpec extends ZIOSpecDefault:
         def render(model: Unit): HtmlElement[Msg] =
           div(
             idAttr := "root",
-            button(idAttr := "show", phx.onClick(Msg.ShowBoth), "show"),
-            button(idAttr := "clear-info", phx.onClick(Msg.ClearInfo), "clear-info"),
-            button(idAttr := "clear-all", phx.onClick(Msg.ClearAll), "clear-all"),
+            button(idAttr := "show", scalive.on.click(Msg.ShowBoth), "show"),
+            button(idAttr := "clear-info", scalive.on.click(Msg.ClearInfo), "clear-info"),
+            button(idAttr := "clear-all", scalive.on.click(Msg.ClearAll), "clear-all"),
             flash(Info)(message => p(idAttr := "info", message)),
             flash(Error)(message => p(idAttr := "error", message))
           )
@@ -190,8 +194,8 @@ object FlashSpec extends ZIOSpecDefault:
         def render(model: Unit): HtmlElement[RootMsg] =
           div(
             idAttr := "root",
-            button(phx.onClick(RootMsg.SetError), "set-error"),
-            button(phx.onClick(RootMsg.Redirect), "redirect"),
+            button(scalive.on.click(RootMsg.SetError), "set-error"),
+            button(scalive.on.click(RootMsg.Redirect), "redirect"),
             flash(Info)(message => p(idAttr := "info", message)),
             flash(Error)(message => p(idAttr := "error", message))
           )
@@ -245,8 +249,8 @@ object FlashSpec extends ZIOSpecDefault:
         def render(model: String): HtmlElement[RootMsg] =
           div(
             idAttr := "root",
-            button(phx.onClick(RootMsg.SetError), "set-error"),
-            button(phx.onClick(RootMsg.Patch), "patch"),
+            button(scalive.on.click(RootMsg.SetError), "set-error"),
+            button(scalive.on.click(RootMsg.Patch), "patch"),
             span(idAttr := "url", model),
             flash(Info)(message => p(idAttr := "info", message)),
             flash(Error)(message => p(idAttr := "error", message))
@@ -302,7 +306,7 @@ object FlashSpec extends ZIOSpecDefault:
         def render(model: String): HtmlElement[RootMsg] =
           div(
             idAttr := "root",
-            button(phx.onClick(RootMsg.Patch), "patch"),
+            button(scalive.on.click(RootMsg.Patch), "patch"),
             flash(Info)(message => p(idAttr := "info", message))
           )
 
@@ -349,7 +353,7 @@ object FlashSpec extends ZIOSpecDefault:
           (_: Msg.type) => ctx.flash.put(Info, "Component saved").as(model)
 
         def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), phx.target(self), "show")
+          button(scalive.on.click(Msg), phx.target(self), "show")
 
       val lv = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
@@ -399,8 +403,8 @@ object FlashSpec extends ZIOSpecDefault:
 
         def render(props: Unit, model: Unit, self: ComponentRef[Msg]) =
           div(
-            button(phx.onClick(Msg.SetError), phx.target(self), "set-error"),
-            button(phx.onClick(Msg.Patch), phx.target(self), "patch"),
+            button(scalive.on.click(Msg.SetError), phx.target(self), "set-error"),
+            button(scalive.on.click(Msg.Patch), phx.target(self), "patch"),
             flash(Info)(message => p(idAttr := "component-info", message)),
             flash(Error)(message => p(idAttr := "component-error", message))
           )
@@ -536,7 +540,7 @@ object FlashSpec extends ZIOSpecDefault:
         def render(model: Unit): HtmlElement[ChildMsg] =
           div(
             idAttr := "child",
-            button(phx.onClick(ChildMsg.Show), "show"),
+            button(scalive.on.click(ChildMsg.Show), "show"),
             flash(Info)(message => p(idAttr := "child-flash", message))
           )
 
@@ -551,7 +555,7 @@ object FlashSpec extends ZIOSpecDefault:
         def render(model: Int): HtmlElement[Msg] =
           div(
             idAttr := "parent",
-            button(phx.onClick(Msg.Rerender), model.toString),
+            button(scalive.on.click(Msg.Rerender), model.toString),
             flash(Info)(message => p(idAttr := "parent-flash", message)),
             liveView("child", child)
           )

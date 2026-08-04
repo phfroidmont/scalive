@@ -135,7 +135,7 @@ object StreamApiSpec extends ZIOSpecDefault:
         users <- runtime.create(usersDef, List(User(1, "chris")))
       yield
         val html = HtmlBuilder.build(
-          users.renderIn(ul, idAttr := "wrong", phx.onUpdate := "ignore") { user =>
+          users.renderIn(ul, idAttr := "wrong", phx.update := PhxUpdate.Ignore) { user =>
             li(idAttr := "wrong-row", user.name)
           }
         )

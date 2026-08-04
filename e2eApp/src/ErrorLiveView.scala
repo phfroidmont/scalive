@@ -25,7 +25,7 @@ class ErrorLiveView
   def render(model: Model) =
     div(
       p(idAttr := "render-time", "main rendered at: ", model.renderTime),
-      button(phx.onClick(Msg.CrashMain), "Crash main"),
+      button(on.click(Msg.CrashMain), "Crash main"),
       p(cls := "if-phx-error", "Error"),
       p(cls := "if-phx-client-error", "Client Error"),
       p(cls := "if-phx-server-error", "Server Error"),
@@ -113,7 +113,7 @@ object ErrorLiveView:
       div(
         if model.connected then "Child connected" else "Child rendered (dead)",
         p(idAttr := "child-render-time", "child rendered at: ", model.renderTime),
-        button(phx.onClick(ChildMsg.CrashChild), "Crash child"),
+        button(on.click(ChildMsg.CrashChild), "Crash child"),
         p(cls := "if-phx-error", "Error"),
         p(cls := "if-phx-client-error", "Client Error"),
         p(cls := "if-phx-server-error", "Server Error"),

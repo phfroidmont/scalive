@@ -64,12 +64,12 @@ class KeyedComprehensionLiveView(assets: StaticAssets)
           )
         )
       ),
-      button(cls := "btn", phx.onClick(Msg.Randomize), "randomize"),
-      button(cls := "btn", phx.onClick(Msg.ChangeFirst), "change first"),
-      button(cls := "btn", phx.onClick(Msg.ChangeOther), "change other"),
+      button(cls := "btn", on.click(Msg.Randomize), "randomize"),
+      button(cls := "btn", on.click(Msg.ChangeFirst), "change first"),
+      button(cls := "btn", on.click(Msg.ChangeOther), "change other"),
       form(
         input(
-          phx.onChange(params =>
+          on.change(params =>
             Msg.ChangeSize(params.get("size").flatMap(_.toIntOption).getOrElse(0))
           ),
           nameAttr := "size",

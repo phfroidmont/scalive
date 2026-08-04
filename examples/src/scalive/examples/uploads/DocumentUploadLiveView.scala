@@ -54,16 +54,16 @@ final class DocumentUploadLiveView(store: UploadStore)
   private def uploader(upload: LiveUpload[Chunk[Byte]]): HtmlElement[Msg] =
     form(
       cls := "space-y-6",
-      phx.onChange(_ => Msg.Validate),
-      phx.onSubmit(Msg.Save),
+      on.change(_ => Msg.Validate),
+      on.submit(Msg.Save),
       div(
-        cls            := "rounded-box border-2 border-dashed border-base-300 bg-base-100 p-6",
-        phx.dropTarget := upload.ref,
+        cls := "rounded-box border-2 border-dashed border-base-300 bg-base-100 p-6",
+        upload.dropTarget,
         liveFileInput(
           upload,
           aria.label := "Documents to upload",
           cls        := "file-input file-input-bordered w-full",
-          phx.onProgress(_ => Msg.Progress)
+          upload.onProgress(_ => Msg.Progress)
         ),
         p(
           cls := "mt-3 text-sm text-base-content/60",
@@ -84,7 +84,7 @@ final class DocumentUploadLiveView(store: UploadStore)
                 button(
                   typ := "button",
                   cls := "btn btn-ghost btn-sm text-error",
-                  phx.onClick(Msg.Cancel(entry)),
+                  on.click(Msg.Cancel(entry)),
                   "Cancel"
                 )
               ),
@@ -105,9 +105,9 @@ final class DocumentUploadLiveView(store: UploadStore)
         )
       ),
       button(
-        typ             := "submit",
-        cls             := "btn btn-primary",
-        phx.disableWith := "Saving...",
+        typ := "submit",
+        cls := "btn btn-primary",
+        submission.replaceTextWith("Saving..."),
         "Upload and save documents"
       )
     )
@@ -122,14 +122,14 @@ final class DocumentUploadLiveView(store: UploadStore)
           button(
             typ := "button",
             cls := "btn btn-sm",
-            phx.onClick(Msg.RetryStore),
+            on.click(Msg.RetryStore),
             "Retry storage"
           )
         ),
         button(
           typ := "button",
           cls := "btn btn-ghost btn-sm",
-          phx.onClick(Msg.DismissStoreFailure),
+          on.click(Msg.DismissStoreFailure),
           "Dismiss"
         )
       )
@@ -160,7 +160,7 @@ final class DocumentUploadLiveView(store: UploadStore)
                 button(
                   typ := "button",
                   cls := "btn btn-outline btn-error btn-sm",
-                  phx.onClick(Msg.Delete(entry.storageId)),
+                  on.click(Msg.Delete(entry.storageId)),
                   "Delete"
                 )
               )

@@ -20,7 +20,7 @@ class JsLiveView extends LiveView[Msg, Model]:
         "Test"
       ),
       button(
-        phx.onClick(
+        on.click(
           JS.show(to = Modal.selector, transition = "fade-in", time = 50)
             .setAttribute(("aria-expanded", "true"), to = Modal.selector)
             .setAttribute(("open", "true"), to = Modal.selector)
@@ -28,7 +28,7 @@ class JsLiveView extends LiveView[Msg, Model]:
         "show modal"
       ),
       button(
-        phx.onClick(
+        on.click(
           JS.hide(to = Modal.selector, transition = "fade-out", time = 50)
             .setAttribute(("aria-expanded", "false"), to = Modal.selector)
             .removeAttribute("open", to = Modal.selector)
@@ -36,7 +36,7 @@ class JsLiveView extends LiveView[Msg, Model]:
         "hide modal"
       ),
       button(
-        phx.onClick(
+        on.click(
           JS.toggle(to = Modal.selector, in = "fade-in", out = "fade-out", time = 50)
             .toggleAttribute("aria-expanded", "true", "false", to = Modal.selector)
             .toggleAttribute("open", "true", to = Modal.selector)
@@ -44,10 +44,10 @@ class JsLiveView extends LiveView[Msg, Model]:
         "toggle modal"
       ),
       detailsTag(
-        phx.onMounted(JS.ignoreAttributes(Seq("open"))),
+        dom.onMount(JS.ignoreAttributes(Seq("open"))),
         summaryTag("Details"),
         button(
-          phx.onClick(Msg.Increment),
+          on.click(Msg.Increment),
           model.count.toString
         )
       )

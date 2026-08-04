@@ -71,12 +71,12 @@ final class NotificationsLiveView
           div(
             cls := "mt-3",
             span(
-              phx.visibleWhenConnected,
+              connection.visibleWhenConnected,
               cls := "badge badge-success badge-lg",
               "Connected"
             ),
             span(
-              phx.visibleWhenDisconnected,
+              connection.visibleWhenDisconnected,
               cls := "badge badge-error badge-lg",
               "Disconnected"
             )
@@ -102,13 +102,13 @@ final class NotificationsLiveView
             button(
               typ := "button",
               cls := "btn btn-primary",
-              phx.onClick(Msg.PutNotification),
+              on.click(Msg.PutNotification),
               "Put notification"
             ),
             button(
               typ := "button",
               cls := "btn btn-outline",
-              phx.onClick(Msg.ClearNotification),
+              on.click(Msg.ClearNotification),
               "Clear notification"
             )
           ),
@@ -141,13 +141,13 @@ final class NotificationsLiveView
             button(
               typ := "button",
               cls := "btn btn-secondary",
-              phx.onClick(Msg.RequestAttention),
+              on.click(Msg.RequestAttention),
               "Request attention"
             ),
             button(
               typ := "button",
               cls := "btn btn-outline",
-              phx.onClick(Msg.RestoreTitle),
+              on.click(Msg.RestoreTitle),
               "Restore title"
             )
           )

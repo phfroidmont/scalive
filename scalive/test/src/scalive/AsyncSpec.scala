@@ -299,7 +299,7 @@ object AsyncSpec extends ZIOSpecDefault:
                  case _                                            => ZIO.succeed(model)
 
                def render(model: String): HtmlElement[Msg] =
-                 div(idAttr := "root", button(phx.onClick(Msg.Start), "start"), span(model))
+                 div(idAttr := "root", button(scalive.on.click(Msg.Start), "start"), span(model))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
@@ -331,7 +331,7 @@ object AsyncSpec extends ZIOSpecDefault:
                  case _                                            => ZIO.succeed(model)
 
                def render(model: String): HtmlElement[Msg] =
-                 div(idAttr := "root", button(phx.onClick(Msg.Cancel), "cancel"), span(model))
+                 div(idAttr := "root", button(scalive.on.click(Msg.Cancel), "cancel"), span(model))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
@@ -368,7 +368,7 @@ object AsyncSpec extends ZIOSpecDefault:
                  case CancelMsg.Completed(_) => ZIO.succeed(model)
 
                def render(model: String): HtmlElement[CancelMsg] =
-                 div(idAttr := "root", button(phx.onClick(CancelMsg.Cancel), "cancel"), span(model))
+                 div(idAttr := "root", button(scalive.on.click(CancelMsg.Cancel), "cancel"), span(model))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
@@ -585,7 +585,7 @@ object AsyncSpec extends ZIOSpecDefault:
           model: (Promise[Nothing, Unit], String),
           self: ComponentRef[Msg]
         ) =
-          button(phx.onClick(Msg.Start), phx.target(self), model._2)
+          button(scalive.on.click(Msg.Start), phx.target(self), model._2)
       end AsyncComponent
 
       for
@@ -684,7 +684,7 @@ object AsyncSpec extends ZIOSpecDefault:
 
                def render(model: Boolean): HtmlElement[ParentMsg] =
                  div(
-                   button(phx.onClick(ParentMsg.Toggle), "toggle"),
+                   button(scalive.on.click(ParentMsg.Toggle), "toggle"),
                    if model then
                      liveComponent(InterruptComponent, id = "interrupt", props = stopped)
                    else "gone"

@@ -42,18 +42,18 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
       h1("Uploads"),
       form(
         idAttr := "upload-form",
-        phx.onSubmit(Msg.Save),
-        phx.onChange(_ => Msg.Validate),
+        on.submit(Msg.Save),
+        on.change(_ => Msg.Validate),
         liveFileInput(
           model.upload,
-          phx.onProgress(_ => Msg.Progress)
+          model.upload.onProgress(_ => Msg.Progress)
         ),
         button(
           typ := "submit",
           "Upload"
         ),
         sectionTag(
-          phx.dropTarget := model.upload.ref,
+          model.upload.dropTarget,
           model.upload.entries.splitBy(_.ref) { (_, entry) =>
             articleTag(
               cls := "upload-entry",
@@ -67,7 +67,7 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
               ),
               button(
                 typ := "button",
-                phx.onClick(Msg.CancelUpload(entry)),
+                on.click(Msg.CancelUpload(entry)),
                 phx.value("ref") := entry.ref.value,
                 ariaLabel        := "cancel",
                 "x"

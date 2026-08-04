@@ -38,15 +38,13 @@ object VoteComponent
           button(
             typ := "button",
             cls := "btn btn-primary",
-            phx.onClick(Msg.Vote),
-            phx.target(self),
+            on.click.to(self)(Msg.Vote),
             "Vote"
           ),
           button(
             typ := "button",
             cls := "btn btn-ghost",
-            phx.onClick(Msg.Reset),
-            phx.target(self),
+            on.click.to(self)(Msg.Reset),
             "Reset"
           )
         )

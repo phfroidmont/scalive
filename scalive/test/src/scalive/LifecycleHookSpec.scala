@@ -169,7 +169,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
           case Msg.Inc => ZIO.succeed(model + 1)
 
         def render(model: Int): HtmlElement[Msg] =
-          div(span(model.toString), button(phx.onClick(Msg.Inc), "inc"))
+          div(span(model.toString), button(scalive.on.click(Msg.Inc), "inc"))
 
       ZIO.scoped(for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
@@ -205,7 +205,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
           case Msg.Inc => ZIO.succeed(model + 100)
 
         def render(model: Int): HtmlElement[Msg] =
-          div(span(model.toString), button(phx.onClick(Msg.Inc), "inc"))
+          div(span(model.toString), button(scalive.on.click(Msg.Inc), "inc"))
 
       ZIO.scoped(for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
@@ -255,8 +255,8 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def render(model: Int): HtmlElement[Msg] =
           div(
             span(model.toString),
-            button(phx.onClick(Msg.Inc), "inc"),
-            button(phx.onClick(Msg.Detach), "detach")
+            button(scalive.on.click(Msg.Inc), "inc"),
+            button(scalive.on.click(Msg.Detach), "detach")
           )
 
       ZIO.scoped(for
@@ -401,7 +401,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                  case Msg.Inc => ZIO.succeed(model + 1)
 
                def render(model: Int): HtmlElement[Msg] =
-                 div(button(phx.onClick(Msg.Inc), "inc"), span(model.toString))
+                 div(button(scalive.on.click(Msg.Inc), "inc"), span(model.toString))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
@@ -440,7 +440,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
           case Msg.Inc => ZIO.succeed(model + 1)
 
         def render(props: Unit, model: Int, self: ComponentRef[Msg]) =
-          div(button(phx.onClick(Msg.Inc), phx.target(self), "inc"), span(model.toString))
+          div(button(scalive.on.click(Msg.Inc), phx.target(self), "inc"), span(model.toString))
 
       val lv = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =

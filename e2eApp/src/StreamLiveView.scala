@@ -51,35 +51,35 @@ class StreamLiveView()
   def render(model: Model) =
     div(
       div(
-        idAttr       := "users",
-        phx.onUpdate := "stream",
+        idAttr     := "users",
+        phx.update := PhxUpdate.Stream,
         model.users.stream { (domId, user) =>
           div(
             idAttr            := domId,
             dataAttr("count") := model.count.toString,
             user.name,
             button(
-              phx.onClick(params => Msg.DeleteUser(params.getOrElse("id", ""))),
+              on.click(params => Msg.DeleteUser(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "delete"
             ),
             button(
-              phx.onClick(params => Msg.UpdateUser(params.getOrElse("id", ""))),
+              on.click(params => Msg.UpdateUser(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "update"
             ),
             button(
-              phx.onClick(params => Msg.MoveUserToFirst(params.getOrElse("id", ""))),
+              on.click(params => Msg.MoveUserToFirst(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "make first"
             ),
             button(
-              phx.onClick(params => Msg.MoveUserToLast(params.getOrElse("id", ""))),
+              on.click(params => Msg.MoveUserToLast(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "make last"
             ),
             button(
-              phx.onClick(JS.hide(to = DomSelector.css("#users > *"))),
+              on.click(JS.hide(to = DomSelector.css("#users > *"))),
               "JS Hide"
             )
           )
@@ -93,30 +93,30 @@ class StreamLiveView()
         else ""
       ),
       div(
-        idAttr       := "admins",
-        phx.onUpdate := "stream",
+        idAttr     := "admins",
+        phx.update := PhxUpdate.Stream,
         model.admins.stream { (domId, user) =>
           div(
             idAttr            := domId,
             dataAttr("count") := model.count.toString,
             user.name,
             button(
-              phx.onClick(params => Msg.DeleteAdmin(params.getOrElse("id", ""))),
+              on.click(params => Msg.DeleteAdmin(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "delete"
             ),
             button(
-              phx.onClick(params => Msg.UpdateAdmin(params.getOrElse("id", ""))),
+              on.click(params => Msg.UpdateAdmin(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "update"
             ),
             button(
-              phx.onClick(params => Msg.MoveAdminToFirst(params.getOrElse("id", ""))),
+              on.click(params => Msg.MoveAdminToFirst(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "make first"
             ),
             button(
-              phx.onClick(params => Msg.MoveAdminToLast(params.getOrElse("id", ""))),
+              on.click(params => Msg.MoveAdminToLast(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "make last"
             )
@@ -124,29 +124,29 @@ class StreamLiveView()
         }
       ),
       div(
-        idAttr       := "c_users",
-        phx.onUpdate := "stream",
+        idAttr     := "c_users",
+        phx.update := PhxUpdate.Stream,
         model.componentUsers.stream { (domId, user) =>
           div(
             idAttr := domId,
             user.name,
             button(
-              phx.onClick(params => Msg.DeleteComponentUser(params.getOrElse("id", ""))),
+              on.click(params => Msg.DeleteComponentUser(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "delete"
             ),
             button(
-              phx.onClick(params => Msg.UpdateComponentUser(params.getOrElse("id", ""))),
+              on.click(params => Msg.UpdateComponentUser(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "update"
             ),
             button(
-              phx.onClick(params => Msg.MoveComponentUserToFirst(params.getOrElse("id", ""))),
+              on.click(params => Msg.MoveComponentUserToFirst(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "make first"
             ),
             button(
-              phx.onClick(params => Msg.MoveComponentUserToLast(params.getOrElse("id", ""))),
+              on.click(params => Msg.MoveComponentUserToLast(params.getOrElse("id", ""))),
               phx.value("id") := domId,
               "make last"
             )
@@ -154,11 +154,11 @@ class StreamLiveView()
         }
       ),
       button(
-        phx.onClick(Msg.ResetUsers),
+        on.click(Msg.ResetUsers),
         "Reset"
       ),
       button(
-        phx.onClick(Msg.ReorderUsers),
+        on.click(Msg.ReorderUsers),
         "Reorder"
       ),
       styleTag(
@@ -401,8 +401,8 @@ class HealthyLiveView(initialCategory: String)
       ),
       h1(model.category.capitalize),
       ul(
-        idAttr       := "items",
-        phx.onUpdate := "stream",
+        idAttr     := "items",
+        phx.update := PhxUpdate.Stream,
         model.items.stream { (domId, item) =>
           li(
             idAttr := domId,
@@ -554,30 +554,30 @@ class StreamResetLiveView()
     div(
       if model.usePhxRemove then streamList(model, withPhxRemove = true) else "",
       if !model.usePhxRemove then streamList(model, withPhxRemove = false) else "",
-      button(phx.onClick(Msg.Filter), "Filter"),
-      button(phx.onClick(Msg.Reorder), "Reorder"),
-      button(phx.onClick(Msg.Reset), "Reset"),
-      button(phx.onClick(Msg.Prepend), "Prepend"),
-      button(phx.onClick(Msg.Append), "Append"),
-      button(phx.onClick(Msg.BulkInsert), "Bulk insert"),
-      button(phx.onClick(Msg.InsertAtOne), "Insert at 1"),
-      button(phx.onClick(Msg.InsertExistingAtOne), "Insert C at 1"),
-      button(phx.onClick(Msg.DeleteInsertExistingAtOne), "Delete C and insert at 1"),
-      button(phx.onClick(Msg.PrependExisting), "Prepend C"),
-      button(phx.onClick(Msg.AppendExisting), "Append C"),
-      button(phx.onClick(Msg.NewUpdateOnly), "Add E (update only)"),
-      button(phx.onClick(Msg.ExistingUpdateOnly), "Update C (update only)")
+      button(on.click(Msg.Filter), "Filter"),
+      button(on.click(Msg.Reorder), "Reorder"),
+      button(on.click(Msg.Reset), "Reset"),
+      button(on.click(Msg.Prepend), "Prepend"),
+      button(on.click(Msg.Append), "Append"),
+      button(on.click(Msg.BulkInsert), "Bulk insert"),
+      button(on.click(Msg.InsertAtOne), "Insert at 1"),
+      button(on.click(Msg.InsertExistingAtOne), "Insert C at 1"),
+      button(on.click(Msg.DeleteInsertExistingAtOne), "Delete C and insert at 1"),
+      button(on.click(Msg.PrependExisting), "Prepend C"),
+      button(on.click(Msg.AppendExisting), "Append C"),
+      button(on.click(Msg.NewUpdateOnly), "Add E (update only)"),
+      button(on.click(Msg.ExistingUpdateOnly), "Update C (update only)")
     )
 
   private def streamList(model: Model, withPhxRemove: Boolean): HtmlElement[Msg] =
     ul(
-      idAttr       := "thelist",
-      phx.onUpdate := "stream",
+      idAttr     := "thelist",
+      phx.update := PhxUpdate.Stream,
       model.items.stream { (domId, item) =>
         if withPhxRemove then
           li(
             idAttr := domId,
-            phx.onRemove(JS.hide()),
+            dom.onRemove(JS.hide()),
             item.name
           )
         else
@@ -653,8 +653,8 @@ class StreamResetLCLiveView
   def render(model: Model) =
     div(
       ul(
-        idAttr       := "thelist",
-        phx.onUpdate := "stream",
+        idAttr     := "thelist",
+        phx.update := PhxUpdate.Stream,
         model.items.stream { (domId, item) =>
           li(
             idAttr := domId,
@@ -662,7 +662,7 @@ class StreamResetLCLiveView
           )
         }
       ),
-      button(phx.onClick(Msg.Reorder), "Reorder")
+      button(on.click(Msg.Reorder), "Reorder")
     )
 
 object StreamResetLCLiveView:
@@ -749,7 +749,7 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
   def render(model: Model) =
     div(
       form(
-        phx.onSubmit(params =>
+        on.submit(params =>
           Msg.Configure(
             params.getOrElse("at", "-1"),
             params.getOrElse("limit", "-5")
@@ -778,12 +778,12 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         ", limit: ",
         model.limit.toString
       ),
-      button(phx.onClick(Msg.Insert10), "add 10"),
-      button(phx.onClick(Msg.Insert1), "add 1"),
-      button(phx.onClick(Msg.Clear), "clear"),
+      button(on.click(Msg.Insert10), "add 10"),
+      button(on.click(Msg.Insert1), "add 1"),
+      button(on.click(Msg.Clear), "clear"),
       ul(
-        idAttr       := "items",
-        phx.onUpdate := "stream",
+        idAttr     := "items",
+        phx.update := PhxUpdate.Stream,
         rawHtml("\n"),
         model.items.stream { (domId, item) =>
           li(
@@ -850,15 +850,15 @@ class StreamNestedComponentResetLiveView
   def render(model: Model) =
     div(
       ul(
-        idAttr       := "thelist",
-        phx.onUpdate := "stream",
+        idAttr     := "thelist",
+        phx.update := PhxUpdate.Stream,
         model.items.stream { (domId, item) =>
           li(
             idAttr := domId,
             item.name,
             div(
-              phx.onUpdate := "stream",
-              styleAttr    := "display: flex; gap: 4px;",
+              phx.update := PhxUpdate.Stream,
+              styleAttr  := "display: flex; gap: 4px;",
               item.nested.stream { (nestedDomId, nestedItem) =>
                 span(
                   idAttr := nestedDomId,
@@ -867,7 +867,7 @@ class StreamNestedComponentResetLiveView
               }
             ),
             button(
-              phx.onClick(params => Msg.ReorderNested(params.getOrElse("id", ""))),
+              on.click(params => Msg.ReorderNested(params.getOrElse("id", ""))),
               phx.value("id") := item.id,
               "Reorder"
             )
@@ -876,7 +876,7 @@ class StreamNestedComponentResetLiveView
       ),
       button(
         idAttr := "parent-reorder",
-        phx.onClick(Msg.ReorderParents),
+        on.click(Msg.ReorderParents),
         "Reorder"
       )
     )
@@ -982,8 +982,8 @@ class StreamInsideForLiveView
     div(
       List(1).map(_ =>
         ul(
-          idAttr       := "thelist",
-          phx.onUpdate := "stream",
+          idAttr     := "thelist",
+          phx.update := PhxUpdate.Stream,
           model.items.stream { (domId, item) =>
             li(
               idAttr := domId,

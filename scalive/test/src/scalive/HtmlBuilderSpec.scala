@@ -1,5 +1,7 @@
 package scalive
 
+import scala.concurrent.duration.DurationInt
+
 import zio.test.*
 
 object HtmlBuilderSpec extends ZIOSpecDefault:
@@ -58,7 +60,7 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
       test("Portal wraps content in a template") {
         val el = portal("portal-source", target = DomSelector.css("#root-portal"))(
           div(idAttr := "my-modal", "Modal"),
-          div(phx.hook("InsidePortal", "hook-test"))
+          div(scalive.dom.hook("InsidePortal", DomRef("hook-test")))
         )
 
         val result = HtmlBuilder.build(el)
@@ -68,25 +70,83 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
         )
       },
       test("Hook helper renders the required DOM id") {
-        val result = HtmlBuilder.build(div(phx.hook("MyHook", "my-hook")))
+        val result = HtmlBuilder.build(div(scalive.dom.hook("MyHook", DomRef("my-hook"))))
 
         assertTrue(result == "<div id=\"my-hook\" phx-hook=\"MyHook\"></div>")
       },
       test("Hook helper rejects empty names and ids") {
+        def ref(value: String) = DomRef(value)
+
         assertTrue(
-          scala.util.Try(phx.hook("", "my-hook")).isFailure,
-          scala.util.Try(phx.hook("MyHook", "")).isFailure
+          scala.util.Try(scalive.dom.hook("", DomRef("my-hook"))).isFailure,
+          scala.util.Try(scalive.dom.hook("MyHook", ref(""))).isFailure
         )
       },
       test("Connection visibility modifiers target their own element") {
-        val connected    = HtmlBuilder.build(span(phx.visibleWhenConnected, "Connected"))
-        val disconnected = HtmlBuilder.build(span(phx.visibleWhenDisconnected, "Disconnected"))
+        val connected = HtmlBuilder.build(span(scalive.connection.visibleWhenConnected, "Connected"))
+        val disconnected =
+          HtmlBuilder.build(span(scalive.connection.visibleWhenDisconnected, "Disconnected"))
 
         assertTrue(
           connected ==
-            "<span hidden phx-connected='[[&quot;remove_attr&quot;,{&quot;attr&quot;:&quot;hidden&quot;}]]' phx-disconnected='[[&quot;set_attr&quot;,{&quot;attr&quot;:[&quot;hidden&quot;,&quot;&quot;]}]]'>Connected</span>",
+            "<span hidden phx-connected=\"[[&quot;remove_attr&quot;,{&quot;attr&quot;:&quot;hidden&quot;}]]\" phx-disconnected=\"[[&quot;set_attr&quot;,{&quot;attr&quot;:[&quot;hidden&quot;,&quot;&quot;]}]]\">Connected</span>",
           disconnected ==
-            "<span phx-connected='[[&quot;set_attr&quot;,{&quot;attr&quot;:[&quot;hidden&quot;,&quot;&quot;]}]]' phx-disconnected='[[&quot;remove_attr&quot;,{&quot;attr&quot;:&quot;hidden&quot;}]]'>Disconnected</span>"
+            "<span phx-connected=\"[[&quot;set_attr&quot;,{&quot;attr&quot;:[&quot;hidden&quot;,&quot;&quot;]}]]\" phx-disconnected=\"[[&quot;remove_attr&quot;,{&quot;attr&quot;:&quot;hidden&quot;}]]\">Disconnected</span>"
+        )
+      },
+      test("Window focus bindings render the protocol attribute") {
+        val result = HtmlBuilder.build(input(scalive.on.windowFocus("focused")))
+
+        assertTrue(
+          result.startsWith("<input phx-window-focus=\"b"),
+          BindingRegistry
+            .collect[String](input(scalive.on.windowFocus("focused")))
+            .values
+            .head(Map.empty) == Right("focused")
+        )
+      },
+      test("Configured key bindings render key and rate attributes") {
+        val result = HtmlBuilder.build(
+          input(
+            scalive.on.windowKeyDown
+              .key(Key.Enter)
+              .debounce(250.millis)
+              .throttle(1.second)("submit")
+          )
+        )
+
+        assertTrue(
+          result.contains("phx-window-keydown=\"b"),
+          result.contains("phx-key=\"Enter\""),
+          result.contains("phx-debounce=\"250\""),
+          result.contains("phx-throttle=\"1000\"")
+        )
+      },
+      test("Rate limits reject negative durations") {
+        assertTrue(
+          scala.util.Try(scalive.on.click.debounce((-1).millis)).isFailure,
+          scala.util.Try(scalive.on.click.throttle((-1).millis)).isFailure
+        )
+      },
+      test("Submission helpers support disabling or replacing text") {
+        val disabled = HtmlBuilder.build(button(scalive.submission.disable, "Save"))
+        val replaced = HtmlBuilder.build(
+          button(scalive.submission.replaceTextWith("Saving..."), "Save")
+        )
+
+        assertTrue(
+          disabled == "<button phx-disable-with>Save</button>",
+          replaced == "<button phx-disable-with=\"Saving...\">Save</button>"
+        )
+      },
+      test("JS command attributes safely contain apostrophes") {
+        val result = HtmlBuilder.build(
+          button(scalive.on.click(JS.show(to = DomSelector.css("[data-state='open']"))))
+        )
+
+        assertTrue(
+          result ==
+            "<button phx-click=\"[[&quot;show&quot;,{&quot;to&quot;:&quot;[data-state='open']&quot;}]]\"></button>"
         )
       },
       test("Portal supports custom wrapper container and class") {
@@ -219,6 +279,12 @@ object HtmlBuilderSpec extends ZIOSpecDefault:
       }
     ),
     suite("Edge cases")(
+      test("Custom tags and attributes reject invalid names") {
+        assertTrue(
+          scala.util.Try(HtmlTag("invalid tag")).isFailure,
+          scala.util.Try(dataAttr("invalid attr")).isFailure
+        )
+      },
       test("Empty content") {
         val el     = div("")
         val result = HtmlBuilder.build(el)

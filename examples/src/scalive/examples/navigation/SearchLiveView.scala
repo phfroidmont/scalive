@@ -121,7 +121,7 @@ final class SearchLiveView
       ),
       form(
         cls := "mb-6 flex flex-col gap-3 rounded-box border border-base-300 bg-base-100 p-5 sm:flex-row",
-        phx.onSubmitForm(QueryField)(Msg.Search.apply),
+        QueryField.onSubmit(Msg.Search.apply),
         label(
           cls := "form-control flex-1",
           span(cls := "label-text mb-2 font-medium", "Search the example notes"),

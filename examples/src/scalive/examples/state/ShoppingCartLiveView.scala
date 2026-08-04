@@ -36,7 +36,7 @@ final class ShoppingCartLiveView
             button(
               typ := "button",
               cls := "btn h-auto justify-between border-base-300 bg-base-100 px-4 py-3",
-              phx.onClick(Msg.Add(product)),
+              on.click(Msg.Add(product)),
               span(product.name),
               span(cls := "font-mono text-sm text-base-content/65", money(product.priceInCents))
             )
@@ -55,7 +55,7 @@ final class ShoppingCartLiveView
             typ      := "button",
             cls      := "btn btn-ghost btn-sm",
             disabled := model.lines.isEmpty,
-            phx.onClick(Msg.Clear),
+            on.click(Msg.Clear),
             "Clear"
           )
         ),
@@ -88,7 +88,7 @@ final class ShoppingCartLiveView
                       button(
                         typ := "button",
                         cls := "btn btn-ghost btn-sm",
-                        phx.onClick(Msg.Remove(line.product)),
+                        on.click(Msg.Remove(line.product)),
                         "Remove one"
                       )
                     )

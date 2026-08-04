@@ -51,7 +51,7 @@ object SocketSpec extends ZIOSpecDefault:
       def render(model: Model): HtmlElement[Msg] =
         div(
           idAttr := "root",
-          phx.onClick(Msg.FromClient),
+          scalive.on.click(Msg.FromClient),
           span(model.counter.toString),
           span(model.staticFlag.map(_.toString).getOrElse("none"))
         )
@@ -152,7 +152,10 @@ object SocketSpec extends ZIOSpecDefault:
                  case _              => ZIO.succeed(model)
 
                def render(model: Model): HtmlElement[Msg] =
-                 div(idAttr := "root", button(phx.onClick(Msg.FromClient), model.counter.toString))
+                 div(
+                   idAttr := "root",
+                   button(scalive.on.click(Msg.FromClient), model.counter.toString)
+                 )
         event: Payload.Event = Payload.Event(
                   `type` = "click",
                   event = BindingId.attrBindingId(Vector("root:div", "tag:0:button"), 0),
@@ -461,7 +464,7 @@ object SocketSpec extends ZIOSpecDefault:
           (_: Msg.type) => ZIO.succeed(model + 1)
 
         def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
-          button(phx.onClick(Msg), phx.target(self), model.toString)
+          button(scalive.on.click(Msg), phx.target(self), model.toString)
 
       val lv = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
@@ -513,7 +516,7 @@ object SocketSpec extends ZIOSpecDefault:
         def render(model: Unit): HtmlElement[Unit] =
           div(
             button(
-              phx.onClick.toComponent(CounterComponent)(CounterComponent.Msg),
+              scalive.on.click.toComponent(CounterComponent)(CounterComponent.Msg),
               phx.target(DomSelector.css("#counter")),
               "increment"
             ),
@@ -561,7 +564,7 @@ object SocketSpec extends ZIOSpecDefault:
 
         def render(model: Unit): HtmlElement[Unit] =
           div(
-            button(phx.onClick.to(first)(CounterComponent.Msg), "increment first"),
+            button(scalive.on.click.to(first)(CounterComponent.Msg), "increment first"),
             first.render("first"),
             second.render("second")
           )
@@ -610,7 +613,7 @@ object SocketSpec extends ZIOSpecDefault:
 
         def render(model: Unit): HtmlElement[Unit] =
           div(
-            button(phx.onClick(()), "update"),
+            button(scalive.on.click(()), "update"),
             label.render("initial")
           )
 
@@ -656,7 +659,7 @@ object SocketSpec extends ZIOSpecDefault:
         def render(model: Int): HtmlElement[Unit] =
           div(
             p(s"Revision: $model"),
-            button(phx.onClick(()), "update props"),
+            button(scalive.on.click(()), "update props"),
             div(liveComponent(StatefulLabelComponent, id = "label", props = "Initial"))
           )
 

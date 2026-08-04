@@ -209,7 +209,7 @@ component instance:
 val counter = component(CounterComponent, "counter")
 
 counter.render(CounterComponent.Props(...))
-phx.onClick.to(counter)(CounterComponent.Msg.Increment)
+on.click.to(counter)(CounterComponent.Msg.Increment)
 ctx.components.sendUpdate(counter, CounterComponent.Props(...))
 ```
 
@@ -569,7 +569,7 @@ class HtmlTag(val name: String, val void: Boolean = false):
   def apply[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg]
 ```
 
-Generated HTML tags are available through `import scalive.*`. Custom tags can be created with:
+Generated HTML tags are available through `import scalive.*`. Custom tag names are validated when created:
 
 ```scala
 htmlTag(name, void = false)
@@ -583,7 +583,7 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
   def :=(value: V): Mod.Attr[Nothing]
 ```
 
-Generated HTML attributes are available through `import scalive.*`. Custom attributes can be created with:
+Generated HTML attributes are available through `import scalive.*`. Custom attribute names are validated when created:
 
 ```scala
 htmlAttr(name, codec)
@@ -594,13 +594,17 @@ Namespaced attributes are available under `aria` and `xlink`.
 
 ### `HtmlAttrBinding`
 
-`HtmlAttrBinding` is used for event-style attributes such as `phx.onClick`.
+`HtmlAttrBinding` backs semantic event bindings such as `on.click`.
 
 ```scala
 class HtmlAttrBinding(val name: String):
+  def debounce(duration: FiniteDuration): HtmlAttrBinding
+  def debounceOnBlur: HtmlAttrBinding
+  def throttle(duration: FiniteDuration): HtmlAttrBinding
   def to[Props, Msg, Model](
     instance: LiveComponentInstance[Props, Msg, Model]
   )(message: Msg): Mod.Attr[Nothing]
+  def to[Msg](ref: ComponentRef[Msg])(message: Msg): Mod.Attr[Msg]
   def toComponent[Props, Msg, Model](
     component: LiveComponent[Props, Msg, Model]
   )(message: Msg): Mod.Attr[Nothing]
@@ -626,14 +630,18 @@ runtime component class:
 
 ```scala
 button(
-  phx.onClick.toComponent(CounterComponent)(CounterComponent.Msg.Increment),
-  phx.target("#counter")
+  on.click.toComponent(CounterComponent)(CounterComponent.Msg.Increment),
+  phx.target(DomSelector.css("#counter"))
 )
 ```
 
-Keeping `phx.target` separate preserves Phoenix targeting semantics, including `ComponentRef`, CSS
-selectors, and selectors that match multiple component instances. Events rendered inside a component
-normally use the component message directly with `phx.target(self)`.
+Keeping the protocol-level `phx.target` separate preserves Phoenix selector semantics, including
+selectors that match multiple component instances. Events rendered inside a component normally use
+the typed component reference directly:
+
+```scala
+button(on.click.to(self)(Msg.Increment))
+```
 
 For a single known instance, prefer `to(instance)(message)`. It targets the instance's stable logical
 identity without a selector:
@@ -641,7 +649,7 @@ identity without a selector:
 ```scala
 val counter = component(CounterComponent, "counter")
 
-button(phx.onClick.to(counter)(CounterComponent.Msg.Increment))
+button(on.click.to(counter)(CounterComponent.Msg.Increment))
 ```
 
 ### `Mod[Msg]`
@@ -662,6 +670,7 @@ Mod.Attr.FormBinding(name, f)
 Mod.Attr.FormEventBinding(name, codec, f)
 Mod.Attr.JsBinding(name, command)
 Mod.Attr.RoutedBinding(name, f)
+Mod.Attr.Group(attrs)
 ```
 
 Content cases:
@@ -708,71 +717,124 @@ stream.stream(project): Mod[Msg]
 
 `splitBy` and `splitByIndex` render keyed comprehensions. `LiveStream.stream` renders stream-backed keyed content.
 
-## Phoenix Binding API
+## Semantic HTML API
 
-The `phx` object exposes typed attributes and event bindings.
+The `on` object contains general event bindings. Specialized behavior lives under focused domains or
+on the value it configures. Bindings produce typed messages or declarative `JS` commands rather than
+application-defined event name strings. The separate `live` value remains exclusively the root route
+seed.
 
 ### Event bindings
 
 ```scala
-phx.onClick
-phx.onClickAway
-phx.onBlur
-phx.onFocus
-phx.onWindowBlur
-phx.onKeydown
-phx.onKeyup
-phx.onWindowKeydown
-phx.onWindowKeyup
-phx.onViewportTop
-phx.onViewportBottom
-phx.onProgress
+on.click
+on.clickAway
+on.blur
+on.focus
+on.windowBlur
+on.windowFocus
+on.keyDown
+on.keyUp
+on.windowKeyDown
+on.windowKeyUp
+on.viewportTop
+on.viewportBottom
+on.change
+on.submit
 ```
 
-### Form bindings
+Key filters and rate limits configure the binding they affect:
 
 ```scala
-phx.onChange
-phx.onSubmit
-phx.onChangeForm(f)
-phx.onChangeForm(codec)(f)
-phx.onSubmitForm(f)
-phx.onSubmitForm(codec)(f)
+on.windowKeyDown
+  .key(Key.Escape)
+  .throttle(500.millis)(Msg.Close)
+
+on.change.debounceOnBlur(Msg.Validate)
+```
+
+### Forms and uploads
+
+Prefer `Form.onChange`, `Form.onSubmit`, `Form.onRecover`, `Form.disableRecovery`, and
+`Form.triggerHttpSubmitWhen` for typed forms. `FormField` and `RootedFormField` expose matching
+`onChange`, `onSubmit`, and `onRecover` methods. Low-level codec bindings remain available through
+`on.change.form(codec)` and `on.submit.form(codec)`.
+
+Upload snapshots own their DOM modifiers:
+
+```scala
+upload.dropTarget
+upload.onProgress(Msg.Progress)
+```
+
+### DOM, connection, submission, and flash
+
+```scala
+dom.onMount
+dom.onRemove
+dom.hook(name, id: DomRef)
+dom.ignoreUpdates(id: DomRef)
+
+connection.onConnect
+connection.onDisconnect
+connection.visibleWhenConnected
+connection.visibleWhenDisconnected
+
+submission.disable
+submission.replaceTextWith(text)
+
+flash(kind)(render)
+flash.clearOnClick
+flash.clearOnClick(kind)
+```
+
+`dom.hook` emits the `phx-hook` attribute and required stable DOM ID together.
+`visibleWhenConnected` and `visibleWhenDisconnected` use sticky current-element `hidden` updates,
+so they require no DOM ID or display-style duplication. Streams should use `LiveStream.renderIn`,
+which owns `phx-update="stream"` and all required DOM IDs.
+
+## Phoenix Protocol Attributes
+
+The `phx` object is the explicit compatibility layer for named `phx-*` attributes. Common values
+remain typed, but these attributes intentionally expose the upstream protocol shape.
+
+```scala
+phx.click
+phx.clickAway
+phx.blur
+phx.focus
+phx.windowBlur
+phx.windowFocus
+phx.keyDown
+phx.keyUp
+phx.windowKeyDown
+phx.windowKeyUp
+phx.viewportTop
+phx.viewportBottom
+phx.change
+phx.submit
 phx.autoRecover
 phx.triggerAction
-```
-
-### Lifecycle and JS bindings
-
-```scala
-phx.onConnected
-phx.onDisconnected
-phx.visibleWhenConnected
-phx.visibleWhenDisconnected
-phx.onMounted
-phx.onRemove
-phx.onUpdate
-```
-
-### Attributes
-
-```scala
-phx.key
+phx.progress
 phx.dropTarget
-phx.disableWith
-phx.hook(name, id)
-phx.clearFlash
+phx.connected
+phx.disconnected
+phx.mounted
+phx.remove
+phx.update
+phx.hook
 phx.target(ref)
-phx.target(selector: DomSelector)
+phx.target(selector)
 phx.debounce
 phx.throttle
 phx.value(key)
+phx.disableWith
+phx.feedbackFor
 phx.trackStatic
 ```
 
-`phx.hook(name, id)` emits the `phx-hook` and required stable DOM `id` together. Both values must be non-empty.
-
-`visibleWhenConnected` and `visibleWhenDisconnected` use sticky current-element `hidden` updates, so they require no DOM ID or display-style duplication.
+`phx.update` accepts `PhxUpdate.Replace`, `PhxUpdate.Stream`, or `PhxUpdate.Ignore`.
+`phx.feedbackFor` is exposed only for compatibility with older upstream behavior.
 
 ## Link API
 
@@ -1292,6 +1354,9 @@ final class RootedFormField[Owner, A]:
   def name: String
   def id: String
   def codec: RootedFormCodec[Owner, A]
+  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
   def map[B](f: A => B): RootedFormField[Owner, B]
   def validate(message: String, code: Option[String] = None)(predicate: A => Boolean): RootedFormField[Owner, A]
   def required(message: String = "can't be blank", code: Option[String] = None)(using A =:= String): RootedFormField[Owner, String]
@@ -1317,6 +1382,9 @@ final class RootedForm[Owner, A]:
   def http[Msg](target: FormAction)(mods*): HtmlElement[Msg]
   def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
   def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def disableRecovery: Mod.Attr[Nothing]
+  def triggerHttpSubmitWhen(condition: Boolean): Mod.Attr[Nothing]
   def field[B](definition: RootedFormField[Owner, B]): FormFieldView[B]
 ```
 
@@ -1404,6 +1472,9 @@ final class FormField[A]:
   val codec: FormCodec[A]
   def name: String
   def id: String
+  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
+  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]
   def map[B](f: A => B): FormField[B]
   def validate(message: String, code: Option[String] = None)(
     predicate: A => Boolean
@@ -1503,20 +1574,23 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   def http(action: FormAction)(mods*): HtmlElement[Msg]
   def onChange(f): Mod.Attr[Msg]
   def onSubmit(f): Mod.Attr[Msg]
+  def onRecover(f): Mod.Attr[Msg]
+  def disableRecovery: Mod.Attr[Nothing]
+  def triggerHttpSubmitWhen(condition: Boolean): Mod.Attr[Nothing]
   def field(path): FormFieldView
   def field[B](definition: FormField[B]): FormFieldView[B]
   def name(path): String
   def id(path): String
   def value(path): String
-  def text(path, mods*): HtmlElement[Nothing]
-  def text(path, explicitId, mods*): HtmlElement[Nothing]
-  def email(path, mods*): HtmlElement[Nothing]
-  def password(path, mods*): HtmlElement[Nothing]
-  def hidden(path, mods*): HtmlElement[Nothing]
-  def checkbox(path, mods*): HtmlElement[Nothing]
-  def checkbox(path, checkedValue, mods*): HtmlElement[Nothing]
-  def textarea(path, mods*): HtmlElement[Nothing]
-  def select(path, options, mods*): HtmlElement[Nothing]
+  def text[Msg](path, mods*): HtmlElement[Msg]
+  def text[Msg](path, explicitId, mods*): HtmlElement[Msg]
+  def email[Msg](path, mods*): HtmlElement[Msg]
+  def password[Msg](path, mods*): HtmlElement[Msg]
+  def hidden[Msg](path, mods*): HtmlElement[Msg]
+  def checkbox[Msg](path, mods*): HtmlElement[Msg]
+  def checkbox[Msg](path, checkedValue, mods*): HtmlElement[Msg]
+  def textarea[Msg](path, mods*): HtmlElement[Msg]
+  def select[Msg](path, options, mods*): HtmlElement[Msg]
   def errors(path): HtmlElement[Nothing]
   def feedback(path, mods*): HtmlElement[Nothing]
   def errorsFor(path): Vector[FormError]
@@ -1533,7 +1607,7 @@ Form.http(action)(mods*)
 
 `Form.of` remains the low-level escape hatch for manually pairing a root name,
 `FormState`, and `FormCodec`; prefer `FormRoot` and `FormDefinition` for application
-forms. `http` renders a normal browser form whose `action` and `method` come from a `FormAction`. The companion form supports action-only forms; the instance method combines the same wrapper with field helpers. Neither form adds `phx-change`, `phx-submit`, `phx-trigger-action`, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `phx.triggerAction`.
+forms. `http` renders a normal browser form whose `action` and `method` come from a `FormAction`. The companion form supports action-only forms; the instance method combines the same wrapper with field helpers. Neither form adds `phx-change`, `phx-submit`, `phx-trigger-action`, or HTTP body decoding. Callers opt into Live bindings explicitly with `onChange`, `onSubmit`, and `triggerHttpSubmitWhen`.
 
 Finalized Live renders automatically add `_csrf_token` to checked POST actions. GET and `FormAction.unsafe` targets do not receive a token. The helper rejects caller-supplied `action` or `method` attributes; use `FormAction.unsafe` and the raw `form` tag when those attributes or CSRF behavior must be controlled manually.
 
@@ -1698,15 +1772,15 @@ final class FormFieldView[A] private[scalive] (...):
   def visibleErrors: Vector[FormError]
   def hasVisibleErrors: Boolean
   def validationAttributes: Vector[Mod.Attr[Nothing]]
-  def text(mods*): HtmlElement[Nothing]
-  def text(explicitId, mods*): HtmlElement[Nothing]
-  def email(mods*): HtmlElement[Nothing]
-  def password(mods*): HtmlElement[Nothing]
-  def hidden(mods*): HtmlElement[Nothing]
-  def checkbox(mods*): HtmlElement[Nothing]
-  def checkbox(checkedValue, mods*): HtmlElement[Nothing]
-  def textarea(mods*): HtmlElement[Nothing]
-  def select(options, mods*): HtmlElement[Nothing]
+  def text[Msg](mods*): HtmlElement[Msg]
+  def text[Msg](explicitId, mods*): HtmlElement[Msg]
+  def email[Msg](mods*): HtmlElement[Msg]
+  def password[Msg](mods*): HtmlElement[Msg]
+  def hidden[Msg](mods*): HtmlElement[Msg]
+  def checkbox[Msg](mods*): HtmlElement[Msg]
+  def checkbox[Msg](checkedValue, mods*): HtmlElement[Msg]
+  def textarea[Msg](mods*): HtmlElement[Msg]
+  def select[Msg](options, mods*): HtmlElement[Msg]
   def errorFeedback(mods*): HtmlElement[Nothing]
   def feedback(mods*): HtmlElement[Nothing]
 ```

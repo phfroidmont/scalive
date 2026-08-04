@@ -39,32 +39,32 @@ final class AsyncReportLiveView
         button(
           typ := "button",
           cls := "btn btn-primary",
-          phx.onClick(Msg.RunSuccess),
+          on.click(Msg.RunSuccess),
           "Run successful report"
         ),
         button(
           typ := "button",
           cls := "btn btn-outline btn-error",
-          phx.onClick(Msg.RunFailure),
+          on.click(Msg.RunFailure),
           "Run failing report"
         ),
         button(
           typ := "button",
           cls := "btn btn-outline",
-          phx.onClick(Msg.Replace),
+          on.click(Msg.Replace),
           "Replace current work"
         ),
         button(
           typ := "button",
           cls := "btn btn-ghost",
-          phx.onClick(Msg.Retry),
+          on.click(Msg.Retry),
           "Retry"
         ),
         button(
           typ      := "button",
           cls      := "btn btn-ghost",
           disabled := !model.report.isLoading,
-          phx.onClick(Msg.Cancel),
+          on.click(Msg.Cancel),
           "Cancel"
         )
       ),

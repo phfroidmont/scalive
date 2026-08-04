@@ -8,7 +8,7 @@ object BindingRegistrySpec extends ZIOSpecDefault:
   private def keyedClickView(keys: List[String]): HtmlElement[String] =
     ul(
       keys.splitBy(identity) { (_, key) =>
-        li(idAttr := key, phx.onClick(s"msg-$key"), key)
+        li(idAttr := key, scalive.on.click(s"msg-$key"), key)
       }
     )
 
@@ -33,7 +33,7 @@ object BindingRegistrySpec extends ZIOSpecDefault:
       )
     },
     test("JS.push bindings resolve deterministically") {
-      val view = button(phx.onClick(JS.push("one").push("two")), "trigger")
+      val view = button(scalive.on.click(JS.push("one").push("two")), "trigger")
 
       val first  = BindingRegistry.collect[String](view)
       val second = BindingRegistry.collect[String](view)
@@ -51,12 +51,14 @@ object BindingRegistrySpec extends ZIOSpecDefault:
         JS.show(to = target.selector).toJson ==
           "[[\"show\",{\"to\":\"#target\"}]]",
         JS.push("save", target = target.selector).toJson ==
-          "[[\"push\",{\"event\":\"__scalive_pending_binding_id__\",\"target\":\"#target\",\"pageLoading\":false}]]"
+          "[[\"push\",{\"event\":\"__scalive_pending_binding_id__\",\"target\":\"#target\"}]]",
+        JS.push("save", pageLoading = true).toJson ==
+          "[[\"push\",{\"event\":\"__scalive_pending_binding_id__\",\"pageLoading\":true}]]"
       )
     },
     test("form bindings receive lossless form data") {
       val view = form(
-        phx.onChangeForm(data => data.values("items[]").mkString(",")),
+        scalive.on.change.form(data => data.values("items[]").mkString(",")),
         input(nameAttr := "items[]")
       )
 

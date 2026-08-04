@@ -64,20 +64,20 @@ final class ClockLiveView extends LiveView[ClockLiveView.Msg, ClockLiveView.Mode
             typ      := "button",
             cls      := "btn btn-primary",
             disabled := (model.mode != Mode.Stopped),
-            phx.onClick(Msg.Start),
+            on.click(Msg.Start),
             "Start: every second"
           ),
           button(
             typ := "button",
             cls := "btn btn-outline",
-            phx.onClick(Msg.Replace),
+            on.click(Msg.Replace),
             "Replace: 4 times/second"
           ),
           button(
             typ      := "button",
             cls      := "btn btn-ghost",
             disabled := (model.mode == Mode.Stopped),
-            phx.onClick(Msg.Cancel),
+            on.click(Msg.Cancel),
             "Cancel stream"
           )
         )

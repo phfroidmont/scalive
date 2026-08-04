@@ -46,7 +46,7 @@ object FormApiSpec extends ZIOSpecDefault:
         used: Set[FormPath])
 
       val view: HtmlElement[Changed] = form(
-        phx.onChangeForm(profileCodec)(event => Changed(event.value, event.target, event.state.used)),
+        scalive.on.change.form(profileCodec)(event => Changed(event.value, event.target, event.state.used)),
         input(nameAttr := "profile[name]")
       )
 
@@ -80,7 +80,7 @@ object FormApiSpec extends ZIOSpecDefault:
         valid: Boolean)
 
       val view: HtmlElement[Submitted] = form(
-        phx.onSubmitForm(FormCodec.formData) { event =>
+        scalive.on.submit.form(FormCodec.formData) { event =>
           Submitted(
             event.submitter,
             event.state.submitted,
@@ -107,7 +107,7 @@ object FormApiSpec extends ZIOSpecDefault:
       final case class Submitted(value: Either[FormErrors, String])
 
       val view: HtmlElement[Submitted] = form(
-        phx.onSubmitForm(NameField)(event => Submitted(event.value)),
+        NameField.onSubmit(event => Submitted(event.value)),
         input(nameAttr := NameField.name)
       )
       val binding = BindingRegistry.collect[Submitted](view).values.head
@@ -196,6 +196,33 @@ object FormApiSpec extends ZIOSpecDefault:
         html.contains("name=\"profile[name]\""),
         html.contains("id=\"profile_name\""),
         html.contains("value=\"Alice\"")
+      )
+    },
+    test("form field controls accept typed message bindings") {
+      final case class Changed()
+
+      val state     = FormState(FormData.empty, Right(Profile("")), submitted = false)
+      val formModel = Form.of("profile", state, profileCodec)
+      val field     = formModel.field(NameField)
+      val controls: Vector[HtmlElement[Changed]] = Vector(
+        formModel.text("name", scalive.on.focus(Changed())),
+        formModel.email("email", scalive.on.focus(Changed())),
+        formModel.password("password", scalive.on.focus(Changed())),
+        formModel.hidden("id", scalive.on.focus(Changed())),
+        formModel.checkbox("active", scalive.on.focus(Changed())),
+        formModel.textarea("bio", scalive.on.focus(Changed())),
+        formModel.select("role", Vector("user" -> "User"), scalive.on.focus(Changed())),
+        field.text(scalive.on.focus(Changed())),
+        field.email(scalive.on.focus(Changed())),
+        field.password(scalive.on.focus(Changed())),
+        field.hidden(scalive.on.focus(Changed())),
+        field.checkbox(scalive.on.focus(Changed())),
+        field.textarea(scalive.on.focus(Changed())),
+        field.select(Vector("user" -> "User"), scalive.on.focus(Changed()))
+      )
+
+      assertTrue(
+        controls.forall(control => BindingRegistry.collect[Changed](control).size == 1)
       )
     },
     test("typed scalar fields reject duplicates and codecs accumulate errors") {
@@ -365,7 +392,7 @@ object FormApiSpec extends ZIOSpecDefault:
         FormAction.from(Method.POST / "profiles")
       )(
         formModel.onSubmit(event => Submitted(event.value)),
-        phx.triggerAction := true,
+        formModel.triggerHttpSubmitWhen(true),
         formModel.text("name")
       )
       val html = HtmlBuilder.build(view)

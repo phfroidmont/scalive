@@ -36,7 +36,7 @@ final class BrowserInteropLiveView
 
   def render(model: Model) =
     div(
-      phx.hook(HookName, id = HookDomRef.value),
+      dom.hook(HookName, HookDomRef),
       headerTag(
         cls := "mb-8 border-b border-base-300 pb-7",
         div(cls := "badge badge-primary badge-outline mb-4", "Client interop"),
@@ -59,7 +59,7 @@ final class BrowserInteropLiveView
           button(
             typ := "button",
             cls := "btn btn-primary mt-5",
-            phx.onClick(ClientOnlyCommand),
+            on.click(ClientOnlyCommand),
             "Run composed command"
           ),
           p(
@@ -99,7 +99,7 @@ final class BrowserInteropLiveView
           button(
             typ := "button",
             cls := "btn btn-secondary mt-5",
-            phx.onClick(Msg.CopySample),
+            on.click(Msg.CopySample),
             if model.operation.isPending then "Retry copy" else "Copy sample text"
           ),
           div(

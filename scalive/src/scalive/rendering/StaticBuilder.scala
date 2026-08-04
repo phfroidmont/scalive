@@ -20,8 +20,10 @@ private[scalive] object StaticBuilder:
       case Attr.FormBinding(name, _)         => List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.FormEventBinding(name, _, _) =>
         List(Some(s""" $name="""), None, Some('"'.toString))
-      case Attr.JsBinding(name, _)     => List(Some(s" $name='"), None, Some("'"))
+      case Attr.JsBinding(name, _)     => List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.RoutedBinding(name, _) => List(Some(s""" $name="""), None, Some('"'.toString))
+      case Attr.Group(_)               =>
+        throw new IllegalStateException("attribute groups must be flattened before rendering")
     }
 
     val children = el.contentMods.flatMap {

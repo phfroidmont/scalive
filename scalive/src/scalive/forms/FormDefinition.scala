@@ -132,6 +132,15 @@ final class RootedFormField[Owner, A] private[scalive] (
 
   def codec: RootedFormCodec[Owner, A] = RootedFormCodec(underlying.codec)
 
+  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    underlying.onChange(f)
+
+  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    underlying.onSubmit(f)
+
+  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    underlying.onRecover(f)
+
   def map[B](f: A => B): RootedFormField[Owner, B] =
     RootedFormField(underlying.map(f))
 
@@ -152,6 +161,7 @@ final class RootedFormField[Owner, A] private[scalive] (
 
   def initial(values: String*): FormInitialValue[Owner] =
     FormInitialValue(path, values.toVector)
+end RootedFormField
 
 private[scalive] object RootedFormField:
   def apply[Owner, A](field: FormField[A]): RootedFormField[Owner, A] =
@@ -205,6 +215,15 @@ final class RootedForm[Owner, A] private[scalive] (
 
   def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
     underlying.onSubmit(f)
+
+  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    underlying.onRecover(f)
+
+  def disableRecovery: Mod.Attr[Nothing] =
+    underlying.disableRecovery
+
+  def triggerHttpSubmitWhen(condition: Boolean): Mod.Attr[Nothing] =
+    underlying.triggerHttpSubmitWhen(condition)
 
   def field[B](definition: RootedFormField[Owner, B]): FormFieldView[B] =
     underlying.field(definition.underlying)

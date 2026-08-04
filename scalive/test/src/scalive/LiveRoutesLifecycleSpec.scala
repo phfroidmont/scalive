@@ -55,7 +55,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
             case _                  => ZIO.succeed(model)
 
       def render(model: Int): HtmlElement[ChildMsg] =
-        button(phx.onClick(ChildMsg.Increment), model.toString)
+        button(scalive.on.click(ChildMsg.Increment), model.toString)
 
   private def nestedChildLiveView =
     new LiveView[ChildMsg, Int]:
@@ -68,7 +68,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
       def render(model: Int): HtmlElement[ChildMsg] =
         div(
-          button(phx.onClick(ChildMsg.Increment), s"child $model"),
+          button(scalive.on.click(ChildMsg.Increment), s"child $model"),
           liveView("grandchild", childLiveView)
         )
 
@@ -87,7 +87,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
             case ChildMsg.Crash               => ZIO.fail(RuntimeException("boom"))
 
       def render(model: Int): HtmlElement[ChildMsg] =
-        button(phx.onClick(command), model.toString)
+        button(scalive.on.click(command), model.toString)
 
   private def redirectAwareParent(child: LiveView[ChildMsg, Int]) =
     new LiveView.Routed[Unit, String, Option[String]]:
@@ -537,7 +537,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           case _              => ZIO.succeed(model)
 
         def render(model: Int): HtmlElement[ChildMsg] =
-          button(phx.onClick(ChildMsg.Crash), model.toString)
+          button(scalive.on.click(ChildMsg.Crash), model.toString)
 
       ZIO.scoped(for
         channel      <- LiveChannel.make(tokenConfig)
@@ -565,7 +565,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           case _              => ZIO.succeed(model)
 
         def render(model: Unit): HtmlElement[ChildMsg] =
-          button(phx.onClick(ChildMsg.Crash), "crash")
+          button(scalive.on.click(ChildMsg.Crash), "crash")
 
       val parent = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) = ZIO.unit
@@ -692,7 +692,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
-            button(phx.onClick(ParentMsg.ShowChild), "show"),
+            button(scalive.on.click(ParentMsg.ShowChild), "show"),
             if model then liveView("child", nestedChildLiveView) else "hidden"
           )
 
@@ -740,7 +740,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
         def render(model: Int): HtmlElement[ParentMsg] =
           div(
-            button(phx.onClick(ParentMsg.Rerender), "rerender"),
+            button(scalive.on.click(ParentMsg.Rerender), "rerender"),
             span(model.toString),
             liveView("child", childLiveView)
           )
@@ -979,8 +979,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         channel       <- LiveChannel.make(TokenConfig.default)
         rendered <- SocketComponentRuntime.renderRoot(
                       ul(
-                        idAttr       := "items",
-                        phx.onUpdate := "stream",
+                        idAttr     := "items",
+                        phx.update := PhxUpdate.Stream,
                         stream.stream((domId, item) => div(idAttr := domId, liveView(domId, child(item.id))))
                       ),
                       componentsRef,
@@ -1020,8 +1020,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
 
         def render(model: LiveStream[Item]): HtmlElement[Unit] =
           ul(
-            idAttr       := "items",
-            phx.onUpdate := "stream",
+            idAttr     := "items",
+            phx.update := PhxUpdate.Stream,
             model.stream((domId, item) => div(idAttr := domId, liveView(domId, child(item.id))))
           )
 
@@ -1055,7 +1055,10 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
               case _                   => ZIO.succeed(model)
 
         def render(model: Int): HtmlElement[ParentMsg] =
-          div(button(phx.onClick(ParentMsg.Rerender), model.toString), liveView("child", childLiveView))
+          div(
+            button(scalive.on.click(ParentMsg.Rerender), model.toString),
+            liveView("child", childLiveView)
+          )
 
       val patchEvent: Payload.Event = Payload.Event(
         `type` = "click",

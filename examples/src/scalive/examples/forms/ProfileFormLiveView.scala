@@ -114,9 +114,9 @@ final class ProfileFormLiveView
           biographyField.errorFeedback(cls := "mt-2 text-sm text-error")
         ),
         button(
-          typ             := "submit",
-          cls             := "btn btn-primary",
-          phx.disableWith := "Saving...",
+          typ := "submit",
+          cls := "btn btn-primary",
+          submission.replaceTextWith("Saving..."),
           "Save profile"
         )
       )

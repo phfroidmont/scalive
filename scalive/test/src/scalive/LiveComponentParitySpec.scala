@@ -51,9 +51,9 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
             ctx.nav.redirectUnsafe("/components?redirect=redirect").as(model)
     def render(props: Unit, model: Unit, self: ComponentRef[NavMsg]) =
       div(
-        button(phx.onClick(NavMsg.PushNavigate), phx.target(self), "push navigate"),
-        button(phx.onClick(NavMsg.PushPatch), phx.target(self), "push patch"),
-        button(phx.onClick(NavMsg.Redirect), phx.target(self), "redirect")
+        button(scalive.on.click(NavMsg.PushNavigate), phx.target(self), "push navigate"),
+        button(scalive.on.click(NavMsg.PushPatch), phx.target(self), "push patch"),
+        button(scalive.on.click(NavMsg.Redirect), phx.target(self), "redirect")
       )
 
   private object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
@@ -64,7 +64,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
       (_: Msg.type) => ZIO.succeed(model + 1)
     def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
-      button(phx.onClick(Msg), phx.target(self), model.toString)
+      button(scalive.on.click(Msg), phx.target(self), model.toString)
 
   private object RawTargetComponent extends LiveComponent[Unit, Unit, String]:
     override def hooks: ComponentLiveHooks[Unit, Unit, String] =
@@ -238,7 +238,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
-            button(phx.onClick(ParentMsg.Toggle), "toggle"),
+            button(scalive.on.click(ParentMsg.Toggle), "toggle"),
             liveComponent(LabelComponent, id = "chris", props = if model then "DISABLED" else "chris"),
             liveComponent(LabelComponent, id = "jose", props = if model then "DISABLED" else "jose"),
             if model then
@@ -275,7 +275,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           if model then
-            div(button(phx.onClick(ParentMsg.Toggle), "disable"), liveComponent(LabelComponent, id = "chris", props = "chris"))
+            div(button(scalive.on.click(ParentMsg.Toggle), "disable"), liveComponent(LabelComponent, id = "chris", props = "chris"))
           else div("Disabled")
 
       for
@@ -299,7 +299,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
-            button(phx.onClick(ParentMsg.Toggle), "disable"),
+            button(scalive.on.click(ParentMsg.Toggle), "disable"),
             if model then liveComponent(LabelComponent, id = "hello", props = "Hello World")
             else "disabled"
           )
@@ -342,7 +342,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
-            button(phx.onClick(ParentMsg.Toggle), "disable"),
+            button(scalive.on.click(ParentMsg.Toggle), "disable"),
             if model then
               Seq(
                 liveComponent(LabelComponent, id = "hello", props = "hello"),
@@ -376,7 +376,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               case ParentMsg.Toggle => ZIO.succeed(model)
         def render(model: Boolean): HtmlElement[ParentMsg] =
           div(
-            button(phx.onClick(ParentMsg.SendMissingUpdate), "add"),
+            button(scalive.on.click(ParentMsg.SendMissingUpdate), "add"),
             if model then liveComponent(LabelComponent, id = "missing", props = "fresh") else "hidden"
           )
 
@@ -403,8 +403,8 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               case ParentMsg.Toggle => ZIO.succeed(model + 1)
         def render(model: Int): HtmlElement[ParentMsg] =
           div(
-            button(phx.onClick(ParentMsg.SendMissingUpdate), "send update"),
-            button(phx.onClick(ParentMsg.Toggle), "rerender"),
+            button(scalive.on.click(ParentMsg.SendMissingUpdate), "send update"),
+            button(scalive.on.click(ParentMsg.Toggle), "rerender"),
             p(model.toString),
             liveComponent(LabelComponent, id = "stable", props = "parent")
           )

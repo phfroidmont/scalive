@@ -167,7 +167,7 @@ object JSCommands:
               maybeBindingId.getOrElse(BindingId.unresolved()),
               target.jsonValue,
               loading.jsonValue,
-              Option.when(!pageLoading)(pageLoading)
+              Option.when(pageLoading)(pageLoading)
             )
           ),
         Some(binding)

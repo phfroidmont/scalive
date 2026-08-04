@@ -33,7 +33,7 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
           styleAttr := "margin-bottom: -1px; display: flex; gap: 2rem;",
           a(
             href := focusWrap.href,
-            phx.onClick(
+            on.click(
               JS.pushPatch(focusWrap).push(Msg.SetTab("focus_wrap"))
             ),
             styleAttr :=
@@ -75,7 +75,7 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
           styleAttr := "position: relative; display: inline-block;",
           button(
             idAttr := "dropdown-button",
-            phx.onClick(
+            on.click(
               JS.toggle(to = DomSelector.css("#dropdown-menu"))
                 .focusFirst(to = DomSelector.css("#dropdown-content"))
             ),
@@ -131,7 +131,7 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
 
   private def menuButton(label: String) =
     button(
-      phx.onClick(JS.hide(to = DomSelector.css("#dropdown-menu"))),
+      on.click(JS.hide(to = DomSelector.css("#dropdown-menu"))),
       styleAttr := "display: block; width: 100%; text-align: left; padding: 0.5rem 1rem; font-size: 0.875rem;",
       label
     )

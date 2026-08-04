@@ -10,10 +10,19 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   ): HtmlElement[Msg] = Form.http(target)(mods*)
 
   def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    phx.onChangeForm(codec)(f)
+    on.change.form(codec)(f)
 
   def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    phx.onSubmitForm(codec)(f)
+    on.submit.form(codec)(f)
+
+  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    on.recover.form(codec)(f)
+
+  def disableRecovery: Mod.Attr[Nothing] =
+    phx.autoRecover := "ignore"
+
+  def triggerHttpSubmitWhen(condition: Boolean): Mod.Attr[Nothing] =
+    phx.triggerAction := condition
 
   def field(path: String): FormFieldView[Vector[String]] =
     field(FormPath.parse(path))
@@ -46,66 +55,66 @@ final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A
   def value(path: FormPath): String =
     state.raw.string(fullPath(path)).orElse(state.raw.string(path)).getOrElse("")
 
-  def text(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def text[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).text(mods*)
 
-  def text(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def text[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).text(mods*)
 
-  def text(path: String, explicitId: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def text[Msg](path: String, explicitId: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).text(explicitId, mods*)
 
-  def text(path: FormPath, explicitId: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def text[Msg](path: FormPath, explicitId: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).text(explicitId, mods*)
 
-  def email(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def email[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).email(mods*)
 
-  def email(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def email[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).email(mods*)
 
-  def password(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def password[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).password(mods*)
 
-  def password(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def password[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).password(mods*)
 
-  def hidden(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def hidden[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).hidden(mods*)
 
-  def hidden(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def hidden[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).hidden(mods*)
 
-  def checkbox(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def checkbox[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).checkbox(mods*)
 
-  def checkbox(path: String, checkedValue: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def checkbox[Msg](path: String, checkedValue: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).checkbox(checkedValue, mods*)
 
-  def checkbox(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def checkbox[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).checkbox(mods*)
 
-  def checkbox(path: FormPath, checkedValue: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def checkbox[Msg](path: FormPath, checkedValue: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).checkbox(checkedValue, mods*)
 
-  def textarea(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def textarea[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).textarea(mods*)
 
-  def textarea(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing] =
+  def textarea[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg] =
     field(path).textarea(mods*)
 
-  def select(
+  def select[Msg](
     path: String,
     options: Iterable[(String, String)],
-    mods: Mod[Nothing]*
-  ): HtmlElement[Nothing] =
+    mods: Mod[Msg]*
+  ): HtmlElement[Msg] =
     field(path).select(options, mods*)
 
-  def select(
+  def select[Msg](
     path: FormPath,
     options: Iterable[(String, String)],
-    mods: Mod[Nothing]*
-  ): HtmlElement[Nothing] =
+    mods: Mod[Msg]*
+  ): HtmlElement[Msg] =
     field(path).select(options, mods*)
 
   def errors(path: String): HtmlElement[Nothing] =
@@ -181,6 +190,7 @@ object Form:
       case Mod.Attr.FormEventBinding(name, _, _)   => Some(name)
       case Mod.Attr.JsBinding(name, _)             => Some(name)
       case Mod.Attr.RoutedBinding(name, _)         => Some(name)
+      case Mod.Attr.Group(attrs)                   => attrs.flatMap(attributeName).headOption
       case _: Mod.Content[?]                       => None
 
   def of[A](name: String, state: FormState[A], codec: FormCodec[A]): Form[A] =
@@ -226,31 +236,31 @@ final class FormFieldView[A] private[scalive] (
     Vector(aria.describedby := errorId) ++
       Option.when(hasVisibleErrors)(aria.invalid := "true").toVector
 
-  def text(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+  def text[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
     input(typ := "text", idAttr := id, nameAttr := name, value := fieldValue, flatten(mods))
 
-  def text(
+  def text[Msg](
     explicitId: String,
-    mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
-  ): HtmlElement[Nothing] =
+    mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
+  ): HtmlElement[Msg] =
     input(typ := "text", idAttr := explicitId, nameAttr := name, value := fieldValue, flatten(mods))
 
-  def email(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+  def email[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
     input(typ := "email", idAttr := id, nameAttr := name, value := fieldValue, flatten(mods))
 
-  def password(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+  def password[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
     input(typ := "password", idAttr := id, nameAttr := name, value := fieldValue, flatten(mods))
 
-  def hidden(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+  def hidden[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
     input(typ := "hidden", idAttr := id, nameAttr := name, value := fieldValue, flatten(mods))
 
-  def checkbox(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+  def checkbox[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
     checkbox("true", flatten(mods))
 
-  def checkbox(
+  def checkbox[Msg](
     checkedValue: String,
-    mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
-  ): HtmlElement[Nothing] =
+    mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
+  ): HtmlElement[Msg] =
     input(
       typ      := "checkbox",
       idAttr   := id,
@@ -260,13 +270,13 @@ final class FormFieldView[A] private[scalive] (
       flatten(mods)
     )
 
-  def textarea(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
+  def textarea[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
     Form.textareaTag(idAttr := id, nameAttr := name, flatten(mods), fieldValue)
 
-  def select(
+  def select[Msg](
     options: Iterable[(String, String)],
-    mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
-  ): HtmlElement[Nothing] =
+    mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
+  ): HtmlElement[Msg] =
     val selectedValues = rawValues.toSet
     _root_.scalive.select(
       idAttr   := id,
@@ -296,11 +306,11 @@ final class FormFieldView[A] private[scalive] (
   def feedback(mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*): HtmlElement[Nothing] =
     div(Form.feedbackFor := name, flatten(mods))
 
-  private def flatten(
-    mods: Seq[Mod[Nothing] | IterableOnce[Mod[Nothing]]]
-  ): Vector[Mod[Nothing]] =
+  private def flatten[Msg](
+    mods: Seq[Mod[Msg] | IterableOnce[Mod[Msg]]]
+  ): Vector[Mod[Msg]] =
     mods.toVector.flatMap {
-      case mod: Mod[Nothing]                => Some(mod)
-      case mods: IterableOnce[Mod[Nothing]] => mods
+      case mod: Mod[Msg]                => Some(mod)
+      case mods: IterableOnce[Mod[Msg]] => mods
     }
 end FormFieldView

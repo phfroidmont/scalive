@@ -16,21 +16,21 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
   def render(model: Model) =
     div(
       form(
-        phx.onSubmit(params => Msg.SubmitPhone(params.getOrElse("user[phone_number]", ""))),
+        on.submit(params => Msg.SubmitPhone(params.getOrElse("user[phone_number]", ""))),
         input(
           typ := "text",
-          phx.hook(".PhoneNumber", "user-phone-number"),
+          dom.hook(".PhoneNumber", DomRef("user-phone-number")),
           nameAttr    := "user[phone_number]",
           placeholder := "phone"
         )
       ),
       p(idAttr := "phone", model.phone),
       div(
-        phx.hook(".Runtime", "runtime"),
+        dom.hook(".Runtime", DomRef("runtime")),
         styleAttr := "display: none;",
         "Runtime hook works!"
       ),
-      button(phx.onClick(Msg.PushJs), "Push JS from server"),
+      button(on.click(Msg.PushJs), "Push JS from server"),
       h1(idAttr := "hello", "Hello!"),
       syntaxHighlight("""
                         |defmodule SyntaxHighlight do

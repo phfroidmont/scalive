@@ -31,7 +31,7 @@ Run the documentation site with `mill documentation.site.run`.
 - [x] Phase 3: Documentation application shell
 - [x] Phase 4: Search and metadata
 - [x] Phase 5: Interactive example foundation
-- [ ] Phase 6: Runtime X-ray inspector
+- [x] Phase 6: Runtime X-ray inspector
 - [ ] Phase 7: Example migration
 - [ ] Phase 8: Documentation content
 - [ ] Phase 9: Visual and responsive design
@@ -371,45 +371,45 @@ test harness without expanding Scalive's public testing API.
 
 **Depends on:** Phase 5. Complete before bulk example migration.
 
-- [ ] Define a package-private, disabled-by-default runtime trace sink in Scalive.
-- [ ] Expose only a package-private router/runtime configuration path for
+- [x] Define a package-private, disabled-by-default runtime trace sink in Scalive.
+- [x] Expose only a package-private router/runtime configuration path for
   installing the sink.
-- [ ] Put the disabled check before trace-object construction, model projection,
+- [x] Put the disabled check before trace-object construction, model projection,
   serialization, clock access, or collection.
-- [ ] Verify by code review that disabled tracing performs only a predictable
+- [x] Verify by code review that disabled tracing performs only a predictable
   no-op branch.
-- [ ] Add tests proving disabled tracing never invokes a projector.
-- [ ] Add tests proving disabled tracing emits byte-for-byte identical HTML and
+- [x] Add tests proving disabled tracing never invokes a projector.
+- [x] Add tests proving disabled tracing emits byte-for-byte identical HTML and
   protocol frames.
-- [ ] Instrument socket join, decoded events, binding resolution, typed messages,
+- [x] Instrument socket join, decoded events, binding resolution, typed messages,
   lifecycle callbacks, model proposals, render completion, tree diffs, model
   commits, final frames, and crashes.
-- [ ] Distinguish proposed, rendered, and committed models.
-- [ ] Add explicit per-example message and model projectors.
-- [ ] Default all unprojected values to type names and redacted content.
-- [ ] Never invoke generic `toString` on models or messages.
-- [ ] Add a test model whose `toString` throws.
-- [ ] Introduce trace session, connection epoch, socket epoch, topic, join
+- [x] Distinguish proposed, rendered, and committed models.
+- [x] Add explicit per-example message and model projectors.
+- [x] Default all unprojected values to type names and redacted content.
+- [x] Never invoke generic `toString` on models or messages.
+- [x] Add a test model whose `toString` throws.
+- [x] Introduce trace session, connection epoch, socket epoch, topic, join
   reference, message reference, and operation sequence identifiers.
-- [ ] Publish server records to a bounded documentation-owned in-memory channel.
-- [ ] Run the inspector on a separate nested LiveView topic.
-- [ ] Exclude inspector traffic from observed traces.
-- [ ] Wrap the pinned Phoenix serializer to observe outbound and inbound frames
+- [x] Publish server records to a bounded documentation-owned in-memory channel.
+- [x] Run the inspector on a separate nested LiveView topic.
+- [x] Exclude inspector traffic from observed traces.
+- [x] Wrap the pinned Phoenix serializer to observe outbound and inbound frames
   without modifying them.
-- [ ] Use Phoenix patch callbacks and a scoped `MutationObserver` to observe final
+- [x] Use Phoenix patch callbacks and a scoped `MutationObserver` to observe final
   DOM changes.
-- [ ] Keep all Phoenix-internal integration inside one versioned JavaScript
+- [x] Keep all Phoenix-internal integration inside one versioned JavaScript
   adapter.
-- [ ] Send browser trace records only to the inspector topic.
-- [ ] Preserve independent browser and server ordering instead of pretending
+- [x] Send browser trace records only to the inspector topic.
+- [x] Preserve independent browser and server ordering instead of pretending
   clocks are synchronized.
-- [ ] Sanitize tokens, CSRF values, cookies, passwords, form secrets, claims, and
+- [x] Sanitize tokens, CSRF values, cookies, passwords, form secrets, claims, and
   upload bytes.
-- [ ] Bound trace history by record count and byte size.
-- [ ] Implement readable model, lifecycle, wire-diff, and DOM-diff views.
-- [ ] Allow expansion to sanitized protocol structure.
-- [ ] Add the counter X-ray browser journey.
-- [ ] Test empty diffs, failed renders, reconnects, async completion, components,
+- [x] Bound trace history by record count and byte size.
+- [x] Implement readable model, lifecycle, wire-diff, and DOM-diff views.
+- [x] Allow expansion to sanitized protocol structure.
+- [x] Add the counter X-ray browser journey.
+- [x] Test empty diffs, failed renders, reconnects, async completion, components,
   streams, and title-only updates.
 
 **Verification:**
@@ -422,7 +422,7 @@ npm run test:xray --prefix documentation/site
 
 **Completion gate:**
 
-- [ ] A counter click is correlated from browser event through committed model
+- [x] A counter click is correlated from browser event through committed model
   and final DOM application without exposing secrets or changing observed
   protocol behavior.
 

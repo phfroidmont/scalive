@@ -1,13 +1,20 @@
-import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
 
 import { nextActiveIndex, search } from "./search.js"
+import {
+  assertLiveViewVersion,
+  createTraceSession,
+  createXRayAdapter,
+  XRaySocket,
+} from "./xray/phoenix-live-view-1.1.28.js"
 
 const connectionRoot = document.documentElement
 const themeStorageKey = "scalive.docs.theme"
 const exampleControlSelector =
   "[data-example-controls], [data-example-controls] button, [data-example-controls] input, [data-example-controls] select, [data-example-controls] textarea"
 const instantSearchLimit = 8
+const xrayAdapter = createXRayAdapter()
+const xrayTraceSession = createTraceSession()
 const searchKindLabels = {
   page: "Page",
   heading: "Heading",
@@ -65,6 +72,7 @@ window.addEventListener("online", () => {
 window.addEventListener("offline", () => updateConnectionState("offline"))
 
 const Hooks = {
+  XRayInspector: xrayAdapter.hook,
   DocumentationSearch: {
     mounted() {
       this.input = this.el.querySelector("input[name='q']")
@@ -319,7 +327,14 @@ const Hooks = {
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 const liveSocketParams = csrfToken ? { _csrf_token: csrfToken } : {}
 
-const liveSocket = new LiveSocket("/live", Socket, { params: liveSocketParams, hooks: Hooks })
+const liveSocket = new LiveSocket("/live", XRaySocket, {
+  params: liveSocketParams,
+  hooks: Hooks,
+  dom: xrayAdapter.dom,
+  xrayAdapter,
+  xrayTraceSession,
+})
+assertLiveViewVersion(liveSocket)
 liveSocket.socket.onError(() => {
   if (connectionRoot.dataset.connectionState !== "connected") {
     updateConnectionState(navigator.onLine ? "reconnecting" : "offline")

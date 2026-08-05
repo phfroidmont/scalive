@@ -65,6 +65,7 @@ final private[scalive] class SocketNestedLiveViewRuntime(
   parentDomId: String,
   tokenConfig: TokenConfig,
   entriesRef: Ref[Map[String, NestedLiveViewEntry]],
+  runtimeTrace: RuntimeTrace,
   loadingOnInitialParentRender: Boolean)
     extends NestedLiveViewRuntime:
 
@@ -101,7 +102,8 @@ final private[scalive] class SocketNestedLiveViewRuntime(
             initialUrl,
             enqueueInitReply = enqueueInitReply,
             onCrash = onCrash,
-            ownsPageTitle = false
+            ownsPageTitle = false,
+            runtimeTrace = runtimeTrace
           )(using spec.msgClassTag)
       )
 

@@ -21,6 +21,16 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
         DocumentationApplication.from(value.copy(pages = pages))
       }
       assertTrue(result.left.exists(_.contains("unknown example 'missing'")))
+    },
+    test("rejects repeated instances of one example on a page") {
+      val result = bundle.flatMap { value =>
+        val pages = value.pages.map { page =>
+          if page.route == "/examples" then page.copy(content = page.content :+ Block.ExampleRef("counter"))
+          else page
+        }
+        DocumentationApplication.from(value.copy(pages = pages))
+      }
+      assertTrue(result.left.exists(_.contains("example 'counter' appears more than once")))
     }
   )
 end DocumentationApplicationValidationSpec

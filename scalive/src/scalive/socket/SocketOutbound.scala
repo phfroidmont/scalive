@@ -21,12 +21,22 @@ private[scalive] object SocketOutbound:
   ): RIO[Scope, Fiber.Runtime[Throwable, Unit]] =
     serverEventStream(state)
       .runForeach((event, meta) =>
-        handleServerEvent(event, meta, state).catchAllCause(cause =>
-          SocketCrashRuntime.crash(
-            state,
-            s"LiveView ${state.meta.topic} server message crashed",
-            Some(cause)
-          )
+        val kind = event match
+          case ServerEvent.Message(_) => RuntimeTraceOperationKind.ServerMessage
+          case ServerEvent.Async(_)   => RuntimeTraceOperationKind.AsyncCompletion
+        val operation  = RuntimeTraceOperation.resolve(state.runtimeTrace, meta, kind)
+        val tracedMeta = RuntimeTraceOperation.attach(meta, operation)
+        handleServerEvent(event, tracedMeta, state).catchAllCause(cause =>
+          RuntimeTraceOperation.event(
+            operation,
+            RuntimeTraceStage.Crash,
+            "Server message operation crashed"
+          ) *>
+            SocketCrashRuntime.crash(
+              state,
+              s"LiveView ${state.meta.topic} server message crashed",
+              Some(cause)
+            )
         )
       ).fork
 
@@ -60,10 +70,22 @@ private[scalive] object SocketOutbound:
   ): ZStream[Any, Nothing, (ServerEvent[Msg], WebSocketMessage.Meta)] =
     val messages = SocketSubscriptionRuntime
       .stream(state.subscriptionsRef)
-      .map(ServerEvent.Message(_) -> state.meta.copy(messageRef = None, eventType = "diff"))
+      .map(
+        ServerEvent.Message(_) -> state.meta.copy(
+          messageRef = None,
+          eventType = "diff",
+          traceOperation = RuntimeTraceOperation.Disabled
+        )
+      )
     val async = ZStream
       .fromQueue(state.asyncQueue)
-      .map(ServerEvent.Async(_) -> state.meta.copy(messageRef = None, eventType = "diff"))
+      .map(
+        ServerEvent.Async(_) -> state.meta.copy(
+          messageRef = None,
+          eventType = "diff",
+          traceOperation = RuntimeTraceOperation.Disabled
+        )
+      )
     messages.merge(async)
 
   private def handleServerEvent[Msg, Model](
@@ -84,6 +106,17 @@ private[scalive] object SocketOutbound:
     hookStage: MessageHookStage[Msg]
   ): Task[Unit] =
     for
+      _ <- RuntimeTraceOperation.message(
+             meta.traceOperation,
+             RuntimeTraceStage.TypedMessage,
+             "Server delivered a typed message",
+             msg
+           )
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.Lifecycle,
+             "Server message lifecycle and handler started"
+           )
       (currentModel, rendered)   <- state.ref.get
       (updatedModel, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
@@ -95,45 +128,29 @@ private[scalive] object SocketOutbound:
             case halt @ LiveHookResult.Halt(_) => ZIO.succeed(halt)
           }
         )
-      _ <- updatedModel match
-             case LiveHookResult.Halt(hookModel) =>
-               navigation match
-                 case Some(command) =>
-                   state.patchRedirectCountRef.set(0) *>
-                     SocketInbound.handleNavigationCommand(
-                       hookModel,
-                       command,
-                       meta,
-                       state
-                     )
-                 case None =>
-                   for
-                     diff <-
-                       SocketModelRuntime.updateModelAndSubscriptions(rendered, hookModel, state)
-                     _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
-                     _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
-                   yield ()
-             case LiveHookResult.Continue(hookModel) =>
-               navigation match
-                 case Some(command) =>
-                   state.patchRedirectCountRef.set(0) *>
-                     SocketInbound.handleNavigationCommand(
-                       hookModel,
-                       command,
-                       meta,
-                       state
-                     )
-                 case None =>
-                   for
-                     diff <-
-                       SocketModelRuntime.updateModelAndSubscriptions(
-                         rendered,
-                         hookModel,
-                         state
-                       )
-                     _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
-                     _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
-                   yield ()
+      hookModel = updatedModel match
+                    case LiveHookResult.Halt(value)     => value
+                    case LiveHookResult.Continue(value) => value
+      _ <- navigation match
+             case Some(command) =>
+               state.patchRedirectCountRef.set(0) *>
+                 SocketInbound.handleNavigationCommand(hookModel, command, meta, state)
+             case None =>
+               for
+                 diff <- SocketModelRuntime.updateModelAndSubscriptions(
+                           rendered,
+                           hookModel,
+                           state,
+                           meta.traceOperation
+                         )
+                 _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+                 _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
+               yield ()
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.Lifecycle,
+             "Server message lifecycle and handler completed"
+           )
     yield ()
 
   private def runMessageHooks[Msg, Model](
@@ -292,9 +309,14 @@ private[scalive] object SocketOutbound:
                  SocketInbound.handleNavigationCommand(model, command, meta, state)
              case None =>
                for
-                 diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
-                 _    <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
-                 _    <- SocketFlashRuntime.resetNavigation(state.flashRef)
+                 diff <- SocketModelRuntime.updateModelAndSubscriptions(
+                           rendered,
+                           model,
+                           state,
+                           meta.traceOperation
+                         )
+                 _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
+                 _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                yield ()
     yield ()
 end SocketOutbound

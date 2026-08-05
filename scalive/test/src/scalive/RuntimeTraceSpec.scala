@@ -1,0 +1,381 @@
+package scalive
+
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
+import scala.reflect.ClassTag
+import scala.jdk.CollectionConverters.*
+
+import zio.*
+import zio.http.URL
+import zio.json.ast.Json
+import zio.test.*
+
+import scalive.WebSocketMessage.Payload
+
+object RuntimeTraceSpec extends ZIOSpecDefault:
+  private enum Msg:
+    case Increment
+
+  private final case class Model(count: Int):
+    override def toString: String = throw new AssertionError("model.toString must not be called")
+
+  private val Topic = "lv:runtime-trace"
+  private val JoinMeta = WebSocketMessage.Meta(
+    joinRef = Some(1),
+    messageRef = Some(1),
+    topic = Topic,
+    eventType = WebSocketMessage.Protocol.EventJoin
+  )
+
+  private val liveView = new LiveView[Msg, Model]:
+    def mount(ctx: MountContext) = ZIO.succeed(Model(0))
+
+    def handleMessage(model: Model, ctx: MessageContext) =
+      case Msg.Increment => ZIO.succeed(model.copy(count = model.count + 1))
+
+    def render(model: Model): HtmlElement[Msg] =
+      button(on.click(Msg.Increment), model.count.toString)
+
+  private final case class Observation(initialHtml: Array[Byte], finalHtml: Array[Byte], frames: Vector[Array[Byte]])
+
+  private def observe(trace: RuntimeTrace): RIO[Scope, Observation] =
+    for
+      socket <- Socket.start(
+                  Topic,
+                  "token",
+                  liveView,
+                  LiveContext(staticChanged = false),
+                  JoinMeta,
+                  initialUrl = URL.root,
+                  runtimeTrace = trace
+                )
+      queue <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+      _     <- ZIO.addFinalizer(queue.shutdown)
+      _     <- socket.outbox.runForeach(queue.offer).forkScoped
+      init  <- queue.take
+      initialHtml <- socket.renderedHtml.map(_.getBytes(StandardCharsets.UTF_8))
+      eventMeta = JoinMeta.copy(
+                    messageRef = Some(2),
+                    eventType = WebSocketMessage.Protocol.EventEvent
+                  )
+      _ <- socket.inbox.offer(
+             Payload.Event(
+               `type` = "click",
+               event = BindingId.attrBindingId(Vector("root:button"), 0),
+               value = Json.Obj.empty
+             ) -> eventMeta
+           )
+      reply <- queue.take
+      finalHtml <- socket.renderedHtml.map(_.getBytes(StandardCharsets.UTF_8))
+      frames <- ZIO.foreach(Vector(init, reply)) { case (payload, meta) =>
+                  val message = WebSocketMessage(
+                    joinRef = meta.joinRef,
+                    messageRef = meta.messageRef,
+                    topic = meta.topic,
+                    eventType = payload match
+                      case Payload.Diff(_) => WebSocketMessage.Protocol.EventDiff
+                      case _               => WebSocketMessage.Protocol.EventReply,
+                    payload = payload,
+                    traceOperation = meta.traceOperation
+                  )
+                  RuntimeTraceFrame
+                    .encode(message)
+                    .map(_.getBytes(StandardCharsets.UTF_8))
+                }
+    yield Observation(initialHtml, finalHtml, frames)
+
+  private final class InactiveTrace(
+    projections: AtomicInteger,
+    sanitizations: AtomicInteger,
+    publications: AtomicInteger)
+      extends RuntimeTrace.Enabled("inactive-session", connectionEpoch = 1L):
+
+    def isObserved(topic: String): Boolean = false
+
+    def projectMessage(topic: String, value: Any): RuntimeTraceValue =
+      projections.incrementAndGet()
+      throw new AssertionError("inactive tracing projected a message")
+
+    def projectModel(topic: String, value: Any): RuntimeTraceValue =
+      projections.incrementAndGet()
+      throw new AssertionError("inactive tracing projected a model")
+
+    def sanitizeProtocol(message: WebSocketMessage, encoded: Option[String]): Json =
+      sanitizations.incrementAndGet()
+      throw new AssertionError("inactive tracing sanitized protocol data")
+
+    def publish(record: RuntimeTraceRecord): UIO[Unit] =
+      ZIO.succeed(publications.incrementAndGet()).unit
+
+  private final class CollectingTrace(records: ConcurrentLinkedQueue[RuntimeTraceRecord])
+      extends RuntimeTrace.Enabled("active-session", connectionEpoch = 3L):
+
+    def isObserved(topic: String): Boolean = topic == Topic
+
+    def projectMessage(topic: String, value: Any): RuntimeTraceValue =
+      RuntimeTraceValue(value.getClass.getName, "Explicit message projection")
+
+    def projectModel(topic: String, value: Any): RuntimeTraceValue =
+      RuntimeTraceValue(value.getClass.getName, "Explicit model projection")
+
+    def sanitizeProtocol(message: WebSocketMessage, encoded: Option[String]): Json =
+      Json.Obj("event" -> Json.Str(message.eventType))
+
+    def publish(record: RuntimeTraceRecord): UIO[Unit] = ZIO.succeed(records.add(record)).unit
+
+  private object FailingTrace extends RuntimeTrace.Enabled("failing-session", connectionEpoch = 1L):
+    def isObserved(topic: String): Boolean = topic == Topic
+    def projectMessage(topic: String, value: Any): RuntimeTraceValue =
+      throw new IllegalStateException("message projector failed")
+    def projectModel(topic: String, value: Any): RuntimeTraceValue =
+      throw new IllegalStateException("model projector failed")
+    def sanitizeProtocol(message: WebSocketMessage, encoded: Option[String]): Json =
+      throw new IllegalStateException("sanitizer failed")
+    def publish(record: RuntimeTraceRecord): UIO[Unit] = ZIO.dieMessage("sink failed")
+
+  private def startTraced[Msg: ClassTag, Model](
+    liveView: LiveView[Msg, Model],
+    records: ConcurrentLinkedQueue[RuntimeTraceRecord]
+  ): RIO[Scope, Socket[Msg, Model]] =
+    Socket.start(
+      Topic,
+      "token",
+      liveView,
+      LiveContext(staticChanged = false),
+      JoinMeta,
+      runtimeTrace = CollectingTrace(records)
+    )
+
+  private def subscribe(socket: Socket[?, ?]): RIO[Scope, Queue[(Payload, WebSocketMessage.Meta)]] =
+    for
+      queue <- Queue.unbounded[(Payload, WebSocketMessage.Meta)]
+      _     <- ZIO.addFinalizer(queue.shutdown)
+      _     <- socket.outbox.runForeach(queue.offer).forkScoped
+      _     <- queue.take
+    yield queue
+
+  private def event(
+    messageRef: Int,
+    path: Vector[String],
+    attrIndex: Int = 0,
+    cid: Option[Int] = None
+  ): (Payload.Event, WebSocketMessage.Meta) =
+    Payload.Event(
+      `type` = "click",
+      event = BindingId.attrBindingId(path, attrIndex),
+      value = Json.Obj.empty,
+      cid = cid
+    ) -> JoinMeta.copy(
+      messageRef = Some(messageRef),
+      eventType = WebSocketMessage.Protocol.EventEvent,
+      traceOperation = RuntimeTraceOperation.Disabled
+    )
+
+  override def spec = suite("RuntimeTraceSpec")(
+    test("inactive tracing does not project, sanitize, collect, or change output bytes") {
+      ZIO.scoped {
+        for
+          projections   <- ZIO.succeed(AtomicInteger(0))
+          sanitizations <- ZIO.succeed(AtomicInteger(0))
+          publications  <- ZIO.succeed(AtomicInteger(0))
+          baseline      <- observe(RuntimeTrace.Disabled)
+          traced        <- observe(InactiveTrace(projections, sanitizations, publications))
+        yield assertTrue(
+          baseline.initialHtml.sameElements(traced.initialHtml),
+          baseline.finalHtml.sameElements(traced.finalHtml),
+          baseline.frames.zip(traced.frames).forall((left, right) => left.sameElements(right)),
+          projections.get() == 0,
+          sanitizations.get() == 0,
+          publications.get() == 0
+        )
+      }
+    },
+    test("active tracing distinguishes proposed, rendered, and committed models") {
+      ZIO.scoped {
+        for
+          records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
+          _       <- observe(CollectingTrace(records))
+          captured = records.iterator().asScala.toVector
+          modelStages = captured.collect {
+                          case record
+                              if record.stage == RuntimeTraceStage.ModelProposed ||
+                                record.stage == RuntimeTraceStage.ModelRendered ||
+                                record.stage == RuntimeTraceStage.ModelCommitted =>
+                            record.stage
+                        }
+          eventOperation = captured.find(_.stage == RuntimeTraceStage.TypedMessage).map(_.identity)
+        yield assertTrue(
+          modelStages.contains(RuntimeTraceStage.ModelProposed),
+          modelStages.contains(RuntimeTraceStage.ModelRendered),
+          modelStages.contains(RuntimeTraceStage.ModelCommitted),
+          eventOperation.exists(_.traceSession == "active-session"),
+          eventOperation.exists(_.connectionEpoch == 3L),
+          eventOperation.exists(_.socketEpoch == 1L),
+          eventOperation.exists(_.messageReference.contains(2))
+        )
+      }
+    },
+    test("trace projector, sanitizer, and sink failures do not alter socket output") {
+      ZIO.scoped {
+        for
+          baseline <- observe(RuntimeTrace.Disabled)
+          traced   <- observe(FailingTrace)
+        yield assertTrue(
+          baseline.initialHtml.sameElements(traced.initialHtml),
+          baseline.finalHtml.sameElements(traced.finalHtml),
+          baseline.frames.zip(traced.frames).forall((left, right) => left.sameElements(right))
+        )
+      }
+    },
+    test("records empty diffs and failed renders without committing the failed model") {
+      enum EdgeMsg:
+        case NoChange, FailRender
+      final case class EdgeModel(failRender: Boolean)
+      val edgeView = new LiveView[EdgeMsg, EdgeModel]:
+        def mount(ctx: MountContext) = ZIO.succeed(EdgeModel(false))
+        def handleMessage(model: EdgeModel, ctx: MessageContext) =
+          case EdgeMsg.NoChange   => ZIO.succeed(model)
+          case EdgeMsg.FailRender => ZIO.succeed(model.copy(failRender = true))
+        def render(model: EdgeModel) =
+          if model.failRender then throw new IllegalStateException("render failed")
+          div(
+            button(on.click(EdgeMsg.NoChange), "No change"),
+            button(on.click(EdgeMsg.FailRender), "Fail")
+          )
+
+      ZIO.scoped {
+        for
+          records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
+          socket  <- startTraced(edgeView, records)
+          output  <- subscribe(socket)
+          _       <- socket.inbox.offer(event(2, Vector("root:div", "tag:0:button")))
+          _       <- output.take
+          _       <- socket.inbox.offer(event(3, Vector("root:div", "tag:1:button")))
+          _       <- output.take
+          captured = records.iterator().asScala.toVector
+          unchanged = captured.filter(_.identity.messageReference.contains(2))
+          failed    = captured.filter(_.identity.messageReference.contains(3))
+        yield assertTrue(
+          unchanged.exists(record =>
+            record.stage == RuntimeTraceStage.TreeDiff && record.summary == "Tree diff is empty"
+          ),
+          unchanged.exists(_.stage == RuntimeTraceStage.ModelCommitted),
+          failed.exists(_.stage == RuntimeTraceStage.ModelProposed),
+          failed.exists(_.stage == RuntimeTraceStage.Crash),
+          !failed.exists(_.stage == RuntimeTraceStage.ModelCommitted)
+        )
+      }
+    },
+    test("correlates async completion as an independent server operation") {
+      enum AsyncMsg:
+        case Start
+        case Done(result: LiveAsyncResult[Int])
+      final case class AsyncModel(value: Int)
+      val task = AsyncKey[Int]("trace-async")
+      val asyncView = new LiveView[AsyncMsg, AsyncModel]:
+        def mount(ctx: MountContext) = ZIO.succeed(AsyncModel(0))
+        def handleMessage(model: AsyncModel, ctx: MessageContext) =
+          case AsyncMsg.Start =>
+            ctx.async.start(task)(ZIO.succeed(7))(AsyncMsg.Done.apply).as(model)
+          case AsyncMsg.Done(LiveAsyncResult.Succeeded(value)) =>
+            ZIO.succeed(model.copy(value = value))
+          case AsyncMsg.Done(_) => ZIO.succeed(model)
+        def render(model: AsyncModel) =
+          div(button(on.click(AsyncMsg.Start), "Start"), span(model.value.toString))
+
+      ZIO.scoped {
+        for
+          records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
+          socket  <- startTraced(asyncView, records)
+          output  <- subscribe(socket)
+          _       <- socket.inbox.offer(event(2, Vector("root:div", "tag:0:button")))
+          _       <- output.take
+          _       <- output.take
+          captured = records.iterator().asScala.toVector
+          asyncRecords = captured.filter(
+                           _.identity.operationKind == RuntimeTraceOperationKind.AsyncCompletion
+                         )
+        yield assertTrue(
+          asyncRecords.exists(_.stage == RuntimeTraceStage.TypedMessage),
+          asyncRecords.exists(_.stage == RuntimeTraceStage.ModelCommitted),
+          asyncRecords.forall(_.identity.messageReference.isEmpty)
+        )
+      }
+    },
+    test("records component model commits") {
+      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+        object Msg
+        def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+          (_: Msg.type) => ZIO.succeed(model + 1)
+        def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
+          button(on.click(Msg), phx.target(self), model.toString)
+      val componentView = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
+        def render(model: Unit) =
+          div(liveComponent(CounterComponent, id = "trace-counter", props = ()))
+
+      ZIO.scoped {
+        for
+          records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
+          socket  <- startTraced(componentView, records)
+          output  <- subscribe(socket)
+          _ <- socket.inbox.offer(
+                 event(2, Vector("root:div", "component:0:1"), attrIndex = 1, cid = Some(1))
+               )
+          _        <- output.take
+          captured  = records.iterator().asScala.toVector
+        yield assertTrue(
+          captured.exists(_.summary == "Component proposed a model"),
+          captured.exists(_.summary == "Component model committed"),
+          captured.exists(_.stage == RuntimeTraceStage.TreeDiff)
+        )
+      }
+    },
+    test("records stream and title-only updates") {
+      final case class User(id: Int, name: String)
+      val users = LiveStreamDef.byId[User, Int]("trace-users")(_.id)
+      enum StreamMsg:
+        case Add, SetTitle
+      final case class StreamModel(items: LiveStream[User], title: String)
+      val streamView = new LiveView[StreamMsg, StreamModel]:
+        override def pageTitle(model: StreamModel) = Some(model.title)
+        def mount(ctx: MountContext) =
+          ctx.streams.create(users, List(User(1, "one"))).map(StreamModel(_, "Initial"))
+        def handleMessage(model: StreamModel, ctx: MessageContext) =
+          case StreamMsg.Add =>
+            ctx.streams.insert(users, User(2, "two")).map(items => model.copy(items = items))
+          case StreamMsg.SetTitle => ZIO.succeed(model.copy(title = "Updated"))
+        def render(model: StreamModel) =
+          div(
+            button(on.click(StreamMsg.Add), "Add"),
+            button(on.click(StreamMsg.SetTitle), "Title"),
+            model.items.renderIn(ul)(user => li(user.name))
+          )
+
+      ZIO.scoped {
+        for
+          records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
+          socket  <- startTraced(streamView, records)
+          output  <- subscribe(socket)
+          _       <- socket.inbox.offer(event(2, Vector("root:div", "tag:0:button")))
+          _       <- output.take
+          _       <- socket.inbox.offer(event(3, Vector("root:div", "tag:1:button")))
+          _       <- output.take
+          captured = records.iterator().asScala.toVector
+          streamRecords = captured.filter(_.identity.messageReference.contains(2))
+          titleRecords  = captured.filter(_.identity.messageReference.contains(3))
+        yield assertTrue(
+          streamRecords.exists(record =>
+            record.stage == RuntimeTraceStage.TreeDiff && record.summary == "Tree diff contains changes"
+          ),
+          streamRecords.exists(_.stage == RuntimeTraceStage.ModelCommitted),
+          titleRecords.exists(_.stage == RuntimeTraceStage.TreeDiff),
+          titleRecords.exists(_.stage == RuntimeTraceStage.FinalPayload)
+        )
+      }
+    }
+  )
+end RuntimeTraceSpec

@@ -35,7 +35,7 @@ private[scalive] object SocketModelRuntime:
     state: RuntimeState[Msg, Model]
   ): Task[Unit] =
     for
-      diff <- updateModelAndSubscriptions(rendered, interceptModel, state)
+      diff <- updateModelAndSubscriptions(rendered, interceptModel, state, meta.traceOperation)
       payload = interceptReplyPayload(reply, diff)
       _ <- publishPayload(payload, meta, state)
       _ <- navigation match
@@ -147,6 +147,22 @@ private[scalive] object SocketModelRuntime:
             state.msgClassTag.unapply(message) match
               case Some(parentMessage) =>
                 for
+                  _ <- RuntimeTraceOperation.event(
+                         meta.traceOperation,
+                         RuntimeTraceStage.BindingResolution,
+                         "Event binding resolved"
+                       )
+                  _ <- RuntimeTraceOperation.message(
+                         meta.traceOperation,
+                         RuntimeTraceStage.TypedMessage,
+                         "Binding produced a typed message",
+                         parentMessage
+                       )
+                  _ <- RuntimeTraceOperation.event(
+                         meta.traceOperation,
+                         RuntimeTraceStage.Lifecycle,
+                         "Event lifecycle and message handler started"
+                       )
                   (updatedModel, navigation) <-
                     captureNavigation(state, carriedNavigation)(
                       state.ctx.hooks
@@ -166,6 +182,11 @@ private[scalive] object SocketModelRuntime:
                           case halt @ LiveEventHookResult.Halt(_, _) => ZIO.succeed(halt)
                         }
                     )
+                  _ <- RuntimeTraceOperation.event(
+                         meta.traceOperation,
+                         RuntimeTraceStage.Lifecycle,
+                         "Event lifecycle and message handler completed"
+                       )
                   _ <- updatedModel match
                          case LiveEventHookResult.Halt(hookModel, reply) =>
                            applyInterceptHalt(
@@ -189,13 +210,17 @@ private[scalive] object SocketModelRuntime:
                                  )
                              case None =>
                                for
-                                 diff <- updateModelAndSubscriptions(rendered, hookModel, state)
-                                 _    <-
-                                   publishPayload(
-                                     Payload.okReply(LiveResponse.Diff(diff)),
-                                     meta,
-                                     state
-                                   )
+                                 diff <- updateModelAndSubscriptions(
+                                           rendered,
+                                           hookModel,
+                                           state,
+                                           meta.traceOperation
+                                         )
+                                 _ <- publishPayload(
+                                        Payload.okReply(LiveResponse.Diff(diff)),
+                                        meta,
+                                        state
+                                      )
                                  _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                                yield ()
                 yield ()
@@ -254,13 +279,36 @@ private[scalive] object SocketModelRuntime:
   def updateModelAndSubscriptions[Msg, Model](
     rendered: RenderedView,
     model: Model,
-    state: RuntimeState[Msg, Model]
+    state: RuntimeState[Msg, Model],
+    traceOperation: RuntimeTraceOperation = RuntimeTraceOperation.Disabled
   ): Task[Diff] =
     for
+      _ <- RuntimeTraceOperation.model(
+             traceOperation,
+             RuntimeTraceStage.ModelProposed,
+             "Handler proposed a model",
+             model
+           )
       currentUrl <- state.currentUrlRef.get
       nextRoot   <- SocketComponentRuntime.renderRoot(state.renderRoot(model, currentUrl), state)
-      nextCompiled  = RenderSnapshot.compile(nextRoot)
-      diff          = TreeDiff.diff(rendered.compiled, nextCompiled)
+      nextCompiled = RenderSnapshot.compile(nextRoot)
+      diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
+      _ <- RuntimeTraceOperation.model(
+             traceOperation,
+             RuntimeTraceStage.ModelRendered,
+             "Proposed model rendered",
+             model
+           )
+      _ <- RuntimeTraceOperation.event(
+             traceOperation,
+             RuntimeTraceStage.RenderCompleted,
+             "Render completed"
+           )
+      _ <- RuntimeTraceOperation.event(
+             traceOperation,
+             RuntimeTraceStage.TreeDiff,
+             if diff.isEmpty then "Tree diff is empty" else "Tree diff contains changes"
+           )
       nextPageTitle =
         Option.when(state.ownsPageTitle)(normalizePageTitle(state.lv.pageTitle(model))).flatten
       nextRendered = RenderedView(
@@ -283,6 +331,12 @@ private[scalive] object SocketModelRuntime:
              )
            )
       _ <- state.ref.set((model, nextRendered))
+      _ <- RuntimeTraceOperation.model(
+             traceOperation,
+             RuntimeTraceStage.ModelCommitted,
+             "Rendered model committed",
+             model
+           )
     yield renderedDiff
 
   def publishPayload[Msg, Model](
@@ -290,7 +344,17 @@ private[scalive] object SocketModelRuntime:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): UIO[Unit] =
-    state.outQueue.offer(payload -> meta).unit
+    val operation = RuntimeTraceOperation.resolve(
+      state.runtimeTrace,
+      meta,
+      RuntimeTraceOperationKind.Other
+    )
+    val tracedMeta = RuntimeTraceOperation.attach(meta, operation)
+    RuntimeTraceOperation.event(
+      operation,
+      RuntimeTraceStage.FinalPayload,
+      "Final socket payload published"
+    ) *> state.outQueue.offer(payload -> tracedMeta).unit
 
   private def interceptReplyPayload(
     reply: Option[Json],

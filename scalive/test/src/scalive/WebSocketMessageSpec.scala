@@ -113,7 +113,7 @@ object WebSocketMessageSpec extends ZIOSpecDefault:
         )
       )
 
-      val flash = result.toOption.collect { case WebSocketMessage(_, _, _, _, join: Payload.Join) =>
+      val flash = result.toOption.collect { case WebSocketMessage(_, _, _, _, join: Payload.Join, _) =>
         join.flash
       }.flatten
 

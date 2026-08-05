@@ -18,15 +18,17 @@ final private[scalive] case class WebSocketMessage(
   // LiveView instance id
   topic: String,
   eventType: String,
-  payload: WebSocketMessage.Payload):
-  val meta    = WebSocketMessage.Meta(joinRef, messageRef, topic, eventType)
+  payload: WebSocketMessage.Payload,
+  traceOperation: RuntimeTraceOperation = RuntimeTraceOperation.Disabled):
+  val meta    = WebSocketMessage.Meta(joinRef, messageRef, topic, eventType, traceOperation)
   def okReply =
     WebSocketMessage(
       joinRef,
       messageRef,
       topic,
       WebSocketMessage.Protocol.EventReply,
-      Payload.Reply(ReplyStatus.Ok, LiveResponse.Empty)
+      Payload.Reply(ReplyStatus.Ok, LiveResponse.Empty),
+      traceOperation
     )
 private[scalive] object WebSocketMessage:
 
@@ -34,7 +36,8 @@ private[scalive] object WebSocketMessage:
     joinRef: Option[Int],
     messageRef: Option[Int],
     topic: String,
-    eventType: String)
+    eventType: String,
+    traceOperation: RuntimeTraceOperation = RuntimeTraceOperation.Disabled)
 
   object Protocol:
     val EventHeartbeat       = "heartbeat"

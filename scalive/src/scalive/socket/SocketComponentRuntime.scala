@@ -87,7 +87,8 @@ private[scalive] object SocketComponentRuntime:
                        diff             <- SocketModelRuntime.updateModelAndSubscriptions(
                                  rendered,
                                  parentModel,
-                                 state
+                                 state,
+                                 meta.traceOperation
                                )
                        _ <- SocketModelRuntime.publishPayload(
                               WebSocketMessage.Payload.Diff(diff),
@@ -191,6 +192,17 @@ private[scalive] object SocketComponentRuntime:
                    case None           => ZIO.succeed(false)
                    case Some(instance) =>
                      for
+                       _ <- RuntimeTraceOperation.message(
+                              meta.traceOperation,
+                              RuntimeTraceStage.TypedMessage,
+                              "Component received a typed message",
+                              message
+                            )
+                       _ <- RuntimeTraceOperation.event(
+                              meta.traceOperation,
+                              RuntimeTraceStage.Lifecycle,
+                              "Component lifecycle and handler started"
+                            )
                        hooksRef <- Ref.make(instance.hooks)
                        componentCtx = componentContext(state.ctx, cid, hooksRef)
                        asyncEvent   = LiveAsyncEvent(AsyncKey[Any](name), result)
@@ -223,6 +235,12 @@ private[scalive] object SocketComponentRuntime:
                        model = result match
                                  case LiveEventHookResult.Continue(value) => value
                                  case LiveEventHookResult.Halt(value, _)  => value
+                       _ <- RuntimeTraceOperation.model(
+                              meta.traceOperation,
+                              RuntimeTraceStage.ModelProposed,
+                              "Component proposed a model",
+                              model
+                            )
                        _ <- state.componentsRef.update { current =>
                               val updated = instance.copy(model = model, hooks = hooks)
                               current.copy(instances =
@@ -238,6 +256,17 @@ private[scalive] object SocketComponentRuntime:
                               parentModel,
                               meta,
                               state
+                            )
+                       _ <- RuntimeTraceOperation.model(
+                              meta.traceOperation,
+                              RuntimeTraceStage.ModelCommitted,
+                              "Component model committed",
+                              model
+                            )
+                       _ <- RuntimeTraceOperation.event(
+                              meta.traceOperation,
+                              RuntimeTraceStage.Lifecycle,
+                              "Component lifecycle and handler completed"
                             )
                      yield true
     yield handled
@@ -257,6 +286,17 @@ private[scalive] object SocketComponentRuntime:
                    case None           => ZIO.succeed(false)
                    case Some(instance) =>
                      for
+                       _ <- RuntimeTraceOperation.message(
+                              meta.traceOperation,
+                              RuntimeTraceStage.TypedMessage,
+                              "Component received a typed message",
+                              message
+                            )
+                       _ <- RuntimeTraceOperation.event(
+                              meta.traceOperation,
+                              RuntimeTraceStage.Lifecycle,
+                              "Component lifecycle and handler started"
+                            )
                        hooksRef <- Ref.make(instance.hooks)
                        componentCtx = componentContext(state.ctx, cid, hooksRef)
                        (result, navigation) <-
@@ -277,12 +317,29 @@ private[scalive] object SocketComponentRuntime:
                        model = result match
                                  case LiveEventHookResult.Continue(value) => value
                                  case LiveEventHookResult.Halt(value, _)  => value
+                       _ <- RuntimeTraceOperation.model(
+                              meta.traceOperation,
+                              RuntimeTraceStage.ModelProposed,
+                              "Component proposed a model",
+                              model
+                            )
                        _ <- state.componentsRef.update { current =>
                               val updated = instance.copy(model = model, hooks = hooks)
                               current.copy(instances =
                                 current.instances.updated(instance.identity, updated)
                               )
                             }
+                       _ <- RuntimeTraceOperation.model(
+                              meta.traceOperation,
+                              RuntimeTraceStage.ModelCommitted,
+                              "Component model committed",
+                              model
+                            )
+                       _ <- RuntimeTraceOperation.event(
+                              meta.traceOperation,
+                              RuntimeTraceStage.Lifecycle,
+                              "Component lifecycle and handler completed"
+                            )
                        (parentModel, _) <- state.ref.get
                        _                <- handleComponentLifecycleResult(
                               result,
@@ -332,8 +389,13 @@ private[scalive] object SocketComponentRuntime:
     result match
       case LiveEventHookResult.Halt(_, reply) =>
         for
-          diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, parentModel, state)
-          _    <- SocketModelRuntime.publishPayload(
+          diff <- SocketModelRuntime.updateModelAndSubscriptions(
+                    rendered,
+                    parentModel,
+                    state,
+                    meta.traceOperation
+                  )
+          _ <- SocketModelRuntime.publishPayload(
                  componentHaltPayload(responseMode, reply, diff),
                  meta,
                  state
@@ -362,8 +424,13 @@ private[scalive] object SocketComponentRuntime:
               )
           case None =>
             for
-              diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, parentModel, state)
-              _    <- SocketModelRuntime.publishPayload(
+              diff <- SocketModelRuntime.updateModelAndSubscriptions(
+                        rendered,
+                        parentModel,
+                        state,
+                        meta.traceOperation
+                      )
+              _ <- SocketModelRuntime.publishPayload(
                      diffPayload(responseMode, diff),
                      meta,
                      state

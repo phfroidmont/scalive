@@ -176,7 +176,8 @@ private[docs] object SiteLiveViewHarness:
   )
 
   def join[Msg: LiveMessageTag, Model](
-    liveView: LiveView[Msg, Model]
+    liveView: LiveView[Msg, Model],
+    runtimeTrace: RuntimeTrace = RuntimeTrace.Disabled
   ): RIO[Scope, SiteLiveViewHarness[Msg, Model]] =
     for
       serverMessages <- Queue.unbounded[Msg]
@@ -197,7 +198,7 @@ private[docs] object SiteLiveViewHarness:
                     liveView.handleMessage(model, ctx)
 
                   def render(model: Model) = liveView.render(model)
-      channel <- LiveChannel.make(TokenConfig.default)
+      channel <- LiveChannel.make(TokenConfig.default, None, runtimeTrace)
       context = LiveContext(
                   staticChanged = false,
                   nestedLiveViews = channel.nestedRuntime(Topic)

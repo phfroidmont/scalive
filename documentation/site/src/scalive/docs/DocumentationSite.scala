@@ -4,6 +4,7 @@ import zio.*
 import zio.http.*
 
 import scalive.*
+import scalive.docs.xray.DocumentationTraceStore
 
 object DocumentationSite extends ZIOAppDefault:
   override val run =
@@ -17,14 +18,15 @@ object DocumentationSite extends ZIOAppDefault:
       application <- ZIO
                        .fromEither(DocumentationApplication.from(bundle))
                        .mapError(new IllegalStateException(_))
-      assets <- StaticAssets.load(
+      traceStore <- DocumentationTraceStore.make()
+      assets     <- StaticAssets.load(
                   StaticAssetConfig.classpath(
                     "public",
                     Seq("app.css", "app.js", "search-index.json")
                   )
                 )
       security = LiveSecurity(TokenConfig.default, CookiePolicy(secure = false))
-      routes   = application.routes(assets, security, config) ++ assets.routes
+      routes   = application.routes(assets, security, config, traceStore) ++ assets.routes
       _ <- Server
              .serve(routes)
              .provide(Server.defaultWithPort(config.serverPort))

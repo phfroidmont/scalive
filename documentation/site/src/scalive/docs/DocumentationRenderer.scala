@@ -6,8 +6,11 @@ import java.nio.charset.StandardCharsets
 import scalive.*
 import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
+import scalive.docs.xray.{DocumentationTraceStore, XRayInspector}
 
-final private[docs] class DocumentationRenderer(application: DocumentationApplication):
+final private[docs] class DocumentationRenderer(
+  application: DocumentationApplication,
+  traceStore: Option[DocumentationTraceStore] = None):
   private val metadata      = application.bundle.apiReference.metadata
   private val repositoryUrl = metadata.repositoryUrl.stripSuffix("/")
 
@@ -158,19 +161,28 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
     val registered = ExampleRegistry.get(id).getOrElse {
       throw new IllegalArgumentException(s"Unknown runtime example: $id")
     }
-    val nestedId = ExampleRegistry.instanceId(pageRoute, id)
-    val source   = definition.source
+    val nestedId       = ExampleRegistry.instanceId(pageRoute, id)
+    val observedTopic  = ExampleRegistry.topic(pageRoute, id)
+    val inspectorId    = ExampleRegistry.inspectorInstanceId(pageRoute, id)
+    val inspectorTopic = ExampleRegistry.inspectorTopic(pageRoute, id)
+    val source         = definition.source
 
     sectionTag(
-      idAttr                    := s"example-$id",
-      cls                       := "docs-example",
-      dataAttr("example")       := id,
-      dataAttr("example-child") := nestedId,
+      idAttr                      := s"example-$id",
+      cls                         := "docs-example",
+      dataAttr("example")         := id,
+      dataAttr("example-child")   := nestedId,
+      dataAttr("example-topic")   := observedTopic,
+      dataAttr("inspector-child") := inspectorId,
+      dataAttr("inspector-topic") := inspectorTopic,
       div(
         cls := "docs-example-rendered",
         h2(s"Example: ${definition.descriptor.title}"),
         p(definition.descriptor.description),
         registered.render(nestedId)
+      ),
+      traceStore.toVector.map(store =>
+        XRayInspector.nested(inspectorId, observedTopic, inspectorTopic, registered, store)
       ),
       p(
         dataAttr("example-disconnected") := "",
@@ -179,6 +191,7 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
       codeBlock(source.language, source.text, source.tokens, Some(source.region)),
       definition.compilationFailures.map(renderCompilationFailure)
     )
+  end renderExample
 
   private def renderCompilationFailure(failure: CompilationFailure): HtmlElement[Nothing] =
     figure(

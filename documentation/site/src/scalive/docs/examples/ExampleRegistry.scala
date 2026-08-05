@@ -92,6 +92,12 @@ private[docs] object ExampleRegistry:
   def topic(pageRoute: String, directiveId: String): String =
     s"lv:${instanceId(pageRoute, directiveId)}"
 
+  def inspectorInstanceId(pageRoute: String, directiveId: String): String =
+    instanceId(pageRoute, directiveId).replace("docs-example-", "docs-xray-")
+
+  def inspectorTopic(pageRoute: String, directiveId: String): String =
+    s"lv:${inspectorInstanceId(pageRoute, directiveId)}"
+
   def validationErrors: Vector[String] =
     val duplicateIds = entries.groupBy(_.descriptor.id).collect {
       case (id, matches) if matches.sizeIs > 1 => s"duplicate runtime example id '$id'."

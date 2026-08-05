@@ -34,6 +34,7 @@
             export JAVA_HOME="${pkgs.jdk}";
             export PLAYWRIGHT_NODEJS_PATH="${pkgs.nodejs}/bin/node";
             export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS="true";
+            export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD="true";
             export PLAYWRIGHT_BROWSERS_PATH="${pkgs.playwright-driver.browsers}";
             export PLAYWRIGHT_TEST_NODE_PATH="${pkgs.playwright-test}/lib/node_modules";
             export LV_UPSTREAM_SRC="${liveview-upstream}";

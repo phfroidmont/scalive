@@ -21,7 +21,8 @@ private[scalive] object SocketBootstrap:
     renderRoot: (Model, URL) => HtmlElement[Msg],
     paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
     onCrash: UIO[Unit],
-    ownsPageTitle: Boolean
+    ownsPageTitle: Boolean,
+    runtimeTrace: RuntimeTrace
   ): Task[RuntimeState[Msg, Model]] =
     for
       inbox            <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
@@ -52,12 +53,23 @@ private[scalive] object SocketBootstrap:
                      components = new SocketComponentUpdateRuntime(componentsRef),
                      subscriptions = new SocketSubscriptionRuntime[Msg](subscriptionsRef)
                        .asInstanceOf[SubscriptionRuntime[Any]],
-                     hooks = new SocketLiveHookRuntime(hooksRef)
+                     hooks = new SocketLiveHookRuntime(hooksRef),
+                     runtimeTrace = runtimeTrace
                    )
-      _               <- SocketFlashRuntime.resetNavigation(flashRef)
-      _               <- navigationRef.set(None)
-      mounted         <- paramsRuntime.mount(lv, initialUrl, runtimeCtx)
-      mountNavigation <- navigationRef.getAndSet(None)
+      _ <- SocketFlashRuntime.resetNavigation(flashRef)
+      _ <- navigationRef.set(None)
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.Lifecycle,
+             "Mount lifecycle started"
+           )
+      mounted <- paramsRuntime.mount(lv, initialUrl, runtimeCtx)
+      _       <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.Lifecycle,
+             "Mount lifecycle completed"
+           )
+      mountNavigation                                   <- navigationRef.getAndSet(None)
       (bootstrapModel, bootstrapPayloads, bootstrapUrl) <-
         runInitialLifecycle(
           lv,
@@ -71,6 +83,12 @@ private[scalive] object SocketBootstrap:
           paramsRuntime,
           mounted.handleInitialParams
         )
+      _ <- RuntimeTraceOperation.model(
+             meta.traceOperation,
+             RuntimeTraceStage.ModelProposed,
+             "Mount proposed a model",
+             bootstrapModel
+           )
       initRoot <-
         SocketComponentRuntime.renderRoot(
           renderRoot(bootstrapModel, bootstrapUrl),
@@ -85,10 +103,42 @@ private[scalive] object SocketBootstrap:
                    bindings = BindingRegistry.collect[Any](initCompiled),
                    pageTitle = initPageTitle
                  )
-      _             <- runtimeCtx.hooks.runAfterRender[Msg, Model](bootstrapModel, runtimeCtx)
-      ref           <- Ref.make((bootstrapModel, initView))
+      _ <- RuntimeTraceOperation.model(
+             meta.traceOperation,
+             RuntimeTraceStage.ModelRendered,
+             "Initial model rendered",
+             bootstrapModel
+           )
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.RenderCompleted,
+             "Initial render completed"
+           )
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.Lifecycle,
+             "After-render lifecycle started"
+           )
+      _ <- runtimeCtx.hooks.runAfterRender[Msg, Model](bootstrapModel, runtimeCtx)
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.Lifecycle,
+             "After-render lifecycle completed"
+           )
+      ref <- Ref.make((bootstrapModel, initView))
+      _   <- RuntimeTraceOperation.model(
+             meta.traceOperation,
+             RuntimeTraceStage.ModelCommitted,
+             "Initial model committed",
+             bootstrapModel
+           )
       currentUrlRef <- Ref.make(bootstrapUrl)
       rawInitDiff = TreeDiff.initial(initCompiled)
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.TreeDiff,
+             "Initial tree diff completed"
+           )
       initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
       initDiffWithoutTitle = SocketModelRuntime.withClientEvents(rawInitDiff, initEvents)
       initDiff             =
@@ -110,6 +160,7 @@ private[scalive] object SocketBootstrap:
       lv = lv,
       renderRoot = renderRoot,
       paramsRuntime = paramsRuntime,
+      runtimeTrace = runtimeTrace,
       msgClassTag = summon[ClassTag[Msg]],
       ctx = runtimeCtx,
       meta = meta,

@@ -50,22 +50,35 @@ private[scalive] object Socket:
       LiveRouteParamsRuntime.none[Any, Msg, Model],
     enqueueInitReply: Boolean = true,
     onCrash: UIO[Unit] = ZIO.unit,
-    ownsPageTitle: Boolean = true
+    ownsPageTitle: Boolean = true,
+    runtimeTrace: RuntimeTrace = RuntimeTrace.Disabled
   ): RIO[Scope, Socket[Msg, Model]] =
-    val rootRenderer = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
+    val rootRenderer   = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
+    val traceOperation = RuntimeTraceOperation.resolve(
+      runtimeTrace,
+      meta,
+      RuntimeTraceOperationKind.Join
+    )
+    val tracedMeta = RuntimeTraceOperation.attach(meta, traceOperation)
     ZIO.logAnnotate("lv", id) {
       for
+        _ <- RuntimeTraceOperation.event(
+               traceOperation,
+               RuntimeTraceStage.SocketJoin,
+               "Socket join started"
+             )
         state <- SocketBootstrap.initializeRuntime(
                    lv,
                    ctx,
-                   meta,
+                   tracedMeta,
                    tokenConfig,
                    initialUrl,
                    initialFlash,
                    rootRenderer,
                    paramsRuntime,
                    onCrash,
-                   ownsPageTitle
+                   ownsPageTitle,
+                   runtimeTrace
                  )
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)

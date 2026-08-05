@@ -6,6 +6,7 @@ import zio.http.codec.PathCodec
 import scalive.*
 import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
+import scalive.docs.xray.{DocumentationRuntimeTraceFactory, DocumentationTraceStore}
 
 final private[docs] case class DocumentationPageEntry(
   page: Page,
@@ -63,8 +64,22 @@ final private[docs] class DocumentationApplication private (
     assets: StaticAssets,
     security: LiveSecurity,
     config: DocumentationConfig
+  ): Routes[Any, Nothing] = routes(assets, security, config, None)
+
+  def routes(
+    assets: StaticAssets,
+    security: LiveSecurity,
+    config: DocumentationConfig,
+    traceStore: DocumentationTraceStore
+  ): Routes[Any, Nothing] = routes(assets, security, config, Some(traceStore))
+
+  private def routes(
+    assets: StaticAssets,
+    security: LiveSecurity,
+    config: DocumentationConfig,
+    traceStore: Option[DocumentationTraceStore]
   ): Routes[Any, Nothing] =
-    val renderer  = DocumentationRenderer(this)
+    val renderer  = DocumentationRenderer(this, traceStore)
     val fragments = pages.map { entry =>
       Live.route(entry.codec) -> DocumentationPageLiveView(entry.page, renderer)
     }
@@ -72,13 +87,17 @@ final private[docs] class DocumentationApplication private (
       .route(PathCodec(DocumentationApplication.SearchRoute))
       .queryOptional[String](DocumentationApplication.SearchParameter) ->
       DocumentationSearchLiveView(this)
-    val liveRoutes = Live.router
+    val router = Live.router
       .withSecurity(security)
       .withRootLayout(DocumentationRootLayout(this, assets, config.publicOrigin))
-      .withLayout(DocumentationLayout(this, assets, config.publicOrigin))(
-        searchRoute,
-        fragments*
-      )
+      .withLayout(DocumentationLayout(this, assets, config.publicOrigin))
+    val tracedRouter = traceStore.fold(router)(store =>
+      router.withRuntimeTrace(DocumentationRuntimeTraceFactory(store))
+    )
+    val liveRoutes = tracedRouter(
+      searchRoute,
+      fragments*
+    )
     liveRoutes ++ DocumentationMetadataRoutes.routes(this, config.publicOrigin)
 end DocumentationApplication
 
@@ -146,7 +165,15 @@ private[docs] object DocumentationApplication:
     val symbols  = bundle.apiReference.symbols.map(_.id).toSet
     val examples = bundle.examples.map(_.descriptor.id).toSet
     val errors   = bundle.pages.flatMap { page =>
-      collectReferences(page.content).flatMap {
+      val references        = collectReferences(page.content)
+      val duplicateExamples = references
+        .collect { case ContentReference.Example(id) => id }
+        .groupBy(identity)
+        .collect {
+          case (id, matches) if matches.sizeIs > 1 =>
+            s"${page.route}: example '$id' appears more than once."
+        }
+      duplicateExamples ++ references.flatMap {
         case ContentReference.Route(route) if !routes(route) =>
           Vector(s"${page.route}: unknown internal route '$route'.")
         case ContentReference.ApiSymbol(id) if !symbols(id) =>

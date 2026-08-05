@@ -17,11 +17,27 @@ private[scalive] object SocketInbound:
     ZStream
       .fromQueue(state.inbox)
       .runForeach((event, meta) =>
-        state.lifecycleLock
-          .withPermit(handleClientEvent(event, meta, state))
+        val operation = RuntimeTraceOperation.resolve(
+          state.runtimeTrace,
+          meta,
+          RuntimeTraceOperationKind.ClientEvent
+        )
+        val tracedMeta = RuntimeTraceOperation.attach(meta, operation)
+        (RuntimeTraceOperation.event(
+          operation,
+          RuntimeTraceStage.DecodedEvent,
+          "Browser event decoded"
+        ) *>
+          state.lifecycleLock
+            .withPermit(handleClientEvent(event, tracedMeta, state)))
           .catchAllCause(cause =>
-            SocketCrashRuntime
-              .crash(state, s"LiveView ${state.meta.topic} event crashed", Some(cause))
+            RuntimeTraceOperation.event(
+              operation,
+              RuntimeTraceStage.Crash,
+              "Browser event operation crashed"
+            ) *>
+              SocketCrashRuntime
+                .crash(state, s"LiveView ${state.meta.topic} event crashed", Some(cause))
           )
       )
       .fork
@@ -31,6 +47,12 @@ private[scalive] object SocketInbound:
     meta: WebSocketMessage.Meta,
     state: RuntimeState[Msg, Model]
   ): Task[Payload.Reply] =
+    val operation = RuntimeTraceOperation.resolve(
+      state.runtimeTrace,
+      meta,
+      RuntimeTraceOperationKind.LivePatch
+    )
+    val tracedMeta = RuntimeTraceOperation.attach(meta, operation)
     state.lifecycleLock.withPermit {
       for
         (currentModel, rendered) <- state.ref.get
@@ -49,14 +71,19 @@ private[scalive] object SocketInbound:
                            command @ (LiveNavigationCommand.PushPatch(_) |
                            LiveNavigationCommand.ReplacePatch(_))
                          ) =>
-                       followPatchRedirects(rendered, model, command, meta, state)
+                       followPatchRedirects(rendered, model, command, tracedMeta, state)
                      case Some(command) =>
-                       handleNavigationCommand(model, command, meta, state).as(None)
+                       handleNavigationCommand(model, command, tracedMeta, state).as(None)
                      case None =>
                        for
                          _    <- state.patchRedirectCountRef.set(0)
                          diff <-
-                           SocketModelRuntime.updateModelAndSubscriptions(rendered, model, state)
+                           SocketModelRuntime.updateModelAndSubscriptions(
+                             rendered,
+                             model,
+                             state,
+                             tracedMeta.traceOperation
+                           )
                          _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                        yield Some(diff)
         reply = diffOpt match
@@ -66,6 +93,7 @@ private[scalive] object SocketInbound:
                     Payload.okReply(LiveResponse.Empty)
       yield reply
     }
+  end handleLivePatch
 
   private def followPatchRedirects[Msg, Model](
     rendered: RenderedView,
@@ -126,7 +154,8 @@ private[scalive] object SocketInbound:
                                diff <- SocketModelRuntime.updateModelAndSubscriptions(
                                          rendered,
                                          nextModel,
-                                         state
+                                         state,
+                                         meta.traceOperation
                                        )
                                _ <- SocketModelRuntime.publishPayload(
                                       Payload.LiveNavigation(nextUrl.encode, kind),
@@ -177,8 +206,13 @@ private[scalive] object SocketInbound:
           _                        <- event.params.get("key") match
                  case Some(kind) => state.ctx.flash.clear(kind)
                  case None       => state.ctx.flash.clearAll
-          diff <- SocketModelRuntime.updateModelAndSubscriptions(rendered, currentModel, state)
-          _    <- SocketModelRuntime.publishPayload(
+          diff <- SocketModelRuntime.updateModelAndSubscriptions(
+                    rendered,
+                    currentModel,
+                    state,
+                    meta.traceOperation
+                  )
+          _ <- SocketModelRuntime.publishPayload(
                  if diff.isEmpty then Payload.okReply(LiveResponse.Empty)
                  else Payload.okReply(LiveResponse.Diff(diff)),
                  meta,

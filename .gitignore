@@ -4,6 +4,7 @@
 .scala-build
 secrets.env
 out
+target
 
 node_modules
 examples/dist

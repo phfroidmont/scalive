@@ -783,27 +783,38 @@ final class LiveRouter[R] private[scalive] (
   globalLayouts: List[LiveLayout[Any, Any]],
   globalRootLayout: LiveRootLayout[Any, Any],
   liveSocketMount: PathCodec[Unit],
-  security: LiveSecurity):
+  security: LiveSecurity,
+  runtimeTraceFactory: RuntimeTraceFactory):
 
   def withLayout(layout: LiveLayout[Any, Any]): LiveRouter[R] =
-    LiveRouter(globalLayouts :+ layout, globalRootLayout, liveSocketMount, security)
+    LiveRouter(
+      globalLayouts :+ layout,
+      globalRootLayout,
+      liveSocketMount,
+      security,
+      runtimeTraceFactory
+    )
 
   def withRootLayout(layout: LiveRootLayout[Any, Any]): LiveRouter[R] =
-    LiveRouter(globalLayouts, layout, liveSocketMount, security)
+    LiveRouter(globalLayouts, layout, liveSocketMount, security, runtimeTraceFactory)
 
   def withSocketPath(path: PathCodec[Unit]): LiveRouter[R] =
-    LiveRouter(globalLayouts, globalRootLayout, path, security)
+    LiveRouter(globalLayouts, globalRootLayout, path, security, runtimeTraceFactory)
 
   def withTokenConfig(config: TokenConfig): LiveRouter[R] =
     LiveRouter(
       globalLayouts,
       globalRootLayout,
       liveSocketMount,
-      security.withTokenConfig(config)
+      security.withTokenConfig(config),
+      runtimeTraceFactory
     )
 
   def withSecurity(value: LiveSecurity): LiveRouter[R] =
-    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, value)
+    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, value, runtimeTraceFactory)
+
+  private[scalive] def withRuntimeTrace(factory: RuntimeTraceFactory): LiveRouter[R] =
+    LiveRouter(globalLayouts, globalRootLayout, liveSocketMount, security, factory)
 
   def apply[R1](route: LiveRouteFragment[R1, Any], routes: LiveRouteFragment[R1, Any]*)
     : Routes[R & R1, Nothing] =
@@ -819,7 +830,8 @@ final class LiveRouter[R] private[scalive] (
       globalRootLayout,
       liveRoutes,
       liveSocketMount,
-      security
+      security,
+      runtimeTraceFactory
     ).routes
 end LiveRouter
 
@@ -829,7 +841,8 @@ object Live:
       Nil,
       LiveRootLayout.identity,
       PathCodec.empty / "live",
-      LiveSecurity(TokenConfig.default)
+      LiveSecurity(TokenConfig.default),
+      RuntimeTraceFactory.Disabled
     )
 
   def route[A](path: PathCodec[A]): LiveRouteSeed[A] =

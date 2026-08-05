@@ -17,7 +17,8 @@ final private[scalive] class LiveRoutesRuntime[R](
   globalRootLayout: LiveRootLayout[Any, Any],
   liveRoutes: List[LiveRoute[R, ?, Any, ?, ?, ?]],
   liveSocketMount: PathCodec[Unit],
-  security: LiveSecurity):
+  security: LiveSecurity,
+  runtimeTraceFactory: RuntimeTraceFactory = RuntimeTraceFactory.Disabled):
 
   private val tokenConfig    = security.tokenConfig
   private val csrfProtection = security.csrf
@@ -41,29 +42,33 @@ final private[scalive] class LiveRoutesRuntime[R](
       SocketDecoder.default.maxFramePayloadLength(16 * 1024 * 1024)
     )
 
-  private def socketApp(csrfToken: Option[String]): WebSocketApp[R] =
+  private def socketApp(
+    csrfToken: Option[String],
+    runtimeTrace: RuntimeTrace
+  ): WebSocketApp[R] =
     val app = Handler.webSocket { channel =>
+      def sendMessage(message: WebSocketMessage) =
+        RuntimeTraceFrame
+          .encode(message)
+          .flatMap(encoded => channel.send(Read(WebSocketFrame.text(encoded))))
+
       ZIO
         .scoped(for
-          liveChannel <- LiveChannel.make(tokenConfig, csrfToken = csrfToken)
+          liveChannel <- LiveChannel.make(tokenConfig, csrfToken, runtimeTrace)
           _           <- liveChannel.diffsStream
                  .runForeach((payload, meta) =>
-                   channel
-                     .send(
-                       Read(
-                         WebSocketFrame.text(
-                           WebSocketMessage(
-                             joinRef = meta.joinRef,
-                             messageRef = payload match
-                               case Payload.Close => meta.joinRef
-                               case _             => meta.messageRef,
-                             topic = meta.topic,
-                             eventType = outgoingEventType(payload),
-                             payload = payload
-                           ).toJson
-                         )
-                       )
+                   sendMessage(
+                     WebSocketMessage(
+                       joinRef = meta.joinRef,
+                       messageRef = payload match
+                         case Payload.Close => meta.joinRef
+                         case _             => meta.messageRef,
+                       topic = meta.topic,
+                       eventType = outgoingEventType(payload),
+                       payload = payload,
+                       traceOperation = meta.traceOperation
                      )
+                   )
                  )
                  .tapErrorCause(c => ZIO.logErrorCause("diffsStream pipeline failed", c))
                  .ensuring(ZIO.logWarning("WS out fiber terminated"))
@@ -73,22 +78,48 @@ final private[scalive] class LiveRoutesRuntime[R](
                    case Read(WebSocketFrame.Close) => ZIO.logDebug("WS connection closed by client")
                    case Read(WebSocketFrame.Text(content)) =>
                      for
-                       message <- ZIO
+                       decoded <- ZIO
                                     .fromEither(content.fromJson[WebSocketMessage])
                                     .mapError(new IllegalArgumentException(_))
+                       operation = RuntimeTraceOperation.resolve(
+                                     runtimeTrace,
+                                     decoded.meta,
+                                     incomingOperationKind(decoded.payload)
+                                   )
+                       message = RuntimeTraceOperation.attach(decoded, operation)
+                       _ <- RuntimeTraceOperation.protocol(
+                              operation,
+                              RuntimeTraceStage.DecodedEvent,
+                              "Inbound protocol frame decoded",
+                              message,
+                              None
+                            )
                        reply <- handleMessage(message, liveChannel)
                        _     <- reply match
-                              case Some(r) => channel.send(Read(WebSocketFrame.text(r.toJson)))
+                              case Some(r) => sendMessage(r)
                               case None    => ZIO.unit
                      yield ()
                    case Read(WebSocketFrame.Binary(bytes)) =>
                      for
-                       message <- ZIO
+                       decoded <- ZIO
                                     .fromEither(WebSocketMessage.decodeBinaryPush(bytes))
                                     .mapError(new IllegalArgumentException(_))
+                       operation = RuntimeTraceOperation.resolve(
+                                     runtimeTrace,
+                                     decoded.meta,
+                                     incomingOperationKind(decoded.payload)
+                                   )
+                       message = RuntimeTraceOperation.attach(decoded, operation)
+                       _ <- RuntimeTraceOperation.protocol(
+                              operation,
+                              RuntimeTraceStage.Upload,
+                              "Inbound binary upload frame decoded",
+                              message,
+                              None
+                            )
                        reply <- handleMessage(message, liveChannel)
                        _     <- reply match
-                              case Some(r) => channel.send(Read(WebSocketFrame.text(r.toJson)))
+                              case Some(r) => sendMessage(r)
                               case None    => ZIO.unit
                      yield ()
                    case _ => ZIO.unit
@@ -518,7 +549,8 @@ final private[scalive] class LiveRoutesRuntime[R](
       message.messageRef,
       message.topic,
       Protocol.EventReply,
-      reply
+      reply,
+      message.traceOperation
     )
 
   private def errorReply(
@@ -553,7 +585,8 @@ final private[scalive] class LiveRoutesRuntime[R](
       message.messageRef,
       message.topic,
       Protocol.EventRedirect,
-      Payload.Redirect(href, None)
+      Payload.Redirect(href, None),
+      message.traceOperation
     )
 
   private def logConnectedMountFailure(
@@ -576,6 +609,18 @@ final private[scalive] class LiveRoutesRuntime[R](
       case Payload.Redirect(_, _)        => Protocol.EventRedirect
       case Payload.Error                 => Protocol.EventError
       case _                             => Protocol.EventReply
+
+  private def incomingOperationKind(payload: Payload): RuntimeTraceOperationKind =
+    payload match
+      case _: Payload.Join        => RuntimeTraceOperationKind.Join
+      case _: Payload.Event       => RuntimeTraceOperationKind.ClientEvent
+      case _: Payload.LivePatch   => RuntimeTraceOperationKind.LivePatch
+      case _: Payload.UploadJoin  => RuntimeTraceOperationKind.Upload
+      case _: Payload.UploadChunk => RuntimeTraceOperationKind.Upload
+      case _: Payload.AllowUpload => RuntimeTraceOperationKind.Upload
+      case _: Payload.Progress    => RuntimeTraceOperationKind.Upload
+      case Payload.Leave          => RuntimeTraceOperationKind.Leave
+      case _                      => RuntimeTraceOperationKind.Other
 
   private def isLiveViewTopic(topic: String): Boolean =
     topic.startsWith("lv:") && topic.length > 3
@@ -607,7 +652,10 @@ final private[scalive] class LiveRoutesRuntime[R](
           .map(route => route.toZioRoute(globalLayouts, globalRootLayout, security))
           .prepended(
             Method.GET / liveSocketMount / "websocket" -> handler { (request: Request) =>
-              socketApp(csrfProtection.validateWebSocket(request)).toResponse
+              socketApp(
+                csrfProtection.validateWebSocket(request),
+                runtimeTraceFactory.connect(request)
+              ).toResponse
             }
           )
       ).handleErrorZIO(e =>

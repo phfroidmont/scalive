@@ -14,6 +14,7 @@ trait LifecycleContext:
   def connected: Boolean
   def staticChanged: Boolean
   def connectParams: Map[String, Json]
+  private[scalive] def runtimeTraceSession: Option[String] = None
 
 trait MountContext[Msg, Model] extends LifecycleContext:
   def nav: MountNavigation
@@ -292,7 +293,8 @@ final private[scalive] case class LiveContext(
   flash: FlashRuntime = FlashRuntime.Disabled,
   async: LiveAsyncRuntime = LiveAsyncRuntime.Disabled,
   subscriptions: SubscriptionRuntime[Any] = SubscriptionRuntime.Disabled,
-  hooks: LiveHookRuntime = LiveHookRuntime.Disabled):
+  hooks: LiveHookRuntime = LiveHookRuntime.Disabled,
+  runtimeTrace: RuntimeTrace = RuntimeTrace.Disabled):
 
   def mountContext[Msg, Model]: MountContext[Msg, Model] =
     new LiveContext.RuntimeMountContext(this)
@@ -463,9 +465,10 @@ private[scalive] object LiveContext:
 
   private[scalive] trait RuntimeContextBase extends LifecycleContext:
     protected def runtime: LiveContext
-    def connected: Boolean               = runtime.connected
-    def staticChanged: Boolean           = runtime.staticChanged
-    def connectParams: Map[String, Json] = runtime.connectParams
+    def connected: Boolean                                            = runtime.connected
+    def staticChanged: Boolean                                        = runtime.staticChanged
+    def connectParams: Map[String, Json]                              = runtime.connectParams
+    override private[scalive] def runtimeTraceSession: Option[String] = runtime.runtimeTrace.session
 
   final private[scalive] class RuntimeMountContext[Msg, Model](protected val runtime: LiveContext)
       extends MountContext[Msg, Model]

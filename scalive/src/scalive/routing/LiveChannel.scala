@@ -26,7 +26,8 @@ final private[scalive] class LiveChannel(
   nestedEntries: Ref[Map[String, NestedLiveViewEntry]],
   tokenConfig: TokenConfig,
   private[scalive] val connectAuthorized: Boolean,
-  private[scalive] val csrfToken: Option[String]):
+  private[scalive] val csrfToken: Option[String],
+  private[scalive] val runtimeTrace: RuntimeTrace):
   def diffsStream: ZStream[Any, Nothing, (Payload, Meta)] =
     ZStream.unwrapScoped {
       for
@@ -139,6 +140,7 @@ final private[scalive] class LiveChannel(
       parentDomId,
       tokenConfig,
       nestedEntries,
+      runtimeTrace,
       loadingOnInitialRender
     )
 
@@ -428,15 +430,23 @@ end LiveChannel
 
 private[scalive] object LiveChannel:
   def make(tokenConfig: TokenConfig, connectAuthorized: Boolean = true): UIO[LiveChannel] =
-    make(tokenConfig, connectAuthorized, csrfToken = None)
+    make(tokenConfig, connectAuthorized, csrfToken = None, RuntimeTrace.Disabled)
 
   def make(tokenConfig: TokenConfig, csrfToken: Option[String]): UIO[LiveChannel] =
-    make(tokenConfig, csrfToken.isDefined, csrfToken)
+    make(tokenConfig, csrfToken.isDefined, csrfToken, RuntimeTrace.Disabled)
+
+  def make(
+    tokenConfig: TokenConfig,
+    csrfToken: Option[String],
+    runtimeTrace: RuntimeTrace
+  ): UIO[LiveChannel] =
+    make(tokenConfig, csrfToken.isDefined, csrfToken, runtimeTrace)
 
   private def make(
     tokenConfig: TokenConfig,
     connectAuthorized: Boolean,
-    csrfToken: Option[String]
+    csrfToken: Option[String],
+    runtimeTrace: RuntimeTrace
   ): UIO[LiveChannel] =
     for
       sockets      <- SubscriptionRef.make(Map.empty[String, Socket[?, ?]])
@@ -448,5 +458,7 @@ private[scalive] object LiveChannel:
       nested,
       tokenConfig,
       connectAuthorized,
-      csrfToken
+      csrfToken,
+      runtimeTrace
     )
+end LiveChannel

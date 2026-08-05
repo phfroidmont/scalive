@@ -17,6 +17,13 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     TokenConfig("documentation-site-spec-secret", 1.hour),
     CookiePolicy(secure = false)
   )
+  private val config = DocumentationConfig(
+    8080,
+    PublicOrigin
+      .from("https://docs.example.test")
+      .fold(error => throw new IllegalArgumentException(error), identity)
+  )
+  private val assetNames = Seq("app.css", "app.js", "search-index.json")
 
   private def url(value: String): URL =
     URL.decode(value).fold(throw _, identity)
@@ -40,6 +47,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         application.pages.forall(entry => entry.codec.render == entry.page.route),
         application.pages.forall(entry => entry.codec.decode(Path(entry.page.route)).contains(())),
         application.pages.forall(entry => entry.location.href == entry.page.route),
+        application.bundle.searchEntries.forall(application.searchLocation(_).nonEmpty),
         Set(Section.Learn, Section.Guides, Section.Examples, Section.Api, Section.Project)
           .subsetOf(application.bundle.navigation.items.map(_.section).toSet)
       )
@@ -48,9 +56,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", Seq("app.css", "app.js"))
+                    StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes = application.routes(assets, security)
+        routes = application.routes(assets, security, config)
         failures <- ZIO.foreach(application.pages) { entry =>
                       DisconnectedRender
                         .run(routes, Request.get(url(entry.page.route)))
@@ -70,7 +78,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                               document.select("meta[name=description]").attr("content") != entry.page.metadata.description
                             )("description"),
                             Option.when(
-                              document.select("link[rel=canonical]").attr("href") != entry.page.route
+                              document.select("link[rel=canonical]").attr("href") !=
+                                config.publicOrigin.absolute(entry.page.route)
                             )(s"canonical '${document.select("link[rel=canonical]").attr("href")}'"),
                             Option.when(document.select("h1").size() != 1)("h1 count"),
                             Option.when(document.selectFirst("h1").text() != entry.page.metadata.title)("h1 title"),
@@ -91,6 +100,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                               document.select("#docs-page-metadata[phx-hook=PageMetadata]").size() != 1
                             )("metadata hook"),
                             Option.when(
+                              document.select("#docs-global-search form[action=/search][method=get]").size() != 1
+                            )("search fallback"),
+                            Option.when(
                               !document.select(".docs-page-links").text().contains("Report a documentation issue")
                             )("issue link")
                           ).flatten
@@ -103,10 +115,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", Seq("app.css", "app.js"))
+                    StaticAssetConfig.classpath("public", assetNames)
                   )
         rendered <- DisconnectedRender.run(
-                      application.routes(assets, security),
+                      application.routes(assets, security, config),
                       Request.get(url("/api/scalive/live-view"))
                     )
         expectedSources = application.bundle.apiReference.symbols
@@ -133,12 +145,16 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", Seq("app.css", "app.js"))
+                    StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes = application.routes(assets, security) ++ assets.routes
+        routes = application.routes(assets, security, config) ++ assets.routes
         home    <- DisconnectedRender.run(routes, Request.get(URL.root))
         missing <- ZIO.scoped(routes.runZIO(Request.get(url("/not-a-documentation-page"))))
         extra   <- ZIO.scoped(routes.runZIO(Request.get(url("/learn/extra"))))
+        searchAsset = Jsoup
+                        .parse(home.html)
+                        .select("#docs-global-search")
+                        .attr("data-search-index")
         assetPaths = Jsoup
                        .parse(home.html)
                        .select("script[src], link[rel=stylesheet]")
@@ -149,8 +165,60 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         home.response.status == Status.Ok,
         assetPaths.size == 2,
         assetPaths.forall(_.startsWith("/static/")),
+        searchAsset.startsWith("/static/search-index-"),
         missing.status == Status.NotFound,
         extra.status == Status.NotFound
+      )
+    },
+    test("renders URL-addressable search with an ordinary GET fallback") {
+      for
+        application <- loadApplication
+        assets <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes = application.routes(assets, security, config)
+        empty <- DisconnectedRender.run(routes, Request.get(url("/search")))
+        symbol <- DisconnectedRender.run(routes, Request.get(url("/search?q=scalive.LiveView")))
+        alias <- DisconnectedRender.run(routes, Request.get(url("/search?q=live%20view")))
+        heading <- DisconnectedRender.run(routes, Request.get(url("/search?q=why%20scalive")))
+        missing <- DisconnectedRender.run(routes, Request.get(url("/search?q=no-such-result")))
+        emptyDocument   = Jsoup.parse(empty.html)
+        symbolDocument  = Jsoup.parse(symbol.html)
+        headingDocument = Jsoup.parse(heading.html)
+        searchForm      = symbolDocument.selectFirst("main form[action=/search]")
+      yield assertTrue(
+        empty.response.status == Status.Ok,
+        empty.text.contains("Enter a term"),
+        emptyDocument.title() == "Search | Scalive",
+        emptyDocument.select("link[rel=canonical]").attr("href") ==
+          "https://docs.example.test/search",
+        emptyDocument.select("meta[name=robots]").attr("content") == "noindex,follow",
+        searchForm.attr("method") == "get",
+        searchForm.select("input[name=q]").attr("value") == "scalive.LiveView",
+        searchForm.attr("phx-submit").isEmpty,
+        symbolDocument.select(".docs-search-result").text().contains("scalive.LiveView"),
+        alias.text.contains("scalive.LiveView"),
+        headingDocument.select(".docs-search-result a[href=/#why-scalive]").size() == 1,
+        missing.text.contains("No results for 'no-such-result'.")
+      )
+    },
+    test("serves a manifest-derived sitemap and self-contained robots policy") {
+      for
+        application <- loadApplication
+        assets <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes = application.routes(assets, security, config)
+        sitemapResponse <- ZIO.scoped(routes.runZIO(Request.get(url("/sitemap.xml"))))
+        robotsResponse  <- ZIO.scoped(routes.runZIO(Request.get(url("/robots.txt"))))
+        sitemap         <- sitemapResponse.body.asString
+        robots          <- robotsResponse.body.asString
+        sitemapDocument = Jsoup.parse(sitemap, "", org.jsoup.parser.Parser.xmlParser())
+        locations       = sitemapDocument.select("loc").asScala.toVector.map(_.text())
+      yield assertTrue(
+        sitemapResponse.status == Status.Ok,
+        robotsResponse.status == Status.Ok,
+        locations == application.pages.map(_.page.route).distinct.sorted.map(config.publicOrigin.absolute),
+        locations.exists(_.contains("/api/scalive/live-view")),
+        !locations.exists(_.endsWith("/search")),
+        robots ==
+          "User-agent: *\nAllow: /\nSitemap: https://docs.example.test/sitemap.xml\n"
       )
     }
   )

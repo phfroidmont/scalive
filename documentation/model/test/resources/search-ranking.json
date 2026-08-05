@@ -1,0 +1,123 @@
+{
+  "entries": [
+    {
+      "id": "page:/learn/quick-start",
+      "kind": "page",
+      "title": "Quick start",
+      "description": "Build a counter application.",
+      "route": "/learn/quick-start",
+      "fragment": null,
+      "section": "learn",
+      "text": "Create your first real-time application with Mill."
+    },
+    {
+      "id": "heading:/learn/quick-start#run-it",
+      "kind": "heading",
+      "title": "Run it",
+      "description": "Quick start",
+      "route": "/learn/quick-start",
+      "fragment": "run-it",
+      "section": "learn",
+      "text": "Run the application from Mill."
+    },
+    {
+      "id": "api:trait:scalive.LiveView",
+      "kind": "apiSymbol",
+      "title": "scalive.LiveView",
+      "description": "Defines a stateful server-rendered view.",
+      "route": "/api/scalive/live-view",
+      "fragment": null,
+      "section": "api",
+      "text": "LiveView trait LiveView[Msg, Model]"
+    },
+    {
+      "id": "api:def:scalive.LiveView.handleMessage",
+      "kind": "apiSymbol",
+      "title": "scalive.LiveView.handleMessage",
+      "description": "Handles a typed message.",
+      "route": "/api/scalive/live-view",
+      "fragment": "handle-message",
+      "section": "api",
+      "text": "handleMessage def handleMessage model message"
+    },
+    {
+      "id": "api:def:scalive.liveView",
+      "kind": "apiSymbol",
+      "title": "scalive.liveView",
+      "description": "Builds a LiveView route.",
+      "route": "/api/scalive/live-view-method",
+      "fragment": null,
+      "section": "api",
+      "text": "liveView def liveView route"
+    },
+    {
+      "id": "compatibility:/project/compatibility#compatibility-server-navigation",
+      "kind": "compatibility",
+      "title": "Server navigation",
+      "description": "Compatibility entry on Compatibility.",
+      "route": "/project/compatibility",
+      "fragment": "compatibility-server-navigation",
+      "section": "project",
+      "text": "server-navigation server navigation"
+    }
+  ],
+  "cases": [
+    {
+      "query": "scalive.LiveView",
+      "limit": 10,
+      "ids": [
+        "api:trait:scalive.LiveView",
+        "api:def:scalive.liveView",
+        "api:def:scalive.LiveView.handleMessage"
+      ]
+    },
+    {
+      "query": "LiveView",
+      "limit": 10,
+      "ids": [
+        "api:trait:scalive.LiveView",
+        "api:def:scalive.liveView",
+        "api:def:scalive.LiveView.handleMessage"
+      ]
+    },
+    {
+      "query": "live view",
+      "limit": 10,
+      "ids": [
+        "api:trait:scalive.LiveView",
+        "api:def:scalive.liveView",
+        "api:def:scalive.LiveView.handleMessage"
+      ]
+    },
+    {
+      "query": "handleMessage",
+      "limit": 10,
+      "ids": ["api:def:scalive.LiveView.handleMessage"]
+    },
+    {
+      "query": "first application",
+      "limit": 10,
+      "ids": ["page:/learn/quick-start"]
+    },
+    {
+      "query": "navigation",
+      "limit": 10,
+      "ids": ["compatibility:/project/compatibility#compatibility-server-navigation"]
+    },
+    {
+      "query": "",
+      "limit": 10,
+      "ids": []
+    },
+    {
+      "query": "no-such-result",
+      "limit": 10,
+      "ids": []
+    },
+    {
+      "query": "scalive",
+      "limit": 1,
+      "ids": ["api:trait:scalive.LiveView"]
+    }
+  ]
+}

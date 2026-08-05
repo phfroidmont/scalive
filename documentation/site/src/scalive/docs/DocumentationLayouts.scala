@@ -6,7 +6,8 @@ import scalive.docs.model.*
 
 final private[docs] class DocumentationRootLayout(
   application: DocumentationApplication,
-  assets: StaticAssets)
+  assets: StaticAssets,
+  origin: PublicOrigin)
     extends LiveRootLayout[Any, Any]:
 
   def key(ctx: LiveLayoutContext[Any, Any]): String = "documentation-root"
@@ -16,42 +17,71 @@ final private[docs] class DocumentationRootLayout(
     pageTitle: Option[String],
     ctx: LiveLayoutContext[Any, Any]
   ): HtmlElement[Msg] =
-    val page = application.page(ctx.currentUrl.path.encode).getOrElse(application.pages.head.page)
+    val route    = ctx.currentUrl.path.encode
+    val metadata = application
+      .metadata(route).getOrElse(
+        throw new IllegalArgumentException(s"Missing documentation metadata for route '$route'.")
+      )
     htmlRootTag(
       lang := "en",
       headTag(
         metaTag(charset  := "utf-8"),
         metaTag(nameAttr := "viewport", contentAttr    := "width=device-width, initial-scale=1"),
-        metaTag(nameAttr := "description", contentAttr := page.metadata.description),
-        linkTag(rel      := "canonical", href          := page.route),
+        metaTag(nameAttr := "description", contentAttr := metadata.description),
+        Option
+          .when(!metadata.indexable)(
+            Mod.Content.Tag(
+              metaTag(
+                idAttr      := "docs-robots",
+                nameAttr    := "robots",
+                contentAttr := "noindex,follow"
+              )
+            )
+          ).toVector,
+        linkTag(rel := "canonical", href := origin.absolute(metadata.canonicalPath)),
         assets.trackedScript("app.js", defer := true, typ := "text/javascript"),
         assets.trackedStylesheet("app.css"),
         liveTitle(pageTitle, default = "Scalive")
       ),
       bodyTag(content)
     )
+  end render
+end DocumentationRootLayout
 
-final private[docs] class DocumentationLayout(application: DocumentationApplication)
+final private[docs] class DocumentationLayout(
+  application: DocumentationApplication,
+  assets: StaticAssets,
+  origin: PublicOrigin)
     extends LiveLayout[Any, Any]:
 
-  private val ariaCurrent = htmlAttr("aria-current", StringAsIsEncoder)
-  private val ariaLive    = htmlAttr("aria-live", StringAsIsEncoder)
-  private val role        = htmlAttr("role", StringAsIsEncoder)
+  private val ariaCurrent      = htmlAttr("aria-current", StringAsIsEncoder)
+  private val ariaLive         = htmlAttr("aria-live", StringAsIsEncoder)
+  private val ariaControls     = htmlAttr("aria-controls", StringAsIsEncoder)
+  private val ariaExpanded     = htmlAttr("aria-expanded", StringAsIsEncoder)
+  private val ariaAutocomplete = htmlAttr("aria-autocomplete", StringAsIsEncoder)
+  private val role             = htmlAttr("role", StringAsIsEncoder)
 
   def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
     val currentRoute = ctx.currentUrl.path.encode
-    val page         = application.page(currentRoute).getOrElse(application.pages.head.page)
+    val page         = application.page(currentRoute)
+    val metadata     = application
+      .metadata(currentRoute).getOrElse(
+        throw new IllegalArgumentException(
+          s"Missing documentation metadata for route '$currentRoute'."
+        )
+      )
     div(
       dom.hook("PageMetadata", DomRef("docs-page-metadata")),
-      dataAttr("page-description") := page.metadata.description,
-      dataAttr("page-canonical")   := page.route,
+      dataAttr("page-description") := metadata.description,
+      dataAttr("page-canonical")   := origin.absolute(metadata.canonicalPath),
+      dataAttr("page-indexable")   := metadata.indexable.toString,
       a(cls := "docs-skip-link", href := "#docs-main", "Skip to content"),
       header(page, currentRoute),
       div(
-        cls := "docs-shell",
+        cls := (if page.nonEmpty then "docs-shell" else "docs-shell docs-shell-wide"),
         mainTag(idAttr := "docs-main", cls := "docs-main", content),
-        sectionNavigation(page, currentRoute),
-        outline(page)
+        page.map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
+        page.map(value => Mod.Content.Tag(outline(value))).toVector
       ),
       footerTag(
         cls := "docs-footer",
@@ -61,7 +91,7 @@ final private[docs] class DocumentationLayout(application: DocumentationApplicat
       )
     )
 
-  private def header[Msg](page: Page, currentRoute: String): HtmlElement[Msg] =
+  private def header[Msg](page: Option[Page], currentRoute: String): HtmlElement[Msg] =
     headerTag(
       cls := "docs-header",
       div(
@@ -81,7 +111,8 @@ final private[docs] class DocumentationLayout(application: DocumentationApplicat
               .filterNot(_.section == Section.Home)
               .map { item =>
                 val className =
-                  if item.section == page.metadata.section then "docs-current-section" else ""
+                  if page.exists(_.metadata.section == item.section) then "docs-current-section"
+                  else ""
                 li(
                   navigationLink(
                     application
@@ -100,9 +131,52 @@ final private[docs] class DocumentationLayout(application: DocumentationApplicat
         ),
         div(
           cls := "docs-header-actions",
+          searchForm,
           connectionIndicator,
           themeSelector
         )
+      )
+    )
+
+  private def searchForm[Msg]: HtmlElement[Msg] =
+    div(
+      dom.hook("DocumentationSearch", DomRef("docs-global-search")),
+      phx.update               := PhxUpdate.Ignore,
+      cls                      := "docs-global-search",
+      dataAttr("search-index") := assets.path("search-index.json"),
+      form(
+        action := DocumentationApplication.SearchRoute,
+        method := "get",
+        role   := "search",
+        label(
+          cls                                := "docs-visually-hidden",
+          htmlAttr("for", StringAsIsEncoder) := "docs-global-search-input",
+          "Search documentation"
+        ),
+        input(
+          idAttr                                      := "docs-global-search-input",
+          typ                                         := "search",
+          nameAttr                                    := DocumentationApplication.SearchParameter,
+          placeholder                                 := "Search",
+          htmlAttr("autocomplete", StringAsIsEncoder) := "off",
+          role                                        := "combobox",
+          ariaControls                                := "docs-global-search-results",
+          ariaExpanded                                := "false",
+          ariaAutocomplete                            := "list"
+        ),
+        button(typ := "submit", cls := "docs-visually-hidden", "Search")
+      ),
+      div(
+        idAttr := "docs-global-search-results",
+        cls    := "docs-global-search-results",
+        role   := "listbox",
+        hidden := true
+      ),
+      p(
+        idAttr   := "docs-global-search-status",
+        cls      := "docs-visually-hidden",
+        role     := "status",
+        ariaLive := "polite"
       )
     )
 

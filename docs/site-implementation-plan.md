@@ -29,7 +29,7 @@ Run the documentation site with `mill documentation.site.run`.
 - [x] Phase 1: Content model and Laika pipeline
 - [x] Phase 2: Generated API reference
 - [x] Phase 3: Documentation application shell
-- [ ] Phase 4: Search and metadata
+- [x] Phase 4: Search and metadata
 - [ ] Phase 5: Interactive example foundation
 - [ ] Phase 6: Runtime X-ray inspector
 - [ ] Phase 7: Example migration
@@ -275,43 +275,51 @@ mill documentation.site.run
 - [x] Generated Markdown pages are readable, navigable, and correctly routed
   before the live connection starts.
 
-Canonical links remain route-relative until the validated public-origin
-configuration is introduced in Phase 10.
+Canonical links initially remained route-relative. Phase 4 moved the validated
+port and public-origin slice of the application configuration forward so
+canonical and sitemap URLs are absolute; Phase 10 will expand the same model.
 
 ## Phase 4: Search And Metadata
 
 **Depends on:** Phases 1 through 3.
 
-- [ ] Generate one deterministic search corpus covering pages, headings,
+- [x] Generate one deterministic search corpus covering pages, headings,
   examples, API symbols, and compatibility entries.
-- [ ] Preserve Scala-oriented tokens such as `LiveView`, `scalive.LiveView`, and
+- [x] Preserve Scala-oriented tokens such as `LiveView`, `scalive.LiveView`, and
   `handleMessage`.
-- [ ] Implement one shared deterministic ranking algorithm in Scala and
+- [x] Implement one shared deterministic ranking algorithm in Scala and
   JavaScript.
-- [ ] Add a server-rendered `/search?q=...` route.
-- [ ] Add an instant-search JavaScript enhancement using the digested static
+- [x] Add a server-rendered `/search?q=...` route.
+- [x] Add an instant-search JavaScript enhancement using the digested static
   index.
-- [ ] Keep search usable through ordinary form submission without JavaScript.
-- [ ] Add keyboard and focus handling for the search interface.
-- [ ] Generate canonical metadata for all public pages.
-- [ ] Generate a sitemap from the page manifest.
-- [ ] Add a self-contained `robots.txt`.
-- [ ] Add search tests for symbols, headings, prose, aliases, empty queries, and
+- [x] Keep search usable through ordinary form submission without JavaScript.
+- [x] Add keyboard and focus handling for the search interface.
+- [x] Generate canonical metadata for all public pages.
+- [x] Generate a sitemap from the page manifest.
+- [x] Add a self-contained `robots.txt`.
+- [x] Add search tests for symbols, headings, prose, aliases, empty queries, and
   no-result states.
-- [ ] Verify every search result targets a valid page and anchor.
+- [x] Verify every search result targets a valid page and anchor.
 
 **Verification:**
 
 ```bash
 mill --ticker false documentation.pipeline.test
 mill --ticker false documentation.site.test
+npm test --prefix documentation/site
 mill --ticker false documentation.check
 ```
 
 **Completion gate:**
 
-- [ ] Instant and server-rendered search return valid results from the same
+- [x] Instant and server-rendered search return valid results from the same
   generated corpus.
+
+The pipeline serializes the same sorted `SearchEntry` vector into the server
+bundle and the digested browser index. Scala and JavaScript ranking use integer
+scores, ASCII-stable tokenization, identifier aliases, and shared contract
+fixtures. Example and compatibility labels and anchors are derived from their
+validated stable IDs until later phases provide richer registry metadata.
 
 ## Phase 5: Interactive Example Foundation
 

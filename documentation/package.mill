@@ -137,7 +137,6 @@ object `package` extends Module:
       val targets = apiTargetRoots().map(_.path).mkString(java.io.File.pathSeparator)
       val dependencies = apiDependencyClasspath().map(_.path).mkString(java.io.File.pathSeparator)
 
-      val output = Task.dest / "scalive" / "docs" / "generated" / "content.json"
       val classpath = runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
       val arguments = Seq(
         "java",
@@ -146,7 +145,7 @@ object `package` extends Module:
         "scalive.docs.pipeline.GenerateDocumentation",
         repositoryRoot.toString,
         (repositoryRoot / "documentation" / "content").toString,
-        output.toString,
+        Task.dest.toString,
         sourceRevision(),
         settings.path.toString,
         snapshot.path.toString,
@@ -186,6 +185,17 @@ object `package` extends Module:
         )
     }
 
+    def searchRankingFixture = Task.Source(
+      moduleDir / os.up / "model" / "test" / "resources" / "search-ranking.json"
+    )
+
+    def testJs = Task {
+      assetSources()
+      searchRankingFixture()
+      npmInstall()
+      os.proc("npm", "test").call(cwd = moduleDir)
+    }
+
     object test extends ScalaTests with TestModule.ZioTest:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scaliveTesting)
       def zioTestVersion = "2.1.25"
@@ -196,5 +206,6 @@ object `package` extends Module:
     pipeline.checkApi()
     pipeline.generate()
     site.test.testCached()
+    site.testJs()
     site.checkRuntimeClasspath()
   }

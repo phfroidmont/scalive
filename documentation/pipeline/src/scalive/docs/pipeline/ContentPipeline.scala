@@ -447,7 +447,10 @@ object ContentPipeline:
     if names.isEmpty then calloutDepth
     else
       line match
-        case SingleDirective(_, _)    => calloutDepth
+        case SingleDirective(name, id) =>
+          if Set("example", "compatibility").contains(name) && !HeadingId.matches(id) then
+            errors += s"$sourcePath:$lineNumber: invalid $name id '$id'."
+          calloutDepth
         case SourceDirective(path, _) =>
           try
             val parsedPath = Path.of(path)
@@ -579,15 +582,18 @@ object ContentPipeline:
         if collisions.nonEmpty then Left(PipelineError(collisions))
         else
           val sortedPages = (pages ++ apiPages).sortBy(pageSortKey)
-          Right(
-            DocumentationBundle(
-              formatVersion = DocumentationBundle.CurrentFormatVersion,
-              navigation = buildNavigation(sortedPages),
-              pages = sortedPages,
-              apiReference = apiReference,
-              searchEntries = if hasApiLanding then apiSearchEntries(apiReference) else Vector.empty
-            )
-          )
+          SearchCorpus
+            .build(sortedPages, apiReference)
+            .left.map(PipelineError.apply)
+            .map { searchEntries =>
+              DocumentationBundle(
+                formatVersion = DocumentationBundle.CurrentFormatVersion,
+                navigation = buildNavigation(sortedPages),
+                pages = sortedPages,
+                apiReference = apiReference,
+                searchEntries = searchEntries
+              )
+            }
   end convertTree
 
   private def validateApiReferences(
@@ -633,23 +639,6 @@ object ContentPipeline:
         source = PageSource.GeneratedApi(representative.id),
         outline = PageOutline(outline),
         content = symbols.map(symbol => Block.ApiSymbolRef(symbol.id))
-      )
-    }
-
-  private def apiSearchEntries(apiReference: ApiReference): Vector[SearchEntry] =
-    apiReference.symbols.sortBy(_.id).map { symbol =>
-      SearchEntry(
-        id = s"api:${symbol.id}",
-        kind = SearchEntryKind.ApiSymbol,
-        title = symbol.qualifiedName,
-        description = symbol.summary,
-        route = symbol.route,
-        fragment = symbol.fragment,
-        section = Section.Api,
-        text = (Vector(symbol.qualifiedName, symbol.summary) ++
-          symbol.signatures.flatMap(signature =>
-            Vector(signature.signature, signature.origin.qualifiedName)
-          )).mkString(" ")
       )
     }
 

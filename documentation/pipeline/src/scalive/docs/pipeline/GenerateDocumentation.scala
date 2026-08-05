@@ -35,17 +35,23 @@ object GenerateDocumentation:
         generated match
           case Left(error)   => throw new IllegalArgumentException(error.message)
           case Right(bundle) =>
-            val outputPath = Path.of(output)
-            val _          = Files.createDirectories(outputPath.getParent)
-            val _          = Files.writeString(
-              outputPath,
-              bundle.toJson + "\n",
-              StandardCharsets.UTF_8
+            val outputRoot = Path.of(output)
+            write(
+              outputRoot.resolve("scalive/docs/generated/content.json"),
+              bundle.toJson + "\n"
+            )
+            write(
+              outputRoot.resolve("public/search-index.json"),
+              bundle.searchEntries.toJson + "\n"
             )
       case _ =>
         throw new IllegalArgumentException(
-          "Expected repository root, content root, output path, revision, API settings, API snapshot, target roots, dependency classpath, and at least one allowed source root."
+          "Expected repository root, content root, output root, revision, API settings, API snapshot, target roots, dependency classpath, and at least one allowed source root."
         )
+
+  private def write(path: Path, content: String): Unit =
+    val _ = Files.createDirectories(path.getParent)
+    val _ = Files.writeString(path, content, StandardCharsets.UTF_8)
 
   private def paths(value: String): Vector[Path] =
     value.split(java.io.File.pathSeparator).toVector.filter(_.nonEmpty).map(Path.of(_))

@@ -11,6 +11,12 @@ final private[docs] case class DocumentationPageEntry(
   codec: PathCodec[Unit],
   location: LiveLocation)
 
+final private[docs] case class DocumentationRouteMetadata(
+  title: String,
+  description: String,
+  canonicalPath: String,
+  indexable: Boolean)
+
 final private[docs] class DocumentationApplication private (
   val bundle: DocumentationBundle,
   val pages: Vector[DocumentationPageEntry],
@@ -24,26 +30,70 @@ final private[docs] class DocumentationApplication private (
 
   def apiSymbol(id: String): Option[ApiSymbol] = apiSymbolsById.get(id)
 
-  def routes(assets: StaticAssets, security: LiveSecurity): Routes[Any, Nothing] =
+  def metadata(route: String): Option[DocumentationRouteMetadata] =
+    page(route)
+      .map { page =>
+        DocumentationRouteMetadata(
+          page.metadata.title,
+          page.metadata.description,
+          page.route,
+          indexable = true
+        )
+      }.orElse(
+        Option.when(route == DocumentationApplication.SearchRoute)(
+          DocumentationRouteMetadata(
+            "Search",
+            "Search Scalive learning content, examples, API symbols, and compatibility notes.",
+            DocumentationApplication.SearchRoute,
+            indexable = false
+          )
+        )
+      )
+
+  def searchLocation(entry: SearchEntry): Option[LiveLocation] =
+    entry.fragment.fold(location(entry.route))(fragment =>
+      location(entry.route).map(_.withFragment(fragment))
+    )
+
+  def routes(
+    assets: StaticAssets,
+    security: LiveSecurity,
+    config: DocumentationConfig
+  ): Routes[Any, Nothing] =
     val renderer  = DocumentationRenderer(this)
     val fragments = pages.map { entry =>
       Live.route(entry.codec) -> DocumentationPageLiveView(entry.page, renderer)
     }
-    Live.router
+    val searchRoute = Live
+      .route(PathCodec(DocumentationApplication.SearchRoute))
+      .queryOptional[String](DocumentationApplication.SearchParameter) ->
+      DocumentationSearchLiveView(this)
+    val liveRoutes = Live.router
       .withSecurity(security)
-      .withRootLayout(DocumentationRootLayout(this, assets))
-      .withLayout(DocumentationLayout(this))(
-        fragments.head,
-        fragments.tail*
+      .withRootLayout(DocumentationRootLayout(this, assets, config.publicOrigin))
+      .withLayout(DocumentationLayout(this, assets, config.publicOrigin))(
+        searchRoute,
+        fragments*
       )
+    liveRoutes ++ DocumentationMetadataRoutes.routes(this, config.publicOrigin)
+end DocumentationApplication
 
 private[docs] object DocumentationApplication:
+  val SearchRoute     = "/search"
+  val SearchParameter = "q"
+
   def from(bundle: DocumentationBundle): Either[String, DocumentationApplication] =
     for
       _ <- validateFormat(bundle)
       _ <- Either.cond(bundle.pages.nonEmpty, (), "Generated documentation contains no pages.")
+      _ <- Either.cond(
+             !bundle.pages.exists(_.route == SearchRoute),
+             (),
+             s"Generated documentation uses reserved route '$SearchRoute'."
+           )
       entries <- buildEntries(bundle.pages)
       _       <- validateReferences(bundle)
+      _       <- validateSearchEntries(bundle)
     yield new DocumentationApplication(
       bundle,
       entries,
@@ -98,6 +148,41 @@ private[docs] object DocumentationApplication:
       }
     }
     Either.cond(errors.isEmpty, (), errors.distinct.sorted.mkString(" "))
+
+  private def validateSearchEntries(bundle: DocumentationBundle): Either[String, Unit] =
+    val anchors      = bundle.pages.map(page => page.route -> pageAnchors(page)).toMap
+    val duplicateIds = bundle.searchEntries
+      .groupBy(_.id).collect { case (id, matches) if matches.size > 1 => id }.toVector.sorted
+    val targetErrors = bundle.searchEntries.flatMap { entry =>
+      anchors.get(entry.route) match
+        case None => Vector(s"Search entry '${entry.id}' targets unknown route '${entry.route}'.")
+        case Some(values) =>
+          entry.fragment.collect {
+            case fragment if !values(fragment) =>
+              s"Search entry '${entry.id}' targets unknown anchor '${entry.route}#$fragment'."
+          }.toVector
+    }
+    val duplicateErrors =
+      duplicateIds.map(id => s"Generated documentation contains duplicate search id '$id'.")
+    val errors = duplicateErrors ++ targetErrors
+    Either.cond(errors.isEmpty, (), errors.mkString(" "))
+
+  private def pageAnchors(page: Page): Set[String] =
+    flattenOutline(page.outline.items).map(_.id).toSet ++ directiveAnchors(page.content)
+
+  private def flattenOutline(items: Vector[OutlineItem]): Vector[OutlineItem] =
+    items.flatMap(item => item +: flattenOutline(item.children))
+
+  private def directiveAnchors(blocks: Vector[Block]): Set[String] =
+    blocks.flatMap {
+      case Block.ExampleRef(id)         => Vector(s"example-$id")
+      case Block.CompatibilityRef(id)   => Vector(s"compatibility-$id")
+      case Block.BulletList(items)      => items.flatMap(item => directiveAnchors(item.content))
+      case Block.OrderedList(_, items)  => items.flatMap(item => directiveAnchors(item.content))
+      case Block.Quote(content)         => directiveAnchors(content)
+      case Block.Callout(_, _, content) => directiveAnchors(content)
+      case _                            => Set.empty[String]
+    }.toSet
 
   private enum ContentReference:
     case Route(route: String)

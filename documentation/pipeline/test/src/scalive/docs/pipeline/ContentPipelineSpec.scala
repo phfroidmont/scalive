@@ -62,7 +62,28 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             bundle.formatVersion == 2,
             bundle.pages.map(_.route) == Vector("/", "/learn", "/guides/first-guide"),
             bundle.apiReference.symbols == Vector(liveViewSymbol),
-            bundle.searchEntries.isEmpty,
+            bundle.searchEntries.map(_.kind).toSet == Set(
+              SearchEntryKind.Page,
+              SearchEntryKind.Heading,
+              SearchEntryKind.Example,
+              SearchEntryKind.Compatibility
+            ),
+            bundle.searchEntries.exists(entry =>
+              entry.id == "page:/" && entry.text.contains("installation guide")
+            ),
+            bundle.searchEntries.exists(entry =>
+              entry.id == "heading:/#overview" && entry.fragment.contains("overview")
+            ),
+            bundle.searchEntries.exists(entry =>
+              entry.id == "example:/#example-counter" &&
+                entry.title == "Counter" &&
+                entry.fragment.contains("example-counter")
+            ),
+            bundle.searchEntries.exists(entry =>
+              entry.id == "compatibility:/#compatibility-server-navigation" &&
+                entry.title == "Server navigation" &&
+                entry.fragment.contains("compatibility-server-navigation")
+            ),
             bundle.navigation.items.map(_.section) ==
               Vector(Section.Home, Section.Learn, Section.Guides),
             bundle.navigation.items.find(_.section == Section.Learn).exists(_.route == "/learn"),
@@ -180,6 +201,17 @@ object ContentPipelineSpec extends ZIOSpecDefault:
         "directive-attributes",
         "invalid @:example directive",
         "invalid @:apiSymbol directive"
+      ),
+      failureTest(
+        "rejects unstable example and compatibility IDs",
+        "directive-id",
+        "invalid example id 'Bad_ID'",
+        "invalid compatibility id 'server/navigation'"
+      ),
+      failureTest(
+        "rejects directive anchors that collide with headings",
+        "directive-anchor",
+        "duplicate rendered anchor 'example-counter'"
       ),
       failureTest("rejects a broken internal document link", "broken-link", "missing.md"),
       failureTest("rejects a broken internal fragment", "broken-fragment", "missing-anchor"),

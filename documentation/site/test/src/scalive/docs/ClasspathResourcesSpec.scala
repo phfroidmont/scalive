@@ -12,12 +12,17 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
   override def spec = suite("ClasspathResourcesSpec")(
     test("loads one generated content bundle alongside unique npm assets") {
       for
-        content <- resources(GeneratedDocumentation.ResourcePath)
-        js      <- resources("public/app.js")
-        css     <- resources("public/app.css")
+        content     <- resources(GeneratedDocumentation.ResourcePath)
+        searchIndex <- resources(GeneratedDocumentation.SearchResourcePath)
+        js          <- resources("public/app.js")
+        css         <- resources("public/app.css")
+        bundle = GeneratedDocumentation.load(getClass.getClassLoader)
+        search = GeneratedDocumentation.loadSearchEntries(getClass.getClassLoader)
       yield assertTrue(
         content.size == 1,
-        GeneratedDocumentation.load(getClass.getClassLoader).exists(_.pages.nonEmpty),
+        searchIndex.size == 1,
+        bundle.exists(_.pages.nonEmpty),
+        search == bundle.map(_.searchEntries),
         js.size == 1,
         css.size == 1
       )

@@ -64,6 +64,7 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
         case None         => throw new IllegalArgumentException(s"Unknown API symbol: $id")
     case Block.CompatibilityRef(id) =>
       sectionTag(
+        idAttr                    := s"compatibility-$id",
         dataAttr("compatibility") := id,
         h2(id),
         p("This compatibility entry will be expanded with its curated evidence.")
@@ -143,6 +144,7 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
 
   private def renderExamplePlaceholder(id: String): HtmlElement[Nothing] =
     sectionTag(
+      idAttr              := s"example-$id",
       cls                 := "docs-example",
       dataAttr("example") := id,
       div(

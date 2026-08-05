@@ -6,16 +6,11 @@ import zio.http.*
 import scalive.*
 
 object DocumentationSite extends ZIOAppDefault:
-  private val defaultPort = 8080
-
-  private val serverPort =
-    sys.env
-      .get("SCALIVE_SERVER_PORT")
-      .flatMap(_.toIntOption)
-      .getOrElse(defaultPort)
-
   override val run =
     for
+      config <- ZIO
+                  .fromEither(DocumentationConfig.fromEnvironment(sys.env))
+                  .mapError(new IllegalArgumentException(_))
       bundle <- ZIO
                   .fromEither(GeneratedDocumentation.load(getClass.getClassLoader))
                   .mapError(new IllegalStateException(_))
@@ -23,11 +18,14 @@ object DocumentationSite extends ZIOAppDefault:
                        .fromEither(DocumentationApplication.from(bundle))
                        .mapError(new IllegalStateException(_))
       assets <- StaticAssets.load(
-                  StaticAssetConfig.classpath("public", Seq("app.css", "app.js"))
+                  StaticAssetConfig.classpath(
+                    "public",
+                    Seq("app.css", "app.js", "search-index.json")
+                  )
                 )
       security = LiveSecurity(TokenConfig.default, CookiePolicy(secure = false))
-      routes   = application.routes(assets, security) ++ assets.routes
+      routes   = application.routes(assets, security, config) ++ assets.routes
       _ <- Server
              .serve(routes)
-             .provide(Server.defaultWithPort(serverPort))
+             .provide(Server.defaultWithPort(config.serverPort))
     yield ()

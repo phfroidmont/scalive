@@ -9,6 +9,7 @@ import zio.http.*
 import zio.test.*
 
 import scalive.*
+import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.Section
 import scalive.testing.DisconnectedRender
 
@@ -139,6 +140,43 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         rendered.text.contains("View source"),
         renderedSources == expectedSources,
         rendered.html.contains("data-api-symbol")
+      )
+    },
+    test("renders the source-backed counter as a disconnected nested LiveView") {
+      for
+        application <- loadApplication
+        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        rendered <- DisconnectedRender.run(
+                      application.routes(assets, security, config),
+                      Request.get(url("/examples"))
+                    )
+        document = Jsoup.parse(rendered.html)
+        example  = document.selectFirst("#example-counter")
+        nestedId = ExampleRegistry.instanceId("/examples", "counter")
+      yield assertTrue(
+        rendered.response.status == Status.Ok,
+        example != null,
+        example.attr("data-example-child") == nestedId,
+        example.select(s"#$nestedId[data-phx-session][data-phx-child-id]").size() == 1,
+        example.select("[role=status][aria-live=polite][aria-atomic=true] strong").text() == "0",
+        example.select("fieldset legend.docs-visually-hidden").text() == "Counter controls",
+        example.select("[data-example-controls]:not([disabled])").size() == 1,
+        example.select("button[phx-click]").asScala.exists(_.text() == "Reset"),
+        example.select(".docs-code-block > figcaption").text() == "Source",
+        example.selectFirst("[data-example-disconnected]").elementSiblingIndex() <
+          example.selectFirst(".docs-code-block").elementSiblingIndex(),
+        example.select(".docs-code").text().contains("class CounterExample"),
+        example.select("[data-compilation-failure=counter-wrong-model]").size() == 1,
+        example.select(".docs-compiler-diagnostic").text().contains("String"),
+        example.select(".docs-compiler-diagnostic").text().contains("Int"),
+        example.select("a").asScala.exists(link =>
+          link.text() == "View source" && link.attr("href").contains("CounterExample.scala#L")
+        ),
+        application.bundle.searchEntries.exists(entry =>
+          entry.id == "example:/examples#example-counter" &&
+            entry.title == "Counter" &&
+            entry.description == "Change typed server state and reset it explicitly."
+        )
       )
     },
     test("serves tracked assets and leaves unknown paths as real 404 responses") {

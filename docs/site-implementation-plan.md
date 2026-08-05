@@ -30,7 +30,7 @@ Run the documentation site with `mill documentation.site.run`.
 - [x] Phase 2: Generated API reference
 - [x] Phase 3: Documentation application shell
 - [x] Phase 4: Search and metadata
-- [ ] Phase 5: Interactive example foundation
+- [x] Phase 5: Interactive example foundation
 - [ ] Phase 6: Runtime X-ray inspector
 - [ ] Phase 7: Example migration
 - [ ] Phase 8: Documentation content
@@ -49,8 +49,8 @@ Run the documentation site with `mill documentation.site.run`.
 - [x] Render Laika AST through typed Scalive nodes; do not render generated HTML
   through `rawHtml`.
 - [x] Reject raw HTML in Markdown.
-- [ ] Use nested LiveViews as the isolation boundary for embedded examples.
-- [ ] Add no arbitrary code-execution service.
+- [x] Use nested LiveViews as the isolation boundary for embedded examples.
+- [x] Add no arbitrary code-execution service.
 - [ ] Preserve `e2eApp` as upstream parity infrastructure.
 - [ ] Do not remove `examples` until its useful behavior and tests have migrated.
 - [ ] Do not introduce publication-provider configuration or a deployment workflow.
@@ -325,26 +325,26 @@ validated stable IDs until later phases provide richer registry metadata.
 
 **Depends on:** Phase 3.
 
-- [ ] Define a documentation-owned example registry keyed by stable example ID.
-- [ ] Keep LiveView factories, metadata, source regions, and trace projectors
+- [x] Define a documentation-owned example registry keyed by stable example ID.
+- [x] Keep LiveView factories, metadata, source regions, and trace projectors
   together in registry entries.
-- [ ] Convert `@:example` directives into registry references during generation.
-- [ ] Derive unique nested LiveView DOM and topic IDs from page and directive
+- [x] Convert `@:example` directives into registry references during generation.
+- [x] Derive unique nested LiveView DOM and topic IDs from page and directive
   identity.
-- [ ] Render every interactive example as a non-sticky nested LiveView.
-- [ ] Define an explicit reset contract for each example.
-- [ ] Ensure page exit terminates the nested LiveView and its resources.
-- [ ] Add a counter example as the first complete vertical slice.
-- [ ] Extract the displayed counter source from its executable implementation.
-- [ ] Build a package-private site test harness over Scalive's internal socket
+- [x] Render every interactive example as a non-sticky nested LiveView.
+- [x] Define an explicit reset contract for each example.
+- [x] Ensure page exit terminates the nested LiveView and its resources.
+- [x] Add a counter example as the first complete vertical slice.
+- [x] Extract the displayed counter source from its executable implementation.
+- [x] Build a package-private site test harness over Scalive's internal socket
   runtime.
-- [ ] Support mount, join, binding dispatch, server messages, output collection,
+- [x] Support mount, join, binding dispatch, server messages, output collection,
   and rendered assertions in the harness.
-- [ ] Keep the harness inside site tests until its API proves suitable for
+- [x] Keep the harness inside site tests until its API proves suitable for
   `scalive-testing`.
-- [ ] Add expected-compilation-failure fixtures using `typeCheckErrors`.
-- [ ] Capture only focused compiler diagnostics in generated content.
-- [ ] Add registry validation ensuring every executable example has source and
+- [x] Add expected-compilation-failure fixtures using `typeCheckErrors`.
+- [x] Capture only focused compiler diagnostics in generated content.
+- [x] Add registry validation ensuring every executable example has source and
   behavior tests.
 
 **Verification:**
@@ -357,8 +357,15 @@ mill --ticker false documentation.check
 
 **Completion gate:**
 
-- [ ] The counter renders inline, resets correctly, displays extracted source,
+- [x] The counter renders inline, resets correctly, displays extracted source,
   and passes connected behavior tests.
+
+Pure example descriptors live in `documentation.model`, allowing the pipeline to
+validate IDs, extract source, and build search entries without depending on the
+site module. The site registry combines those descriptors with fresh non-sticky
+LiveView factories, reset contracts, and explicit trace projectors. A
+package-private rendered-HTML socket snapshot supports the site-local connected
+test harness without expanding Scalive's public testing API.
 
 ## Phase 6: Runtime X-Ray Inspector
 

@@ -4,6 +4,7 @@ import zio.http.Routes
 import zio.http.codec.PathCodec
 
 import scalive.*
+import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
 
 final private[docs] case class DocumentationPageEntry(
@@ -22,6 +23,7 @@ final private[docs] class DocumentationApplication private (
   val pages: Vector[DocumentationPageEntry],
   private val pagesByRoute: Map[String, Page],
   private val locationsByRoute: Map[String, LiveLocation],
+  private val examplesById: Map[String, ExampleDefinition],
   private val apiSymbolsById: Map[String, ApiSymbol]):
 
   def page(route: String): Option[Page] = pagesByRoute.get(route)
@@ -29,6 +31,8 @@ final private[docs] class DocumentationApplication private (
   def location(route: String): Option[LiveLocation] = locationsByRoute.get(route)
 
   def apiSymbol(id: String): Option[ApiSymbol] = apiSymbolsById.get(id)
+
+  def example(id: String): Option[ExampleDefinition] = examplesById.get(id)
 
   def metadata(route: String): Option[DocumentationRouteMetadata] =
     page(route)
@@ -91,6 +95,7 @@ private[docs] object DocumentationApplication:
              (),
              s"Generated documentation uses reserved route '$SearchRoute'."
            )
+      _       <- validateExamples(bundle)
       entries <- buildEntries(bundle.pages)
       _       <- validateReferences(bundle)
       _       <- validateSearchEntries(bundle)
@@ -99,6 +104,7 @@ private[docs] object DocumentationApplication:
       entries,
       bundle.pages.map(page => page.route -> page).toMap,
       entries.map(entry => entry.page.route -> entry.location).toMap,
+      bundle.examples.map(example => example.descriptor.id -> example).toMap,
       bundle.apiReference.symbols.map(symbol => symbol.id -> symbol).toMap
     )
 
@@ -136,18 +142,44 @@ private[docs] object DocumentationApplication:
       }
 
   private def validateReferences(bundle: DocumentationBundle): Either[String, Unit] =
-    val routes  = bundle.pages.map(_.route).toSet
-    val symbols = bundle.apiReference.symbols.map(_.id).toSet
-    val errors  = bundle.pages.flatMap { page =>
+    val routes   = bundle.pages.map(_.route).toSet
+    val symbols  = bundle.apiReference.symbols.map(_.id).toSet
+    val examples = bundle.examples.map(_.descriptor.id).toSet
+    val errors   = bundle.pages.flatMap { page =>
       collectReferences(page.content).flatMap {
         case ContentReference.Route(route) if !routes(route) =>
           Vector(s"${page.route}: unknown internal route '$route'.")
         case ContentReference.ApiSymbol(id) if !symbols(id) =>
           Vector(s"${page.route}: unknown API symbol '$id'.")
+        case ContentReference.Example(id) if !examples(id) =>
+          Vector(s"${page.route}: unknown example '$id'.")
         case _ => Vector.empty
       }
     }
     Either.cond(errors.isEmpty, (), errors.distinct.sorted.mkString(" "))
+
+  private def validateExamples(bundle: DocumentationBundle): Either[String, Unit] =
+    val duplicateIds = bundle.examples.groupBy(_.descriptor.id).collect {
+      case (id, matches) if matches.sizeIs > 1 =>
+        s"Generated documentation contains duplicate example '$id'."
+    }
+    val runtimeById =
+      ExampleRegistry.entries.map(entry => entry.descriptor.id -> entry.descriptor).toMap
+    val generatedById =
+      bundle.examples.map(example => example.descriptor.id -> example.descriptor).toMap
+    val missing = (runtimeById.keySet -- generatedById.keySet).toVector.sorted.map { id =>
+      s"Generated documentation is missing example '$id'."
+    }
+    val unexpected = (generatedById.keySet -- runtimeById.keySet).toVector.sorted.map { id =>
+      s"Generated documentation contains unknown runtime example '$id'."
+    }
+    val mismatched = (runtimeById.keySet intersect generatedById.keySet).toVector.sorted.collect {
+      case id if runtimeById(id) != generatedById(id) =>
+        s"Generated metadata differs from runtime example '$id'."
+    }
+    val errors =
+      ExampleRegistry.validationErrors ++ duplicateIds ++ missing ++ unexpected ++ mismatched
+    Either.cond(errors.isEmpty, (), errors.toVector.sorted.mkString(" "))
 
   private def validateSearchEntries(bundle: DocumentationBundle): Either[String, Unit] =
     val anchors      = bundle.pages.map(page => page.route -> pageAnchors(page)).toMap
@@ -187,6 +219,7 @@ private[docs] object DocumentationApplication:
   private enum ContentReference:
     case Route(route: String)
     case ApiSymbol(id: String)
+    case Example(id: String)
 
   private def collectReferences(blocks: Vector[Block]): Vector[ContentReference] =
     blocks.flatMap {
@@ -199,6 +232,7 @@ private[docs] object DocumentationApplication:
         (header ++ rows.flatMap(_.cells)).flatMap(cell => collectInlineReferences(cell.content))
       case Block.Callout(_, _, content) => collectReferences(content)
       case Block.ApiSymbolRef(id)       => Vector(ContentReference.ApiSymbol(id))
+      case Block.ExampleRef(id)         => Vector(ContentReference.Example(id))
       case _                            => Vector.empty
     }
 

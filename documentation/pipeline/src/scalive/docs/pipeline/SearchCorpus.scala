@@ -7,20 +7,25 @@ import scalive.docs.model.*
 private[pipeline] object SearchCorpus:
   def build(
     pages: Vector[Page],
-    apiReference: ApiReference
+    apiReference: ApiReference,
+    examples: Vector[ExampleDefinition]
   ): Either[Vector[String], Vector[SearchEntry]] =
     val routes        = pages.map(_.route).toSet
     val authoredPages = pages.collect { case page @ Page(_, _, _: PageSource.Authored, _, _) =>
       page
     }
-    val pageEntries = authoredPages.flatMap(entriesForPage)
+    val exampleById = examples.map(example => example.descriptor.id -> example).toMap
+    val pageEntries = authoredPages.flatMap(entriesForPage(_, exampleById))
     val apiEntries  = apiReference.symbols.filter(symbol => routes(symbol.route)).map(apiEntry)
     val entries     = (pageEntries ++ apiEntries).sortBy(_.id)
     val errors      = validate(entries, pages)
 
     Either.cond(errors.isEmpty, entries, errors)
 
-  private def entriesForPage(page: Page): Vector[SearchEntry] =
+  private def entriesForPage(
+    page: Page,
+    examples: Map[String, ExampleDefinition]
+  ): Vector[SearchEntry] =
     val pageEntry = SearchEntry(
       id = s"page:${page.route}",
       kind = SearchEntryKind.Page,
@@ -46,7 +51,11 @@ private[pipeline] object SearchCorpus:
     }
     val directives = collectDirectives(page.content).map {
       case (SearchEntryKind.Example, id) =>
-        directiveEntry(page, SearchEntryKind.Example, id, "example")
+        val example = examples.getOrElse(
+          id,
+          throw new IllegalArgumentException(s"Unknown validated example: $id")
+        )
+        exampleEntry(page, example)
       case (SearchEntryKind.Compatibility, id) =>
         directiveEntry(page, SearchEntryKind.Compatibility, id, "compatibility")
       case (kind, _) =>
@@ -54,6 +63,22 @@ private[pipeline] object SearchCorpus:
     }
     (pageEntry +: headings) ++ directives
   end entriesForPage
+
+  private def exampleEntry(page: Page, example: ExampleDefinition): SearchEntry =
+    val descriptor = example.descriptor
+    val fragment   = s"example-${descriptor.id}"
+    SearchEntry(
+      id = s"example:${page.route}#$fragment",
+      kind = SearchEntryKind.Example,
+      title = descriptor.title,
+      description = descriptor.description,
+      route = page.route,
+      fragment = Some(fragment),
+      section = page.metadata.section,
+      text =
+        (Vector(descriptor.id, descriptor.title, descriptor.description, page.metadata.title) ++
+          descriptor.topics ++ descriptor.aliases).mkString(" ")
+    )
 
   private def directiveEntry(
     page: Page,

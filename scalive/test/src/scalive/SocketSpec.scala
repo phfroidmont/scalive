@@ -175,6 +175,32 @@ object SocketSpec extends ZIOSpecDefault:
                   ).some
       yield assertTrue(diffFromPayload(update._1).exists(containsValue(_, "1")))
     },
+    test("exposes complete current rendered HTML after an event") {
+      val lv = makeLiveView(ZStream.empty)
+
+      for
+        socket  <- makeSocket(LiveContext(staticChanged = false), lv)
+        initial <- socket.renderedHtml
+        binding <- ZIO.fromOption("phx-click=\"([^\"]+)\"".r.findFirstMatchIn(initial).map(_.group(1)))
+                     .orElseFail(new RuntimeException("Missing click binding"))
+        event: Payload.Event = Payload.Event(
+                                 `type` = "click",
+                                 event = binding,
+                                 value = Json.Obj.empty
+                               )
+        updated <- withOutbox(socket) { queue =>
+                     for
+                       _    <- socket.inbox.offer(event -> meta)
+                       _    <- queue.take
+                       html <- socket.renderedHtml
+                     yield html
+                   }
+      yield assertTrue(
+        initial.contains("<span>0</span>"),
+        updated.contains("<span>1</span>"),
+        updated.startsWith("<div id=\"root\"")
+      )
+    },
     test("emits title updates on top-level diff") {
       val lv = makeLiveView(ZStream.succeed(Msg.SetTitle))
 

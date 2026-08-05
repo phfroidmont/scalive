@@ -4,6 +4,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 import scalive.*
+import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
 
 final private[docs] class DocumentationRenderer(application: DocumentationApplication):
@@ -14,11 +15,11 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
     articleTag(
       cls := "docs-content docs-prose",
       h1(page.metadata.title),
-      page.content.map(renderBlock),
+      page.content.map(renderBlock(page.route)),
       pageLinks(page)
     )
 
-  private def renderBlock(block: Block): HtmlElement[Nothing] = block match
+  private def renderBlock(pageRoute: String)(block: Block): HtmlElement[Nothing] = block match
     case Block.Paragraph(content)          => p(content.map(renderInline))
     case Block.Heading(level, id, content) =>
       val mods = Vector[Mod[Nothing]](idAttr := id) ++ content.map(renderInline)
@@ -32,13 +33,14 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
           throw new IllegalArgumentException(s"Unsupported documentation heading level: $level")
     case Block.Code(language, text, tokens, sourceRegion) =>
       codeBlock(language, text, tokens, sourceRegion)
-    case Block.BulletList(items)         => ul(items.map(item => li(item.content.map(renderBlock))))
+    case Block.BulletList(items) =>
+      ul(items.map(item => li(item.content.map(renderBlock(pageRoute)))))
     case Block.OrderedList(start, items) =>
       ol(
         htmlAttr("start", scalive.codecs.IntAsStringEncoder) := start,
-        items.map(item => li(item.content.map(renderBlock)))
+        items.map(item => li(item.content.map(renderBlock(pageRoute))))
       )
-    case Block.Quote(content)      => blockQuote(content.map(renderBlock))
+    case Block.Quote(content)      => blockQuote(content.map(renderBlock(pageRoute)))
     case Block.Table(header, rows) =>
       table(
         cls := "docs-table",
@@ -53,9 +55,9 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
         cls                 := "docs-callout",
         dataAttr("callout") := calloutName(kind),
         calloutTitle.map(value => Mod.Content.Tag(h3(value))).toVector,
-        content.map(renderBlock)
+        content.map(renderBlock(pageRoute))
       )
-    case Block.ExampleRef(id)                             => renderExamplePlaceholder(id)
+    case Block.ExampleRef(id)                             => renderExample(pageRoute, id)
     case Block.SourceCode(region, language, text, tokens) =>
       codeBlock(language, text, tokens, Some(region))
     case Block.ApiSymbolRef(id) =>
@@ -98,13 +100,20 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
     figure(
       cls := "docs-code-block",
       sourceRegion.map(region => dataAttr("source") := sourceLabel(region)).toVector,
+      sourceRegion.map(_ => Mod.Content.Tag(HtmlTag("figcaption")("Source"))).toVector,
       pre(
         cls := "docs-code",
         code(dataAttr("language") := language.getOrElse("text"), renderCode(text, tokens))
       ),
       sourceRegion.map { region =>
         val source = metadata.sourceLink(ApiSource.Repository(region))
-        Mod.Content.Tag(p(a(href := source.url, "View source"), s" (${source.label})"))
+        Mod.Content.Tag(
+          p(
+            cls := "docs-code-source-link",
+            a(href := source.url, "View source"),
+            s" (${source.label})"
+          )
+        )
       }.toVector
     )
 
@@ -142,26 +151,42 @@ final private[docs] class DocumentationRenderer(application: DocumentationApplic
       )
     )
 
-  private def renderExamplePlaceholder(id: String): HtmlElement[Nothing] =
+  private def renderExample(pageRoute: String, id: String): HtmlElement[Nothing] =
+    val definition = application.example(id).getOrElse {
+      throw new IllegalArgumentException(s"Unknown generated example: $id")
+    }
+    val registered = ExampleRegistry.get(id).getOrElse {
+      throw new IllegalArgumentException(s"Unknown runtime example: $id")
+    }
+    val nestedId = ExampleRegistry.instanceId(pageRoute, id)
+    val source   = definition.source
+
     sectionTag(
-      idAttr              := s"example-$id",
-      cls                 := "docs-example",
-      dataAttr("example") := id,
+      idAttr                    := s"example-$id",
+      cls                       := "docs-example",
+      dataAttr("example")       := id,
+      dataAttr("example-child") := nestedId,
       div(
         cls := "docs-example-rendered",
-        h2(s"Example: $id"),
-        p("This example remains readable while live interaction is unavailable.")
-      ),
-      HtmlTag("fieldset")(
-        disabled                           := true,
-        cls                                := "docs-example-controls",
-        dataAttr("example-controls")       := "",
-        dataAttr("disabled-by-connection") := ""
+        h2(s"Example: ${definition.descriptor.title}"),
+        p(definition.descriptor.description),
+        registered.render(nestedId)
       ),
       p(
         dataAttr("example-disconnected") := "",
-        "Interaction is unavailable until the live connection returns."
-      )
+        "This example is read-only while disconnected. Its rendered state stays visible; controls resume after reconnection."
+      ),
+      codeBlock(source.language, source.text, source.tokens, Some(source.region)),
+      definition.compilationFailures.map(renderCompilationFailure)
+    )
+
+  private def renderCompilationFailure(failure: CompilationFailure): HtmlElement[Nothing] =
+    figure(
+      cls                             := "docs-compilation-failure",
+      dataAttr("compilation-failure") := failure.id,
+      HtmlTag("figcaption")("Expected compilation failure"),
+      pre(cls := "docs-code", code(dataAttr("language") := "scala", failure.source)),
+      pre(cls := "docs-compiler-diagnostic", code(failure.diagnostic))
     )
 
   private def pageLinks(page: Page): HtmlElement[Nothing] =

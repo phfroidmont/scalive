@@ -17,6 +17,8 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
 
         assertTrue(
           representativeRoutes.subsetOf(bundle.pages.map(_.route).toSet),
+          bundle.examples.map(_.descriptor.id) == Vector("counter"),
+          bundle.examples.head.source.text.contains("class CounterExample"),
           bundle.apiReference.symbols.exists(_.qualifiedName == "scalive.LiveView"),
           bundle.searchEntries.exists(_.title == "scalive.LiveView"),
           rendered.contains("<h1>Scalive</h1>"),

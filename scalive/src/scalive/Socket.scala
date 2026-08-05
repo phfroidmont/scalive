@@ -28,6 +28,7 @@ final private[scalive] case class Socket[Msg, Model] private (
   outbox: ZStream[Any, Nothing, (Payload, WebSocketMessage.Meta)],
   private[scalive] val initReply: Payload.Reply,
   private[scalive] val stickyRejoinReply: UIO[Payload.Reply],
+  private[scalive] val renderedHtml: UIO[String],
   private[scalive] val currentUrl: UIO[URL],
   private[scalive] val takeNavigationFlash: UIO[Map[String, String]],
   private[scalive] val replaceNavigationFlash: Map[String, String] => UIO[Unit],
@@ -101,6 +102,11 @@ private[scalive] object Socket:
                                 )
                               }
                             }
+        renderedHtml = state.lifecycleLock.withPermit {
+                         state.ref.get.map { case (_, rendered) =>
+                           RenderSnapshot.renderHtml(rendered.compiled)
+                         }
+                       }
         currentUrl             = state.currentUrlRef.get
         takeNavigationFlash    = SocketFlashRuntime.takeNavigation(state.flashRef)
         replaceNavigationFlash = (flash: Map[String, String]) =>
@@ -120,6 +126,7 @@ private[scalive] object Socket:
         outbox,
         initReply,
         stickyRejoinReply,
+        renderedHtml,
         currentUrl,
         takeNavigationFlash,
         replaceNavigationFlash,

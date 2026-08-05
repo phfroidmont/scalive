@@ -6,12 +6,13 @@ final case class DocumentationBundle(
   formatVersion: Int,
   navigation: Navigation,
   pages: Vector[Page],
+  examples: Vector[ExampleDefinition],
   apiReference: ApiReference,
   searchEntries: Vector[SearchEntry])
     derives JsonCodec
 
 object DocumentationBundle:
-  val CurrentFormatVersion = 2
+  val CurrentFormatVersion = 3
 
 final case class Page(
   route: String,
@@ -86,6 +87,41 @@ final case class SourceRegion(
   path: String,
   startLine: Int,
   endLineInclusive: Int)
+    derives JsonCodec
+
+final case class ExampleSource(
+  path: String,
+  region: String,
+  language: Option[String])
+    derives JsonCodec
+
+final case class ExampleDescriptor(
+  id: String,
+  title: String,
+  description: String,
+  topics: Vector[String],
+  aliases: Vector[String],
+  resetDescription: String,
+  source: ExampleSource)
+    derives JsonCodec
+
+final case class CompilationFailure(
+  id: String,
+  source: String,
+  diagnostic: String)
+    derives JsonCodec
+
+final case class ExampleSourceCode(
+  region: SourceRegion,
+  language: Option[String],
+  text: String,
+  tokens: Vector[CodeToken])
+    derives JsonCodec
+
+final case class ExampleDefinition(
+  descriptor: ExampleDescriptor,
+  source: ExampleSourceCode,
+  compilationFailures: Vector[CompilationFailure])
     derives JsonCodec
 
 final case class CodeToken(text: String, styles: Vector[String]) derives JsonCodec

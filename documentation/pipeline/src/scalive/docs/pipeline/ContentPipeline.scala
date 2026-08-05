@@ -70,14 +70,16 @@ object ContentPipeline:
     repositoryRoot: Path,
     contentRoot: Path,
     allowedSourceRoots: Seq[Path],
-    apiReference: ApiReference
+    apiReference: ApiReference,
+    examples: Vector[ExampleDescriptor]
   ): Either[PipelineError, DocumentationBundle] =
     try
       for
-        paths     <- validatePaths(repositoryRoot, contentRoot, allowedSourceRoots)
-        authored  <- readAndValidate(paths)
-        parsed    <- parseTree(authored, paths)
-        converted <- convertTree(parsed, authored, paths, apiReference)
+        paths       <- validatePaths(repositoryRoot, contentRoot, allowedSourceRoots)
+        definitions <- resolveExamples(paths, examples)
+        authored    <- readAndValidate(paths)
+        parsed      <- parseTree(authored, paths)
+        converted   <- convertTree(parsed, authored, paths, apiReference, definitions)
       yield converted
     catch
       case NonFatal(_) => Left(PipelineError(Vector("Unexpected documentation pipeline failure.")))
@@ -546,7 +548,8 @@ object ContentPipeline:
     tree: laika.ast.DocumentTreeRoot,
     authored: Vector[AuthoredDocument],
     paths: ValidatedPaths,
-    apiReference: ApiReference
+    apiReference: ApiReference,
+    examples: Vector[ExampleDefinition]
   ): Either[PipelineError, DocumentationBundle] =
     val routeByPath =
       authored.map(document => document.virtualPath.toString -> document.route).toMap
@@ -569,7 +572,8 @@ object ContentPipeline:
     val (failures, pages) = pageResults.partitionMap(identity)
     if failures.nonEmpty then Left(PipelineError(failures.flatten.sorted))
     else
-      val referenceErrors = validateApiReferences(pages, apiReference)
+      val referenceErrors =
+        validateApiReferences(pages, apiReference) ++ validateExampleReferences(pages, examples)
       if referenceErrors.nonEmpty then Left(PipelineError(referenceErrors))
       else
         val hasApiLanding  = pages.exists(_.route == "/api")
@@ -583,13 +587,14 @@ object ContentPipeline:
         else
           val sortedPages = (pages ++ apiPages).sortBy(pageSortKey)
           SearchCorpus
-            .build(sortedPages, apiReference)
+            .build(sortedPages, apiReference, examples)
             .left.map(PipelineError.apply)
             .map { searchEntries =>
               DocumentationBundle(
                 formatVersion = DocumentationBundle.CurrentFormatVersion,
                 navigation = buildNavigation(sortedPages),
                 pages = sortedPages,
+                examples = examples,
                 apiReference = apiReference,
                 searchEntries = searchEntries
               )
@@ -617,6 +622,93 @@ object ContentPipeline:
       case Block.Callout(_, _, content) => collectApiReferences(content)
       case _                            => Vector.empty
     }
+
+  private def validateExampleReferences(
+    pages: Vector[Page],
+    examples: Vector[ExampleDefinition]
+  ): Vector[String] =
+    val ids = examples.map(_.descriptor.id).toSet
+    pages
+      .flatMap { page =>
+        collectExampleReferences(page.content).collect {
+          case id if !ids(id) => s"${pageSourceName(page)}: unknown example '$id'."
+        }
+      }.distinct.sorted
+
+  private def collectExampleReferences(blocks: Vector[Block]): Vector[String] =
+    blocks.flatMap {
+      case Block.ExampleRef(id)    => Vector(id)
+      case Block.BulletList(items) => items.flatMap(item => collectExampleReferences(item.content))
+      case Block.OrderedList(_, items) =>
+        items.flatMap(item => collectExampleReferences(item.content))
+      case Block.Quote(content)         => collectExampleReferences(content)
+      case Block.Callout(_, _, content) => collectExampleReferences(content)
+      case _                            => Vector.empty
+    }
+
+  private def resolveExamples(
+    paths: ValidatedPaths,
+    descriptors: Vector[ExampleDescriptor]
+  ): Either[PipelineError, Vector[ExampleDefinition]] =
+    val errors = ArrayBuffer.empty[String]
+
+    descriptors.groupBy(_.id).toVector.sortBy(_._1).foreach { case (id, matches) =>
+      if matches.sizeIs > 1 then errors += s"duplicate example id '$id'."
+    }
+    descriptors.foreach { descriptor =>
+      if !HeadingId.matches(descriptor.id) then
+        errors += s"invalid example id '${descriptor.id}'; expected lowercase kebab-case."
+      validateExampleText(descriptor.id, "title", descriptor.title, errors)
+      validateExampleText(descriptor.id, "description", descriptor.description, errors)
+      validateExampleText(descriptor.id, "reset description", descriptor.resetDescription, errors)
+      if descriptor.source.path.trim.isEmpty then
+        errors += s"example '${descriptor.id}' source path must not be blank."
+      if descriptor.source.region.trim.isEmpty then
+        errors += s"example '${descriptor.id}' source region must not be blank."
+      (descriptor.topics ++ descriptor.aliases).foreach { value =>
+        if value.trim.isEmpty then
+          errors += s"example '${descriptor.id}' search terms must not be blank."
+      }
+    }
+
+    if errors.nonEmpty then Left(PipelineError(errors.toVector.distinct.sorted))
+    else
+      val results = descriptors.sortBy(_.id).map { descriptor =>
+        val sourcePath =
+          try Right(Path.of(descriptor.source.path))
+          catch case _: Exception => Left(s"example '${descriptor.id}' has an invalid source path.")
+        sourcePath.flatMap { path =>
+          SourceExtractor
+            .extract(
+              paths.repository,
+              paths.allowedSourceRoots,
+              path,
+              descriptor.source.region
+            ).left.map(_.message).map { extracted =>
+              ExampleDefinition(
+                descriptor = descriptor,
+                source = ExampleSourceCode(
+                  region = SourceRegion(extracted.path, extracted.startLine, extracted.endLine),
+                  language = descriptor.source.language.orElse(inferLanguage(extracted.path)),
+                  text = extracted.content,
+                  tokens = Vector(CodeToken(extracted.content, Vector.empty))
+                ),
+                compilationFailures = ExpectedCompilationFailures.forExample(descriptor.id)
+              )
+            }
+        }
+      }
+      val (failures, definitions) = results.partitionMap(identity)
+      if failures.nonEmpty then Left(PipelineError(failures.sorted)) else Right(definitions)
+  end resolveExamples
+
+  private def validateExampleText(
+    id: String,
+    field: String,
+    value: String,
+    errors: ArrayBuffer[String]
+  ): Unit =
+    if value.trim.isEmpty then errors += s"example '$id' $field must not be blank."
 
   private def generatedApiPages(apiReference: ApiReference): Vector[Page] =
     val symbolsByRoute = apiReference.symbols.groupBy(_.route).toVector.sortBy(_._1)

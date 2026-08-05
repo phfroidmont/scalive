@@ -6,6 +6,8 @@ import java.nio.file.Path
 
 import zio.json.*
 
+import scalive.docs.model.ExampleCatalog
+
 object GenerateDocumentation:
   def main(arguments: Array[String]): Unit =
     arguments.toList match
@@ -28,7 +30,8 @@ object GenerateDocumentation:
                         repositoryRoot = Path.of(repository),
                         contentRoot = Path.of(content),
                         allowedSourceRoots = allowedRoots.map(Path.of(_)),
-                        apiReference = reference
+                        apiReference = reference,
+                        examples = ExampleCatalog.entries
                       ).left.map(error => ApiReferenceError(error.messages))
         yield bundle
 

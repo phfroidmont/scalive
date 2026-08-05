@@ -150,10 +150,38 @@ object ContentModelSpec extends ZIOSpecDefault:
     )
   }
 
+  private val exampleDescriptor = ExampleDescriptor(
+    id = "counter",
+    title = "Counter",
+    description = "Change typed server state and reset it explicitly.",
+    topics = Vector("state", "events"),
+    aliases = Vector("increment", "reset"),
+    resetDescription = "Set the count back to zero.",
+    source = ExampleSource("documentation/site/src/Counter.scala", "counter", Some("scala"))
+  )
+
   private val bundle = DocumentationBundle(
-    formatVersion = 2,
+    formatVersion = DocumentationBundle.CurrentFormatVersion,
     navigation = Navigation(navigationItems),
     pages = pages,
+    examples = Vector(
+      ExampleDefinition(
+        descriptor = exampleDescriptor,
+        source = ExampleSourceCode(
+          region = sourceRegion,
+          language = Some("scala"),
+          text = "val count = 0",
+          tokens = tokens
+        ),
+        compilationFailures = Vector(
+          CompilationFailure(
+            id = "wrong-model",
+            source = "val count: Int = \"zero\"",
+            diagnostic = "Found: String, Required: Int"
+          )
+        )
+      )
+    ),
     apiReference = ApiReference(
       metadata = ApiReferenceMetadata(
         repositoryUrl = "https://github.com/phfroidmont/scalive",
@@ -214,6 +242,8 @@ object ContentModelSpec extends ZIOSpecDefault:
         encoded.contains("\"section\":\"home\""),
         encoded.contains("\"kind\":\"info\""),
         encoded.contains("\"kind\":\"heading\""),
+        encoded.contains("\"resetDescription\":\"Set the count back to zero.\""),
+        encoded.contains("\"diagnostic\":\"Found: String, Required: Int\""),
         encoded.contains("\"type\":\"generatedApi\"")
       )
     },
@@ -233,7 +263,8 @@ object ContentModelSpec extends ZIOSpecDefault:
         ),
         decoded.map(_.pages.head.content.collectFirst { case Block.SourceCode(region, _, _, _) =>
           region
-        }) == Right(Some(sourceRegion))
+        }) == Right(Some(sourceRegion)),
+        decoded.map(_.examples.head.source.region) == Right(sourceRegion)
       )
     },
     test("builds pinned repository and generated DOM source links") {

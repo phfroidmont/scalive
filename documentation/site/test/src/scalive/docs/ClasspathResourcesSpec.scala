@@ -22,6 +22,7 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         content.size == 1,
         searchIndex.size == 1,
         bundle.exists(_.pages.nonEmpty),
+        bundle.exists(_.examples.map(_.descriptor.id) == Vector("counter")),
         search == bundle.map(_.searchEntries),
         js.size == 1,
         css.size == 1

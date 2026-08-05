@@ -40,6 +40,15 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     fragment = None
   )
   private val validApiReference = ApiReference(apiMetadata, Vector(liveViewSymbol))
+  private val counterDescriptor = ExampleDescriptor(
+    id = "counter",
+    title = "Typed counter",
+    description = "Update and reset isolated server state.",
+    topics = Vector("state", "events"),
+    aliases = Vector("increment", "reset"),
+    resetDescription = "Set the count back to zero.",
+    source = ExampleSource("examples/Sample.scala", "greeting", Some("scala"))
+  )
 
   override def spec = suite("ContentPipelineSpec")(
     test("generates a deterministic bundle from a resolved Laika document tree") {
@@ -59,8 +68,15 @@ object ContentPipelineSpec extends ZIOSpecDefault:
           val inlines = home.content.collect { case Block.Paragraph(content) => content }.flatten
 
           assertTrue(
-            bundle.formatVersion == 2,
+            bundle.formatVersion == DocumentationBundle.CurrentFormatVersion,
             bundle.pages.map(_.route) == Vector("/", "/learn", "/guides/first-guide"),
+            bundle.examples.map(_.descriptor) == Vector(counterDescriptor),
+            bundle.examples.head.source.region == SourceRegion("examples/Sample.scala", 3, 4),
+            bundle.examples.head.source.text == "val greeting = \"hello\"\nprintln(greeting)",
+            bundle.examples.head.compilationFailures.map(_.id) == Vector("counter-wrong-model"),
+            bundle.examples.head.compilationFailures.head.diagnostic.contains("String"),
+            bundle.examples.head.compilationFailures.head.diagnostic.contains("Int"),
+            !bundle.examples.head.compilationFailures.head.diagnostic.contains("warning"),
             bundle.apiReference.symbols == Vector(liveViewSymbol),
             bundle.searchEntries.map(_.kind).toSet == Set(
               SearchEntryKind.Page,
@@ -76,7 +92,9 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             ),
             bundle.searchEntries.exists(entry =>
               entry.id == "example:/#example-counter" &&
-                entry.title == "Counter" &&
+                entry.title == "Typed counter" &&
+                entry.description == "Update and reset isolated server state." &&
+                entry.text.contains("increment") &&
                 entry.fragment.contains("example-counter")
             ),
             bundle.searchEntries.exists(entry =>
@@ -153,6 +171,16 @@ object ContentPipelineSpec extends ZIOSpecDefault:
       generate("valid", emptyApiReference) match
         case Right(_)    => assertTrue(false)
         case Left(error) => assertTrue(error.message.contains("unknown API symbol 'trait:scalive.LiveView'"))
+    },
+    test("rejects unknown example directives") {
+      generate("valid", validApiReference, Vector.empty) match
+        case Right(_)    => assertTrue(false)
+        case Left(error) => assertTrue(error.message.contains("unknown example 'counter'"))
+    },
+    test("rejects duplicate example registry ids") {
+      generate("valid", validApiReference, Vector(counterDescriptor, counterDescriptor)) match
+        case Right(_)    => assertTrue(false)
+        case Left(error) => assertTrue(error.message.contains("duplicate example id 'counter'"))
     },
     suite("authoring failures")(
       failureTest(
@@ -254,10 +282,11 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     test("rejects content roots outside documentation/content") {
       val repository = fixtures.resolve("valid").resolve("repository")
       ContentPipeline.generate(
-        repository,
-        repository,
-        Seq(Path.of("examples")),
-        emptyApiReference
+         repository,
+         repository,
+         Seq(Path.of("examples")),
+         emptyApiReference,
+         Vector.empty
       ) match
         case Right(_)    => assertTrue(false)
         case Left(error) =>
@@ -276,7 +305,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             repository,
             docs,
             Seq(Path.of("documentation/site/src")),
-            emptyApiReference
+            emptyApiReference,
+            Vector.empty
           ) match
             case Right(_)    => assertTrue(false)
             case Left(error) =>
@@ -305,12 +335,22 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     fixture: String,
     apiReference: ApiReference
   ): Either[PipelineError, DocumentationBundle] =
+    val examples =
+      if Set("valid", "directive-anchor")(fixture) then Vector(counterDescriptor) else Vector.empty
+    generate(fixture, apiReference, examples)
+
+  private def generate(
+    fixture: String,
+    apiReference: ApiReference,
+    examples: Vector[ExampleDescriptor]
+  ): Either[PipelineError, DocumentationBundle] =
     val repository = fixtures.resolve(fixture).resolve("repository")
     ContentPipeline.generate(
       repositoryRoot = repository,
       contentRoot = repository.resolve("documentation/content"),
       allowedSourceRoots = Seq(Path.of("examples")),
-      apiReference = apiReference
+      apiReference = apiReference,
+      examples = examples
     )
 
   private def withTempDirectory[A](prefix: String)(use: Path => Task[A]): Task[A] =

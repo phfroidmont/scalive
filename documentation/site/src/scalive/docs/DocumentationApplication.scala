@@ -22,6 +22,7 @@ final private[docs] case class DocumentationRouteMetadata(
 final private[docs] class DocumentationApplication private (
   val bundle: DocumentationBundle,
   val pages: Vector[DocumentationPageEntry],
+  val homeContent: HomePageContent,
   private val pagesByRoute: Map[String, Page],
   private val locationsByRoute: Map[String, LiveLocation],
   private val examplesById: Map[String, ExampleDefinition],
@@ -80,7 +81,16 @@ final private[docs] class DocumentationApplication private (
     traceStore: Option[DocumentationTraceStore]
   ): Routes[Any, Nothing] =
     val renderer  = DocumentationRenderer(this, traceStore)
-    val fragments = pages.map { entry =>
+    val homeEntry = pages.find(_.page.route == "/").getOrElse {
+      throw new IllegalStateException("Missing validated homepage route '/'.")
+    }
+    val homeRoute = Live.route(homeEntry.codec) -> DocumentationHomeLiveView(
+      homeEntry.page,
+      homeContent,
+      this,
+      renderer
+    )
+    val fragments = pages.filterNot(_.page.route == "/").map { entry =>
       Live.route(entry.codec) -> DocumentationPageLiveView(entry.page, renderer)
     }
     val searchRoute = Live
@@ -94,11 +104,9 @@ final private[docs] class DocumentationApplication private (
     val tracedRouter = traceStore.fold(router)(store =>
       router.withRuntimeTrace(DocumentationRuntimeTraceFactory(store))
     )
-    val liveRoutes = tracedRouter(
-      searchRoute,
-      fragments*
-    )
+    val liveRoutes = tracedRouter(homeRoute, (searchRoute +: fragments)*)
     liveRoutes ++ DocumentationMetadataRoutes.routes(this, config.publicOrigin)
+  end routes
 end DocumentationApplication
 
 private[docs] object DocumentationApplication:
@@ -116,16 +124,35 @@ private[docs] object DocumentationApplication:
            )
       _       <- validateExamples(bundle)
       entries <- buildEntries(bundle.pages)
+      home    <- validateHomepage(bundle.pages)
       _       <- validateReferences(bundle)
       _       <- validateSearchEntries(bundle)
     yield new DocumentationApplication(
       bundle,
       entries,
+      home,
       bundle.pages.map(page => page.route -> page).toMap,
       entries.map(entry => entry.page.route -> entry.location).toMap,
       bundle.examples.map(example => example.descriptor.id -> example).toMap,
       bundle.apiReference.symbols.map(symbol => symbol.id -> symbol).toMap
     )
+
+  private def validateHomepage(pages: Vector[Page]): Either[String, HomePageContent] =
+    val rootPages = pages.filter(_.route == "/")
+    val homePages = pages.filter(_.metadata.section == Section.Home)
+    for
+      page <- rootPages match
+                case Vector(value) => Right(value)
+                case Vector()      => Left("Generated documentation is missing homepage route '/'.")
+                case values        =>
+                  Left(s"Generated documentation contains ${values.size} homepage routes '/'.")
+      _ <- Either.cond(
+             homePages == Vector(page),
+             (),
+             "Generated documentation must contain exactly one page in section Home, at route '/'."
+           )
+      content <- HomePageContent.from(page)
+    yield content
 
   private def validateFormat(bundle: DocumentationBundle): Either[String, Unit] =
     Either.cond(

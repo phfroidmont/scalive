@@ -16,6 +16,10 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         searchIndex <- resources(GeneratedDocumentation.SearchResourcePath)
         js          <- resources("public/app.js")
         css         <- resources("public/app.css")
+        fonts       <- resources("public/fonts.css")
+        favicon     <- resources("public/favicon.svg")
+        instrumentLicense <- resources("public/instrument-sans-OFL.txt")
+        jetbrainsLicense  <- resources("public/jetbrains-mono-OFL.txt")
         bundle = GeneratedDocumentation.load(getClass.getClassLoader)
         search = GeneratedDocumentation.loadSearchEntries(getClass.getClassLoader)
       yield assertTrue(
@@ -25,7 +29,11 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         bundle.exists(_.examples.map(_.descriptor.id) == Vector("counter")),
         search == bundle.map(_.searchEntries),
         js.size == 1,
-        css.size == 1
+        css.size == 1,
+        fonts.size == 1,
+        favicon.size == 1,
+        instrumentLicense.size == 1,
+        jetbrainsLicense.size == 1
       )
     },
     test("keeps pipeline dependencies off the site runtime classpath") {

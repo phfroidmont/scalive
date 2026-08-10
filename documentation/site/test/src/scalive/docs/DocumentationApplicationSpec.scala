@@ -24,7 +24,15 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       .from("https://docs.example.test")
       .fold(error => throw new IllegalArgumentException(error), identity)
   )
-  private val assetNames = Seq("app.css", "app.js", "search-index.json")
+  private val assetNames = Seq(
+    "app.css",
+    "app.js",
+    "favicon.svg",
+    "fonts.css",
+    "instrument-sans-OFL.txt",
+    "jetbrains-mono-OFL.txt",
+    "search-index.json"
+  )
 
   private def url(value: String): URL =
     URL.decode(value).fold(throw _, identity)
@@ -83,7 +91,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                                 config.publicOrigin.absolute(entry.page.route)
                             )(s"canonical '${document.select("link[rel=canonical]").attr("href")}'"),
                             Option.when(document.select("h1").size() != 1)("h1 count"),
-                            Option.when(document.selectFirst("h1").text() != entry.page.metadata.title)("h1 title"),
+                            Option.when(
+                              document.selectFirst("h1").text() != entry.page.metadata.title
+                            )("h1 title"),
                             Option.when(
                               document.select("nav[aria-label='Primary navigation'] a").size() != 5
                             )(s"primary nav ${document.select("nav[aria-label='Primary navigation'] a").size()}"),
@@ -111,6 +121,34 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                         }
                     }.map(_.flatten)
       yield assertTrue(failures.isEmpty)
+    },
+    test("renders the Signal lockup and gives only the homepage a wide shell") {
+      for
+        application <- loadApplication
+        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes       = application.routes(assets, security, config)
+        home        <- DisconnectedRender.run(routes, Request.get(URL.root))
+        learn       <- DisconnectedRender.run(routes, Request.get(url("/learn")))
+        homeDocument  = Jsoup.parse(home.html)
+        learnDocument = Jsoup.parse(learn.html)
+        brand          = homeDocument.selectFirst("a.docs-brand[aria-label='Scalive home']")
+      yield assertTrue(
+        brand != null,
+        brand.select("svg[viewBox='0 0 96 96'][aria-hidden=true] path").size() == 2,
+        brand.select(".docs-brand-wordmark").text() == "scalive",
+        homeDocument.select(".docs-shell.docs-shell-wide").size() == 1,
+        homeDocument.select(".docs-section-nav, .docs-outline").isEmpty,
+        learnDocument.select(".docs-shell:not(.docs-shell-wide)").size() == 1,
+        learnDocument.select(".docs-section-nav").size() == 1,
+        learnDocument.select(".docs-outline").size() == 1,
+        homeDocument.select("link[rel=stylesheet]").asScala.toVector
+          .map(_.attr("href")).exists(_.contains("/fonts-")),
+        homeDocument.select("link[rel=icon][type='image/svg+xml']").attr("href")
+          .contains("/favicon-"),
+        home.html.indexOf("scalive.docs.theme") < home.html.indexOf("/fonts-"),
+        home.html.indexOf("/fonts-") < home.html.indexOf("/app-"),
+        !home.html.contains("&quot;scalive.docs.theme")
+      )
     },
     test("renders generated API summaries, signatures, and pinned sources") {
       for
@@ -163,6 +201,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         example.select("[data-example-controls]:not([disabled])").size() == 1,
         example.select("button[phx-click]").asScala.exists(_.text() == "Reset"),
         example.select(".docs-code-block > figcaption").text() == "Source",
+        example.select(".docs-code-block [data-code-copy][hidden]").size() >= 1,
+        example.select(".docs-code-block[data-code-expandable] [data-code-expand][hidden]").size() == 1,
         example.selectFirst("[data-example-disconnected]").elementSiblingIndex() <
           example.selectFirst(".docs-code-block").elementSiblingIndex(),
         example.select(".docs-code").text().contains("class CounterExample"),
@@ -193,15 +233,15 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                         .parse(home.html)
                         .select("#docs-global-search")
                         .attr("data-search-index")
-        assetPaths = Jsoup
-                       .parse(home.html)
-                       .select("script[src], link[rel=stylesheet]")
+        document = Jsoup.parse(home.html)
+        assetPaths = document
+                        .select("script[src], link[rel=stylesheet]")
                        .asScala.toVector.map(element =>
                          Option(element.attr("src")).filter(_.nonEmpty).getOrElse(element.attr("href"))
                        )
       yield assertTrue(
         home.response.status == Status.Ok,
-        assetPaths.size == 2,
+        assetPaths.size == 3,
         assetPaths.forall(_.startsWith("/static/")),
         searchAsset.startsWith("/static/search-index-"),
         missing.status == Status.NotFound,

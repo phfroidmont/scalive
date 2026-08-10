@@ -22,7 +22,15 @@ object DocumentationSite extends ZIOAppDefault:
       assets     <- StaticAssets.load(
                   StaticAssetConfig.classpath(
                     "public",
-                    Seq("app.css", "app.js", "search-index.json")
+                    Seq(
+                      "app.css",
+                      "app.js",
+                      "favicon.svg",
+                      "fonts.css",
+                      "instrument-sans-OFL.txt",
+                      "jetbrains-mono-OFL.txt",
+                      "search-index.json"
+                    )
                   )
                 )
       security = LiveSecurity(TokenConfig.default, CookiePolicy(secure = false))
@@ -31,3 +39,4 @@ object DocumentationSite extends ZIOAppDefault:
              .serve(routes)
              .provide(Server.defaultWithPort(config.serverPort))
     yield ()
+end DocumentationSite

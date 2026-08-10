@@ -2,7 +2,7 @@ package scalive.docs
 
 import zio.test.*
 
-import scalive.docs.model.Block
+import scalive.docs.model.{Block, Section}
 
 object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
   private def bundle = GeneratedDocumentation.load(getClass.getClassLoader)
@@ -31,6 +31,45 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
         DocumentationApplication.from(value.copy(pages = pages))
       }
       assertTrue(result.left.exists(_.contains("example 'counter' appears more than once")))
+    },
+    test("requires one authored homepage at the root route") {
+      val missing = bundle.flatMap(value =>
+        DocumentationApplication.from(value.copy(pages = value.pages.filterNot(_.route == "/")))
+      )
+      val wrongSection = bundle.flatMap { value =>
+        val pages = value.pages.map(page =>
+          if page.route == "/" then
+            page.copy(metadata = page.metadata.copy(section = Section.Learn))
+          else page
+        )
+        DocumentationApplication.from(value.copy(pages = pages))
+      }
+      val duplicateSection = bundle.flatMap { value =>
+        val pages = value.pages.map(page =>
+          if page.route == "/learn" then
+            page.copy(metadata = page.metadata.copy(section = Section.Home))
+          else page
+        )
+        DocumentationApplication.from(value.copy(pages = pages))
+      }
+      assertTrue(
+        missing.left.exists(_.contains("homepage route '/'")),
+        wrongSection.left.exists(_.contains("section Home")),
+        duplicateSection.left.exists(_.contains("exactly one page in section Home"))
+      )
+    },
+    test("rejects malformed homepage blocks with a source-oriented error") {
+      val result = bundle.flatMap { value =>
+        val pages = value.pages.map(page =>
+          if page.route == "/" then page.copy(content = page.content.reverse)
+          else page
+        )
+        DocumentationApplication.from(value.copy(pages = pages))
+      }
+      assertTrue(
+        result.left.exists(_.contains("documentation/content/index.md")),
+        result.left.exists(_.contains("homepage block"))
+      )
     }
   )
 end DocumentationApplicationValidationSpec

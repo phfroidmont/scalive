@@ -535,27 +535,33 @@ mill --ticker false documentation.checkExternalLinks
 
 **Depends on:** Phases 3 and 6. May overlap with content work.
 
-- [ ] Remove DaisyUI from the documentation package and lockfile.
-- [ ] Keep Tailwind utilities and define Scalive-specific CSS variables and
+**Selected direction:** Signal / Editorial with a lowercase visual wordmark. See
+[`site-signal-identity-implementation-plan.md`](site-signal-identity-implementation-plan.md)
+for the approved production design contract, implementation sequence, tests, and
+acceptance criteria.
+
+- [x] Confirm the documentation package remains DaisyUI-free; DaisyUI was already
+  absent before this implementation.
+- [x] Keep Tailwind utilities and define Scalive-specific CSS variables and
   tokens.
-- [ ] Implement the living-notebook visual language for prose, code, callouts,
-  traces, and diagrams.
-- [ ] Use self-contained system font stacks unless a clearly justified licensed
-  font is bundled.
-- [ ] Implement system-default light and dark themes.
-- [ ] Prevent theme flash before application startup.
-- [ ] Implement desktop left navigation, central content, and right outline.
-- [ ] Implement mobile navigation drawers and stacked examples.
-- [ ] Ensure code, tables, examples, and traces do not cause document-level
+- [x] Implement the selected Signal / Editorial visual language for prose, code,
+  callouts, traces, and diagrams.
+- [x] Bundle licensed Instrument Sans Variable and JetBrains Mono Variable fonts
+  locally, with usable system fallbacks.
+- [x] Implement system-default light and dark themes.
+- [x] Prevent theme flash before application startup.
+- [x] Implement desktop left navigation, central content, and right outline.
+- [x] Implement native mobile navigation disclosure and stacked examples.
+- [x] Ensure code, tables, examples, and traces do not cause document-level
   overflow.
-- [ ] Add copy controls and complete-source expansion to code blocks.
-- [ ] Add visible keyboard focus and skip navigation.
-- [ ] Respect reduced-motion preferences.
-- [ ] Ensure connection and trace updates remain understandable without relying
+- [x] Add copy controls and complete-source expansion to code blocks.
+- [x] Add visible keyboard focus and skip navigation.
+- [x] Respect reduced-motion preferences.
+- [x] Ensure connection and trace updates remain understandable without relying
   only on color.
 - [ ] Perform manual keyboard, contrast, semantic-heading, and screen-reader
   announcement review.
-- [ ] Verify all required fonts, icons, scripts, and media are served locally.
+- [x] Verify all required fonts, icons, scripts, and media are served locally.
 
 **Completion gate:**
 

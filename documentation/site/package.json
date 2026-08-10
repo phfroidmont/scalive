@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run build:js && npm run build:css",
+    "build": "npm run build:js && npm run build:css && npm run build:brand",
+    "build:brand": "node assets/build-brand-assets.mjs",
     "build:js": "esbuild assets/js/app.js --bundle --platform=browser --format=iife --target=es2020 --outfile=dist/app.js",
     "build:css": "tailwindcss -i assets/css/app.css -o dist/app.css --minify",
     "test": "node --test assets/js/search.test.js assets/js/xray/phoenix-live-view-1.1.28.test.js",
@@ -14,6 +15,8 @@
     "phoenix_live_view": "1.1.28"
   },
   "devDependencies": {
+    "@fontsource-variable/instrument-sans": "5.2.8",
+    "@fontsource-variable/jetbrains-mono": "5.2.8",
     "@tailwindcss/cli": "4.1.12",
     "esbuild": "0.28.1",
     "tailwindcss": "4.1.12"

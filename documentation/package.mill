@@ -164,6 +164,15 @@ object `package` extends Module:
   object site extends build.ScalaCommon with build.NpmAssets:
     def moduleDeps = Seq(build.scalive, model)
 
+    override def bundleOutputs = Seq(
+      "app.js",
+      "app.css",
+      "fonts.css",
+      "favicon.svg",
+      "instrument-sans-OFL.txt",
+      "jetbrains-mono-OFL.txt"
+    )
+
     def resources = Task {
       val roots = super.resources() ++ Seq(pipeline.generate(), bundle())
       validateResourcePaths(roots)

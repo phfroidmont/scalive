@@ -61,9 +61,68 @@ function updateConnectionState(state, element) {
   updateExampleControls(state === "connected")
 }
 
+function enhanceCodeBlocks(root = document) {
+  root.querySelectorAll(".docs-code-block").forEach((block) => {
+    const copy = block.querySelector("[data-code-copy]")
+    if (copy) copy.hidden = false
+
+    const expand = block.querySelector("[data-code-expand]")
+    if (expand && !block.classList.contains("docs-code-enhanced")) {
+      block.classList.add("docs-code-enhanced", "docs-code-collapsed")
+      expand.hidden = false
+      expand.setAttribute("aria-expanded", "false")
+      expand.textContent = "Show all"
+    }
+  })
+}
+
+function closeNavigationDisclosure() {
+  const disclosure = document.querySelector("#docs-navigation-disclosure")
+  if (!disclosure) return
+  if (window.matchMedia("(max-width: 48rem)").matches) disclosure.removeAttribute("open")
+  else disclosure.setAttribute("open", "")
+}
+
+document.addEventListener("click", async (event) => {
+  const copy = event.target.closest("[data-code-copy]")
+  if (copy) {
+    const block = copy.closest(".docs-code-block")
+    const code = block?.querySelector(".docs-code > code")
+    const status = block?.querySelector("[data-code-status]")
+    if (!code || !status) return
+
+    try {
+      await navigator.clipboard.writeText(code.textContent ?? "")
+      status.textContent = "Code copied"
+      copy.textContent = "Copied"
+      window.setTimeout(() => {
+        copy.textContent = "Copy"
+      }, 1600)
+    } catch (_error) {
+      status.textContent = "Unable to copy code"
+    }
+    return
+  }
+
+  const expand = event.target.closest("[data-code-expand]")
+  if (expand) {
+    const block = expand.closest(".docs-code-block")
+    if (!block) return
+    const expanded = block.classList.toggle("docs-code-collapsed") === false
+    expand.setAttribute("aria-expanded", String(expanded))
+    expand.textContent = expanded ? "Collapse" : "Show all"
+  }
+})
+
 applyTheme(readTheme())
 updateConnectionState(navigator.onLine ? "connecting" : "offline")
 updateExampleControls(false)
+enhanceCodeBlocks()
+
+window.addEventListener("phx:page-loading-stop", () => {
+  enhanceCodeBlocks()
+  closeNavigationDisclosure()
+})
 
 window.addEventListener("online", () => {
   const state = window.liveSocket?.isConnected() ? "connected" : "reconnecting"
@@ -285,6 +344,26 @@ const Hooks = {
     destroyed() {
       this.el.removeEventListener("change", this.handleThemeChange)
       this.colorScheme.removeEventListener("change", this.handleColorSchemeChange)
+    },
+  },
+
+  NavigationDisclosure: {
+    mounted() {
+      this.mobile = window.matchMedia("(max-width: 48rem)")
+      this.syncDisclosure = () => {
+        if (this.mobile.matches) this.el.removeAttribute("open")
+        else this.el.setAttribute("open", "")
+      }
+      this.syncDisclosure()
+      this.mobile.addEventListener("change", this.syncDisclosure)
+    },
+
+    updated() {
+      this.syncDisclosure()
+    },
+
+    destroyed() {
+      this.mobile.removeEventListener("change", this.syncDisclosure)
     },
   },
 

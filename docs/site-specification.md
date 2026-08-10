@@ -88,6 +88,11 @@ The homepage explains Scalive's value, presents one small live example, and
 leads directly to the quick start. It is an entry point to the documentation,
 not a marketing site or exhaustive section index.
 
+Its copy remains authored as a normal generated `Page` using the shared `Block`
+model. Startup validates the expected homepage structure, then a dedicated
+LiveView presents those typed blocks in a wide editorial shell with a real,
+isolated counter example. The page remains meaningful without JavaScript.
+
 ### Learn
 
 Learn is a short ordered path:
@@ -178,6 +183,11 @@ the search index are validated at build time. Invalid content fails the build.
 External links are checked separately so network failures cannot make normal
 builds flaky.
 
+The homepage adds no public content type or Markdown directive. Its authored
+block shape is validated by the site when loading the generated bundle, while
+the shared pipeline continues to own links, search entries, navigation metadata,
+source locations, and sitemap coverage.
+
 Public API drift also fails validation. A change to the supported public boundary
 must update affected generated or curated documentation in the same change.
 
@@ -244,6 +254,10 @@ center, and an in-page outline on the right. Navigation collapses appropriately
 on smaller screens, and examples and inspectors stack without horizontal page
 overflow.
 
+The homepage and search results are deliberate wide-shell exceptions. Generated
+Learn, Guide, Example, API, and Project pages retain the three-column desktop
+documentation shell.
+
 All internal destinations are ordinary HTTP links progressively enhanced by
 Scalive navigation. Reading and navigation therefore continue when a live
 connection is unavailable.
@@ -260,9 +274,17 @@ server-rendered results provide a dependable fallback.
 
 ## Visual And Content Design
 
-The visual direction is a living technical notebook: editorial prose combined
-with precise source, traces, and restrained instrumentation. It must feel like a
-purpose-built Scalive resource rather than a generic component-library theme.
+The selected visual direction is Signal / Editorial: a precise technical
+publication interrupted by one unmistakable live signal. It evolves the living
+technical notebook into a cleaner editorial system for prose, source, traces,
+and runtime evidence. Red is reserved for identity, action, and meaningful live
+transitions rather than general decoration.
+
+The visible lockup uses the two-plane Scalive mark and a lowercase `scalive`
+wordmark; prose, metadata, titles, and accessible labels retain proper-case
+“Scalive.” Instrument Sans is used for interface and prose, and JetBrains Mono
+for code and compact technical metadata. Both variable fonts are licensed,
+bundled locally, and served through the digested asset pipeline.
 
 The site uses the existing utility-CSS asset pipeline with project-specific
 design tokens, typography, and documentation components. It supports light and

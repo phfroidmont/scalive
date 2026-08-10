@@ -11,9 +11,14 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
         application <- DocumentationApplication.from(bundle)
       yield
         val renderer             = DocumentationRenderer(application)
-        val representativeRoutes = Set("/", "/learn", "/api/scalive/live-view")
+        val representativeRoutes = Set("/learn", "/api/scalive/live-view")
         val rendered = bundle.pages.filter(page => representativeRoutes(page.route))
           .map(page => HtmlBuilder.build(renderer.render(page))).mkString
+        val home = application.page("/").map(page =>
+          HtmlBuilder.build(
+            DocumentationHomeLiveView(page, application.homeContent, application, renderer).render(())
+          )
+        ).getOrElse("")
 
         assertTrue(
           representativeRoutes.subsetOf(bundle.pages.map(_.route).toSet),
@@ -21,10 +26,11 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
           bundle.examples.head.source.text.contains("class CounterExample"),
           bundle.apiReference.symbols.exists(_.qualifiedName == "scalive.LiveView"),
           bundle.searchEntries.exists(_.title == "scalive.LiveView"),
-          rendered.contains("<h1>Scalive</h1>"),
-          rendered.contains("<h2 id=\"why-scalive\">Why Scalive</h2>"),
-          rendered.contains("href=\"/learn#start-here\""),
-          rendered.contains("data-callout=\"info\""),
+          bundle.pages.exists(page =>
+            page.route == "/" && page.metadata.title == "Live interfaces. Typed end to end."
+          ),
+          home.contains("href=\"/learn#start-here\""),
+          home.contains("data-callout=\"info\""),
           rendered.contains("GeneratedDocumentation.scala"),
           rendered.contains("scalive.LiveView"),
           rendered.contains("View source"),

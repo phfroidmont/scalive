@@ -39,8 +39,14 @@ final private[docs] class DocumentationRootLayout(
             )
           ).toVector,
         linkTag(rel := "canonical", href := origin.absolute(metadata.canonicalPath)),
-        assets.trackedScript("app.js", defer := true, typ := "text/javascript"),
+        scriptTag(
+          typ := "text/javascript",
+          "try{var t=localStorage.getItem(`scalive.docs.theme`);if(t===`light`||t===`dark`){document.documentElement.dataset.theme=t}else{document.documentElement.removeAttribute(`data-theme`)}}catch(e){document.documentElement.removeAttribute(`data-theme`)}"
+        ),
+        linkTag(rel := "icon", typ := "image/svg+xml", href := assets.path("favicon.svg")),
+        assets.trackedStylesheet("fonts.css"),
         assets.trackedStylesheet("app.css"),
+        assets.trackedScript("app.js", defer := true, typ := "text/javascript"),
         liveTitle(pageTitle, default = "Scalive")
       ),
       bodyTag(content)
@@ -60,10 +66,12 @@ final private[docs] class DocumentationLayout(
   private val ariaExpanded     = htmlAttr("aria-expanded", StringAsIsEncoder)
   private val ariaAutocomplete = htmlAttr("aria-autocomplete", StringAsIsEncoder)
   private val role             = htmlAttr("role", StringAsIsEncoder)
+  private val disclosureOpen   = htmlAttr("open", scalive.codecs.BooleanAsAttrPresenceEncoder)
 
   def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
     val currentRoute = ctx.currentUrl.path.encode
     val page         = application.page(currentRoute)
+    val documentPage = page.filterNot(_.metadata.section == Section.Home)
     val metadata     = application
       .metadata(currentRoute).getOrElse(
         throw new IllegalArgumentException(
@@ -78,10 +86,10 @@ final private[docs] class DocumentationLayout(
       a(cls := "docs-skip-link", href := "#docs-main", "Skip to content"),
       header(page, currentRoute),
       div(
-        cls := (if page.nonEmpty then "docs-shell" else "docs-shell docs-shell-wide"),
+        cls := (if documentPage.nonEmpty then "docs-shell" else "docs-shell docs-shell-wide"),
         mainTag(idAttr := "docs-main", cls := "docs-main", content),
-        page.map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
-        page.map(value => Mod.Content.Tag(outline(value))).toVector
+        documentPage.map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
+        documentPage.map(value => Mod.Content.Tag(outline(value))).toVector
       ),
       footerTag(
         cls := "docs-footer",
@@ -90,52 +98,72 @@ final private[docs] class DocumentationLayout(
         "."
       )
     )
+  end render
 
   private def header[Msg](page: Option[Page], currentRoute: String): HtmlElement[Msg] =
     headerTag(
       cls := "docs-header",
       div(
         cls := "docs-header-inner",
-        navigationLink(
-          application
-            .location("/").getOrElse(throw new IllegalStateException("Missing homepage route.")),
-          currentRoute == "/",
-          "docs-brand",
-          "Scalive"
-        ),
-        navTag(
-          cls        := "docs-primary-nav",
-          aria.label := "Primary navigation",
-          ul(
-            application.bundle.navigation.items
-              .filterNot(_.section == Section.Home)
-              .map { item =>
-                val className =
-                  if page.exists(_.metadata.section == item.section) then "docs-current-section"
-                  else ""
-                li(
-                  navigationLink(
-                    application
-                      .location(item.route).getOrElse(
-                        throw new IllegalArgumentException(
-                          s"Unknown navigation route: ${item.route}"
-                        )
-                      ),
-                    item.route == currentRoute,
-                    className,
-                    item.title
-                  )
-                )
-              }
+        brandLink(currentRoute),
+        detailsTag(
+          dom.hook("NavigationDisclosure", DomRef("docs-navigation-disclosure")),
+          cls            := "docs-nav-disclosure",
+          disclosureOpen := true,
+          summaryTag(
+            cls := "docs-nav-summary",
+            span("Menu"),
+            span(cls := "docs-nav-summary-icon", aria.hidden := true, "+")
+          ),
+          div(
+            cls := "docs-nav-panel",
+            navTag(
+              cls        := "docs-primary-nav",
+              aria.label := "Primary navigation",
+              ul(
+                application.bundle.navigation.items
+                  .filterNot(_.section == Section.Home)
+                  .map { item =>
+                    val className =
+                      if page.exists(_.metadata.section == item.section) then "docs-current-section"
+                      else ""
+                    li(
+                      navigationLink(
+                        application
+                          .location(item.route).getOrElse(
+                            throw new IllegalArgumentException(
+                              s"Unknown navigation route: ${item.route}"
+                            )
+                          ),
+                        item.route == currentRoute,
+                        className,
+                        item.title
+                      )
+                    )
+                  }
+              )
+            ),
+            div(
+              cls := "docs-header-actions",
+              searchForm,
+              connectionIndicator,
+              themeSelector
+            )
           )
-        ),
-        div(
-          cls := "docs-header-actions",
-          searchForm,
-          connectionIndicator,
-          themeSelector
         )
       )
+    )
+
+  private def brandLink[Msg](currentRoute: String): HtmlElement[Msg] =
+    val mods                                     = Vector.newBuilder[Mod[Msg]]
+    mods += (cls                                     := "docs-brand")
+    mods += (aria.label                              := "Scalive home")
+    if currentRoute == "/" then mods += (ariaCurrent := "page")
+    mods += Mod.Content.Tag(DocumentationBrand.lockup)
+    link.pushNavigate(
+      application
+        .location("/").getOrElse(throw new IllegalStateException("Missing homepage route.")),
+      mods.result()*
     )
 
   private def searchForm[Msg]: HtmlElement[Msg] =

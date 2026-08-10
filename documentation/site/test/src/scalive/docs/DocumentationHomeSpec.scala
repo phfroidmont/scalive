@@ -22,8 +22,8 @@ object DocumentationHomeSpec extends ZIOSpecDefault:
     test("keeps the approved two-plane mark geometry") {
       val rendered = HtmlBuilder.build(DocumentationBrand.mark("mark"))
       assertTrue(
-        DocumentationBrand.TopPath == "M12 52V28L84 4V28L36 44H48L40 52Z",
-        DocumentationBrand.BottomPath == "M56 44H84V68L12 92V68L60 52H48Z",
+        DocumentationBrand.TopPath == "M18 52V26L78 2V28L38 44H46L42 52Z",
+        DocumentationBrand.BottomPath == "M54 44H78V70L18 94V68L58 52H50Z",
         rendered.count(_ == '<') == 6,
         rendered.contains("viewBox=\"0 0 96 96\""),
         !rendered.contains("mask"),

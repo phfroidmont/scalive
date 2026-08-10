@@ -74,8 +74,8 @@ Use a `96 96` view box and the following normalized two-plane geometry:
 
 ```svg
 <svg viewBox="0 0 96 96" aria-hidden="true">
-  <path d="M12 52V28L84 4V28L36 44H48L40 52Z" />
-  <path d="M56 44H84V68L12 92V68L60 52H48Z" />
+  <path d="M18 52V26L78 2V28L38 44H46L42 52Z" />
+  <path d="M54 44H78V70L18 94V68L58 52H50Z" />
 </svg>
 ```
 
@@ -84,11 +84,13 @@ Construction invariants:
 - Each ribbon is one connected, seven-vertex, non-self-intersecting polygon.
 - The bottom ribbon is the exact 180-degree rotation of the top ribbon around
   `(48,48)`.
-- All four exposed long edges are parallel with slope `-1/3`.
-- All four end caps are vertical and 24 view-box units high.
+- The complete visible bounds are `60` units wide by `92` units high; each
+  ribbon is `60` units wide by `50` units high.
+- All four exposed long edges are parallel with slope `-2/5`.
+- All four end caps are vertical and 26 view-box units high.
 - The center is transparent negative space, not a positive lightning fragment.
-- The center seam is the parallelogram bounded by `(48,44)`, `(56,44)`,
-  `(48,52)`, and `(40,52)`, centered on `(48,48)`.
+- The center seam is the parallelogram bounded by `(46,44)`, `(54,44)`,
+  `(50,52)`, and `(42,52)`, centered on `(48,48)`.
 - The seam remains eight view-box units wide along both horizontal edges.
 - The ribbon paths do not overlap and require no SVG mask, clip-path, or reusable
   document ID.
@@ -566,7 +568,7 @@ Completion gate:
 - [x] Verify visible keyboard focus through the complete header, navigation,
   search, code controls, examples, X-ray controls, and footer.
 - [x] Verify heading order and landmark names.
-- [ ] Verify the mark and wordmark at small sizes.
+- [x] Verify the mark and wordmark at small sizes.
 - [x] Verify tables, source, API signatures, examples, and X-ray records do not
   create document-level overflow.
 - [x] Verify reduced motion.

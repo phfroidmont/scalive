@@ -47,6 +47,9 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val liveViewTrait = symbols.find(symbol =>
         symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Trait
       )
+      val liveViewObject = symbols.find(symbol =>
+        symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Object
+      )
       val handleMessage = symbols.find(_.qualifiedName == "scalive.LiveView.handleMessage")
       val routedMount   = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.mount")
       val liveViewDocumentation = liveViewTrait.toVector.flatMap(_.signatures)
@@ -79,6 +82,9 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         ),
         liveUpload.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported)),
         liveUpload.exists(_.route == "/api/scalive/live-upload"),
+        liveViewTrait.exists(_.route == "/api/scalive/live-view"),
+        liveViewObject.exists(_.route == "/api/scalive/live-view/companion"),
+        handleMessage.exists(_.route == "/api/scalive/live-view"),
         exportedNames.forall(name =>
           symbols.find(_.qualifiedName == name)
             .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))

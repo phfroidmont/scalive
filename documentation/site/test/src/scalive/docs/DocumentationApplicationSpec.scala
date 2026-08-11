@@ -10,7 +10,7 @@ import zio.test.*
 
 import scalive.*
 import scalive.docs.examples.ExampleRegistry
-import scalive.docs.model.Section
+import scalive.docs.model.{PageSource, Section}
 import scalive.testing.DisconnectedRender
 
 object DocumentationApplicationSpec extends ZIOSpecDefault:
@@ -76,6 +76,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                           val expectedTitle =
                             if entry.page.route == "/" then "Scalive"
                             else s"${entry.page.metadata.title} | Scalive"
+                          val expectedHeading = entry.page.source match
+                            case PageSource.GeneratedApi(id) =>
+                              application.apiSymbol(id).map(_.name).getOrElse(entry.page.metadata.title)
+                            case _ => entry.page.metadata.title
                           val outlineIds = entry.page.outline.items.flatMap(flattenOutline).map(_.id)
                           val missingOutlineIds = outlineIds.filter(id => document.getElementById(id) == null)
                           val substantiveContent = document.selectFirst("main").clone()
@@ -92,7 +96,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                             )(s"canonical '${document.select("link[rel=canonical]").attr("href")}'"),
                             Option.when(document.select("h1").size() != 1)("h1 count"),
                             Option.when(
-                              document.selectFirst("h1").text() != entry.page.metadata.title
+                              document.selectFirst("h1").text() != expectedHeading
                             )("h1 title"),
                             Option.when(
                               document.select("nav[aria-label='Primary navigation'] a").size() != 5
@@ -156,16 +160,22 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets <- StaticAssets.load(
                     StaticAssetConfig.classpath("public", assetNames)
                   )
+        routes = application.routes(assets, security, config)
         rendered <- DisconnectedRender.run(
-                      application.routes(assets, security, config),
+                      routes,
                       Request.get(url("/api/scalive/live-view"))
                     )
+        companionRendered <- DisconnectedRender.run(
+                               routes,
+                               Request.get(url("/api/scalive/live-view/companion"))
+                             )
         expectedSources = application.bundle.apiReference.symbols
                             .filter(_.route == "/api/scalive/live-view")
                              .flatMap(_.signatures)
                              .map(signature => application.bundle.apiReference.metadata.sourceLink(signature.source).url)
                              .toSet
         document        = Jsoup.parse(rendered.html)
+        companionDocument = Jsoup.parse(companionRendered.html)
         liveViewTrait   = document.selectFirst("[data-api-symbol='trait:scalive.LiveView']")
         renderedSources = document
                             .select("[data-api-symbol] a")
@@ -187,6 +197,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         !liveViewTrait.select(".docs-api-documentation code").isEmpty,
         !liveViewTrait.select(".docs-api-tag-section").isEmpty,
         liveViewTrait.select("a[href='/api/scalive/html-element']").text() == "HtmlElement",
+        document.select(".docs-api-companion-reference a").attr("href") ==
+          "/api/scalive/live-view/companion",
+        companionDocument.select(".docs-api-companion-reference a").attr("href") ==
+          "/api/scalive/live-view",
+        companionDocument.select("[data-api-symbol='object:scalive.LiveView']").size() == 1,
+        companionDocument.select("[data-api-symbol='trait:scalive.LiveView']").isEmpty,
         !rendered.text.contains("[[LiveView]]")
       )
     },

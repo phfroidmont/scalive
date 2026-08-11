@@ -591,7 +591,7 @@ object ContentPipeline:
             .map { searchEntries =>
               DocumentationBundle(
                 formatVersion = DocumentationBundle.CurrentFormatVersion,
-                navigation = buildNavigation(sortedPages),
+                navigation = buildNavigation(sortedPages, apiReference),
                 pages = sortedPages,
                 examples = examples,
                 apiReference = apiReference,
@@ -716,17 +716,37 @@ object ContentPipeline:
   private def generatedApiPages(apiReference: ApiReference): Vector[Page] =
     val symbolsByRoute = apiReference.symbols.groupBy(_.route).toVector.sortBy(_._1)
     symbolsByRoute.zipWithIndex.map { case ((route, routeSymbols), index) =>
-      val symbols        = routeSymbols.sortBy(symbol => (symbol.fragment.nonEmpty, symbol.id))
-      val owners         = symbols.filter(_.fragment.isEmpty)
-      val representative = owners.headOption.getOrElse(symbols.head)
-      val description    = owners.map(_.summary).find(_.nonEmpty).getOrElse(representative.summary)
-      val outline        = symbols.flatMap { symbol =>
-        symbol.fragment.map(fragment => OutlineItem(fragment, symbol.name, 2, Vector.empty))
+      val owners         = routeSymbols.filter(_.fragment.isEmpty).sortBy(ownerSortKey)
+      val members        = routeSymbols.filter(_.fragment.nonEmpty)
+      val representative = owners.headOption.getOrElse(routeSymbols.sortBy(_.id).head)
+      val orderedMembers = owners.flatMap(owner =>
+        members.filter(_.ownerId.contains(owner.id)).sortBy(memberSortKey)
+      ) ++
+        members
+          .filter(member => !owners.exists(owner => member.ownerId.contains(owner.id))).sortBy(
+            memberSortKey
+          )
+      val symbols     = owners ++ orderedMembers
+      val description = owners
+        .map(_.summary).find(summary => summary.nonEmpty && !isFallbackSummary(summary))
+        .getOrElse(representative.summary)
+      val outline = memberGroups(owners, orderedMembers).map { case (id, title, groupedMembers) =>
+        OutlineItem(
+          id,
+          title,
+          2,
+          groupedMembers.flatMap { symbol =>
+            symbol.fragment.map(fragment => OutlineItem(fragment, symbol.name, 3, Vector.empty))
+          }
+        )
       }
       Page(
         route = route,
         metadata = PageMetadata(
-          title = representative.qualifiedName,
+          title =
+            if isCompanionObject(representative, apiReference) then
+              s"${representative.qualifiedName} companion object"
+            else representative.qualifiedName,
           description = description,
           order = index,
           section = Section.Api
@@ -736,6 +756,58 @@ object ContentPipeline:
         content = symbols.map(symbol => Block.ApiSymbolRef(symbol.id))
       )
     }
+  end generatedApiPages
+
+  private def ownerSortKey(symbol: ApiSymbol): (Int, String) =
+    val rank = symbol.kind match
+      case ApiSymbolKind.Trait      => 0
+      case ApiSymbolKind.Class      => 1
+      case ApiSymbolKind.Enum       => 2
+      case ApiSymbolKind.OpaqueType => 3
+      case ApiSymbolKind.TypeAlias  => 4
+      case ApiSymbolKind.Object     => 5
+      case ApiSymbolKind.Package    => 6
+      case _                        => 7
+    (rank, symbol.id)
+
+  private def memberSortKey(symbol: ApiSymbol): (Int, String, String) =
+    val rank = symbol.kind match
+      case ApiSymbolKind.Def | ApiSymbolKind.Extension                                         => 0
+      case ApiSymbolKind.Val | ApiSymbolKind.LazyVal | ApiSymbolKind.Var | ApiSymbolKind.Given => 1
+      case ApiSymbolKind.TypeAlias | ApiSymbolKind.OpaqueType                                  => 2
+      case _                                                                                   => 3
+    (rank, symbol.name.toLowerCase, symbol.id)
+
+  private def memberGroups(
+    owners: Vector[ApiSymbol],
+    members: Vector[ApiSymbol]
+  ): Vector[(String, String, Vector[ApiSymbol])] =
+    val groups = owners.flatMap { owner =>
+      val owned = members.filter(_.ownerId.contains(owner.id))
+      Option.when(owned.nonEmpty) {
+        val companion =
+          owner.kind == ApiSymbolKind.Object && owners.exists(_.kind != ApiSymbolKind.Object)
+        val id    = if companion then "companion-members" else "members"
+        val title = if companion then "Companion members" else "Members"
+        (id, title, owned)
+      }
+    }
+    val groupedIds = groups.flatMap(_._3.map(_.id)).toSet
+    val remaining  = members.filterNot(member => groupedIds(member.id))
+    if remaining.isEmpty then groups
+    else groups :+ ("other-members", "Other members", remaining)
+
+  private def isFallbackSummary(summary: String): Boolean =
+    summary.startsWith("Public API for the `") ||
+      summary.startsWith("Public APIs in the `") ||
+      (summary.startsWith("The `") && summary.endsWith("."))
+
+  private def isCompanionObject(symbol: ApiSymbol, apiReference: ApiReference): Boolean =
+    symbol.kind == ApiSymbolKind.Object && apiReference.symbols.exists(candidate =>
+      candidate.fragment.isEmpty &&
+        candidate.qualifiedName == symbol.qualifiedName &&
+        candidate.kind != ApiSymbolKind.Object
+    )
 
   private def pageSourceName(page: Page): String = page.source match
     case PageSource.Authored(location) => location.path
@@ -1018,18 +1090,68 @@ object ContentPipeline:
     case Inline.LineBreak           => " "
   }.mkString
 
-  private def buildNavigation(pages: Vector[Page]): Navigation =
+  private def buildNavigation(pages: Vector[Page], apiReference: ApiReference): Navigation =
     val items = SectionOrder.flatMap { section =>
       val sectionPages = pages.filter(_.metadata.section == section).sortBy(pageSortKey)
       val rootRoute    = if section == Section.Home then "/" else s"/${sectionName(section)}"
       sectionPages.find(_.route == rootRoute) match
         case Some(root) =>
           Vector(
-            navigationItem(root, sectionPages.filterNot(_.route == rootRoute).map(navigationItem))
+            if section == Section.Api then
+              apiNavigation(root, sectionPages.filterNot(_.route == rootRoute), apiReference)
+            else
+              navigationItem(root, sectionPages.filterNot(_.route == rootRoute).map(navigationItem))
           )
         case None => sectionPages.map(navigationItem)
     }
     Navigation(items)
+
+  private def apiNavigation(
+    root: Page,
+    pages: Vector[Page],
+    apiReference: ApiReference
+  ): NavigationItem =
+    val symbolsById  = apiReference.symbols.map(symbol => symbol.id -> symbol).toMap
+    val pagesByRoute = pages.map(page => page.route -> page).toMap
+
+    def pageSymbol(page: Page): Option[ApiSymbol] = page.source match
+      case PageSource.GeneratedApi(id) => symbolsById.get(id)
+      case _                           => None
+
+    def parentRoute(page: Page): String =
+      pageSymbol(page)
+        .flatMap(_.ownerId)
+        .flatMap(symbolsById.get)
+        .map(_.route)
+        .filter(route => route != page.route && pagesByRoute.contains(route))
+        .getOrElse(root.route)
+
+    val pagesByParent = pages.groupBy(parentRoute)
+
+    def apiItem(page: Page): NavigationItem =
+      val children = pagesByParent
+        .getOrElse(page.route, Vector.empty)
+        .sortBy(child => pageSymbol(child).map(navigationSortKey))
+        .map(apiItem)
+      NavigationItem(
+        pageSymbol(page).map(_.name).getOrElse(page.metadata.title),
+        page.route,
+        page.metadata.section,
+        children
+      )
+
+    navigationItem(
+      root,
+      pagesByParent
+        .getOrElse(root.route, Vector.empty)
+        .sortBy(page => pageSymbol(page).map(navigationSortKey))
+        .map(apiItem)
+    )
+  end apiNavigation
+
+  private def navigationSortKey(symbol: ApiSymbol): (String, Int, String) =
+    val (kindRank, id) = ownerSortKey(symbol)
+    (symbol.name.toLowerCase, kindRank, id)
 
   private def navigationItem(page: Page): NavigationItem =
     navigationItem(page, Vector.empty)

@@ -11,17 +11,130 @@ import scalive.docs.xray.{DocumentationTraceStore, XRayInspector}
 final private[docs] class DocumentationRenderer(
   application: DocumentationApplication,
   traceStore: Option[DocumentationTraceStore] = None):
-  private val metadata      = application.bundle.apiReference.metadata
-  private val repositoryUrl = metadata.repositoryUrl.stripSuffix("/")
-  private val ariaExpanded  = htmlAttr("aria-expanded", scalive.codecs.StringAsIsEncoder)
+  private val metadata        = application.bundle.apiReference.metadata
+  private val repositoryUrl   = metadata.repositoryUrl.stripSuffix("/")
+  private val ariaExpanded    = htmlAttr("aria-expanded", scalive.codecs.StringAsIsEncoder)
+  private val methodSignature = "^(extension def|def) ([^:]+): (.*)$".r
 
   def render(page: Page): HtmlElement[Nothing] =
+    page.source match
+      case _: PageSource.GeneratedApi => renderGeneratedApiPage(page)
+      case _                          => renderAuthoredPage(page)
+
+  private def renderAuthoredPage(page: Page): HtmlElement[Nothing] =
     articleTag(
       cls := "docs-content docs-prose",
       h1(page.metadata.title),
       page.content.map(renderBlock(page.route)),
       pageLinks(page)
     )
+
+  private def renderGeneratedApiPage(page: Page): HtmlElement[Nothing] =
+    val symbols = page.content.collect { case Block.ApiSymbolRef(id) =>
+      application
+        .apiSymbol(id).getOrElse(
+          throw new IllegalArgumentException(s"Unknown API symbol: $id")
+        )
+    }
+    val owners  = symbols.filter(_.fragment.isEmpty).sortBy(ownerSortKey)
+    val members = symbols.filter(_.fragment.nonEmpty)
+    val primary = owners.headOption.getOrElse(
+      throw new IllegalArgumentException(s"Generated API page has no owner: ${page.route}")
+    )
+    val groups = apiMemberGroups(owners, members)
+
+    articleTag(
+      cls := "docs-content docs-prose docs-api-page",
+      apiBreadcrumb(primary),
+      div(
+        cls := "docs-api-title-row",
+        h1(primary.name),
+        div(
+          cls := "docs-api-title-kinds",
+          owners.map(owner => span(cls := "docs-api-title-kind", apiKindName(owner.kind)))
+        )
+      ),
+      p(cls := "docs-api-qualified-name", primary.qualifiedName),
+      companionReference(primary).map(Mod.Content.Tag(_)).toVector,
+      h2(cls := "docs-api-group-heading", "Declaration"),
+      renderApiSymbol(page.route, primary, None, 2),
+      groups.map { case (id, title, groupedMembers) =>
+        Mod.Content.Tag(
+          sectionTag(
+            cls    := "docs-api-member-group",
+            idAttr := id,
+            h2(title),
+            groupedMembers.map(member => renderApiSymbol(page.route, member, member.fragment, 3))
+          )
+        )
+      },
+      pageLinks(page)
+    )
+  end renderGeneratedApiPage
+
+  private def apiBreadcrumb(symbol: ApiSymbol): HtmlElement[Nothing] =
+    val packages = application.bundle.apiReference.symbols
+      .filter(candidate =>
+        candidate.kind == ApiSymbolKind.Package &&
+          candidate.fragment.isEmpty &&
+          symbol.qualifiedName.startsWith(s"${candidate.qualifiedName}.")
+      ).sortBy(_.qualifiedName.length)
+    navTag(
+      cls        := "docs-api-breadcrumb",
+      aria.label := "Breadcrumb",
+      ol(
+        li(a(href := "/api", "API")),
+        packages.map(value => li(a(href := value.route, value.name)))
+      )
+    )
+
+  private def ownerSortKey(symbol: ApiSymbol): (Int, String) =
+    val rank = symbol.kind match
+      case ApiSymbolKind.Trait      => 0
+      case ApiSymbolKind.Class      => 1
+      case ApiSymbolKind.Enum       => 2
+      case ApiSymbolKind.OpaqueType => 3
+      case ApiSymbolKind.TypeAlias  => 4
+      case ApiSymbolKind.Object     => 5
+      case ApiSymbolKind.Package    => 6
+      case _                        => 7
+    (rank, symbol.id)
+
+  private def apiMemberGroups(
+    owners: Vector[ApiSymbol],
+    members: Vector[ApiSymbol]
+  ): Vector[(String, String, Vector[ApiSymbol])] =
+    val groups = owners.flatMap { owner =>
+      val owned = members.filter(_.ownerId.contains(owner.id))
+      Option.when(owned.nonEmpty) {
+        val companion =
+          owner.kind == ApiSymbolKind.Object && owners.exists(_.kind != ApiSymbolKind.Object)
+        val id    = if companion then "companion-members" else "members"
+        val title = if companion then "Companion members" else "Members"
+        (id, title, owned)
+      }
+    }
+    val groupedIds = groups.flatMap(_._3.map(_.id)).toSet
+    val remaining  = members.filterNot(member => groupedIds(member.id))
+    if remaining.isEmpty then groups else groups :+ ("other-members", "Other members", remaining)
+
+  private def companionReference(symbol: ApiSymbol): Option[HtmlElement[Nothing]] =
+    val matchingOwners = application.bundle.apiReference.symbols.filter(candidate =>
+      candidate.fragment.isEmpty &&
+        candidate.qualifiedName == symbol.qualifiedName &&
+        candidate.id != symbol.id
+    )
+    val companion =
+      if symbol.kind == ApiSymbolKind.Object then
+        matchingOwners.find(_.kind != ApiSymbolKind.Object)
+      else matchingOwners.find(_.kind == ApiSymbolKind.Object)
+    companion.map { value =>
+      asideTag(
+        cls := "docs-api-companion-reference",
+        span("Companion: "),
+        a(href := value.route, s"${apiKindName(value.kind).toLowerCase} ${value.name}")
+      )
+    }
 
   private[docs] def renderBlock(pageRoute: String)(block: Block): HtmlElement[Nothing] = block match
     case Block.Paragraph(content)          => p(content.map(renderInline))
@@ -71,7 +184,7 @@ final private[docs] class DocumentationRenderer(
       codeBlock(language, text, tokens, Some(region))
     case Block.ApiSymbolRef(id) =>
       application.apiSymbol(id) match
-        case Some(symbol) => renderApiSymbol(pageRoute, symbol)
+        case Some(symbol) => renderApiSymbol(pageRoute, symbol, symbol.fragment, 2)
         case None         => throw new IllegalArgumentException(s"Unknown API symbol: $id")
     case Block.CompatibilityRef(id) =>
       sectionTag(
@@ -170,28 +283,43 @@ final private[docs] class DocumentationRenderer(
         else Mod.Content.Tag(span(cls := token.styles.mkString(" "), token.text))
       }
 
-  private def renderApiSymbol(pageRoute: String, symbol: ApiSymbol): HtmlElement[Nothing] =
-    val heading = symbol.fragment
-      .map(fragment => Mod.Content.Tag(h2(idAttr := fragment, symbol.name)))
-      .toVector
+  private def renderApiSymbol(
+    pageRoute: String,
+    symbol: ApiSymbol,
+    fragment: Option[String],
+    headingLevel: Int
+  ): HtmlElement[Nothing] =
+    val heading = fragment.map { value =>
+      Mod.Content.Tag(
+        if headingLevel == 3 then h3(idAttr := value, symbol.name)
+        else h2(idAttr                      := value, symbol.name)
+      )
+    }.toVector
     val hasDocumentation = symbol.signatures.exists(_.documentation.nonEmpty)
+    val showSummary      = !hasDocumentation && !isFallbackSummary(symbol.summary)
     sectionTag(
       cls                    := "docs-api-symbol",
       dataAttr("api-symbol") := symbol.id,
       heading,
       p(cls := "docs-api-kind", apiKindName(symbol.kind)),
-      Option.unless(hasDocumentation)(Mod.Content.Tag(p(symbol.summary))).toVector,
+      Option.when(showSummary)(Mod.Content.Tag(p(symbol.summary))).toVector,
       symbol.signatures.map(renderApiSignature(pageRoute, _))
     )
+
+  private def isFallbackSummary(summary: String): Boolean =
+    summary.startsWith("Public API for the `") ||
+      summary.startsWith("Public APIs in the `") ||
+      (summary.startsWith("The `") && summary.endsWith("."))
 
   private def renderApiSignature(
     pageRoute: String,
     signature: ApiSignature
   ): HtmlElement[Nothing] =
-    val source = metadata.sourceLink(signature.source)
+    val source           = metadata.sourceLink(signature.source)
+    val displaySignature = readableSignature(signature.signature)
     div(
       cls := "docs-api-signature",
-      codeBlock(Some("scala"), signature.signature, signature.tokens, None),
+      codeBlock(Some("scala"), displaySignature, displaySignatureTokens(displaySignature), None),
       signature.documentation
         .map(documentation => Mod.Content.Tag(renderApiDocumentation(pageRoute, documentation)))
         .toVector,
@@ -203,6 +331,132 @@ final private[docs] class DocumentationRenderer(
         s" (${source.label})"
       )
     )
+
+  private def readableSignature(value: String): String =
+    val shortened = value
+      .replace("scala.Predef.", "")
+      .replace("scala.package.", "")
+      .replace("scala.collection.immutable.", "")
+      .replace("scala.", "")
+      .replace("java.lang.", "")
+      .replaceAll("[A-Za-z0-9_]+\\$package\\.", "")
+      .replaceAll("[A-Za-z0-9_]+\\.this\\.", "")
+      .replaceAll("([A-Za-z0-9_]+)\\$\\.this\\.", "$1.")
+    val scalaSyntax = readableAppliedTypes(shortened)
+    scalaSyntax match
+      case methodSignature(keyword, name, declaredType) =>
+        s"$keyword $name${renderMethodType(declaredType)}"
+      case _ => scalaSyntax
+
+  private def readableAppliedTypes(value: String): String =
+    replaceAppliedType(value, "Function1") { arguments =>
+      s"${arguments.head} => ${arguments(1)}"
+    } match
+      case functions =>
+        replaceAppliedType(functions, "Tuple2") { arguments =>
+          s"(${arguments.head}, ${arguments(1)})"
+        }
+
+  private def replaceAppliedType(
+    value: String,
+    typeName: String
+  )(
+    render: Vector[String] => String
+  ): String =
+    val prefix = s"$typeName["
+    value.indexOf(prefix) match
+      case -1    => value
+      case start =>
+        val open = start + typeName.length
+        matchingBracket(value, open) match
+          case Some(close) =>
+            val arguments = splitTypeArguments(value.substring(open + 1, close))
+              .map(readableAppliedTypes)
+            if arguments.size != 2 then value
+            else
+              val replaced = value.take(start) + render(arguments) + value.drop(close + 1)
+              replaceAppliedType(replaced, typeName)(render)
+          case None => value
+
+  private def matchingBracket(value: String, open: Int): Option[Int] =
+    var depth = 0
+    var index = open
+    while index < value.length do
+      value.charAt(index) match
+        case '[' => depth += 1
+        case ']' =>
+          depth -= 1
+          if depth == 0 then return Some(index)
+        case _ => ()
+      index += 1
+    None
+
+  private def splitTypeArguments(value: String): Vector[String] =
+    var squareDepth = 0
+    var roundDepth  = 0
+    val separators  = Vector.newBuilder[Int]
+    value.indices.foreach { index =>
+      value.charAt(index) match
+        case '['                                        => squareDepth += 1
+        case ']'                                        => squareDepth -= 1
+        case '('                                        => roundDepth += 1
+        case ')'                                        => roundDepth -= 1
+        case ',' if squareDepth == 0 && roundDepth == 0 => separators += index
+        case _                                          => ()
+    }
+    separators.result() match
+      case Vector(index) => Vector(value.take(index).trim, value.drop(index + 1).trim)
+      case _             => Vector(value)
+
+  private def displaySignatureTokens(value: String): Vector[CodeToken] =
+    val keyword = Vector(
+      "extension def ",
+      "opaque type ",
+      "lazy val ",
+      "object ",
+      "trait ",
+      "class ",
+      "enum ",
+      "given ",
+      "type ",
+      "def ",
+      "val ",
+      "var "
+    ).find(value.startsWith)
+    keyword match
+      case Some(prefix) =>
+        Vector(
+          CodeToken(prefix, Vector("keyword")),
+          CodeToken(value.stripPrefix(prefix), Vector.empty)
+        )
+      case None => Vector(CodeToken(value, Vector.empty))
+
+  private def renderMethodType(value: String): String =
+    val parameterLists = Vector.newBuilder[String]
+    var remaining      = value
+    var parsing        = true
+    while parsing && remaining.startsWith("(") do
+      matchingParenthesis(remaining) match
+        case Some(index) =>
+          parameterLists += remaining.take(index + 1)
+          remaining = remaining.drop(index + 1)
+        case None => parsing = false
+    val parameters = parameterLists.result()
+    if parameters.nonEmpty && remaining.nonEmpty then s"${parameters.mkString}: $remaining"
+    else s": $value"
+
+  private def matchingParenthesis(value: String): Option[Int] =
+    var depth = 0
+    var index = 0
+    while index < value.length do
+      value.charAt(index) match
+        case '(' => depth += 1
+        case ')' =>
+          depth -= 1
+          if depth == 0 then return Some(index)
+        case _ => ()
+      index += 1
+    None
 
   private def renderApiDocumentation(
     pageRoute: String,

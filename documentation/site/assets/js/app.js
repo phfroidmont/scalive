@@ -382,6 +382,73 @@ const Hooks = {
     },
   },
 
+  ApiNavigation: {
+    mounted() {
+      this.filter = this.el.querySelector("[data-api-nav-filter]")
+      this.revealCurrent = () => {
+        const current = this.el.querySelector('[aria-current="page"]')
+        if (!current) return
+        current.closest("li")?.querySelectorAll(":scope > details").forEach((branch) => {
+          branch.setAttribute("open", "")
+        })
+        let branch = current.parentElement
+        while (branch && branch !== this.el) {
+          if (branch.tagName === "DETAILS") branch.setAttribute("open", "")
+          branch = branch.parentElement
+        }
+        if (window.matchMedia("(min-width: 48rem)").matches) {
+          const container = this.el.closest(".docs-section-nav")
+          if (container) container.scrollTop = Math.max(0, current.offsetTop - container.clientHeight / 2)
+        }
+      }
+      this.filterItems = () => {
+        const query = this.filter?.value.trim().toLowerCase() ?? ""
+        const visit = (item) => {
+          const children = [...item.querySelectorAll(":scope > details > ul > li")]
+          const descendantMatches = children.map(visit).some(Boolean)
+          const ownText = item.dataset.apiNavItem ?? ""
+          const matches = query === "" || ownText.includes(query) || descendantMatches
+          item.hidden = !matches
+          if (query && descendantMatches) item.querySelector(":scope > details")?.setAttribute("open", "")
+          return matches
+        }
+        this.el.querySelectorAll("nav > ul > li").forEach(visit)
+        if (!query) this.revealCurrent()
+      }
+
+      this.revealCurrent()
+      this.filter?.addEventListener("input", this.filterItems)
+    },
+
+    updated() {
+      this.revealCurrent()
+    },
+
+    destroyed() {
+      this.filter?.removeEventListener("input", this.filterItems)
+    },
+  },
+
+  PageOutline: {
+    mounted() {
+      this.compact = window.matchMedia("(max-width: 48rem)")
+      this.syncDisclosure = () => {
+        if (this.compact.matches) this.el.removeAttribute("open")
+        else this.el.setAttribute("open", "")
+      }
+      this.syncDisclosure()
+      this.compact.addEventListener("change", this.syncDisclosure)
+    },
+
+    updated() {
+      this.syncDisclosure()
+    },
+
+    destroyed() {
+      this.compact.removeEventListener("change", this.syncDisclosure)
+    },
+  },
+
   PageMetadata: {
     mounted() {
       this.updatePageMetadata = () => {

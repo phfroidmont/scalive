@@ -281,8 +281,20 @@ object ApiReferencePipeline:
           name -> route
         }
       }.toMap
+      val companionNames = ownerEntries
+        .groupBy(_._2.qualifiedName).collect {
+          case (name, entries)
+              if entries.exists(_._2.kind == ApiSymbolKind.Object) &&
+                entries.exists(_._2.kind != ApiSymbolKind.Object) =>
+            name
+        }.toSet
       val ownerRoutes = ownerEntries.map { case (id, entry) =>
-        id -> presentationRoutes(entry.qualifiedName)
+        val primaryRoute = presentationRoutes(entry.qualifiedName)
+        val route        =
+          if entry.kind == ApiSymbolKind.Object && companionNames(entry.qualifiedName) then
+            s"$primaryRoute/companion"
+          else primaryRoute
+        id -> route
       }.toMap
 
       val groups = grouped.map { case (id, entries) =>

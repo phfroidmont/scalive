@@ -5,6 +5,21 @@ order = 0
 section = api
 %}
 
-Browse the generated reference for the `scalive`, `scalive.codecs`, and
-`scalive.testing` packages. Symbols inherited or exported through
-`import scalive.*` appear under that public import path.
+Browse Scalive's supported public API by package or use **Filter symbols** in the
+API browser. Symbols inherited or exported through `import scalive.*` appear
+under that public import path.
+
+## Packages {#packages}
+
+- `scalive` contains the core LiveView, component, HTML, form,
+  routing, upload, and runtime APIs.
+- `scalive.codecs` contains codecs used at browser and
+  route boundaries.
+- `scalive.testing` contains disconnected rendering,
+  page queries, and typed form test utilities.
+
+## Find a symbol {#find-a-symbol}
+
+Use the API browser to explore packages and nested owners. Global documentation
+search (`Ctrl K`) searches API declarations and members alongside guides and
+examples.

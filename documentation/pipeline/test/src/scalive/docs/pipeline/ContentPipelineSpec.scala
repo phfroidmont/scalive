@@ -169,6 +169,128 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             )
           )
     },
+    test("groups companions and builds API navigation from symbol owners") {
+      val packageSymbol = liveViewSymbol.copy(
+        id = "package:scalive",
+        ownerId = None,
+        name = "scalive",
+        qualifiedName = "scalive",
+        kind = ApiSymbolKind.Package,
+        summary = "Public APIs in the `scalive` package.",
+        signatures = liveViewSymbol.signatures.map(_.copy(
+          id = "package:scalive:signature",
+          signature = "package scalive",
+          origin = ApiOrigin("scalive", ApiExposure.Direct)
+        )),
+        route = "/api/scalive"
+      )
+      val companion = liveViewSymbol.copy(
+        id = "object:scalive.LiveView",
+        kind = ApiSymbolKind.Object,
+        summary = "Variants of LiveView.",
+        signatures = liveViewSymbol.signatures.map(_.copy(
+          id = "object:scalive.LiveView:signature",
+          signature = "object LiveView"
+        )),
+        route = "/api/scalive/live-view/companion"
+      )
+      val instanceMember = liveViewSymbol.copy(
+        id = "def:scalive.LiveView.mount",
+        ownerId = Some(liveViewSymbol.id),
+        name = "mount",
+        qualifiedName = "scalive.LiveView.mount",
+        kind = ApiSymbolKind.Def,
+        summary = "Creates the initial model.",
+        signatures = liveViewSymbol.signatures.map(_.copy(
+          id = "def:scalive.LiveView.mount:signature",
+          signature = "def mount: Model"
+        )),
+        fragment = Some("mount-12345678")
+      )
+      val companionMember = instanceMember.copy(
+        id = "def:scalive.LiveView.apply",
+        ownerId = Some(companion.id),
+        name = "apply",
+        qualifiedName = "scalive.LiveView.apply",
+        summary = "Creates a LiveView.",
+        signatures = instanceMember.signatures.map(_.copy(
+          id = "def:scalive.LiveView.apply:signature",
+          signature = "def apply: LiveView"
+        )),
+        route = companion.route,
+        fragment = Some("apply-12345678")
+      )
+      val alphaObject = companion.copy(
+        id = "object:scalive.Alpha",
+        name = "Alpha",
+        qualifiedName = "scalive.Alpha",
+        signatures = companion.signatures.map(_.copy(
+          id = "object:scalive.Alpha:signature",
+          signature = "object Alpha"
+        )),
+        route = "/api/scalive/alpha"
+      )
+      val zetaTrait = liveViewSymbol.copy(
+        id = "trait:scalive.Zeta",
+        name = "Zeta",
+        qualifiedName = "scalive.Zeta",
+        signatures = liveViewSymbol.signatures.map(_.copy(
+          id = "trait:scalive.Zeta:signature",
+          signature = "trait Zeta"
+        )),
+        route = "/api/scalive/zeta"
+      )
+      val reference = ApiReference(
+        apiMetadata,
+        Vector(
+          packageSymbol,
+          companion,
+          companionMember,
+          liveViewSymbol,
+          instanceMember,
+          alphaObject,
+          zetaTrait
+        )
+      )
+
+      generate("api-reference", reference) match
+        case Left(error) => assertTrue(error.messages.isEmpty)
+        case Right(bundle) =>
+          val page          = bundle.pages.find(_.route == liveViewSymbol.route).get
+          val companionPage = bundle.pages.find(_.route == companion.route).get
+          val apiRoot       = bundle.navigation.items.find(_.section == Section.Api).get
+          val scalive       = apiRoot.children.find(_.route == packageSymbol.route).get
+          assertTrue(
+            page.source == PageSource.GeneratedApi(liveViewSymbol.id),
+            page.content == Vector(
+              Block.ApiSymbolRef(liveViewSymbol.id),
+              Block.ApiSymbolRef(instanceMember.id)
+            ),
+            companionPage.source == PageSource.GeneratedApi(companion.id),
+            companionPage.metadata.title == "scalive.LiveView companion object",
+            companionPage.content == Vector(
+              Block.ApiSymbolRef(companion.id),
+              Block.ApiSymbolRef(companionMember.id)
+            ),
+            page.outline.items.map(_.id) == Vector("members"),
+            companionPage.outline.items.map(_.id) == Vector("members"),
+            page.outline.items.flatMap(_.children).forall(_.level == 3),
+            scalive.title == "scalive",
+            scalive.children.map(_.title) == Vector("Alpha", "LiveView", "LiveView", "Zeta"),
+            scalive.children.count(_.title == "LiveView") == 2,
+            scalive.children.exists(_.route == page.route),
+            scalive.children.exists(_.route == companionPage.route),
+            bundle.searchEntries.count(entry =>
+              entry.kind == SearchEntryKind.ApiSymbol &&
+                entry.title == liveViewSymbol.qualifiedName &&
+                entry.fragment.isEmpty
+            ) == 1,
+            bundle.searchEntries.exists(entry =>
+              entry.title == "scalive.LiveView companion object" &&
+                entry.route == companion.route
+            )
+          )
+    },
     test("rejects unknown API symbol directives") {
       generate("valid", emptyApiReference) match
         case Right(_)    => assertTrue(false)

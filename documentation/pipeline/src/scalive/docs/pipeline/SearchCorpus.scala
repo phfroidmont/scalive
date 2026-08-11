@@ -14,11 +14,23 @@ private[pipeline] object SearchCorpus:
     val authoredPages = pages.collect { case page @ Page(_, _, _: PageSource.Authored, _, _) =>
       page
     }
-    val exampleById = examples.map(example => example.descriptor.id -> example).toMap
-    val pageEntries = authoredPages.flatMap(entriesForPage(_, exampleById))
-    val apiEntries  = apiReference.symbols.filter(symbol => routes(symbol.route)).map(apiEntry)
-    val entries     = (pageEntries ++ apiEntries).sortBy(_.id)
-    val errors      = validate(entries, pages)
+    val exampleById        = examples.map(example => example.descriptor.id -> example).toMap
+    val pageEntries        = authoredPages.flatMap(entriesForPage(_, exampleById))
+    val apiSymbols         = apiReference.symbols.filter(symbol => routes(symbol.route))
+    val (owners, members)  = apiSymbols.partition(_.fragment.isEmpty)
+    val companionObjectIds = owners
+      .groupBy(_.qualifiedName).values.flatMap { matchingOwners =>
+        Option
+          .when(matchingOwners.exists(_.kind != ApiSymbolKind.Object))(
+            matchingOwners.filter(_.kind == ApiSymbolKind.Object).map(_.id)
+          ).toVector.flatten
+      }.toSet
+    val ownerEntries = owners
+      .groupBy(symbol => symbol.route -> symbol.qualifiedName).values
+      .map(symbols => apiOwnerEntry(symbols.toVector, companionObjectIds)).toVector
+    val apiEntries = ownerEntries ++ members.map(apiEntry)
+    val entries    = (pageEntries ++ apiEntries).sortBy(_.id)
+    val errors     = validate(entries, pages)
 
     Either.cond(errors.isEmpty, entries, errors)
 
@@ -112,6 +124,53 @@ private[pipeline] object SearchCorpus:
       text = (Vector(symbol.name, symbol.qualifiedName, symbol.summary) ++
         symbol.signatures.map(_.signature) ++ documentation).mkString(" ")
     )
+
+  private def apiOwnerEntry(
+    symbols: Vector[ApiSymbol],
+    companionObjectIds: Set[String]
+  ): SearchEntry =
+    val ordered        = symbols.sortBy(ownerSortKey)
+    val representative = ordered.head
+    val documentation  =
+      ordered.flatMap(_.signatures).flatMap(_.documentation).map(ScaladocParser.text)
+    val description = ordered
+      .map(_.summary)
+      .find(summary => summary.nonEmpty && !isFallbackSummary(summary))
+      .getOrElse(representative.summary)
+    SearchEntry(
+      id = s"api:${representative.id}",
+      kind = SearchEntryKind.ApiSymbol,
+      title =
+        if companionObjectIds(representative.id) then
+          s"${representative.qualifiedName} companion object"
+        else representative.qualifiedName,
+      description = description,
+      route = representative.route,
+      fragment = None,
+      section = Section.Api,
+      text = (ordered.flatMap { symbol =>
+        Vector(symbol.name, symbol.qualifiedName, symbol.summary) ++ symbol.signatures.map(
+          _.signature
+        )
+      } ++ documentation).mkString(" ")
+    )
+
+  private def ownerSortKey(symbol: ApiSymbol): (Int, String) =
+    val rank = symbol.kind match
+      case ApiSymbolKind.Trait      => 0
+      case ApiSymbolKind.Class      => 1
+      case ApiSymbolKind.Enum       => 2
+      case ApiSymbolKind.OpaqueType => 3
+      case ApiSymbolKind.TypeAlias  => 4
+      case ApiSymbolKind.Object     => 5
+      case ApiSymbolKind.Package    => 6
+      case _                        => 7
+    (rank, symbol.id)
+
+  private def isFallbackSummary(summary: String): Boolean =
+    summary.startsWith("Public API for the `") ||
+      summary.startsWith("Public APIs in the `") ||
+      (summary.startsWith("The `") && summary.endsWith("."))
 
   private def validate(entries: Vector[SearchEntry], pages: Vector[Page]): Vector[String] =
     val errors  = ArrayBuffer.empty[String]

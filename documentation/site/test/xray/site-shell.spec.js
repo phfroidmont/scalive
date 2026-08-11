@@ -108,6 +108,62 @@ test("focuses documentation search with the advertised keyboard shortcut", async
   await expect(search).toBeFocused()
 })
 
+test("hides the API tree and keeps the outline before mobile content", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/api/scalive/live-view")
+
+  const apiNavigation = page.locator(".docs-api-navigation")
+  const outline = page.locator(".docs-outline-disclosure")
+  const main = page.locator("#docs-main")
+  await expect(apiNavigation).toBeHidden()
+  await expect(outline).not.toHaveAttribute("open")
+  expect(await outline.locator(":scope > summary").evaluate((element) => element.getBoundingClientRect().top))
+    .toBeLessThan(await main.evaluate((element) => element.getBoundingClientRect().top))
+
+  await outline.locator(":scope > summary").click()
+  await expect(outline.getByRole("link", { name: "Members", exact: true })).toBeVisible()
+})
+
+test("shows sibling companion entries without tree guide lines", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 1000 })
+  await page.goto("/api/scalive/live-view")
+
+  const navigation = page.locator(".docs-section-nav")
+  const current = navigation.locator('[aria-current="page"]')
+  const liveViewLinks = navigation.getByRole("link", { name: "LiveView", exact: true })
+  await expect(current).toHaveText("LiveView")
+  await expect(liveViewLinks).toHaveCount(2)
+  await expect(navigation.locator('a[href="/api/scalive/live-view/companion"]')).toBeVisible()
+  await expect(page.getByText("Browse API", { exact: true })).toHaveCount(0)
+  await expect(navigation.locator(".docs-tree-marker").first()).toHaveText("")
+  expect(await navigation.evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe("0px")
+  expect(await navigation.locator("details > ul").first()
+    .evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe("0px")
+  const liveViewLefts = await liveViewLinks.evaluateAll((links) =>
+    links.map((link) => link.getBoundingClientRect().left)
+  )
+  expect(Math.max(...liveViewLefts) - Math.min(...liveViewLefts)).toBeLessThanOrEqual(0.5)
+  const siblingNames = await navigation.locator('[data-api-nav-item="scalive"]')
+    .evaluate((item) => [...item.querySelectorAll(":scope > details > ul > li")].map((child) => {
+      const row = child.querySelector(":scope > details > summary .docs-nav-row, :scope > .docs-nav-leaf .docs-nav-row")
+      return row.querySelector("a").textContent
+    }))
+  const sortedNames = [...siblingNames].sort((left, right) =>
+    left.toLowerCase().localeCompare(right.toLowerCase())
+  )
+  expect(siblingNames).toEqual(sortedNames)
+  await expect.poll(async () => current.evaluate((element) => {
+    const bounds = element.getBoundingClientRect()
+    const container = element.closest(".docs-section-nav").getBoundingClientRect()
+    return bounds.top >= container.top && bounds.bottom <= container.bottom
+  })).toBe(true)
+
+  await page.goto("/search?q=scalive.LiveView")
+  await expect(page.locator('.docs-search-results a[href="/api/scalive/live-view"]')).toHaveCount(1)
+  await expect(page.locator('.docs-search-results a[href="/api/scalive/live-view/companion"]'))
+    .toHaveText("scalive.LiveView companion object")
+})
+
 test("connects the focused homepage action to a typed server transition", async ({ page }) => {
   await page.goto("/")
 

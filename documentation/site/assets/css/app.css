@@ -333,6 +333,13 @@ a:hover {
   gap: 2rem;
 }
 
+.docs-shell-api {
+  grid-template-areas:
+    "section-navigation"
+    "page-outline"
+    "main-content";
+}
+
 .docs-section-nav,
 .docs-content,
 .docs-main,
@@ -346,6 +353,143 @@ a:hover {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.docs-outline-disclosure > summary {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--docs-control-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.docs-outline-disclosure > summary::-webkit-details-marker,
+.docs-section-nav details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.docs-disclosure-marker,
+.docs-tree-marker {
+  width: 0.5rem;
+  height: 0.5rem;
+  display: inline-block;
+  border: solid currentColor;
+  border-width: 0 0.1rem 0.1rem 0;
+  color: var(--docs-accent-strong);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+details[open] > summary .docs-disclosure-marker,
+.docs-section-nav details[open] > summary .docs-tree-marker {
+  transform: rotate(45deg);
+}
+
+.docs-outline-disclosure > nav {
+  margin-top: 1rem;
+}
+
+.docs-api-nav-filter {
+  width: 100%;
+  min-height: 2.5rem;
+  margin-bottom: 0.85rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--docs-control-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+.docs-section-nav li[hidden] {
+  display: none;
+}
+
+.docs-section-nav details > summary,
+.docs-nav-leaf {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.docs-section-nav details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.docs-section-nav details > ul {
+  margin: 0.3rem 0 0.45rem 0.8rem;
+  padding-left: 0.65rem;
+}
+
+.docs-tree-marker,
+.docs-tree-marker-spacer {
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-inline: 0.15rem 0.2rem;
+  flex: none;
+}
+
+.docs-nav-row {
+  min-width: 0;
+  min-height: 1.75rem;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 0.35rem;
+}
+
+.docs-nav-row > a {
+  min-width: 0;
+  padding: 0.18rem 0.35rem;
+  flex: 1;
+}
+
+.docs-nav-row > a[aria-current="page"] {
+  background: var(--docs-surface-subtle);
+  box-shadow: inset 0.15rem 0 var(--docs-accent);
+  font-weight: 700;
+}
+
+.docs-api-nav-kind {
+  width: 1.15rem;
+  height: 1.15rem;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: var(--docs-surface-subtle);
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.docs-api-nav-kind-trait,
+.docs-api-nav-kind-class,
+.docs-api-nav-kind-enum {
+  background: color-mix(in srgb, var(--docs-info) 16%, var(--docs-surface));
+  color: var(--docs-info);
+}
+
+.docs-api-nav-kind-object {
+  background: color-mix(in srgb, var(--docs-warning) 16%, var(--docs-surface));
+  color: var(--docs-warning);
+}
+
+.docs-api-nav-kind-package {
+  background: color-mix(in srgb, var(--docs-accent) 14%, var(--docs-surface));
+  color: var(--docs-accent-strong);
 }
 
 .docs-primary-nav ul {
@@ -524,8 +668,6 @@ a:hover {
 
 .docs-section-nav {
   grid-area: section-navigation;
-  padding-left: 0.85rem;
-  border-left: 1px solid var(--docs-border);
 }
 
 .docs-main {
@@ -534,8 +676,6 @@ a:hover {
 
 .docs-outline {
   grid-area: page-outline;
-  padding-left: 0.85rem;
-  border-left: 1px solid var(--docs-border);
 }
 
 .docs-section-nav li + li,
@@ -571,6 +711,99 @@ a:hover {
   border-top: 1px solid var(--docs-border);
 }
 
+.docs-api-breadcrumb {
+  margin-bottom: 0.8rem;
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.docs-api-breadcrumb ol {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  list-style: none;
+}
+
+.docs-api-breadcrumb li + li::before {
+  margin-right: 0.35rem;
+  color: var(--docs-border-strong);
+  content: "/";
+}
+
+.docs-api-breadcrumb a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.docs-api-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+
+.docs-api-title-row h1 {
+  margin-bottom: 0;
+}
+
+.docs-api-title-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.docs-api-title-kind {
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--docs-border);
+  border-radius: 999px;
+  background: var(--docs-surface-subtle);
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.docs-api-qualified-name {
+  margin: 0.35rem 0 0;
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.86rem;
+}
+
+.docs-api-companion-reference {
+  margin-top: 0.75rem;
+  color: var(--docs-muted);
+  font-size: 0.88rem;
+}
+
+.docs-api-companion-reference a {
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+}
+
+.docs-api-group-heading {
+  margin-top: 2rem;
+  font-size: 1.15rem;
+}
+
+.docs-api-member-group {
+  margin-top: 3rem;
+  scroll-margin-top: calc(var(--docs-header-height) + 1rem);
+}
+
+.docs-api-member-group > h2 {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--docs-border-strong);
+}
+
+.docs-api-member-group .docs-api-symbol > h3 {
+  margin-top: 0.35rem;
+  font-size: clamp(1.3rem, 2vw, 1.65rem);
+}
+
 .docs-api-kind {
   margin-bottom: 0.35rem;
   color: var(--docs-accent-strong);
@@ -587,6 +820,19 @@ a:hover {
 
 .docs-api-signature .docs-code {
   margin-bottom: 0.5rem;
+}
+
+.docs-api-signature .docs-code-toolbar {
+  min-height: 2.25rem;
+  padding-block: 0.4rem;
+}
+
+.docs-api-signature .docs-code-language {
+  display: none;
+}
+
+.docs-api-signature pre.docs-code {
+  padding-block: 0.8rem;
 }
 
 .docs-api-source {
@@ -2463,6 +2709,35 @@ a:hover {
   font-size: 0.9rem;
 }
 
+@media (min-width: 48rem) and (max-width: 71.999rem) {
+  .docs-shell-api {
+    grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+    grid-template-areas:
+      "section-navigation main-content"
+      "page-outline main-content";
+    align-items: start;
+  }
+
+  .docs-shell-api .docs-section-nav {
+    max-height: calc(100vh - var(--docs-header-height) - 8rem);
+    overflow-y: auto;
+  }
+}
+
+@media (min-width: 48rem) {
+  .docs-outline-disclosure > summary {
+    display: none;
+  }
+
+  .docs-outline-disclosure:not([open]) > nav {
+    display: block !important;
+  }
+
+  .docs-outline-disclosure > nav {
+    margin-top: 0;
+  }
+}
+
 @media (min-width: 72rem) {
   .docs-shell {
     grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr) minmax(10rem, 13rem);
@@ -2618,6 +2893,16 @@ a:hover {
 
   .docs-shell {
     padding-top: 1rem;
+  }
+
+  .docs-shell-api {
+    grid-template-areas:
+      "page-outline"
+      "main-content";
+  }
+
+  .docs-shell-api .docs-section-nav {
+    display: none;
   }
 
   .docs-xray > header {

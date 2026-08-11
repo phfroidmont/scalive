@@ -67,6 +67,10 @@ final private[docs] class DocumentationLayout(
   private val ariaAutocomplete = htmlAttr("aria-autocomplete", StringAsIsEncoder)
   private val role             = htmlAttr("role", StringAsIsEncoder)
   private val disclosureOpen   = htmlAttr("open", scalive.codecs.BooleanAsAttrPresenceEncoder)
+  private val apiOwnerKinds    = application.bundle.apiReference.symbols
+    .filter(_.fragment.isEmpty)
+    .groupBy(_.route)
+    .view.mapValues(_.map(_.kind).distinct.sortBy(apiKindRank)).toMap
 
   def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
     val currentRoute = ctx.currentUrl.path.encode
@@ -86,10 +90,21 @@ final private[docs] class DocumentationLayout(
       a(cls := "docs-skip-link", href := "#docs-main", "Skip to content"),
       header(page, currentRoute),
       div(
-        cls := (if documentPage.nonEmpty then "docs-shell" else "docs-shell docs-shell-wide"),
+        cls :=
+          (if documentPage.exists(_.metadata.section == Section.Api) then
+             "docs-shell docs-shell-api"
+           else if documentPage.nonEmpty then "docs-shell"
+           else "docs-shell docs-shell-wide"),
+        documentPage
+          .filter(_.metadata.section == Section.Api)
+          .map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
         mainTag(idAttr := "docs-main", cls := "docs-main", content),
-        documentPage.map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
-        documentPage.map(value => Mod.Content.Tag(outline(value))).toVector
+        documentPage
+          .filterNot(_.metadata.section == Section.Api)
+          .map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
+        documentPage
+          .filter(_.outline.items.nonEmpty)
+          .map(value => Mod.Content.Tag(outline(value))).toVector
       ),
       footerTag(
         cls := "docs-footer",
@@ -213,24 +228,94 @@ final private[docs] class DocumentationLayout(
     )
 
   private def sectionNavigation[Msg](page: Page, currentRoute: String): HtmlElement[Msg] =
-    val section = application.bundle.navigation.items.find(_.section == page.metadata.section)
-    asideTag(
-      cls := "docs-section-nav",
-      navTag(
-        aria.label := s"${section.fold(page.metadata.title)(_.title)} section navigation",
-        p(cls := "docs-nav-title", section.fold(page.metadata.title)(_.title)),
-        ul(section.toVector.map(item => navigationTree(item, currentRoute)))
-      )
+    val section    = application.bundle.navigation.items.find(_.section == page.metadata.section)
+    val navigation = navTag(
+      aria.label := s"${section.fold(page.metadata.title)(_.title)} section navigation",
+      p(cls := "docs-nav-title", section.fold(page.metadata.title)(_.title)),
+      Option
+        .when(page.metadata.section == Section.Api)(
+          Mod.Content.Tag(
+            input(
+              cls                        := "docs-api-nav-filter",
+              typ                        := "search",
+              placeholder                := "Filter symbols",
+              aria.label                 := "Filter API symbols",
+              dataAttr("api-nav-filter") := ""
+            )
+          )
+        ).toVector,
+      ul(section.toVector.map(item => navigationTree(item, currentRoute)))
     )
+    if page.metadata.section == Section.Api then
+      asideTag(
+        dom.hook("ApiNavigation", DomRef("docs-api-navigation")),
+        cls := "docs-section-nav docs-api-navigation",
+        navigation
+      )
+    else asideTag(cls := "docs-section-nav", navigation)
 
   private def navigationTree[Msg](item: NavigationItem, currentRoute: String): HtmlElement[Msg] =
-    li(
+    val row = span(
+      cls := "docs-nav-row",
       navigationItemLink(item, currentRoute),
-      Option
-        .when(item.children.nonEmpty)(
-          Mod.Content.Tag(ul(item.children.map(child => navigationTree(child, currentRoute))))
-        ).toVector
+      apiOwnerKinds.getOrElse(item.route, Vector.empty).map(apiKindBadge)
     )
+    li(
+      dataAttr("api-nav-item") := item.title.toLowerCase,
+      if item.children.nonEmpty then
+        detailsTag(
+          disclosureOpen := navigationContains(item, currentRoute),
+          summaryTag(
+            span(cls := "docs-tree-marker", aria.hidden := true),
+            row
+          ),
+          ul(item.children.map(child => navigationTree(child, currentRoute)))
+        )
+      else
+        span(
+          cls := "docs-nav-leaf",
+          span(cls := "docs-tree-marker-spacer", aria.hidden := true),
+          row
+        )
+    )
+
+  private def navigationContains(item: NavigationItem, route: String): Boolean =
+    item.route == route || item.children.exists(navigationContains(_, route))
+
+  private def apiKindBadge[Msg](kind: ApiSymbolKind): HtmlElement[Msg] =
+    span(
+      cls                  := s"docs-api-nav-kind docs-api-nav-kind-${apiKindKey(kind)}",
+      aria.label           := apiKindName(kind),
+      dataAttr("api-kind") := apiKindKey(kind),
+      apiKindKey(kind).take(1)
+    )
+
+  private def apiKindRank(kind: ApiSymbolKind): Int = kind match
+    case ApiSymbolKind.Trait      => 0
+    case ApiSymbolKind.Class      => 1
+    case ApiSymbolKind.Enum       => 2
+    case ApiSymbolKind.OpaqueType => 3
+    case ApiSymbolKind.TypeAlias  => 4
+    case ApiSymbolKind.Object     => 5
+    case ApiSymbolKind.Package    => 6
+    case _                        => 7
+
+  private def apiKindKey(kind: ApiSymbolKind): String = kind match
+    case ApiSymbolKind.Package    => "package"
+    case ApiSymbolKind.Class      => "class"
+    case ApiSymbolKind.Trait      => "trait"
+    case ApiSymbolKind.Object     => "object"
+    case ApiSymbolKind.Enum       => "enum"
+    case ApiSymbolKind.OpaqueType => "opaque-type"
+    case ApiSymbolKind.TypeAlias  => "type-alias"
+    case ApiSymbolKind.Def        => "method"
+    case ApiSymbolKind.Extension  => "extension"
+    case ApiSymbolKind.Val        => "value"
+    case ApiSymbolKind.LazyVal    => "lazy-value"
+    case ApiSymbolKind.Var        => "variable"
+    case ApiSymbolKind.Given      => "given"
+
+  private def apiKindName(kind: ApiSymbolKind): String = apiKindKey(kind).replace('-', ' ')
 
   private def navigationItemLink[Msg](
     item: NavigationItem,
@@ -257,10 +342,18 @@ final private[docs] class DocumentationLayout(
   private def outline[Msg](page: Page): HtmlElement[Msg] =
     asideTag(
       cls := "docs-outline",
-      navTag(
-        aria.label := "On this page",
-        p(cls := "docs-outline-title", "On this page"),
-        ul(page.outline.items.map(item => outlineItem(page.route, item)))
+      detailsTag(
+        dom.hook("PageOutline", DomRef("docs-page-outline")),
+        cls := "docs-outline-disclosure",
+        summaryTag(
+          span("On this page"),
+          span(cls := "docs-disclosure-marker", aria.hidden := true)
+        ),
+        navTag(
+          aria.label := "On this page",
+          p(cls := "docs-outline-title", "On this page"),
+          ul(page.outline.items.map(item => outlineItem(page.route, item)))
+        )
       )
     )
 

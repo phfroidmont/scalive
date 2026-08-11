@@ -40,7 +40,11 @@ object DocumentationHomeSpec extends ZIOSpecDefault:
       assertTrue(
         result.exists(_.principles.items.size == 3),
         result.exists(_.example.id == "counter"),
+        result.exists(_.howHeading.id == "how-it-works"),
+        result.exists(_.workflow.items.size == 4),
         result.exists(_.whyHeading.id == "why-scalive"),
+        result.exists(_.stack.items.size == 5),
+        result.exists(_.startHeading.id == "start-building"),
         result.exists(_.alphaNote.kind == CalloutKind.Info)
       )
     },
@@ -90,13 +94,19 @@ object DocumentationHomeSpec extends ZIOSpecDefault:
           before <- child.text("[role=status] strong")
           _      <- child.clickButton("Increase")
           after  <- child.text("[role=status] strong")
+          flow   <- child.text(".docs-counter-flow")
           html   <- parent.html
           _      <- parent.leave
           alive  <- parent.socketExists(child.topic)
         yield assertTrue(
           before == "0",
           after == "1",
+          flow.contains("Msg.Increment"),
+          flow.contains("server state: 1"),
+          flow.contains("HTML diff"),
           html.contains("docs-home-hero"),
+          html.contains("docs-home-workflow"),
+          html.contains("docs-home-start"),
           html.contains("id=\"example-counter\""),
           html.contains("data-example=\"counter\""),
           !html.contains("docs-xray"),

@@ -266,10 +266,19 @@ const Hooks = {
         if (!this.el.contains(event.target)) this.closeResults()
       }
 
+      this.handleDocumentKeyDown = (event) => {
+        if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "k") return
+        event.preventDefault()
+        const disclosure = this.el.closest("details")
+        if (disclosure) disclosure.open = true
+        this.input.focus()
+      }
+
       this.input.addEventListener("input", this.updateResults)
       this.input.addEventListener("focus", this.updateResults)
       this.input.addEventListener("keydown", this.handleKeyDown)
       document.addEventListener("pointerdown", this.handleDocumentPointerDown)
+      document.addEventListener("keydown", this.handleDocumentKeyDown)
     },
 
     destroyed() {
@@ -278,6 +287,7 @@ const Hooks = {
       this.input.removeEventListener("focus", this.updateResults)
       this.input.removeEventListener("keydown", this.handleKeyDown)
       document.removeEventListener("pointerdown", this.handleDocumentPointerDown)
+      document.removeEventListener("keydown", this.handleDocumentKeyDown)
     },
   },
 
@@ -310,7 +320,12 @@ const Hooks = {
       this.applyTheme = (theme) => {
         this.theme = theme === "light" || theme === "dark" ? theme : "system"
         applyTheme(this.theme)
-        if ("value" in this.el) this.el.value = this.theme
+        if ("value" in this.el) {
+          const label = `Color theme: ${this.theme[0].toUpperCase()}${this.theme.slice(1)}`
+          this.el.value = this.theme
+          this.el.setAttribute("aria-label", label)
+          this.el.title = label
+        }
       }
       this.storeTheme = (theme) => {
         try {

@@ -13,11 +13,17 @@ test("applies and persists explicit themes before the application hook mounts", 
 
   const root = page.locator("html")
   const selector = page.locator("#docs-theme-selector")
+  const control = page.locator(".docs-theme-control")
   await expect(root).toHaveAttribute("data-theme", "dark")
   await expect(selector).toHaveValue("dark")
+  await expect(selector).toHaveAttribute("aria-label", "Color theme: Dark")
+  await expect(control.locator(".docs-theme-icon")).toHaveAttribute("aria-hidden", "true")
+  await expect(control).toHaveCSS("width", "44px")
+  await expect(control).toHaveCSS("height", "44px")
 
   await selector.selectOption("light")
   await expect(root).toHaveAttribute("data-theme", "light")
+  await expect(selector).toHaveAttribute("title", "Color theme: Light")
   expect(await page.evaluate(() => window.localStorage.getItem("scalive.docs.theme"))).toBe("light")
 
   await selector.selectOption("system")
@@ -87,6 +93,31 @@ test("uses one native mobile disclosure without duplicating header controls", as
   await learn.click()
   await expect(page).toHaveURL(/\/learn$/)
   await expect(disclosure).not.toHaveAttribute("open")
+})
+
+test("focuses documentation search with the advertised keyboard shortcut", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/")
+
+  const disclosure = page.locator("#docs-navigation-disclosure")
+  const search = page.locator("#docs-global-search-input")
+  await expect(page.locator(".docs-global-search-control kbd")).toHaveText("Ctrl K")
+
+  await page.keyboard.press("Control+k")
+  await expect(disclosure).toHaveAttribute("open", "")
+  await expect(search).toBeFocused()
+})
+
+test("connects the focused homepage action to a typed server transition", async ({ page }) => {
+  await page.goto("/")
+
+  const example = page.locator("#example-counter")
+  await expect(example.getByRole("button", { name: "Decrease" })).toBeHidden()
+  await expect(example.getByRole("button", { name: "Reset" })).toBeHidden()
+  await example.getByRole("button", { name: "Increase" }).click()
+  await expect(example.locator(".docs-counter-flow")).toContainText(
+    "browser event→Msg.Increment→server state: 1→HTML diff",
+  )
 })
 
 test("copies exact code and expands the same long source block", async ({ context, page }) => {

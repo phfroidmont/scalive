@@ -181,16 +181,20 @@ final private[docs] class DocumentationLayout(
           htmlAttr("for", StringAsIsEncoder) := "docs-global-search-input",
           "Search documentation"
         ),
-        input(
-          idAttr                                      := "docs-global-search-input",
-          typ                                         := "search",
-          nameAttr                                    := DocumentationApplication.SearchParameter,
-          placeholder                                 := "Search",
-          htmlAttr("autocomplete", StringAsIsEncoder) := "off",
-          role                                        := "combobox",
-          ariaControls                                := "docs-global-search-results",
-          ariaExpanded                                := "false",
-          ariaAutocomplete                            := "list"
+        div(
+          cls := "docs-global-search-control",
+          input(
+            idAttr                                      := "docs-global-search-input",
+            typ                                         := "search",
+            nameAttr                                    := DocumentationApplication.SearchParameter,
+            placeholder                                 := "Search docs",
+            htmlAttr("autocomplete", StringAsIsEncoder) := "off",
+            role                                        := "combobox",
+            ariaControls                                := "docs-global-search-results",
+            ariaExpanded                                := "false",
+            ariaAutocomplete                            := "list"
+          ),
+          kbd(aria.hidden := true, "Ctrl K")
         ),
         button(typ := "submit", cls := "docs-visually-hidden", "Search")
       ),
@@ -278,22 +282,28 @@ final private[docs] class DocumentationLayout(
       dom.hook("ConnectionStatus", DomRef("docs-connection-status")),
       cls                          := "docs-connection-indicator",
       dataAttr("connection-state") := "connecting",
+      title                        := "Live connection status",
       role                         := "status",
       ariaLive                     := "polite",
       span(dataAttr("connection-label") := "connecting", "Connecting"),
-      span(dataAttr("connection-label") := "connected", "Connected"),
+      span(dataAttr("connection-label") := "connected", "Live"),
       span(dataAttr("connection-label") := "reconnecting", "Reconnecting"),
       span(dataAttr("connection-label") := "offline", "Offline")
     )
 
   private def themeSelector[Msg]: HtmlElement[Msg] =
-    HtmlTag("select")(
-      dom.hook("ThemeSelector", DomRef("docs-theme-selector")),
-      cls        := "docs-theme-selector",
-      aria.label := "Color theme",
-      HtmlTag("option")(value := "system", "System"),
-      HtmlTag("option")(value := "light", "Light"),
-      HtmlTag("option")(value := "dark", "Dark")
+    div(
+      cls := "docs-theme-control",
+      span(cls := "docs-theme-icon", aria.hidden := true),
+      HtmlTag("select")(
+        dom.hook("ThemeSelector", DomRef("docs-theme-selector")),
+        cls        := "docs-theme-selector",
+        title      := "Color theme: System",
+        aria.label := "Color theme: System",
+        HtmlTag("option")(value := "system", "System"),
+        HtmlTag("option")(value := "light", "Light"),
+        HtmlTag("option")(value := "dark", "Dark")
+      )
     )
 end DocumentationLayout
 

@@ -4,7 +4,7 @@ object ExampleCatalog:
   val Counter = ExampleDescriptor(
     id = "counter",
     title = "Counter",
-    description = "Change typed server state and reset it explicitly.",
+    description = "Send typed messages and watch server-owned state update the rendered result.",
     topics = Vector("state", "events", "rendering"),
     aliases = Vector("increment", "decrement", "reset"),
     resetDescription = "Set the count back to zero.",

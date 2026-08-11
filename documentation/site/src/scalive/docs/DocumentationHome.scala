@@ -10,8 +10,15 @@ final private[docs] case class HomePageContent(
   preview: Block.Code,
   example: Block.ExampleRef,
   principles: Block.BulletList,
+  howHeading: Block.Heading,
+  howIntroduction: Block.Paragraph,
+  workflow: Block.OrderedList,
   whyHeading: Block.Heading,
   projectStatement: Block.Paragraph,
+  audience: Block.Paragraph,
+  stack: Block.BulletList,
+  startHeading: Block.Heading,
+  startIntroduction: Block.Paragraph,
   alphaNote: Block.Callout)
 
 private[docs] object HomePageContent:
@@ -43,14 +50,15 @@ private[docs] object HomePageContent:
                Left(s"${source(page)}: homepage must be authored content.")
       _ <- require(
              page,
-             page.content.size == 8,
-             s"homepage must contain exactly 8 blocks, found ${page.content.size}."
+             page.content.size == 15,
+             s"homepage must contain exactly 15 blocks, found ${page.content.size}."
            )
       introduction <- block(page, 0, "an introduction paragraph") { case value: Block.Paragraph =>
                         value
                       }
-      actions <- block(page, 1, "a Learn and API action paragraph") { case value: Block.Paragraph =>
-                   value
+      actions <- block(page, 1, "a Learn and Examples action paragraph") {
+                   case value: Block.Paragraph =>
+                     value
                  }
       _       <- validateActions(page, actions)
       preview <- block(page, 2, "a Scala code preview") {
@@ -67,7 +75,21 @@ private[docs] object HomePageContent:
                 case _ => false) =>
             value
         }
-      whyHeading <- block(page, 5, "the level-2 #why-scalive heading") {
+      howHeading <- block(page, 5, "the level-2 #how-it-works heading") {
+                      case value @ Block.Heading(
+                            2,
+                            "how-it-works",
+                            Vector(Inline.Text("How it works"))
+                          ) =>
+                        value
+                    }
+      howIntroduction <- block(page, 6, "the How it works introduction") {
+                           case value: Block.Paragraph => value
+                         }
+      workflow <- block(page, 7, "a four-step workflow list") {
+                    case value @ Block.OrderedList(1, items) if items.size == 4 => value
+                  }
+      whyHeading <- block(page, 8, "the level-2 #why-scalive heading") {
                       case value @ Block.Heading(
                             2,
                             "why-scalive",
@@ -75,10 +97,27 @@ private[docs] object HomePageContent:
                           ) =>
                         value
                     }
-      projectStatement <- block(page, 6, "the Why Scalive paragraph") {
+      projectStatement <- block(page, 9, "the Why Scalive paragraph") {
                             case value: Block.Paragraph => value
                           }
-      alphaNote <- block(page, 7, "the final alpha info callout") {
+      audience <- block(page, 10, "the Scalive audience paragraph") { case value: Block.Paragraph =>
+                    value
+                  }
+      stack <- block(page, 11, "a five-item technology list") {
+                 case value @ Block.BulletList(items) if items.size == 5 => value
+               }
+      startHeading <- block(page, 12, "the level-2 #start-building heading") {
+                        case value @ Block.Heading(
+                              2,
+                              "start-building",
+                              Vector(Inline.Text("Start building"))
+                            ) =>
+                          value
+                      }
+      startIntroduction <- block(page, 13, "the Start building paragraph") {
+                             case value: Block.Paragraph => value
+                           }
+      alphaNote <- block(page, 14, "the final alpha info callout") {
                      case value @ Block.Callout(CalloutKind.Info, None, content)
                          if content.nonEmpty =>
                        value
@@ -89,8 +128,15 @@ private[docs] object HomePageContent:
       preview,
       example,
       principles,
+      howHeading,
+      howIntroduction,
+      workflow,
       whyHeading,
       projectStatement,
+      audience,
+      stack,
+      startHeading,
+      startIntroduction,
       alphaNote
     )
 
@@ -102,9 +148,9 @@ private[docs] object HomePageContent:
       page,
       targets == Vector(
         LinkTarget.Internal("/learn", Some("start-here")),
-        LinkTarget.Internal("/api", None)
+        LinkTarget.Internal("/examples", Some("typed-counter"))
       ),
-      "homepage block 2 must link to /learn#start-here and /api, in that order."
+      "homepage block 2 must link to /learn#start-here and /examples#typed-counter, in that order."
     )
 
   private def block[A](
@@ -146,7 +192,8 @@ final private[docs] class DocumentationHomeLiveView(
         DocumentationBrand.mark("docs-home-hero-mark"),
         div(
           cls := "docs-home-introduction",
-          h1(page.metadata.title),
+          p(cls := "docs-home-eyebrow", "Scala 3", " · ", "Server rendered", " · ", "Fully typed"),
+          h1(span("Live interfaces."), " ", span("Typed end to end.")),
           renderer.renderBlock(page.route)(content.introduction),
           p(cls := "docs-home-actions", content.actions.content.map(renderer.renderInline))
         ),
@@ -169,10 +216,32 @@ final private[docs] class DocumentationHomeLiveView(
         renderer.renderBlock(page.route)(content.principles)
       ),
       sectionTag(
+        cls := "docs-home-workflow",
+        div(
+          cls := "docs-home-section-heading",
+          renderer.renderBlock(page.route)(content.howHeading),
+          renderer.renderBlock(page.route)(content.howIntroduction)
+        ),
+        renderer.renderBlock(page.route)(content.workflow)
+      ),
+      sectionTag(
         cls := "docs-home-statement",
         renderer.renderBlock(page.route)(content.whyHeading),
-        renderer.renderBlock(page.route)(content.projectStatement),
-        renderer.renderBlock(page.route)(content.alphaNote)
+        div(
+          cls := "docs-home-statement-content",
+          renderer.renderBlock(page.route)(content.projectStatement),
+          renderer.renderBlock(page.route)(content.audience),
+          renderer.renderBlock(page.route)(content.stack)
+        )
+      ),
+      sectionTag(
+        cls := "docs-home-start",
+        renderer.renderBlock(page.route)(content.startHeading),
+        div(
+          cls := "docs-home-start-content",
+          renderer.renderBlock(page.route)(content.startIntroduction),
+          renderer.renderBlock(page.route)(content.alphaNote)
+        )
       ),
       renderer.pageLinks(page)
     )
@@ -190,12 +259,16 @@ final private[docs] class DocumentationHomeLiveView(
     sectionTag(
       idAttr                    := s"example-$id",
       cls                       := "docs-example docs-home-example",
+      aria.label                := s"${definition.descriptor.title} live result",
       dataAttr("example")       := id,
       dataAttr("example-child") := nestedId,
       div(
         cls := "docs-home-example-heading",
-        h2(definition.descriptor.title),
-        p(definition.descriptor.description)
+        div(
+          h2("Live result"),
+          p("Click Increase to send ", code("Msg.Increment"), " to the server.")
+        ),
+        span(cls := "docs-home-live-label", "Live server")
       ),
       registered.render(nestedId),
       p(
@@ -203,4 +276,5 @@ final private[docs] class DocumentationHomeLiveView(
         "This example is read-only while disconnected. Controls resume after reconnection."
       )
     )
+  end compactExample
 end DocumentationHomeLiveView

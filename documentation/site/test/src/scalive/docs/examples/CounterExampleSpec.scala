@@ -17,11 +17,19 @@ object CounterExampleSpec extends ZIOSpecDefault:
           _       <- harness.clickButton("Increase")
           _       <- harness.clickButton("Increase")
           increased <- harness.text(Count)
+          flow      <- harness.text(".docs-counter-flow")
           _         <- harness.clickButton("Decrease")
           decreased <- harness.text(Count)
           _         <- harness.clickButton("Reset")
           reset     <- harness.text(Count)
-        yield assertTrue(initial == "0", increased == "2", decreased == "1", reset == "0")
+        yield assertTrue(
+          initial == "0",
+          increased == "2",
+          flow.contains("Msg.Increment"),
+          flow.contains("server state: 2"),
+          decreased == "1",
+          reset == "0"
+        )
       }
     },
     test("handles an explicit server reset") {

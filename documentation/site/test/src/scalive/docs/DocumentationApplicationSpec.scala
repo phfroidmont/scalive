@@ -213,10 +213,11 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
           link.text() == "View source" && link.attr("href").contains("CounterExample.scala#L")
         ),
         application.bundle.searchEntries.exists(entry =>
-          entry.id == "example:/examples#example-counter" &&
-            entry.title == "Counter" &&
-            entry.description == "Change typed server state and reset it explicitly."
-        )
+            entry.id == "example:/examples#example-counter" &&
+              entry.title == "Counter" &&
+              entry.description ==
+                "Send typed messages and watch server-owned state update the rendered result."
+          )
       )
     },
     test("serves tracked assets and leaves unknown paths as real 404 responses") {

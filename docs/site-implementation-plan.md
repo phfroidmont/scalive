@@ -535,10 +535,9 @@ mill --ticker false documentation.checkExternalLinks
 
 **Depends on:** Phases 3 and 6. May overlap with content work.
 
-**Selected direction:** Signal / Editorial with a lowercase visual wordmark. See
-[`site-signal-identity-implementation-plan.md`](site-signal-identity-implementation-plan.md)
-for the approved production design contract, implementation sequence, tests, and
-acceptance criteria.
+**Selected direction:** Signal / Editorial with a lowercase visual wordmark, as
+defined by the production design contract in
+[`site-specification.md`](site-specification.md#visual-and-content-design).
 
 - [x] Confirm the documentation package remains DaisyUI-free; DaisyUI was already
   absent before this implementation.

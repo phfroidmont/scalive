@@ -93,6 +93,26 @@ model. Startup validates the expected homepage structure, then a dedicated
 LiveView presents those typed blocks in a wide editorial shell with a real,
 isolated counter example. The page remains meaningful without JavaScript.
 
+The authored homepage contains, in order:
+
+1. The rendered heading `Live interfaces. Typed end to end.` and a factual
+   description of Scalive as a Scala 3 re-implementation of Phoenix LiveView.
+2. Ordinary internal links to Learn and API.
+3. One compact, verified Scala code block.
+4. One `counter` example reference rendered as a compact nested LiveView.
+5. Three principles covering typed state, Scala HTML rendering, and live
+   diffs and effects.
+6. A `Why Scalive` section with the stable `#why-scalive` anchor.
+7. The alpha-software warning as an information callout.
+
+The browser title for `/` remains `Scalive`. Homepage copy, links, code,
+callouts, and example references remain canonical in
+`documentation/content/index.md`; presentation code does not duplicate them.
+The homepage structure is validated at startup with source-oriented errors for
+missing, duplicated, reordered, or incorrectly typed blocks. Its compact
+counter reuses the registered counter behavior with an isolated, route-scoped,
+non-sticky instance rather than introducing homepage-specific behavior.
+
 ### Learn
 
 Learn is a short ordered path:
@@ -279,22 +299,143 @@ server-rendered results provide a dependable fallback.
 
 ## Visual And Content Design
 
+### Direction
+
 The selected visual direction is Signal / Editorial: a precise technical
 publication interrupted by one unmistakable live signal. It evolves the living
 technical notebook into a cleaner editorial system for prose, source, traces,
 and runtime evidence. Red is reserved for identity, action, and meaningful live
 transitions rather than general decoration.
 
-The visible lockup uses the two-plane Scalive mark and a lowercase `scalive`
-wordmark; prose, metadata, titles, and accessible labels retain proper-case
-“Scalive.” Instrument Sans is used for interface and prose, and JetBrains Mono
-for code and compact technical metadata. Both variable fonts are licensed,
-bundled locally, and served through the digested asset pipeline.
+### Mark And Wordmark
+
+The visible lockup uses a two-plane Scalive mark and a lowercase `scalive`
+wordmark. Prose, metadata, titles, and accessible labels retain proper-case
+“Scalive.” The home lockup has an accessible name such as `Scalive home`; its
+decorative mark is not exposed separately to assistive technology.
+
+The mark uses this normalized `96 96` view box and two-path geometry:
+
+```svg
+<svg viewBox="0 0 96 96" aria-hidden="true">
+  <path d="M18 52V26L78 2V28L38 44H46L42 52Z" />
+  <path d="M54 44H78V70L18 94V68L58 52H50Z" />
+</svg>
+```
+
+The mark preserves these construction invariants:
+
+- Each ribbon is one connected, seven-vertex, non-self-intersecting polygon.
+- The bottom ribbon is the exact 180-degree rotation of the top ribbon around
+  `(48,48)`.
+- The complete visible bounds are 60 units wide by 92 units high; each ribbon
+  is 60 units wide by 50 units high.
+- The four exposed long edges are parallel with slope `-2/5`, and the four end
+  caps are vertical and 26 units high.
+- The center is transparent negative space. Its seam is the parallelogram
+  bounded by `(46,44)`, `(54,44)`, `(50,52)`, and `(42,52)`, with eight-unit
+  horizontal edges.
+- The paths do not overlap and require no mask, clip path, or reusable document
+  ID. There are no floating center contours or additional interior points.
+- The geometry remains recognizable with a single fill and at 16, 24, 30, 40,
+  and 96 CSS pixels.
+
+The top and bottom planes use `#ff334f` and `#a70e29` in the light theme, and
+`#ff435c` and `#bd1230` in the dark theme. Normal navigation and body contexts
+use no glow, photographic background, raster gradient, or generated mockup
+shadow. Restrained translucent or oversized treatments are limited to the
+homepage hero. One reusable typed Scala renderer owns inline SVG lockups; an
+independent favicon may duplicate the paths.
+
+### Typography
+
+Instrument Sans Variable is used for interface and prose at weights `400 700`.
+JetBrains Mono Variable is used for code, source labels, runtime records, and
+compact technical metadata at weights `100 800`. The visible wordmark uses
+Instrument Sans at approximately weight `700` with tight optical tracking.
+
+Only normal Latin variable WOFF2 files are bundled. Font declarations use
+`font-display: swap`, retain usable system fallbacks, and do not synthesize bold
+or italic faces. Fonts and their licenses are served locally through the
+digested asset pipeline.
+
+### Color Tokens
+
+The light theme starts from this palette:
+
+```css
+--docs-bg: #f4f1eb;
+--docs-surface: #ffffff;
+--docs-surface-raised: #ffffff;
+--docs-surface-subtle: #ece8e0;
+--docs-text: #171719;
+--docs-muted: #67645f;
+--docs-border: #d8d2c7;
+--docs-border-strong: #aca69c;
+--docs-accent: #ee2946;
+--docs-accent-strong: #9d1029;
+--docs-action-bg: #9d1029;
+--docs-action-text: #ffffff;
+--docs-focus: #2a63d4;
+--docs-code-bg: #15161a;
+--docs-code-text: #efeee8;
+--docs-trace-browser: #2a63d4;
+--docs-trace-server: #ee2946;
+```
+
+The dark theme starts from this palette:
+
+```css
+--docs-bg: #111114;
+--docs-surface: #19191d;
+--docs-surface-raised: #1d1d21;
+--docs-surface-subtle: #202025;
+--docs-text: #f1efe9;
+--docs-muted: #aaa7a1;
+--docs-border: #34343a;
+--docs-border-strong: #55555d;
+--docs-accent: #ff3a55;
+--docs-accent-strong: #ff8292;
+--docs-action-bg: #ff4a62;
+--docs-action-text: #111114;
+--docs-focus: #77a5ff;
+--docs-code-bg: #090a0d;
+--docs-code-text: #f1f0ec;
+--docs-trace-browser: #79a8ff;
+--docs-trace-server: #ff526b;
+```
+
+Small token adjustments require a demonstrated contrast or legibility need.
+Expressive accent colors and accessible action color pairs remain separate;
+small white text is not placed on signal red when contrast is insufficient.
+Connected, reconnecting, offline, warning, and error states remain semantic
+tokens. Connection and trace meaning is also communicated through labels and
+structure rather than color alone.
+
+### Components And Enhancement
+
+Prose, code, callouts, search, API reference, examples, and X-ray traces share
+one editorial component language. The reading measure stays near 48 rem. Tables,
+source code, API signatures, compiler diagnostics, examples, and traces contain
+their own overflow rather than widening the document.
+
+Code blocks provide progressively enhanced copy controls. Long source-backed
+blocks may become collapsible only after JavaScript enhancement; without
+JavaScript, their complete source remains visible. Expansion preserves one code
+node and reports state through `aria-expanded`. Copy status is announced without
+moving focus, and reduced-motion preferences apply to presentation changes.
+
+The desktop shell retains left section navigation, central content, and a right
+outline for generated documentation pages. The homepage and search use the wide
+shell. One native disclosure owns navigation and action controls on mobile so
+IDs and hooks are not duplicated. Internal navigation remains ordinary links,
+and examples remain visible but non-interactive while disconnected.
 
 The site uses the existing utility-CSS asset pipeline with project-specific
 design tokens, typography, and documentation components. It supports light and
 dark themes, defaults to the operating-system preference, and remembers an
-explicit visitor override.
+explicit visitor override. The stored preference is applied before first paint
+when storage is available; storage failures fall back to the system theme.
 
 Accessibility is a best-effort quality requirement rather than a formal
 conformance claim. Semantic structure, keyboard operation, visible focus,

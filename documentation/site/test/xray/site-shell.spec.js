@@ -115,9 +115,7 @@ test("connects the focused homepage action to a typed server transition", async 
   await expect(example.getByRole("button", { name: "Decrease" })).toBeHidden()
   await expect(example.getByRole("button", { name: "Reset" })).toBeHidden()
   await example.getByRole("button", { name: "Increase" }).click()
-  await expect(example.locator(".docs-counter-flow")).toContainText(
-    "browser event→Msg.Increment→server state: 1→HTML diff",
-  )
+  await expect(example.locator("[role=status] strong")).toHaveText("1")
 })
 
 test("copies exact code and expands the same long source block", async ({ context, page }) => {

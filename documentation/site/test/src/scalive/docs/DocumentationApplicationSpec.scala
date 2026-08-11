@@ -203,20 +203,24 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         example.select(".docs-code-block > figcaption").text() == "Source",
         example.select(".docs-code-block [data-code-copy][hidden]").size() >= 1,
         example.select(".docs-code-block[data-code-expandable] [data-code-expand][hidden]").size() == 1,
-        example.selectFirst("[data-example-disconnected]").elementSiblingIndex() <
-          example.selectFirst(".docs-code-block").elementSiblingIndex(),
+        document.select("#typed-counter").text() == "Typed counter",
+        document.select("#typed-counter + p").text().contains("Decrement, Reset, and Increment"),
+        example.select(".docs-example-topics").isEmpty,
+        example.select(".docs-example-rendered h3").text() == "Result",
+        example.selectFirst(".docs-code-block").elementSiblingIndex() <
+          example.selectFirst(".docs-example-rendered").elementSiblingIndex(),
+        example.selectFirst(".docs-example-rendered").elementSiblingIndex() <
+          example.selectFirst("[data-example-disconnected]").elementSiblingIndex(),
         example.select(".docs-code").text().contains("class CounterExample"),
-        example.select("[data-compilation-failure=counter-wrong-model]").size() == 1,
-        example.select(".docs-compiler-diagnostic").text().contains("String"),
-        example.select(".docs-compiler-diagnostic").text().contains("Int"),
+        example.select("[data-compilation-failure]").isEmpty,
         example.select("a").asScala.exists(link =>
           link.text() == "View source" && link.attr("href").contains("CounterExample.scala#L")
         ),
         application.bundle.searchEntries.exists(entry =>
-            entry.id == "example:/examples#example-counter" &&
-              entry.title == "Counter" &&
+              entry.id == "example:/examples#example-counter" &&
+              entry.title == "Typed counter" &&
               entry.description ==
-                "Send typed messages and watch server-owned state update the rendered result."
+                "A LiveView with a count model and Decrement, Reset, and Increment messages."
           )
       )
     },

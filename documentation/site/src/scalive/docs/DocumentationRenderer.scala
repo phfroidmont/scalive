@@ -217,21 +217,30 @@ final private[docs] class DocumentationRenderer(
       dataAttr("example-topic")   := observedTopic,
       dataAttr("inspector-child") := inspectorId,
       dataAttr("inspector-topic") := inspectorTopic,
+      codeBlock(source.language, source.text, source.tokens, Some(source.region)),
+      definition.compilationFailures.map(renderCompilationFailure),
       div(
         cls := "docs-example-rendered",
-        h2(s"Example: ${definition.descriptor.title}"),
-        p(definition.descriptor.description),
+        headerTag(
+          h3("Result"),
+          span(
+            cls         := "docs-example-connection",
+            aria.live   := "polite",
+            aria.atomic := true,
+            span(cls := "docs-example-connected", "Connected"),
+            span(cls := "docs-example-reconnecting", "Reconnecting"),
+            span(cls := "docs-example-offline", "Read-only")
+          )
+        ),
         registered.render(nestedId)
-      ),
-      traceStore.toVector.map(store =>
-        XRayInspector.nested(inspectorId, observedTopic, inspectorTopic, registered, store)
       ),
       p(
         dataAttr("example-disconnected") := "",
-        "This example is read-only while disconnected. Its rendered state stays visible; controls resume after reconnection."
+        "Disconnected. Controls resume after reconnection."
       ),
-      codeBlock(source.language, source.text, source.tokens, Some(source.region)),
-      definition.compilationFailures.map(renderCompilationFailure)
+      traceStore.toVector.map(store =>
+        XRayInspector.nested(inspectorId, observedTopic, inspectorTopic, registered, store)
+      )
     )
   end renderExample
 
@@ -239,7 +248,10 @@ final private[docs] class DocumentationRenderer(
     figure(
       cls                             := "docs-compilation-failure",
       dataAttr("compilation-failure") := failure.id,
-      HtmlTag("figcaption")("Expected compilation failure"),
+      HtmlTag("figcaption")(
+        strong("Type safety, demonstrated"),
+        span("This invalid model transition is rejected at compile time.")
+      ),
       codeBlock(Some("scala"), failure.source, Vector.empty, None),
       pre(cls := "docs-compiler-diagnostic", code(failure.diagnostic))
     )

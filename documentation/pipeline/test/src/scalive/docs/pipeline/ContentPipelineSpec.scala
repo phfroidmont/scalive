@@ -73,10 +73,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             bundle.examples.map(_.descriptor) == Vector(counterDescriptor),
             bundle.examples.head.source.region == SourceRegion("examples/Sample.scala", 3, 4),
             bundle.examples.head.source.text == "val greeting = \"hello\"\nprintln(greeting)",
-            bundle.examples.head.compilationFailures.map(_.id) == Vector("counter-wrong-model"),
-            bundle.examples.head.compilationFailures.head.diagnostic.contains("String"),
-            bundle.examples.head.compilationFailures.head.diagnostic.contains("Int"),
-            !bundle.examples.head.compilationFailures.head.diagnostic.contains("warning"),
+            bundle.examples.head.compilationFailures.isEmpty,
             bundle.apiReference.symbols == Vector(liveViewSymbol),
             bundle.searchEntries.map(_.kind).toSet == Set(
               SearchEntryKind.Page,

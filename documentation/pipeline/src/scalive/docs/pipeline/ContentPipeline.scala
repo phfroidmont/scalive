@@ -693,7 +693,7 @@ object ContentPipeline:
                   text = extracted.content,
                   tokens = Vector(CodeToken(extracted.content, Vector.empty))
                 ),
-                compilationFailures = ExpectedCompilationFailures.forExample(descriptor.id)
+                compilationFailures = Vector.empty
               )
             }
         }

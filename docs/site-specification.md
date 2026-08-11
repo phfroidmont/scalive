@@ -220,9 +220,9 @@ arbitrary Scala execution environment.
 
 Examples may expose deterministic preset variations for latency, failure,
 cancellation, replacement, and reconnect behavior when these states are part of
-the lesson. Selected type-safety lessons may include invalid variants. Those
-variants are checked as expected compilation failures during the build and show
-only the focused relevant compiler diagnostic.
+the lesson. An example specifically teaching type safety may include an invalid
+variant. Such variants are checked as expected compilation failures during the
+build and show only the focused relevant compiler diagnostic.
 
 ### X-Ray Inspector
 
@@ -240,7 +240,12 @@ than replaying a hand-authored animation:
 
 The inspector leads with an annotated, human-readable trace. DOM changes are
 shown as readable diffs, with the underlying protocol payload available on
-demand. Trace history is bounded and scoped to one example.
+demand. The summary exposes causal ordering across browser and server records
+without implying that their independent producer sequences share a clock. Trace
+history is bounded and scoped to one example. Raw records for the latest
+interaction use protocol frames to expose causal browser-to-server and
+server-to-browser handoffs; older or uncorrelated records retain only their
+producer-local order.
 
 Instrumentation is documentation-specific initially, but its boundary should
 remain generic enough to inform a future Scalive developer-tools capability. It

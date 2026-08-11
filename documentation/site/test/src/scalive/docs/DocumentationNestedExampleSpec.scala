@@ -64,11 +64,11 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           inspectorId = ExampleRegistry.inspectorInstanceId(page.route, "counter")
           child     <- parent.joinNested(childId)
           inspector <- parent.joinNested(inspectorId)
-          _         <- inspector.clickButton("Enable X-ray")
+           _         <- inspector.clickButton("Start tracing")
           _         <- child.clickButton("Increase")
-          records   <- store.records(session, child.topic)
-          inspectorText <- (ZIO.yieldNow *> inspector.html)
-                             .repeatUntil(_.contains("Committed model"))
+           records   <- store.records(session, child.topic)
+           inspectorText <- (ZIO.yieldNow *> inspector.html)
+                              .repeatUntil(_.contains("count = 1"))
           stages = records.filter(_.producer == TraceProducer.Server).map(_.stage)
           inspectorObserved <- store.records(session, inspector.topic)
           _                  <- parent.leave
@@ -83,8 +83,11 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           stages.contains("ModelRendered"),
           stages.contains("TreeDiff"),
           stages.contains("ModelCommitted"),
-          inspectorText.contains("Committed model"),
-          inspectorObserved.isEmpty,
+           inspectorText.contains("CounterExample.Msg"),
+           inspectorText.contains("count = 1"),
+           inspectorText.contains("data-xray-summary-order=\"2\""),
+           inspectorText.contains("data-xray-summary-order=\"3\""),
+           inspectorObserved.isEmpty,
           !childRemoved,
           !inspectorRemoved
         )

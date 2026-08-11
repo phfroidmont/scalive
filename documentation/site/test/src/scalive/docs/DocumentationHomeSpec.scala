@@ -94,16 +94,12 @@ object DocumentationHomeSpec extends ZIOSpecDefault:
           before <- child.text("[role=status] strong")
           _      <- child.clickButton("Increase")
           after  <- child.text("[role=status] strong")
-          flow   <- child.text(".docs-counter-flow")
           html   <- parent.html
           _      <- parent.leave
           alive  <- parent.socketExists(child.topic)
         yield assertTrue(
           before == "0",
           after == "1",
-          flow.contains("Msg.Increment"),
-          flow.contains("server state: 1"),
-          flow.contains("HTML diff"),
           html.contains("docs-home-hero"),
           html.contains("docs-home-workflow"),
           html.contains("docs-home-start"),

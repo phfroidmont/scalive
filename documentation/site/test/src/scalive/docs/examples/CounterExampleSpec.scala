@@ -17,7 +17,6 @@ object CounterExampleSpec extends ZIOSpecDefault:
           _       <- harness.clickButton("Increase")
           _       <- harness.clickButton("Increase")
           increased <- harness.text(Count)
-          flow      <- harness.text(".docs-counter-flow")
           _         <- harness.clickButton("Decrease")
           decreased <- harness.text(Count)
           _         <- harness.clickButton("Reset")
@@ -25,8 +24,6 @@ object CounterExampleSpec extends ZIOSpecDefault:
         yield assertTrue(
           initial == "0",
           increased == "2",
-          flow.contains("Msg.Increment"),
-          flow.contains("server state: 2"),
           decreased == "1",
           reset == "0"
         )

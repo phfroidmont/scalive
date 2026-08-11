@@ -30,7 +30,8 @@ object ApiSnapshotSpec extends ZIOSpecDefault:
           signature,
           CodeHighlighter.highlight(Some("scala"), signature),
           ApiOrigin(id.split(':').last, ApiExposure.Direct),
-          ApiSource.Repository(SourceRegion("scalive/src/scalive/Sample.scala", 1, 2))
+          ApiSource.Repository(SourceRegion("scalive/src/scalive/Sample.scala", 1, 2)),
+          None
         )
       ),
       route = "/api/scalive",

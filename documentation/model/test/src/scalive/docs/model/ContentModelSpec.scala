@@ -206,6 +206,23 @@ object ContentModelSpec extends ZIOSpecDefault:
               origin = ApiOrigin("scalive.LiveView", ApiExposure.Direct),
               source = ApiSource.Repository(
                 SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82)
+              ),
+              documentation = Some(
+                ApiDocumentation(
+                  body = Vector(
+                    Block.Paragraph(
+                      Vector(Inline.Text("Defines a stateful server-rendered view."))
+                    ),
+                    Block.Paragraph(Vector(Inline.Text("Mounted for HTTP and socket phases.")))
+                  ),
+                  tags = Vector(
+                    ApiDocumentationTag(
+                      "tparam",
+                      Some("Msg"),
+                      Vector(Block.Paragraph(Vector(Inline.Text("the accepted messages"))))
+                    )
+                  )
+                )
               )
             ),
             ApiSignature(
@@ -213,7 +230,8 @@ object ContentModelSpec extends ZIOSpecDefault:
               signature = "lazy val div: HtmlTag",
               tokens = tokens,
               origin = ApiOrigin("scalive.defs.tags.HtmlTags.div", ApiExposure.Inherited),
-              source = ApiSource.GeneratedDom
+              source = ApiSource.GeneratedDom,
+              documentation = None
             )
           ),
           route = "/api/scalive/live-view",
@@ -245,9 +263,10 @@ object ContentModelSpec extends ZIOSpecDefault:
         encoded.contains("\"section\":\"home\""),
         encoded.contains("\"kind\":\"info\""),
         encoded.contains("\"kind\":\"heading\""),
-        encoded.contains("\"resetDescription\":\"Set the count back to zero.\""),
-        encoded.contains("\"diagnostic\":\"Found: String, Required: Int\""),
-        encoded.contains("\"type\":\"generatedApi\"")
+         encoded.contains("\"resetDescription\":\"Set the count back to zero.\""),
+         encoded.contains("\"diagnostic\":\"Found: String, Required: Int\""),
+         encoded.contains("\"name\":\"tparam\""),
+         encoded.contains("\"type\":\"generatedApi\"")
       )
     },
     test("encodes the same bundle byte-identically") {

@@ -589,11 +589,53 @@ a:hover {
   margin-bottom: 0.5rem;
 }
 
-.docs-api-signature > p {
+.docs-api-source {
   margin: 0;
   color: var(--docs-muted);
   font-size: 0.82rem;
   overflow-wrap: anywhere;
+}
+
+.docs-api-documentation {
+  margin: 0.9rem 0 1rem;
+}
+
+.docs-api-documentation > :first-child {
+  margin-top: 0;
+}
+
+.docs-api-documentation > :last-child {
+  margin-bottom: 0;
+}
+
+.docs-api-tag-section {
+  margin-top: 1.15rem;
+}
+
+.docs-api-tag-section h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.9rem;
+}
+
+.docs-api-tag-section dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+  gap: 0.45rem 1rem;
+}
+
+.docs-api-tag-section dt,
+.docs-api-tag-section dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.docs-api-tag-section dd > :first-child {
+  margin-top: 0;
+}
+
+.docs-api-tag-section dd > :last-child {
+  margin-bottom: 0;
 }
 
 .docs-content,

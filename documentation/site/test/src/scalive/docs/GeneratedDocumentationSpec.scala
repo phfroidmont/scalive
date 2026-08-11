@@ -26,6 +26,9 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
           bundle.examples.head.source.text.contains("class CounterExample"),
           bundle.apiReference.symbols.exists(_.qualifiedName == "scalive.LiveView"),
           bundle.searchEntries.exists(_.title == "scalive.LiveView"),
+          bundle.searchEntries.exists(entry =>
+            entry.title == "scalive.LiveView" && entry.text.contains("mounted independently")
+          ),
           bundle.pages.exists(page =>
             page.route == "/" && page.metadata.title == "Live interfaces. Typed end to end."
           ),

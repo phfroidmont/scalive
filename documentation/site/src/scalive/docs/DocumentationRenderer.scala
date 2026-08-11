@@ -71,7 +71,7 @@ final private[docs] class DocumentationRenderer(
       codeBlock(language, text, tokens, Some(region))
     case Block.ApiSymbolRef(id) =>
       application.apiSymbol(id) match
-        case Some(symbol) => renderApiSymbol(symbol)
+        case Some(symbol) => renderApiSymbol(pageRoute, symbol)
         case None         => throw new IllegalArgumentException(s"Unknown API symbol: $id")
     case Block.CompatibilityRef(id) =>
       sectionTag(
@@ -170,31 +170,92 @@ final private[docs] class DocumentationRenderer(
         else Mod.Content.Tag(span(cls := token.styles.mkString(" "), token.text))
       }
 
-  private def renderApiSymbol(symbol: ApiSymbol): HtmlElement[Nothing] =
+  private def renderApiSymbol(pageRoute: String, symbol: ApiSymbol): HtmlElement[Nothing] =
     val heading = symbol.fragment
       .map(fragment => Mod.Content.Tag(h2(idAttr := fragment, symbol.name)))
       .toVector
+    val hasDocumentation = symbol.signatures.exists(_.documentation.nonEmpty)
     sectionTag(
       cls                    := "docs-api-symbol",
       dataAttr("api-symbol") := symbol.id,
       heading,
       p(cls := "docs-api-kind", apiKindName(symbol.kind)),
-      p(symbol.summary),
-      symbol.signatures.map(renderApiSignature)
+      Option.unless(hasDocumentation)(Mod.Content.Tag(p(symbol.summary))).toVector,
+      symbol.signatures.map(renderApiSignature(pageRoute, _))
     )
 
-  private def renderApiSignature(signature: ApiSignature): HtmlElement[Nothing] =
+  private def renderApiSignature(
+    pageRoute: String,
+    signature: ApiSignature
+  ): HtmlElement[Nothing] =
     val source = metadata.sourceLink(signature.source)
     div(
       cls := "docs-api-signature",
       codeBlock(Some("scala"), signature.signature, signature.tokens, None),
+      signature.documentation
+        .map(documentation => Mod.Content.Tag(renderApiDocumentation(pageRoute, documentation)))
+        .toVector,
       p(
+        cls := "docs-api-source",
         exposureLabel(signature.origin),
         " ",
         a(href := source.url, "View source"),
         s" (${source.label})"
       )
     )
+
+  private def renderApiDocumentation(
+    pageRoute: String,
+    documentation: ApiDocumentation
+  ): HtmlElement[Nothing] =
+    div(
+      cls := "docs-api-documentation",
+      documentation.body.map(renderBlock(pageRoute)),
+      groupTags(documentation.tags).map { case (name, tags) =>
+        sectionTag(
+          cls := "docs-api-tag-section",
+          h3(tagTitle(name)),
+          HtmlTag("dl")(
+            tags.flatMap { tag =>
+              Vector(
+                Mod.Content.Tag(
+                  HtmlTag("dt")(
+                    tag.subject
+                      .map(subject => Mod.Content.Tag(code(subject)))
+                      .getOrElse(Mod.Content.Text(tagTitle(name)))
+                  )
+                ),
+                Mod.Content.Tag(HtmlTag("dd")(tag.content.map(renderBlock(pageRoute))))
+              )
+            }
+          )
+        )
+      }
+    )
+
+  private def groupTags(
+    tags: Vector[ApiDocumentationTag]
+  ): Vector[(String, Vector[ApiDocumentationTag])] =
+    tags.foldLeft(Vector.empty[(String, Vector[ApiDocumentationTag])]) { (groups, tag) =>
+      groups.lastOption match
+        case Some((name, values)) if name == tag.name => groups.init :+ (name -> (values :+ tag))
+        case _                                        => groups :+ (tag.name  -> Vector(tag))
+    }
+
+  private def tagTitle(name: String): String = name match
+    case "param"      => "Parameters"
+    case "tparam"     => "Type parameters"
+    case "return"     => "Returns"
+    case "throws"     => "Throws"
+    case "see"        => "See also"
+    case "note"       => "Notes"
+    case "example"    => "Examples"
+    case "author"     => "Authors"
+    case "version"    => "Version"
+    case "since"      => "Since"
+    case "todo"       => "To do"
+    case "deprecated" => "Deprecated"
+    case other        => other
 
   private def renderExample(pageRoute: String, id: String): HtmlElement[Nothing] =
     val definition = application.example(id).getOrElse {

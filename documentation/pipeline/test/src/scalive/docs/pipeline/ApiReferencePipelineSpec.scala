@@ -44,6 +44,17 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val div = symbols.find(_.qualifiedName == "scalive.div")
       val liveUpload = symbols.find(_.qualifiedName == "scalive.LiveUpload")
       val liveView = symbols.find(_.qualifiedName == "scalive.LiveView")
+      val liveViewTrait = symbols.find(symbol =>
+        symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Trait
+      )
+      val handleMessage = symbols.find(_.qualifiedName == "scalive.LiveView.handleMessage")
+      val routedMount   = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.mount")
+      val liveViewDocumentation = liveViewTrait.toVector.flatMap(_.signatures)
+        .flatMap(_.documentation)
+      val liveViewLinks = liveViewDocumentation.flatMap(_.body).flatMap {
+        case Block.Paragraph(content) => content.collect { case link: Inline.Link => link }
+        case _                        => Vector.empty
+      }
       val exportedNames = Set("scalive.LiveStream", "scalive.LiveUpload")
       val liveComponent = symbols.find(symbol =>
         symbol.qualifiedName == "scalive.liveComponent" && symbol.kind == ApiSymbolKind.Def
@@ -73,6 +84,20 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
             .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))
         ),
         liveComponent.exists(_.signatures.size == 2),
+        liveViewDocumentation.exists(_.body.count(_.isInstanceOf[Block.Paragraph]) == 2),
+        liveViewDocumentation.exists(_.tags.map(_.subject).contains(Some("Msg"))),
+        liveViewLinks.exists(_.target == LinkTarget.Internal(
+          "/api/scalive/html-element",
+          None
+        )),
+        handleMessage.exists(_.signatures.flatMap(_.documentation).exists(documentation =>
+          documentation.body.count(_.isInstanceOf[Block.Paragraph]) == 2 &&
+            documentation.tags.map(_.name) == Vector("param", "param", "return")
+        )),
+        routedMount.exists(symbol =>
+          symbol.signatures.size == 2 && symbol.signatures.forall(_.documentation.nonEmpty)
+        ),
+        symbols.filter(_.qualifiedName == "scalive.LiveView").forall(!_.summary.contains("[[")),
         symbols.forall(_.summary.nonEmpty),
         !symbols.exists(_.qualifiedName.startsWith("scalive.upload.")),
         !symbols.exists(_.qualifiedName.startsWith("scalive.streams.")),
@@ -103,7 +128,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val second = ApiReferencePipeline.generate(config)
       val symbols = first.toOption.toVector.flatMap(_.symbols)
       val repositorySources = symbols.flatMap(_.signatures).collect {
-        case ApiSignature(_, _, _, _, ApiSource.Repository(region)) => region
+        case ApiSignature(_, _, _, _, ApiSource.Repository(region), _) => region
       }
 
       assertTrue(

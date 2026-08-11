@@ -100,6 +100,7 @@ private[pipeline] object SearchCorpus:
     )
 
   private def apiEntry(symbol: ApiSymbol): SearchEntry =
+    val documentation = symbol.signatures.flatMap(_.documentation).map(ScaladocParser.text)
     SearchEntry(
       id = s"api:${symbol.id}",
       kind = SearchEntryKind.ApiSymbol,
@@ -109,7 +110,7 @@ private[pipeline] object SearchCorpus:
       fragment = symbol.fragment,
       section = Section.Api,
       text = (Vector(symbol.name, symbol.qualifiedName, symbol.summary) ++
-        symbol.signatures.map(_.signature)).mkString(" ")
+        symbol.signatures.map(_.signature) ++ documentation).mkString(" ")
     )
 
   private def validate(entries: Vector[SearchEntry], pages: Vector[Page]): Vector[String] =

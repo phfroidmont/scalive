@@ -162,10 +162,11 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                     )
         expectedSources = application.bundle.apiReference.symbols
                             .filter(_.route == "/api/scalive/live-view")
-                            .flatMap(_.signatures)
-                            .map(signature => application.bundle.apiReference.metadata.sourceLink(signature.source).url)
-                            .toSet
+                             .flatMap(_.signatures)
+                             .map(signature => application.bundle.apiReference.metadata.sourceLink(signature.source).url)
+                             .toSet
         document        = Jsoup.parse(rendered.html)
+        liveViewTrait   = document.selectFirst("[data-api-symbol='trait:scalive.LiveView']")
         renderedSources = document
                             .select("[data-api-symbol] a")
                             .asScala.toVector
@@ -178,7 +179,15 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         rendered.text.contains("View source"),
         renderedSources == expectedSources,
         rendered.html.contains("data-api-symbol"),
-        !document.select(".docs-api-signature .keyword").isEmpty
+        !document.select(".docs-api-signature .keyword").isEmpty,
+        liveViewTrait != null,
+        liveViewTrait.text().contains(
+          "A LiveView is mounted independently for the disconnected HTTP render"
+        ),
+        !liveViewTrait.select(".docs-api-documentation code").isEmpty,
+        !liveViewTrait.select(".docs-api-tag-section").isEmpty,
+        liveViewTrait.select("a[href='/api/scalive/html-element']").text() == "HtmlElement",
+        !rendered.text.contains("[[LiveView]]")
       )
     },
     test("renders the source-backed counter as a disconnected nested LiveView") {

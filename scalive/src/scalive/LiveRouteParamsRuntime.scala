@@ -64,8 +64,9 @@ private[scalive] object LiveRouteParamsRuntime:
         ctx: LiveContext
       ): Task[Model] =
         val routed = lv.asInstanceOf[LiveView.Routed[Msg, Model, Params]]
-        decode(pathCodec, paramsDecoder, url).flatMap(params =>
-          runDecoded(routed, model, params, url, ctx)
+        decode(pathCodec, paramsDecoder, url).foldZIO(
+          error => routed.handleParamsDecodeError(model, error, url, ctx.paramsContext[Msg, Model]),
+          params => runDecoded(routed, model, params, url, ctx)
         )
 
       private def runDecoded(

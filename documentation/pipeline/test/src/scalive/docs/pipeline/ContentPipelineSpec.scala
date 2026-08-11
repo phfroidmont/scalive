@@ -34,7 +34,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
         "trait LiveView[Msg, Model]",
         CodeHighlighter.highlight(Some("scala"), "trait LiveView[Msg, Model]"),
         ApiOrigin("scalive.LiveView", ApiExposure.Direct),
-        ApiSource.Repository(SourceRegion("scalive/src/scalive/LiveView.scala", 1, 2))
+        ApiSource.Repository(SourceRegion("scalive/src/scalive/LiveView.scala", 1, 2)),
+        None
       )
     ),
     route = "/api/scalive/live-view",

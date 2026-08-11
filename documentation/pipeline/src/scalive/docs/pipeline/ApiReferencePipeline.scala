@@ -56,6 +56,7 @@ object ApiReferencePipeline:
     signature: String,
     origin: ApiOrigin,
     source: ApiSource,
+    comment: Option[String],
     generatedSummary: Option[String],
     pageOwner: Boolean)
 
@@ -73,13 +74,16 @@ object ApiReferencePipeline:
       IncludedPackages.foreach(extractPackage)
       if errors.nonEmpty then Left(ApiReferenceError(errors.toVector.distinct.sorted))
       else
-        val symbols         = materialize(raw.toVector)
-        val routeCollisions = symbols.filter(_.fragment.isEmpty).groupBy(_.route).toVector.collect {
-          case (route, owners) if owners.map(_.qualifiedName).distinct.sizeIs > 1 =>
-            s"API route collision '$route': ${owners.map(_.qualifiedName).distinct.sorted.mkString(", ")}."
-        }
-        if routeCollisions.nonEmpty then Left(ApiReferenceError(routeCollisions.sorted))
-        else Right(ApiReference(config.metadata, symbols))
+        val symbols = materialize(raw.toVector)
+        if errors.nonEmpty then Left(ApiReferenceError(errors.toVector.distinct.sorted))
+        else
+          val routeCollisions =
+            symbols.filter(_.fragment.isEmpty).groupBy(_.route).toVector.collect {
+              case (route, owners) if owners.map(_.qualifiedName).distinct.sizeIs > 1 =>
+                s"API route collision '$route': ${owners.map(_.qualifiedName).distinct.sorted.mkString(", ")}."
+            }
+          if routeCollisions.nonEmpty then Left(ApiReferenceError(routeCollisions.sorted))
+          else Right(ApiReference(config.metadata, symbols))
 
     private def extractPackage(packageName: String): Unit =
       val packageSymbol = summon[Context].findPackage(packageName)
@@ -93,6 +97,7 @@ object ApiReferencePipeline:
         signature = s"package $packageName",
         origin = ApiOrigin(packageName, ApiExposure.Direct),
         source = ApiSource.Repository(SourceRegion(packagePath(packageName), 1, 1)),
+        comment = None,
         generatedSummary = Some(s"Public APIs in the `$packageName` package."),
         pageOwner = true
       )
@@ -165,7 +170,8 @@ object ApiReferencePipeline:
             classSignature(owner, sourceName(owner)),
             ApiOrigin(originName(owner), ownerExposure),
             sourceFor(owner),
-            summaryFor(owner),
+            commentFor(owner),
+            None,
             pageOwner = true
           )
         )
@@ -221,7 +227,8 @@ object ApiReferencePipeline:
           termSignature(term),
           ApiOrigin(originName(term), termExposure),
           sourceFor(term),
-          summaryFor(term),
+          commentFor(term),
+          None,
           pageOwner
         )
       )
@@ -249,7 +256,8 @@ object ApiReferencePipeline:
           typeSignature(member),
           ApiOrigin(originName(member), memberExposure),
           sourceFor(member),
-          summaryFor(member),
+          commentFor(member),
+          None,
           pageOwner
         )
       )
@@ -277,8 +285,20 @@ object ApiReferencePipeline:
         id -> presentationRoutes(entry.qualifiedName)
       }.toMap
 
-      grouped.map { case (id, entries) =>
-        val first      = entries.find(_.pageOwner).getOrElse(entries.head)
+      val groups = grouped.map { case (id, entries) =>
+        val first = entries.find(_.pageOwner).getOrElse(entries.head)
+        val route =
+          if first.pageOwner then ownerRoutes(id)
+          else first.ownerId.flatMap(ownerRoutes.get).getOrElse(routeFor(first.qualifiedName))
+        val fragment = Option.unless(first.pageOwner)(s"${slug(first.name)}-${digest(id).take(8)}")
+        (id, entries, first, route, fragment)
+      }
+      val linkTargets = groups
+        .flatMap { case (_, entries, _, route, fragment) =>
+          entries.map(_.qualifiedName -> LinkTarget.Internal(route, fragment))
+        }.groupMap(_._1)(_._2).view.mapValues(_.distinct.sortBy(_.toString).head).toMap
+
+      groups.map { case (id, entries, first, route, fragment) =>
         val signatures = entries
           .groupBy(_.signature)
           .values
@@ -286,22 +306,36 @@ object ApiReferencePipeline:
           .toVector
           .sortBy(_.signature)
           .map { entry =>
+            val signatureId   = s"$id:${digest(entry.signature)}"
+            val documentation = entry.comment.flatMap { comment =>
+              ScaladocParser
+                .parse(
+                  comment,
+                  signatureId.replace(':', '-'),
+                  resolveSymbolLink(entry.qualifiedName, _, linkTargets)
+                ) match
+                case Left(messages) =>
+                  errors ++= messages.map(message => s"${entry.qualifiedName}: $message")
+                  None
+                case Right(value) => Option.unless(value.body.isEmpty && value.tags.isEmpty)(value)
+            }
             ApiSignature(
-              id = s"$id:${digest(entry.signature)}",
+              id = signatureId,
               signature = entry.signature,
               tokens = CodeHighlighter.highlight(Some("scala"), entry.signature),
               origin = entry.origin,
-              source = entry.source
+              source = entry.source,
+              documentation = documentation
             )
           }
-        val generatedSummaries = entries.flatMap(_.generatedSummary).distinct.sorted
-        val summary            = config.curatedSummaries
+        val generatedSummaries = (
+          entries.flatMap(_.generatedSummary) ++
+            signatures.flatMap(_.documentation.flatMap(ScaladocParser.summary))
+        ).distinct.sorted
+        val summary = config.curatedSummaries
           .get(id).orElse {
             Option.when(generatedSummaries.size == 1)(generatedSummaries.head)
           }.getOrElse(fallbackSummary(first))
-        val route =
-          if first.pageOwner then ownerRoutes(id)
-          else first.ownerId.flatMap(ownerRoutes.get).getOrElse(routeFor(first.qualifiedName))
         ApiSymbol(
           id = id,
           ownerId = first.ownerId,
@@ -311,7 +345,7 @@ object ApiReferencePipeline:
           summary = summary,
           signatures = signatures,
           route = route,
-          fragment = Option.unless(first.pageOwner)(s"${slug(first.name)}-${digest(id).take(8)}")
+          fragment = fragment
         )
       }
     end materialize
@@ -346,8 +380,29 @@ object ApiReferencePipeline:
         }
       }
 
-    private def summaryFor(symbol: TermOrTypeSymbol): Option[String] =
-      documentationRecord(symbol).flatMap(_.comment).flatMap(commentSummary)
+    private def commentFor(symbol: TermOrTypeSymbol): Option[String] =
+      documentationRecord(symbol).flatMap(_.comment)
+
+    private def resolveSymbolLink(
+      currentQualifiedName: String,
+      target: String,
+      targets: Map[String, LinkTarget]
+    ): Option[LinkTarget] =
+      val scopes = Iterator
+        .iterate(Option(currentQualifiedName))(
+          _.flatMap(value =>
+            value.lastIndexOf('.') match
+              case -1    => None
+              case index => Some(value.take(index))
+          )
+        )
+        .takeWhile(_.nonEmpty).flatten.toVector
+      val candidates = (
+        scopes.map(scope => s"$scope.$target") ++
+          Vector(target) ++ Option
+            .unless(target.startsWith("scalive."))(s"scalive.$target").toVector
+      ).distinct
+      candidates.collectFirst(Function.unlift(targets.get))
 
     private def sourceFor(symbol: TermOrTypeSymbol): ApiSource =
       symbol.tree.map(_.pos).filterNot(_.isUnknown) match
@@ -570,18 +625,5 @@ object ApiReferencePipeline:
         case ApiSymbolKind.Var        => s"The $renderedName variable."
         case ApiSymbolKind.Given      => s"The $renderedName given instance."
 
-    private def commentSummary(comment: String): Option[String] =
-      val lines = comment.linesIterator.toVector
-        .map(_.trim)
-        .map(_.stripPrefix("/**").stripSuffix("*/").trim)
-        .map(_.stripPrefix("*").trim)
-      val prose =
-        lines.dropWhile(_.isEmpty).takeWhile(line => line.nonEmpty && !line.startsWith("@"))
-      val summary = prose
-        .mkString(" ")
-        .replaceAll("\\[\\[[^ ]+ ([^]]+)\\]\\]", "$1")
-        .replaceAll("\\s+", " ")
-        .trim
-      Option.when(summary.nonEmpty)(summary)
   end Extractor
 end ApiReferencePipeline

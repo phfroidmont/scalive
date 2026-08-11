@@ -389,6 +389,64 @@ object SocketSpec extends ZIOSpecDefault:
       )
       end for
     },
+    test("recovers from live patch parameter decode errors") {
+      val ctx = LiveContext(staticChanged = false)
+      for
+        callsRef <- Ref.make(List.empty[String])
+        lv = new LiveView.Routed[Unit, String, String]:
+               def mount(params: String, ctx: MountContext) =
+                 ZIO.succeed(s"mounted:$params")
+
+               override def handleParams(
+                 model: String,
+                 params: String,
+                 url: URL,
+                 ctx: ParamsContext
+               ) =
+                 callsRef.update(_ :+ s"params:$params").as(s"$model:params:$params")
+
+               override def handleParamsDecodeError(
+                 model: String,
+                 error: LiveParamsCodec.DecodeError,
+                 url: URL,
+                 ctx: ParamsContext
+               ) =
+                 callsRef.update(_ :+ s"error:${error.message}").as(s"$model:recovered")
+
+               def handleMessage(model: String, ctx: MessageContext) =
+                 (_: Unit) => ZIO.succeed(model)
+
+               def render(model: String): HtmlElement[Unit] = div(model)
+        initialUrl <- ZIO.fromEither(URL.decode("/search?q=valid")).orDie
+        paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, String, String](
+                          PathCodec.empty / "search",
+                          LiveParamsDecoder.custom[Unit, String]((_, url) =>
+                            url.queryParam("q").filterNot(_ == "invalid").toRight("invalid query")
+                          )
+                        )
+        socket <- Socket.start(
+                    "id",
+                    "token",
+                    lv,
+                    ctx,
+                    meta,
+                    initialUrl = initialUrl,
+                    paramsRuntime = paramsRuntime
+                  )
+        reply <- socket.livePatch("?q=invalid", meta)
+        calls <- callsRef.get
+      yield
+        val recovered = reply match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
+            containsValue(diff, "mounted:valid:params:valid:recovered")
+          case _ => false
+
+        assertTrue(
+          recovered,
+          calls == List("params:valid", "error:invalid query")
+        )
+      end for
+    },
     test("live patch handleParams redirect loops emit an error") {
       final case class LoopModel(shouldLoop: Boolean)
 

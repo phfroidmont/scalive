@@ -319,6 +319,7 @@ object ApiReferencePipeline:
           .sortBy(_.signature)
           .map { entry =>
             val signatureId   = s"$id:${digest(entry.signature)}"
+            val signature     = ApiSignatureFormatter.format(entry.signature)
             val documentation = entry.comment.flatMap { comment =>
               ScaladocParser
                 .parse(
@@ -333,8 +334,8 @@ object ApiReferencePipeline:
             }
             ApiSignature(
               id = signatureId,
-              signature = entry.signature,
-              tokens = CodeHighlighter.highlight(Some("scala"), entry.signature),
+              signature = signature,
+              tokens = CodeHighlighter.highlight(Some("scala"), signature),
               origin = entry.origin,
               source = entry.source,
               documentation = documentation
@@ -502,7 +503,9 @@ object ApiReferencePipeline:
             case "Covariant"     => "+"
             case "Contravariant" => "-"
             case _               => ""
-          s"$variance${parameter.name} ${parameter.declaredBounds.showBasic}"
+          val bounds         = parameter.declaredBounds.showBasic.trim
+          val renderedBounds = if bounds.isEmpty then "" else s" $bounds"
+          s"$variance${parameter.name}$renderedBounds"
         }.mkString("[", ", ", "]")
       val typeParameters = if owner.typeParams.isEmpty then "" else parameters
       val constructor    =
@@ -518,6 +521,7 @@ object ApiReferencePipeline:
         .distinct
       val parentClause = if parents.isEmpty then "" else parents.mkString(" extends ", " with ", "")
       normalizeSignature(s"$keyword $name$typeParameters$constructor$parentClause")
+    end classSignature
 
     private def termSignature(term: TermSymbol): String =
       val keyword = termKind(term) match

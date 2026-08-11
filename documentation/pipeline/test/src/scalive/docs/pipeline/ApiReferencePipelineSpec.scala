@@ -51,7 +51,11 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Object
       )
       val handleMessage = symbols.find(_.qualifiedName == "scalive.LiveView.handleMessage")
+      val hooks         = symbols.find(_.qualifiedName == "scalive.LiveView.hooks")
       val routedMount   = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.mount")
+      val routedEventless = symbols.find(
+        _.qualifiedName == "scalive.LiveView.Routed.Eventless"
+      )
       val liveViewDocumentation = liveViewTrait.toVector.flatMap(_.signatures)
         .flatMap(_.documentation)
       val liveViewLinks = liveViewDocumentation.flatMap(_.body).flatMap {
@@ -61,6 +65,13 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val exportedNames = Set("scalive.LiveStream", "scalive.LiveUpload")
       val liveComponent = symbols.find(symbol =>
         symbol.qualifiedName == "scalive.liveComponent" && symbol.kind == ApiSymbolKind.Def
+      )
+      val mod = symbols.find(symbol =>
+        symbol.qualifiedName == "scalive.Mod" && symbol.kind == ApiSymbolKind.Trait
+      )
+      val liveRouteParamsBuilder = symbols.find(symbol =>
+        symbol.qualifiedName == "scalive.LiveRouteParamsBuilder" &&
+          symbol.kind == ApiSymbolKind.Class
       )
 
       assertTrue(
@@ -90,6 +101,15 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
             .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))
         ),
         liveComponent.exists(_.signatures.size == 2),
+        liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
+        mod.exists(_.signatures.exists(_.signature == "trait Mod[+Msg]")),
+        liveRouteParamsBuilder.exists(_.signatures.exists(_.signature.startsWith(
+          "class LiveRouteParamsBuilder[R, A, -Need, Ctx, Params, Capability <: LiveRouteParamsCapability]"
+        ))),
+        hooks.exists(_.signatures.exists(_.signature == "def hooks: LiveHooks[Msg, Model]")),
+        routedEventless.exists(_.signatures.exists(_.signature ==
+          "trait Eventless[Model, Params] extends LiveView.Eventless[Model] with LiveView.Routed[Nothing, Model, Params]"
+        )),
         liveViewDocumentation.exists(_.body.count(_.isInstanceOf[Block.Paragraph]) == 2),
         liveViewDocumentation.exists(_.tags.map(_.subject).contains(Some("Msg"))),
         liveViewLinks.exists(_.target == LinkTarget.Internal(

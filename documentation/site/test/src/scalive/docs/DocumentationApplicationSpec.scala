@@ -177,6 +177,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         document        = Jsoup.parse(rendered.html)
         companionDocument = Jsoup.parse(companionRendered.html)
         liveViewTrait   = document.selectFirst("[data-api-symbol='trait:scalive.LiveView']")
+        liveViewDeclaration = liveViewTrait.selectFirst(".docs-api-signature code")
         renderedSources = document
                             .select("[data-api-symbol] a")
                             .asScala.toVector
@@ -191,6 +192,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         rendered.html.contains("data-api-symbol"),
         !document.select(".docs-api-signature .keyword").isEmpty,
         liveViewTrait != null,
+        liveViewDeclaration.text() == "trait LiveView[Msg, Model]",
+        liveViewDeclaration.select("span").size() > 1,
         liveViewTrait.text().contains(
           "A LiveView is mounted independently for the disconnected HTTP render"
         ),

@@ -28,6 +28,7 @@ object ApiSnapshotSpec extends ZIOSpecDefault:
         ApiSignature(
           s"$id:signature",
           signature,
+          CodeHighlighter.highlight(Some("scala"), signature),
           ApiOrigin(id.split(':').last, ApiExposure.Direct),
           ApiSource.Repository(SourceRegion("scalive/src/scalive/Sample.scala", 1, 2))
         )

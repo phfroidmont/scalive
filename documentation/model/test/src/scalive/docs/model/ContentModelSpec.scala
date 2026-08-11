@@ -177,6 +177,7 @@ object ContentModelSpec extends ZIOSpecDefault:
           CompilationFailure(
             id = "wrong-model",
             source = "val count: Int = \"zero\"",
+            sourceTokens = tokens,
             diagnostic = "Found: String, Required: Int"
           )
         )
@@ -201,6 +202,7 @@ object ContentModelSpec extends ZIOSpecDefault:
             ApiSignature(
               id = "trait:scalive.LiveView:8f57c1c6",
               signature = "trait LiveView[Msg, Model]",
+              tokens = tokens,
               origin = ApiOrigin("scalive.LiveView", ApiExposure.Direct),
               source = ApiSource.Repository(
                 SourceRegion("scalive/src/scalive/LiveView.scala", 8, 82)
@@ -209,6 +211,7 @@ object ContentModelSpec extends ZIOSpecDefault:
             ApiSignature(
               id = "trait:scalive.LiveView:generated",
               signature = "lazy val div: HtmlTag",
+              tokens = tokens,
               origin = ApiOrigin("scalive.defs.tags.HtmlTags.div", ApiExposure.Inherited),
               source = ApiSource.GeneratedDom
             )

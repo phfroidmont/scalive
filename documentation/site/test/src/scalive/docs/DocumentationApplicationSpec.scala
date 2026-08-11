@@ -165,8 +165,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                             .flatMap(_.signatures)
                             .map(signature => application.bundle.apiReference.metadata.sourceLink(signature.source).url)
                             .toSet
-        renderedSources = Jsoup
-                            .parse(rendered.html)
+        document        = Jsoup.parse(rendered.html)
+        renderedSources = document
                             .select("[data-api-symbol] a")
                             .asScala.toVector
                             .filter(_.text() == "View source")
@@ -177,7 +177,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         rendered.text.contains("scalive.LiveView"),
         rendered.text.contains("View source"),
         renderedSources == expectedSources,
-        rendered.html.contains("data-api-symbol")
+        rendered.html.contains("data-api-symbol"),
+        !document.select(".docs-api-signature .keyword").isEmpty
       )
     },
     test("renders the source-backed counter as a disconnected nested LiveView") {
@@ -212,6 +213,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         example.selectFirst(".docs-example-rendered").elementSiblingIndex() <
           example.selectFirst("[data-example-disconnected]").elementSiblingIndex(),
         example.select(".docs-code").text().contains("class CounterExample"),
+        !example.select(".docs-code .keyword").isEmpty,
         example.select("[data-compilation-failure]").isEmpty,
         example.select("a").asScala.exists(link =>
           link.text() == "View source" && link.attr("href").contains("CounterExample.scala#L")

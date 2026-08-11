@@ -32,6 +32,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
       ApiSignature(
         "trait:scalive.LiveView:signature",
         "trait LiveView[Msg, Model]",
+        CodeHighlighter.highlight(Some("scala"), "trait LiveView[Msg, Model]"),
         ApiOrigin("scalive.LiveView", ApiExposure.Direct),
         ApiSource.Repository(SourceRegion("scalive/src/scalive/LiveView.scala", 1, 2))
       )
@@ -73,6 +74,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             bundle.examples.map(_.descriptor) == Vector(counterDescriptor),
             bundle.examples.head.source.region == SourceRegion("examples/Sample.scala", 3, 4),
             bundle.examples.head.source.text == "val greeting = \"hello\"\nprintln(greeting)",
+            bundle.examples.head.source.tokens.exists(_.styles.nonEmpty),
             bundle.examples.head.compilationFailures.isEmpty,
             bundle.apiReference.symbols == Vector(liveViewSymbol),
             bundle.searchEntries.map(_.kind).toSet == Set(
@@ -127,9 +129,11 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             home.content.contains(Block.Rule),
             code.language.contains("scala"),
             code.tokens.exists(_.styles.nonEmpty),
+            code.tokens.exists(token => token.text == "enum" && token.styles.contains("keyword")),
             source.region == SourceRegion("examples/Sample.scala", 3, 4),
             source.language.contains("scala"),
             source.text == "val greeting = \"hello\"\nprintln(greeting)",
+            source.tokens.exists(_.styles.nonEmpty),
             home.content.contains(Block.ExampleRef("counter")),
             home.content.contains(Block.ApiSymbolRef("trait:scalive.LiveView")),
             home.content.contains(Block.CompatibilityRef("server-navigation")),

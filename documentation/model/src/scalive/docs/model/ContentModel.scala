@@ -12,7 +12,7 @@ final case class DocumentationBundle(
     derives JsonCodec
 
 object DocumentationBundle:
-  val CurrentFormatVersion = 3
+  val CurrentFormatVersion = 4
 
 final case class Page(
   route: String,
@@ -108,6 +108,7 @@ final case class ExampleDescriptor(
 final case class CompilationFailure(
   id: String,
   source: String,
+  sourceTokens: Vector[CodeToken],
   diagnostic: String)
     derives JsonCodec
 
@@ -297,6 +298,7 @@ final case class ApiSymbol(
 final case class ApiSignature(
   id: String,
   signature: String,
+  tokens: Vector[CodeToken],
   origin: ApiOrigin,
   source: ApiSource)
     derives JsonCodec

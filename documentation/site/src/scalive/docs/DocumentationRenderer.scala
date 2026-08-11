@@ -187,7 +187,7 @@ final private[docs] class DocumentationRenderer(
     val source = metadata.sourceLink(signature.source)
     div(
       cls := "docs-api-signature",
-      codeBlock(Some("scala"), signature.signature, Vector.empty, None),
+      codeBlock(Some("scala"), signature.signature, signature.tokens, None),
       p(
         exposureLabel(signature.origin),
         " ",
@@ -252,7 +252,7 @@ final private[docs] class DocumentationRenderer(
         strong("Type safety, demonstrated"),
         span("This invalid model transition is rejected at compile time.")
       ),
-      codeBlock(Some("scala"), failure.source, Vector.empty, None),
+      codeBlock(Some("scala"), failure.source, failure.sourceTokens, None),
       pre(cls := "docs-compiler-diagnostic", code(failure.diagnostic))
     )
 

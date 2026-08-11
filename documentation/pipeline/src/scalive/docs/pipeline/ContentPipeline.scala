@@ -28,7 +28,6 @@ import laika.ast.RewritePhase
 import laika.ast.RewriteRules
 import laika.ast.Span as LaikaSpan
 import laika.config.LaikaKeys
-import laika.config.SyntaxHighlighting
 import laika.format.Markdown
 import laika.io.model.InputTree
 import laika.io.syntax.*
@@ -524,7 +523,7 @@ object ContentPipeline:
     }
     val parser = MarkupParser
       .of(Markdown)
-      .using(Markdown.GitHubFlavor, SyntaxHighlighting, PipelineDirectives)
+      .using(Markdown.GitHubFlavor, CodeHighlighter.syntaxHighlighting, PipelineDirectives)
       .withConfigValue(LaikaKeys.firstHeaderAsTitle, false)
       .sequential[IO]
       .withTheme(Theme.empty)
@@ -691,7 +690,10 @@ object ContentPipeline:
                   region = SourceRegion(extracted.path, extracted.startLine, extracted.endLine),
                   language = descriptor.source.language.orElse(inferLanguage(extracted.path)),
                   text = extracted.content,
-                  tokens = Vector(CodeToken(extracted.content, Vector.empty))
+                  tokens = CodeHighlighter.highlight(
+                    descriptor.source.language.orElse(inferLanguage(extracted.path)),
+                    extracted.content
+                  )
                 ),
                 compilationFailures = Vector.empty
               )
@@ -700,6 +702,7 @@ object ContentPipeline:
       }
       val (failures, definitions) = results.partitionMap(identity)
       if failures.nonEmpty then Left(PipelineError(failures.sorted)) else Right(definitions)
+    end if
   end resolveExamples
 
   private def validateExampleText(
@@ -767,7 +770,7 @@ object ContentPipeline:
     case header: laika.ast.Header =>
       convertHeading(header, routeByPath).map(value => Vector(value))
     case laika.ast.CodeBlock(language, content, _, _) =>
-      val tokens = codeTokens(content)
+      val tokens = CodeHighlighter.fromSpans(content)
       Right(
         Vector(
           Block.Code(
@@ -918,15 +921,6 @@ object ContentPipeline:
       )
     )
 
-  private def codeTokens(spans: Seq[LaikaSpan]): Vector[CodeToken] =
-    spans.toVector.flatMap {
-      case laika.ast.CodeSpan(content, categories, _) =>
-        Vector(CodeToken(content, categories.toVector.map(_.name).sorted))
-      case laika.ast.Text(content, _)           => Vector(CodeToken(content, Vector.empty))
-      case sequence: laika.ast.CodeSpanSequence => codeTokens(sequence.content)
-      case other => Vector(CodeToken(extractText(Seq(other)), Vector.empty))
-    }
-
   private def extractText(spans: Seq[LaikaSpan]): String = spans.map {
     case container: laika.ast.TextContainer => container.content
     case container: laika.ast.SpanContainer => extractText(container.content)
@@ -949,7 +943,7 @@ object ContentPipeline:
           region,
           inferLanguage(extracted.path),
           extracted.content,
-          Vector(CodeToken(extracted.content, Vector.empty))
+          CodeHighlighter.highlight(inferLanguage(extracted.path), extracted.content)
         )
       }
 

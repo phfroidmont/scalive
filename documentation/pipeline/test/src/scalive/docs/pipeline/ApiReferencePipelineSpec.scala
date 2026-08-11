@@ -103,13 +103,14 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val second = ApiReferencePipeline.generate(config)
       val symbols = first.toOption.toVector.flatMap(_.symbols)
       val repositorySources = symbols.flatMap(_.signatures).collect {
-        case ApiSignature(_, _, _, ApiSource.Repository(region)) => region
+        case ApiSignature(_, _, _, _, ApiSource.Repository(region)) => region
       }
 
       assertTrue(
         first == second,
         symbols.map(_.id).distinct.size == symbols.size,
         symbols.flatMap(_.signatures.map(_.id)).distinct.size == symbols.flatMap(_.signatures).size,
+        symbols.flatMap(_.signatures).forall(_.tokens.exists(_.styles.nonEmpty)),
         symbols.forall(_.route.matches("/api(?:/[a-z0-9]+(?:-[a-z0-9]+)*)+")),
         repositorySources.forall(region =>
           !region.path.startsWith("/") && !region.path.startsWith("out/") && region.startLine > 0

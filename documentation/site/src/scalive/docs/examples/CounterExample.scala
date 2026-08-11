@@ -5,7 +5,7 @@ import zio.ZIO
 import scalive.*
 
 // docs:start counter-example
-final private[docs] class CounterExample extends LiveView[CounterExample.Msg, CounterExample.Model]:
+final class CounterExample extends LiveView[CounterExample.Msg, CounterExample.Model]:
   import CounterExample.*
 
   def mount(ctx: MountContext): LiveIO[Model] =
@@ -56,7 +56,7 @@ final private[docs] class CounterExample extends LiveView[CounterExample.Msg, Co
     )
 end CounterExample
 
-private[docs] object CounterExample:
+object CounterExample:
   enum Msg:
     case Decrement, Increment, Reset
 

@@ -289,6 +289,7 @@ object ApiReferencePipeline:
             ApiSignature(
               id = s"$id:${digest(entry.signature)}",
               signature = entry.signature,
+              tokens = CodeHighlighter.highlight(Some("scala"), entry.signature),
               origin = entry.origin,
               source = entry.source
             )

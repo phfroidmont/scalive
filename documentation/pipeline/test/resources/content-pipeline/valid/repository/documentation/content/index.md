@@ -13,6 +13,9 @@ This follows a line break.
 ### Details {#details}
 
 ```scala
+enum Answer:
+  case Value
+
 val answer: Int = 42
 ```
 

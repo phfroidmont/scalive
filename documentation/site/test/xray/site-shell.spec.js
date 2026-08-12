@@ -158,6 +158,8 @@ test("shows sibling companion entries without tree guide lines", async ({ page }
   const navigation = page.locator(".docs-section-nav")
   const current = navigation.locator('[aria-current="page"]')
   const liveViewLinks = navigation.getByRole("link", { name: "LiveView", exact: true })
+  await expect.poll(async () => navigation.evaluate((element) => element.getBoundingClientRect().width))
+    .toBeGreaterThanOrEqual(272)
   await expect(navigation.locator("nav > ul > li")).toHaveAttribute("data-api-nav-item", "scalive")
   await expect(navigation.locator('[data-api-nav-item="api"]')).toHaveCount(0)
   await expect(current).toHaveText("LiveView")

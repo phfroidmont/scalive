@@ -151,6 +151,34 @@ test("shows a flat Learn path on desktop and hides it on smaller screens", async
   await expect(navigation).toBeHidden()
 })
 
+test("tracks the current section in the page outline", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 700 })
+  await page.goto("/learn/models-and-messages")
+
+  const outline = page.locator(".docs-outline")
+  const first = outline.getByRole("link", { name: "One model, one message type", exact: true })
+  const last = outline.getByRole("link", { name: "Keep messages meaningful", exact: true })
+  await expect(first).toHaveAttribute("aria-current", "location")
+  await expect(outline.locator('[aria-current="location"]')).toHaveCount(1)
+
+  const guideColors = await outline.locator("a").evaluateAll((links) =>
+    links.slice(0, 2).map((link) => getComputedStyle(link).borderLeftColor)
+  )
+  expect(guideColors[0]).not.toBe(guideColors[1])
+  const guideGap = await outline.locator("a").evaluateAll((links) =>
+    links[1].getBoundingClientRect().top - links[0].getBoundingClientRect().bottom
+  )
+  expect(Math.abs(guideGap)).toBeLessThanOrEqual(0.5)
+
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await expect(last).toHaveAttribute("aria-current", "location")
+  await expect(outline.locator('[aria-current="location"]')).toHaveCount(1)
+
+  await first.click()
+  await expect(page).toHaveURL(/#one-model-one-message-type$/)
+  await expect(first).toHaveAttribute("aria-current", "location")
+})
+
 test("shows sibling companion entries without tree guide lines", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 1000 })
   await page.goto("/api/scalive/live-view")

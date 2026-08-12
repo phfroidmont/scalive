@@ -719,9 +719,18 @@ details[open] > summary .docs-disclosure-marker,
   grid-area: page-outline;
 }
 
-.docs-api-navigation li + li,
-.docs-outline li + li {
+.docs-api-navigation li + li {
   margin-top: 0.35rem;
+}
+
+.docs-outline a {
+  display: block;
+  padding: 0.4rem 0 0.4rem 0.7rem;
+  border-left: 1px solid var(--docs-border);
+}
+
+.docs-outline a[aria-current="location"] {
+  border-left-color: var(--docs-accent);
 }
 
 .docs-nav-title,

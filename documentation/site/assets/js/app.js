@@ -439,16 +439,54 @@ const Hooks = {
         if (this.compact.matches) this.el.removeAttribute("open")
         else this.el.setAttribute("open", "")
       }
+      this.collectSections = () => {
+        this.sections = [...this.el.querySelectorAll('a[href*="#"]')].flatMap((link) => {
+          const id = new URL(link.href).hash.slice(1)
+          const heading = id ? document.getElementById(decodeURIComponent(id)) : null
+          return heading ? [{ heading, link }] : []
+        })
+      }
+      this.updateCurrentSection = () => {
+        this.frame = undefined
+        if (this.sections.length === 0) return
+
+        const headerBottom = document.querySelector(".docs-header")?.getBoundingClientRect().bottom ?? 0
+        const activationLine = headerBottom + 24
+        const atDocumentEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1
+        const current = atDocumentEnd
+          ? this.sections[this.sections.length - 1]
+          : this.sections.reduce(
+              (active, section) => section.heading.getBoundingClientRect().top <= activationLine ? section : active,
+              this.sections[0]
+            )
+
+        this.sections.forEach(({ link }) => {
+          if (link === current.link) link.setAttribute("aria-current", "location")
+          else link.removeAttribute("aria-current")
+        })
+      }
+      this.scheduleCurrentSectionUpdate = () => {
+        if (this.frame === undefined) this.frame = window.requestAnimationFrame(this.updateCurrentSection)
+      }
       this.syncDisclosure()
+      this.collectSections()
+      this.updateCurrentSection()
       this.compact.addEventListener("change", this.syncDisclosure)
+      window.addEventListener("scroll", this.scheduleCurrentSectionUpdate, { passive: true })
+      window.addEventListener("resize", this.scheduleCurrentSectionUpdate)
     },
 
     updated() {
       this.syncDisclosure()
+      this.collectSections()
+      this.scheduleCurrentSectionUpdate()
     },
 
     destroyed() {
       this.compact.removeEventListener("change", this.syncDisclosure)
+      window.removeEventListener("scroll", this.scheduleCurrentSectionUpdate)
+      window.removeEventListener("resize", this.scheduleCurrentSectionUpdate)
+      if (this.frame !== undefined) window.cancelAnimationFrame(this.frame)
     },
   },
 

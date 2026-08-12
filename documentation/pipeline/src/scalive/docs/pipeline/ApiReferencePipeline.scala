@@ -88,26 +88,29 @@ object ApiReferencePipeline:
     private def extractPackage(packageName: String): Unit =
       val packageSymbol = summon[Context].findPackage(packageName)
       val packageId     = symbolId(ApiSymbolKind.Package, packageName)
+      val declarations  = packageSymbol.declarations.collect { case symbol: TermOrTypeSymbol =>
+        symbol
+      }
+      val packageObjects = declarations.collect {
+        case owner: ClassSymbol if isPackageObject(owner) => owner
+      }
+      val signature = packageObjects
+        .find(_.name.toString == "package$")
+        .map(packageObjectSignature(packageName, _))
+        .getOrElse(s"package $packageName")
       raw += RawSignature(
         groupId = packageId,
         ownerId = None,
         name = packageName.split('.').last,
         qualifiedName = packageName,
         kind = ApiSymbolKind.Package,
-        signature = s"package $packageName",
+        signature = signature,
         origin = ApiOrigin(packageName, ApiExposure.Direct),
         source = ApiSource.Repository(SourceRegion(packagePath(packageName), 1, 1)),
         comment = None,
         generatedSummary = Some(s"Public APIs in the `$packageName` package."),
         pageOwner = true
       )
-
-      val declarations = packageSymbol.declarations.collect { case symbol: TermOrTypeSymbol =>
-        symbol
-      }
-      val packageObjects = declarations.collect {
-        case owner: ClassSymbol if isPackageObject(owner) => owner
-      }
 
       declarations
         .collect {
@@ -513,15 +516,43 @@ object ApiReferencePipeline:
         else
           owner.tree
             .map(_.rhs.constr.symbol).filter(_.isPublic)
-            .map(value => s" ${value.declaredType.showBasic}${defaultParameters(value)}")
+            .map(value =>
+              ApiSignatureFormatter.formatConstructor(
+                value.declaredType.showBasic,
+                defaultParameters(value)
+              )
+            )
             .getOrElse("")
+      val renderedConstructor =
+        if owner.isEnum && constructor == "()" then "" else constructor
+      val parents = owner.parents
+        .map(_.showBasic)
+        .filterNot(parent => syntheticParent(owner, parent))
+        .distinct
+      val parentClause = if parents.isEmpty then "" else parents.mkString(" extends ", " with ", "")
+      normalizeSignature(s"$keyword $name$typeParameters$renderedConstructor$parentClause")
+    end classSignature
+
+    private def syntheticParent(owner: ClassSymbol, parent: String): Boolean =
+      parent == "scala.Object" ||
+        parent == "java.lang.Object" ||
+        owner.isEnum && parent == "scala.reflect.Enum" ||
+        owner.isCaseClass && (parent == "scala.Product" || parent == "scala.Serializable") ||
+        classKind(owner) == ApiSymbolKind.Object && parent.contains("Mirror")
+
+    private def packageObjectSignature(packageName: String, owner: ClassSymbol): String =
       val parents = owner.parents
         .map(_.showBasic)
         .filterNot(parent => parent == "scala.Object" || parent == "java.lang.Object")
-        .distinct
+        .map { parent =>
+          val typeArguments = parent.indexOf('[')
+          val end           = if typeArguments < 0 then parent.length else typeArguments
+          val prefix        = parent.take(end)
+          val name          = prefix.substring(prefix.lastIndexOf('.') + 1)
+          name + parent.drop(end)
+        }.distinct
       val parentClause = if parents.isEmpty then "" else parents.mkString(" extends ", " with ", "")
-      normalizeSignature(s"$keyword $name$typeParameters$constructor$parentClause")
-    end classSignature
+      normalizeSignature(s"package object $packageName$parentClause")
 
     private def termSignature(term: TermSymbol): String =
       val keyword = termKind(term) match
@@ -532,15 +563,14 @@ object ApiReferencePipeline:
         case ApiSymbolKind.Val       => "val"
         case _                       => "def"
       normalizeSignature(
-        s"$keyword ${sourceName(term)}: ${term.declaredType.showBasic}${defaultParameters(term)}"
+        s"$keyword ${sourceName(term)}: ${ApiSignatureFormatter.markDefaultParameters(term.declaredType.showBasic, defaultParameters(term))}"
       )
 
-    private def defaultParameters(term: TermSymbol): String =
-      val names = term.paramSymss.flatMap {
+    private def defaultParameters(term: TermSymbol): Set[String] =
+      term.paramSymss.flatMap {
         case Left(parameters) => parameters.filter(_.isParamWithDefault).map(_.name.toString)
         case Right(_)         => Nil
-      }
-      if names.isEmpty then "" else names.mkString(" [defaults: ", ", ", "]")
+      }.toSet
 
     private def typeSignature(member: TypeMemberSymbol): String =
       val rendered = member.typeDef match

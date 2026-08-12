@@ -8,6 +8,59 @@ import zio.test.*
 import scalive.docs.model.*
 
 object ApiReferencePipelineSpec extends ZIOSpecDefault:
+  private def hasSignature(
+    symbols: Vector[ApiSymbol],
+    qualifiedName: String,
+    kind: ApiSymbolKind,
+    expected: String
+  ): Boolean =
+    symbols.exists(symbol =>
+      symbol.qualifiedName == qualifiedName &&
+        symbol.kind == kind &&
+        symbol.signatures.exists(_.signature == expected)
+    )
+
+  private def packageSignaturesHideSyntheticNames(symbols: Vector[ApiSymbol]): Boolean =
+    symbols.iterator
+      .filter(_.kind == ApiSymbolKind.Package)
+      .flatMap(_.signatures)
+      .forall(!_.signature.contains("$package"))
+
+  private def signaturesHideSyntheticParents(symbols: Vector[ApiSymbol]): Boolean =
+    symbols.iterator.flatMap(_.signatures).forall { signature =>
+      !signature.signature.contains("reflect.Enum") &&
+      !signature.signature.contains("Mirror.Sum") &&
+      !signature.signature.contains("Mirror.Product")
+    }
+
+  private def symbolIdsAreUnique(symbols: Vector[ApiSymbol]): Boolean =
+    symbols.iterator.map(_.id).toSet.size == symbols.size
+
+  private def signatureIdsAreUnique(symbols: Vector[ApiSymbol]): Boolean =
+    val ids = symbols.iterator.flatMap(_.signatures).map(_.id).toVector
+    ids.toSet.size == ids.size
+
+  private def signaturesAreHighlighted(symbols: Vector[ApiSymbol]): Boolean =
+    symbols.iterator.flatMap(_.signatures).forall(_.tokens.exists(_.styles.nonEmpty))
+
+  private def signatureTokensMatchText(symbols: Vector[ApiSymbol]): Boolean =
+    symbols.iterator.flatMap(_.signatures).forall(signature =>
+      signature.tokens.iterator.map(_.text).mkString == signature.signature
+    )
+
+  private def routesAreValid(symbols: Vector[ApiSymbol]): Boolean =
+    symbols.forall(_.route.matches("/api(?:/[a-z0-9]+(?:-[a-z0-9]+)*)+"))
+
+  private def repositorySourcesAreValid(symbols: Vector[ApiSymbol]): Boolean =
+    symbols.iterator.flatMap(_.signatures).forall {
+      case ApiSignature(_, _, _, _, ApiSource.Repository(region), _) =>
+        !region.path.startsWith("/") &&
+        !region.path.startsWith("out/") &&
+        region.startLine > 0 &&
+        Files.isRegularFile(repositoryRoot.resolve(region.path))
+      case _ => true
+    }
+
   private val targetRoots = Vector(
     Path.of(classOf[scalive.LiveView[?, ?]].getProtectionDomain.getCodeSource.getLocation.toURI),
     Path.of(
@@ -73,12 +126,16 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         symbol.qualifiedName == "scalive.LiveRouteParamsBuilder" &&
           symbol.kind == ApiSymbolKind.Class
       )
-
       assertTrue(
         result.isRight,
         symbols.exists(_.qualifiedName == "scalive.LiveView"),
         symbols.exists(_.qualifiedName == "scalive.codecs.Encoder"),
         symbols.exists(_.qualifiedName == "scalive.testing.DisconnectedRender"),
+        hasSignature(symbols, "scalive", ApiSymbolKind.Package,
+          "package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with Components"),
+        hasSignature(symbols, "scalive.codecs", ApiSymbolKind.Package, "package scalive.codecs"),
+        hasSignature(symbols, "scalive.testing", ApiSymbolKind.Package, "package scalive.testing"),
+        packageSignaturesHideSyntheticNames(symbols),
         div.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Inherited)),
         div.exists(_.signatures.forall(_.source == ApiSource.GeneratedDom)),
         div.exists(_.summary.nonEmpty),
@@ -106,6 +163,31 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         liveRouteParamsBuilder.exists(_.signatures.exists(_.signature.startsWith(
           "class LiveRouteParamsBuilder[R, A, -Need, Ctx, Params, Capability <: LiveRouteParamsCapability]"
         ))),
+        hasSignature(symbols, "scalive.HtmlElement", ApiSymbolKind.Class,
+          "class HtmlElement[+Msg](tag: HtmlTag, mods: Vector[Mod[Msg]])"),
+        hasSignature(symbols, "scalive.HtmlElement.appended", ApiSymbolKind.Def,
+          "def appended[Msg2 >: Msg](mod: Mod[Msg2]*): HtmlElement[Msg2]"),
+        hasSignature(symbols, "scalive.component", ApiSymbolKind.Def,
+          "def component[Props, Msg, Model](liveComponent: LiveComponent[Props, Msg, Model], id: String): LiveComponentInstance[Props, Msg, Model]"),
+        hasSignature(symbols, "scalive.dropTarget", ApiSymbolKind.Extension,
+          "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"),
+        hasSignature(symbols, "scalive.splitBy", ApiSymbolKind.Extension,
+          "extension def splitBy[T](items: IterableOnce[T])[Key, Msg](key: T => Key)(project: (Key, T) => HtmlElement[Msg]): Mod[Msg]"),
+        hasSignature(symbols, "scalive.AsyncValue", ApiSymbolKind.Enum, "enum AsyncValue[+A]"),
+        hasSignature(symbols, "scalive.AsyncValue", ApiSymbolKind.Object, "object AsyncValue"),
+        hasSignature(symbols, "scalive.Mod.Attr", ApiSymbolKind.Enum,
+          "enum Attr[+Msg] extends Mod[Msg]"),
+        hasSignature(symbols, "scalive.FormAction.Method", ApiSymbolKind.Enum,
+          "enum Method(attributeValue: String)"),
+        hasSignature(symbols, "scalive.PhxUpdate", ApiSymbolKind.Enum,
+          "enum PhxUpdate(value: String)"),
+        hasSignature(symbols, "scalive.LiveParamsCodec.DecodeError", ApiSymbolKind.Class,
+          "class DecodeError(message: String, cause: Option[Throwable] = ...) extends RuntimeException"),
+        hasSignature(symbols, "scalive.StaticAssetSource.Classpath", ApiSymbolKind.Class,
+          "class Classpath(resourcePrefix: String, assets: Set[String], classLoader: ClassLoader) extends StaticAssetSource"),
+        hasSignature(symbols, "scalive.ContextAppend", ApiSymbolKind.Object,
+          "object ContextAppend extends LowPriorityContextAppend"),
+        signaturesHideSyntheticParents(symbols),
         hooks.exists(_.signatures.exists(_.signature == "def hooks: LiveHooks[Msg, Model]")),
         routedEventless.exists(_.signatures.exists(_.signature ==
           "trait Eventless[Model, Params] extends LiveView.Eventless[Model] with LiveView.Routed[Nothing, Model, Params]"
@@ -153,20 +235,15 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val first = ApiReferencePipeline.generate(config)
       val second = ApiReferencePipeline.generate(config)
       val symbols = first.toOption.toVector.flatMap(_.symbols)
-      val repositorySources = symbols.flatMap(_.signatures).collect {
-        case ApiSignature(_, _, _, _, ApiSource.Repository(region), _) => region
-      }
 
       assertTrue(
         first == second,
-        symbols.map(_.id).distinct.size == symbols.size,
-        symbols.flatMap(_.signatures.map(_.id)).distinct.size == symbols.flatMap(_.signatures).size,
-        symbols.flatMap(_.signatures).forall(_.tokens.exists(_.styles.nonEmpty)),
-        symbols.forall(_.route.matches("/api(?:/[a-z0-9]+(?:-[a-z0-9]+)*)+")),
-        repositorySources.forall(region =>
-          !region.path.startsWith("/") && !region.path.startsWith("out/") && region.startLine > 0
-        ),
-        repositorySources.forall(region => Files.isRegularFile(repositoryRoot.resolve(region.path)))
+        symbolIdsAreUnique(symbols),
+        signatureIdsAreUnique(symbols),
+        signaturesAreHighlighted(symbols),
+        signatureTokensMatchText(symbols),
+        routesAreValid(symbols),
+        repositorySourcesAreValid(symbols)
       )
     }
   ) @@ TestAspect.sequential

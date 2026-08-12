@@ -2,7 +2,7 @@ package scalive.docs
 
 import zio.test.*
 
-import scalive.docs.model.{Block, Section}
+import scalive.docs.model.{Block, Inline, LinkTarget, Section}
 
 object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
   private def bundle = GeneratedDocumentation.load(getClass.getClassLoader)
@@ -33,6 +33,26 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
         DocumentationApplication.from(value.copy(pages = pages))
       }
       assertTrue(result.left.exists(_.contains("example 'counter' appears more than once")))
+    },
+    test("rejects internal links to unknown fragments") {
+      val result = bundle.flatMap { value =>
+        val pages = value.pages.map { page =>
+          if page.route == "/learn" then
+            page.copy(content = page.content :+ Block.Paragraph(Vector(
+              Inline.Link(
+                Vector(Inline.Text("Broken fragment")),
+                LinkTarget.Internal("/api/scalive/live-view", Some("missing-anchor")),
+                None
+              )
+            )))
+          else page
+        }
+        DocumentationApplication.from(value.copy(pages = pages))
+      }
+      assertTrue(
+        result.left.exists(_.contains("/learn")),
+        result.left.exists(_.contains("/api/scalive/live-view#missing-anchor"))
+      )
     },
     test("requires one authored homepage at the root route") {
       val missing = bundle.flatMap(value =>

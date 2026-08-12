@@ -23,3 +23,8 @@ under that public import path.
 Use the API browser to explore packages and nested owners. Global documentation
 search (`Ctrl K`) searches API declarations and members alongside guides and
 examples.
+
+## Core abstraction {#core-abstraction}
+
+Start with @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@, the typed boundary for mounting
+state, handling messages, and rendering HTML.

@@ -12,7 +12,7 @@ final case class DocumentationBundle(
     derives JsonCodec
 
 object DocumentationBundle:
-  val CurrentFormatVersion = 5
+  val CurrentFormatVersion = 6
 
 final case class Page(
   route: String,
@@ -239,6 +239,9 @@ object Inline:
     target: LinkTarget,
     title: Option[String])
       extends Inline
+
+  @jsonHint("apiSymbolRef")
+  final case class ApiSymbolRef(id: String, label: String) extends Inline
 
   @jsonHint("lineBreak")
   case object LineBreak extends Inline

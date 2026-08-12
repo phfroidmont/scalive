@@ -37,7 +37,7 @@ val answer: Int = 42
 
 @:sourceRegion(examples/Sample.scala, greeting)
 
-@:apiSymbol(trait:scalive.LiveView)
+Use @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ and its @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ member.
 
 @:compatibility(server-navigation)
 

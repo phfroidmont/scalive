@@ -27,6 +27,7 @@ object ContentModelSpec extends ZIOSpecDefault:
       target = LinkTarget.External("https://zio.dev"),
       title = None
     ),
+    Inline.ApiSymbolRef("trait:scalive.LiveView", "LiveView[Msg, Model]"),
     Inline.LineBreak
   )
 
@@ -260,6 +261,7 @@ object ContentModelSpec extends ZIOSpecDefault:
         encoded.fromJson[DocumentationBundle] == Right(bundle),
         encoded.contains("\"type\":\"paragraph\""),
         encoded.contains("\"type\":\"internal\""),
+        encoded.contains("\"type\":\"apiSymbolRef\",\"id\":\"trait:scalive.LiveView\""),
         encoded.contains("\"section\":\"home\""),
         encoded.contains("\"kind\":\"info\""),
         encoded.contains("\"kind\":\"heading\""),

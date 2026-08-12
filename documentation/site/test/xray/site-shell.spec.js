@@ -124,6 +124,32 @@ test("hides the API tree and keeps the outline before mobile content", async ({ 
   await expect(outline.getByRole("link", { name: "Members", exact: true })).toBeVisible()
 })
 
+test("shows a flat Learn path on desktop and hides it on smaller screens", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto("/learn/models-and-messages")
+
+  const navigation = page.locator(".docs-section-index")
+  await expect(navigation).toBeVisible()
+  await expect(navigation.locator("details")).toHaveCount(0)
+  await expect(navigation.locator(":scope > nav > ol > li > a")).toHaveText([
+    "01Start here",
+    "02Quick start",
+    "03Project anatomy",
+    "04Models and messages",
+    "05Rendering and DOM updates",
+  ])
+  await expect(navigation.locator('[aria-current="page"]')).toHaveText("04Models and messages")
+  const rowGaps = await navigation.locator(":scope > nav > ol > li > a").evaluateAll((links) =>
+    links.slice(1).map((link, index) =>
+      link.getBoundingClientRect().top - links[index].getBoundingClientRect().bottom
+    )
+  )
+  expect(rowGaps.every((gap) => Math.abs(gap) <= 0.5)).toBe(true)
+
+  await page.setViewportSize({ width: 768, height: 900 })
+  await expect(navigation).toBeHidden()
+})
+
 test("shows sibling companion entries without tree guide lines", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 1000 })
   await page.goto("/api/scalive/live-view")

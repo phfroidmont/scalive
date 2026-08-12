@@ -379,13 +379,14 @@ private[pipeline] object ScaladocParser:
     }.mkString(" ")
 
   private def inlineText(inlines: Vector[Inline]): String = inlines.map {
-    case Inline.Text(value)         => value
-    case Inline.Emphasis(content)   => inlineText(content)
-    case Inline.Strong(content)     => inlineText(content)
-    case Inline.Strike(content)     => inlineText(content)
-    case Inline.Code(value)         => value
-    case Inline.Link(content, _, _) => inlineText(content)
-    case Inline.LineBreak           => " "
+    case Inline.Text(value)            => value
+    case Inline.Emphasis(content)      => inlineText(content)
+    case Inline.Strong(content)        => inlineText(content)
+    case Inline.Strike(content)        => inlineText(content)
+    case Inline.Code(value)            => value
+    case Inline.Link(content, _, _)    => inlineText(content)
+    case Inline.ApiSymbolRef(_, label) => label
+    case Inline.LineBreak              => " "
   }.mkString
 
   private def slug(value: String): String =

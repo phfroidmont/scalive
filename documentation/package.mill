@@ -161,6 +161,17 @@ object `package` extends Module:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scaliveTesting)
       def zioTestVersion = "2.1.25"
 
+  object quickStartFixture extends build.ScalaCommon with build.NpmAssets:
+    def moduleDeps = Seq(build.scalive)
+
+    override def moduleDir = super.moduleDir / os.up / "fixtures" / "quick-start"
+
+    override def bundleOutputs = Seq("app.js")
+
+    def resources = Task {
+      super.resources() :+ bundle()
+    }
+
   object site extends build.ScalaCommon with build.NpmAssets:
     def moduleDeps = Seq(build.scalive, model)
 
@@ -214,7 +225,21 @@ object `package` extends Module:
     pipeline.test.testCached()
     pipeline.checkApi()
     pipeline.generate()
+    quickStartFixture.compile()
+    quickStartFixture.bundle()
     site.test.testCached()
     site.testJs()
     site.checkRuntimeClasspath()
+  }
+
+  def checkExternalLinks = Task {
+    val generated = pipeline.generate().path / "scalive" / "docs" / "generated" / "content.json"
+    val classpath = pipeline.runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
+    os.proc(
+      "java",
+      "-cp",
+      classpath,
+      "scalive.docs.pipeline.ExternalLinkChecker",
+      generated
+    ).call(cwd = moduleDir / os.up)
   }

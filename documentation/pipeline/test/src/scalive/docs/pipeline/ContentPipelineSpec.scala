@@ -41,7 +41,16 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     route = "/api/scalive/live-view",
     fragment = None
   )
-  private val validApiReference = ApiReference(apiMetadata, Vector(liveViewSymbol))
+  private val mountSymbol = liveViewSymbol.copy(
+    id = "def:scalive.LiveView.mount",
+    ownerId = Some(liveViewSymbol.id),
+    name = "mount",
+    qualifiedName = "scalive.LiveView.mount",
+    kind = ApiSymbolKind.Def,
+    summary = "Creates the initial model.",
+    fragment = Some("mount-12345678")
+  )
+  private val validApiReference = ApiReference(apiMetadata, Vector(liveViewSymbol, mountSymbol))
   private val counterDescriptor = ExampleDescriptor(
     id = "counter",
     title = "Typed counter",
@@ -78,7 +87,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             bundle.examples.head.source.text == "val greeting = \"hello\"\nprintln(greeting)",
             bundle.examples.head.source.tokens.exists(_.styles.nonEmpty),
             bundle.examples.head.compilationFailures.isEmpty,
-            bundle.apiReference.symbols == Vector(liveViewSymbol),
+            bundle.apiReference.symbols == Vector(liveViewSymbol, mountSymbol),
             bundle.searchEntries.map(_.kind).toSet == Set(
               SearchEntryKind.Page,
               SearchEntryKind.Heading,
@@ -141,7 +150,6 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             source.text == "val greeting = \"hello\"\nprintln(greeting)",
             source.tokens.exists(_.styles.nonEmpty),
             home.content.contains(Block.ExampleRef("counter")),
-            home.content.contains(Block.ApiSymbolRef("trait:scalive.LiveView")),
             home.content.contains(Block.CompatibilityRef("server-navigation")),
             home.content.collect { case callout: Block.Callout => callout.kind }.toSet ==
               CalloutKind.values.toSet
@@ -149,8 +157,22 @@ object ContentPipelineSpec extends ZIOSpecDefault:
 
       assertions && assertTrue(first == second)
     },
+    test("preserves owner and member API symbol identity in inline content and search") {
+      generate("valid") match
+        case Left(error) => assertTrue(error.messages.isEmpty)
+        case Right(bundle) =>
+          val inlines = bundle.pages.find(_.route == "/").toVector
+            .flatMap(_.content.collect { case Block.Paragraph(content) => content }.flatten)
+          val searchText = bundle.searchEntries.find(_.id == "page:/").map(_.text)
+          assertTrue(
+            inlines.contains(Inline.ApiSymbolRef(liveViewSymbol.id, "LiveView")),
+            inlines.contains(Inline.ApiSymbolRef(mountSymbol.id, "mount")),
+            searchText.exists(_.contains("LiveView")),
+            searchText.exists(_.contains("mount"))
+          )
+    },
     test("generates typed API pages and search entries") {
-      generate("api-reference", validApiReference) match
+      generate("api-reference", ApiReference(apiMetadata, Vector(liveViewSymbol))) match
         case Left(error) => assertTrue(error.messages.isEmpty)
         case Right(bundle) =>
           val generated = bundle.pages.find(_.route == "/api/scalive/live-view")
@@ -300,6 +322,19 @@ object ContentPipelineSpec extends ZIOSpecDefault:
       generate("valid", emptyApiReference) match
         case Right(_)    => assertTrue(false)
         case Left(error) => assertTrue(error.message.contains("unknown API symbol 'trait:scalive.LiveView'"))
+    },
+    failureTest(
+      "rejects standalone authored API symbol directives",
+      "standalone-api-symbol",
+      "apiSymbol must be embedded in inline content"
+    ),
+    test("requires API symbol labels to be non-empty code spans") {
+      val results = Vector("api-symbol-text-label", "api-symbol-empty-label").map { fixture =>
+        generate(fixture, validApiReference)
+      }
+      assertTrue(results.forall(
+        _.left.exists(_.message.contains("apiSymbol label must be one non-empty code span"))
+      ))
     },
     test("rejects unknown example directives") {
       generate("valid", validApiReference, Vector.empty) match

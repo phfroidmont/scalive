@@ -49,7 +49,11 @@ object ContentPipeline:
     "(?i)<(?!https?://|mailto:)(?:!--|\\?|![a-z\\[]|/?[a-z][a-z0-9:-]*(?=[\\s/>]|$))".r
   private val DirectiveName   = "@:([A-Za-z][A-Za-z0-9]*|@)".r
   private val SingleDirective =
-    "^\\s*@:(example|apiSymbol|compatibility)\\(([^\\s,(){}]+)\\)\\s*$".r
+    "^\\s*@:(example|compatibility)\\(([^\\s,(){}]+)\\)\\s*$".r
+  private val StandaloneApiSymbol =
+    "^\\s*@:apiSymbol\\(([^\\s,(){}]+)\\)\\s*$".r
+  private val InlineApiSymbol =
+    "@:apiSymbol\\(([^\\s,(){}]+)\\)(?s:.*?)@:@".r
   private val SourceDirective =
     "^\\s*@:sourceRegion\\(([^\\s,(){}]+)\\s*,\\s*([^\\s,(){}]+)\\)\\s*$".r
   private val CalloutDirective =
@@ -448,6 +452,9 @@ object ContentPipeline:
     if names.isEmpty then calloutDepth
     else
       line match
+        case StandaloneApiSymbol(_) =>
+          errors += s"$sourcePath:$lineNumber: apiSymbol must be embedded in inline content."
+          calloutDepth
         case SingleDirective(name, id) =>
           if Set("example", "compatibility").contains(name) && !HeadingId.matches(id) then
             errors += s"$sourcePath:$lineNumber: invalid $name id '$id'."
@@ -470,6 +477,8 @@ object ContentPipeline:
             errors += s"$sourcePath:$lineNumber: unexpected directive closing marker."
             0
           else calloutDepth - 1
+        case value if DirectiveName.findFirstIn(InlineApiSymbol.replaceAllIn(value, "")).isEmpty =>
+          calloutDepth
         case _ =>
           names.distinct.sorted.foreach {
             case "@" =>
@@ -562,12 +571,18 @@ object ContentPipeline:
         case None =>
           Left(Vector(s"${source.sourcePath}: parsed document is missing from the Laika tree."))
         case Some(document) =>
-          convertBlocks(document.content.content, source, routeByPath, paths).map { blocks =>
+          convertBlocks(
+            document.content.content,
+            source,
+            routeByPath,
+            paths,
+            apiReference.symbols.map(symbol => symbol.id -> symbol).toMap
+          ).map { blocks =>
             Page(
               route = source.route,
               metadata = source.metadata,
               source = PageSource.Authored(SourceLocation(source.sourcePath, 1)),
-              outline = buildOutline(collectHeadings(blocks)),
+              outline = buildOutline(collectHeadings(blocks), apiReference),
               content = blocks
             )
           }
@@ -622,11 +637,25 @@ object ContentPipeline:
   private def collectApiReferences(blocks: Vector[Block]): Vector[String] =
     blocks.flatMap {
       case Block.ApiSymbolRef(id)       => Vector(id)
+      case Block.Paragraph(content)     => collectInlineApiReferences(content)
+      case Block.Heading(_, _, content) => collectInlineApiReferences(content)
+      case Block.Table(header, rows)    =>
+        (header ++ rows.flatMap(_.cells)).flatMap(cell => collectInlineApiReferences(cell.content))
       case Block.BulletList(items)      => items.flatMap(item => collectApiReferences(item.content))
       case Block.OrderedList(_, items)  => items.flatMap(item => collectApiReferences(item.content))
       case Block.Quote(content)         => collectApiReferences(content)
       case Block.Callout(_, _, content) => collectApiReferences(content)
       case _                            => Vector.empty
+    }
+
+  private def collectInlineApiReferences(inlines: Vector[Inline]): Vector[String] =
+    inlines.flatMap {
+      case Inline.ApiSymbolRef(id, _) => Vector(id)
+      case Inline.Emphasis(content)   => collectInlineApiReferences(content)
+      case Inline.Strong(content)     => collectInlineApiReferences(content)
+      case Inline.Strike(content)     => collectInlineApiReferences(content)
+      case Inline.Link(content, _, _) => collectInlineApiReferences(content)
+      case _                          => Vector.empty
     }
 
   private def validateExampleReferences(
@@ -868,9 +897,10 @@ object ContentPipeline:
     blocks: Seq[LaikaBlock],
     source: AuthoredDocument,
     routeByPath: Map[String, String],
-    paths: ValidatedPaths
+    paths: ValidatedPaths,
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], Vector[Block]] =
-    val converted        = blocks.map(convertBlock(_, source, routeByPath, paths))
+    val converted        = blocks.map(convertBlock(_, source, routeByPath, paths, apiSymbols))
     val (errors, values) = converted.partitionMap(identity)
     if errors.nonEmpty then Left(errors.flatten.toVector)
     else Right(values.flatten.toVector)
@@ -879,19 +909,22 @@ object ContentPipeline:
     block: LaikaBlock,
     source: AuthoredDocument,
     routeByPath: Map[String, String],
-    paths: ValidatedPaths
+    paths: ValidatedPaths,
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], Vector[Block]] = block match
     case laika.ast.Paragraph(Seq(image: laika.ast.Image), _) =>
       convertImage(image).map(value => Vector(value))
     case laika.ast.Paragraph(content, _) =>
-      convertInlines(content, routeByPath).map(value => Vector(Block.Paragraph(value)))
+      convertInlines(content, source, routeByPath, apiSymbols).map(value =>
+        Vector(Block.Paragraph(value))
+      )
     case section: laika.ast.Section =>
       for
-        heading <- convertHeading(section.header, routeByPath)
-        content <- convertBlocks(section.content, source, routeByPath, paths)
+        heading <- convertHeading(section.header, source, routeByPath, apiSymbols)
+        content <- convertBlocks(section.content, source, routeByPath, paths, apiSymbols)
       yield heading +: content
     case header: laika.ast.Header =>
-      convertHeading(header, routeByPath).map(value => Vector(value))
+      convertHeading(header, source, routeByPath, apiSymbols).map(value => Vector(value))
     case laika.ast.CodeBlock(language, content, _, _) =>
       val tokens = CodeHighlighter.fromSpans(content)
       Right(
@@ -905,116 +938,148 @@ object ContentPipeline:
         )
       )
     case list: laika.ast.BulletList =>
-      convertListItems(list.content.map(_.content), source, routeByPath, paths)
+      convertListItems(list.content.map(_.content), source, routeByPath, paths, apiSymbols)
         .map(items => Vector(Block.BulletList(items)))
     case list: laika.ast.EnumList =>
-      convertListItems(list.content.map(_.content), source, routeByPath, paths)
+      convertListItems(list.content.map(_.content), source, routeByPath, paths, apiSymbols)
         .map { items =>
           val start = list.content.headOption.map(_.position).getOrElse(list.start)
           Vector(Block.OrderedList(start, items))
         }
     case quote: laika.ast.QuotedBlock if quote.attribution.isEmpty =>
-      convertBlocks(quote.content, source, routeByPath, paths)
+      convertBlocks(quote.content, source, routeByPath, paths, apiSymbols)
         .map(content => Vector(Block.Quote(content)))
     case _: laika.ast.QuotedBlock => unsupported(source, block)
-    case table: laika.ast.Table   => convertTable(table, routeByPath).map(value => Vector(value))
-    case _: laika.ast.Rule        => Right(Vector(Block.Rule))
-    case node: ExampleNode        => Right(Vector(Block.ExampleRef(node.id)))
-    case node: ApiSymbolNode      => Right(Vector(Block.ApiSymbolRef(node.id)))
-    case node: CompatibilityNode  => Right(Vector(Block.CompatibilityRef(node.id)))
-    case node: SourceRegionNode   => convertSourceRegion(node, paths).map(value => Vector(value))
-    case node: CalloutNode        =>
+    case table: laika.ast.Table   =>
+      convertTable(table, source, routeByPath, apiSymbols).map(value => Vector(value))
+    case _: laika.ast.Rule       => Right(Vector(Block.Rule))
+    case node: ExampleNode       => Right(Vector(Block.ExampleRef(node.id)))
+    case node: CompatibilityNode => Right(Vector(Block.CompatibilityRef(node.id)))
+    case node: SourceRegionNode  => convertSourceRegion(node, paths).map(value => Vector(value))
+    case node: CalloutNode       =>
       for
         kind <- calloutKind(node.kind).toRight(
                   Vector(s"${source.sourcePath}: unsupported callout kind '${node.kind}'.")
                 )
-        content <- convertBlocks(node.content, source, routeByPath, paths)
+        content <- convertBlocks(node.content, source, routeByPath, paths, apiSymbols)
       yield Vector(Block.Callout(kind, None, content))
     case sequence: laika.ast.BlockSequence =>
-      convertBlocks(sequence.content, source, routeByPath, paths)
+      convertBlocks(sequence.content, source, routeByPath, paths, apiSymbols)
     case _ => unsupported(source, block)
 
   private def convertHeading(
     header: laika.ast.Header,
-    routeByPath: Map[String, String]
+    source: AuthoredDocument,
+    routeByPath: Map[String, String],
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], Block.Heading] =
     if !header.hasStyle(ExplicitHeadingStyle) || header.options.id.isEmpty then
       Left(Vector("Laika produced a heading without an explicit author-supplied id."))
     else
-      convertInlines(header.content, routeByPath)
+      convertInlines(header.content, source, routeByPath, apiSymbols)
         .map(content => Block.Heading(header.level, header.options.id.get, content))
 
   private def convertListItems(
     items: Seq[Seq[LaikaBlock]],
     source: AuthoredDocument,
     routeByPath: Map[String, String],
-    paths: ValidatedPaths
+    paths: ValidatedPaths,
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], Vector[ListItem]] =
-    val results = items.map(convertBlocks(_, source, routeByPath, paths).map(ListItem(_)))
+    val results =
+      items.map(convertBlocks(_, source, routeByPath, paths, apiSymbols).map(ListItem(_)))
     val (errors, converted) = results.partitionMap(identity)
     if errors.nonEmpty then Left(errors.flatten.toVector) else Right(converted.toVector)
 
   private def convertTable(
     table: laika.ast.Table,
-    routeByPath: Map[String, String]
+    source: AuthoredDocument,
+    routeByPath: Map[String, String],
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], Block.Table] =
     val headerRows = table.head.content
     if headerRows.size != 1 then Left(Vector("GFM tables must contain exactly one header row."))
     else
       for
-        header <- convertTableRow(headerRows.head, routeByPath)
-        rows   <- sequence(table.body.content.map(convertTableRow(_, routeByPath)))
+        header <- convertTableRow(headerRows.head, source, routeByPath, apiSymbols)
+        rows   <-
+          sequence(table.body.content.map(convertTableRow(_, source, routeByPath, apiSymbols)))
       yield Block.Table(header.cells, rows)
 
   private def convertTableRow(
     row: laika.ast.Row,
-    routeByPath: Map[String, String]
+    source: AuthoredDocument,
+    routeByPath: Map[String, String],
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], TableRow] =
-    sequence(row.content.map(convertTableCell(_, routeByPath))).map(cells => TableRow(cells))
+    sequence(row.content.map(convertTableCell(_, source, routeByPath, apiSymbols))).map(cells =>
+      TableRow(cells)
+    )
 
   private def convertTableCell(
     cell: laika.ast.Cell,
-    routeByPath: Map[String, String]
+    source: AuthoredDocument,
+    routeByPath: Map[String, String],
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], TableCell] =
     if cell.colspan != 1 || cell.rowspan != 1 then
       Left(Vector("Spanning table cells are not supported."))
     else
       cell.content match
         case Seq(laika.ast.Paragraph(content, _)) =>
-          convertInlines(content, routeByPath).map(TableCell(_))
+          convertInlines(content, source, routeByPath, apiSymbols).map(TableCell(_))
         case _ => Left(Vector("Table cells must contain a single paragraph."))
 
   private def convertInlines(
     spans: Seq[LaikaSpan],
-    routeByPath: Map[String, String]
+    source: AuthoredDocument,
+    routeByPath: Map[String, String],
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], Vector[Inline]] =
-    val converted        = spans.map(convertInline(_, routeByPath))
+    val converted        = spans.map(convertInline(_, source, routeByPath, apiSymbols))
     val (errors, values) = converted.partitionMap(identity)
     if errors.nonEmpty then Left(errors.flatten.toVector)
     else Right(values.flatten.toVector)
 
   private def convertInline(
     span: LaikaSpan,
-    routeByPath: Map[String, String]
+    source: AuthoredDocument,
+    routeByPath: Map[String, String],
+    apiSymbols: Map[String, ApiSymbol]
   ): Either[Vector[String], Vector[Inline]] = span match
     case laika.ast.Text(content, _)       => Right(Vector(Inline.Text(content)))
     case laika.ast.Emphasized(content, _) =>
-      convertInlines(content, routeByPath).map(value => Vector(Inline.Emphasis(value)))
+      convertInlines(content, source, routeByPath, apiSymbols).map(value =>
+        Vector(Inline.Emphasis(value))
+      )
     case laika.ast.Strong(content, _) =>
-      convertInlines(content, routeByPath).map(value => Vector(Inline.Strong(value)))
+      convertInlines(content, source, routeByPath, apiSymbols).map(value =>
+        Vector(Inline.Strong(value))
+      )
     case laika.ast.Deleted(content, _) =>
-      convertInlines(content, routeByPath).map(value => Vector(Inline.Strike(value)))
+      convertInlines(content, source, routeByPath, apiSymbols).map(value =>
+        Vector(Inline.Strike(value))
+      )
     case laika.ast.Literal(content, _)       => Right(Vector(Inline.Code(content)))
     case laika.ast.InlineCode(_, content, _) =>
       Right(Vector(Inline.Code(extractText(content))))
     case link: laika.ast.SpanLink =>
       for
-        content <- convertInlines(link.content, routeByPath)
+        content <- convertInlines(link.content, source, routeByPath, apiSymbols)
         target  <- convertLinkTarget(link.target, routeByPath)
       yield Vector(Inline.Link(content, target, link.title))
-    case _: laika.ast.LineBreak           => Right(Vector(Inline.LineBreak))
-    case sequence: laika.ast.SpanSequence => convertInlines(sequence.content, routeByPath)
-    case image: laika.ast.Image           =>
+    case _: laika.ast.LineBreak => Right(Vector(Inline.LineBreak))
+    case node: ApiSymbolNode    =>
+      if !apiSymbols.contains(node.id) then
+        Left(Vector(s"${source.sourcePath}: unknown API symbol '${node.id}'."))
+      else
+        apiSymbolLabel(node.content)
+          .toRight(
+            Vector(s"${source.sourcePath}: apiSymbol label must be one non-empty code span.")
+          ).map(label => Vector(Inline.ApiSymbolRef(node.id, label)))
+    case sequence: laika.ast.SpanSequence =>
+      convertInlines(sequence.content, source, routeByPath, apiSymbols)
+    case image: laika.ast.Image =>
       Left(Vector(s"Image '${image.target.render()}' must be the sole content of a paragraph."))
     case _ => Left(Vector(s"Unsupported inline Markdown node: ${span.productPrefix}."))
 
@@ -1049,6 +1114,12 @@ object ContentPipeline:
     case container: laika.ast.SpanContainer => extractText(container.content)
     case _                                  => ""
   }.mkString
+
+  private def apiSymbolLabel(content: Seq[LaikaSpan]): Option[String] = content match
+    case Seq(laika.ast.Literal(value, _)) if value.trim.nonEmpty => Some(value)
+    case Seq(laika.ast.InlineCode(_, spans, _))                  =>
+      Option(extractText(spans)).filter(_.trim.nonEmpty)
+    case _ => None
 
   private def convertSourceRegion(
     node: SourceRegionNode,
@@ -1119,11 +1190,15 @@ object ContentPipeline:
     children: ArrayBuffer[MutableOutline] = ArrayBuffer.empty):
     def result: OutlineItem = OutlineItem(id, title, level, children.map(_.result).toVector)
 
-  private def buildOutline(headings: Vector[Block.Heading]): PageOutline =
-    val roots = ArrayBuffer.empty[MutableOutline]
-    val stack = ArrayBuffer.empty[MutableOutline]
+  private def buildOutline(
+    headings: Vector[Block.Heading],
+    apiReference: ApiReference
+  ): PageOutline =
+    val apiSymbols = apiReference.symbols.map(symbol => symbol.id -> symbol).toMap
+    val roots      = ArrayBuffer.empty[MutableOutline]
+    val stack      = ArrayBuffer.empty[MutableOutline]
     headings.foreach { heading =>
-      val item = MutableOutline(heading.id, inlineText(heading.content), heading.level)
+      val item = MutableOutline(heading.id, inlineText(heading.content, apiSymbols), heading.level)
       while stack.nonEmpty && stack.last.level >= item.level do
         val _ = stack.remove(stack.size - 1)
       if stack.isEmpty then roots += item else stack.last.children += item
@@ -1131,15 +1206,17 @@ object ContentPipeline:
     }
     PageOutline(roots.map(_.result).toVector)
 
-  private def inlineText(inlines: Vector[Inline]): String = inlines.map {
-    case Inline.Text(value)         => value
-    case Inline.Emphasis(content)   => inlineText(content)
-    case Inline.Strong(content)     => inlineText(content)
-    case Inline.Strike(content)     => inlineText(content)
-    case Inline.Code(value)         => value
-    case Inline.Link(content, _, _) => inlineText(content)
-    case Inline.LineBreak           => " "
-  }.mkString
+  private def inlineText(inlines: Vector[Inline], apiSymbols: Map[String, ApiSymbol]): String =
+    inlines.map {
+      case Inline.Text(value)            => value
+      case Inline.Emphasis(content)      => inlineText(content, apiSymbols)
+      case Inline.Strong(content)        => inlineText(content, apiSymbols)
+      case Inline.Strike(content)        => inlineText(content, apiSymbols)
+      case Inline.Code(value)            => value
+      case Inline.Link(content, _, _)    => inlineText(content, apiSymbols)
+      case Inline.ApiSymbolRef(_, label) => label
+      case Inline.LineBreak              => " "
+    }.mkString
 
   private def buildNavigation(pages: Vector[Page], apiReference: ApiReference): Navigation =
     val items = SectionOrder.flatMap { section =>
@@ -1277,8 +1354,11 @@ object ContentPipeline:
     type Self = SourceRegionNode
     def withOptions(options: Options): SourceRegionNode = copy(options = options)
 
-  final private case class ApiSymbolNode(id: String, options: Options = Options.empty)
-      extends LaikaBlock:
+  final private case class ApiSymbolNode(
+    id: String,
+    content: Seq[LaikaSpan],
+    options: Options = Options.empty)
+      extends LaikaSpan:
     type Self = ApiSymbolNode
     def withOptions(options: Options): ApiSymbolNode = copy(options = options)
 
@@ -1311,9 +1391,6 @@ object ContentPipeline:
           block.attribute(1).as[String].widen
         ).mapN((path, region) => SourceRegionNode(path, region))
       },
-      BlockDirectives.create("apiSymbol") {
-        block.attribute(0).as[String].map(ApiSymbolNode(_))
-      },
       BlockDirectives.create("compatibility") {
         block.attribute(0).as[String].map(CompatibilityNode(_))
       },
@@ -1322,6 +1399,9 @@ object ContentPipeline:
       }
     )
     val spanDirectives = Seq(
+      SpanDirectives.create("apiSymbol") {
+        (span.attribute(0).as[String].widen, span.parsedBody).mapN(ApiSymbolNode(_, _))
+      },
       SpanDirectives.create("scaliveHeadingId") {
         span.attribute(0).as[String].map(HeadingMarker(_))
       }

@@ -1,6 +1,7 @@
 import { LiveSocket } from "phoenix_live_view"
 
 import { nextActiveIndex, search } from "./search.js"
+import { createInlineApiReferenceEnhancer } from "./inline-api-reference.js"
 import {
   assertLiveViewVersion,
   createTraceSession,
@@ -15,6 +16,7 @@ const exampleControlSelector =
 const instantSearchLimit = 8
 const xrayAdapter = createXRayAdapter()
 const xrayTraceSession = createTraceSession()
+const inlineApiReferences = createInlineApiReferenceEnhancer()
 const searchKindLabels = {
   page: "Page",
   heading: "Heading",
@@ -121,6 +123,7 @@ enhanceCodeBlocks()
 
 window.addEventListener("phx:page-loading-stop", () => {
   enhanceCodeBlocks()
+  inlineApiReferences.enhance()
   closeNavigationDisclosure()
 })
 

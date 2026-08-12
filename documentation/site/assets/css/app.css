@@ -670,6 +670,47 @@ details[open] > summary .docs-disclosure-marker,
   grid-area: section-navigation;
 }
 
+.docs-section-index ol,
+.docs-section-index ul {
+  border-left: 1px solid var(--docs-border);
+}
+
+.docs-section-index li + li {
+  margin-top: 0;
+}
+
+.docs-section-index a {
+  min-height: 2.75rem;
+  margin-left: -1px;
+  padding: 0.65rem 0.75rem 0.65rem 1rem;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  align-items: center;
+  border-left: 1px solid transparent;
+  font-size: 0.94rem;
+}
+
+.docs-section-index ul a {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.docs-section-index a:hover,
+.docs-section-index a[aria-current="page"] {
+  border-left-color: var(--docs-accent);
+  background: var(--docs-surface-subtle);
+}
+
+.docs-section-index-number {
+  color: var(--docs-border-strong);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.docs-section-index-label {
+  min-width: 0;
+}
+
 .docs-main {
   grid-area: main-content;
 }
@@ -678,7 +719,7 @@ details[open] > summary .docs-disclosure-marker,
   grid-area: page-outline;
 }
 
-.docs-section-nav li + li,
+.docs-api-navigation li + li,
 .docs-outline li + li {
   margin-top: 0.35rem;
 }
@@ -851,6 +892,70 @@ details[open] > summary .docs-disclosure-marker,
 }
 
 .docs-api-documentation > :last-child {
+  margin-bottom: 0;
+}
+
+.docs-inline-api-reference {
+  display: inline;
+}
+
+.docs-inline-api-reference > [data-api-reference-preview] {
+  position: fixed;
+  z-index: 50;
+  width: min(24rem, calc(100vw - 1.5rem));
+  max-height: min(18rem, calc(100vh - 1.5rem));
+  padding: 0.75rem 0.85rem;
+  overflow: auto;
+  border: 1px solid var(--docs-border-strong);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface-raised);
+  box-shadow: 0 0.8rem 2rem color-mix(in srgb, var(--docs-text) 18%, transparent);
+  color: var(--docs-text);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.docs-inline-api-reference > [data-api-reference-preview][hidden] {
+  display: none;
+}
+
+.docs-inline-api-reference .docs-api-reference-signature,
+.docs-inline-api-reference [data-api-reference-preview] > .docs-api-signature {
+  max-width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  color: var(--docs-text);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.76rem;
+  display: block;
+  white-space: pre-wrap;
+}
+
+.docs-inline-api-reference .docs-api-reference-signature .keyword {
+  color: var(--docs-code-keyword);
+}
+
+.docs-inline-api-reference .docs-api-reference-signature .type-name {
+  color: var(--docs-code-type);
+}
+
+.docs-inline-api-reference .docs-api-reference-signature .declaration-name {
+  color: var(--docs-code-declaration);
+}
+
+.docs-inline-api-reference .docs-api-reference-summary,
+.docs-inline-api-reference [data-api-reference-preview] > .docs-api-documentation {
+  margin: 0.55rem 0 0;
+  display: block;
+  color: var(--docs-muted);
+}
+
+.docs-inline-api-reference > [data-api-reference-preview] > :first-child {
+  margin-top: 0;
+}
+
+.docs-inline-api-reference > [data-api-reference-preview] > :last-child {
   margin-bottom: 0;
 }
 
@@ -3059,6 +3164,12 @@ details[open] > summary .docs-disclosure-marker,
   }
 }
 
+@media (max-width: 71.999rem) {
+  .docs-section-index {
+    display: none;
+  }
+}
+
 @media (min-width: 72rem) {
   .docs-shell {
     grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr) minmax(10rem, 13rem);
@@ -3070,6 +3181,11 @@ details[open] > summary .docs-disclosure-marker,
   .docs-shell.docs-shell-wide {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "main-content";
+  }
+
+  .docs-shell.docs-shell-no-section {
+    grid-template-columns: minmax(0, 1fr) minmax(10rem, 13rem);
+    grid-template-areas: "main-content page-outline";
   }
 
   .docs-section-nav,

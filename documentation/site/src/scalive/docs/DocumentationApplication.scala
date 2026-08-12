@@ -202,6 +202,7 @@ private[docs] object DocumentationApplication:
 
   private def validateReferences(bundle: DocumentationBundle): Either[String, Unit] =
     val routes   = bundle.pages.map(_.route).toSet
+    val anchors  = bundle.pages.map(page => page.route -> pageAnchors(page)).toMap
     val symbols  = bundle.apiReference.symbols.map(_.id).toSet
     val examples = bundle.examples.map(_.descriptor.id).toSet
     val errors   = bundle.pages.flatMap { page =>
@@ -214,8 +215,10 @@ private[docs] object DocumentationApplication:
             s"${page.route}: example '$id' appears more than once."
         }
       duplicateExamples ++ references.flatMap {
-        case ContentReference.Route(route) if !routes(route) =>
+        case ContentReference.Route(route, _) if !routes(route) =>
           Vector(s"${page.route}: unknown internal route '$route'.")
+        case ContentReference.Route(route, Some(fragment)) if !anchors(route)(fragment) =>
+          Vector(s"${page.route}: unknown internal anchor '$route#$fragment'.")
         case ContentReference.ApiSymbol(id) if !symbols(id) =>
           Vector(s"${page.route}: unknown API symbol '$id'.")
         case ContentReference.Example(id) if !examples(id) =>
@@ -333,7 +336,7 @@ private[docs] object DocumentationApplication:
     }
 
   private enum ContentReference:
-    case Route(route: String)
+    case Route(route: String, fragment: Option[String])
     case ApiSymbol(id: String)
     case Example(id: String)
 
@@ -357,11 +360,13 @@ private[docs] object DocumentationApplication:
       case Inline.Emphasis(content)        => collectInlineReferences(content)
       case Inline.Strong(content)          => collectInlineReferences(content)
       case Inline.Strike(content)          => collectInlineReferences(content)
+      case Inline.ApiSymbolRef(id, _)      => Vector(ContentReference.ApiSymbol(id))
       case Inline.Link(content, target, _) =>
         val nested = collectInlineReferences(content)
         target match
-          case LinkTarget.Internal(route, _) => ContentReference.Route(route) +: nested
-          case _: LinkTarget.External        => nested
+          case LinkTarget.Internal(route, fragment) =>
+            ContentReference.Route(route, fragment) +: nested
+          case _: LinkTarget.External => nested
       case _ => Vector.empty
     }
 end DocumentationApplication

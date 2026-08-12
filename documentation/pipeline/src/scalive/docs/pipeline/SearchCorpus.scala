@@ -15,7 +15,8 @@ private[pipeline] object SearchCorpus:
       page
     }
     val exampleById        = examples.map(example => example.descriptor.id -> example).toMap
-    val pageEntries        = authoredPages.flatMap(entriesForPage(_, exampleById))
+    val apiSymbolsById     = apiReference.symbols.map(symbol => symbol.id -> symbol).toMap
+    val pageEntries        = authoredPages.flatMap(entriesForPage(_, exampleById, apiSymbolsById))
     val apiSymbols         = apiReference.symbols.filter(symbol => routes(symbol.route))
     val (owners, members)  = apiSymbols.partition(_.fragment.isEmpty)
     val companionObjectIds = owners
@@ -36,7 +37,8 @@ private[pipeline] object SearchCorpus:
 
   private def entriesForPage(
     page: Page,
-    examples: Map[String, ExampleDefinition]
+    examples: Map[String, ExampleDefinition],
+    apiSymbols: Map[String, ApiSymbol]
   ): Vector[SearchEntry] =
     val canonicalExample = page.route.stripPrefix("/examples/") match
       case id if id.nonEmpty && !id.contains('/') => examples.get(id)
@@ -49,10 +51,10 @@ private[pipeline] object SearchCorpus:
       route = page.route,
       fragment = None,
       section = page.metadata.section,
-      text = prose(page.content)
+      text = prose(page.content, apiSymbols)
     )
     val headings = collectHeadings(page.content).map { heading =>
-      val title = inlineText(heading.content)
+      val title = inlineText(heading.content, apiSymbols)
       SearchEntry(
         id = s"heading:${page.route}#${heading.id}",
         kind = SearchEntryKind.Heading,
@@ -72,11 +74,15 @@ private[pipeline] object SearchCorpus:
         throw new IllegalArgumentException(s"Unsupported directive search kind: $kind")
     }
     canonicalExample match
-      case Some(example) => exampleEntry(page, example) +: (headings ++ directives)
+      case Some(example) => exampleEntry(page, example, apiSymbols) +: (headings ++ directives)
       case None          => (pageEntry +: headings) ++ directives
   end entriesForPage
 
-  private def exampleEntry(page: Page, example: ExampleDefinition): SearchEntry =
+  private def exampleEntry(
+    page: Page,
+    example: ExampleDefinition,
+    apiSymbols: Map[String, ApiSymbol]
+  ): SearchEntry =
     val descriptor = example.descriptor
     SearchEntry(
       id = s"example:${page.route}",
@@ -91,7 +97,7 @@ private[pipeline] object SearchCorpus:
         descriptor.title,
         descriptor.description,
         page.metadata.title,
-        prose(page.content)
+        prose(page.content, apiSymbols)
       ) ++
         descriptor.topics ++ descriptor.aliases).mkString(" ")
     )
@@ -239,32 +245,36 @@ private[pipeline] object SearchCorpus:
       case _                            => Vector.empty
     }
 
-  private def prose(blocks: Vector[Block]): String =
+  private def prose(blocks: Vector[Block], apiSymbols: Map[String, ApiSymbol]): String =
     blocks
       .flatMap {
-        case Block.Paragraph(content)     => Vector(inlineText(content))
-        case Block.Heading(_, _, content) => Vector(inlineText(content))
-        case Block.BulletList(items)      => items.flatMap(item => Vector(prose(item.content)))
-        case Block.OrderedList(_, items)  => items.flatMap(item => Vector(prose(item.content)))
-        case Block.Quote(content)         => Vector(prose(content))
-        case Block.Table(header, rows)    =>
-          (header ++ rows.flatMap(_.cells)).map(cell => inlineText(cell.content))
+        case Block.Paragraph(content)     => Vector(inlineText(content, apiSymbols))
+        case Block.Heading(_, _, content) => Vector(inlineText(content, apiSymbols))
+        case Block.BulletList(items)      =>
+          items.flatMap(item => Vector(prose(item.content, apiSymbols)))
+        case Block.OrderedList(_, items) =>
+          items.flatMap(item => Vector(prose(item.content, apiSymbols)))
+        case Block.Quote(content)      => Vector(prose(content, apiSymbols))
+        case Block.Table(header, rows) =>
+          (header ++ rows.flatMap(_.cells)).map(cell => inlineText(cell.content, apiSymbols))
         case Block.Image(_, alternative, imageTitle) => Vector(alternative) ++ imageTitle
-        case Block.Callout(_, title, content)        => title.toVector :+ prose(content)
+        case Block.Callout(_, title, content)        => title.toVector :+ prose(content, apiSymbols)
         case Block.ExampleRef(id)                    => Vector(id.replace('-', ' '))
         case Block.CompatibilityRef(id)              => Vector(id.replace('-', ' '))
         case _                                       => Vector.empty
       }.map(_.trim).filter(_.nonEmpty).mkString(" ")
 
-  private def inlineText(inlines: Vector[Inline]): String = inlines.map {
-    case Inline.Text(value)         => value
-    case Inline.Emphasis(content)   => inlineText(content)
-    case Inline.Strong(content)     => inlineText(content)
-    case Inline.Strike(content)     => inlineText(content)
-    case Inline.Code(value)         => value
-    case Inline.Link(content, _, _) => inlineText(content)
-    case Inline.LineBreak           => " "
-  }.mkString
+  private def inlineText(inlines: Vector[Inline], apiSymbols: Map[String, ApiSymbol]): String =
+    inlines.map {
+      case Inline.Text(value)            => value
+      case Inline.Emphasis(content)      => inlineText(content, apiSymbols)
+      case Inline.Strong(content)        => inlineText(content, apiSymbols)
+      case Inline.Strike(content)        => inlineText(content, apiSymbols)
+      case Inline.Code(value)            => value
+      case Inline.Link(content, _, _)    => inlineText(content, apiSymbols)
+      case Inline.ApiSymbolRef(_, label) => label
+      case Inline.LineBreak              => " "
+    }.mkString
 
   private def humanize(id: String): String =
     id.split('-').toVector.filter(_.nonEmpty).mkString(" ") match

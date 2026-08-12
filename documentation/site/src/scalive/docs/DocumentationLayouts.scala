@@ -73,10 +73,11 @@ final private[docs] class DocumentationLayout(
     .view.mapValues(_.map(_.kind).distinct.sortBy(apiKindRank)).toMap
 
   def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
-    val currentRoute = ctx.currentUrl.path.encode
-    val page         = application.page(currentRoute)
-    val documentPage = page.filterNot(_.metadata.section == Section.Home)
-    val metadata     = application
+    val currentRoute         = ctx.currentUrl.path.encode
+    val page                 = application.page(currentRoute)
+    val documentPage         = page.filterNot(_.metadata.section == Section.Home)
+    val hasSectionNavigation = documentPage.exists(sectionNavigationVisible)
+    val metadata             = application
       .metadata(currentRoute).getOrElse(
         throw new IllegalArgumentException(
           s"Missing documentation metadata for route '$currentRoute'."
@@ -93,6 +94,8 @@ final private[docs] class DocumentationLayout(
         cls :=
           (if documentPage.exists(_.metadata.section == Section.Api) then
              "docs-shell docs-shell-api"
+           else if documentPage.nonEmpty && !hasSectionNavigation then
+             "docs-shell docs-shell-no-section"
            else if documentPage.nonEmpty then "docs-shell"
            else "docs-shell docs-shell-wide"),
         documentPage
@@ -100,7 +103,7 @@ final private[docs] class DocumentationLayout(
           .map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
         mainTag(idAttr := "docs-main", cls := "docs-main", content),
         documentPage
-          .filterNot(_.metadata.section == Section.Api)
+          .filter(value => value.metadata.section != Section.Api && sectionNavigationVisible(value))
           .map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
         documentPage
           .filter(_.outline.items.nonEmpty)
@@ -228,7 +231,9 @@ final private[docs] class DocumentationLayout(
     )
 
   private def sectionNavigation[Msg](page: Page, currentRoute: String): HtmlElement[Msg] =
-    val section    = application.bundle.navigation.items.find(_.section == page.metadata.section)
+    val section = application.bundle.navigation.items.find(_.section == page.metadata.section)
+    if page.metadata.section != Section.Api then
+      return editorialSectionNavigation(page, currentRoute, section)
     val navigation = navTag(
       aria.label := s"${section.fold(page.metadata.title)(_.title)} section navigation",
       p(cls := "docs-nav-title", section.fold(page.metadata.title)(_.title)),
@@ -246,13 +251,79 @@ final private[docs] class DocumentationLayout(
         ).toVector,
       ul(section.toVector.map(item => navigationTree(item, currentRoute)))
     )
-    if page.metadata.section == Section.Api then
-      asideTag(
-        dom.hook("ApiNavigation", DomRef("docs-api-navigation")),
-        cls := "docs-section-nav docs-api-navigation",
-        navigation
+    asideTag(
+      dom.hook("ApiNavigation", DomRef("docs-api-navigation")),
+      cls := "docs-section-nav docs-api-navigation",
+      navigation
+    )
+
+  private def sectionNavigationVisible(page: Page): Boolean =
+    page.metadata.section match
+      case Section.Learn | Section.Guides => true
+      case Section.Project                =>
+        application.bundle.navigation.items
+          .find(_.section == Section.Project).exists(_.children.nonEmpty)
+      case Section.Api => true
+      case _           => false
+
+  private def editorialSectionNavigation[Msg](
+    page: Page,
+    currentRoute: String,
+    section: Option[NavigationItem]
+  ): HtmlElement[Msg] =
+    val root = section.getOrElse(
+      throw new IllegalArgumentException(
+        s"Missing navigation for section ${page.metadata.section}."
       )
-    else asideTag(cls := "docs-section-nav", navigation)
+    )
+    val items                           = root +: root.children
+    val links: Vector[HtmlElement[Msg]] = items.zipWithIndex.map { case (item, index) =>
+      li(editorialNavigationLink[Msg](item, currentRoute, index + 1))
+    }
+    val linkMods = links.map(Mod.Content.Tag(_))
+    val list     =
+      if page.metadata.section == Section.Learn then ol(linkMods)
+      else ul(linkMods)
+    asideTag(
+      cls := "docs-section-nav docs-section-index",
+      navTag(
+        aria.label := s"${root.title} section navigation",
+        p(cls := "docs-nav-title", root.title),
+        list
+      )
+    )
+
+  private def editorialNavigationLink[Msg](
+    item: NavigationItem,
+    currentRoute: String,
+    position: Int
+  ): HtmlElement[Msg] =
+    val location = application
+      .location(item.route).getOrElse(
+        throw new IllegalArgumentException(s"Unknown navigation route: ${item.route}")
+      )
+    val mods = Vector.newBuilder[Mod[Msg]]
+    if item.route == currentRoute then mods += (ariaCurrent := "page")
+    if item.section == Section.Learn then
+      mods += Mod.Content.Tag(
+        span(cls := "docs-section-index-number", aria.hidden := true, f"$position%02d")
+      )
+    mods += Mod.Content.Tag(
+      span(
+        cls := "docs-section-index-label",
+        editorialNavigationLabel(item, position)
+      )
+    )
+    link.pushNavigate(location, mods.result()*)
+
+  private def editorialNavigationLabel(item: NavigationItem, position: Int): String =
+    if position == 1 then
+      item.section match
+        case Section.Learn   => "Start here"
+        case Section.Guides  => "Overview"
+        case Section.Project => "Overview"
+        case _               => item.title
+    else item.title
 
   private def navigationTree[Msg](item: NavigationItem, currentRoute: String): HtmlElement[Msg] =
     val row = span(

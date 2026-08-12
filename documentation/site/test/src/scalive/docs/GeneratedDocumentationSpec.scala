@@ -38,7 +38,7 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
           ),
           home.contains("href=\"/learn#start-here\""),
           home.contains("data-callout=\"info\""),
-          rendered.contains("GeneratedDocumentation.scala"),
+          rendered.contains("href=\"/learn/quick-start\""),
           rendered.contains("scalive.LiveView"),
           rendered.contains("View source"),
           !rendered.contains("<script")

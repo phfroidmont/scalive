@@ -119,7 +119,19 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                             )("search fallback"),
                             Option.when(
                               !document.select(".docs-page-links").text().contains("Report a documentation issue")
-                            )("issue link")
+                            )("issue link"),
+                            entry.page.source match
+                              case PageSource.Authored(location) =>
+                                Option.when(
+                                  !document.select(".docs-page-links a").asScala.exists(link =>
+                                    link.text() == "Edit this page" &&
+                                      link.attr("href").contains(s"/${location.path}#L${location.line}")
+                                  )
+                                )("edit link")
+                              case _: PageSource.GeneratedApi =>
+                                Option.when(
+                                  document.select(".docs-page-links").text().contains("Edit this page")
+                                )("generated edit link")
                           ).flatten
                           Option.when(failedChecks.nonEmpty)(s"${entry.page.route}: ${failedChecks.mkString(", ")}")
                         }
@@ -152,6 +164,43 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         home.html.indexOf("scalive.docs.theme") < home.html.indexOf("/fonts-"),
         home.html.indexOf("/fonts-") < home.html.indexOf("/app-"),
         !home.html.contains("&quot;scalive.docs.theme")
+      )
+    },
+    test("renders editorial sections as flat indexes and preserves the API tree") {
+      for
+        application <- loadApplication
+        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes       = application.routes(assets, security, config)
+        learn       <- DisconnectedRender.run(routes, Request.get(url("/learn/models-and-messages")))
+        guides      <- DisconnectedRender.run(routes, Request.get(url("/guides/testing")))
+        project     <- DisconnectedRender.run(routes, Request.get(url("/project")))
+        api         <- DisconnectedRender.run(routes, Request.get(url("/api/scalive/live-view")))
+        learnDocument   = Jsoup.parse(learn.html)
+        guidesDocument  = Jsoup.parse(guides.html)
+        projectDocument = Jsoup.parse(project.html)
+        apiDocument     = Jsoup.parse(api.html)
+        learnLinks = learnDocument.select(".docs-section-index > nav > ol > li > a").asScala.toVector
+        guideLinks = guidesDocument.select(".docs-section-index > nav > ul > li > a").asScala.toVector
+      yield assertTrue(
+        learnDocument.select(".docs-section-index details").isEmpty,
+        learnLinks.map(_.select(".docs-section-index-label").text()) == Vector(
+          "Start here",
+          "Quick start",
+          "Project anatomy",
+          "Models and messages",
+          "Rendering and DOM updates"
+        ),
+        learnLinks.map(_.select(".docs-section-index-number").text()) ==
+          Vector("01", "02", "03", "04", "05"),
+        learnDocument.select(
+          ".docs-section-index a[href='/learn/models-and-messages'][aria-current=page]"
+        ).size() == 1,
+        guidesDocument.select(".docs-section-index details").isEmpty,
+        guideLinks.headOption.exists(_.text() == "Overview"),
+        guideLinks.exists(_.text() == "Testing LiveViews"),
+        projectDocument.select(".docs-section-nav").isEmpty,
+        apiDocument.select(".docs-api-navigation details").size() > 0,
+        apiDocument.select(".docs-section-index").isEmpty
       )
     },
     test("renders generated API summaries, signatures, and pinned sources") {
@@ -207,6 +256,30 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         companionDocument.select("[data-api-symbol='object:scalive.LiveView']").size() == 1,
         companionDocument.select("[data-api-symbol='trait:scalive.LiveView']").isEmpty,
         !rendered.text.contains("[[LiveView]]")
+      )
+    },
+    test("renders authored API directives as inline references with concise previews") {
+      for
+        application <- loadApplication
+        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes = application.routes(assets, security, config)
+        rendered <- DisconnectedRender.run(routes, Request.get(url("/learn/models-and-messages")))
+        document  = Jsoup.parse(rendered.html)
+        reference = document.selectFirst("[data-api-reference='trait:scalive.LiveView']")
+      yield assertTrue(
+        reference != null,
+        reference.select("a[href='/api/scalive/live-view'] code").text() == "LiveView[Msg, Model]",
+        reference.select("[data-api-reference-preview][role=tooltip][hidden]").size() == 1,
+        reference.select(".docs-api-reference-kind").isEmpty,
+        reference.select("code.docs-api-reference-signature, pre .docs-api-reference-signature").isEmpty,
+        reference.select("span.docs-api-reference-signature").size() == 1,
+        reference.select(".docs-api-reference-signature").text() == "trait LiveView[Msg, Model]",
+        reference.select(".docs-api-reference-signature .keyword").text() == "trait",
+        reference.select(".docs-api-reference-signature .type-name").text().contains("LiveView"),
+        reference.select(".docs-api-reference-summary").text().contains(
+          "Defines a server-rendered view with typed messages and model state."
+        ),
+        reference.select("[data-api-symbol]").isEmpty
       )
     },
     test("renders a bounded URL-filtered example catalog") {
@@ -284,8 +357,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         counterExample.select(s"#$counterNestedId[data-phx-session][data-phx-child-id]").size() == 1,
         counterExample.select("[role=status] strong").text() == "0",
         counterExample.select(".docs-code").text().contains("class CounterExample"),
-        counterDocument.select(".docs-section-nav a").size() == 1,
-        counterDocument.select(".docs-section-nav a[href='/examples'][aria-current=page]").size() == 1,
+        counterDocument.select(".docs-section-nav").isEmpty,
         cart.response.status == Status.Ok,
         cartDocument.select(".docs-example").size() == 1,
         cartExample.attr("data-example-child") == cartNestedId,
@@ -332,7 +404,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         symbol <- DisconnectedRender.run(routes, Request.get(url("/search?q=scalive.LiveView")))
         alias <- DisconnectedRender.run(routes, Request.get(url("/search?q=live%20view")))
         heading <- DisconnectedRender.run(routes, Request.get(url("/search?q=why%20scalive")))
-        missing <- DisconnectedRender.run(routes, Request.get(url("/search?q=no-such-result")))
+        missing <- DisconnectedRender.run(routes, Request.get(url("/search?q=zyxwvutsrq")))
         emptyDocument   = Jsoup.parse(empty.html)
         symbolDocument  = Jsoup.parse(symbol.html)
         headingDocument = Jsoup.parse(heading.html)
@@ -350,7 +422,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         symbolDocument.select(".docs-search-result").text().contains("scalive.LiveView"),
         alias.text.contains("scalive.LiveView"),
         headingDocument.select(".docs-search-result a[href=/#why-scalive]").size() == 1,
-        missing.text.contains("No results for 'no-such-result'.")
+        missing.text.contains("No results for 'zyxwvutsrq'.")
       )
     },
     test("serves a manifest-derived sitemap and self-contained robots policy") {

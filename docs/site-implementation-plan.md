@@ -478,16 +478,16 @@ mill --ticker false documentation.check
 
 ### Learn
 
-- [ ] Write the Mill-based ten-minute counter quick start.
-- [ ] Include the complete minimal project and current npm asset setup.
-- [ ] Write project anatomy and application startup.
-- [ ] Write models, typed messages, and state transitions.
-- [ ] Write rendering and DOM updates.
+- [x] Write the Mill-based ten-minute counter quick start.
+- [x] Include the complete minimal project and current npm asset setup.
+- [x] Write project anatomy and application startup.
+- [x] Write models, typed messages, and state transitions.
+- [x] Write rendering and DOM updates.
 - [ ] Write lifecycle and connection behavior.
 
 ### Guides
 
-- [ ] Write HTML DSL, attributes, bindings, and keyed rendering guides.
+- [x] Write HTML DSL, attributes, bindings, and keyed rendering guides.
 - [ ] Write typed forms and validation guides.
 - [ ] Write components and parent/component communication guides.
 - [ ] Write JS commands, browser events, and hook integration guides.
@@ -498,26 +498,26 @@ mill --ticker false documentation.check
 - [ ] Write routes, typed parameters, patching, and navigation guides.
 - [ ] Write layouts, sessions, mount aspects, and authentication guides.
 - [ ] Write async work, subscriptions, cancellation, and failure guides.
-- [ ] Write static assets and client setup guides.
-- [ ] Write disconnected, connected, and browser testing guides.
-- [ ] Write troubleshooting guides for startup, assets, sockets, CSRF, and
+- [x] Write static assets and client setup guides.
+- [x] Write disconnected, connected, and browser testing guides.
+- [x] Write troubleshooting guides for startup, assets, sockets, CSRF, and
   reconnects.
-- [ ] Write the Phoenix LiveView orientation and migration guide.
-- [ ] Add brief Phoenix comparison callouts only where useful.
+- [x] Write the Phoenix LiveView orientation and migration guide.
+- [x] Add brief Phoenix comparison callouts only where useful.
 
 ### API And Project
 
 - [ ] Split the current public API reference into curated API landing and concept
   pages.
-- [ ] Link curated pages to generated owners and members.
-- [ ] Migrate project status and alpha expectations.
+- [x] Link curated pages to generated owners and members.
+- [x] Migrate project status and alpha expectations.
 - [ ] Migrate the compatibility matrix.
 - [ ] Pin the compatibility matrix to the current upstream LiveView revision.
 - [ ] Add links from compatibility entries to Scalive or upstream test evidence.
 - [ ] Add coverage validation mapping every generated API group to curated
   guidance or an intentional reference-only classification.
-- [ ] Add source-edit and issue-report links to every authored page.
-- [ ] Run the full internal-link and API-drift checks.
+- [x] Add source-edit and issue-report links to every authored page.
+- [x] Run the full internal-link and API-drift checks.
 
 **Verification:**
 

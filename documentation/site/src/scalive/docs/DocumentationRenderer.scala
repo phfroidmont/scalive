@@ -14,6 +14,7 @@ final private[docs] class DocumentationRenderer(
   private val metadata      = application.bundle.apiReference.metadata
   private val repositoryUrl = metadata.repositoryUrl.stripSuffix("/")
   private val ariaExpanded  = htmlAttr("aria-expanded", scalive.codecs.StringAsIsEncoder)
+  private val role          = htmlAttr("role", scalive.codecs.StringAsIsEncoder)
 
   def render(page: Page): HtmlElement[Nothing] =
     page.source match
@@ -183,7 +184,7 @@ final private[docs] class DocumentationRenderer(
       codeBlock(language, text, tokens, Some(region))
     case Block.ApiSymbolRef(id) =>
       application.apiSymbol(id) match
-        case Some(symbol) => renderApiSymbol(pageRoute, symbol, symbol.fragment, 2)
+        case Some(symbol) => renderApiReference(symbol)
         case None         => throw new IllegalArgumentException(s"Unknown API symbol: $id")
     case Block.CompatibilityRef(id) =>
       sectionTag(
@@ -193,12 +194,26 @@ final private[docs] class DocumentationRenderer(
         p("This compatibility entry will be expanded with its curated evidence.")
       )
 
+  private def renderApiReference(symbol: ApiSymbol): HtmlElement[Nothing] =
+    val location = symbol.fragment.fold(symbol.route)(fragment => s"${symbol.route}#$fragment")
+    asideTag(
+      cls                       := "docs-api-reference",
+      dataAttr("api-reference") := symbol.id,
+      p(cls  := "docs-api-kind", apiKindName(symbol.kind)),
+      a(href := location, code(symbol.qualifiedName)),
+      Option
+        .when(!isFallbackSummary(symbol.summary))(
+          Mod.Content.Tag(p(symbol.summary))
+        ).toVector
+    )
+
   private[docs] def renderInline(inline: Inline): Mod[Nothing] = inline match
-    case Inline.Text(value)       => Mod.Content.Text(value)
-    case Inline.Emphasis(content) => Mod.Content.Tag(em(content.map(renderInline)))
-    case Inline.Strong(content)   => Mod.Content.Tag(strong(content.map(renderInline)))
-    case Inline.Strike(content)   => Mod.Content.Tag(del(content.map(renderInline)))
-    case Inline.Code(value)       => Mod.Content.Tag(code(value))
+    case Inline.Text(value)             => Mod.Content.Text(value)
+    case Inline.Emphasis(content)       => Mod.Content.Tag(em(content.map(renderInline)))
+    case Inline.Strong(content)         => Mod.Content.Tag(strong(content.map(renderInline)))
+    case Inline.Strike(content)         => Mod.Content.Tag(del(content.map(renderInline)))
+    case Inline.Code(value)             => Mod.Content.Tag(code(value))
+    case Inline.ApiSymbolRef(id, label) => Mod.Content.Tag(renderInlineApiReference(id, label))
     case Inline.Link(content, target, linkTitle) =>
       val titleMods = linkTitle.map(value => title := value).toVector
       target match
@@ -211,6 +226,52 @@ final private[docs] class DocumentationRenderer(
         case LinkTarget.External(url) =>
           Mod.Content.Tag(a(href := url, titleMods, content.map(renderInline)))
     case Inline.LineBreak => Mod.Content.Tag(br())
+
+  private def renderInlineApiReference(id: String, label: String): HtmlElement[Nothing] =
+    val symbol = application
+      .apiSymbol(id).getOrElse(
+        throw new IllegalArgumentException(s"Unknown API symbol: $id")
+      )
+    val location = symbol.fragment
+      .fold(application.location(symbol.route)) { fragment =>
+        application.location(symbol.route).map(_.withFragment(fragment))
+      }.getOrElse(throw new IllegalArgumentException(s"Unknown API route: ${symbol.route}"))
+    val summary =
+      Option(symbol.summary).filter(value => value.nonEmpty && !isFallbackSummary(value))
+    val signature = symbol.signatures.headOption
+    span(
+      cls                       := "docs-inline-api-reference",
+      dataAttr("api-reference") := symbol.id,
+      link.pushNavigate(
+        location,
+        dataAttr("api-reference-trigger") := "",
+        code(label)
+      ),
+      span(
+        dataAttr("api-reference-preview") := "",
+        role                              := "tooltip",
+        hidden                            := true,
+        signature
+          .map(value =>
+            Mod.Content.Tag(
+              span(
+                cls := "docs-api-reference-signature",
+                renderCode(value.signature, value.tokens)
+              )
+            )
+          ).toVector,
+        summary
+          .map(value =>
+            Mod.Content.Tag(
+              span(
+                cls := "docs-api-reference-summary",
+                value
+              )
+            )
+          ).toVector
+      )
+    )
+  end renderInlineApiReference
 
   private[docs] def codeBlock(
     language: Option[String],

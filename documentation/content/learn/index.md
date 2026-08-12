@@ -1,18 +1,22 @@
 {%
 title = "Learn"
-description = "Learn Scalive through a short, ordered path."
+description = "Build a Scalive application, then learn how its server, routes, layouts, assets, and LiveViews fit together."
 order = 0
 section = learn
 %}
 
 ## Start Here {#start-here}
 
-The Learn section will begin with a complete Mill-based counter and then explain
-application startup, models, typed messages, rendering, and lifecycle behavior.
+Start with a runnable counter, then separate the responsibilities that make up a
+Scalive application:
 
-The documentation application consumes the validated bundle generated from this
-content tree:
+- [Quick start](quick-start.md) builds and runs the smallest complete application.
+- [Project anatomy](project-anatomy.md) explains the startup, routing, layout,
+  asset, and LiveView boundaries.
+- [Models and messages](models-and-messages.md) continues with immutable state
+  and typed messages.
+- [Rendering and DOM updates](rendering-and-dom-updates.md) follows a model
+  change through typed HTML, tree diffs, and keyed collection rendering.
 
-@:sourceRegion(documentation/site/src/scalive/docs/GeneratedDocumentation.scala, load-content)
-
-Return to [why Scalive](../index.md#why-scalive) for the project overview.
+Scalive is alpha software. These pages follow the current source API rather than
+assuming compatibility with a future stable release.

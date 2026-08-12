@@ -13,6 +13,8 @@ operations work. For an ordered introduction to the framework, start with
 
 - [HTML DSL and event bindings](html-dsl-and-event-bindings.md) builds typed
   trees, sets attributes, binds messages, and keys repeated content.
+- [Flash, title, and lifecycle UX](flash-title-and-lifecycle-ux.md) communicates
+  notification, document-title, connection, and after-render state.
 - [Static assets and client setup](static-assets-and-client-setup.md) bundles
   the Phoenix client and serves tracked, digested assets.
 - [Testing LiveViews](testing.md) separates public disconnected tests from

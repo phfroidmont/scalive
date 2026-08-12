@@ -116,7 +116,37 @@ private[docs] object ExampleRegistry:
       behaviorTestId = "shopping-cart-behavior"
     )
 
-  val entries: Vector[RegisteredExample] = Vector(counter, shoppingCart)
+  private val lifecycle =
+    new ExampleEntry[LifecycleExample.Msg, LifecycleExample.Model](
+      descriptor = ExampleCatalog.Lifecycle,
+      factory = () => new LifecycleExample,
+      reset = ExampleReset(LifecycleExample.Msg.Reset, "Reset example"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[LifecycleExample.Msg]:
+          def project(value: LifecycleExample.Msg) = value match
+            case LifecycleExample.Msg.PutNotification =>
+              ExampleTraceValue("LifecycleExample.Msg", "Put a keyed notification")
+            case LifecycleExample.Msg.ClearNotification =>
+              ExampleTraceValue("LifecycleExample.Msg", "Clear the keyed notification")
+            case LifecycleExample.Msg.RequestAttention =>
+              ExampleTraceValue("LifecycleExample.Msg", "Change the projected page title")
+            case LifecycleExample.Msg.Reset =>
+              ExampleTraceValue("LifecycleExample.Msg", "Reset lifecycle state"),
+        model = new ExampleTraceProjector[LifecycleExample.Model]:
+          def project(value: LifecycleExample.Model) =
+            ExampleTraceValue(
+              "LifecycleExample.Model",
+              "Current lifecycle state",
+              Vector(
+                "connectedMount" -> value.connectedMount.toString,
+                "currentTitle"   -> value.currentTitle
+              )
+            )
+      ),
+      behaviorTestId = "lifecycle-behavior"
+    )
+
+  val entries: Vector[RegisteredExample] = Vector(counter, lifecycle, shoppingCart)
 
   private val byId = entries.map(entry => entry.descriptor.id -> entry).toMap
 

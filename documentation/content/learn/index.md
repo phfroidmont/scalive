@@ -17,6 +17,9 @@ Scalive application:
   and typed messages.
 - [Rendering and DOM updates](rendering-and-dom-updates.md) follows a model
   change through typed HTML, tree diffs, and keyed collection rendering.
+- [Lifecycle and connection behavior](lifecycle-and-connection-behavior.md)
+  separates disconnected and connected mounts, reconnects, cleanup, and
+  lifecycle effects.
 
 Scalive is alpha software. These pages follow the current source API rather than
 assuming compatibility with a future stable release.

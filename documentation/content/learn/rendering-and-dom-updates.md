@@ -57,3 +57,5 @@ position really is the entry's identity.
 
 Review the state side of this loop in
 [Models and messages](models-and-messages.md#one-model-one-message-type).
+Continue with [Lifecycle and connection behavior](lifecycle-and-connection-behavior.md#two-independent-mounts)
+to place renders in the disconnected, connected, and reconnect lifecycles.

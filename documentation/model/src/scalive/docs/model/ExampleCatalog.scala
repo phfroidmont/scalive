@@ -29,5 +29,20 @@ object ExampleCatalog:
     )
   )
 
-  val entries: Vector[ExampleDescriptor] = Vector(Counter, ShoppingCart)
+  val Lifecycle = ExampleDescriptor(
+    id = "lifecycle",
+    title = "Lifecycle and connection state",
+    description =
+      "Connection-aware mounting, keyed flash messages, page-title projection, and after-render effects.",
+    topics = Vector("lifecycle", "connection state", "flash", "page title"),
+    aliases = Vector("mount", "connected", "disconnected", "after render", "notification"),
+    resetDescription = "Clear the notification and restore the default projected title.",
+    source = ExampleSource(
+      path = "documentation/site/src/scalive/docs/examples/LifecycleExample.scala",
+      region = "lifecycle-example",
+      language = Some("scala")
+    )
+  )
+
+  val entries: Vector[ExampleDescriptor] = Vector(Counter, Lifecycle, ShoppingCart)
 end ExampleCatalog

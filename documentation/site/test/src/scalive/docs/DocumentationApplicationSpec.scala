@@ -188,10 +188,11 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
           "Quick start",
           "Project anatomy",
           "Models and messages",
-          "Rendering and DOM updates"
+          "Rendering and DOM updates",
+          "Lifecycle and connection behavior"
         ),
         learnLinks.map(_.select(".docs-section-index-number").text()) ==
-          Vector("01", "02", "03", "04", "05"),
+          Vector("01", "02", "03", "04", "05", "06"),
         learnDocument.select(
           ".docs-section-index a[href='/learn/models-and-messages'][aria-current=page]"
         ).size() == 1,
@@ -302,12 +303,15 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 2,
+        document.select("[data-example-card]").size() == 3,
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
         document.select("a[href='/examples/shopping-cart']").asScala.exists(
           _.text() == "Connection-local shopping cart"
+        ),
+        document.select("a[href='/examples/lifecycle']").asScala.exists(
+          _.text() == "Lifecycle and connection state"
         ),
         document.select("a[data-example-topic-filter][href='/examples?topic=keyed-rendering']").size() == 1,
         filtered.response.status == Status.Ok,
@@ -334,6 +338,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             entry.title == "Connection-local shopping cart" &&
             entry.route == "/examples/shopping-cart" &&
             entry.fragment.isEmpty && entry.text.contains("keyed rendering")
+        ),
+        application.bundle.searchEntries.exists(entry =>
+          entry.id == "example:/examples/lifecycle" &&
+            entry.title == "Lifecycle and connection state" &&
+            entry.route == "/examples/lifecycle" &&
+            entry.fragment.isEmpty && entry.text.contains("page title")
         )
       )
     },
@@ -344,12 +354,15 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         routes       = application.routes(assets, security, config)
         counter <- DisconnectedRender.run(routes, Request.get(url("/examples/counter")))
         cart <- DisconnectedRender.run(routes, Request.get(url("/examples/shopping-cart")))
+        lifecycle <- DisconnectedRender.run(routes, Request.get(url("/examples/lifecycle")))
         counterDocument = Jsoup.parse(counter.html)
         cartDocument    = Jsoup.parse(cart.html)
+        lifecycleDocument = Jsoup.parse(lifecycle.html)
         counterExample  = counterDocument.selectFirst("#example-counter")
         cartExample     = cartDocument.selectFirst("#example-shopping-cart")
         counterNestedId = ExampleRegistry.instanceId("/examples/counter", "counter")
         cartNestedId    = ExampleRegistry.instanceId("/examples/shopping-cart", "shopping-cart")
+        lifecycleNestedId = ExampleRegistry.instanceId("/examples/lifecycle", "lifecycle")
       yield assertTrue(
         counter.response.status == Status.Ok,
         counterDocument.select(".docs-example").size() == 1,
@@ -363,7 +376,14 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         cartExample.attr("data-example-child") == cartNestedId,
         cartExample.select(s"#$cartNestedId[data-phx-session][data-phx-child-id]").size() == 1,
         cartExample.select("[data-cart-item-count]").text() == "0 items",
-        cartExample.select(".docs-code").text().contains("class ShoppingCartExample")
+        cartExample.select(".docs-code").text().contains("class ShoppingCartExample"),
+        lifecycle.response.status == Status.Ok,
+        lifecycleDocument.select(".docs-example").size() == 1,
+        lifecycleDocument.select("#example-lifecycle").attr("data-example-child") ==
+          lifecycleNestedId,
+        lifecycleDocument.select("[data-mount-phase]").text() == "Disconnected HTTP mount",
+        lifecycleDocument.select("[data-lifecycle-title]").text() == "Lifecycle example",
+        lifecycleDocument.select(".docs-code").text().contains("class LifecycleExample")
       )
     },
     test("serves tracked assets and leaves unknown paths as real 404 responses") {

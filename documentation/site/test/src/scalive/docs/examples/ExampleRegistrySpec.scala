@@ -5,7 +5,8 @@ import zio.test.*
 import scalive.docs.model.ExampleCatalog
 
 object ExampleRegistrySpec extends ZIOSpecDefault:
-  private val BehaviorTests = Set("counter-behavior", "shopping-cart-behavior")
+  private val BehaviorTests =
+    Set("counter-behavior", "lifecycle-behavior", "shopping-cart-behavior")
 
   override def spec = suite("ExampleRegistrySpec")(
     test("keeps executable entries aligned with generated descriptors and behavior tests") {
@@ -54,6 +55,23 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         cart.projectModel(model).exists(_.fields.contains("itemCount" -> "2")),
         cart.projectModel(model).exists(_.fields.contains("total" -> "$25.98")),
         cart.projectModel(2).isEmpty
+      )
+    },
+    test("uses explicit lifecycle reset and trace projectors") {
+      val lifecycle = ExampleRegistry.get("lifecycle").get
+      val model = LifecycleExample.Model(
+        connectedMount = true,
+        currentTitle = "Attention needed"
+      )
+      assertTrue(
+        lifecycle.resetMessage == LifecycleExample.Msg.Reset,
+        lifecycle.resetControlLabel == "Reset example",
+        lifecycle.projectMessage(LifecycleExample.Msg.PutNotification)
+          .exists(_.summary == "Put a keyed notification"),
+        lifecycle.projectMessage("put notification").isEmpty,
+        lifecycle.projectModel(model).exists(_.fields.contains("connectedMount" -> "true")),
+        lifecycle.projectModel(model).exists(_.fields.contains("currentTitle" -> "Attention needed")),
+        lifecycle.projectModel("Attention needed").isEmpty
       )
     }
   )

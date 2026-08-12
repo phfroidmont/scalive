@@ -443,7 +443,7 @@ support where it improves the lesson.
 - [ ] Migrate the activity stream.
 - [ ] Migrate voting components with instance-scoped component IDs.
 - [ ] Migrate browser interop with instance-scoped hook and DOM IDs.
-- [ ] Migrate lifecycle, flash, title, and connection behavior.
+- [x] Migrate lifecycle, flash, title, and connection behavior.
 - [ ] Adapt navigation examples to real documentation routes and search
   parameters.
 - [ ] Replace persistent document storage with a bounded real upload that
@@ -483,7 +483,7 @@ mill --ticker false documentation.check
 - [x] Write project anatomy and application startup.
 - [x] Write models, typed messages, and state transitions.
 - [x] Write rendering and DOM updates.
-- [ ] Write lifecycle and connection behavior.
+- [x] Write lifecycle and connection behavior.
 
 ### Guides
 
@@ -491,7 +491,7 @@ mill --ticker false documentation.check
 - [ ] Write typed forms and validation guides.
 - [ ] Write components and parent/component communication guides.
 - [ ] Write JS commands, browser events, and hook integration guides.
-- [ ] Write flash, title, and lifecycle UX guides.
+- [x] Write flash, title, and lifecycle UX guides.
 - [ ] Write services and ZLayer injection guides.
 - [ ] Write streams and collection update guides.
 - [ ] Write uploads and consumption guides.

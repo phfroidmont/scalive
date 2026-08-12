@@ -1,5 +1,7 @@
 package scalive.docs
 
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import scala.jdk.CollectionConverters.*
 
 import org.jsoup.Jsoup
@@ -32,6 +34,16 @@ private[docs] final class SiteLiveViewHarness[Msg, Model] private (
   def clickButton(label: String): Task[Unit] =
     dispatchClick(SiteLiveViewHarnessDom.buttonByLabel(_, label))
 
+  def changeForm(
+    selector: String,
+    fields: Vector[(String, String)],
+    target: Option[String] = None
+  ): Task[Unit] =
+    dispatchForm(selector, "phx-change", fields, target)
+
+  def submitForm(selector: String, fields: Vector[(String, String)]): Task[Unit] =
+    dispatchForm(selector, "phx-submit", fields, None)
+
   private def dispatchClick(findElement: String => Element): Task[Unit] =
     for
       current <- html
@@ -51,6 +63,38 @@ private[docs] final class SiteLiveViewHarness[Msg, Model] private (
       _ <- channel.event(
              topic,
              Payload.Event(`type` = "click", event = binding, value = Json.Obj.empty),
+             meta
+           )
+      _ <- takeOutput { case (payload, outputMeta) =>
+             outputMeta.messageRef.contains(messageRef) && payload.isInstanceOf[Payload.Reply]
+           }
+    yield ()
+
+  private def dispatchForm(
+    selector: String,
+    attribute: String,
+    fields: Vector[(String, String)],
+    target: Option[String]
+  ): Task[Unit] =
+    for
+      current <- html
+      binding <- ZIO.attempt(SiteLiveViewHarnessDom.formBinding(current, selector, attribute))
+      messageRef <- nextMessageRef.updateAndGet(_ + 1)
+      meta = Meta(
+               joinRef = Some(1),
+               messageRef = Some(messageRef),
+               topic = topic,
+               eventType = WebSocketMessage.Protocol.EventEvent
+             )
+      eventMeta = target.map(value => Json.Obj("_target" -> Json.Str(value)))
+      _ <- channel.event(
+             topic,
+             Payload.Event(
+               `type` = "form",
+               event = binding,
+               value = Json.Str(SiteLiveViewHarnessDom.urlEncoded(fields)),
+               meta = eventMeta
+             ),
              meta
            )
       _ <- takeOutput { case (payload, outputMeta) =>
@@ -96,6 +140,16 @@ private[docs] final class SiteNestedLiveViewHarness private (
   def clickButton(label: String): Task[Unit] =
     dispatchClick(SiteLiveViewHarnessDom.buttonByLabel(_, label))
 
+  def changeForm(
+    selector: String,
+    fields: Vector[(String, String)],
+    target: Option[String] = None
+  ): Task[Unit] =
+    dispatchForm(selector, "phx-change", fields, target)
+
+  def submitForm(selector: String, fields: Vector[(String, String)]): Task[Unit] =
+    dispatchForm(selector, "phx-submit", fields, None)
+
   private def dispatchClick(findElement: String => Element): Task[Unit] =
     for
       current <- html
@@ -123,6 +177,40 @@ private[docs] final class SiteNestedLiveViewHarness private (
              }
              .timeoutFail(new RuntimeException("Timed out waiting for nested LiveView output"))(3.seconds)
     yield ()
+
+  private def dispatchForm(
+    selector: String,
+    attribute: String,
+    fields: Vector[(String, String)],
+    target: Option[String]
+  ): Task[Unit] =
+    for
+      current <- html
+      binding <- ZIO.attempt(SiteLiveViewHarnessDom.formBinding(current, selector, attribute))
+      messageRef <- nextMessageRef.updateAndGet(_ + 1)
+      meta = Meta(
+               joinRef = Some(2),
+               messageRef = Some(messageRef),
+               topic = topic,
+               eventType = WebSocketMessage.Protocol.EventEvent
+             )
+      eventMeta = target.map(value => Json.Obj("_target" -> Json.Str(value)))
+      _ <- channel.event(
+             topic,
+             Payload.Event(
+               `type` = "form",
+               event = binding,
+               value = Json.Str(SiteLiveViewHarnessDom.urlEncoded(fields)),
+               meta = eventMeta
+             ),
+             meta
+           )
+      _ <- outputQueue.take
+             .repeatUntil { case (payload, outputMeta) =>
+               outputMeta.messageRef.contains(messageRef) && payload.isInstanceOf[Payload.Reply]
+             }
+             .timeoutFail(new RuntimeException("Timed out waiting for nested LiveView output"))(3.seconds)
+    yield ()
 end SiteNestedLiveViewHarness
 
 private object SiteLiveViewHarnessDom:
@@ -134,6 +222,18 @@ private object SiteLiveViewHarnessDom:
       .parseBodyFragment(html)
       .select("button").asScala.toVector.filter(_.text() == label)
     exactlyOne(buttons, s"button labelled '$label'")
+
+  def formBinding(html: String, selector: String, attribute: String): String =
+    val element = selectOne(html, selector)
+    if !element.hasAttr(attribute) then
+      throw new IllegalArgumentException(s"Element has no $attribute binding.")
+    element.attr(attribute)
+
+  def urlEncoded(fields: Vector[(String, String)]): String =
+    fields.map { case (name, value) => s"${encode(name)}=${encode(value)}" }.mkString("&")
+
+  private def encode(value: String): String =
+    URLEncoder.encode(value, StandardCharsets.UTF_8)
 
   private def exactlyOne(matches: Vector[Element], description: String): Element =
     matches match

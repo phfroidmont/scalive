@@ -13,7 +13,31 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
   private enum ResourceMsg:
     case Tick
 
+  private enum FormMsg:
+    case Changed(event: FormEvent[String])
+    case Submitted(event: FormEvent[String])
+
   private val ResourceSubscription = SubscriptionKey("docs-test-resource")
+
+  private val Name = FormField.requiredString(FormPath("profile", "name"), "Name is required.")
+
+  private val formLiveView = new LiveView[FormMsg, FormEvent[String] | Null]:
+    def mount(ctx: MountContext) = ZIO.succeed(null)
+
+    def handleMessage(model: FormEvent[String] | Null, ctx: MessageContext) =
+      case FormMsg.Changed(event)   => ZIO.succeed(event)
+      case FormMsg.Submitted(event) => ZIO.succeed(event)
+
+    def render(model: FormEvent[String] | Null) =
+      form(
+        dataAttr("profile-form") := "",
+        Name.onChange(FormMsg.Changed(_)),
+        Name.onSubmit(FormMsg.Submitted(_)),
+        input(nameAttr := Name.name),
+        span(dataAttr("target") := "", Option(model).flatMap(_.target).fold("")(_.name)),
+        span(dataAttr("submitted") := "", Option(model).exists(_.submitted).toString),
+        span(dataAttr("used") := "", Option(model).exists(_.state.isUsed(Name.path)).toString)
+      )
 
   private val testLiveView = new LiveView[Msg, Int]:
     def mount(ctx: MountContext) = ZIO.succeed(0)
@@ -44,6 +68,31 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
           clicked == "1",
           sent == "2",
           outputs.size >= 3
+        )
+      }
+    },
+    test("dispatches typed form change and submit bindings") {
+      ZIO.scoped {
+        for
+          harness <- SiteLiveViewHarness.join(formLiveView)
+          _ <- harness.changeForm(
+                 "[data-profile-form]",
+                 Vector(Name.name -> "", "profile[_unused_email]" -> ""),
+                 target = Some(Name.name)
+               )
+          changedTarget <- harness.text("[data-target]")
+          changedUsed   <- harness.text("[data-used]")
+          _ <- harness.submitForm(
+                 "[data-profile-form]",
+                 Vector(Name.name -> "Ada")
+               )
+          submitted <- harness.text("[data-submitted]")
+          submitUsed <- harness.text("[data-used]")
+        yield assertTrue(
+          changedTarget == Name.name,
+          changedUsed == "true",
+          submitted == "true",
+          submitUsed == "true"
         )
       }
     },

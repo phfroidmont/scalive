@@ -22,7 +22,8 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
 
         assertTrue(
           representativeRoutes.subsetOf(bundle.pages.map(_.route).toSet),
-          bundle.examples.map(_.descriptor.id) == Vector("counter", "lifecycle", "shopping-cart"),
+          bundle.examples.map(_.descriptor.id) ==
+            Vector("counter", "lifecycle", "profile-form", "shopping-cart"),
           bundle.examples.head.source.text.contains("class CounterExample"),
           bundle.examples.exists(example =>
             example.descriptor.id == "shopping-cart" &&

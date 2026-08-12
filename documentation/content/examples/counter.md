@@ -5,7 +5,7 @@ order = 1
 section = examples
 %}
 
-A LiveView with a `count` model and `Decrement`, `Reset`, and `Increment`
+A @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ with a `count` model and `Decrement`, `Reset`, and `Increment`
 messages.
 
 @:example(counter)

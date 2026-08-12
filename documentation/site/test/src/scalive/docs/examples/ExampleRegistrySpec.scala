@@ -6,7 +6,12 @@ import scalive.docs.model.ExampleCatalog
 
 object ExampleRegistrySpec extends ZIOSpecDefault:
   private val BehaviorTests =
-    Set("counter-behavior", "lifecycle-behavior", "shopping-cart-behavior")
+    Set(
+      "counter-behavior",
+      "lifecycle-behavior",
+      "profile-form-behavior",
+      "shopping-cart-behavior"
+    )
 
   override def spec = suite("ExampleRegistrySpec")(
     test("keeps executable entries aligned with generated descriptors and behavior tests") {
@@ -72,6 +77,24 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         lifecycle.projectModel(model).exists(_.fields.contains("connectedMount" -> "true")),
         lifecycle.projectModel(model).exists(_.fields.contains("currentTitle" -> "Attention needed")),
         lifecycle.projectModel("Attention needed").isEmpty
+      )
+    },
+    test("redacts profile form values from explicit trace projectors") {
+      val profile = ExampleRegistry.get("profile-form").get
+      val model = ProfileFormExample.Model(
+        form = ProfileFormExample.Profile.Definition.initial(),
+        saved = Some(
+          ProfileFormExample.Profile("Ada Lovelace", "secret@example.com", "Private biography")
+        )
+      )
+      val projected = profile.projectModel(model).get
+      assertTrue(
+        profile.resetMessage == ProfileFormExample.Msg.Reset,
+        profile.resetControlLabel == "Reset form",
+        profile.projectMessage(ProfileFormExample.Msg.Reset).exists(_.summary == "Reset the form"),
+        projected.fields.contains("saved" -> "true"),
+        !projected.toString.contains("secret@example.com"),
+        !projected.toString.contains("Private biography")
       )
     }
   )

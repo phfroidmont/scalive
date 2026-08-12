@@ -303,7 +303,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 3,
+        document.select("[data-example-card]").size() == 4,
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
@@ -312,6 +312,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         ),
         document.select("a[href='/examples/lifecycle']").asScala.exists(
           _.text() == "Lifecycle and connection state"
+        ),
+        document.select("a[href='/examples/profile-form']").asScala.exists(
+          _.text() == "Typed profile form"
         ),
         document.select("a[data-example-topic-filter][href='/examples?topic=keyed-rendering']").size() == 1,
         filtered.response.status == Status.Ok,
@@ -344,6 +347,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             entry.title == "Lifecycle and connection state" &&
             entry.route == "/examples/lifecycle" &&
             entry.fragment.isEmpty && entry.text.contains("page title")
+        ),
+        application.bundle.searchEntries.exists(entry =>
+          entry.id == "example:/examples/profile-form" &&
+            entry.title == "Typed profile form" &&
+            entry.route == "/examples/profile-form" &&
+            entry.fragment.isEmpty && entry.text.contains("validation")
         )
       )
     },
@@ -355,14 +364,17 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         counter <- DisconnectedRender.run(routes, Request.get(url("/examples/counter")))
         cart <- DisconnectedRender.run(routes, Request.get(url("/examples/shopping-cart")))
         lifecycle <- DisconnectedRender.run(routes, Request.get(url("/examples/lifecycle")))
+        profile <- DisconnectedRender.run(routes, Request.get(url("/examples/profile-form")))
         counterDocument = Jsoup.parse(counter.html)
         cartDocument    = Jsoup.parse(cart.html)
         lifecycleDocument = Jsoup.parse(lifecycle.html)
+        profileDocument   = Jsoup.parse(profile.html)
         counterExample  = counterDocument.selectFirst("#example-counter")
         cartExample     = cartDocument.selectFirst("#example-shopping-cart")
         counterNestedId = ExampleRegistry.instanceId("/examples/counter", "counter")
         cartNestedId    = ExampleRegistry.instanceId("/examples/shopping-cart", "shopping-cart")
         lifecycleNestedId = ExampleRegistry.instanceId("/examples/lifecycle", "lifecycle")
+        profileNestedId = ExampleRegistry.instanceId("/examples/profile-form", "profile-form")
       yield assertTrue(
         counter.response.status == Status.Ok,
         counterDocument.select(".docs-example").size() == 1,
@@ -383,7 +395,13 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
           lifecycleNestedId,
         lifecycleDocument.select("[data-mount-phase]").text() == "Disconnected HTTP mount",
         lifecycleDocument.select("[data-lifecycle-title]").text() == "Lifecycle example",
-        lifecycleDocument.select(".docs-code").text().contains("class LifecycleExample")
+        lifecycleDocument.select(".docs-code").text().contains("class LifecycleExample"),
+        profile.response.status == Status.Ok,
+        profileDocument.select(".docs-example").size() == 1,
+        profileDocument.select("#example-profile-form").attr("data-example-child") == profileNestedId,
+        profileDocument.select("[data-profile-form]").size() == 1,
+        profileDocument.select("[data-field-error] .form-error").isEmpty,
+        profileDocument.select(".docs-code").text().contains("class ProfileFormExample")
       )
     },
     test("serves tracked assets and leaves unknown paths as real 404 responses") {

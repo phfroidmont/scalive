@@ -7,8 +7,8 @@ section = guides
 
 ## Render Keyed Flash {#render-keyed-flash}
 
-Define a stable `FlashKind`, update it through the phase context, and render only
-that key with `flash`:
+Define a stable @:apiSymbol(opaque-type:scalive.FlashKind)`FlashKind`@:@, update it through the phase context, and render only
+that key with @:apiSymbol(object:scalive.flash)`flash`@:@:
 
 ```scala
 private val Saved = FlashKind("saved")
@@ -24,8 +24,9 @@ def render(model: Model) =
   )
 ```
 
-`put` replaces the value for the same key. `clear(Saved)` removes that key, and
-`clearAll` removes every flash value owned by the current lifecycle. Prefer a
+@:apiSymbol(def:scalive.Flash.put)`put`@:@ replaces the value for the same key.
+@:apiSymbol(def:scalive.Flash.clear)`clear`@:@ removes that key, and
+@:apiSymbol(def:scalive.Flash.clearAll)`clearAll`@:@ removes every flash value owned by the current lifecycle. Prefer a
 specific key when independent notices can coexist.
 
 Flash is lifecycle state, not a substitute for model data. Use it for brief
@@ -35,21 +36,23 @@ application state instead.
 
 ## Derive The Page Title {#derive-the-page-title}
 
-Override `pageTitle` on the routed root LiveView and derive it from the same
-model used by `render`:
+Override @:apiSymbol(def:scalive.LiveView.pageTitle)`pageTitle`@:@ on the routed root
+@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ and derive it from the same
+model used by @:apiSymbol(def:scalive.LiveView.render)`render`@:@:
 
 ```scala
 override def pageTitle(model: Model): Option[String] =
   Some(model.currentTitle)
 ```
 
-The root layout's `liveTitle` renders that title during disconnected HTTP
+The root layout's @:apiSymbol(def:scalive.liveTitle)`liveTitle`@:@ renders that title during disconnected HTTP
 rendering. Connected model changes send title metadata so the client updates
 `document.title`. Returning `None` or a blank title uses the root layout's
 fallback.
 
-Only the root LiveView owns the document title. A nested LiveView can project a
-title-like value for its own interface, but its `pageTitle` result does not
+Only the root @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ owns the document title. A nested
+@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ can project a
+title-like value for its own interface, but its @:apiSymbol(def:scalive.LiveView.pageTitle)`pageTitle`@:@ result does not
 replace the containing document's title. The embedded lifecycle example makes
 that boundary visible by displaying its projection inside the example.
 
@@ -77,7 +80,7 @@ or explain unavailable interaction.
 
 ## Keep After-Render Effects Observational {#keep-after-render-effects-observational}
 
-Declare static hooks once on the LiveView:
+Declare static hooks once on the @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@:
 
 ```scala
 override def hooks: LiveHooks[Msg, Model] =
@@ -87,18 +90,19 @@ override def hooks: LiveHooks[Msg, Model] =
 ```
 
 An after-render hook observes a render that already succeeded. It cannot return
-a replacement model. Use `handleMessage`, `handleParams`, an async completion,
+a replacement model. Use @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@,
+@:apiSymbol(def:scalive.LiveView.Routed.handleParams)`handleParams`@:@, an async completion,
 or a subscription message when an effect must produce the next state.
 
 Hooks are installed independently for disconnected and connected lifecycles.
-Guard socket-only work with `ctx.connected`, keep effects idempotent where
+Guard socket-only work with @:apiSymbol(def:scalive.LifecycleContext.connected)`ctx.connected`@:@, keep effects idempotent where
 practical, and avoid starting unmanaged fibers from a hook.
 
 ## Exercise The Behavior {#exercise-the-behavior}
 
 Use the [lifecycle example](../examples/lifecycle.md) to put and clear flash,
 change the projected title, inspect connected mount state, and reset the nested
-LiveView. Its source keeps the model, messages, flash key, title projection, and
+@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@. Its source keeps the model, messages, flash key, title projection, and
 after-render hook together.
 
 For the full lifecycle sequence and reconnect model, read

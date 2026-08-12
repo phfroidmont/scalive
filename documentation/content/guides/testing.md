@@ -11,7 +11,7 @@ Scalive applications have three useful test boundaries:
 
 - **Disconnected tests** execute the finalized ZIO HTTP routes and inspect the
   first HTML response. This boundary has public support in `scalive.testing`.
-- **Connected tests** join a LiveView channel, send protocol events, and inspect
+- **Connected tests** join a @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ channel, send protocol events, and inspect
   committed HTML or diffs. Scalive does not currently publish a connected test
   harness.
 - **Browser tests** run the Phoenix LiveView JavaScript client against a real
@@ -81,26 +81,36 @@ end ProfilePageSpec
 ```
 
 The names `testSecurity`, `Routes.profile`, and `ProfileLiveView` represent
-application code. Use a fixed test `TokenConfig` when assertions depend on
+application code. Use a fixed test @:apiSymbol(class:scalive.TokenConfig)`TokenConfig`@:@ when assertions depend on
 signed cookies or tokens; do not compare output produced with independently
 constructed security configurations.
 
 ## Query Forms Semantically {#query-forms-semantically}
 
 The @:apiSymbol(class:scalive.testing.RenderedPage)`RenderedPage`@:@ exposes the status and
-headers through `response`, the exact body through `html`, normalized document
-text through `text`, and all forms through `forms`. `form` succeeds only when
+headers through @:apiSymbol(val:scalive.testing.RenderedPage.response)`response`@:@, the exact body through
+@:apiSymbol(val:scalive.testing.RenderedPage.html)`html`@:@, normalized document
+text through @:apiSymbol(def:scalive.testing.RenderedPage.text)`text`@:@, and all forms through
+@:apiSymbol(def:scalive.testing.RenderedPage.forms)`forms`@:@.
+@:apiSymbol(def:scalive.testing.RenderedPage.form)`form`@:@ succeeds only when
 exactly one form matches its optional action and method filters. Handle
 `NotFound` and `MultipleMatches` instead of silently selecting the first form.
 
-The @:apiSymbol(class:scalive.testing.RenderedForm)`RenderedForm`@:@ exposes its id, action,
-normalized GET or POST method, named fields, values, and the presence of
-`phx-change`, `phx-submit`, and `phx-trigger-action`. `RenderedField` exposes tag
+The @:apiSymbol(class:scalive.testing.RenderedForm)`RenderedForm`@:@ exposes its
+@:apiSymbol(def:scalive.testing.RenderedForm.id)`id`@:@,
+@:apiSymbol(def:scalive.testing.RenderedForm.action)`action`@:@,
+@:apiSymbol(def:scalive.testing.RenderedForm.method)`method`@:@,
+@:apiSymbol(def:scalive.testing.RenderedForm.fields)`fields`@:@, and
+@:apiSymbol(def:scalive.testing.RenderedForm.values)`values`@:@. It also reports
+@:apiSymbol(def:scalive.testing.RenderedForm.hasChangeBinding)`phx-change`@:@,
+@:apiSymbol(def:scalive.testing.RenderedForm.hasSubmitBinding)`phx-submit`@:@, and
+@:apiSymbol(def:scalive.testing.RenderedForm.triggersAction)`phx-trigger-action`@:@ presence.
+@:apiSymbol(class:scalive.testing.RenderedField)`RenderedField`@:@ exposes tag
 name, id, name, value, input type, and required state. These are HTML queries;
-they do not submit the form or dispatch a LiveView event.
+they do not submit the form or dispatch a @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ event.
 
-Use `FormPath` for generated nested names when the application uses a
-`FormCodec`. Values remain a `Vector` because repeated names, such as checkbox
+Use @:apiSymbol(class:scalive.FormPath)`FormPath`@:@ for generated nested names when the application uses a
+@:apiSymbol(trait:scalive.FormCodec)`FormCodec`@:@. Values remain a `Vector` because repeated names, such as checkbox
 groups, are valid.
 
 ## Cover Connected Behavior {#cover-connected-behavior}

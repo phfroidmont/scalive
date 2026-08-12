@@ -146,7 +146,37 @@ private[docs] object ExampleRegistry:
       behaviorTestId = "lifecycle-behavior"
     )
 
-  val entries: Vector[RegisteredExample] = Vector(counter, lifecycle, shoppingCart)
+  private val profileForm =
+    new ExampleEntry[ProfileFormExample.Msg, ProfileFormExample.Model](
+      descriptor = ExampleCatalog.ProfileForm,
+      factory = () => new ProfileFormExample,
+      reset = ExampleReset(ProfileFormExample.Msg.Reset, "Reset form"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[ProfileFormExample.Msg]:
+          def project(value: ProfileFormExample.Msg) = value match
+            case ProfileFormExample.Msg.Validate(event) =>
+              formEventTrace("Validate the profile form", event)
+            case ProfileFormExample.Msg.Save(event) =>
+              formEventTrace("Submit the profile form", event)
+            case ProfileFormExample.Msg.Reset =>
+              ExampleTraceValue("ProfileFormExample.Msg", "Reset the form"),
+        model = new ExampleTraceProjector[ProfileFormExample.Model]:
+          def project(value: ProfileFormExample.Model) =
+            ExampleTraceValue(
+              "ProfileFormExample.Model",
+              "Current profile form state",
+              Vector(
+                "valid"      -> value.form.state.isValid.toString,
+                "submitted"  -> value.form.state.submitted.toString,
+                "usedFields" -> value.form.state.used.size.toString,
+                "saved"      -> value.saved.nonEmpty.toString
+              )
+            )
+      ),
+      behaviorTestId = "profile-form-behavior"
+    )
+
+  val entries: Vector[RegisteredExample] = Vector(counter, lifecycle, profileForm, shoppingCart)
 
   private val byId = entries.map(entry => entry.descriptor.id -> entry).toMap
 
@@ -171,6 +201,21 @@ private[docs] object ExampleRegistry:
     val dollars   = cents / 100
     val remainder = cents % 100
     f"$$$dollars%d.$remainder%02d"
+
+  private def formEventTrace(
+    summary: String,
+    event: FormEvent[ProfileFormExample.Profile]
+  ): ExampleTraceValue =
+    ExampleTraceValue(
+      "ProfileFormExample.Msg",
+      summary,
+      Vector(
+        "valid"      -> event.isValid.toString,
+        "submitted"  -> event.submitted.toString,
+        "target"     -> event.target.fold("none")(_.name),
+        "usedFields" -> event.state.used.size.toString
+      )
+    )
 
   def validationErrors: Vector[String] =
     val duplicateIds = entries.groupBy(_.descriptor.id).collect {

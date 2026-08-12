@@ -7,7 +7,7 @@ section = examples
 
 Compare the connected mount with declarative LiveSocket state, put and clear one
 keyed notification, and change the title projected from the model. The example
-runs as an isolated nested LiveView, so it displays its projected title without
+runs as an isolated nested @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@, so it displays its projected title without
 claiming ownership of the documentation page's browser title.
 
 @:example(lifecycle)

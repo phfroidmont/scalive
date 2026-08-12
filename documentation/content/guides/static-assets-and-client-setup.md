@@ -63,7 +63,7 @@ liveSocket.connect()
 window.liveSocket = liveSocket
 ```
 
-`Live.router` uses `/live` as its current default socket path. Scalive injects
+@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ uses `/live` as its current default socket path. Scalive injects
 the `csrf-token` meta element into the root layout's `<head>` and associates it
 with the CSRF cookie. Return that value as `_csrf_token`; do not create or
 hard-code a token in JavaScript.
@@ -133,12 +133,14 @@ and `immutable`, and serve original paths with `no-cache`. Both forms include a
 strong `ETag` containing the digest. Set `serveOriginals = false` to make the
 undigested path return `404`. Query strings do not affect asset lookup.
 
-Use `pathOption` when an optional asset may be absent. `path` and `entry` throw
+Use @:apiSymbol(def:scalive.StaticAssets.pathOption)`pathOption`@:@ when an optional asset may be absent.
+@:apiSymbol(def:scalive.StaticAssets.path)`path`@:@ and
+@:apiSymbol(def:scalive.StaticAssets.entry)`entry`@:@ throw
 for a name outside the loaded manifest.
 
 ## Render Tracked Tags {#render-tracked-tags}
 
-Pass `StaticAssets` to the root layout and render bundle tags in `<head>`:
+Pass @:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ to the root layout and render bundle tags in `<head>`:
 
 ```scala
 headTag(
@@ -150,7 +152,9 @@ headTag(
 
 The tracked helpers @:apiSymbol(def:scalive.StaticAssets.trackedStylesheet)`StaticAssets.trackedStylesheet`@:@ and
 also @:apiSymbol(def:scalive.StaticAssets.trackedScript)`StaticAssets.trackedScript`@:@ use the digested URL and
-add `phx-track-static`. The untracked `stylesheet` and `script` helpers still use
+add `phx-track-static`. The untracked
+@:apiSymbol(def:scalive.StaticAssets.stylesheet)`stylesheet`@:@ and
+@:apiSymbol(def:scalive.StaticAssets.script)`script`@:@ helpers still use
 digested URLs but omit that Phoenix marker. Use tracked helpers for the
 application bundles whose change should be visible to the LiveView client.
 

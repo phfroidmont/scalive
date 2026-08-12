@@ -33,13 +33,15 @@ def handleMessage(model: Int, ctx: MessageContext) =
 One event travels through a small, observable server-owned loop.
 
 1. **Browser event.** A user interaction is sent over the live connection.
-2. **Typed message.** The event is decoded into a message your LiveView accepts.
+2. **Typed message.** The event is decoded into a message your
+   @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ accepts.
 3. **Server transition.** Your handler updates typed state and can run ZIO effects.
 4. **HTML diff.** Scalive renders the next view and sends only the changes to the browser.
 
 ## Why Scalive {#why-scalive}
 
-Scalive brings the Phoenix LiveView model to Scala 3 and ZIO. A LiveView
+Scalive brings the Phoenix LiveView model to Scala 3 and ZIO. A
+@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@
 describes its initial state, transitions, effects, and rendered output without
 introducing a separate frontend component framework.
 

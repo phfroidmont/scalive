@@ -7,7 +7,8 @@ section = guides
 
 ## Build An HTML Tree {#build-an-html-tree}
 
-Import `scalive.*`, then call tag values such as `div`, `button`, and `table`.
+Import `scalive.*`, then call tag values such as @:apiSymbol(lazy-val:scalive.div)`div`@:@,
+@:apiSymbol(lazy-val:scalive.button)`button`@:@, and @:apiSymbol(lazy-val:scalive.table)`table`@:@.
 Pass attributes and children in document order:
 
 ```scala
@@ -27,19 +28,23 @@ expressions for conditional and repeated content.
 
 Use the named tag definitions when they exist. The DSL gives Scala-safe names to
 HTML names that would otherwise conflict with Scala or another exported symbol:
-for example, `sectionTag`, `headerTag`, `htmlRootTag`, `headTag`, and `idAttr`.
+for example, @:apiSymbol(lazy-val:scalive.sectionTag)`sectionTag`@:@,
+@:apiSymbol(lazy-val:scalive.headerTag)`headerTag`@:@,
+@:apiSymbol(lazy-val:scalive.htmlRootTag)`htmlRootTag`@:@,
+@:apiSymbol(lazy-val:scalive.headTag)`headTag`@:@, and
+@:apiSymbol(lazy-val:scalive.idAttr)`idAttr`@:@.
 Use @:apiSymbol(def:scalive.htmlTag)`htmlTag(name)`@:@ only when the framework does not
 provide the element you need.
 
 ## Set Typed Attributes {#set-typed-attributes}
 
-Assign attributes with `:=`. Each @:apiSymbol(class:scalive.HtmlAttr)`HtmlAttr[V]`@:@
+Assign attributes with @:apiSymbol(def:scalive.HtmlAttr.:=)`:=`@:@. Each @:apiSymbol(class:scalive.HtmlAttr)`HtmlAttr[V]`@:@
 accepts its declared Scala value type, so `disabled := model.lines.isEmpty` takes
 a `Boolean` while `cls := "cart"` takes a `String`. Boolean presence attributes
 are emitted when true and omitted when false.
 
 Use @:apiSymbol(def:scalive.dataAttr)`dataAttr(name)`@:@ for application `data-*` attributes and
-the `aria` namespace for ARIA attributes:
+the @:apiSymbol(object:scalive.aria)`aria`@:@ namespace for ARIA attributes:
 
 ```scala
 button(
@@ -61,7 +66,7 @@ private val popover = htmlAttr("popover", scalive.codecs.StringAsIsEncoder)
 div(popover := "manual", "Details")
 ```
 
-Avoid `rawHtml` for ordinary content. It bypasses escaping and should be limited
+Avoid @:apiSymbol(def:scalive.rawHtml)`rawHtml`@:@ for ordinary content. It bypasses escaping and should be limited
 to HTML that the application already trusts.
 
 ## Bind Events To Messages {#bind-events-to-messages}
@@ -78,13 +83,15 @@ button(on.click(Msg.Add(product)), "Add")
 button(on.click(Msg.Clear), "Clear")
 ```
 
-The message type remains part of the whole tree. If `render` returns
+The message type remains part of the whole tree. If
+@:apiSymbol(def:scalive.LiveView.render)`render`@:@ returns
 `HtmlElement[Msg]`, a binding that produces another message type does not
 compile. The shopping cart uses this directly for product-specific add and
 remove messages.
 
 Use @:apiSymbol(def:scalive.HtmlAttrBinding.withValue)`withValue`@:@ when an event's `value`
-should construct the message, and use `withValueOption` when a missing value is
+should construct the message, and use
+@:apiSymbol(def:scalive.HtmlAttrBinding.withValueOption)`withValueOption`@:@ when a missing value is
 meaningful:
 
 ```scala
@@ -97,9 +104,9 @@ input(
 )
 ```
 
-`withValue` supplies an empty string when the payload has no `value`.
-`withValueOption` preserves that case as `None`. The lower-level function form,
-such as `on.click(payload => Msg.Selected(payload.get("id")))`, receives the
+@:apiSymbol(def:scalive.HtmlAttrBinding.withValue)`withValue`@:@ supplies an empty string when the payload has no `value`.
+@:apiSymbol(def:scalive.HtmlAttrBinding.withValueOption)`withValueOption`@:@ preserves that case as `None`. The lower-level function form of
+@:apiSymbol(lazy-val:scalive.on.click)`on.click`@:@ receives the
 binding payload as `Map[String, String]`.
 
 Configure rate limiting before supplying the message. Durations are rendered in
@@ -135,7 +142,8 @@ Scalive's tree diff uses the keys to match entries between renders. Current
 tests cover unchanged keyed subtrees producing no diff, reorders producing
 index changes without resending unchanged entry payloads, changed entries being
 merged into reorder payloads, and deletion reducing the keyed count. Prefer a
-SKU, database identifier, or another domain key. Use `splitByIndex` only when
+SKU, database identifier, or another domain key. Use
+@:apiSymbol(extension:scalive.splitByIndex)`splitByIndex`@:@ only when
 position is the identity and reordering is not meaningful.
 
 The migrated shopping cart combines typed attributes, product-specific event

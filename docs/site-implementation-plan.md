@@ -439,7 +439,7 @@ support where it improves the lesson.
 - [ ] Migrate the subscription clock with instance-scoped keys.
 - [ ] Migrate the async report with deterministic success, failure, replacement,
   retry, and cancellation controls.
-- [ ] Migrate the typed profile form.
+- [x] Migrate the typed profile form.
 - [ ] Migrate the activity stream.
 - [ ] Migrate voting components with instance-scoped component IDs.
 - [ ] Migrate browser interop with instance-scoped hook and DOM IDs.
@@ -488,7 +488,7 @@ mill --ticker false documentation.check
 ### Guides
 
 - [x] Write HTML DSL, attributes, bindings, and keyed rendering guides.
-- [ ] Write typed forms and validation guides.
+- [x] Write typed forms and validation guides.
 - [ ] Write components and parent/component communication guides.
 - [ ] Write JS commands, browser events, and hook integration guides.
 - [x] Write flash, title, and lifecycle UX guides.

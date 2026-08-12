@@ -7,10 +7,11 @@ section = learn
 
 ## Render from the model {#render-from-the-model}
 
-`render(model)` describes the HTML tree for the current model and returns an
+@:apiSymbol(def:scalive.LiveView.render)`render(model)`@:@ describes the HTML tree for the current model and returns an
 instance of @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Treat rendering as a
 pure projection: read the model, build the tree, and leave effects and state
-transitions in lifecycle methods such as `mount` and `handleMessage`.
+transitions in lifecycle methods such as @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ and
+@:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@.
 
 The counter renders its count directly. The cart derives labels, disabled
 state, quantities, subtotals, and totals from the same model used by its message
@@ -20,7 +21,7 @@ cart table.
 ## Bind events to messages {#bind-events-to-messages}
 
 Event bindings from @:apiSymbol(object:scalive.on)`on`@:@ are part of the typed HTML
-tree. For example, `on.click(Msg.Increment)` associates a button click with a
+tree. For example, @:apiSymbol(lazy-val:scalive.on.click)`on.click(Msg.Increment)`@:@ associates a button click with a
 value accepted by the view's `Msg` type. A binding can also construct a message
 with data, as in `on.click(Msg.Add(product))`.
 

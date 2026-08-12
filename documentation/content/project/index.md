@@ -60,7 +60,7 @@ use Scala's type system and ZIO's effect model:
 - `ZIO` effects and explicit result types replace Elixir callback tuples.
 - Typed path and query codecs replace Phoenix route macros and atom actions.
 - Scala HTML builders replace HEEx templates and component macros.
-- Typed `LiveMountAspect` values replace module-and-atom `on_mount` callbacks.
+- Typed @:apiSymbol(class:scalive.LiveMountAspect)`LiveMountAspect`@:@ values replace module-and-atom `on_mount` callbacks.
 - Scalive-native testing APIs replace direct copies of Phoenix test helpers.
 
 These differences are design choices, not compatibility gaps by themselves.

@@ -137,6 +137,7 @@ test("shows a flat Learn path on desktop and hides it on smaller screens", async
     "03Project anatomy",
     "04Models and messages",
     "05Rendering and DOM updates",
+    "06Lifecycle and connection behavior",
   ])
   await expect(navigation.locator('[aria-current="page"]')).toHaveText("04Models and messages")
   const rowGaps = await navigation.locator(":scope > nav > ol > li > a").evaluateAll((links) =>

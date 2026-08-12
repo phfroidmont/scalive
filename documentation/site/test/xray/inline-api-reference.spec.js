@@ -21,6 +21,7 @@ test("opens inline API references on hover and keeps only one open", async ({ pa
   await firstTrigger.dispatchEvent("pointerover")
   await expect(firstPreview).toBeHidden({ timeout: 75 })
   await expect(firstPreview).toBeVisible()
+  await first.hover()
   await expect(firstTrigger).toHaveText("LiveView[Msg, Model]")
   await expect(firstPreview.locator(".docs-api-reference-kind")).toHaveCount(0)
   await expect(firstPreview.locator("code.docs-api-reference-signature, pre .docs-api-reference-signature"))

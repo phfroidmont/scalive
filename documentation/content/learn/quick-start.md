@@ -104,7 +104,7 @@ liveSocket.connect()
 window.liveSocket = liveSocket
 ```
 
-`Live.router` mounts its socket at `/live` by default. The server injects the
+@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ mounts its socket at `/live` by default. The server injects the
 `csrf-token` meta element into the root layout's `<head>` and binds it to a
 cookie; the client returns the value as `_csrf_token` when it opens the socket.
 Do not hard-code or generate this token in JavaScript.
@@ -235,7 +235,7 @@ mill quickStart.run
 
 Open `http://localhost:8080/`. The first request performs a disconnected HTML
 render. The bundled client then connects to `/live`, mounts a connected
-LiveView, and sends typed button messages over the socket.
+@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@, and sends typed button messages over the socket.
 
 Next, read [Project anatomy](project-anatomy.md) to understand why each file has
 one distinct responsibility.

@@ -13,6 +13,8 @@ operations work. For an ordered introduction to the framework, start with
 
 - [HTML DSL and event bindings](html-dsl-and-event-bindings.md) builds typed
   trees, sets attributes, binds messages, and keys repeated content.
+- [Typed forms and validation](typed-forms-and-validation.md) decodes rooted
+  browser input into domain values with path-specific feedback.
 - [Flash, title, and lifecycle UX](flash-title-and-lifecycle-ux.md) communicates
   notification, document-title, connection, and after-render state.
 - [Static assets and client setup](static-assets-and-client-setup.md) bundles

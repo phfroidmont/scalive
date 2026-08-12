@@ -98,6 +98,37 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("submits the profile form and terminates it when the documentation page leaves") {
+      ZIO.scoped {
+        for
+          bundle <- ZIO
+                      .fromEither(GeneratedDocumentation.load(getClass.getClassLoader))
+                      .mapError(new IllegalArgumentException(_))
+          application <- ZIO
+                           .fromEither(DocumentationApplication.from(bundle))
+                           .mapError(new IllegalArgumentException(_))
+          page <- ZIO
+                    .fromOption(application.page("/examples/profile-form"))
+                    .orElseFail(new NoSuchElementException("/examples/profile-form"))
+          renderer = DocumentationRenderer(application)
+          parent   <- SiteLiveViewHarness.join(DocumentationPageLiveView(page, renderer))
+          childId   = ExampleRegistry.instanceId(page.route, "profile-form")
+          child    <- parent.joinNested(childId)
+          _ <- child.submitForm(
+                 "[data-profile-form]",
+                 Vector(
+                   "profile[name]"      -> "Ada Lovelace",
+                   "profile[email]"     -> "ada@example.com",
+                   "profile[biography]" -> "Pioneer."
+                 )
+               )
+          saved   <- child.text("[data-profile-saved]")
+          joined  <- parent.socketExists(child.topic)
+          _       <- parent.leave
+          removed <- parent.socketExists(child.topic)
+        yield assertTrue(saved == "Saved Ada Lovelace's profile.", joined, !removed)
+      }
+    },
     test("captures a counter operation on a separate inspector topic") {
       ZIO.scoped {
         val session = "01234567-89ab-cdef-0123-456789abcdef"

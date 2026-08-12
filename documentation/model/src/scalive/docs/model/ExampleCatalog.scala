@@ -44,5 +44,20 @@ object ExampleCatalog:
     )
   )
 
-  val entries: Vector[ExampleDescriptor] = Vector(Counter, Lifecycle, ShoppingCart)
+  val ProfileForm = ExampleDescriptor(
+    id = "profile-form",
+    title = "Typed profile form",
+    description =
+      "Rooted fields decode change and submit events with normalization and path-specific validation.",
+    topics = Vector("forms", "validation", "typed input", "accessibility"),
+    aliases = Vector("FormRoot", "FormEvent", "profile", "errors", "submit"),
+    resetDescription = "Clear every field, validation state, and saved profile.",
+    source = ExampleSource(
+      path = "documentation/site/src/scalive/docs/examples/ProfileFormExample.scala",
+      region = "profile-form-example",
+      language = Some("scala")
+    )
+  )
+
+  val entries: Vector[ExampleDescriptor] = Vector(Counter, Lifecycle, ProfileForm, ShoppingCart)
 end ExampleCatalog

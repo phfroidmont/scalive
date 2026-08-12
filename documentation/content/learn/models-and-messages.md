@@ -22,7 +22,8 @@ an unstructured event name through application code.
 
 ## State transitions {#state-transitions}
 
-`mount` produces the initial model. `handleMessage` receives the current model
+@:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ produces the initial model.
+@:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ receives the current model
 and returns an effect that produces the next model. Each counter branch uses
 `copy`, making the transition from old state to new state visible at the call
 site.
@@ -39,7 +40,7 @@ state.
 
 Prefer messages that describe application intent and carry already typed
 values. This keeps decoding concerns at the binding boundary and lets
-`handleMessage` work only with valid `Msg` values. Keep model transitions small
+@:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ work only with valid `Msg` values. Keep model transitions small
 and explicit; move repeated domain operations onto the model when that makes
 the handler easier to read.
 

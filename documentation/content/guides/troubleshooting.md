@@ -21,29 +21,30 @@ deciding which phase failed:
    decoded message, handler failure, and returned diff rather than changing the
    HTTP route.
 
-`mount` must be repeatable. The disconnected model is not continued by the
+@:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ must be repeatable. The disconnected model is not continued by the
 connected socket, and a rejoin creates another connected model. Restrict
-subscriptions and other connection-only effects with `ctx.connected`; persist
-state outside the LiveView when it must survive reconnects or process restarts.
+subscriptions and other connection-only effects with
+@:apiSymbol(def:scalive.LifecycleContext.connected)`ctx.connected`@:@; persist
+state outside the @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ when it must survive reconnects or process restarts.
 
 ## Diagnose Startup Failures {#diagnose-startup-failures}
 
 Check the startup path in order:
 
 - Build the browser bundle before starting the JVM.
-- Load every declared asset with `StaticAssets.load`.
-- Construct one `LiveSecurity` and apply it to the router.
+- Load every declared asset with @:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@.
+- Construct one @:apiSymbol(class:scalive.LiveSecurity)`LiveSecurity`@:@ and apply it to the router.
 - Attach a complete root layout containing `<html>`, `<head>`, and `<body>`.
-- Combine the Live routes with `assets.routes`.
+- Combine the Live routes with @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
 - Provide all ZIO environment requirements before calling `Server.serve`.
 
-`StaticAssets.load` fails startup when a configured classpath or directory asset
+@:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@ fails startup when a configured classpath or directory asset
 is absent. Route construction also validates invalid or duplicate Live route
 configurations. Preserve those failures rather than replacing them with a
 server that starts partially.
 
 For production, configure a stable, secret `SCALIVE_TOKEN_SECRET`. If it is
-empty or absent, `TokenConfig.default` generates a process-local secret. A
+empty or absent, @:apiSymbol(val:scalive.TokenConfig.default)`TokenConfig.default`@:@ generates a process-local secret. A
 restart then invalidates session, flash, mount-claim, and CSRF tokens signed by
 the previous process, and independently started replicas will not accept one
 another's tokens. `SCALIVE_TOKEN_MAX_AGE_SECONDS` accepts a positive number of
@@ -86,16 +87,17 @@ for
 yield ()
 ```
 
-`trackedScript` and `trackedStylesheet` emit fingerprinted paths and
+@:apiSymbol(def:scalive.StaticAssets.trackedScript)`trackedScript`@:@ and
+@:apiSymbol(def:scalive.StaticAssets.trackedStylesheet)`trackedStylesheet`@:@ emit fingerprinted paths and
 `phx-track-static`. By default, digested assets are cached as immutable for one
 year, while configured original paths use `no-cache`. Do not hard-code a digest;
 render it through the loaded manifest. If a reverse proxy adds a URL prefix,
-make its routing agree with `StaticAssetConfig.mountPath` rather than rewriting
+make its routing agree with @:apiSymbol(val:scalive.StaticAssetConfig.mountPath)`StaticAssetConfig.mountPath`@:@ rather than rewriting
 only the HTML.
 
 Common asset failures are a missing Mill `resources` dependency on the bundle,
 an output name omitted from `bundleOutputs`, a classpath prefix that does not
-match the packaged resource, or forgetting `assets.routes`. Return to the
+match the packaged resource, or forgetting @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@. Return to the
 [quick-start asset wiring](../learn/quick-start.md#start-the-server) for a minimal
 known shape.
 
@@ -161,7 +163,7 @@ Ordinary checked POST forms use the same protection and receive a hidden
 On transport interruption, expect the Phoenix client to attempt reconnection and
 the server to mount a fresh connected lifecycle. Verify that:
 
-- `mount` does not assume the disconnected model or an earlier socket still
+- @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ does not assume the disconnected model or an earlier socket still
   exists;
 - connection-scoped streams and fibers are acquired through lifecycle
   capabilities so old resources can be released;
@@ -171,7 +173,8 @@ the server to mount a fresh connected lifecycle. Verify that:
 - deployed replicas share the token secret; and
 - proxy idle timeouts are not repeatedly terminating healthy sockets.
 
-The runtime emits a Phoenix-compatible `phx_error` when a joined root LiveView
+The runtime emits a Phoenix-compatible `phx_error` when a joined root
+@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@
 crashes, and native tests demonstrate that the topic can subsequently rejoin
 with a new socket. Do not turn that result into a stronger guarantee: exact
 protocol error payloads, stale cases, crash logging, and reconnect/remount parity

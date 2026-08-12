@@ -27,7 +27,8 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         searchIndex.size == 1,
         bundle.exists(_.pages.nonEmpty),
         bundle.exists(
-          _.examples.map(_.descriptor.id) == Vector("counter", "lifecycle", "shopping-cart")
+          _.examples.map(_.descriptor.id) ==
+            Vector("counter", "lifecycle", "profile-form", "shopping-cart")
         ),
         search == bundle.map(_.searchEntries),
         js.size == 1,

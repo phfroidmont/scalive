@@ -249,7 +249,7 @@ final private[docs] class DocumentationLayout(
             )
           )
         ).toVector,
-      ul(section.toVector.map(item => navigationTree(item, currentRoute)))
+      ul(section.toVector.flatMap(_.children).map(item => navigationTree(item, currentRoute)))
     )
     asideTag(
       dom.hook("ApiNavigation", DomRef("docs-api-navigation")),

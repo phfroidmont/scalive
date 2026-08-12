@@ -267,6 +267,30 @@ object ContentPipelineSpec extends ZIOSpecDefault:
         )),
         route = "/api/scalive/zeta"
       )
+      val codecsPackage = packageSymbol.copy(
+        id = "package:scalive.codecs",
+        ownerId = Some(packageSymbol.id),
+        name = "codecs",
+        qualifiedName = "scalive.codecs",
+        signatures = packageSymbol.signatures.map(_.copy(
+          id = "package:scalive.codecs:signature",
+          signature = "package scalive.codecs",
+          origin = ApiOrigin("scalive.codecs", ApiExposure.Direct)
+        )),
+        route = "/api/scalive/codecs"
+      )
+      val testingPackage = packageSymbol.copy(
+        id = "package:scalive.testing",
+        ownerId = Some(packageSymbol.id),
+        name = "testing",
+        qualifiedName = "scalive.testing",
+        signatures = packageSymbol.signatures.map(_.copy(
+          id = "package:scalive.testing:signature",
+          signature = "package scalive.testing",
+          origin = ApiOrigin("scalive.testing", ApiExposure.Direct)
+        )),
+        route = "/api/scalive/testing"
+      )
       val reference = ApiReference(
         apiMetadata,
         Vector(
@@ -276,7 +300,9 @@ object ContentPipelineSpec extends ZIOSpecDefault:
           liveViewSymbol,
           instanceMember,
           alphaObject,
-          zetaTrait
+          zetaTrait,
+          codecsPackage,
+          testingPackage
         )
       )
 
@@ -303,7 +329,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             companionPage.outline.items.map(_.id) == Vector("members"),
             page.outline.items.flatMap(_.children).forall(_.level == 3),
             scalive.title == "scalive",
-            scalive.children.map(_.title) == Vector("Alpha", "LiveView", "LiveView", "Zeta"),
+            scalive.children.map(_.title) ==
+              Vector("Alpha", "codecs", "LiveView", "LiveView", "testing", "Zeta"),
             scalive.children.count(_.title == "LiveView") == 2,
             scalive.children.exists(_.route == page.route),
             scalive.children.exists(_.route == companionPage.route),

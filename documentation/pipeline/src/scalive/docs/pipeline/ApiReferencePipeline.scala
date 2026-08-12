@@ -26,6 +26,7 @@ final case class ApiReferenceError(messages: Vector[String]):
 
 object ApiReferencePipeline:
   private val IncludedPackages    = Vector("scalive", "scalive.codecs", "scalive.testing")
+  private val IncludedPackageSet  = IncludedPackages.toSet
   private val DomDefinitionPrefix = "scalive.defs."
 
   def generate(config: ApiReferenceConfig): Either[ApiReferenceError, ApiReference] =
@@ -100,7 +101,7 @@ object ApiReferencePipeline:
         .getOrElse(s"package $packageName")
       raw += RawSignature(
         groupId = packageId,
-        ownerId = None,
+        ownerId = parentPackage(packageName).map(symbolId(ApiSymbolKind.Package, _)),
         name = packageName.split('.').last,
         qualifiedName = packageName,
         kind = ApiSymbolKind.Package,
@@ -653,6 +654,14 @@ object ApiReferencePipeline:
         case "scalive"         => "scalive/src/scalive/Scalive.scala"
         case "scalive.codecs"  => "scalive/src/scalive/codecs/Encoder.scala"
         case "scalive.testing" => "scaliveTesting/src/scalive/testing/DisconnectedRender.scala"
+
+    private def parentPackage(packageName: String): Option[String] =
+      packageName
+        .split('.')
+        .inits
+        .drop(1)
+        .map(_.mkString("."))
+        .find(IncludedPackageSet)
 
     private def fallbackSummary(entry: RawSignature): String =
       val renderedName = s"`${entry.qualifiedName}`"

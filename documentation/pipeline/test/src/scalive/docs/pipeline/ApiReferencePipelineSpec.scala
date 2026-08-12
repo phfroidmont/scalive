@@ -126,6 +126,9 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         symbol.qualifiedName == "scalive.LiveRouteParamsBuilder" &&
           symbol.kind == ApiSymbolKind.Class
       )
+      val packages = symbols.filter(_.kind == ApiSymbolKind.Package).map(symbol =>
+        symbol.qualifiedName -> symbol.ownerId
+      ).toMap
       assertTrue(
         result.isRight,
         symbols.exists(_.qualifiedName == "scalive.LiveView"),
@@ -135,6 +138,9 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
           "package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with Components"),
         hasSignature(symbols, "scalive.codecs", ApiSymbolKind.Package, "package scalive.codecs"),
         hasSignature(symbols, "scalive.testing", ApiSymbolKind.Package, "package scalive.testing"),
+        packages.get("scalive").contains(None),
+        packages.get("scalive.codecs").contains(Some("package:scalive")),
+        packages.get("scalive.testing").contains(Some("package:scalive")),
         packageSignaturesHideSyntheticNames(symbols),
         div.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Inherited)),
         div.exists(_.signatures.forall(_.source == ApiSource.GeneratedDom)),

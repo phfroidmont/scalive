@@ -12686,6 +12686,7 @@
     },
     {
       "id" : "package:scalive.codecs",
+      "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.codecs",
       "kind" : "package",
       "signatures" : [
@@ -12697,6 +12698,7 @@
     },
     {
       "id" : "package:scalive.testing",
+      "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.testing",
       "kind" : "package",
       "signatures" : [

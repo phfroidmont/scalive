@@ -201,6 +201,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         guideLinks.exists(_.text() == "Testing LiveViews"),
         projectDocument.select(".docs-section-nav").isEmpty,
         apiDocument.select(".docs-api-navigation details").size() > 0,
+        apiDocument.select(".docs-api-navigation nav > ul > li").asScala.toVector
+          .map(_.attr("data-api-nav-item")) == Vector("scalive"),
+        apiDocument.select(".docs-api-navigation [data-api-nav-item=api]").isEmpty,
         apiDocument.select(".docs-section-index").isEmpty
       )
     },

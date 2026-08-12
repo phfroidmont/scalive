@@ -325,7 +325,9 @@ final private[docs] class DocumentationLayout(
       .location(item.route).getOrElse(
         throw new IllegalArgumentException(s"Unknown navigation route: ${item.route}")
       )
-    navigationLink(location, item.route == currentRoute, "", item.title)
+    val active = item.route == currentRoute ||
+      (item.section == Section.Examples && currentRoute.startsWith("/examples/"))
+    navigationLink(location, active, "", item.title)
 
   private def navigationLink[Msg](
     location: LiveLocation,

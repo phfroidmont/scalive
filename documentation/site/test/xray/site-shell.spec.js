@@ -176,7 +176,7 @@ test("connects the focused homepage action to a typed server transition", async 
 
 test("copies exact code and expands the same long source block", async ({ context, page }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"])
-  await page.goto("/examples")
+  await page.goto("/examples/counter")
 
   const block = page.locator(".docs-code-block[data-code-expandable]").first()
   const code = block.locator(".docs-code > code")
@@ -204,7 +204,7 @@ test("copies exact code and expands the same long source block", async ({ contex
 test("keeps complete code visible without JavaScript", async ({ browser }) => {
   const context = await browser.newContext({ javaScriptEnabled: false })
   const page = await context.newPage()
-  await page.goto("/examples")
+  await page.goto("/examples/counter")
 
   const block = page.locator(".docs-code-block[data-code-expandable]").first()
   await expect(block.locator("[data-code-copy]")).toBeHidden()
@@ -217,7 +217,7 @@ test("keeps complete code visible without JavaScript", async ({ browser }) => {
 
 test("keeps focus visible and suppresses motion for local controls", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
-  await page.goto("/examples")
+  await page.goto("/examples/counter")
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
 
   const selectors = [

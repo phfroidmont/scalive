@@ -22,8 +22,12 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
 
         assertTrue(
           representativeRoutes.subsetOf(bundle.pages.map(_.route).toSet),
-          bundle.examples.map(_.descriptor.id) == Vector("counter"),
+          bundle.examples.map(_.descriptor.id) == Vector("counter", "shopping-cart"),
           bundle.examples.head.source.text.contains("class CounterExample"),
+          bundle.examples.exists(example =>
+            example.descriptor.id == "shopping-cart" &&
+              example.source.text.contains("class ShoppingCartExample")
+          ),
           bundle.apiReference.symbols.exists(_.qualifiedName == "scalive.LiveView"),
           bundle.searchEntries.exists(_.title == "scalive.LiveView"),
           bundle.searchEntries.exists(entry =>

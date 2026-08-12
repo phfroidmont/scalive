@@ -71,7 +71,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
 
           assertTrue(
             bundle.formatVersion == DocumentationBundle.CurrentFormatVersion,
-            bundle.pages.map(_.route) == Vector("/", "/learn", "/guides/first-guide"),
+            bundle.pages.map(_.route) ==
+              Vector("/", "/learn", "/guides/first-guide", "/examples", "/examples/counter"),
             bundle.examples.map(_.descriptor) == Vector(counterDescriptor),
             bundle.examples.head.source.region == SourceRegion("examples/Sample.scala", 3, 4),
             bundle.examples.head.source.text == "val greeting = \"hello\"\nprintln(greeting)",
@@ -91,11 +92,12 @@ object ContentPipelineSpec extends ZIOSpecDefault:
               entry.id == "heading:/#overview" && entry.fragment.contains("overview")
             ),
             bundle.searchEntries.exists(entry =>
-              entry.id == "example:/#example-counter" &&
+              entry.id == "example:/examples/counter" &&
                 entry.title == "Typed counter" &&
                 entry.description == "Update and reset isolated server state." &&
                 entry.text.contains("increment") &&
-                entry.fragment.contains("example-counter")
+                entry.route == "/examples/counter" &&
+                entry.fragment.isEmpty
             ),
             bundle.searchEntries.exists(entry =>
               entry.id == "compatibility:/#compatibility-server-navigation" &&
@@ -103,8 +105,11 @@ object ContentPipelineSpec extends ZIOSpecDefault:
                 entry.fragment.contains("compatibility-server-navigation")
             ),
             bundle.navigation.items.map(_.section) ==
-              Vector(Section.Home, Section.Learn, Section.Guides),
+              Vector(Section.Home, Section.Learn, Section.Guides, Section.Examples),
             bundle.navigation.items.find(_.section == Section.Learn).exists(_.route == "/learn"),
+            bundle.navigation.items.find(_.section == Section.Examples).exists(
+              item => item.route == "/examples" && item.children.isEmpty
+            ),
             home.source == PageSource.Authored(
               SourceLocation("documentation/content/index.md", 1)
             ),
@@ -305,6 +310,24 @@ object ContentPipelineSpec extends ZIOSpecDefault:
       generate("valid", validApiReference, Vector(counterDescriptor, counterDescriptor)) match
         case Right(_)    => assertTrue(false)
         case Left(error) => assertTrue(error.message.contains("duplicate example id 'counter'"))
+    },
+    test("requires one canonical detail page for every example") {
+      val missing = counterDescriptor.copy(id = "missing-counter")
+      generate("valid", validApiReference, Vector(missing)) match
+        case Right(_)    => assertTrue(false)
+        case Left(error) =>
+          assertTrue(
+            error.message.contains(
+              "example 'missing-counter' requires canonical page '/examples/missing-counter'"
+            )
+          )
+    },
+    test("rejects topics with colliding URL keys") {
+      val invalid = counterDescriptor.copy(topics = Vector("server state", "server-state"))
+      generate("valid", validApiReference, Vector(invalid)) match
+        case Right(_)    => assertTrue(false)
+        case Left(error) =>
+          assertTrue(error.message.contains("duplicate topic key 'server-state'"))
     },
     suite("authoring failures")(
       failureTest(

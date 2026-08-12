@@ -107,7 +107,7 @@ object DocumentationHomeSpec extends ZIOSpecDefault:
           html.contains("data-example=\"counter\""),
           !html.contains("docs-xray"),
           !alive,
-          childId != ExampleRegistry.instanceId("/examples", "counter")
+          childId != ExampleRegistry.instanceId("/examples/counter", "counter")
         )
       }
     }

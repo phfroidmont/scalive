@@ -15,7 +15,8 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
     test("rejects generated pages that reference an unknown example") {
       val result = bundle.flatMap { value =>
         val pages = value.pages.map { page =>
-          if page.route == "/examples" then page.copy(content = page.content :+ Block.ExampleRef("missing"))
+          if page.route == "/examples/counter" then
+            page.copy(content = page.content :+ Block.ExampleRef("missing"))
           else page
         }
         DocumentationApplication.from(value.copy(pages = pages))
@@ -25,7 +26,8 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
     test("rejects repeated instances of one example on a page") {
       val result = bundle.flatMap { value =>
         val pages = value.pages.map { page =>
-          if page.route == "/examples" then page.copy(content = page.content :+ Block.ExampleRef("counter"))
+          if page.route == "/examples/counter" then
+            page.copy(content = page.content :+ Block.ExampleRef("counter"))
           else page
         }
         DocumentationApplication.from(value.copy(pages = pages))

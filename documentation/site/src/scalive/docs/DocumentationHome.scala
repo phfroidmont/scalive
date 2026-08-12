@@ -148,9 +148,9 @@ private[docs] object HomePageContent:
       page,
       targets == Vector(
         LinkTarget.Internal("/learn", Some("start-here")),
-        LinkTarget.Internal("/examples", Some("typed-counter"))
+        LinkTarget.Internal("/examples/counter", None)
       ),
-      "homepage block 2 must link to /learn#start-here and /examples#typed-counter, in that order."
+      "homepage block 2 must link to /learn#start-here and /examples/counter, in that order."
     )
 
   private def block[A](

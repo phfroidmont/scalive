@@ -209,49 +209,89 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         !rendered.text.contains("[[LiveView]]")
       )
     },
-    test("renders the source-backed counter as a disconnected nested LiveView") {
+    test("renders a bounded URL-filtered example catalog") {
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        rendered <- DisconnectedRender.run(
-                      application.routes(assets, security, config),
-                      Request.get(url("/examples"))
+        routes = application.routes(assets, security, config)
+        rendered <- DisconnectedRender.run(routes, Request.get(url("/examples")))
+        filtered <- DisconnectedRender.run(
+                      routes,
+                      Request.get(url("/examples?topic=keyed-rendering"))
                     )
-        document = Jsoup.parse(rendered.html)
-        example  = document.selectFirst("#example-counter")
-        nestedId = ExampleRegistry.instanceId("/examples", "counter")
+        unknown <- DisconnectedRender.run(
+                     routes,
+                     Request.get(url("/examples?topic=unknown"))
+                   )
+        document         = Jsoup.parse(rendered.html)
+        filteredDocument = Jsoup.parse(filtered.html)
+        unknownDocument  = Jsoup.parse(unknown.html)
       yield assertTrue(
         rendered.response.status == Status.Ok,
-        example != null,
-        example.attr("data-example-child") == nestedId,
-        example.select(s"#$nestedId[data-phx-session][data-phx-child-id]").size() == 1,
-        example.select("[role=status][aria-live=polite][aria-atomic=true] strong").text() == "0",
-        example.select("fieldset legend.docs-visually-hidden").text() == "Counter controls",
-        example.select("[data-example-controls]:not([disabled])").size() == 1,
-        example.select("button[phx-click]").asScala.exists(_.text() == "Reset"),
-        example.select(".docs-code-block > figcaption").text() == "Source",
-        example.select(".docs-code-block [data-code-copy][hidden]").size() >= 1,
-        example.select(".docs-code-block[data-code-expandable] [data-code-expand][hidden]").size() == 1,
-        document.select("#typed-counter").text() == "Typed counter",
-        document.select("#typed-counter + p").text().contains("Decrement, Reset, and Increment"),
-        example.select(".docs-example-topics").isEmpty,
-        example.select(".docs-example-rendered h3").text() == "Result",
-        example.selectFirst(".docs-code-block").elementSiblingIndex() <
-          example.selectFirst(".docs-example-rendered").elementSiblingIndex(),
-        example.selectFirst(".docs-example-rendered").elementSiblingIndex() <
-          example.selectFirst("[data-example-disconnected]").elementSiblingIndex(),
-        example.select(".docs-code").text().contains("class CounterExample"),
-        !example.select(".docs-code .keyword").isEmpty,
-        example.select("[data-compilation-failure]").isEmpty,
-        example.select("a").asScala.exists(link =>
-          link.text() == "View source" && link.attr("href").contains("CounterExample.scala#L")
+        document.select("[data-example-catalog]").size() == 1,
+        document.select("[data-example-card]").size() == 2,
+        document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
+        document.select(".docs-code-block").isEmpty,
+        document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
+        document.select("a[href='/examples/shopping-cart']").asScala.exists(
+          _.text() == "Connection-local shopping cart"
         ),
+        document.select("a[data-example-topic-filter][href='/examples?topic=keyed-rendering']").size() == 1,
+        filtered.response.status == Status.Ok,
+        filteredDocument.select("[data-example-card]").size() == 1,
+        filteredDocument.select("[data-example-card=shopping-cart]").size() == 1,
+        filteredDocument.select("[data-example-card=counter]").isEmpty,
+        filteredDocument.select("[data-example-topic-filter][aria-current=page]").text() ==
+          "Keyed rendering",
+        filteredDocument.select("[role=status]").text().contains("1 example"),
+        unknown.response.status == Status.Ok,
+        unknownDocument.select("[data-example-card]").isEmpty,
+        unknownDocument.select(".docs-example-catalog-status[role=status]").text() == "0 examples",
+        unknownDocument.select(".docs-example-catalog-empty a[href='/examples']").text() ==
+          "Show all examples",
         application.bundle.searchEntries.exists(entry =>
-              entry.id == "example:/examples#example-counter" &&
+              entry.id == "example:/examples/counter" &&
               entry.title == "Typed counter" &&
               entry.description ==
-                "A LiveView with a count model and Decrement, Reset, and Increment messages."
-          )
+                "A LiveView with a count model and Decrement, Reset, and Increment messages." &&
+              entry.route == "/examples/counter" && entry.fragment.isEmpty
+          ),
+        application.bundle.searchEntries.exists(entry =>
+          entry.id == "example:/examples/shopping-cart" &&
+            entry.title == "Connection-local shopping cart" &&
+            entry.route == "/examples/shopping-cart" &&
+            entry.fragment.isEmpty && entry.text.contains("keyed rendering")
+        )
+      )
+    },
+    test("renders one source-backed example on each canonical detail route") {
+      for
+        application <- loadApplication
+        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes       = application.routes(assets, security, config)
+        counter <- DisconnectedRender.run(routes, Request.get(url("/examples/counter")))
+        cart <- DisconnectedRender.run(routes, Request.get(url("/examples/shopping-cart")))
+        counterDocument = Jsoup.parse(counter.html)
+        cartDocument    = Jsoup.parse(cart.html)
+        counterExample  = counterDocument.selectFirst("#example-counter")
+        cartExample     = cartDocument.selectFirst("#example-shopping-cart")
+        counterNestedId = ExampleRegistry.instanceId("/examples/counter", "counter")
+        cartNestedId    = ExampleRegistry.instanceId("/examples/shopping-cart", "shopping-cart")
+      yield assertTrue(
+        counter.response.status == Status.Ok,
+        counterDocument.select(".docs-example").size() == 1,
+        counterExample.attr("data-example-child") == counterNestedId,
+        counterExample.select(s"#$counterNestedId[data-phx-session][data-phx-child-id]").size() == 1,
+        counterExample.select("[role=status] strong").text() == "0",
+        counterExample.select(".docs-code").text().contains("class CounterExample"),
+        counterDocument.select(".docs-section-nav a").size() == 1,
+        counterDocument.select(".docs-section-nav a[href='/examples'][aria-current=page]").size() == 1,
+        cart.response.status == Status.Ok,
+        cartDocument.select(".docs-example").size() == 1,
+        cartExample.attr("data-example-child") == cartNestedId,
+        cartExample.select(s"#$cartNestedId[data-phx-session][data-phx-child-id]").size() == 1,
+        cartExample.select("[data-cart-item-count]").text() == "0 items",
+        cartExample.select(".docs-code").text().contains("class ShoppingCartExample")
       )
     },
     test("serves tracked assets and leaves unknown paths as real 404 responses") {

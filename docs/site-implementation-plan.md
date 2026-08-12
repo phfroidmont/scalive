@@ -434,7 +434,7 @@ Each migrated example must include extracted source, a behavior test, reset
 behavior, isolated state, catalog metadata, related-guide links, and X-ray
 support where it improves the lesson.
 
-- [ ] Migrate the shopping cart example.
+- [x] Migrate the shopping cart example.
 - [ ] Replace the guestbook with a deterministic read-only ZLayer service example.
 - [ ] Migrate the subscription clock with instance-scoped keys.
 - [ ] Migrate the async report with deterministic success, failure, replacement,
@@ -456,7 +456,7 @@ support where it improves the lesson.
 - [ ] Keep authentication session records opaque and isolated between visitors.
 - [ ] Add deterministic latency and failure controls only where they teach
   relevant behavior.
-- [ ] Build the topic-filtered example catalog from registry metadata.
+- [x] Build the topic-filtered example catalog from registry metadata.
 - [ ] Preserve applicable existing auth, form, and routing tests during
   migration.
 

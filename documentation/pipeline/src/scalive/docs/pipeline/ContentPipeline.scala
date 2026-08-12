@@ -492,10 +492,11 @@ object ContentPipeline:
     duplicateGroups(documents)(_.metadata.title).foreach { case (title, docs) =>
       errors += s"duplicate page title '$title': ${docs.map(_.sourcePath).sorted.mkString(", ")}."
     }
-    duplicateGroups(documents)(doc => doc.metadata.section -> doc.metadata.order).foreach {
-      case ((section, order), docs) =>
-        errors +=
-          s"duplicate navigation position (${sectionName(section)}, $order): ${docs.map(_.sourcePath).sorted.mkString(", ")}."
+    duplicateGroups(documents.filter(isNavigationDocument))(doc =>
+      doc.metadata.section -> doc.metadata.order
+    ).foreach { case ((section, order), docs) =>
+      errors +=
+        s"duplicate navigation position (${sectionName(section)}, $order): ${docs.map(_.sourcePath).sorted.mkString(", ")}."
     }
     errors.toVector
 
@@ -509,6 +510,9 @@ object ContentPipeline:
         case (value, matches) if matches.sizeIs > 1 =>
           value -> matches
       }.sortBy(_._1.toString)
+
+  private def isNavigationDocument(document: AuthoredDocument): Boolean =
+    document.metadata.section != Section.Examples || document.route == "/examples"
 
   private def parseTree(
     documents: Vector[AuthoredDocument],
@@ -572,7 +576,9 @@ object ContentPipeline:
     if failures.nonEmpty then Left(PipelineError(failures.flatten.sorted))
     else
       val referenceErrors =
-        validateApiReferences(pages, apiReference) ++ validateExampleReferences(pages, examples)
+        validateApiReferences(pages, apiReference) ++
+          validateExampleReferences(pages, examples) ++
+          validateCanonicalExamplePages(pages, examples)
       if referenceErrors.nonEmpty then Left(PipelineError(referenceErrors))
       else
         val hasApiLanding  = pages.exists(_.route == "/api")
@@ -598,6 +604,7 @@ object ContentPipeline:
                 searchEntries = searchEntries
               )
             }
+    end if
   end convertTree
 
   private def validateApiReferences(
@@ -634,6 +641,43 @@ object ContentPipeline:
         }
       }.distinct.sorted
 
+  private def validateCanonicalExamplePages(
+    pages: Vector[Page],
+    examples: Vector[ExampleDefinition]
+  ): Vector[String] =
+    val errors  = ArrayBuffer.empty[String]
+    val byRoute = pages.map(page => page.route -> page).toMap
+
+    if examples.nonEmpty then
+      byRoute.get("/examples") match
+        case None       => errors += "example catalog page '/examples' is missing."
+        case Some(page) =>
+          if page.metadata.section != Section.Examples then
+            errors += "example catalog page '/examples' must use section examples."
+          if collectExampleReferences(page.content).nonEmpty then
+            errors += "example catalog page '/examples' must not embed executable examples."
+
+    examples.foreach { example =>
+      val descriptor = example.descriptor
+      val route      = s"/examples/${descriptor.id}"
+      byRoute.get(route) match
+        case None       => errors += s"example '${descriptor.id}' requires canonical page '$route'."
+        case Some(page) =>
+          if page.metadata.section != Section.Examples then
+            errors += s"canonical example page '$route' must use section examples."
+          if page.metadata.title != descriptor.title then
+            errors += s"canonical example page '$route' title must match example '${descriptor.id}'."
+          if page.metadata.description != descriptor.description then
+            errors +=
+              s"canonical example page '$route' description must match example '${descriptor.id}'."
+          val references = collectExampleReferences(page.content)
+          if references != Vector(descriptor.id) then
+            errors += s"canonical example page '$route' must embed exactly '${descriptor.id}'."
+    }
+
+    errors.toVector.distinct.sorted
+  end validateCanonicalExamplePages
+
   private def collectExampleReferences(blocks: Vector[Block]): Vector[String] =
     blocks.flatMap {
       case Block.ExampleRef(id)    => Vector(id)
@@ -667,6 +711,13 @@ object ContentPipeline:
       (descriptor.topics ++ descriptor.aliases).foreach { value =>
         if value.trim.isEmpty then
           errors += s"example '${descriptor.id}' search terms must not be blank."
+      }
+      val topicKeys = descriptor.topics.map(ExampleTopic.key)
+      if topicKeys.exists(_.isEmpty) then
+        errors += s"example '${descriptor.id}' topics must contain letters or digits."
+      topicKeys.groupBy(identity).foreach { case (key, matches) =>
+        if key.nonEmpty && matches.sizeIs > 1 then
+          errors += s"example '${descriptor.id}' has duplicate topic key '$key'."
       }
     }
 
@@ -1099,6 +1150,7 @@ object ContentPipeline:
           Vector(
             if section == Section.Api then
               apiNavigation(root, sectionPages.filterNot(_.route == rootRoute), apiReference)
+            else if section == Section.Examples then navigationItem(root)
             else
               navigationItem(root, sectionPages.filterNot(_.route == rootRoute).map(navigationItem))
           )

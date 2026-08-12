@@ -77,7 +77,46 @@ private[docs] object ExampleRegistry:
     behaviorTestId = "counter-behavior"
   )
 
-  val entries: Vector[RegisteredExample] = Vector(counter)
+  private val shoppingCart =
+    new ExampleEntry[ShoppingCartExample.Msg, ShoppingCartExample.Model](
+      descriptor = ExampleCatalog.ShoppingCart,
+      factory = () => new ShoppingCartExample,
+      reset = ExampleReset(ShoppingCartExample.Msg.Clear, "Clear"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[ShoppingCartExample.Msg]:
+          def project(value: ShoppingCartExample.Msg) = value match
+            case ShoppingCartExample.Msg.Add(product) =>
+              ExampleTraceValue(
+                "ShoppingCartExample.Msg",
+                "Add one product",
+                Vector("product" -> product.sku)
+              )
+            case ShoppingCartExample.Msg.Remove(product) =>
+              ExampleTraceValue(
+                "ShoppingCartExample.Msg",
+                "Remove one product",
+                Vector("product" -> product.sku)
+              )
+            case ShoppingCartExample.Msg.Clear =>
+              ExampleTraceValue("ShoppingCartExample.Msg", "Clear the cart"),
+        model = new ExampleTraceProjector[ShoppingCartExample.Model]:
+          def project(value: ShoppingCartExample.Model) =
+            val quantities =
+              value.lines.map(line => s"${line.product.sku}=${line.quantity}").mkString(", ")
+            ExampleTraceValue(
+              "ShoppingCartExample.Model",
+              "Current cart state",
+              Vector(
+                "itemCount" -> value.itemCount.toString,
+                "total"     -> money(value.totalInCents),
+                "lines"     -> quantities
+              )
+            )
+      ),
+      behaviorTestId = "shopping-cart-behavior"
+    )
+
+  val entries: Vector[RegisteredExample] = Vector(counter, shoppingCart)
 
   private val byId = entries.map(entry => entry.descriptor.id -> entry).toMap
 
@@ -97,6 +136,11 @@ private[docs] object ExampleRegistry:
 
   def inspectorTopic(pageRoute: String, directiveId: String): String =
     s"lv:${inspectorInstanceId(pageRoute, directiveId)}"
+
+  private def money(cents: Int): String =
+    val dollars   = cents / 100
+    val remainder = cents % 100
+    f"$$$dollars%d.$remainder%02d"
 
   def validationErrors: Vector[String] =
     val duplicateIds = entries.groupBy(_.descriptor.id).collect {

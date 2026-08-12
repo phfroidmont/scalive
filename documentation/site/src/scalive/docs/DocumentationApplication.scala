@@ -90,9 +90,17 @@ final private[docs] class DocumentationApplication private (
       this,
       renderer
     )
-    val fragments = pages.filterNot(_.page.route == "/").map { entry =>
-      Live.route(entry.codec) -> DocumentationPageLiveView(entry.page, renderer)
+    val examplesPage = pages.find(_.page.route == DocumentationApplication.ExamplesRoute).getOrElse {
+      throw new IllegalStateException("Missing validated examples catalog route '/examples'.")
     }
+    val fragments = pages
+      .filterNot(entry =>
+        entry.page.route == "/" || entry.page.route == DocumentationApplication.ExamplesRoute
+      ).map { entry =>
+        Live.route(entry.codec) -> DocumentationPageLiveView(entry.page, renderer)
+      }
+    val examplesRoute = DocumentationApplication.ExamplesCatalogRoute ->
+      DocumentationExamplesLiveView(examplesPage.page, this, renderer)
     val searchRoute = Live
       .route(PathCodec(DocumentationApplication.SearchRoute))
       .queryOptional[String](DocumentationApplication.SearchParameter) ->
@@ -104,14 +112,18 @@ final private[docs] class DocumentationApplication private (
     val tracedRouter = traceStore.fold(router)(store =>
       router.withRuntimeTrace(DocumentationRuntimeTraceFactory(store))
     )
-    val liveRoutes = tracedRouter(homeRoute, (searchRoute +: fragments)*)
+    val liveRoutes = tracedRouter(homeRoute, (Vector(examplesRoute, searchRoute) ++ fragments)*)
     liveRoutes ++ DocumentationMetadataRoutes.routes(this, config.publicOrigin)
   end routes
 end DocumentationApplication
 
 private[docs] object DocumentationApplication:
-  val SearchRoute     = "/search"
-  val SearchParameter = "q"
+  val SearchRoute                        = "/search"
+  val SearchParameter                    = "q"
+  val ExamplesRoute                      = "/examples"
+  val TopicParameter                     = "topic"
+  private[docs] val ExamplesCatalogRoute =
+    (live / "examples").queryOptional[String](TopicParameter)
 
   def from(bundle: DocumentationBundle): Either[String, DocumentationApplication] =
     for
@@ -126,6 +138,7 @@ private[docs] object DocumentationApplication:
       entries <- buildEntries(bundle.pages)
       home    <- validateHomepage(bundle.pages)
       _       <- validateReferences(bundle)
+      _       <- validateCanonicalExamples(bundle)
       _       <- validateSearchEntries(bundle)
     yield new DocumentationApplication(
       bundle,
@@ -235,6 +248,45 @@ private[docs] object DocumentationApplication:
       ExampleRegistry.validationErrors ++ duplicateIds ++ missing ++ unexpected ++ mismatched
     Either.cond(errors.isEmpty, (), errors.toVector.sorted.mkString(" "))
 
+  private def validateCanonicalExamples(bundle: DocumentationBundle): Either[String, Unit] =
+    val pagesByRoute  = bundle.pages.map(page => page.route -> page).toMap
+    val catalogErrors = pagesByRoute.get(ExamplesRoute) match
+      case None => Vector("Generated documentation is missing examples catalog page '/examples'.")
+      case Some(page) =>
+        Vector(
+          Option.when(page.metadata.section != Section.Examples)(
+            "Examples catalog page '/examples' must use section Examples."
+          ),
+          Option.when(exampleReferences(page.content).nonEmpty)(
+            "Examples catalog page '/examples' must not embed executable examples."
+          )
+        ).flatten
+    val detailErrors = bundle.examples.flatMap { example =>
+      val descriptor = example.descriptor
+      val route      = s"/examples/${descriptor.id}"
+      pagesByRoute.get(route) match
+        case None => Vector(s"Generated documentation is missing canonical example page '$route'.")
+        case Some(page) =>
+          val references = exampleReferences(page.content)
+          Vector(
+            Option.when(page.metadata.section != Section.Examples)(
+              s"Canonical example page '$route' must use section Examples."
+            ),
+            Option.when(page.metadata.title != descriptor.title)(
+              s"Canonical example page '$route' title differs from example '${descriptor.id}'."
+            ),
+            Option.when(page.metadata.description != descriptor.description)(
+              s"Canonical example page '$route' description differs from example '${descriptor.id}'."
+            ),
+            Option.when(references != Vector(descriptor.id))(
+              s"Canonical example page '$route' must embed exactly '${descriptor.id}'."
+            )
+          ).flatten
+    }
+    val errors = catalogErrors ++ detailErrors
+    Either.cond(errors.isEmpty, (), errors.toVector.sorted.mkString(" "))
+  end validateCanonicalExamples
+
   private def validateSearchEntries(bundle: DocumentationBundle): Either[String, Unit] =
     val anchors      = bundle.pages.map(page => page.route -> pageAnchors(page)).toMap
     val duplicateIds = bundle.searchEntries
@@ -269,6 +321,16 @@ private[docs] object DocumentationApplication:
       case Block.Callout(_, _, content) => directiveAnchors(content)
       case _                            => Set.empty[String]
     }.toSet
+
+  private def exampleReferences(blocks: Vector[Block]): Vector[String] =
+    blocks.flatMap {
+      case Block.ExampleRef(id)         => Vector(id)
+      case Block.BulletList(items)      => items.flatMap(item => exampleReferences(item.content))
+      case Block.OrderedList(_, items)  => items.flatMap(item => exampleReferences(item.content))
+      case Block.Quote(content)         => exampleReferences(content)
+      case Block.Callout(_, _, content) => exampleReferences(content)
+      case _                            => Vector.empty
+    }
 
   private enum ContentReference:
     case Route(route: String)

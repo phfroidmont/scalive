@@ -5,11 +5,5 @@ order = 0
 section = examples
 %}
 
-Runnable examples with source and runtime traces.
-
-## Typed counter {#typed-counter}
-
-A LiveView with a `count` model and `Decrement`, `Reset`, and `Increment`
-messages.
-
-@:example(counter)
+Browse focused examples by topic. Each example has its own page with executable
+source, isolated state, reset behavior, and an optional runtime trace.

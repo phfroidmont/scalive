@@ -8,7 +8,7 @@ if (!playwrightRoot) throw new Error("PLAYWRIGHT_TEST_NODE_PATH is not set; ente
 const { expect, test } = require(`${playwrightRoot}/playwright/test.js`)
 
 test("correlates a counter click through server and browser application", async ({ page }) => {
-  await page.goto("/examples")
+  await page.goto("/examples/counter")
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
 
   const example = page.locator('[data-example="counter"]')

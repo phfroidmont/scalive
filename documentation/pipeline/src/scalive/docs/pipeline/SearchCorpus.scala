@@ -38,6 +38,9 @@ private[pipeline] object SearchCorpus:
     page: Page,
     examples: Map[String, ExampleDefinition]
   ): Vector[SearchEntry] =
+    val canonicalExample = page.route.stripPrefix("/examples/") match
+      case id if id.nonEmpty && !id.contains('/') => examples.get(id)
+      case _                                      => None
     val pageEntry = SearchEntry(
       id = s"page:${page.route}",
       kind = SearchEntryKind.Page,
@@ -61,35 +64,36 @@ private[pipeline] object SearchCorpus:
         text = s"$title ${page.metadata.title} ${page.metadata.description}"
       )
     }
-    val directives = collectDirectives(page.content).map {
-      case (SearchEntryKind.Example, id) =>
-        val example = examples.getOrElse(
-          id,
-          throw new IllegalArgumentException(s"Unknown validated example: $id")
-        )
-        exampleEntry(page, example)
+    val directives = collectDirectives(page.content).flatMap {
+      case (SearchEntryKind.Example, _)        => Vector.empty
       case (SearchEntryKind.Compatibility, id) =>
-        directiveEntry(page, SearchEntryKind.Compatibility, id, "compatibility")
+        Vector(directiveEntry(page, SearchEntryKind.Compatibility, id, "compatibility"))
       case (kind, _) =>
         throw new IllegalArgumentException(s"Unsupported directive search kind: $kind")
     }
-    (pageEntry +: headings) ++ directives
+    canonicalExample match
+      case Some(example) => exampleEntry(page, example) +: (headings ++ directives)
+      case None          => (pageEntry +: headings) ++ directives
   end entriesForPage
 
   private def exampleEntry(page: Page, example: ExampleDefinition): SearchEntry =
     val descriptor = example.descriptor
-    val fragment   = s"example-${descriptor.id}"
     SearchEntry(
-      id = s"example:${page.route}#$fragment",
+      id = s"example:${page.route}",
       kind = SearchEntryKind.Example,
       title = descriptor.title,
       description = descriptor.description,
       route = page.route,
-      fragment = Some(fragment),
+      fragment = None,
       section = page.metadata.section,
-      text =
-        (Vector(descriptor.id, descriptor.title, descriptor.description, page.metadata.title) ++
-          descriptor.topics ++ descriptor.aliases).mkString(" ")
+      text = (Vector(
+        descriptor.id,
+        descriptor.title,
+        descriptor.description,
+        page.metadata.title,
+        prose(page.content)
+      ) ++
+        descriptor.topics ++ descriptor.aliases).mkString(" ")
     )
 
   private def directiveEntry(

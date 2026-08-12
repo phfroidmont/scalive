@@ -9,7 +9,7 @@ Build real-time web applications entirely in Scala. Keep state and rendering on
 the server, handle browser events as typed messages, and send efficient HTML
 updates over the wire.
 
-[Build your first LiveView](learn/index.md#start-here) [Browse examples](examples/index.md#typed-counter)
+[Build your first LiveView](learn/index.md#start-here) [Browse examples](examples/counter.md)
 
 ```scala
 import scalive.*

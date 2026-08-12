@@ -5,7 +5,7 @@ import zio.test.*
 import scalive.docs.model.ExampleCatalog
 
 object ExampleRegistrySpec extends ZIOSpecDefault:
-  private val BehaviorTests = Set("counter-behavior")
+  private val BehaviorTests = Set("counter-behavior", "shopping-cart-behavior")
 
   override def spec = suite("ExampleRegistrySpec")(
     test("keeps executable entries aligned with generated descriptors and behavior tests") {
@@ -38,6 +38,22 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
           _.fields.contains("count" -> "2")
         ),
         counter.projectModel(2).isEmpty
+      )
+    },
+    test("uses explicit shopping cart reset and trace projectors") {
+      val cart = ExampleRegistry.get("shopping-cart").get
+      val model = ShoppingCartExample.Model.empty
+        .add(ShoppingCartExample.Product.Coffee)
+        .add(ShoppingCartExample.Product.Coffee)
+      assertTrue(
+        cart.resetMessage == ShoppingCartExample.Msg.Clear,
+        cart.resetControlLabel == "Clear",
+        cart.projectMessage(ShoppingCartExample.Msg.Add(ShoppingCartExample.Product.Coffee))
+          .exists(_.fields.contains("product" -> "coffee")),
+        cart.projectMessage("add coffee").isEmpty,
+        cart.projectModel(model).exists(_.fields.contains("itemCount" -> "2")),
+        cart.projectModel(model).exists(_.fields.contains("total" -> "$25.98")),
+        cart.projectModel(2).isEmpty
       )
     }
   )

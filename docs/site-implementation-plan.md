@@ -440,7 +440,7 @@ support where it improves the lesson.
 - [ ] Migrate the async report with deterministic success, failure, replacement,
   retry, and cancellation controls.
 - [x] Migrate the typed profile form.
-- [ ] Migrate the activity stream.
+- [x] Migrate the activity stream.
 - [ ] Migrate voting components with instance-scoped component IDs.
 - [ ] Migrate browser interop with instance-scoped hook and DOM IDs.
 - [x] Migrate lifecycle, flash, title, and connection behavior.
@@ -493,7 +493,7 @@ mill --ticker false documentation.check
 - [ ] Write JS commands, browser events, and hook integration guides.
 - [x] Write flash, title, and lifecycle UX guides.
 - [ ] Write services and ZLayer injection guides.
-- [ ] Write streams and collection update guides.
+- [x] Write streams and collection update guides.
 - [ ] Write uploads and consumption guides.
 - [ ] Write routes, typed parameters, patching, and navigation guides.
 - [ ] Write layouts, sessions, mount aspects, and authentication guides.

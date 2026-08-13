@@ -53,6 +53,38 @@ final private class ExampleEntry[Msg: LiveMessageTag, Model: ClassTag](
     modelTag.unapply(value).map(traces.model.project)
 
 private[docs] object ExampleRegistry:
+  private val activityStream =
+    new ExampleEntry[ActivityStreamExample.Msg, ActivityStreamExample.Model](
+      descriptor = ExampleCatalog.ActivityStream,
+      factory = () => new ActivityStreamExample,
+      reset = ExampleReset(ActivityStreamExample.Msg.Reset, "Reset activity stream"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[ActivityStreamExample.Msg]:
+          def project(value: ActivityStreamExample.Msg) = value match
+            case ActivityStreamExample.Msg.Add =>
+              ExampleTraceValue("ActivityStreamExample.Msg", "Insert one activity")
+            case ActivityStreamExample.Msg.Delete(activity) =>
+              ExampleTraceValue(
+                "ActivityStreamExample.Msg",
+                "Delete one activity",
+                Vector("activityId" -> activity.id.toString)
+              )
+            case ActivityStreamExample.Msg.Reset =>
+              ExampleTraceValue("ActivityStreamExample.Msg", "Reset the activity stream"),
+        model = new ExampleTraceProjector[ActivityStreamExample.Model]:
+          def project(value: ActivityStreamExample.Model) =
+            ExampleTraceValue(
+              "ActivityStreamExample.Model",
+              "Current durable activity state",
+              Vector(
+                "activityCount" -> value.activities.size.toString,
+                "nextId"        -> value.nextId.toString
+              )
+            )
+      ),
+      behaviorTestId = "activity-stream-behavior"
+    )
+
   private val counter = new ExampleEntry[CounterExample.Msg, CounterExample.Model](
     descriptor = ExampleCatalog.Counter,
     factory = () => new CounterExample,
@@ -176,7 +208,8 @@ private[docs] object ExampleRegistry:
       behaviorTestId = "profile-form-behavior"
     )
 
-  val entries: Vector[RegisteredExample] = Vector(counter, lifecycle, profileForm, shoppingCart)
+  val entries: Vector[RegisteredExample] =
+    Vector(activityStream, counter, lifecycle, profileForm, shoppingCart)
 
   private val byId = entries.map(entry => entry.descriptor.id -> entry).toMap
 

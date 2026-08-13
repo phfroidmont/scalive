@@ -19,24 +19,35 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
             DocumentationHomeLiveView(page, application.homeContent, application, renderer).render(())
           )
         ).getOrElse("")
+        val routes = bundle.pages.map(_.route).toSet
+        val exampleIds = bundle.examples.map(_.descriptor.id)
+        val expectedExampleIds = Vector(
+          "activity-stream",
+          "counter",
+          "lifecycle",
+          "profile-form",
+          "shopping-cart"
+        )
+        val counterSource = bundle.examples.find(_.descriptor.id == "counter").map(_.source.text)
+        val hasShoppingCartSource = bundle.examples.exists(example =>
+          example.descriptor.id == "shopping-cart" &&
+            example.source.text.contains("class ShoppingCartExample")
+        )
+        val apiQualifiedNames = bundle.apiReference.symbols.map(_.qualifiedName).toSet
+        val liveViewSearchEntries = bundle.searchEntries.filter(_.title == "scalive.LiveView")
+        val hasHomePage = bundle.pages.exists(page =>
+          page.route == "/" && page.metadata.title == "Live interfaces. Typed end to end."
+        )
 
         assertTrue(
-          representativeRoutes.subsetOf(bundle.pages.map(_.route).toSet),
-          bundle.examples.map(_.descriptor.id) ==
-            Vector("counter", "lifecycle", "profile-form", "shopping-cart"),
-          bundle.examples.head.source.text.contains("class CounterExample"),
-          bundle.examples.exists(example =>
-            example.descriptor.id == "shopping-cart" &&
-              example.source.text.contains("class ShoppingCartExample")
-          ),
-          bundle.apiReference.symbols.exists(_.qualifiedName == "scalive.LiveView"),
-          bundle.searchEntries.exists(_.title == "scalive.LiveView"),
-          bundle.searchEntries.exists(entry =>
-            entry.title == "scalive.LiveView" && entry.text.contains("mounted independently")
-          ),
-          bundle.pages.exists(page =>
-            page.route == "/" && page.metadata.title == "Live interfaces. Typed end to end."
-          ),
+          representativeRoutes.subsetOf(routes),
+          exampleIds == expectedExampleIds,
+          counterSource.exists(_.contains("class CounterExample")),
+          hasShoppingCartSource,
+          apiQualifiedNames.contains("scalive.LiveView"),
+          liveViewSearchEntries.nonEmpty,
+          liveViewSearchEntries.exists(_.text.contains("mounted independently")),
+          hasHomePage,
           home.contains("href=\"/learn#start-here\""),
           home.contains("data-callout=\"info\""),
           rendered.contains("href=\"/learn/quick-start\""),

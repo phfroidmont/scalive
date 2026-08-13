@@ -318,7 +318,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 4,
+        document.select("[data-example-card]").size() == 5,
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
@@ -330,6 +330,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         ),
         document.select("a[href='/examples/profile-form']").asScala.exists(
           _.text() == "Typed profile form"
+        ),
+        document.select("a[href='/examples/activity-stream']").asScala.exists(
+          _.text() == "Bounded activity stream"
         ),
         document.select("a[data-example-topic-filter][href='/examples?topic=keyed-rendering']").size() == 1,
         filtered.response.status == Status.Ok,

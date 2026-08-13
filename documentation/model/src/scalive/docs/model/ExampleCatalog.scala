@@ -1,6 +1,21 @@
 package scalive.docs.model
 
 object ExampleCatalog:
+  val ActivityStream = ExampleDescriptor(
+    id = "activity-stream",
+    title = "Bounded activity stream",
+    description =
+      "Durable activity history drives an opaque stream handle with stable IDs and a five-row DOM window.",
+    topics = Vector("streams", "collections", "DOM patches", "bounded rendering"),
+    aliases = Vector("LiveStream", "LiveStreamDef", "insert", "delete", "reset", "keepLast"),
+    resetDescription = "Restore the initial durable history and rendered stream window.",
+    source = ExampleSource(
+      path = "documentation/site/src/scalive/docs/examples/ActivityStreamExample.scala",
+      region = "activity-stream-example",
+      language = Some("scala")
+    )
+  )
+
   val Counter = ExampleDescriptor(
     id = "counter",
     title = "Typed counter",
@@ -59,5 +74,6 @@ object ExampleCatalog:
     )
   )
 
-  val entries: Vector[ExampleDescriptor] = Vector(Counter, Lifecycle, ProfileForm, ShoppingCart)
+  val entries: Vector[ExampleDescriptor] =
+    Vector(ActivityStream, Counter, Lifecycle, ProfileForm, ShoppingCart)
 end ExampleCatalog

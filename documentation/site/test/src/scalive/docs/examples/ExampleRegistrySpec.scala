@@ -8,6 +8,7 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
   private val BehaviorTests =
     Set(
       "counter-behavior",
+      "activity-stream-behavior",
       "lifecycle-behavior",
       "profile-form-behavior",
       "shopping-cart-behavior"
@@ -60,6 +61,16 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         cart.projectModel(model).exists(_.fields.contains("itemCount" -> "2")),
         cart.projectModel(model).exists(_.fields.contains("total" -> "$25.98")),
         cart.projectModel(2).isEmpty
+      )
+    },
+    test("keeps activity stream internals out of explicit trace projections") {
+      val activityStream = ExampleRegistry.get("activity-stream").get
+      assertTrue(
+        activityStream.resetMessage == ActivityStreamExample.Msg.Reset,
+        activityStream.resetControlLabel == "Reset activity stream",
+        activityStream.projectMessage(ActivityStreamExample.Msg.Add)
+          .exists(_.summary == "Insert one activity"),
+        activityStream.projectMessage("add").isEmpty
       )
     },
     test("uses explicit lifecycle reset and trace projectors") {

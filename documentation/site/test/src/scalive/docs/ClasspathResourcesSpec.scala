@@ -22,15 +22,22 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         jetbrainsLicense  <- resources("public/jetbrains-mono-OFL.txt")
         bundle = GeneratedDocumentation.load(getClass.getClassLoader)
         search = GeneratedDocumentation.loadSearchEntries(getClass.getClassLoader)
+        hasPages = bundle.exists(_.pages.nonEmpty)
+        exampleIds = bundle.map(_.examples.map(_.descriptor.id))
+        expectedExampleIds = Vector(
+                               "activity-stream",
+                               "counter",
+                               "lifecycle",
+                               "profile-form",
+                               "shopping-cart"
+                             )
+        searchMatchesBundle = search == bundle.map(_.searchEntries)
       yield assertTrue(
         content.size == 1,
         searchIndex.size == 1,
-        bundle.exists(_.pages.nonEmpty),
-        bundle.exists(
-          _.examples.map(_.descriptor.id) ==
-            Vector("counter", "lifecycle", "profile-form", "shopping-cart")
-        ),
-        search == bundle.map(_.searchEntries),
+        hasPages,
+        exampleIds.contains(expectedExampleIds),
+        searchMatchesBundle,
         js.size == 1,
         css.size == 1,
         fonts.size == 1,

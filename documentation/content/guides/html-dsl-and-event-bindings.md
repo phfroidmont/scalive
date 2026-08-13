@@ -155,3 +155,5 @@ For the model and handler behind this tree, read
 [Models and messages](../learn/models-and-messages.md#one-model-one-message-type).
 For the diffing model, read
 [Rendering and DOM updates](../learn/rendering-and-dom-updates.md#from-tree-changes-to-dom-changes).
+For targeted inserts and deletes in frequently changing collections, read
+[Streams and collection updates](streams-and-collection-updates.md#choose-streams-deliberately).

@@ -2528,6 +2528,198 @@ details[open] > summary .docs-disclosure-marker,
   }
 }
 
+.docs-activity-stream {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.docs-activity-summary {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 1.3fr);
+  border: 1px solid var(--docs-border);
+  border-left: 0.3rem solid var(--docs-accent);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface-subtle);
+}
+
+.docs-activity-summary > div,
+.docs-activity-summary > p {
+  display: grid;
+  align-content: center;
+  gap: 0.3rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.85rem 1rem;
+}
+
+.docs-activity-summary > p {
+  border-left: 1px solid var(--docs-border);
+  color: var(--docs-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.docs-activity-label,
+.docs-activity-summary > p > span {
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.docs-activity-count {
+  color: var(--docs-accent-strong);
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.docs-activity-controls {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.docs-activity-controls > button,
+.docs-activity-delete {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.docs-activity-controls > button {
+  border-color: var(--docs-action-bg);
+  background: var(--docs-action-bg);
+  color: var(--docs-action-text);
+}
+
+.docs-activity-controls > button:hover,
+.docs-activity-delete:hover {
+  border-color: var(--docs-accent);
+  background: color-mix(in srgb, var(--docs-accent) 9%, var(--docs-surface));
+  color: var(--docs-accent-strong);
+}
+
+.docs-activity-controls > button:active,
+.docs-activity-delete:active {
+  transform: translateY(1px);
+}
+
+.docs-activity-list {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-activity-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0.85rem 0.9rem 0.85rem 1rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+}
+
+.docs-activity-row-content {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.docs-activity-category {
+  padding: 0.22rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--docs-accent) 35%, var(--docs-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--docs-accent) 8%, var(--docs-surface));
+  color: var(--docs-accent-strong);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.docs-activity-message {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.docs-activity-id {
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.docs-activity-delete {
+  min-height: 2.2rem;
+  padding: 0.4rem 0.65rem;
+  color: var(--docs-muted);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 42rem) {
+  .docs-activity-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-activity-summary > p {
+    border-top: 1px solid var(--docs-border);
+    border-left: 0;
+  }
+
+  .docs-activity-controls > button {
+    width: 100%;
+  }
+
+  .docs-activity-list > li,
+  .docs-activity-row-content {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .docs-activity-list > li {
+    gap: 0.75rem;
+  }
+
+  .docs-activity-category {
+    justify-self: start;
+  }
+
+  .docs-activity-id {
+    white-space: normal;
+  }
+
+  .docs-activity-delete {
+    width: 100%;
+  }
+}
+
 .docs-lifecycle {
   display: grid;
   gap: 1rem;

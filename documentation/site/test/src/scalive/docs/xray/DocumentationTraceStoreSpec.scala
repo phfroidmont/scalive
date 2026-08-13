@@ -119,17 +119,27 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         Payload.UploadChunk(Chunk.fromArray("upload-secret".getBytes(StandardCharsets.UTF_8)))
       )
 
-      val sanitizedJoin   = DocumentationTraceSanitizer.protocol(join).toJson
-      val sanitizedUpload = DocumentationTraceSanitizer.protocol(upload).toJson
-
-      assertTrue(
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 10, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        trace    = DocumentationRuntimeTrace(store, Session, connectionEpoch = 1L)
+        sanitizedJoin   = trace.sanitizeProtocol(join, encoded = None).toJson
+        sanitizedUpload = trace.sanitizeProtocol(upload, encoded = None)
+        _ <- store.appendServer(
+               serverRecord("Upload chunk received").copy(protocol = Some(sanitizedUpload))
+             )
+        stored <- store.records(Session, Topic)
+        storedJson = stored.toJson
+      yield assertTrue(
         !sanitizedJoin.contains("signed-session-secret"),
         !sanitizedJoin.contains("csrf-secret"),
         !sanitizedJoin.contains("password-secret"),
         !sanitizedJoin.contains("unsafe-free-text"),
         !sanitizedJoin.contains("url-secret"),
-        !sanitizedUpload.contains("upload-secret"),
-        sanitizedUpload.contains("13")
+        !storedJson.contains("upload-secret"),
+        storedJson.contains("13"),
+        storedJson.contains("[redacted]")
       )
     },
     test("unprojected values use type-only redaction without toString") {

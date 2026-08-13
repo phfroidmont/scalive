@@ -18,6 +18,7 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
       "reports-service-behavior",
       "shopping-cart-behavior",
       "subscription-clock-behavior",
+      "text-upload-behavior",
       "voting-components-behavior"
     )
 

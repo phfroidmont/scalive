@@ -3729,6 +3729,148 @@ details[open] > summary .docs-disclosure-marker,
   }
 }
 
+.docs-text-upload {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.docs-example-lede,
+.docs-upload-notice,
+.docs-upload-help {
+  margin: 0;
+}
+
+.docs-upload-notice {
+  padding: 0.75rem 0.9rem;
+  border-left: 3px solid var(--docs-accent);
+  background: color-mix(in srgb, var(--docs-accent) 7%, var(--docs-surface));
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.docs-text-upload form,
+.docs-upload-dropzone,
+.docs-upload-entries,
+.docs-upload-summaries {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.docs-upload-dropzone {
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px dashed var(--docs-border-strong);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface-subtle);
+}
+
+.docs-upload-dropzone > label {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.docs-upload-dropzone > input[type="file"] {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  font: inherit;
+}
+
+.docs-upload-help {
+  color: var(--docs-muted);
+  font-size: 0.78rem;
+}
+
+.docs-upload-entry,
+.docs-upload-summary {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+}
+
+.docs-upload-entry > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.docs-upload-entry progress {
+  width: 100%;
+}
+
+.docs-upload-entry button,
+.docs-upload-actions button {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.docs-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.docs-upload-actions button[type="submit"] {
+  border-color: var(--docs-action-bg);
+  background: var(--docs-action-bg);
+  color: var(--docs-action-text);
+}
+
+.docs-upload-summary h3 {
+  margin: 0 0 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.docs-upload-summary dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.docs-upload-summary dl > div {
+  padding: 0.55rem;
+  background: var(--docs-surface-subtle);
+}
+
+.docs-upload-summary dt {
+  color: var(--docs-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.docs-upload-summary dd {
+  margin: 0.2rem 0 0;
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 42rem) {
+  .docs-upload-actions button {
+    width: 100%;
+  }
+
+  .docs-upload-summary dl {
+    grid-template-columns: 1fr;
+  }
+}
+
 .docs-example > [data-example-disconnected] {
   margin: 0;
   padding: 0.75rem clamp(1rem, 3vw, 1.5rem);

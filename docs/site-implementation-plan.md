@@ -446,9 +446,9 @@ support where it improves the lesson.
 - [x] Migrate lifecycle, flash, title, and connection behavior.
 - [x] Adapt navigation examples to real documentation routes and search
   parameters.
-- [ ] Replace persistent document storage with a bounded real upload that
+- [x] Replace persistent document storage with a bounded real upload that
   summarizes text and immediately discards consumed content.
-- [ ] Verify upload bytes never enter trace history.
+- [x] Verify upload bytes never enter trace history.
 - [ ] Add a dedicated authentication lab using standalone HTTP and protected Live
   routes.
 - [ ] Add fixed credentials, bounded sessions, rate limits, expiry, logout, and
@@ -494,7 +494,7 @@ mill --ticker false documentation.check
 - [x] Write flash, title, and lifecycle UX guides.
 - [x] Write services and ZLayer injection guides.
 - [x] Write streams and collection update guides.
-- [ ] Write uploads and consumption guides.
+- [x] Write uploads and consumption guides.
 - [x] Write routes, typed parameters, patching, and navigation guides.
 - [ ] Write layouts, sessions, mount aspects, and authentication guides.
 - [x] Write async work, subscriptions, cancellation, and failure guides.

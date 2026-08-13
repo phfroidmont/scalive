@@ -35,6 +35,7 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
           "service-injection",
           "shopping-cart",
           "subscription-clock",
+          "text-upload",
           "voting-components"
         )
         searchMatchesBundle = search == bundle.map(_.searchEntries)

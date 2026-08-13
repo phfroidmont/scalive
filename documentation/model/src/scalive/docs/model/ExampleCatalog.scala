@@ -119,6 +119,24 @@ object ExampleCatalog:
     )
   )
 
+  val TextUpload = ExampleDescriptor(
+    id = "text-upload",
+    title = "Summarize-and-discard text upload",
+    description =
+      "One bounded text file becomes aggregate facts while its consumed bytes are immediately discarded.",
+    topics = Vector("uploads", "validation", "resource ownership", "security"),
+    aliases = Vector("LiveUploadDef", "consumeCompleted", "ConsumeDecision", "liveFileInput"),
+    resetDescription = "Discard active upload state and clear every retained summary.",
+    sources = Vector(
+      ExampleSource(
+        label = "LiveView",
+        path = "documentation/site/src/scalive/docs/examples/TextUploadExample.scala",
+        region = "text-upload-example",
+        language = Some("scala")
+      )
+    )
+  )
+
   val ServiceInjection = ExampleDescriptor(
     id = "service-injection",
     title = "Reports service injection",
@@ -233,6 +251,7 @@ object ExampleCatalog:
       ServiceInjection,
       ShoppingCart,
       SubscriptionClock,
+      TextUpload,
       VotingComponents
     )
 end ExampleCatalog

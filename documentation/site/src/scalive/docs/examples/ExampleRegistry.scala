@@ -401,6 +401,39 @@ private[docs] object ExampleRegistry:
       behaviorTestId = "voting-components-behavior"
     )
 
+  private val textUpload =
+    new ExampleEntry[TextUploadExample.Msg, TextUploadExample.Model](
+      descriptor = ExampleCatalog.TextUpload,
+      factory = _ => new TextUploadExample,
+      reset = ExampleReset(TextUploadExample.Msg.Reset, "Reset text upload"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[TextUploadExample.Msg]:
+          def project(value: TextUploadExample.Msg) = value match
+            case TextUploadExample.Msg.Validate =>
+              ExampleTraceValue("TextUploadExample.Msg", "Validate selected upload metadata")
+            case TextUploadExample.Msg.Progress =>
+              ExampleTraceValue("TextUploadExample.Msg", "Refresh upload progress")
+            case TextUploadExample.Msg.Cancel(_) =>
+              ExampleTraceValue("TextUploadExample.Msg", "Cancel one upload entry")
+            case TextUploadExample.Msg.Summarize =>
+              ExampleTraceValue("TextUploadExample.Msg", "Summarize completed text")
+            case TextUploadExample.Msg.Reset =>
+              ExampleTraceValue("TextUploadExample.Msg", "Reset upload state"),
+        model = new ExampleTraceProjector[TextUploadExample.Model]:
+          def project(value: TextUploadExample.Model) =
+            ExampleTraceValue(
+              "TextUploadExample.Model",
+              "Current upload lifecycle state",
+              Vector(
+                "activeEntries" -> value.upload.entries.size.toString,
+                "summaries"     -> value.summaries.size.toString,
+                "totalBytes"    -> value.summaries.map(_.bytes).sum.toString
+              )
+            )
+      ),
+      behaviorTestId = "text-upload-behavior"
+    )
+
   val entries: Vector[RegisteredExample] =
     Vector(
       activityStream,
@@ -413,6 +446,7 @@ private[docs] object ExampleRegistry:
       serviceInjection,
       shoppingCart,
       subscriptionClock,
+      textUpload,
       votingComponents
     )
 

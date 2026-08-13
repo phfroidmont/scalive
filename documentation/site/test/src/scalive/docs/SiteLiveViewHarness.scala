@@ -125,6 +125,37 @@ private[docs] final class SiteLiveViewHarness[Msg, Model] private (
   def socketExists(socketTopic: String): UIO[Boolean] =
     channel.socket(socketTopic).map(_.nonEmpty)
 
+  def upload(
+    uploadRef: String,
+    entryRef: String,
+    fileName: String,
+    mediaType: String,
+    bytes: Chunk[Byte]
+  ): Task[Unit] =
+    val entry = WebSocketMessage.UploadPreflightEntry(
+      ref = entryRef,
+      name = fileName,
+      relative_path = None,
+      size = bytes.length.toLong,
+      `type` = mediaType
+    )
+    for
+      preflight <- channel.allowUpload(
+                     topic,
+                     Payload.AllowUpload(uploadRef, List(entry), cid = None)
+                   )
+      token <- ZIO.fromOption(preflight match
+                 case Payload.Reply(
+                       WebSocketMessage.ReplyStatus.Ok,
+                       WebSocketMessage.LiveResponse.UploadPreflightSuccess(_, _, entries, _)
+                     ) => entries.get(entryRef).flatMap(_.asString)
+                 case _ => None
+               ).orElseFail(new RuntimeException("Upload preflight did not return a token."))
+      uploadTopic = s"lvu:$entryRef"
+      _ <- channel.uploadJoin(uploadTopic, token)
+      _ <- channel.uploadChunk(uploadTopic, bytes)
+    yield ()
+
   def leave: UIO[Unit] = channel.leave(topic)
 
   private def takeOutput(predicate: ((Payload, Meta)) => Boolean): Task[(Payload, Meta)] =

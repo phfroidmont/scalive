@@ -32,6 +32,7 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
           "service-injection",
           "shopping-cart",
           "subscription-clock",
+          "text-upload",
           "voting-components"
         )
         val counterSource = bundle.examples.find(_.descriptor.id == "counter")

@@ -232,12 +232,13 @@ private[pipeline] object ScaladocParser:
     case header: laika.ast.Header =>
       convertHeading(header, links, anchorPrefix, resolveSymbol).map(Vector(_))
     case laika.ast.CodeBlock(language, content, _, _) =>
-      val tokens = CodeHighlighter.fromSpans(content)
+      val text   = restoreRawLessThan(CodeHighlighter.fromSpans(content).map(_.text).mkString)
+      val tokens = CodeHighlighter.highlight(Option(language).filter(_.nonEmpty), text)
       Right(
         Vector(
           Block.Code(
             Option(language).filter(_.nonEmpty),
-            tokens.map(_.text).mkString,
+            text,
             tokens,
             None
           )
@@ -299,16 +300,17 @@ private[pipeline] object ScaladocParser:
     resolveSymbol: String => Option[LinkTarget]
   ): Either[Vector[String], Vector[Inline]] = span match
     case laika.ast.Text(content, _) =>
-      Right(Vector(Inline.Text(content.replace(RawLessThanPlaceholder, "<"))))
+      Right(Vector(Inline.Text(restoreRawLessThan(content))))
     case laika.ast.Emphasized(content, _) =>
       convertInlines(content, links, resolveSymbol).map(value => Vector(Inline.Emphasis(value)))
     case laika.ast.Strong(content, _) =>
       convertInlines(content, links, resolveSymbol).map(value => Vector(Inline.Strong(value)))
     case laika.ast.Deleted(content, _) =>
       convertInlines(content, links, resolveSymbol).map(value => Vector(Inline.Strike(value)))
-    case laika.ast.Literal(content, _)       => Right(Vector(Inline.Code(content)))
-    case laika.ast.InlineCode(_, content, _) => Right(Vector(Inline.Code(extractText(content))))
-    case link: laika.ast.SpanLink            =>
+    case laika.ast.Literal(content, _) => Right(Vector(Inline.Code(restoreRawLessThan(content))))
+    case laika.ast.InlineCode(_, content, _) =>
+      Right(Vector(Inline.Code(restoreRawLessThan(extractText(content)))))
+    case link: laika.ast.SpanLink =>
       val renderedTarget = link.target.render()
       if renderedTarget.startsWith(WikiLinkPrefix) then
         val index = renderedTarget.stripPrefix(WikiLinkPrefix).toIntOption
@@ -362,6 +364,9 @@ private[pipeline] object ScaladocParser:
     case container: laika.ast.SpanContainer => extractText(container.content)
     case _                                  => ""
   }.mkString
+
+  private def restoreRawLessThan(value: String): String =
+    value.replace(RawLessThanPlaceholder, "<")
 
   private def blockText(blocks: Vector[Block]): String = blocks
     .flatMap {

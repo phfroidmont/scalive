@@ -1,5 +1,8 @@
 package scalive.docs.pipeline
 
+import java.nio.file.Files
+import java.nio.file.Path
+
 import zio.test.*
 
 import scalive.docs.model.*
@@ -83,6 +86,58 @@ object ScaladocParserSpec extends ZIOSpecDefault:
         )),
         unsafeLink.isLeft
       )
+    },
+    test("restores HTML tags in inline and fenced code") {
+      val inline = ScaladocParser.parse("/** Renders a `<link>` and `<script>`. */", "html", _ => None)
+      val fenced = ScaladocParser.parse(
+        "/**\n  * ```html\n  * <script>alert(1)</script>\n  * ```\n  */",
+        "html",
+        _ => None
+      )
+      val inlineBody = inline.toOption.toVector.flatMap(_.body)
+      val fencedCode = fenced.toOption.toVector.flatMap(_.body).collectFirst {
+        case code: Block.Code => code
+      }
+
+      assertTrue(
+        inlineBody == Vector(
+          Block.Paragraph(Vector(
+            Inline.Text("Renders a "),
+            Inline.Code("<link>"),
+            Inline.Text(" and "),
+            Inline.Code("<script>"),
+            Inline.Text(".")
+          ))
+        ),
+        fencedCode.exists(_.text == "<script>alert(1)</script>"),
+        fencedCode.exists(_.tokens.map(_.text).mkString == "<script>alert(1)</script>")
+      )
+    },
+    test("preserves HTML tags in StaticAssets Scaladoc extracted from TASTy") {
+      val classes = Path.of(
+        classOf[scalive.StaticAssets].getProtectionDomain.getCodeSource.getLocation.toURI
+      )
+      val classpath = System.getProperty("java.class.path")
+        .split(java.io.File.pathSeparator)
+        .toVector
+        .map(Path.of(_))
+        .filter(Files.exists(_))
+      val comments = TastyDocumentation
+        .inspect(Seq(classes), classpath)
+        .toOption
+        .toVector
+        .flatten
+        .filter(record => Set("trackedStylesheet", "trackedScript")(record.name))
+        .flatMap(_.comment)
+      val codeSpans = comments
+        .flatMap(ScaladocParser.parse(_, "static-assets", _ => None).toOption)
+        .flatMap(_.body)
+        .flatMap {
+          case Block.Paragraph(content) => content.collect { case Inline.Code(value) => value }
+          case _                        => Vector.empty
+        }.toSet
+
+      assertTrue(Set("<link>", "<script>").subsetOf(codeSpans))
     }
   )
 end ScaladocParserSpec

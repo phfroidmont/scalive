@@ -699,23 +699,17 @@ details[open] > summary .docs-disclosure-marker,
   grid-area: section-navigation;
 }
 
-.docs-section-index ol,
-.docs-section-index ul {
-  border-left: 1px solid var(--docs-border);
-}
-
 .docs-section-index li + li {
   margin-top: 0;
 }
 
 .docs-section-index a {
   min-height: 2.75rem;
-  margin-left: -1px;
   padding: 0.65rem 0.75rem 0.65rem 1rem;
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr);
   align-items: center;
-  border-left: 1px solid transparent;
+  border-left: 1px solid var(--docs-border);
   font-size: 0.94rem;
 }
 

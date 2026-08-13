@@ -3,7 +3,25 @@ package scalive.defs.components
 import scalive.*
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
+/** Manually implemented HTML helpers whose structure participates in the Phoenix client protocol.
+  */
 trait Components:
+  /** Renders a keyboard-focus boundary using Phoenix's `Phoenix.FocusWrap` hook.
+    *
+    * The returned wrapper receives `id` and the supplied `mods`, and surrounds `content` with
+    * focusable, assistive-technology-hidden sentinels named `${id}-start` and `${id}-end`. Keep
+    * `id` stable and unique in the document so the hook and sentinels retain their DOM identity. Do
+    * not supply another `id` or `phx-hook` in `mods`; those attributes belong to this helper's
+    * protocol structure. Supply only attributes and bindings in `mods`: content there is placed
+    * before the start sentinel and breaks the hook's expected structure.
+    *
+    * @param id
+    *   stable DOM ID used by the wrapper and its two sentinels
+    * @param mods
+    *   additional wrapper attributes and bindings, not child content
+    * @param content
+    *   content whose focus should wrap at the boundaries
+    */
   def focusWrap[Msg](id: String, mods: Mod[Msg]*)(content: Mod[Msg]*): HtmlElement[Msg] =
     val startSentinel = span(idAttr := s"$id-start", tabIndex := 0, aria.hidden := true)
     val endSentinel   = span(idAttr := s"$id-end", tabIndex := 0, aria.hidden := true)
@@ -18,6 +36,26 @@ trait Components:
 
   private val dataPhxAutoUpload = htmlAttr("data-phx-auto-upload", BooleanAsAttrPresenceEncoder)
 
+  /** Renders the file input required by the LiveView upload protocol.
+    *
+    * The helper derives the input `id`, `name`, `accept`, and `multiple` state from the current
+    * [[LiveUpload]] snapshot. It also owns the `Phoenix.LiveFileUpload` hook and the
+    * `data-phx-upload-ref`, `data-phx-active-refs`, `data-phx-done-refs`, and
+    * `data-phx-preflighted-refs` protocol attributes. `data-phx-auto-upload` is present only for
+    * automatic uploads. These attributes allow the browser client to correlate selections and
+    * progress with server-side entries; do not remove or hand-edit them. Refresh the upload
+    * snapshot after upload events before rendering it again. Supply only attributes and bindings in
+    * `mods`; an `input` is a void element and cannot contain child content.
+    *
+    * Validation and transfer failures are not rendered by the input. Read them with
+    * [[uploadErrors]] and present them explicitly.
+    *
+    * @param upload
+    *   the currently allowed upload snapshot to bind to this input
+    * @param mods
+    *   additional input attributes and bindings, commonly an upload progress binding; do not pass
+    *   content or duplicate the protocol attributes owned by this helper
+    */
   def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod[Msg]*): HtmlElement[Msg] =
     val activeRefs = upload.entries.map(_.ref.value).mkString(",")
     val doneRefs   = upload.entries
@@ -51,11 +89,24 @@ trait Components:
     )
   end liveFileInput
 
+  /** Returns upload-wide errors, such as selecting more files than the definition permits.
+    *
+    * Entry-specific validation or transfer errors are available from an entry overload.
+    */
   def uploadErrors[R](upload: LiveUpload[R]): List[LiveUploadError] = upload.errors
 
+  /** Returns current errors for `entry` as recorded in `upload`.
+    *
+    * Matching is by upload entry reference. `Nil` is returned when the reference is absent from
+    * this upload snapshot, including after that entry has been removed.
+    */
   def uploadErrors[R](upload: LiveUpload[R], entry: LiveUploadEntry[R]): List[LiveUploadError] =
     upload.entries.find(_.ref == entry.ref).map(_.errors).getOrElse(Nil)
 
+  /** Returns validation or transfer errors attached to this upload entry.
+    *
+    * An entry that is not in the invalid state has no errors and returns `Nil`.
+    */
   def uploadErrors[R](entry: LiveUploadEntry[R]): List[LiveUploadError] = entry.errors
 
 end Components

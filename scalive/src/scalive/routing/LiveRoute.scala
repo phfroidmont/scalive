@@ -21,6 +21,17 @@ import scalive.socket.SocketUploadRuntime
 import scalive.socket.StreamRuntimeState
 import scalive.socket.UploadRuntimeState
 
+/** A completed route or grouped set of routes accepted by session and router assembly.
+  *
+  * The fragment deliberately exposes no route internals. Its type tracks the environment `R`
+  * required to run it and the context `Need` that must be supplied by a surrounding Live session. A
+  * fragment can be passed directly to [[LiveRouter]] only when `Need` has been satisfied as `Any`.
+  *
+  * @tparam R
+  *   the environment required by the contained routes
+  * @tparam Need
+  *   context still required from a surrounding session
+  */
 trait LiveRouteFragment[-R, -Need]:
   private[scalive] def liveRoutes: List[LiveRoute[?, ?, ?, ?, ?, ?]]
 
@@ -34,6 +45,27 @@ private[scalive] object LiveSessionGroup:
   def named(name: String): LiveSessionGroup =
     new Named(name)
 
+/** A completed typed Live route.
+  *
+  * Instances are produced by [[LiveRouteSeed]], [[LiveRouteBuilder]], or
+  * [[LiveRouteParamsBuilder]], rather than constructed directly. A route retains the path,
+  * lifecycle factory, mount pipeline, layouts, and session requirements needed by
+  * [[LiveSessionBuilder]] and [[LiveRouter]] assembly. Application code normally treats it as a
+  * [[LiveRouteFragment]].
+  *
+  * @tparam R
+  *   the environment required by this route
+  * @tparam A
+  *   the value decoded by its path codec
+  * @tparam Need
+  *   context still required from a surrounding session
+  * @tparam Ctx
+  *   the route mount context supplied to its lifecycle factory and layouts
+  * @tparam Msg
+  *   the messages accepted by the routed LiveView
+  * @tparam Model
+  *   the routed LiveView's model type
+  */
 final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
   private[scalive] val pathCodec: PathCodec[A],
   private val liveViewBuilder: (A, Request, Ctx) => URIO[R & Scope, LiveView[Msg, Model]],

@@ -9,13 +9,49 @@ import zio.*
 import zio.http.*
 import zio.http.codec.PathCodec
 
+/** Configuration used to load, identify, and serve a static asset manifest.
+  *
+  * Asset paths are normalized when [[StaticAssets.load]] runs. Lookup URLs always use the loaded
+  * digested path; `serveOriginals` controls only whether the routes also accept undigested paths.
+  *
+  * @param source
+  *   where configured assets are listed and read
+  * @param mountPath
+  *   the HTTP path below which asset routes and generated URLs are mounted; defaults to `/static`
+  * @param serveOriginals
+  *   whether routes also serve undigested manifest paths; defaults to `true`
+  * @param cache
+  *   cache-control headers for digested and original responses
+  */
 final case class StaticAssetConfig(
   source: StaticAssetSource,
   mountPath: Path = Path.empty / "static",
   serveOriginals: Boolean = true,
   cache: StaticAssetCache = StaticAssetCache.default)
 
+/** Convenience constructors for the built-in static asset sources. */
 object StaticAssetConfig:
+  /** Configures an explicit set of classpath resources.
+    *
+    * The loader does not scan the classpath. Every normalized path in `assets` is read below
+    * `resourcePrefix` while the manifest is loaded, and loading fails if any resource is absent.
+    * Duplicate names are collapsed. The prefix is used as supplied except for one trailing `/`, so
+    * it should use the resource-name form expected by `ClassLoader.getResourceAsStream` (normally
+    * without a leading slash). This convenience constructor uses [[StaticAssetCache.default]];
+    * customize the returned configuration with `copy(cache = ...)` when needed.
+    *
+    * @param resourcePrefix
+    *   the classpath directory containing the assets
+    * @param assets
+    *   the asset paths to include; paths are normalized by [[StaticAssets.load]]
+    * @param mountPath
+    *   the HTTP mount path, defaulting to `/static`
+    * @param serveOriginals
+    *   whether to serve undigested paths, defaulting to `true`
+    * @param classLoader
+    *   the loader used both while building the manifest and for later requests; defaults to the
+    *   current thread's context class loader
+    */
   def classpath(
     resourcePrefix: String,
     assets: Iterable[String],
@@ -29,6 +65,27 @@ object StaticAssetConfig:
       serveOriginals
     )
 
+  /** Configures assets stored below a filesystem directory.
+    *
+    * With `assets = Some(...)`, only those paths are loaded and each must resolve to a regular
+    * file. Duplicate configured strings are collapsed. With `None`, loading recursively discovers
+    * regular files below the normalized absolute root. Directory contents are read with blocking
+    * filesystem operations.
+    *
+    * The root is lexically normalized rather than resolved through the filesystem. Symbolic links
+    * are not a security boundary and may refer outside it, so expose only a trusted asset tree.
+    * This convenience constructor uses [[StaticAssetCache.default]]; customize the returned
+    * configuration with `copy(cache = ...)` when needed.
+    *
+    * @param root
+    *   the directory against which normalized asset paths are resolved
+    * @param mountPath
+    *   the HTTP mount path, defaulting to `/static`
+    * @param serveOriginals
+    *   whether to serve undigested paths, defaulting to `true`
+    * @param assets
+    *   explicit asset paths, or `None` to discover all regular files recursively
+    */
   def directory(
     root: NioPath,
     mountPath: Path = Path.empty / "static",
@@ -40,23 +97,60 @@ object StaticAssetConfig:
       mountPath,
       serveOriginals
     )
+end StaticAssetConfig
 
+/** Describes where [[StaticAssets]] obtains asset names and bytes.
+  *
+  * Sources are consulted while loading the manifest and again for every HTTP request; asset bytes
+  * are not retained in memory by [[StaticAssets]].
+  */
 sealed trait StaticAssetSource
 
+/** Built-in classpath and filesystem asset sources. */
 object StaticAssetSource:
+  /** An explicit set of resources loaded through a class loader.
+    *
+    * @param resourcePrefix
+    *   the prefix prepended to each normalized asset path
+    * @param assets
+    *   configured asset paths; the classpath is never scanned
+    * @param classLoader
+    *   the loader used to open each resource
+    */
   final case class Classpath(
     resourcePrefix: String,
     assets: Set[String],
     classLoader: ClassLoader)
       extends StaticAssetSource
 
+  /** Assets stored below a filesystem directory.
+    *
+    * @param root
+    *   the root directory for reads and discovery
+    * @param assets
+    *   explicit paths, or `None` to recursively discover regular files when loading
+    */
   final case class Directory(root: NioPath, assets: Option[Set[String]]) extends StaticAssetSource
 
+/** Cache-control policy for static asset responses.
+  *
+  * These values are emitted verbatim according to whether a request used a digested or original
+  * path. They do not enable conditional or range request handling.
+  *
+  * @param digested
+  *   cache control for content-addressed URLs
+  * @param original
+  *   cache control for undigested URLs
+  */
 final case class StaticAssetCache(
   digested: Header.CacheControl,
   original: Header.CacheControl)
 
+/** Standard static asset cache policies. */
 object StaticAssetCache:
+  /** The default policy: public, immutable one-year caching for digested URLs and `no-cache` for
+    * original URLs.
+    */
   val default: StaticAssetCache = StaticAssetCache(
     digested = Header.CacheControl.Multiple(
       NonEmptyChunk(
@@ -68,6 +162,20 @@ object StaticAssetCache:
     original = Header.CacheControl.NoCache
   )
 
+/** Metadata calculated for one asset when its manifest is loaded.
+  *
+  * @param originalPath
+  *   the normalized source-relative path
+  * @param digestedPath
+  *   `originalPath` with the full SHA-256 digest inserted before its last file extension, or
+  *   appended when it has no extension
+  * @param digest
+  *   the lowercase, 64-character hexadecimal SHA-256 digest of the loaded bytes
+  * @param size
+  *   the byte length observed while loading
+  * @param mediaType
+  *   the media type inferred from the final file extension, or `application/octet-stream`
+  */
 final case class StaticAssetEntry(
   originalPath: String,
   digestedPath: String,
@@ -93,33 +201,94 @@ final private[scalive] case class StaticAssetManifest(entries: Map[String, Stati
         .orElse(entries.get(normalized).filter(_ => includeOriginals).map(_ -> false))
     }
 
+/** A loaded static asset manifest, URL/tag helper, and HTTP route set.
+  *
+  * The manifest records metadata from load time but does not retain file contents. Requests reopen
+  * the original source and read the complete asset, including for `HEAD`. Keep source contents
+  * unchanged for this instance's lifetime: changing bytes can make a digested URL and ETag describe
+  * different content, while removing an asset makes its route return `404 Not Found`.
+  */
 final class StaticAssets private (
   private[scalive] val config: StaticAssetConfig,
   private[scalive] val manifest: StaticAssetManifest):
 
   private val mountPrefix = StaticAssets.mountPrefix(config.mountPath)
 
+  /** Returns the mounted, root-relative URL for an asset's digested path.
+    *
+    * Lookup accepts an optional leading `/` and ignores a `?query` or `#fragment`, then requires a
+    * normalized manifest path. The returned URL itself has no query or fragment.
+    *
+    * @throws IllegalArgumentException
+    *   if the path is invalid or no matching asset was loaded
+    */
   def path(asset: String): String =
     url(manifest(asset).digestedPath)
 
+  /** Returns the mounted, root-relative digested URL when `asset` is valid and present.
+    *
+    * Invalid, empty, and unknown paths return `None`. An optional leading `/` is accepted and query
+    * or fragment suffixes are ignored during lookup.
+    */
   def pathOption(asset: String): Option[String] =
     manifest.get(asset).map(entry => url(entry.digestedPath))
 
+  /** Returns the load-time metadata for `asset`.
+    *
+    * Lookup accepts an optional leading `/` and ignores a query or fragment suffix.
+    *
+    * @throws IllegalArgumentException
+    *   if the path is invalid or no matching asset was loaded
+    */
   def entry(asset: String): StaticAssetEntry =
     manifest(asset)
 
+  /** Renders an untracked stylesheet `<link>` using the asset's digested URL.
+    *
+    * The generated tag includes `rel="stylesheet"` and `href=path(asset)` before the supplied
+    * modifiers. Lookup has the same failure behavior as [[path]].
+    */
   def stylesheet[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     linkTag(rel := "stylesheet", href := path(asset), mods)
 
+  /** Renders a tracked stylesheet `<link>` using the asset's digested URL.
+    *
+    * In addition to [[stylesheet]] attributes, the tag includes `phx-track-static`, allowing the
+    * LiveView client to detect that a tracked bundle changed between mounts.
+    */
   def trackedStylesheet[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     linkTag(phx.trackStatic := true, rel := "stylesheet", href := path(asset), mods)
 
+  /** Renders an untracked `<script>` using the asset's digested URL.
+    *
+    * The generated tag includes `src=path(asset)` before the supplied modifiers. Lookup has the
+    * same failure behavior as [[path]].
+    */
   def script[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     scriptTag(src := path(asset), mods)
 
+  /** Renders a tracked `<script>` using the asset's digested URL.
+    *
+    * In addition to [[script]] attributes, the tag includes `phx-track-static`, allowing the
+    * LiveView client to detect that a tracked bundle changed between mounts.
+    */
   def trackedScript[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg] =
     scriptTag(phx.trackStatic := true, src := path(asset), mods)
 
+  /** `GET` and `HEAD` routes serving manifest entries below the configured mount path.
+    *
+    * Digested paths are always eligible; original paths are eligible only when
+    * `config.serveOriginals` is true. Lookup ignores query strings and accepts only the exact
+    * loaded original or digested path, so an unknown digest returns `404 Not Found`. Successful
+    * responses include the entry's content type, configured cache control, and a strong ETag
+    * containing its load-time digest. `HEAD` returns the same status and metadata with an empty
+    * body.
+    *
+    * Each request reads the entire source asset again. A missing source asset returns 404; read
+    * failures are logged and also return 404. The routes do not evaluate conditional ETags, produce
+    * `304 Not Modified`, or serve byte ranges, so an upstream static server may be preferable for
+    * large or high-volume production assets.
+    */
   val routes: Routes[Any, Nothing] =
     Routes
       .fromIterable(
@@ -159,7 +328,26 @@ final class StaticAssets private (
           )
 end StaticAssets
 
+/** Loads static asset manifests. */
 object StaticAssets:
+  /** Validates and loads all configured assets, calculates their metadata, and constructs helpers
+    * and routes.
+    *
+    * Configured paths are sorted and normalized before reads. Normalization removes one leading `/`
+    * and ignores any query or fragment suffix; the remaining path must be non-empty, use `/`
+    * separators, and contain no empty, `.`, or `..` segment. Each asset is read completely to
+    * calculate its full SHA-256 digest, byte size, and media type. If multiple configured strings
+    * normalize to the same path, the resulting manifest keeps one entry. Classpath and explicitly
+    * listed directory sources fail if any asset is missing; an unlisted directory source discovers
+    * all regular files recursively.
+    *
+    * Bytes are not cached. The returned routes reopen each original asset when requested, so the
+    * source should remain available and unchanged for the lifetime of the returned instance.
+    *
+    * @return
+    *   an effect which fails on invalid paths, inaccessible sources, missing configured assets, or
+    *   read/digest errors
+    */
   def load(config: StaticAssetConfig): Task[StaticAssets] =
     for
       assets  <- list(config.source)

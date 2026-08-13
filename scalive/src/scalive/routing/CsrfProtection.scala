@@ -12,11 +12,43 @@ import zio.http.Response
 import scalive.Mod.Attr
 import scalive.Mod.Content
 
+/** Browser-bound double-submit CSRF protection for ordinary forms and Live socket joins.
+  *
+  * A disconnected Live render reuses the random browser secret from a valid existing cookie or
+  * creates one and stores it in a purpose-bound signed `HttpOnly` cookie. It renders the same
+  * secret in a separately purpose-bound signed token, injecting a `csrf-token` meta element into
+  * any rendered `head` and a hidden field into checked POST forms built with
+  * `Form.http(FormAction.from(...))`. Connected renders retain the verified join token for newly
+  * rendered checked forms. GET forms, manually authored forms, and `FormAction.unsafe` are not
+  * automatically protected. Injection does not deduplicate a manually supplied `_csrf_token` field
+  * inside a checked form; do not add that field yourself because validation rejects duplicates.
+  *
+  * Ordinary-form validation requires exactly one bounded submitted token, verifies both signatures
+  * and purposes, and compares their browser secrets in constant time. Live socket joins validate
+  * the bounded token selected from the connection query. Tokens are reusable until
+  * [[TokenConfig.maxAge]]; they are not one-time tokens and there is no server-side replay store.
+  * Values are signed, not encrypted, and their representation is not a stable public wire format.
+  *
+  * This mechanism binds a submission to its cookie, but it does not parse the request body, check
+  * the HTTP method, validate `Origin` or `Referer`, bind a token to a route or authenticated user,
+  * or defend against same-origin script injection. Use [[HttpFormDecoder]] for bounded form parsing
+  * plus this validation, and perform application authorization separately.
+  */
 final class CsrfProtection private[scalive] (
   tokenConfig: TokenConfig,
   cookies: CookiePolicy):
   import CsrfProtection.*
 
+  /** Validates an already-decoded ordinary form against the request's CSRF cookie.
+    *
+    * The form must contain exactly one [[CsrfProtection.ParamName]] value within the framework's
+    * size bound. The request must contain a valid [[CsrfProtection.CookieName]] cookie signed by
+    * the same `LiveSecurity`, and both values must carry the same browser secret. A successful
+    * result is reusable and does not consume either value.
+    *
+    * This method does not decode or size-limit the request body as a whole; prefer
+    * [[HttpFormDecoder]] for ordinary URL-encoded handlers.
+    */
   def validate(request: Request, data: FormData): Either[ValidationError, Unit] =
     data.values(ParamName) match
       case Vector()                                        => Left(ValidationError.MissingToken)
@@ -63,10 +95,16 @@ final class CsrfProtection private[scalive] (
     )
 end CsrfProtection
 
+/** Public names and validation failures for [[CsrfProtection]]. */
 object CsrfProtection:
+  /** Name of the signed, `HttpOnly` browser-secret cookie. */
   val CookieName = "_scalive_csrf"
-  val ParamName  = "_csrf_token"
-  val MetaName   = "csrf-token"
+
+  /** Name of the hidden form field and Live socket query parameter carrying the render token. */
+  val ParamName = "_csrf_token"
+
+  /** Value of the rendered CSRF meta element's `name` attribute. */
+  val MetaName = "csrf-token"
 
   private[scalive] val MarkerName = "data-scalive-csrf"
 
@@ -76,11 +114,26 @@ object CsrfProtection:
   private val MaxTokenLength = 1024
   private val secureRandom   = new SecureRandom()
 
+  /** Why ordinary form CSRF validation was rejected.
+    *
+    * These categories are suitable for server-side handling. Avoid returning signature details or
+    * supplied token values to an untrusted client.
+    */
   enum ValidationError:
+    /** The request has no [[CookieName]] cookie. */
     case MissingCookie
+
+    /** The CSRF cookie is malformed, expired, signed by another secret, or has the wrong purpose.
+      */
     case InvalidCookie
+
+    /** The decoded form has no [[ParamName]] value. */
     case MissingToken
+
+    /** The decoded form has more than one [[ParamName]] value. */
     case DuplicateToken
+
+    /** The single submitted token is oversized, invalid, expired, or does not match the cookie. */
     case InvalidToken
 
   final private[scalive] case class RenderToken(

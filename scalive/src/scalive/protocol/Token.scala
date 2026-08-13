@@ -19,8 +19,26 @@ final private[scalive] case class Token[T] private (
   salt: String)
     derives JsonCodec
 
+/** Signing configuration for framework-issued Live session, CSRF, and HTTP flash values.
+  *
+  * The secret authenticates values with a message authentication code; it does not encrypt them.
+  * Clients can read signed payloads, so application secrets must not be stored in those payloads.
+  * Changing the secret invalidates existing framework values. It does not configure or revoke
+  * application-owned authentication sessions.
+  *
+  * Construction does not validate either field. Use a stable, high-entropy secret and a positive,
+  * finite duration; non-positive or non-finite durations can expire values immediately or fail when
+  * converted to milliseconds.
+  *
+  * @param secret
+  *   secret key shared by every process that must verify the same framework values
+  * @param maxAge
+  *   maximum accepted age of signed framework values; individual browser cookies may be shorter
+  *   lived
+  */
 final case class TokenConfig(secret: String, maxAge: Duration)
 
+/** Default framework token configuration. */
 object TokenConfig:
   private[scalive] val DefaultMaxAge = 7.days
 
@@ -31,6 +49,18 @@ object TokenConfig:
       .filter(_ > 0)
       .map(_.seconds)
 
+  /** Configuration resolved once from the process environment.
+    *
+    * `SCALIVE_TOKEN_SECRET` is used verbatim when non-empty, including whitespace. If it is missing
+    * or exactly empty, a random process-local secret is generated. That fallback is convenient for
+    * local development, but a restart invalidates existing Live sessions, CSRF values, and flash,
+    * and independently started replicas cannot verify each other's values. Production deployments
+    * must provide the same stable, high-entropy secret to every replica.
+    *
+    * `SCALIVE_TOKEN_MAX_AGE_SECONDS` is accepted only when it parses as a positive whole `Long`.
+    * Missing, empty, whitespace-padded, non-numeric, overflowing, zero, and negative values use the
+    * seven-day default. Environment values are read only when this singleton value is initialized.
+    */
   val default: TokenConfig =
     fromEnvironment(sys.env, java.util.UUID.randomUUID().toString)
 
@@ -45,6 +75,7 @@ object TokenConfig:
         .getOrElse(generatedSecret),
       maxAge = maxAgeFromEnvironment(environment).getOrElse(DefaultMaxAge)
     )
+end TokenConfig
 
 private[scalive] object Token:
   private val version = 1

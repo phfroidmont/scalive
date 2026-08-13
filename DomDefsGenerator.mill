@@ -5,6 +5,7 @@ import com.raquo.domtypes.codegen.DefType.LazyVal
 import com.raquo.domtypes.defs.styles.StyleTraitDefs
 import com.raquo.domtypes.codegen.generators.*
 import com.raquo.domtypes.common.*
+import com.raquo.domtypes.defs.attrs.AriaAttrDefs
 import com.raquo.domtypes.defs.reflectedAttrs.ReflectedHtmlAttrDefs
 
 class DomDefsGenerator(baseOutputDirectoryPath: String):
@@ -13,6 +14,145 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
     scalaName: String,
     attrSuffix: String,
     valueType: String)
+
+  private val additionalAriaCommentLines = Map(
+    "aria-details" -> List(
+      "Identifies the element (or elements) that provide additional information related to the object."
+    ),
+    "aria-errormessage" -> List(
+      "Identifies the element (or elements) that provide an error message for the object."
+    ),
+    "aria-keyshortcuts" -> List(
+      "Indicates keyboard shortcuts implemented by the author to activate or give focus to an element."
+    ),
+    "aria-modal" -> List(
+      "Indicates whether an element is modal when displayed."
+    ),
+    "aria-placeholder" -> List(
+      "Defines a short hint intended to help the user enter data when a control has no value."
+    ),
+    "aria-roledescription" -> List(
+      "Defines a human-readable, author-localized description for the role of an element."
+    )
+  )
+
+  private val ariaAttrsByDomName = AriaAttrDefs.defs.map(d => d.domName -> d).toMap
+
+  private def scaladocLines(indent: String, commentLines: List[String]): List[String] =
+    commentLines match
+      case Nil          => Nil
+      case line :: Nil  => List(s"$indent/** $line */")
+      case multipleLines =>
+        List(s"$indent/**") ++
+          multipleLines.map(line => s"$indent  * $line") ++
+          List(s"$indent  */")
+
+  private def commentSections(sections: List[List[String]]): List[String] =
+    sections.filter(_.nonEmpty) match
+      case Nil          => Nil
+      case head :: tail => head ++ tail.flatMap(section => "" +: section)
+
+  private def mdnDocLine(url: String): String =
+    val caption = url.substring(url.lastIndexOf("/") + 1)
+    s"[[$url $caption @ MDN]]"
+
+  private def namespacedAttrCommentLines(
+    namespaceName: String,
+    defs: List[NamespacedAttrDef],
+    attr: NamespacedAttrDef
+  ): List[String] =
+    val domName = s"$namespaceName-${attr.attrSuffix}"
+
+    val sourceDef = namespaceName match
+      case "aria" => ariaAttrsByDomName.get(domName)
+      // Scalive emits hyphenated HTML attributes, not the XML attributes described by SVG XLink.
+      case _ => None
+
+    val sourceComments = sourceDef
+      .map(_.commentLines)
+      .filter(_.nonEmpty)
+      .getOrElse(additionalAriaCommentLines.getOrElse(domName, Nil))
+
+    val generatedAriaNames = defs.map(d => s"aria-${d.attrSuffix}" -> d.scalaName).toMap
+    val linkedComments =
+      if namespaceName == "aria" then
+        AriaAttrDefs.defs.foldLeft(sourceComments) { (lines, ariaDef) =>
+          val replacement = generatedAriaNames
+            .get(ariaDef.domName)
+            .map(name => s"[[$name]]")
+            .getOrElse(s"`${ariaDef.domName}`")
+          lines.map(_.replace(s"[[${ariaDef.scalaName}]]", replacement))
+        }
+      else sourceComments
+
+    val docUrls = sourceDef
+      .map(_.docUrls)
+      .filter(_.nonEmpty)
+      .getOrElse(
+        if namespaceName == "aria" then
+          List(s"https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Attributes/$domName")
+        else Nil
+      )
+
+    commentSections(
+      List(
+        List(s"Defines the `$domName` HTML attribute."),
+        linkedComments,
+        docUrls.map(mdnDocLine)
+      )
+    )
+
+  private def namespaceCommentLines(namespaceName: String): List[String] =
+    namespaceName match
+      case "aria" =>
+        List(
+          "ARIA attribute definitions.",
+          "",
+          "For example, `aria.label := \"Dialog\"` emits the `aria-label` HTML attribute."
+        )
+      case "xlink" =>
+        List(
+          "Hyphenated `xlink-*` HTML attribute definitions.",
+          "",
+          "For example, `xlink.href := \"#target\"` emits `xlink-href`, not the XML `xlink:href` form."
+        )
+      case _ => Nil
+
+  private def scaliveAttrComments(attr: AttrDef): AttrDef =
+    val linkedComments = attr.commentLines.map(
+      _.replace("[[FormTags.dataList]]", "`dataList`")
+        .replace("[[FormTags.form]]", "the `<form>` element")
+        .replace("[[name]]", "[[nameAttr]]")
+        .replace("See [[Props.checked]]", "Scalive emits the reflected `checked` HTML attribute.")
+        .replace("See [[Props.selected]]", "Scalive emits the reflected `selected` HTML attribute.")
+        .replace("See also [[Props.value]]", "Scalive emits the reflected `value` HTML attribute.")
+    )
+
+    attr.domName match
+      case "maxlength" =>
+        attr.copy(commentLines = List(
+          "Specifies the maximum number of characters accepted by a compatible form control.",
+          "Browsers enforce the limit during editing and expose constraint-validation state when applicable."
+        ))
+      case "scoped" =>
+        attr.copy(commentLines = List(
+          "Defines the obsolete `scoped` attribute for a `<style>` element.",
+          "Current browsers do not implement scoped-style behavior; use ordinary CSS scoping instead."
+        ))
+      case _ => attr.copy(commentLines = linkedComments)
+
+  private def scaliveTagComments(tag: TagDef): TagDef =
+    tag.domName match
+      case "del" => tag.copy(commentLines = List("Represents content removed from the document."))
+      case "keygen" =>
+        tag.copy(
+          commentLines = List(
+            "Defines the obsolete `<keygen>` element.",
+            "Current browsers do not support this element; it remains available only for source compatibility."
+          ),
+          docUrls = Nil
+        )
+      case _ => tag
 
   private def generateNamespacedHtmlKeysTrait(
     traitName: String,
@@ -32,7 +172,7 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
     )
 
     val bodyLines = namespaces.flatMap { (namespaceName, defs) =>
-      val nsHeader = List(
+      val nsHeader = scaladocLines("  ", namespaceCommentLines(namespaceName)) ++ List(
         s"  object ${namespaceName}:",
         s"    private inline def attrName(suffix: String) = \"${namespaceName}-\" + suffix",
         ""
@@ -66,7 +206,7 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
             throw new IllegalArgumentException(s"Unsupported value type for namespaced attr generation: $unsupported")
         }
 
-      val attrDefs = defs.map { d =>
+      val attrDefs = defs.flatMap { d =>
         val helper = d.valueType match
           case "Boolean" => "boolAttr"
           case "String"  => "stringAttr"
@@ -74,13 +214,21 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
           case "Double"  => "doubleAttr"
           case _           => throw new IllegalArgumentException(s"Unsupported value type: ${d.valueType}")
 
-        s"    lazy val ${d.scalaName}: HtmlAttr[${d.valueType}] = $helper(\"${d.attrSuffix}\")"
+        scaladocLines("    ", namespacedAttrCommentLines(namespaceName, defs, d)) ++ List(
+          s"    lazy val ${d.scalaName}: HtmlAttr[${d.valueType}] = $helper(\"${d.attrSuffix}\")",
+          ""
+        )
       }
 
       nsHeader ++ valueHelpers ++ attrDefs ++ List("", "")
     }
 
-    (headerLines ++ List(s"trait $traitName:", "") ++ bodyLines).mkString("\n")
+    val traitCommentLines = List(
+      "Generated composite HTML attribute definitions grouped under [[aria]] and [[xlink]]."
+    )
+
+    (headerLines ++ scaladocLines("", traitCommentLines) ++ List(s"trait $traitName:", "") ++ bodyLines)
+      .mkString("\n")
 
   private object generator
       extends CanonicalGenerator(
@@ -113,7 +261,8 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
       keyImplName: String,
       defType: DefType
     ): String =
-      val (defs, defGroupComments) = defsAndGroupComments(defGroups, printDefGroupComments)
+      val (rawDefs, defGroupComments) = defsAndGroupComments(defGroups, printDefGroupComments)
+      val defs                         = rawDefs.map(scaliveTagComments)
 
       val baseImplDef =
         if tagType == HtmlTagType then
@@ -150,7 +299,19 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
         baseImplDef = baseImplDef,
         outputImplDefs = true,
         format = format
-      ).printTrait().getOutput()
+      ):
+        override protected def printDef(keyDef: TagDef, alias: Option[String]): Unit =
+          alias match
+            case Some(_) =>
+              val canonicalName = keyDef.scalaName.stripPrefix("`").stripSuffix("`")
+              blockCommentLines(
+                List(s"Alias for the `$canonicalName` member defining the `<${keyDef.domName}>` HTML tag.")
+              )
+            case None if keyDef.commentLines.isEmpty && keyDef.docUrls.isEmpty =>
+              blockCommentLines(List(s"Defines the `<${keyDef.domName}>` HTML tag."))
+            case None => ()
+          super.printDef(keyDef, alias)
+      .printTrait().getOutput()
     end generateTagsTrait
 
     override def generateAttrsTrait(
@@ -168,7 +329,8 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
       transformAttrDomName: String => String,
       defType: DefType
     ): String =
-      val (defs, defGroupComments) = defsAndGroupComments(defGroups, printDefGroupComments)
+      val (rawDefs, defGroupComments) = defsAndGroupComments(defGroups, printDefGroupComments)
+      val defs                         = rawDefs.map(scaliveAttrComments)
 
       val tagTypes = defs.foldLeft(List[TagType]())((acc, k) => (acc :+ k.tagType).distinct)
       if tagTypes.size > 1 then
@@ -214,7 +376,19 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
         namespaceImpl = namespaceImpl,
         outputImplDefs = true,
         format = format
-      ).printTrait().getOutput()
+      ):
+        override protected def printDef(keyDef: AttrDef, alias: Option[String]): Unit =
+          alias match
+            case Some(_) =>
+              val canonicalName = keyDef.scalaName.stripPrefix("`").stripSuffix("`")
+              blockCommentLines(
+                List(s"Alias for the `$canonicalName` member defining the `${keyDef.domName}` HTML attribute.")
+              )
+            case None if keyDef.commentLines.isEmpty && keyDef.docUrls.isEmpty =>
+              blockCommentLines(List(s"Defines the `${keyDef.domName}` HTML attribute."))
+            case None => ()
+          super.printDef(keyDef, alias)
+      .printTrait().getOutput()
     end generateAttrsTrait
   end generator
 
@@ -230,17 +404,24 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
         tagType = HtmlTagType,
         defGroups = defGroups.htmlTagsDefGroups,
         printDefGroupComments = true,
-        traitCommentLines = Nil,
+        traitCommentLines = List(
+          "Reusable definitions for HTML tags.",
+          "",
+          "Each member is an [[HtmlTag]] factory that creates an element when applied to modifiers."
+        ),
         traitModifiers = Nil,
         traitName = traitName,
         keyKind = "HtmlTag",
         baseImplDefComments = List(
-          "Create HTML tag",
+          "Creates a reusable HTML tag definition.",
           "",
-          "Note: this simply creates an instance of HtmlTag.",
-          " - This does not create the element (to do that, call .apply() on the returned tag instance)",
+          "The name is validated by [[HtmlTag]]. Applying the returned tag creates an element.",
+          "Set `void` only for tags that must be serialized without a closing tag; callers must still avoid supplying children.",
           "",
-          "@param name - e.g. \"div\" or \"mwc-input\""
+          "@param name",
+          "  tag name, for example `div` or `mwc-input`",
+          "@param void",
+          "  whether elements created by this tag are serialized without a closing tag"
         ),
         keyImplName = "htmlTag",
         defType = LazyVal
@@ -270,18 +451,26 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
             ).map(_.toAttrDef)
         ),
         printDefGroupComments = false,
-        traitCommentLines = Nil,
+        traitCommentLines = List(
+          "Typed definitions for HTML attributes.",
+          "",
+          "Assigning a value with `:=` encodes it using the definition's [[scalive.codecs.Encoder]]."
+        ),
         traitModifiers = Nil,
         traitName = traitName,
         keyKind = "HtmlAttr",
         implNameSuffix = "HtmlAttr",
         baseImplDefComments = List(
-          "Create HTML attribute (Note: for SVG attrs, use L.svg.svgAttr)",
+          "Creates a typed HTML attribute definition.",
           "",
-          "@param name  - name of the attribute, e.g. \"value\"",
-          "@param codec - used to encode V into String, e.g. StringAsIsEncoder",
+          "The name is validated by [[HtmlAttr]]. Values assigned with `:=` are encoded before rendering.",
           "",
-          "@tparam V    - value type for this attr in Scala"
+          "@param name",
+          "  attribute name, for example `value`",
+          "@param encoder",
+          "  encoder from `V` to the rendered attribute string",
+          "@tparam V",
+          "  Scala value type accepted by this attribute"
         ),
         baseImplName = "htmlAttr",
         namespaceImports = Nil,

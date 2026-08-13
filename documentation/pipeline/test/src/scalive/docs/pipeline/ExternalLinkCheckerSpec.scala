@@ -49,7 +49,7 @@ object ExternalLinkCheckerSpec extends ZIOSpecDefault:
         }
       }
     },
-    test("collects recursively authored and Scaladoc links plus API source and generated links") {
+    test("collects only recursively authored and Scaladoc links") {
       val root = "https://example.test/repository"
       val apiLink = "https://api.example.test/reference"
       val authoredLink = "https://docs.example.test/nested#section"
@@ -66,13 +66,11 @@ object ExternalLinkCheckerSpec extends ZIOSpecDefault:
       val links = ExternalLinkChecker.collect(bundle)
 
       assertTrue(
-        links.contains(authoredLink.stripSuffix("#section")),
-        links.contains(apiLink),
-        links.contains(apiLink + "/tag"),
-        links.contains(s"$root/blob/revision/src/Example.scala"),
-        links.exists(_.startsWith(s"$root/edit/master/documentation/content/test.md")),
-        links.exists(_.startsWith(s"$root/issues/new?")),
-        links == links.distinct.sorted
+        links == Vector(
+          apiLink,
+          apiLink + "/tag",
+          authoredLink.stripSuffix("#section")
+        ).sorted
       )
     }
   )

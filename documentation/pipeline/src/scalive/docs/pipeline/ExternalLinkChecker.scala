@@ -1,7 +1,6 @@
 package scalive.docs.pipeline
 
 import java.net.URI
-import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -22,7 +21,6 @@ object ExternalLinkChecker:
   private val DefaultTimeout = Duration.ofSeconds(10)
 
   def collect(bundle: DocumentationBundle): Vector[String] =
-    val metadata      = bundle.apiReference.metadata
     val authoredLinks = bundle.pages.flatMap(page => linksInBlocks(page.content))
     val scaladocLinks = bundle.apiReference.symbols.flatMap(_.signatures).flatMap { signature =>
       signature.documentation.toVector.flatMap { documentation =>
@@ -30,21 +28,8 @@ object ExternalLinkChecker:
           documentation.tags.flatMap(tag => linksInBlocks(tag.content))
       }
     }
-    val apiSourceLinks = bundle.apiReference.symbols
-      .flatMap(_.signatures)
-      .map(signature => metadata.sourceLink(signature.source).url)
-    val generatedPageLinks = bundle.pages.flatMap { page =>
-      val issue = issueLink(metadata, page)
-      page.source match
-        case PageSource.Authored(location) =>
-          Vector(
-            s"${metadata.repositoryUrl.stripSuffix("/")}/edit/master/${location.path}#L${location.line}",
-            issue
-          )
-        case PageSource.GeneratedApi(_) => Vector(issue)
-    }
 
-    (authoredLinks ++ scaladocLinks ++ apiSourceLinks ++ generatedPageLinks)
+    (authoredLinks ++ scaladocLinks)
       .filter(isHttp)
       .map(withoutFragment)
       .distinct
@@ -153,17 +138,4 @@ object ExternalLinkChecker:
   private def withoutFragment(url: String): String =
     val fragment = url.indexOf('#')
     if fragment < 0 then url else url.substring(0, fragment)
-
-  private def issueLink(metadata: ApiReferenceMetadata, page: Page): String =
-    val source = page.source match
-      case PageSource.Authored(location) => location.path
-      case PageSource.GeneratedApi(id)   => s"generated API symbol $id"
-    val title = encode(s"Documentation: ${page.metadata.title}")
-    val body  = encode(
-      s"Page: ${page.route}\nSource: $source\nDocumented revision: ${metadata.revision}\n\nDescribe the issue:"
-    )
-    s"${metadata.repositoryUrl.stripSuffix("/")}/issues/new?title=$title&body=$body"
-
-  private def encode(value: String): String =
-    URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
 end ExternalLinkChecker

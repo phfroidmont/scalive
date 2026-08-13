@@ -435,7 +435,7 @@ behavior, isolated state, catalog metadata, related-guide links, and X-ray
 support where it improves the lesson.
 
 - [x] Migrate the shopping cart example.
-- [ ] Replace the guestbook with a deterministic read-only ZLayer service example.
+- [x] Replace the guestbook with a deterministic read-only ZLayer service example.
 - [ ] Migrate the subscription clock with instance-scoped keys.
 - [ ] Migrate the async report with deterministic success, failure, replacement,
   retry, and cancellation controls.
@@ -492,7 +492,7 @@ mill --ticker false documentation.check
 - [x] Write components and parent/component communication guides.
 - [x] Write JS commands, browser events, and hook integration guides.
 - [x] Write flash, title, and lifecycle UX guides.
-- [ ] Write services and ZLayer injection guides.
+- [x] Write services and ZLayer injection guides.
 - [x] Write streams and collection update guides.
 - [ ] Write uploads and consumption guides.
 - [x] Write routes, typed parameters, patching, and navigation guides.

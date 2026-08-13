@@ -4,6 +4,7 @@ import zio.*
 import zio.http.*
 
 import scalive.*
+import scalive.docs.examples.Reports
 import scalive.docs.xray.DocumentationTraceStore
 
 object DocumentationSite extends ZIOAppDefault:
@@ -37,6 +38,6 @@ object DocumentationSite extends ZIOAppDefault:
       routes   = application.routes(assets, security, config, traceStore) ++ assets.routes
       _ <- Server
              .serve(routes)
-             .provide(Server.defaultWithPort(config.serverPort))
+             .provide(Server.defaultWithPort(config.serverPort), Reports.inMemory)
     yield ()
 end DocumentationSite

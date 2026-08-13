@@ -180,6 +180,43 @@ private[docs] object ExampleRegistry:
       behaviorTestId = "shopping-cart-behavior"
     )
 
+  private val serviceInjection =
+    new ExampleEntry[ReportsExample.Msg, ReportsExample.Model](
+      descriptor = ExampleCatalog.ServiceInjection,
+      factory = _ => ReportsExamplePreview(),
+      reset = ExampleReset(ReportsExample.Msg.ResetSelection, "Reset selected report"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[ReportsExample.Msg]:
+          def project(value: ReportsExample.Msg) = value match
+            case ReportsExample.Msg.Select(report) =>
+              ExampleTraceValue(
+                "ReportsExample.Msg",
+                "Select a report supplied by the service",
+                Vector("reportId" -> report.id.toString)
+              )
+            case ReportsExample.Msg.ResetSelection =>
+              ExampleTraceValue("ReportsExample.Msg", "Reset the selected report")
+            case ReportsExample.Msg.Refresh =>
+              ExampleTraceValue("ReportsExample.Msg", "Refresh reports from the service"),
+        model = new ExampleTraceProjector[ReportsExample.Model]:
+          def project(value: ReportsExample.Model) = value match
+            case ReportsExample.Model.Loaded(reports, selected) =>
+              ExampleTraceValue(
+                "ReportsExample.Model",
+                "Loaded reports with one selected report",
+                Vector(
+                  "reportCount"      -> reports.size.toString,
+                  "selectedReportId" -> selected.id.toString
+                )
+              )
+            case ReportsExample.Model.Empty =>
+              ExampleTraceValue("ReportsExample.Model", "No reports available")
+            case ReportsExample.Model.Failed =>
+              ExampleTraceValue("ReportsExample.Model", "Report loading failed")
+      ),
+      behaviorTestId = "reports-service-behavior"
+    )
+
   private val lifecycle =
     new ExampleEntry[LifecycleExample.Msg, LifecycleExample.Model](
       descriptor = ExampleCatalog.Lifecycle,
@@ -307,6 +344,7 @@ private[docs] object ExampleRegistry:
       lifecycle,
       navigation,
       profileForm,
+      serviceInjection,
       shoppingCart,
       votingComponents
     )

@@ -83,6 +83,30 @@ object ExampleCatalog:
     )
   )
 
+  val ServiceInjection = ExampleDescriptor(
+    id = "service-injection",
+    title = "Reports service injection",
+    description =
+      "A layer-backed route constructor-injects a reports service while selection remains connection-local.",
+    topics = Vector("services", "ZLayer", "dependency injection", "route environments"),
+    aliases = Vector("constructor injection", "ZLayer.fromFunction", "Reports", "refresh"),
+    resetDescription = "Restore the first loaded report without querying the service again.",
+    sources = Vector(
+      ExampleSource(
+        label = "Reports service",
+        path = "documentation/site/src/scalive/docs/examples/ReportsExample.scala",
+        region = "reports-service",
+        language = Some("scala")
+      ),
+      ExampleSource(
+        label = "Layer-backed LiveView route",
+        path = "documentation/site/src/scalive/docs/examples/ReportsExample.scala",
+        region = "reports-liveview",
+        language = Some("scala")
+      )
+    )
+  )
+
   val Lifecycle = ExampleDescriptor(
     id = "lifecycle",
     title = "Lifecycle and connection state",
@@ -169,6 +193,7 @@ object ExampleCatalog:
       Lifecycle,
       Navigation,
       ProfileForm,
+      ServiceInjection,
       ShoppingCart,
       VotingComponents
     )

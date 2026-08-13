@@ -31,6 +31,7 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
           "lifecycle",
           "navigation",
           "profile-form",
+          "service-injection",
           "shopping-cart",
           "voting-components"
         )

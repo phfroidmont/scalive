@@ -4,7 +4,7 @@ import zio.http.Routes
 import zio.http.codec.PathCodec
 
 import scalive.*
-import scalive.docs.examples.ExampleRegistry
+import scalive.docs.examples.{ExampleRegistry, Reports, ReportsExample}
 import scalive.docs.model.*
 import scalive.docs.xray.{DocumentationRuntimeTraceFactory, DocumentationTraceStore}
 
@@ -46,6 +46,15 @@ final private[docs] class DocumentationApplication private (
           indexable = true
         )
       }.orElse(
+        Option.when(route == ReportsExample.LabRoute)(
+          DocumentationRouteMetadata(
+            "Reports service injection lab",
+            "A standalone LiveView route constructed from a Reports service layer.",
+            DocumentationApplication.ExamplesRoute + "/service-injection",
+            indexable = false
+          )
+        )
+      ).orElse(
         Option.when(route == DocumentationApplication.SearchRoute)(
           DocumentationRouteMetadata(
             "Search",
@@ -65,21 +74,21 @@ final private[docs] class DocumentationApplication private (
     assets: StaticAssets,
     security: LiveSecurity,
     config: DocumentationConfig
-  ): Routes[Any, Nothing] = routes(assets, security, config, None)
+  ): Routes[Reports, Nothing] = routes(assets, security, config, None)
 
   def routes(
     assets: StaticAssets,
     security: LiveSecurity,
     config: DocumentationConfig,
     traceStore: DocumentationTraceStore
-  ): Routes[Any, Nothing] = routes(assets, security, config, Some(traceStore))
+  ): Routes[Reports, Nothing] = routes(assets, security, config, Some(traceStore))
 
   private def routes(
     assets: StaticAssets,
     security: LiveSecurity,
     config: DocumentationConfig,
     traceStore: Option[DocumentationTraceStore]
-  ): Routes[Any, Nothing] =
+  ): Routes[Reports, Nothing] =
     val renderer  = DocumentationRenderer(this, traceStore)
     val homeEntry = pages.find(_.page.route == "/").getOrElse {
       throw new IllegalStateException("Missing validated homepage route '/'.")
@@ -110,7 +119,10 @@ final private[docs] class DocumentationApplication private (
     val tracedRouter = traceStore.fold(router)(store =>
       router.withRuntimeTrace(DocumentationRuntimeTraceFactory(store))
     )
-    val liveRoutes = tracedRouter(homeRoute, (Vector(examplesRoute, searchRoute) ++ fragments)*)
+    val liveRoutes = tracedRouter(
+      homeRoute,
+      (Vector(examplesRoute, searchRoute, ReportsExample.route) ++ fragments)*
+    )
     liveRoutes ++ DocumentationMetadataRoutes.routes(this, config.publicOrigin)
   end routes
 end DocumentationApplication

@@ -13,6 +13,7 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
       "lifecycle-behavior",
       "navigation-behavior",
       "profile-form-behavior",
+      "reports-service-behavior",
       "shopping-cart-behavior",
       "voting-components-behavior"
     )
@@ -151,6 +152,21 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         voting.projectMessage(VotingComponentsExample.Msg.ComponentReported("scala-vote", 2))
           .exists(_.fields == Vector("componentId" -> "scala-vote", "votes" -> "2")),
         voting.projectMessage(VoteComponent.Msg.Vote).isEmpty
+      )
+    },
+    test("projects report service state without exposing report content") {
+      val service = ExampleRegistry.get("service-injection").get
+      assertTrue(
+        service.resetMessage == ReportsExample.Msg.ResetSelection,
+        service.resetControlLabel == "Reset selected report",
+        service.projectMessage(ReportsExample.Msg.Select(Reports.fixtures.head))
+          .exists(_.fields == Vector("reportId" -> "1")),
+        service.projectModel(
+          ReportsExample.Model.Loaded(Reports.fixtures, Reports.fixtures.head)
+        ).exists(_.fields == Vector("reportCount" -> "2", "selectedReportId" -> "1")),
+        !service.projectModel(
+          ReportsExample.Model.Loaded(Reports.fixtures, Reports.fixtures.head)
+        ).exists(_.toString.contains("Revenue increased"))
       )
     }
   )

@@ -9,7 +9,7 @@ import zio.http.*
 import zio.test.*
 
 import scalive.*
-import scalive.docs.examples.ExampleRegistry
+import scalive.docs.examples.{ExampleRegistry, reportsFixtureService}
 import scalive.docs.model.{PageSource, Section}
 import scalive.testing.DisconnectedRender
 
@@ -67,7 +67,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets <- StaticAssets.load(
                     StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes = application.routes(assets, security, config)
+        routes = application.routes(assets, security, config).provide(reportsFixtureService)
         failures <- ZIO.foreach(application.pages) { entry =>
                       DisconnectedRender
                         .run(routes, Request.get(url(entry.page.route)))
@@ -142,7 +142,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes       = application.routes(assets, security, config)
+        routes       = application.routes(assets, security, config).provide(reportsFixtureService)
         home        <- DisconnectedRender.run(routes, Request.get(URL.root))
         learn       <- DisconnectedRender.run(routes, Request.get(url("/learn")))
         homeDocument  = Jsoup.parse(home.html)
@@ -170,7 +170,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes       = application.routes(assets, security, config)
+        routes       = application.routes(assets, security, config).provide(reportsFixtureService)
         learn       <- DisconnectedRender.run(routes, Request.get(url("/learn/models-and-messages")))
         guides      <- DisconnectedRender.run(routes, Request.get(url("/guides/testing")))
         project     <- DisconnectedRender.run(routes, Request.get(url("/project")))
@@ -213,7 +213,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets <- StaticAssets.load(
                     StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes = application.routes(assets, security, config)
+        routes = application.routes(assets, security, config).provide(reportsFixtureService)
         rendered <- DisconnectedRender.run(
                       routes,
                       Request.get(url("/api/scalive/live-view"))
@@ -278,7 +278,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes = application.routes(assets, security, config)
+        routes = application.routes(assets, security, config).provide(reportsFixtureService)
         rendered <- DisconnectedRender.run(routes, Request.get(url("/learn/models-and-messages")))
         document  = Jsoup.parse(rendered.html)
         reference = document.selectFirst("[data-api-reference='trait:scalive.LiveView']")
@@ -302,7 +302,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes = application.routes(assets, security, config)
+        routes = application.routes(assets, security, config).provide(reportsFixtureService)
         rendered <- DisconnectedRender.run(routes, Request.get(url("/examples")))
         filtered <- DisconnectedRender.run(
                       routes,
@@ -318,7 +318,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 8,
+        document.select("[data-example-card]").size() == 9,
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
@@ -342,6 +342,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         ),
         document.select("a[href='/examples/voting-components']").asScala.exists(
           _.text() == "Voting components"
+        ),
+        document.select("a[href='/examples/service-injection']").asScala.exists(
+          _.text() == "Reports service injection"
         ),
         document.select("a[data-example-topic-filter][href='/examples?topic=keyed-rendering']").size() == 1,
         filtered.response.status == Status.Ok,
@@ -393,7 +396,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes       = application.routes(assets, security, config)
+        routes       = application.routes(assets, security, config).provide(reportsFixtureService)
         counter <- DisconnectedRender.run(routes, Request.get(url("/examples/counter")))
         browser <- DisconnectedRender.run(routes, Request.get(url("/examples/browser-integration")))
         cart <- DisconnectedRender.run(routes, Request.get(url("/examples/shopping-cart")))
@@ -471,15 +474,20 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets <- StaticAssets.load(
                     StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes = application.routes(assets, security, config) ++ assets.routes
+        routes = application.routes(assets, security, config).provide(reportsFixtureService) ++ assets.routes
         home    <- DisconnectedRender.run(routes, Request.get(URL.root))
         missing <- ZIO.scoped(routes.runZIO(Request.get(url("/not-a-documentation-page"))))
         extra   <- ZIO.scoped(routes.runZIO(Request.get(url("/learn/extra"))))
+        reportsLab <- DisconnectedRender.run(
+                        routes,
+                        Request.get(url("/examples/service-injection/lab"))
+                      )
         searchAsset = Jsoup
                         .parse(home.html)
                         .select("#docs-global-search")
                         .attr("data-search-index")
         document = Jsoup.parse(home.html)
+        reportsDocument = Jsoup.parse(reportsLab.html)
         assetPaths = document
                         .select("script[src], link[rel=stylesheet]")
                        .asScala.toVector.map(element =>
@@ -490,6 +498,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assetPaths.size == 3,
         assetPaths.forall(_.startsWith("/static/")),
         searchAsset.startsWith("/static/search-index-"),
+        reportsLab.response.status == Status.Ok,
+        reportsDocument.select("[data-report-selected]").text() == "Daily sales",
         missing.status == Status.NotFound,
         extra.status == Status.NotFound
       )
@@ -498,7 +508,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes = application.routes(assets, security, config)
+        routes = application.routes(assets, security, config).provide(reportsFixtureService)
         empty <- DisconnectedRender.run(routes, Request.get(url("/search")))
         symbol <- DisconnectedRender.run(routes, Request.get(url("/search?q=scalive.LiveView")))
         alias <- DisconnectedRender.run(routes, Request.get(url("/search?q=live%20view")))
@@ -528,7 +538,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes = application.routes(assets, security, config)
+        routes = application.routes(assets, security, config).provide(reportsFixtureService)
         sitemapResponse <- ZIO.scoped(routes.runZIO(Request.get(url("/sitemap.xml"))))
         robotsResponse  <- ZIO.scoped(routes.runZIO(Request.get(url("/robots.txt"))))
         sitemap         <- sitemapResponse.body.asString

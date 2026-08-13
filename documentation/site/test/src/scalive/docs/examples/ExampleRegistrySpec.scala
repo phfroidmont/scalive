@@ -11,6 +11,7 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
       "activity-stream-behavior",
       "browser-integration-behavior",
       "lifecycle-behavior",
+      "navigation-behavior",
       "profile-form-behavior",
       "shopping-cart-behavior",
       "voting-components-behavior"
@@ -126,6 +127,21 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         projected.fields.contains("saved" -> "true"),
         !projected.toString.contains("secret@example.com"),
         !projected.toString.contains("Private biography")
+      )
+    },
+    test("projects navigation presets without raw destination strings") {
+      val navigation = ExampleRegistry.get("navigation").get
+      assertTrue(
+        navigation.resetMessage == NavigationExample.Msg.Reset,
+        navigation.projectMessage(
+          NavigationExample.Msg.Select(NavigationExample.SearchPreset.TypedForms)
+        ).exists(_.fields == Vector("preset" -> "Typed forms")),
+        navigation.projectModel(
+          NavigationExample.Model(NavigationExample.SearchPreset.Streams)
+        ).exists(_.fields == Vector("preset" -> "Streams")),
+        !navigation.projectModel(
+          NavigationExample.Model(NavigationExample.SearchPreset.Streams)
+        ).exists(_.toString.contains("/search"))
       )
     },
     test("projects component reports with stable application identity") {

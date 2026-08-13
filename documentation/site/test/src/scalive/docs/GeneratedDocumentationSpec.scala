@@ -26,6 +26,7 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
           "browser-integration",
           "counter",
           "lifecycle",
+          "navigation",
           "profile-form",
           "shopping-cart",
           "voting-components"

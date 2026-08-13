@@ -240,6 +240,33 @@ private[docs] object ExampleRegistry:
       behaviorTestId = "profile-form-behavior"
     )
 
+  private val navigation =
+    new ExampleEntry[NavigationExample.Msg, NavigationExample.Model](
+      descriptor = ExampleCatalog.Navigation,
+      factory = _ => new NavigationExample,
+      reset = ExampleReset(NavigationExample.Msg.Reset, "Reset navigation"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[NavigationExample.Msg]:
+          def project(value: NavigationExample.Msg) = value match
+            case NavigationExample.Msg.Select(query) =>
+              ExampleTraceValue(
+                "NavigationExample.Msg",
+                "Select typed search parameters",
+                Vector("preset" -> query.label)
+              )
+            case NavigationExample.Msg.Reset =>
+              ExampleTraceValue("NavigationExample.Msg", "Reset navigation state"),
+        model = new ExampleTraceProjector[NavigationExample.Model]:
+          def project(value: NavigationExample.Model) =
+            ExampleTraceValue(
+              "NavigationExample.Model",
+              "Current typed search destination",
+              Vector("preset" -> value.query.label)
+            )
+      ),
+      behaviorTestId = "navigation-behavior"
+    )
+
   private val votingComponents =
     new ExampleEntry[VotingComponentsExample.Msg, VotingComponentsExample.Model](
       descriptor = ExampleCatalog.VotingComponents,
@@ -278,6 +305,7 @@ private[docs] object ExampleRegistry:
       browserIntegration,
       counter,
       lifecycle,
+      navigation,
       profileForm,
       shoppingCart,
       votingComponents

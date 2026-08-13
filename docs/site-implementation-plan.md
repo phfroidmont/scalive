@@ -444,7 +444,7 @@ support where it improves the lesson.
 - [x] Migrate voting components with instance-scoped component IDs.
 - [x] Migrate browser interop with instance-scoped hook and DOM IDs.
 - [x] Migrate lifecycle, flash, title, and connection behavior.
-- [ ] Adapt navigation examples to real documentation routes and search
+- [x] Adapt navigation examples to real documentation routes and search
   parameters.
 - [ ] Replace persistent document storage with a bounded real upload that
   summarizes text and immediately discards consumed content.
@@ -495,7 +495,7 @@ mill --ticker false documentation.check
 - [ ] Write services and ZLayer injection guides.
 - [x] Write streams and collection update guides.
 - [ ] Write uploads and consumption guides.
-- [ ] Write routes, typed parameters, patching, and navigation guides.
+- [x] Write routes, typed parameters, patching, and navigation guides.
 - [ ] Write layouts, sessions, mount aspects, and authentication guides.
 - [ ] Write async work, subscriptions, cancellation, and failure guides.
 - [x] Write static assets and client setup guides.

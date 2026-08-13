@@ -318,7 +318,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 7,
+        document.select("[data-example-card]").size() == 8,
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
@@ -327,6 +327,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         ),
         document.select("a[href='/examples/lifecycle']").asScala.exists(
           _.text() == "Lifecycle and connection state"
+        ),
+        document.select("a[href='/examples/navigation']").asScala.exists(
+          _.text() == "Typed documentation navigation"
         ),
         document.select("a[href='/examples/profile-form']").asScala.exists(
           _.text() == "Typed profile form"
@@ -377,6 +380,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             entry.title == "Typed profile form" &&
             entry.route == "/examples/profile-form" &&
             entry.fragment.isEmpty && entry.text.contains("validation")
+        ),
+        application.bundle.searchEntries.exists(entry =>
+          entry.id == "example:/examples/navigation" &&
+            entry.title == "Typed documentation navigation" &&
+            entry.route == "/examples/navigation" &&
+            entry.fragment.isEmpty && entry.text.contains("LiveLocation")
         )
       )
     },
@@ -389,12 +398,14 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         browser <- DisconnectedRender.run(routes, Request.get(url("/examples/browser-integration")))
         cart <- DisconnectedRender.run(routes, Request.get(url("/examples/shopping-cart")))
         lifecycle <- DisconnectedRender.run(routes, Request.get(url("/examples/lifecycle")))
+        navigation <- DisconnectedRender.run(routes, Request.get(url("/examples/navigation")))
         profile <- DisconnectedRender.run(routes, Request.get(url("/examples/profile-form")))
         voting <- DisconnectedRender.run(routes, Request.get(url("/examples/voting-components")))
         counterDocument = Jsoup.parse(counter.html)
         browserDocument = Jsoup.parse(browser.html)
         cartDocument    = Jsoup.parse(cart.html)
         lifecycleDocument = Jsoup.parse(lifecycle.html)
+        navigationDocument = Jsoup.parse(navigation.html)
         profileDocument   = Jsoup.parse(profile.html)
         votingDocument    = Jsoup.parse(voting.html)
         counterExample  = counterDocument.selectFirst("#example-counter")
@@ -403,6 +414,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         counterNestedId = ExampleRegistry.instanceId("/examples/counter", "counter")
         cartNestedId    = ExampleRegistry.instanceId("/examples/shopping-cart", "shopping-cart")
         lifecycleNestedId = ExampleRegistry.instanceId("/examples/lifecycle", "lifecycle")
+        navigationNestedId = ExampleRegistry.instanceId("/examples/navigation", "navigation")
         profileNestedId = ExampleRegistry.instanceId("/examples/profile-form", "profile-form")
         votingNestedId = ExampleRegistry.instanceId("/examples/voting-components", "voting-components")
       yield assertTrue(
@@ -433,6 +445,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         lifecycleDocument.select("[data-mount-phase]").text() == "Disconnected HTTP mount",
         lifecycleDocument.select("[data-lifecycle-title]").text() == "Lifecycle example",
         lifecycleDocument.select(".docs-code").text().contains("class LifecycleExample"),
+        navigation.response.status == Status.Ok,
+        navigationDocument.select("#example-navigation").attr("data-example-child") ==
+          navigationNestedId,
+        navigationDocument.select("[data-navigation-destination]").text() ==
+          "/search?q=LiveView",
+        navigationDocument.select(".docs-code").text().contains("class NavigationExample"),
         profile.response.status == Status.Ok,
         profileDocument.select(".docs-example").size() == 1,
         profileDocument.select("#example-profile-form").attr("data-example-child") == profileNestedId,

@@ -101,9 +101,7 @@ final private[docs] class DocumentationApplication private (
       }
     val examplesRoute = DocumentationApplication.ExamplesCatalogRoute ->
       DocumentationExamplesLiveView(examplesPage.page, this, renderer)
-    val searchRoute = Live
-      .route(PathCodec(DocumentationApplication.SearchRoute))
-      .queryOptional[String](DocumentationApplication.SearchParameter) ->
+    val searchRoute = DocumentationApplication.SearchRouteBuilder ->
       DocumentationSearchLiveView(this)
     val router = Live.router
       .withSecurity(security)
@@ -118,8 +116,10 @@ final private[docs] class DocumentationApplication private (
 end DocumentationApplication
 
 private[docs] object DocumentationApplication:
-  val SearchRoute                        = "/search"
-  val SearchParameter                    = "q"
+  val SearchRoute                      = "/search"
+  val SearchParameter                  = "q"
+  private[docs] val SearchRouteBuilder =
+    (live / "search").queryOptional[String](SearchParameter)
   val ExamplesRoute                      = "/examples"
   val TopicParameter                     = "topic"
   private[docs] val ExamplesCatalogRoute =

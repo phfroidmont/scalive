@@ -25,14 +25,15 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         hasPages = bundle.exists(_.pages.nonEmpty)
         exampleIds = bundle.map(_.examples.map(_.descriptor.id))
         expectedExampleIds = Vector(
-                                "activity-stream",
-                                "browser-integration",
-                                "counter",
-                               "lifecycle",
-                                "profile-form",
-                                "shopping-cart",
-                                "voting-components"
-                             )
+          "activity-stream",
+          "browser-integration",
+          "counter",
+          "lifecycle",
+          "navigation",
+          "profile-form",
+          "shopping-cart",
+          "voting-components"
+        )
         searchMatchesBundle = search == bundle.map(_.searchEntries)
       yield assertTrue(
         content.size == 1,

@@ -119,6 +119,30 @@ object ExampleCatalog:
     )
   )
 
+  val Navigation = ExampleDescriptor(
+    id = "navigation",
+    title = "Typed documentation navigation",
+    description =
+      "Named route builders encode real documentation search parameters into checked LiveLocation values.",
+    topics = Vector("routing", "navigation", "typed parameters", "search"),
+    aliases = Vector(
+      "LiveLocation",
+      "pushNavigate",
+      "replaceNavigate",
+      "queryOptional",
+      "routes"
+    ),
+    resetDescription = "Restore the initial LiveView search destination.",
+    sources = Vector(
+      ExampleSource(
+        label = "LiveView",
+        path = "documentation/site/src/scalive/docs/examples/NavigationExample.scala",
+        region = "navigation-example",
+        language = Some("scala")
+      )
+    )
+  )
+
   val VotingComponents = ExampleDescriptor(
     id = "voting-components",
     title = "Voting components",
@@ -143,6 +167,7 @@ object ExampleCatalog:
       BrowserIntegration,
       Counter,
       Lifecycle,
+      Navigation,
       ProfileForm,
       ShoppingCart,
       VotingComponents

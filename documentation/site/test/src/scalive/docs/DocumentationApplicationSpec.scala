@@ -318,7 +318,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 6,
+        document.select("[data-example-card]").size() == 7,
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
@@ -333,6 +333,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         ),
         document.select("a[href='/examples/activity-stream']").asScala.exists(
           _.text() == "Bounded activity stream"
+        ),
+        document.select("a[href='/examples/browser-integration']").asScala.exists(
+          _.text() == "Browser integration"
         ),
         document.select("a[href='/examples/voting-components']").asScala.exists(
           _.text() == "Voting components"
@@ -383,16 +386,19 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
         routes       = application.routes(assets, security, config)
         counter <- DisconnectedRender.run(routes, Request.get(url("/examples/counter")))
+        browser <- DisconnectedRender.run(routes, Request.get(url("/examples/browser-integration")))
         cart <- DisconnectedRender.run(routes, Request.get(url("/examples/shopping-cart")))
         lifecycle <- DisconnectedRender.run(routes, Request.get(url("/examples/lifecycle")))
         profile <- DisconnectedRender.run(routes, Request.get(url("/examples/profile-form")))
         voting <- DisconnectedRender.run(routes, Request.get(url("/examples/voting-components")))
         counterDocument = Jsoup.parse(counter.html)
+        browserDocument = Jsoup.parse(browser.html)
         cartDocument    = Jsoup.parse(cart.html)
         lifecycleDocument = Jsoup.parse(lifecycle.html)
         profileDocument   = Jsoup.parse(profile.html)
         votingDocument    = Jsoup.parse(voting.html)
         counterExample  = counterDocument.selectFirst("#example-counter")
+        browserExample  = browserDocument.selectFirst("#example-browser-integration")
         cartExample     = cartDocument.selectFirst("#example-shopping-cart")
         counterNestedId = ExampleRegistry.instanceId("/examples/counter", "counter")
         cartNestedId    = ExampleRegistry.instanceId("/examples/shopping-cart", "shopping-cart")
@@ -406,6 +412,13 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         counterExample.select(s"#$counterNestedId[data-phx-session][data-phx-child-id]").size() == 1,
         counterExample.select("[role=status] strong").text() == "0",
         counterExample.select(".docs-code").text().contains("class CounterExample"),
+        browser.response.status == Status.Ok,
+        browserExample.select(".docs-code-block").size() == 2,
+        browserExample.select(".docs-code-block > figcaption").eachText().asScala.toVector ==
+          Vector("LiveView", "Browser hook"),
+        browserExample.select(".docs-code").text().contains("class BrowserInteropExample"),
+        browserExample.select(".docs-code").text().contains("createBrowserInteropHook"),
+        browserExample.select(".docs-code-source-link a").size() == 2,
         counterDocument.select(".docs-section-nav").isEmpty,
         cart.response.status == Status.Ok,
         cartDocument.select(".docs-example").size() == 1,

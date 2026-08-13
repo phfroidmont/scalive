@@ -43,6 +43,7 @@ object `package` extends Module:
       os.sub / "scalive" / "src",
       os.sub / "scaliveTesting" / "src",
       os.sub / "documentation" / "site" / "src",
+      os.sub / "documentation" / "site" / "assets" / "js",
       os.sub / "examples" / "src"
     )
 

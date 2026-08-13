@@ -58,7 +58,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     topics = Vector("state", "events"),
     aliases = Vector("increment", "reset"),
     resetDescription = "Set the count back to zero.",
-    source = ExampleSource("examples/Sample.scala", "greeting", Some("scala"))
+    sources = Vector(ExampleSource("LiveView", "examples/Sample.scala", "greeting", Some("scala")))
   )
 
   override def spec = suite("ContentPipelineSpec")(
@@ -83,9 +83,10 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             bundle.pages.map(_.route) ==
               Vector("/", "/learn", "/guides/first-guide", "/examples", "/examples/counter"),
             bundle.examples.map(_.descriptor) == Vector(counterDescriptor),
-            bundle.examples.head.source.region == SourceRegion("examples/Sample.scala", 3, 4),
-            bundle.examples.head.source.text == "val greeting = \"hello\"\nprintln(greeting)",
-            bundle.examples.head.source.tokens.exists(_.styles.nonEmpty),
+            bundle.examples.head.sources.head.label == "LiveView",
+            bundle.examples.head.sources.head.region == SourceRegion("examples/Sample.scala", 3, 4),
+            bundle.examples.head.sources.head.text == "val greeting = \"hello\"\nprintln(greeting)",
+            bundle.examples.head.sources.head.tokens.exists(_.styles.nonEmpty),
             bundle.examples.head.compilationFailures.isEmpty,
             bundle.apiReference.symbols == Vector(liveViewSymbol, mountSymbol),
             bundle.searchEntries.map(_.kind).toSet == Set(

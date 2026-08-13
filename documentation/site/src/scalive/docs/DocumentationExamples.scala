@@ -106,8 +106,10 @@ final private[docs] class DocumentationExamplesLiveView(
     val location   = application.location(route).getOrElse {
       throw new IllegalArgumentException(s"Missing validated example route: $route")
     }
-    val source = application.bundle.apiReference.metadata.sourceLink(
-      ApiSource.Repository(example.source.region)
+    val sources = example.sources.map(source =>
+      source.label -> application.bundle.apiReference.metadata.sourceLink(
+        ApiSource.Repository(source.region)
+      )
     )
     articleTag(
       cls                      := "docs-example-card",
@@ -127,7 +129,9 @@ final private[docs] class DocumentationExamplesLiveView(
       ),
       footerTag(
         link.pushNavigate(location, "Open example"),
-        a(href := source.url, "View source")
+        sources.map { case (label, source) =>
+          a(href := source.url, s"View $label source")
+        }
       )
     )
   end exampleCard

@@ -733,10 +733,19 @@ object ContentPipeline:
       validateExampleText(descriptor.id, "title", descriptor.title, errors)
       validateExampleText(descriptor.id, "description", descriptor.description, errors)
       validateExampleText(descriptor.id, "reset description", descriptor.resetDescription, errors)
-      if descriptor.source.path.trim.isEmpty then
-        errors += s"example '${descriptor.id}' source path must not be blank."
-      if descriptor.source.region.trim.isEmpty then
-        errors += s"example '${descriptor.id}' source region must not be blank."
+      if descriptor.sources.isEmpty then errors += s"example '${descriptor.id}' must have source."
+      descriptor.sources.foreach { source =>
+        if source.label.trim.isEmpty then
+          errors += s"example '${descriptor.id}' source label must not be blank."
+        if source.path.trim.isEmpty then
+          errors += s"example '${descriptor.id}' source path must not be blank."
+        if source.region.trim.isEmpty then
+          errors += s"example '${descriptor.id}' source region must not be blank."
+      }
+      descriptor.sources.groupBy(_.label.trim.toLowerCase).foreach { case (label, matches) =>
+        if label.nonEmpty && matches.sizeIs > 1 then
+          errors += s"example '${descriptor.id}' has duplicate source label '$label'."
+      }
       (descriptor.topics ++ descriptor.aliases).foreach { value =>
         if value.trim.isEmpty then
           errors += s"example '${descriptor.id}' search terms must not be blank."
@@ -753,32 +762,40 @@ object ContentPipeline:
     if errors.nonEmpty then Left(PipelineError(errors.toVector.distinct.sorted))
     else
       val results = descriptors.sortBy(_.id).map { descriptor =>
-        val sourcePath =
-          try Right(Path.of(descriptor.source.path))
-          catch case _: Exception => Left(s"example '${descriptor.id}' has an invalid source path.")
-        sourcePath.flatMap { path =>
-          SourceExtractor
-            .extract(
-              paths.repository,
-              paths.allowedSourceRoots,
-              path,
-              descriptor.source.region
-            ).left.map(_.message).map { extracted =>
-              ExampleDefinition(
-                descriptor = descriptor,
-                source = ExampleSourceCode(
+        val sources = descriptor.sources.map { source =>
+          val sourcePath: Either[String, Path] =
+            try Right(Path.of(source.path))
+            catch
+              case _: Exception => Left(s"example '${descriptor.id}' has an invalid source path.")
+          sourcePath.flatMap { path =>
+            SourceExtractor
+              .extract(
+                paths.repository,
+                paths.allowedSourceRoots,
+                path,
+                source.region
+              ).left.map(_.message).map { extracted =>
+                val language = source.language.orElse(inferLanguage(extracted.path))
+                ExampleSourceCode(
+                  label = source.label,
                   region = SourceRegion(extracted.path, extracted.startLine, extracted.endLine),
-                  language = descriptor.source.language.orElse(inferLanguage(extracted.path)),
+                  language = language,
                   text = extracted.content,
-                  tokens = CodeHighlighter.highlight(
-                    descriptor.source.language.orElse(inferLanguage(extracted.path)),
-                    extracted.content
-                  )
-                ),
-                compilationFailures = Vector.empty
-              )
-            }
+                  tokens = CodeHighlighter.highlight(language, extracted.content)
+                )
+              }
+          }
         }
+        val (sourceFailures, sourceDefinitions) = sources.partitionMap(identity)
+        if sourceFailures.nonEmpty then Left(sourceFailures.sorted.mkString("\n"))
+        else
+          Right(
+            ExampleDefinition(
+              descriptor = descriptor,
+              sources = sourceDefinitions,
+              compilationFailures = Vector.empty
+            )
+          )
       }
       val (failures, definitions) = results.partitionMap(identity)
       if failures.nonEmpty then Left(PipelineError(failures.sorted)) else Right(definitions)

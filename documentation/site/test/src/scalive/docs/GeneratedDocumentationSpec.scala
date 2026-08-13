@@ -23,17 +23,21 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
         val exampleIds = bundle.examples.map(_.descriptor.id)
         val expectedExampleIds = Vector(
           "activity-stream",
+          "browser-integration",
           "counter",
           "lifecycle",
           "profile-form",
           "shopping-cart",
           "voting-components"
         )
-        val counterSource = bundle.examples.find(_.descriptor.id == "counter").map(_.source.text)
+        val counterSource = bundle.examples.find(_.descriptor.id == "counter")
+          .flatMap(_.sources.find(_.label == "LiveView")).map(_.text)
         val hasShoppingCartSource = bundle.examples.exists(example =>
           example.descriptor.id == "shopping-cart" &&
-            example.source.text.contains("class ShoppingCartExample")
+            example.sources.exists(_.text.contains("class ShoppingCartExample"))
         )
+        val browserSources = bundle.examples.find(_.descriptor.id == "browser-integration")
+          .map(_.sources)
         val apiQualifiedNames = bundle.apiReference.symbols.map(_.qualifiedName).toSet
         val liveViewSearchEntries = bundle.searchEntries.filter(_.title == "scalive.LiveView")
         val hasHomePage = bundle.pages.exists(page =>
@@ -45,6 +49,8 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
           exampleIds == expectedExampleIds,
           counterSource.exists(_.contains("class CounterExample")),
           hasShoppingCartSource,
+          browserSources.exists(_.map(_.label) == Vector("LiveView", "Browser hook")),
+          browserSources.exists(_.exists(_.text.contains("createBrowserInteropHook"))),
           apiQualifiedNames.contains("scalive.LiveView"),
           liveViewSearchEntries.nonEmpty,
           liveViewSearchEntries.exists(_.text.contains("mounted independently")),

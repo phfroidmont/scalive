@@ -1,6 +1,7 @@
 import { LiveSocket } from "phoenix_live_view"
 
 import { nextActiveIndex, search } from "./search.js"
+import { createBrowserInteropHook } from "./browser-interop.js"
 import { createInlineApiReferenceEnhancer } from "./inline-api-reference.js"
 import {
   assertLiveViewVersion,
@@ -134,6 +135,7 @@ window.addEventListener("online", () => {
 window.addEventListener("offline", () => updateConnectionState("offline"))
 
 const Hooks = {
+  BrowserInterop: createBrowserInteropHook(),
   XRayInspector: xrayAdapter.hook,
   DocumentationSearch: {
     mounted() {

@@ -32,7 +32,7 @@ sealed private[docs] trait RegisteredExample:
 
 final private class ExampleEntry[Msg: LiveMessageTag, Model: ClassTag](
   val descriptor: ExampleDescriptor,
-  factory: () => LiveView[Msg, Model],
+  factory: String => LiveView[Msg, Model],
   reset: ExampleReset[Msg],
   traces: ExampleTraceProjectors[Msg, Model],
   val behaviorTestId: String)
@@ -44,7 +44,7 @@ final private class ExampleEntry[Msg: LiveMessageTag, Model: ClassTag](
   val resetMessage: Any         = reset.message
 
   def render(instanceId: String): Mod[Nothing] =
-    liveView(instanceId, factory(), sticky = false)
+    liveView(instanceId, factory(instanceId), sticky = false)
 
   def projectMessage(value: Any): Option[ExampleTraceValue] =
     messageTag.unapply(value).map(traces.message.project)
@@ -56,7 +56,7 @@ private[docs] object ExampleRegistry:
   private val activityStream =
     new ExampleEntry[ActivityStreamExample.Msg, ActivityStreamExample.Model](
       descriptor = ExampleCatalog.ActivityStream,
-      factory = () => new ActivityStreamExample,
+      factory = _ => new ActivityStreamExample,
       reset = ExampleReset(ActivityStreamExample.Msg.Reset, "Reset activity stream"),
       traces = ExampleTraceProjectors(
         message = new ExampleTraceProjector[ActivityStreamExample.Msg]:
@@ -87,7 +87,7 @@ private[docs] object ExampleRegistry:
 
   private val counter = new ExampleEntry[CounterExample.Msg, CounterExample.Model](
     descriptor = ExampleCatalog.Counter,
-    factory = () => new CounterExample,
+    factory = _ => new CounterExample,
     reset = ExampleReset(CounterExample.Msg.Reset, "Reset"),
     traces = ExampleTraceProjectors(
       message = new ExampleTraceProjector[CounterExample.Msg]:
@@ -109,10 +109,42 @@ private[docs] object ExampleRegistry:
     behaviorTestId = "counter-behavior"
   )
 
+  private val browserIntegration =
+    new ExampleEntry[BrowserInteropExample.Msg, BrowserInteropExample.Model](
+      descriptor = ExampleCatalog.BrowserIntegration,
+      factory = instanceId => new BrowserInteropExample(instanceId),
+      reset = ExampleReset(
+        BrowserInteropExample.Msg.Reset,
+        "Reset browser integration"
+      ),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[BrowserInteropExample.Msg]:
+          def project(value: BrowserInteropExample.Msg) = value match
+            case BrowserInteropExample.Msg.CopySample =>
+              ExampleTraceValue(
+                "BrowserInteropExample.Msg",
+                "Request a browser clipboard write"
+              )
+            case BrowserInteropExample.Msg.Reset =>
+              ExampleTraceValue("BrowserInteropExample.Msg", "Reset browser integration"),
+        model = new ExampleTraceProjector[BrowserInteropExample.Model]:
+          def project(value: BrowserInteropExample.Model) =
+            ExampleTraceValue(
+              "BrowserInteropExample.Model",
+              "Current browser operation state",
+              Vector(
+                "requestNumber" -> value.requestNumber.toString,
+                "operation"     -> value.operation.traceLabel
+              )
+            )
+      ),
+      behaviorTestId = "browser-integration-behavior"
+    )
+
   private val shoppingCart =
     new ExampleEntry[ShoppingCartExample.Msg, ShoppingCartExample.Model](
       descriptor = ExampleCatalog.ShoppingCart,
-      factory = () => new ShoppingCartExample,
+      factory = _ => new ShoppingCartExample,
       reset = ExampleReset(ShoppingCartExample.Msg.Clear, "Clear"),
       traces = ExampleTraceProjectors(
         message = new ExampleTraceProjector[ShoppingCartExample.Msg]:
@@ -151,7 +183,7 @@ private[docs] object ExampleRegistry:
   private val lifecycle =
     new ExampleEntry[LifecycleExample.Msg, LifecycleExample.Model](
       descriptor = ExampleCatalog.Lifecycle,
-      factory = () => new LifecycleExample,
+      factory = _ => new LifecycleExample,
       reset = ExampleReset(LifecycleExample.Msg.Reset, "Reset example"),
       traces = ExampleTraceProjectors(
         message = new ExampleTraceProjector[LifecycleExample.Msg]:
@@ -181,7 +213,7 @@ private[docs] object ExampleRegistry:
   private val profileForm =
     new ExampleEntry[ProfileFormExample.Msg, ProfileFormExample.Model](
       descriptor = ExampleCatalog.ProfileForm,
-      factory = () => new ProfileFormExample,
+      factory = _ => new ProfileFormExample,
       reset = ExampleReset(ProfileFormExample.Msg.Reset, "Reset form"),
       traces = ExampleTraceProjectors(
         message = new ExampleTraceProjector[ProfileFormExample.Msg]:
@@ -211,7 +243,7 @@ private[docs] object ExampleRegistry:
   private val votingComponents =
     new ExampleEntry[VotingComponentsExample.Msg, VotingComponentsExample.Model](
       descriptor = ExampleCatalog.VotingComponents,
-      factory = () => new VotingComponentsExample,
+      factory = _ => new VotingComponentsExample,
       reset = ExampleReset(VotingComponentsExample.Msg.Reset, "Reset voting components"),
       traces = ExampleTraceProjectors(
         message = new ExampleTraceProjector[VotingComponentsExample.Msg]:
@@ -241,7 +273,15 @@ private[docs] object ExampleRegistry:
     )
 
   val entries: Vector[RegisteredExample] =
-    Vector(activityStream, counter, lifecycle, profileForm, shoppingCart, votingComponents)
+    Vector(
+      activityStream,
+      browserIntegration,
+      counter,
+      lifecycle,
+      profileForm,
+      shoppingCart,
+      votingComponents
+    )
 
   private val byId = entries.map(entry => entry.descriptor.id -> entry).toMap
 

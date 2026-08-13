@@ -25,8 +25,9 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         hasPages = bundle.exists(_.pages.nonEmpty)
         exampleIds = bundle.map(_.examples.map(_.descriptor.id))
         expectedExampleIds = Vector(
-                               "activity-stream",
-                               "counter",
+                                "activity-stream",
+                                "browser-integration",
+                                "counter",
                                "lifecycle",
                                 "profile-form",
                                 "shopping-cart",

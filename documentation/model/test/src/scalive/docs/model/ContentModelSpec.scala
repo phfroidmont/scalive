@@ -158,7 +158,20 @@ object ContentModelSpec extends ZIOSpecDefault:
     topics = Vector("state", "events"),
     aliases = Vector("increment", "reset"),
     resetDescription = "Set the count back to zero.",
-    source = ExampleSource("documentation/site/src/Counter.scala", "counter", Some("scala"))
+    sources = Vector(
+      ExampleSource(
+        "LiveView",
+        "documentation/site/src/Counter.scala",
+        "counter",
+        Some("scala")
+      ),
+      ExampleSource(
+        "Browser hook",
+        "documentation/site/assets/js/counter.js",
+        "counter-hook",
+        Some("javascript")
+      )
+    )
   )
 
   private val bundle = DocumentationBundle(
@@ -168,11 +181,21 @@ object ContentModelSpec extends ZIOSpecDefault:
     examples = Vector(
       ExampleDefinition(
         descriptor = exampleDescriptor,
-        source = ExampleSourceCode(
-          region = sourceRegion,
-          language = Some("scala"),
-          text = "val count = 0",
-          tokens = tokens
+        sources = Vector(
+          ExampleSourceCode(
+            label = "LiveView",
+            region = sourceRegion,
+            language = Some("scala"),
+            text = "val count = 0",
+            tokens = tokens
+          ),
+          ExampleSourceCode(
+            label = "Browser hook",
+            region = SourceRegion("documentation/site/assets/js/counter.js", 2, 4),
+            language = Some("javascript"),
+            text = "export const hook = {}",
+            tokens = Vector.empty
+          )
         ),
         compilationFailures = Vector(
           CompilationFailure(
@@ -288,7 +311,12 @@ object ContentModelSpec extends ZIOSpecDefault:
         decoded.map(_.pages.head.content.collectFirst { case Block.SourceCode(region, _, _, _) =>
           region
         }) == Right(Some(sourceRegion)),
-        decoded.map(_.examples.head.source.region) == Right(sourceRegion)
+        decoded.map(_.examples.head.sources.map(source => source.label -> source.region)) == Right(
+          Vector(
+            "LiveView" -> sourceRegion,
+            "Browser hook" -> SourceRegion("documentation/site/assets/js/counter.js", 2, 4)
+          )
+        )
       )
     },
     test("builds pinned repository and generated DOM source links") {

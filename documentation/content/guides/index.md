@@ -17,6 +17,8 @@ operations work. For an ordered introduction to the framework, start with
   browser input into domain values with path-specific feedback.
 - [Components and communication](components-and-communication.md) isolates local
   state and maps typed component outputs into owner messages.
+- [JS commands, browser events, and hooks](browser-integration.md) composes
+  client effects and exchanges validated typed payloads with focused hooks.
 - [Streams and collection updates](streams-and-collection-updates.md) separates
   durable collection state from targeted, bounded DOM operations.
 - [Flash, title, and lifecycle UX](flash-title-and-lifecycle-ux.md) communicates

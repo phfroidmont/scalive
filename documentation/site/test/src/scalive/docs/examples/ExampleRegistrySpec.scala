@@ -9,6 +9,7 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
     Set(
       "counter-behavior",
       "activity-stream-behavior",
+      "browser-integration-behavior",
       "lifecycle-behavior",
       "profile-form-behavior",
       "shopping-cart-behavior",
@@ -21,8 +22,9 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         ExampleRegistry.validationErrors.isEmpty,
         ExampleRegistry.entries.map(_.descriptor) == ExampleCatalog.entries,
         ExampleRegistry.entries.map(_.behaviorTestId).toSet == BehaviorTests,
-        ExampleRegistry.entries.forall(_.descriptor.source.path.nonEmpty),
-        ExampleRegistry.entries.forall(_.descriptor.source.region.nonEmpty)
+        ExampleRegistry.entries.forall(_.descriptor.sources.nonEmpty),
+        ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.path.nonEmpty)),
+        ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.region.nonEmpty))
       )
     },
     test("derives collision-free DOM and topic ids from page and directive identity") {
@@ -72,6 +74,23 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         activityStream.projectMessage(ActivityStreamExample.Msg.Add)
           .exists(_.summary == "Insert one activity"),
         activityStream.projectMessage("add").isEmpty
+      )
+    },
+    test("redacts browser payloads from explicit trace projections") {
+      val browser = ExampleRegistry.get("browser-integration").get
+      val model = BrowserInteropExample.Model(
+        requestNumber = 2,
+        operation = BrowserInteropExample.CopyOperation.Pending("copy-2")
+      )
+      val projected = browser.projectModel(model).get
+      assertTrue(
+        browser.resetMessage == BrowserInteropExample.Msg.Reset,
+        browser.resetControlLabel == "Reset browser integration",
+        browser.projectMessage(BrowserInteropExample.Msg.CopySample)
+          .exists(_.summary == "Request a browser clipboard write"),
+        projected.fields.contains("requestNumber" -> "2"),
+        projected.fields.contains("operation" -> "pending"),
+        !projected.toString.contains(BrowserInteropExample.SampleText)
       )
     },
     test("uses explicit lifecycle reset and trace projectors") {

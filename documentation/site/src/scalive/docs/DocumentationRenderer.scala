@@ -296,14 +296,17 @@ final private[docs] class DocumentationRenderer(
     text: String,
     tokens: Vector[CodeToken],
     sourceRegion: Option[SourceRegion],
-    copyable: Boolean = true
+    copyable: Boolean = true,
+    caption: Option[String] = None
   ): HtmlElement[Nothing] =
     val expandable = sourceRegion.nonEmpty && (text.linesIterator.size > 24 || text.length > 1600)
     figure(
       cls := "docs-code-block",
       sourceRegion.map(region => dataAttr("source") := sourceLabel(region)).toVector,
       Option.when(expandable)(dataAttr("code-expandable") := "").toVector,
-      sourceRegion.map(_ => Mod.Content.Tag(HtmlTag("figcaption")("Source"))).toVector,
+      caption
+        .orElse(sourceRegion.map(_ => "Source"))
+        .map(value => Mod.Content.Tag(HtmlTag("figcaption")(value))).toVector,
       Option
         .when(copyable || expandable)(
           Mod.Content.Tag(
@@ -498,7 +501,6 @@ final private[docs] class DocumentationRenderer(
     val observedTopic  = ExampleRegistry.topic(pageRoute, id)
     val inspectorId    = ExampleRegistry.inspectorInstanceId(pageRoute, id)
     val inspectorTopic = ExampleRegistry.inspectorTopic(pageRoute, id)
-    val source         = definition.source
 
     sectionTag(
       idAttr                      := s"example-$id",
@@ -508,7 +510,15 @@ final private[docs] class DocumentationRenderer(
       dataAttr("example-topic")   := observedTopic,
       dataAttr("inspector-child") := inspectorId,
       dataAttr("inspector-topic") := inspectorTopic,
-      codeBlock(source.language, source.text, source.tokens, Some(source.region)),
+      definition.sources.map(source =>
+        codeBlock(
+          source.language,
+          source.text,
+          source.tokens,
+          Some(source.region),
+          caption = Some(source.label)
+        )
+      ),
       definition.compilationFailures.map(renderCompilationFailure),
       div(
         cls := "docs-example-rendered",

@@ -108,6 +108,26 @@ trait LiveComponent[Props, Msg, Model]:
   def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
 end LiveComponent
 
+object LiveComponent:
+  /** Defines a component with a typed output protocol handled by its immediate owner. */
+  trait WithOutput[Props, Msg, Model, Output] extends LiveComponent[Props, Msg, Model]:
+    extension (ctx: MessageContext)
+      /** Queues `output` for the component's immediate owner. */
+      def emit(output: Output): LiveIO[Unit] = ctx.emitOutput(output)
+
+  /** Defines a component that cannot receive component messages. */
+  trait Eventless[Props, Model] extends LiveComponent[Props, Nothing, Model]:
+    final def handleMessage(
+      props: Props,
+      model: Model,
+      ctx: MessageContext
+    ): Nothing => LiveIO[Model] =
+      _ => ZIO.succeed(model)
+
+  /** Extracts the property type accepted by a component type. */
+  type PropsOf[C] = C match
+    case LiveComponent[props, msg, model] => props
+
 /** A stable, typed handle for one logical [[LiveComponent]] instance.
   *
   * Create a handle with `scalive.component`, then reuse it to render the instance, route an event
@@ -138,42 +158,23 @@ final case class LiveComponentInstance[Props, Msg, Model](
     *   the properties supplied to this render
     */
   def render(props: Props): Mod[Nothing] =
-    Mod.Content.LiveComponent(LiveComponentSpec(component, id, props))
+    Mod.Content.LiveComponent(LiveComponentSpec(component, id, props, None))
 
-/** Variants and type utilities for [[LiveComponent]]. */
-object LiveComponent:
-  /** Defines a component that cannot receive component messages.
-    *
-    * The message type is fixed to `Nothing`, which supplies the unreachable message handler and
-    * prevents component event bindings from being rendered. Implementations only need to define
-    * [[LiveComponent.mount mount]] and [[LiveComponent.render render]], and may override
-    * [[LiveComponent.update update]].
-    *
-    * @tparam Props
-    *   the input properties supplied by the parent
-    * @tparam Model
-    *   the state owned by each component instance
-    */
-  trait Eventless[Props, Model] extends LiveComponent[Props, Nothing, Model]:
-    /** Returns the unreachable message handler for this eventless component.
-      *
-      * This implementation is final because no value of `Nothing` can be delivered.
-      */
-    final def handleMessage(
-      props: Props,
-      model: Model,
-      ctx: MessageContext
-    ): Nothing => LiveIO[Model] =
-      _ => ZIO.succeed(model)
+final case class LiveComponentOutputInstance[Props, Msg, Model, Output](
+  component: LiveComponent.WithOutput[Props, Msg, Model, Output],
+  id: String):
 
-  /** Extracts the property type accepted by a [[LiveComponent]] type.
+  /** Renders this instance and maps its typed outputs into messages accepted by the enclosing
+    * LiveView or LiveComponent.
     *
-    * This match type keeps class-and-ID component updates aligned with the selected component's
-    * `Props` type.
+    * Output delivery is queued after the component's current lifecycle turn. The mapper runs while
+    * emitting, so a mapper failure fails that component lifecycle rather than a later owner
+    * lifecycle.
     */
-  type PropsOf[C] = C match
-    case LiveComponent[props, msg, model] => props
-end LiveComponent
+  def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg] =
+    Mod.Content.LiveComponent(
+      LiveComponentSpec(component, id, props, Some(value => onOutput(value.asInstanceOf[Output])))
+    )
 
 /** A typed reference to one mounted [[LiveComponent]] instance.
   *
@@ -188,10 +189,26 @@ final case class ComponentRef[Msg] private[scalive] (private[scalive] val cid: I
   /** Returns the client component ID used by Phoenix's `phx-target` protocol attribute. */
   override def toString: String = cid.toString
 
-final private[scalive] case class LiveComponentSpec[Props, Msg, Model](
+final private[scalive] case class LiveComponentSpec[Props, Msg, Model, Output](
   component: LiveComponent[Props, Msg, Model],
   id: String,
-  props: Props)
+  props: Props,
+  outputMapper: Option[Any => Any])
+
+private[scalive] enum ComponentOutputOwner:
+  case Root
+  case Component(cid: Int)
+
+final private[scalive] case class ComponentOutputMessage(owner: ComponentOutputOwner, value: Any)
+
+private[scalive] trait ComponentOutputRuntime:
+  def emit(output: Any): LiveIO[Unit]
+  def scoped(owner: ComponentOutputOwner, mapper: Any => Any): ComponentOutputRuntime
+
+private[scalive] object ComponentOutputRuntime:
+  object Disabled extends ComponentOutputRuntime:
+    def emit(output: Any): LiveIO[Unit]                                                 = ZIO.unit
+    def scoped(owner: ComponentOutputOwner, mapper: Any => Any): ComponentOutputRuntime = this
 
 final private[scalive] case class ComponentIdentity(componentClass: Class[?], id: String)
 

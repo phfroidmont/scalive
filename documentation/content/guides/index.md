@@ -15,6 +15,8 @@ operations work. For an ordered introduction to the framework, start with
   trees, sets attributes, binds messages, and keys repeated content.
 - [Typed forms and validation](typed-forms-and-validation.md) decodes rooted
   browser input into domain values with path-specific feedback.
+- [Components and communication](components-and-communication.md) isolates local
+  state and maps typed component outputs into owner messages.
 - [Streams and collection updates](streams-and-collection-updates.md) separates
   durable collection state from targeted, bounded DOM operations.
 - [Flash, title, and lifecycle UX](flash-title-and-lifecycle-ux.md) communicates

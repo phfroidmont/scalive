@@ -2534,6 +2534,223 @@ details[open] > summary .docs-disclosure-marker,
   margin-top: 1rem;
 }
 
+.docs-voting-components {
+  display: grid;
+  gap: 1rem;
+}
+
+.docs-vote-parent,
+.docs-vote-card {
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+}
+
+.docs-vote-parent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1rem 1.1rem 1rem 1.25rem;
+  border-left: 0.3rem solid var(--docs-accent);
+  background: var(--docs-surface-subtle);
+}
+
+.docs-vote-parent > div {
+  min-width: 0;
+}
+
+.docs-vote-kicker {
+  margin: 0 0 0.3rem;
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.docs-vote-parent [data-vote-status],
+.docs-vote-card h4,
+.docs-vote-description {
+  margin: 0;
+}
+
+.docs-vote-parent button,
+.docs-vote-card button {
+  min-height: 2.6rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.docs-vote-parent button,
+.docs-vote-card .docs-vote-primary {
+  border-color: var(--docs-action-bg);
+  background: var(--docs-action-bg);
+  color: var(--docs-action-text);
+}
+
+.docs-vote-parent button:hover,
+.docs-vote-card button:hover {
+  border-color: var(--docs-accent);
+  background: color-mix(in srgb, var(--docs-accent) 9%, var(--docs-surface));
+  color: var(--docs-accent-strong);
+}
+
+.docs-vote-parent button:active,
+.docs-vote-card button:active {
+  transform: translateY(1px);
+}
+
+.docs-vote-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.docs-vote-card {
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 1.15rem;
+}
+
+.docs-vote-card > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.docs-vote-card h4 {
+  font-size: 1.05rem;
+}
+
+.docs-vote-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+}
+
+.docs-vote-meta code,
+.docs-vote-meta span {
+  padding: 0.18rem 0.4rem;
+  border: 1px solid var(--docs-border);
+  border-radius: 999px;
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.docs-vote-meta code {
+  background: color-mix(in srgb, var(--docs-accent) 8%, var(--docs-surface));
+  color: var(--docs-accent-strong);
+}
+
+.docs-vote-meta span {
+  color: var(--docs-muted);
+}
+
+.docs-vote-description {
+  color: var(--docs-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.docs-vote-count-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.15rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--docs-border);
+}
+
+.docs-vote-metric {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.docs-vote-metric > span {
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.docs-vote-metric > strong {
+  color: var(--docs-accent-strong);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: clamp(2rem, 5vw, 2.6rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.docs-vote-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 0.5rem;
+}
+
+@media (max-width: 42rem) {
+  .docs-vote-parent,
+  .docs-vote-count-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .docs-vote-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-vote-parent button {
+    width: 100%;
+  }
+
+  .docs-vote-actions {
+    justify-content: start;
+  }
+}
+
+@media (max-width: 30rem) {
+  .docs-vote-card > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .docs-vote-meta {
+    display: flex;
+    justify-items: initial;
+    flex-wrap: wrap;
+  }
+
+  .docs-vote-actions > button {
+    flex: 1 1 7rem;
+  }
+}
+
 .docs-activity-summary {
   display: grid;
   grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 1.3fr);

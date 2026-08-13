@@ -79,6 +79,13 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): LiveComponentInstance[Props, Msg, Model] =
     LiveComponentInstance(liveComponent, id)
 
+  /** Creates a typed handle for an output-producing LiveComponent identity. */
+  def component[Props, Msg, Model, Output](
+    liveComponent: LiveComponent.WithOutput[Props, Msg, Model, Output],
+    id: String
+  ): LiveComponentOutputInstance[Props, Msg, Model, Output] =
+    LiveComponentOutputInstance(liveComponent, id)
+
   /** Renders a stateful LiveComponent with a string identity and typed props.
     *
     * Identity is the component's runtime class plus `id`, scoped to the owning LiveView socket. A
@@ -92,7 +99,18 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     id: String,
     props: Props
   ): Mod[Nothing] =
-    Mod.Content.LiveComponent(LiveComponentSpec(component, id, props))
+    Mod.Content.LiveComponent(LiveComponentSpec(component, id, props, None))
+
+  /** Renders an output-producing LiveComponent and maps its outputs into enclosing messages. */
+  def liveComponent[Props, Msg, Model, Output, OwnerMsg](
+    component: LiveComponent.WithOutput[Props, Msg, Model, Output],
+    id: String,
+    props: Props,
+    onOutput: Output => OwnerMsg
+  ): Mod[OwnerMsg] =
+    Mod.Content.LiveComponent(
+      LiveComponentSpec(component, id, props, Some(value => onOutput(value.asInstanceOf[Output])))
+    )
 
   /** Embeds an independently mounted LiveView inside the current LiveView.
     *

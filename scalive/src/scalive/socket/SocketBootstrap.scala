@@ -25,19 +25,20 @@ private[scalive] object SocketBootstrap:
     runtimeTrace: RuntimeTrace
   ): Task[RuntimeState[Msg, Model]] =
     for
-      inbox            <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
-      asyncQueue       <- Queue.unbounded[LiveAsyncCompletion]
-      outQueue         <- Queue.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
-      lifecycleLock    <- Semaphore.make(1)
-      uploadRef        <- Ref.make(UploadRuntimeState.empty)
-      streamRef        <- Ref.make(StreamRuntimeState.empty)
-      clientEventsRef  <- Ref.make(Vector.empty[Diff.Event])
-      flashRef         <- Ref.make(FlashRuntimeState(initialFlash))
-      asyncTasksRef    <- Ref.make(LiveAsyncRuntimeState.empty)
-      navigationRef    <- Ref.make(Option.empty[LiveNavigationCommand])
-      componentsRef    <- Ref.make(ComponentRuntimeState.empty)
-      subscriptionsRef <- SubscriptionRef.make(Map.empty[String, ZStream[Any, Nothing, Msg]])
-      hooksRef         <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
+      inbox      <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
+      asyncQueue <- Queue.unbounded[LiveAsyncCompletion]
+      componentOutputQueue <- Queue.unbounded[ComponentOutputMessage]
+      outQueue             <- Queue.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
+      lifecycleLock        <- Semaphore.make(1)
+      uploadRef            <- Ref.make(UploadRuntimeState.empty)
+      streamRef            <- Ref.make(StreamRuntimeState.empty)
+      clientEventsRef      <- Ref.make(Vector.empty[Diff.Event])
+      flashRef             <- Ref.make(FlashRuntimeState(initialFlash))
+      asyncTasksRef        <- Ref.make(LiveAsyncRuntimeState.empty)
+      navigationRef        <- Ref.make(Option.empty[LiveNavigationCommand])
+      componentsRef        <- Ref.make(ComponentRuntimeState.empty)
+      subscriptionsRef     <- SubscriptionRef.make(Map.empty[String, ZStream[Any, Nothing, Msg]])
+      hooksRef             <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
       runtimeCtx = ctx.copy(
                      connected = true,
                      uploads = new SocketUploadRuntime(uploadRef),
@@ -51,6 +52,7 @@ private[scalive] object SocketBootstrap:
                        LiveAsyncOwner.Root
                      ),
                      components = new SocketComponentUpdateRuntime(componentsRef),
+                     componentOutput = new SocketComponentOutputRuntime(componentOutputQueue),
                      subscriptions = new SocketSubscriptionRuntime[Msg](subscriptionsRef)
                        .asInstanceOf[SubscriptionRuntime[Any]],
                      hooks = new SocketLiveHookRuntime(hooksRef),
@@ -167,6 +169,7 @@ private[scalive] object SocketBootstrap:
       tokenConfig = tokenConfig,
       inbox = inbox,
       asyncQueue = asyncQueue,
+      componentOutputQueue = componentOutputQueue,
       outQueue = outQueue,
       lifecycleLock = lifecycleLock,
       ref = ref,

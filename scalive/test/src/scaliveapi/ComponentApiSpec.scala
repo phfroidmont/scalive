@@ -136,6 +136,86 @@ object ComponentApiSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.nonEmpty)
+    },
+    test("component outputs map into the owning LiveView message type") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum ParentMsg:
+          case CountChanged(value: Int)
+
+        object CounterComponent
+            extends LiveComponent.WithOutput[Unit, CounterComponent.Msg.type, Int, Int]:
+          object Msg
+
+          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(0)
+
+          def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+            (_: Msg.type) => ctx.emit(model + 1).as(model + 1)
+
+          def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) = div()
+
+        val counter = component(CounterComponent, "counter")
+        val rendered: Mod[ParentMsg] = counter.render((), ParentMsg.CountChanged.apply)
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("component outputs reject a mapper to another owner message type") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum ParentMsg:
+          case CountChanged(value: Int)
+
+        enum OtherMsg:
+          case CountChanged(value: Int)
+
+        object CounterComponent
+            extends LiveComponent.WithOutput[Unit, CounterComponent.Msg.type, Int, Int]:
+          object Msg
+
+          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(0)
+
+          def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+            (_: Msg.type) => ctx.emit(model + 1).as(model + 1)
+
+          def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) = div()
+
+        val counter = component(CounterComponent, "counter")
+        val rendered: Mod[ParentMsg] = counter.render((), OtherMsg.CountChanged.apply)
+      """)
+
+      assertTrue(errors.nonEmpty)
+    },
+    test("emitting components require an output mapper") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        object CounterComponent extends LiveComponent.WithOutput[Unit, Unit, Unit, Int]:
+          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
+            (_: Unit) => LiveIO.succeed(())
+          def render(props: Unit, model: Unit, self: ComponentRef[Unit]) = div()
+
+        val counter = component(CounterComponent, "counter")
+        val rendered = counter.render(())
+      """)
+
+      assertTrue(errors.nonEmpty)
+    },
+    test("component outputs are unavailable outside message handling") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        object CounterComponent extends LiveComponent.WithOutput[Unit, Unit, Unit, Int]:
+          def mount(props: Unit, ctx: MountContext) = ctx.emit(1).as(())
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
+            (_: Unit) => LiveIO.succeed(())
+          def render(props: Unit, model: Unit, self: ComponentRef[Unit]) = div()
+      """)
+
+      assertTrue(errors.nonEmpty)
     }
   )
 end ComponentApiSpec

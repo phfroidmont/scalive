@@ -441,7 +441,7 @@ support where it improves the lesson.
   retry, and cancellation controls.
 - [x] Migrate the typed profile form.
 - [x] Migrate the activity stream.
-- [ ] Migrate voting components with instance-scoped component IDs.
+- [x] Migrate voting components with instance-scoped component IDs.
 - [ ] Migrate browser interop with instance-scoped hook and DOM IDs.
 - [x] Migrate lifecycle, flash, title, and connection behavior.
 - [ ] Adapt navigation examples to real documentation routes and search
@@ -489,7 +489,7 @@ mill --ticker false documentation.check
 
 - [x] Write HTML DSL, attributes, bindings, and keyed rendering guides.
 - [x] Write typed forms and validation guides.
-- [ ] Write components and parent/component communication guides.
+- [x] Write components and parent/component communication guides.
 - [ ] Write JS commands, browser events, and hook integration guides.
 - [x] Write flash, title, and lifecycle UX guides.
 - [ ] Write services and ZLayer injection guides.

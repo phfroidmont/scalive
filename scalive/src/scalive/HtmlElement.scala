@@ -247,6 +247,23 @@ class HtmlAttrBinding(
       )
     )
 
+  /** Routes `message` to an output-producing component instance. */
+  def to[Props, Msg, Model, Output](
+    instance: LiveComponentOutputInstance[Props, Msg, Model, Output]
+  )(
+    message: Msg
+  ): Mod.Attr[Nothing] =
+    configured(
+      Mod.Attr.RoutedBinding(
+        name,
+        _ =>
+          ComponentInstanceMessage(
+            ComponentIdentity(instance.component.getClass, instance.id),
+            message
+          )
+      )
+    )
+
   /** Routes `message` to the component represented by `ref`.
     *
     * This emits both the event binding and `phx-target` with the component's current numeric ID. A
@@ -468,7 +485,7 @@ object Mod:
     case Component[Msg](cid: Int, el: HtmlElement[Msg]) extends Content[Msg]
 
     /** An unresolved stateful LiveComponent request produced by component rendering helpers. */
-    case LiveComponent(spec: LiveComponentSpec[?, ?, ?]) extends Content[Nothing]
+    case LiveComponent[Msg](spec: LiveComponentSpec[?, ?, ?, ?]) extends Content[Msg]
 
     /** An unresolved nested LiveView request produced by [[scalive.liveView]]. */
     case LiveView(spec: NestedLiveViewSpec[?, ?]) extends Content[Nothing]

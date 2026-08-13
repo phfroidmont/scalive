@@ -334,6 +334,46 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("records component output delivery as a separate server operation") {
+      enum ParentMsg:
+        case Changed(value: Int)
+
+      object OutputComponent extends LiveComponent.WithOutput[Unit, Unit, Int, Int]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+          (_: Unit) => ctx.emit(model + 1).as(model + 1)
+        def render(props: Unit, model: Int, self: ComponentRef[Unit]) =
+          button(on.click.to(self)(()), model.toString)
+
+      val instance = component(OutputComponent, "output-trace")
+      val componentView = new LiveView[ParentMsg, Int]:
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext) =
+          case ParentMsg.Changed(value) => ZIO.succeed(value)
+        def render(model: Int): HtmlElement[ParentMsg] =
+          div(instance.render((), ParentMsg.Changed.apply), p(model.toString))
+
+      ZIO.scoped {
+        for
+          records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
+          socket  <- startTraced(componentView, records)
+          queue   <- subscribe(socket)
+          _ <- socket.inbox.offer(
+                 event(2, Vector("root:div", "component:0:1"), attrIndex = 1, cid = Some(1))
+               )
+          _        <- queue.take
+          _        <- queue.take
+          captured  = records.iterator().asScala.toVector
+          operations = captured.groupBy(_.identity.operationSequence)
+          client = operations.values.find(_.exists(_.identity.operationKind == RuntimeTraceOperationKind.ClientEvent))
+          server = operations.values.find(_.exists(_.identity.operationKind == RuntimeTraceOperationKind.ServerMessage))
+        yield assertTrue(
+          client.exists(_.exists(_.stage == RuntimeTraceStage.TypedMessage)),
+          server.exists(_.exists(_.stage == RuntimeTraceStage.TypedMessage)),
+          server.exists(_.forall(_.identity.messageReference.isEmpty))
+        )
+      }
+    },
     test("records stream and title-only updates") {
       final case class User(id: Int, name: String)
       val users = LiveStreamDef.byId[User, Int]("trace-users")(_.id)

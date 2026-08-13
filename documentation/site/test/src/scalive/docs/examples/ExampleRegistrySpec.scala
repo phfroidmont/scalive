@@ -11,7 +11,8 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
       "activity-stream-behavior",
       "lifecycle-behavior",
       "profile-form-behavior",
-      "shopping-cart-behavior"
+      "shopping-cart-behavior",
+      "voting-components-behavior"
     )
 
   override def spec = suite("ExampleRegistrySpec")(
@@ -106,6 +107,15 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         projected.fields.contains("saved" -> "true"),
         !projected.toString.contains("secret@example.com"),
         !projected.toString.contains("Private biography")
+      )
+    },
+    test("projects component reports with stable application identity") {
+      val voting = ExampleRegistry.get("voting-components").get
+      assertTrue(
+        voting.resetMessage == VotingComponentsExample.Msg.Reset,
+        voting.projectMessage(VotingComponentsExample.Msg.ComponentReported("scala-vote", 2))
+          .exists(_.fields == Vector("componentId" -> "scala-vote", "votes" -> "2")),
+        voting.projectMessage(VoteComponent.Msg.Vote).isEmpty
       )
     }
   )

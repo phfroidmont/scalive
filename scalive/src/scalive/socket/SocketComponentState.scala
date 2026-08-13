@@ -10,7 +10,23 @@ final private[scalive] case class ComponentInstance(
   props: Any,
   parentProps: Any,
   model: Any,
-  hooks: LiveHookRuntimeState)
+  hooks: LiveHookRuntimeState,
+  outputMapper: Option[Any => Any],
+  outputOwner: ComponentOutputOwner)
+
+final private[scalive] class SocketComponentOutputRuntime(
+  queue: Queue[ComponentOutputMessage],
+  owner: ComponentOutputOwner = ComponentOutputOwner.Root,
+  mapper: Any => Any = identity)
+    extends ComponentOutputRuntime:
+  def emit(output: Any): LiveIO[Unit] =
+    ZIO
+      .attempt(mapper(output)).flatMap(value =>
+        queue.offer(ComponentOutputMessage(owner, value)).unit
+      )
+
+  def scoped(owner: ComponentOutputOwner, mapper: Any => Any): ComponentOutputRuntime =
+    SocketComponentOutputRuntime(queue, owner, mapper)
 
 final private[scalive] case class ComponentRuntimeState(
   instances: Map[ComponentIdentity, ComponentInstance],

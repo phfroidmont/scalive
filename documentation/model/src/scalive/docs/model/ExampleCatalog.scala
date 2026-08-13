@@ -74,6 +74,21 @@ object ExampleCatalog:
     )
   )
 
+  val VotingComponents = ExampleDescriptor(
+    id = "voting-components",
+    title = "Voting components",
+    description =
+      "Stable component instances isolate local votes while typed outputs report changes to their parent LiveView.",
+    topics = Vector("components", "typed outputs", "local state", "parent communication"),
+    aliases = Vector("LiveComponent", "ComponentRef", "sendUpdate", "emit", "WithOutput"),
+    resetDescription = "Reset both component models and the parent report state.",
+    source = ExampleSource(
+      path = "documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala",
+      region = "voting-components-example",
+      language = Some("scala")
+    )
+  )
+
   val entries: Vector[ExampleDescriptor] =
-    Vector(ActivityStream, Counter, Lifecycle, ProfileForm, ShoppingCart)
+    Vector(ActivityStream, Counter, Lifecycle, ProfileForm, ShoppingCart, VotingComponents)
 end ExampleCatalog

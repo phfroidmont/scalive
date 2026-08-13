@@ -163,7 +163,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
           symbols.find(_.qualifiedName == name)
             .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))
         ),
-        liveComponent.exists(_.signatures.size == 2),
+        liveComponent.exists(_.signatures.size == 3),
         liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
         mod.exists(_.signatures.exists(_.signature == "trait Mod[+Msg]")),
         liveRouteParamsBuilder.exists(_.signatures.exists(_.signature.startsWith(

@@ -26,7 +26,8 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
           "counter",
           "lifecycle",
           "profile-form",
-          "shopping-cart"
+          "shopping-cart",
+          "voting-components"
         )
         val counterSource = bundle.examples.find(_.descriptor.id == "counter").map(_.source.text)
         val hasShoppingCartSource = bundle.examples.exists(example =>

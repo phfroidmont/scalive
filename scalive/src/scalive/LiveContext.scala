@@ -282,6 +282,7 @@ trait ComponentMessageContext[Props, Msg, Model] extends LifecycleContext:
 
   /** Dynamic lifecycle hooks scoped to this component instance. */
   def hooks: ComponentHooks[Props, Msg, Model]
+  private[scalive] def emitOutput(output: Any): LiveIO[Unit]
 
 /** Capabilities available to a live component's after-render hooks.
   *
@@ -596,6 +597,12 @@ trait ComponentUpdates:
     props: Props
   ): LiveIO[Unit]
 
+  /** Queues `props` for an output-producing component instance. */
+  def sendUpdate[Props, Msg, Model, Output](
+    instance: LiveComponentOutputInstance[Props, Msg, Model, Output],
+    props: Props
+  ): LiveIO[Unit]
+
   /** Queues typed `props` for component type `C` and `id`.
     *
     * A runtime `ClassTag` for `C` supplies the component class used in the target identity.
@@ -852,6 +859,8 @@ final private[scalive] case class LiveContext(
   clientEvents: ClientEventRuntime = ClientEventRuntime.Disabled,
   navigation: LiveNavigationRuntime = LiveNavigationRuntime.Disabled,
   components: ComponentUpdateRuntime = ComponentUpdateRuntime.Disabled,
+  componentOutput: ComponentOutputRuntime = ComponentOutputRuntime.Disabled,
+  componentOutputOwner: ComponentOutputOwner = ComponentOutputOwner.Root,
   nestedLiveViews: NestedLiveViewRuntime = NestedLiveViewRuntime.Disabled,
   flash: FlashRuntime = FlashRuntime.Disabled,
   async: LiveAsyncRuntime = LiveAsyncRuntime.Disabled,
@@ -1020,6 +1029,12 @@ private[scalive] object LiveContext:
     ): LiveIO[Unit] =
       runtime.components.sendUpdate(instance.component.getClass, instance.id, props)
 
+    def sendUpdate[Props, Msg, Model, Output](
+      instance: LiveComponentOutputInstance[Props, Msg, Model, Output],
+      props: Props
+    ): LiveIO[Unit] =
+      runtime.components.sendUpdate(instance.component.getClass, instance.id, props)
+
     def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
       id: String,
       props: LiveComponent.PropsOf[C]
@@ -1104,14 +1119,16 @@ private[scalive] object LiveContext:
     protected val runtime: LiveContext)
       extends ComponentMessageContext[Props, Msg, Model]
       with RuntimeContextBase:
-    val nav: Navigation                          = RuntimeNavigation(runtime)
-    val flash: Flash                             = RuntimeFlash(runtime)
-    val uploads: Uploads                         = RuntimeUploads(runtime)
-    val streams: Streams                         = RuntimeStreams(runtime)
-    val async: Async[Msg]                        = RuntimeAsync(runtime)
-    val client: Client                           = RuntimeClient(runtime)
-    val components: ComponentUpdates             = RuntimeComponents(runtime)
-    val hooks: ComponentHooks[Props, Msg, Model] = RuntimeComponentHooks(runtime)
+    val nav: Navigation                                        = RuntimeNavigation(runtime)
+    val flash: Flash                                           = RuntimeFlash(runtime)
+    val uploads: Uploads                                       = RuntimeUploads(runtime)
+    val streams: Streams                                       = RuntimeStreams(runtime)
+    val async: Async[Msg]                                      = RuntimeAsync(runtime)
+    val client: Client                                         = RuntimeClient(runtime)
+    val components: ComponentUpdates                           = RuntimeComponents(runtime)
+    val hooks: ComponentHooks[Props, Msg, Model]               = RuntimeComponentHooks(runtime)
+    private[scalive] def emitOutput(output: Any): LiveIO[Unit] =
+      runtime.componentOutput.emit(output)
 
   final private[scalive] class RuntimeComponentAfterRenderContext[Props, Msg, Model](
     protected val runtime: LiveContext)

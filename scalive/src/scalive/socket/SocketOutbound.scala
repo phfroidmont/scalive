@@ -11,6 +11,7 @@ private[scalive] object SocketOutbound:
   private enum ServerEvent[+Msg]:
     case Message(value: Msg)
     case Async(value: LiveAsyncCompletion)
+    case ComponentOutput(value: ComponentOutputMessage)
 
   private enum MessageHookStage[+Msg]:
     case Info
@@ -22,8 +23,9 @@ private[scalive] object SocketOutbound:
     serverEventStream(state)
       .runForeach((event, meta) =>
         val kind = event match
-          case ServerEvent.Message(_) => RuntimeTraceOperationKind.ServerMessage
-          case ServerEvent.Async(_)   => RuntimeTraceOperationKind.AsyncCompletion
+          case ServerEvent.Message(_)         => RuntimeTraceOperationKind.ServerMessage
+          case ServerEvent.Async(_)           => RuntimeTraceOperationKind.AsyncCompletion
+          case ServerEvent.ComponentOutput(_) => RuntimeTraceOperationKind.ServerMessage
         val operation  = RuntimeTraceOperation.resolve(state.runtimeTrace, meta, kind)
         val tracedMeta = RuntimeTraceOperation.attach(meta, operation)
         handleServerEvent(event, tracedMeta, state).catchAllCause(cause =>
@@ -60,6 +62,7 @@ private[scalive] object SocketOutbound:
         SocketUploadRuntime.shutdown(state.uploadRef) *>
         state.inbox.shutdown *>
         state.asyncQueue.shutdown *>
+        state.componentOutputQueue.shutdown *>
         state.outQueue.shutdown *>
         clientFiber.interrupt.unit *>
         serverFiber.interrupt.unit
@@ -86,7 +89,17 @@ private[scalive] object SocketOutbound:
           traceOperation = RuntimeTraceOperation.Disabled
         )
       )
-    messages.merge(async)
+    val componentOutputs = ZStream
+      .fromQueue(state.componentOutputQueue)
+      .map(
+        ServerEvent.ComponentOutput(_) -> state.meta.copy(
+          messageRef = None,
+          eventType = "diff",
+          traceOperation = RuntimeTraceOperation.Disabled
+        )
+      )
+    messages.merge(async).merge(componentOutputs)
+  end serverEventStream
 
   private def handleServerEvent[Msg, Model](
     event: ServerEvent[Msg],
@@ -96,8 +109,30 @@ private[scalive] object SocketOutbound:
     state.lifecycleLock.withPermit {
       event match
         case ServerEvent.Message(msg) => handleServerMsg(msg, meta, state, MessageHookStage.Info)
-        case ServerEvent.Async(completion) => handleAsyncCompletion(completion, meta, state)
+        case ServerEvent.Async(completion)       => handleAsyncCompletion(completion, meta, state)
+        case ServerEvent.ComponentOutput(output) => handleComponentOutput(output, meta, state)
     }
+
+  private def handleComponentOutput[Msg, Model](
+    output: ComponentOutputMessage,
+    meta: WebSocketMessage.Meta,
+    state: RuntimeState[Msg, Model]
+  ): Task[Unit] =
+    output.owner match
+      case ComponentOutputOwner.Root =>
+        state.msgClassTag.unapply(output.value) match
+          case Some(msg) => handleServerMsg(msg, meta, state, MessageHookStage.Info)
+          case None      =>
+            ZIO.logWarning(
+              s"Ignoring component output ${output.value.getClass.getName}: expected ${state.msgClassTag.runtimeClass.getName}"
+            )
+      case ComponentOutputOwner.Component(cid) =>
+        for
+          (_, rendered) <- state.ref.get
+          _             <- SocketComponentRuntime
+                 .handleComponentServerMessage(cid, output.value, rendered, meta, state)
+                 .unit
+        yield ()
 
   private def handleServerMsg[Msg, Model](
     msg: Msg,

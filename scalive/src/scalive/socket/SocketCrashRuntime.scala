@@ -29,5 +29,6 @@ private[scalive] object SocketCrashRuntime:
             SocketUploadRuntime.shutdown(state.uploadRef) *>
             state.inbox.shutdown *>
             state.asyncQueue.shutdown *>
+            state.componentOutputQueue.shutdown *>
             state.onCrash
       }

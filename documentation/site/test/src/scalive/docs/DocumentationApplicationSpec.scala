@@ -318,7 +318,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 5,
+        document.select("[data-example-card]").size() == 6,
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
@@ -333,6 +333,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         ),
         document.select("a[href='/examples/activity-stream']").asScala.exists(
           _.text() == "Bounded activity stream"
+        ),
+        document.select("a[href='/examples/voting-components']").asScala.exists(
+          _.text() == "Voting components"
         ),
         document.select("a[data-example-topic-filter][href='/examples?topic=keyed-rendering']").size() == 1,
         filtered.response.status == Status.Ok,
@@ -383,16 +386,19 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         cart <- DisconnectedRender.run(routes, Request.get(url("/examples/shopping-cart")))
         lifecycle <- DisconnectedRender.run(routes, Request.get(url("/examples/lifecycle")))
         profile <- DisconnectedRender.run(routes, Request.get(url("/examples/profile-form")))
+        voting <- DisconnectedRender.run(routes, Request.get(url("/examples/voting-components")))
         counterDocument = Jsoup.parse(counter.html)
         cartDocument    = Jsoup.parse(cart.html)
         lifecycleDocument = Jsoup.parse(lifecycle.html)
         profileDocument   = Jsoup.parse(profile.html)
+        votingDocument    = Jsoup.parse(voting.html)
         counterExample  = counterDocument.selectFirst("#example-counter")
         cartExample     = cartDocument.selectFirst("#example-shopping-cart")
         counterNestedId = ExampleRegistry.instanceId("/examples/counter", "counter")
         cartNestedId    = ExampleRegistry.instanceId("/examples/shopping-cart", "shopping-cart")
         lifecycleNestedId = ExampleRegistry.instanceId("/examples/lifecycle", "lifecycle")
         profileNestedId = ExampleRegistry.instanceId("/examples/profile-form", "profile-form")
+        votingNestedId = ExampleRegistry.instanceId("/examples/voting-components", "voting-components")
       yield assertTrue(
         counter.response.status == Status.Ok,
         counterDocument.select(".docs-example").size() == 1,
@@ -419,7 +425,13 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         profileDocument.select("#example-profile-form").attr("data-example-child") == profileNestedId,
         profileDocument.select("[data-profile-form]").size() == 1,
         profileDocument.select("[data-field-error] .form-error").isEmpty,
-        profileDocument.select(".docs-code").text().contains("class ProfileFormExample")
+        profileDocument.select(".docs-code").text().contains("class ProfileFormExample"),
+        voting.response.status == Status.Ok,
+        votingDocument.select("#example-voting-components").attr("data-example-child") == votingNestedId,
+        votingDocument.select("[data-vote-component]").size() == 2,
+        votingDocument.select("[data-component-id]").size() == 2,
+        votingDocument.select("[data-props-revision]").size() == 2,
+        votingDocument.select(".docs-code").text().contains("class VotingComponentsExample")
       )
     },
     test("serves tracked assets and leaves unknown paths as real 404 responses") {

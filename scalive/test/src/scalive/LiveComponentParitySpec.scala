@@ -29,6 +29,39 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     case PushPatch
     case Redirect
 
+  private enum OutputParentMsg:
+    case ChildChanged(value: Int)
+
+  private object OutputComponent
+      extends LiveComponent.WithOutput[Unit, OutputComponent.Msg.type, Int, Int]:
+    object Msg
+
+    def mount(props: Unit, ctx: MountContext) =
+      ZIO.succeed(0)
+
+    def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+      (_: Msg.type) =>
+        val updated = model + 1
+        ctx.emit(updated).as(updated)
+
+    def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
+      button(scalive.on.click(Msg), phx.target(self), s"Child: $model")
+
+  private object ForwardingComponent
+      extends LiveComponent.WithOutput[Unit, ForwardingComponent.Msg, Unit, Int]:
+    enum Msg:
+      case ChildChanged(value: Int)
+
+    def mount(props: Unit, ctx: MountContext) = ZIO.unit
+
+    def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
+      case Msg.ChildChanged(value) => ctx.emit(value).as(model)
+
+    def render(props: Unit, model: Unit, self: ComponentRef[Msg]) =
+      div(NestedOutput.render((), Msg.ChildChanged.apply))
+
+  private val NestedOutput = component(OutputComponent, "nested-output")
+
   private object LabelComponent extends LiveComponent[String, Unit, String]:
     def mount(props: String, ctx: MountContext) =
       ZIO.succeed(props)
@@ -425,6 +458,66 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
                       case _ => false
                     }
       yield assertTrue(sent._2.topic == meta.topic, notReset._2.topic == meta.topic)
+    },
+    test("queues a typed component output for its owning LiveView") {
+      val child = component(OutputComponent, "output")
+      val parent = new LiveView[OutputParentMsg, Int]:
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext) =
+          case OutputParentMsg.ChildChanged(value) => ZIO.succeed(value)
+        def render(model: Int): HtmlElement[OutputParentMsg] =
+          div(
+            p(s"Parent: $model"),
+            child.render((), OutputParentMsg.ChildChanged.apply)
+          )
+
+      for
+        socket   <- start(parent)
+        outQueue <- subscribe(socket)
+        _ <- socket.inbox.offer(
+               click(Vector("root:div", "component:1:1"), attrIndex = 1, cid = Some(1)) -> meta
+             )
+        childReply <- outQueue.take
+        parentDiff <- outQueue.take
+      yield assertTrue(
+        childReply._1 match
+          case Payload.Reply(ReplyStatus.Ok, LiveResponse.Diff(diff)) =>
+            containsValue(diff, "Child: 1") && !containsValue(diff, "Parent: 1")
+          case _ => false,
+        parentDiff._1 match
+          case Payload.Diff(diff) => containsValue(diff, "Parent: 1")
+          case _                  => false,
+        childReply._2.messageRef == meta.messageRef,
+        parentDiff._2.messageRef.isEmpty
+      )
+    },
+    test("routes nested outputs through the immediate component owner") {
+      val forwarding = component(ForwardingComponent, "forwarding")
+      val parent = new LiveView[OutputParentMsg, Int]:
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext) =
+          case OutputParentMsg.ChildChanged(value) => ZIO.succeed(value)
+        def render(model: Int): HtmlElement[OutputParentMsg] =
+          div(
+            button(scalive.on.click.to(NestedOutput)(OutputComponent.Msg), "increment nested"),
+            p(s"Parent: $model"),
+            forwarding.render((), OutputParentMsg.ChildChanged.apply)
+          )
+
+      for
+        socket   <- start(parent)
+        outQueue <- subscribe(socket)
+        _ <- socket.inbox.offer(
+               click(Vector("root:div", "tag:0:button")) -> meta
+             )
+        childReply <- outQueue.take
+        parentDiff <- outQueue.take
+      yield assertTrue(
+        childReply._1.isInstanceOf[Payload.Reply],
+        parentDiff._1 match
+          case Payload.Diff(diff) => containsValue(diff, "Parent: 1")
+          case _                  => false
+      )
     },
     test("component pushNavigate emits live redirect") {
       val parent = new LiveView[Unit, Unit]:

@@ -208,8 +208,40 @@ private[docs] object ExampleRegistry:
       behaviorTestId = "profile-form-behavior"
     )
 
+  private val votingComponents =
+    new ExampleEntry[VotingComponentsExample.Msg, VotingComponentsExample.Model](
+      descriptor = ExampleCatalog.VotingComponents,
+      factory = () => new VotingComponentsExample,
+      reset = ExampleReset(VotingComponentsExample.Msg.Reset, "Reset voting components"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[VotingComponentsExample.Msg]:
+          def project(value: VotingComponentsExample.Msg) = value match
+            case VotingComponentsExample.Msg.ComponentReported(id, votes) =>
+              ExampleTraceValue(
+                "VotingComponentsExample.Msg",
+                "Component reported a vote count",
+                Vector("componentId" -> id, "votes" -> votes.toString)
+              )
+            case VotingComponentsExample.Msg.UpdateScalaProps =>
+              ExampleTraceValue("VotingComponentsExample.Msg", "Parent updated component props")
+            case VotingComponentsExample.Msg.Reset =>
+              ExampleTraceValue("VotingComponentsExample.Msg", "Reset voting components"),
+        model = new ExampleTraceProjector[VotingComponentsExample.Model]:
+          def project(value: VotingComponentsExample.Model) =
+            ExampleTraceValue(
+              "VotingComponentsExample.Model",
+              "Current parent component state",
+              Vector(
+                "scalaRevision" -> value.scalaRevision.toString,
+                "resetEpoch"    -> value.resetEpoch.toString
+              )
+            )
+      ),
+      behaviorTestId = "voting-components-behavior"
+    )
+
   val entries: Vector[RegisteredExample] =
-    Vector(activityStream, counter, lifecycle, profileForm, shoppingCart)
+    Vector(activityStream, counter, lifecycle, profileForm, shoppingCart, votingComponents)
 
   private val byId = entries.map(entry => entry.descriptor.id -> entry).toMap
 

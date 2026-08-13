@@ -47,11 +47,14 @@ private[docs] final class SiteLiveViewHarness[Msg, Model] private (
   private def dispatchClick(findElement: String => Element): Task[Unit] =
     for
       current <- html
-      binding <- ZIO.attempt {
+      target <- ZIO.attempt {
                    val element = findElement(current)
                    if !element.hasAttr("phx-click") then
                      throw new IllegalArgumentException("Element has no phx-click binding.")
-                   element.attr("phx-click")
+                   val cid = Option.when(element.hasAttr("phx-target"))(
+                     element.attr("phx-target").toInt
+                   )
+                   element.attr("phx-click") -> cid
                  }
       messageRef <- nextMessageRef.updateAndGet(_ + 1)
       meta = Meta(
@@ -62,7 +65,12 @@ private[docs] final class SiteLiveViewHarness[Msg, Model] private (
              )
       _ <- channel.event(
              topic,
-             Payload.Event(`type` = "click", event = binding, value = Json.Obj.empty),
+             Payload.Event(
+               `type` = "click",
+               event = target._1,
+               value = Json.Obj.empty,
+               cid = target._2
+             ),
              meta
            )
       _ <- takeOutput { case (payload, outputMeta) =>
@@ -153,11 +161,14 @@ private[docs] final class SiteNestedLiveViewHarness private (
   private def dispatchClick(findElement: String => Element): Task[Unit] =
     for
       current <- html
-      binding <- ZIO.attempt {
+      target <- ZIO.attempt {
                    val element = findElement(current)
                    if !element.hasAttr("phx-click") then
                      throw new IllegalArgumentException("Element has no phx-click binding.")
-                   element.attr("phx-click")
+                   val cid = Option.when(element.hasAttr("phx-target"))(
+                     element.attr("phx-target").toInt
+                   )
+                   element.attr("phx-click") -> cid
                  }
       messageRef <- nextMessageRef.updateAndGet(_ + 1)
       meta = Meta(
@@ -168,7 +179,12 @@ private[docs] final class SiteNestedLiveViewHarness private (
              )
       _ <- channel.event(
              topic,
-             Payload.Event(`type` = "click", event = binding, value = Json.Obj.empty),
+             Payload.Event(
+               `type` = "click",
+               event = target._1,
+               value = Json.Obj.empty,
+               cid = target._2
+             ),
              meta
            )
       _ <- outputQueue.take

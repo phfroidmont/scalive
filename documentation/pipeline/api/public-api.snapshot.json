@@ -350,6 +350,18 @@
       ]
     },
     {
+      "id" : "class:scalive.LiveComponentOutputInstance",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveComponentOutputInstance:340a47686da7b10f",
+          "signature" : "class LiveComponentOutputInstance[Props, Msg, Model, Output](component: LiveComponent.WithOutput[Props, Msg, Model, Output], id: String)"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.LiveEvent",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveEvent",
@@ -1423,6 +1435,10 @@
       "qualifiedName" : "scalive.ComponentUpdates.sendUpdate",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.ComponentUpdates.sendUpdate:2aa4e29c1fc37e82",
+          "signature" : "def sendUpdate[Props, Msg, Model, Output](instance: LiveComponentOutputInstance[Props, Msg, Model, Output], props: Props): LiveIO[Unit]"
+        },
         {
           "id" : "def:scalive.ComponentUpdates.sendUpdate:5dd9b4e60d6bbf8e",
           "signature" : "def sendUpdate[C <: LiveComponent[?, ?, ?]](id: String, props: LiveComponent.PropsOf[C])(using evidence$1: reflect.ClassTag[C]): LiveIO[Unit]"
@@ -3324,6 +3340,10 @@
           "signature" : "def to[Msg](ref: ComponentRef[Msg])(message: Msg): Mod.Attr[Msg]"
         },
         {
+          "id" : "def:scalive.HtmlAttrBinding.to:a0448c4d24867571",
+          "signature" : "def to[Props, Msg, Model, Output](instance: LiveComponentOutputInstance[Props, Msg, Model, Output])(message: Msg): Mod.Attr[Nothing]"
+        },
+        {
           "id" : "def:scalive.HtmlAttrBinding.to:c2437ffa95c5bb53",
           "signature" : "def to[Props, Msg, Model](instance: LiveComponentInstance[Props, Msg, Model])(message: Msg): Mod.Attr[Nothing]"
         }
@@ -3758,6 +3778,18 @@
         {
           "id" : "def:scalive.LiveComponentInstance.render:16ecea6756ec2b33",
           "signature" : "def render(props: Props): Mod[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveComponentOutputInstance.render",
+      "ownerId" : "class:scalive.LiveComponentOutputInstance",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance.render",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveComponentOutputInstance.render:10b3f1a441738db1",
+          "signature" : "def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
         }
       ]
     },
@@ -6618,6 +6650,10 @@
         {
           "id" : "def:scalive.component:11359d5e204cec9c",
           "signature" : "def component[Props, Msg, Model](liveComponent: LiveComponent[Props, Msg, Model], id: String): LiveComponentInstance[Props, Msg, Model]"
+        },
+        {
+          "id" : "def:scalive.component:2c94a7bfde3489af",
+          "signature" : "def component[Props, Msg, Model, Output](liveComponent: LiveComponent.WithOutput[Props, Msg, Model, Output], id: String): LiveComponentOutputInstance[Props, Msg, Model, Output]"
         }
       ]
     },
@@ -6834,6 +6870,10 @@
         {
           "id" : "def:scalive.liveComponent:52dfef577a6c2bcb",
           "signature" : "def liveComponent[Props, Msg, Model](component: LiveComponent[Props, Msg, Model], id: String, props: Props): Mod[Nothing]"
+        },
+        {
+          "id" : "def:scalive.liveComponent:6020e0664c715aca",
+          "signature" : "def liveComponent[Props, Msg, Model, Output, OwnerMsg](component: LiveComponent.WithOutput[Props, Msg, Model, Output], id: String, props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
         },
         {
           "id" : "def:scalive.liveComponent:de40dfefa58b9b09",
@@ -7596,8 +7636,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.Mod.Content.LiveComponent:f56fed88dfcfb9b9",
-          "signature" : "enum LiveComponent(spec: LiveComponentSpec[?, ?, ?]) extends Mod.Content[Nothing]"
+          "id" : "enum:scalive.Mod.Content.LiveComponent:68d84e58c756cc2c",
+          "signature" : "enum LiveComponent[Msg](spec: LiveComponentSpec[?, ?, ?, ?]) extends Mod.Content[Msg]"
         }
       ]
     },
@@ -8102,6 +8142,18 @@
         {
           "id" : "extension:scalive.JSCommands.transition:5033b3cf121de9cb",
           "signature" : "extension def transition[Msg](ops: JSCommands.JSCommand[Msg])(transition: |[String, Tuple3[String, String, String]] = ..., to: DomSelector = ..., time: Int = ..., blocking: Boolean = ...): JSCommands.JSCommand[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.LiveComponent.WithOutput.emit",
+      "ownerId" : "trait:scalive.LiveComponent.WithOutput",
+      "qualifiedName" : "scalive.LiveComponent.WithOutput.emit",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.LiveComponent.WithOutput.emit:a2d707e39d75c6a8",
+          "signature" : "extension def emit(ctx: MessageContext)(output: Output): LiveIO[Unit]"
         }
       ]
     },
@@ -12937,6 +12989,18 @@
       ]
     },
     {
+      "id" : "trait:scalive.LiveComponent.WithOutput",
+      "ownerId" : "object:scalive.LiveComponent",
+      "qualifiedName" : "scalive.LiveComponent.WithOutput",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LiveComponent.WithOutput:b17fc7fd4e91aa06",
+          "signature" : "trait WithOutput[Props, Msg, Model, Output] extends LiveComponent[Props, Msg, Model]"
+        }
+      ]
+    },
+    {
       "id" : "trait:scalive.LiveLayout",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveLayout",
@@ -14641,6 +14705,30 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveComponentOutputInstance.component",
+      "ownerId" : "class:scalive.LiveComponentOutputInstance",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance.component",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveComponentOutputInstance.component:b89fdfe9e08d2315",
+          "signature" : "val component: LiveComponent.WithOutput[Props, Msg, Model, Output]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveComponentOutputInstance.id",
+      "ownerId" : "class:scalive.LiveComponentOutputInstance",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance.id",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveComponentOutputInstance.id:dc2166db80555898",
+          "signature" : "val id: String"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveEvent.bindingId",
       "ownerId" : "class:scalive.LiveEvent",
       "qualifiedName" : "scalive.LiveEvent.bindingId",
@@ -15139,8 +15227,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.Mod.Content.LiveComponent.spec:573a2d0a6b94ac01",
-          "signature" : "val spec: LiveComponentSpec[?, ?, ?]"
+          "id" : "val:scalive.Mod.Content.LiveComponent.spec:1f0af40bdd3f7039",
+          "signature" : "val spec: LiveComponentSpec[?, ?, ?, ?]"
         }
       ]
     },

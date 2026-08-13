@@ -28,8 +28,9 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
                                "activity-stream",
                                "counter",
                                "lifecycle",
-                               "profile-form",
-                               "shopping-cart"
+                                "profile-form",
+                                "shopping-cart",
+                                "voting-components"
                              )
         searchMatchesBundle = search == bundle.map(_.searchEntries)
       yield assertTrue(

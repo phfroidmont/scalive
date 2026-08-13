@@ -140,6 +140,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   tokenConfig: TokenConfig,
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
   asyncQueue: Queue[LiveAsyncCompletion],
+  componentOutputQueue: Queue[ComponentOutputMessage],
   outQueue: Queue[(Payload, WebSocketMessage.Meta)],
   lifecycleLock: Semaphore,
   ref: Ref[(Model, RenderedView)],

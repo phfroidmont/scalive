@@ -204,8 +204,14 @@ private[scalive] object SocketComponentRuntime:
                               "Component lifecycle and handler started"
                             )
                        hooksRef <- Ref.make(instance.hooks)
-                       componentCtx = componentContext(state.ctx, cid, hooksRef)
-                       asyncEvent   = LiveAsyncEvent(AsyncKey[Any](name), result)
+                       componentCtx = componentContext(
+                                        state.ctx,
+                                        cid,
+                                        hooksRef,
+                                        instance.outputMapper,
+                                        instance.outputOwner
+                                      )
+                       asyncEvent = LiveAsyncEvent(AsyncKey[Any](name), result)
                        (result, navigation) <-
                          SocketModelRuntime.captureNavigation(state)(
                            componentCtx.hooks
@@ -298,7 +304,13 @@ private[scalive] object SocketComponentRuntime:
                               "Component lifecycle and handler started"
                             )
                        hooksRef <- Ref.make(instance.hooks)
-                       componentCtx = componentContext(state.ctx, cid, hooksRef)
+                       componentCtx = componentContext(
+                                        state.ctx,
+                                        cid,
+                                        hooksRef,
+                                        instance.outputMapper,
+                                        instance.outputOwner
+                                      )
                        (result, navigation) <-
                          SocketModelRuntime.captureNavigation(state)(
                            runComponentEventHooks(instance, message, event, componentCtx).flatMap {
@@ -515,7 +527,13 @@ private[scalive] object SocketComponentRuntime:
                    case Some(instance) =>
                      for
                        hooksRef <- Ref.make(instance.hooks)
-                       componentCtx = componentContext(state.ctx, cid, hooksRef)
+                       componentCtx = componentContext(
+                                        state.ctx,
+                                        cid,
+                                        hooksRef,
+                                        instance.outputMapper,
+                                        instance.outputOwner
+                                      )
                        (result, navigation) <-
                          SocketModelRuntime.captureNavigation(state)(
                            componentCtx.hooks.runComponentRawEvent(
@@ -634,11 +652,11 @@ private[scalive] object SocketComponentRuntime:
     )
 
   private def renderComponent(
-    spec: LiveComponentSpec[?, ?, ?],
+    spec: LiveComponentSpec[?, ?, ?, ?],
     cursor: ComponentCursor,
     ctx: LiveContext
   ): Task[Content.Component[Any]] =
-    val typed          = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any]]
+    val typed          = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any, Any]]
     val identity       = ComponentIdentity(typed.component.getClass, typed.id)
     val duplicated     = cursor.renderedIdentities.contains(identity)
     val existing       = cursor.state.instances.get(identity)
@@ -660,7 +678,9 @@ private[scalive] object SocketComponentRuntime:
         Ref.make(
           existing.map(_.hooks).getOrElse(LiveHookRuntimeState.component(typed.component.hooks))
         )
-      componentCtx = componentContext(ctx, cid, hooksRef)
+      outputOwner  = ctx.componentOutputOwner
+      outputMapper = typed.outputMapper.orElse(existing.flatMap(_.outputMapper))
+      componentCtx = componentContext(ctx, cid, hooksRef, outputMapper, outputOwner)
       model <- existing match
                  case Some(instance) => ZIO.succeed(instance.model)
                  case None           =>
@@ -690,7 +710,9 @@ private[scalive] object SocketComponentRuntime:
                    renderProps,
                    typed.props,
                    updatedModel,
-                   hooks
+                   hooks,
+                   outputMapper,
+                   outputOwner
                  )
       _ = cursor.state = cursor.state.copy(
             instances = cursor.state.instances.updated(identity, instance),
@@ -721,13 +743,19 @@ private[scalive] object SocketComponentRuntime:
   private def componentContext(
     ctx: LiveContext,
     cid: Int,
-    hooksRef: Ref[LiveHookRuntimeState]
+    hooksRef: Ref[LiveHookRuntimeState],
+    outputMapper: Option[Any => Any],
+    outputOwner: ComponentOutputOwner
   ): LiveContext =
     ctx.copy(
       uploads = SocketUploadRuntime.scoped(ctx.uploads, SocketStreamRuntime.componentScope(cid)),
       streams = SocketStreamRuntime.scoped(ctx.streams, SocketStreamRuntime.componentScope(cid)),
       async = SocketAsyncRuntime.scoped(ctx.async, LiveAsyncOwner.Component(cid)),
-      hooks = new ComponentLiveHookRuntime(hooksRef)
+      hooks = new ComponentLiveHookRuntime(hooksRef),
+      componentOutput = outputMapper.fold[ComponentOutputRuntime](ComponentOutputRuntime.Disabled)(
+        ctx.componentOutput.scoped(outputOwner, _)
+      ),
+      componentOutputOwner = ComponentOutputOwner.Component(cid)
     )
 
   private def eventReply[Msg, Model](

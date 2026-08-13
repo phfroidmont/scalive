@@ -325,8 +325,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
               Block.ApiSymbolRef(companion.id),
               Block.ApiSymbolRef(companionMember.id)
             ),
-            page.outline.items.map(_.id) == Vector("members"),
-            companionPage.outline.items.map(_.id) == Vector("members"),
+            page.outline.items.map(_.id) == Vector("methods"),
+            companionPage.outline.items.map(_.id) == Vector("methods"),
             page.outline.items.flatMap(_.children).forall(_.level == 3),
             scalive.title == "scalive",
             scalive.children.map(_.title) ==

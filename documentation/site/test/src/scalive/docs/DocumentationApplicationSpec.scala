@@ -231,6 +231,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         companionDocument = Jsoup.parse(companionRendered.html)
         liveViewTrait   = document.selectFirst("[data-api-symbol='trait:scalive.LiveView']")
         liveViewDeclaration = liveViewTrait.selectFirst(".docs-api-signature code")
+        firstMember = document.selectFirst(".docs-api-member-group [data-api-member]")
+        titleRow = document.selectFirst(".docs-api-title-row")
         renderedSources = document
                             .select("[data-api-symbol] a")
                             .asScala.toVector
@@ -247,6 +249,16 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         liveViewTrait != null,
         liveViewDeclaration.text() == "trait LiveView[Msg, Model]",
         liveViewDeclaration.select("span").size() > 1,
+        liveViewTrait.select(".docs-code-block").size() == 1,
+        liveViewTrait.select(".docs-code-toolbar, [data-code-copy]").isEmpty,
+        titleRow.children().first().hasClass("docs-api-title-kind-trait"),
+        titleRow.select("h1").text() == "LiveView",
+        document.select(".docs-api-qualified-name").isEmpty,
+        document.select(".docs-api-group-heading, .docs-api-kind").isEmpty,
+        firstMember.id().nonEmpty,
+        firstMember.select("h3.docs-visually-hidden").text().nonEmpty,
+        firstMember.select("pre.docs-api-member-signature code").size() >= 1,
+        firstMember.select(".docs-code-block, [data-code-copy]").isEmpty,
         liveViewTrait.text().contains(
           "A LiveView is mounted independently for the disconnected HTTP render"
         ),

@@ -810,10 +810,10 @@ object ContentPipeline:
       val description = owners
         .map(_.summary).find(summary => summary.nonEmpty && !isFallbackSummary(summary))
         .getOrElse(representative.summary)
-      val outline = memberGroups(owners, orderedMembers).map { case (id, title, groupedMembers) =>
+      val outline = ApiMemberCategory.group(orderedMembers).map { case (category, groupedMembers) =>
         OutlineItem(
-          id,
-          title,
+          category.id,
+          category.title,
           2,
           groupedMembers.flatMap { symbol =>
             symbol.fragment.map(fragment => OutlineItem(fragment, symbol.name, 3, Vector.empty))
@@ -857,25 +857,6 @@ object ContentPipeline:
       case ApiSymbolKind.TypeAlias | ApiSymbolKind.OpaqueType                                  => 2
       case _                                                                                   => 3
     (rank, symbol.name.toLowerCase, symbol.id)
-
-  private def memberGroups(
-    owners: Vector[ApiSymbol],
-    members: Vector[ApiSymbol]
-  ): Vector[(String, String, Vector[ApiSymbol])] =
-    val groups = owners.flatMap { owner =>
-      val owned = members.filter(_.ownerId.contains(owner.id))
-      Option.when(owned.nonEmpty) {
-        val companion =
-          owner.kind == ApiSymbolKind.Object && owners.exists(_.kind != ApiSymbolKind.Object)
-        val id    = if companion then "companion-members" else "members"
-        val title = if companion then "Companion members" else "Members"
-        (id, title, owned)
-      }
-    }
-    val groupedIds = groups.flatMap(_._3.map(_.id)).toSet
-    val remaining  = members.filterNot(member => groupedIds(member.id))
-    if remaining.isEmpty then groups
-    else groups :+ ("other-members", "Other members", remaining)
 
   private def isFallbackSummary(summary: String): Boolean =
     summary.startsWith("Public API for the `") ||
@@ -1260,6 +1241,7 @@ object ContentPipeline:
     def apiItem(page: Page): NavigationItem =
       val children = pagesByParent
         .getOrElse(page.route, Vector.empty)
+        .filter(navigationOwner)
         .sortBy(child => pageSymbol(child).map(navigationSortKey))
         .map(apiItem)
       NavigationItem(
@@ -1269,10 +1251,19 @@ object ContentPipeline:
         children
       )
 
+    def navigationOwner(page: Page): Boolean = pageSymbol(page).exists(symbol =>
+      symbol.kind match
+        case ApiSymbolKind.Package | ApiSymbolKind.Class | ApiSymbolKind.Trait |
+            ApiSymbolKind.Object | ApiSymbolKind.Enum =>
+          true
+        case _ => false
+    )
+
     navigationItem(
       root,
       pagesByParent
         .getOrElse(root.route, Vector.empty)
+        .filter(navigationOwner)
         .sortBy(page => pageSymbol(page).map(navigationSortKey))
         .map(apiItem)
     )

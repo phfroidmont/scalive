@@ -14,6 +14,7 @@ final private[docs] class DocumentationRenderer(
   private val metadata      = application.bundle.apiReference.metadata
   private val repositoryUrl = metadata.repositoryUrl.stripSuffix("/")
   private val ariaExpanded  = htmlAttr("aria-expanded", scalive.codecs.StringAsIsEncoder)
+  private val ariaLive      = htmlAttr("aria-live", scalive.codecs.StringAsIsEncoder)
   private val role          = htmlAttr("role", scalive.codecs.StringAsIsEncoder)
 
   def render(page: Page): HtmlElement[Nothing] =
@@ -41,30 +42,65 @@ final private[docs] class DocumentationRenderer(
     val primary = owners.headOption.getOrElse(
       throw new IllegalArgumentException(s"Generated API page has no owner: ${page.route}")
     )
-    val groups = apiMemberGroups(owners, members)
+    val groups = ApiMemberCategory.group(members)
 
     articleTag(
+      dom.hook("ApiMembers", DomRef("docs-api-members")),
       cls := "docs-content docs-prose docs-api-page",
       apiBreadcrumb(primary),
       div(
         cls := "docs-api-title-row",
-        h1(primary.name),
-        div(
-          cls := "docs-api-title-kinds",
-          owners.map(owner => span(cls := "docs-api-title-kind", apiKindName(owner.kind)))
-        )
+        span(
+          cls        := s"docs-api-title-kind docs-api-title-kind-${apiKindKey(primary.kind)}",
+          aria.label := apiKindName(primary.kind),
+          dataAttr("api-kind") := apiKindKey(primary.kind),
+          apiKindKey(primary.kind).take(1)
+        ),
+        h1(primary.name)
       ),
-      p(cls := "docs-api-qualified-name", primary.qualifiedName),
       companionReference(primary).map(Mod.Content.Tag(_)).toVector,
-      h2(cls := "docs-api-group-heading", "Declaration"),
-      renderApiSymbol(page.route, primary, None, 2),
-      groups.map { case (id, title, groupedMembers) =>
+      renderApiSymbol(page.route, primary, None),
+      Option
+        .when(groups.nonEmpty)(
+          Mod.Content.Tag(
+            div(
+              cls                          := "docs-api-member-tools",
+              hidden                       := true,
+              dataAttr("api-member-tools") := "",
+              label(forId := "docs-api-member-filter", "Find a member"),
+              input(
+                idAttr                        := "docs-api-member-filter",
+                typ                           := "search",
+                placeholder                   := "Filter names, signatures, or categories",
+                dataAttr("api-member-filter") := ""
+              ),
+              p(
+                cls                           := "docs-api-member-status",
+                ariaLive                      := "polite",
+                dataAttr("api-member-status") := ""
+              )
+            )
+          )
+        ).toVector,
+      groups.map { case (category, groupedMembers) =>
         Mod.Content.Tag(
           sectionTag(
-            cls    := "docs-api-member-group",
-            idAttr := id,
-            h2(title),
-            groupedMembers.map(member => renderApiSymbol(page.route, member, member.fragment, 3))
+            cls                             := "docs-api-member-group",
+            idAttr                          := category.id,
+            dataAttr("api-member-group")    := "",
+            dataAttr("api-member-category") := category.title.toLowerCase,
+            h2(
+              category.title,
+              span(cls := "docs-api-member-count", groupedMembers.size.toString)
+            ),
+            groupedMembers.map(member =>
+              renderApiSymbol(
+                page.route,
+                member,
+                member.fragment,
+                Some(category)
+              )
+            )
           )
         )
       },
@@ -99,24 +135,6 @@ final private[docs] class DocumentationRenderer(
       case ApiSymbolKind.Package    => 6
       case _                        => 7
     (rank, symbol.id)
-
-  private def apiMemberGroups(
-    owners: Vector[ApiSymbol],
-    members: Vector[ApiSymbol]
-  ): Vector[(String, String, Vector[ApiSymbol])] =
-    val groups = owners.flatMap { owner =>
-      val owned = members.filter(_.ownerId.contains(owner.id))
-      Option.when(owned.nonEmpty) {
-        val companion =
-          owner.kind == ApiSymbolKind.Object && owners.exists(_.kind != ApiSymbolKind.Object)
-        val id    = if companion then "companion-members" else "members"
-        val title = if companion then "Companion members" else "Members"
-        (id, title, owned)
-      }
-    }
-    val groupedIds = groups.flatMap(_._3.map(_.id)).toSet
-    val remaining  = members.filterNot(member => groupedIds(member.id))
-    if remaining.isEmpty then groups else groups :+ ("other-members", "Other members", remaining)
 
   private def companionReference(symbol: ApiSymbol): Option[HtmlElement[Nothing]] =
     val matchingOwners = application.bundle.apiReference.symbols.filter(candidate =>
@@ -277,7 +295,8 @@ final private[docs] class DocumentationRenderer(
     language: Option[String],
     text: String,
     tokens: Vector[CodeToken],
-    sourceRegion: Option[SourceRegion]
+    sourceRegion: Option[SourceRegion],
+    copyable: Boolean = true
   ): HtmlElement[Nothing] =
     val expandable = sourceRegion.nonEmpty && (text.linesIterator.size > 24 || text.length > 1600)
     figure(
@@ -285,39 +304,54 @@ final private[docs] class DocumentationRenderer(
       sourceRegion.map(region => dataAttr("source") := sourceLabel(region)).toVector,
       Option.when(expandable)(dataAttr("code-expandable") := "").toVector,
       sourceRegion.map(_ => Mod.Content.Tag(HtmlTag("figcaption")("Source"))).toVector,
-      div(
-        cls := "docs-code-toolbar",
-        span(cls := "docs-code-language", language.getOrElse("text")),
-        div(
-          cls := "docs-code-controls",
-          button(
-            typ                   := "button",
-            cls                   := "docs-code-control",
-            dataAttr("code-copy") := "",
-            hidden                := true,
-            "Copy"
-          ),
-          Option
-            .when(expandable)(
-              Mod.Content.Tag(
-                button(
-                  typ                     := "button",
-                  cls                     := "docs-code-control",
-                  dataAttr("code-expand") := "",
-                  ariaExpanded            := "true",
-                  hidden                  := true,
-                  "Collapse"
-                )
+      Option
+        .when(copyable || expandable)(
+          Mod.Content.Tag(
+            div(
+              cls := "docs-code-toolbar",
+              span(cls := "docs-code-language", language.getOrElse("text")),
+              div(
+                cls := "docs-code-controls",
+                Option
+                  .when(copyable)(
+                    Mod.Content.Tag(
+                      button(
+                        typ                   := "button",
+                        cls                   := "docs-code-control",
+                        dataAttr("code-copy") := "",
+                        hidden                := true,
+                        "Copy"
+                      )
+                    )
+                  ).toVector,
+                Option
+                  .when(expandable)(
+                    Mod.Content.Tag(
+                      button(
+                        typ                     := "button",
+                        cls                     := "docs-code-control",
+                        dataAttr("code-expand") := "",
+                        ariaExpanded            := "true",
+                        hidden                  := true,
+                        "Collapse"
+                      )
+                    )
+                  ).toVector,
+                Option
+                  .when(copyable)(
+                    Mod.Content.Tag(
+                      span(
+                        cls                     := "docs-visually-hidden",
+                        dataAttr("code-status") := "",
+                        role                    := "status",
+                        aria.live               := "polite"
+                      )
+                    )
+                  ).toVector
               )
-            ).toVector,
-          span(
-            cls                     := "docs-visually-hidden",
-            dataAttr("code-status") := "",
-            role                    := "status",
-            aria.live               := "polite"
+            )
           )
-        )
-      ),
+        ).toVector,
       pre(
         cls := "docs-code",
         code(dataAttr("language") := language.getOrElse("text"), renderCode(text, tokens))
@@ -347,24 +381,27 @@ final private[docs] class DocumentationRenderer(
     pageRoute: String,
     symbol: ApiSymbol,
     fragment: Option[String],
-    headingLevel: Int
+    category: Option[ApiMemberCategory] = None
   ): HtmlElement[Nothing] =
-    val heading = fragment.map { value =>
-      Mod.Content.Tag(
-        if headingLevel == 3 then h3(idAttr := value, symbol.name)
-        else h2(idAttr                      := value, symbol.name)
-      )
-    }.toVector
     val hasDocumentation = symbol.signatures.exists(_.documentation.nonEmpty)
     val showSummary      = !hasDocumentation && !isFallbackSummary(symbol.summary)
     sectionTag(
       cls                    := "docs-api-symbol",
       dataAttr("api-symbol") := symbol.id,
-      heading,
-      p(cls := "docs-api-kind", apiKindName(symbol.kind)),
-      Option.when(showSummary)(Mod.Content.Tag(p(symbol.summary))).toVector,
-      symbol.signatures.map(renderApiSignature(pageRoute, _))
+      fragment.map(idAttr := _).toVector,
+      category.map(value => dataAttr("api-member") := apiMemberSearchText(symbol, value)).toVector,
+      fragment.map(_ => Mod.Content.Tag(h3(cls := "docs-visually-hidden", symbol.name))).toVector,
+      symbol.signatures.map(renderApiSignature(pageRoute, _, member = category.nonEmpty)),
+      Option
+        .when(showSummary)(Mod.Content.Tag(p(cls := "docs-api-summary", symbol.summary))).toVector
     )
+
+  private def apiMemberSearchText(symbol: ApiSymbol, category: ApiMemberCategory): String =
+    (Vector(symbol.name, symbol.qualifiedName, apiKindName(symbol.kind), category.title) ++
+      symbol.signatures.flatMap(signature =>
+        Vector(signature.signature, signature.origin.qualifiedName)
+      ))
+      .mkString(" ").toLowerCase
 
   private def isFallbackSummary(summary: String): Boolean =
     summary.startsWith("Public API for the `") ||
@@ -373,12 +410,18 @@ final private[docs] class DocumentationRenderer(
 
   private def renderApiSignature(
     pageRoute: String,
-    signature: ApiSignature
+    signature: ApiSignature,
+    member: Boolean
   ): HtmlElement[Nothing] =
     val source = metadata.sourceLink(signature.source)
     div(
       cls := "docs-api-signature",
-      codeBlock(Some("scala"), signature.signature, signature.tokens, None),
+      if member then
+        pre(
+          cls := "docs-code docs-api-member-signature",
+          code(dataAttr("language") := "scala", renderCode(signature.signature, signature.tokens))
+        )
+      else codeBlock(Some("scala"), signature.signature, signature.tokens, None, copyable = false),
       signature.documentation
         .map(documentation => Mod.Content.Tag(renderApiDocumentation(pageRoute, documentation)))
         .toVector,
@@ -557,6 +600,21 @@ final private[docs] class DocumentationRenderer(
     case ApiSymbolKind.LazyVal    => "Lazy value"
     case ApiSymbolKind.Var        => "Variable"
     case ApiSymbolKind.Given      => "Given"
+
+  private def apiKindKey(kind: ApiSymbolKind): String = kind match
+    case ApiSymbolKind.Package    => "package"
+    case ApiSymbolKind.Class      => "class"
+    case ApiSymbolKind.Trait      => "trait"
+    case ApiSymbolKind.Object     => "object"
+    case ApiSymbolKind.Enum       => "enum"
+    case ApiSymbolKind.OpaqueType => "opaque-type"
+    case ApiSymbolKind.TypeAlias  => "type-alias"
+    case ApiSymbolKind.Def        => "method"
+    case ApiSymbolKind.Extension  => "extension"
+    case ApiSymbolKind.Val        => "value"
+    case ApiSymbolKind.LazyVal    => "lazy-value"
+    case ApiSymbolKind.Var        => "variable"
+    case ApiSymbolKind.Given      => "given"
 
   private def calloutName(kind: CalloutKind): String = kind match
     case CalloutKind.Info    => "info"

@@ -121,7 +121,179 @@ test("hides the API tree and keeps the outline before mobile content", async ({ 
     .toBeLessThan(await main.evaluate((element) => element.getBoundingClientRect().top))
 
   await outline.locator(":scope > summary").click()
-  await expect(outline.getByRole("link", { name: "Members", exact: true })).toBeVisible()
+  await expect(outline.getByRole("link", { name: "Methods", exact: true })).toBeVisible()
+})
+
+test("organizes API package members without duplicating them in side navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/api/scalive")
+
+  const navigation = page.locator(".docs-api-navigation")
+  const outline = page.locator(".docs-outline")
+  const pageContent = page.locator(".docs-api-page")
+  await expect(navigation.getByText("Packages and types", { exact: true })).toBeVisible()
+  await expect(navigation.locator("[data-api-nav-filter]"))
+    .toHaveAttribute("placeholder", "Filter packages and types")
+  await expect(navigation.getByRole("link", { name: "rawHtml", exact: true })).toHaveCount(0)
+  expect(await navigation.locator("[data-api-kind]").evaluateAll((badges) =>
+    [...new Set(badges.map((badge) => badge.dataset.apiKind))].sort()
+  )).toEqual(["class", "enum", "object", "package", "trait"])
+  const titleRow = pageContent.locator(".docs-api-title-row")
+  await expect(titleRow.locator(".docs-api-title-kind")).toHaveText("p")
+  await expect(titleRow.locator(".docs-api-title-kind"))
+    .toHaveAttribute("aria-label", "Package")
+  await expect(titleRow.locator(".docs-api-title-kind + h1")).toHaveText("scalive")
+  await expect(pageContent.locator(".docs-api-qualified-name")).toHaveCount(0)
+  const titleBadgeLayout = await pageContent.evaluate((element) => {
+    const treeBadge = document.querySelector(".docs-api-nav-kind-package")
+    const titleBadge = element.querySelector(".docs-api-title-kind-package")
+    const heading = element.querySelector(".docs-api-title-row h1")
+    const treeStyle = getComputedStyle(treeBadge)
+    const titleStyle = getComputedStyle(titleBadge)
+    const titleBounds = titleBadge.getBoundingClientRect()
+    const headingBounds = heading.getBoundingClientRect()
+    return {
+      backgroundMatches: titleStyle.backgroundColor === treeStyle.backgroundColor,
+      colorMatches: titleStyle.color === treeStyle.color,
+      centerDifference: Math.abs(
+        titleBounds.top + titleBounds.height / 2 - (headingBounds.top + headingBounds.height / 2)
+      ),
+      headingMarginTop: getComputedStyle(heading).marginTop,
+      headingMarginBottom: getComputedStyle(heading).marginBottom,
+    }
+  })
+  expect(titleBadgeLayout.backgroundMatches).toBe(true)
+  expect(titleBadgeLayout.colorMatches).toBe(true)
+  expect(titleBadgeLayout.centerDifference).toBeLessThanOrEqual(1)
+  expect(titleBadgeLayout.headingMarginTop).toBe("0px")
+  expect(titleBadgeLayout.headingMarginBottom).toBe("0px")
+
+  await expect(pageContent.locator("#html-elements")).toBeVisible()
+  await expect(pageContent.locator("#html-attributes")).toBeVisible()
+  await expect(outline.getByRole("link", { name: "HTML elements", exact: true })).toBeVisible()
+  await expect(outline.getByRole("link", { name: "HTML attributes", exact: true })).toBeVisible()
+  await expect(outline.getByRole("link", { name: "div", exact: true })).toHaveCount(0)
+
+  const categoryHeading = pageContent.locator("#core-api > h2")
+  expect(await categoryHeading.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return [style.borderTopWidth, style.borderBottomWidth]
+  })).toEqual(["0px", "0px"])
+
+  const simpleMember = pageContent.locator('[data-api-symbol="def:scalive.rawHtml"]')
+  await expect(simpleMember.locator("h3.docs-visually-hidden")).toHaveText("rawHtml")
+  await expect(simpleMember.locator(".docs-api-kind")).toHaveCount(0)
+  const signatureLayout = await simpleMember.locator(".docs-api-signature").first().evaluate((element) => {
+    return {
+      height: element.getBoundingClientRect().height,
+      background: getComputedStyle(element.querySelector("pre")).backgroundColor,
+    }
+  })
+  expect(signatureLayout.height).toBeLessThan(110)
+  expect(signatureLayout.background).toBe("rgba(0, 0, 0, 0)")
+  await expect(simpleMember.locator(".docs-code-block, [data-code-copy]")).toHaveCount(0)
+  const syntaxColors = await simpleMember.locator(".docs-api-member-signature").evaluate((element) => ({
+    keyword: getComputedStyle(element.querySelector(".keyword")).color,
+    text: getComputedStyle(element).color,
+    type: getComputedStyle(element.querySelector(".type-name")).color,
+    signatureLeft: element.querySelector("code").getBoundingClientRect().left,
+    sourceLeft: element.parentElement.querySelector(".docs-api-source").getBoundingClientRect().left,
+  }))
+  expect(syntaxColors.keyword).not.toBe(syntaxColors.text)
+  expect(syntaxColors.type).not.toBe(syntaxColors.text)
+  expect(Math.abs(syntaxColors.signatureLeft - syntaxColors.sourceLeft)).toBeLessThanOrEqual(0.5)
+
+  const filter = pageContent.locator("[data-api-member-filter]")
+  await expect(filter).toBeVisible()
+  await filter.fill("rawHtml")
+  await expect(pageContent.locator('[data-api-symbol="def:scalive.rawHtml"]')).toBeVisible()
+  await expect(pageContent.locator("[data-api-member]:visible")).toHaveCount(1)
+  await expect(pageContent.locator("[data-api-member-status]")).toHaveText("1 member")
+  await expect(pageContent.locator("#html-elements")).toBeHidden()
+  await expect(outline.getByRole("link", { name: "HTML elements", exact: true })).toBeHidden()
+
+  await filter.fill("html elements")
+  await expect(pageContent.locator("#html-elements")).toBeVisible()
+  await expect(pageContent.locator("#html-attributes")).toBeHidden()
+  await expect(outline.getByRole("link", { name: "HTML elements", exact: true })).toBeVisible()
+})
+
+test("keeps every categorized API member visible without JavaScript", async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false })
+  const page = await context.newPage()
+  await page.goto("http://127.0.0.1:4005/api/scalive")
+
+  await expect(page.locator("[data-api-member-tools]")).toBeHidden()
+  const rawHtml = page.locator('[data-api-symbol="def:scalive.rawHtml"]')
+  await expect(rawHtml).toBeVisible()
+  await expect(rawHtml.locator("pre.docs-api-member-signature code")).toBeVisible()
+  await expect(rawHtml.getByRole("link", { name: "View source" })).toBeVisible()
+  await expect(rawHtml.locator(".docs-code-block, [data-code-copy]")).toHaveCount(0)
+  await expect(page.locator("#html-elements [data-api-member]").first()).toBeVisible()
+  await context.close()
+})
+
+test("wraps long API member signatures without breaking words", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/api/scalive")
+
+  const signatures = page.locator(".docs-api-member-signature")
+  const longest = signatures.filter({ hasText: "liveComponent" }).first()
+  await expect(longest).toBeVisible()
+  const layout = await longest.evaluate((element) => {
+    const code = element.querySelector("code")
+    const style = getComputedStyle(code)
+    return {
+      lineHeight: Number.parseFloat(style.lineHeight),
+      height: code.getBoundingClientRect().height,
+      overflow: element.scrollWidth - element.clientWidth,
+      whiteSpace: style.whiteSpace,
+      overflowWrap: style.overflowWrap,
+      wordBreak: style.wordBreak,
+      keyword: getComputedStyle(code.querySelector(".keyword")).color,
+      text: getComputedStyle(code).color,
+      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }
+  })
+  expect(layout.whiteSpace).toBe("pre-wrap")
+  expect(layout.overflowWrap).toBe("normal")
+  expect(layout.wordBreak).toBe("normal")
+  expect(layout.height).toBeGreaterThan(layout.lineHeight * 1.5)
+  expect(layout.overflow).toBeLessThanOrEqual(1)
+  expect(layout.documentOverflow).toBeLessThanOrEqual(1)
+  expect(layout.keyword).not.toBe(layout.text)
+})
+
+test("wraps the API owner declaration without copy controls", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/api/scalive")
+
+  const declaration = page.locator(".docs-api-page > .docs-api-symbol .docs-code-block")
+  await expect(declaration).toBeVisible()
+  await expect(declaration.locator(".docs-code-toolbar, [data-code-copy]")).toHaveCount(0)
+  const layout = await declaration.evaluate((element) => {
+    const pre = element.querySelector("pre")
+    const code = element.querySelector("code")
+    const style = getComputedStyle(code)
+    return {
+      lineHeight: Number.parseFloat(getComputedStyle(pre).lineHeight),
+      height: code.getBoundingClientRect().height,
+      overflow: pre.scrollWidth - pre.clientWidth,
+      whiteSpace: style.whiteSpace,
+      overflowWrap: style.overflowWrap,
+      wordBreak: style.wordBreak,
+      keyword: getComputedStyle(code.querySelector(".keyword")).color,
+      text: getComputedStyle(code).color,
+      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }
+  })
+  expect(layout.whiteSpace).toBe("pre-wrap")
+  expect(layout.overflowWrap).toBe("normal")
+  expect(layout.wordBreak).toBe("normal")
+  expect(layout.height).toBeGreaterThan(layout.lineHeight * 1.5)
+  expect(layout.overflow).toBeLessThanOrEqual(1)
+  expect(layout.documentOverflow).toBeLessThanOrEqual(1)
+  expect(layout.keyword).not.toBe(layout.text)
 })
 
 test("shows a flat Learn path on desktop and hides it on smaller screens", async ({ page }) => {
@@ -185,37 +357,61 @@ test("shows sibling companion entries without tree guide lines", async ({ page }
 
   const navigation = page.locator(".docs-section-nav")
   const current = navigation.locator('[aria-current="page"]')
-  const liveViewLinks = navigation.getByRole("link", { name: "LiveView", exact: true })
+  const packageChildren = navigation.locator('[data-api-nav-item="scalive"] > details > ul > li')
+  const liveViewLabels = packageChildren.locator(
+    ":scope > details > summary .docs-api-nav-label, :scope > .docs-nav-leaf .docs-api-nav-label"
+  ).filter({ hasText: /^LiveView$/ })
   await expect.poll(async () => navigation.evaluate((element) => element.getBoundingClientRect().width))
-    .toBeGreaterThanOrEqual(272)
+    .toBeGreaterThanOrEqual(288)
   await expect(navigation.locator("nav > ul > li")).toHaveAttribute("data-api-nav-item", "scalive")
   await expect(navigation.locator('[data-api-nav-item="api"]')).toHaveCount(0)
-  await expect(current).toHaveText("LiveView")
-  await expect(liveViewLinks).toHaveCount(2)
+  await expect(current.locator(".docs-api-nav-label")).toHaveText("LiveView")
+  await expect(liveViewLabels).toHaveCount(2)
   await expect(navigation.locator('a[href="/api/scalive/live-view/companion"]')).toBeVisible()
   await expect(page.getByText("Browse API", { exact: true })).toHaveCount(0)
   await expect(navigation.locator(".docs-tree-marker").first()).toHaveText("")
   expect(await navigation.evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe("0px")
   expect(await navigation.locator("details > ul").first()
     .evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe("0px")
-  const liveViewLefts = await liveViewLinks.evaluateAll((links) =>
-    links.map((link) => link.getBoundingClientRect().left)
+  const entryLefts = await navigation.locator(
+    '[data-api-nav-item="scalive"] > details > summary, [data-api-nav-item="afterrendercontext"] > .docs-api-nav-entry'
+  ).evaluateAll((entries) => entries.map((entry) => entry.getBoundingClientRect().left))
+  expect(Math.max(...entryLefts) - Math.min(...entryLefts)).toBeLessThanOrEqual(0.5)
+  const liveViewLefts = await liveViewLabels.evaluateAll((labels) =>
+    labels.map((label) => label.getBoundingClientRect().left)
   )
   expect(Math.max(...liveViewLefts) - Math.min(...liveViewLefts)).toBeLessThanOrEqual(0.5)
-  const siblingNames = await navigation.locator('[data-api-nav-item="scalive"]')
-    .evaluate((item) => [...item.querySelectorAll(":scope > details > ul > li")].map((child) => {
-      const row = child.querySelector(":scope > details > summary .docs-nav-row, :scope > .docs-nav-leaf .docs-nav-row")
-      return row.querySelector("a").textContent
-    }))
-  const sortedNames = [...siblingNames].sort((left, right) =>
-    left.toLowerCase().localeCompare(right.toLowerCase())
-  )
-  expect(siblingNames).toEqual(sortedNames)
+  await expect(current.locator("[data-api-kind]")).toBeVisible()
+  await expect(current.locator(".docs-api-nav-label")).toHaveText("LiveView")
   await expect.poll(async () => current.evaluate((element) => {
     const bounds = element.getBoundingClientRect()
     const container = element.closest(".docs-section-nav").getBoundingClientRect()
     return bounds.top >= container.top && bounds.bottom <= container.bottom
   })).toBe(true)
+
+  const packageEntry = navigation.locator('[data-api-nav-item="scalive"] > details > summary')
+  const packageDetails = packageEntry.locator("..")
+  const initialUrl = page.url()
+  await packageEntry.click({ position: { x: 8, y: 14 } })
+  await expect(packageDetails).not.toHaveAttribute("open")
+  expect(page.url()).toBe(initialUrl)
+  await packageEntry.click({ position: { x: 8, y: 14 } })
+  await expect(packageDetails).toHaveAttribute("open", "")
+
+  const leafEntry = navigation.locator('[data-api-nav-item="afterrendercontext"] > .docs-api-nav-entry')
+  const restingBackground = await leafEntry.evaluate((entry) => getComputedStyle(entry).backgroundColor)
+  await leafEntry.hover()
+  await expect.poll(() => leafEntry.evaluate((entry) => getComputedStyle(entry).backgroundColor))
+    .not.toBe(restingBackground)
+  const siblingNames = await navigation.locator('[data-api-nav-item="scalive"]')
+    .evaluate((item) => [...item.querySelectorAll(":scope > details > ul > li")].map((child) => {
+      const row = child.querySelector(":scope > details > summary .docs-nav-row, :scope > .docs-nav-leaf .docs-nav-row")
+      return row.querySelector(".docs-api-nav-label").textContent
+    }))
+  const sortedNames = [...siblingNames].sort((left, right) =>
+    left.toLowerCase().localeCompare(right.toLowerCase())
+  )
+  expect(siblingNames).toEqual(sortedNames)
 
   await page.goto("/search?q=scalive.LiveView")
   await expect(page.locator('.docs-search-results a[href="/api/scalive/live-view"]')).toHaveCount(1)
@@ -257,7 +453,7 @@ test("copies exact code and expands the same long source block", async ({ contex
   await expect(block.locator(".docs-code > code")).toHaveCount(1)
 
   await page.goto("/api/scalive/live-view")
-  await expect(page.locator(".docs-api-signature [data-code-copy]").first()).toBeVisible()
+  await expect(page.locator(".docs-api-page [data-code-copy]")).toHaveCount(0)
 })
 
 test("keeps complete code visible without JavaScript", async ({ browser }) => {

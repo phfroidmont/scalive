@@ -127,7 +127,7 @@ object ApiReferencePipeline:
           case term: TermSymbol if eligibleTerm(term) =>
             addTerm(term, packageName, packageId, exposure(term), pageOwner = false)
           case member: TypeMemberSymbol if eligible(member) =>
-            addType(member, packageName, packageId, exposure(member), pageOwner = true)
+            addType(member, packageName, packageId, exposure(member), pageOwner = false)
           case _ => ()
         }
 

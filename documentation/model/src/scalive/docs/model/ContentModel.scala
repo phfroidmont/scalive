@@ -370,6 +370,64 @@ object ApiSymbolKind:
   )
 end ApiSymbolKind
 
+enum ApiMemberCategory(val id: String, val title: String):
+  case Types          extends ApiMemberCategory("types", "Types")
+  case CoreApi        extends ApiMemberCategory("core-api", "Core API")
+  case Components     extends ApiMemberCategory("components", "Components")
+  case Streams        extends ApiMemberCategory("streams", "Streams")
+  case Uploads        extends ApiMemberCategory("uploads", "Uploads")
+  case HtmlElements   extends ApiMemberCategory("html-elements", "HTML elements")
+  case HtmlAttributes extends ApiMemberCategory("html-attributes", "HTML attributes")
+  case DomHelpers     extends ApiMemberCategory("dom-helpers", "DOM helpers")
+  case Extensions     extends ApiMemberCategory("extensions", "Extension methods")
+  case Methods        extends ApiMemberCategory("methods", "Methods")
+  case Values         extends ApiMemberCategory("values", "Values")
+  case Givens         extends ApiMemberCategory("givens", "Givens")
+
+object ApiMemberCategory:
+  def group(members: Vector[ApiSymbol]): Vector[(ApiMemberCategory, Vector[ApiSymbol])] =
+    val rootPackage = members.exists(_.ownerId.contains("package:scalive"))
+    members
+      .groupBy(categoryFor).toVector.sortBy { case (category, _) =>
+        if rootPackage then rootPackageRank(category) else category.ordinal
+      }
+      .map { case (category, symbols) => category -> symbols }
+
+  private def rootPackageRank(category: ApiMemberCategory): Int = category match
+    case ApiMemberCategory.CoreApi        => 0
+    case ApiMemberCategory.Components     => 1
+    case ApiMemberCategory.Streams        => 2
+    case ApiMemberCategory.Uploads        => 3
+    case ApiMemberCategory.HtmlElements   => 4
+    case ApiMemberCategory.HtmlAttributes => 5
+    case ApiMemberCategory.DomHelpers     => 6
+    case ApiMemberCategory.Types          => 7
+    case _                                => category.ordinal + 8
+
+  private def categoryFor(symbol: ApiSymbol): ApiMemberCategory =
+    if symbol.kind == ApiSymbolKind.TypeAlias || symbol.kind == ApiSymbolKind.OpaqueType then
+      ApiMemberCategory.Types
+    else if symbol.ownerId.contains("package:scalive") then rootPackageCategory(symbol)
+    else
+      symbol.kind match
+        case ApiSymbolKind.Extension => ApiMemberCategory.Extensions
+        case ApiSymbolKind.Def       => ApiMemberCategory.Methods
+        case ApiSymbolKind.Given     => ApiMemberCategory.Givens
+        case _                       => ApiMemberCategory.Values
+
+  private def rootPackageCategory(symbol: ApiSymbol): ApiMemberCategory =
+    val origins = symbol.signatures.map(_.origin.qualifiedName)
+    if origins.exists(_.startsWith("scalive.defs.tags.")) then ApiMemberCategory.HtmlElements
+    else if origins.exists(_.startsWith("scalive.defs.attrs.")) then
+      ApiMemberCategory.HtmlAttributes
+    else if origins.exists(_.startsWith("scalive.defs.complex.")) then ApiMemberCategory.DomHelpers
+    else if origins.exists(_.startsWith("scalive.defs.components.")) then
+      ApiMemberCategory.Components
+    else if origins.exists(_.startsWith("scalive.streams.")) then ApiMemberCategory.Streams
+    else if origins.exists(_.startsWith("scalive.upload.")) then ApiMemberCategory.Uploads
+    else ApiMemberCategory.CoreApi
+end ApiMemberCategory
+
 enum ApiExposure:
   case Direct, Exported, Inherited
 

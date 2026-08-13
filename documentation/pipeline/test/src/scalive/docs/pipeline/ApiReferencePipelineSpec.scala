@@ -155,7 +155,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
           ))
         ),
         liveUpload.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported)),
-        liveUpload.exists(_.route == "/api/scalive/live-upload"),
+        liveUpload.exists(symbol => symbol.route == "/api/scalive" && symbol.fragment.nonEmpty),
         liveViewTrait.exists(_.route == "/api/scalive/live-view"),
         liveViewObject.exists(_.route == "/api/scalive/live-view/companion"),
         handleMessage.exists(_.route == "/api/scalive/live-view"),

@@ -432,6 +432,48 @@ const Hooks = {
     },
   },
 
+  ApiMembers: {
+    mounted() {
+      this.collectMembers = () => {
+        this.filter = this.el.querySelector("[data-api-member-filter]")
+        this.status = this.el.querySelector("[data-api-member-status]")
+        this.groups = [...this.el.querySelectorAll("[data-api-member-group]")]
+        this.members = [...this.el.querySelectorAll("[data-api-member]")]
+      }
+      this.filterMembers = () => {
+        const query = this.filter?.value.trim().toLowerCase() ?? ""
+        this.members.forEach((member) => {
+          member.hidden = query !== "" && !member.dataset.apiMember.includes(query)
+        })
+        this.groups.forEach((group) => {
+          group.hidden = !group.querySelector("[data-api-member]:not([hidden])")
+          const outlineItem = document.querySelector(`.docs-outline a[href$="#${group.id}"]`)?.closest("li")
+          if (outlineItem) outlineItem.hidden = group.hidden
+        })
+        const visible = this.members.filter((member) => !member.hidden).length
+        if (this.status) this.status.textContent = `${visible} ${visible === 1 ? "member" : "members"}`
+        window.dispatchEvent(new Event("scroll"))
+      }
+
+      this.collectMembers()
+      this.el.querySelector("[data-api-member-tools]")?.removeAttribute("hidden")
+      this.filterMembers()
+      this.filter?.addEventListener("input", this.filterMembers)
+    },
+
+    updated() {
+      this.filter?.removeEventListener("input", this.filterMembers)
+      this.collectMembers()
+      this.el.querySelector("[data-api-member-tools]")?.removeAttribute("hidden")
+      this.filterMembers()
+      this.filter?.addEventListener("input", this.filterMembers)
+    },
+
+    destroyed() {
+      this.filter?.removeEventListener("input", this.filterMembers)
+    },
+  },
+
   PageOutline: {
     mounted() {
       this.compact = window.matchMedia("(max-width: 48rem)")
@@ -448,16 +490,22 @@ const Hooks = {
       }
       this.updateCurrentSection = () => {
         this.frame = undefined
-        if (this.sections.length === 0) return
+        const sections = this.sections.filter(({ heading, link }) =>
+          !heading.closest("[hidden]") && !link.closest("[hidden]")
+        )
+        if (sections.length === 0) {
+          this.sections.forEach(({ link }) => link.removeAttribute("aria-current"))
+          return
+        }
 
         const headerBottom = document.querySelector(".docs-header")?.getBoundingClientRect().bottom ?? 0
         const activationLine = headerBottom + 24
         const atDocumentEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1
         const current = atDocumentEnd
-          ? this.sections[this.sections.length - 1]
-          : this.sections.reduce(
+          ? sections[sections.length - 1]
+          : sections.reduce(
               (active, section) => section.heading.getBoundingClientRect().top <= activationLine ? section : active,
-              this.sections[0]
+              sections[0]
             )
 
         this.sections.forEach(({ link }) => {

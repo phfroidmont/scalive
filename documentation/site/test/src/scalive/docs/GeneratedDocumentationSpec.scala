@@ -23,6 +23,7 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
         val exampleIds = bundle.examples.map(_.descriptor.id)
         val expectedExampleIds = Vector(
           "activity-stream",
+          "async-report",
           "browser-integration",
           "counter",
           "lifecycle",
@@ -30,6 +31,7 @@ object GeneratedDocumentationSpec extends ZIOSpecDefault:
           "profile-form",
           "service-injection",
           "shopping-cart",
+          "subscription-clock",
           "voting-components"
         )
         val counterSource = bundle.examples.find(_.descriptor.id == "counter")

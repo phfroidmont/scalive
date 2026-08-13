@@ -2864,6 +2864,96 @@ details[open] > summary .docs-disclosure-marker,
   }
 }
 
+.docs-managed-work {
+  display: grid;
+  gap: 1rem;
+}
+
+.docs-managed-work-state,
+.docs-managed-work > [data-report-state] {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid var(--docs-border);
+  border-left: 0.3rem solid var(--docs-accent);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface-subtle);
+}
+
+.docs-managed-work-state > p,
+.docs-managed-work > [data-report-state] > * {
+  margin: 0;
+}
+
+.docs-managed-work-state > p {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--docs-muted);
+  font-size: 0.82rem;
+}
+
+.docs-managed-work-state strong,
+.docs-managed-work-state span,
+.docs-managed-work [data-report-status] {
+  color: var(--docs-text);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.docs-managed-work-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.docs-managed-work-controls > button {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.docs-managed-work-controls > button:hover:not(:disabled) {
+  border-color: var(--docs-accent);
+  color: var(--docs-accent-strong);
+}
+
+.docs-managed-work-controls > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.docs-managed-work > [data-report-state] article {
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--docs-border);
+}
+
+.docs-managed-work > [data-report-state] h3,
+.docs-managed-work > [data-report-state] article > p {
+  margin: 0;
+}
+
+@media (max-width: 42rem) {
+  .docs-managed-work-controls,
+  .docs-managed-work-controls > button {
+    width: 100%;
+  }
+
+  .docs-managed-work-state > p {
+    display: grid;
+    gap: 0.25rem;
+  }
+}
+
 .docs-cart {
   display: grid;
   gap: 1rem;

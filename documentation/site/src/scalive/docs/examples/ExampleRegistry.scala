@@ -53,6 +53,39 @@ final private class ExampleEntry[Msg: LiveMessageTag, Model: ClassTag](
     modelTag.unapply(value).map(traces.model.project)
 
 private[docs] object ExampleRegistry:
+  private val asyncReport =
+    new ExampleEntry[AsyncReportExample.Msg, AsyncReportExample.Model](
+      descriptor = ExampleCatalog.AsyncReport,
+      factory = instanceId => new AsyncReportExample(instanceId),
+      reset = ExampleReset(AsyncReportExample.Msg.Reset, "Reset async report"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[AsyncReportExample.Msg]:
+          def project(value: AsyncReportExample.Msg) = value match
+            case AsyncReportExample.Msg.RunSuccess =>
+              ExampleTraceValue("AsyncReportExample.Msg", "Start the successful report")
+            case AsyncReportExample.Msg.RunFailure =>
+              ExampleTraceValue("AsyncReportExample.Msg", "Start the failing report")
+            case AsyncReportExample.Msg.Replace =>
+              ExampleTraceValue("AsyncReportExample.Msg", "Replace active report work")
+            case AsyncReportExample.Msg.Retry =>
+              ExampleTraceValue("AsyncReportExample.Msg", "Retry report work")
+            case AsyncReportExample.Msg.Cancel =>
+              ExampleTraceValue("AsyncReportExample.Msg", "Cancel active report work")
+            case AsyncReportExample.Msg.Reset =>
+              ExampleTraceValue("AsyncReportExample.Msg", "Reset async report state")
+            case AsyncReportExample.Msg.ReportCompleted(result) =>
+              ExampleTraceValue("AsyncReportExample.Msg", asyncResultLabel(result)),
+        model = new ExampleTraceProjector[AsyncReportExample.Model]:
+          def project(value: AsyncReportExample.Model) =
+            ExampleTraceValue(
+              "AsyncReportExample.Model",
+              "Current async report state",
+              Vector("state" -> asyncValueLabel(value.report))
+            )
+      ),
+      behaviorTestId = "async-report-behavior"
+    )
+
   private val activityStream =
     new ExampleEntry[ActivityStreamExample.Msg, ActivityStreamExample.Model](
       descriptor = ExampleCatalog.ActivityStream,
@@ -178,6 +211,38 @@ private[docs] object ExampleRegistry:
             )
       ),
       behaviorTestId = "shopping-cart-behavior"
+    )
+
+  private val subscriptionClock =
+    new ExampleEntry[SubscriptionClockExample.Msg, SubscriptionClockExample.Model](
+      descriptor = ExampleCatalog.SubscriptionClock,
+      factory = instanceId => new SubscriptionClockExample(instanceId),
+      reset = ExampleReset(SubscriptionClockExample.Msg.Reset, "Reset clock"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[SubscriptionClockExample.Msg]:
+          def project(value: SubscriptionClockExample.Msg) = value match
+            case SubscriptionClockExample.Msg.Start =>
+              ExampleTraceValue("SubscriptionClockExample.Msg", "Start the clock subscription")
+            case SubscriptionClockExample.Msg.Replace =>
+              ExampleTraceValue("SubscriptionClockExample.Msg", "Replace the clock subscription")
+            case SubscriptionClockExample.Msg.Cancel =>
+              ExampleTraceValue("SubscriptionClockExample.Msg", "Cancel the clock subscription")
+            case SubscriptionClockExample.Msg.Reset =>
+              ExampleTraceValue("SubscriptionClockExample.Msg", "Reset the clock subscription")
+            case SubscriptionClockExample.Msg.Tick(_) =>
+              ExampleTraceValue("SubscriptionClockExample.Msg", "Receive one clock tick"),
+        model = new ExampleTraceProjector[SubscriptionClockExample.Model]:
+          def project(value: SubscriptionClockExample.Model) =
+            ExampleTraceValue(
+              "SubscriptionClockExample.Model",
+              "Current clock subscription state",
+              Vector(
+                "mode"      -> value.mode.label,
+                "tickCount" -> value.tickCount.toString
+              )
+            )
+      ),
+      behaviorTestId = "subscription-clock-behavior"
     )
 
   private val serviceInjection =
@@ -339,6 +404,7 @@ private[docs] object ExampleRegistry:
   val entries: Vector[RegisteredExample] =
     Vector(
       activityStream,
+      asyncReport,
       browserIntegration,
       counter,
       lifecycle,
@@ -346,6 +412,7 @@ private[docs] object ExampleRegistry:
       profileForm,
       serviceInjection,
       shoppingCart,
+      subscriptionClock,
       votingComponents
     )
 
@@ -387,6 +454,18 @@ private[docs] object ExampleRegistry:
         "usedFields" -> event.state.used.size.toString
       )
     )
+
+  private def asyncResultLabel(result: LiveAsyncResult[?]): String = result match
+    case LiveAsyncResult.Succeeded(_) => "Async report succeeded"
+    case LiveAsyncResult.Failed(_)    => "Async report failed"
+    case LiveAsyncResult.Cancelled(_) => "Async report was cancelled"
+
+  private def asyncValueLabel(value: AsyncValue[?]): String = value match
+    case AsyncValue.Empty           => "empty"
+    case AsyncValue.Loading(_)      => "loading"
+    case AsyncValue.Ok(_)           => "succeeded"
+    case AsyncValue.Failed(_, _)    => "failed"
+    case AsyncValue.Cancelled(_, _) => "cancelled"
 
   def validationErrors: Vector[String] =
     val duplicateIds = entries.groupBy(_.descriptor.id).collect {

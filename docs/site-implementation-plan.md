@@ -436,8 +436,8 @@ support where it improves the lesson.
 
 - [x] Migrate the shopping cart example.
 - [x] Replace the guestbook with a deterministic read-only ZLayer service example.
-- [ ] Migrate the subscription clock with instance-scoped keys.
-- [ ] Migrate the async report with deterministic success, failure, replacement,
+- [x] Migrate the subscription clock with instance-scoped keys.
+- [x] Migrate the async report with deterministic success, failure, replacement,
   retry, and cancellation controls.
 - [x] Migrate the typed profile form.
 - [x] Migrate the activity stream.
@@ -497,7 +497,7 @@ mill --ticker false documentation.check
 - [ ] Write uploads and consumption guides.
 - [x] Write routes, typed parameters, patching, and navigation guides.
 - [ ] Write layouts, sessions, mount aspects, and authentication guides.
-- [ ] Write async work, subscriptions, cancellation, and failure guides.
+- [x] Write async work, subscriptions, cancellation, and failure guides.
 - [x] Write static assets and client setup guides.
 - [x] Write disconnected, connected, and browser testing guides.
 - [x] Write troubleshooting guides for startup, assets, sockets, CSRF, and

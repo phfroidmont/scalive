@@ -2,6 +2,7 @@ package scalive.docs.examples
 
 import zio.test.*
 
+import scalive.*
 import scalive.docs.model.ExampleCatalog
 
 object ExampleRegistrySpec extends ZIOSpecDefault:
@@ -9,12 +10,14 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
     Set(
       "counter-behavior",
       "activity-stream-behavior",
+      "async-report-behavior",
       "browser-integration-behavior",
       "lifecycle-behavior",
       "navigation-behavior",
       "profile-form-behavior",
       "reports-service-behavior",
       "shopping-cart-behavior",
+      "subscription-clock-behavior",
       "voting-components-behavior"
     )
 
@@ -76,6 +79,43 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         activityStream.projectMessage(ActivityStreamExample.Msg.Add)
           .exists(_.summary == "Insert one activity"),
         activityStream.projectMessage("add").isEmpty
+      )
+    },
+    test("projects managed work without report, error, or clock payloads") {
+      val async = ExampleRegistry.get("async-report").get
+      val clock = ExampleRegistry.get("subscription-clock").get
+      val failure = new RuntimeException("private service details")
+      assertTrue(
+        async.resetMessage == AsyncReportExample.Msg.Reset,
+        async.projectMessage(
+          AsyncReportExample.Msg.ReportCompleted(LiveAsyncResult.Failed(failure))
+        ).exists(_.summary == "Async report failed"),
+        !async.projectMessage(
+          AsyncReportExample.Msg.ReportCompleted(LiveAsyncResult.Failed(failure))
+        ).exists(_.toString.contains("private service details")),
+        async.projectModel(
+          AsyncReportExample.Model(AsyncValue.ok(
+            AsyncReportExample.Report("Private report", 3, "Private summary")
+          ))
+        ).exists(_.fields == Vector("state" -> "succeeded")),
+        !async.projectModel(
+          AsyncReportExample.Model(AsyncValue.ok(
+            AsyncReportExample.Report("Private report", 3, "Private summary")
+          ))
+        ).exists(_.toString.contains("Private report")),
+        clock.resetMessage == SubscriptionClockExample.Msg.Reset,
+        clock.projectMessage(SubscriptionClockExample.Msg.Tick(java.time.Instant.EPOCH))
+          .exists(_.summary == "Receive one clock tick"),
+        clock.projectModel(
+          SubscriptionClockExample.Model(
+            SubscriptionClockExample.Mode.EverySecond,
+            Some(java.time.Instant.EPOCH),
+            2
+          )
+        ).exists(_.fields == Vector("mode" -> "Every second", "tickCount" -> "2")),
+        !clock.projectModel(
+          SubscriptionClockExample.Model(lastTick = Some(java.time.Instant.EPOCH))
+        ).exists(_.toString.contains("1970"))
       )
     },
     test("redacts browser payloads from explicit trace projections") {

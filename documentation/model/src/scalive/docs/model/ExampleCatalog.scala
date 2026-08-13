@@ -1,6 +1,24 @@
 package scalive.docs.model
 
 object ExampleCatalog:
+  val AsyncReport = ExampleDescriptor(
+    id = "async-report",
+    title = "Managed async report",
+    description =
+      "A typed task key drives deterministic success, failure, replacement, retry, and cancellation states.",
+    topics = Vector("async work", "cancellation", "failure handling", "lifecycle"),
+    aliases = Vector("AsyncKey", "AsyncValue", "LiveAsyncResult", "replace", "retry"),
+    resetDescription = "Cancel active work and return the report state to empty.",
+    sources = Vector(
+      ExampleSource(
+        label = "LiveView",
+        path = "documentation/site/src/scalive/docs/examples/AsyncReportExample.scala",
+        region = "async-report-example",
+        language = Some("scala")
+      )
+    )
+  )
+
   val ActivityStream = ExampleDescriptor(
     id = "activity-stream",
     title = "Bounded activity stream",
@@ -78,6 +96,24 @@ object ExampleCatalog:
         label = "LiveView",
         path = "documentation/site/src/scalive/docs/examples/ShoppingCartExample.scala",
         region = "shopping-cart-example",
+        language = Some("scala")
+      )
+    )
+  )
+
+  val SubscriptionClock = ExampleDescriptor(
+    id = "subscription-clock",
+    title = "Managed clock subscription",
+    description =
+      "An instance-scoped subscription key starts, replaces, cancels, and resets a managed clock stream.",
+    topics = Vector("subscriptions", "ZStream", "cancellation", "lifecycle"),
+    aliases = Vector("SubscriptionKey", "start", "replace", "cancel", "clock"),
+    resetDescription = "Cancel the clock and clear its tick history.",
+    sources = Vector(
+      ExampleSource(
+        label = "LiveView",
+        path = "documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala",
+        region = "subscription-clock-example",
         language = Some("scala")
       )
     )
@@ -188,6 +224,7 @@ object ExampleCatalog:
   val entries: Vector[ExampleDescriptor] =
     Vector(
       ActivityStream,
+      AsyncReport,
       BrowserIntegration,
       Counter,
       Lifecycle,
@@ -195,6 +232,7 @@ object ExampleCatalog:
       ProfileForm,
       ServiceInjection,
       ShoppingCart,
+      SubscriptionClock,
       VotingComponents
     )
 end ExampleCatalog

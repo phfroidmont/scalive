@@ -26,6 +26,7 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         exampleIds = bundle.map(_.examples.map(_.descriptor.id))
         expectedExampleIds = Vector(
           "activity-stream",
+          "async-report",
           "browser-integration",
           "counter",
           "lifecycle",
@@ -33,6 +34,7 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
           "profile-form",
           "service-injection",
           "shopping-cart",
+          "subscription-clock",
           "voting-components"
         )
         searchMatchesBundle = search == bundle.map(_.searchEntries)

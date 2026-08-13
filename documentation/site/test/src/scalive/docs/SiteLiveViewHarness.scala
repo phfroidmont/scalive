@@ -116,6 +116,9 @@ private[docs] final class SiteLiveViewHarness[Msg, Model] private (
 
   def outputs: UIO[Vector[(Payload, Meta)]] = outputRef.get
 
+  def awaitDiff: Task[Unit] =
+    takeOutput { case (payload, _) => payload.isInstanceOf[Payload.Diff] }.unit
+
   def joinNested(instanceId: String): RIO[Scope, SiteNestedLiveViewHarness] =
     SiteNestedLiveViewHarness.join(channel, instanceId)
 

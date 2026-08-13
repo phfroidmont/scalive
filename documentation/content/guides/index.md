@@ -23,6 +23,8 @@ operations work. For an ordered introduction to the framework, start with
   client effects and exchanges validated typed payloads with focused hooks.
 - [Streams and collection updates](streams-and-collection-updates.md) separates
   durable collection state from targeted, bounded DOM operations.
+- [Async work and subscriptions](async-work-and-subscriptions.md) owns finite
+  tasks and long-lived message streams with typed keys and lifecycle cleanup.
 - [Routes, parameters, and navigation](routes-and-navigation.md) decodes typed
   URL state and chooses checked patch, navigation, replace, and redirect behavior.
 - [Flash, title, and lifecycle UX](flash-title-and-lifecycle-ux.md) communicates

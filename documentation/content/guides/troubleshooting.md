@@ -1,8 +1,9 @@
 {%
 title = "Troubleshooting"
 description = "Diagnose Scalive startup, assets, sockets, CSRF failures, and reconnect behavior without hiding current limitations."
-order = 5
+order = 41
 section = guides
+group = "Quality and operations"
 %}
 
 ## Separate The Two Mounts {#separate-the-two-mounts}

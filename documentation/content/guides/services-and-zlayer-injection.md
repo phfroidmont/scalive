@@ -1,8 +1,9 @@
 {%
-title = "Services and ZLayer injection"
+title = "Services and dependency injection"
 description = "Inject application services into LiveViews, derive route layers from constructors, and provide shared dependencies at startup."
-order = 27
+order = 20
 section = guides
+group = "Building applications"
 %}
 
 ## Inject A Service Into A LiveView {#inject-a-service-into-a-liveview}

@@ -1,8 +1,9 @@
 {%
-title = "Phoenix LiveView orientation"
+title = "Phoenix LiveView concepts in Scalive"
 description = "Map Phoenix LiveView concepts to Scalive's typed Scala API without requiring Elixir experience."
 order = 1
 section = guides
+group = "Orientation"
 %}
 
 ## Start With The Programming Model {#start-with-the-programming-model}

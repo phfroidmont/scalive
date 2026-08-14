@@ -109,7 +109,8 @@ object ContentModelSpec extends ZIOSpecDefault:
               title = "Quick start",
               route = "/learn/quick-start",
               section = Section.Learn,
-              children = Vector.empty
+              children = Vector.empty,
+              group = Some("Foundations")
             )
           )
         else Vector.empty
@@ -124,7 +125,8 @@ object ContentModelSpec extends ZIOSpecDefault:
         title = section.toString,
         description = s"$section documentation",
         order = index,
-        section = section
+        section = section,
+        group = if section == Section.Guides then Some("Foundations") else None
       ),
       source =
         if section == Section.Api then PageSource.GeneratedApi("trait:scalive.LiveView")

@@ -276,22 +276,32 @@ final private[docs] class DocumentationLayout(
         s"Missing navigation for section ${page.metadata.section}."
       )
     )
-    val items                           = root +: root.children
-    val links: Vector[HtmlElement[Msg]] = items.zipWithIndex.map { case (item, index) =>
-      li(editorialNavigationLink[Msg](item, currentRoute, index + 1))
+    val items         = root +: root.children
+    val indexedGroups = items.zipWithIndex.foldLeft(
+      Vector.empty[(Option[String], Vector[(NavigationItem, Int)])]
+    ) { case (result, (item, index)) =>
+      result.lastOption match
+        case Some((group, entries)) if group == item.group =>
+          result.init :+ (group -> (entries :+ (item -> (index + 1))))
+        case _ => result :+ (item.group -> Vector(item -> (index + 1)))
     }
-    val linkMods = links.map(Mod.Content.Tag(_))
-    val list     =
-      if page.metadata.section == Section.Learn then ol(linkMods)
-      else ul(linkMods)
+    val lists = indexedGroups.flatMap { case (group, entries) =>
+      val links = entries.map { case (item, position) =>
+        li(editorialNavigationLink[Msg](item, currentRoute, position))
+      }
+      val linkMods = links.map(Mod.Content.Tag(_))
+      group.map(value => p(cls := "docs-nav-group", value)).toVector :+
+        (if page.metadata.section == Section.Learn then ol(linkMods) else ul(linkMods))
+    }
     asideTag(
       cls := "docs-section-nav docs-section-index",
       navTag(
         aria.label := s"${root.title} section navigation",
         p(cls := "docs-nav-title", root.title),
-        list
+        lists.map(Mod.Content.Tag(_))
       )
     )
+  end editorialSectionNavigation
 
   private def editorialNavigationLink[Msg](
     item: NavigationItem,

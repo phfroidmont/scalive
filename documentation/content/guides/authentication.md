@@ -1,8 +1,9 @@
 {%
-title = "Authentication"
+title = "Authentication and sessions"
 description = "Combine ordinary HTTP login and logout with opaque sessions and protected LiveView mounts."
-order = 38
+order = 22
 section = guides
+group = "Building applications"
 %}
 
 ## Separate HTTP Login From Live Authorization {#separate-http-login-from-live-authorization}
@@ -82,7 +83,7 @@ returns minimal `AuthClaims` plus `CurrentSession`. During connected mount,
 expiry between those phases therefore prevents the socket from mounting.
 
 Do not transfer the cookie token in claims. Signed claims are authenticated but
-not encrypted. Read [Layouts, sessions, and mount context](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently)
+not encrypted. Read [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently)
 for the phase boundary in detail.
 
 ## Revoke Through A CSRF-Protected Reset {#revoke-through-a-csrf-protected-reset}
@@ -101,7 +102,7 @@ session and attempt record associated with that visitor.
 
 The HTTP handlers and protected Live routes must use the same `AuthService`
 instance. In a normal application, combine both route sets and provide the layer
-once at `Server.serve`, as described in [Services and ZLayer injection](services-and-zlayer-injection.md#provide-services-at-startup).
+once at `Server.serve`, as described in [Services and dependency injection](services-and-zlayer-injection.md#provide-services-at-startup).
 
 Keep the service responsible for credentials, session authenticity, expiry,
 revocation, capacity, and rate limits. Keep the mount aspect responsible for

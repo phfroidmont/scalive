@@ -47,7 +47,7 @@ a later documentation slice; until then, treat the current API, tests, and
 working examples as evidence with limited scope.
 
 For a conceptual translation rather than a support matrix, read the
-[Phoenix LiveView orientation](../guides/phoenix-live-view-orientation.md#start-with-the-programming-model).
+[Phoenix LiveView concepts in Scalive](../guides/phoenix-live-view-orientation.md#start-with-the-programming-model).
 
 ## Intentional Scala-First Divergences {#intentional-scala-first-divergences}
 

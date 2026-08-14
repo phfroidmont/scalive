@@ -1,8 +1,9 @@
 {%
 title = "Routes, parameters, and navigation"
 description = "Decode typed path and query parameters, build checked destinations, and choose patch, navigate, replace, or redirect semantics."
-order = 35
+order = 12
 section = guides
+group = "Foundations"
 %}
 
 ## Name Route Declarations {#name-route-declarations}

@@ -1,8 +1,9 @@
 {%
-title = "Flash, title, and lifecycle UX"
+title = "Flash messages, page titles, and lifecycle UX"
 description = "Render keyed flash messages, derive browser titles, and communicate connection state."
-order = 50
+order = 34
 section = guides
+group = "Advanced features"
 %}
 
 ## Render Keyed Flash {#render-keyed-flash}

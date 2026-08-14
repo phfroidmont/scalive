@@ -1,8 +1,9 @@
 {%
 title = "Testing LiveViews"
 description = "Test disconnected HTML today, and choose honest strategies for connected and browser behavior."
-order = 4
+order = 40
 section = guides
+group = "Quality and operations"
 %}
 
 ## Choose The Test Boundary {#choose-the-test-boundary}

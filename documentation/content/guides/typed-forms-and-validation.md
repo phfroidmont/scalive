@@ -1,8 +1,9 @@
 {%
 title = "Typed forms and validation"
 description = "Decode rooted browser forms into domain values with normalization, validation, and accessible feedback."
-order = 20
+order = 21
 section = guides
+group = "Building applications"
 %}
 
 ## Define A Rooted Form {#define-a-rooted-form}

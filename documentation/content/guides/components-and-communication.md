@@ -1,8 +1,9 @@
 {%
-title = "Components and communication"
+title = "Stateful components and communication"
 description = "Isolate state in typed LiveComponents and communicate explicitly with their immediate owner."
-order = 25
+order = 23
 section = guides
+group = "Building applications"
 %}
 
 ## Choose A Stateful Component {#choose-a-stateful-component}

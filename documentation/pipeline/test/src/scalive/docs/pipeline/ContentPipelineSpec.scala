@@ -117,6 +117,9 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             bundle.navigation.items.map(_.section) ==
               Vector(Section.Home, Section.Learn, Section.Guides, Section.Examples),
             bundle.navigation.items.find(_.section == Section.Learn).exists(_.route == "/learn"),
+            bundle.navigation.items
+              .find(_.section == Section.Guides)
+              .exists(_.group.contains("Foundations")),
             bundle.navigation.items.find(_.section == Section.Examples).exists(
               item => item.route == "/examples" && item.children.isEmpty
             ),

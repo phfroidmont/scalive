@@ -1,8 +1,9 @@
 {%
-title = "JS commands, browser events, and hooks"
+title = "Browser commands, events, and hooks"
 description = "Compose client commands and exchange validated typed payloads with focused JavaScript hooks."
-order = 40
+order = 33
 section = guides
+group = "Advanced features"
 %}
 
 ## Choose The Boundary {#choose-the-boundary}

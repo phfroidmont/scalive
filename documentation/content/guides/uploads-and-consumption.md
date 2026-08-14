@@ -1,8 +1,9 @@
 {%
-title = "Uploads and consumption"
+title = "File uploads"
 description = "Accept bounded files, track immutable upload state, validate content, and transfer resource ownership deliberately."
-order = 33
+order = 32
 section = guides
+group = "Advanced features"
 %}
 
 ## Choose A Destination And Set Hard Limits {#choose-a-destination-and-set-hard-limits}

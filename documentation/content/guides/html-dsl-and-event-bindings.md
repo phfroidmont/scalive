@@ -1,8 +1,9 @@
 {%
-title = "HTML DSL and event bindings"
+title = "HTML and event bindings"
 description = "Build typed HTML, set attributes, bind browser events to messages, and key collection entries."
 order = 10
 section = guides
+group = "Foundations"
 %}
 
 ## Build An HTML Tree {#build-an-html-tree}

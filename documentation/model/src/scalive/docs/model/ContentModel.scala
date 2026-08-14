@@ -12,7 +12,7 @@ final case class DocumentationBundle(
     derives JsonCodec
 
 object DocumentationBundle:
-  val CurrentFormatVersion = 7
+  val CurrentFormatVersion = 8
 
 final case class Page(
   route: String,
@@ -26,7 +26,8 @@ final case class PageMetadata(
   title: String,
   description: String,
   order: Int,
-  section: Section)
+  section: Section,
+  group: Option[String] = None)
     derives JsonCodec
 
 enum Section:
@@ -59,7 +60,8 @@ final case class NavigationItem(
   title: String,
   route: String,
   section: Section,
-  children: Vector[NavigationItem])
+  children: Vector[NavigationItem],
+  group: Option[String] = None)
     derives JsonCodec
 
 final case class PageOutline(items: Vector[OutlineItem]) derives JsonCodec

@@ -3,6 +3,7 @@ title = "Streams and collection updates"
 description = "Render large or frequently changing collections with stable stream identities while retaining durable domain state separately."
 order = 30
 section = guides
+group = "Advanced features"
 %}
 
 ## Choose Streams Deliberately {#choose-streams-deliberately}

@@ -40,6 +40,7 @@ final case class PipelineError(messages: Vector[String]):
 
 object ContentPipeline:
   private val RequiredMetadata = Set("title", "description", "order", "section")
+  private val AllowedMetadata  = RequiredMetadata + "group"
   private val RouteSegment     = "^[a-z0-9]+(?:-[a-z0-9]+)*$".r
   private val HeadingId        = "^[a-z0-9]+(?:-[a-z0-9]+)*$".r
   private val AtxHeading       = "^ {0,3}(#{1,6})(?:[ \\t]+|$)(.*)$".r
@@ -271,7 +272,7 @@ object ContentPipeline:
             errors += s"$sourcePath: invalid HOCON metadata: ${singleLine(error.message)}"
             None
           case Right(fields) =>
-            fields.keySet.diff(RequiredMetadata).toVector.sorted.foreach { field =>
+            fields.keySet.diff(AllowedMetadata).toVector.sorted.foreach { field =>
               errors += s"$sourcePath: unknown metadata field '$field'."
             }
             RequiredMetadata.diff(fields.keySet).toVector.sorted.foreach { field =>
@@ -293,13 +294,14 @@ object ContentPipeline:
                   errors += s"$sourcePath: unknown documentation section '$value'."
                   None
             }
+            val group = optionalStringMetadata(sourcePath, "group", fields, errors)
 
             for
               validTitle       <- title
               validDescription <- description
               validOrder       <- order
               validSection     <- section
-            yield PageMetadata(validTitle, validDescription, validOrder, validSection)
+            yield PageMetadata(validTitle, validDescription, validOrder, validSection, group)
 
         MetadataValidation(metadata.filter(_ => errors.isEmpty), Some(closing + 1), errors.toVector)
       end if
@@ -307,6 +309,22 @@ object ContentPipeline:
   end parseMetadata
 
   private def stringMetadata(
+    sourcePath: String,
+    name: String,
+    fields: Map[String, ConfigValue],
+    errors: ArrayBuffer[String]
+  ): Option[String] =
+    fields.get(name) match
+      case Some(StringValue(value)) if value.trim.nonEmpty => Some(value.trim)
+      case Some(StringValue(_))                            =>
+        errors += s"$sourcePath: metadata field '$name' must not be blank."
+        None
+      case Some(_) =>
+        errors += s"$sourcePath: metadata field '$name' must be a string."
+        None
+      case None => None
+
+  private def optionalStringMetadata(
     sourcePath: String,
     name: String,
     fields: Map[String, ConfigValue],
@@ -1268,7 +1286,8 @@ object ContentPipeline:
         pageSymbol(page).map(_.name).getOrElse(page.metadata.title),
         page.route,
         page.metadata.section,
-        children
+        children,
+        page.metadata.group
       )
 
     def navigationOwner(page: Page): Boolean = pageSymbol(page).exists(symbol =>
@@ -1297,7 +1316,13 @@ object ContentPipeline:
     navigationItem(page, Vector.empty)
 
   private def navigationItem(page: Page, children: Vector[NavigationItem]): NavigationItem =
-    NavigationItem(page.metadata.title, page.route, page.metadata.section, children)
+    NavigationItem(
+      page.metadata.title,
+      page.route,
+      page.metadata.section,
+      children,
+      page.metadata.group
+    )
 
   private def pageSortKey(page: Page): (Int, Int, String) =
     val sourceKey = page.source match

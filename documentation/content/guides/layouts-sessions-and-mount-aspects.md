@@ -1,8 +1,9 @@
 {%
-title = "Layouts, sessions, and mount context"
+title = "Layouts, live sessions, and mount aspects"
 description = "Compose application shells, group compatible routes, and derive typed context before LiveView mount."
-order = 37
+order = 13
 section = guides
+group = "Foundations"
 %}
 
 ## Choose The Right Boundary {#choose-the-right-boundary}

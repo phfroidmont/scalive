@@ -1,8 +1,9 @@
 {%
-title = "Async work and subscriptions"
+title = "Asynchronous work and subscriptions"
 description = "Own finite tasks and long-lived message streams with the LiveView lifecycle, typed keys, explicit UI states, and predictable cancellation."
-order = 32
+order = 31
 section = guides
+group = "Advanced features"
 %}
 
 ## Choose The Resource By Shape {#choose-the-resource-by-shape}

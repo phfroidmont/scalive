@@ -1,8 +1,9 @@
 {%
-title = "Static assets and client setup"
+title = "Client setup and static assets"
 description = "Load classpath or directory assets, render digested links, and connect the Phoenix LiveView client."
 order = 11
 section = guides
+group = "Foundations"
 %}
 
 ## Build The Client Bundle {#build-the-client-bundle}

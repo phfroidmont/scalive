@@ -703,6 +703,19 @@ details[open] > summary .docs-disclosure-marker,
   margin-top: 0;
 }
 
+.docs-nav-group {
+  margin: 1.25rem 0 0.35rem;
+  color: var(--docs-border-strong);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.docs-nav-title + .docs-nav-group {
+  margin-top: 0.75rem;
+}
+
 .docs-section-index a {
   min-height: 2.75rem;
   padding: 0.65rem 0.75rem 0.65rem 1rem;

@@ -1,10 +1,15 @@
 {%
 title = "Testing LiveViews"
 description = "Test disconnected HTML today, and choose honest strategies for connected and browser behavior."
-order = 40
+order = 60
 section = guides
-group = "Quality and operations"
+group = "Testing and troubleshooting"
 %}
+
+## Prerequisites {#prerequisites}
+
+Assemble the application routes under test and identify whether the expected
+behavior belongs to the initial HTTP render or the connected socket.
 
 ## Choose The Test Boundary {#choose-the-test-boundary}
 
@@ -43,6 +48,10 @@ to its Scalive build.
 The @:apiSymbol(object:scalive.testing.DisconnectedRender)`DisconnectedRender.run`@:@ method accepts
 finalized `Routes` and a ZIO HTTP `Request`. It runs the route, consumes the
 response body once, restores a replayable body, and parses the HTML with jsoup:
+
+The example uses `ZIOSpecDefault` for the test runtime, `suite` to group tests,
+and `test` for an effectful assertion. `orDieWith` turns an unexpected typed
+failure into a test defect with a useful assertion error.
 
 ```scala
 import zio.*
@@ -172,3 +181,9 @@ browser test proves its scenario but may not isolate the failing lifecycle
 stage. Keep at least one assertion at each boundary your application depends on,
 and use [Troubleshooting](troubleshooting.md#separate-the-two-mounts) to locate a
 failure before expanding the test suite.
+
+## Related Tasks {#related-tasks}
+
+- Build the production-shaped browser bundle with [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
+- Locate the failing lifecycle stage with [Troubleshooting](troubleshooting.md#prerequisites).
+- Supply deterministic dependencies with [Services and dependency injection](services-and-zlayer-injection.md#supply-a-test-implementation).

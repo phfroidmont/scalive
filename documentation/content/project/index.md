@@ -13,6 +13,11 @@ edge-case behavior are still being expanded and audited. Do not assume complete
 Phoenix LiveView parity or production maturity from the presence of a related
 API.
 
+Compatibility is currently assessed against Phoenix LiveView `v1.1.28`. Read
+the [compatibility status](compatibility.md#compatibility-target) for the current
+feature matrix, known gaps, intentional Scala-first divergences, and verification
+guidance.
+
 The current documentation follows the current source revision. The standalone
 [Quick start](../learn/quick-start.md#before-you-begin) uses the forthcoming
 snapshot coordinate and clearly marks it as unavailable until publication.
@@ -43,30 +48,11 @@ public APIs.
 Coverage varies by feature. Some areas are implemented and tested deeply, some
 are partial, and some have no Scalive equivalent. Passing an upstream browser
 scenario is evidence for that scenario, not proof that the whole feature area
-is complete. The project will publish structured compatibility documentation in
-a later documentation slice; until then, treat the current API, tests, and
-working examples as evidence with limited scope.
+is complete. The [public compatibility matrix](compatibility.md#status-matrix)
+states the evidence and remaining work for each tracked area.
 
 For a conceptual translation rather than a support matrix, read the
 [Phoenix LiveView concepts in Scalive](../guides/phoenix-live-view-orientation.md#start-with-the-programming-model).
-
-## Intentional Scala-First Divergences {#intentional-scala-first-divergences}
-
-Scalive preserves the LiveView programming model while changing API shapes to
-use Scala's type system and ZIO's effect model:
-
-- Typed immutable models replace socket assign maps.
-- Typed message values replace stringly typed event dispatch in application
-  handlers.
-- `ZIO` effects and explicit result types replace Elixir callback tuples.
-- Typed path and query codecs replace Phoenix route macros and atom actions.
-- Scala HTML builders replace HEEx templates and component macros.
-- Typed @:apiSymbol(class:scalive.LiveMountAspect)`LiveMountAspect`@:@ values replace module-and-atom `on_mount` callbacks.
-- Scalive-native testing APIs replace direct copies of Phoenix test helpers.
-
-These differences are design choices, not compatibility gaps by themselves.
-When strict API similarity conflicts with type safety, robustness, or Scala
-ergonomics, Scalive prefers the better Scala API.
 
 ## Non-Goals {#non-goals}
 
@@ -76,8 +62,7 @@ Scalive is not intended to:
 - provide source compatibility with Phoenix LiveView modules;
 - reproduce Phoenix or BEAM internals when observable behavior can be provided
   idiomatically on ZIO HTTP;
-- guarantee that every Phoenix option, callback, test helper, or transport has a
-  direct Scalive equivalent;
+- guarantee that every Phoenix API has the same shape in Scalive;
 - preserve alpha APIs solely to avoid migration work; or
 - replace JavaScript for behavior that inherently depends on browser APIs.
 

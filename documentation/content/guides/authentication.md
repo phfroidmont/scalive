@@ -3,8 +3,14 @@ title = "Authentication and sessions"
 description = "Combine ordinary HTTP login and logout with opaque sessions and protected LiveView mounts."
 order = 22
 section = guides
-group = "Building applications"
+group = "Routing and application structure"
 %}
+
+## Prerequisites {#prerequisites}
+
+This guide builds on [Ordinary HTTP forms and redirects](http-forms-and-redirects.md),
+[named live sessions and mount aspects](layouts-sessions-and-mount-aspects.md),
+and [service layers provided at startup](services-and-zlayer-injection.md#provide-services-at-startup).
 
 ## Separate HTTP Login From Live Authorization {#separate-http-login-from-live-authorization}
 
@@ -124,3 +130,9 @@ Before adapting this lab for real users:
   throttling, and visitor isolation.
 
 The lab is teaching code, not a production identity system.
+
+## Related Tasks {#related-tasks}
+
+- Review phase-safe claims in [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently).
+- Wire the shared session service with [Services and dependency injection](services-and-zlayer-injection.md#provide-services-at-startup).
+- Diagnose rejected joins and forms in [Troubleshooting](troubleshooting.md#diagnose-csrf-rejections).

@@ -1,10 +1,15 @@
 {%
 title = "Services and dependency injection"
 description = "Inject application services into LiveViews, derive route layers from constructors, and provide shared dependencies at startup."
-order = 20
+order = 30
 section = guides
-group = "Building applications"
+group = "State, services, and components"
 %}
+
+## Prerequisites {#prerequisites}
+
+Start with a working Live route whose `mount` and `handleMessage` methods return
+`LiveIO` effects.
 
 ## Inject A Service Into A LiveView {#inject-a-service-into-a-liveview}
 
@@ -12,6 +17,11 @@ Use constructor injection when a @:apiSymbol(trait:scalive.LiveView)`LiveView`@:
 needs an application service such as a repository, API client, or mailer. The
 constructor makes the dependency explicit, while a ZIO layer supplies its
 implementation when the application starts.
+
+In the types used below, `ZIO[R, E, A]` needs environment `R`, may fail with
+`E`, and may produce `A`; `Task[A]` uses `Throwable` as its error and `UIO[A]`
+cannot fail. A `ZLayer[RIn, E, ROut]` constructs `ROut` from `RIn`, while
+`ULayer` and `URLayer` are infallible aliases.
 
 The complete path has four parts:
 
@@ -201,3 +211,9 @@ while reset changes only connection-local selection state.
 
 Try the embedded preview or open the real layer-backed route from the
 [reports service injection example](../examples/service-injection.md).
+
+## Related Tasks {#related-tasks}
+
+- Share an authentication store between HTTP and Live routes in [Authentication and sessions](authentication.md#provide-one-shared-authentication-service).
+- Move finite or long-lived work under lifecycle ownership with [Asynchronous work and subscriptions](async-work-and-subscriptions.md#prerequisites).
+- Replace production layers in [Testing LiveViews](testing.md#prerequisites).

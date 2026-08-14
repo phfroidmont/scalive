@@ -1,10 +1,15 @@
 {%
 title = "Asynchronous work and subscriptions"
 description = "Own finite tasks and long-lived message streams with the LiveView lifecycle, typed keys, explicit UI states, and predictable cancellation."
-order = 31
+order = 40
 section = guides
-group = "Advanced features"
+group = "Async and lifecycle"
 %}
+
+## Prerequisites {#prerequisites}
+
+Start with Scalive's
+[model and message lifecycle](../learn/models-and-messages.md#produce-explicit-state-transitions).
 
 ## Choose The Resource By Shape {#choose-the-resource-by-shape}
 
@@ -13,6 +18,14 @@ later. Use `ctx.async` for one finite `Task[A]`: a database query, service call,
 or report that succeeds, fails, or is cancelled. Use `ctx.subscriptions` for a
 `ZStream[Any, Nothing, Msg]` that can emit many messages over time: a clock,
 notification feed, or application event stream.
+
+A `Task[A]` is finite work that may fail with a `Throwable`; a fiber is its
+running, interruptible execution. A `ZStream[R, E, A]` emits zero or more `A`
+values over time. Scalive uses interruption to cancel work when its owner or a
+replacement disappears.
+
+Use an injected service for durable or shared state. The APIs on this page own
+work only for one connected LiveView lifecycle.
 
 Both APIs attach resources to the socket lifecycle. Scalive interrupts them
 when the socket closes, and starting replacement work cannot leak a stale
@@ -170,3 +183,9 @@ failure, stale-completion suppression, explicit cancellation, retry, and reset:
 Run the [managed clock subscription](../examples/subscription-clock.md) and
 [managed async report](../examples/async-report.md) alongside their X-ray views
 to correlate messages, model transitions, and final DOM changes.
+
+## Related Tasks {#related-tasks}
+
+- Inject the service that starts the work with [Services and dependency injection](services-and-zlayer-injection.md#prerequisites).
+- Apply emitted collection changes with [Streams and collection updates](streams-and-collection-updates.md#prerequisites).
+- Choose a test boundary for connected behavior with [Testing LiveViews](testing.md#cover-connected-behavior).

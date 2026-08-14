@@ -1,10 +1,16 @@
 {%
 title = "Client setup and static assets"
 description = "Load classpath or directory assets, render digested links, and connect the Phoenix LiveView client."
-order = 11
+order = 70
 section = guides
-group = "Foundations"
+group = "Assets and operations"
 %}
+
+## Prerequisites {#prerequisites}
+
+Have a Scalive application that can start from Mill, plus Node.js and npm for
+the browser bundle. Complete the [Quick start](../learn/quick-start.md) first if
+you do not yet have routes and a root layout.
 
 ## Build The Client Bundle {#build-the-client-bundle}
 
@@ -73,6 +79,33 @@ Pass Phoenix options such as `hooks` in the final `LiveSocket` options object
 when the application needs them. The documentation application uses the same
 CSRF setup, registers its hooks, calls `connect()`, and exposes the socket for
 browser-console debugging.
+
+## Read Connect Metadata {#read-connect-metadata}
+
+Add small browser-derived values to the `params` object when mount needs them:
+
+```js
+const params = {
+  ...(csrfToken ? { _csrf_token: csrfToken } : {}),
+  locale: document.documentElement.lang
+}
+```
+
+Lifecycle contexts expose @:apiSymbol(def:scalive.LifecycleContext.connectParams)`connectParams`@:@
+as `Map[String, zio.json.ast.Json]`. Decode and validate the expected shape:
+
+```scala
+val locale = ctx.connectParams.get("locale").collect {
+  case Json.Str(value) => value
+}
+```
+
+The map is empty during disconnected HTTP rendering and contains the browser's
+join parameters during the connected lifecycle. Treat every value as untrusted
+client input: use the signed session or server-side state for identity,
+authorization, and other security decisions. Do not set or depend on Phoenix's
+internal keys such as `_mounts` and `_track_static`; their exact values and
+reconnect behavior are protocol metadata, not application state.
 
 ## Load Classpath Assets {#load-classpath-assets}
 
@@ -159,5 +192,21 @@ add `phx-track-static`. The untracked
 digested URLs but omit that Phoenix marker. Use tracked helpers for the
 application bundles whose change should be visible to the LiveView client.
 
+Lifecycle contexts expose @:apiSymbol(def:scalive.LifecycleContext.staticChanged)`staticChanged`@:@
+for reacting to that tracking result, commonly by replacing stale connected
+state or initiating a full reload. It is `false` during disconnected rendering.
+On a routed root socket join, it becomes `true` when the client's non-empty list
+of tracked URLs differs from the server-rendered list; query strings, fragments,
+and URL origins are ignored during comparison. Missing, malformed, or empty
+client tracking metadata yields `false`, and the result remains stable for that
+socket lifecycle. Therefore use it as a deployment-change hint, not proof that
+assets loaded successfully or as a security signal.
+
 The complete root layout and startup wiring are available in the
 [quick start](../learn/quick-start.md#add-routes-and-layout).
+
+## Related Tasks {#related-tasks}
+
+- Place bundle tags in the document shell with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#prerequisites).
+- Diagnose a page that renders but never connects in [Troubleshooting](troubleshooting.md#diagnose-missing-assets).
+- Verify the real client connection with [Testing LiveViews](testing.md#test-in-a-browser).

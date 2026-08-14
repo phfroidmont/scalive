@@ -1,16 +1,25 @@
 {%
 title = "File uploads"
-description = "Accept bounded files, track immutable upload state, validate content, and transfer resource ownership deliberately."
-order = 32
+description = "Accept bounded files, choose a hosted or external destination, report progress, and transfer resource ownership deliberately."
+order = 13
 section = guides
-group = "Advanced features"
+group = "Interfaces and input"
 %}
+
+## Prerequisites {#prerequisites}
+
+This guide builds on:
+
+- [Models and messages](../learn/models-and-messages.md), because upload handles are immutable model snapshots;
+- [Typed forms and validation](typed-forms-and-validation.md), for form change and submit handling; and
+- [Static assets and client setup](static-assets-and-client-setup.md), especially when an external uploader needs browser JavaScript.
 
 ## Choose A Destination And Set Hard Limits {#choose-a-destination-and-set-hard-limits}
 
 Start with the resource boundary, not the file input. A
 @:apiSymbol(type-alias:scalive.LiveUploadDef)`LiveUploadDef[Result]`@:@ fixes the upload
-name, selection policy, limits, and destination result type:
+name, selection policy, limits, destination result type, and whether transfer
+starts automatically:
 
 ```scala
 private val TextFiles = LiveUploadDef.inMemory(
@@ -21,20 +30,20 @@ private val TextFiles = LiveUploadDef.inMemory(
 )
 ```
 
-`inMemory` buffers each file in server heap and returns a `Chunk[Byte]`. Use it
-only for small, strictly bounded uploads with modest concurrency. A hosted
-@:apiSymbol(type-alias:scalive.LiveUploadWriter)`LiveUploadWriter`@:@ can stream bytes
-through application-managed state, while an external destination lets the
-browser transfer bytes directly to another service.
+Choose the factory by where bytes should travel:
 
-The browser reports the name, media type, size, relative path, and progress.
-Treat all of those values as untrusted. `LiveUploadAccept` improves selection and
-performs early preflight checks; it does not prove the file's type, contents, or
-actual destination size.
+- `inMemory` buffers every byte in server heap and returns `Chunk[Byte]`. Use it only for small, strictly bounded uploads with modest concurrency.
+- `hosted` sends browser chunks through Scalive to a `LiveUploadWriter[State, Result]`. Use it to stream into a temporary file, scanner, object-store SDK, or another application-managed sink without collecting the whole file in heap.
+- `external` asks a `LiveUploadExternalUploader[Result]` for browser-visible configuration, then lets the browser send bytes directly to another service. Scalive retains only the server-side `Result` handle.
+
+The browser reports the name, media type, size, relative path, modification
+time, and progress. Treat all of them as untrusted. `LiveUploadAccept` improves
+selection and performs early preflight checks; it does not prove the file's
+type, contents, destination size, or integrity.
 
 ## Allow The Upload During Every Mount {#allow-the-upload-during-every-mount}
 
-Allow one stable definition and retain the returned
+Keep one stable definition value and retain the returned
 @:apiSymbol(type-alias:scalive.LiveUpload)`LiveUpload[Result]`@:@ snapshot:
 
 ```scala
@@ -42,32 +51,239 @@ def mount(ctx: MountContext): LiveIO[Model] =
   ctx.uploads.allow(TextFiles).map(Model(_))
 ```
 
-Disconnected and connected mounts own independent upload registrations. Calling
-`allow` in `mount` therefore supports both the initial HTML and the connected
-socket without sharing upload state between visitors.
+Disconnected and connected mounts own independent registrations. Calling
+`allow` in `mount` supports both the initial HTML and connected socket without
+sharing state between visitors.
 
-An upload and each `LiveUploadEntry` are immutable point-in-time views. Progress,
-cancellation, and consumption return replacement snapshots. Store the returned
-value or refresh it through `ctx.uploads.get`; rendering an old value renders old
-protocol attributes and status.
+An upload and each `LiveUploadEntry` are immutable point-in-time views.
+Progress, cancellation, and consumption return replacement snapshots. Store
+the returned value or refresh it through `ctx.uploads.get`; rendering an old
+value renders old protocol attributes and status.
 
-## Render Protocol-Owned Controls {#render-protocol-owned-controls}
+## Render Selection, Drop, And Progress Controls {#render-selection-drop-and-progress-controls}
 
 Use @:apiSymbol(def:scalive.liveFileInput)`liveFileInput`@:@ rather than assembling
-the protocol attributes by hand:
+protocol attributes by hand. Put `upload.dropTarget` on any element that should
+accept files dropped for this upload:
 
 ```scala
-liveFileInput(
-  model.upload,
-  aria.label := "Text file",
-  model.upload.onProgress(_ => Msg.Progress)
+form(
+  on.change(_ => Msg.Validate),
+  on.submit(Msg.Save),
+  div(
+    cls := "drop-zone",
+    model.upload.dropTarget,
+    liveFileInput(
+      model.upload,
+      aria.label := "Text files",
+      model.upload.onProgress(Msg.Progress)
+    )
+  )
 )
 ```
 
-The helper supplies the upload reference, active and completed entry references,
-accepted values, and Phoenix upload hook. Render upload-wide and entry-specific
-@:apiSymbol(def:scalive.uploadErrors)`uploadErrors`@:@ explicitly. A progress value
-is status, not proof that valid content reached a durable destination.
+The file input supplies the upload reference, active, preflighted, and completed
+entry references, accepted values, multiplicity, automatic-upload marker, and
+Phoenix upload hook. A drop target only routes dropped files to that input; it
+does not relax acceptance, count, or size checks.
+
+`upload.onProgress(Msg.Progress)` is a DOM event binding. Handle the message by
+fetching the latest snapshot rather than trusting raw browser metadata:
+
+```scala
+case Msg.Progress =>
+  ctx.uploads.get(TextFiles).map(_.fold(model)(upload => model.copy(upload = upload)))
+```
+
+The overload taking `Map[String, String] => Msg` exposes raw `ref`,
+`entry_ref`, `progress`, and optional `error` values. They are client-controlled
+protocol data, not authorization evidence.
+
+Render upload-wide and entry-specific
+@:apiSymbol(def:scalive.uploadErrors)`uploadErrors`@:@ explicitly. Display
+`entry.progress` as status only; 100 percent is not proof that valid content
+reached durable storage.
+
+## Choose Manual Or Automatic Transfer {#choose-manual-or-automatic-transfer}
+
+The default `autoUpload = false` waits for the form submit before valid entries
+start transferring. Set `autoUpload = true` when selection should start transfer
+immediately:
+
+```scala
+private val Avatars = LiveUploadDef.hosted(
+  name = "avatar",
+  accept = LiveUploadAccept.only("image/jpeg", "image/png"),
+  writer = avatarWriter,
+  maxFileSize = 2L * 1024L * 1024L,
+  autoUpload = true
+)
+```
+
+Automatic transfer does not consume an entry, publish a result, or submit the
+surrounding form. Keep a separate Save action that validates application state
+and calls `consume` or `consumeCompleted` after entries complete.
+
+For a server-side progress hook, pass `progress = Some(...)` on the definition:
+
+```scala
+val progress = new LiveUploadProgress[StoredTempFile]:
+  def onProgress(entry: LiveUploadEntry[StoredTempFile]): LiveIO[Unit] =
+    metrics.record(entry.ref, entry.progress)
+```
+
+This callback runs after an accepted browser progress report has updated runtime
+state. It is not called for every hosted chunk, and its effect failing fails the
+progress operation without rolling the state update back. Use it for lightweight
+observation or orchestration, not exact byte accounting. The writer is the
+authoritative place to count hosted bytes.
+
+## Stream Through A Hosted Writer {#stream-through-a-hosted-writer}
+
+A hosted writer owns an in-progress `State` and eventually produces a typed
+`Result`. A temporary-file writer can follow this shape:
+
+```scala
+final case class PendingFile(path: Path, expected: Long, written: Long)
+final case class StoredTempFile(path: Path, bytes: Long)
+
+val MaxBytes = 2L * 1024L * 1024L
+
+val writer = new LiveUploadWriter[PendingFile, StoredTempFile]:
+  def init(client: UploadClientMetadata): Task[PendingFile] =
+    ZIO.attemptBlocking {
+      if client.sizeBytes > MaxBytes then
+        throw new IllegalArgumentException("upload exceeds destination limit")
+      val path = Files.createTempFile("scalive-upload-", ".pending")
+      PendingFile(path, client.sizeBytes, 0L)
+    }
+
+  def writeChunk(data: Chunk[Byte], state: PendingFile): Task[PendingFile] =
+    ZIO.attemptBlocking {
+      val nextSize = state.written + data.length
+      if nextSize > MaxBytes then
+        throw new IllegalArgumentException("upload exceeds destination limit")
+      Files.write(state.path, data.toArray, StandardOpenOption.APPEND)
+      state.copy(written = nextSize)
+    }
+
+  def complete(state: PendingFile): Task[StoredTempFile] =
+    ZIO.attempt {
+      if state.written != state.expected then
+        throw new IllegalStateException("upload length mismatch")
+      StoredTempFile(state.path, state.written)
+    }
+
+  def abort(state: PendingFile, reason: LiveUploadAbortReason): Task[Unit] =
+    ZIO.attemptBlocking(Files.deleteIfExists(state.path)).unit
+
+  def discard(result: StoredTempFile): Task[Unit] =
+    ZIO.attemptBlocking(Files.deleteIfExists(result.path)).unit
+```
+
+Use a server-generated path. Never resolve `client.fileName` or
+`client.relativePath` directly into storage. Enforce a destination-side byte
+limit and inspect or scan content in `complete` or before consumption. Chunk
+boundaries are transport details and are not content boundaries.
+
+The runtime threads only successfully returned state. `abort` releases an
+initialized state after cancellation, disallow, component removal, socket
+shutdown, or upload failure. `discard` releases a completed result still owned
+by the runtime. If a failed `init`, `writeChunk`, or `complete` call creates a
+side effect not represented by the last successful state, that call must clean
+it itself. Framework cleanup is best-effort and cannot run after process death,
+so also sweep abandoned temporary resources by age.
+
+## Upload Directly To An External Service {#upload-directly-to-an-external-service}
+
+An external uploader authorizes one entry, reserves a server-side handle, and
+returns only browser-safe configuration:
+
+```scala
+final case class ReservedObject(key: String, uploadId: String)
+
+val uploader = new LiveUploadExternalUploader[ReservedObject]:
+  def preflight(client: UploadClientMetadata): LiveIO[LiveExternalUploadResult[ReservedObject]] =
+    authorizeUpload(client) *> objectStore.preparePut(client.sizeBytes).map { prepared =>
+      val config = ExternalUploadClientConfig(Json.Obj(
+        "uploader" -> Json.Str("object-store"),
+        "url"      -> Json.Str(prepared.signedUrl),
+        "method"   -> Json.Str("PUT")
+      ))
+      LiveExternalUploadResult.Ready(config, ReservedObject(prepared.key, prepared.uploadId))
+    }
+
+  override def discard(result: ReservedObject): Task[Unit] =
+    objectStore.abort(result.key, result.uploadId)
+```
+
+Authorize in `preflight`, generate the object key on the server, scope signed
+credentials narrowly, and keep server secrets out of `ExternalUploadClientConfig`.
+Return `LiveExternalUploadResult.Error(meta)` for a safe structured rejection.
+If preparation fails or rejects after reserving a resource but before returning
+`Ready`, release that resource in `preflight`; Scalive has no result to pass to
+`discard` yet.
+
+The `uploader` string must match a Phoenix external uploader installed when the
+browser creates `LiveSocket`. For a signed PUT workflow:
+
+```javascript
+const uploaders = {
+  "object-store": (entries, onViewError) => {
+    entries.forEach(entry => {
+      const xhr = new XMLHttpRequest()
+      onViewError(() => xhr.abort())
+      xhr.upload.addEventListener("progress", event => {
+        if (event.lengthComputable) {
+          entry.progress(Math.round((event.loaded / event.total) * 100))
+        }
+      })
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) entry.progress(100)
+        else entry.error()
+      })
+      xhr.addEventListener("error", () => entry.error())
+      xhr.open(entry.meta.method, entry.meta.url, true)
+      xhr.send(entry.file)
+    })
+  },
+}
+
+const liveSocket = new LiveSocket("/live", Socket, { params, uploaders })
+```
+
+Scalive never receives external bytes. Browser-reported completion merely makes
+the prepared result consumable. In the consume callback, query the external
+service and verify ownership, final size, media type, checksum or integrity, and
+scan status as appropriate before publishing the object and returning `Consume`.
+
+## Consume And Transfer Ownership {#consume-and-transfer-ownership}
+
+@:apiSymbol(def:scalive.Uploads.consumeCompleted)`consumeCompleted`@:@ visits valid
+completed entries in selection order. It fails while a valid entry is still in
+progress, skips invalid entries, and is not transactional: an earlier consumed
+entry stays consumed if a later callback fails.
+
+The framework owns a completed destination result while the callback runs. The
+returned @:apiSymbol(type-alias:scalive.ConsumeDecision)`ConsumeDecision`@:@ determines
+what happens next:
+
+- `Consume(value)` removes the entry and transfers responsibility for its result to application code. Destination cleanup is not called.
+- `Postpone(value)` keeps the entry and result framework-owned so a later attempt, cancellation, disallow, component removal, or socket shutdown can release it.
+
+Persist, verify, or atomically move a hosted result before returning `Consume`.
+For an external result, verify and finalize the reserved object first. If a
+retryable application operation fails, return `Postpone` so the runtime still
+owns cleanup:
+
+```scala
+ctx.uploads.consumeCompleted(TextFiles) { completed =>
+  repository.publish(completed).foldZIO(
+    _ => ZIO.succeed(ConsumeDecision.Postpone(false)),
+    _ => ZIO.succeed(ConsumeDecision.Consume(true))
+  )
+}
+```
 
 Cancel with the current entry snapshot and retain the returned upload:
 
@@ -76,42 +292,12 @@ case Msg.Cancel(entry) =>
   ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
 ```
 
-Cancellation releases resources still owned by the upload runtime. A stale or
-already removed entry fails with a typed upload operation error.
-
-## Validate Content Before Consuming It {#validate-content-before-consuming-it}
-
-Selection policy is not content validation. Decode, inspect, authorize, or scan
-the destination result inside the consume callback before application code takes
-ownership. The text example uses a strict UTF-8 decoder and derives aggregate
-facts without retaining or rendering the original content.
-
-@:apiSymbol(def:scalive.Uploads.consumeCompleted)`consumeCompleted`@:@ visits valid
-completed entries in selection order. It fails while a valid entry is still in
-progress, skips invalid entries, and is not transactional: an earlier consumed
-entry stays consumed if a later callback fails.
-
-## Make Ownership Explicit {#make-ownership-explicit}
-
-The framework owns a completed destination result while the callback runs. The
-returned @:apiSymbol(type-alias:scalive.ConsumeDecision)`ConsumeDecision`@:@ determines
-what happens next:
-
-- `Consume(value)` removes the entry and transfers responsibility for its result
-  to application code. Destination cleanup is not called.
-- `Postpone(value)` keeps the entry and result framework-owned so a later attempt,
-  cancellation, disallow, component removal, or socket shutdown can release it.
-
-For an in-memory `Chunk[Byte]`, immediate summarization followed by `Consume`
-makes the bytes unreachable after the callback. For a temporary file or external
-object, finish validation and persistence or explicitly delete it before
-returning `Consume`; after ownership transfer, framework cleanup will not do that
-work for you.
+A stale or already removed entry fails with a typed upload operation error.
 
 ## Reset And Release Resources {#reset-and-release-resources}
 
-Disallowing a definition releases every result the runtime still owns. A complete
-reset can then allow the stable definition again and return a clean model:
+Disallowing a definition releases every result the runtime still owns. A full
+reset can then allow the stable definition again:
 
 ```scala
 case Msg.Reset =>
@@ -120,13 +306,21 @@ case Msg.Reset =>
 ```
 
 Socket shutdown and component removal also clean framework-owned resources on a
-best-effort basis. Writers must still account for abrupt process termination and
-must release side effects from failed writer operations themselves.
+best-effort basis. Once `Consume` transfers ownership, application retention,
+deletion, and failure compensation policies apply instead.
 
-The complete bounded implementation is extracted from executable source:
+The complete bounded in-memory implementation is extracted from executable
+source:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/TextUploadExample.scala, text-upload-example)
 
 Try the [summarize-and-discard text upload](../examples/text-upload.md). Its X-ray
-shows lifecycle state and aggregate counts; upload chunks are represented only by
-their byte length, never their contents.
+shows lifecycle state and aggregate counts; upload chunks are represented only
+by their byte length, never their contents.
+
+## Related Tasks {#related-tasks}
+
+- Use [Typed forms and validation](typed-forms-and-validation.md) for metadata submitted with an upload.
+- Use [Asynchronous work and subscriptions](async-work-and-subscriptions.md) when scanning or post-processing should continue as lifecycle-owned work.
+- Use [Testing](testing.md) to exercise selection limits, cancellation, cleanup, retries, and invalid content.
+- Use [Troubleshooting](troubleshooting.md) when the browser hook, socket path, or static assets prevent transfer.

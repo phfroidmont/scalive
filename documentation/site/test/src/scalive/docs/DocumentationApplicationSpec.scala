@@ -181,6 +181,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         apiDocument     = Jsoup.parse(api.html)
         learnLinks = learnDocument.select(".docs-section-index > nav > ol > li > a").asScala.toVector
         guideLinks = guidesDocument.select(".docs-section-index > nav > ul > li > a").asScala.toVector
+        guideGroups = guidesDocument.select(".docs-nav-group").asScala.toVector.map { heading =>
+                        heading.text() -> heading.nextElementSibling().select("a").asScala.toVector.map(_.attr("href"))
+                      }
+        projectLinks = projectDocument.select(".docs-section-index > nav > ul > li > a").asScala.toVector
       yield assertTrue(
         learnDocument.select(".docs-section-index details").isEmpty,
         learnLinks.nonEmpty,
@@ -193,12 +197,51 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         guidesDocument.select(".docs-section-index details").isEmpty,
         guideLinks.headOption.exists(_.text() == "Overview"),
         guideLinks.exists(_.text() == "Testing LiveViews"),
-        projectDocument.select(".docs-section-nav").isEmpty,
+        guideGroups == Vector(
+          "Orientation" -> Vector("/guides/phoenix-live-view-orientation"),
+          "Interfaces and input" -> Vector(
+            "/guides/html-dsl-and-event-bindings",
+            "/guides/typed-forms-and-validation",
+            "/guides/http-forms-and-redirects",
+            "/guides/uploads-and-consumption"
+          ),
+          "Routing and application structure" -> Vector(
+            "/guides/routes-and-navigation",
+            "/guides/layouts-sessions-and-mount-aspects",
+            "/guides/authentication",
+            "/guides/nested-liveviews"
+          ),
+          "State, services, and components" -> Vector(
+            "/guides/services-and-zlayer-injection",
+            "/guides/components-and-communication",
+            "/guides/streams-and-collection-updates"
+          ),
+          "Async and lifecycle" -> Vector(
+            "/guides/async-work-and-subscriptions",
+            "/guides/lifecycle-hooks",
+            "/guides/flash-title-and-lifecycle-ux"
+          ),
+          "Browser integration" -> Vector("/guides/browser-integration"),
+          "Testing and troubleshooting" -> Vector(
+            "/guides/testing",
+            "/guides/troubleshooting"
+          ),
+          "Assets and operations" -> Vector(
+            "/guides/static-assets-and-client-setup",
+            "/guides/configuration",
+            "/guides/deployment"
+          )
+        ),
         apiDocument.select(".docs-api-navigation details").size() > 0,
         apiDocument.select(".docs-api-navigation nav > ul > li").asScala.toVector
           .map(_.attr("data-api-nav-item")) == Vector("scalive"),
         apiDocument.select(".docs-api-navigation [data-api-nav-item=api]").isEmpty,
         apiDocument.select(".docs-section-index").isEmpty
+      ) && assertTrue(
+        projectLinks.map(_.text()) == Vector("Overview", "Phoenix LiveView compatibility"),
+        projectDocument.select(
+          ".docs-section-index a[href='/project'][aria-current=page]"
+        ).size() == 1
       )
     },
     test("renders generated API summaries, signatures, and pinned sources") {

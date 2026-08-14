@@ -3,8 +3,14 @@ title = "HTML and event bindings"
 description = "Build typed HTML, set attributes, bind browser events to messages, and key collection entries."
 order = 10
 section = guides
-group = "Foundations"
+group = "Interfaces and input"
 %}
+
+## Prerequisites {#prerequisites}
+
+Start with the `LiveView` model and messages introduced in
+[Models and messages](../learn/models-and-messages.md). The DSL uses ordinary
+Scala expressions and collections rather than introducing a template language.
 
 ## Build An HTML Tree {#build-an-html-tree}
 
@@ -36,6 +42,41 @@ for example, @:apiSymbol(lazy-val:scalive.sectionTag)`sectionTag`@:@,
 @:apiSymbol(lazy-val:scalive.idAttr)`idAttr`@:@.
 Use @:apiSymbol(def:scalive.htmlTag)`htmlTag(name)`@:@ only when the framework does not
 provide the element you need.
+
+## Move Content And Wrap Focus {#move-content-and-wrap-focus}
+
+Use @:apiSymbol(def:scalive.portal)`portal`@:@ when content must remain owned by its
+LiveView but appear elsewhere in the document, such as below a root-level modal
+container:
+
+```scala
+portal("cart-dialog", target = DomSelector.css("#modal-root"))(
+  sectionTag(aria.label := "Cart", "...")
+)
+```
+
+The helper renders a source `<template>` and moves one generated wrapper to the
+explicit CSS target in the browser. Keep `id` stable and unique, ensure the target
+exists, and use `container` and `wrapperClass` only to customize that wrapper.
+`DomSelector.current` and invalid container tag names are rejected, but selector
+syntax and target existence are not checked server-side. A portal preserves event,
+hook, component, and nested LiveView ownership; it is not a security boundary and
+does not make untrusted HTML safe.
+
+Use @:apiSymbol(def:scalive.focusWrap)`focusWrap`@:@ for content whose keyboard focus
+should cycle at its boundaries:
+
+```scala
+focusWrap("cart-dialog-focus", cls := "dialog-body")(
+  button(on.click(Msg.Close), "Close")
+)
+```
+
+Keep its `id` stable and unique. Pass only wrapper attributes and bindings in
+`mods`; do not override `id` or `phx-hook`, and put all child content in the second
+argument list so the generated focus sentinels remain first and last. The helper
+depends on the Phoenix client hook. It does not add dialog roles, labels, background
+inertness, authorization, or a no-JavaScript focus trap; provide those separately.
 
 ## Set Typed Attributes {#set-typed-attributes}
 
@@ -110,7 +151,6 @@ input(
 @:apiSymbol(lazy-val:scalive.on.click)`on.click`@:@ receives the
 binding payload as `Map[String, String]`.
 
-Configure rate limiting before supplying the message. Durations are rendered in
 Configure rate limiting with @:apiSymbol(def:scalive.HtmlAttrBinding.debounce)`debounce(duration)`@:@
 before supplying the message. Durations are rendered in milliseconds, and
 negative durations are rejected:
@@ -158,3 +198,9 @@ For the diffing model, read
 [Rendering, bindings, and diffs](../learn/rendering-and-dom-updates.md#from-tree-changes-to-dom-changes).
 For targeted inserts and deletes in frequently changing collections, read
 [Streams and collection updates](streams-and-collection-updates.md#choose-streams-deliberately).
+
+## Related Tasks {#related-tasks}
+
+- Give frequently changing rows targeted updates with [Streams and collection updates](streams-and-collection-updates.md#prerequisites).
+- Build checked links and destinations with [Routes, parameters, and navigation](routes-and-navigation.md#prerequisites).
+- Assert rendered forms and markup with [Testing LiveViews](testing.md#prerequisites).

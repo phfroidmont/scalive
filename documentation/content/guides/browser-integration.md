@@ -1,10 +1,17 @@
 {%
 title = "Browser commands, events, and hooks"
 description = "Compose client commands and exchange validated typed payloads with focused JavaScript hooks."
-order = 33
+order = 50
 section = guides
-group = "Advanced features"
+group = "Browser integration"
 %}
+
+## Prerequisites {#prerequisites}
+
+Complete [Client setup and static assets](static-assets-and-client-setup.md), so
+the application bundles JavaScript, renders a CSRF token, and connects a
+Phoenix `LiveSocket`. This guide assumes the usual `assets/js/app.js` entry
+point and the `phoenix` and `phoenix_live_view` packages.
 
 ## Choose The Boundary {#choose-the-boundary}
 
@@ -78,6 +85,102 @@ malformed matching payload is rejected without changing the model. The Scala
 codec does not make JavaScript trustworthy: validate shape, length, permissions,
 and browser failures before calling `this.pushEvent`.
 
+## Implement The Browser Hook {#implement-the-browser-hook}
+
+Put the hook in a focused module such as `assets/js/browser-interop.js`. This is
+the implementation used by the documentation application, with bounded input,
+clipboard failure handling, and protection against late asynchronous results:
+
+```js
+const maxRequestIdLength = 64
+const maxTextLength = 4096
+
+export function readCopyRequest(payload) {
+  const requestId = typeof payload?.requestId === "string" ? payload.requestId : ""
+  const text = typeof payload?.text === "string" ? payload.text : undefined
+  if (
+    requestId.length === 0 ||
+    requestId.length > maxRequestIdLength ||
+    text === undefined ||
+    text.length > maxTextLength
+  ) return undefined
+  return { requestId, text }
+}
+
+export function createBrowserInteropHook(clipboard = globalThis.navigator?.clipboard) {
+  return {
+    mounted() {
+      this.isDestroyed = false
+      this.handleEvent("browser-copy-request", async (payload) => {
+        if (this.isDestroyed) return
+
+        const request = readCopyRequest(payload)
+        let ok = false
+        if (request && clipboard?.writeText) {
+          try {
+            await clipboard.writeText(request.text)
+            ok = true
+          } catch {
+            ok = false
+          }
+        }
+
+        if (this.isDestroyed) return
+        try {
+          await this.pushEvent("browser-copy-result", {
+            requestId: request?.requestId ?? "",
+            ok,
+          })
+        } catch {
+          // The LiveSocket may disconnect while browser work is completing.
+        }
+      })
+    },
+
+    destroyed() {
+      this.isDestroyed = true
+    },
+  }
+}
+```
+
+`handleEvent` receives events pushed by `ctx.client.push`. `pushEvent` sends the
+result back as a root browser event, where `onBrowserEvent` validates and
+decodes it. The explicit failure result lets Scala clear or report the pending
+operation instead of waiting forever.
+
+## Register The Hook With LiveSocket {#register-the-hook-with-live-socket}
+
+Import the factory in `assets/js/app.js`, register the same name rendered by
+`dom.hook`, and pass the registry in the final `LiveSocket` options object:
+
+```js
+import { Socket } from "phoenix"
+import { LiveSocket } from "phoenix_live_view"
+
+import { createBrowserInteropHook } from "./browser-interop.js"
+
+const Hooks = {
+  BrowserInterop: createBrowserInteropHook(),
+}
+
+const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
+const params = csrfToken ? { _csrf_token: csrfToken } : {}
+
+const liveSocket = new LiveSocket("/live", Socket, {
+  params,
+  hooks: Hooks,
+})
+liveSocket.connect()
+
+window.liveSocket = liveSocket
+```
+
+The documentation site's `app.js` has additional X-ray integration, but uses
+this same `hooks: Hooks` registration and calls `connect()` only after creating
+the socket. Do not create a second `LiveSocket` just for hooks; add them to the
+application's existing options object.
+
 ## Give Every Hook Stable Identity {#give-every-hook-stable-identity}
 
 Phoenix hooks require an element ID. @:apiSymbol(def:scalive.dom.hook)`dom.hook`@:@ renders the hook name and typed ID together:
@@ -110,9 +213,13 @@ Set a destroyed flag or abort owned asynchronous work in the hook's `destroyed`
 callback. Check it again after every awaited browser operation and tolerate
 `pushEvent` failure because the LiveSocket may disconnect before completion.
 
-## Exercise The Complete Flow {#exercise-the-complete-flow}
+## Related Tasks {#related-tasks}
 
 The [browser integration example](../examples/browser-integration.md) combines a
 client-only command with correlated clipboard events. Its executable source
 derives every DOM ID from the nested instance, resets deterministically, handles
 permission failure, and projects operation metadata without exposing copied text.
+
+Use [Client setup and static assets](static-assets-and-client-setup.md) to build
+and serve the bundle. Use [Lifecycle hooks](lifecycle-hooks.md) for server-side
+interception and lifecycle-wide policy rather than browser API integration.

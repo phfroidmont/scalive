@@ -1,10 +1,17 @@
 {%
 title = "Troubleshooting"
 description = "Diagnose Scalive startup, assets, sockets, CSRF failures, and reconnect behavior without hiding current limitations."
-order = 41
+order = 61
 section = guides
-group = "Quality and operations"
+group = "Testing and troubleshooting"
 %}
+
+## Prerequisites {#prerequisites}
+
+Start with a reproducible URL, server logs, and access to the browser console
+and Network panel. Identify whether the expected result belongs to the initial
+HTTP render or the connected LiveView; the checks below diagnose those phases
+separately.
 
 ## Separate The Two Mounts {#separate-the-two-mounts}
 
@@ -204,3 +211,9 @@ matrix. Consult `UPSTREAM_COMPATIBILITY.md` in the repository before relying on
 an edge case, and use the boundary guidance in
 [Testing LiveViews](testing.md#choose-the-test-boundary) to add evidence for your
 application's requirements.
+
+## Related Tasks {#related-tasks}
+
+- Recheck browser and asset wiring in [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
+- Add evidence at the failing boundary with [Testing LiveViews](testing.md#choose-the-test-boundary).
+- Resolve missing startup dependencies with [Services and dependency injection](services-and-zlayer-injection.md#provide-services-at-startup).

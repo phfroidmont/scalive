@@ -1,10 +1,17 @@
 {%
 title = "Streams and collection updates"
 description = "Render large or frequently changing collections with stable stream identities while retaining durable domain state separately."
-order = 30
+order = 32
 section = guides
-group = "Advanced features"
+group = "State, services, and components"
 %}
+
+## Prerequisites {#prerequisites}
+
+Read
+[HTML and event bindings](html-dsl-and-event-bindings.md#key-repeated-content)
+before choosing a stream over ordinary keyed rendering. The entries rendered by
+this guide must have stable domain keys.
 
 ## Choose Streams Deliberately {#choose-streams-deliberately}
 
@@ -156,3 +163,9 @@ The complete migrated implementation is extracted from executable source:
 
 Try insertion, bounded retention, deletion, and reset in the
 [bounded activity stream example](../examples/activity-stream.md).
+
+## Related Tasks {#related-tasks}
+
+- Keep simpler repeated content keyed with [HTML and event bindings](html-dsl-and-event-bindings.md#key-repeated-content).
+- Feed repeated updates from lifecycle-owned work with [Asynchronous work and subscriptions](async-work-and-subscriptions.md#prerequisites).
+- Exercise initial collection rendering with [Testing LiveViews](testing.md#test-disconnected-rendering).

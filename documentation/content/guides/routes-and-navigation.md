@@ -1,10 +1,16 @@
 {%
 title = "Routes, parameters, and navigation"
 description = "Decode typed path and query parameters, build checked destinations, and choose patch, navigate, replace, or redirect semantics."
-order = 12
+order = 20
 section = guides
-group = "Foundations"
+group = "Routing and application structure"
 %}
+
+## Prerequisites {#prerequisites}
+
+Start with a `LiveView` that mounts and renders. The
+[Quick start](../learn/quick-start.md#add-routes-and-layout) shows the minimal
+router and layout wiring assumed here.
 
 ## Name Route Declarations {#name-route-declarations}
 
@@ -65,6 +71,13 @@ final class SearchLiveView
   override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
     LiveIO.succeed(search(params))
 ```
+
+Choose `LiveView.Routed.Eventless` when the view reacts to typed route parameters
+but renders no server-handled browser messages. Choose `LiveView.Eventless` for
+the same compile-time restriction on an unrouted view. Both remove the message
+type and `handleMessage` rather than asking you to invent an impossible message;
+switch to the ordinary `LiveView` or `LiveView.Routed` form when rendered
+bindings need to produce application messages.
 
 Keep parameter-derived state in one function so disconnected render, connected
 mount, browser back and forward, and patches agree. Use `handleParams` to
@@ -135,3 +148,9 @@ authorization, canonical HTTP responses, and completed ordinary HTTP actions.
 Safe APIs accept `LiveLocation`. Explicit `Unsafe` methods accept raw strings for
 external URLs, dead routes, or deliberately query-only patches. Keep those calls
 at a narrow boundary: raw strings give up route refactoring and encoding checks.
+
+## Related Tasks {#related-tasks}
+
+- Group compatible routes with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#prerequisites).
+- Protect route groups with [Authentication and sessions](authentication.md#prerequisites).
+- Test parameter decoding and initial routes with [Testing LiveViews](testing.md#test-disconnected-rendering).

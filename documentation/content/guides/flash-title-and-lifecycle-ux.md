@@ -1,10 +1,16 @@
 {%
-title = "Flash messages, page titles, and lifecycle UX"
-description = "Render keyed flash messages, derive browser titles, and communicate connection state."
-order = 34
+title = "Lifecycle feedback and page state"
+description = "Communicate lifecycle state through flash, document titles, connection feedback, and post-render observation."
+order = 42
 section = guides
-group = "Advanced features"
+group = "Async and lifecycle"
 %}
+
+## Prerequisites {#prerequisites}
+
+Start with a LiveView and a root layout that renders `liveTitle`. Review
+[Lifecycle and connection behavior](../learn/lifecycle-and-connection-behavior.md)
+before attaching effects to lifecycle hooks.
 
 ## Render Keyed Flash {#render-keyed-flash}
 
@@ -108,3 +114,9 @@ after-render hook together.
 
 For the full lifecycle sequence and reconnect model, read
 [Lifecycle, state ownership, and reconnects](../learn/lifecycle-and-connection-behavior.md#two-independent-mounts).
+
+## Related Tasks {#related-tasks}
+
+- Install the title-owning document shell with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#install-root-and-ordinary-layouts).
+- Deliver delayed UI state through [Asynchronous work and subscriptions](async-work-and-subscriptions.md#prerequisites).
+- Verify title and reconnect behavior with [Testing LiveViews](testing.md#test-in-a-browser).

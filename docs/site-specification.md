@@ -20,13 +20,18 @@ The site must:
 
 ## Audience
 
-The primary audience is Scala developers with basic web development knowledge
-who are new to the LiveView programming model.
+The primary audience is somewhat experienced Scala developers with basic web
+development knowledge who know nothing about Scalive or the LiveView programming
+model.
 
 Readers are expected to understand Scala 3 fundamentals, basic HTML and HTTP,
 and general server-side application development. Prior knowledge of Phoenix
 LiveView or ZIO is not required. The documentation introduces the small subset
 of ZIO needed by each example without attempting to teach ZIO comprehensively.
+
+Learn is the preferred ordered introduction, but Guides and API pages remain
+usable as direct entry points from search. They state their Scalive prerequisites
+and link to the smallest preceding material needed to complete the task.
 
 Secondary audiences are Phoenix LiveView developers evaluating Scalive,
 existing Scalive users looking for guides and API reference material, and
@@ -44,6 +49,13 @@ programming model through incremental, executable lessons.
 Pages lead with the minimum explanation needed to proceed. Conceptual detail,
 edge cases, full source files, raw traces, and API specifics remain available
 without interrupting the main path.
+
+### Direct entry without hidden prerequisites
+
+Every task page states the Scalive concepts it assumes. Pages that use ZIO name
+and explain only the aliases, constructors, operators, and lifetime concepts
+needed for that task. Examples label application-owned placeholders rather than
+leaving readers to infer whether an undefined name belongs to Scalive.
 
 ### Examples as evidence
 
@@ -169,17 +181,33 @@ By the end of Learn, a reader can explain:
 Guides are task-oriented, with one focused task per page. They are grouped by
 work rather than by skill level or a mirror of the package hierarchy:
 
-- building interfaces and handling input;
-- state, services, and data collections;
-- routing, navigation, sessions, and application structure;
-- asynchronous work, subscriptions, and lifecycle behavior;
+- interfaces and input, including typed and ordinary forms and uploads;
+- routing and application structure, including sessions, authentication, and
+  nested LiveViews;
+- state, services, components, and data collections;
+- asynchronous work and lifecycle hooks;
 - browser integration and client events;
 - testing and troubleshooting; and
-- assets, configuration, and deployment.
+- assets and operations, including an explicit configuration contract and
+  provider-neutral deployment.
 
 Together, the guides and API reference cover every supported public Scalive
 feature. A dedicated Phoenix LiveView orientation guide is supplemented by brief
 comparison callouts where they clarify a concept.
+
+Each guide opens with tailored prerequisites and ends with related tasks. A
+guide reached directly from search must distinguish framework APIs from
+application-owned values and must not rely on a complete source listing to make
+its primary workflow actionable. JavaScript integration includes both the hook
+implementation and its LiveSocket registration. Operational guidance states
+packaging, observability, health, shutdown, transport, and clustering limits
+explicitly rather than inventing unsupported production capabilities.
+
+The supported guide surface includes ordinary and typed forms, advanced upload
+destinations, nested LiveViews, root and component lifecycle hooks, advanced
+component ownership, portals and focus wrapping, lifecycle metadata, testing,
+configuration, and deployment. Lower-level variants may remain in generated API
+reference only when their behavior follows directly from the guided workflow.
 
 ### Examples
 
@@ -216,7 +244,11 @@ The Project section contains only:
 
 The compatibility matrix is curated, identifies a pinned Phoenix LiveView
 release or commit as its baseline, and links to relevant test evidence where
-available. Changelogs, roadmaps, contributor instructions, internal design
+available. Its status legend distinguishes baseline browser evidence, native
+parity, substantial or expanding coverage, partial support, intentional
+divergence, and absent behavior. The public matrix is updated with feature work;
+the existence of a similarly named API is never presented as parity evidence.
+Changelogs, roadmaps, contributor instructions, internal design
 specifications, and implementation plans are not part of the initial public
 site.
 
@@ -230,6 +262,10 @@ Documentation pages follow these conventions:
 
 - use direct, explanatory prose without promotional language;
 - address one task per guide page;
+- open guide pages with tailored prerequisites and close them with related
+  tasks;
+- introduce the minimum ZIO vocabulary required on the page when Learn does not
+  already establish it;
 - show a focused extracted source region before offering the complete executable
   file; and
 - use durable heading anchors, source-edit links, and prefilled issue links.
@@ -543,7 +579,9 @@ The operations material includes:
   horizontal scaling, without presenting a complete clustered deployment recipe.
 
 A dedicated configuration reference defines these operational expectations as
-an explicit contract.
+an explicit contract. When no verified assembly or image workflow exists,
+deployment documentation gives the verified run path and identifies packaging
+as application-owned work instead of publishing a speculative command.
 
 ## Non-Goals
 

@@ -1,10 +1,17 @@
 {%
 title = "Layouts, live sessions, and mount aspects"
 description = "Compose application shells, group compatible routes, and derive typed context before LiveView mount."
-order = 13
+order = 21
 section = guides
-group = "Foundations"
+group = "Routing and application structure"
 %}
+
+## Prerequisites {#prerequisites}
+
+Have at least two named Live route declarations and understand that Scalive
+mounts once for HTTP rendering and again for the live connection. Review
+[Routes, parameters, and navigation](routes-and-navigation.md#name-route-declarations)
+if your routes are still assembled from ad hoc strings.
 
 ## Choose The Right Boundary {#choose-the-right-boundary}
 
@@ -136,3 +143,9 @@ claims resumption to the application service.
 
 Continue with [Authentication](authentication.md#separate-http-login-from-live-authorization)
 for a complete runnable flow.
+
+## Related Tasks {#related-tasks}
+
+- Add protected route context with [Authentication and sessions](authentication.md#prerequisites).
+- Construct LiveViews from application dependencies with [Services and dependency injection](services-and-zlayer-injection.md#prerequisites).
+- Check navigation across session boundaries in [Routes, parameters, and navigation](routes-and-navigation.md#respect-route-and-session-boundaries).

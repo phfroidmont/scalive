@@ -6,6 +6,11 @@ section = guides
 group = "Orientation"
 %}
 
+## Prerequisites {#prerequisites}
+
+No Elixir or Phoenix experience is required. If Scalive is also new to you, the
+[Quick start](../learn/quick-start.md) provides a runnable application shape.
+
 ## Start With The Programming Model {#start-with-the-programming-model}
 
 Phoenix LiveView is a server-side programming model for interactive web pages.
@@ -113,3 +118,9 @@ and the [API reference](../api/index.md#core-abstraction) for the current public
 surface. If a Phoenix feature is important to your application, do not infer
 support from this concept map; check the current API and raise an issue as
 described in [Project status](../project/index.md#report-an-issue).
+
+## Related Tasks {#related-tasks}
+
+- Build typed markup and messages in [HTML and event bindings](html-dsl-and-event-bindings.md#prerequisites).
+- Connect the browser client in [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
+- Define application URLs in [Routes, parameters, and navigation](routes-and-navigation.md#prerequisites).

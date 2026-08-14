@@ -280,10 +280,12 @@ final private[docs] class DocumentationLayout(
     val indexedGroups = items.zipWithIndex.foldLeft(
       Vector.empty[(Option[String], Vector[(NavigationItem, Int)])]
     ) { case (result, (item, index)) =>
-      result.lastOption match
-        case Some((group, entries)) if group == item.group =>
-          result.init :+ (group -> (entries :+ (item -> (index + 1))))
-        case _ => result :+ (item.group -> Vector(item -> (index + 1)))
+      val entry      = item -> (index + 1)
+      val groupIndex = result.indexWhere(_._1 == item.group)
+      if groupIndex < 0 then result :+ (item.group -> Vector(entry))
+      else
+        val (group, entries) = result(groupIndex)
+        result.updated(groupIndex, group -> (entries :+ entry))
     }
     val lists = indexedGroups.flatMap { case (group, entries) =>
       val links = entries.map { case (item, position) =>

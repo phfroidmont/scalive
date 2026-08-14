@@ -1,3 +1,4 @@
+// docs:start quick-start-live-view
 package quickstart
 
 import zio.ZIO
@@ -25,3 +26,4 @@ final class CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
 object CounterLiveView:
   enum Msg:
     case Decrement, Increment
+// docs:end quick-start-live-view

@@ -85,8 +85,8 @@ The primary navigation is:
 ### Homepage
 
 The homepage explains Scalive's value, presents one small live example, and
-leads directly to the quick start. It is an entry point to the documentation,
-not a marketing site or exhaustive section index.
+leads directly to the Learn mental model and ordered path. It is an entry point
+to the documentation, not a marketing site or exhaustive section index.
 
 Its copy remains authored as a normal generated `Page` using the shared `Block`
 model. Startup validates the expected homepage structure, then a dedicated
@@ -115,18 +115,54 @@ non-sticky instance rather than introducing homepage-specific behavior.
 
 ### Learn
 
-Learn is a short ordered path:
+Learn is a short ordered path that establishes one coherent mental model:
 
-1. A roughly ten-minute quick start that builds a counter.
-2. Project anatomy and application startup.
-3. Models, typed messages, and state transitions.
-4. Rendering and DOM updates.
-5. Lifecycle and connection behavior.
+1. **Start here** defines Scalive as a server-owned state machine, separates
+   server and browser responsibilities, and follows one page from its initial
+   HTTP request through socket mount, typed messages, tree diffs, DOM patches,
+   cleanup, and reconnect.
+2. **Quick start** builds and runs a complete standalone counter.
+3. **Project anatomy** assigns startup, routing, layout, LiveView, service,
+   asset, and browser responsibilities.
+4. **Models, messages, and effects** introduces immutable state, typed intent,
+   effectful transitions, and only the ZIO vocabulary required to understand
+   Scalive callbacks.
+5. **Rendering, bindings, and diffs** explains typed HTML, event bindings,
+   render purity, tree diffs, DOM patches, and stable collection identity.
+6. **Lifecycle, state ownership, and reconnects** explains disconnected and
+   connected mounts, commit and failure boundaries, state lifetime, cleanup,
+   and remounting from durable inputs.
+7. **Where to go next** maps common application needs to task-oriented guides,
+   executable examples, the API reference, and project compatibility material.
+
+Start here is the canonical architecture overview. Later Learn pages may remind
+readers of the part relevant to their topic, but do not independently redefine
+the request, connection, event, render, or reconnect sequence.
 
 The quick start uses Mill as its primary build tool, provides a complete minimal
-project to copy, and documents the current Node/npm client asset setup. Concise
+standalone project, and documents the Node/npm client asset setup. It consumes a
+published Scala artifact rather than requiring changes inside a Scalive source
+checkout. Before the first snapshot is available, the page may identify the
+forthcoming coordinate with a prominent availability warning while a
+source-backed repository fixture compiles the same application code. Concise
 dependency equivalents for other common Scala build tools may be included where
 useful.
+
+The conceptual pages evolve the same small application where practical. When a
+richer example replaces a quick-start type or behavior, the transition is
+explicit. Focused excerpts precede complete examples so the learning path does
+not require readers to infer the relevant lines from a large source listing.
+
+By the end of Learn, a reader can explain:
+
+- the complete HTTP-to-socket lifecycle and repeated event-to-DOM loop;
+- which responsibilities belong to the JVM server and browser client;
+- where render-derived, connection-local, shared, browser-local, and durable
+  state belong;
+- why lifecycle callbacks return effects and how successful proposals become
+  committed models; and
+- why reconnect creates a new lifecycle rather than restoring a previous model
+  object.
 
 ### Guides
 

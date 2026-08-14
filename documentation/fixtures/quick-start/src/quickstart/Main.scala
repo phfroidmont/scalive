@@ -1,3 +1,4 @@
+// docs:start quick-start-main
 package quickstart
 
 import zio.*
@@ -18,3 +19,4 @@ object Main extends ZIOAppDefault:
       routes = liveRoutes ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(8080))
     yield ()
+// docs:end quick-start-main

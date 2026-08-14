@@ -238,7 +238,7 @@ test("shows a flat Learn path on desktop and hides it on smaller screens", async
   const navigation = page.locator(".docs-section-index")
   await expect(navigation).toBeVisible()
   await expect(navigation.locator("details")).toHaveCount(0)
-  await expect(navigation.locator('[aria-current="page"]')).toHaveText("04Models and messages")
+  await expect(navigation.locator('[aria-current="page"]')).toHaveText("04Models, messages, and effects")
 
   await page.setViewportSize({ width: 768, height: 900 })
   await expect(navigation).toBeHidden()
@@ -249,8 +249,8 @@ test("tracks the current section in the page outline", async ({ page }) => {
   await page.goto("/learn/models-and-messages")
 
   const outline = page.locator(".docs-outline")
-  const first = outline.getByRole("link", { name: "One model, one message type", exact: true })
-  const last = outline.getByRole("link", { name: "Keep messages meaningful", exact: true })
+  const first = outline.getByRole("link", { name: "One Model, One Message Type", exact: true })
+  const last = outline.getByRole("link", { name: "Keep Messages Meaningful", exact: true })
   await expect(first).toHaveAttribute("aria-current", "location")
   await expect(outline.locator('[aria-current="location"]')).toHaveCount(1)
 

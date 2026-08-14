@@ -13,11 +13,12 @@ edge-case behavior are still being expanded and audited. Do not assume complete
 Phoenix LiveView parity or production maturity from the presence of a related
 API.
 
-The current documentation follows the current source revision. Scalive does not
-yet have a verified public dependency coordinate, so the [Quick start](../learn/quick-start.md#before-you-begin)
-uses a source checkout. Evaluate the framework against your application's
-requirements, especially security, failure recovery, operations, and any
-Phoenix feature on which you depend.
+The current documentation follows the current source revision. The standalone
+[Quick start](../learn/quick-start.md#before-you-begin) uses the forthcoming
+snapshot coordinate and clearly marks it as unavailable until publication.
+Evaluate the framework against your application's requirements, especially
+security, failure recovery, operations, and any Phoenix feature on which you
+depend.
 
 ## Expect Breaking Changes {#expect-breaking-changes}
 

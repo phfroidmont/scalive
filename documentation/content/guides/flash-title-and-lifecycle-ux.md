@@ -107,4 +107,4 @@ change the projected title, inspect connected mount state, and reset the nested
 after-render hook together.
 
 For the full lifecycle sequence and reconnect model, read
-[Lifecycle and connection behavior](../learn/lifecycle-and-connection-behavior.md#two-independent-mounts).
+[Lifecycle, state ownership, and reconnects](../learn/lifecycle-and-connection-behavior.md#two-independent-mounts).

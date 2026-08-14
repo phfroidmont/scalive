@@ -1,3 +1,4 @@
+// docs:start quick-start-root-layout
 package quickstart
 
 import scalive.*
@@ -20,3 +21,4 @@ final class RootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]:
       ),
       bodyTag(content)
     )
+// docs:end quick-start-root-layout

@@ -61,8 +61,8 @@ The model remains on the server. Scalive does not require a second client-side
 state tree or a JavaScript component framework for ordinary interactions.
 
 For the current code shape, follow the [Quick start](../learn/quick-start.md),
-then read [Models and messages](../learn/models-and-messages.md#one-model-one-message-type)
-and [Rendering and DOM updates](../learn/rendering-and-dom-updates.md#render-from-the-model).
+then read [Models, messages, and effects](../learn/models-and-messages.md#one-model-one-message-type)
+and [Rendering, bindings, and diffs](../learn/rendering-and-dom-updates.md#render-from-the-model).
 
 ## Understand The Two Mount Phases {#understand-the-two-mount-phases}
 

@@ -42,6 +42,8 @@ object `package` extends Module:
     private def allowedSourceRoots = Seq(
       os.sub / "scalive" / "src",
       os.sub / "scaliveTesting" / "src",
+      os.sub / "documentation" / "fixtures" / "quick-start" / "src",
+      os.sub / "documentation" / "fixtures" / "quick-start" / "assets" / "js",
       os.sub / "documentation" / "site" / "src",
       os.sub / "documentation" / "site" / "assets" / "js",
       os.sub / "examples" / "src"

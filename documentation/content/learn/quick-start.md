@@ -1,65 +1,93 @@
 {%
 title = "Quick start"
-description = "Run a complete minimal Scalive counter with Mill and the Phoenix LiveView client."
+description = "Create and run a standalone Scalive counter with Mill and the Phoenix LiveView client."
 order = 1
 section = learn
 %}
 
 ## Before You Begin {#before-you-begin}
 
-Scalive does not currently have a verified public dependency coordinate. This
-quick start therefore creates an application module inside a Scalive source
-checkout and depends on the repository's `scalive` module directly. It does not
-claim that `phfroidmont::scalive:0.0.1` is available from a package repository.
+Install Java, Mill, and Node.js with npm. This quick start uses Scala `3.8.3`,
+Mill, and the forthcoming `phfroidmont::scalive:0.0.1-SNAPSHOT` artifact.
 
-Use the repository development environment, which supplies Mill, Java, and npm:
+@:callout(warning)
 
-```bash
-git clone https://github.com/phfroidmont/scalive.git
-cd scalive
-nix develop
-```
+The snapshot coordinate is reserved but not publicly available yet. The project
+below is the intended standalone setup and will resolve as written once the
+snapshot is published. Until then, the same application is compiled as a
+source-backed fixture in the Scalive repository.
+
+@:@
 
 ## Create The Project {#create-the-project}
 
-Create this application tree at the repository root:
+Create this project tree:
 
 ```text
-quickStart/
-├── assets/
-│   └── js/
-│       └── app.js
-├── src/
-│   └── quickstart/
-│       ├── CounterLiveView.scala
-│       ├── Main.scala
-│       ├── RootLayout.scala
-│       └── Routes.scala
-├── package-lock.json
-└── package.json
+scalive-quick-start/
+├── build.mill
+└── app/
+    ├── assets/
+    │   └── js/
+    │       └── app.js
+    ├── src/
+    │   └── quickstart/
+    │       ├── CounterLiveView.scala
+    │       ├── Main.scala
+    │       ├── RootLayout.scala
+    │       └── Routes.scala
+    ├── package-lock.json
+    └── package.json
 ```
 
-`package-lock.json` is generated from the complete `package.json` below. Keep it
-in source control because the repository's Mill asset module uses `npm ci`.
-
-Append this complete module definition to the checkout's existing `build.mill`:
+Create `build.mill` at the project root:
 
 ```scala
-object quickStart extends ScalaCommon with NpmAssets:
-  def moduleDeps = Seq(scalive)
+package build
 
-  override def bundleOutputs = Seq("app.js")
+import mill.*, scalalib.*
+
+object app extends ScalaModule:
+  def scalaVersion = "3.8.3"
+  def mainClass = Some("quickstart.Main")
+
+  def mvnDeps = Seq(
+    mvn"phfroidmont::scalive:0.0.1-SNAPSHOT"
+  )
+
+  def packageJson = Task.Source(moduleDir / "package.json")
+  def packageLock = Task.Source(moduleDir / "package-lock.json")
+  def assetSources = Task.Sources(moduleDir / "assets")
+
+  def bundle = Task {
+    val workDir = Task.dest / "work"
+    val publicDir = Task.dest / "public"
+
+    os.copy(packageJson().path, workDir / "package.json", createFolders = true)
+    os.copy(packageLock().path, workDir / "package-lock.json")
+    assetSources().foreach(source =>
+      os.copy(source.path, workDir / source.path.last)
+    )
+    os.proc("npm", "ci").call(cwd = workDir)
+    os.proc("npm", "run", "build").call(cwd = workDir)
+    os.copy(
+      workDir / "dist" / "app.js",
+      publicDir / "app.js",
+      createFolders = true
+    )
+    PathRef(publicDir)
+  }
 
   def resources = Task {
     super.resources() :+ bundle()
   }
+end app
 ```
 
-This reuses the checkout's current Scala version, compiler settings, npm asset
-tasks, and local `scalive` module. It is intentionally a source dependency, not
-an external Maven dependency.
+The `::` in the dependency selects the Scala 3 artifact. Scalive's ZIO and ZIO
+HTTP dependencies are supplied transitively.
 
-Create `quickStart/package.json`:
+Create `app/package.json`:
 
 ```json
 {
@@ -78,164 +106,71 @@ Create `quickStart/package.json`:
 }
 ```
 
-Generate the lockfile:
+Generate and commit the lockfile:
 
 ```bash
-npm install --package-lock-only --prefix quickStart
+npm install --package-lock-only --prefix app
 ```
 
-Tailwind is not needed for this minimal application. esbuild only bundles the
-LiveView client into the classpath asset served by Scalive.
+Mill uses `npm ci` to reproduce this dependency graph and places the bundled
+`app.js` in the application's classpath resources.
 
 ## Connect The Browser {#connect-the-browser}
 
-Create `quickStart/assets/js/app.js`:
+Create `app/assets/js/app.js`:
 
-```js
-import { Socket } from "phoenix"
-import { LiveSocket } from "phoenix_live_view"
+@:sourceRegion(documentation/fixtures/quick-start/assets/js/app.js, quick-start-browser)
 
-const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
-const params = csrfToken ? { _csrf_token: csrfToken } : {}
-
-const liveSocket = new LiveSocket("/live", Socket, { params })
-liveSocket.connect()
-
-window.liveSocket = liveSocket
-```
-
-@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ mounts its socket at `/live` by default. The server injects the
-`csrf-token` meta element into the root layout's `<head>` and binds it to a
-cookie; the client returns the value as `_csrf_token` when it opens the socket.
-Do not hard-code or generate this token in JavaScript.
+@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ mounts its socket at `/live`
+by default. The server injects the CSRF meta element into the root layout's
+`<head>` and binds it to a cookie. The client returns the value as `_csrf_token`
+when it opens the socket. Do not create or hard-code this token in JavaScript.
 
 ## Define The LiveView {#define-the-liveview}
 
-Create `quickStart/src/quickstart/CounterLiveView.scala`:
+Create `app/src/quickstart/CounterLiveView.scala`:
 
-```scala
-package quickstart
+@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/CounterLiveView.scala, quick-start-live-view)
 
-import zio.ZIO
-
-import scalive.*
-
-final class CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
-  import CounterLiveView.Msg
-
-  def mount(ctx: MountContext): LiveIO[Int] =
-    ZIO.succeed(0)
-
-  def handleMessage(model: Int, ctx: MessageContext) =
-    case Msg.Decrement => ZIO.succeed(model - 1)
-    case Msg.Increment => ZIO.succeed(model + 1)
-
-  def render(model: Int): HtmlElement[Msg] =
-    mainTag(
-      h1("Scalive counter"),
-      button(typ := "button", on.click(Msg.Decrement), "Decrease"),
-      outputTag(aria.live := "polite", model.toString),
-      button(typ := "button", on.click(Msg.Increment), "Increase")
-    )
-end CounterLiveView
-
-object CounterLiveView:
-  enum Msg:
-    case Decrement, Increment
-```
-
-The model is the current `Int`. Browser events decode directly to `Msg`, and a
-successful handler result becomes the next model.
+The `Int` is all state needed to render this interface. `Msg` lists every input
+the view accepts. `mount` creates the state, `handleMessage` performs an
+effectful transition, and `render` projects the state into typed HTML.
 
 ## Add Routes And Layout {#add-routes-and-layout}
 
-Create `quickStart/src/quickstart/Routes.scala`:
+Create `app/src/quickstart/Routes.scala`:
 
-```scala
-package quickstart
+@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/Routes.scala, quick-start-routes)
 
-import scalive.*
+Create `app/src/quickstart/RootLayout.scala`:
 
-object Routes:
-  val home = live
-```
+@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/RootLayout.scala, quick-start-root-layout)
 
-Create `quickStart/src/quickstart/RootLayout.scala`:
-
-```scala
-package quickstart
-
-import scalive.*
-
-final class RootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]:
-  def key(ctx: LiveLayoutContext[Any, Any]): String = "quick-start-root"
-
-  def render[Msg](
-    content: HtmlElement[Msg],
-    pageTitle: Option[String],
-    ctx: LiveLayoutContext[Any, Any]
-  ): HtmlElement[Msg] =
-    htmlRootTag(
-      lang := "en",
-      headTag(
-        metaTag(charset := "utf-8"),
-        metaTag(nameAttr := "viewport", contentAttr := "width=device-width, initial-scale=1"),
-        liveTitle(pageTitle, default = "Scalive quick start"),
-        assets.trackedScript("app.js", defer := true, typ := "text/javascript")
-      ),
-      bodyTag(content)
-    )
-end RootLayout
-```
-
-The root layout must render a complete HTML document with a `<head>`. That gives
-Scalive a place to inject its CSRF meta element and gives the browser the bundled
-client script.
+The root layout renders the complete document. Its `<head>` gives Scalive a
+place for the CSRF meta element and loads the tracked browser bundle.
 
 ## Start The Server {#start-the-server}
 
-Create `quickStart/src/quickstart/Main.scala`:
+Create `app/src/quickstart/Main.scala`:
 
-```scala
-package quickstart
+@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/Main.scala, quick-start-main)
 
-import zio.*
-import zio.http.Server
-
-import scalive.*
-
-object Main extends ZIOAppDefault:
-  override val run =
-    for
-      assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
-      security = LiveSecurity(TokenConfig.default)
-      liveRoutes = Live.router
-                     .withSecurity(security)
-                     .withRootLayout(RootLayout(assets))(
-                       Routes.home -> CounterLiveView()
-                     )
-      routes = liveRoutes ++ assets.routes
-      _ <- Server.serve(routes).provide(Server.defaultWithPort(8080))
-    yield ()
-end Main
-```
-
-The server loads the bundled classpath asset, builds CSRF-protected Live routes,
-adds the static asset routes, and listens on port 8080. For deployed instances,
-set a stable, secret `SCALIVE_TOKEN_SECRET`; the default generates a new secret
-when the process starts.
+The server loads the browser bundle, builds CSRF-protected Live routes, adds the
+static asset routes, and listens on port `8080`. Deployed instances must set a
+stable, secret `SCALIVE_TOKEN_SECRET`; the default generates a new secret when
+the process starts.
 
 ## Run It {#run-it}
 
-From the repository root, run:
+From the project root, run:
 
 ```bash
-mill quickStart.run
+mill app.run
 ```
 
-Open `http://localhost:8080/`. The first request performs a disconnected HTML
-render. The bundled client then connects to `/live`, mounts a connected
-@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@, and sends typed button messages over the socket.
+Open `http://localhost:8080/`. The HTTP request first produces disconnected
+HTML. The client then connects to `/live`, Scalive mounts an independent
+connected model, and button events travel over the socket as typed messages.
 
-Next, read [Project anatomy](project-anatomy.md) to understand why each file has
-one distinct responsibility.
+Next, read [Project anatomy](project-anatomy.md) to assign each file and runtime
+step a clear owner.

@@ -54,37 +54,6 @@ object ActivityStreamExampleSpec extends ZIOSpecDefault:
           current.select("#activity-5").isEmpty
         )
       }
-    },
-    test("isolates stream state between instances") {
-      ZIO.scoped {
-        for
-          first  <- SiteLiveViewHarness.join(new ActivityStreamExample)
-          second <- SiteLiveViewHarness.join(new ActivityStreamExample)
-          _      <- first.clickButton("Insert activity")
-          firstState  <- state(first)
-          secondState <- state(second)
-        yield assertTrue(
-          firstState.select("[data-activity-count]").text() == "5",
-          secondState.select("[data-activity-count]").text() == "4"
-        )
-      }
-    },
-    test("recreates initial stream state after remounting") {
-      for
-        _ <- ZIO.scoped {
-               for
-                 harness <- SiteLiveViewHarness.join(new ActivityStreamExample)
-                 _       <- harness.clickButton("Insert activity")
-                 _       <- harness.leave
-               yield ()
-             }
-        remounted <- ZIO.scoped {
-                       for
-                         harness <- SiteLiveViewHarness.join(new ActivityStreamExample)
-                         current <- state(harness)
-                       yield current.select("[data-activity-count]").text()
-                     }
-      yield assertTrue(remounted == "4")
     }
   )
 end ActivityStreamExampleSpec

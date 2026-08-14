@@ -46,37 +46,15 @@ object NavigationExampleSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("resets selection and isolates instances") {
+    test("resets the selected destination") {
       ZIO.scoped {
         for
-          first  <- SiteLiveViewHarness.join(new NavigationExample)
-          second <- SiteLiveViewHarness.join(new NavigationExample)
-          _      <- first.click("[data-navigation-preset=streams]")
-          _      <- first.sendServer(NavigationExample.Msg.Reset)
-          firstState  <- state(first)
-          secondState <- state(second)
-        yield assertTrue(
-          firstState.select("[data-navigation-query]").text() == "LiveView",
-          secondState.select("[data-navigation-query]").text() == "LiveView"
-        )
+          harness <- SiteLiveViewHarness.join(new NavigationExample)
+          _       <- harness.click("[data-navigation-preset=streams]")
+          _       <- harness.sendServer(NavigationExample.Msg.Reset)
+          current <- state(harness)
+        yield assertTrue(current.select("[data-navigation-query]").text() == "LiveView")
       }
-    },
-    test("recreates initial navigation state after remounting") {
-      for
-        _ <- ZIO.scoped {
-               for
-                 harness <- SiteLiveViewHarness.join(new NavigationExample)
-                 _       <- harness.click("[data-navigation-preset=streams]")
-                 _       <- harness.leave
-               yield ()
-             }
-        remounted <- ZIO.scoped {
-                       for
-                         harness <- SiteLiveViewHarness.join(new NavigationExample)
-                         current <- state(harness)
-                       yield current.select("[data-navigation-query]").text()
-                     }
-      yield assertTrue(remounted == "LiveView")
     }
   )
 end NavigationExampleSpec

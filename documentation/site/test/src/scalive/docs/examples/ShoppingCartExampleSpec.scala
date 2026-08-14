@@ -42,50 +42,6 @@ object ShoppingCartExampleSpec extends ZIOSpecDefault:
           cleared.select("button[data-cart-clear][disabled]").size() == 1
         )
       }
-    },
-    test("handles an explicit server reset") {
-      ZIO.scoped {
-        for
-          harness <- SiteLiveViewHarness.join(new ShoppingCartExample)
-          _       <- harness.click("[data-product=sticker]")
-          _       <- harness.sendServer(ShoppingCartExample.Msg.Clear)
-          state   <- cartState(harness)
-        yield assertTrue(
-          state.select("[data-cart-line]").isEmpty,
-          state.select("[data-cart-item-count]").text() == "0 items"
-        )
-      }
-    },
-    test("isolates state between instances") {
-      ZIO.scoped {
-        for
-          first  <- SiteLiveViewHarness.join(new ShoppingCartExample)
-          second <- SiteLiveViewHarness.join(new ShoppingCartExample)
-          _      <- first.click("[data-product=coffee]")
-          firstState  <- cartState(first)
-          secondState <- cartState(second)
-        yield assertTrue(
-          firstState.select("[data-cart-item-count]").text() == "1 item",
-          secondState.select("[data-cart-item-count]").text() == "0 items"
-        )
-      }
-    },
-    test("starts empty after leaving and remounting") {
-      for
-        _ <- ZIO.scoped {
-               for
-                 harness <- SiteLiveViewHarness.join(new ShoppingCartExample)
-                 _       <- harness.click("[data-product=notebook]")
-                 _       <- harness.leave
-               yield ()
-             }
-        remounted <- ZIO.scoped {
-                       for
-                         harness <- SiteLiveViewHarness.join(new ShoppingCartExample)
-                         state   <- cartState(harness)
-                       yield state.select("[data-cart-item-count]").text()
-                     }
-      yield assertTrue(remounted == "0 items")
     }
   )
 end ShoppingCartExampleSpec

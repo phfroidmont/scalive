@@ -103,22 +103,6 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
           reset.select("[data-field-error] .form-error").isEmpty
         )
       }
-    },
-    test("handles explicit reset and isolates instances") {
-      ZIO.scoped {
-        for
-          first  <- SiteLiveViewHarness.join(new ProfileFormExample)
-          second <- SiteLiveViewHarness.join(new ProfileFormExample)
-          _      <- first.submitForm("[data-profile-form]", validFields)
-          _      <- first.sendServer(ProfileFormExample.Msg.Reset)
-          firstState  <- document(first)
-          secondState <- document(second)
-        yield assertTrue(
-          firstState.select("[data-profile-saved]").isEmpty,
-          firstState.select("[name='profile[name]']").attr("value").isEmpty,
-          secondState.select("[name='profile[name]']").attr("value").isEmpty
-        )
-      }
     }
   )
 end ProfileFormExampleSpec

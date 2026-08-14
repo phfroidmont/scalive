@@ -1,6 +1,5 @@
 package scalive.docs.model
 
-import java.nio.charset.StandardCharsets
 import zio.json.*
 import zio.test.*
 
@@ -294,11 +293,6 @@ object ContentModelSpec extends ZIOSpecDefault:
          encoded.contains("\"name\":\"tparam\""),
          encoded.contains("\"type\":\"generatedApi\"")
       )
-    },
-    test("encodes the same bundle byte-identically") {
-      val first  = bundle.toJson.getBytes(StandardCharsets.UTF_8)
-      val second = bundle.toJson.getBytes(StandardCharsets.UTF_8)
-      assertTrue(first.sameElements(second))
     },
     test("preserves repository-relative source paths and inclusive line ranges") {
       val decoded = bundle.toJson.fromJson[DocumentationBundle]

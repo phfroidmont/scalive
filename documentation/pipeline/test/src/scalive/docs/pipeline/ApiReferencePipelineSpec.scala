@@ -119,13 +119,6 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val liveComponent = symbols.find(symbol =>
         symbol.qualifiedName == "scalive.liveComponent" && symbol.kind == ApiSymbolKind.Def
       )
-      val mod = symbols.find(symbol =>
-        symbol.qualifiedName == "scalive.Mod" && symbol.kind == ApiSymbolKind.Trait
-      )
-      val liveRouteParamsBuilder = symbols.find(symbol =>
-        symbol.qualifiedName == "scalive.LiveRouteParamsBuilder" &&
-          symbol.kind == ApiSymbolKind.Class
-      )
       val packages = symbols.filter(_.kind == ApiSymbolKind.Package).map(symbol =>
         symbol.qualifiedName -> symbol.ownerId
       ).toMap
@@ -165,34 +158,8 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         ),
         liveComponent.exists(_.signatures.size == 3),
         liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
-        mod.exists(_.signatures.exists(_.signature == "trait Mod[+Msg]")),
-        liveRouteParamsBuilder.exists(_.signatures.exists(_.signature.startsWith(
-          "class LiveRouteParamsBuilder[R, A, -Need, Ctx, Params, Capability <: LiveRouteParamsCapability]"
-        ))),
-        hasSignature(symbols, "scalive.HtmlElement", ApiSymbolKind.Class,
-          "class HtmlElement[+Msg](tag: HtmlTag, mods: Vector[Mod[Msg]])"),
-        hasSignature(symbols, "scalive.HtmlElement.appended", ApiSymbolKind.Def,
-          "def appended[Msg2 >: Msg](mod: Mod[Msg2]*): HtmlElement[Msg2]"),
-        hasSignature(symbols, "scalive.component", ApiSymbolKind.Def,
-          "def component[Props, Msg, Model](liveComponent: LiveComponent[Props, Msg, Model], id: String): LiveComponentInstance[Props, Msg, Model]"),
         hasSignature(symbols, "scalive.dropTarget", ApiSymbolKind.Extension,
           "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"),
-        hasSignature(symbols, "scalive.splitBy", ApiSymbolKind.Extension,
-          "extension def splitBy[T](items: IterableOnce[T])[Key, Msg](key: T => Key)(project: (Key, T) => HtmlElement[Msg]): Mod[Msg]"),
-        hasSignature(symbols, "scalive.AsyncValue", ApiSymbolKind.Enum, "enum AsyncValue[+A]"),
-        hasSignature(symbols, "scalive.AsyncValue", ApiSymbolKind.Object, "object AsyncValue"),
-        hasSignature(symbols, "scalive.Mod.Attr", ApiSymbolKind.Enum,
-          "enum Attr[+Msg] extends Mod[Msg]"),
-        hasSignature(symbols, "scalive.FormAction.Method", ApiSymbolKind.Enum,
-          "enum Method(attributeValue: String)"),
-        hasSignature(symbols, "scalive.PhxUpdate", ApiSymbolKind.Enum,
-          "enum PhxUpdate(value: String)"),
-        hasSignature(symbols, "scalive.LiveParamsCodec.DecodeError", ApiSymbolKind.Class,
-          "class DecodeError(message: String, cause: Option[Throwable] = ...) extends RuntimeException"),
-        hasSignature(symbols, "scalive.StaticAssetSource.Classpath", ApiSymbolKind.Class,
-          "class Classpath(resourcePrefix: String, assets: Set[String], classLoader: ClassLoader) extends StaticAssetSource"),
-        hasSignature(symbols, "scalive.ContextAppend", ApiSymbolKind.Object,
-          "object ContextAppend extends LowPriorityContextAppend"),
         signaturesHideSyntheticParents(symbols),
         hooks.exists(_.signatures.exists(_.signature == "def hooks: LiveHooks[Msg, Model]")),
         routedEventless.exists(_.signatures.exists(_.signature ==

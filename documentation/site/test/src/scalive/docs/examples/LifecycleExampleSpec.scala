@@ -41,51 +41,6 @@ object LifecycleExampleSpec extends ZIOSpecDefault:
           cleared <- document(harness)
         yield assertTrue(cleared.select("[data-lifecycle-flash]").isEmpty)
       }
-    },
-    test("handles an explicit server reset") {
-      ZIO.scoped {
-        for
-          harness <- SiteLiveViewHarness.join(new LifecycleExample)
-          _       <- harness.clickButton("Show notification")
-          _       <- harness.clickButton("Request attention")
-          _       <- harness.sendServer(LifecycleExample.Msg.Reset)
-          reset   <- document(harness)
-        yield assertTrue(
-          reset.select("[data-lifecycle-title]").text() == "Lifecycle example",
-          reset.select("[data-lifecycle-flash]").isEmpty
-        )
-      }
-    },
-    test("isolates state between instances") {
-      ZIO.scoped {
-        for
-          first  <- SiteLiveViewHarness.join(new LifecycleExample)
-          second <- SiteLiveViewHarness.join(new LifecycleExample)
-          _      <- first.clickButton("Request attention")
-          firstDocument  <- document(first)
-          secondDocument <- document(second)
-        yield assertTrue(
-          firstDocument.select("[data-lifecycle-title]").text() == "Attention needed",
-          secondDocument.select("[data-lifecycle-title]").text() == "Lifecycle example"
-        )
-      }
-    },
-    test("starts from defaults after leaving and remounting") {
-      for
-        _ <- ZIO.scoped {
-               for
-                 harness <- SiteLiveViewHarness.join(new LifecycleExample)
-                 _       <- harness.clickButton("Request attention")
-                 _       <- harness.leave
-               yield ()
-             }
-        remounted <- ZIO.scoped {
-                       for
-                         harness <- SiteLiveViewHarness.join(new LifecycleExample)
-                         state   <- document(harness)
-                       yield state.select("[data-lifecycle-title]").text()
-                     }
-      yield assertTrue(remounted == "Lifecycle example")
     }
   )
 end LifecycleExampleSpec

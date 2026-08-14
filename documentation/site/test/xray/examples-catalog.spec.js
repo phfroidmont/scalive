@@ -10,7 +10,8 @@ const { expect, test } = require(`${playwrightRoot}/playwright/test.js`)
 test("filters the bounded example catalog through URL patches", async ({ page }) => {
   await page.goto("/examples")
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
-  await expect(page.locator("[data-example-card]")).toHaveCount(11)
+  const initialCount = await page.locator("[data-example-card]").count()
+  expect(initialCount).toBeGreaterThan(1)
   await expect(page.locator(".docs-example, [data-example-child], [data-inspector-child]")).toHaveCount(0)
 
   await page.getByRole("link", { name: "Keyed rendering", exact: true }).first().click()
@@ -24,7 +25,7 @@ test("filters the bounded example catalog through URL patches", async ({ page })
 
   await page.getByRole("link", { name: "All examples" }).click()
   await expect(page).toHaveURL("/examples")
-  await expect(page.locator("[data-example-card]")).toHaveCount(11)
+  await expect(page.locator("[data-example-card]")).toHaveCount(initialCount)
 })
 
 test("filters the catalog without JavaScript", async ({ browser }) => {

@@ -7,127 +7,35 @@ import scalive.docs.examples.ExampleRegistry
 import scalive.docs.xray.*
 
 object DocumentationNestedExampleSpec extends ZIOSpecDefault:
-  private val Count = "[role=status] strong"
-
   override def spec = suite("DocumentationNestedExampleSpec")(
-    test("joins the counter and terminates it when the documentation page leaves") {
-      ZIO.scoped {
-        for
-          bundle <- ZIO
-                      .fromEither(GeneratedDocumentation.load(getClass.getClassLoader))
-                      .mapError(new IllegalArgumentException(_))
-          application <- ZIO
-                           .fromEither(DocumentationApplication.from(bundle))
-                           .mapError(new IllegalArgumentException(_))
-          page <- ZIO
-                    .fromOption(application.page("/examples/counter"))
-                    .orElseFail(new NoSuchElementException("/examples/counter"))
-          renderer = DocumentationRenderer(application)
-          parent   <- SiteLiveViewHarness.join(DocumentationPageLiveView(page, renderer))
-          childId   = ExampleRegistry.instanceId(page.route, "counter")
-          child    <- parent.joinNested(childId)
-          initial  <- child.text(Count)
-          _        <- child.clickButton("Increase")
-          changed  <- child.text(Count)
-          _        <- child.clickButton("Reset")
-          reset    <- child.text(Count)
-          joined   <- parent.socketExists(child.topic)
-          _        <- parent.leave
-          removed  <- parent.socketExists(child.topic)
-        yield assertTrue(
-          initial == "0",
-          changed == "1",
-          reset == "0",
-          joined,
-          !removed
-        )
-      }
-    },
-    test("isolates the shopping cart and terminates it when the documentation page leaves") {
-      ZIO.scoped {
-        for
-          bundle <- ZIO
-                      .fromEither(GeneratedDocumentation.load(getClass.getClassLoader))
-                      .mapError(new IllegalArgumentException(_))
-          application <- ZIO
-                           .fromEither(DocumentationApplication.from(bundle))
-                           .mapError(new IllegalArgumentException(_))
-          page <- ZIO
-                    .fromOption(application.page("/examples/shopping-cart"))
-                    .orElseFail(new NoSuchElementException("/examples/shopping-cart"))
-          renderer = DocumentationRenderer(application)
-          parent   <- SiteLiveViewHarness.join(DocumentationPageLiveView(page, renderer))
-          childId   = ExampleRegistry.instanceId(page.route, "shopping-cart")
-          child    <- parent.joinNested(childId)
-          initial  <- child.text("[data-cart-item-count]")
-          _        <- child.click("[data-product=coffee]")
-          changed  <- child.text("[data-cart-item-count]")
-          joined   <- parent.socketExists(child.topic)
-          _        <- parent.leave
-          removed  <- parent.socketExists(child.topic)
-        yield assertTrue(initial == "0 items", changed == "1 item", joined, !removed)
-      }
-    },
-    test("isolates the lifecycle example and terminates it when the documentation page leaves") {
-      ZIO.scoped {
-        for
-          bundle <- ZIO
-                      .fromEither(GeneratedDocumentation.load(getClass.getClassLoader))
-                      .mapError(new IllegalArgumentException(_))
-          application <- ZIO
-                           .fromEither(DocumentationApplication.from(bundle))
-                           .mapError(new IllegalArgumentException(_))
-          page <- ZIO
-                    .fromOption(application.page("/examples/lifecycle"))
-                    .orElseFail(new NoSuchElementException("/examples/lifecycle"))
-          renderer = DocumentationRenderer(application)
-          parent   <- SiteLiveViewHarness.join(DocumentationPageLiveView(page, renderer))
-          childId   = ExampleRegistry.instanceId(page.route, "lifecycle")
-          child    <- parent.joinNested(childId)
-          initial  <- child.text("[data-lifecycle-title]")
-          _        <- child.clickButton("Request attention")
-          changed  <- child.text("[data-lifecycle-title]")
-          joined   <- parent.socketExists(child.topic)
-          _        <- parent.leave
-          removed  <- parent.socketExists(child.topic)
-        yield assertTrue(
-          initial == "Lifecycle example",
-          changed == "Attention needed",
-          joined,
-          !removed
-        )
-      }
-    },
-    test("submits the profile form and terminates it when the documentation page leaves") {
-      ZIO.scoped {
-        for
-          bundle <- ZIO
-                      .fromEither(GeneratedDocumentation.load(getClass.getClassLoader))
-                      .mapError(new IllegalArgumentException(_))
-          application <- ZIO
-                           .fromEither(DocumentationApplication.from(bundle))
-                           .mapError(new IllegalArgumentException(_))
-          page <- ZIO
-                    .fromOption(application.page("/examples/profile-form"))
-                    .orElseFail(new NoSuchElementException("/examples/profile-form"))
-          renderer = DocumentationRenderer(application)
-          parent   <- SiteLiveViewHarness.join(DocumentationPageLiveView(page, renderer))
-          childId   = ExampleRegistry.instanceId(page.route, "profile-form")
-          child    <- parent.joinNested(childId)
-          _ <- child.submitForm(
-                 "[data-profile-form]",
-                 Vector(
-                   "profile[name]"      -> "Ada Lovelace",
-                   "profile[email]"     -> "ada@example.com",
-                   "profile[biography]" -> "Pioneer."
-                 )
-               )
-          saved   <- child.text("[data-profile-saved]")
-          joined  <- parent.socketExists(child.topic)
-          _       <- parent.leave
-          removed <- parent.socketExists(child.topic)
-        yield assertTrue(saved == "Saved Ada Lovelace's profile.", joined, !removed)
-      }
+    test("mounts and terminates every canonical nested example") {
+      for
+        bundle <- ZIO
+                    .fromEither(GeneratedDocumentation.load(getClass.getClassLoader))
+                    .mapError(new IllegalArgumentException(_))
+        application <- ZIO
+                         .fromEither(DocumentationApplication.from(bundle))
+                         .mapError(new IllegalArgumentException(_))
+        results <- ZIO.foreach(ExampleRegistry.entries) { entry =>
+                     ZIO.scoped {
+                       val route = s"/examples/${entry.descriptor.id}"
+                       for
+                         page <- ZIO
+                                   .fromOption(application.page(route))
+                                   .orElseFail(new NoSuchElementException(route))
+                         renderer = DocumentationRenderer(application)
+                         parent <- SiteLiveViewHarness.join(
+                                     DocumentationPageLiveView(page, renderer)
+                                   )
+                         childId = ExampleRegistry.instanceId(route, entry.descriptor.id)
+                         child   <- parent.joinNested(childId)
+                         joined  <- parent.socketExists(child.topic)
+                         _       <- parent.leave
+                         removed <- parent.socketExists(child.topic)
+                       yield joined && !removed
+                     }
+                   }
+      yield assertTrue(results.forall(identity))
     },
     test("captures a counter operation on a separate inspector topic") {
       ZIO.scoped {

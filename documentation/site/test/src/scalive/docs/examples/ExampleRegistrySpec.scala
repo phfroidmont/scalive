@@ -6,28 +6,11 @@ import scalive.*
 import scalive.docs.model.ExampleCatalog
 
 object ExampleRegistrySpec extends ZIOSpecDefault:
-  private val BehaviorTests =
-    Set(
-      "counter-behavior",
-      "activity-stream-behavior",
-      "async-report-behavior",
-      "browser-integration-behavior",
-      "lifecycle-behavior",
-      "navigation-behavior",
-      "profile-form-behavior",
-      "reports-service-behavior",
-      "shopping-cart-behavior",
-      "subscription-clock-behavior",
-      "text-upload-behavior",
-      "voting-components-behavior"
-    )
-
   override def spec = suite("ExampleRegistrySpec")(
-    test("keeps executable entries aligned with generated descriptors and behavior tests") {
+    test("keeps executable entries aligned with generated descriptors") {
       assertTrue(
         ExampleRegistry.validationErrors.isEmpty,
         ExampleRegistry.entries.map(_.descriptor) == ExampleCatalog.entries,
-        ExampleRegistry.entries.map(_.behaviorTestId).toSet == BehaviorTests,
         ExampleRegistry.entries.forall(_.descriptor.sources.nonEmpty),
         ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.path.nonEmpty)),
         ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.region.nonEmpty))

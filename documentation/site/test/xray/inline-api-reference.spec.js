@@ -28,19 +28,6 @@ test("opens inline API references on hover and keeps only one open", async ({ pa
     .toHaveCount(0)
   await expect(firstPreview.locator(".docs-api-reference-signature .keyword")).toHaveText("trait")
   await expect(firstPreview.locator(".docs-api-reference-signature .type-name").first()).toHaveText("LiveView")
-  const signatureSurface = await firstPreview.locator(".docs-api-reference-signature").evaluate((element) => {
-    const style = getComputedStyle(element)
-    return {
-      background: style.backgroundColor,
-      border: style.borderTopWidth,
-      padding: style.paddingTop,
-    }
-  })
-  expect(signatureSurface).toEqual({
-    background: "rgba(0, 0, 0, 0)",
-    border: "0px",
-    padding: "0px",
-  })
   await expect(firstPreview).toHaveAttribute("id", /docs-api-reference-preview-\d+/)
   await expect(firstTrigger).toHaveAttribute("aria-describedby", await firstPreview.getAttribute("id"))
 

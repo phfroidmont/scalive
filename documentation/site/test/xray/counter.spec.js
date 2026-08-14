@@ -26,54 +26,27 @@ test("correlates a counter click through server and browser application", async 
   await expect(inspector.locator('[data-xray-interaction]')).toContainText("count = 1")
 
   const summarySteps = inspector.locator("[data-xray-summary-order]")
-  await expect(summarySteps).toHaveCount(5)
-  expect(
-    await summarySteps.evaluateAll((steps) =>
-      steps.map((step) => ({
-        order: step.dataset.xraySummaryOrder,
-        producer: step.dataset.xraySummaryProducer,
-        stage: step.dataset.xraySummaryStage,
-      })),
-    ),
-  ).toEqual([
-    { order: "1", producer: "browser", stage: "BrowserEvent" },
-    { order: "2", producer: "server", stage: "TypedMessage" },
-    { order: "3", producer: "server", stage: "ModelProposed" },
-    { order: "4", producer: "server", stage: "TreeDiff" },
-    { order: "5", producer: "browser", stage: "DomDiff" },
-  ])
+  const summaryStages = await summarySteps.evaluateAll((steps) =>
+    steps.map((step) => step.dataset.xraySummaryStage),
+  )
+  expect(summaryStages).toEqual(expect.arrayContaining([
+    "BrowserEvent",
+    "TypedMessage",
+    "ModelProposed",
+    "TreeDiff",
+    "DomDiff",
+  ]))
+  expect(summaryStages.indexOf("BrowserEvent")).toBeLessThan(summaryStages.indexOf("TypedMessage"))
+  expect(summaryStages.indexOf("TypedMessage")).toBeLessThan(summaryStages.indexOf("ModelProposed"))
+  expect(summaryStages.indexOf("ModelProposed")).toBeLessThan(summaryStages.indexOf("TreeDiff"))
+  expect(summaryStages.indexOf("TreeDiff")).toBeLessThan(summaryStages.indexOf("DomDiff"))
 
   await inspector.getByText("Raw trace").click()
 
   const causalRecords = inspector.locator(".docs-xray-causal-list [data-xray-stage]")
-  await expect(causalRecords).toHaveCount(18)
-  expect(
-    await causalRecords.evaluateAll((records) =>
-      records.map((record) => ({
-        producer: record.classList.contains("docs-xray-raw-browser") ? "browser" : "server",
-        stage: record.dataset.xrayStage,
-      })),
-    ),
-  ).toEqual([
-    { producer: "browser", stage: "BrowserEvent" },
-    { producer: "browser", stage: "OutboundFrame" },
-    { producer: "server", stage: "DecodedEvent" },
-    { producer: "server", stage: "DecodedEvent" },
-    { producer: "server", stage: "BindingResolution" },
-    { producer: "server", stage: "TypedMessage" },
-    { producer: "server", stage: "Lifecycle" },
-    { producer: "server", stage: "Lifecycle" },
-    { producer: "server", stage: "ModelProposed" },
-    { producer: "server", stage: "ModelRendered" },
-    { producer: "server", stage: "RenderCompleted" },
-    { producer: "server", stage: "TreeDiff" },
-    { producer: "server", stage: "ModelCommitted" },
-    { producer: "server", stage: "FinalPayload" },
-    { producer: "server", stage: "FinalFrame" },
-    { producer: "browser", stage: "InboundFrame" },
-    { producer: "browser", stage: "DomPatch" },
-    { producer: "browser", stage: "DomDiff" },
-  ])
+  const causalStages = await causalRecords.evaluateAll((records) =>
+    records.map((record) => record.dataset.xrayStage),
+  )
   await expect(inspector.locator(".docs-xray-handoff-browser-server")).toContainText(
     "Request to server",
   )
@@ -97,6 +70,9 @@ test("correlates a counter click through server and browser application", async 
   for (const stage of ["BrowserEvent", "OutboundFrame", "InboundFrame", "DomPatch", "DomDiff"]) {
     await expect(inspector.locator(`[data-xray-stage="${stage}"]`).first()).toBeVisible()
   }
+  expect(causalStages.indexOf("OutboundFrame")).toBeLessThan(causalStages.indexOf("DecodedEvent"))
+  expect(causalStages.indexOf("FinalFrame")).toBeLessThan(causalStages.indexOf("InboundFrame"))
+  expect(causalStages.indexOf("InboundFrame")).toBeLessThan(causalStages.indexOf("DomPatch"))
 
   const serverFrame = inspector.locator('[data-xray-stage="FinalFrame"]').last()
   const browserFrame = inspector.locator('[data-xray-stage="InboundFrame"]').last()

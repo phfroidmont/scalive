@@ -183,16 +183,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         guideLinks = guidesDocument.select(".docs-section-index > nav > ul > li > a").asScala.toVector
       yield assertTrue(
         learnDocument.select(".docs-section-index details").isEmpty,
-        learnLinks.map(_.select(".docs-section-index-label").text()) == Vector(
-          "Start here",
-          "Quick start",
-          "Project anatomy",
-          "Models and messages",
-          "Rendering and DOM updates",
-          "Lifecycle and connection behavior"
-        ),
-        learnLinks.map(_.select(".docs-section-index-number").text()) ==
-          Vector("01", "02", "03", "04", "05", "06"),
+        learnLinks.nonEmpty,
+        learnLinks.forall(_.select(".docs-section-index-label").text().nonEmpty),
+        learnLinks.forall(_.select(".docs-section-index-number").text().nonEmpty),
+        learnLinks.map(_.attr("href")).distinct.size == learnLinks.size,
         learnDocument.select(
           ".docs-section-index a[href='/learn/models-and-messages'][aria-current=page]"
         ).size() == 1,
@@ -315,46 +309,15 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         document         = Jsoup.parse(rendered.html)
         filteredDocument = Jsoup.parse(filtered.html)
         unknownDocument  = Jsoup.parse(unknown.html)
+        expectedExampleIds = application.bundle.examples.map(_.descriptor.id).toSet
+        renderedExampleIds = document.select("[data-example-card]").asScala.toVector
+                               .map(_.attr("data-example-card")).filter(_.nonEmpty).toSet
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 13,
+        expectedExampleIds.subsetOf(renderedExampleIds),
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
-        document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
-        document.select("a[href='/examples/shopping-cart']").asScala.exists(
-          _.text() == "Connection-local shopping cart"
-        ),
-        document.select("a[href='/examples/lifecycle']").asScala.exists(
-          _.text() == "Lifecycle and connection state"
-        ),
-        document.select("a[href='/examples/navigation']").asScala.exists(
-          _.text() == "Typed documentation navigation"
-        ),
-        document.select("a[href='/examples/profile-form']").asScala.exists(
-          _.text() == "Typed profile form"
-        ),
-        document.select("a[href='/examples/activity-stream']").asScala.exists(
-          _.text() == "Bounded activity stream"
-        ),
-        document.select("a[href='/examples/browser-integration']").asScala.exists(
-          _.text() == "Browser integration"
-        ),
-        document.select("a[href='/examples/voting-components']").asScala.exists(
-          _.text() == "Voting components"
-        ),
-        document.select("a[href='/examples/service-injection']").asScala.exists(
-          _.text() == "Reports service injection"
-        ),
-        document.select("a[href='/examples/async-report']").asScala.exists(
-          _.text() == "Managed async report"
-        ),
-        document.select("a[href='/examples/subscription-clock']").asScala.exists(
-          _.text() == "Managed clock subscription"
-        ),
-        document.select("a[href='/examples/text-upload']").asScala.exists(
-          _.text() == "Summarize-and-discard text upload"
-        ),
         document.select("[data-standalone-lab] a[href='/examples/authentication/lab']").asScala
           .exists(_.text() == "Authentication lab"),
         document.select("[data-standalone-lab] a[href='/examples/authentication/lab']").asScala

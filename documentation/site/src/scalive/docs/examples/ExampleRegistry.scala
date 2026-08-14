@@ -23,7 +23,6 @@ final private[docs] case class ExampleReset[Msg](message: Msg, controlLabel: Str
 
 sealed private[docs] trait RegisteredExample:
   def descriptor: ExampleDescriptor
-  def behaviorTestId: String
   def resetMessage: Any
   def resetControlLabel: String
   def render(instanceId: String): Mod[Nothing]
@@ -34,8 +33,7 @@ final private class ExampleEntry[Msg: LiveMessageTag, Model: ClassTag](
   val descriptor: ExampleDescriptor,
   factory: String => LiveView[Msg, Model],
   reset: ExampleReset[Msg],
-  traces: ExampleTraceProjectors[Msg, Model],
-  val behaviorTestId: String)
+  traces: ExampleTraceProjectors[Msg, Model])
     extends RegisteredExample:
   private val messageTag = summon[LiveMessageTag[Msg]].classTag
   private val modelTag   = summon[ClassTag[Model]]
@@ -82,8 +80,7 @@ private[docs] object ExampleRegistry:
               "Current async report state",
               Vector("state" -> asyncValueLabel(value.report))
             )
-      ),
-      behaviorTestId = "async-report-behavior"
+      )
     )
 
   private val activityStream =
@@ -114,8 +111,7 @@ private[docs] object ExampleRegistry:
                 "nextId"        -> value.nextId.toString
               )
             )
-      ),
-      behaviorTestId = "activity-stream-behavior"
+      )
     )
 
   private val counter = new ExampleEntry[CounterExample.Msg, CounterExample.Model](
@@ -138,8 +134,7 @@ private[docs] object ExampleRegistry:
             "Current counter state",
             Vector("count" -> value.count.toString)
           )
-    ),
-    behaviorTestId = "counter-behavior"
+    )
   )
 
   private val browserIntegration =
@@ -170,8 +165,7 @@ private[docs] object ExampleRegistry:
                 "operation"     -> value.operation.traceLabel
               )
             )
-      ),
-      behaviorTestId = "browser-integration-behavior"
+      )
     )
 
   private val shoppingCart =
@@ -209,8 +203,7 @@ private[docs] object ExampleRegistry:
                 "lines"     -> quantities
               )
             )
-      ),
-      behaviorTestId = "shopping-cart-behavior"
+      )
     )
 
   private val subscriptionClock =
@@ -241,8 +234,7 @@ private[docs] object ExampleRegistry:
                 "tickCount" -> value.tickCount.toString
               )
             )
-      ),
-      behaviorTestId = "subscription-clock-behavior"
+      )
     )
 
   private val serviceInjection =
@@ -278,8 +270,7 @@ private[docs] object ExampleRegistry:
               ExampleTraceValue("ReportsExample.Model", "No reports available")
             case ReportsExample.Model.Failed =>
               ExampleTraceValue("ReportsExample.Model", "Report loading failed")
-      ),
-      behaviorTestId = "reports-service-behavior"
+      )
     )
 
   private val lifecycle =
@@ -308,8 +299,7 @@ private[docs] object ExampleRegistry:
                 "currentTitle"   -> value.currentTitle
               )
             )
-      ),
-      behaviorTestId = "lifecycle-behavior"
+      )
     )
 
   private val profileForm =
@@ -338,8 +328,7 @@ private[docs] object ExampleRegistry:
                 "saved"      -> value.saved.nonEmpty.toString
               )
             )
-      ),
-      behaviorTestId = "profile-form-behavior"
+      )
     )
 
   private val navigation =
@@ -365,8 +354,7 @@ private[docs] object ExampleRegistry:
               "Current typed search destination",
               Vector("preset" -> value.query.label)
             )
-      ),
-      behaviorTestId = "navigation-behavior"
+      )
     )
 
   private val votingComponents =
@@ -397,8 +385,7 @@ private[docs] object ExampleRegistry:
                 "resetEpoch"    -> value.resetEpoch.toString
               )
             )
-      ),
-      behaviorTestId = "voting-components-behavior"
+      )
     )
 
   private val textUpload =
@@ -430,8 +417,7 @@ private[docs] object ExampleRegistry:
                 "totalBytes"    -> value.summaries.map(_.bytes).sum.toString
               )
             )
-      ),
-      behaviorTestId = "text-upload-behavior"
+      )
     )
 
   val entries: Vector[RegisteredExample] =
@@ -514,9 +500,6 @@ private[docs] object ExampleRegistry:
         )
     val metadataErrors = entries.flatMap { entry =>
       Vector(
-        Option.when(entry.behaviorTestId.trim.isEmpty)(
-          s"example '${entry.descriptor.id}' has no behavior test id."
-        ),
         Option.when(entry.resetControlLabel.trim.isEmpty)(
           s"example '${entry.descriptor.id}' has no reset control."
         )

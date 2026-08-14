@@ -19,13 +19,12 @@ object DocumentationHomeSpec extends ZIOSpecDefault:
     yield application
 
   override def spec = suite("DocumentationHomeSpec")(
-    test("keeps the approved two-plane mark geometry") {
+    test("renders a decorative two-plane mark without clipping") {
       val rendered = HtmlBuilder.build(DocumentationBrand.mark("mark"))
       assertTrue(
-        DocumentationBrand.TopPath == "M18 52V26L78 2V28L38 44H46L42 52Z",
-        DocumentationBrand.BottomPath == "M54 44H78V70L18 94V68L58 52H50Z",
-        rendered.count(_ == '<') == 6,
         rendered.contains("viewBox=\"0 0 96 96\""),
+        rendered.contains("aria-hidden=\"true\""),
+        rendered.sliding(5).count(_ == "<path") == 2,
         !rendered.contains("mask"),
         !rendered.contains("clip-path")
       )

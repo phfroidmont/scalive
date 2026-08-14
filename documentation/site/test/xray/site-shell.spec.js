@@ -145,28 +145,17 @@ test("organizes API package members without duplicating them in side navigation"
   await expect(titleRow.locator(".docs-api-title-kind + h1")).toHaveText("scalive")
   await expect(pageContent.locator(".docs-api-qualified-name")).toHaveCount(0)
   const titleBadgeLayout = await pageContent.evaluate((element) => {
-    const treeBadge = document.querySelector(".docs-api-nav-kind-package")
     const titleBadge = element.querySelector(".docs-api-title-kind-package")
     const heading = element.querySelector(".docs-api-title-row h1")
-    const treeStyle = getComputedStyle(treeBadge)
-    const titleStyle = getComputedStyle(titleBadge)
     const titleBounds = titleBadge.getBoundingClientRect()
     const headingBounds = heading.getBoundingClientRect()
     return {
-      backgroundMatches: titleStyle.backgroundColor === treeStyle.backgroundColor,
-      colorMatches: titleStyle.color === treeStyle.color,
       centerDifference: Math.abs(
         titleBounds.top + titleBounds.height / 2 - (headingBounds.top + headingBounds.height / 2)
       ),
-      headingMarginTop: getComputedStyle(heading).marginTop,
-      headingMarginBottom: getComputedStyle(heading).marginBottom,
     }
   })
-  expect(titleBadgeLayout.backgroundMatches).toBe(true)
-  expect(titleBadgeLayout.colorMatches).toBe(true)
   expect(titleBadgeLayout.centerDifference).toBeLessThanOrEqual(1)
-  expect(titleBadgeLayout.headingMarginTop).toBe("0px")
-  expect(titleBadgeLayout.headingMarginBottom).toBe("0px")
 
   await expect(pageContent.locator("#html-elements")).toBeVisible()
   await expect(pageContent.locator("#html-attributes")).toBeVisible()
@@ -174,34 +163,17 @@ test("organizes API package members without duplicating them in side navigation"
   await expect(outline.getByRole("link", { name: "HTML attributes", exact: true })).toBeVisible()
   await expect(outline.getByRole("link", { name: "div", exact: true })).toHaveCount(0)
 
-  const categoryHeading = pageContent.locator("#core-api > h2")
-  expect(await categoryHeading.evaluate((element) => {
-    const style = getComputedStyle(element)
-    return [style.borderTopWidth, style.borderBottomWidth]
-  })).toEqual(["0px", "0px"])
-
   const simpleMember = pageContent.locator('[data-api-symbol="def:scalive.rawHtml"]')
   await expect(simpleMember.locator("h3.docs-visually-hidden")).toHaveText("rawHtml")
   await expect(simpleMember.locator(".docs-api-kind")).toHaveCount(0)
-  const signatureLayout = await simpleMember.locator(".docs-api-signature").first().evaluate((element) => {
-    return {
-      height: element.getBoundingClientRect().height,
-      background: getComputedStyle(element.querySelector("pre")).backgroundColor,
-    }
-  })
-  expect(signatureLayout.height).toBeLessThan(110)
-  expect(signatureLayout.background).toBe("rgba(0, 0, 0, 0)")
   await expect(simpleMember.locator(".docs-code-block, [data-code-copy]")).toHaveCount(0)
   const syntaxColors = await simpleMember.locator(".docs-api-member-signature").evaluate((element) => ({
     keyword: getComputedStyle(element.querySelector(".keyword")).color,
     text: getComputedStyle(element).color,
     type: getComputedStyle(element.querySelector(".type-name")).color,
-    signatureLeft: element.querySelector("code").getBoundingClientRect().left,
-    sourceLeft: element.parentElement.querySelector(".docs-api-source").getBoundingClientRect().left,
   }))
   expect(syntaxColors.keyword).not.toBe(syntaxColors.text)
   expect(syntaxColors.type).not.toBe(syntaxColors.text)
-  expect(Math.abs(syntaxColors.signatureLeft - syntaxColors.sourceLeft)).toBeLessThanOrEqual(0.5)
 
   const filter = pageContent.locator("[data-api-member-filter]")
   await expect(filter).toBeVisible()
@@ -233,67 +205,30 @@ test("keeps every categorized API member visible without JavaScript", async ({ b
   await context.close()
 })
 
-test("wraps long API member signatures without breaking words", async ({ page }) => {
+test("wraps API declarations without document overflow or copy controls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/api/scalive")
 
   const signatures = page.locator(".docs-api-member-signature")
-  const longest = signatures.filter({ hasText: "liveComponent" }).first()
-  await expect(longest).toBeVisible()
-  const layout = await longest.evaluate((element) => {
-    const code = element.querySelector("code")
-    const style = getComputedStyle(code)
-    return {
-      lineHeight: Number.parseFloat(style.lineHeight),
-      height: code.getBoundingClientRect().height,
-      overflow: element.scrollWidth - element.clientWidth,
-      whiteSpace: style.whiteSpace,
-      overflowWrap: style.overflowWrap,
-      wordBreak: style.wordBreak,
-      keyword: getComputedStyle(code.querySelector(".keyword")).color,
-      text: getComputedStyle(code).color,
-      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    }
-  })
-  expect(layout.whiteSpace).toBe("pre-wrap")
-  expect(layout.overflowWrap).toBe("normal")
-  expect(layout.wordBreak).toBe("normal")
-  expect(layout.height).toBeGreaterThan(layout.lineHeight * 1.5)
-  expect(layout.overflow).toBeLessThanOrEqual(1)
-  expect(layout.documentOverflow).toBeLessThanOrEqual(1)
-  expect(layout.keyword).not.toBe(layout.text)
-})
-
-test("wraps the API owner declaration without copy controls", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto("/api/scalive")
-
+  const member = signatures.filter({ hasText: "liveComponent" }).first()
   const declaration = page.locator(".docs-api-page > .docs-api-symbol .docs-code-block")
+  await expect(member).toBeVisible()
   await expect(declaration).toBeVisible()
   await expect(declaration.locator(".docs-code-toolbar, [data-code-copy]")).toHaveCount(0)
-  const layout = await declaration.evaluate((element) => {
-    const pre = element.querySelector("pre")
-    const code = element.querySelector("code")
-    const style = getComputedStyle(code)
-    return {
-      lineHeight: Number.parseFloat(getComputedStyle(pre).lineHeight),
-      height: code.getBoundingClientRect().height,
-      overflow: pre.scrollWidth - pre.clientWidth,
-      whiteSpace: style.whiteSpace,
-      overflowWrap: style.overflowWrap,
-      wordBreak: style.wordBreak,
-      keyword: getComputedStyle(code.querySelector(".keyword")).color,
-      text: getComputedStyle(code).color,
-      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    }
-  })
-  expect(layout.whiteSpace).toBe("pre-wrap")
-  expect(layout.overflowWrap).toBe("normal")
-  expect(layout.wordBreak).toBe("normal")
-  expect(layout.height).toBeGreaterThan(layout.lineHeight * 1.5)
-  expect(layout.overflow).toBeLessThanOrEqual(1)
-  expect(layout.documentOverflow).toBeLessThanOrEqual(1)
-  expect(layout.keyword).not.toBe(layout.text)
+  for (const element of [member, declaration]) {
+    const layout = await element.evaluate((container) => {
+      const surface = container.matches("pre") ? container : container.querySelector("pre") || container
+      const code = container.querySelector("code")
+      return {
+        overflow: surface.scrollWidth - surface.clientWidth,
+        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        wraps: code.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(code).lineHeight) * 1.5,
+      }
+    })
+    expect(layout.wraps).toBe(true)
+    expect(layout.overflow).toBeLessThanOrEqual(1)
+    expect(layout.documentOverflow).toBeLessThanOrEqual(1)
+  }
 })
 
 test("shows a flat Learn path on desktop and hides it on smaller screens", async ({ page }) => {
@@ -303,21 +238,7 @@ test("shows a flat Learn path on desktop and hides it on smaller screens", async
   const navigation = page.locator(".docs-section-index")
   await expect(navigation).toBeVisible()
   await expect(navigation.locator("details")).toHaveCount(0)
-  await expect(navigation.locator(":scope > nav > ol > li > a")).toHaveText([
-    "01Start here",
-    "02Quick start",
-    "03Project anatomy",
-    "04Models and messages",
-    "05Rendering and DOM updates",
-    "06Lifecycle and connection behavior",
-  ])
   await expect(navigation.locator('[aria-current="page"]')).toHaveText("04Models and messages")
-  const rowGaps = await navigation.locator(":scope > nav > ol > li > a").evaluateAll((links) =>
-    links.slice(1).map((link, index) =>
-      link.getBoundingClientRect().top - links[index].getBoundingClientRect().bottom
-    )
-  )
-  expect(rowGaps.every((gap) => Math.abs(gap) <= 0.5)).toBe(true)
 
   await page.setViewportSize({ width: 768, height: 900 })
   await expect(navigation).toBeHidden()

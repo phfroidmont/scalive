@@ -163,9 +163,10 @@ private[docs] object DocumentationApplication:
     (live / "search").queryOptional[String](SearchParameter)
   val ExamplesRoute                      = "/examples"
   val GuidesRoute                        = "/guides"
+  val ExamplesQueryParameter             = "q"
   val TopicParameter                     = "topic"
   private[docs] val ExamplesCatalogRoute =
-    (live / "examples").queryOptional[String](TopicParameter)
+    (live / "examples").query[DocumentationExamplesParams]
 
   def from(bundle: DocumentationBundle): Either[String, DocumentationApplication] =
     for

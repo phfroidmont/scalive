@@ -12,7 +12,7 @@ final case class DocumentationBundle(
     derives JsonCodec
 
 object DocumentationBundle:
-  val CurrentFormatVersion = 8
+  val CurrentFormatVersion = 9
 
 final case class Page(
   route: String,
@@ -102,11 +102,39 @@ final case class ExampleDescriptor(
   id: String,
   title: String,
   description: String,
+  category: ExampleCategory,
   topics: Vector[String],
   aliases: Vector[String],
   resetDescription: String,
   sources: Vector[ExampleSource])
     derives JsonCodec
+
+enum ExampleCategory(val label: String, val description: String) derives JsonCodec:
+  case StartHere
+      extends ExampleCategory(
+        "Start here",
+        "Approachable examples of typed messages, state, and rendering."
+      )
+  case StateAndRendering
+      extends ExampleCategory(
+        "State and rendering",
+        "Durable state, efficient DOM updates, lifecycle, and components."
+      )
+  case AsyncAndEffects
+      extends ExampleCategory(
+        "Async and effects",
+        "Managed work, subscriptions, cancellation, and injected services."
+      )
+  case UserInput
+      extends ExampleCategory(
+        "User input",
+        "Typed forms, validation, uploads, and resource ownership."
+      )
+  case BrowserAndNavigation
+      extends ExampleCategory(
+        "Browser and navigation",
+        "Checked routes, browser hooks, and client interoperability."
+      )
 
 final case class CompilationFailure(
   id: String,

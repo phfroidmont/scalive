@@ -55,6 +55,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     id = "counter",
     title = "Typed counter",
     description = "Update and reset isolated server state.",
+    category = ExampleCategory.StartHere,
     topics = Vector("state", "events"),
     aliases = Vector("increment", "reset"),
     resetDescription = "Set the count back to zero.",

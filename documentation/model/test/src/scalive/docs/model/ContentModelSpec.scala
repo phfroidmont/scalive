@@ -157,6 +157,7 @@ object ContentModelSpec extends ZIOSpecDefault:
     id = "counter",
     title = "Counter",
     description = "Change typed server state and reset it explicitly.",
+    category = ExampleCategory.StartHere,
     topics = Vector("state", "events"),
     aliases = Vector("increment", "reset"),
     resetDescription = "Set the count back to zero.",

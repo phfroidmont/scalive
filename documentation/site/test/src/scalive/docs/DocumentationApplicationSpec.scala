@@ -10,7 +10,7 @@ import zio.test.*
 
 import scalive.*
 import scalive.docs.examples.{ExampleRegistry, reportsFixtureService}
-import scalive.docs.model.{PageSource, Section}
+import scalive.docs.model.{ExampleCategory, PageSource, Section}
 import scalive.testing.DisconnectedRender
 
 object DocumentationApplicationSpec extends ZIOSpecDefault:
@@ -302,12 +302,17 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                       routes,
                       Request.get(url("/examples?topic=keyed-rendering"))
                     )
+        searched <- DisconnectedRender.run(
+                      routes,
+                      Request.get(url("/examples?q=LiveStream"))
+                    )
         unknown <- DisconnectedRender.run(
                      routes,
                      Request.get(url("/examples?topic=unknown"))
                    )
         document         = Jsoup.parse(rendered.html)
         filteredDocument = Jsoup.parse(filtered.html)
+        searchedDocument = Jsoup.parse(searched.html)
         unknownDocument  = Jsoup.parse(unknown.html)
         expectedExampleIds = application.bundle.examples.map(_.descriptor.id).toSet
         renderedExampleIds = document.select("[data-example-card]").asScala.toVector
@@ -318,8 +323,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         expectedExampleIds.subsetOf(renderedExampleIds),
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
+        document.select(".docs-example-category").size() == ExampleCategory.values.size + 1,
         document.select("[data-standalone-lab] a[href='/examples/authentication/lab']").asScala
-          .exists(_.text() == "Authentication lab"),
+          .exists(_.text().startsWith("Authentication lab")),
         document.select("[data-standalone-lab] a[href='/examples/authentication/lab']").asScala
           .exists(_.text() == "Open authentication lab"),
         document.select("a[data-example-topic-filter][href='/examples?topic=keyed-rendering']").size() == 1,
@@ -330,11 +336,16 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         filteredDocument.select("[data-example-topic-filter][aria-current=page]").text() ==
           "Keyed rendering",
         filteredDocument.select("[role=status]").text().contains("1 example"),
+        searched.response.status == Status.Ok,
+        searchedDocument.select("[data-example-card]").size() == 1,
+        searchedDocument.select("[data-example-card=activity-stream]").size() == 1,
+        searchedDocument.select(".docs-example-catalog-status[role=status]").text() ==
+          "1 example for 'LiveStream'",
         unknown.response.status == Status.Ok,
         unknownDocument.select("[data-example-card]").isEmpty,
         unknownDocument.select(".docs-example-catalog-status[role=status]").text() == "0 examples",
         unknownDocument.select(".docs-example-catalog-empty a[href='/examples']").text() ==
-          "Show all examples",
+          "Clear search and filters",
         application.bundle.searchEntries.exists(entry =>
               entry.id == "example:/examples/counter" &&
               entry.title == "Typed counter" &&

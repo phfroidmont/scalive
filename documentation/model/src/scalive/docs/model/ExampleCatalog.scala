@@ -6,6 +6,7 @@ object ExampleCatalog:
     title = "Managed async report",
     description =
       "A typed task key drives deterministic success, failure, replacement, retry, and cancellation states.",
+    category = ExampleCategory.AsyncAndEffects,
     topics = Vector("async work", "cancellation", "failure handling", "lifecycle"),
     aliases = Vector("AsyncKey", "AsyncValue", "LiveAsyncResult", "replace", "retry"),
     resetDescription = "Cancel active work and return the report state to empty.",
@@ -24,6 +25,7 @@ object ExampleCatalog:
     title = "Bounded activity stream",
     description =
       "Durable activity history drives an opaque stream handle with stable IDs and a five-row DOM window.",
+    category = ExampleCategory.StateAndRendering,
     topics = Vector("streams", "collections", "DOM patches", "bounded rendering"),
     aliases = Vector("LiveStream", "LiveStreamDef", "insert", "delete", "reset", "keepLast"),
     resetDescription = "Restore the initial durable history and rendered stream window.",
@@ -41,6 +43,7 @@ object ExampleCatalog:
     id = "counter",
     title = "Typed counter",
     description = "A LiveView with a count model and Decrement, Reset, and Increment messages.",
+    category = ExampleCategory.StartHere,
     topics = Vector("typed messages", "server state", "DOM patches"),
     aliases = Vector("increment", "decrement", "reset"),
     resetDescription = "Set the count back to zero.",
@@ -59,6 +62,7 @@ object ExampleCatalog:
     title = "Browser integration",
     description =
       "Composed JS commands and a focused hook exchange correlated, typed browser events.",
+    category = ExampleCategory.BrowserAndNavigation,
     topics = Vector("JS commands", "browser events", "hooks", "client interop"),
     aliases = Vector(
       "JS",
@@ -88,6 +92,7 @@ object ExampleCatalog:
     id = "shopping-cart",
     title = "Connection-local shopping cart",
     description = "Typed messages update an immutable cart with derived totals and SKU-keyed rows.",
+    category = ExampleCategory.StartHere,
     topics = Vector("typed messages", "immutable state", "derived state", "keyed rendering"),
     aliases = Vector("cart", "products", "quantity", "subtotal", "clear"),
     resetDescription = "Remove every item and return the cart to its empty state.",
@@ -106,6 +111,7 @@ object ExampleCatalog:
     title = "Managed clock subscription",
     description =
       "An instance-scoped subscription key starts, replaces, cancels, and resets a managed clock stream.",
+    category = ExampleCategory.AsyncAndEffects,
     topics = Vector("subscriptions", "ZStream", "cancellation", "lifecycle"),
     aliases = Vector("SubscriptionKey", "start", "replace", "cancel", "clock"),
     resetDescription = "Cancel the clock and clear its tick history.",
@@ -124,6 +130,7 @@ object ExampleCatalog:
     title = "Summarize-and-discard text upload",
     description =
       "One bounded text file becomes aggregate facts while its consumed bytes are immediately discarded.",
+    category = ExampleCategory.UserInput,
     topics = Vector("uploads", "validation", "resource ownership", "security"),
     aliases = Vector("LiveUploadDef", "consumeCompleted", "ConsumeDecision", "liveFileInput"),
     resetDescription = "Discard active upload state and clear every retained summary.",
@@ -142,6 +149,7 @@ object ExampleCatalog:
     title = "Reports service injection",
     description =
       "A layer-backed route constructor-injects a reports service while selection remains connection-local.",
+    category = ExampleCategory.AsyncAndEffects,
     topics = Vector("services", "ZLayer", "dependency injection", "route environments"),
     aliases = Vector("constructor injection", "ZLayer.fromFunction", "Reports", "refresh"),
     resetDescription = "Restore the first loaded report without querying the service again.",
@@ -166,6 +174,7 @@ object ExampleCatalog:
     title = "Lifecycle and connection state",
     description =
       "Connection-aware mounting, keyed flash messages, page-title projection, and after-render effects.",
+    category = ExampleCategory.StateAndRendering,
     topics = Vector("lifecycle", "connection state", "flash", "page title"),
     aliases = Vector("mount", "connected", "disconnected", "after render", "notification"),
     resetDescription = "Clear the notification and restore the default projected title.",
@@ -184,6 +193,7 @@ object ExampleCatalog:
     title = "Typed profile form",
     description =
       "Rooted fields decode change and submit events with normalization and path-specific validation.",
+    category = ExampleCategory.UserInput,
     topics = Vector("forms", "validation", "typed input", "accessibility"),
     aliases = Vector("FormRoot", "FormEvent", "profile", "errors", "submit"),
     resetDescription = "Clear every field, validation state, and saved profile.",
@@ -202,6 +212,7 @@ object ExampleCatalog:
     title = "Typed documentation navigation",
     description =
       "Named route builders encode real documentation search parameters into checked LiveLocation values.",
+    category = ExampleCategory.BrowserAndNavigation,
     topics = Vector("routing", "navigation", "typed parameters", "search"),
     aliases = Vector(
       "LiveLocation",
@@ -226,6 +237,7 @@ object ExampleCatalog:
     title = "Voting components",
     description =
       "Stable component instances isolate local votes while typed outputs report changes to their parent LiveView.",
+    category = ExampleCategory.StateAndRendering,
     topics = Vector("components", "typed outputs", "local state", "parent communication"),
     aliases = Vector("LiveComponent", "ComponentRef", "sendUpdate", "emit", "WithOutput"),
     resetDescription = "Reset both component models and the parent report state.",

@@ -23,10 +23,10 @@ trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
   )
 
 trait PublishCommon extends PublishModule:
-  def publishVersion = "0.0.1"
+  def publishVersion = "0.0.1-SNAPSHOT"
   def pomSettings    = PomSettings(
     description = artifactName(),
-    organization = "phfroidmont",
+    organization = "dev.scalive",
     url = "https://github.com/phfroidmont/scalive",
     licenses = Seq(License.MIT),
     versionControl = VersionControl.github("phfroidmont", "scalive"),

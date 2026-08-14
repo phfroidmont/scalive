@@ -249,6 +249,7 @@ private[docs] object DocumentationApplication:
     val anchors  = bundle.pages.map(page => page.route -> pageAnchors(page)).toMap
     val symbols  = bundle.apiReference.symbols.map(_.id).toSet
     val examples = bundle.examples.map(_.descriptor.id).toSet
+    val traces   = TraceCatalog.entries.map(_.id).toSet
     val errors   = bundle.pages.flatMap { page =>
       val references        = collectReferences(page.content)
       val duplicateExamples = references
@@ -267,10 +268,13 @@ private[docs] object DocumentationApplication:
           Vector(s"${page.route}: unknown API symbol '$id'.")
         case ContentReference.Example(id) if !examples(id) =>
           Vector(s"${page.route}: unknown example '$id'.")
+        case ContentReference.Trace(id) if !traces(id) =>
+          Vector(s"${page.route}: unknown trace '$id'.")
         case _ => Vector.empty
       }
     }
     Either.cond(errors.isEmpty, (), errors.distinct.sorted.mkString(" "))
+  end validateReferences
 
   private def validateExamples(bundle: DocumentationBundle): Either[String, Unit] =
     val duplicateIds = bundle.examples.groupBy(_.descriptor.id).collect {
@@ -384,6 +388,7 @@ private[docs] object DocumentationApplication:
     case Route(route: String, fragment: Option[String])
     case ApiSymbol(id: String)
     case Example(id: String)
+    case Trace(id: String)
 
   private def collectReferences(blocks: Vector[Block]): Vector[ContentReference] =
     blocks.flatMap {
@@ -398,6 +403,7 @@ private[docs] object DocumentationApplication:
       case Block.ApiSymbolRef(id)       => Vector(ContentReference.ApiSymbol(id))
       case Block.ExampleRef(id)         => Vector(ContentReference.Example(id))
       case Block.LabRef(_)              => Vector.empty
+      case Block.TraceRef(id)           => Vector(ContentReference.Trace(id))
       case _                            => Vector.empty
     }
 

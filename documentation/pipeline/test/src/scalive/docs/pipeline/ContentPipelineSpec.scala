@@ -375,6 +375,32 @@ object ContentPipelineSpec extends ZIOSpecDefault:
         case Left(error) => assertTrue(error.message.contains("unknown example 'counter'"))
     },
     failureTest("rejects unknown lab directives", "unknown-lab", "unknown lab 'missing'"),
+    test("converts trace directives and indexes catalog prose") {
+      withTraceDocument("@:trace(http-get)\n\n@:trace(live-socket-join)").map {
+        case Left(error) => assertTrue(error.messages.isEmpty)
+        case Right(bundle) =>
+          assertTrue(
+            bundle.pages.head.content == Vector(
+              Block.TraceRef("http-get"),
+              Block.TraceRef("live-socket-join")
+            ),
+            bundle.searchEntries.exists(entry =>
+              entry.id == "page:/" &&
+                entry.text.contains("End request lifecycle") &&
+                entry.text.contains("Connected LiveSocket mount")
+            )
+          )
+      }
+    },
+    test("rejects invalid and unknown trace directives") {
+      withTraceDocument("@:trace(Bad_ID)").zipWith(withTraceDocument("@:trace(missing)")) {
+        case (invalid, unknown) =>
+          assertTrue(
+            invalid.left.exists(_.message.contains("invalid trace id 'Bad_ID'")),
+            unknown.left.exists(_.message.contains("unknown trace 'missing'"))
+          )
+      }
+    },
     test("rejects duplicate example registry ids") {
       generate("valid", validApiReference, Vector(counterDescriptor, counterDescriptor)) match
         case Right(_)    => assertTrue(false)
@@ -583,5 +609,31 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             val _ = Files.deleteIfExists(path)
           }
         finally paths.close()
+    }
+
+  private def withTraceDocument(directive: String): Task[Either[PipelineError, DocumentationBundle]] =
+    withTempDirectory("content-pipeline-trace-") { repository =>
+      ZIO.attemptBlocking {
+        val content = Files.createDirectories(repository.resolve("documentation/content"))
+        val _ = Files.writeString(
+          content.resolve("index.md"),
+          s"""{%
+             |title = "Trace"
+             |description = "Trace directive coverage."
+             |order = 0
+             |section = home
+             |%}
+             |
+             |$directive
+             |""".stripMargin
+        )
+        ContentPipeline.generate(
+          repository,
+          content,
+          Seq(Path.of("examples")),
+          emptyApiReference,
+          Vector.empty
+        )
+      }
     }
 end ContentPipelineSpec

@@ -78,6 +78,7 @@ object ContentModelSpec extends ZIOSpecDefault:
     ),
     Block.ExampleRef("counter"),
     Block.LabRef("authentication"),
+    Block.TraceRef("http-get"),
     Block.SourceCode(
       region = sourceRegion,
       language = Some("scala"),
@@ -287,7 +288,8 @@ object ContentModelSpec extends ZIOSpecDefault:
         encoded.fromJson[DocumentationBundle] == Right(bundle),
         encoded.contains("\"type\":\"paragraph\""),
         encoded.contains("\"type\":\"internal\""),
-        encoded.contains("\"type\":\"apiSymbolRef\",\"id\":\"trait:scalive.LiveView\""),
+         encoded.contains("\"type\":\"apiSymbolRef\",\"id\":\"trait:scalive.LiveView\""),
+         encoded.contains("\"type\":\"traceRef\",\"id\":\"http-get\""),
         encoded.contains("\"section\":\"home\""),
         encoded.contains("\"kind\":\"info\""),
         encoded.contains("\"kind\":\"heading\""),

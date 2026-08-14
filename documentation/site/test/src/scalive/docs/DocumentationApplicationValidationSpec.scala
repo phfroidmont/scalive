@@ -23,6 +23,16 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
       }
       assertTrue(result.left.exists(_.contains("unknown example 'missing'")))
     },
+    test("rejects generated pages that reference an unknown trace") {
+      val result = bundle.flatMap { value =>
+        val pages = value.pages.map { page =>
+          if page.route == "/learn" then page.copy(content = page.content :+ Block.TraceRef("missing"))
+          else page
+        }
+        DocumentationApplication.from(value.copy(pages = pages))
+      }
+      assertTrue(result.left.exists(_.contains("unknown trace 'missing'")))
+    },
     test("rejects repeated instances of one example on a page") {
       val result = bundle.flatMap { value =>
         val pages = value.pages.map { page =>

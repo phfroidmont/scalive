@@ -23,6 +23,18 @@ only for the connected lifecycle:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/LifecycleExample.scala, lifecycle-example)
 
+## Follow The Connected Mount {#follow-the-connected-mount}
+
+The disconnected response leaves the browser with useful DOM, a signed session,
+and CSRF metadata, not the temporary model. A `LiveSocket` join uses that
+bootstrap data to establish a fresh connected lifecycle:
+
+@:trace(live-socket-join)
+
+The successful join returns an initial rendered diff inside its reply. The
+browser reconciles that tree with the existing disconnected DOM rather than
+replacing it with a second HTML document.
+
 ## Follow The Lifecycle Timeline {#follow-the-lifecycle-timeline}
 
 | Stage | Connection | Model and work |

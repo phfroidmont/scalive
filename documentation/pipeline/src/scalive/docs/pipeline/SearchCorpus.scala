@@ -265,6 +265,7 @@ private[pipeline] object SearchCorpus:
             .get(id).toVector.flatMap(lab =>
               Vector(lab.title, lab.description, lab.topics.mkString(" "))
             )
+        case Block.TraceRef(id)         => TraceCatalog.get(id).map(TraceCatalog.prose).toVector
         case Block.CompatibilityRef(id) => Vector(id.replace('-', ' '))
         case _                          => Vector.empty
       }.map(_.trim).filter(_.nonEmpty).mkString(" ")

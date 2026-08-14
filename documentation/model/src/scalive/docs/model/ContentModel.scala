@@ -12,7 +12,7 @@ final case class DocumentationBundle(
     derives JsonCodec
 
 object DocumentationBundle:
-  val CurrentFormatVersion = 9
+  val CurrentFormatVersion = 10
 
 final case class Page(
   route: String,
@@ -213,6 +213,9 @@ object Block:
 
   @jsonHint("labRef")
   final case class LabRef(id: String) extends Block
+
+  @jsonHint("traceRef")
+  final case class TraceRef(id: String) extends Block
 
   @jsonHint("sourceCode")
   final case class SourceCode(

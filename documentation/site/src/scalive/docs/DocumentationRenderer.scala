@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 import scalive.*
 import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
+import scalive.docs.trace.TraceViewer
 import scalive.docs.xray.{DocumentationTraceStore, XRayInspector}
 
 final private[docs] class DocumentationRenderer(
@@ -197,8 +198,13 @@ final private[docs] class DocumentationRenderer(
         ),
         content.map(renderBlock(pageRoute))
       )
-    case Block.ExampleRef(id)                             => renderExample(pageRoute, id)
-    case Block.LabRef(id)                                 => renderLab(id)
+    case Block.ExampleRef(id) => renderExample(pageRoute, id)
+    case Block.LabRef(id)     => renderLab(id)
+    case Block.TraceRef(id)   =>
+      TraceCatalog
+        .get(id).map(TraceViewer.render).getOrElse(
+          throw new IllegalArgumentException(s"Unknown documentation trace: $id")
+        )
     case Block.SourceCode(region, language, text, tokens) =>
       codeBlock(language, text, tokens, Some(region))
     case Block.ApiSymbolRef(id) =>

@@ -50,7 +50,7 @@ object ContentPipeline:
     "(?i)<(?!https?://|mailto:)(?:!--|\\?|![a-z\\[]|/?[a-z][a-z0-9:-]*(?=[\\s/>]|$))".r
   private val DirectiveName   = "@:([A-Za-z][A-Za-z0-9]*|@)".r
   private val SingleDirective =
-    "^\\s*@:(example|lab|compatibility)\\(([^\\s,(){}]+)\\)\\s*$".r
+    "^\\s*@:(example|lab|trace|compatibility)\\(([^\\s,(){}]+)\\)\\s*$".r
   private val StandaloneApiSymbol =
     "^\\s*@:apiSymbol\\(([^\\s,(){}]+)\\)\\s*$".r
   private val InlineApiSymbol =
@@ -78,7 +78,13 @@ object ContentPipeline:
     examples: Vector[ExampleDescriptor]
   ): Either[PipelineError, DocumentationBundle] =
     try
+      val traceValidation = TraceCatalog.validate()
       for
+        _ <- Either.cond(
+               traceValidation.isEmpty,
+               (),
+               PipelineError(traceValidation)
+             )
         paths       <- validatePaths(repositoryRoot, contentRoot, allowedSourceRoots)
         definitions <- resolveExamples(paths, examples)
         authored    <- readAndValidate(paths)
@@ -474,10 +480,14 @@ object ContentPipeline:
           errors += s"$sourcePath:$lineNumber: apiSymbol must be embedded in inline content."
           calloutDepth
         case SingleDirective(name, id) =>
-          if Set("example", "lab", "compatibility").contains(name) && !HeadingId.matches(id) then
-            errors += s"$sourcePath:$lineNumber: invalid $name id '$id'."
+          if Set("example", "lab", "trace", "compatibility").contains(name) && !HeadingId.matches(
+              id
+            )
+          then errors += s"$sourcePath:$lineNumber: invalid $name id '$id'."
           else if name == "lab" && LabCatalog.get(id).isEmpty then
             errors += s"$sourcePath:$lineNumber: unknown lab '$id'."
+          else if name == "trace" && TraceCatalog.get(id).isEmpty then
+            errors += s"$sourcePath:$lineNumber: unknown trace '$id'."
           calloutDepth
         case SourceDirective(path, _) =>
           try
@@ -504,7 +514,15 @@ object ContentPipeline:
             case "@" =>
               errors += s"$sourcePath:$lineNumber: unexpected directive closing marker."
             case name
-                if Set("example", "lab", "sourceRegion", "apiSymbol", "compatibility", "callout")
+                if Set(
+                  "example",
+                  "lab",
+                  "trace",
+                  "sourceRegion",
+                  "apiSymbol",
+                  "compatibility",
+                  "callout"
+                )
                   .contains(name) =>
               errors += s"$sourcePath:$lineNumber: invalid @:$name directive."
             case name => errors += s"$sourcePath:$lineNumber: directive '$name' is not supported."
@@ -973,6 +991,7 @@ object ContentPipeline:
     case _: laika.ast.Rule       => Right(Vector(Block.Rule))
     case node: ExampleNode       => Right(Vector(Block.ExampleRef(node.id)))
     case node: LabNode           => Right(Vector(Block.LabRef(node.id)))
+    case node: TraceNode         => Right(Vector(Block.TraceRef(node.id)))
     case node: CompatibilityNode => Right(Vector(Block.CompatibilityRef(node.id)))
     case node: SourceRegionNode  => convertSourceRegion(node, paths).map(value => Vector(value))
     case node: CalloutNode       =>
@@ -1407,6 +1426,11 @@ object ContentPipeline:
     type Self = LabNode
     def withOptions(options: Options): LabNode = copy(options = options)
 
+  final private case class TraceNode(id: String, options: Options = Options.empty)
+      extends LaikaBlock:
+    type Self = TraceNode
+    def withOptions(options: Options): TraceNode = copy(options = options)
+
   final private case class CalloutNode(
     kind: String,
     content: Seq[LaikaBlock],
@@ -1427,6 +1451,9 @@ object ContentPipeline:
       },
       BlockDirectives.create("lab") {
         block.attribute(0).as[String].map(LabNode(_))
+      },
+      BlockDirectives.create("trace") {
+        block.attribute(0).as[String].map(TraceNode(_))
       },
       BlockDirectives.create("sourceRegion") {
         (

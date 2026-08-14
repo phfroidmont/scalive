@@ -30,23 +30,29 @@ stays in Scala without requiring a second client-side state tree.
 
 ## Follow One Page From HTTP To DOM {#follow-one-page-from-http-to-dom}
 
-The complete lifecycle has two starts and a repeated update loop:
+A page reaches the DOM and becomes live in three stages:
 
-1. An ordinary HTTP request reaches a typed Live route.
-2. Scalive mounts a disconnected model and renders useful initial HTML inside
-   the configured layouts.
-3. The browser receives the document, loads the JavaScript client, and returns
-   the server-issued CSRF token while opening the live connection.
-4. Scalive creates an independent connected lifecycle and mounts a new model.
-   It does not continue the disconnected model instance.
-5. A browser interaction resolves to a typed `Msg` declared by the rendered
-   tree.
-6. `handleMessage` produces a proposed next model through `LiveIO`.
-7. Scalive renders that model, computes a tree diff, commits the model after a
-   successful render, and sends the patch.
-8. The browser applies the patch to the existing DOM.
-9. If the connection is replaced or rejoins, connection-owned work is cleaned
-   up and a new connected lifecycle mounts from durable inputs.
+1. **Disconnected render.** An ordinary HTTP request reaches a typed Live route.
+   Scalive invokes `mount` with `connected = false`, renders the temporary model,
+   and returns complete HTML inside the configured layouts.
+2. **Connected mount.** The browser loads the JavaScript client and opens
+   `LiveSocket` with the server-issued CSRF token. Scalive invokes `mount` again
+   to create an independent connected model; it does not continue the
+   disconnected model instance.
+3. **Live updates.** Browser interactions resolve to typed `Msg` values.
+   `handleMessage` proposes a model through `LiveIO`, `render` produces typed
+   HTML, and Scalive commits the model and sends the resulting diff. A rejoin
+   cleans up connection-owned work and repeats the connected mount.
+
+The boundary between the first two stages is easy to miss. Follow the initial
+HTTP request until its temporary lifecycle ends:
+
+@:trace(http-get)
+
+The browser keeps the returned DOM, but Model A is gone. [Follow the connected
+mount](lifecycle-and-connection-behavior.md#follow-the-connected-mount) to see
+how `LiveSocket` establishes Model B from durable inputs. That boundary also
+explains which side owns each part of the application.
 
 ## Know Which Side Owns What {#know-which-side-owns-what}
 

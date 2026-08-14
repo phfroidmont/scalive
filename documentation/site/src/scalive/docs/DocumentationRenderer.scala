@@ -198,6 +198,7 @@ final private[docs] class DocumentationRenderer(
         content.map(renderBlock(pageRoute))
       )
     case Block.ExampleRef(id)                             => renderExample(pageRoute, id)
+    case Block.LabRef(id)                                 => renderLab(id)
     case Block.SourceCode(region, language, text, tokens) =>
       codeBlock(language, text, tokens, Some(region))
     case Block.ApiSymbolRef(id) =>
@@ -211,6 +212,20 @@ final private[docs] class DocumentationRenderer(
         h2(id),
         p("This compatibility entry will be expanded with its curated evidence.")
       )
+
+  private def renderLab(id: String): HtmlElement[Nothing] =
+    val lab = LabCatalog
+      .get(id).getOrElse(throw new IllegalArgumentException(s"Unknown documentation lab: $id"))
+    asideTag(
+      cls                 := "docs-lab-cta",
+      dataAttr("lab-cta") := lab.id,
+      div(
+        p(cls := "docs-lab-cta-label", "Standalone lab"),
+        h2(lab.title),
+        p(lab.description)
+      ),
+      a(href := lab.route, lab.actionLabel)
+    )
 
   private def renderApiReference(symbol: ApiSymbol): HtmlElement[Nothing] =
     val location = symbol.fragment.fold(symbol.route)(fragment => s"${symbol.route}#$fragment")

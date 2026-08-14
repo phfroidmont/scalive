@@ -78,6 +78,7 @@ object ContentModelSpec extends ZIOSpecDefault:
       content = Vector(Block.Paragraph(Vector(Inline.Text("Content remains readable offline."))))
     ),
     Block.ExampleRef("counter"),
+    Block.LabRef("authentication"),
     Block.SourceCode(
       region = sourceRegion,
       language = Some("scala"),

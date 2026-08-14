@@ -260,8 +260,13 @@ private[pipeline] object SearchCorpus:
         case Block.Image(_, alternative, imageTitle) => Vector(alternative) ++ imageTitle
         case Block.Callout(_, title, content)        => title.toVector :+ prose(content, apiSymbols)
         case Block.ExampleRef(id)                    => Vector(id.replace('-', ' '))
-        case Block.CompatibilityRef(id)              => Vector(id.replace('-', ' '))
-        case _                                       => Vector.empty
+        case Block.LabRef(id)                        =>
+          LabCatalog
+            .get(id).toVector.flatMap(lab =>
+              Vector(lab.title, lab.description, lab.topics.mkString(" "))
+            )
+        case Block.CompatibilityRef(id) => Vector(id.replace('-', ' '))
+        case _                          => Vector.empty
       }.map(_.trim).filter(_.nonEmpty).mkString(" ")
 
   private def inlineText(inlines: Vector[Inline], apiSymbols: Map[String, ApiSymbol]): String =

@@ -4,6 +4,7 @@ import zio.http.Routes
 import zio.http.codec.PathCodec
 
 import scalive.*
+import scalive.docs.auth.{AuthHttpRoutes, AuthLab, AuthLabRoutes, AuthService}
 import scalive.docs.examples.{ExampleRegistry, Reports, ReportsExample}
 import scalive.docs.model.*
 import scalive.docs.xray.{DocumentationRuntimeTraceFactory, DocumentationTraceStore}
@@ -26,7 +27,8 @@ final private[docs] class DocumentationApplication private (
   private val pagesByRoute: Map[String, Page],
   private val locationsByRoute: Map[String, LiveLocation],
   private val examplesById: Map[String, ExampleDefinition],
-  private val apiSymbolsById: Map[String, ApiSymbol]):
+  private val apiSymbolsById: Map[String, ApiSymbol],
+  private val authService: AuthService):
 
   def page(route: String): Option[Page] = pagesByRoute.get(route)
 
@@ -51,6 +53,24 @@ final private[docs] class DocumentationApplication private (
             "Reports service injection lab",
             "A standalone LiveView route constructed from a Reports service layer.",
             DocumentationApplication.ExamplesRoute + "/service-injection",
+            indexable = false
+          )
+        )
+      ).orElse(
+        Option.when(route == AuthLabRoutes.LoginPath)(
+          DocumentationRouteMetadata(
+            "Authentication lab",
+            "Sign in through ordinary HTTP, then mount a protected LiveView with revalidated session claims.",
+            DocumentationApplication.GuidesRoute + "/authentication",
+            indexable = false
+          )
+        )
+      ).orElse(
+        Option.when(route == AuthLabRoutes.ProfilePath)(
+          DocumentationRouteMetadata(
+            "Protected authentication lab",
+            "Inspect and reset the current visitor's bounded authentication lab session.",
+            DocumentationApplication.GuidesRoute + "/authentication",
             indexable = false
           )
         )
@@ -119,11 +139,20 @@ final private[docs] class DocumentationApplication private (
     val tracedRouter = traceStore.fold(router)(store =>
       router.withRuntimeTrace(DocumentationRuntimeTraceFactory(store))
     )
+    val supplementalRoutes = Vector[LiveRouteFragment[Reports, Any]](
+      examplesRoute,
+      searchRoute,
+      ReportsExample.route,
+      AuthLab.loginRoute,
+      AuthLab.protectedSession(authService)
+    ) ++ fragments
     val liveRoutes = tracedRouter(
       homeRoute,
-      (Vector(examplesRoute, searchRoute, ReportsExample.route) ++ fragments)*
+      supplementalRoutes*
     )
-    liveRoutes ++ DocumentationMetadataRoutes.routes(this, config.publicOrigin)
+    liveRoutes ++
+      AuthHttpRoutes(authService, security).routes ++
+      DocumentationMetadataRoutes.routes(this, config.publicOrigin)
   end routes
 end DocumentationApplication
 
@@ -133,6 +162,7 @@ private[docs] object DocumentationApplication:
   private[docs] val SearchRouteBuilder =
     (live / "search").queryOptional[String](SearchParameter)
   val ExamplesRoute                      = "/examples"
+  val GuidesRoute                        = "/guides"
   val TopicParameter                     = "topic"
   private[docs] val ExamplesCatalogRoute =
     (live / "examples").queryOptional[String](TopicParameter)
@@ -159,7 +189,8 @@ private[docs] object DocumentationApplication:
       bundle.pages.map(page => page.route -> page).toMap,
       entries.map(entry => entry.page.route -> entry.location).toMap,
       bundle.examples.map(example => example.descriptor.id -> example).toMap,
-      bundle.apiReference.symbols.map(symbol => symbol.id -> symbol).toMap
+      bundle.apiReference.symbols.map(symbol => symbol.id -> symbol).toMap,
+      AuthService.inMemory()
     )
 
   private def validateHomepage(pages: Vector[Page]): Either[String, HomePageContent] =
@@ -340,6 +371,7 @@ private[docs] object DocumentationApplication:
   private def exampleReferences(blocks: Vector[Block]): Vector[String] =
     blocks.flatMap {
       case Block.ExampleRef(id)         => Vector(id)
+      case Block.LabRef(_)              => Vector.empty
       case Block.BulletList(items)      => items.flatMap(item => exampleReferences(item.content))
       case Block.OrderedList(_, items)  => items.flatMap(item => exampleReferences(item.content))
       case Block.Quote(content)         => exampleReferences(content)
@@ -364,6 +396,7 @@ private[docs] object DocumentationApplication:
       case Block.Callout(_, _, content) => collectReferences(content)
       case Block.ApiSymbolRef(id)       => Vector(ContentReference.ApiSymbol(id))
       case Block.ExampleRef(id)         => Vector(ContentReference.Example(id))
+      case Block.LabRef(_)              => Vector.empty
       case _                            => Vector.empty
     }
 

@@ -318,7 +318,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       yield assertTrue(
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
-        document.select("[data-example-card]").size() == 12,
+        document.select("[data-example-card]").size() == 13,
         document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select("a[href='/examples/counter']").asScala.exists(_.text() == "Typed counter"),
@@ -355,6 +355,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         document.select("a[href='/examples/text-upload']").asScala.exists(
           _.text() == "Summarize-and-discard text upload"
         ),
+        document.select("[data-standalone-lab] a[href='/examples/authentication/lab']").asScala
+          .exists(_.text() == "Authentication lab"),
+        document.select("[data-standalone-lab] a[href='/examples/authentication/lab']").asScala
+          .exists(_.text() == "Open authentication lab"),
         document.select("a[data-example-topic-filter][href='/examples?topic=keyed-rendering']").size() == 1,
         filtered.response.status == Status.Ok,
         filteredDocument.select("[data-example-card]").size() == 1,

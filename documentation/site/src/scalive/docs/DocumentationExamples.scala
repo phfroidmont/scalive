@@ -16,8 +16,8 @@ final private[docs] class DocumentationExamplesLiveView(
   renderer: DocumentationRenderer)
     extends LiveView.Routed.Eventless[DocumentationExamplesModel, Option[String]]:
   private val ariaCurrent = htmlAttr("aria-current", StringAsIsEncoder)
-  private val topics      = application.bundle.examples
-    .flatMap(_.descriptor.topics)
+  private val topics      = (application.bundle.examples.flatMap(_.descriptor.topics) ++
+    LabCatalog.entries.flatMap(_.topics))
     .groupBy(ExampleTopic.key)
     .toVector.collect {
       case (key, values) if key.nonEmpty => key -> ExampleTopic.label(values.head)
@@ -47,8 +47,12 @@ final private[docs] class DocumentationExamplesLiveView(
         example.descriptor.topics.exists(value => ExampleTopic.key(value) == topic)
       )
     }
-    val listing =
-      if examples.isEmpty then
+    val labs = model.topic.fold(LabCatalog.entries) { topic =>
+      LabCatalog.entries.filter(lab => lab.topics.exists(value => ExampleTopic.key(value) == topic))
+    }
+    val resultCount = examples.size + labs.size
+    val listing     =
+      if resultCount == 0 then
         div(
           cls := "docs-example-catalog-empty",
           p("No examples match this topic."),
@@ -60,7 +64,8 @@ final private[docs] class DocumentationExamplesLiveView(
       else
         div(
           cls := "docs-example-card-grid",
-          examples.map(exampleCard)
+          examples.map(exampleCard),
+          labs.map(labCard)
         )
     articleTag(
       cls                         := "docs-content docs-prose docs-examples-catalog",
@@ -71,7 +76,7 @@ final private[docs] class DocumentationExamplesLiveView(
       p(
         cls  := "docs-example-catalog-status",
         role := "status",
-        if examples.size == 1 then "1 example" else s"${examples.size} examples"
+        if resultCount == 1 then "1 example" else s"$resultCount examples"
       ),
       listing,
       renderer.pageLinks(page)
@@ -135,4 +140,33 @@ final private[docs] class DocumentationExamplesLiveView(
       )
     )
   end exampleCard
+
+  private def labCard(lab: LabDescriptor): HtmlElement[Nothing] =
+    articleTag(
+      cls                        := "docs-example-card docs-lab-card",
+      dataAttr("example-card")   := lab.id,
+      dataAttr("standalone-lab") := "",
+      h2(a(href := lab.route, lab.title)),
+      p(lab.description),
+      ul(
+        cls := "docs-example-card-topics",
+        lab.topics.map { topic =>
+          li(
+            link.pushPatch(
+              DocumentationApplication.ExamplesCatalogRoute.location(Some(ExampleTopic.key(topic))),
+              topic
+            )
+          )
+        }
+      ),
+      footerTag(
+        a(href := lab.route, lab.actionLabel),
+        link.pushNavigate(
+          application.location("/guides/authentication").getOrElse {
+            throw new IllegalArgumentException("Missing authentication guide route")
+          },
+          "Read authentication guide"
+        )
+      )
+    )
 end DocumentationExamplesLiveView

@@ -49,7 +49,7 @@ object ContentPipeline:
     "(?i)<(?!https?://|mailto:)(?:!--|\\?|![a-z\\[]|/?[a-z][a-z0-9:-]*(?=[\\s/>]|$))".r
   private val DirectiveName   = "@:([A-Za-z][A-Za-z0-9]*|@)".r
   private val SingleDirective =
-    "^\\s*@:(example|compatibility)\\(([^\\s,(){}]+)\\)\\s*$".r
+    "^\\s*@:(example|lab|compatibility)\\(([^\\s,(){}]+)\\)\\s*$".r
   private val StandaloneApiSymbol =
     "^\\s*@:apiSymbol\\(([^\\s,(){}]+)\\)\\s*$".r
   private val InlineApiSymbol =
@@ -456,8 +456,10 @@ object ContentPipeline:
           errors += s"$sourcePath:$lineNumber: apiSymbol must be embedded in inline content."
           calloutDepth
         case SingleDirective(name, id) =>
-          if Set("example", "compatibility").contains(name) && !HeadingId.matches(id) then
+          if Set("example", "lab", "compatibility").contains(name) && !HeadingId.matches(id) then
             errors += s"$sourcePath:$lineNumber: invalid $name id '$id'."
+          else if name == "lab" && LabCatalog.get(id).isEmpty then
+            errors += s"$sourcePath:$lineNumber: unknown lab '$id'."
           calloutDepth
         case SourceDirective(path, _) =>
           try
@@ -484,7 +486,7 @@ object ContentPipeline:
             case "@" =>
               errors += s"$sourcePath:$lineNumber: unexpected directive closing marker."
             case name
-                if Set("example", "sourceRegion", "apiSymbol", "compatibility", "callout")
+                if Set("example", "lab", "sourceRegion", "apiSymbol", "compatibility", "callout")
                   .contains(name) =>
               errors += s"$sourcePath:$lineNumber: invalid @:$name directive."
             case name => errors += s"$sourcePath:$lineNumber: directive '$name' is not supported."
@@ -952,6 +954,7 @@ object ContentPipeline:
       convertTable(table, source, routeByPath, apiSymbols).map(value => Vector(value))
     case _: laika.ast.Rule       => Right(Vector(Block.Rule))
     case node: ExampleNode       => Right(Vector(Block.ExampleRef(node.id)))
+    case node: LabNode           => Right(Vector(Block.LabRef(node.id)))
     case node: CompatibilityNode => Right(Vector(Block.CompatibilityRef(node.id)))
     case node: SourceRegionNode  => convertSourceRegion(node, paths).map(value => Vector(value))
     case node: CalloutNode       =>
@@ -1375,6 +1378,10 @@ object ContentPipeline:
     type Self = CompatibilityNode
     def withOptions(options: Options): CompatibilityNode = copy(options = options)
 
+  final private case class LabNode(id: String, options: Options = Options.empty) extends LaikaBlock:
+    type Self = LabNode
+    def withOptions(options: Options): LabNode = copy(options = options)
+
   final private case class CalloutNode(
     kind: String,
     content: Seq[LaikaBlock],
@@ -1392,6 +1399,9 @@ object ContentPipeline:
     val blockDirectives = Seq(
       BlockDirectives.create("example") {
         block.attribute(0).as[String].map(ExampleNode(_))
+      },
+      BlockDirectives.create("lab") {
+        block.attribute(0).as[String].map(LabNode(_))
       },
       BlockDirectives.create("sourceRegion") {
         (

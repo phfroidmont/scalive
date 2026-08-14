@@ -35,6 +35,8 @@ val answer: Int = 42
 
 @:example(counter)
 
+@:lab(authentication)
+
 @:sourceRegion(examples/Sample.scala, greeting)
 
 Use @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ and its @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ member.

@@ -32,7 +32,7 @@ Run the documentation site with `mill documentation.site.run`.
 - [x] Phase 4: Search and metadata
 - [x] Phase 5: Interactive example foundation
 - [x] Phase 6: Runtime X-ray inspector
-- [ ] Phase 7: Example migration
+- [x] Phase 7: Example migration
 - [ ] Phase 8: Documentation content
 - [ ] Phase 9: Visual and responsive design
 - [ ] Phase 10: Operations and packaging
@@ -449,15 +449,15 @@ support where it improves the lesson.
 - [x] Replace persistent document storage with a bounded real upload that
   summarizes text and immediately discards consumed content.
 - [x] Verify upload bytes never enter trace history.
-- [ ] Add a dedicated authentication lab using standalone HTTP and protected Live
+- [x] Add a dedicated authentication lab using standalone HTTP and protected Live
   routes.
-- [ ] Add fixed credentials, bounded sessions, rate limits, expiry, logout, and
+- [x] Add fixed credentials, bounded sessions, rate limits, expiry, logout, and
   explicit reset behavior to the authentication lab.
-- [ ] Keep authentication session records opaque and isolated between visitors.
-- [ ] Add deterministic latency and failure controls only where they teach
+- [x] Keep authentication session records opaque and isolated between visitors.
+- [x] Add deterministic latency and failure controls only where they teach
   relevant behavior.
 - [x] Build the topic-filtered example catalog from registry metadata.
-- [ ] Preserve applicable existing auth, form, and routing tests during
+- [x] Preserve applicable existing auth, form, and routing tests during
   migration.
 
 **Verification:**
@@ -469,7 +469,7 @@ mill --ticker false documentation.check
 
 **Completion gate:**
 
-- [ ] Every catalog example is isolated, executable, source-backed,
+- [x] Every catalog example is isolated, executable, source-backed,
   behavior-tested, and safe for public use.
 
 ## Phase 8: Documentation Content
@@ -496,7 +496,7 @@ mill --ticker false documentation.check
 - [x] Write streams and collection update guides.
 - [x] Write uploads and consumption guides.
 - [x] Write routes, typed parameters, patching, and navigation guides.
-- [ ] Write layouts, sessions, mount aspects, and authentication guides.
+- [x] Write layouts, sessions, mount aspects, and authentication guides.
 - [x] Write async work, subscriptions, cancellation, and failure guides.
 - [x] Write static assets and client setup guides.
 - [x] Write disconnected, connected, and browser testing guides.

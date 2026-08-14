@@ -151,6 +151,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             source.text == "val greeting = \"hello\"\nprintln(greeting)",
             source.tokens.exists(_.styles.nonEmpty),
             home.content.contains(Block.ExampleRef("counter")),
+            home.content.contains(Block.LabRef("authentication")),
             home.content.contains(Block.CompatibilityRef("server-navigation")),
             home.content.collect { case callout: Block.Callout => callout.kind }.toSet ==
               CalloutKind.values.toSet
@@ -369,6 +370,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
         case Right(_)    => assertTrue(false)
         case Left(error) => assertTrue(error.message.contains("unknown example 'counter'"))
     },
+    failureTest("rejects unknown lab directives", "unknown-lab", "unknown lab 'missing'"),
     test("rejects duplicate example registry ids") {
       generate("valid", validApiReference, Vector(counterDescriptor, counterDescriptor)) match
         case Right(_)    => assertTrue(false)

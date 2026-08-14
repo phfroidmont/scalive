@@ -181,6 +181,9 @@ object Block:
   @jsonHint("exampleRef")
   final case class ExampleRef(id: String) extends Block
 
+  @jsonHint("labRef")
+  final case class LabRef(id: String) extends Block
+
   @jsonHint("sourceCode")
   final case class SourceCode(
     region: SourceRegion,

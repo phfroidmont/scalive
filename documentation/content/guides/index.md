@@ -29,6 +29,10 @@ operations work. For an ordered introduction to the framework, start with
   tasks and long-lived message streams with typed keys and lifecycle cleanup.
 - [Routes, parameters, and navigation](routes-and-navigation.md) decodes typed
   URL state and chooses checked patch, navigation, replace, and redirect behavior.
+- [Layouts, sessions, and mount context](layouts-sessions-and-mount-aspects.md)
+  composes document shells, route groups, and typed pre-mount policy.
+- [Authentication](authentication.md) combines ordinary HTTP login and reset
+  with opaque sessions and protected LiveView mounts.
 - [Flash, title, and lifecycle UX](flash-title-and-lifecycle-ux.md) communicates
   notification, document-title, connection, and after-render state.
 - [Static assets and client setup](static-assets-and-client-setup.md) bundles

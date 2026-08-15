@@ -63,7 +63,7 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           _         <- child.clickButton("Increase")
           records   <- store.records(session, child.topic)
           inspectorText <- (ZIO.yieldNow *> inspector.html)
-                  .repeatUntil(_.contains("Increase counter"))
+                   .repeatUntil(_.contains("data-trace-evidence=\"Tree diff\""))
           stages = records.filter(_.producer == TraceProducer.Server).map(_.stage)
           inspectorObserved <- store.records(session, inspector.topic)
           _                 <- parent.leave

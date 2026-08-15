@@ -62,12 +62,32 @@ test("captures counter interactions in the integrated live trace viewer", async 
     /count\s*1/,
   )
   await expect(capturedTrace.locator('[data-trace-evidence="Tree diff"]')).toContainText(
-    "TreeDiff",
+    "Tree diff contains changes",
   )
   await expect(capturedTrace.locator('[data-trace-evidence="DOM mutations"]')).toContainText(
     /mutations|DOM patch applied/,
   )
-  await expect(capturedTrace).toContainText("[redacted]")
+  await expect(capturedTrace).toContainText('"topic" : "lv:docs-example-counter-')
+  await expect(capturedTrace).toContainText('"after" : "1"')
+
+  const frameRecord = capturedTrace.locator('[data-trace-evidence="Final frame"]')
+  await expect(frameRecord.locator(":scope > details > summary")).toContainText("Runtime")
+  await expect(frameRecord.locator(":scope > details > summary")).toContainText("143 B")
+  await expect(capturedTrace.locator('[data-trace-evidence="Inbound frame"] > details > summary')).toContainText(
+    "Browser",
+  )
+  const frameGroup = frameRecord.locator("xpath=ancestor::details[contains(@class, 'docs-trace-evidence')]")
+  await frameGroup.locator(":scope > summary").click()
+  await frameRecord.locator(":scope > details > summary").click()
+  const frameCode = frameRecord.locator(".docs-trace-evidence-code")
+  await expect(frameCode).toBeVisible()
+  await expect(frameRecord).not.toContainText("FinalFrame")
+  const wrapLines = frameCode.locator("[data-trace-code-wrap]")
+  await wrapLines.click()
+  await expect(wrapLines).toHaveAttribute("aria-pressed", "true")
+  const showAll = frameCode.locator("[data-trace-code-expand]")
+  await showAll.click()
+  await expect(showAll).toHaveAttribute("aria-expanded", "true")
   await expect(interactions.first()).toHaveAttribute("data-trace-state", "complete")
   const selectedRowId = await interactions.first().getAttribute("id")
   const tracePanelId = await tracePanel.getAttribute("id")

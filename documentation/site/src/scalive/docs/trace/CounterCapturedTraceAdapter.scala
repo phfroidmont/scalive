@@ -217,27 +217,40 @@ private[docs] object CounterCapturedTraceAdapter:
     records.map { record =>
       TraceEvidence(
         label = recordLabel(record),
-        summary = record.summary,
-        facts = recordFacts(record),
+        summary = recordSummary(record),
         code =
-          record.protocol.map(value => DocumentationTraceSanitizer.structure(value).toJsonPretty)
+          record.protocol.map(value => DocumentationTraceSanitizer.structure(value).toJsonPretty),
+        producer = Some(producerLabel(record.producer)),
+        highlights = recordHighlights(record),
+        correlation = recordCorrelation(record),
+        metadata = recordMetadata(record),
+        projection = record.value.map(value =>
+          TraceEvidenceProjection(value.typeName, value.summary, value.fields)
+        )
       )
     }
 
-  private def recordFacts(record: DocumentationTraceRecord): Vector[(String, String)] =
+  private def recordHighlights(record: DocumentationTraceRecord): Vector[String] =
+    record.byteSize.map(value => s"$value B").toVector ++
+      record.value.toVector.flatMap(_.fields.take(2).map { case (name, value) => s"$name: $value" })
+
+  private def recordCorrelation(record: DocumentationTraceRecord): Vector[(String, String)] =
     Vector(
-      Some("producer"           -> producerLabel(record.producer)),
-      Some("stage"              -> record.stage),
-      Some("operation kind"     -> record.operationKind),
-      Some("operation sequence" -> record.operationSequence.toString),
-      record.messageReference.map("message reference" -> _),
-      record.joinReference.map("join reference" -> _),
-      record.connectionEpoch.map(value => "connection epoch" -> value.toString),
-      record.socketEpoch.map(value => "socket epoch" -> value.toString),
-      record.byteSize.map(value => "frame bytes" -> value.toString),
-      record.value.map(value => "projected type" -> value.typeName),
-      record.value.map(value => "projected summary" -> value.summary)
-    ).flatten ++ record.value.toVector.flatMap(_.fields)
+      record.messageReference.map(value => "message" -> s"#$value"),
+      record.joinReference.map(value => "join" -> s"#$value")
+    ).flatten
+
+  private def recordMetadata(record: DocumentationTraceRecord): Vector[(String, String)] =
+    Vector(
+      Some("operation" -> operationKindLabel(record.operationKind)),
+      Some("sequence"  -> record.operationSequence.toString),
+      record.connectionEpoch.map(value => "connection" -> value.toString),
+      record.socketEpoch.map(value => "socket" -> value.toString)
+    ).flatten
+
+  private def recordSummary(record: DocumentationTraceRecord): String = record.stage match
+    case "FinalPayload" => "Socket payload prepared for encoding"
+    case _              => record.summary
 
   private def typedMessageLabel(records: Vector[DocumentationTraceRecord]): String =
     records
@@ -248,7 +261,14 @@ private[docs] object CounterCapturedTraceAdapter:
 
   private def producerLabel(producer: TraceProducer): String = producer match
     case TraceProducer.Browser => "Browser"
-    case TraceProducer.Server  => "Server"
+    case TraceProducer.Server  => "Runtime"
+
+  private def operationKindLabel(kind: String): String = kind match
+    case "ClientEvent"     => "Client event"
+    case "ServerMessage"   => "Server message"
+    case "AsyncCompletion" => "Async completion"
+    case "LivePatch"       => "Live patch"
+    case other             => other
 
   private def stateLabel(state: CapturedInteractionState): String = state match
     case CapturedInteractionState.InProgress => "in progress"
@@ -271,7 +291,7 @@ private[docs] object CounterCapturedTraceAdapter:
     case "RenderCompleted"    => "Render completed"
     case "TreeDiff"           => "Tree diff"
     case "ModelCommitted"     => "Committed model"
-    case "FinalPayload"       => "Final payload"
+    case "FinalPayload"       => "Payload assembled"
     case "FinalFrame"         => "Final frame"
     case "DomPatch"           => "DOM patch"
     case "DomDiff"            => "DOM mutations"

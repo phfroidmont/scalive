@@ -160,7 +160,7 @@ test("protocol sanitization removes secrets and binary content", () => {
       event: "binding-id",
       password: "password-secret",
       _csrf_token: "csrf-secret",
-      value: "free-text-secret",
+      value: "public form value",
       bytes: new Uint8Array([1, 2, 3]),
     },
   })
@@ -170,8 +170,24 @@ test("protocol sanitization removes secrets and binary content", () => {
   assert.equal(sanitized.payload.event, "binding-id")
   assert.ok(!encoded.includes("password-secret"))
   assert.ok(!encoded.includes("csrf-secret"))
-  assert.ok(!encoded.includes("free-text-secret"))
+  assert.ok(encoded.includes("public form value"))
   assert.ok(!encoded.includes("1,2,3"))
+})
+
+test("protocol sanitization preserves public trace values", () => {
+  const sanitized = sanitizeProtocol({
+    topic: "lv:example",
+    event: "event",
+    join_ref: "1",
+    ref: "2",
+    payload: {
+      label: "Increase counter",
+      nested: { result: "Counter is 1" },
+    },
+  })
+
+  assert.equal(sanitized.payload.label, "Increase counter")
+  assert.equal(sanitized.payload.nested.result, "Counter is 1")
 })
 
 test("trace sessions use page-lifetime random UUIDs", () => {

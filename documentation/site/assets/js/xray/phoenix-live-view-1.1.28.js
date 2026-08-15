@@ -4,16 +4,6 @@ export const traceSessionParameter = "_scalive_xray_session"
 export const expectedLiveViewVersion = "1.1.28"
 
 const redacted = "[redacted]"
-const safeStringKeys = new Set([
-  "event",
-  "joinReference",
-  "kind",
-  "messageReference",
-  "stage",
-  "status",
-  "topic",
-  "type",
-])
 const sensitiveFragments = [
   "authorization",
   "claim",
@@ -24,8 +14,11 @@ const sensitiveFragments = [
   "password",
   "secret",
   "session",
+  "static",
   "token",
   "upload",
+  "url",
+  "redirect",
 ]
 
 function resolveParams(params) {
@@ -40,7 +33,7 @@ function isSensitive(name) {
 function sanitizeValue(value, fieldName = null) {
   if (fieldName && isSensitive(fieldName)) return redacted
   if (value === null || typeof value === "boolean" || typeof value === "number") return value
-  if (typeof value === "string") return fieldName && safeStringKeys.has(fieldName) ? value : redacted
+  if (typeof value === "string") return value
   if (value instanceof ArrayBuffer) return { byteLength: value.byteLength, content: redacted }
   if (ArrayBuffer.isView(value)) return { byteLength: value.byteLength, content: redacted }
   if (Array.isArray(value)) return value.map((item) => sanitizeValue(item))
@@ -123,9 +116,7 @@ function nodeDescription(node) {
 }
 
 function safeDomText(value) {
-  const normalized = (value || "").trim()
-  if (/^-?\d+(\.\d+)?$/.test(normalized)) return normalized
-  return normalized ? `[text ${normalized.length} chars]` : ""
+  return (value || "").trim()
 }
 
 function mutationSummary(mutation) {
@@ -139,7 +130,7 @@ function mutationSummary(mutation) {
   }
   if (mutation.type === "attributes") {
     const name = mutation.attributeName
-    const safeAttribute = name === "id" || name === "class" || name === "role" || name.startsWith("aria-")
+    const safeAttribute = !isSensitive(name)
     return {
       kind: "attribute",
       target: nodeDescription(mutation.target),

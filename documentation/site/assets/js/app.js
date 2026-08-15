@@ -87,6 +87,46 @@ function closeNavigationDisclosure() {
 }
 
 document.addEventListener("click", async (event) => {
+  const traceCopy = event.target.closest("[data-trace-code-copy]")
+  if (traceCopy) {
+    const block = traceCopy.closest(".docs-trace-evidence-code")
+    const code = block?.querySelector("pre > code")
+    const status = block?.querySelector("[data-trace-code-status]")
+    if (!code || !status) return
+
+    try {
+      await navigator.clipboard.writeText(code.textContent ?? "")
+      status.textContent = "JSON copied"
+      traceCopy.textContent = "Copied"
+      window.setTimeout(() => {
+        traceCopy.textContent = "Copy JSON"
+      }, 1600)
+    } catch (_error) {
+      status.textContent = "Unable to copy JSON"
+    }
+    return
+  }
+
+  const traceWrap = event.target.closest("[data-trace-code-wrap]")
+  if (traceWrap) {
+    const block = traceWrap.closest(".docs-trace-evidence-code")
+    if (!block) return
+    const wrapped = block.classList.toggle("is-wrapped")
+    traceWrap.setAttribute("aria-pressed", String(wrapped))
+    traceWrap.textContent = wrapped ? "Do not wrap" : "Wrap lines"
+    return
+  }
+
+  const traceExpand = event.target.closest("[data-trace-code-expand]")
+  if (traceExpand) {
+    const block = traceExpand.closest(".docs-trace-evidence-code")
+    if (!block) return
+    const expanded = block.classList.toggle("is-expanded")
+    traceExpand.setAttribute("aria-expanded", String(expanded))
+    traceExpand.textContent = expanded ? "Collapse" : "Show all"
+    return
+  }
+
   const copy = event.target.closest("[data-code-copy]")
   if (copy) {
     const block = copy.closest(".docs-code-block")

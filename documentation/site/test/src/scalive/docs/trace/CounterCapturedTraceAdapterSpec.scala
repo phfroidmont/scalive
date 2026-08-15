@@ -127,21 +127,25 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
 
       val trace    = CounterCapturedTraceAdapter.adapt(interaction)
       val evidence = trace.phases.flatMap(_.steps.flatMap(stepEvidence))
-      val facts    = evidence.flatMap(_.facts)
       val code     = evidence.flatMap(_.code).mkString("\n")
+      val finalFrame = evidence.find(_.label == "Final frame").get
+      val proposed   = evidence.find(_.label == "Proposed model").get
 
       assertTrue(
         evidence.map(_.label).contains("Typed message"),
         evidence.map(_.label).contains("DOM mutations"),
-        facts.contains("projected type"    -> "scalive.docs.examples.CounterExample.Msg.Increment"),
-        facts.contains("count"             -> "1"),
-        facts.contains("operation kind"    -> "ClientEvent"),
-        facts.contains("connection epoch"  -> "3"),
-        facts.contains("socket epoch"      -> "2"),
-        facts.contains("message reference" -> "7"),
-        facts.contains("frame bytes"       -> "143"),
+        evidence.flatMap(_.producer).toSet == Set("Runtime", "Browser"),
+        finalFrame.highlights == Vector("143 B"),
+        finalFrame.metadata.contains("operation" -> "Client event"),
+        finalFrame.metadata.contains("connection" -> "3"),
+        finalFrame.metadata.contains("socket" -> "2"),
+        finalFrame.correlation.contains("message" -> "#7"),
+        proposed.projection.exists(_.typeName == "scalive.docs.examples.CounterExample.Model"),
+        proposed.projection.exists(_.fields.contains("count" -> "1")),
+        evidence.forall(_.facts.forall(_._1 != "stage")),
+        code.contains("private-value"),
         code.contains("[redacted]"),
-        !code.contains("private-value"),
+        !code.contains("server-secret"),
         code.contains("mutations")
       )
     }
@@ -159,7 +163,10 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
   )
   private val frameProtocol = Json.Obj(
     "event"   -> Json.Str("phx_reply"),
-    "payload" -> Json.Obj("content" -> Json.Str("private-value"))
+    "payload" -> Json.Obj(
+      "content"  -> Json.Str("private-value"),
+      "csrfToken" -> Json.Str("server-secret")
+    )
   )
   private val domProtocol = Json.Obj(
     "mutations" -> Json.Arr(Json.Obj("kind" -> Json.Str("text"), "after" -> Json.Str("1")))

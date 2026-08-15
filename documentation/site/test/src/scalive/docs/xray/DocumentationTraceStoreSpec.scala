@@ -135,7 +135,7 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         !sanitizedJoin.contains("signed-session-secret"),
         !sanitizedJoin.contains("csrf-secret"),
         !sanitizedJoin.contains("password-secret"),
-        !sanitizedJoin.contains("unsafe-free-text"),
+        sanitizedJoin.contains("unsafe-free-text"),
         !sanitizedJoin.contains("url-secret"),
         !storedJson.contains("upload-secret"),
         storedJson.contains("13"),
@@ -191,7 +191,7 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         stored.forall(_.messageReference.contains("2")),
         !encoded.contains("forged-reference"),
         !encoded.contains("untrusted summary"),
-        !encoded.contains("untrusted-topic-value"),
+        encoded.contains("untrusted-topic-value"),
         encoded.contains("click")
       )
     },

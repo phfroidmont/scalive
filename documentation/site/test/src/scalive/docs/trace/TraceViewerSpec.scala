@@ -5,7 +5,7 @@ import scala.jdk.CollectionConverters.*
 import zio.test.*
 
 import scalive.HtmlBuilder
-import scalive.docs.model.TraceCatalog
+import scalive.docs.model.*
 
 object TraceViewerSpec extends ZIOSpecDefault:
   override def spec = suite("TraceViewerSpec")(
@@ -83,8 +83,61 @@ object TraceViewerSpec extends ZIOSpecDefault:
         evidence.asScala.forall(_.attr("data-trace-evidence-count") == "1"),
         evidence.asScala.forall(_.select(".docs-trace-evidence-record").size() == 1),
         evidence.asScala.forall(value => value.select("dl > div").asScala.forall(_.select("dt, dd").size() == 2)),
+        evidence.select("summary .docs-trace-evidence-record-summary").size() == 2,
         evidence.text().contains("connected"),
         evidence.text().contains("fresh connected mount")
+      )
+    },
+    test("labels shared context and renders records as ordered disclosures") {
+      val trace = TraceDefinition(
+        "shared-context",
+        "Shared context",
+        "Evidence rendering fixture",
+        Vector(TraceParticipant("runtime", "Runtime", "Runs the operation")),
+        Vector(
+          TracePhase(
+            "phase",
+            "Phase",
+            Vector(
+              TraceStep.Operation(
+                "runtime",
+                "Operation",
+                "Runs once",
+                Vector(
+                  TraceEvidence(
+                    label = "Started",
+                    summary = "Operation started",
+                    producer = Some("Runtime"),
+                    highlights = Vector("12 B"),
+                    correlation = Vector("message" -> "#7"),
+                    metadata = Vector("operation" -> "Client event")
+                  ),
+                  TraceEvidence(
+                    label = "Completed",
+                    summary = "Operation completed",
+                    producer = Some("Browser"),
+                    correlation = Vector("message" -> "#7")
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      val document = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(trace)))
+      val evidence = document.selectFirst("details.docs-trace-evidence")
+
+      assertTrue(
+        evidence.select(".docs-trace-evidence-common h5").text() == "Correlation",
+        evidence.select(".docs-trace-evidence-common").text().contains("message #7"),
+        evidence.select("ol.docs-trace-evidence-records").size() == 1,
+        evidence.select("li.docs-trace-evidence-record").size() == 2,
+        evidence.select(".docs-trace-evidence-record > details").size() == 2,
+        evidence.select(".docs-trace-evidence-producer").eachText().asScala.toVector ==
+          Vector("Runtime", "Browser"),
+        evidence.select(".docs-trace-evidence-highlights").text() == "12 B",
+        evidence.select("summary .docs-trace-evidence-description").isEmpty,
+        evidence.select(".docs-trace-evidence-metadata").text().contains("Client event")
       )
     }
   )

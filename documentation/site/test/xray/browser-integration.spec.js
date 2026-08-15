@@ -7,7 +7,7 @@ if (!playwrightRoot) throw new Error("PLAYWRIGHT_TEST_NODE_PATH is not set; ente
 
 const { expect, test } = require(`${playwrightRoot}/playwright/test.js`)
 
-test("runs client commands and exchanges redacted typed browser events", async ({ page }) => {
+test("runs client commands and exposes public typed browser events", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -46,7 +46,7 @@ test("runs client commands and exchanges redacted typed browser events", async (
   const traceText = await inspector.textContent()
   expect(traceText).toContain("BrowserInteropExample.Msg")
   expect(traceText).toContain("operation: succeeded")
-  expect(traceText).not.toContain("Scalive keeps server-to-browser event payloads typed.")
+  expect(traceText).toContain("Scalive keeps server-to-browser event payloads typed.")
 
   await example.getByRole("button", { name: "Reset browser integration" }).click()
   await expect(status).toHaveText("No browser operation requested yet.")

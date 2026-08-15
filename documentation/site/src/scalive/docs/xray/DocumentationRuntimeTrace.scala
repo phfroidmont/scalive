@@ -20,15 +20,11 @@ private[docs] object DocumentationTraceSanitizer:
     "password",
     "secret",
     "session",
+    "static",
     "token",
-    "upload"
-  )
-  private val SafeStringKeys = Set(
-    "event",
-    "kind",
-    "status",
-    "type",
-    "liveview_version"
+    "upload",
+    "url",
+    "redirect"
   )
   private val BrowserLabels = Map(
     "BrowserEvent"     -> "Browser event sent",
@@ -69,11 +65,10 @@ private[docs] object DocumentationTraceSanitizer:
           case Json.Obj(fields) =>
             Json.Obj(fields.map((name, child) => name -> sanitize(child, Some(name)))*)
           case Json.Arr(values) => Json.Arr(values.map(sanitize(_, None)))
-          case Json.Str(value) if fieldName.exists(SafeStringKeys.contains) => Json.Str(value)
-          case Json.Str(_)                                                  => Redacted
-          case number: Json.Num                                             => number
-          case bool: Json.Bool                                              => bool
-          case Json.Null                                                    => Json.Null
+          case string: Json.Str => string
+          case number: Json.Num => number
+          case bool: Json.Bool  => bool
+          case Json.Null        => Json.Null
 
   private def isSensitive(name: String): Boolean =
     val normalized = name.toLowerCase

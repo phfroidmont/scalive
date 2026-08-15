@@ -15,7 +15,17 @@ final case class TraceEvidence(
   label: String,
   summary: String,
   facts: Vector[(String, String)] = Vector.empty,
-  code: Option[String] = None)
+  code: Option[String] = None,
+  producer: Option[String] = None,
+  highlights: Vector[String] = Vector.empty,
+  correlation: Vector[(String, String)] = Vector.empty,
+  metadata: Vector[(String, String)] = Vector.empty,
+  projection: Option[TraceEvidenceProjection] = None)
+
+final case class TraceEvidenceProjection(
+  typeName: String,
+  summary: String,
+  fields: Vector[(String, String)])
 
 sealed trait TraceStep
 
@@ -347,9 +357,15 @@ object TraceCatalog:
       )).mkString(" ")
 
   private def evidenceProse(evidence: TraceEvidence): Vector[String] =
-    Vector(evidence.label, evidence.summary) ++ evidence.facts.flatMap { case (name, value) =>
-      Vector(name, value)
-    } ++ evidence.code.toVector
+    Vector(evidence.label, evidence.summary) ++ evidence.producer.toVector ++ evidence.highlights ++
+      evidence.facts.flatMap { case (name, value) => Vector(name, value) } ++
+      evidence.correlation.flatMap { case (name, value) => Vector(name, value) } ++
+      evidence.metadata.flatMap { case (name, value) => Vector(name, value) } ++
+      evidence.projection.toVector.flatMap(value =>
+        Vector(value.typeName, value.summary) ++ value.fields.flatMap { case (name, field) =>
+          Vector(name, field)
+        }
+      ) ++ evidence.code.toVector
 
   private def validateEvidence(
     traceId: String,
@@ -359,8 +375,15 @@ object TraceCatalog:
     evidence.foreach { value =>
       if value.label.trim.isEmpty || value.summary.trim.isEmpty then
         errors += s"trace '$traceId' evidence must have label and summary."
-      if value.facts.exists { case (name, fact) => name.trim.isEmpty || fact.trim.isEmpty } then
-        errors += s"trace '$traceId' evidence facts must not be blank."
+      val namedValues = value.facts ++ value.correlation ++ value.metadata ++
+        value.projection.toVector.flatMap(_.fields)
+      val blankProjection = value.projection.exists(projection =>
+        projection.typeName.trim.isEmpty || projection.summary.trim.isEmpty
+      )
+      if namedValues.exists { case (name, fact) => name.trim.isEmpty || fact.trim.isEmpty } ||
+        value.producer.exists(_.trim.isEmpty) || value.highlights.exists(_.trim.isEmpty) ||
+        blankProjection
+      then errors += s"trace '$traceId' evidence facts must not be blank."
     }
 
   private def isKebabCase(value: String): Boolean =

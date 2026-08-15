@@ -122,11 +122,11 @@ private[docs] object ExampleRegistry:
       message = new ExampleTraceProjector[CounterExample.Msg]:
         def project(value: CounterExample.Msg) = value match
           case CounterExample.Msg.Decrement =>
-            ExampleTraceValue("CounterExample.Msg", "Decrease the count")
+            ExampleTraceValue("CounterExample.Msg.Decrement", "Decrease the count")
           case CounterExample.Msg.Increment =>
-            ExampleTraceValue("CounterExample.Msg", "Increase the count")
+            ExampleTraceValue("CounterExample.Msg.Increment", "Increase the count")
           case CounterExample.Msg.Reset =>
-            ExampleTraceValue("CounterExample.Msg", "Reset the count"),
+            ExampleTraceValue("CounterExample.Msg.Reset", "Reset the count"),
       model = new ExampleTraceProjector[CounterExample.Model]:
         def project(value: CounterExample.Model) =
           ExampleTraceValue(

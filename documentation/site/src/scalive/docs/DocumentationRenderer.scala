@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets
 import scalive.*
 import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
-import scalive.docs.trace.TraceViewer
+import scalive.docs.trace.{CounterLiveTraceViewer, TraceViewer}
 import scalive.docs.xray.{DocumentationTraceStore, XRayInspector}
 
 final private[docs] class DocumentationRenderer(
@@ -202,7 +202,7 @@ final private[docs] class DocumentationRenderer(
     case Block.LabRef(id)     => renderLab(id)
     case Block.TraceRef(id)   =>
       TraceCatalog
-        .get(id).map(TraceViewer.render).getOrElse(
+        .get(id).map(trace => TraceViewer.render(trace)).getOrElse(
           throw new IllegalArgumentException(s"Unknown documentation trace: $id")
         )
     case Block.SourceCode(region, language, text, tokens) =>
@@ -560,9 +560,17 @@ final private[docs] class DocumentationRenderer(
         dataAttr("example-disconnected") := "",
         "Disconnected. Controls resume after reconnection."
       ),
-      traceStore.toVector.map(store =>
-        XRayInspector.nested(inspectorId, observedTopic, inspectorTopic, registered, store)
-      )
+      traceStore.toVector.map { store =>
+        if id == "counter" then
+          CounterLiveTraceViewer.nested(
+            inspectorId,
+            observedTopic,
+            inspectorTopic,
+            registered,
+            store
+          )
+        else XRayInspector.nested(inspectorId, observedTopic, inspectorTopic, registered, store)
+      }
     )
   end renderExample
 

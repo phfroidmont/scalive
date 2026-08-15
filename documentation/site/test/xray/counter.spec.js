@@ -7,102 +7,102 @@ if (!playwrightRoot) throw new Error("PLAYWRIGHT_TEST_NODE_PATH is not set; ente
 
 const { expect, test } = require(`${playwrightRoot}/playwright/test.js`)
 
-test("correlates a counter click through server and browser application", async ({ page }) => {
+test("captures counter interactions in the integrated live trace viewer", async ({ page }) => {
   await page.goto("/examples/counter")
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
 
   const example = page.locator('[data-example="counter"]')
-  const inspector = example.locator(".docs-xray")
+  const viewer = example.locator('[data-live-trace-viewer="counter"]')
   const count = example.locator(".docs-counter [role=status] strong")
+  const interactions = viewer.locator("[data-trace-interaction]")
 
   await expect(count).toHaveText("0")
-  await expect(inspector).toHaveAttribute("data-xray-enabled", "false")
-  await inspector.getByRole("button", { name: "Start tracing" }).click()
-  await expect(inspector).toHaveAttribute("data-xray-enabled", "true")
+  await expect(viewer.locator('[data-trace-provenance="authored"]')).toHaveCount(0)
+  await expect(viewer.locator(".docs-live-trace-catalog")).toHaveCount(0)
+  await expect(viewer.locator(".docs-xray-raw")).toHaveCount(0)
+  await expect(viewer.getByText("Raw trace", { exact: true })).toHaveCount(0)
 
-  await example.getByRole("button", { name: "Increase" }).click()
+  await expect(viewer).toContainText("No captured interaction")
+  await viewer.getByRole("button", { name: "Start capture" }).click()
+  await expect(viewer).toHaveAttribute("data-xray-enabled", "true")
+
+  await example.getByRole("button", { name: "Increase", exact: true }).click()
   await expect(count).toHaveText("1")
-  await expect(inspector.locator('[data-xray-interaction]')).toContainText("CounterExample.Msg")
-  await expect(inspector.locator('[data-xray-interaction]')).toContainText("count = 1")
+  await expect(interactions).toHaveCount(1)
+  await expect(interactions.first()).toHaveAttribute("aria-pressed", "true")
 
-  const summarySteps = inspector.locator("[data-xray-summary-order]")
-  const summaryStages = await summarySteps.evaluateAll((steps) =>
-    steps.map((step) => step.dataset.xraySummaryStage),
+  const capturedTrace = viewer.locator('[data-trace-viewer][data-trace-provenance="captured"]')
+  await expect(capturedTrace.locator('[data-trace-evidence="Typed message"]')).toContainText(
+    "CounterExample.Msg.Increment",
   )
-  expect(summaryStages).toEqual(expect.arrayContaining([
-    "BrowserEvent",
-    "TypedMessage",
-    "ModelProposed",
+  await expect(capturedTrace.locator('[data-trace-evidence="Proposed model"]')).toContainText(
+    /count\s*1/,
+  )
+  await expect(capturedTrace.locator('[data-trace-evidence="Tree diff"]')).toContainText(
     "TreeDiff",
-    "DomDiff",
-  ]))
-  expect(summaryStages.indexOf("BrowserEvent")).toBeLessThan(summaryStages.indexOf("TypedMessage"))
-  expect(summaryStages.indexOf("TypedMessage")).toBeLessThan(summaryStages.indexOf("ModelProposed"))
-  expect(summaryStages.indexOf("ModelProposed")).toBeLessThan(summaryStages.indexOf("TreeDiff"))
-  expect(summaryStages.indexOf("TreeDiff")).toBeLessThan(summaryStages.indexOf("DomDiff"))
-
-  await inspector.getByText("Raw trace").click()
-
-  const causalRecords = inspector.locator(".docs-xray-causal-list [data-xray-stage]")
-  const causalStages = await causalRecords.evaluateAll((records) =>
-    records.map((record) => record.dataset.xrayStage),
   )
-  await expect(inspector.locator(".docs-xray-handoff-browser-server")).toContainText(
-    "Request to server",
+  await expect(capturedTrace.locator('[data-trace-evidence="DOM mutations"]')).toContainText(
+    /mutations|DOM patch applied/,
   )
-  await expect(inspector.locator(".docs-xray-handoff-server-browser")).toContainText(
-    "Response to browser",
-  )
-
-  for (const stage of [
-    "DecodedEvent",
-    "BindingResolution",
-    "TypedMessage",
-    "ModelProposed",
-    "ModelRendered",
-    "TreeDiff",
-    "ModelCommitted",
-    "FinalFrame",
-  ]) {
-    await expect(inspector.locator(`[data-xray-stage="${stage}"]`).first()).toBeVisible()
-  }
-
-  for (const stage of ["BrowserEvent", "OutboundFrame", "InboundFrame", "DomPatch", "DomDiff"]) {
-    await expect(inspector.locator(`[data-xray-stage="${stage}"]`).first()).toBeVisible()
-  }
-  expect(causalStages.indexOf("OutboundFrame")).toBeLessThan(causalStages.indexOf("DecodedEvent"))
-  expect(causalStages.indexOf("FinalFrame")).toBeLessThan(causalStages.indexOf("InboundFrame"))
-  expect(causalStages.indexOf("InboundFrame")).toBeLessThan(causalStages.indexOf("DomPatch"))
-
-  const serverFrame = inspector.locator('[data-xray-stage="FinalFrame"]').last()
-  const browserFrame = inspector.locator('[data-xray-stage="InboundFrame"]').last()
-  await expect(serverFrame).toHaveAttribute(
-    "data-xray-message-reference",
-    await browserFrame.getAttribute("data-xray-message-reference"),
-  )
+  await expect(capturedTrace).toContainText("[redacted]")
+  await expect(interactions.first()).toHaveAttribute("data-trace-state", "complete")
 
   const csrfToken = await page.locator('meta[name="csrf-token"]').getAttribute("content")
-  const exampleSession = await example.locator('[data-phx-session]').first().getAttribute("data-phx-session")
-  const inspectorText = await inspector.textContent()
-  expect(inspectorText).not.toContain(csrfToken)
-  expect(inspectorText).not.toContain(exampleSession)
-  expect(inspectorText).toContain("[redacted]")
+  const exampleSession = await example.locator("[data-phx-session]").first().getAttribute("data-phx-session")
+  const capturedText = await capturedTrace.textContent()
+  expect(capturedText).not.toContain(csrfToken)
+  expect(capturedText).not.toContain(exampleSession)
+  await expect(viewer.locator(".docs-xray-raw")).toHaveCount(0)
+
+  await example.getByRole("button", { name: "Decrease", exact: true }).click()
+  await expect(count).toHaveText("0")
+  await expect(interactions).toHaveCount(2)
+  await expect(interactions.first()).toHaveAttribute("data-trace-state", "complete")
+
+  const olderInteraction = interactions.last()
+  const olderId = await olderInteraction.getAttribute("data-trace-interaction")
+  await olderInteraction.click()
+  await expect(viewer.locator(`[data-trace-interaction="${olderId}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
+
+  await example.getByRole("button", { name: "Increase", exact: true }).click()
+  await expect(count).toHaveText("1")
+  await expect(interactions).toHaveCount(3)
+  await expect(viewer.locator(`[data-trace-interaction="${olderId}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
+  await expect(viewer.locator(".docs-live-trace-inspection")).toContainText(/[1-9]\d* newer/)
+  await viewer.getByRole("button", { name: "Jump to latest" }).click()
+  await expect(viewer.locator(`[data-trace-interaction="${olderId}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  )
+  await expect(interactions.first()).toHaveAttribute("aria-pressed", "true")
 
   await page.evaluate(() => window.liveSocket.disconnect())
   await page.evaluate(() => window.liveSocket.connect())
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
-  await expect(inspector).toHaveAttribute("data-xray-enabled", "true")
-  await expect(inspector.locator(".docs-xray-history")).toHaveCount(1)
-  await inspector.getByText("Raw trace").click()
-  await inspector.locator(".docs-xray-history > summary").click()
-  await expect(inspector.locator('.docs-xray-history [data-xray-producer="browser"]')).toHaveCount(1)
-  await expect(inspector.locator('.docs-xray-history [data-xray-producer="server"]')).toHaveCount(1)
+  await expect(viewer).toHaveAttribute("data-xray-enabled", "true")
+  await expect(interactions).toHaveCount(3)
 
-  const socketEpochs = await inspector.locator('[data-xray-socket-epoch]').evaluateAll((records) =>
-    [...new Set(records.map((record) => record.dataset.xraySocketEpoch).filter(Boolean))],
-  )
-  expect(socketEpochs.length).toBeGreaterThanOrEqual(2)
+  await viewer.getByRole("button", { name: "Pause capture" }).click()
+  await expect(viewer).toHaveAttribute("data-xray-enabled", "false")
+  const countBeforePausedClick = Number(await count.textContent())
+  await example.getByRole("button", { name: "Increase", exact: true }).click()
+  await expect(count).toHaveText(String(countBeforePausedClick + 1))
+  await expect(interactions).toHaveCount(3)
+  await viewer.getByRole("button", { name: "Resume capture" }).click()
+  await expect(viewer).toHaveAttribute("data-xray-enabled", "true")
 
-  await inspector.getByRole("button", { name: "Clear trace" }).click()
-  await expect(inspector.locator('[data-xray-stage]')).toHaveCount(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(viewer).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false)
+
+  await viewer.getByRole("button", { name: "Clear", exact: true }).click()
+  await expect(interactions).toHaveCount(0)
+  await expect(viewer.locator('[data-trace-provenance="captured"]')).toHaveCount(0)
+  await expect(viewer).toContainText("Use a counter control to capture an interaction.")
 })

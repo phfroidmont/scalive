@@ -6,7 +6,11 @@ import scalive.docs.model.*
 private[docs] object TraceViewer:
   private val ariaLabelledBy = htmlAttr("aria-labelledby", scalive.codecs.StringAsIsEncoder)
 
-  def render(trace: TraceDefinition): HtmlElement[Nothing] =
+  def render(
+    trace: TraceDefinition,
+    provenance: String = "authored",
+    kicker: String = "Lifecycle trace"
+  ): HtmlElement[Nothing] =
     val participants = trace.participants.map(_.id)
     val indices      = participants.zipWithIndex.toMap
     val labels = trace.participants.map(participant => participant.id -> participant.label).toMap
@@ -14,11 +18,11 @@ private[docs] object TraceViewer:
     figure(
       cls                          := "docs-trace",
       dataAttr("trace-viewer")     := trace.id,
-      dataAttr("trace-provenance") := "authored",
+      dataAttr("trace-provenance") := provenance,
       ariaLabelledBy               := s"docs-trace-${trace.id}-title",
       HtmlTag("figcaption")(
         cls := "docs-trace-header",
-        p(cls     := "docs-trace-kicker", "Lifecycle trace"),
+        p(cls     := "docs-trace-kicker", kicker),
         h3(idAttr := s"docs-trace-${trace.id}-title", trace.title),
         p(trace.description)
       ),

@@ -403,7 +403,7 @@ test("keeps focus visible and suppresses motion for local controls", async ({ pa
     "#docs-theme-selector",
     "[data-code-copy]",
     "[data-example-controls] button",
-    ".docs-xray button",
+    ".docs-live-trace button",
     ".docs-page-links a",
   ]
   const remaining = new Set(selectors)

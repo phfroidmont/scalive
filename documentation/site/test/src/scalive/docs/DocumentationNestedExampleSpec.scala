@@ -37,7 +37,7 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
                    }
       yield assertTrue(results.forall(identity))
     },
-    test("captures a counter operation on a separate inspector topic") {
+    test("renders a captured counter operation on a separate inspector topic") {
       ZIO.scoped {
         val session = "01234567-89ab-cdef-0123-456789abcdef"
         for
@@ -50,26 +50,30 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           page <- ZIO
                     .fromOption(application.page("/examples/counter"))
                     .orElseFail(new NoSuchElementException("/examples/counter"))
-          store    <- DocumentationTraceStore.make()
-          renderer  = DocumentationRenderer(application, Some(store))
-          trace     = DocumentationRuntimeTrace(store, session, connectionEpoch = 1L)
-          parent   <- SiteLiveViewHarness.join(DocumentationPageLiveView(page, renderer), trace)
-          childId   = ExampleRegistry.instanceId(page.route, "counter")
+          store <- DocumentationTraceStore.make()
+          renderer = DocumentationRenderer(application, Some(store))
+          trace    = DocumentationRuntimeTrace(store, session, connectionEpoch = 1L)
+          parent <- SiteLiveViewHarness.join(DocumentationPageLiveView(page, renderer), trace)
+          childId     = ExampleRegistry.instanceId(page.route, "counter")
           inspectorId = ExampleRegistry.inspectorInstanceId(page.route, "counter")
           child     <- parent.joinNested(childId)
           inspector <- parent.joinNested(inspectorId)
-           _         <- inspector.clickButton("Start tracing")
+          initial   <- inspector.html
+          _         <- inspector.clickButton("Start capture")
           _         <- child.clickButton("Increase")
-           records   <- store.records(session, child.topic)
-           inspectorText <- (ZIO.yieldNow *> inspector.html)
-                              .repeatUntil(_.contains("count = 1"))
+          records   <- store.records(session, child.topic)
+          inspectorText <- (ZIO.yieldNow *> inspector.html)
+                  .repeatUntil(_.contains("Increase counter"))
           stages = records.filter(_.producer == TraceProducer.Server).map(_.stage)
           inspectorObserved <- store.records(session, inspector.topic)
-          _                  <- parent.leave
-          childRemoved       <- parent.socketExists(child.topic)
-          inspectorRemoved   <- parent.socketExists(inspector.topic)
+          _                 <- parent.leave
+          childRemoved      <- parent.socketExists(child.topic)
+          inspectorRemoved  <- parent.socketExists(inspector.topic)
         yield assertTrue(
           child.topic != inspector.topic,
+          initial.contains("data-live-trace-viewer=\"counter\""),
+          !initial.contains("docs-live-trace-catalog"),
+          !initial.contains("data-trace-provenance=\"authored\""),
           stages.contains("DecodedEvent"),
           stages.contains("BindingResolution"),
           stages.contains("TypedMessage"),
@@ -77,14 +81,18 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           stages.contains("ModelRendered"),
           stages.contains("TreeDiff"),
           stages.contains("ModelCommitted"),
-           inspectorText.contains("CounterExample.Msg"),
-           inspectorText.contains("count = 1"),
-           inspectorText.contains("data-xray-summary-order=\"2\""),
-           inspectorText.contains("data-xray-summary-order=\"3\""),
-           inspectorObserved.isEmpty,
+          inspectorText.contains("data-trace-provenance=\"captured\""),
+          inspectorText.contains("data-trace-evidence=\"Typed message\""),
+          inspectorText.contains("data-trace-evidence=\"Proposed model\""),
+          inspectorText.contains("data-trace-evidence=\"Tree diff\""),
+          inspectorText.contains("CounterExample.Msg.Increment"),
+          inspectorText.contains("count</dt><dd>1"),
+          !inspectorText.contains("docs-xray-raw"),
+          inspectorObserved.isEmpty,
           !childRemoved,
           !inspectorRemoved
         )
+        end for
       }
     }
   )

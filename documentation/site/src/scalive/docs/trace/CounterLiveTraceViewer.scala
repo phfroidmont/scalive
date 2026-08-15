@@ -71,6 +71,7 @@ final private[docs] class CounterLiveTraceViewer(
     val interactions = CapturedInteractionGrouper.group(model.records)
     sectionTag(
       cls                             := "docs-live-trace",
+      aria.label                      := "Live counter trace",
       dataAttr("live-trace-viewer")   := "counter",
       dataAttr("xray-observed-topic") := observedTopic,
       dataAttr("xray-topic")          := inspectorTopic,
@@ -92,38 +93,48 @@ final private[docs] class CounterLiveTraceViewer(
     selectedId: Option[String]
   ): HtmlElement[Msg] =
     val selected   = selectedId.flatMap(id => interactions.find(_.id == id))
+    val panelId    = s"$instanceId-trace-panel"
     val newerCount =
       selected.fold(0)(interaction => interactions.indexWhere(_.id == interaction.id))
     div(
       cls := "docs-live-trace-live",
       renderCaptureControls(model, interactions.size),
-      renderInspection(selectedId, selected, newerCount),
-      renderInteractionList(interactions, selectedId),
-      selected match
-        case Some(interaction) =>
-          div(
-            cls := "docs-live-trace-display",
-            TraceViewer.render(
-              CounterCapturedTraceAdapter.adapt(interaction),
-              provenance = "captured",
-              kicker = "Browser event trace"
-            )
+      Option
+        .when(interactions.nonEmpty || selectedId.nonEmpty)(
+          Vector[Mod[Msg]](
+            renderInspection(selectedId, selected, newerCount),
+            renderInteractionList(interactions, selectedId, panelId),
+            selected match
+              case Some(interaction) =>
+                div(
+                  idAttr          := panelId,
+                  cls             := "docs-live-trace-display docs-live-trace-panel",
+                  role            := "region",
+                  aria.labelledby := interactionRowId(interaction),
+                  aria.busy       := (interaction.state == CapturedInteractionState.InProgress),
+                  TraceViewer.render(
+                    CounterCapturedTraceAdapter.adapt(interaction),
+                    provenance = "captured",
+                    kicker = "Browser event trace"
+                  )
+                )
+              case None =>
+                div(
+                  idAttr     := panelId,
+                  cls        := "docs-live-trace-display docs-live-trace-panel",
+                  role       := "region",
+                  aria.label := "Displayed counter interaction trace",
+                  div(
+                    cls         := "docs-live-trace-empty",
+                    role        := "status",
+                    aria.live   := "polite",
+                    aria.atomic := true,
+                    strong("Selected interaction expired"),
+                    p("The selected interaction is no longer retained.")
+                  )
+                )
           )
-        case None =>
-          div(
-            cls       := "docs-live-trace-empty",
-            role      := "status",
-            aria.live := "polite",
-            strong(
-              if model.session.isEmpty then "Capture unavailable" else "No captured interaction"
-            ),
-            p(
-              if model.session.isEmpty then "Connect to inspect a live counter interaction."
-              else if selectedId.nonEmpty then "The selected interaction is no longer retained."
-              else if model.enabled then "Use a counter control to capture an interaction."
-              else "Start capture, then use a counter control."
-            )
-          )
+        ).getOrElse(Vector.empty)
     )
   end renderLive
 
@@ -131,14 +142,31 @@ final private[docs] class CounterLiveTraceViewer(
     div(
       cls := s"docs-live-trace-toolbar${if model.enabled then " is-capturing" else " is-paused"}",
       span(
-        cls := "docs-live-trace-capture-status",
-        if model.enabled then "Capturing" else if count == 0 then "Ready" else "Paused"
+        cls         := "docs-live-trace-capture-status",
+        role        := "status",
+        aria.live   := "polite",
+        aria.atomic := true,
+        if model.session.isEmpty then "Unavailable"
+        else if model.enabled then "Capturing"
+        else if count == 0 then "Ready"
+        else "Paused"
       ),
-      span(cls := "docs-live-trace-capture-summary", s"$count interactions retained"),
+      span(
+        cls         := "docs-live-trace-capture-summary",
+        role        := "status",
+        aria.live   := "polite",
+        aria.atomic := true,
+        if model.session.isEmpty then "Connect to capture interactions"
+        else if count == 0 && model.enabled then "Use a counter control"
+        else if count == 0 then "No interactions yet"
+        else if count == 1 then "1 interaction retained"
+        else s"$count interactions retained"
+      ),
       div(
         cls := "docs-live-trace-actions",
         button(
-          typ := "button",
+          typ      := "button",
+          disabled := model.session.isEmpty,
           on.click(Msg.ToggleCapture),
           if model.enabled then "Pause capture"
           else if count == 0 then "Start capture"
@@ -161,11 +189,28 @@ final private[docs] class CounterLiveTraceViewer(
     div(
       cls := "docs-live-trace-inspection",
       span(
+        cls         := "docs-live-trace-inspection-status",
+        role        := "status",
+        aria.live   := "polite",
+        aria.atomic := true,
         selected match
           case Some(interaction) =>
             Vector[Mod[Msg]](
               Mod.Content.Text("Inspecting "),
-              Mod.Content.Tag(strong(interactionReference(interaction))),
+              Mod.Content.Tag(
+                strong(
+                  cls := "docs-live-trace-inspection-reference",
+                  interactionReference(interaction)
+                )
+              ),
+              Mod.Content.Text(" / "),
+              Mod.Content.Tag(
+                span(cls := "docs-live-trace-inspection-label", interaction.label)
+              ),
+              Mod.Content.Text(" / "),
+              Mod.Content.Tag(
+                span(cls := "docs-live-trace-inspection-state", stateLabel(interaction.state))
+              ),
               Mod.Content.Text(if newerCount == 0 then " / latest" else s" / $newerCount newer")
             )
           case None if selectedId.nonEmpty =>
@@ -187,7 +232,8 @@ final private[docs] class CounterLiveTraceViewer(
 
   private def renderInteractionList(
     interactions: Vector[CapturedInteraction],
-    selectedId: Option[String]
+    selectedId: Option[String],
+    panelId: String
   ): HtmlElement[Msg] =
     div(
       cls := "docs-live-trace-event-window",
@@ -196,18 +242,21 @@ final private[docs] class CounterLiveTraceViewer(
       else
         ol(
           cls        := "docs-live-trace-events",
+          aria.live  := "polite",
           aria.label := "Captured counter interactions",
           interactions.map { interaction =>
             li(
               button(
-                typ                           := "button",
-                cls                           := "docs-live-trace-event",
-                aria.pressed                  := selectedId.contains(interaction.id).toString,
+                typ           := "button",
+                idAttr        := interactionRowId(interaction),
+                cls           := "docs-live-trace-event",
+                aria.pressed  := selectedId.contains(interaction.id).toString,
+                aria.controls := panelId,
+                aria.busy     := (interaction.state == CapturedInteractionState.InProgress),
                 dataAttr("trace-interaction") := interaction.id,
                 dataAttr("trace-state")       := stateKey(interaction.state),
                 on.click(Msg.SelectInteraction(interaction.id)),
                 span(cls := "docs-live-trace-event-reference", interactionReference(interaction)),
-                span(cls := "docs-live-trace-event-kind", "Click"),
                 strong(interaction.label),
                 span(cls := "docs-live-trace-event-state", stateLabel(interaction.state))
               )
@@ -218,6 +267,9 @@ final private[docs] class CounterLiveTraceViewer(
 
   private def interactionReference(interaction: CapturedInteraction): String =
     interaction.reference.fold(interaction.id)(reference => s"#$reference")
+
+  private def interactionRowId(interaction: CapturedInteraction): String =
+    s"$instanceId-${interaction.id}"
 
   private def withRecords(model: Model, records: Vector[DocumentationTraceRecord]): Model =
     val selected = model.selectedInteraction.orElse(

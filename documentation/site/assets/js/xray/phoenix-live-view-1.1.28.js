@@ -81,10 +81,12 @@ export function wrapDecoder(decode, observer) {
   return (raw, callback) =>
     decode(raw, (message) => {
       observer.before(message, raw)
+      let succeeded = false
       try {
         callback(message)
+        succeeded = true
       } finally {
-        observer.after(message, raw)
+        observer.after(message, raw, succeeded)
       }
     })
 }
@@ -244,8 +246,19 @@ export function createXRayAdapter() {
     }
   }
 
-  function endInbound() {
-    inboundMessage = null
+  function endInbound(_message, _raw, succeeded) {
+    try {
+      if (succeeded && inboundMessage) {
+        enqueue(
+          inboundMessage.topic,
+          "InboundProcessed",
+          "Inbound protocol frame processed",
+          inboundMessage,
+        )
+      }
+    } finally {
+      inboundMessage = null
+    }
   }
 
   function topicForContainer(container) {

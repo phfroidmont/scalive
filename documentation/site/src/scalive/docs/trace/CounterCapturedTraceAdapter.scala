@@ -73,7 +73,8 @@ private[docs] object CounterCapturedTraceAdapter:
     val lifecycle = Vector(
       step(
         interaction,
-        Set("Lifecycle"),
+        Set("LifecycleStarted", "LifecycleCompleted"),
+        record => record.summary.startsWith("Event lifecycle"),
         records =>
           TraceStep.Operation(
             "live-view",
@@ -89,8 +90,20 @@ private[docs] object CounterCapturedTraceAdapter:
           TraceStep.Message(
             "live-view",
             "runtime",
-            "Propose counter model",
+            "Return updated model",
             "The handler returns a new immutable counter model.",
+            evidence(records)
+          )
+      ),
+      step(
+        interaction,
+        Set("RenderStarted"),
+        records =>
+          TraceStep.Message(
+            "runtime",
+            "live-view",
+            "Request counter render",
+            "The runtime asks the LiveView to render the updated model.",
             evidence(records)
           )
       ),
@@ -98,10 +111,11 @@ private[docs] object CounterCapturedTraceAdapter:
         interaction,
         Set("ModelRendered", "RenderCompleted"),
         records =>
-          TraceStep.Operation(
+          TraceStep.Message(
             "live-view",
-            "Render counter",
-            "The proposed model is rendered into a typed tree.",
+            "runtime",
+            "Return rendered tree",
+            "The LiveView returns the typed tree produced from the updated model.",
             evidence(records)
           )
       ),
@@ -132,7 +146,7 @@ private[docs] object CounterCapturedTraceAdapter:
     val output = Vector(
       step(
         interaction,
-        Set("FinalPayload", "FinalFrame", "InboundFrame"),
+        Set("FinalPayload", "FinalFrame", "InboundFrame", "InboundProcessed"),
         records =>
           TraceStep.Message(
             "runtime",
@@ -185,23 +199,24 @@ private[docs] object CounterCapturedTraceAdapter:
     stages: Set[String],
     build: Vector[DocumentationTraceRecord] => TraceStep
   ): Option[TraceStep] =
-    val records = interaction.records.filter(record => stages(record.stage))
+    step(interaction, stages, _ => true, build)
+
+  private def step(
+    interaction: CapturedInteraction,
+    stages: Set[String],
+    include: DocumentationTraceRecord => Boolean,
+    build: Vector[DocumentationTraceRecord] => TraceStep
+  ): Option[TraceStep] =
+    val records = interaction.records.filter(record => stages(record.stage) && include(record))
     Option.when(records.nonEmpty)(build(records))
 
   private def phase(id: String, title: String, steps: Vector[TraceStep]): Option[TracePhase] =
     Option.when(steps.nonEmpty)(TracePhase(id, title, steps))
 
   private def evidence(records: Vector[DocumentationTraceRecord]): Vector[TraceEvidence] =
-    val stageCounts = records.groupMapReduce(_.stage)(_ => 1)(_ + _)
-    val seen        = scala.collection.mutable.Map.empty[String, Int].withDefaultValue(0)
     records.map { record =>
-      val next = seen(record.stage) + 1
-      seen.update(record.stage, next)
-      val label = stageLabel(record.stage) + Option
-        .when(stageCounts(record.stage) > 1)(s" $next")
-        .getOrElse("")
       TraceEvidence(
-        label = label,
+        label = recordLabel(record),
         summary = record.summary,
         facts = recordFacts(record),
         code =
@@ -241,22 +256,30 @@ private[docs] object CounterCapturedTraceAdapter:
     case CapturedInteractionState.Failed     => "failed"
 
   private def stageLabel(stage: String): String = stage match
-    case "BrowserEvent"      => "Browser event"
-    case "OutboundFrame"     => "Outbound frame"
-    case "InboundFrame"      => "Inbound frame"
-    case "DecodedEvent"      => "Decoded event"
-    case "BindingResolution" => "Binding resolution"
-    case "TypedMessage"      => "Typed message"
-    case "Lifecycle"         => "Lifecycle"
-    case "ModelProposed"     => "Proposed model"
-    case "ModelRendered"     => "Rendered model"
-    case "RenderCompleted"   => "Render completed"
-    case "TreeDiff"          => "Tree diff"
-    case "ModelCommitted"    => "Committed model"
-    case "FinalPayload"      => "Final payload"
-    case "FinalFrame"        => "Final frame"
-    case "DomPatch"          => "DOM patch"
-    case "DomDiff"           => "DOM mutations"
-    case "Crash"             => "Runtime failure"
-    case other               => other
+    case "BrowserEvent"       => "Browser event"
+    case "OutboundFrame"      => "Outbound frame"
+    case "InboundFrame"       => "Inbound frame"
+    case "InboundProcessed"   => "Response processed"
+    case "DecodedEvent"       => "Decoded event"
+    case "BindingResolution"  => "Binding resolution"
+    case "TypedMessage"       => "Typed message"
+    case "LifecycleStarted"   => "Lifecycle started"
+    case "LifecycleCompleted" => "Lifecycle completed"
+    case "ModelProposed"      => "Proposed model"
+    case "RenderStarted"      => "Render started"
+    case "ModelRendered"      => "Rendered model"
+    case "RenderCompleted"    => "Render completed"
+    case "TreeDiff"           => "Tree diff"
+    case "ModelCommitted"     => "Committed model"
+    case "FinalPayload"       => "Final payload"
+    case "FinalFrame"         => "Final frame"
+    case "DomPatch"           => "DOM patch"
+    case "DomDiff"            => "DOM mutations"
+    case "Crash"              => "Runtime failure"
+    case other                => other
+
+  private def recordLabel(record: DocumentationTraceRecord): String = record.stage match
+    case "LifecycleStarted"   => "Handler started"
+    case "LifecycleCompleted" => "Handler completed"
+    case _                    => stageLabel(record.stage)
 end CounterCapturedTraceAdapter

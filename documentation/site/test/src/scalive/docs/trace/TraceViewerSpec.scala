@@ -73,17 +73,15 @@ object TraceViewerSpec extends ZIOSpecDefault:
         !document.html().contains("phx-")
       )
     },
-    test("uses native disclosure for authored lifecycle evidence") {
+    test("groups technical records by causal step") {
       val document = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(TraceCatalog.HttpGet)))
       val evidence = document.select("details.docs-trace-evidence")
 
       assertTrue(
         evidence.size() == 2,
-        evidence.select("summary").eachText().asScala.toVector == Vector(
-          "Mount context",
-          "Lifecycle boundary"
-        ),
-        evidence.asScala.forall(_.parent().hasClass("docs-trace-event-copy")),
+        evidence.asScala.forall(_.parent().hasClass("docs-trace-step")),
+        evidence.asScala.forall(_.attr("data-trace-evidence-count") == "1"),
+        evidence.asScala.forall(_.select(".docs-trace-evidence-record").size() == 1),
         evidence.asScala.forall(value => value.select("dl > div").asScala.forall(_.select("dt, dd").size() == 2)),
         evidence.text().contains("connected"),
         evidence.text().contains("fresh connected mount")

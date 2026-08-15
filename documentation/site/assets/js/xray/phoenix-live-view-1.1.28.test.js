@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  createXRayAdapter,
   createTraceSession,
   sanitizeProtocol,
   wrapDecoder,
@@ -32,8 +33,8 @@ test("decoder forwards the exact decoded object", () => {
     before(message) {
       calls.push(["before", message])
     },
-    after(message) {
-      calls.push(["after", message])
+    after(message, _raw, succeeded) {
+      calls.push(["after", message, succeeded])
     },
   })
 
@@ -41,6 +42,112 @@ test("decoder forwards the exact decoded object", () => {
 
   assert.deepEqual(calls.map(([name]) => name), ["before", "callback", "after"])
   assert.ok(calls.every(([, message]) => message === decoded))
+  assert.equal(calls[2][2], true)
+})
+
+test("decoder reports a thrown callback and still invokes the after observer", () => {
+  const decoded = { topic: "lv:example", event: "phx_reply", payload: {}, ref: "2", join_ref: "1" }
+  const calls = []
+  const wrapped = wrapDecoder((_raw, callback) => callback(decoded), {
+    before() {
+      calls.push(["before"])
+    },
+    after(_message, _raw, succeeded) {
+      calls.push(["after", succeeded])
+    },
+  })
+
+  assert.throws(
+    () => wrapped("raw-frame", () => {
+      calls.push(["callback"])
+      throw new Error("callback failed")
+    }),
+    /callback failed/,
+  )
+
+  assert.deepEqual(calls, [["before"], ["callback"], ["after", false]])
+})
+
+test("adapter emits a correlated terminal record after successful inbound processing", async () => {
+  const batches = []
+  const adapter = createXRayAdapter()
+  adapter.hook.mounted.call({
+    el: {
+      dataset: {
+        xrayObservedTopic: "lv:example",
+        xrayEnabled: "true",
+        xrayBrowserEvent: "xray-records",
+      },
+    },
+    pushEvent(_event, payload) {
+      batches.push(payload.records)
+    },
+  })
+  const decoded = { topic: "lv:example", event: "phx_reply", payload: {}, ref: "2", join_ref: "1" }
+  const wrapped = wrapDecoder((_raw, callback) => callback(decoded), {
+    before: adapter.beginInbound,
+    after: adapter.endInbound,
+  })
+
+  wrapped("raw-frame", () => {})
+  await Promise.resolve()
+
+  const records = batches.flat()
+  assert.deepEqual(records.map((record) => record.stage), ["InboundFrame", "InboundProcessed"])
+  const terminal = records[1]
+  assert.equal(terminal.summary, "Inbound protocol frame processed")
+  assert.equal(terminal.topic, decoded.topic)
+  assert.equal(terminal.joinReference, decoded.join_ref)
+  assert.equal(terminal.messageReference, decoded.ref)
+  assert.equal(terminal.operationSequence, Number(decoded.ref))
+})
+
+test("adapter omits the terminal record after a thrown callback and clears inbound state", async () => {
+  const batches = []
+  const adapter = createXRayAdapter()
+  adapter.hook.mounted.call({
+    el: {
+      dataset: {
+        xrayObservedTopic: "lv:example",
+        xrayEnabled: "true",
+        xrayBrowserEvent: "xray-records",
+      },
+    },
+    pushEvent(_event, payload) {
+      batches.push(payload.records)
+    },
+  })
+  const decoded = { topic: "lv:example", event: "phx_reply", payload: {}, ref: "2", join_ref: "1" }
+  const wrapped = wrapDecoder((_raw, callback) => callback(decoded), {
+    before: adapter.beginInbound,
+    after: adapter.endInbound,
+  })
+  const previousMutationObserver = globalThis.MutationObserver
+  globalThis.MutationObserver = class {
+    observe() {}
+    takeRecords() { return [] }
+    disconnect() {}
+  }
+
+  try {
+    assert.throws(() => wrapped("raw-frame", () => {
+      throw new Error("callback failed")
+    }), /callback failed/)
+
+    const container = { id: "example" }
+    adapter.dom.onPatchStart(container)
+    adapter.dom.onPatchEnd(container)
+    await Promise.resolve()
+  } finally {
+    if (previousMutationObserver === undefined) delete globalThis.MutationObserver
+    else globalThis.MutationObserver = previousMutationObserver
+  }
+
+  const records = batches.flat()
+  assert.equal(records.some((record) => record.stage === "InboundProcessed"), false)
+  const patch = records.find((record) => record.stage === "DomPatch")
+  assert.equal(patch.joinReference, null)
+  assert.equal(patch.messageReference, null)
 })
 
 test("protocol sanitization removes secrets and binary content", () => {

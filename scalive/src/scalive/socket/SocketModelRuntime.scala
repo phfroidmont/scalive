@@ -160,7 +160,7 @@ private[scalive] object SocketModelRuntime:
                        )
                   _ <- RuntimeTraceOperation.event(
                          meta.traceOperation,
-                         RuntimeTraceStage.Lifecycle,
+                         RuntimeTraceStage.LifecycleStarted,
                          "Event lifecycle and message handler started"
                        )
                   (updatedModel, navigation) <-
@@ -184,7 +184,7 @@ private[scalive] object SocketModelRuntime:
                     )
                   _ <- RuntimeTraceOperation.event(
                          meta.traceOperation,
-                         RuntimeTraceStage.Lifecycle,
+                         RuntimeTraceStage.LifecycleCompleted,
                          "Event lifecycle and message handler completed"
                        )
                   _ <- updatedModel match
@@ -290,10 +290,13 @@ private[scalive] object SocketModelRuntime:
              model
            )
       currentUrl <- state.currentUrlRef.get
-      nextRoot   <- SocketComponentRuntime.renderRoot(state.renderRoot(model, currentUrl), state)
-      nextCompiled = RenderSnapshot.compile(nextRoot)
-      diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
-      _ <- RuntimeTraceOperation.model(
+      _          <- RuntimeTraceOperation.event(
+             traceOperation,
+             RuntimeTraceStage.RenderStarted,
+             "Render started"
+           )
+      nextRoot <- SocketComponentRuntime.renderRoot(state.renderRoot(model, currentUrl), state)
+      _        <- RuntimeTraceOperation.model(
              traceOperation,
              RuntimeTraceStage.ModelRendered,
              "Proposed model rendered",
@@ -304,6 +307,8 @@ private[scalive] object SocketModelRuntime:
              RuntimeTraceStage.RenderCompleted,
              "Render completed"
            )
+      nextCompiled = RenderSnapshot.compile(nextRoot)
+      diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
       _ <- RuntimeTraceOperation.event(
              traceOperation,
              RuntimeTraceStage.TreeDiff,

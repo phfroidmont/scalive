@@ -21,7 +21,9 @@ private[docs] object TraceViewer:
       dataAttr("trace-provenance") := provenance,
       ariaLabelledBy               := s"docs-trace-${trace.id}-title",
       HtmlTag("figcaption")(
-        cls := "docs-trace-header",
+        cls := s"docs-trace-header${
+            if provenance == "captured" then " docs-visually-hidden" else ""
+          }",
         p(cls     := "docs-trace-kicker", kicker),
         h3(idAttr := s"docs-trace-${trace.id}-title", trace.title),
         p(trace.description)
@@ -38,7 +40,8 @@ private[docs] object TraceViewer:
         )
       ),
       ol(
-        cls := "docs-trace-sequence",
+        cls       := "docs-trace-sequence",
+        styleAttr := laneCountStyle(participants.size),
         trace.phases.zipWithIndex.map { case (phase, phaseIndex) =>
           val start = trace.phases.take(phaseIndex).map(_.steps.size).sum + 1
           renderPhase(phase, phaseIndex, start, indices, labels, participants.size)
@@ -87,14 +90,15 @@ private[docs] object TraceViewer:
           dataAttr("trace-step")        := order.toString,
           dataAttr("trace-step-kind")   := "operation",
           dataAttr("trace-participant") := participant,
-          styleAttr                     := s"--docs-trace-lane: ${indices(participant) + 1}",
+          styleAttr                     :=
+            f"--docs-trace-lane: ${indices(participant) + 1}; --docs-trace-detail-position: ${laneCenter(indices(participant), laneCount)}%.4f%%;",
           eventCopy(
             order,
             label,
             description,
-            stepEvidence(step),
             operationContext(participant, labels)
-          )
+          ),
+          renderEvidenceGroup(stepEvidence(step), label)
         )
       case TraceStep.Message(from, to, label, description, _) =>
         val fromPosition  = laneCenter(indices(from), laneCount)
@@ -109,7 +113,7 @@ private[docs] object TraceViewer:
           dataAttr("trace-from")      := from,
           dataAttr("trace-to")        := to,
           styleAttr                   :=
-            f"--docs-trace-start: $startPosition%.4f%%; --docs-trace-end: $endPosition%.4f%%; --docs-trace-midpoint: ${(fromPosition + toPosition) / 2}%.4f%%;",
+            f"--docs-trace-start: $startPosition%.4f%%; --docs-trace-end: $endPosition%.4f%%; --docs-trace-midpoint: ${(fromPosition + toPosition) / 2}%.4f%%; --docs-trace-detail-position: ${(fromPosition + toPosition) / 2}%.4f%%;",
           div(
             cls         := "docs-trace-message-route",
             aria.hidden := true,
@@ -119,16 +123,17 @@ private[docs] object TraceViewer:
             order,
             label,
             description,
-            stepEvidence(step),
             messageContext(from, to, labels)
-          )
+          ),
+          renderEvidenceGroup(stepEvidence(step), label)
         )
       case TraceStep.Boundary(label, description, _) =>
         li(
           cls                         := "docs-trace-step docs-trace-boundary",
           dataAttr("trace-step")      := order.toString,
           dataAttr("trace-step-kind") := "boundary",
-          eventCopy(order, label, description, stepEvidence(step), boundaryContext)
+          eventCopy(order, label, description, boundaryContext),
+          renderEvidenceGroup(stepEvidence(step), label)
         )
   end renderStep
 
@@ -136,7 +141,6 @@ private[docs] object TraceViewer:
     order: Int,
     label: String,
     description: String,
-    evidence: Vector[TraceEvidence],
     context: HtmlElement[Nothing]
   ): HtmlElement[Nothing] =
     div(
@@ -144,11 +148,10 @@ private[docs] object TraceViewer:
       context,
       div(
         cls := "docs-trace-event-heading",
-        span(cls := "docs-trace-order", aria.hidden := true, f"$order%02d"),
+        span(cls := "docs-trace-order", f"$order%02d"),
         strong(label)
       ),
-      p(description),
-      evidence.map(value => renderEvidence(value): Mod[Nothing])
+      p(description)
     )
 
   private def operationContext(
@@ -176,21 +179,66 @@ private[docs] object TraceViewer:
   private val boundaryContext =
     p(cls := "docs-trace-event-context docs-visually-hidden", "Lifecycle boundary")
 
-  private def renderEvidence(evidence: TraceEvidence): HtmlElement[Nothing] =
-    detailsTag(
-      cls                        := "docs-trace-evidence",
+  private def renderEvidenceGroup(
+    evidence: Vector[TraceEvidence],
+    stepLabel: String
+  ): Vector[Mod[Nothing]] =
+    Option
+      .when(evidence.nonEmpty) {
+        val commonFactSet: Set[(String, String)] =
+          if evidence.size == 1 then Set.empty[(String, String)]
+          else evidence.map(_.facts.toSet).reduce(_ intersect _)
+        val commonFacts = evidence.head.facts.filter(commonFactSet)
+        val recordCount = if evidence.size == 1 then "1 record" else s"${evidence.size} records"
+
+        detailsTag(
+          cls                              := "docs-trace-evidence",
+          dataAttr("trace-evidence-count") := evidence.size.toString,
+          summaryTag(
+            span(cls := "docs-visually-hidden", "Show technical "),
+            span(cls := "docs-trace-evidence-count", recordCount),
+            span(cls := "docs-visually-hidden", s" for $stepLabel")
+          ),
+          div(
+            cls := "docs-trace-evidence-content",
+            Option
+              .when(commonFacts.nonEmpty)(
+                renderFacts(commonFacts, "docs-trace-evidence-common")
+              )
+              .map(value => value: Mod[Nothing]).toVector,
+            div(
+              cls := "docs-trace-evidence-records",
+              evidence.map(value => renderEvidenceRecord(value, commonFactSet): Mod[Nothing])
+            )
+          )
+        )
+      }.map(value => value: Mod[Nothing]).toVector
+
+  private def renderEvidenceRecord(
+    evidence: TraceEvidence,
+    commonFacts: Set[(String, String)]
+  ): HtmlElement[Nothing] =
+    val specificFacts = evidence.facts.filterNot(commonFacts)
+    sectionTag(
+      cls                        := "docs-trace-evidence-record",
       dataAttr("trace-evidence") := evidence.label,
-      summaryTag(evidence.label),
+      h5(evidence.label),
       p(evidence.summary),
       Option
-        .when(evidence.facts.nonEmpty)(
-          dl(
-            evidence.facts.map { case (name, value) =>
-              div(dt(name), dd(value))
-            }
-          )
-        ).map(value => value: Mod[Nothing]).toVector,
+        .when(specificFacts.nonEmpty)(renderFacts(specificFacts, "docs-trace-evidence-specific"))
+        .map(value => value: Mod[Nothing]).toVector,
       evidence.code.map(value => pre(code(value)): Mod[Nothing]).toVector
+    )
+
+  private def renderFacts(
+    facts: Vector[(String, String)],
+    className: String
+  ): HtmlElement[Nothing] =
+    dl(
+      cls := className,
+      facts.map { case (name, value) =>
+        div(dt(name), dd(value))
+      }
     )
 
   private def stepEvidence(step: TraceStep): Vector[TraceEvidence] = step match

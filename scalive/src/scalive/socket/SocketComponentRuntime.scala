@@ -200,7 +200,7 @@ private[scalive] object SocketComponentRuntime:
                             )
                        _ <- RuntimeTraceOperation.event(
                               meta.traceOperation,
-                              RuntimeTraceStage.Lifecycle,
+                              RuntimeTraceStage.LifecycleStarted,
                               "Component lifecycle and handler started"
                             )
                        hooksRef <- Ref.make(instance.hooks)
@@ -212,7 +212,7 @@ private[scalive] object SocketComponentRuntime:
                                         instance.outputOwner
                                       )
                        asyncEvent = LiveAsyncEvent(AsyncKey[Any](name), result)
-                       (result, navigation) <-
+                       lifecycleResult <-
                          SocketModelRuntime.captureNavigation(state)(
                            componentCtx.hooks
                              .runComponentAsync(
@@ -237,6 +237,13 @@ private[scalive] object SocketComponentRuntime:
                                  ZIO.succeed(LiveEventHookResult.Halt(hookModel, None))
                              }
                          )
+                       result     = lifecycleResult._1
+                       navigation = lifecycleResult._2
+                       _ <- RuntimeTraceOperation.event(
+                              meta.traceOperation,
+                              RuntimeTraceStage.LifecycleCompleted,
+                              "Component lifecycle and handler completed"
+                            )
                        hooks <- hooksRef.get
                        model = result match
                                  case LiveEventHookResult.Continue(value) => value
@@ -269,11 +276,6 @@ private[scalive] object SocketComponentRuntime:
                               "Component model committed",
                               model
                             )
-                       _ <- RuntimeTraceOperation.event(
-                              meta.traceOperation,
-                              RuntimeTraceStage.Lifecycle,
-                              "Component lifecycle and handler completed"
-                            )
                      yield true
     yield handled
 
@@ -300,7 +302,7 @@ private[scalive] object SocketComponentRuntime:
                             )
                        _ <- RuntimeTraceOperation.event(
                               meta.traceOperation,
-                              RuntimeTraceStage.Lifecycle,
+                              RuntimeTraceStage.LifecycleStarted,
                               "Component lifecycle and handler started"
                             )
                        hooksRef <- Ref.make(instance.hooks)
@@ -311,7 +313,7 @@ private[scalive] object SocketComponentRuntime:
                                         instance.outputMapper,
                                         instance.outputOwner
                                       )
-                       (result, navigation) <-
+                       lifecycleResult <-
                          SocketModelRuntime.captureNavigation(state)(
                            runComponentEventHooks(instance, message, event, componentCtx).flatMap {
                              case LiveEventHookResult.Continue(hookModel) =>
@@ -325,6 +327,13 @@ private[scalive] object SocketComponentRuntime:
                              case halt @ LiveEventHookResult.Halt(_, _) => ZIO.succeed(halt)
                            }
                          )
+                       result     = lifecycleResult._1
+                       navigation = lifecycleResult._2
+                       _ <- RuntimeTraceOperation.event(
+                              meta.traceOperation,
+                              RuntimeTraceStage.LifecycleCompleted,
+                              "Component lifecycle and handler completed"
+                            )
                        hooks <- hooksRef.get
                        model = result match
                                  case LiveEventHookResult.Continue(value) => value
@@ -346,11 +355,6 @@ private[scalive] object SocketComponentRuntime:
                               RuntimeTraceStage.ModelCommitted,
                               "Component model committed",
                               model
-                            )
-                       _ <- RuntimeTraceOperation.event(
-                              meta.traceOperation,
-                              RuntimeTraceStage.Lifecycle,
-                              "Component lifecycle and handler completed"
                             )
                        (parentModel, _) <- state.ref.get
                        _                <- handleComponentLifecycleResult(

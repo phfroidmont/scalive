@@ -34,8 +34,10 @@ private[scalive] enum RuntimeTraceStage:
   case DecodedEvent
   case BindingResolution
   case TypedMessage
-  case Lifecycle
+  case LifecycleStarted
+  case LifecycleCompleted
   case ModelProposed
+  case RenderStarted
   case ModelRendered
   case RenderCompleted
   case TreeDiff

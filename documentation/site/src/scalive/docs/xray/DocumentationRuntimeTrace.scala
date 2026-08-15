@@ -31,11 +31,12 @@ private[docs] object DocumentationTraceSanitizer:
     "liveview_version"
   )
   private val BrowserLabels = Map(
-    "BrowserEvent"  -> "Browser event sent",
-    "OutboundFrame" -> "Outbound protocol frame encoded",
-    "InboundFrame"  -> "Inbound protocol frame decoded",
-    "DomPatch"      -> "DOM patch started",
-    "DomDiff"       -> "Final DOM changes observed"
+    "BrowserEvent"     -> "Browser event sent",
+    "OutboundFrame"    -> "Outbound protocol frame encoded",
+    "InboundFrame"     -> "Inbound protocol frame decoded",
+    "InboundProcessed" -> "Inbound protocol frame processed",
+    "DomPatch"         -> "DOM patch started",
+    "DomDiff"          -> "Final DOM changes observed"
   )
 
   def protocol(message: WebSocketMessage): Json =

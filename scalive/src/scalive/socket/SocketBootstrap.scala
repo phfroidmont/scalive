@@ -62,13 +62,13 @@ private[scalive] object SocketBootstrap:
       _ <- navigationRef.set(None)
       _ <- RuntimeTraceOperation.event(
              meta.traceOperation,
-             RuntimeTraceStage.Lifecycle,
+             RuntimeTraceStage.LifecycleStarted,
              "Mount lifecycle started"
            )
       mounted <- paramsRuntime.mount(lv, initialUrl, runtimeCtx)
       _       <- RuntimeTraceOperation.event(
              meta.traceOperation,
-             RuntimeTraceStage.Lifecycle,
+             RuntimeTraceStage.LifecycleCompleted,
              "Mount lifecycle completed"
            )
       mountNavigation                                   <- navigationRef.getAndSet(None)
@@ -91,20 +91,17 @@ private[scalive] object SocketBootstrap:
              "Mount proposed a model",
              bootstrapModel
            )
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.RenderStarted,
+             "Initial render started"
+           )
       initRoot <-
         SocketComponentRuntime.renderRoot(
           renderRoot(bootstrapModel, bootstrapUrl),
           componentsRef,
           runtimeCtx
         )
-      initCompiled  = RenderSnapshot.compile(initRoot)
-      initPageTitle =
-        Option.when(ownsPageTitle)(normalizePageTitle(lv.pageTitle(bootstrapModel))).flatten
-      initView = RenderedView(
-                   compiled = initCompiled,
-                   bindings = BindingRegistry.collect[Any](initCompiled),
-                   pageTitle = initPageTitle
-                 )
       _ <- RuntimeTraceOperation.model(
              meta.traceOperation,
              RuntimeTraceStage.ModelRendered,
@@ -116,15 +113,23 @@ private[scalive] object SocketBootstrap:
              RuntimeTraceStage.RenderCompleted,
              "Initial render completed"
            )
+      initCompiled  = RenderSnapshot.compile(initRoot)
+      initPageTitle =
+        Option.when(ownsPageTitle)(normalizePageTitle(lv.pageTitle(bootstrapModel))).flatten
+      initView = RenderedView(
+                   compiled = initCompiled,
+                   bindings = BindingRegistry.collect[Any](initCompiled),
+                   pageTitle = initPageTitle
+                 )
       _ <- RuntimeTraceOperation.event(
              meta.traceOperation,
-             RuntimeTraceStage.Lifecycle,
+             RuntimeTraceStage.LifecycleStarted,
              "After-render lifecycle started"
            )
       _ <- runtimeCtx.hooks.runAfterRender[Msg, Model](bootstrapModel, runtimeCtx)
       _ <- RuntimeTraceOperation.event(
              meta.traceOperation,
-             RuntimeTraceStage.Lifecycle,
+             RuntimeTraceStage.LifecycleCompleted,
              "After-render lifecycle completed"
            )
       ref <- Ref.make((bootstrapModel, initView))

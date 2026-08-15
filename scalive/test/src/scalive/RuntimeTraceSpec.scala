@@ -172,6 +172,18 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
       traceOperation = RuntimeTraceOperation.Disabled
     )
 
+  private def recordIndex(
+    records: Vector[RuntimeTraceRecord],
+    stage: RuntimeTraceStage
+  ): Int =
+    records.indexWhere(_.stage == stage)
+
+  private def isStrictlyOrdered(indices: Int*): Boolean =
+    indices.forall(_ >= 0) && indices.sliding(2).forall {
+      case Seq(left, right) => left < right
+      case _                => true
+    }
+
   override def spec = suite("RuntimeTraceSpec")(
     test("inactive tracing does not project, sanitize, collect, or change output bytes") {
       ZIO.scoped {
@@ -191,12 +203,14 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("active tracing distinguishes proposed, rendered, and committed models") {
+    test("active tracing distinguishes lifecycle edges and preserves causal render ordering") {
       ZIO.scoped {
         for
           records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
           _       <- observe(CollectingTrace(records))
           captured = records.iterator().asScala.toVector
+          joinRecords = captured.filter(_.identity.messageReference.contains(1))
+          eventRecords = captured.filter(_.identity.messageReference.contains(2))
           modelStages = captured.collect {
                           case record
                               if record.stage == RuntimeTraceStage.ModelProposed ||
@@ -212,7 +226,22 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
           eventOperation.exists(_.traceSession == "active-session"),
           eventOperation.exists(_.connectionEpoch == 3L),
           eventOperation.exists(_.socketEpoch == 1L),
-          eventOperation.exists(_.messageReference.contains(2))
+          eventOperation.exists(_.messageReference.contains(2)),
+          isStrictlyOrdered(
+            recordIndex(joinRecords, RuntimeTraceStage.RenderStarted),
+            recordIndex(joinRecords, RuntimeTraceStage.ModelRendered),
+            recordIndex(joinRecords, RuntimeTraceStage.RenderCompleted),
+            recordIndex(joinRecords, RuntimeTraceStage.TreeDiff)
+          ),
+          isStrictlyOrdered(
+            recordIndex(eventRecords, RuntimeTraceStage.LifecycleStarted),
+            recordIndex(eventRecords, RuntimeTraceStage.LifecycleCompleted),
+            recordIndex(eventRecords, RuntimeTraceStage.ModelProposed),
+            recordIndex(eventRecords, RuntimeTraceStage.RenderStarted),
+            recordIndex(eventRecords, RuntimeTraceStage.ModelRendered),
+            recordIndex(eventRecords, RuntimeTraceStage.RenderCompleted),
+            recordIndex(eventRecords, RuntimeTraceStage.TreeDiff)
+          )
         )
       }
     },
@@ -262,6 +291,9 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
           ),
           unchanged.exists(_.stage == RuntimeTraceStage.ModelCommitted),
           failed.exists(_.stage == RuntimeTraceStage.ModelProposed),
+          failed.exists(_.stage == RuntimeTraceStage.RenderStarted),
+          !failed.exists(_.stage == RuntimeTraceStage.RenderCompleted),
+          !failed.exists(_.stage == RuntimeTraceStage.ModelRendered),
           failed.exists(_.stage == RuntimeTraceStage.Crash),
           !failed.exists(_.stage == RuntimeTraceStage.ModelCommitted)
         )
@@ -327,10 +359,15 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
                )
           _        <- output.take
           captured  = records.iterator().asScala.toVector
+          componentRecords = captured.filter(_.identity.messageReference.contains(2))
         yield assertTrue(
           captured.exists(_.summary == "Component proposed a model"),
           captured.exists(_.summary == "Component model committed"),
-          captured.exists(_.stage == RuntimeTraceStage.TreeDiff)
+          captured.exists(_.stage == RuntimeTraceStage.TreeDiff),
+          isStrictlyOrdered(
+            recordIndex(componentRecords, RuntimeTraceStage.LifecycleStarted),
+            recordIndex(componentRecords, RuntimeTraceStage.LifecycleCompleted)
+          )
         )
       }
     },
@@ -370,7 +407,13 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
         yield assertTrue(
           client.exists(_.exists(_.stage == RuntimeTraceStage.TypedMessage)),
           server.exists(_.exists(_.stage == RuntimeTraceStage.TypedMessage)),
-          server.exists(_.forall(_.identity.messageReference.isEmpty))
+          server.exists(_.forall(_.identity.messageReference.isEmpty)),
+          server.exists(records =>
+            isStrictlyOrdered(
+              recordIndex(records, RuntimeTraceStage.LifecycleStarted),
+              recordIndex(records, RuntimeTraceStage.LifecycleCompleted)
+            )
+          )
         )
       }
     },

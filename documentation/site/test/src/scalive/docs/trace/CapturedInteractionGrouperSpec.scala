@@ -61,6 +61,28 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
         after.label == "Decrease counter"
       )
     },
+    test("completes when the browser processes a response without a DOM patch") {
+      val received = Vector(
+        browser(1, 3, 3, "BrowserEvent"),
+        browser(2, 3, 3, "OutboundFrame"),
+        server(1, 1, 1, 3, 3, "TypedMessage", Some(message("Reset"))),
+        server(2, 1, 1, 3, 3, "TreeDiff"),
+        server(3, 1, 1, 3, 3, "FinalFrame"),
+        browser(3, 3, 3, "InboundFrame")
+      )
+      val before    = CapturedInteractionGrouper.group(received).head
+      val completed = CapturedInteractionGrouper.group(received :+ browser(4, 3, 3, "InboundProcessed")).head
+      val failed = CapturedInteractionGrouper
+        .group(received ++ Vector(browser(4, 3, 3, "InboundProcessed"), server(4, 1, 1, 3, 3, "Crash")))
+        .head
+
+      assertTrue(
+        before.state == CapturedInteractionState.InProgress,
+        completed.state == CapturedInteractionState.Complete,
+        !completed.records.exists(_.stage == "DomDiff"),
+        failed.state == CapturedInteractionState.Failed
+      )
+    },
     test("preserves server-only failures and gives failure precedence") {
       val interaction = CapturedInteractionGrouper.group(
         Vector(

@@ -5020,6 +5020,8 @@ details[open] > summary .docs-disclosure-marker,
   padding: clamp(1rem, 3vw, 1.5rem);
   border-top: 1px solid var(--docs-border);
   background: var(--docs-surface-subtle);
+  container-name: docs-live-trace;
+  container-type: inline-size;
 }
 
 .docs-live-trace [data-xray-hook] {
@@ -5091,7 +5093,7 @@ details[open] > summary .docs-disclosure-marker,
 
 .docs-live-trace-actions button,
 .docs-live-trace-jump {
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   padding: 0.45rem 0.7rem;
   border: 1px solid var(--docs-control-border);
   border-radius: var(--docs-radius);
@@ -5137,7 +5139,7 @@ details[open] > summary .docs-disclosure-marker,
 }
 
 .docs-live-trace-jump {
-  min-height: 2rem;
+  min-height: 2.75rem;
   padding-block: 0.3rem;
   flex: none;
   border-color: var(--docs-border-strong);
@@ -5169,7 +5171,7 @@ details[open] > summary .docs-disclosure-marker,
   min-height: 3.5rem;
   padding: 0.65rem 0.85rem;
   display: grid;
-  grid-template-columns: 4.5rem 4rem minmax(0, 1fr) auto;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5rem 0.75rem;
   border: 0;
@@ -5196,7 +5198,6 @@ details[open] > summary .docs-disclosure-marker,
 }
 
 .docs-live-trace-event-reference,
-.docs-live-trace-event-kind,
 .docs-live-trace-event-state {
   font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
   font-size: 0.68rem;
@@ -5204,14 +5205,11 @@ details[open] > summary .docs-disclosure-marker,
 }
 
 .docs-live-trace-event-reference {
+  min-width: 0;
   color: var(--docs-accent-strong);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-}
-
-.docs-live-trace-event-kind {
-  color: var(--docs-muted);
-  text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .docs-live-trace-event > strong {
@@ -5286,7 +5284,7 @@ details[open] > summary .docs-disclosure-marker,
   margin: 0;
 }
 
-@media (max-width: 48rem) {
+@container docs-live-trace (max-width: 48rem) {
   .docs-live-trace-toolbar {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -5303,26 +5301,19 @@ details[open] > summary .docs-disclosure-marker,
 
   .docs-live-trace-event {
     grid-template-columns: 3.5rem minmax(0, 1fr) auto;
-    gap: 0.2rem 0.6rem;
-  }
-
-  .docs-live-trace-event-kind {
-    grid-column: 1;
-    grid-row: 2;
+    gap: 0.35rem 0.6rem;
   }
 
   .docs-live-trace-event > strong {
     grid-column: 2;
-    grid-row: 1 / span 2;
   }
 
   .docs-live-trace-event-state {
     grid-column: 3;
-    grid-row: 1 / span 2;
   }
 }
 
-@media (max-width: 30rem) {
+@container docs-live-trace (max-width: 30rem) {
   .docs-live-trace-toolbar {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -5353,7 +5344,7 @@ details[open] > summary .docs-disclosure-marker,
 
   .docs-live-trace-event-state {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 2;
     justify-self: start;
   }
 }
@@ -5436,26 +5427,40 @@ details[open] > summary .docs-disclosure-marker,
 .docs-trace-sequence {
   margin: 0;
   padding: 0;
+  background-image: linear-gradient(
+    to right,
+    transparent calc(50% - 0.5px),
+    var(--docs-border) calc(50% - 0.5px),
+    var(--docs-border) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
+  background-repeat: repeat-x;
+  background-size: calc(100% / var(--docs-trace-lanes)) 100%;
   list-style: none;
 }
 
 .docs-trace-phase-group {
-  margin: 1.5rem 0 0;
+  margin: 1rem 0 0;
   padding: 0;
   list-style: none;
 }
 
 .docs-trace-phase-group + .docs-trace-phase-group {
-  padding-top: 1.5rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--docs-border);
 }
 
 .docs-trace-phase {
+  position: relative;
+  z-index: 1;
+  width: max-content;
+  max-width: 100%;
   display: flex;
   align-items: baseline;
   gap: 0.65rem;
   margin: 0;
-  padding: 0;
+  padding: 0 0.55rem 0 0;
+  background: var(--docs-surface);
   color: var(--docs-text);
   font-size: 0.9rem;
 }
@@ -5469,10 +5474,6 @@ details[open] > summary .docs-disclosure-marker,
   margin: 0;
   padding: 0.65rem 0 0;
   list-style: none;
-  background-image:
-    linear-gradient(to right, transparent calc(16.6667% - 0.5px), var(--docs-border) calc(16.6667% - 0.5px), var(--docs-border) calc(16.6667% + 0.5px), transparent calc(16.6667% + 0.5px)),
-    linear-gradient(to right, transparent calc(50% - 0.5px), var(--docs-border) calc(50% - 0.5px), var(--docs-border) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-    linear-gradient(to right, transparent calc(83.3333% - 0.5px), var(--docs-border) calc(83.3333% - 0.5px), var(--docs-border) calc(83.3333% + 0.5px), transparent calc(83.3333% + 0.5px));
 }
 
 .docs-trace-step {
@@ -5532,12 +5533,12 @@ details[open] > summary .docs-disclosure-marker,
 
 .docs-trace-message {
   display: block;
-  padding-top: 1.35rem;
+  padding-top: 1.15rem;
 }
 
 .docs-trace-message-route {
   position: absolute;
-  top: 1.1rem;
+  top: 0.9rem;
   right: 0;
   left: 0;
   height: 0;
@@ -5641,33 +5642,66 @@ details[open] > summary .docs-disclosure-marker,
 }
 
 .docs-trace-evidence {
-  margin-top: 0.55rem;
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0.1rem auto 0.45rem;
   text-align: left;
 }
 
-.docs-trace-evidence[open] {
-  margin-inline: -0.65rem;
-  padding: 0.45rem 0.65rem 0.6rem;
+.docs-trace-evidence-content {
+  box-sizing: border-box;
+  width: min(calc(100% - 2rem), 48rem);
+  margin: 0.6rem auto 0;
+  padding: 0.7rem;
   border-radius: var(--docs-radius);
   background: var(--docs-surface);
   box-shadow: 0 0 0 1px var(--docs-border);
 }
 
 .docs-trace-evidence summary {
-  width: max-content;
-  margin-inline: auto;
-  color: var(--docs-accent-strong);
+  position: relative;
+  left: var(--docs-trace-detail-position, 50%);
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  color: var(--docs-muted);
   cursor: pointer;
-  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  transform: translateX(-50%);
 }
 
-.docs-trace-evidence p {
+.docs-trace-evidence summary:hover,
+.docs-trace-evidence summary:focus-visible,
+.docs-trace-evidence[open] > summary {
+  color: var(--docs-accent-strong);
+}
+
+.docs-trace-evidence-records {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+  gap: 0.65rem;
+}
+
+.docs-trace-evidence-record {
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface-subtle);
+}
+
+.docs-trace-evidence-record h5 {
+  margin: 0;
+  color: var(--docs-accent-strong);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.docs-trace-evidence-record p {
   margin: 0.45rem 0 0;
-  padding-top: 0.45rem;
-  border-top: 1px solid var(--docs-border);
   color: var(--docs-muted);
   font-size: 0.78rem;
   line-height: 1.5;
@@ -5676,6 +5710,11 @@ details[open] > summary .docs-disclosure-marker,
 .docs-trace-evidence dl {
   margin: 0.55rem 0 0;
   background: transparent;
+}
+
+.docs-trace-evidence-common {
+  padding: 0.2rem 0.65rem 0.55rem;
+  border-bottom: 1px solid var(--docs-border);
 }
 
 .docs-trace-evidence dl > div {
@@ -5722,6 +5761,10 @@ details[open] > summary .docs-disclosure-marker,
     background: none;
   }
 
+  .docs-trace-sequence {
+    background: none;
+  }
+
   .docs-trace-step {
     display: block;
     padding: 0.55rem 0;
@@ -5763,10 +5806,18 @@ details[open] > summary .docs-disclosure-marker,
   }
 
   .docs-trace-evidence summary {
+    left: auto;
+    margin-inline: 0;
+    transform: none;
+  }
+
+  .docs-trace-evidence {
+    width: 100%;
     margin-inline: 0;
   }
 
-  .docs-trace-evidence[open] {
+  .docs-trace-evidence-content {
+    width: 100%;
     margin-inline: 0;
   }
 

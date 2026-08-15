@@ -151,7 +151,9 @@ private[docs] object CapturedInteractionGrouper:
         s"counter-interaction-server-${key.connectionEpoch.getOrElse(0L)}-${key.socketEpoch.getOrElse(0L)}-${key.operationSequence}"
     val state =
       if records.exists(_.stage == "Crash") then CapturedInteractionState.Failed
-      else if records.exists(_.stage == "DomDiff") ||
+      else if records.exists(record =>
+          record.stage == "InboundProcessed" || record.stage == "DomDiff"
+        ) ||
         (browser.isEmpty && records.exists(_.stage == "FinalFrame"))
       then CapturedInteractionState.Complete
       else CapturedInteractionState.InProgress

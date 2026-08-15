@@ -149,7 +149,7 @@ private[scalive] object SocketOutbound:
            )
       _ <- RuntimeTraceOperation.event(
              meta.traceOperation,
-             RuntimeTraceStage.Lifecycle,
+             RuntimeTraceStage.LifecycleStarted,
              "Server message lifecycle and handler started"
            )
       (currentModel, rendered)   <- state.ref.get
@@ -163,6 +163,11 @@ private[scalive] object SocketOutbound:
             case halt @ LiveHookResult.Halt(_) => ZIO.succeed(halt)
           }
         )
+      _ <- RuntimeTraceOperation.event(
+             meta.traceOperation,
+             RuntimeTraceStage.LifecycleCompleted,
+             "Server message lifecycle and handler completed"
+           )
       hookModel = updatedModel match
                     case LiveHookResult.Halt(value)     => value
                     case LiveHookResult.Continue(value) => value
@@ -181,11 +186,6 @@ private[scalive] object SocketOutbound:
                  _ <- SocketModelRuntime.publishPayload(Payload.Diff(diff), meta, state)
                  _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
                yield ()
-      _ <- RuntimeTraceOperation.event(
-             meta.traceOperation,
-             RuntimeTraceStage.Lifecycle,
-             "Server message lifecycle and handler completed"
-           )
     yield ()
 
   private def runMessageHooks[Msg, Model](

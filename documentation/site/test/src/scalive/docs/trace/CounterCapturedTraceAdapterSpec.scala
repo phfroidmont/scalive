@@ -8,7 +8,7 @@ import scalive.docs.xray.*
 
 object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
   override def spec = suite("CounterCapturedTraceAdapterSpec")(
-    test("maps only present stages and consolidates runtime records") {
+    test("represents every lane transition in the captured causal flow") {
       val interaction = captured(
         Vector(
           record(TraceProducer.Browser, 1, "BrowserEvent"),
@@ -16,39 +16,100 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
           record(TraceProducer.Server, 1, "DecodedEvent"),
           record(TraceProducer.Server, 2, "BindingResolution"),
           record(TraceProducer.Server, 3, "TypedMessage", value = Some(message)),
-          record(TraceProducer.Server, 4, "Lifecycle", summary = "Handler started"),
-          record(TraceProducer.Server, 5, "Lifecycle", summary = "Handler completed"),
+          record(
+            TraceProducer.Server,
+            4,
+            "LifecycleStarted",
+            summary = "Event lifecycle and message handler started"
+          ),
+          record(
+            TraceProducer.Server,
+            5,
+            "LifecycleCompleted",
+            summary = "Event lifecycle and message handler completed"
+          ),
           record(TraceProducer.Server, 6, "ModelProposed", value = Some(model)),
-          record(TraceProducer.Server, 7, "TreeDiff", summary = "Tree diff contains changes"),
-          record(TraceProducer.Server, 8, "FinalFrame", protocol = Some(frameProtocol), byteSize = Some(143)),
+          record(TraceProducer.Server, 7, "RenderStarted"),
+          record(TraceProducer.Server, 8, "ModelRendered", value = Some(model)),
+          record(TraceProducer.Server, 9, "RenderCompleted"),
+          record(TraceProducer.Server, 10, "TreeDiff", summary = "Tree diff contains changes"),
+          record(TraceProducer.Server, 11, "ModelCommitted", value = Some(model)),
+          record(TraceProducer.Server, 12, "FinalPayload"),
+          record(
+            TraceProducer.Server,
+            13,
+            "FinalFrame",
+            protocol = Some(frameProtocol),
+            byteSize = Some(143)
+          ),
           record(TraceProducer.Browser, 3, "DomDiff", protocol = Some(domProtocol))
         )
       )
 
-      val trace  = CounterCapturedTraceAdapter.adapt(interaction)
-      val labels = trace.phases.flatMap(_.steps.map(stepLabel))
+      val trace = CounterCapturedTraceAdapter.adapt(interaction)
+      val steps = trace.phases.flatMap(_.steps)
 
       assertTrue(
         trace.id == interaction.id,
         trace.participants.map(_.id) == Vector("browser", "runtime", "live-view"),
-        trace.phases.map(_.id) == Vector("event", "lifecycle", "response"),
-        labels == Vector(
-          "Increase counter",
-          "Send event frame",
-          "Decode counter event",
-          "Increment",
-          "Handle Increment",
-          "Propose counter model",
-          "Compute tree diff",
-          "Send rendered diff",
-          "Apply DOM patch"
-        ),
-        !labels.contains("Render counter"),
-        !labels.contains("Commit counter model"),
+        steps.nonEmpty,
+        causalFlowErrors(steps).isEmpty,
+        messageWithEvidence(steps, "Render started").contains("runtime" -> "live-view"),
+        messageWithEvidence(steps, "Render completed").contains("live-view" -> "runtime"),
         TraceCatalog.validate(Vector(trace)).isEmpty
       )
     },
-    test("attaches projected fields, operation metadata, bytes, and sanitized protocol as evidence") {
+    test("groups lifecycle evidence with semantic start and completion labels") {
+      val interaction = captured(
+        Vector(
+          record(
+            TraceProducer.Server,
+            1,
+            "LifecycleStarted",
+            summary = "Event lifecycle and message handler started"
+          ),
+          record(
+            TraceProducer.Server,
+            2,
+            "LifecycleCompleted",
+            summary = "Event lifecycle and message handler completed"
+          ),
+          record(
+            TraceProducer.Server,
+            3,
+            "LifecycleStarted",
+            summary = "After-render lifecycle started"
+          )
+        )
+      )
+
+      val trace           = CounterCapturedTraceAdapter.adapt(interaction)
+      val handlerEvidence = trace.phases
+        .flatMap(_.steps)
+        .collectFirst { case TraceStep.Operation("live-view", _, _, evidence) =>
+          evidence
+        }
+        .getOrElse(Vector.empty)
+
+      assertTrue(
+        handlerEvidence.map(_.label) == Vector("Handler started", "Handler completed"),
+        handlerEvidence.map(_.label).distinct.size == 2,
+        handlerEvidence.forall(evidence => !evidence.label.matches(".* \\d+$"))
+      )
+    },
+    test("omits phases whose captured stages are absent") {
+      val trace = CounterCapturedTraceAdapter.adapt(
+        captured(Vector(record(TraceProducer.Browser, 1, "BrowserEvent")))
+      )
+
+      assertTrue(
+        trace.phases.map(_.id) == Vector("event"),
+        trace.phases.forall(_.steps.nonEmpty)
+      )
+    },
+    test(
+      "attaches projected fields, operation metadata, bytes, and sanitized protocol as evidence"
+    ) {
       val interaction = captured(
         Vector(
           record(TraceProducer.Server, 1, "TypedMessage", value = Some(message)),
@@ -72,13 +133,13 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
       assertTrue(
         evidence.map(_.label).contains("Typed message"),
         evidence.map(_.label).contains("DOM mutations"),
-        facts.contains("projected type" -> "scalive.docs.examples.CounterExample.Msg.Increment"),
-        facts.contains("count" -> "1"),
-        facts.contains("operation kind" -> "ClientEvent"),
-        facts.contains("connection epoch" -> "3"),
-        facts.contains("socket epoch" -> "2"),
+        facts.contains("projected type"    -> "scalive.docs.examples.CounterExample.Msg.Increment"),
+        facts.contains("count"             -> "1"),
+        facts.contains("operation kind"    -> "ClientEvent"),
+        facts.contains("connection epoch"  -> "3"),
+        facts.contains("socket epoch"      -> "2"),
         facts.contains("message reference" -> "7"),
-        facts.contains("frame bytes" -> "143"),
+        facts.contains("frame bytes"       -> "143"),
         code.contains("[redacted]"),
         !code.contains("private-value"),
         code.contains("mutations")
@@ -143,13 +204,35 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
       byteSize
     )
 
-  private def stepLabel(step: TraceStep): String = step match
-    case TraceStep.Operation(_, label, _, _)  => label
-    case TraceStep.Message(_, _, label, _, _) => label
-    case TraceStep.Boundary(label, _, _)      => label
-
   private def stepEvidence(step: TraceStep): Vector[TraceEvidence] = step match
     case TraceStep.Operation(_, _, _, evidence)  => evidence
     case TraceStep.Message(_, _, _, _, evidence) => evidence
     case TraceStep.Boundary(_, _, evidence)      => evidence
+
+  private def messageWithEvidence(
+    steps: Vector[TraceStep],
+    evidenceLabel: String
+  ): Option[(String, String)] =
+    steps.collectFirst {
+      case TraceStep.Message(from, to, _, _, evidence) if evidence.exists(_.label == evidenceLabel) =>
+        from -> to
+    }
+
+  private def causalFlowErrors(steps: Vector[TraceStep]): Vector[String] =
+    steps
+      .foldLeft((Option.empty[String], Vector.empty[String])) {
+        case ((current, errors), TraceStep.Operation(participant, label, _, _)) =>
+          val nextErrors = current
+            .filter(_ != participant).fold(errors)(lane =>
+              errors :+ s"$label starts on $participant after the flow ended on $lane"
+            )
+          Some(participant) -> nextErrors
+        case ((current, errors), TraceStep.Message(from, to, label, _, _)) =>
+          val nextErrors = current
+            .filter(_ != from).fold(errors)(lane =>
+              errors :+ s"$label leaves $from after the flow ended on $lane"
+            )
+          Some(to) -> nextErrors
+        case (state, _: TraceStep.Boundary) => state
+      }._2
 end CounterCapturedTraceAdapterSpec

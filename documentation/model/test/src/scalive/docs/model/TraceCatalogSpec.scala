@@ -23,5 +23,28 @@ object TraceCatalogSpec extends ZIOSpecDefault:
         TraceCatalog.validate(Vector(invalid)) ==
           Vector("trace 'http-get' operation references unknown participant 'missing'.")
       )
+    },
+    test("accepts semantic facts and rejects contentless evidence") {
+      def trace(evidence: TraceEvidence) = TraceCatalog.HttpGet.copy(
+        phases = Vector(
+          TracePhase(
+            "request",
+            "Request",
+            Vector(TraceStep.Operation("runtime", "Start", "Starts.", Some(evidence)))
+          )
+        )
+      )
+
+      val facts       = trace(TraceEvidence("Updated model", facts = Vector("count" -> "1")))
+      val contentless = trace(TraceEvidence("Measurement"))
+      val blankCode   = trace(TraceEvidence("Protocol frame", code = Some("  ")))
+
+      assertTrue(
+        TraceCatalog.validate(Vector(facts)).isEmpty,
+        TraceCatalog.validate(Vector(contentless)) ==
+          Vector("trace 'http-get' evidence must have content."),
+        TraceCatalog.validate(Vector(blankCode)) ==
+          Vector("trace 'http-get' evidence content must not be blank.")
+      )
     }
   )

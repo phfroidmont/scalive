@@ -24,12 +24,15 @@ test("traces a shopping cart message, derived model, and keyed row", async ({ pa
   await expect(coffee.locator("[data-cart-subtotal]")).toHaveText("$12.99")
   await expect(example.locator("[data-cart-total]")).toHaveText("$12.99")
   await expect(inspector.locator("[data-trace-interaction]")).toHaveCount(1)
-  await expect(inspector.locator('[data-trace-evidence="Tree diff"]')).toBeAttached()
-  await expect(inspector.locator('[data-trace-evidence="DOM mutations"]')).toBeAttached()
-  await expect(inspector.locator('[data-trace-evidence="Typed message"]')).toContainText(
-    "product: coffee",
+  await expect(inspector.locator('[data-trace-evidence="Tree diff"]')).toHaveCount(0)
+  await expect(inspector.locator("[data-trace-step]", { hasText: "Compute tree diff" })).toContainText(
+    "The rendered tree contains changes.",
   )
-  await expect(inspector.locator('[data-trace-evidence="Proposed model"]')).toContainText(
-    "total: $12.99",
+  await expect(inspector.locator('[data-trace-evidence="DOM changes"]')).toBeAttached()
+  await expect(inspector.locator('[data-trace-evidence="Message fields"]')).toContainText(
+    /product\s*coffee/,
+  )
+  await expect(inspector.locator('[data-trace-evidence="Updated model"]')).toContainText(
+    /total\s*\$12\.99/,
   )
 })

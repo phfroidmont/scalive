@@ -5648,205 +5648,80 @@ details[open] > summary .docs-disclosure-marker,
   text-align: left;
 }
 
-.docs-trace-evidence-content {
-  box-sizing: border-box;
-  width: min(calc(100% - 2rem), 56rem);
-  margin: 0.6rem auto 0;
-  padding: 0.7rem;
-  border-radius: var(--docs-radius);
-  background: var(--docs-surface);
-  box-shadow: 0 0 0 1px var(--docs-border);
-}
-
-.docs-trace-evidence summary {
+.docs-trace-evidence-inline,
+.docs-trace-evidence-code-detail > summary {
   position: relative;
   left: var(--docs-trace-detail-position, 50%);
   width: fit-content;
-  max-width: 100%;
+  max-width: calc(100% / var(--docs-trace-lanes) - 1rem);
+  transform: translateX(-50%);
+}
+
+.docs-trace-evidence-inline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.65rem;
+  color: var(--docs-muted);
+  font-size: 0.8125rem;
+}
+
+.docs-trace-evidence-inline > p {
   margin: 0;
+  line-height: 1.45;
+}
+
+.docs-trace-evidence-code-detail > summary {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.55rem;
   color: var(--docs-muted);
   cursor: pointer;
   font-size: 0.8125rem;
   font-weight: 600;
+  list-style-position: outside;
   overflow-wrap: anywhere;
-  transform: translateX(-50%);
 }
 
-.docs-trace-evidence summary:hover,
-.docs-trace-evidence summary:focus-visible,
-.docs-trace-evidence[open] > summary {
-  color: var(--docs-accent-strong);
-}
-
-.docs-trace-evidence-records {
-  margin: 0.6rem 0 0;
-  padding: 0;
-  border: 1px solid var(--docs-border);
-  border-radius: var(--docs-radius);
-  counter-reset: trace-record;
-  list-style: none;
-  overflow: hidden;
-}
-
-.docs-trace-evidence-record {
-  min-width: 0;
-  background: var(--docs-surface);
-  counter-increment: trace-record;
-}
-
-.docs-trace-evidence-record + .docs-trace-evidence-record {
-  border-top: 1px solid var(--docs-border);
-}
-
-.docs-trace-evidence-record > details > summary {
-  position: static;
-  width: auto;
-  min-height: 3.25rem;
-  box-sizing: border-box;
-  padding: 0.65rem 0.8rem;
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 0.45rem 0.65rem;
-  background: var(--docs-surface-subtle);
-  color: var(--docs-text);
-  cursor: pointer;
-  list-style: none;
-  transform: none;
-}
-
-.docs-trace-evidence-record > details > summary::-webkit-details-marker {
-  display: none;
-}
-
-.docs-trace-evidence-record > details > summary::before {
-  grid-column: 1;
-  align-self: center;
+.docs-trace-evidence-marker {
+  width: 0.75rem;
+  flex: none;
   color: var(--docs-muted);
-  content: counter(trace-record, decimal-leading-zero);
   font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.75rem;
   font-weight: 700;
 }
 
-.docs-trace-evidence-record > details > summary::after {
-  grid-column: 5;
-  align-self: center;
-  color: var(--docs-muted);
+.docs-trace-evidence-marker::before {
   content: "+";
-  font-size: 1rem;
 }
 
-.docs-trace-evidence-record > details[open] > summary::after {
+.docs-trace-evidence-code-detail[open] .docs-trace-evidence-marker::before {
   content: "-";
 }
 
-.docs-trace-evidence-record-label {
-  grid-column: 3;
-  font-size: 0.8125rem;
-  font-weight: 700;
+.docs-trace-evidence-code-detail > summary:hover,
+.docs-trace-evidence-code-detail > summary:focus-visible,
+.docs-trace-evidence-code-detail[open] > summary {
+  color: var(--docs-accent-strong);
 }
 
-.docs-trace-evidence-record:not([data-trace-producer]) .docs-trace-evidence-record-label {
-  grid-column: 2 / 5;
-}
-
-.docs-trace-evidence-record-summary {
-  grid-column: 2 / 5;
-  grid-row: 2;
-  color: var(--docs-muted);
-  font-size: 0.75rem;
-  font-weight: 400;
-  line-height: 1.4;
-}
-
-.docs-trace-evidence-producer {
-  grid-column: 2;
-  padding: 0.16rem 0.35rem;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  color: var(--docs-muted);
-  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.docs-trace-evidence-record[data-trace-producer="runtime"] .docs-trace-evidence-producer {
-  color: var(--docs-trace-server);
-}
-
-.docs-trace-evidence-record[data-trace-producer="browser"] .docs-trace-evidence-producer {
-  color: var(--docs-trace-browser);
-}
-
-.docs-trace-evidence-highlights {
-  min-width: 0;
-  grid-column: 4;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.3rem;
-}
-
-.docs-trace-evidence-highlights > span {
-  max-width: min(16rem, 40vw);
-  padding: 0.15rem 0.35rem;
-  border-radius: 999px;
-  background: var(--docs-surface);
+.docs-trace-evidence-summary-fact {
   color: var(--docs-muted);
   font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
   font-size: 0.6875rem;
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.docs-trace-evidence-record-content {
-  padding: 0.8rem 1rem 1rem;
-  border-top: 1px solid var(--docs-border);
-  background: var(--docs-surface);
+.docs-trace-evidence-summary-name {
+  font-family: "Instrument Sans Variable", Inter, sans-serif;
+  font-weight: 400;
 }
 
-.docs-trace-evidence-description {
-  margin: 0;
+.docs-trace-evidence-summary {
   color: var(--docs-muted);
-  font-size: 0.8125rem;
-  line-height: 1.5;
-}
-
-.docs-trace-evidence-common,
-.docs-trace-evidence-specific,
-.docs-trace-evidence-metadata,
-.docs-trace-evidence-correlation {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.65rem;
-}
-
-.docs-trace-evidence-common {
-  padding: 0.15rem 0.15rem 0.7rem;
-  border-bottom: 1px solid var(--docs-border);
-}
-
-.docs-trace-evidence-specific,
-.docs-trace-evidence-metadata,
-.docs-trace-evidence-correlation {
-  margin-top: 0.65rem;
-}
-
-.docs-trace-evidence h5 {
-  margin: 0;
-  color: var(--docs-muted);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 400;
 }
 
 .docs-trace-evidence dl {
@@ -5880,30 +5755,9 @@ details[open] > summary .docs-disclosure-marker,
   overflow-wrap: anywhere;
 }
 
-.docs-trace-evidence-projection {
-  margin-top: 0.7rem;
-  padding: 0.65rem 0.75rem;
-  border-left: 0.2rem solid var(--docs-border-strong);
-  background: var(--docs-surface-subtle);
-}
-
-.docs-trace-evidence-projection > code {
-  font-size: 0.75rem;
-  overflow-wrap: anywhere;
-}
-
-.docs-trace-evidence-projection > p {
-  margin: 0.25rem 0 0;
-  color: var(--docs-muted);
-  font-size: 0.78rem;
-}
-
-.docs-trace-evidence-projection > dl {
-  margin-top: 0.5rem;
-}
-
 .docs-trace-evidence-code {
-  margin-top: 0.75rem;
+  width: min(calc(100% - 2rem), 56rem);
+  margin: 0.6rem auto 0;
   border: 1px solid var(--docs-border);
   border-radius: var(--docs-radius);
   background: var(--docs-code-bg);
@@ -6010,46 +5864,12 @@ details[open] > summary .docs-disclosure-marker,
     display: flex;
   }
 
-  .docs-trace-evidence summary {
+  .docs-trace-evidence-inline,
+  .docs-trace-evidence-code-detail > summary {
     left: auto;
+    max-width: 100%;
     margin-inline: 0;
     transform: none;
-  }
-
-  .docs-trace-evidence-record > details > summary {
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
-  }
-
-  .docs-trace-evidence-record > details > summary::before {
-    grid-row: 1 / span 2;
-  }
-
-  .docs-trace-evidence-record > details > summary::after {
-    grid-column: 4;
-    grid-row: 1 / span 2;
-  }
-
-  .docs-trace-evidence-producer {
-    grid-column: 2;
-  }
-
-  .docs-trace-evidence-record-label {
-    grid-column: 3;
-  }
-
-  .docs-trace-evidence-highlights {
-    grid-column: 2 / 4;
-    grid-row: 2;
-    justify-content: flex-start;
-  }
-
-  .docs-trace-evidence-record:not([data-trace-producer]) .docs-trace-evidence-record-label {
-    grid-column: 2 / 4;
-  }
-
-  .docs-trace-evidence-record-summary {
-    grid-column: 2 / 4;
-    grid-row: 2;
   }
 
   .docs-trace-evidence {
@@ -6057,7 +5877,7 @@ details[open] > summary .docs-disclosure-marker,
     margin-inline: 0;
   }
 
-  .docs-trace-evidence-content {
+  .docs-trace-evidence-code {
     width: 100%;
     margin-inline: 0;
   }
@@ -6069,7 +5889,8 @@ details[open] > summary .docs-disclosure-marker,
   }
 
   .docs-trace-evidence dl > div {
-    grid-template-columns: 1fr;
+    align-items: flex-start;
+    flex-direction: column;
     gap: 0.15rem;
   }
 }

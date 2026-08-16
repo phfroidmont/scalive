@@ -63,7 +63,7 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           _         <- child.clickButton("Increase")
           records   <- store.records(session, child.topic)
           viewerText <- (ZIO.yieldNow *> viewer.html)
-                    .repeatUntil(_.contains("data-trace-evidence=\"Tree diff\""))
+                    .repeatUntil(_.contains("data-trace-evidence=\"Updated model\""))
           stages = records.filter(_.producer == TraceProducer.Server).map(_.stage)
           viewerObserved <- store.records(session, viewer.topic)
           _              <- parent.leave
@@ -82,10 +82,11 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           stages.contains("TreeDiff"),
           stages.contains("ModelCommitted"),
           viewerText.contains("data-trace-provenance=\"captured\""),
-          viewerText.contains("data-trace-evidence=\"Typed message\""),
-          viewerText.contains("data-trace-evidence=\"Proposed model\""),
-          viewerText.contains("data-trace-evidence=\"Tree diff\""),
-          viewerText.contains("CounterExample.Msg.Increment"),
+          !viewerText.contains("data-trace-evidence=\"Message fields\""),
+          viewerText.contains("data-trace-evidence=\"Updated model\""),
+          !viewerText.contains("data-trace-evidence=\"Tree diff\""),
+          !viewerText.contains("data-trace-evidence=\"Handler started\""),
+          !viewerText.contains("data-trace-evidence=\"Handler completed\""),
           viewerText.contains("count</dt><dd>1"),
           viewerObserved.isEmpty,
           !childRemoved,

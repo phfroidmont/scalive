@@ -44,9 +44,9 @@ test("runs client commands and exposes public typed browser events", async ({ pa
   )
 
   await expect(inspector.locator("[data-trace-interaction]")).toHaveCount(2)
-  expect(await inspector.textContent()).toContain("BrowserInteropExample.Msg")
+  expect(await inspector.textContent()).not.toContain("BrowserInteropExample.Msg")
   await inspector.getByRole("button", { name: "Jump to latest" }).click()
-  await expect(inspector.locator('[data-trace-evidence="Proposed model"]')).toContainText(
+  await expect(inspector.locator('[data-trace-evidence="Updated model"]')).toContainText(
     /operation\s*succeeded/,
   )
   expect(await inspector.textContent()).not.toContain(

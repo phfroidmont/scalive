@@ -53,35 +53,40 @@ test("captures counter interactions in the integrated live trace viewer", async 
 
   const capturedTrace = viewer.locator('[data-trace-viewer][data-trace-provenance="captured"]')
   await expect(capturedTrace.locator(".docs-trace-evidence summary").first()).toHaveAccessibleName(
-    /Show technical \d+ records? for /,
+    "Show Protocol frame for Send protocol frame",
   )
-  await expect(capturedTrace.locator('[data-trace-evidence="Typed message"]')).toContainText(
-    "CounterExample.Msg.Increment",
-  )
-  await expect(capturedTrace.locator('[data-trace-evidence="Proposed model"]')).toContainText(
+  await expect(capturedTrace).not.toContainText(/\d+ records?/)
+  await expect(capturedTrace.locator(".docs-trace-evidence-record")).toHaveCount(0)
+  await expect(capturedTrace.locator('[data-trace-evidence="Message fields"]')).toHaveCount(0)
+  await expect(capturedTrace.locator('[data-trace-evidence="Handler started"]')).toHaveCount(0)
+  await expect(capturedTrace.locator('[data-trace-evidence="Handler completed"]')).toHaveCount(0)
+  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"]')).toContainText(
     /count\s*1/,
   )
-  await expect(capturedTrace.locator('[data-trace-evidence="Tree diff"]')).toContainText(
-    "Tree diff contains changes",
+  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"]')).not.toContainText(
+    /CounterExample\.Model|Current counter state|Handler proposed a model|Execution|Correlation/,
   )
-  await expect(capturedTrace.locator('[data-trace-evidence="DOM mutations"]')).toContainText(
+  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"]')).toBeVisible()
+  await expect(
+    capturedTrace.locator("[data-trace-step]", { hasText: "Client event" }).locator("[data-trace-evidence]"),
+  ).toHaveCount(0)
+  await expect(capturedTrace.locator("[data-trace-step]", { hasText: "Compute tree diff" })).toContainText(
+    "The rendered tree contains changes.",
+  )
+  await expect(capturedTrace.locator('[data-trace-evidence="DOM changes"]')).toContainText(
     /mutations|DOM patch applied/,
   )
   await expect(capturedTrace).toContainText('"topic" : "lv:docs-example-counter-')
   await expect(capturedTrace).not.toContainText('"after"')
 
-  const frameRecord = capturedTrace.locator('[data-trace-evidence="Final frame"]')
-  await expect(frameRecord.locator(":scope > details > summary")).toContainText("Runtime")
-  await expect(frameRecord.locator(":scope > details > summary")).toContainText("143 B")
-  await expect(capturedTrace.locator('[data-trace-evidence="Inbound frame"] > details > summary')).toContainText(
-    "Browser",
-  )
-  const frameGroup = frameRecord.locator("xpath=ancestor::details[contains(@class, 'docs-trace-evidence')]")
-  await frameGroup.locator(":scope > summary").click()
-  await frameRecord.locator(":scope > details > summary").click()
-  const frameCode = frameRecord.locator(".docs-trace-evidence-code")
+  await expect(capturedTrace.locator('[data-trace-evidence="Protocol frame"]')).toHaveCount(2)
+  const publishStep = capturedTrace.locator("[data-trace-step]", { hasText: "Publish result" })
+  const frameDetail = publishStep.locator('[data-trace-evidence="Protocol frame"]')
+  await expect(frameDetail.locator(":scope > summary")).toContainText("143 B")
+  await frameDetail.locator(":scope > summary").click()
+  const frameCode = frameDetail.locator(".docs-trace-evidence-code")
   await expect(frameCode).toBeVisible()
-  await expect(frameRecord).not.toContainText("FinalFrame")
+  await expect(frameDetail).not.toContainText("FinalFrame")
   const wrapLines = frameCode.locator("[data-trace-code-wrap]")
   await wrapLines.click()
   await expect(wrapLines).toHaveAttribute("aria-pressed", "true")
@@ -186,8 +191,9 @@ test("completes a no-op counter interaction without waiting for DOM mutations", 
   await expect(interactions.first()).toHaveAttribute("aria-busy", "false")
 
   const trace = viewer.locator('[data-trace-provenance="captured"]')
-  await expect(trace.locator('[data-trace-evidence="Response processed"]')).toBeAttached()
-  await expect(trace.locator('[data-trace-evidence="DOM mutations"]')).toHaveCount(0)
+  await expect(trace.locator('[data-trace-evidence="Response processed"]')).toHaveCount(0)
+  await expect(trace.locator("[data-trace-step]", { hasText: "Publish result" })).toBeAttached()
+  await expect(trace.locator('[data-trace-evidence="DOM changes"]')).toHaveCount(0)
   await expect(viewer.locator(".docs-live-trace-panel")).toHaveAttribute("aria-busy", "false")
 })
 

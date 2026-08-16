@@ -73,25 +73,24 @@ object TraceViewerSpec extends ZIOSpecDefault:
         !document.html().contains("phx-")
       )
     },
-    test("groups technical records by causal step") {
+    test("renders authored facts inline without record disclosures") {
       val document = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(TraceCatalog.HttpGet)))
-      val evidence = document.select("details.docs-trace-evidence")
+      val evidence = document.select(".docs-trace-evidence-inline")
 
       assertTrue(
         evidence.size() == 2,
         evidence.asScala.forall(_.parent().hasClass("docs-trace-step")),
-        evidence.asScala.forall(_.attr("data-trace-evidence-count") == "1"),
-        evidence.asScala.forall(_.select(".docs-trace-evidence-record").size() == 1),
         evidence.asScala.forall(value => value.select("dl > div").asScala.forall(_.select("dt, dd").size() == 2)),
-        evidence.select("summary .docs-trace-evidence-record-summary").size() == 2,
+        evidence.select("details").isEmpty,
+        document.select(".docs-trace-evidence-record").isEmpty,
         evidence.text().contains("connected"),
         evidence.text().contains("fresh connected mount")
       )
     },
-    test("labels shared context and renders records as ordered disclosures") {
+    test("renders code in one direct disclosure") {
       val trace = TraceDefinition(
-        "shared-context",
-        "Shared context",
+        "code-detail",
+        "Code detail",
         "Evidence rendering fixture",
         Vector(TraceParticipant("runtime", "Runtime", "Runs the operation")),
         Vector(
@@ -101,22 +100,14 @@ object TraceViewerSpec extends ZIOSpecDefault:
             Vector(
               TraceStep.Operation(
                 "runtime",
-                "Operation",
-                "Runs once",
-                Vector(
+                "Send frame",
+                "Sends one protocol frame.",
+                Some(
                   TraceEvidence(
-                    label = "Started",
-                    summary = "Operation started",
-                    producer = Some("Runtime"),
-                    highlights = Vector("12 B"),
-                    correlation = Vector("message" -> "#7"),
-                    metadata = Vector("operation" -> "Client event")
-                  ),
-                  TraceEvidence(
-                    label = "Completed",
-                    summary = "Operation completed",
-                    producer = Some("Browser"),
-                    correlation = Vector("message" -> "#7")
+                    label = "Protocol frame",
+                    summary = Some("Encoded event"),
+                    facts = Vector("size" -> "12 B"),
+                    code = Some("{\n  \"event\": \"event\"\n}")
                   )
                 )
               )
@@ -125,19 +116,52 @@ object TraceViewerSpec extends ZIOSpecDefault:
         )
       )
       val document = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(trace)))
-      val evidence = document.selectFirst("details.docs-trace-evidence")
+      val evidence = document.selectFirst("details[data-trace-evidence='Protocol frame']")
 
       assertTrue(
-        evidence.select(".docs-trace-evidence-common h5").text() == "Correlation",
-        evidence.select(".docs-trace-evidence-common").text().contains("message #7"),
-        evidence.select("ol.docs-trace-evidence-records").size() == 1,
-        evidence.select("li.docs-trace-evidence-record").size() == 2,
-        evidence.select(".docs-trace-evidence-record > details").size() == 2,
-        evidence.select(".docs-trace-evidence-producer").eachText().asScala.toVector ==
-          Vector("Runtime", "Browser"),
-        evidence.select(".docs-trace-evidence-highlights").text() == "12 B",
-        evidence.select("summary .docs-trace-evidence-description").isEmpty,
-        evidence.select(".docs-trace-evidence-metadata").text().contains("Client event")
+        evidence.select(".docs-trace-evidence-label, .docs-trace-evidence-summary-fact").text() ==
+          "Protocol frame size 12 B",
+        evidence.select(".docs-trace-evidence-summary").text() == "Encoded event",
+        evidence.children().asScala.count(_.hasClass("docs-trace-evidence-code")) == 1,
+        evidence.select("details details").isEmpty,
+        evidence.select(".docs-trace-evidence-record").isEmpty,
+        !document.text().contains("1 record")
+      )
+    },
+    test("renders semantic fields inline") {
+      val trace = TraceDefinition(
+        "field-only",
+        "Field-only evidence",
+        "Evidence rendering fixture",
+        Vector(TraceParticipant("runtime", "Runtime", "Runs the operation")),
+        Vector(
+          TracePhase(
+            "phase",
+            "Phase",
+            Vector(
+              TraceStep.Operation(
+                "runtime",
+                "Return updated model",
+                "The handler proposes a new immutable model.",
+                Some(
+                  TraceEvidence(
+                    label = "Updated model",
+                    facts = Vector("count" -> "2")
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      val document = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(trace)))
+      val detail   = document.selectFirst("[data-trace-evidence='Updated model']")
+
+      assertTrue(
+        TraceCatalog.validate(Vector(trace)).isEmpty,
+        detail.hasClass("docs-trace-evidence-inline"),
+        detail.select("details").isEmpty,
+        detail.select("dl").text() == "count 2"
       )
     }
   )

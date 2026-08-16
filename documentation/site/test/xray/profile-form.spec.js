@@ -32,7 +32,7 @@ test("validates, saves, resets, and redacts a typed profile form", async ({ page
   const jumpToLatest = inspector.getByRole("button", { name: "Jump to latest" })
   if (await jumpToLatest.isVisible()) await jumpToLatest.click()
   const capturedTrace = inspector.locator('[data-trace-provenance="captured"]')
-  await expect(capturedTrace.locator('[data-trace-evidence="Proposed model"]')).toContainText(
+  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"]')).toContainText(
     /saved\s*true/,
   )
   const projectedTrace = await capturedTrace.textContent()

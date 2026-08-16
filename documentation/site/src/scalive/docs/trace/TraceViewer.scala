@@ -98,7 +98,7 @@ private[docs] object TraceViewer:
             description,
             operationContext(participant, labels)
           ),
-          renderEvidenceGroup(stepEvidence(step), label)
+          renderEvidence(stepEvidence(step), label)
         )
       case TraceStep.Message(from, to, label, description, _) =>
         val fromPosition  = laneCenter(indices(from), laneCount)
@@ -125,7 +125,7 @@ private[docs] object TraceViewer:
             description,
             messageContext(from, to, labels)
           ),
-          renderEvidenceGroup(stepEvidence(step), label)
+          renderEvidence(stepEvidence(step), label)
         )
       case TraceStep.Boundary(label, description, _) =>
         li(
@@ -133,7 +133,7 @@ private[docs] object TraceViewer:
           dataAttr("trace-step")      := order.toString,
           dataAttr("trace-step-kind") := "boundary",
           eventCopy(order, label, description, boundaryContext),
-          renderEvidenceGroup(stepEvidence(step), label)
+          renderEvidence(stepEvidence(step), label)
         )
   end renderStep
 
@@ -179,150 +179,54 @@ private[docs] object TraceViewer:
   private val boundaryContext =
     p(cls := "docs-trace-event-context docs-visually-hidden", "Lifecycle boundary")
 
-  private def renderEvidenceGroup(
-    evidence: Vector[TraceEvidence],
+  private def renderEvidence(
+    evidence: Option[TraceEvidence],
     stepLabel: String
   ): Vector[Mod[Nothing]] =
-    Option
-      .when(evidence.nonEmpty) {
-        def common(values: TraceEvidence => Vector[(String, String)]): Set[(String, String)] =
-          if evidence.size == 1 then Set.empty[(String, String)]
-          else evidence.map(value => values(value).toSet).reduce(_ intersect _)
+    evidence
+      .map(value =>
+        if value.code.nonEmpty then renderCodeEvidence(value, stepLabel): Mod[Nothing]
+        else renderInlineEvidence(value, stepLabel): Mod[Nothing]
+      ).toVector
 
-        val commonFactSet        = common(_.facts)
-        val commonMetadataSet    = common(_.metadata)
-        val commonCorrelationSet = common(_.correlation)
-        val commonFacts          = evidence.head.facts.filter(commonFactSet)
-        val commonMetadata       = evidence.head.metadata.filter(commonMetadataSet)
-        val commonCorrelation    = evidence.head.correlation.filter(commonCorrelationSet)
-        val recordCount = if evidence.size == 1 then "1 record" else s"${evidence.size} records"
-
-        detailsTag(
-          cls                              := "docs-trace-evidence",
-          dataAttr("trace-evidence-count") := evidence.size.toString,
-          summaryTag(
-            span(cls := "docs-visually-hidden", "Show technical "),
-            span(cls := "docs-trace-evidence-count", recordCount),
-            span(cls := "docs-visually-hidden", s" for $stepLabel")
-          ),
-          div(
-            cls := "docs-trace-evidence-content",
-            Option
-              .when(commonFacts.nonEmpty)(
-                renderFactGroup("Details", commonFacts, "docs-trace-evidence-common")
-              )
-              .map(value => value: Mod[Nothing]).toVector,
-            Option
-              .when(commonMetadata.nonEmpty)(
-                renderFactGroup("Execution", commonMetadata, "docs-trace-evidence-common")
-              )
-              .map(value => value: Mod[Nothing]).toVector,
-            Option
-              .when(commonCorrelation.nonEmpty)(
-                renderFactGroup(
-                  "Correlation",
-                  commonCorrelation,
-                  "docs-trace-evidence-common"
-                )
-              )
-              .map(value => value: Mod[Nothing]).toVector,
-            ol(
-              cls := "docs-trace-evidence-records",
-              evidence.map(value =>
-                renderEvidenceRecord(
-                  value,
-                  commonFactSet,
-                  commonMetadataSet,
-                  commonCorrelationSet
-                ): Mod[Nothing]
-              )
-            )
-          )
-        )
-      }.map(value => value: Mod[Nothing]).toVector
-
-  private def renderEvidenceRecord(
+  private def renderInlineEvidence(
     evidence: TraceEvidence,
-    commonFacts: Set[(String, String)],
-    commonMetadata: Set[(String, String)],
-    commonCorrelation: Set[(String, String)]
+    stepLabel: String
   ): HtmlElement[Nothing] =
-    val specificFacts       = evidence.facts.filterNot(commonFacts)
-    val specificMetadata    = evidence.metadata.filterNot(commonMetadata)
-    val specificCorrelation = evidence.correlation.filterNot(commonCorrelation)
-    li(
-      cls                        := "docs-trace-evidence-record",
-      dataAttr("trace-evidence") := evidence.label,
-      evidence.producer.map(value => dataAttr("trace-producer") := value.toLowerCase).toVector,
-      detailsTag(
-        summaryTag(
-          evidence.producer
-            .map(value =>
-              span(cls := "docs-trace-evidence-producer", value): Mod[Nothing]
-            ).toVector,
-          span(cls := "docs-trace-evidence-record-label", evidence.label),
-          Option
-            .when(evidence.producer.isEmpty)(
-              span(cls := "docs-trace-evidence-record-summary", evidence.summary)
-            )
-            .map(value => value: Mod[Nothing]).toVector,
-          Option
-            .when(evidence.highlights.nonEmpty)(
-              span(
-                cls := "docs-trace-evidence-highlights",
-                evidence.highlights.map(value => span(value): Mod[Nothing])
-              )
-            )
-            .map(value => value: Mod[Nothing]).toVector
-        ),
-        div(
-          cls := "docs-trace-evidence-record-content",
-          p(cls := "docs-trace-evidence-description", evidence.summary),
-          evidence.projection.map(value => renderProjection(value): Mod[Nothing]).toVector,
-          Option
-            .when(specificFacts.nonEmpty)(
-              renderFactGroup("Details", specificFacts, "docs-trace-evidence-specific")
-            )
-            .map(value => value: Mod[Nothing]).toVector,
-          Option
-            .when(specificMetadata.nonEmpty)(
-              renderFactGroup("Execution", specificMetadata, "docs-trace-evidence-metadata")
-            )
-            .map(value => value: Mod[Nothing]).toVector,
-          Option
-            .when(specificCorrelation.nonEmpty)(
-              renderFactGroup(
-                "Correlation",
-                specificCorrelation,
-                "docs-trace-evidence-correlation"
-              )
-            )
-            .map(value => value: Mod[Nothing]).toVector,
-          evidence.code.map(value => renderProtocolCode(value): Mod[Nothing]).toVector
-        )
-      )
-    )
-  end renderEvidenceRecord
-
-  private def renderProjection(projection: TraceEvidenceProjection): HtmlElement[Nothing] =
     div(
-      cls := "docs-trace-evidence-projection",
-      code(projection.typeName),
-      p(projection.summary),
+      cls                        := "docs-trace-evidence docs-trace-evidence-inline",
+      dataAttr("trace-evidence") := evidence.label,
+      span(cls := "docs-visually-hidden", s"${evidence.label} for $stepLabel: "),
+      evidence.summary.map(value => p(value): Mod[Nothing]).toVector,
       Option
-        .when(projection.fields.nonEmpty)(renderFacts(projection.fields, ""))
+        .when(evidence.facts.nonEmpty)(renderFacts(evidence.facts, ""))
         .map(value => value: Mod[Nothing]).toVector
     )
 
-  private def renderFactGroup(
-    title: String,
-    facts: Vector[(String, String)],
-    className: String
+  private def renderCodeEvidence(
+    evidence: TraceEvidence,
+    stepLabel: String
   ): HtmlElement[Nothing] =
-    sectionTag(
-      cls := className,
-      h5(title),
-      renderFacts(facts, "")
+    detailsTag(
+      cls                        := "docs-trace-evidence docs-trace-evidence-code-detail",
+      dataAttr("trace-evidence") := evidence.label,
+      summaryTag(
+        span(cls := "docs-trace-evidence-marker", aria.hidden := true),
+        span(cls := "docs-visually-hidden", "Show "),
+        span(cls := "docs-trace-evidence-label", evidence.label),
+        evidence.facts.map { case (name, value) =>
+          span(
+            cls := "docs-trace-evidence-summary-fact",
+            span(cls := "docs-trace-evidence-summary-name", name),
+            " ",
+            value
+          ): Mod[Nothing]
+        },
+        evidence.summary
+          .map(value => span(cls := "docs-trace-evidence-summary", value): Mod[Nothing]).toVector,
+        span(cls := "docs-visually-hidden", s" for $stepLabel")
+      ),
+      evidence.code.map(value => renderProtocolCode(value): Mod[Nothing]).toVector
     )
 
   private def renderProtocolCode(value: String): HtmlElement[Nothing] =
@@ -368,7 +272,7 @@ private[docs] object TraceViewer:
       }
     )
 
-  private def stepEvidence(step: TraceStep): Vector[TraceEvidence] = step match
+  private def stepEvidence(step: TraceStep): Option[TraceEvidence] = step match
     case TraceStep.Operation(_, _, _, evidence)  => evidence
     case TraceStep.Message(_, _, _, _, evidence) => evidence
     case TraceStep.Boundary(_, _, evidence)      => evidence

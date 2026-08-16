@@ -13,19 +13,9 @@ final case class TracePhase(id: String, title: String, steps: Vector[TraceStep])
 
 final case class TraceEvidence(
   label: String,
-  summary: String,
+  summary: Option[String] = None,
   facts: Vector[(String, String)] = Vector.empty,
-  code: Option[String] = None,
-  producer: Option[String] = None,
-  highlights: Vector[String] = Vector.empty,
-  correlation: Vector[(String, String)] = Vector.empty,
-  metadata: Vector[(String, String)] = Vector.empty,
-  projection: Option[TraceEvidenceProjection] = None)
-
-final case class TraceEvidenceProjection(
-  typeName: String,
-  summary: String,
-  fields: Vector[(String, String)])
+  code: Option[String] = None)
 
 sealed trait TraceStep
 
@@ -34,19 +24,19 @@ object TraceStep:
     participant: String,
     label: String,
     description: String,
-    evidence: Vector[TraceEvidence] = Vector.empty)
+    evidence: Option[TraceEvidence] = None)
       extends TraceStep
   final case class Message(
     from: String,
     to: String,
     label: String,
     description: String,
-    evidence: Vector[TraceEvidence] = Vector.empty)
+    evidence: Option[TraceEvidence] = None)
       extends TraceStep
   final case class Boundary(
     label: String,
     description: String,
-    evidence: Vector[TraceEvidence] = Vector.empty)
+    evidence: Option[TraceEvidence] = None)
       extends TraceStep
 
 object TraceCatalog:
@@ -83,11 +73,13 @@ object TraceCatalog:
             "live-view",
             "mount (disconnected)",
             "Creates model A with connected = false.",
-            Vector(
+            Some(
               TraceEvidence(
-                "Mount context",
-                "This mount runs during the HTTP request, before a live connection exists.",
-                Vector("connected" -> "false", "model lifetime" -> "this HTTP request")
+                label = "Mount context",
+                summary = Some(
+                  "This mount runs during the HTTP request, before a live connection exists."
+                ),
+                facts = Vector("connected" -> "false", "model lifetime" -> "this HTTP request")
               )
             )
           ),
@@ -129,11 +121,13 @@ object TraceCatalog:
           TraceStep.Boundary(
             "End request lifecycle",
             "When LiveSocket connects, Scalive invokes mount again to create a fresh connected model.",
-            Vector(
+            Some(
               TraceEvidence(
-                "Lifecycle boundary",
-                "The disconnected model is not transferred into the future socket lifecycle.",
-                Vector(
+                label = "Lifecycle boundary",
+                summary = Some(
+                  "The disconnected model is not transferred into the future socket lifecycle."
+                ),
+                facts = Vector(
                   "model A"    -> "released with the request",
                   "next model" -> "fresh connected mount"
                 )
@@ -189,11 +183,13 @@ object TraceCatalog:
             "runtime",
             "Validate join",
             "Checks CSRF authorization, the topic-bound session, route, live session, mount claims, and root layout.",
-            Vector(
+            Some(
               TraceEvidence(
-                "Join inputs",
-                "Signed server data establishes authority; browser-provided connect parameters do not.",
-                Vector(
+                label = "Join inputs",
+                summary = Some(
+                  "Signed server data establishes authority; browser-provided connect parameters do not."
+                ),
+                facts = Vector(
                   "signed session"     -> "signature, age, and topic verified",
                   "route and layout"   -> "must match the disconnected render",
                   "connect parameters" -> "untrusted input"
@@ -212,11 +208,13 @@ object TraceCatalog:
             "live-view",
             "mount (connected)",
             "Runs connected mount aspects, decodes route parameters, and invokes mount with connected = true.",
-            Vector(
+            Some(
               TraceEvidence(
-                "Connected mount",
-                "This is a fresh lifecycle; the disconnected model is unavailable.",
-                Vector(
+                label = "Connected mount",
+                summary = Some(
+                  "This is a fresh lifecycle; the disconnected model is unavailable."
+                ),
+                facts = Vector(
                   "connected"           -> "true",
                   "previous model"      -> "unavailable",
                   "model lifetime"      -> "this socket lifecycle",
@@ -247,11 +245,13 @@ object TraceCatalog:
             "runtime",
             "Commit Model B",
             "After render hooks succeed, stores Model B and its rendered snapshot, then computes the initial diff.",
-            Vector(
+            Some(
               TraceEvidence(
-                "Commit boundary",
-                "The connected model becomes current only after the initial render path succeeds.",
-                Vector(
+                label = "Commit boundary",
+                summary = Some(
+                  "The connected model becomes current only after the initial render path succeeds."
+                ),
+                facts = Vector(
                   "before render succeeds" -> "Model B is proposed",
                   "after render succeeds"  -> "Model B and its tree are committed"
                 )
@@ -348,42 +348,31 @@ object TraceCatalog:
       trace.phases.flatMap(phase =>
         Vector(phase.id, phase.title) ++ phase.steps.flatMap {
           case TraceStep.Operation(_, label, description, evidence) =>
-            Vector(label, description) ++ evidence.flatMap(evidenceProse)
+            Vector(label, description) ++ evidence.toVector.flatMap(evidenceProse)
           case TraceStep.Message(_, _, label, description, evidence) =>
-            Vector(label, description) ++ evidence.flatMap(evidenceProse)
+            Vector(label, description) ++ evidence.toVector.flatMap(evidenceProse)
           case TraceStep.Boundary(label, description, evidence) =>
-            Vector(label, description) ++ evidence.flatMap(evidenceProse)
+            Vector(label, description) ++ evidence.toVector.flatMap(evidenceProse)
         }
       )).mkString(" ")
 
   private def evidenceProse(evidence: TraceEvidence): Vector[String] =
-    Vector(evidence.label, evidence.summary) ++ evidence.producer.toVector ++ evidence.highlights ++
+    Vector(evidence.label) ++ evidence.summary.toVector ++
       evidence.facts.flatMap { case (name, value) => Vector(name, value) } ++
-      evidence.correlation.flatMap { case (name, value) => Vector(name, value) } ++
-      evidence.metadata.flatMap { case (name, value) => Vector(name, value) } ++
-      evidence.projection.toVector.flatMap(value =>
-        Vector(value.typeName, value.summary) ++ value.fields.flatMap { case (name, field) =>
-          Vector(name, field)
-        }
-      ) ++ evidence.code.toVector
+      evidence.code.toVector
 
   private def validateEvidence(
     traceId: String,
-    evidence: Vector[TraceEvidence],
+    evidence: Option[TraceEvidence],
     errors: scala.collection.mutable.Builder[String, Vector[String]]
   ): Unit =
     evidence.foreach { value =>
-      if value.label.trim.isEmpty || value.summary.trim.isEmpty then
-        errors += s"trace '$traceId' evidence must have label and summary."
-      val namedValues = value.facts ++ value.correlation ++ value.metadata ++
-        value.projection.toVector.flatMap(_.fields)
-      val blankProjection = value.projection.exists(projection =>
-        projection.typeName.trim.isEmpty || projection.summary.trim.isEmpty
-      )
-      if namedValues.exists { case (name, fact) => name.trim.isEmpty || fact.trim.isEmpty } ||
-        value.producer.exists(_.trim.isEmpty) || value.highlights.exists(_.trim.isEmpty) ||
-        blankProjection
-      then errors += s"trace '$traceId' evidence facts must not be blank."
+      if value.label.trim.isEmpty then errors += s"trace '$traceId' evidence must have a label."
+      val hasContent = value.summary.nonEmpty || value.facts.nonEmpty || value.code.nonEmpty
+      if value.facts.exists { case (name, fact) => name.trim.isEmpty || fact.trim.isEmpty } ||
+        value.summary.exists(_.trim.isEmpty) || value.code.exists(_.trim.isEmpty)
+      then errors += s"trace '$traceId' evidence content must not be blank."
+      if !hasContent then errors += s"trace '$traceId' evidence must have content."
     }
 
   private def isKebabCase(value: String): Boolean =

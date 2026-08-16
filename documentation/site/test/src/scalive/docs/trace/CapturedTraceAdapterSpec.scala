@@ -42,7 +42,8 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
             protocol = Some(frameProtocol),
             byteSize = Some(143)
           ),
-          record(TraceProducer.Browser, 3, "DomDiff", protocol = Some(domProtocol))
+          record(TraceProducer.Browser, 3, "InboundFrame", protocol = Some(frameProtocol)),
+          record(TraceProducer.Browser, 4, "DomDiff", protocol = Some(domProtocol))
         )
       )
 
@@ -54,12 +55,12 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
         trace.participants.map(_.id) == Vector("browser", "runtime", "live-view"),
         steps.nonEmpty,
         causalFlowErrors(steps).isEmpty,
-        messageWithEvidence(steps, "Render started").contains("runtime" -> "live-view"),
-        messageWithEvidence(steps, "Render completed").contains("live-view" -> "runtime"),
+        messageRoute(steps, "Request render").contains("runtime" -> "live-view"),
+        messageRoute(steps, "Return rendered tree").contains("live-view" -> "runtime"),
         TraceCatalog.validate(Vector(trace)).isEmpty
       )
     },
-    test("groups lifecycle evidence with semantic start and completion labels") {
+    test("omits lifecycle markers that add no information to the handler step") {
       val interaction = captured(
         Vector(
           record(
@@ -89,13 +90,9 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
         .collectFirst { case TraceStep.Operation("live-view", _, _, evidence) =>
           evidence
         }
-        .getOrElse(Vector.empty)
+        .flatten
 
-      assertTrue(
-        handlerEvidence.map(_.label) == Vector("Handler started", "Handler completed"),
-        handlerEvidence.map(_.label).distinct.size == 2,
-        handlerEvidence.forall(evidence => !evidence.label.matches(".* \\d+$"))
-      )
+      assertTrue(handlerEvidence.isEmpty)
     },
     test("omits phases whose captured stages are absent") {
       val trace = CapturedTraceAdapter.adapt(
@@ -108,46 +105,114 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
         trace.phases.forall(_.steps.nonEmpty)
       )
     },
-    test(
-      "attaches projected fields, operation metadata, bytes, and sanitized protocol as evidence"
-    ) {
+    test("summarizes each step as at most one semantic detail") {
       val interaction = captured(
         Vector(
-          record(TraceProducer.Server, 1, "TypedMessage", value = Some(message)),
-          record(TraceProducer.Server, 2, "ModelProposed", value = Some(model)),
+          record(TraceProducer.Browser, 1, "OutboundFrame", protocol = Some(frameProtocol)),
           record(
             TraceProducer.Server,
-            3,
+            1,
+            "DecodedEvent",
+            protocol = Some(frameProtocol)
+          ),
+          record(TraceProducer.Server, 2, "TypedMessage", value = Some(messageWithField)),
+          record(TraceProducer.Server, 3, "ModelProposed", value = Some(model)),
+          record(
+            TraceProducer.Server,
+            4,
             "FinalFrame",
             protocol = Some(frameProtocol),
             byteSize = Some(143)
           ),
-          record(TraceProducer.Browser, 4, "DomDiff", protocol = Some(domProtocol))
+          record(TraceProducer.Browser, 5, "InboundFrame", protocol = Some(frameProtocol)),
+          record(TraceProducer.Browser, 6, "DomDiff", protocol = Some(domProtocol))
         )
       )
 
       val trace    = CapturedTraceAdapter.adapt(ExampleCatalog.Counter, interaction)
-      val evidence = trace.phases.flatMap(_.steps.flatMap(stepEvidence))
+      val steps    = trace.phases.flatMap(_.steps)
+      val evidence = steps.flatMap(stepEvidence(_).toVector)
       val code     = evidence.flatMap(_.code).mkString("\n")
-      val finalFrame = evidence.find(_.label == "Final frame").get
-      val proposed   = evidence.find(_.label == "Proposed model").get
+      val outbound    = stepEvidence(step(steps, "Send protocol frame")).get
+      val clientEvent = stepEvidence(step(steps, "Client event"))
+      val typed       = stepEvidence(step(steps, "WithField")).get
+      val proposed    = stepEvidence(step(steps, "Return updated model")).get
+      val published   = stepEvidence(step(steps, "Publish result")).get
 
       assertTrue(
-        evidence.map(_.label).contains("Typed message"),
-        evidence.map(_.label).contains("DOM mutations"),
-        evidence.flatMap(_.producer).toSet == Set("Runtime", "Browser"),
-        finalFrame.highlights == Vector("143 B"),
-        finalFrame.metadata.contains("operation" -> "Client event"),
-        finalFrame.metadata.contains("connection" -> "3"),
-        finalFrame.metadata.contains("socket" -> "2"),
-        finalFrame.correlation.contains("message" -> "#7"),
-        proposed.projection.exists(_.typeName == "scalive.docs.examples.CounterExample.Model"),
-        proposed.projection.exists(_.fields.contains("count" -> "1")),
-        evidence.forall(_.facts.forall(_._1 != "stage")),
+        steps.forall(stepEvidence(_).size <= 1),
+        outbound.label == "Protocol frame",
+        outbound.code.nonEmpty,
+        clientEvent.isEmpty,
+        typed.facts == Vector("value" -> "42"),
+        proposed.facts == Vector("count" -> "1"),
+        published.label == "Protocol frame",
+        published.facts == Vector("size" -> "143 B"),
+        evidence.count(_.label == "Protocol frame") == 2,
+        !evidence.map(_.label).contains("Inbound frame"),
+        !evidence.map(_.label).contains("Decoded event"),
         code.contains("[redacted]"),
         !code.contains("private-value"),
         !code.contains("server-secret"),
         code.contains("mutations")
+      )
+    },
+    test("omits receiver-side frame copies and summary-only records") {
+      val interaction = captured(
+        Vector(
+          record(TraceProducer.Browser, 1, "BrowserEvent", summary = "Browser event sent"),
+          record(
+            TraceProducer.Server,
+            2,
+            "DecodedEvent",
+            summary = "Inbound protocol frame decoded",
+            protocol = Some(frameProtocol)
+          ),
+          record(
+            TraceProducer.Server,
+            3,
+            "DecodedEvent",
+            summary = "Browser event decoded"
+          ),
+          record(
+            TraceProducer.Browser,
+            4,
+            "InboundFrame",
+            protocol = Some(frameProtocol)
+          ),
+          record(TraceProducer.Server, 5, "BindingResolution", summary = "Event binding resolved"),
+          record(TraceProducer.Server, 6, "RenderStarted", summary = "Render started"),
+          record(TraceProducer.Server, 7, "RenderCompleted", summary = "Render completed"),
+          record(TraceProducer.Server, 8, "FinalPayload", summary = "Final socket payload published")
+        )
+      )
+
+      val evidence = CapturedTraceAdapter
+        .adapt(ExampleCatalog.Counter, interaction).phases.flatMap(_.steps.flatMap(stepEvidence))
+
+      assertTrue(evidence.isEmpty)
+    },
+    test("promotes an unchanged tree diff into the timeline description") {
+      val trace = CapturedTraceAdapter.adapt(
+        ExampleCatalog.Counter,
+        captured(
+          Vector(
+            record(
+              TraceProducer.Server,
+              1,
+              "TreeDiff",
+              summary = "Tree diff is empty"
+            )
+          )
+        )
+      )
+      val step = trace.phases.flatMap(_.steps).collectFirst {
+        case operation: TraceStep.Operation => operation
+      }.get
+
+      assertTrue(
+        step.description == "The rendered tree matches the previous tree.",
+        step.evidence.isEmpty
       )
     }
   )
@@ -156,6 +221,11 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
     "scalive.docs.examples.CounterExample.Msg.Increment",
     "Increment message",
     Vector.empty
+  )
+  private val messageWithField = DocumentationTraceValue(
+    "scalive.docs.examples.CounterExample.Msg.WithField",
+    "Message with one field",
+    Vector("value" -> "42")
   )
   private val model = DocumentationTraceValue(
     "scalive.docs.examples.CounterExample.Model",
@@ -215,17 +285,24 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
       interactionOrdinal = Some(1L)
     )
 
-  private def stepEvidence(step: TraceStep): Vector[TraceEvidence] = step match
+  private def stepEvidence(step: TraceStep): Option[TraceEvidence] = step match
     case TraceStep.Operation(_, _, _, evidence)  => evidence
     case TraceStep.Message(_, _, _, _, evidence) => evidence
     case TraceStep.Boundary(_, _, evidence)      => evidence
 
-  private def messageWithEvidence(
+  private def step(steps: Vector[TraceStep], label: String): TraceStep =
+    steps.find {
+      case TraceStep.Operation(_, current, _, _)  => current == label
+      case TraceStep.Message(_, _, current, _, _) => current == label
+      case TraceStep.Boundary(current, _, _)      => current == label
+    }.get
+
+  private def messageRoute(
     steps: Vector[TraceStep],
-    evidenceLabel: String
+    label: String
   ): Option[(String, String)] =
     steps.collectFirst {
-      case TraceStep.Message(from, to, _, _, evidence) if evidence.exists(_.label == evidenceLabel) =>
+      case TraceStep.Message(from, to, currentLabel, _, _) if currentLabel == label =>
         from -> to
     }
 

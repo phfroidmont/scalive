@@ -46,8 +46,9 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
     "1 interaction retained",
   )
+  await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#1")
   await expect(inspectionStatus).toContainText(
-    /Inspecting #[^/]+ \/ Increase counter \/ Complete \/ latest/,
+    /Inspecting #1 \/ Increase counter \/ Complete \/ latest/,
   )
   await expect(viewer.getByText("Click", { exact: true })).toHaveCount(0)
 
@@ -109,6 +110,8 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
     "2 interactions retained",
   )
+  await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#2")
+  await expect(interactions.last().locator(".docs-live-trace-event-reference")).toHaveText("#1")
 
   const olderInteraction = interactions.last()
   const olderId = await olderInteraction.getAttribute("data-trace-interaction")
@@ -122,6 +125,10 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await example.getByRole("button", { name: "Increase", exact: true }).click()
   await expect(count).toHaveText("1")
   await expect(interactions).toHaveCount(3)
+  await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#3")
+  await expect(viewer.locator(`[data-trace-interaction="${olderId}"] .docs-live-trace-event-reference`)).toHaveText(
+    "#1",
+  )
   await expect(viewer.locator(`[data-trace-interaction="${olderId}"]`)).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -183,4 +190,35 @@ test("completes a no-op counter interaction without waiting for DOM mutations", 
   await expect(trace.locator('[data-trace-evidence="Response processed"]')).toBeAttached()
   await expect(trace.locator('[data-trace-evidence="DOM mutations"]')).toHaveCount(0)
   await expect(viewer.locator(".docs-live-trace-panel")).toHaveAttribute("aria-busy", "false")
+})
+
+test("keeps interaction numbers monotonic after older records are evicted", async ({ page }) => {
+  await page.goto("/examples/counter")
+  await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
+
+  const example = page.locator('[data-example="counter"]')
+  const viewer = example.locator('[data-live-trace-viewer="counter"]')
+  const count = example.locator(".docs-counter [role=status] strong")
+  const interactions = viewer.locator("[data-trace-interaction]")
+
+  await viewer.getByRole("button", { name: "Start capture" }).click()
+  for (let ordinal = 1; ordinal <= 12; ordinal += 1) {
+    await example.getByRole("button", { name: "Increase", exact: true }).click()
+    await expect(count).toHaveText(String(ordinal))
+    await expect(interactions.first()).toHaveAttribute("data-trace-state", "complete")
+    await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText(
+      `#${ordinal}`,
+    )
+  }
+
+  expect(await interactions.count()).toBeLessThan(12)
+  await page.evaluate(() => window.liveSocket.disconnect())
+  await page.evaluate(() => window.liveSocket.connect())
+  await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
+  await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#12")
+
+  await viewer.getByRole("button", { name: "Clear", exact: true }).click()
+  await expect(interactions).toHaveCount(0)
+  await example.getByRole("button", { name: "Increase", exact: true }).click()
+  await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#1")
 })

@@ -3,6 +3,7 @@ package scalive.docs.xray
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
 
 import zio.*
@@ -46,7 +47,8 @@ final private[docs] case class DocumentationTraceRecord(
   summary: String,
   value: Option[DocumentationTraceValue],
   protocol: Option[Json],
-  byteSize: Option[Int])
+  byteSize: Option[Int],
+  interactionOrdinal: Option[Long] = None)
     derives JsonCodec
 
 final private[docs] case class BrowserTraceRecord(
@@ -72,10 +74,21 @@ final private[docs] class DocumentationTraceStore private (
   private val MaxBrowserBatchRecords = 64
 
   final private class History:
-    private var values             = Vector.empty[DocumentationTraceRecord]
-    private var bytes              = 0
-    private val nextServerSequence = AtomicLong(0L)
-    private val accessSequence     = AtomicLong(0L)
+    final private case class ServerOperation(
+      connectionEpoch: Long,
+      socketEpoch: Long,
+      sequence: Long)
+    final private case class InteractionOrdinal(
+      value: Long,
+      var browserStarted: Boolean,
+      var serverOperation: Option[ServerOperation])
+
+    private var values                 = Vector.empty[DocumentationTraceRecord]
+    private var bytes                  = 0
+    private val nextServerSequence     = AtomicLong(0L)
+    private val accessSequence         = AtomicLong(0L)
+    private val interactionOrdinals    = mutable.LinkedHashMap.empty[String, InteractionOrdinal]
+    private var nextInteractionOrdinal = 0L
 
     def lastAccess: Long = accessSequence.get()
 
@@ -101,7 +114,21 @@ final private[docs] class DocumentationTraceStore private (
           DocumentationTraceValue(value.typeName, value.summary, value.fields)
         ),
         protocol = record.protocol,
-        byteSize = record.byteSize
+        byteSize = record.byteSize,
+        interactionOrdinal = Option
+          .when(record.identity.operationKind == RuntimeTraceOperationKind.ClientEvent) {
+            ServerOperation(
+              record.identity.connectionEpoch,
+              record.identity.socketEpoch,
+              record.identity.operationSequence
+            )
+          }.flatMap(operation =>
+            interactionOrdinal(
+              record.identity.messageReference.map(_.toString),
+              browserStart = false,
+              Some(operation)
+            )
+          )
       )
       append(value)
     }
@@ -109,6 +136,7 @@ final private[docs] class DocumentationTraceStore private (
     def appendBrowser(session: String, record: BrowserTraceRecord): Boolean = synchronized {
       touch()
       val (stage, summary) = DocumentationTraceSanitizer.browserLabel(record.stage)
+      val messageReference = safeReference(record.messageReference)
       append(
         DocumentationTraceRecord(
           producer = TraceProducer.Browser,
@@ -118,7 +146,7 @@ final private[docs] class DocumentationTraceStore private (
           socketEpoch = None,
           topic = record.topic,
           joinReference = safeReference(record.joinReference),
-          messageReference = safeReference(record.messageReference),
+          messageReference = messageReference,
           operationSequence = record.operationSequence,
           operationKind = "Browser",
           operationRecordSequence = record.sequence,
@@ -126,7 +154,12 @@ final private[docs] class DocumentationTraceStore private (
           summary = summary,
           value = None,
           protocol = record.protocol.map(DocumentationTraceSanitizer.structure),
-          byteSize = None
+          byteSize = None,
+          interactionOrdinal = interactionOrdinal(
+            messageReference,
+            browserStart = record.stage == "BrowserEvent",
+            serverOperation = None
+          )
         )
       )
     }
@@ -143,6 +176,47 @@ final private[docs] class DocumentationTraceStore private (
           bytes -= encodedBytes(removed)
         true
 
+    private def interactionOrdinal(
+      reference: Option[String],
+      browserStart: Boolean,
+      serverOperation: Option[ServerOperation]
+    ): Option[Long] =
+      val key = reference
+        .map(value => s"reference:$value").orElse(
+          serverOperation.map(operation =>
+            s"server:${operation.connectionEpoch}:${operation.socketEpoch}:${operation.sequence}"
+          )
+        )
+      key.flatMap { value =>
+        interactionOrdinals.get(value) match
+          case Some(existing)
+              if (browserStart && existing.browserStarted) || serverOperation
+                .exists(current => existing.serverOperation.exists(_ != current)) =>
+            Some(allocateInteraction(value, browserStart, serverOperation))
+          case Some(existing) =>
+            if browserStart then existing.browserStarted = true
+            if existing.serverOperation.isEmpty then existing.serverOperation = serverOperation
+            Some(existing.value)
+          case None if browserStart || serverOperation.nonEmpty =>
+            Some(allocateInteraction(value, browserStart, serverOperation))
+          case None => None
+      }
+
+    private def allocateInteraction(
+      key: String,
+      browserStarted: Boolean,
+      serverOperation: Option[ServerOperation]
+    ): Long =
+      nextInteractionOrdinal += 1
+      val _ = interactionOrdinals.remove(key)
+      interactionOrdinals.update(
+        key,
+        InteractionOrdinal(nextInteractionOrdinal, browserStarted, serverOperation)
+      )
+      while interactionOrdinals.size > limits.maxRecords do
+        val _ = interactionOrdinals.remove(interactionOrdinals.head._1)
+      nextInteractionOrdinal
+
     def snapshot: Vector[DocumentationTraceRecord] = synchronized {
       touch()
       values
@@ -152,6 +226,8 @@ final private[docs] class DocumentationTraceStore private (
       touch()
       values = Vector.empty
       bytes = 0
+      interactionOrdinals.clear()
+      nextInteractionOrdinal = 0L
     }
 
     private def encodedBytes(record: DocumentationTraceRecord): Int =

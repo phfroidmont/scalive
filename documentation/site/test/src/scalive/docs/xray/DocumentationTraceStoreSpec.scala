@@ -16,7 +16,11 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
   private val Topic   = "lv:docs-example-counter-L2V4YW1wbGVz"
   private val Session = "01234567-89ab-cdef-0123-456789abcdef"
 
-  private def serverRecord(summary: String, operation: Long = 1L): RuntimeTraceRecord =
+  private def serverRecord(
+    summary: String,
+    operation: Long = 1L,
+    reference: Int = 2
+  ): RuntimeTraceRecord =
     RuntimeTraceRecord(
       RuntimeTraceIdentity(
         traceSession = Session,
@@ -24,7 +28,7 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         socketEpoch = 1L,
         topic = Topic,
         joinReference = Some(1),
-        messageReference = Some(2),
+        messageReference = Some(reference),
         operationSequence = operation,
         operationKind = RuntimeTraceOperationKind.ClientEvent
       ),
@@ -64,6 +68,56 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         _       <- store.appendServer(serverRecord("three", 3L))
         records <- store.records(Session, Topic)
       yield assertTrue(records.map(_.summary) == Vector("two", "three"))
+    },
+    test("keeps interaction ordinals monotonic through eviction and resets them on clear") {
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 3, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        _ <- ZIO.foreachDiscard(1 to 5)(value =>
+               store.appendServer(serverRecord(s"interaction $value", value.toLong, value))
+             )
+        retained <- store.records(Session, Topic)
+        _        <- store.reset(Session, Topic)
+        _        <- store.appendServer(serverRecord("after clear", operation = 6L, reference = 6))
+        reset    <- store.records(Session, Topic)
+      yield assertTrue(
+        retained.map(_.summary) == Vector("interaction 3", "interaction 4", "interaction 5"),
+        retained.flatMap(_.interactionOrdinal) == Vector(3L, 4L, 5L),
+        reset.flatMap(_.interactionOrdinal) == Vector(1L)
+      )
+    },
+    test("assigns one interaction ordinal to browser and server records") {
+      val browserRecords = Vector(
+        BrowserTraceRecord(1L, Topic, Some("1"), Some("7"), 7L, "BrowserEvent", "ignored"),
+        BrowserTraceRecord(2L, Topic, Some("1"), Some("7"), 7L, "OutboundFrame", "ignored")
+      )
+
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 10, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        _       <- store.appendBrowser(Session, Topic, BrowserTraceBatch(browserRecords))
+        _       <- store.appendServer(serverRecord("server", operation = 7L, reference = 7))
+        records <- store.records(Session, Topic)
+      yield assertTrue(records.flatMap(_.interactionOrdinal) == Vector(1L, 1L, 1L))
+    },
+    test("assigns new ordinals when references repeat or are absent") {
+      val first  = serverRecord("first", operation = 1L, reference = 7)
+      val second = serverRecord("second", operation = 2L, reference = 7)
+      val unreferenced = serverRecord("unreferenced", operation = 3L).copy(identity =
+        serverRecord("unused", operation = 3L).identity.copy(messageReference = None)
+      )
+
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 10, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        _       <- store.appendServer(first)
+        _       <- store.appendServer(second)
+        _       <- store.appendServer(unreferenced)
+        records <- store.records(Session, Topic)
+      yield assertTrue(records.flatMap(_.interactionOrdinal) == Vector(1L, 2L, 3L))
     },
     test("bounds serialized history bytes") {
       for

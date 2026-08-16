@@ -92,7 +92,12 @@ final private[docs] class CounterLiveTraceViewer(
     interactions: Vector[CapturedInteraction],
     selectedId: Option[String]
   ): HtmlElement[Msg] =
-    val selected   = selectedId.flatMap(id => interactions.find(_.id == id))
+    val selected            = selectedId.flatMap(id => interactions.find(_.id == id))
+    val interactionOrdinals = interactions.reverse.zipWithIndex.map { case (interaction, index) =>
+      val ordinal =
+        interaction.records.flatMap(_.interactionOrdinal).headOption.getOrElse(index + 1L)
+      interaction.id -> ordinal
+    }.toMap
     val panelId    = s"$instanceId-trace-panel"
     val newerCount =
       selected.fold(0)(interaction => interactions.indexWhere(_.id == interaction.id))
@@ -102,8 +107,13 @@ final private[docs] class CounterLiveTraceViewer(
       Option
         .when(interactions.nonEmpty || selectedId.nonEmpty)(
           Vector[Mod[Msg]](
-            renderInspection(selectedId, selected, newerCount),
-            renderInteractionList(interactions, selectedId, panelId),
+            renderInspection(
+              selectedId,
+              selected,
+              interactionOrdinals,
+              newerCount
+            ),
+            renderInteractionList(interactions, interactionOrdinals, selectedId, panelId),
             selected match
               case Some(interaction) =>
                 div(
@@ -184,6 +194,7 @@ final private[docs] class CounterLiveTraceViewer(
   private def renderInspection(
     selectedId: Option[String],
     selected: Option[CapturedInteraction],
+    interactionOrdinals: Map[String, Long],
     newerCount: Int
   ): HtmlElement[Msg] =
     div(
@@ -200,7 +211,7 @@ final private[docs] class CounterLiveTraceViewer(
               Mod.Content.Tag(
                 strong(
                   cls := "docs-live-trace-inspection-reference",
-                  interactionReference(interaction)
+                  s"#${interactionOrdinals(interaction.id)}"
                 )
               ),
               Mod.Content.Text(" / "),
@@ -232,6 +243,7 @@ final private[docs] class CounterLiveTraceViewer(
 
   private def renderInteractionList(
     interactions: Vector[CapturedInteraction],
+    interactionOrdinals: Map[String, Long],
     selectedId: Option[String],
     panelId: String
   ): HtmlElement[Msg] =
@@ -256,7 +268,10 @@ final private[docs] class CounterLiveTraceViewer(
                 dataAttr("trace-interaction") := interaction.id,
                 dataAttr("trace-state")       := stateKey(interaction.state),
                 on.click(Msg.SelectInteraction(interaction.id)),
-                span(cls := "docs-live-trace-event-reference", interactionReference(interaction)),
+                span(
+                  cls := "docs-live-trace-event-reference",
+                  s"#${interactionOrdinals(interaction.id)}"
+                ),
                 strong(interaction.label),
                 span(cls := "docs-live-trace-event-state", stateLabel(interaction.state))
               )
@@ -264,9 +279,6 @@ final private[docs] class CounterLiveTraceViewer(
           }
         )
     )
-
-  private def interactionReference(interaction: CapturedInteraction): String =
-    interaction.reference.fold(interaction.id)(reference => s"#$reference")
 
   private def interactionRowId(interaction: CapturedInteraction): String =
     s"$instanceId-${interaction.id}"

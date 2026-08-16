@@ -6,8 +6,8 @@ import java.nio.charset.StandardCharsets
 import scalive.*
 import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
-import scalive.docs.trace.{CounterLiveTraceViewer, TraceViewer}
-import scalive.docs.xray.{DocumentationTraceStore, XRayInspector}
+import scalive.docs.trace.{LiveTraceViewer, TraceViewer}
+import scalive.docs.xray.DocumentationTraceStore
 
 final private[docs] class DocumentationRenderer(
   application: DocumentationApplication,
@@ -518,19 +518,19 @@ final private[docs] class DocumentationRenderer(
     val registered = ExampleRegistry.get(id).getOrElse {
       throw new IllegalArgumentException(s"Unknown runtime example: $id")
     }
-    val nestedId       = ExampleRegistry.instanceId(pageRoute, id)
-    val observedTopic  = ExampleRegistry.topic(pageRoute, id)
-    val inspectorId    = ExampleRegistry.inspectorInstanceId(pageRoute, id)
-    val inspectorTopic = ExampleRegistry.inspectorTopic(pageRoute, id)
+    val nestedId         = ExampleRegistry.instanceId(pageRoute, id)
+    val observedTopic    = ExampleRegistry.topic(pageRoute, id)
+    val traceViewerId    = ExampleRegistry.traceViewerInstanceId(pageRoute, id)
+    val traceViewerTopic = ExampleRegistry.traceViewerTopic(pageRoute, id)
 
     sectionTag(
-      idAttr                      := s"example-$id",
-      cls                         := "docs-example",
-      dataAttr("example")         := id,
-      dataAttr("example-child")   := nestedId,
-      dataAttr("example-topic")   := observedTopic,
-      dataAttr("inspector-child") := inspectorId,
-      dataAttr("inspector-topic") := inspectorTopic,
+      idAttr                         := s"example-$id",
+      cls                            := "docs-example",
+      dataAttr("example")            := id,
+      dataAttr("example-child")      := nestedId,
+      dataAttr("example-topic")      := observedTopic,
+      dataAttr("trace-viewer-child") := traceViewerId,
+      dataAttr("trace-viewer-topic") := traceViewerTopic,
       definition.sources.map(source =>
         codeBlock(
           source.language,
@@ -561,15 +561,13 @@ final private[docs] class DocumentationRenderer(
         "Disconnected. Controls resume after reconnection."
       ),
       traceStore.toVector.map { store =>
-        if id == "counter" then
-          CounterLiveTraceViewer.nested(
-            inspectorId,
-            observedTopic,
-            inspectorTopic,
-            registered,
-            store
-          )
-        else XRayInspector.nested(inspectorId, observedTopic, inspectorTopic, registered, store)
+        LiveTraceViewer.nested(
+          traceViewerId,
+          observedTopic,
+          traceViewerTopic,
+          registered,
+          store
+        )
       }
     )
   end renderExample

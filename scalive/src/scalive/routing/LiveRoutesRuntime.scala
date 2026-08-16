@@ -81,9 +81,13 @@ final private[scalive] class LiveRoutesRuntime[R](
                        decoded <- ZIO
                                     .fromEither(content.fromJson[WebSocketMessage])
                                     .mapError(new IllegalArgumentException(_))
+                       traceTopic <- liveChannel.traceTopic(decoded.topic)
+                       traceMeta =
+                         if traceTopic == decoded.topic then decoded.meta
+                         else decoded.meta.copy(topic = traceTopic)
                        operation = RuntimeTraceOperation.resolve(
                                      runtimeTrace,
-                                     decoded.meta,
+                                     traceMeta,
                                      incomingOperationKind(decoded.payload)
                                    )
                        message = RuntimeTraceOperation.attach(decoded, operation)
@@ -104,9 +108,13 @@ final private[scalive] class LiveRoutesRuntime[R](
                        decoded <- ZIO
                                     .fromEither(WebSocketMessage.decodeBinaryPush(bytes))
                                     .mapError(new IllegalArgumentException(_))
+                       traceTopic <- liveChannel.traceTopic(decoded.topic)
+                       traceMeta =
+                         if traceTopic == decoded.topic then decoded.meta
+                         else decoded.meta.copy(topic = traceTopic)
                        operation = RuntimeTraceOperation.resolve(
                                      runtimeTrace,
-                                     decoded.meta,
+                                     traceMeta,
                                      incomingOperationKind(decoded.payload)
                                    )
                        message = RuntimeTraceOperation.attach(decoded, operation)

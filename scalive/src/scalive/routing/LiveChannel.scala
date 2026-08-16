@@ -426,6 +426,10 @@ final private[scalive] class LiveChannel(
           )
     }
 
+  def traceTopic(topic: String): UIO[String] =
+    if topic.startsWith("lvu:") then uploadOwners.get.map(_.getOrElse(topic, topic))
+    else ZIO.succeed(topic)
+
 end LiveChannel
 
 private[scalive] object LiveChannel:

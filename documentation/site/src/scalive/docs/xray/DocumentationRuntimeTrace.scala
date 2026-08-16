@@ -9,7 +9,18 @@ import scalive.*
 import scalive.WebSocketMessage.Payload
 
 private[docs] object DocumentationTraceSanitizer:
-  private val Redacted           = Json.Str("[redacted]")
+  private val Redacted          = Json.Str("[redacted]")
+  private val StructuralStrings = Set(
+    "event",
+    "joinReference",
+    "kind",
+    "messageReference",
+    "name",
+    "status",
+    "topic",
+    "type"
+  )
+  private val StructuralString   = "[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}".r
   private val SensitiveFragments = Vector(
     "authorization",
     "claim",
@@ -65,7 +76,11 @@ private[docs] object DocumentationTraceSanitizer:
           case Json.Obj(fields) =>
             Json.Obj(fields.map((name, child) => name -> sanitize(child, Some(name)))*)
           case Json.Arr(values) => Json.Arr(values.map(sanitize(_, None)))
-          case string: Json.Str => string
+          case string: Json.Str =>
+            fieldName
+              .filter(StructuralStrings)
+              .filter(_ => StructuralString.matches(string.value))
+              .fold[Json](Redacted)(_ => string)
           case number: Json.Num => number
           case bool: Json.Bool  => bool
           case Json.Null        => Json.Null
@@ -141,5 +156,5 @@ final private[docs] class DocumentationRuntimeTraceFactory(store: DocumentationT
       )
 
 private[docs] object DocumentationRuntimeTraceFactory:
-  val TraceSessionParameter = "_scalive_xray_session"
+  val TraceSessionParameter = "_scalive_trace_session"
   val ValidSession          = "[A-Za-z0-9_-]{16,64}".r

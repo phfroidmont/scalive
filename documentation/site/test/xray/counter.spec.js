@@ -19,22 +19,21 @@ test("captures counter interactions in the integrated live trace viewer", async 
   const tracePanel = viewer.locator(".docs-live-trace-panel")
 
   await expect(viewer).toHaveRole("region")
-  await expect(viewer).toHaveAccessibleName("Live counter trace")
+  await expect(viewer).toHaveAccessibleName("Live Typed counter trace")
   await expect(viewer.locator(".docs-live-trace-capture-status")).toHaveRole("status")
   await expect(viewer.locator(".docs-live-trace-capture-status")).toHaveAttribute("aria-live", "polite")
   await expect(count).toHaveText("0")
   await expect(viewer.locator('[data-trace-provenance="authored"]')).toHaveCount(0)
   await expect(viewer.locator(".docs-live-trace-catalog")).toHaveCount(0)
-  await expect(viewer.locator(".docs-xray-raw")).toHaveCount(0)
   await expect(viewer.getByText("Raw trace", { exact: true })).toHaveCount(0)
 
   await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText("No interactions yet")
   await expect(inspectionStatus).toHaveCount(0)
   await expect(tracePanel).toHaveCount(0)
   await viewer.getByRole("button", { name: "Start capture" }).click()
-  await expect(viewer).toHaveAttribute("data-xray-enabled", "true")
+  await expect(viewer).toHaveAttribute("data-live-trace-enabled", "true")
   await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
-    "Use a counter control",
+    "Use the example controls",
   )
 
   await example.getByRole("button", { name: "Increase", exact: true }).click()
@@ -48,7 +47,7 @@ test("captures counter interactions in the integrated live trace viewer", async 
   )
   await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#1")
   await expect(inspectionStatus).toContainText(
-    /Inspecting #1 \/ Increase counter \/ Complete \/ latest/,
+    /Inspecting #1 \/ Increment \/ Complete \/ latest/,
   )
   await expect(viewer.getByText("Click", { exact: true })).toHaveCount(0)
 
@@ -69,7 +68,7 @@ test("captures counter interactions in the integrated live trace viewer", async 
     /mutations|DOM patch applied/,
   )
   await expect(capturedTrace).toContainText('"topic" : "lv:docs-example-counter-')
-  await expect(capturedTrace).toContainText('"after" : "1"')
+  await expect(capturedTrace).not.toContainText('"after"')
 
   const frameRecord = capturedTrace.locator('[data-trace-evidence="Final frame"]')
   await expect(frameRecord.locator(":scope > details > summary")).toContainText("Runtime")
@@ -101,7 +100,6 @@ test("captures counter interactions in the integrated live trace viewer", async 
   const capturedText = await capturedTrace.textContent()
   expect(capturedText).not.toContain(csrfToken)
   expect(capturedText).not.toContain(exampleSession)
-  await expect(viewer.locator(".docs-xray-raw")).toHaveCount(0)
 
   await example.getByRole("button", { name: "Decrease", exact: true }).click()
   await expect(count).toHaveText("0")
@@ -145,17 +143,18 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await page.evaluate(() => window.liveSocket.disconnect())
   await page.evaluate(() => window.liveSocket.connect())
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
-  await expect(viewer).toHaveAttribute("data-xray-enabled", "true")
-  await expect(interactions).toHaveCount(3)
+  await expect(viewer).toHaveAttribute("data-live-trace-enabled", "true")
+  await expect(interactions).toHaveCount(5)
+  await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#5")
 
   await viewer.getByRole("button", { name: "Pause capture" }).click()
-  await expect(viewer).toHaveAttribute("data-xray-enabled", "false")
+  await expect(viewer).toHaveAttribute("data-live-trace-enabled", "false")
   const countBeforePausedClick = Number(await count.textContent())
   await example.getByRole("button", { name: "Increase", exact: true }).click()
   await expect(count).toHaveText(String(countBeforePausedClick + 1))
-  await expect(interactions).toHaveCount(3)
+  await expect(interactions).toHaveCount(5)
   await viewer.getByRole("button", { name: "Resume capture" }).click()
-  await expect(viewer).toHaveAttribute("data-xray-enabled", "true")
+  await expect(viewer).toHaveAttribute("data-live-trace-enabled", "true")
 
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(viewer).toBeVisible()
@@ -166,7 +165,7 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await expect(viewer.locator('[data-trace-provenance="captured"]')).toHaveCount(0)
   await expect(tracePanel).toHaveCount(0)
   await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
-    "Use a counter control",
+    "Use the example controls",
   )
 })
 
@@ -215,7 +214,7 @@ test("keeps interaction numbers monotonic after older records are evicted", asyn
   await page.evaluate(() => window.liveSocket.disconnect())
   await page.evaluate(() => window.liveSocket.connect())
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
-  await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#12")
+  await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#14")
 
   await viewer.getByRole("button", { name: "Clear", exact: true }).click()
   await expect(interactions).toHaveCount(0)

@@ -6,8 +6,8 @@ import zio.test.*
 import scalive.docs.model.*
 import scalive.docs.xray.*
 
-object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
-  override def spec = suite("CounterCapturedTraceAdapterSpec")(
+object CapturedTraceAdapterSpec extends ZIOSpecDefault:
+  override def spec = suite("CapturedTraceAdapterSpec")(
     test("represents every lane transition in the captured causal flow") {
       val interaction = captured(
         Vector(
@@ -46,7 +46,7 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
         )
       )
 
-      val trace = CounterCapturedTraceAdapter.adapt(interaction)
+      val trace = CapturedTraceAdapter.adapt(ExampleCatalog.Counter, interaction)
       val steps = trace.phases.flatMap(_.steps)
 
       assertTrue(
@@ -83,7 +83,7 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
         )
       )
 
-      val trace           = CounterCapturedTraceAdapter.adapt(interaction)
+      val trace           = CapturedTraceAdapter.adapt(ExampleCatalog.Counter, interaction)
       val handlerEvidence = trace.phases
         .flatMap(_.steps)
         .collectFirst { case TraceStep.Operation("live-view", _, _, evidence) =>
@@ -98,12 +98,13 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
       )
     },
     test("omits phases whose captured stages are absent") {
-      val trace = CounterCapturedTraceAdapter.adapt(
+      val trace = CapturedTraceAdapter.adapt(
+        ExampleCatalog.Counter,
         captured(Vector(record(TraceProducer.Browser, 1, "BrowserEvent")))
       )
 
       assertTrue(
-        trace.phases.map(_.id) == Vector("event"),
+        trace.phases.map(_.id) == Vector("trigger"),
         trace.phases.forall(_.steps.nonEmpty)
       )
     },
@@ -125,7 +126,7 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
         )
       )
 
-      val trace    = CounterCapturedTraceAdapter.adapt(interaction)
+      val trace    = CapturedTraceAdapter.adapt(ExampleCatalog.Counter, interaction)
       val evidence = trace.phases.flatMap(_.steps.flatMap(stepEvidence))
       val code     = evidence.flatMap(_.code).mkString("\n")
       val finalFrame = evidence.find(_.label == "Final frame").get
@@ -143,8 +144,8 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
         proposed.projection.exists(_.typeName == "scalive.docs.examples.CounterExample.Model"),
         proposed.projection.exists(_.fields.contains("count" -> "1")),
         evidence.forall(_.facts.forall(_._1 != "stage")),
-        code.contains("private-value"),
         code.contains("[redacted]"),
+        !code.contains("private-value"),
         !code.contains("server-secret"),
         code.contains("mutations")
       )
@@ -174,13 +175,15 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
 
   private def captured(records: Vector[DocumentationTraceRecord]): CapturedInteraction =
     CapturedInteraction(
-      "counter-interaction-ref-7-1",
-      Some("7"),
-      records,
-      CapturedInteractionAnchor(Some(1L), Some(1L)),
-      CapturedInteractionState.Complete,
-      "Increase counter",
-      "Increment message"
+      id = "captured-operation-1",
+      ordinal = 1L,
+      operationKind = "ClientEvent",
+      reference = Some("7"),
+      records = records,
+      orderingAnchor = CapturedInteractionAnchor(Some(1L), Some(1L)),
+      state = CapturedInteractionState.Complete,
+      label = "Increment",
+      summary = "Increment message"
     )
 
   private def record(
@@ -208,7 +211,8 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
       summary,
       value,
       protocol,
-      byteSize
+      byteSize,
+      interactionOrdinal = Some(1L)
     )
 
   private def stepEvidence(step: TraceStep): Vector[TraceEvidence] = step match
@@ -242,4 +246,4 @@ object CounterCapturedTraceAdapterSpec extends ZIOSpecDefault:
           Some(to) -> nextErrors
         case (state, _: TraceStep.Boundary) => state
       }._2
-end CounterCapturedTraceAdapterSpec
+end CapturedTraceAdapterSpec

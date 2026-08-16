@@ -17,18 +17,18 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
         server(2, 1, 1, 2, 2, "FinalFrame"),
         browser(3, 2, 2, "InboundFrame"),
         browser(4, 2, 2, "DomDiff"),
-        browser(5, 2, 2, "BrowserEvent"),
-        server(3, 2, 1, 2, 2, "TypedMessage", Some(message("Reset")))
+        browser(5, 2, 2, "BrowserEvent", ordinal = 2L),
+        server(3, 2, 1, 2, 2, "TypedMessage", Some(message("Reset")), ordinal = 2L)
       )
 
       val interactions = CapturedInteractionGrouper.group(records)
 
       assertTrue(
         interactions.map(_.id) == Vector(
-          "counter-interaction-ref-2-2",
-          "counter-interaction-ref-2-1"
+          "captured-operation-2",
+          "captured-operation-1"
         ),
-        interactions.map(_.label) == Vector("Reset counter", "Increase counter"),
+        interactions.map(_.label) == Vector("Reset", "Increment"),
         interactions.map(_.state) == Vector(
           CapturedInteractionState.InProgress,
           CapturedInteractionState.Complete
@@ -58,7 +58,7 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
         before.orderingAnchor.browserSequence == after.orderingAnchor.browserSequence,
         before.state == CapturedInteractionState.InProgress,
         after.state == CapturedInteractionState.Complete,
-        after.label == "Decrease counter"
+        after.label == "Decrement"
       )
     },
     test("completes when the browser processes a response without a DOM patch") {
@@ -99,6 +99,26 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
         interaction.orderingAnchor.browserSequence.isEmpty,
         interaction.orderingAnchor.serverSequence.contains(1L)
       )
+    },
+    test("preserves server messages and async completions without browser records") {
+      val serverMessage = server(1, 1, 1, 1, 0, "TypedMessage", Some(message("Tick")))
+        .copy(operationKind = "ServerMessage", messageReference = None)
+      val serverFrame = server(2, 1, 1, 1, 0, "FinalFrame")
+        .copy(operationKind = "ServerMessage", messageReference = None)
+      val asyncMessage = server(3, 1, 1, 2, 0, "TypedMessage", Some(message("ReportCompleted")), 2L)
+        .copy(operationKind = "AsyncCompletion", messageReference = None)
+      val asyncFrame = server(4, 1, 1, 2, 0, "FinalFrame", ordinal = 2L)
+        .copy(operationKind = "AsyncCompletion", messageReference = None)
+
+      val interactions = CapturedInteractionGrouper.group(
+        Vector(serverMessage, serverFrame, asyncMessage, asyncFrame)
+      )
+
+      assertTrue(
+        interactions.map(_.operationKind) == Vector("AsyncCompletion", "ServerMessage"),
+        interactions.map(_.state) == Vector.fill(2)(CapturedInteractionState.Complete),
+        interactions.map(_.label) == Vector("ReportCompleted", "Tick")
+      )
     }
   )
 
@@ -106,7 +126,8 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
     sequence: Long,
     operation: Long,
     reference: Long,
-    stage: String
+    stage: String,
+    ordinal: Long = 1L
   ): DocumentationTraceRecord =
     DocumentationTraceRecord(
       TraceProducer.Browser,
@@ -124,7 +145,8 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
       stage,
       None,
       None,
-      None
+      None,
+      interactionOrdinal = Some(ordinal)
     )
 
   private def server(
@@ -134,7 +156,8 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
     operation: Long,
     reference: Long,
     stage: String,
-    value: Option[DocumentationTraceValue] = None
+    value: Option[DocumentationTraceValue] = None,
+    ordinal: Long = 1L
   ): DocumentationTraceRecord =
     DocumentationTraceRecord(
       TraceProducer.Server,
@@ -152,7 +175,8 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
       stage,
       value,
       None,
-      None
+      None,
+      interactionOrdinal = Some(ordinal)
     )
 
   private def message(name: String): DocumentationTraceValue =

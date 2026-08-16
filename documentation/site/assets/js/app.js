@@ -6,8 +6,8 @@ import { createInlineApiReferenceEnhancer } from "./inline-api-reference.js"
 import {
   assertLiveViewVersion,
   createTraceSession,
-  createXRayAdapter,
-  XRaySocket,
+  createLiveTraceAdapter,
+  LiveTraceSocket,
 } from "./xray/phoenix-live-view-1.1.28.js"
 
 const connectionRoot = document.documentElement
@@ -15,8 +15,8 @@ const themeStorageKey = "scalive.docs.theme"
 const exampleControlSelector =
   "[data-example-controls], [data-example-controls] button, [data-example-controls] input, [data-example-controls] select, [data-example-controls] textarea"
 const instantSearchLimit = 8
-const xrayAdapter = createXRayAdapter()
-const xrayTraceSession = createTraceSession()
+const liveTraceAdapter = createLiveTraceAdapter()
+const liveTraceSession = createTraceSession()
 const inlineApiReferences = createInlineApiReferenceEnhancer()
 const searchKindLabels = {
   page: "Page",
@@ -176,7 +176,7 @@ window.addEventListener("offline", () => updateConnectionState("offline"))
 
 const Hooks = {
   BrowserInterop: createBrowserInteropHook(),
-  XRayInspector: xrayAdapter.hook,
+  LiveTraceViewer: liveTraceAdapter.hook,
   DocumentationSearch: {
     mounted() {
       this.input = this.el.querySelector("input[name='q']")
@@ -619,12 +619,12 @@ const Hooks = {
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 const liveSocketParams = csrfToken ? { _csrf_token: csrfToken } : {}
 
-const liveSocket = new LiveSocket("/live", XRaySocket, {
+const liveSocket = new LiveSocket("/live", LiveTraceSocket, {
   params: liveSocketParams,
   hooks: Hooks,
-  dom: xrayAdapter.dom,
-  xrayAdapter,
-  xrayTraceSession,
+  dom: liveTraceAdapter.dom,
+  liveTraceAdapter,
+  liveTraceSession,
 })
 assertLiveViewVersion(liveSocket)
 liveSocket.socket.onError(() => {

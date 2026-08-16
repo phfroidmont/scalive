@@ -1,6 +1,6 @@
 import { Serializer, Socket } from "phoenix"
 
-export const traceSessionParameter = "_scalive_xray_session"
+export const traceSessionParameter = "_scalive_trace_session"
 export const expectedLiveViewVersion = "1.1.28"
 
 const redacted = "[redacted]"
@@ -30,10 +30,20 @@ function isSensitive(name) {
   return sensitiveFragments.some((fragment) => normalized.includes(fragment))
 }
 
+const structuralStringFields = new Set(["event", "kind", "status", "type"])
+const structuralStringPattern = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,63}$/
+
 function sanitizeValue(value, fieldName = null) {
-  if (fieldName && isSensitive(fieldName)) return redacted
   if (value === null || typeof value === "boolean" || typeof value === "number") return value
-  if (typeof value === "string") return value
+  if (typeof value === "string") {
+    if (
+      fieldName &&
+      !isSensitive(fieldName) &&
+      structuralStringFields.has(fieldName) &&
+      structuralStringPattern.test(value)
+    ) return value
+    return redacted
+  }
   if (value instanceof ArrayBuffer) return { byteLength: value.byteLength, content: redacted }
   if (ArrayBuffer.isView(value)) return { byteLength: value.byteLength, content: redacted }
   if (Array.isArray(value)) return value.map((item) => sanitizeValue(item))
@@ -84,10 +94,10 @@ export function wrapDecoder(decode, observer) {
     })
 }
 
-export class XRaySocket extends Socket {
+export class LiveTraceSocket extends Socket {
   constructor(endpoint, options = {}) {
-    const adapter = options.xrayAdapter
-    const traceSession = options.xrayTraceSession
+    const adapter = options.liveTraceAdapter
+    const traceSession = options.liveTraceSession
     const transportParams = () => ({
       ...resolveParams(options.params),
       ...(traceSession ? { [traceSessionParameter]: traceSession } : {}),
@@ -115,28 +125,19 @@ function nodeDescription(node) {
   return `${node.tagName.toLowerCase()}${id}`
 }
 
-function safeDomText(value) {
-  return (value || "").trim()
-}
-
 function mutationSummary(mutation) {
   if (mutation.type === "characterData") {
     return {
       kind: "text",
       target: nodeDescription(mutation.target.parentNode || mutation.target),
-      before: safeDomText(mutation.oldValue),
-      after: safeDomText(mutation.target.data),
     }
   }
   if (mutation.type === "attributes") {
     const name = mutation.attributeName
-    const safeAttribute = !isSensitive(name)
     return {
       kind: "attribute",
       target: nodeDescription(mutation.target),
-      name,
-      before: safeAttribute ? mutation.oldValue : redacted,
-      after: safeAttribute ? mutation.target.getAttribute(name) : redacted,
+      name: isSensitive(name) ? redacted : name,
     }
   }
   return {
@@ -147,7 +148,7 @@ function mutationSummary(mutation) {
   }
 }
 
-export function createXRayAdapter() {
+export function createLiveTraceAdapter() {
   const registrations = new Map()
   const sequences = new Map()
   const pending = new Map()
@@ -189,24 +190,36 @@ export function createXRayAdapter() {
   function flush() {
     flushScheduled = false
     for (const [topic, records] of pending) {
-      const registration = registrations.get(topic)
+      const topicRegistrations = registrations.get(topic)
       pending.delete(topic)
-      if (registration && records.length > 0) {
-        registration.hook.pushEvent(registration.eventName, { records })
+      if (topicRegistrations && records.length > 0) {
+        for (const registration of topicRegistrations.values()) {
+          registration.hook.pushEvent(registration.eventName, { records })
+        }
       }
     }
   }
 
+  function unregister(hook) {
+    const topic = hook.__liveTraceObservedTopic
+    if (!topic) return
+    const topicRegistrations = registrations.get(topic)
+    topicRegistrations?.delete(hook)
+    if (topicRegistrations?.size === 0) registrations.delete(topic)
+    hook.__liveTraceObservedTopic = null
+  }
+
   function register(hook) {
-    const previousTopic = hook.__xrayObservedTopic
-    if (previousTopic) registrations.delete(previousTopic)
-    const topic = hook.el.dataset.xrayObservedTopic
-    hook.__xrayObservedTopic = topic
-    if (topic && hook.el.dataset.xrayEnabled === "true") {
-      registrations.set(topic, {
+    unregister(hook)
+    const topic = hook.el.dataset.liveTraceObservedTopic
+    hook.__liveTraceObservedTopic = topic
+    if (topic && hook.el.dataset.liveTraceEnabled === "true") {
+      const topicRegistrations = registrations.get(topic) || new Map()
+      topicRegistrations.set(hook, {
         hook,
-        eventName: hook.el.dataset.xrayBrowserEvent,
+        eventName: hook.el.dataset.liveTraceBrowserEvent,
       })
+      registrations.set(topic, topicRegistrations)
     }
   }
 
@@ -218,7 +231,7 @@ export function createXRayAdapter() {
       register(this)
     },
     destroyed() {
-      if (this.__xrayObservedTopic) registrations.delete(this.__xrayObservedTopic)
+      unregister(this)
     },
   }
 

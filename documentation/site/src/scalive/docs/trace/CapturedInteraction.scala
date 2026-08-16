@@ -1,9 +1,5 @@
 package scalive.docs.trace
 
-import scala.collection.mutable
-
-import zio.json.ast.Json
-
 import scalive.docs.xray.*
 
 private[docs] enum CapturedInteractionState:
@@ -15,6 +11,8 @@ final private[docs] case class CapturedInteractionAnchor(
 
 final private[docs] case class CapturedInteraction(
   id: String,
+  ordinal: Long,
+  operationKind: String,
   reference: Option[String],
   records: Vector[DocumentationTraceRecord],
   orderingAnchor: CapturedInteractionAnchor,
@@ -23,149 +21,64 @@ final private[docs] case class CapturedInteraction(
   summary: String)
 
 private[docs] object CapturedInteractionGrouper:
-  final private case class ServerKey(
-    traceSession: String,
-    connectionEpoch: Option[Long],
-    socketEpoch: Option[Long],
-    topic: String,
-    operationSequence: Long)
-
-  final private case class BrowserGroup(
-    reference: String,
-    occurrence: Int,
-    anchor: Long,
-    records: Vector[DocumentationTraceRecord])
-
-  final private case class ServerGroup(
-    reference: Option[String],
-    occurrence: Option[Int],
-    anchor: Long,
-    key: ServerKey,
-    records: Vector[DocumentationTraceRecord])
-
   def group(records: Vector[DocumentationTraceRecord]): Vector[CapturedInteraction] =
-    val browserGroups       = groupBrowserRecords(records)
-    val serverGroups        = groupServerRecords(records)
-    val browserByOccurrence =
-      browserGroups.map(group => (group.reference, group.occurrence) -> group).toMap
-    val serverByOccurrence =
-      serverGroups.flatMap(group => group.reference.zip(group.occurrence).map(_ -> group)).toMap
-    val pairedKeys = (browserByOccurrence.keySet ++ serverByOccurrence.keySet).toVector
-
-    val paired = pairedKeys.map { key =>
-      captured(browserByOccurrence.get(key), serverByOccurrence.get(key), Some(key._1), key._2)
-    }
-    val unreferencedServer = serverGroups
-      .filter(_.reference.isEmpty)
-      .map(group => captured(None, Some(group), None, occurrence = 1))
-
-    (paired ++ unreferencedServer).sortBy { interaction =>
-      val primary = interaction.orderingAnchor.browserSequence
-        .orElse(interaction.orderingAnchor.serverSequence)
-        .getOrElse(0L)
-      val server = interaction.orderingAnchor.serverSequence.getOrElse(0L)
-      (-primary, -server)
-    }
-
-  private def groupBrowserRecords(records: Vector[DocumentationTraceRecord]): Vector[BrowserGroup] =
-    final class Pending(val reference: String, val operation: Long, val anchor: Long):
-      val records = mutable.ArrayBuffer.empty[DocumentationTraceRecord]
-
-    val pending = mutable.ArrayBuffer.empty[Pending]
     records
-      .filter(_.producer == TraceProducer.Browser)
-      .sortBy(_.producerSequence)
-      .foreach { record =>
-        record.messageReference.foreach { reference =>
-          val matching = pending.reverseIterator.find(group =>
-            group.reference == reference && group.operation == record.operationSequence
-          )
-          if record.stage == "BrowserEvent" then
-            val created = Pending(reference, record.operationSequence, record.producerSequence)
-            created.records += record
-            pending += created
-          else
-            matching match
-              case Some(group)                      => group.records += record
-              case None if isClientOutbound(record) =>
-                val created = Pending(reference, record.operationSequence, record.producerSequence)
-                created.records += record
-                pending += created
-              case None => ()
-        }
-      }
-
-    val occurrences = mutable.Map.empty[String, Int].withDefaultValue(0)
-    pending.toVector.map { group =>
-      val occurrence = occurrences(group.reference) + 1
-      occurrences.update(group.reference, occurrence)
-      BrowserGroup(group.reference, occurrence, group.anchor, group.records.toVector)
-    }
-  end groupBrowserRecords
-
-  private def groupServerRecords(records: Vector[DocumentationTraceRecord]): Vector[ServerGroup] =
-    val grouped = records
-      .filter(record =>
-        record.producer == TraceProducer.Server && record.operationKind == "ClientEvent"
-      )
-      .groupBy(record =>
-        ServerKey(
-          record.traceSession,
-          record.connectionEpoch,
-          record.socketEpoch,
-          record.topic,
-          record.operationSequence
-        )
-      )
+      .flatMap(record => record.interactionOrdinal.map(_ -> record))
+      .groupMap(_._1)(_._2)
       .toVector
-      .map { case (key, values) => key -> values.sortBy(_.operationRecordSequence) }
-      .sortBy { case (_, values) => values.map(_.producerSequence).min }
-
-    val occurrences = mutable.Map.empty[String, Int].withDefaultValue(0)
-    grouped.map { case (key, values) =>
-      val reference  = values.flatMap(_.messageReference).headOption
-      val occurrence = reference.map { value =>
-        val next = occurrences(value) + 1
-        occurrences.update(value, next)
-        next
-      }
-      ServerGroup(reference, occurrence, values.map(_.producerSequence).min, key, values)
-    }
+      .map(captured)
+      .sortBy(interaction =>
+        val primary = interaction.orderingAnchor.browserSequence
+          .orElse(interaction.orderingAnchor.serverSequence)
+          .getOrElse(interaction.ordinal)
+        (-primary, -interaction.ordinal)
+      )
 
   private def captured(
-    browser: Option[BrowserGroup],
-    server: Option[ServerGroup],
-    reference: Option[String],
-    occurrence: Int
+    ordinal: Long,
+    unordered: Vector[DocumentationTraceRecord]
   ): CapturedInteraction =
-    val records =
-      causalRecords(browser.toVector.flatMap(_.records), server.toVector.flatMap(_.records))
-    val typed            = records.find(_.stage == "TypedMessage").flatMap(_.value)
-    val (label, summary) = typed.fold("Counter interaction" -> "A captured counter client event.")(
-      messageLabel
-    )
-    val id = reference match
-      case Some(value) => s"counter-interaction-ref-$value-$occurrence"
-      case None        =>
-        val key = server.get.key
-        s"counter-interaction-server-${key.connectionEpoch.getOrElse(0L)}-${key.socketEpoch.getOrElse(0L)}-${key.operationSequence}"
-    val state =
+    val browser = unordered
+      .filter(_.producer == TraceProducer.Browser).sortBy(_.producerSequence)
+    val server = unordered
+      .filter(_.producer == TraceProducer.Server).sortBy(_.operationRecordSequence)
+    val records       = causalRecords(browser, server)
+    val operationKind = server.headOption.map(_.operationKind).getOrElse("Browser")
+    val typed         = records.find(_.stage == "TypedMessage").flatMap(_.value)
+    val label         = typed
+      .map { value =>
+        val projectedType = typeName(value.typeName)
+        if projectedType == "Msg" || projectedType == "Message" then value.summary
+        else projectedType
+      }.filter(_.trim.nonEmpty)
+      .getOrElse(operationLabel(operationKind))
+    val summary = typed
+      .map(_.summary).filter(_.trim.nonEmpty)
+      .getOrElse(s"Captured ${operationLabel(operationKind).toLowerCase} operation.")
+    val hasBrowserRequest =
+      browser.exists(record => record.stage == "BrowserEvent" || record.stage == "OutboundFrame")
+    val browserComplete =
+      browser.exists(record => record.stage == "InboundProcessed" || record.stage == "DomDiff")
+    val serverComplete = server.exists(_.stage == "FinalFrame")
+    val state          =
       if records.exists(_.stage == "Crash") then CapturedInteractionState.Failed
-      else if records.exists(record =>
-          record.stage == "InboundProcessed" || record.stage == "DomDiff"
-        ) ||
-        (browser.isEmpty && records.exists(_.stage == "FinalFrame"))
-      then CapturedInteractionState.Complete
+      else if browserComplete || (!hasBrowserRequest && serverComplete) then
+        CapturedInteractionState.Complete
       else CapturedInteractionState.InProgress
 
     CapturedInteraction(
-      id,
-      reference,
-      records,
-      CapturedInteractionAnchor(browser.map(_.anchor), server.map(_.anchor)),
-      state,
-      label,
-      summary
+      id = s"captured-operation-$ordinal",
+      ordinal = ordinal,
+      operationKind = operationKind,
+      reference = records.flatMap(_.messageReference).headOption,
+      records = records,
+      orderingAnchor = CapturedInteractionAnchor(
+        browser.map(_.producerSequence).minOption,
+        server.map(_.producerSequence).minOption
+      ),
+      state = state,
+      label = label,
+      summary = summary
     )
   end captured
 
@@ -173,28 +86,21 @@ private[docs] object CapturedInteractionGrouper:
     browser: Vector[DocumentationTraceRecord],
     server: Vector[DocumentationTraceRecord]
   ): Vector[DocumentationTraceRecord] =
-    val orderedBrowser = browser.sortBy(_.producerSequence)
-    val inboundIndex   = orderedBrowser.indexWhere(_.stage == "InboundFrame")
-    if inboundIndex < 0 then orderedBrowser ++ server
-    else orderedBrowser.take(inboundIndex) ++ server ++ orderedBrowser.drop(inboundIndex)
+    val inboundIndex = browser.indexWhere(_.stage == "InboundFrame")
+    if inboundIndex < 0 then browser ++ server
+    else browser.take(inboundIndex) ++ server ++ browser.drop(inboundIndex)
 
-  private def messageLabel(value: DocumentationTraceValue): (String, String) =
-    val name  = value.typeName.split("[.$]").lastOption.getOrElse(value.typeName)
-    val label = name match
-      case "Increment" => "Increase counter"
-      case "Decrement" => "Decrease counter"
-      case "Reset"     => "Reset counter"
-      case _           => name
-    val summary =
-      Option(value.summary).filter(_.trim.nonEmpty).getOrElse(s"Projected message: $name")
-    label -> summary
+  private def typeName(qualifiedName: String): String =
+    qualifiedName.split("[.$]").lastOption.filter(_.nonEmpty).getOrElse(qualifiedName)
 
-  private def isClientOutbound(record: DocumentationTraceRecord): Boolean =
-    record.stage == "OutboundFrame" && record.protocol.exists {
-      case Json.Obj(fields) =>
-        fields.exists { case (name, value) =>
-          name == "event" && value == Json.Str("event")
-        }
-      case _ => false
-    }
+  private def operationLabel(kind: String): String = kind match
+    case "Join"            => "Socket join"
+    case "ClientEvent"     => "Client event"
+    case "ServerMessage"   => "Server message"
+    case "AsyncCompletion" => "Async completion"
+    case "LivePatch"       => "Live patch"
+    case "Upload"          => "Upload"
+    case "Leave"           => "Socket leave"
+    case "Browser"         => "Browser event"
+    case _                 => "Runtime operation"
 end CapturedInteractionGrouper

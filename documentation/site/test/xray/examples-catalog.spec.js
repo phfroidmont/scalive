@@ -14,7 +14,7 @@ test("filters the bounded example catalog through URL patches", async ({ page })
   expect(initialCount).toBeGreaterThan(1)
   await expect(page.getByRole("heading", { name: "Start here", exact: true })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Complete applications" })).toBeVisible()
-  await expect(page.locator(".docs-example, [data-example-child], [data-inspector-child]")).toHaveCount(0)
+  await expect(page.locator(".docs-example, [data-example-child], [data-trace-viewer-child]")).toHaveCount(0)
 
   await page.getByText("Browse all topics", { exact: true }).click()
   await page.getByRole("link", { name: "Keyed rendering", exact: true }).first().click()

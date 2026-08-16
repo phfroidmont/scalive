@@ -402,7 +402,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         rendered.response.status == Status.Ok,
         document.select("[data-example-catalog]").size() == 1,
         expectedExampleIds.subsetOf(renderedExampleIds),
-        document.select(".docs-example, [data-example-child], [data-inspector-child]").isEmpty,
+        document.select(".docs-example, [data-example-child], [data-trace-viewer-child]").isEmpty,
         document.select(".docs-code-block").isEmpty,
         document.select(".docs-example-category").size() == ExampleCategory.values.size + 1,
         document.select("[data-standalone-lab] a[href='/examples/authentication/lab']").asScala

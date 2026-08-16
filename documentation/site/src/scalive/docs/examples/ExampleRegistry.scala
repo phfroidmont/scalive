@@ -449,11 +449,11 @@ private[docs] object ExampleRegistry:
   def topic(pageRoute: String, directiveId: String): String =
     s"lv:${instanceId(pageRoute, directiveId)}"
 
-  def inspectorInstanceId(pageRoute: String, directiveId: String): String =
-    instanceId(pageRoute, directiveId).replace("docs-example-", "docs-xray-")
+  def traceViewerInstanceId(pageRoute: String, directiveId: String): String =
+    instanceId(pageRoute, directiveId).replace("docs-example-", "docs-trace-")
 
-  def inspectorTopic(pageRoute: String, directiveId: String): String =
-    s"lv:${inspectorInstanceId(pageRoute, directiveId)}"
+  def traceViewerTopic(pageRoute: String, directiveId: String): String =
+    s"lv:${traceViewerInstanceId(pageRoute, directiveId)}"
 
   private def money(cents: Int): String =
     val dollars   = cents / 100

@@ -22,10 +22,11 @@ test("runs client commands and exposes public typed browser events", async ({ pa
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
 
   const example = page.locator('[data-example="browser-integration"]')
-  const inspector = example.locator(".docs-xray")
-  const panel = example.locator('[id$="-panel"]')
-  const placeholder = example.locator('[id$="-placeholder"]')
-  const detail = example.locator('[id$="-detail"]')
+  const inspector = example.locator('[data-live-trace-viewer="browser-integration"]')
+  const rendered = example.locator(".docs-browser-integration")
+  const panel = rendered.locator('[id$="-panel"]')
+  const placeholder = rendered.locator('[id$="-placeholder"]')
+  const detail = rendered.locator('[id$="-detail"]')
   const status = example.locator("[data-browser-copy-status]")
 
   await expect(panel).toBeHidden()
@@ -35,18 +36,22 @@ test("runs client commands and exposes public typed browser events", async ({ pa
   await expect(placeholder).toBeHidden()
   await expect(detail).toBeVisible()
 
-  await inspector.getByRole("button", { name: "Start tracing" }).click()
+  await inspector.getByRole("button", { name: "Start capture" }).click()
   await example.getByRole("button", { name: "Copy sample text" }).click()
   await expect(status).toHaveText("Browser operation completed.")
   expect(await page.evaluate(() => window.__copiedText)).toBe(
     "Scalive keeps server-to-browser event payloads typed.",
   )
 
-  await inspector.getByText("Raw trace").click()
-  const traceText = await inspector.textContent()
-  expect(traceText).toContain("BrowserInteropExample.Msg")
-  expect(traceText).toContain("operation: succeeded")
-  expect(traceText).toContain("Scalive keeps server-to-browser event payloads typed.")
+  await expect(inspector.locator("[data-trace-interaction]")).toHaveCount(2)
+  expect(await inspector.textContent()).toContain("BrowserInteropExample.Msg")
+  await inspector.getByRole("button", { name: "Jump to latest" }).click()
+  await expect(inspector.locator('[data-trace-evidence="Proposed model"]')).toContainText(
+    /operation\s*succeeded/,
+  )
+  expect(await inspector.textContent()).not.toContain(
+    "Scalive keeps server-to-browser event payloads typed.",
+  )
 
   await example.getByRole("button", { name: "Reset browser integration" }).click()
   await expect(status).toHaveText("No browser operation requested yet.")

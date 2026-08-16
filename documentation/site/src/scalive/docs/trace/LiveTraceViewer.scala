@@ -6,37 +6,40 @@ import scalive.*
 import scalive.docs.examples.RegisteredExample
 import scalive.docs.xray.*
 
-final private[docs] class CounterLiveTraceViewer(
+final private[docs] class LiveTraceViewer(
   instanceId: String,
   observedTopic: String,
-  inspectorTopic: String,
+  viewerTopic: String,
   example: RegisteredExample,
   store: DocumentationTraceStore)
-    extends LiveView[CounterLiveTraceViewer.Msg, CounterLiveTraceViewer.Model]:
+    extends LiveView[LiveTraceViewer.Msg, LiveTraceViewer.Model]:
 
-  import CounterLiveTraceViewer.*
+  import LiveTraceViewer.*
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty[Msg, Model].onBrowserEvent(XRayInspector.BrowserRecordsEvent) {
-      (model, batch, _) =>
-        model.session match
-          case Some(session) =>
-            store.appendBrowser(session, observedTopic, batch) *>
-              store.records(session, observedTopic).map(records => withRecords(model, records))
-          case None => ZIO.succeed(model)
+    LiveHooks.empty[Msg, Model].onBrowserEvent(BrowserRecordsEvent) { (model, batch, _) =>
+      model.session match
+        case Some(session) =>
+          store.appendBrowser(session, observedTopic, batch) *>
+            store.snapshot(session, observedTopic).map(snapshot => withSnapshot(model, snapshot))
+        case None => ZIO.succeed(model)
     }
 
   def mount(ctx: MountContext): LiveIO[Model] =
     ctx.runtimeTraceSession match
       case Some(session) =>
         for
-          _ <- ctx.subscriptions.start(SubscriptionKey(s"counter-trace:$inspectorTopic"))(
-                 store.updates(session, observedTopic).map(_ => Msg.Refresh)
+          owner = s"$viewerTopic:${java.util.UUID.randomUUID()}"
+          _ <- ctx.subscriptions.start(SubscriptionKey(s"live-trace:$viewerTopic"))(
+                 zio.stream.ZStream
+                   .acquireReleaseWith(store.attach(session, observedTopic, owner))(_ =>
+                     store.detach(session, observedTopic, owner)
+                   ).flatMap(_ => store.updates(session, observedTopic)).map(_ => Msg.Refresh)
                )
-          records <- store.records(session, observedTopic)
-        yield withRecords(
-          Model(Some(session), store.isActive(session, observedTopic), Vector.empty, None),
-          records
+          snapshot <- store.snapshot(session, observedTopic)
+        yield withSnapshot(
+          Model(Some(session), enabled = false, Vector.empty, None),
+          snapshot
         )
       case None => ZIO.succeed(Model(None, enabled = false, Vector.empty, None))
 
@@ -59,7 +62,7 @@ final private[docs] class CounterLiveTraceViewer(
     case Msg.Refresh =>
       model.session match
         case Some(session) =>
-          store.records(session, observedTopic).map(records => withRecords(model, records))
+          store.snapshot(session, observedTopic).map(snapshot => withSnapshot(model, snapshot))
         case None => ZIO.succeed(model)
     case Msg.SelectInteraction(id) =>
       ZIO.succeed(model.copy(selectedInteraction = Some(id)))
@@ -70,19 +73,19 @@ final private[docs] class CounterLiveTraceViewer(
   def render(model: Model): HtmlElement[Msg] =
     val interactions = CapturedInteractionGrouper.group(model.records)
     sectionTag(
-      cls                             := "docs-live-trace",
-      aria.label                      := "Live counter trace",
-      dataAttr("live-trace-viewer")   := "counter",
-      dataAttr("xray-observed-topic") := observedTopic,
-      dataAttr("xray-topic")          := inspectorTopic,
-      dataAttr("xray-enabled")        := model.enabled.toString,
-      dataAttr("xray-browser-event")  := XRayInspector.BrowserRecordsEvent.value,
+      cls                                   := "docs-live-trace",
+      aria.label                            := s"Live ${example.descriptor.title} trace",
+      dataAttr("live-trace-viewer")         := example.descriptor.id,
+      dataAttr("live-trace-observed-topic") := observedTopic,
+      dataAttr("live-trace-topic")          := viewerTopic,
+      dataAttr("live-trace-enabled")        := model.enabled.toString,
+      dataAttr("live-trace-browser-event")  := BrowserRecordsEvent.value,
       div(
-        dom.hook(XRayInspector.HookName, DomRef(s"$instanceId-hook")),
-        dataAttr("xray-hook")           := "",
-        dataAttr("xray-observed-topic") := observedTopic,
-        dataAttr("xray-enabled")        := model.enabled.toString,
-        dataAttr("xray-browser-event")  := XRayInspector.BrowserRecordsEvent.value
+        dom.hook(HookName, DomRef(s"$instanceId-hook")),
+        dataAttr("live-trace-hook")           := "",
+        dataAttr("live-trace-observed-topic") := observedTopic,
+        dataAttr("live-trace-enabled")        := model.enabled.toString,
+        dataAttr("live-trace-browser-event")  := BrowserRecordsEvent.value
       ),
       renderLive(model, interactions, model.selectedInteraction)
     )
@@ -93,11 +96,8 @@ final private[docs] class CounterLiveTraceViewer(
     selectedId: Option[String]
   ): HtmlElement[Msg] =
     val selected            = selectedId.flatMap(id => interactions.find(_.id == id))
-    val interactionOrdinals = interactions.reverse.zipWithIndex.map { case (interaction, index) =>
-      val ordinal =
-        interaction.records.flatMap(_.interactionOrdinal).headOption.getOrElse(index + 1L)
-      interaction.id -> ordinal
-    }.toMap
+    val interactionOrdinals =
+      interactions.map(interaction => interaction.id -> interaction.ordinal).toMap
     val panelId    = s"$instanceId-trace-panel"
     val newerCount =
       selected.fold(0)(interaction => interactions.indexWhere(_.id == interaction.id))
@@ -123,9 +123,9 @@ final private[docs] class CounterLiveTraceViewer(
                   aria.labelledby := interactionRowId(interaction),
                   aria.busy       := (interaction.state == CapturedInteractionState.InProgress),
                   TraceViewer.render(
-                    CounterCapturedTraceAdapter.adapt(interaction),
+                    CapturedTraceAdapter.adapt(example.descriptor, interaction),
                     provenance = "captured",
-                    kicker = "Browser event trace"
+                    kicker = "Captured operation trace"
                   )
                 )
               case None =>
@@ -133,7 +133,7 @@ final private[docs] class CounterLiveTraceViewer(
                   idAttr     := panelId,
                   cls        := "docs-live-trace-display docs-live-trace-panel",
                   role       := "region",
-                  aria.label := "Displayed counter interaction trace",
+                  aria.label := s"Displayed ${example.descriptor.title} operation trace",
                   div(
                     cls         := "docs-live-trace-empty",
                     role        := "status",
@@ -167,7 +167,7 @@ final private[docs] class CounterLiveTraceViewer(
         aria.live   := "polite",
         aria.atomic := true,
         if model.session.isEmpty then "Connect to capture interactions"
-        else if count == 0 && model.enabled then "Use a counter control"
+        else if count == 0 && model.enabled then "Use the example controls"
         else if count == 0 then "No interactions yet"
         else if count == 1 then "1 interaction retained"
         else s"$count interactions retained"
@@ -254,8 +254,7 @@ final private[docs] class CounterLiveTraceViewer(
       else
         ol(
           cls        := "docs-live-trace-events",
-          aria.live  := "polite",
-          aria.label := "Captured counter interactions",
+          aria.label := s"Captured ${example.descriptor.title} operations",
           interactions.map { interaction =>
             li(
               button(
@@ -283,11 +282,18 @@ final private[docs] class CounterLiveTraceViewer(
   private def interactionRowId(interaction: CapturedInteraction): String =
     s"$instanceId-${interaction.id}"
 
-  private def withRecords(model: Model, records: Vector[DocumentationTraceRecord]): Model =
+  private def withSnapshot(
+    model: Model,
+    snapshot: DocumentationTraceSnapshot
+  ): Model =
     val selected = model.selectedInteraction.orElse(
-      CapturedInteractionGrouper.group(records).headOption.map(_.id)
+      CapturedInteractionGrouper.group(snapshot.records).headOption.map(_.id)
     )
-    model.copy(records = records, selectedInteraction = selected)
+    model.copy(
+      enabled = snapshot.active,
+      records = snapshot.records,
+      selectedInteraction = selected
+    )
 
   private def stateKey(state: CapturedInteractionState): String = state match
     case CapturedInteractionState.InProgress => "in-progress"
@@ -298,9 +304,14 @@ final private[docs] class CounterLiveTraceViewer(
     case CapturedInteractionState.InProgress => "In progress"
     case CapturedInteractionState.Complete   => "Complete"
     case CapturedInteractionState.Failed     => "Failed"
-end CounterLiveTraceViewer
+end LiveTraceViewer
 
-private[docs] object CounterLiveTraceViewer:
+private[docs] object LiveTraceViewer:
+  val HookName            = "LiveTraceViewer"
+  val BrowserRecordsEvent = BrowserToServerEvent[BrowserTraceBatch](
+    "docs:live-trace-browser-records"
+  )
+
   enum Msg:
     case ToggleCapture, Clear, Refresh, JumpToLatest
     case SelectInteraction(id: String)
@@ -314,12 +325,12 @@ private[docs] object CounterLiveTraceViewer:
   def nested(
     instanceId: String,
     observedTopic: String,
-    inspectorTopic: String,
+    viewerTopic: String,
     example: RegisteredExample,
     store: DocumentationTraceStore
   ): Mod[Nothing] =
     liveView(
       instanceId,
-      CounterLiveTraceViewer(instanceId, observedTopic, inspectorTopic, example, store),
+      LiveTraceViewer(instanceId, observedTopic, viewerTopic, example, store),
       sticky = false
     )

@@ -5024,7 +5024,7 @@ details[open] > summary .docs-disclosure-marker,
   container-type: inline-size;
 }
 
-.docs-live-trace [data-xray-hook] {
+.docs-live-trace [data-live-trace-hook] {
   display: none;
 }
 

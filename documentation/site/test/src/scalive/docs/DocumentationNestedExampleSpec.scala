@@ -37,7 +37,7 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
                    }
       yield assertTrue(results.forall(identity))
     },
-    test("renders a captured counter operation on a separate inspector topic") {
+    test("renders a captured counter operation on a separate trace viewer topic") {
       ZIO.scoped {
         val session = "01234567-89ab-cdef-0123-456789abcdef"
         for
@@ -55,22 +55,22 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           trace    = DocumentationRuntimeTrace(store, session, connectionEpoch = 1L)
           parent <- SiteLiveViewHarness.join(DocumentationPageLiveView(page, renderer), trace)
           childId     = ExampleRegistry.instanceId(page.route, "counter")
-          inspectorId = ExampleRegistry.inspectorInstanceId(page.route, "counter")
-          child     <- parent.joinNested(childId)
-          inspector <- parent.joinNested(inspectorId)
-          initial   <- inspector.html
-          _         <- inspector.clickButton("Start capture")
+          viewerId = ExampleRegistry.traceViewerInstanceId(page.route, "counter")
+          child   <- parent.joinNested(childId)
+          viewer  <- parent.joinNested(viewerId)
+          initial <- viewer.html
+          _       <- viewer.clickButton("Start capture")
           _         <- child.clickButton("Increase")
           records   <- store.records(session, child.topic)
-          inspectorText <- (ZIO.yieldNow *> inspector.html)
-                   .repeatUntil(_.contains("data-trace-evidence=\"Tree diff\""))
+          viewerText <- (ZIO.yieldNow *> viewer.html)
+                    .repeatUntil(_.contains("data-trace-evidence=\"Tree diff\""))
           stages = records.filter(_.producer == TraceProducer.Server).map(_.stage)
-          inspectorObserved <- store.records(session, inspector.topic)
-          _                 <- parent.leave
-          childRemoved      <- parent.socketExists(child.topic)
-          inspectorRemoved  <- parent.socketExists(inspector.topic)
+          viewerObserved <- store.records(session, viewer.topic)
+          _              <- parent.leave
+          childRemoved   <- parent.socketExists(child.topic)
+          viewerRemoved  <- parent.socketExists(viewer.topic)
         yield assertTrue(
-          child.topic != inspector.topic,
+          child.topic != viewer.topic,
           initial.contains("data-live-trace-viewer=\"counter\""),
           !initial.contains("docs-live-trace-catalog"),
           !initial.contains("data-trace-provenance=\"authored\""),
@@ -81,16 +81,15 @@ object DocumentationNestedExampleSpec extends ZIOSpecDefault:
           stages.contains("ModelRendered"),
           stages.contains("TreeDiff"),
           stages.contains("ModelCommitted"),
-          inspectorText.contains("data-trace-provenance=\"captured\""),
-          inspectorText.contains("data-trace-evidence=\"Typed message\""),
-          inspectorText.contains("data-trace-evidence=\"Proposed model\""),
-          inspectorText.contains("data-trace-evidence=\"Tree diff\""),
-          inspectorText.contains("CounterExample.Msg.Increment"),
-          inspectorText.contains("count</dt><dd>1"),
-          !inspectorText.contains("docs-xray-raw"),
-          inspectorObserved.isEmpty,
+          viewerText.contains("data-trace-provenance=\"captured\""),
+          viewerText.contains("data-trace-evidence=\"Typed message\""),
+          viewerText.contains("data-trace-evidence=\"Proposed model\""),
+          viewerText.contains("data-trace-evidence=\"Tree diff\""),
+          viewerText.contains("CounterExample.Msg.Increment"),
+          viewerText.contains("count</dt><dd>1"),
+          viewerObserved.isEmpty,
           !childRemoved,
-          !inspectorRemoved
+          !viewerRemoved
         )
         end for
       }

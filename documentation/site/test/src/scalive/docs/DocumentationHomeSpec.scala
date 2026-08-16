@@ -104,7 +104,7 @@ object DocumentationHomeSpec extends ZIOSpecDefault:
           html.contains("docs-home-start"),
           html.contains("id=\"example-counter\""),
           html.contains("data-example=\"counter\""),
-          !html.contains("docs-xray"),
+          !html.contains("data-live-trace-viewer"),
           !alive,
           childId != ExampleRegistry.instanceId("/examples/counter", "counter")
         )

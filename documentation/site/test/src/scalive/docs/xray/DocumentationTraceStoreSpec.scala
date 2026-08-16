@@ -69,6 +69,21 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         records <- store.records(Session, Topic)
       yield assertTrue(records.map(_.summary) == Vector("two", "three"))
     },
+    test("evicts complete interactions and rejects their late records") {
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 2, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        _       <- store.appendServer(serverRecord("one-a", operation = 1L, reference = 1))
+        _       <- store.appendServer(serverRecord("one-b", operation = 1L, reference = 1))
+        _       <- store.appendServer(serverRecord("two", operation = 2L, reference = 2))
+        _       <- store.appendServer(serverRecord("one-late", operation = 1L, reference = 1))
+        records <- store.records(Session, Topic)
+      yield assertTrue(
+        records.map(_.summary) == Vector("two"),
+        records.flatMap(_.interactionOrdinal).distinct == Vector(2L)
+      )
+    },
     test("keeps interaction ordinals monotonic through eviction and resets them on clear") {
       for
         store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 3, maxBytes = 4096))
@@ -97,10 +112,39 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 10, maxBytes = 4096))
         counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
         _       <- store.activate(Session, Topic, counter)
-        _       <- store.appendBrowser(Session, Topic, BrowserTraceBatch(browserRecords))
         _       <- store.appendServer(serverRecord("server", operation = 7L, reference = 7))
+        _       <- store.appendBrowser(Session, Topic, BrowserTraceBatch(browserRecords))
+        _       <- store.appendBrowser(Session, Topic, BrowserTraceBatch(browserRecords))
         records <- store.records(Session, Topic)
       yield assertTrue(records.flatMap(_.interactionOrdinal) == Vector(1L, 1L, 1L))
+    },
+    test("correlates non-event outbound frames with runtime operations") {
+      val browserRecord = BrowserTraceRecord(
+        1L,
+        Topic,
+        Some("1"),
+        Some("9"),
+        9L,
+        "OutboundFrame",
+        "ignored"
+      )
+      val livePatch = serverRecord("live patch", operation = 9L, reference = 9).copy(identity =
+        serverRecord("unused", operation = 9L, reference = 9).identity.copy(
+          operationKind = RuntimeTraceOperationKind.LivePatch
+        )
+      )
+
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 10, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        _       <- store.appendBrowser(Session, Topic, BrowserTraceBatch(Vector(browserRecord)))
+        _       <- store.appendServer(livePatch)
+        records <- store.records(Session, Topic)
+      yield assertTrue(
+        records.flatMap(_.interactionOrdinal) == Vector(1L, 1L),
+        records.last.operationKind == "LivePatch"
+      )
     },
     test("assigns new ordinals when references repeat or are absent") {
       val first  = serverRecord("first", operation = 1L, reference = 7)
@@ -119,13 +163,47 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         records <- store.records(Session, Topic)
       yield assertTrue(records.flatMap(_.interactionOrdinal) == Vector(1L, 2L, 3L))
     },
+    test("keeps interleaved reused references bound to their operation and join") {
+      val first = serverRecord("first", operation = 1L, reference = 7)
+      val second = serverRecord("second", operation = 2L, reference = 7).copy(identity =
+        serverRecord("unused", operation = 2L, reference = 7).identity.copy(
+          connectionEpoch = 2L,
+          joinReference = Some(2)
+        )
+      )
+      val firstLate = first.copy(recordSequence = 2L, summary = "first late")
+      val oldBrowserResponse = BrowserTraceRecord(
+        1L,
+        Topic,
+        Some("1"),
+        Some("7"),
+        7L,
+        "InboundProcessed",
+        "ignored"
+      )
+
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 10, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        _       <- store.appendServer(first)
+        _       <- store.appendServer(second)
+        _       <- store.appendServer(firstLate)
+        _ <- store.appendBrowser(
+               Session,
+               Topic,
+               BrowserTraceBatch(Vector(oldBrowserResponse))
+             )
+        records <- store.records(Session, Topic)
+      yield assertTrue(records.flatMap(_.interactionOrdinal) == Vector(1L, 2L, 1L, 1L))
+    },
     test("bounds serialized history bytes") {
       for
         store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 20, maxBytes = 600))
         counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
         _       <- store.activate(Session, Topic, counter)
         _       <- store.appendServer(serverRecord("a" * 1000))
-        _       <- store.appendServer(serverRecord("small"))
+        _       <- store.appendServer(serverRecord("small", operation = 2L, reference = 3))
         records <- store.records(Session, Topic)
         bytes = records.map(_.toJson.getBytes(StandardCharsets.UTF_8).length).sum
       yield assertTrue(records.nonEmpty, bytes <= 600)
@@ -140,8 +218,61 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         _       <- store.activate(Session, Topic, counter)
         _       <- store.appendServer(serverRecord("first"))
         _       <- store.activate(secondSession, Topic, counter)
-        first   <- store.records(Session, Topic)
-      yield assertTrue(first.isEmpty, !store.isActive(Session, Topic))
+        first   <- store.snapshot(Session, Topic)
+      yield assertTrue(first.records.isEmpty, !first.active)
+    },
+    test("releases active capture after its final viewer lease expires") {
+      for
+        store   <- DocumentationTraceStore.make()
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.attach(Session, Topic, "viewer")
+        _       <- store.activate(Session, Topic, counter)
+        _       <- store.detach(Session, Topic, "viewer")
+        before  <- store.snapshot(Session, Topic)
+        _       <- TestClock.adjust(5.seconds)
+        _       <- ZIO.yieldNow
+        after   <- store.snapshot(Session, Topic)
+      yield assertTrue(before.active, !after.active)
+    },
+    test("reattaching a viewer cancels pending lease cleanup") {
+      for
+        store   <- DocumentationTraceStore.make()
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.attach(Session, Topic, "first-viewer")
+        _       <- store.activate(Session, Topic, counter)
+        _       <- store.detach(Session, Topic, "first-viewer")
+        _       <- TestClock.adjust(2.seconds)
+        _       <- store.attach(Session, Topic, "reconnected-viewer")
+        _       <- TestClock.adjust(5.seconds)
+        active  <- store.snapshot(Session, Topic)
+        _       <- store.detach(Session, Topic, "reconnected-viewer")
+        _       <- TestClock.adjust(5.seconds)
+        _       <- ZIO.yieldNow
+        released <- store.snapshot(Session, Topic)
+      yield assertTrue(active.active, !released.active)
+    },
+    test("pausing discards incomplete interactions and preserves completed ones") {
+      val partialBrowser = Vector(
+        BrowserTraceRecord(1L, Topic, Some("1"), Some("7"), 7L, "BrowserEvent", "ignored"),
+        BrowserTraceRecord(2L, Topic, Some("1"), Some("7"), 7L, "OutboundFrame", "ignored")
+      )
+      val complete = serverRecord("complete", operation = 8L, reference = 8).copy(
+        stage = RuntimeTraceStage.FinalFrame
+      )
+
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 10, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        _       <- store.appendBrowser(Session, Topic, BrowserTraceBatch(partialBrowser))
+        _       <- store.appendServer(serverRecord("partial", operation = 7L, reference = 7))
+        _       <- store.appendServer(complete)
+        _       <- store.deactivate(Session, Topic)
+        snapshot <- store.snapshot(Session, Topic)
+      yield assertTrue(
+        !snapshot.active,
+        snapshot.records.map(_.summary) == Vector("complete")
+      )
     },
     test("sanitizes secrets and never serializes upload bytes") {
       val join = WebSocketMessage(
@@ -189,7 +320,7 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         !sanitizedJoin.contains("signed-session-secret"),
         !sanitizedJoin.contains("csrf-secret"),
         !sanitizedJoin.contains("password-secret"),
-        sanitizedJoin.contains("unsafe-free-text"),
+        !sanitizedJoin.contains("unsafe-free-text"),
         !sanitizedJoin.contains("url-secret"),
         !storedJson.contains("upload-secret"),
         storedJson.contains("13"),
@@ -225,6 +356,7 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
           protocol = Some(
             Json.Obj(
               "event" -> Json.Str("click"),
+              "name"  -> Json.Str("credential contents"),
               "topic" -> Json.Str("untrusted-topic-value")
             )
           )
@@ -246,7 +378,8 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         !encoded.contains("forged-reference"),
         !encoded.contains("untrusted summary"),
         encoded.contains("untrusted-topic-value"),
-        encoded.contains("click")
+        encoded.contains("click"),
+        !encoded.contains("credential contents")
       )
     },
     test("validates page trace sessions and increments connection epochs") {

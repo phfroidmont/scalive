@@ -5,23 +5,26 @@ import zio.json.*
 import scalive.docs.model.*
 import scalive.docs.xray.*
 
-private[docs] object CounterCapturedTraceAdapter:
-  private val participants = Vector(
-    TraceParticipant("browser", "Browser", "Sends the counter event and applies the DOM patch."),
-    TraceParticipant(
-      "runtime",
-      "Scalive runtime",
-      "Decodes protocol, coordinates rendering, and sends the diff."
-    ),
-    TraceParticipant(
-      "live-view",
-      "Counter LiveView",
-      "Handles the typed message and renders counter state."
+private[docs] object CapturedTraceAdapter:
+  def adapt(
+    example: ExampleDescriptor,
+    interaction: CapturedInteraction
+  ): TraceDefinition =
+    val participants = Vector(
+      TraceParticipant("browser", "Browser", "Sends events and applies DOM updates."),
+      TraceParticipant(
+        "runtime",
+        "Scalive runtime",
+        "Coordinates protocol, lifecycle, rendering, and effects."
+      ),
+      TraceParticipant(
+        "live-view",
+        example.title,
+        example.description
+      )
     )
-  )
 
-  def adapt(interaction: CapturedInteraction): TraceDefinition =
-    val input = Vector(
+    val trigger = Vector(
       step(
         interaction,
         Set("BrowserEvent"),
@@ -29,7 +32,7 @@ private[docs] object CounterCapturedTraceAdapter:
           TraceStep.Operation(
             "browser",
             interaction.label,
-            "The browser control emits a counter event.",
+            "The browser emits an event.",
             evidence(records)
           )
       ),
@@ -40,19 +43,33 @@ private[docs] object CounterCapturedTraceAdapter:
           TraceStep.Message(
             "browser",
             "runtime",
-            "Send event frame",
-            "The browser encodes and sends the event.",
+            "Send protocol frame",
+            "The browser encodes and sends the operation.",
             evidence(records)
           )
       ),
       step(
         interaction,
-        Set("DecodedEvent", "BindingResolution"),
+        Set("DecodedEvent", "SocketJoin", "Upload"),
         records =>
           TraceStep.Operation(
             "runtime",
-            "Decode counter event",
-            "The runtime decodes the event and resolves its binding.",
+            operationKindLabel(interaction.operationKind),
+            "The runtime accepts and decodes the operation.",
+            evidence(records)
+          )
+      )
+    ).flatten
+
+    val dispatch = Vector(
+      step(
+        interaction,
+        Set("BindingResolution"),
+        records =>
+          TraceStep.Operation(
+            "runtime",
+            "Resolve binding",
+            "The runtime resolves the typed event binding.",
             evidence(records)
           )
       ),
@@ -64,7 +81,7 @@ private[docs] object CounterCapturedTraceAdapter:
             "runtime",
             "live-view",
             typedMessageLabel(records),
-            "The resolved binding produces the projected counter message.",
+            "The runtime delivers the projected typed message.",
             evidence(records)
           )
       )
@@ -74,12 +91,12 @@ private[docs] object CounterCapturedTraceAdapter:
       step(
         interaction,
         Set("LifecycleStarted", "LifecycleCompleted"),
-        record => record.summary.startsWith("Event lifecycle"),
+        record => !record.summary.startsWith("After-render lifecycle"),
         records =>
           TraceStep.Operation(
             "live-view",
             s"Handle ${typedMessageLabel(interaction.records)}",
-            "The Counter LiveView runs the message lifecycle.",
+            "The LiveView runs the message lifecycle.",
             evidence(records)
           )
       ),
@@ -91,7 +108,7 @@ private[docs] object CounterCapturedTraceAdapter:
             "live-view",
             "runtime",
             "Return updated model",
-            "The handler returns a new immutable counter model.",
+            "The handler proposes a new immutable model.",
             evidence(records)
           )
       ),
@@ -102,8 +119,8 @@ private[docs] object CounterCapturedTraceAdapter:
           TraceStep.Message(
             "runtime",
             "live-view",
-            "Request counter render",
-            "The runtime asks the LiveView to render the updated model.",
+            "Request render",
+            "The runtime asks the LiveView to render.",
             evidence(records)
           )
       ),
@@ -115,7 +132,7 @@ private[docs] object CounterCapturedTraceAdapter:
             "live-view",
             "runtime",
             "Return rendered tree",
-            "The LiveView returns the typed tree produced from the updated model.",
+            "The LiveView returns its rendered tree.",
             evidence(records)
           )
       ),
@@ -136,14 +153,14 @@ private[docs] object CounterCapturedTraceAdapter:
         records =>
           TraceStep.Operation(
             "runtime",
-            "Commit counter model",
+            "Commit model",
             "The rendered model becomes the current socket state.",
             evidence(records)
           )
       )
     ).flatten
 
-    val output = Vector(
+    val response = Vector(
       step(
         interaction,
         Set("FinalPayload", "FinalFrame", "InboundFrame", "InboundProcessed"),
@@ -151,8 +168,8 @@ private[docs] object CounterCapturedTraceAdapter:
           TraceStep.Message(
             "runtime",
             "browser",
-            "Send rendered diff",
-            "The runtime publishes the response and the browser decodes it.",
+            "Publish result",
+            "The runtime publishes the result and the browser processes it.",
             evidence(records)
           )
       ),
@@ -172,17 +189,11 @@ private[docs] object CounterCapturedTraceAdapter:
         Set("Crash"),
         records =>
           TraceStep.Boundary(
-            "Counter interaction failed",
+            "Operation failed",
             "The captured runtime operation terminated with a failure.",
             evidence(records)
           )
       )
-    ).flatten
-
-    val phases = Vector(
-      phase("event", "Counter event", input),
-      phase("lifecycle", "LiveView lifecycle", lifecycle),
-      phase("response", "Diff and DOM", output)
     ).flatten
 
     TraceDefinition(
@@ -190,7 +201,12 @@ private[docs] object CounterCapturedTraceAdapter:
       title = interaction.label,
       description = s"${interaction.summary} Capture state: ${stateLabel(interaction.state)}.",
       participants = participants,
-      phases = phases
+      phases = Vector(
+        phase("trigger", "Trigger", trigger),
+        phase("dispatch", "Typed dispatch", dispatch),
+        phase("lifecycle", "LiveView lifecycle", lifecycle),
+        phase("response", "Result", response)
+      ).flatten
     )
   end adapt
 
@@ -257,17 +273,22 @@ private[docs] object CounterCapturedTraceAdapter:
       .find(_.stage == "TypedMessage")
       .flatMap(_.value)
       .map(value => value.typeName.split("[.$]").lastOption.getOrElse(value.typeName))
-      .getOrElse("counter message")
+      .getOrElse("operation")
 
   private def producerLabel(producer: TraceProducer): String = producer match
     case TraceProducer.Browser => "Browser"
     case TraceProducer.Server  => "Runtime"
 
   private def operationKindLabel(kind: String): String = kind match
+    case "Join"            => "Socket join"
     case "ClientEvent"     => "Client event"
     case "ServerMessage"   => "Server message"
     case "AsyncCompletion" => "Async completion"
     case "LivePatch"       => "Live patch"
+    case "Upload"          => "Upload"
+    case "Leave"           => "Socket leave"
+    case "Other"           => "Runtime operation"
+    case "Browser"         => "Browser event"
     case other             => other
 
   private def stateLabel(state: CapturedInteractionState): String = state match
@@ -280,6 +301,7 @@ private[docs] object CounterCapturedTraceAdapter:
     case "OutboundFrame"      => "Outbound frame"
     case "InboundFrame"       => "Inbound frame"
     case "InboundProcessed"   => "Response processed"
+    case "SocketJoin"         => "Socket join"
     case "DecodedEvent"       => "Decoded event"
     case "BindingResolution"  => "Binding resolution"
     case "TypedMessage"       => "Typed message"
@@ -295,6 +317,7 @@ private[docs] object CounterCapturedTraceAdapter:
     case "FinalFrame"         => "Final frame"
     case "DomPatch"           => "DOM patch"
     case "DomDiff"            => "DOM mutations"
+    case "Upload"             => "Upload chunk"
     case "Crash"              => "Runtime failure"
     case other                => other
 
@@ -302,4 +325,4 @@ private[docs] object CounterCapturedTraceAdapter:
     case "LifecycleStarted"   => "Handler started"
     case "LifecycleCompleted" => "Handler completed"
     case _                    => stageLabel(record.stage)
-end CounterCapturedTraceAdapter
+end CapturedTraceAdapter

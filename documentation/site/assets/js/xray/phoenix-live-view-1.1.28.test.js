@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
-  createXRayAdapter,
+  createLiveTraceAdapter,
   createTraceSession,
   sanitizeProtocol,
   wrapDecoder,
@@ -70,13 +70,13 @@ test("decoder reports a thrown callback and still invokes the after observer", (
 
 test("adapter emits a correlated terminal record after successful inbound processing", async () => {
   const batches = []
-  const adapter = createXRayAdapter()
+  const adapter = createLiveTraceAdapter()
   adapter.hook.mounted.call({
     el: {
       dataset: {
-        xrayObservedTopic: "lv:example",
-        xrayEnabled: "true",
-        xrayBrowserEvent: "xray-records",
+        liveTraceObservedTopic: "lv:example",
+        liveTraceEnabled: "true",
+        liveTraceBrowserEvent: "trace-records",
       },
     },
     pushEvent(_event, payload) {
@@ -104,13 +104,13 @@ test("adapter emits a correlated terminal record after successful inbound proces
 
 test("adapter omits the terminal record after a thrown callback and clears inbound state", async () => {
   const batches = []
-  const adapter = createXRayAdapter()
+  const adapter = createLiveTraceAdapter()
   adapter.hook.mounted.call({
     el: {
       dataset: {
-        xrayObservedTopic: "lv:example",
-        xrayEnabled: "true",
-        xrayBrowserEvent: "xray-records",
+        liveTraceObservedTopic: "lv:example",
+        liveTraceEnabled: "true",
+        liveTraceBrowserEvent: "trace-records",
       },
     },
     pushEvent(_event, payload) {
@@ -170,11 +170,12 @@ test("protocol sanitization removes secrets and binary content", () => {
   assert.equal(sanitized.payload.event, "binding-id")
   assert.ok(!encoded.includes("password-secret"))
   assert.ok(!encoded.includes("csrf-secret"))
-  assert.ok(encoded.includes("public form value"))
+  assert.ok(!encoded.includes("public form value"))
   assert.ok(!encoded.includes("1,2,3"))
+  assert.deepEqual(sanitized.payload.bytes, { byteLength: 3, content: "[redacted]" })
 })
 
-test("protocol sanitization preserves public trace values", () => {
+test("protocol sanitization redacts strings under neutral keys", () => {
   const sanitized = sanitizeProtocol({
     topic: "lv:example",
     event: "event",
@@ -183,11 +184,121 @@ test("protocol sanitization preserves public trace values", () => {
     payload: {
       label: "Increase counter",
       nested: { result: "Counter is 1" },
+      count: 1,
+      active: true,
+      missing: null,
+      status: "ok",
     },
   })
 
-  assert.equal(sanitized.payload.label, "Increase counter")
-  assert.equal(sanitized.payload.nested.result, "Counter is 1")
+  assert.equal(sanitized.payload.label, "[redacted]")
+  assert.equal(sanitized.payload.nested.result, "[redacted]")
+  assert.equal(sanitized.payload.count, 1)
+  assert.equal(sanitized.payload.active, true)
+  assert.equal(sanitized.payload.missing, null)
+  assert.equal(sanitized.payload.status, "ok")
+})
+
+test("DOM mutation evidence omits text and attribute values", async () => {
+  const batches = []
+  const adapter = createLiveTraceAdapter()
+  const hook = {
+    el: {
+      dataset: {
+        liveTraceObservedTopic: "lv:example",
+        liveTraceEnabled: "true",
+        liveTraceBrowserEvent: "trace-records",
+      },
+    },
+    pushEvent(_event, payload) {
+      batches.push(payload.records)
+    },
+  }
+  adapter.hook.mounted.call(hook)
+
+  const previousNode = globalThis.Node
+  const previousMutationObserver = globalThis.MutationObserver
+  globalThis.Node = { TEXT_NODE: 3, ELEMENT_NODE: 1 }
+  globalThis.MutationObserver = class {
+    observe() {}
+    takeRecords() {
+      const element = {
+        nodeType: 1,
+        id: "example",
+        tagName: "DIV",
+        getAttribute: () => "attribute-secret",
+      }
+      return [
+        {
+          type: "characterData",
+          target: { nodeType: 3, data: "text-secret", parentNode: element },
+          oldValue: "old-text-secret",
+        },
+        {
+          type: "attributes",
+          target: element,
+          attributeName: "title",
+          oldValue: "old-attribute-secret",
+        },
+      ]
+    }
+    disconnect() {}
+  }
+
+  try {
+    const container = { id: "example" }
+    adapter.dom.onPatchStart(container)
+    adapter.dom.onPatchEnd(container)
+    await Promise.resolve()
+  } finally {
+    if (previousNode === undefined) delete globalThis.Node
+    else globalThis.Node = previousNode
+    if (previousMutationObserver === undefined) delete globalThis.MutationObserver
+    else globalThis.MutationObserver = previousMutationObserver
+  }
+
+  const encoded = JSON.stringify(batches.flat())
+  assert.ok(!encoded.includes("text-secret"))
+  assert.ok(!encoded.includes("attribute-secret"))
+  const mutations = batches.flat().find((record) => record.stage === "DomDiff").protocol.mutations
+  assert.deepEqual(mutations, [
+    { kind: "text", target: "div#example" },
+    { kind: "attribute", target: "div#example", name: "title" },
+  ])
+})
+
+test("multiple hooks observe one topic independently", async () => {
+  const adapter = createLiveTraceAdapter()
+  const firstBatches = []
+  const secondBatches = []
+  const makeHook = (batches) => ({
+    el: {
+      dataset: {
+        liveTraceObservedTopic: "lv:example",
+        liveTraceEnabled: "true",
+        liveTraceBrowserEvent: "trace-records",
+      },
+    },
+    pushEvent(_event, payload) {
+      batches.push(payload.records)
+    },
+  })
+  const first = makeHook(firstBatches)
+  const second = makeHook(secondBatches)
+  adapter.hook.mounted.call(first)
+  adapter.hook.mounted.call(second)
+
+  const message = { topic: "lv:example", event: "event", payload: {}, ref: "2", join_ref: "1" }
+  adapter.observeOutbound(message)
+  await Promise.resolve()
+  assert.equal(firstBatches.length, 1)
+  assert.equal(secondBatches.length, 1)
+
+  adapter.hook.destroyed.call(first)
+  adapter.observeOutbound({ ...message, ref: "3" })
+  await Promise.resolve()
+  assert.equal(firstBatches.length, 1)
+  assert.equal(secondBatches.length, 2)
 })
 
 test("trace sessions use page-lifetime random UUIDs", () => {

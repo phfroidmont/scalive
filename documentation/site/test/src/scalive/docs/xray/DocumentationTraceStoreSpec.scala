@@ -30,7 +30,8 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         joinReference = Some(1),
         messageReference = Some(reference),
         operationSequence = operation,
-        operationKind = RuntimeTraceOperationKind.ClientEvent
+        operationKind = RuntimeTraceOperationKind.ClientEvent,
+        initiator = RuntimeTraceInitiator.Browser
       ),
       recordSequence = 1L,
       stage = RuntimeTraceStage.RenderCompleted,
@@ -55,6 +56,7 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         store.isActive(Session, Topic),
         !store.isActive(Session, s"$Topic-inspector"),
         own.map(_.summary) == Vector("kept"),
+        own.map(_.initiator) == Vector(DocumentationTraceInitiator.Browser),
         other.isEmpty
       )
     },

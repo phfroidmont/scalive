@@ -207,6 +207,7 @@ private[scalive] object SocketComponentRuntime:
                        componentCtx = componentContext(
                                         state.ctx,
                                         cid,
+                                        instance.identity,
                                         hooksRef,
                                         instance.outputMapper,
                                         instance.outputOwner
@@ -309,6 +310,7 @@ private[scalive] object SocketComponentRuntime:
                        componentCtx = componentContext(
                                         state.ctx,
                                         cid,
+                                        instance.identity,
                                         hooksRef,
                                         instance.outputMapper,
                                         instance.outputOwner
@@ -534,6 +536,7 @@ private[scalive] object SocketComponentRuntime:
                        componentCtx = componentContext(
                                         state.ctx,
                                         cid,
+                                        instance.identity,
                                         hooksRef,
                                         instance.outputMapper,
                                         instance.outputOwner
@@ -684,7 +687,7 @@ private[scalive] object SocketComponentRuntime:
         )
       outputOwner  = ctx.componentOutputOwner
       outputMapper = typed.outputMapper.orElse(existing.flatMap(_.outputMapper))
-      componentCtx = componentContext(ctx, cid, hooksRef, outputMapper, outputOwner)
+      componentCtx = componentContext(ctx, cid, identity, hooksRef, outputMapper, outputOwner)
       model <- existing match
                  case Some(instance) => ZIO.succeed(instance.model)
                  case None           =>
@@ -747,6 +750,7 @@ private[scalive] object SocketComponentRuntime:
   private def componentContext(
     ctx: LiveContext,
     cid: Int,
+    identity: ComponentIdentity,
     hooksRef: Ref[LiveHookRuntimeState],
     outputMapper: Option[Any => Any],
     outputOwner: ComponentOutputOwner
@@ -757,7 +761,7 @@ private[scalive] object SocketComponentRuntime:
       async = SocketAsyncRuntime.scoped(ctx.async, LiveAsyncOwner.Component(cid)),
       hooks = new ComponentLiveHookRuntime(hooksRef),
       componentOutput = outputMapper.fold[ComponentOutputRuntime](ComponentOutputRuntime.Disabled)(
-        ctx.componentOutput.scoped(outputOwner, _)
+        ctx.componentOutput.scoped(outputOwner, identity, _)
       ),
       componentOutputOwner = ComponentOutputOwner.Component(cid)
     )

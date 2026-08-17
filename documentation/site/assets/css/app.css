@@ -5135,7 +5135,51 @@ details[open] > summary .docs-disclosure-marker,
 
 .docs-live-trace-inspection strong {
   color: var(--docs-text);
+}
+
+.docs-live-trace-inspection-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+}
+
+.docs-live-trace-inspection-selection {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.docs-live-trace-inspection-reference {
+  color: var(--docs-accent-strong);
   font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+}
+
+.docs-live-trace-inspection-initiator,
+.docs-live-trace-inspection-state,
+.docs-live-trace-inspection-recency {
+  min-height: 1.45rem;
+  padding: 0.12rem 0.42rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  border: 1px solid var(--docs-border);
+  border-radius: 999px;
+  background: var(--docs-surface);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.65rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.docs-live-trace-inspection-recency {
+  color: var(--docs-muted);
+}
+
+.docs-live-trace-inspection-initiator {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .docs-live-trace-jump {
@@ -5169,11 +5213,11 @@ details[open] > summary .docs-disclosure-marker,
   width: 100%;
   min-width: 0;
   min-height: 3.5rem;
-  padding: 0.65rem 0.85rem;
+  padding: 0.6rem 0.85rem;
   display: grid;
-  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  grid-template-columns: 3rem minmax(0, 1fr) minmax(8rem, 13rem) auto;
   align-items: center;
-  gap: 0.5rem 0.75rem;
+  gap: 0.4rem 0.75rem;
   border: 0;
   border-left: 0.2rem solid transparent;
   background: transparent;
@@ -5194,7 +5238,7 @@ details[open] > summary .docs-disclosure-marker,
 
 .docs-live-trace-event[aria-pressed="true"] {
   border-left-color: var(--docs-accent);
-  background: color-mix(in srgb, var(--docs-accent) 8%, var(--docs-surface));
+  background: color-mix(in srgb, var(--docs-accent) 4%, var(--docs-surface));
 }
 
 .docs-live-trace-event-reference,
@@ -5214,15 +5258,54 @@ details[open] > summary .docs-disclosure-marker,
 
 .docs-live-trace-event > strong {
   min-width: 0;
+  grid-column: 2;
+  grid-row: 1;
   font-size: 0.82rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.docs-live-trace-event-initiator {
+  min-width: 0;
+  grid-column: 3;
+  grid-row: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.65rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.docs-live-trace-event-initiator::before,
+.docs-live-trace-inspection-initiator::before,
+.docs-live-trace-inspection-state::before {
+  width: 0.42rem;
+  height: 0.42rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--docs-text);
+  content: "";
+}
+
+.docs-live-trace-event[data-trace-initiator="browser"] .docs-live-trace-event-initiator::before,
+.docs-live-trace-inspection-initiator[data-trace-initiator="browser"]::before {
+  background: var(--docs-trace-browser);
+}
+
+.docs-live-trace-event[data-trace-initiator="runtime"] .docs-live-trace-event-initiator::before,
+.docs-live-trace-inspection-initiator[data-trace-initiator="runtime"]::before {
+  background: var(--docs-trace-server);
 }
 
 .docs-live-trace-event-state {
   display: inline-flex;
   align-items: center;
   justify-self: end;
+  grid-column: 4;
+  grid-row: 1;
   gap: 0.4rem;
   color: var(--docs-muted);
   white-space: nowrap;
@@ -5238,7 +5321,25 @@ details[open] > summary .docs-disclosure-marker,
 }
 
 .docs-live-trace-event[data-trace-state="complete"] .docs-live-trace-event-state {
-  color: var(--docs-connected);
+  color: var(--docs-muted);
+}
+
+.docs-live-trace-event[data-trace-state="complete"] .docs-live-trace-event-state::before,
+.docs-live-trace-inspection-state[data-trace-state="complete"]::before {
+  background: var(--docs-connected);
+}
+
+.docs-live-trace-inspection-state[data-trace-state="in-progress"] {
+  color: var(--docs-warning);
+}
+
+.docs-live-trace-inspection-state[data-trace-state="failed"] {
+  color: var(--docs-error);
+}
+
+.docs-live-trace-inspection-state[data-trace-state="in-progress"]::before,
+.docs-live-trace-inspection-state[data-trace-state="failed"]::before {
+  background: currentColor;
 }
 
 .docs-live-trace-event[data-trace-state="in-progress"] .docs-live-trace-event-state {
@@ -5308,8 +5409,14 @@ details[open] > summary .docs-disclosure-marker,
     grid-column: 2;
   }
 
+  .docs-live-trace-event-initiator {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
   .docs-live-trace-event-state {
     grid-column: 3;
+    grid-row: 1 / span 2;
   }
 }
 
@@ -5339,13 +5446,13 @@ details[open] > summary .docs-disclosure-marker,
   }
 
   .docs-live-trace-event {
-    grid-template-columns: 3.25rem minmax(0, 1fr);
+    grid-template-columns: 2.75rem minmax(0, 1fr) auto;
   }
 
   .docs-live-trace-event-state {
-    grid-column: 2;
-    grid-row: 2;
-    justify-self: start;
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    justify-self: end;
   }
 }
 

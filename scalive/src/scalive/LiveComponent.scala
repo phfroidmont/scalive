@@ -199,16 +199,27 @@ private[scalive] enum ComponentOutputOwner:
   case Root
   case Component(cid: Int)
 
-final private[scalive] case class ComponentOutputMessage(owner: ComponentOutputOwner, value: Any)
+final private[scalive] case class ComponentOutputMessage(
+  owner: ComponentOutputOwner,
+  emitter: ComponentIdentity,
+  value: Any)
 
 private[scalive] trait ComponentOutputRuntime:
   def emit(output: Any): LiveIO[Unit]
-  def scoped(owner: ComponentOutputOwner, mapper: Any => Any): ComponentOutputRuntime
+  def scoped(
+    owner: ComponentOutputOwner,
+    emitter: ComponentIdentity,
+    mapper: Any => Any
+  ): ComponentOutputRuntime
 
 private[scalive] object ComponentOutputRuntime:
   object Disabled extends ComponentOutputRuntime:
-    def emit(output: Any): LiveIO[Unit]                                                 = ZIO.unit
-    def scoped(owner: ComponentOutputOwner, mapper: Any => Any): ComponentOutputRuntime = this
+    def emit(output: Any): LiveIO[Unit] = ZIO.unit
+    def scoped(
+      owner: ComponentOutputOwner,
+      emitter: ComponentIdentity,
+      mapper: Any => Any
+    ): ComponentOutputRuntime = this
 
 final private[scalive] case class ComponentIdentity(componentClass: Class[?], id: String)
 

@@ -213,15 +213,27 @@ export function createLiveTraceAdapter() {
     }
   }
 
+  function revealSelectedInteraction(hook) {
+    const viewer = hook.el.closest?.("[data-live-trace-viewer]")
+    const selected = viewer?.querySelector('[data-trace-interaction][aria-pressed="true"]')
+    const id = selected?.dataset.traceInteraction
+    if (!id || hook.__liveTraceSelectedInteraction === id) return
+    hook.__liveTraceSelectedInteraction = id
+    selected.scrollIntoView?.({ block: "nearest", inline: "nearest" })
+  }
+
   const hook = {
     mounted() {
       register(this)
+      revealSelectedInteraction(this)
     },
     updated() {
       register(this)
+      revealSelectedInteraction(this)
     },
     destroyed() {
       unregister(this)
+      this.__liveTraceSelectedInteraction = null
     },
   }
 

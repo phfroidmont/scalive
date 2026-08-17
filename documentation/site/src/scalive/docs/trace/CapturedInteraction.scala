@@ -5,9 +5,10 @@ import scalive.docs.xray.*
 private[docs] enum CapturedInteractionState:
   case InProgress, Complete, Failed
 
-final private[docs] case class CapturedInteractionAnchor(
-  browserSequence: Option[Long],
-  serverSequence: Option[Long])
+private[docs] enum CapturedInteractionInitiator:
+  case Browser
+  case Runtime
+  case Component(typeName: String, id: String)
 
 final private[docs] case class CapturedInteraction(
   id: String,
@@ -15,10 +16,10 @@ final private[docs] case class CapturedInteraction(
   operationKind: String,
   reference: Option[String],
   records: Vector[DocumentationTraceRecord],
-  orderingAnchor: CapturedInteractionAnchor,
   state: CapturedInteractionState,
   label: String,
-  summary: String)
+  summary: String,
+  initiator: CapturedInteractionInitiator)
 
 private[trace] object CapturedTraceValue:
   def select(
@@ -39,12 +40,7 @@ private[docs] object CapturedInteractionGrouper:
       .groupMap(_._1)(_._2)
       .toVector
       .map(captured)
-      .sortBy(interaction =>
-        val primary = interaction.orderingAnchor.browserSequence
-          .orElse(interaction.orderingAnchor.serverSequence)
-          .getOrElse(interaction.ordinal)
-        (-primary, -interaction.ordinal)
-      )
+      .sortBy(interaction => -interaction.ordinal)
 
   private def captured(
     ordinal: Long,
@@ -56,8 +52,13 @@ private[docs] object CapturedInteractionGrouper:
       .filter(_.producer == TraceProducer.Server).sortBy(_.operationRecordSequence)
     val records       = causalRecords(browser, server)
     val operationKind = server.headOption.map(_.operationKind).getOrElse("Browser")
-    val typed         = CapturedTraceValue.select(records, "TypedMessage")
-    val label         = typed
+    val initiator     = records.head.initiator match
+      case DocumentationTraceInitiator.Browser => CapturedInteractionInitiator.Browser
+      case DocumentationTraceInitiator.Runtime => CapturedInteractionInitiator.Runtime
+      case DocumentationTraceInitiator.Component(typeName, id) =>
+        CapturedInteractionInitiator.Component(typeName, id)
+    val typed = CapturedTraceValue.select(records, "TypedMessage")
+    val label = typed
       .map { value =>
         val projectedType = typeName(value.typeName)
         if projectedType == "Msg" || projectedType == "Message" then value.summary
@@ -84,13 +85,10 @@ private[docs] object CapturedInteractionGrouper:
       operationKind = operationKind,
       reference = records.flatMap(_.messageReference).headOption,
       records = records,
-      orderingAnchor = CapturedInteractionAnchor(
-        browser.map(_.producerSequence).minOption,
-        server.map(_.producerSequence).minOption
-      ),
       state = state,
       label = label,
-      summary = summary
+      summary = summary,
+      initiator = initiator
     )
   end captured
 

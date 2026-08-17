@@ -58,6 +58,11 @@ private[scalive] enum RuntimeTraceOperationKind:
   case Leave
   case Other
 
+private[scalive] enum RuntimeTraceInitiator:
+  case Browser
+  case Runtime
+  case Component(typeName: String, id: String)
+
 private[scalive] enum RuntimeTraceStage:
   case SocketJoin
   case DecodedEvent
@@ -84,7 +89,8 @@ final private[scalive] case class RuntimeTraceIdentity(
   joinReference: Option[Int],
   messageReference: Option[Int],
   operationSequence: Long,
-  operationKind: RuntimeTraceOperationKind)
+  operationKind: RuntimeTraceOperationKind,
+  initiator: RuntimeTraceInitiator)
 
 final private[scalive] case class RuntimeTraceRecord(
   identity: RuntimeTraceIdentity,
@@ -100,7 +106,8 @@ sealed private[scalive] trait RuntimeTrace:
 
   private[scalive] def begin(
     meta: WebSocketMessage.Meta,
-    kind: RuntimeTraceOperationKind
+    kind: RuntimeTraceOperationKind,
+    initiator: RuntimeTraceInitiator
   ): RuntimeTraceOperation
 
 private[scalive] object RuntimeTrace:
@@ -109,7 +116,8 @@ private[scalive] object RuntimeTrace:
 
     def begin(
       meta: WebSocketMessage.Meta,
-      kind: RuntimeTraceOperationKind
+      kind: RuntimeTraceOperationKind,
+      initiator: RuntimeTraceInitiator
     ): RuntimeTraceOperation = RuntimeTraceOperation.Disabled
 
   abstract class Enabled(
@@ -147,7 +155,8 @@ private[scalive] object RuntimeTrace:
 
     final def begin(
       meta: WebSocketMessage.Meta,
-      kind: RuntimeTraceOperationKind
+      kind: RuntimeTraceOperationKind,
+      initiator: RuntimeTraceInitiator
     ): RuntimeTraceOperation =
       val observed =
         try isObserved(meta.topic)
@@ -167,7 +176,8 @@ private[scalive] object RuntimeTrace:
             meta.joinRef,
             meta.messageRef,
             operationSequence,
-            kind
+            kind,
+            initiator
           )
         )
   end Enabled
@@ -202,9 +212,27 @@ private[scalive] object RuntimeTraceOperation:
     meta: WebSocketMessage.Meta,
     kind: RuntimeTraceOperationKind
   ): RuntimeTraceOperation =
+    resolve(trace, meta, kind, defaultInitiator(kind))
+
+  def resolve(
+    trace: RuntimeTrace,
+    meta: WebSocketMessage.Meta,
+    kind: RuntimeTraceOperationKind,
+    initiator: RuntimeTraceInitiator
+  ): RuntimeTraceOperation =
     meta.traceOperation match
-      case Disabled => trace.begin(meta, kind)
+      case Disabled => trace.begin(meta, kind, initiator)
       case active   => active
+
+  private def defaultInitiator(kind: RuntimeTraceOperationKind): RuntimeTraceInitiator =
+    kind match
+      case RuntimeTraceOperationKind.Join | RuntimeTraceOperationKind.ClientEvent |
+          RuntimeTraceOperationKind.LivePatch | RuntimeTraceOperationKind.Upload |
+          RuntimeTraceOperationKind.Leave =>
+        RuntimeTraceInitiator.Browser
+      case RuntimeTraceOperationKind.ServerMessage | RuntimeTraceOperationKind.AsyncCompletion |
+          RuntimeTraceOperationKind.Other =>
+        RuntimeTraceInitiator.Runtime
 
   def attach(
     meta: WebSocketMessage.Meta,

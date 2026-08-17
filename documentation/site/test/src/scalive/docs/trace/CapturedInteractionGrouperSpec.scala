@@ -29,6 +29,7 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
           "captured-operation-1"
         ),
         interactions.map(_.label) == Vector("Reset", "Increment"),
+        interactions.map(_.initiator) == Vector.fill(2)(CapturedInteractionInitiator.Browser),
         interactions.map(_.state) == Vector(
           CapturedInteractionState.InProgress,
           CapturedInteractionState.Complete
@@ -41,7 +42,7 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("keeps IDs and ordering anchors stable as an interaction is appended") {
+    test("keeps IDs stable as an interaction is appended") {
       val initial = Vector(browser(10, 7, 7, "BrowserEvent"))
       val before  = CapturedInteractionGrouper.group(initial).head
       val after = CapturedInteractionGrouper.group(
@@ -55,11 +56,24 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
 
       assertTrue(
         before.id == after.id,
-        before.orderingAnchor.browserSequence == after.orderingAnchor.browserSequence,
         before.state == CapturedInteractionState.InProgress,
         after.state == CapturedInteractionState.Complete,
         after.label == "Decrement"
       )
+    },
+    test("orders interactions by their global ordinal across producers") {
+      val browserInteraction = browser(100, 3, 3, "BrowserEvent", ordinal = 3L)
+      val runtimeInteraction = server(1, 1, 1, 4, 0, "TypedMessage", ordinal = 4L)
+        .copy(
+          operationKind = "AsyncCompletion",
+          messageReference = None
+        )
+
+      val interactions = CapturedInteractionGrouper.group(
+        Vector(browserInteraction, runtimeInteraction)
+      )
+
+      assertTrue(interactions.map(_.ordinal) == Vector(4L, 3L))
     },
     test("completes when the browser processes a response without a DOM patch") {
       val received = Vector(
@@ -95,9 +109,7 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
       assertTrue(
         interaction.reference.contains("12"),
         interaction.records.size == 3,
-        interaction.state == CapturedInteractionState.Failed,
-        interaction.orderingAnchor.browserSequence.isEmpty,
-        interaction.orderingAnchor.serverSequence.contains(1L)
+        interaction.state == CapturedInteractionState.Failed
       )
     },
     test("preserves server messages and async completions without browser records") {
@@ -116,8 +128,31 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
 
       assertTrue(
         interactions.map(_.operationKind) == Vector("AsyncCompletion", "ServerMessage"),
+        interactions.map(_.initiator) == Vector.fill(2)(CapturedInteractionInitiator.Runtime),
         interactions.map(_.state) == Vector.fill(2)(CapturedInteractionState.Complete),
         interactions.map(_.label) == Vector("ReportCompleted", "Tick")
+      )
+    },
+    test("preserves the exact component output initiator") {
+      val interaction = CapturedInteractionGrouper.group(
+        Vector(
+          server(1, 1, 1, 1, 0, "TypedMessage", Some(message("ComponentReported")))
+            .copy(
+              operationKind = "ServerMessage",
+              messageReference = None,
+              initiator = DocumentationTraceInitiator.Component(
+                "scalive.docs.examples.VoteComponent$",
+                "scala-vote"
+              )
+            )
+        )
+      ).head
+
+      assertTrue(
+        interaction.initiator == CapturedInteractionInitiator.Component(
+          "scalive.docs.examples.VoteComponent$",
+          "scala-vote"
+        )
       )
     },
     test("uses the same useful typed message for interaction labels and summaries") {
@@ -181,7 +216,8 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
       None,
       None,
       None,
-      interactionOrdinal = Some(ordinal)
+      interactionOrdinal = Some(ordinal),
+      initiator = DocumentationTraceInitiator.Browser
     )
 
   private def server(
@@ -211,7 +247,8 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
       value,
       None,
       None,
-      interactionOrdinal = Some(ordinal)
+      interactionOrdinal = Some(ordinal),
+      initiator = DocumentationTraceInitiator.Runtime
     )
 
   private def message(name: String): DocumentationTraceValue =

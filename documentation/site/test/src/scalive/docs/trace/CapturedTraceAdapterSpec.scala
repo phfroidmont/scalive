@@ -391,10 +391,10 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
       operationKind = "ClientEvent",
       reference = Some("7"),
       records = records,
-      orderingAnchor = CapturedInteractionAnchor(Some(1L), Some(1L)),
       state = CapturedInteractionState.Complete,
       label = "Increment",
-      summary = "Increment message"
+      summary = "Increment message",
+      initiator = CapturedInteractionInitiator.Browser
     )
 
   private def record(
@@ -423,7 +423,10 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
       value,
       protocol,
       byteSize,
-      interactionOrdinal = Some(1L)
+      interactionOrdinal = Some(1L),
+      initiator =
+        if producer == TraceProducer.Browser then DocumentationTraceInitiator.Browser
+        else DocumentationTraceInitiator.Runtime
     )
 
   private def stepEvidence(step: TraceStep): Option[TraceEvidence] = step match

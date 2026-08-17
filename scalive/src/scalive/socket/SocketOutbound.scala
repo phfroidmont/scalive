@@ -26,7 +26,14 @@ private[scalive] object SocketOutbound:
           case ServerEvent.Message(_)         => RuntimeTraceOperationKind.ServerMessage
           case ServerEvent.Async(_)           => RuntimeTraceOperationKind.AsyncCompletion
           case ServerEvent.ComponentOutput(_) => RuntimeTraceOperationKind.ServerMessage
-        val operation  = RuntimeTraceOperation.resolve(state.runtimeTrace, meta, kind)
+        val initiator = event match
+          case ServerEvent.ComponentOutput(output) =>
+            RuntimeTraceInitiator.Component(
+              output.emitter.componentClass.getName,
+              output.emitter.id
+            )
+          case _ => RuntimeTraceInitiator.Runtime
+        val operation  = RuntimeTraceOperation.resolve(state.runtimeTrace, meta, kind, initiator)
         val tracedMeta = RuntimeTraceOperation.attach(meta, operation)
         handleServerEvent(event, tracedMeta, state).catchAllCause(cause =>
           RuntimeTraceOperation.event(

@@ -47,7 +47,7 @@ test("captures counter interactions in the integrated live trace viewer", async 
   )
   await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#1")
   await expect(inspectionStatus).toContainText(
-    /Inspecting #1 \/ Increment \/ Complete \/ latest/,
+    /Inspecting #1 Increment Triggered by Browser Status Complete Latest/,
   )
   await expect(viewer.getByText("Click", { exact: true })).toHaveCount(0)
 
@@ -132,6 +132,9 @@ test("captures counter interactions in the integrated live trace viewer", async 
 
   const olderInteraction = interactions.last()
   const olderId = await olderInteraction.getAttribute("data-trace-interaction")
+  await viewer.locator(".docs-live-trace-event-window").evaluate((element) => {
+    element.style.maxHeight = "4rem"
+  })
   await olderInteraction.click()
   await expect(viewer.locator(`[data-trace-interaction="${olderId}"]`)).toHaveAttribute(
     "aria-pressed",
@@ -158,6 +161,19 @@ test("captures counter interactions in the integrated live trace viewer", async 
     "false",
   )
   await expect(interactions.first()).toHaveAttribute("aria-pressed", "true")
+  await expect
+    .poll(() =>
+      interactions.first().evaluate((row) => {
+        const viewport = row.closest(".docs-live-trace-event-window")
+        const rowRect = row.getBoundingClientRect()
+        const viewportRect = viewport.getBoundingClientRect()
+        return rowRect.top >= viewportRect.top && rowRect.bottom <= viewportRect.bottom
+      }),
+    )
+    .toBe(true)
+  await viewer.locator(".docs-live-trace-event-window").evaluate((element) => {
+    element.style.removeProperty("max-height")
+  })
 
   await page.evaluate(() => window.liveSocket.disconnect())
   await page.evaluate(() => window.liveSocket.connect())

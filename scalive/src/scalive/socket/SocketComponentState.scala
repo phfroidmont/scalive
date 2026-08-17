@@ -17,16 +17,24 @@ final private[scalive] case class ComponentInstance(
 final private[scalive] class SocketComponentOutputRuntime(
   queue: Queue[ComponentOutputMessage],
   owner: ComponentOutputOwner = ComponentOutputOwner.Root,
+  emitter: Option[ComponentIdentity] = None,
   mapper: Any => Any = identity)
     extends ComponentOutputRuntime:
   def emit(output: Any): LiveIO[Unit] =
     ZIO
-      .attempt(mapper(output)).flatMap(value =>
-        queue.offer(ComponentOutputMessage(owner, value)).unit
+      .fromOption(emitter)
+      .orElseFail(new IllegalStateException("Component output emitter is unavailable"))
+      .zipWith(ZIO.attempt(mapper(output)))((identity, value) =>
+        ComponentOutputMessage(owner, identity, value)
       )
+      .flatMap(queue.offer(_).unit)
 
-  def scoped(owner: ComponentOutputOwner, mapper: Any => Any): ComponentOutputRuntime =
-    SocketComponentOutputRuntime(queue, owner, mapper)
+  def scoped(
+    owner: ComponentOutputOwner,
+    emitter: ComponentIdentity,
+    mapper: Any => Any
+  ): ComponentOutputRuntime =
+    SocketComponentOutputRuntime(queue, owner, Some(emitter), mapper)
 
 final private[scalive] case class ComponentRuntimeState(
   instances: Map[ComponentIdentity, ComponentInstance],

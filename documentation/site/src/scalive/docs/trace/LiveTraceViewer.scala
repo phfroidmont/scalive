@@ -207,22 +207,41 @@ final private[docs] class LiveTraceViewer(
         selected match
           case Some(interaction) =>
             Vector[Mod[Msg]](
-              Mod.Content.Text("Inspecting "),
               Mod.Content.Tag(
                 strong(
-                  cls := "docs-live-trace-inspection-reference",
-                  s"#${interactionOrdinals(interaction.id)}"
+                  cls := "docs-live-trace-inspection-selection",
+                  span(cls := "docs-visually-hidden", "Inspecting "),
+                  span(
+                    cls := "docs-live-trace-inspection-reference",
+                    s"#${interactionOrdinals(interaction.id)}"
+                  ),
+                  Mod.Content.Text(" "),
+                  span(cls := "docs-live-trace-inspection-label", interaction.label)
                 )
               ),
-              Mod.Content.Text(" / "),
               Mod.Content.Tag(
-                span(cls := "docs-live-trace-inspection-label", interaction.label)
+                span(
+                  cls                         := "docs-live-trace-inspection-initiator",
+                  dataAttr("trace-initiator") := initiatorKey(interaction.initiator),
+                  span(cls := "docs-visually-hidden", " Triggered by "),
+                  initiatorLabel(interaction.initiator)
+                )
               ),
-              Mod.Content.Text(" / "),
               Mod.Content.Tag(
-                span(cls := "docs-live-trace-inspection-state", stateLabel(interaction.state))
+                span(
+                  cls                     := "docs-live-trace-inspection-state",
+                  dataAttr("trace-state") := stateKey(interaction.state),
+                  span(cls := "docs-visually-hidden", " Status "),
+                  stateLabel(interaction.state)
+                )
               ),
-              Mod.Content.Text(if newerCount == 0 then " / latest" else s" / $newerCount newer")
+              Mod.Content.Tag(
+                span(
+                  cls := "docs-live-trace-inspection-recency",
+                  span(cls := "docs-visually-hidden", " "),
+                  if newerCount == 0 then "Latest" else s"$newerCount newer"
+                )
+              )
             )
           case None if selectedId.nonEmpty =>
             Vector(Mod.Content.Text("Selected interaction expired"))
@@ -266,13 +285,23 @@ final private[docs] class LiveTraceViewer(
                 aria.busy     := (interaction.state == CapturedInteractionState.InProgress),
                 dataAttr("trace-interaction") := interaction.id,
                 dataAttr("trace-state")       := stateKey(interaction.state),
+                dataAttr("trace-initiator")   := initiatorKey(interaction.initiator),
                 on.click(Msg.SelectInteraction(interaction.id)),
                 span(
                   cls := "docs-live-trace-event-reference",
                   s"#${interactionOrdinals(interaction.id)}"
                 ),
                 strong(interaction.label),
-                span(cls := "docs-live-trace-event-state", stateLabel(interaction.state))
+                span(
+                  cls := "docs-live-trace-event-initiator",
+                  span(cls := "docs-visually-hidden", " Triggered by "),
+                  initiatorLabel(interaction.initiator)
+                ),
+                span(
+                  cls := "docs-live-trace-event-state",
+                  span(cls := "docs-visually-hidden", " Status "),
+                  stateLabel(interaction.state)
+                )
               )
             )
           }
@@ -304,6 +333,18 @@ final private[docs] class LiveTraceViewer(
     case CapturedInteractionState.InProgress => "In progress"
     case CapturedInteractionState.Complete   => "Complete"
     case CapturedInteractionState.Failed     => "Failed"
+
+  private def initiatorKey(initiator: CapturedInteractionInitiator): String = initiator match
+    case CapturedInteractionInitiator.Browser         => "browser"
+    case CapturedInteractionInitiator.Runtime         => "runtime"
+    case CapturedInteractionInitiator.Component(_, _) => "component"
+
+  private def initiatorLabel(initiator: CapturedInteractionInitiator): String = initiator match
+    case CapturedInteractionInitiator.Browser                 => "Browser"
+    case CapturedInteractionInitiator.Runtime                 => "Scalive runtime"
+    case CapturedInteractionInitiator.Component(typeName, id) =>
+      val componentName = typeName.split("[.$]").lastOption.filter(_.nonEmpty).getOrElse(typeName)
+      s"$componentName ($id)"
 end LiveTraceViewer
 
 private[docs] object LiveTraceViewer:

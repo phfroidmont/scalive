@@ -25,6 +25,11 @@ final private[docs] case class TraceLimits(
 private[docs] enum TraceProducer derives JsonCodec:
   case Server, Browser
 
+private[docs] enum DocumentationTraceInitiator derives JsonCodec:
+  case Browser
+  case Runtime
+  case Component(typeName: String, id: String)
+
 final private[docs] case class DocumentationTraceValue(
   typeName: String,
   summary: String,
@@ -49,7 +54,8 @@ final private[docs] case class DocumentationTraceRecord(
   value: Option[DocumentationTraceValue],
   protocol: Option[Json],
   byteSize: Option[Int],
-  interactionOrdinal: Option[Long] = None)
+  interactionOrdinal: Option[Long],
+  initiator: DocumentationTraceInitiator)
     derives JsonCodec
 
 final private[docs] case class BrowserTraceRecord(
@@ -124,6 +130,11 @@ final private[docs] class DocumentationTraceStore private (
         ),
         protocol = record.protocol,
         byteSize = record.byteSize,
+        initiator = record.identity.initiator match
+          case RuntimeTraceInitiator.Browser                 => DocumentationTraceInitiator.Browser
+          case RuntimeTraceInitiator.Runtime                 => DocumentationTraceInitiator.Runtime
+          case RuntimeTraceInitiator.Component(typeName, id) =>
+            DocumentationTraceInitiator.Component(typeName, id),
         interactionOrdinal = interactionOrdinal(
           correlationReference(
             record.identity.joinReference.map(_.toString),
@@ -168,6 +179,7 @@ final private[docs] class DocumentationTraceStore private (
             value = None,
             protocol = record.protocol.map(DocumentationTraceSanitizer.structure),
             byteSize = None,
+            initiator = DocumentationTraceInitiator.Browser,
             interactionOrdinal = interactionOrdinal(
               correlationReference(safeReference(record.joinReference), messageReference),
               browserStart = record.stage == "BrowserEvent",

@@ -242,8 +242,9 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
           modelStages.contains(RuntimeTraceStage.ModelCommitted),
           eventOperation.exists(_.traceSession == "active-session"),
           eventOperation.exists(_.connectionEpoch == 3L),
-          eventOperation.exists(_.socketEpoch == 1L),
-          eventOperation.exists(_.messageReference.contains(2)),
+           eventOperation.exists(_.socketEpoch == 1L),
+           eventOperation.exists(_.messageReference.contains(2)),
+           eventOperation.exists(_.initiator == RuntimeTraceInitiator.Browser),
           isStrictlyOrdered(
             recordIndex(joinRecords, RuntimeTraceStage.RenderStarted),
             recordIndex(joinRecords, RuntimeTraceStage.ModelRendered),
@@ -346,9 +347,10 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
                            _.identity.operationKind == RuntimeTraceOperationKind.AsyncCompletion
                          )
         yield assertTrue(
-          asyncRecords.exists(_.stage == RuntimeTraceStage.TypedMessage),
-          asyncRecords.exists(_.stage == RuntimeTraceStage.ModelCommitted),
-          asyncRecords.forall(_.identity.messageReference.isEmpty)
+           asyncRecords.exists(_.stage == RuntimeTraceStage.TypedMessage),
+           asyncRecords.exists(_.stage == RuntimeTraceStage.ModelCommitted),
+           asyncRecords.forall(_.identity.messageReference.isEmpty),
+           asyncRecords.forall(_.identity.initiator == RuntimeTraceInitiator.Runtime)
         )
       }
     },
@@ -423,9 +425,15 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
           server = operations.values.find(_.exists(_.identity.operationKind == RuntimeTraceOperationKind.ServerMessage))
         yield assertTrue(
           client.exists(_.exists(_.stage == RuntimeTraceStage.TypedMessage)),
-          server.exists(_.exists(_.stage == RuntimeTraceStage.TypedMessage)),
-          server.exists(_.forall(_.identity.messageReference.isEmpty)),
-          server.exists(records =>
+           server.exists(_.exists(_.stage == RuntimeTraceStage.TypedMessage)),
+           server.exists(_.forall(_.identity.messageReference.isEmpty)),
+           server.exists(_.forall(
+             _.identity.initiator == RuntimeTraceInitiator.Component(
+               OutputComponent.getClass.getName,
+               "output-trace"
+             )
+           )),
+           server.exists(records =>
             isStrictlyOrdered(
               recordIndex(records, RuntimeTraceStage.LifecycleStarted),
               recordIndex(records, RuntimeTraceStage.LifecycleCompleted)

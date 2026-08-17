@@ -102,6 +102,43 @@ test("adapter emits a correlated terminal record after successful inbound proces
   assert.equal(terminal.operationSequence, Number(decoded.ref))
 })
 
+test("adapter reveals a newly selected trace interaction", () => {
+  const calls = []
+  let selected = {
+    dataset: { traceInteraction: "first" },
+    scrollIntoView(options) {
+      calls.push([this.dataset.traceInteraction, options])
+    },
+  }
+  const viewer = {
+    querySelector() {
+      return selected
+    },
+  }
+  const hook = {
+    el: {
+      dataset: {},
+      closest() {
+        return viewer
+      },
+    },
+  }
+  const adapter = createLiveTraceAdapter()
+
+  adapter.hook.mounted.call(hook)
+  adapter.hook.updated.call(hook)
+  selected = {
+    dataset: { traceInteraction: "second" },
+    scrollIntoView: selected.scrollIntoView,
+  }
+  adapter.hook.updated.call(hook)
+
+  assert.deepEqual(calls, [
+    ["first", { block: "nearest", inline: "nearest" }],
+    ["second", { block: "nearest", inline: "nearest" }],
+  ])
+})
+
 test("adapter omits the terminal record after a thrown callback and clears inbound state", async () => {
   const batches = []
   const adapter = createLiveTraceAdapter()

@@ -38,21 +38,21 @@ object CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
 ## Routing And Server Setup
 
 Routes start from `scalive.live` and are assembled with `Live.router`.
-See `examples/src/scalive/examples/ExamplesApp.scala` for a complete runnable
-setup including static assets, routes, socket configuration, and root layout
-wiring.
+The [quick start](documentation/content/learn/quick-start.md) contains a complete
+runnable setup, including static assets, routes, socket configuration, and root
+layout wiring.
 
 ## Client Setup
 
-Scalive uses a LiveView-compatible JavaScript client connection. The examples app
-shows the expected socket path and static asset setup. Start with
-`examples/src/scalive/examples/ExamplesRootLayout.scala` and
-`examples/src/scalive/examples/ExamplesApp.scala` when wiring a new application.
+Scalive uses a LiveView-compatible JavaScript client connection. See the
+[static assets and client setup guide](documentation/content/guides/static-assets-and-client-setup.md)
+for the expected socket path, root layout, and browser asset setup.
 
 ## Running The Project
 
 ```bash
-mill examples.run
+mill documentation.site.run
+mill --ticker false documentation.check
 mill --ticker false scalive.test
 mill --ticker false __.test
 ```
@@ -61,15 +61,16 @@ The project runs inside `nix develop`; `mill` is available there.
 
 ## Documentation
 
+- Documentation content: `documentation/content`
+- Interactive examples: `documentation/content/examples`
 - Public API reference: `docs/public-api-reference.md`
 - API improvement backlog: `docs/api-improvement-ideas.md`
 - Phoenix LiveView compatibility notes: `UPSTREAM_COMPATIBILITY.md`
-- Human-oriented examples: `examples/README.md` and `examples/src`
 - Upstream parity fixtures: `e2eApp/src`
 
 The parity fixtures are useful compatibility evidence, but they are not always
-recommended application style. Prefer `examples` and the public API reference
-for learning the normal Scalive API.
+recommended application style. Prefer the documentation site and its embedded
+examples for learning the normal Scalive API.
 
 ## Compatibility
 

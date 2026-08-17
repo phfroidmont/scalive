@@ -57,18 +57,6 @@ object scaliveTesting extends ScalaCommon with PublishCommon:
   object test extends ScalaTests with scalalib.TestModule.ZioTest:
     def zioTestVersion = "2.1.25"
 
-object examples extends ScalaCommon with NpmAssets:
-  def moduleDeps = Seq(scalive)
-  def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.1")
-
-  def resources = Task {
-    super.resources() :+ bundle()
-  }
-
-  object test extends ScalaTests with scalalib.TestModule.ZioTest:
-    override def moduleDeps = super.moduleDeps ++ Seq(scaliveTesting)
-    def zioTestVersion      = "2.1.25"
-
 object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)
   def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.1")

@@ -1150,14 +1150,25 @@ val security = LiveSecurity(
   CookiePolicy(secure = true)
 )
 
-val liveRoutes = Live.router.withSecurity(security)(loginRoute, protectedRoutes)
-val httpRoutes = AuthHttpRoutes(security).routes
+val auth       = AuthService.inMemory()
+val liveRoutes = Live.router.withSecurity(security)(
+  AuthLab.loginRoute,
+  AuthLab.protectedSession(auth)
+)
+val httpRoutes = AuthHttpRoutes(auth, security).routes
 val routes     = liveRoutes ++ httpRoutes
 
-Server.serve(routes).provide(AuthService.live)
+Server.serve(routes)
 ```
 
-`AuthHttpRoutes` is application code from the runnable authentication example, not a framework type. Its routes and the authenticated mount aspect both require `AuthService` in the route environment. Compose them first and provide `AuthService.live` once so HTTP login/logout and Live authentication share one session store. See [`ExamplesApp.scala`](../examples/src/scalive/examples/ExamplesApp.scala), [`AuthHttpRoutes.scala`](../examples/src/scalive/examples/auth/AuthHttpRoutes.scala), and [`AuthMountAspect.scala`](../examples/src/scalive/examples/auth/AuthMountAspect.scala) for the complete composition.
+`AuthHttpRoutes`, `AuthLab`, and `AuthService` are application code from the
+documentation authentication lab, not framework types. Construct one service and
+pass it to both the ordinary HTTP handlers and protected Live route so login,
+reset, and Live authentication share one session store. See the
+[authentication guide](../documentation/content/guides/authentication.md),
+[`AuthLab.scala`](../documentation/site/src/scalive/docs/auth/AuthLab.scala), and
+[`AuthService.scala`](../documentation/site/src/scalive/docs/auth/AuthService.scala)
+for the complete composition.
 
 `withTokenConfig` remains the direct configuration path when no ordinary handler needs to share security capabilities.
 

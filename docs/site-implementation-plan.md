@@ -51,8 +51,8 @@ Run the documentation site with `mill documentation.site.run`.
 - [x] Reject raw HTML in Markdown.
 - [x] Use nested LiveViews as the isolation boundary for embedded examples.
 - [x] Add no arbitrary code-execution service.
-- [ ] Preserve `e2eApp` as upstream parity infrastructure.
-- [ ] Do not remove `examples` until its useful behavior and tests have migrated.
+- [x] Preserve `e2eApp` as upstream parity infrastructure.
+- [x] Do not remove `examples` until its useful behavior and tests have migrated.
 - [ ] Do not introduce publication-provider configuration or a deployment workflow.
 - [x] Follow test-first development for runtime, parsing, validation, and example
   behavior changes.
@@ -659,34 +659,35 @@ npm run lighthouse --prefix documentation/site
 
 ## Phase 12: Cutover And Cleanup
 
-**Depends on:** All previous phases.
+**Depends on:** All previous phases for final completion. The example migration
+and removal slice may proceed after Phase 7.
 
-- [ ] Confirm every useful current example has migrated, been replaced, or been
+- [x] Confirm every useful current example has migrated, been replaced, or been
   intentionally retired.
-- [ ] Move applicable example tests into the documentation site.
-- [ ] Remove the standalone `examples` Mill module.
-- [ ] Remove the old examples shell, routes, layouts, catalog, and README.
-- [ ] Remove the process-shared guestbook and upload store.
-- [ ] Update npm lockfile identity and repository ignore rules.
+- [x] Move applicable example tests into the documentation site.
+- [x] Remove the standalone `examples` Mill module.
+- [x] Remove the old examples shell, routes, layouts, catalog, and README.
+- [x] Remove the process-shared guestbook and upload store.
+- [x] Remove the obsolete examples npm package and repository ignore rule.
 - [ ] Move the public API reference into canonical site content.
 - [ ] Move the compatibility matrix into canonical site content.
 - [ ] Leave short repository pointers at old public-document locations if they
   remain useful to GitHub readers.
-- [ ] Update the root README to use the documentation-site commands and content
+- [x] Update the root README to use the documentation-site commands and content
   locations.
-- [ ] Update stale links in API improvement notes without rewriting historical
-  plans.
-- [ ] Keep `e2eApp` explicitly described as parity evidence rather than teaching
+- [x] Confirm API improvement notes contain no stale examples links without
+  rewriting historical plans.
+- [x] Keep `e2eApp` explicitly described as parity evidence rather than teaching
   material.
-- [ ] Run formatter and Scalafix across changed modules.
-- [ ] Run every Scala test.
+- [x] Run formatter and Scalafix across changed modules.
+- [x] Run every Scala test.
 - [ ] Run documentation generation and validation from a clean build.
-- [ ] Build both documentation and E2E assets.
+- [x] Build both documentation and E2E assets.
 - [ ] Run documentation Playwright tests.
 - [ ] Run upstream parity tests.
 - [ ] Run Lighthouse verification.
-- [ ] Run `git diff --check`.
-- [ ] Inspect the final worktree and confirm only intended changes remain.
+- [x] Run `git diff --check`.
+- [x] Inspect the final worktree and confirm only intended changes remain.
 - [ ] Complete a final maintainer review against `docs/site-specification.md`.
 - [ ] Mark all phase and completion-gate checkboxes complete.
 

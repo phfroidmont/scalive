@@ -48,9 +48,8 @@ mill documentation.site.run
 ```
 
 For an application following the source-backed quick start, the equivalent
-verified shape is `mill app.run`. The repository example catalog runs with
-`mill examples.run`. In all three cases, Mill builds the configured browser
-bundle through the module's resources before the application serves it.
+verified shape is `mill app.run`. In both cases, Mill builds the configured
+browser bundle through the module's resources before the application serves it.
 
 `SCALIVE_SERVER_PORT` and `SCALIVE_PUBLIC_ORIGIN` above belong to the
 documentation application, not to Scalive or ZIO HTTP. Other applications must

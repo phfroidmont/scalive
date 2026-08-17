@@ -510,6 +510,7 @@ mill --ticker false documentation.check
 - [ ] Split the current public API reference into curated API landing and concept
   pages.
 - [x] Link curated pages to generated owners and members.
+- [x] Publish the personal and technical journey that led to Scalive.
 - [x] Migrate project status and alpha expectations.
 - [ ] Migrate the compatibility matrix.
 - [ ] Pin the compatibility matrix to the current upstream LiveView revision.

@@ -5,6 +5,13 @@ order = 0
 section = project
 %}
 
+## Why Scalive Exists {#why-scalive-exists}
+
+Scalive grew out of building and maintaining a production Scala.js application,
+then searching for a simpler boundary between browser and server. Read
+[why I built Scalive](why-i-built-scalive.md#choosing-a-stack) for the personal
+and technical journey behind the project.
+
 ## Project Status {#project-status}
 
 Scalive is alpha software under active development. It implements substantial

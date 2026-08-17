@@ -46,7 +46,9 @@ describes its initial state, transitions, effects, and rendered output without
 introducing a separate frontend component framework.
 
 It is designed for Scala teams that want interactive applications while keeping
-domain logic, UI state, and effect handling in one typed server-side system.
+domain logic, UI state, and effect handling in one typed server-side system. Read
+[why I built Scalive](project/why-i-built-scalive.md#choosing-a-stack) for the
+journey that led to this design.
 
 - Scala 3
 - ZIO effects

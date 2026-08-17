@@ -276,7 +276,11 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         apiDocument.select(".docs-api-navigation [data-api-nav-item=api]").isEmpty,
         apiDocument.select(".docs-section-index").isEmpty
       ) && assertTrue(
-        projectLinks.map(_.text()) == Vector("Overview", "Phoenix LiveView compatibility"),
+        projectLinks.map(_.text()) == Vector(
+          "Overview",
+          "Why I Built Scalive",
+          "Phoenix LiveView compatibility"
+        ),
         projectDocument.select(
           ".docs-section-index a[href='/project'][aria-current=page]"
         ).size() == 1

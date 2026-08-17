@@ -114,7 +114,8 @@ The authored homepage contains, in order:
 4. One `counter` example reference rendered as a compact nested LiveView.
 5. Three principles covering typed state, Scala HTML rendering, and live
    diffs and effects.
-6. A `Why Scalive` section with the stable `#why-scalive` anchor.
+6. A `Why Scalive` section with the stable `#why-scalive` anchor and a link to
+   the full project origin story.
 7. The alpha-software warning as an information callout.
 
 The browser title for `/` remains `Scalive`. Homepage copy, links, code,
@@ -236,8 +237,9 @@ per-symbol alpha or compatibility badges.
 
 ### Project
 
-The Project section contains only:
+The Project section contains:
 
+- the personal and technical journey that led to Scalive;
 - project status and alpha expectations; and
 - a compatibility matrix of supported features, intentional divergences, and
   known gaps.
@@ -285,8 +287,10 @@ must update affected generated or curated documentation in the same change.
 
 Existing public material, including the public API reference and compatibility
 matrix, moves into the documentation content tree and becomes canonical there.
-Internal design history remains repository-only. Content is English-only, and
-the initial architecture includes no localization abstraction.
+The public origin story explains the motivation and experiences that led to
+Scalive. Detailed internal design history remains repository-only. Content is
+English-only, and the initial architecture includes no localization
+abstraction.
 
 The site documents the latest Scalive revision only. It does not preserve
 versioned documentation during alpha. Page paths are generated from the content

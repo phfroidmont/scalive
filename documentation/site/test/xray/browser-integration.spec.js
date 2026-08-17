@@ -44,11 +44,12 @@ test("runs client commands and exposes public typed browser events", async ({ pa
   )
 
   await expect(inspector.locator("[data-trace-interaction]")).toHaveCount(2)
-  expect(await inspector.textContent()).not.toContain("BrowserInteropExample.Msg")
   await inspector.getByRole("button", { name: "Jump to latest" }).click()
-  await expect(inspector.locator('[data-trace-evidence="Updated model"]')).toContainText(
-    /operation\s*succeeded/,
-  )
+  const modelValue = inspector.locator('[data-trace-evidence="Updated model"] code')
+  await expect(modelValue).toContainText("Model(")
+  await expect(modelValue).toContainText("requestNumber = 1")
+  await expect(modelValue).toContainText("operation = CopyOperation.Succeeded")
+  await expect(modelValue).not.toContainText("BrowserInteropExample")
   expect(await inspector.textContent()).not.toContain(
     "Scalive keeps server-to-browser event payloads typed.",
   )

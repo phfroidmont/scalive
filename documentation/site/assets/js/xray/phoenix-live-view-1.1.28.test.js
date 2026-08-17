@@ -150,7 +150,7 @@ test("adapter omits the terminal record after a thrown callback and clears inbou
   assert.equal(patch.messageReference, null)
 })
 
-test("protocol sanitization removes secrets and binary content", () => {
+test("protocol sanitization reveals documentation values but removes security material", () => {
   const sanitized = sanitizeProtocol({
     topic: "lv:example",
     event: "event",
@@ -158,9 +158,10 @@ test("protocol sanitization removes secrets and binary content", () => {
     ref: "2",
     payload: {
       event: "binding-id",
-      password: "password-secret",
+      password: "public-demo-password",
       _csrf_token: "csrf-secret",
       value: "public form value",
+      headers: [["authorization", "Bearer server-secret"]],
       bytes: new Uint8Array([1, 2, 3]),
     },
   })
@@ -168,14 +169,15 @@ test("protocol sanitization removes secrets and binary content", () => {
 
   assert.equal(sanitized.topic, "lv:example")
   assert.equal(sanitized.payload.event, "binding-id")
-  assert.ok(!encoded.includes("password-secret"))
+  assert.equal(sanitized.payload.password, "public-demo-password")
+  assert.equal(sanitized.payload.value, "public form value")
   assert.ok(!encoded.includes("csrf-secret"))
-  assert.ok(!encoded.includes("public form value"))
+  assert.ok(!encoded.includes("Bearer server-secret"))
   assert.ok(!encoded.includes("1,2,3"))
   assert.deepEqual(sanitized.payload.bytes, { byteLength: 3, content: "[redacted]" })
 })
 
-test("protocol sanitization redacts strings under neutral keys", () => {
+test("protocol sanitization preserves strings under neutral keys", () => {
   const sanitized = sanitizeProtocol({
     topic: "lv:example",
     event: "event",
@@ -191,8 +193,8 @@ test("protocol sanitization redacts strings under neutral keys", () => {
     },
   })
 
-  assert.equal(sanitized.payload.label, "[redacted]")
-  assert.equal(sanitized.payload.nested.result, "[redacted]")
+  assert.equal(sanitized.payload.label, "Increase counter")
+  assert.equal(sanitized.payload.nested.result, "Counter is 1")
   assert.equal(sanitized.payload.count, 1)
   assert.equal(sanitized.payload.active, true)
   assert.equal(sanitized.payload.missing, null)

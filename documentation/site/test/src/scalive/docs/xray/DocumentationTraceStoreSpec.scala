@@ -274,7 +274,7 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         snapshot.records.map(_.summary) == Vector("complete")
       )
     },
-    test("sanitizes secrets and never serializes upload bytes") {
+    test("reveals documentation values but sanitizes security material and upload bytes") {
       val join = WebSocketMessage(
         Some(1),
         Some(2),
@@ -288,8 +288,11 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
           params = Some(
             Map(
               "_csrf_token" -> Json.Str("csrf-secret"),
-              "password"    -> Json.Str("password-secret"),
-              "safe"        -> Json.Str("unsafe-free-text")
+              "password"    -> Json.Str("public-demo-password"),
+              "safe"        -> Json.Str("unsafe-free-text"),
+              "headers" -> Json.Arr(
+                Json.Arr(Json.Str("authorization"), Json.Str("Bearer server-secret"))
+              )
             )
           ),
           flash = Some("flash-secret"),
@@ -319,8 +322,9 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
       yield assertTrue(
         !sanitizedJoin.contains("signed-session-secret"),
         !sanitizedJoin.contains("csrf-secret"),
-        !sanitizedJoin.contains("password-secret"),
-        !sanitizedJoin.contains("unsafe-free-text"),
+        !sanitizedJoin.contains("Bearer server-secret"),
+        sanitizedJoin.contains("public-demo-password"),
+        sanitizedJoin.contains("unsafe-free-text"),
         !sanitizedJoin.contains("url-secret"),
         !storedJson.contains("upload-secret"),
         storedJson.contains("13"),
@@ -340,7 +344,29 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
       yield assertTrue(
         value.typeName.contains("Throwing"),
         value.summary == "Content redacted",
-        value.fields.isEmpty
+        value.fields.isEmpty,
+        value.scalaValue.exists(_.startsWith("_: "))
+      )
+    },
+    test("preserves explicit Scala values through projection and storage") {
+      val storedValue = RuntimeTraceValue(
+        "CounterExample.Model",
+        "Current counter state",
+        Vector("count" -> "1"),
+        scalaValue = Some("CounterExample.Model(count = 1)")
+      )
+
+      for
+        store   <- DocumentationTraceStore.make(TraceLimits(maxRecords = 10, maxBytes = 4096))
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        trace    = DocumentationRuntimeTrace(store, Session, connectionEpoch = 1L)
+        projected = trace.projectModel(Topic, scalive.docs.examples.CounterExample.Model(2))
+        _ <- store.appendServer(serverRecord("model").copy(value = Some(storedValue)))
+        records <- store.records(Session, Topic)
+      yield assertTrue(
+        projected.scalaValue.contains("Model(count = 2)"),
+        records.flatMap(_.value.flatMap(_.scalaValue)) == Vector("CounterExample.Model(count = 1)")
       )
     },
     test("bounds and sanitizes browser-submitted records") {
@@ -356,7 +382,10 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
           protocol = Some(
             Json.Obj(
               "event" -> Json.Str("click"),
-              "name"  -> Json.Str("credential contents"),
+              "name"  -> Json.Str("documentation value"),
+              "apiToken" -> Json.Str("framework-security-material"),
+              "target" -> Json.Str("div#example"),
+              "rendered" -> Json.Str("1"),
               "topic" -> Json.Str("untrusted-topic-value")
             )
           )
@@ -379,7 +408,10 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         !encoded.contains("untrusted summary"),
         encoded.contains("untrusted-topic-value"),
         encoded.contains("click"),
-        !encoded.contains("credential contents")
+        encoded.contains("documentation value"),
+        encoded.contains("div#example"),
+        encoded.contains("rendered"),
+        !encoded.contains("framework-security-material")
       )
     },
     test("validates page trace sessions and increments connection epochs") {

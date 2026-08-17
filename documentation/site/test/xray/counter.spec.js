@@ -57,16 +57,27 @@ test("captures counter interactions in the integrated live trace viewer", async 
   )
   await expect(capturedTrace).not.toContainText(/\d+ records?/)
   await expect(capturedTrace.locator(".docs-trace-evidence-record")).toHaveCount(0)
-  await expect(capturedTrace.locator('[data-trace-evidence="Message fields"]')).toHaveCount(0)
+  const resolvedMessage = capturedTrace.locator('[data-trace-evidence="Resolved message"]')
+  await expect(resolvedMessage.locator("code.docs-trace-evidence-scala-value")).toHaveText(
+    "Msg.Increment",
+  )
+  await expect(resolvedMessage.locator("code.docs-trace-evidence-scala-value")).toHaveCSS("font-size", "12px")
+  await expect(resolvedMessage).not.toContainText("Increase the count")
   await expect(capturedTrace.locator('[data-trace-evidence="Handler started"]')).toHaveCount(0)
   await expect(capturedTrace.locator('[data-trace-evidence="Handler completed"]')).toHaveCount(0)
-  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"]')).toContainText(
-    /count\s*1/,
+  const updatedModel = capturedTrace.locator('[data-trace-evidence="Updated model"]')
+  await expect(updatedModel.locator("code.docs-trace-evidence-scala-value")).toHaveText(
+    "Model(count = 1)",
   )
-  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"]')).not.toContainText(
-    /CounterExample\.Model|Current counter state|Handler proposed a model|Execution|Correlation/,
-  )
-  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"]')).toBeVisible()
+  await expect(updatedModel).not.toContainText(/Current counter state|Handler proposed a model|Execution|Correlation/)
+  await expect(updatedModel.locator("dl")).toHaveCount(0)
+  for (const evidenceLabel of ["Resolved message", "Updated model"]) {
+    const evidence = capturedTrace.locator(`[data-trace-evidence="${evidenceLabel}"]`)
+    const step = evidence.locator("..")
+    const copyBox = await step.locator(":scope > .docs-trace-event-copy").boundingBox()
+    const evidenceBox = await evidence.boundingBox()
+    expect(Math.abs(copyBox.x + copyBox.width / 2 - (evidenceBox.x + evidenceBox.width / 2))).toBeLessThan(2)
+  }
   await expect(
     capturedTrace.locator("[data-trace-step]", { hasText: "Client event" }).locator("[data-trace-evidence]"),
   ).toHaveCount(0)
@@ -77,6 +88,9 @@ test("captures counter interactions in the integrated live trace viewer", async 
     /mutations|DOM patch applied/,
   )
   await expect(capturedTrace).toContainText('"topic" : "lv:docs-example-counter-')
+  await expect(capturedTrace).toContainText('"value" : ""')
+  await expect(capturedTrace).toContainText('"target" : "')
+  await expect(capturedTrace).toContainText('"1" : "1"')
   await expect(capturedTrace).not.toContainText('"after"')
 
   await expect(capturedTrace.locator('[data-trace-evidence="Protocol frame"]')).toHaveCount(2)

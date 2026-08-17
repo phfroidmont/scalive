@@ -32,10 +32,14 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         counter.resetMessage == CounterExample.Msg.Reset,
         counter.resetControlLabel == "Reset",
         counter.projectMessage(CounterExample.Msg.Reset).exists(_.summary == "Reset the count"),
+        counter.projectMessage(CounterExample.Msg.Increment)
+          .flatMap(_.scalaValue).contains("Msg.Increment"),
         counter.projectMessage("reset").isEmpty,
         counter.projectModel(CounterExample.Model(2)).exists(
           _.fields.contains("count" -> "2")
         ),
+        counter.projectModel(CounterExample.Model(2))
+          .flatMap(_.scalaValue).contains("Model(count = 2)"),
         counter.projectModel(2).isEmpty
       )
     },
@@ -134,6 +138,19 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         lifecycle.projectModel(model).exists(_.fields.contains("connectedMount" -> "true")),
         lifecycle.projectModel(model).exists(_.fields.contains("currentTitle" -> "Attention needed")),
         lifecycle.projectModel("Attention needed").isEmpty
+      )
+    },
+    test("escapes projected strings as valid Scala literals") {
+      val voting = ExampleRegistry.get("voting-components").get
+      val projected = voting.projectMessage(
+        VotingComponentsExample.Msg.ComponentReported("quote\" slash\\ line\n control\b", 2)
+      ).get
+
+      assertTrue(
+        projected.scalaValue.exists(_.contains("Msg.ComponentReported(")),
+        projected.scalaValue.exists(_.contains("id = \"quote\\\" slash\\\\ line\\n control\\b\"")),
+        projected.scalaValue.exists(_.contains("votes = 2")),
+        projected.scalaValue.exists(!_.contains("VotingComponentsExample"))
       )
     },
     test("redacts profile form values from explicit trace projectors") {

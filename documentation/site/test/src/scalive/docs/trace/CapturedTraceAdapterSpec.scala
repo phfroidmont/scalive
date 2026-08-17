@@ -144,17 +144,158 @@ object CapturedTraceAdapterSpec extends ZIOSpecDefault:
         outbound.label == "Protocol frame",
         outbound.code.nonEmpty,
         clientEvent.isEmpty,
+        typed.label == "Resolved message",
+        typed.summary.contains("Message with one field"),
         typed.facts == Vector("value" -> "42"),
+        proposed.summary.contains("Counter value is 1"),
         proposed.facts == Vector("count" -> "1"),
         published.label == "Protocol frame",
         published.facts == Vector("size" -> "143 B"),
         evidence.count(_.label == "Protocol frame") == 2,
         !evidence.map(_.label).contains("Inbound frame"),
         !evidence.map(_.label).contains("Decoded event"),
-        code.contains("[redacted]"),
-        !code.contains("private-value"),
+        code.contains("private-value"),
         !code.contains("server-secret"),
-        code.contains("mutations")
+        code.contains("mutations"),
+        code.contains("\"after\" : \"1\"")
+      )
+    },
+    test("shows projected summaries when typed values have no fields") {
+      val interaction = captured(
+        Vector(
+          record(TraceProducer.Server, 1, "TypedMessage", value = Some(message)),
+          record(TraceProducer.Server, 2, "ModelProposed", value = Some(model.copy(fields = Vector.empty)))
+        )
+      )
+
+      val steps    = CapturedTraceAdapter.adapt(ExampleCatalog.Counter, interaction).phases.flatMap(_.steps)
+      val resolved = stepEvidence(step(steps, "Increment")).get
+      val proposed = stepEvidence(step(steps, "Return updated model")).get
+
+      assertTrue(
+        resolved.summary.contains("Increment message"),
+        resolved.facts.isEmpty,
+        proposed.summary.contains("Counter value is 1"),
+        proposed.facts.isEmpty
+      )
+    },
+    test("renders an unprojected value as a typed wildcard") {
+      val interaction = captured(
+        Vector(
+          record(
+            TraceProducer.Server,
+            1,
+            "TypedMessage",
+            value = Some(
+              DocumentationTraceValue(
+                "scalive.docs.examples.VoteComponent.Msg.Vote",
+                "Content redacted",
+                Vector.empty,
+                scalaValue = Some("_: scalive.docs.examples.VoteComponent.Msg.Vote")
+              )
+            )
+          )
+        )
+      )
+
+      val evidence = CapturedTraceAdapter
+        .adapt(ExampleCatalog.Counter, interaction).phases.flatMap(_.steps)
+        .flatMap(stepEvidence).head
+
+      assertTrue(
+        evidence.scalaValue.contains("_: scalive.docs.examples.VoteComponent.Msg.Vote"),
+        evidence.summary.isEmpty
+      )
+    },
+    test("uses exact Scala values without prose or field fragments") {
+      val interaction = captured(
+        Vector(
+          record(
+            TraceProducer.Server,
+            1,
+            "TypedMessage",
+            value = Some(message.copy(scalaValue = Some("CounterExample.Msg.Increment")))
+          ),
+          record(
+            TraceProducer.Server,
+            2,
+            "ModelProposed",
+            value = Some(model.copy(scalaValue = Some("CounterExample.Model(count = 1)")))
+          )
+        )
+      )
+
+      val steps    = CapturedTraceAdapter.adapt(ExampleCatalog.Counter, interaction).phases.flatMap(_.steps)
+      val resolved = stepEvidence(step(steps, "Increment")).get
+      val proposed = stepEvidence(step(steps, "Return updated model")).get
+
+      assertTrue(
+        resolved.scalaValue.contains("CounterExample.Msg.Increment"),
+        resolved.summary.isEmpty,
+        resolved.facts.isEmpty,
+        proposed.scalaValue.contains("CounterExample.Model(count = 1)"),
+        proposed.summary.isEmpty,
+        proposed.facts.isEmpty
+      )
+    },
+    test("uses one selected typed message for the step label and evidence") {
+      val interaction = captured(
+        Vector(
+          record(
+            TraceProducer.Server,
+            1,
+            "TypedMessage",
+            value = Some(DocumentationTraceValue("VoteComponent.Msg.Vote", "Content redacted", Vector.empty))
+          ),
+          record(
+            TraceProducer.Server,
+            2,
+            "TypedMessage",
+            value = Some(
+              DocumentationTraceValue(
+                "VotingComponentsExample.Msg.ComponentReported",
+                "Component reported a vote count",
+                Vector.empty,
+                scalaValue = Some("VotingComponentsExample.Msg.ComponentReported(\"scala\", 1)")
+              )
+            )
+          )
+        )
+      )
+
+      val steps    = CapturedTraceAdapter.adapt(ExampleCatalog.Counter, interaction).phases.flatMap(_.steps)
+      val evidence = stepEvidence(step(steps, "ComponentReported")).get
+
+      assertTrue(
+        evidence.scalaValue.contains("VotingComponentsExample.Msg.ComponentReported(\"scala\", 1)")
+      )
+    },
+    test("prefers useful projected evidence across repeated model stages") {
+      val interaction = captured(
+        Vector(
+          record(
+            TraceProducer.Server,
+            1,
+            "ModelProposed",
+            value = Some(
+              DocumentationTraceValue(
+                "ComponentModel",
+                "Component state",
+                Vector("count" -> "99")
+              )
+            )
+          ),
+          record(TraceProducer.Server, 2, "ModelProposed", value = Some(model))
+        )
+      )
+
+      val proposed = CapturedTraceAdapter
+        .adapt(ExampleCatalog.Counter, interaction).phases.flatMap(_.steps)
+        .flatMap(stepEvidence).head
+
+      assertTrue(
+        proposed.summary.contains("Counter value is 1"),
+        proposed.facts == Vector("count" -> "1")
       )
     },
     test("omits receiver-side frame copies and summary-only records") {

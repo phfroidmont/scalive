@@ -177,6 +177,7 @@ object `package` extends Module:
 
   object site extends build.ScalaCommon with build.NpmAssets:
     def moduleDeps = Seq(build.scalive, model)
+    override def mvnDeps = Seq(mvn"com.lihaoyi::pprint:0.9.6")
 
     override def bundleOutputs = Seq(
       "app.js",

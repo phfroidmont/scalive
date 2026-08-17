@@ -6,17 +6,12 @@ export const expectedLiveViewVersion = "1.1.28"
 const redacted = "[redacted]"
 const sensitiveFragments = [
   "authorization",
-  "claim",
   "cookie",
-  "credential",
   "csrf",
-  "flash",
-  "password",
   "secret",
   "session",
   "static",
   "token",
-  "upload",
   "url",
   "redirect",
 ]
@@ -30,23 +25,18 @@ function isSensitive(name) {
   return sensitiveFragments.some((fragment) => normalized.includes(fragment))
 }
 
-const structuralStringFields = new Set(["event", "kind", "status", "type"])
-const structuralStringPattern = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,63}$/
-
 function sanitizeValue(value, fieldName = null) {
+  if (fieldName && isSensitive(fieldName)) return redacted
   if (value === null || typeof value === "boolean" || typeof value === "number") return value
-  if (typeof value === "string") {
-    if (
-      fieldName &&
-      !isSensitive(fieldName) &&
-      structuralStringFields.has(fieldName) &&
-      structuralStringPattern.test(value)
-    ) return value
-    return redacted
-  }
+  if (typeof value === "string") return value
   if (value instanceof ArrayBuffer) return { byteLength: value.byteLength, content: redacted }
   if (ArrayBuffer.isView(value)) return { byteLength: value.byteLength, content: redacted }
-  if (Array.isArray(value)) return value.map((item) => sanitizeValue(item))
+  if (Array.isArray(value)) {
+    if (typeof value[0] === "string" && isSensitive(value[0])) {
+      return [value[0], ...value.slice(1).map(() => redacted)]
+    }
+    return value.map((item) => sanitizeValue(item))
+  }
   if (typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value).map(([name, child]) => [name, sanitizeValue(child, name)]),

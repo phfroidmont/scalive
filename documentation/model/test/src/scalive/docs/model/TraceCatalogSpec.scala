@@ -36,13 +36,29 @@ object TraceCatalogSpec extends ZIOSpecDefault:
       )
 
       val facts       = trace(TraceEvidence("Updated model", facts = Vector("count" -> "1")))
+      val scalaValue  = trace(TraceEvidence("Updated model", scalaValue = Some("Model(count = 1)")))
+      val mixedValue = trace(
+        TraceEvidence(
+          "Updated model",
+          summary = Some("Current model"),
+          facts = Vector("count" -> "1"),
+          scalaValue = Some("Model(count = 1)"),
+          code = Some("protocol")
+        )
+      )
       val contentless = trace(TraceEvidence("Measurement"))
+      val blankValue  = trace(TraceEvidence("Updated model", scalaValue = Some("  ")))
       val blankCode   = trace(TraceEvidence("Protocol frame", code = Some("  ")))
 
       assertTrue(
         TraceCatalog.validate(Vector(facts)).isEmpty,
+        TraceCatalog.validate(Vector(scalaValue)).isEmpty,
+        TraceCatalog.validate(Vector(mixedValue)) ==
+          Vector("trace 'http-get' Scala value evidence must not include other content."),
         TraceCatalog.validate(Vector(contentless)) ==
           Vector("trace 'http-get' evidence must have content."),
+        TraceCatalog.validate(Vector(blankValue)) ==
+          Vector("trace 'http-get' evidence content must not be blank."),
         TraceCatalog.validate(Vector(blankCode)) ==
           Vector("trace 'http-get' evidence content must not be blank.")
       )

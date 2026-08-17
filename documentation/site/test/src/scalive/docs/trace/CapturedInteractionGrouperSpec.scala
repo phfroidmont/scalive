@@ -119,6 +119,41 @@ object CapturedInteractionGrouperSpec extends ZIOSpecDefault:
         interactions.map(_.state) == Vector.fill(2)(CapturedInteractionState.Complete),
         interactions.map(_.label) == Vector("ReportCompleted", "Tick")
       )
+    },
+    test("uses the same useful typed message for interaction labels and summaries") {
+      val interaction = CapturedInteractionGrouper.group(
+        Vector(
+          server(
+            1,
+            1,
+            1,
+            1,
+            1,
+            "TypedMessage",
+            Some(DocumentationTraceValue("VoteComponent.Msg.Vote", "Content redacted", Vector.empty))
+          ),
+          server(
+            2,
+            1,
+            1,
+            1,
+            1,
+            "TypedMessage",
+            Some(
+              DocumentationTraceValue(
+                "VotingComponentsExample.Msg.ComponentReported",
+                "Component reported a vote count",
+                Vector.empty
+              )
+            )
+          )
+        )
+      ).head
+
+      assertTrue(
+        interaction.label == "ComponentReported",
+        interaction.summary == "Component reported a vote count"
+      )
     }
   )
 

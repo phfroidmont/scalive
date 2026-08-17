@@ -29,10 +29,20 @@ test("traces a shopping cart message, derived model, and keyed row", async ({ pa
     "The rendered tree contains changes.",
   )
   await expect(inspector.locator('[data-trace-evidence="DOM changes"]')).toBeAttached()
-  await expect(inspector.locator('[data-trace-evidence="Message fields"]')).toContainText(
-    /product\s*coffee/,
+  await expect(
+    inspector
+      .locator('[data-trace-step-kind="message"][data-trace-from="runtime"][data-trace-to="live-view"]')
+      .filter({ hasText: "Add" }),
+  ).toContainText("Add")
+  await expect(inspector.locator('[data-trace-step-kind="operation"][data-trace-participant="live-view"]')).toContainText(
+    "Handle Add",
   )
-  await expect(inspector.locator('[data-trace-evidence="Updated model"]')).toContainText(
-    /total\s*\$12\.99/,
+  await expect(inspector.locator('[data-trace-evidence="Resolved message"] code')).toHaveText(
+    "Msg.Add(Product.Coffee)",
   )
+  const modelValue = inspector.locator('[data-trace-evidence="Updated model"] code')
+  await expect(modelValue).toContainText("Model(")
+  await expect(modelValue).toContainText("Line(Product.Coffee, quantity = 1)")
+  await expect(modelValue).not.toContainText("ShoppingCartExample")
+  expect(await modelValue.textContent()).toContain("\n")
 })

@@ -403,10 +403,16 @@ test harness without expanding Scalive's public testing API.
 - [x] Send browser trace records only to the inspector topic.
 - [x] Preserve independent browser and server ordering instead of pretending
   clocks are synchronized.
-- [x] Sanitize tokens, CSRF values, cookies, passwords, form secrets, claims, and
-  upload bytes.
+- [x] Keep documentation values, protocol strings, rendered diffs, and DOM
+  descriptions inspectable while sanitizing authorization values, cookies, CSRF
+  tokens, signed session/static tokens, and binary upload bodies.
 - [x] Bound trace history by record count and byte size.
 - [x] Implement readable model, lifecycle, wire-diff, and DOM-diff views.
+- [x] Render live and authored trace values as Scala code, using `_` for
+  intentionally omitted fields instead of prose stand-ins.
+- [x] Pretty-print safe projected value trees with PPrint, concise
+  context-relative names, deterministic wrapping, and bounded output without
+  passing raw application values to the printer.
 - [x] Allow expansion to sanitized protocol structure.
 - [x] Add the counter X-ray browser journey.
 - [x] Test empty diffs, failed renders, reconnects, async completion, components,

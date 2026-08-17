@@ -12,12 +12,41 @@ import zio.json.ast.Json
 final private[scalive] case class RuntimeTraceValue(
   typeName: String,
   summary: String,
-  fields: Vector[(String, String)] = Vector.empty)
+  fields: Vector[(String, String)] = Vector.empty,
+  scalaValue: Option[String] = None)
 
 private[scalive] object RuntimeTraceValue:
   def redacted(value: Any): RuntimeTraceValue =
-    val typeName = if value == null then "null" else value.getClass.getName
-    RuntimeTraceValue(typeName, "Content redacted")
+    val typeName   = if value == null then "null" else value.getClass.getName
+    val scalaValue =
+      if value == null then "null"
+      else s"_: ${scalaTypeName(value.getClass)}"
+    RuntimeTraceValue(typeName, "Content redacted", scalaValue = Some(scalaValue))
+
+  private val ScalaName = "[A-Za-z_$][A-Za-z0-9_$]*".r
+
+  private def scalaTypeName(value: Class[?]): String =
+    if value.isArray then s"Array[${scalaTypeName(value.getComponentType)}]"
+    else if value.isPrimitive then
+      value.getName match
+        case "boolean" => "Boolean"
+        case "byte"    => "Byte"
+        case "char"    => "Char"
+        case "double"  => "Double"
+        case "float"   => "Float"
+        case "int"     => "Int"
+        case "long"    => "Long"
+        case "short"   => "Short"
+        case "void"    => "Unit"
+        case _         => "Any"
+    else
+      val module    = value.getName.endsWith("$")
+      val candidate = value.getName.stripSuffix("$").replace('$', '.').split('.').takeRight(3)
+      val valid     = candidate.nonEmpty && candidate.forall(ScalaName.matches) &&
+        !candidate.exists(name => name.contains("$anon") || name.contains("$Lambda"))
+      if !valid then "Any"
+      else s"${candidate.mkString(".")}${if module then ".type" else ""}"
+end RuntimeTraceValue
 
 private[scalive] enum RuntimeTraceOperationKind:
   case Join

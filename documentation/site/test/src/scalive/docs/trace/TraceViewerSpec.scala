@@ -75,16 +75,28 @@ object TraceViewerSpec extends ZIOSpecDefault:
     },
     test("renders authored facts inline without record disclosures") {
       val document = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(TraceCatalog.HttpGet)))
-      val evidence = document.select(".docs-trace-evidence-inline")
+      val evidence = document.select(".docs-trace-evidence-inline").asScala
+        .filter(_.select("dl").size() == 1)
 
       assertTrue(
-        evidence.size() == 2,
-        evidence.asScala.forall(_.parent().hasClass("docs-trace-step")),
-        evidence.asScala.forall(value => value.select("dl > div").asScala.forall(_.select("dt, dd").size() == 2)),
-        evidence.select("details").isEmpty,
+        evidence.size == 2,
+        evidence.forall(_.parent().hasClass("docs-trace-step")),
+        evidence.forall(value => value.select("dl > div").asScala.forall(_.select("dt, dd").size() == 2)),
+        evidence.forall(_.select("details").isEmpty),
         document.select(".docs-trace-evidence-record").isEmpty,
-        evidence.text().contains("connected"),
-        evidence.text().contains("fresh connected mount")
+        evidence.map(_.text()).mkString(" ").contains("connected"),
+        evidence.map(_.text()).mkString(" ").contains("fresh connected mount")
+      )
+    },
+    test("renders symbolic Scala values in authored traces") {
+      val http = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(TraceCatalog.HttpGet)))
+      val join = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(TraceCatalog.LiveSocketJoin)))
+
+      assertTrue(
+        http.select("code.docs-trace-evidence-scala-value").eachText().asScala.toVector ==
+          Vector("modelA: Model", "render(modelA): HtmlElement[Msg]"),
+        join.select("code.docs-trace-evidence-scala-value").eachText().asScala.toVector ==
+          Vector("modelB: Model", "render(modelB): HtmlElement[Msg]")
       )
     },
     test("renders code in one direct disclosure") {
@@ -162,6 +174,42 @@ object TraceViewerSpec extends ZIOSpecDefault:
         detail.hasClass("docs-trace-evidence-inline"),
         detail.select("details").isEmpty,
         detail.select("dl").text() == "count 2"
+      )
+    },
+    test("renders an exact Scala value as inline code") {
+      val trace = TraceDefinition(
+        "scala-value",
+        "Scala value",
+        "Evidence rendering fixture",
+        Vector(TraceParticipant("runtime", "Runtime", "Runs the operation")),
+        Vector(
+          TracePhase(
+            "phase",
+            "Phase",
+            Vector(
+              TraceStep.Operation(
+                "runtime",
+                "Return updated model",
+                "The handler proposes a new immutable model.",
+                Some(
+                  TraceEvidence(
+                    label = "Updated model",
+                    scalaValue = Some("CounterExample.Model(count = 1)")
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      val document = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(trace)))
+      val detail   = document.selectFirst("[data-trace-evidence='Updated model']")
+
+      assertTrue(
+        TraceCatalog.validate(Vector(trace)).isEmpty,
+        detail.select("code.docs-trace-evidence-scala-value").text() ==
+          "CounterExample.Model(count = 1)",
+        detail.select("p, dl").isEmpty
       )
     }
   )

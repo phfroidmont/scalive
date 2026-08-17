@@ -6,11 +6,14 @@ import scala.reflect.ClassTag
 
 import scalive.*
 import scalive.docs.model.{ExampleCatalog, ExampleDescriptor}
+import scalive.docs.trace.{ProjectedScalaValue, ProjectedScalaValueFormatter}
 
 final private[docs] case class ExampleTraceValue(
   typeName: String,
   summary: String,
-  fields: Vector[(String, String)] = Vector.empty)
+  fields: Vector[(String, String)] = Vector.empty,
+  scalaValue: Option[String] = None):
+  require(scalaValue.exists(_.trim.nonEmpty), "Example trace values require Scala code")
 
 private[docs] trait ExampleTraceProjector[-A]:
   def project(value: A): ExampleTraceValue
@@ -51,6 +54,8 @@ final private class ExampleEntry[Msg: LiveMessageTag, Model: ClassTag](
     modelTag.unapply(value).map(traces.model.project)
 
 private[docs] object ExampleRegistry:
+  import ProjectedScalaValue.*
+
   private val asyncReport =
     new ExampleEntry[AsyncReportExample.Msg, AsyncReportExample.Model](
       descriptor = ExampleCatalog.AsyncReport,
@@ -60,24 +65,49 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[AsyncReportExample.Msg]:
           def project(value: AsyncReportExample.Msg) = value match
             case AsyncReportExample.Msg.RunSuccess =>
-              ExampleTraceValue("AsyncReportExample.Msg", "Start the successful report")
+              traced(
+                "AsyncReportExample.Msg",
+                "Start the successful report",
+                "AsyncReportExample.Msg.RunSuccess"
+              )
             case AsyncReportExample.Msg.RunFailure =>
-              ExampleTraceValue("AsyncReportExample.Msg", "Start the failing report")
+              traced(
+                "AsyncReportExample.Msg",
+                "Start the failing report",
+                "AsyncReportExample.Msg.RunFailure"
+              )
             case AsyncReportExample.Msg.Replace =>
-              ExampleTraceValue("AsyncReportExample.Msg", "Replace active report work")
+              traced(
+                "AsyncReportExample.Msg",
+                "Replace active report work",
+                "AsyncReportExample.Msg.Replace"
+              )
             case AsyncReportExample.Msg.Retry =>
-              ExampleTraceValue("AsyncReportExample.Msg", "Retry report work")
+              traced("AsyncReportExample.Msg", "Retry report work", "AsyncReportExample.Msg.Retry")
             case AsyncReportExample.Msg.Cancel =>
-              ExampleTraceValue("AsyncReportExample.Msg", "Cancel active report work")
+              traced(
+                "AsyncReportExample.Msg",
+                "Cancel active report work",
+                "AsyncReportExample.Msg.Cancel"
+              )
             case AsyncReportExample.Msg.Reset =>
-              ExampleTraceValue("AsyncReportExample.Msg", "Reset async report state")
+              traced(
+                "AsyncReportExample.Msg",
+                "Reset async report state",
+                "AsyncReportExample.Msg.Reset"
+              )
             case AsyncReportExample.Msg.ReportCompleted(result) =>
-              ExampleTraceValue("AsyncReportExample.Msg", asyncResultLabel(result)),
+              projected(
+                "AsyncReportExample.Msg.ReportCompleted",
+                asyncResultLabel(result),
+                constructor("Msg.ReportCompleted", asyncResultScala(result))
+              ),
         model = new ExampleTraceProjector[AsyncReportExample.Model]:
           def project(value: AsyncReportExample.Model) =
-            ExampleTraceValue(
+            projected(
               "AsyncReportExample.Model",
               "Current async report state",
+              constructor("Model", field("report", asyncValueScala(value.report))),
               Vector("state" -> asyncValueLabel(value.report))
             )
       )
@@ -92,20 +122,43 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[ActivityStreamExample.Msg]:
           def project(value: ActivityStreamExample.Msg) = value match
             case ActivityStreamExample.Msg.Add =>
-              ExampleTraceValue("ActivityStreamExample.Msg", "Insert one activity")
-            case ActivityStreamExample.Msg.Delete(activity) =>
-              ExampleTraceValue(
+              traced(
                 "ActivityStreamExample.Msg",
+                "Insert one activity",
+                "ActivityStreamExample.Msg.Add"
+              )
+            case ActivityStreamExample.Msg.Delete(activity) =>
+              projected(
+                "ActivityStreamExample.Msg.Delete",
                 "Delete one activity",
+                constructor(
+                  "Msg.Delete",
+                  constructor(
+                    "Activity",
+                    field("id", number(activity.id)),
+                    field("category", wildcard),
+                    field("summary", wildcard)
+                  )
+                ),
                 Vector("activityId" -> activity.id.toString)
               )
             case ActivityStreamExample.Msg.Reset =>
-              ExampleTraceValue("ActivityStreamExample.Msg", "Reset the activity stream"),
+              traced(
+                "ActivityStreamExample.Msg",
+                "Reset the activity stream",
+                "ActivityStreamExample.Msg.Reset"
+              ),
         model = new ExampleTraceProjector[ActivityStreamExample.Model]:
           def project(value: ActivityStreamExample.Model) =
-            ExampleTraceValue(
+            projected(
               "ActivityStreamExample.Model",
               "Current durable activity state",
+              constructor(
+                "Model",
+                field("activities", wildcard),
+                field("activityStream", wildcard),
+                field("nextId", number(value.nextId))
+              ),
               Vector(
                 "activityCount" -> value.activities.size.toString,
                 "nextId"        -> value.nextId.toString
@@ -122,16 +175,17 @@ private[docs] object ExampleRegistry:
       message = new ExampleTraceProjector[CounterExample.Msg]:
         def project(value: CounterExample.Msg) = value match
           case CounterExample.Msg.Decrement =>
-            ExampleTraceValue("CounterExample.Msg.Decrement", "Decrease the count")
+            traced("CounterExample.Msg", "Decrease the count", "CounterExample.Msg.Decrement")
           case CounterExample.Msg.Increment =>
-            ExampleTraceValue("CounterExample.Msg.Increment", "Increase the count")
+            traced("CounterExample.Msg", "Increase the count", "CounterExample.Msg.Increment")
           case CounterExample.Msg.Reset =>
-            ExampleTraceValue("CounterExample.Msg.Reset", "Reset the count"),
+            traced("CounterExample.Msg", "Reset the count", "CounterExample.Msg.Reset"),
       model = new ExampleTraceProjector[CounterExample.Model]:
         def project(value: CounterExample.Model) =
-          ExampleTraceValue(
+          projected(
             "CounterExample.Model",
             "Current counter state",
+            constructor("Model", field("count", number(value.count))),
             Vector("count" -> value.count.toString)
           )
     )
@@ -149,17 +203,27 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[BrowserInteropExample.Msg]:
           def project(value: BrowserInteropExample.Msg) = value match
             case BrowserInteropExample.Msg.CopySample =>
-              ExampleTraceValue(
+              traced(
                 "BrowserInteropExample.Msg",
-                "Request a browser clipboard write"
+                "Request a browser clipboard write",
+                "BrowserInteropExample.Msg.CopySample"
               )
             case BrowserInteropExample.Msg.Reset =>
-              ExampleTraceValue("BrowserInteropExample.Msg", "Reset browser integration"),
+              traced(
+                "BrowserInteropExample.Msg",
+                "Reset browser integration",
+                "BrowserInteropExample.Msg.Reset"
+              ),
         model = new ExampleTraceProjector[BrowserInteropExample.Model]:
           def project(value: BrowserInteropExample.Model) =
-            ExampleTraceValue(
+            projected(
               "BrowserInteropExample.Model",
               "Current browser operation state",
+              constructor(
+                "Model",
+                field("requestNumber", number(value.requestNumber)),
+                field("operation", browserOperationScala(value.operation))
+              ),
               Vector(
                 "requestNumber" -> value.requestNumber.toString,
                 "operation"     -> value.operation.traceLabel
@@ -177,26 +241,29 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[ShoppingCartExample.Msg]:
           def project(value: ShoppingCartExample.Msg) = value match
             case ShoppingCartExample.Msg.Add(product) =>
-              ExampleTraceValue(
-                "ShoppingCartExample.Msg",
+              projected(
+                "ShoppingCartExample.Msg.Add",
                 "Add one product",
+                constructor("Msg.Add", shoppingProductScala(product)),
                 Vector("product" -> product.sku)
               )
             case ShoppingCartExample.Msg.Remove(product) =>
-              ExampleTraceValue(
-                "ShoppingCartExample.Msg",
+              projected(
+                "ShoppingCartExample.Msg.Remove",
                 "Remove one product",
+                constructor("Msg.Remove", shoppingProductScala(product)),
                 Vector("product" -> product.sku)
               )
             case ShoppingCartExample.Msg.Clear =>
-              ExampleTraceValue("ShoppingCartExample.Msg", "Clear the cart"),
+              traced("ShoppingCartExample.Msg", "Clear the cart", "ShoppingCartExample.Msg.Clear"),
         model = new ExampleTraceProjector[ShoppingCartExample.Model]:
           def project(value: ShoppingCartExample.Model) =
             val quantities =
               value.lines.map(line => s"${line.product.sku}=${line.quantity}").mkString(", ")
-            ExampleTraceValue(
+            projected(
               "ShoppingCartExample.Model",
               "Current cart state",
+              shoppingModelScala(value),
               Vector(
                 "itemCount" -> value.itemCount.toString,
                 "total"     -> money(value.totalInCents),
@@ -215,20 +282,46 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[SubscriptionClockExample.Msg]:
           def project(value: SubscriptionClockExample.Msg) = value match
             case SubscriptionClockExample.Msg.Start =>
-              ExampleTraceValue("SubscriptionClockExample.Msg", "Start the clock subscription")
+              traced(
+                "SubscriptionClockExample.Msg",
+                "Start the clock subscription",
+                "SubscriptionClockExample.Msg.Start"
+              )
             case SubscriptionClockExample.Msg.Replace =>
-              ExampleTraceValue("SubscriptionClockExample.Msg", "Replace the clock subscription")
+              traced(
+                "SubscriptionClockExample.Msg",
+                "Replace the clock subscription",
+                "SubscriptionClockExample.Msg.Replace"
+              )
             case SubscriptionClockExample.Msg.Cancel =>
-              ExampleTraceValue("SubscriptionClockExample.Msg", "Cancel the clock subscription")
+              traced(
+                "SubscriptionClockExample.Msg",
+                "Cancel the clock subscription",
+                "SubscriptionClockExample.Msg.Cancel"
+              )
             case SubscriptionClockExample.Msg.Reset =>
-              ExampleTraceValue("SubscriptionClockExample.Msg", "Reset the clock subscription")
+              traced(
+                "SubscriptionClockExample.Msg",
+                "Reset the clock subscription",
+                "SubscriptionClockExample.Msg.Reset"
+              )
             case SubscriptionClockExample.Msg.Tick(_) =>
-              ExampleTraceValue("SubscriptionClockExample.Msg", "Receive one clock tick"),
+              projected(
+                "SubscriptionClockExample.Msg.Tick",
+                "Receive one clock tick",
+                constructor("Msg.Tick", field("at", wildcard))
+              ),
         model = new ExampleTraceProjector[SubscriptionClockExample.Model]:
           def project(value: SubscriptionClockExample.Model) =
-            ExampleTraceValue(
+            projected(
               "SubscriptionClockExample.Model",
               "Current clock subscription state",
+              constructor(
+                "Model",
+                field("mode", clockModeScala(value.mode)),
+                field("lastTick", wildcard),
+                field("tickCount", number(value.tickCount))
+              ),
               Vector(
                 "mode"      -> value.mode.label,
                 "tickCount" -> value.tickCount.toString
@@ -246,30 +339,52 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[ReportsExample.Msg]:
           def project(value: ReportsExample.Msg) = value match
             case ReportsExample.Msg.Select(report) =>
-              ExampleTraceValue(
-                "ReportsExample.Msg",
+              projected(
+                "ReportsExample.Msg.Select",
                 "Select a report supplied by the service",
+                constructor(
+                  "Msg.Select",
+                  constructor(
+                    "Report",
+                    field("id", number(report.id)),
+                    field("title", wildcard),
+                    field("summary", wildcard)
+                  )
+                ),
                 Vector("reportId" -> report.id.toString)
               )
             case ReportsExample.Msg.ResetSelection =>
-              ExampleTraceValue("ReportsExample.Msg", "Reset the selected report")
+              traced(
+                "ReportsExample.Msg",
+                "Reset the selected report",
+                "ReportsExample.Msg.ResetSelection"
+              )
             case ReportsExample.Msg.Refresh =>
-              ExampleTraceValue("ReportsExample.Msg", "Refresh reports from the service"),
+              traced(
+                "ReportsExample.Msg",
+                "Refresh reports from the service",
+                "ReportsExample.Msg.Refresh"
+              ),
         model = new ExampleTraceProjector[ReportsExample.Model]:
           def project(value: ReportsExample.Model) = value match
             case ReportsExample.Model.Loaded(reports, selected) =>
-              ExampleTraceValue(
-                "ReportsExample.Model",
+              projected(
+                "ReportsExample.Model.Loaded",
                 "Loaded reports with one selected report",
+                constructor(
+                  "Model.Loaded",
+                  field("reports", wildcard),
+                  field("selected", wildcard)
+                ),
                 Vector(
                   "reportCount"      -> reports.size.toString,
                   "selectedReportId" -> selected.id.toString
                 )
               )
             case ReportsExample.Model.Empty =>
-              ExampleTraceValue("ReportsExample.Model", "No reports available")
+              traced("ReportsExample.Model", "No reports available", "ReportsExample.Model.Empty")
             case ReportsExample.Model.Failed =>
-              ExampleTraceValue("ReportsExample.Model", "Report loading failed")
+              traced("ReportsExample.Model", "Report loading failed", "ReportsExample.Model.Failed")
       )
     )
 
@@ -282,18 +397,35 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[LifecycleExample.Msg]:
           def project(value: LifecycleExample.Msg) = value match
             case LifecycleExample.Msg.PutNotification =>
-              ExampleTraceValue("LifecycleExample.Msg", "Put a keyed notification")
+              traced(
+                "LifecycleExample.Msg",
+                "Put a keyed notification",
+                "LifecycleExample.Msg.PutNotification"
+              )
             case LifecycleExample.Msg.ClearNotification =>
-              ExampleTraceValue("LifecycleExample.Msg", "Clear the keyed notification")
+              traced(
+                "LifecycleExample.Msg",
+                "Clear the keyed notification",
+                "LifecycleExample.Msg.ClearNotification"
+              )
             case LifecycleExample.Msg.RequestAttention =>
-              ExampleTraceValue("LifecycleExample.Msg", "Change the projected page title")
+              traced(
+                "LifecycleExample.Msg",
+                "Change the projected page title",
+                "LifecycleExample.Msg.RequestAttention"
+              )
             case LifecycleExample.Msg.Reset =>
-              ExampleTraceValue("LifecycleExample.Msg", "Reset lifecycle state"),
+              traced("LifecycleExample.Msg", "Reset lifecycle state", "LifecycleExample.Msg.Reset"),
         model = new ExampleTraceProjector[LifecycleExample.Model]:
           def project(value: LifecycleExample.Model) =
-            ExampleTraceValue(
+            projected(
               "LifecycleExample.Model",
               "Current lifecycle state",
+              constructor(
+                "Model",
+                field("connectedMount", boolean(value.connectedMount)),
+                field("currentTitle", string(value.currentTitle))
+              ),
               Vector(
                 "connectedMount" -> value.connectedMount.toString,
                 "currentTitle"   -> value.currentTitle
@@ -311,16 +443,21 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[ProfileFormExample.Msg]:
           def project(value: ProfileFormExample.Msg) = value match
             case ProfileFormExample.Msg.Validate(event) =>
-              formEventTrace("Validate the profile form", event)
+              formEventTrace("Validate the profile form", "Validate", event)
             case ProfileFormExample.Msg.Save(event) =>
-              formEventTrace("Submit the profile form", event)
+              formEventTrace("Submit the profile form", "Save", event)
             case ProfileFormExample.Msg.Reset =>
-              ExampleTraceValue("ProfileFormExample.Msg", "Reset the form"),
+              traced("ProfileFormExample.Msg", "Reset the form", "ProfileFormExample.Msg.Reset"),
         model = new ExampleTraceProjector[ProfileFormExample.Model]:
           def project(value: ProfileFormExample.Model) =
-            ExampleTraceValue(
+            projected(
               "ProfileFormExample.Model",
               "Current profile form state",
+              constructor(
+                "Model",
+                field("form", wildcard),
+                field("saved", wildcard)
+              ),
               Vector(
                 "valid"      -> value.form.state.isValid.toString,
                 "submitted"  -> value.form.state.submitted.toString,
@@ -340,18 +477,24 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[NavigationExample.Msg]:
           def project(value: NavigationExample.Msg) = value match
             case NavigationExample.Msg.Select(query) =>
-              ExampleTraceValue(
-                "NavigationExample.Msg",
+              projected(
+                "NavigationExample.Msg.Select",
                 "Select typed search parameters",
+                constructor("Msg.Select", navigationPresetScala(query)),
                 Vector("preset" -> query.label)
               )
             case NavigationExample.Msg.Reset =>
-              ExampleTraceValue("NavigationExample.Msg", "Reset navigation state"),
+              traced(
+                "NavigationExample.Msg",
+                "Reset navigation state",
+                "NavigationExample.Msg.Reset"
+              ),
         model = new ExampleTraceProjector[NavigationExample.Model]:
           def project(value: NavigationExample.Model) =
-            ExampleTraceValue(
+            projected(
               "NavigationExample.Model",
               "Current typed search destination",
+              constructor("Model", field("query", navigationPresetScala(value.query))),
               Vector("preset" -> value.query.label)
             )
       )
@@ -366,20 +509,39 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[VotingComponentsExample.Msg]:
           def project(value: VotingComponentsExample.Msg) = value match
             case VotingComponentsExample.Msg.ComponentReported(id, votes) =>
-              ExampleTraceValue(
-                "VotingComponentsExample.Msg",
+              projected(
+                "VotingComponentsExample.Msg.ComponentReported",
                 "Component reported a vote count",
+                constructor(
+                  "Msg.ComponentReported",
+                  field("id", string(id)),
+                  field("votes", number(votes))
+                ),
                 Vector("componentId" -> id, "votes" -> votes.toString)
               )
             case VotingComponentsExample.Msg.UpdateScalaProps =>
-              ExampleTraceValue("VotingComponentsExample.Msg", "Parent updated component props")
+              traced(
+                "VotingComponentsExample.Msg",
+                "Parent updated component props",
+                "VotingComponentsExample.Msg.UpdateScalaProps"
+              )
             case VotingComponentsExample.Msg.Reset =>
-              ExampleTraceValue("VotingComponentsExample.Msg", "Reset voting components"),
+              traced(
+                "VotingComponentsExample.Msg",
+                "Reset voting components",
+                "VotingComponentsExample.Msg.Reset"
+              ),
         model = new ExampleTraceProjector[VotingComponentsExample.Model]:
           def project(value: VotingComponentsExample.Model) =
-            ExampleTraceValue(
+            projected(
               "VotingComponentsExample.Model",
               "Current parent component state",
+              constructor(
+                "Model",
+                field("scalaRevision", number(value.scalaRevision)),
+                field("resetEpoch", number(value.resetEpoch)),
+                field("status", wildcard)
+              ),
               Vector(
                 "scalaRevision" -> value.scalaRevision.toString,
                 "resetEpoch"    -> value.resetEpoch.toString
@@ -397,20 +559,42 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[TextUploadExample.Msg]:
           def project(value: TextUploadExample.Msg) = value match
             case TextUploadExample.Msg.Validate =>
-              ExampleTraceValue("TextUploadExample.Msg", "Validate selected upload metadata")
+              traced(
+                "TextUploadExample.Msg",
+                "Validate selected upload metadata",
+                "TextUploadExample.Msg.Validate"
+              )
             case TextUploadExample.Msg.Progress =>
-              ExampleTraceValue("TextUploadExample.Msg", "Refresh upload progress")
+              traced(
+                "TextUploadExample.Msg",
+                "Refresh upload progress",
+                "TextUploadExample.Msg.Progress"
+              )
             case TextUploadExample.Msg.Cancel(_) =>
-              ExampleTraceValue("TextUploadExample.Msg", "Cancel one upload entry")
+              projected(
+                "TextUploadExample.Msg.Cancel",
+                "Cancel one upload entry",
+                constructor("Msg.Cancel", field("entry", wildcard))
+              )
             case TextUploadExample.Msg.Summarize =>
-              ExampleTraceValue("TextUploadExample.Msg", "Summarize completed text")
+              traced(
+                "TextUploadExample.Msg",
+                "Summarize completed text",
+                "TextUploadExample.Msg.Summarize"
+              )
             case TextUploadExample.Msg.Reset =>
-              ExampleTraceValue("TextUploadExample.Msg", "Reset upload state"),
+              traced("TextUploadExample.Msg", "Reset upload state", "TextUploadExample.Msg.Reset"),
         model = new ExampleTraceProjector[TextUploadExample.Model]:
           def project(value: TextUploadExample.Model) =
-            ExampleTraceValue(
+            projected(
               "TextUploadExample.Model",
               "Current upload lifecycle state",
+              constructor(
+                "Model",
+                field("upload", wildcard),
+                field("summaries", wildcard),
+                field("notice", wildcard)
+              ),
               Vector(
                 "activeEntries" -> value.upload.entries.size.toString,
                 "summaries"     -> value.summaries.size.toString,
@@ -462,11 +646,13 @@ private[docs] object ExampleRegistry:
 
   private def formEventTrace(
     summary: String,
+    caseName: String,
     event: FormEvent[ProfileFormExample.Profile]
   ): ExampleTraceValue =
-    ExampleTraceValue(
-      "ProfileFormExample.Msg",
+    projected(
+      s"ProfileFormExample.Msg.$caseName",
       summary,
+      constructor(s"Msg.$caseName", field("event", wildcard)),
       Vector(
         "valid"      -> event.isValid.toString,
         "submitted"  -> event.submitted.toString,
@@ -474,6 +660,83 @@ private[docs] object ExampleRegistry:
         "usedFields" -> event.state.used.size.toString
       )
     )
+
+  private def traced(typeName: String, summary: String, scalaValue: String): ExampleTraceValue =
+    val owner = typeName.takeWhile(_ != '.')
+    projected(scalaValue, summary, name(scalaValue.stripPrefix(s"$owner.")))
+
+  private def projected(
+    typeName: String,
+    summary: String,
+    value: ProjectedScalaValue,
+    fields: Vector[(String, String)] = Vector.empty
+  ): ExampleTraceValue =
+    ExampleTraceValue(
+      typeName,
+      summary,
+      fields,
+      scalaValue = Some(ProjectedScalaValueFormatter.format(value))
+    )
+
+  private def asyncResultScala(result: LiveAsyncResult[?]): ProjectedScalaValue = result match
+    case LiveAsyncResult.Succeeded(_) => constructor("LiveAsyncResult.Succeeded", wildcard)
+    case LiveAsyncResult.Failed(_)    => constructor("LiveAsyncResult.Failed", wildcard)
+    case LiveAsyncResult.Cancelled(_) => constructor("LiveAsyncResult.Cancelled", wildcard)
+
+  private def asyncValueScala(value: AsyncValue[?]): ProjectedScalaValue = value match
+    case AsyncValue.Empty           => name("AsyncValue.Empty")
+    case AsyncValue.Loading(_)      => constructor("AsyncValue.Loading", wildcard)
+    case AsyncValue.Ok(_)           => constructor("AsyncValue.Ok", wildcard)
+    case AsyncValue.Failed(_, _)    => constructor("AsyncValue.Failed", wildcard, wildcard)
+    case AsyncValue.Cancelled(_, _) => constructor("AsyncValue.Cancelled", wildcard, wildcard)
+
+  private def browserOperationScala(
+    value: BrowserInteropExample.CopyOperation
+  ): ProjectedScalaValue =
+    value match
+      case BrowserInteropExample.CopyOperation.Idle =>
+        name("CopyOperation.Idle")
+      case BrowserInteropExample.CopyOperation.Pending(_) =>
+        constructor("CopyOperation.Pending", wildcard)
+      case BrowserInteropExample.CopyOperation.Succeeded =>
+        name("CopyOperation.Succeeded")
+      case BrowserInteropExample.CopyOperation.Failed =>
+        name("CopyOperation.Failed")
+
+  private def shoppingProductScala(value: ShoppingCartExample.Product): ProjectedScalaValue =
+    value match
+      case ShoppingCartExample.Product.Coffee   => name("Product.Coffee")
+      case ShoppingCartExample.Product.Notebook => name("Product.Notebook")
+      case ShoppingCartExample.Product.Sticker  => name("Product.Sticker")
+
+  private def shoppingModelScala(value: ShoppingCartExample.Model): ProjectedScalaValue =
+    val lines = value.lines.map { line =>
+      constructor(
+        "Line",
+        shoppingProductScala(line.product),
+        field("quantity", number(line.quantity))
+      )
+    }
+    constructor("Model", field("lines", vector(lines*)))
+
+  private def clockModeScala(value: SubscriptionClockExample.Mode): ProjectedScalaValue =
+    value match
+      case SubscriptionClockExample.Mode.Stopped =>
+        name("Mode.Stopped")
+      case SubscriptionClockExample.Mode.EverySecond =>
+        name("Mode.EverySecond")
+      case SubscriptionClockExample.Mode.FourTimesPerSecond =>
+        name("Mode.FourTimesPerSecond")
+
+  private def navigationPresetScala(
+    value: NavigationExample.SearchPreset
+  ): ProjectedScalaValue = value match
+    case NavigationExample.SearchPreset.LiveView =>
+      name("SearchPreset.LiveView")
+    case NavigationExample.SearchPreset.Streams =>
+      name("SearchPreset.Streams")
+    case NavigationExample.SearchPreset.TypedForms =>
+      name("SearchPreset.TypedForms")
 
   private def asyncResultLabel(result: LiveAsyncResult[?]): String = result match
     case LiveAsyncResult.Succeeded(_) => "Async report succeeded"

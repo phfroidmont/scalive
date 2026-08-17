@@ -185,7 +185,8 @@ private[docs] object TraceViewer:
   ): Vector[Mod[Nothing]] =
     evidence
       .map(value =>
-        if value.code.nonEmpty then renderCodeEvidence(value, stepLabel): Mod[Nothing]
+        if value.scalaValue.nonEmpty then renderInlineEvidence(value, stepLabel): Mod[Nothing]
+        else if value.code.nonEmpty then renderCodeEvidence(value, stepLabel): Mod[Nothing]
         else renderInlineEvidence(value, stepLabel): Mod[Nothing]
       ).toVector
 
@@ -197,9 +198,15 @@ private[docs] object TraceViewer:
       cls                        := "docs-trace-evidence docs-trace-evidence-inline",
       dataAttr("trace-evidence") := evidence.label,
       span(cls := "docs-visually-hidden", s"${evidence.label} for $stepLabel: "),
-      evidence.summary.map(value => p(value): Mod[Nothing]).toVector,
+      evidence.scalaValue
+        .map(value => code(cls := "docs-trace-evidence-scala-value", value): Mod[Nothing]).toVector,
+      evidence.summary
+        .filter(_ => evidence.scalaValue.isEmpty)
+        .map(value => p(value): Mod[Nothing]).toVector,
       Option
-        .when(evidence.facts.nonEmpty)(renderFacts(evidence.facts, ""))
+        .when(evidence.scalaValue.isEmpty && evidence.facts.nonEmpty)(
+          renderFacts(evidence.facts, "")
+        )
         .map(value => value: Mod[Nothing]).toVector
     )
 

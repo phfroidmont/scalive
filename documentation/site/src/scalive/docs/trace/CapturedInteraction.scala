@@ -20,6 +20,18 @@ final private[docs] case class CapturedInteraction(
   label: String,
   summary: String)
 
+private[trace] object CapturedTraceValue:
+  def select(
+    records: Vector[DocumentationTraceRecord],
+    stage: String
+  ): Option[DocumentationTraceValue] =
+    val values = records.filter(_.stage == stage).flatMap(_.value)
+    values.reverse
+      .find(value =>
+        value.summary != "Content redacted" || value.fields.nonEmpty || value.scalaValue.nonEmpty
+      )
+      .orElse(values.lastOption)
+
 private[docs] object CapturedInteractionGrouper:
   def group(records: Vector[DocumentationTraceRecord]): Vector[CapturedInteraction] =
     records
@@ -44,7 +56,7 @@ private[docs] object CapturedInteractionGrouper:
       .filter(_.producer == TraceProducer.Server).sortBy(_.operationRecordSequence)
     val records       = causalRecords(browser, server)
     val operationKind = server.headOption.map(_.operationKind).getOrElse("Browser")
-    val typed         = records.find(_.stage == "TypedMessage").flatMap(_.value)
+    val typed         = CapturedTraceValue.select(records, "TypedMessage")
     val label         = typed
       .map { value =>
         val projectedType = typeName(value.typeName)

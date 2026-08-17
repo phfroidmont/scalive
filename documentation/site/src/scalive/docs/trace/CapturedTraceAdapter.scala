@@ -82,7 +82,7 @@ private[docs] object CapturedTraceAdapter:
             "live-view",
             typedMessageLabel(records),
             "The runtime delivers the projected typed message.",
-            fieldEvidence(records, "TypedMessage", "Message fields")
+            valueEvidence(records, "TypedMessage", "Resolved message")
           )
       )
     ).flatten
@@ -109,7 +109,7 @@ private[docs] object CapturedTraceAdapter:
             "runtime",
             "Return updated model",
             "The handler proposes a new immutable model.",
-            fieldEvidence(records, "ModelProposed", "Updated model")
+            valueEvidence(records, "ModelProposed", "Updated model")
           )
       ),
       step(
@@ -229,14 +229,19 @@ private[docs] object CapturedTraceAdapter:
   private def phase(id: String, title: String, steps: Vector[TraceStep]): Option[TracePhase] =
     Option.when(steps.nonEmpty)(TracePhase(id, title, steps))
 
-  private def fieldEvidence(
+  private def valueEvidence(
     records: Vector[DocumentationTraceRecord],
     stage: String,
     label: String
   ): Option[TraceEvidence] =
-    val fields =
-      records.filter(_.stage == stage).flatMap(_.value.toVector.flatMap(_.fields)).distinct
-    Option.when(fields.nonEmpty)(TraceEvidence(label = label, facts = fields))
+    CapturedTraceValue.select(records, stage).map { value =>
+      TraceEvidence(
+        label = label,
+        summary = Option.when(value.scalaValue.isEmpty)(value.summary).filter(_.nonEmpty),
+        facts = Option.when(value.scalaValue.isEmpty)(value.fields).getOrElse(Vector.empty),
+        scalaValue = value.scalaValue
+      )
+    }
 
   private def protocolEvidence(
     records: Vector[DocumentationTraceRecord],
@@ -265,9 +270,8 @@ private[docs] object CapturedTraceAdapter:
       case _ => "The runtime compares the previous and rendered trees."
 
   private def typedMessageLabel(records: Vector[DocumentationTraceRecord]): String =
-    records
-      .find(_.stage == "TypedMessage")
-      .flatMap(_.value)
+    CapturedTraceValue
+      .select(records, "TypedMessage")
       .map(value => value.typeName.split("[.$]").lastOption.getOrElse(value.typeName))
       .getOrElse("operation")
 

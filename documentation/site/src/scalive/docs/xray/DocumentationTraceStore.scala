@@ -28,7 +28,8 @@ private[docs] enum TraceProducer derives JsonCodec:
 final private[docs] case class DocumentationTraceValue(
   typeName: String,
   summary: String,
-  fields: Vector[(String, String)])
+  fields: Vector[(String, String)],
+  scalaValue: Option[String] = None)
     derives JsonCodec
 
 final private[docs] case class DocumentationTraceRecord(
@@ -119,7 +120,7 @@ final private[docs] class DocumentationTraceStore private (
         stage = record.stage.toString,
         summary = record.summary,
         value = record.value.map(value =>
-          DocumentationTraceValue(value.typeName, value.summary, value.fields)
+          DocumentationTraceValue(value.typeName, value.summary, value.fields, value.scalaValue)
         ),
         protocol = record.protocol,
         byteSize = record.byteSize,

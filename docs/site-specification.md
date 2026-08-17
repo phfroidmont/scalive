@@ -343,6 +343,17 @@ interaction use protocol frames to expose causal browser-to-server and
 server-to-browser handoffs; older or uncorrelated records retain only their
 producer-local order.
 
+Documentation examples contain no private user data, so their projected values,
+protocol strings, rendered diffs, and DOM mutation descriptions remain visible
+in the inspector. Framework security material such as authorization values,
+cookies, CSRF tokens, and signed session or static tokens is still redacted.
+Binary upload bodies are represented by bounded metadata rather than retained.
+The inspector presents projected values as Scala code instead of prose summaries
+or field lists. Complete projections use constructor expressions; intentionally
+partial projections use `_` wildcards, and authored traces use symbolic typed
+expressions for abstract lifecycle values. Live values use context-relative type
+names and deterministic bounded pretty-printing so nested values remain readable.
+
 Instrumentation is documentation-specific initially, but its boundary should
 remain generic enough to inform a future Scalive developer-tools capability. It
 must not expand the supported public framework API solely for the documentation

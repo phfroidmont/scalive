@@ -7,7 +7,7 @@ if (!playwrightRoot) throw new Error("PLAYWRIGHT_TEST_NODE_PATH is not set; ente
 
 const { expect, test } = require(`${playwrightRoot}/playwright/test.js`)
 
-test("validates, saves, resets, and redacts a typed profile form", async ({ page }) => {
+test("validates, saves, resets, and traces a typed profile form", async ({ page }) => {
   await page.goto("/examples/profile-form")
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
 
@@ -32,12 +32,12 @@ test("validates, saves, resets, and redacts a typed profile form", async ({ page
   const jumpToLatest = inspector.getByRole("button", { name: "Jump to latest" })
   if (await jumpToLatest.isVisible()) await jumpToLatest.click()
   const capturedTrace = inspector.locator('[data-trace-provenance="captured"]')
-  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"]')).toContainText(
-    /saved\s*true/,
+  await expect(capturedTrace.locator('[data-trace-evidence="Updated model"] code')).toHaveText(
+    "Model(form = _, saved = _)",
   )
   const projectedTrace = await capturedTrace.textContent()
-  expect(projectedTrace).not.toContain("ada@example.com")
-  expect(projectedTrace).not.toContain("Analytical engine pioneer.")
+  expect(projectedTrace).toContain("ada@example.com")
+  expect(projectedTrace).toContain("Analytical engine pioneer.")
 
   await form.getByRole("button", { name: "Reset form" }).click()
   await expect(form.getByLabel("Name")).toHaveValue("")

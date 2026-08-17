@@ -17,6 +17,8 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
   private enum Msg:
     case Increment
 
+  private object Marker
+
   private final case class Model(count: Int):
     override def toString: String = throw new AssertionError("model.toString must not be called")
 
@@ -202,6 +204,21 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
           publications.get() == 0
         )
       }
+    },
+    test("type-only redaction always emits valid concise Scala patterns") {
+      val anonymous = new Object {}
+      val lambda    = () => ()
+
+      assertTrue(
+        RuntimeTraceValue.redacted(null).scalaValue.contains("null"),
+        RuntimeTraceValue.redacted(Array(1, 2)).scalaValue.contains("_: Array[Int]"),
+        RuntimeTraceValue.redacted(Marker).scalaValue.exists(
+          value => value.startsWith("_: ") && value.endsWith("RuntimeTraceSpec.Marker.type")
+        ),
+        RuntimeTraceValue.redacted(Msg.Increment).scalaValue.contains("_: Any"),
+        RuntimeTraceValue.redacted(anonymous).scalaValue.contains("_: Any"),
+        RuntimeTraceValue.redacted(lambda).scalaValue.contains("_: Any")
+      )
     },
     test("active tracing distinguishes lifecycle edges and preserves causal render ordering") {
       ZIO.scoped {

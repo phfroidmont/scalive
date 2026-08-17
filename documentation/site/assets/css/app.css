@@ -5662,6 +5662,7 @@ details[open] > summary .docs-disclosure-marker,
   align-items: baseline;
   flex-wrap: wrap;
   gap: 0.25rem 0.65rem;
+  margin-inline: 0;
   color: var(--docs-muted);
   font-size: 0.8125rem;
 }
@@ -5669,6 +5670,20 @@ details[open] > summary .docs-disclosure-marker,
 .docs-trace-evidence-inline > p {
   margin: 0;
   line-height: 1.45;
+}
+
+.docs-trace-evidence-inline > code.docs-trace-evidence-scala-value {
+  max-width: 100%;
+  padding: 0.16rem 0.38rem;
+  border: 1px solid var(--docs-border);
+  border-radius: 0.25rem;
+  background: var(--docs-code-bg);
+  color: var(--docs-text);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .docs-trace-evidence-code-detail > summary {

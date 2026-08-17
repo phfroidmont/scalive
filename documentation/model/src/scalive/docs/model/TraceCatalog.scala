@@ -15,6 +15,7 @@ final case class TraceEvidence(
   label: String,
   summary: Option[String] = None,
   facts: Vector[(String, String)] = Vector.empty,
+  scalaValue: Option[String] = None,
   code: Option[String] = None)
 
 sealed trait TraceStep
@@ -87,7 +88,8 @@ object TraceCatalog:
             "live-view",
             "runtime",
             "Model A",
-            "Returns temporary immutable state for the first render."
+            "Returns temporary immutable state for the first render.",
+            Some(TraceEvidence("Returned model", scalaValue = Some("modelA: Model")))
           ),
           TraceStep.Message(
             "runtime",
@@ -99,7 +101,13 @@ object TraceCatalog:
             "live-view",
             "runtime",
             "Typed HTML tree",
-            "Returns page content before layouts are applied."
+            "Returns page content before layouts are applied.",
+            Some(
+              TraceEvidence(
+                "Rendered value",
+                scalaValue = Some("render(modelA): HtmlElement[Msg]")
+              )
+            )
           ),
           TraceStep.Operation(
             "runtime",
@@ -227,7 +235,8 @@ object TraceCatalog:
             "live-view",
             "runtime",
             "Model B",
-            "Returns fresh immutable state rebuilt from route, session, and durable inputs."
+            "Returns fresh immutable state rebuilt from route, session, and durable inputs.",
+            Some(TraceEvidence("Returned model", scalaValue = Some("modelB: Model")))
           ),
           TraceStep.Message(
             "runtime",
@@ -239,7 +248,13 @@ object TraceCatalog:
             "live-view",
             "runtime",
             "Initial live tree",
-            "Returns the connected tree, bindings, and page metadata."
+            "Returns the connected tree, bindings, and page metadata.",
+            Some(
+              TraceEvidence(
+                "Rendered value",
+                scalaValue = Some("render(modelB): HtmlElement[Msg]")
+              )
+            )
           ),
           TraceStep.Operation(
             "runtime",
@@ -359,7 +374,7 @@ object TraceCatalog:
   private def evidenceProse(evidence: TraceEvidence): Vector[String] =
     Vector(evidence.label) ++ evidence.summary.toVector ++
       evidence.facts.flatMap { case (name, value) => Vector(name, value) } ++
-      evidence.code.toVector
+      evidence.scalaValue.toVector ++ evidence.code.toVector
 
   private def validateEvidence(
     traceId: String,
@@ -368,9 +383,14 @@ object TraceCatalog:
   ): Unit =
     evidence.foreach { value =>
       if value.label.trim.isEmpty then errors += s"trace '$traceId' evidence must have a label."
-      val hasContent = value.summary.nonEmpty || value.facts.nonEmpty || value.code.nonEmpty
+      val hasContent =
+        value.summary.nonEmpty || value.facts.nonEmpty || value.scalaValue.nonEmpty || value.code.nonEmpty
+      if value.scalaValue.nonEmpty &&
+        (value.summary.nonEmpty || value.facts.nonEmpty || value.code.nonEmpty)
+      then errors += s"trace '$traceId' Scala value evidence must not include other content."
       if value.facts.exists { case (name, fact) => name.trim.isEmpty || fact.trim.isEmpty } ||
-        value.summary.exists(_.trim.isEmpty) || value.code.exists(_.trim.isEmpty)
+        value.summary.exists(_.trim.isEmpty) || value.scalaValue.exists(_.trim.isEmpty) ||
+        value.code.exists(_.trim.isEmpty)
       then errors += s"trace '$traceId' evidence content must not be blank."
       if !hasContent then errors += s"trace '$traceId' evidence must have content."
     }

@@ -9,31 +9,15 @@ import scalive.*
 import scalive.WebSocketMessage.Payload
 
 private[docs] object DocumentationTraceSanitizer:
-  private val Redacted          = Json.Str("[redacted]")
-  private val StructuralStrings = Set(
-    "event",
-    "joinReference",
-    "kind",
-    "messageReference",
-    "name",
-    "status",
-    "topic",
-    "type"
-  )
-  private val StructuralString   = "[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}".r
+  private val Redacted           = Json.Str("[redacted]")
   private val SensitiveFragments = Vector(
     "authorization",
-    "claim",
     "cookie",
-    "credential",
     "csrf",
-    "flash",
-    "password",
     "secret",
     "session",
     "static",
     "token",
-    "upload",
     "url",
     "redirect"
   )
@@ -75,12 +59,14 @@ private[docs] object DocumentationTraceSanitizer:
         value match
           case Json.Obj(fields) =>
             Json.Obj(fields.map((name, child) => name -> sanitize(child, Some(name)))*)
-          case Json.Arr(values) => Json.Arr(values.map(sanitize(_, None)))
-          case string: Json.Str =>
-            fieldName
-              .filter(StructuralStrings)
-              .filter(_ => StructuralString.matches(string.value))
-              .fold[Json](Redacted)(_ => string)
+          case Json.Arr(values) =>
+            values.headOption match
+              case Some(Json.Str(name)) if isSensitive(name) =>
+                Json.Arr(values.zipWithIndex.map { case (child, index) =>
+                  if index == 0 then child else Redacted
+                })
+              case _ => Json.Arr(values.map(sanitize(_, None)))
+          case string: Json.Str => string
           case number: Json.Num => number
           case bool: Json.Bool  => bool
           case Json.Null        => Json.Null
@@ -131,7 +117,8 @@ final private[docs] class DocumentationRuntimeTrace(
       value.summary,
       value.fields.map { case (name, fieldValue) =>
         name -> DocumentationTraceSanitizer.projectedField(name, fieldValue)
-      }
+      },
+      value.scalaValue
     )
 end DocumentationRuntimeTrace
 

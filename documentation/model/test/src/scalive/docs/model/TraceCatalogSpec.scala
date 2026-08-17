@@ -13,6 +13,20 @@ object TraceCatalogSpec extends ZIOSpecDefault:
         TraceCatalog.prose(TraceCatalog.LiveSocketJoin).contains("Connected LiveSocket mount")
       )
     },
+    test("keeps authored lifecycle traces focused on semantic prose") {
+      def evidence(trace: TraceDefinition) = trace.phases.flatMap(_.steps).flatMap {
+        case TraceStep.Operation(_, _, _, value)  => value
+        case TraceStep.Message(_, _, _, _, value) => value
+        case TraceStep.Boundary(_, _, value)      => value
+      }
+
+      assertTrue(
+        evidence(TraceCatalog.HttpGet).isEmpty,
+        evidence(TraceCatalog.LiveSocketJoin).isEmpty,
+        TraceCatalog.prose(TraceCatalog.HttpGet).contains("not carried into the socket lifecycle"),
+        TraceCatalog.prose(TraceCatalog.LiveSocketJoin).contains("Browser connect parameters remain untrusted")
+      )
+    },
     test("reports invalid participant references") {
       val invalid = TraceCatalog.HttpGet.copy(
         phases = Vector(

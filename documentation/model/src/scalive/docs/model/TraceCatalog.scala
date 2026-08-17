@@ -45,7 +45,7 @@ object TraceCatalog:
     id = "http-get",
     title = "Disconnected HTTP render",
     description =
-      "One HTTP request produces useful HTML, then releases its temporary model before LiveSocket connects.",
+      "One HTTP request produces useful HTML; its temporary model is not retained after the response.",
     participants = Vector(
       TraceParticipant("browser", "Browser", "Initiates navigation and receives the response."),
       TraceParticipant("runtime", "Scalive runtime", "Owns the HTTP request lifecycle."),
@@ -72,42 +72,26 @@ object TraceCatalog:
           TraceStep.Message(
             "runtime",
             "live-view",
-            "mount (disconnected)",
-            "Creates model A with connected = false.",
-            Some(
-              TraceEvidence(
-                label = "Mount context",
-                summary = Some(
-                  "This mount runs during the HTTP request, before a live connection exists."
-                ),
-                facts = Vector("connected" -> "false", "model lifetime" -> "this HTTP request")
-              )
-            )
+            "Disconnected mount",
+            "Invokes mount with connected = false to create a temporary model for this HTTP request."
           ),
           TraceStep.Message(
             "live-view",
             "runtime",
             "Model A",
-            "Returns temporary immutable state for the first render.",
-            Some(TraceEvidence("Returned model", scalaValue = Some("modelA: Model")))
+            "Returns immutable state used only for the disconnected render."
           ),
           TraceStep.Message(
             "runtime",
             "live-view",
-            "render(model A)",
+            "Render Model A",
             "Projects the disconnected model into typed HTML."
           ),
           TraceStep.Message(
             "live-view",
             "runtime",
-            "Typed HTML tree",
-            "Returns page content before layouts are applied.",
-            Some(
-              TraceEvidence(
-                "Rendered value",
-                scalaValue = Some("render(modelA): HtmlElement[Msg]")
-              )
-            )
+            "Typed HTML",
+            "Returns page content before layouts are applied."
           ),
           TraceStep.Operation(
             "runtime",
@@ -128,19 +112,7 @@ object TraceCatalog:
           ),
           TraceStep.Boundary(
             "End request lifecycle",
-            "When LiveSocket connects, Scalive invokes mount again to create a fresh connected model.",
-            Some(
-              TraceEvidence(
-                label = "Lifecycle boundary",
-                summary = Some(
-                  "The disconnected model is not transferred into the future socket lifecycle."
-                ),
-                facts = Vector(
-                  "model A"    -> "released with the request",
-                  "next model" -> "fresh connected mount"
-                )
-              )
-            )
+            "Model A ends with the request and is not carried into the socket lifecycle. A future LiveView join creates a fresh model."
           )
         )
       )
@@ -190,20 +162,7 @@ object TraceCatalog:
           TraceStep.Operation(
             "runtime",
             "Validate join",
-            "Checks CSRF authorization, the topic-bound session, route, live session, mount claims, and root layout.",
-            Some(
-              TraceEvidence(
-                label = "Join inputs",
-                summary = Some(
-                  "Signed server data establishes authority; browser-provided connect parameters do not."
-                ),
-                facts = Vector(
-                  "signed session"     -> "signature, age, and topic verified",
-                  "route and layout"   -> "must match the disconnected render",
-                  "connect parameters" -> "untrusted input"
-                )
-              )
-            )
+            "Verifies CSRF authorization, the signed topic-bound session, route, live session, mount claims, and root layout. Browser connect parameters remain untrusted."
           )
         )
       ),
@@ -214,64 +173,31 @@ object TraceCatalog:
           TraceStep.Message(
             "runtime",
             "live-view",
-            "mount (connected)",
-            "Runs connected mount aspects, decodes route parameters, and invokes mount with connected = true.",
-            Some(
-              TraceEvidence(
-                label = "Connected mount",
-                summary = Some(
-                  "This is a fresh lifecycle; the disconnected model is unavailable."
-                ),
-                facts = Vector(
-                  "connected"           -> "true",
-                  "previous model"      -> "unavailable",
-                  "model lifetime"      -> "this socket lifecycle",
-                  "socket capabilities" -> "available during mount"
-                )
-              )
-            )
+            "Connected mount",
+            "Starts a fresh lifecycle, runs connected mount aspects, then decodes route parameters and invokes mount with connected = true. Model A is unavailable."
           ),
           TraceStep.Message(
             "live-view",
             "runtime",
             "Model B",
-            "Returns fresh immutable state rebuilt from route, session, and durable inputs.",
-            Some(TraceEvidence("Returned model", scalaValue = Some("modelB: Model")))
+            "Returns fresh immutable state rebuilt from route, session, and durable inputs."
           ),
           TraceStep.Message(
             "runtime",
             "live-view",
-            "render(model B)",
+            "Render Model B",
             "Projects the connected model into typed HTML."
           ),
           TraceStep.Message(
             "live-view",
             "runtime",
-            "Initial live tree",
-            "Returns the connected tree, bindings, and page metadata.",
-            Some(
-              TraceEvidence(
-                "Rendered value",
-                scalaValue = Some("render(modelB): HtmlElement[Msg]")
-              )
-            )
+            "Typed HTML",
+            "Returns content that the runtime uses to build the initial rendered tree."
           ),
           TraceStep.Operation(
             "runtime",
             "Commit Model B",
-            "After render hooks succeed, stores Model B and its rendered snapshot, then computes the initial diff.",
-            Some(
-              TraceEvidence(
-                label = "Commit boundary",
-                summary = Some(
-                  "The connected model becomes current only after the initial render path succeeds."
-                ),
-                facts = Vector(
-                  "before render succeeds" -> "Model B is proposed",
-                  "after render succeeds"  -> "Model B and its tree are committed"
-                )
-              )
-            )
+            "Model B and its rendered snapshot become current only after the initial render and its after-render hooks succeed; the runtime then computes the initial diff."
           )
         )
       ),

@@ -408,8 +408,9 @@ test harness without expanding Scalive's public testing API.
   tokens, signed session/static tokens, and binary upload bodies.
 - [x] Bound trace history by record count and byte size.
 - [x] Implement readable model, lifecycle, wire-diff, and DOM-diff views.
-- [x] Render live and authored trace values as Scala code, using `_` for
-  intentionally omitted fields instead of prose stand-ins.
+- [x] Render projected live trace values as Scala code, using `_` for
+  intentionally omitted fields, while keeping authored lifecycle traces in
+  concise semantic prose.
 - [x] Pretty-print safe projected value trees with PPrint, concise
   context-relative names, deterministic wrapping, and bounded output without
   passing raw application values to the printer.

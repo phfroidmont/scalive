@@ -73,30 +73,17 @@ object TraceViewerSpec extends ZIOSpecDefault:
         !document.html().contains("phx-")
       )
     },
-    test("renders authored facts inline without record disclosures") {
-      val document = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(TraceCatalog.HttpGet)))
-      val evidence = document.select(".docs-trace-evidence-inline").asScala
-        .filter(_.select("dl").size() == 1)
-
-      assertTrue(
-        evidence.size == 2,
-        evidence.forall(_.parent().hasClass("docs-trace-step")),
-        evidence.forall(value => value.select("dl > div").asScala.forall(_.select("dt, dd").size() == 2)),
-        evidence.forall(_.select("details").isEmpty),
-        document.select(".docs-trace-evidence-record").isEmpty,
-        evidence.map(_.text()).mkString(" ").contains("connected"),
-        evidence.map(_.text()).mkString(" ").contains("fresh connected mount")
-      )
-    },
-    test("renders symbolic Scala values in authored traces") {
+    test("keeps authored lifecycle traces concise") {
       val http = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(TraceCatalog.HttpGet)))
       val join = Jsoup.parseBodyFragment(HtmlBuilder.build(TraceViewer.render(TraceCatalog.LiveSocketJoin)))
 
       assertTrue(
-        http.select("code.docs-trace-evidence-scala-value").eachText().asScala.toVector ==
-          Vector("modelA: Model", "render(modelA): HtmlElement[Msg]"),
-        join.select("code.docs-trace-evidence-scala-value").eachText().asScala.toVector ==
-          Vector("modelB: Model", "render(modelB): HtmlElement[Msg]")
+        http.select(".docs-trace-evidence").isEmpty,
+        join.select(".docs-trace-evidence").isEmpty,
+        http.text().contains("temporary model for this HTTP request"),
+        http.text().contains("not carried into the socket lifecycle"),
+        join.text().contains("fresh lifecycle"),
+        join.text().contains("become current only after the initial render and its after-render hooks succeed")
       )
     },
     test("renders code in one direct disclosure") {

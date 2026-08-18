@@ -74,7 +74,7 @@ object JSCommands:
     private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand[Msg] =
       Op(_ => encodeOp(kind, args), None) :: ops
 
-    private def resolved(scope: String): Vector[(Json, Option[(String, Any)])] =
+    private def resolved(scope: String): Vector[(Json, Option[(String, Msg)])] =
       ops.reverse.zipWithIndex.map { case (op, pushIndex) =>
         val resolvedId =
           if op.binding.isDefined then Some(s"$scope:js:$pushIndex") else None
@@ -87,8 +87,8 @@ object JSCommands:
     private[scalive] def renderJson(scope: String): String =
       Json.Arr(resolved(scope).map(_._1)*).toJson
 
-    private[scalive] def bindings(scope: String): Map[String, Any] =
-      resolved(scope).flatMap(_._2).toMap
+    private[scalive] def bindings(scope: String): Vector[(String, Msg)] =
+      resolved(scope).flatMap(_._2)
 
     /** Appends a command which adds whitespace-separated class `names` to the selected elements.
       *

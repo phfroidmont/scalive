@@ -41,7 +41,8 @@ object `package` extends Module:
 
     private def allowedSourceRoots = Seq(
       os.sub / "scalive" / "src",
-      os.sub / "scaliveTesting" / "src",
+      os.sub / "scalive" / "api" / "src",
+      os.sub / "scalive" / "testing" / "src",
       os.sub / "documentation" / "fixtures" / "quick-start" / "src",
       os.sub / "documentation" / "fixtures" / "quick-start" / "assets" / "js",
       os.sub / "documentation" / "site" / "src",
@@ -58,11 +59,21 @@ object `package` extends Module:
     def apiSnapshot = Task.Source(moduleDir / "api" / "public-api.snapshot.json")
 
     def apiTargetRoots = Task {
-      Seq(build.scalive.compile().classes, build.scaliveTesting.compile().classes)
+      Seq(
+        build.scalive.api.compile().classes,
+        build.scalive.compile().classes,
+        build.scalive.transport.`zio-http`.compile().classes,
+        build.scalive.testing.compile().classes
+      )
     }
 
     def apiDependencyClasspath = Task {
-      (build.scalive.compileClasspath() ++ build.scaliveTesting.compileClasspath()).distinct
+      (
+        build.scalive.api.compileClasspath() ++
+          build.scalive.compileClasspath() ++
+          build.scalive.transport.`zio-http`.compileClasspath() ++
+          build.scalive.testing.compileClasspath()
+      ).distinct
     }
 
     def sourceRevision = Task.Input {
@@ -160,7 +171,7 @@ object `package` extends Module:
     }
 
     object test extends ScalaTests with TestModule.ZioTest:
-      override def moduleDeps = super.moduleDeps ++ Seq(build.scaliveTesting)
+      override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
       def zioTestVersion = "2.1.25"
 
   object quickStartFixture extends build.ScalaCommon with build.NpmAssets:
@@ -220,7 +231,7 @@ object `package` extends Module:
     }
 
     object test extends ScalaTests with TestModule.ZioTest:
-      override def moduleDeps = super.moduleDeps ++ Seq(build.scaliveTesting)
+      override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
       def zioTestVersion = "2.1.25"
 
   def check = Task {

@@ -39,7 +39,7 @@ scalive/runtime/topology/src
 scalive/runtime/kernel/src
 scalive/runtime/connection/src
 scalive/protocol/phoenix/src
-scalive/transport/zioHttp/src
+scalive/transport/zio-http/src
 scalive/testing/src
 ```
 
@@ -58,7 +58,7 @@ Each module keeps its tests under its own `test/src` directory.
 | `scalive.runtime.kernel` | `scalive-runtime-kernel` |
 | `scalive.runtime.connection` | `scalive-runtime-connection` |
 | `scalive.protocol.phoenix` | `scalive-protocol-phoenix` |
-| `scalive.transport.zioHttp` | `scalive-transport-zio-http` |
+| `scalive.transport.zio-http` | `scalive-transport-zio-http` |
 | `scalive.testing` | `scalive-testing` |
 
 ### Dependency Graph
@@ -78,10 +78,10 @@ scalive.runtime.connection  -> scalive.runtime.contracts
                                + scalive.runtime.topology
                                + scalive.runtime.resources
 scalive.protocol.phoenix    -> scalive.runtime.contracts + scalive.render
-scalive.transport.zioHttp   -> scalive.api
+scalive.transport.zio-http  -> scalive.api
                                + scalive.runtime.connection
                                + scalive.protocol.phoenix
-scalive                     -> scalive.api + scalive.transport.zioHttp
+scalive                     -> scalive.api + scalive.transport.zio-http
 scalive.testing             -> scalive + explicitly supported test harnesses
 ```
 
@@ -593,7 +593,7 @@ mill --ticker false scalive.render.test
 mill --ticker false scalive.runtime.kernel.test
 mill --ticker false scalive.runtime.connection.test
 mill --ticker false scalive.protocol.phoenix.test
-mill --ticker false scalive.transport.zioHttp.test
+mill --ticker false scalive.transport.zio-http.test
 mill --ticker false scalive.__.test
 ```
 

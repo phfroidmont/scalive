@@ -4,6 +4,14 @@ Scalive tracks Phoenix LiveView behavior and feature coverage while keeping the 
 
 The current upstream target is Phoenix LiveView `v1.1.28`, pinned by `flake.nix` and the websocket protocol version in `WebSocketMessage`.
 
+The frozen runtime oracle, normalized comparison rules, and scenario-level classifications are
+recorded in [`docs/runtime-parity-manifest.md`](docs/runtime-parity-manifest.md).
+
+The matrix below currently records legacy-oracle behavior. During the greenfield runtime rewrite, a
+row becomes target-runtime coverage only when its evidence has moved to the corresponding final
+module. Milestone 1 establishes the independent public API and does not yet provide executable
+runtime parity.
+
 ## Status Legend
 
 | Status | Meaning |

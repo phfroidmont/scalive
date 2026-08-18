@@ -9,6 +9,11 @@ import mill.*, scalalib.*, publish.*
 import mill.scalalib.scalafmt.ScalafmtModule
 import com.goyeau.mill.scalafix.ScalafixModule
 
+object Versions:
+  val zioJson = "0.7.44"
+  val zioHttp = "3.10.1"
+  val zioTest = "2.1.25"
+
 trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
   def scalaVersion  = "3.8.3"
   def scalacOptions = Seq(
@@ -34,28 +39,56 @@ trait PublishCommon extends PublishModule:
       Seq(Developer("phfroidmont", "Paul-Henri Froidmont", "https://github.com/phfroidmont"))
   )
 
-object scalive extends ScalaCommon with PublishCommon:
-  def mvnDeps = Seq(
-    mvn"dev.zio::zio-json:0.7.44",
-    mvn"dev.zio::zio-http:3.10.1"
-  )
-
-  def generatedSources = Task {
-    new DomDefsGenerator((Task.dest / "src/scalive").toString).generate()
-    super.generatedSources() ++ Seq(PathRef(Task.dest))
-  }
-
+trait ScaliveModule extends ScalaCommon with PublishCommon:
   object test extends ScalaTests with scalalib.TestModule.ZioTest:
-    def zioTestVersion = "2.1.25"
+    def zioTestVersion = Versions.zioTest
 
-object scaliveTesting extends ScalaCommon with PublishCommon:
-  override def artifactName = "scalive-testing"
+object scalive extends ScaliveModule:
+  def moduleDeps = Seq(api, transport.`zio-http`)
 
-  def moduleDeps = Seq(scalive)
-  def mvnDeps    = Seq(mvn"org.jsoup:jsoup:1.23.1")
+  object api extends ScaliveModule:
+    def mvnDeps = Seq(
+      mvn"dev.zio::zio-json:${Versions.zioJson}",
+      mvn"dev.zio::zio-http:${Versions.zioHttp}"
+    )
 
-  object test extends ScalaTests with scalalib.TestModule.ZioTest:
-    def zioTestVersion = "2.1.25"
+    def generatedSources = Task {
+      new DomDefsGenerator((Task.dest / "src/scalive").toString).generate()
+      super.generatedSources() ++ Seq(PathRef(Task.dest))
+    }
+
+  object render extends ScaliveModule:
+    def moduleDeps = Seq(api)
+
+  object runtime extends Module:
+    object contracts extends ScaliveModule:
+      def moduleDeps = Seq(api)
+
+    object resources extends ScaliveModule:
+      def moduleDeps = Seq(api, contracts)
+
+    object topology extends ScaliveModule:
+      def moduleDeps = Seq(api, contracts)
+
+    object kernel extends ScaliveModule:
+      def moduleDeps = Seq(api, render, contracts, runtime.resources)
+
+    object connection extends ScaliveModule:
+      def moduleDeps = Seq(contracts, kernel, topology, runtime.resources)
+
+  object protocol extends Module:
+    object phoenix extends ScaliveModule:
+      def moduleDeps = Seq(runtime.contracts, render)
+
+  object transport extends Module:
+    object `zio-http` extends ScaliveModule:
+      def moduleDeps = Seq(api, runtime.connection, protocol.phoenix)
+
+      def mvnDeps = Seq(mvn"dev.zio::zio-http:${Versions.zioHttp}")
+
+  object testing extends ScaliveModule:
+    def moduleDeps = Seq(scalive)
+    def mvnDeps    = Seq(mvn"org.jsoup:jsoup:1.23.1")
 
 object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)

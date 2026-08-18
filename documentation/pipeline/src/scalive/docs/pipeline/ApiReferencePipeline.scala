@@ -651,9 +651,9 @@ object ApiReferencePipeline:
 
     private def packagePath(packageName: String): String =
       packageName match
-        case "scalive"         => "scalive/src/scalive/Scalive.scala"
-        case "scalive.codecs"  => "scalive/src/scalive/codecs/Encoder.scala"
-        case "scalive.testing" => "scaliveTesting/src/scalive/testing/DisconnectedRender.scala"
+        case "scalive"         => "scalive/api/src/scalive/Scalive.scala"
+        case "scalive.codecs"  => "scalive/api/src/scalive/codecs/Encoder.scala"
+        case "scalive.testing" => "scalive/testing/src/scalive/testing/DisconnectedRender.scala"
 
     private def parentPackage(packageName: String): Option[String] =
       packageName

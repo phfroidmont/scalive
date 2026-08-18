@@ -7,6 +7,18 @@ typed models, typed route params, ZIO effects, and a Scala HTML DSL.
 Scalive is currently alpha software. APIs may change while the project optimizes
 for the best user-facing Scala API.
 
+## Runtime Rewrite Status
+
+The runtime is being rebuilt against the target architecture in
+[`docs/runtime-target-implementation-plan.md`](docs/runtime-target-implementation-plan.md). The
+independent `scalive-api` boundary and final Mill module graph are available; executable HTTP,
+WebSocket, rendering, and lifecycle runtime behavior will return through the subsequent runtime
+milestones.
+
+The frozen legacy behavior oracle remains available at tag
+`runtime-legacy-baseline-2026-08-18`. Its native and browser results are recorded in
+[`docs/runtime-parity-manifest.md`](docs/runtime-parity-manifest.md).
+
 ## What A LiveView Looks Like
 
 ```scala
@@ -51,13 +63,13 @@ for the expected socket path, root layout, and browser asset setup.
 ## Running The Project
 
 ```bash
-mill documentation.site.run
-mill --ticker false documentation.check
-mill --ticker false scalive.test
-mill --ticker false __.test
+mill --ticker false scalive.api.test
+mill --ticker false scalive.transport.zio-http.test
 ```
 
-The project runs inside `nix develop`; `mill` is available there.
+The project runs inside `nix develop`; `mill` is available there. Repository-wide runtime,
+documentation-site, and upstream browser gates resume as their corresponding greenfield modules are
+implemented.
 
 ## Documentation
 

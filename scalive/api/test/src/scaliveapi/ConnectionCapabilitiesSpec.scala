@@ -1,0 +1,89 @@
+package scaliveapi
+
+import zio.test.*
+
+object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
+  def spec = suite("ConnectionCapabilitiesSpec")(
+    test("disconnected-capable root phases do not expose connected operations directly") {
+      val mountErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: MountContext[Unit, Unit]) = ctx.async
+      """)
+      val paramsErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: ParamsContext[Unit, Unit]) = ctx.client
+      """)
+      val afterRenderErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: AfterRenderContext[Unit, Unit]) = ctx.client
+      """)
+      val legacyBooleanErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: MountContext[Unit, Unit]) = ctx.connected
+      """)
+
+      assertTrue(
+        mountErrors.nonEmpty,
+        paramsErrors.nonEmpty,
+        afterRenderErrors.nonEmpty,
+        legacyBooleanErrors.nonEmpty
+      )
+    },
+    test("connected root capabilities require explicit connection handling") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.stream.ZStream
+
+        def mount(ctx: MountContext[Unit, Unit]) =
+          ctx.streams.create(LiveStreamDef.byId[Int, Int]("rows")(identity), List(1)) *>
+            (ctx.connection match
+              case Connection.Disconnected => ZIO.unit
+              case Connection.Connected(connected) =>
+                connected.async.start(AsyncKey[Int]("load"))(ZIO.succeed(1))(_ => ()) *>
+                  connected.subscriptions.start(SubscriptionKey("ticks"))(ZStream.succeed(())))
+
+        def params(ctx: ParamsContext[Unit, Unit]) =
+          ctx.connection match
+            case Connection.Disconnected => ZIO.unit
+            case Connection.Connected(connected) => connected.client.exec(JS)
+
+        def afterRender(ctx: AfterRenderContext[Unit, Unit]) =
+          ctx.connection match
+            case Connection.Disconnected => ZIO.unit
+            case Connection.Connected(connected) => connected.client.exec(JS)
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("component disconnected phases gate connected operations") {
+      val directErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: ComponentMountContext[Unit, Unit, Unit]) = ctx.async
+      """)
+      val connectedErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        def valid(ctx: ComponentUpdateContext[Unit, Unit, Unit]) =
+          ctx.connection match
+            case Connection.Disconnected => ZIO.unit
+            case Connection.Connected(connected) => connected.client.exec(JS)
+      """)
+
+      assertTrue(directErrors.nonEmpty, connectedErrors.isEmpty)
+    },
+    test("message phases expose connected capabilities directly") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        def root(ctx: MessageContext[Unit, Unit]) =
+          ctx.async.cancel(AsyncKey[Int]("load")) *> ctx.client.exec(JS)
+
+        def component(ctx: ComponentMessageContext[Unit, Unit, Unit]) =
+          ctx.async.cancel(AsyncKey[Int]("load")) *> ctx.client.exec(JS)
+      """)
+
+      assertTrue(errors.isEmpty)
+    }
+  )

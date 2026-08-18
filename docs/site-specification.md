@@ -148,9 +148,12 @@ Learn is a short ordered path that establishes one coherent mental model:
 7. **Where to go next** maps common application needs to task-oriented guides,
    executable examples, the API reference, and project compatibility material.
 
-Start here is the canonical architecture overview. Later Learn pages may remind
-readers of the part relevant to their topic, but do not independently redefine
-the request, connection, event, render, or reconnect sequence.
+Start here is the canonical user-facing architecture overview. Later Learn pages
+may remind readers of the part relevant to their topic, but do not independently
+redefine the request, connection, event, render, or reconnect sequence. The
+Project runtime architecture page may describe the current implementation of
+that sequence for contributors without treating internal types as supported
+application APIs.
 
 The quick start uses Mill as its primary build tool, provides a complete minimal
 standalone project, and documents the Node/npm client asset setup. It consumes a
@@ -240,6 +243,8 @@ per-symbol alpha or compatibility badges.
 The Project section contains:
 
 - the personal and technical journey that led to Scalive;
+- a contributor-oriented tour of runtime subsystems, lifecycle flow, rendering,
+  concurrency, resource ownership, and cleanup;
 - project status and alpha expectations; and
 - a compatibility matrix of supported features, intentional divergences, and
   known gaps.
@@ -250,9 +255,10 @@ available. Its status legend distinguishes baseline browser evidence, native
 parity, substantial or expanding coverage, partial support, intentional
 divergence, and absent behavior. The public matrix is updated with feature work;
 the existence of a similarly named API is never presented as parity evidence.
-Changelogs, roadmaps, contributor instructions, internal design
-specifications, and implementation plans are not part of the initial public
-site.
+Changelogs, roadmaps, contributor setup instructions, detailed internal design
+specifications, and implementation plans are not part of the public site. The
+runtime architecture tour is a current source map rather than a stable internal
+API contract or design specification.
 
 ## Content Model
 

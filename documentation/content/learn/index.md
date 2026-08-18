@@ -30,6 +30,10 @@ differences to the Phoenix LiveView JavaScript client. Ordinary application
 behavior therefore stays in Scala without requiring a second client-side state
 tree.
 
+This is the canonical application-facing architecture. Contributors who need
+the current internal subsystem and concurrency map can continue to
+[Runtime architecture](../project/runtime-architecture.md#implementation-map).
+
 ## Follow One Page From HTTP To DOM {#follow-one-page-from-http-to-dom}
 
 A page reaches the DOM and becomes live in three stages:

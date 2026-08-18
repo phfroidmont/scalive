@@ -12,6 +12,14 @@ then searching for a simpler boundary between browser and server. Read
 [why I built Scalive](why-i-built-scalive.md#choosing-a-stack) for the personal
 and technical journey behind the project.
 
+## Understand The Runtime {#understand-the-runtime}
+
+Contributors can use the [runtime architecture](runtime-architecture.md#implementation-map)
+tour to follow disconnected rendering, socket bootstrap, serialized lifecycle
+turns, signal evaluation, tree diffs, resource ownership, and cleanup through the
+current implementation. Internal names on that page are source landmarks rather
+than supported application APIs.
+
 ## Project Status {#project-status}
 
 Scalive is alpha software under active development. It implements substantial

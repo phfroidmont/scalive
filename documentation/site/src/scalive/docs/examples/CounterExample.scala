@@ -16,7 +16,7 @@ final class CounterExample extends LiveView[CounterExample.Msg, CounterExample.M
     case Msg.Increment => ZIO.succeed(model.copy(count = model.count + 1))
     case Msg.Reset     => ZIO.succeed(model.copy(count = 0))
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-counter",
       p(
@@ -29,7 +29,7 @@ final class CounterExample extends LiveView[CounterExample.Msg, CounterExample.M
           span("Current model"),
           code("count =")
         ),
-        strong(cls := "docs-counter-value", model.count.toString)
+        strong(cls := "docs-counter-value", model.map(_.count.toString))
       ),
       fieldSet(
         dataAttr("example-controls") := "",

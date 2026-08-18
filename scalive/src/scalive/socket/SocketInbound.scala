@@ -31,16 +31,19 @@ private[scalive] object SocketInbound:
           state.lifecycleLock
             .withPermit(handleClientEvent(event, tracedMeta, state)))
           .catchAllCause(cause =>
-            RuntimeTraceOperation.event(
-              operation,
-              RuntimeTraceStage.Crash,
-              "Browser event operation crashed"
-            ) *>
-              SocketCrashRuntime
-                .crash(state, s"LiveView ${state.meta.topic} event crashed", Some(cause))
+            if cause.isInterruptedOnly then ZIO.failCause(cause)
+            else
+              RuntimeTraceOperation.event(
+                operation,
+                RuntimeTraceStage.Crash,
+                "Browser event operation crashed"
+              ) *>
+                SocketCrashRuntime
+                  .crash(state, s"LiveView ${state.meta.topic} event crashed", Some(cause))
           )
       )
-      .fork
+      .interruptible
+      .forkScoped
 
   def handleLivePatch[Msg, Model](
     url: String,
@@ -55,42 +58,58 @@ private[scalive] object SocketInbound:
     val tracedMeta = RuntimeTraceOperation.attach(meta, operation)
     state.lifecycleLock.withPermit {
       for
-        (currentModel, rendered) <- state.ref.get
-        currentUrl               <- state.currentUrlRef.get
-        decodedUrl               <- ZIO
-                        .fromEither(LivePatchUrl.resolve(url, currentUrl))
-                        .mapError(error => new IllegalArgumentException(error))
-        _                   <- SocketFlashRuntime.commitNavigation(state.flashRef)
-        _                   <- state.currentUrlRef.set(decodedUrl)
-        (model, navigation) <-
-          SocketModelRuntime.captureNavigation(state, resetFlash = false)(
-            state.paramsRuntime.run(state.lv, currentModel, decodedUrl, state.ctx)
-          )
-        diffOpt <- navigation match
-                     case Some(
-                           command @ (LiveNavigationCommand.PushPatch(_) |
-                           LiveNavigationCommand.ReplacePatch(_))
-                         ) =>
-                       followPatchRedirects(rendered, model, command, tracedMeta, state)
-                     case Some(command) =>
-                       handleNavigationCommand(model, command, tracedMeta, state).as(None)
-                     case None =>
-                       for
-                         _    <- state.patchRedirectCountRef.set(0)
-                         diff <-
-                           SocketModelRuntime.updateModelAndSubscriptions(
-                             rendered,
-                             model,
-                             state,
-                             tracedMeta.traceOperation
-                           )
-                         _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
-                       yield Some(diff)
+        (committedModel, rendered) <- state.ref.get
+        pendingModel               <- state.pendingNavigationModelRef.getAndSet(None)
+        currentModel = pendingModel.getOrElse(committedModel)
+        currentUrl    <- state.currentUrlRef.get
+        previousFlash <- state.flashRef.get
+        diffOpt       <- (for
+                     decodedUrl <- ZIO
+                                     .fromEither(LivePatchUrl.resolve(url, currentUrl))
+                                     .mapError(error => new IllegalArgumentException(error))
+                     _                   <- SocketFlashRuntime.commitNavigation(state.flashRef)
+                     _                   <- state.currentUrlRef.set(decodedUrl)
+                     (model, navigation) <-
+                       SocketModelRuntime.captureNavigation(state, resetFlash = false)(
+                         state.paramsRuntime.run(state.lv, currentModel, decodedUrl, state.ctx)
+                       )
+                     diffOpt <- navigation match
+                                  case Some(
+                                        command @ (LiveNavigationCommand.PushPatch(_) |
+                                        LiveNavigationCommand.ReplacePatch(_))
+                                      ) =>
+                                    followPatchRedirects(
+                                      rendered,
+                                      model,
+                                      command,
+                                      tracedMeta,
+                                      state
+                                    )
+                                  case Some(command) =>
+                                    handleNavigationCommand(model, command, tracedMeta, state).as(
+                                      None
+                                    )
+                                  case None =>
+                                    for
+                                      _    <- state.patchRedirectCountRef.set(0)
+                                      diff <-
+                                        SocketModelRuntime.updateModelAndSubscriptions(
+                                          rendered,
+                                          model,
+                                          state,
+                                          tracedMeta.traceOperation
+                                        )
+                                      _ <- SocketFlashRuntime.resetNavigation(state.flashRef)
+                                    yield Some(diff)
+                   yield diffOpt).onError(_ =>
+                     state.pendingNavigationModelRef.update(_.orElse(pendingModel)) *>
+                       state.currentUrlRef.set(currentUrl) *>
+                       state.flashRef.set(previousFlash)
+                   )
         reply = diffOpt match
                   case Some(diff) if !diff.isEmpty =>
                     Payload.okReply(LiveResponse.Diff(diff))
-                  case _ =>
-                    Payload.okReply(LiveResponse.Empty)
+                  case _ => Payload.okReply(LiveResponse.Empty)
       yield reply
     }
   end handleLivePatch
@@ -123,8 +142,7 @@ private[scalive] object SocketInbound:
                      .fromEither(LivePatchUrl.resolve(to, currentUrl))
                      .mapError(error => new IllegalArgumentException(error))
         redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
-        _      <- state.ref.update { case (_, currentRendered) => (currentModel, currentRendered) }
-        result <-
+        result        <-
           if redirectCount > 20 then
             SocketModelRuntime
               .publishPayload(
@@ -184,7 +202,7 @@ private[scalive] object SocketInbound:
           requestedCids = parseCids(event.value)
           destroyedCids = requestedCids.intersect(activeCids)
           _ <- state.componentCidsRef.update(_ -- destroyedCids)
-          _ <- state.componentsRef.update(_.removeCids(destroyedCids))
+          _ <- SocketViewGraphRuntime.removeComponents(state.componentsRef, destroyedCids)
           _ <- SocketStreamRuntime.removeComponentScopes(state.streamRef, destroyedCids)
           _ <- SocketUploadRuntime.removeComponentScopes(state.uploadRef, destroyedCids)
           _ <- SocketAsyncRuntime.interruptOwners(
@@ -202,7 +220,7 @@ private[scalive] object SocketInbound:
         yield ()
       case "lv:clear-flash" =>
         for
-          (currentModel, rendered) <- state.ref.get
+          (currentModel, rendered) <- SocketModelRuntime.currentModelAndRendered(state)
           _                        <- event.params.get("key") match
                  case Some(kind) => state.ctx.flash.clear(kind)
                  case None       => state.ctx.flash.clearAll
@@ -223,7 +241,7 @@ private[scalive] object SocketInbound:
       case _ =>
         for
           _                        <- SocketUploadProtocol.syncUploadRuntimeFromEvent(event, state)
-          (currentModel, rendered) <- state.ref.get
+          (currentModel, rendered) <- SocketModelRuntime.currentModelAndRendered(state)
           (rawResult, navigation)  <-
             SocketModelRuntime.captureNavigation(state)(
               state.ctx.hooks.runRawEvent[Msg, Model](
@@ -294,8 +312,8 @@ private[scalive] object SocketInbound:
         for
           resolvedTo    <- resolve(to)
           redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
-          _ <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
-          _ <-
+          _             <- state.pendingNavigationModelRef.set(Some(model))
+          _             <-
             if redirectCount > 20 then
               SocketModelRuntime.publishPayload(
                 Payload.Error,
@@ -308,8 +326,8 @@ private[scalive] object SocketInbound:
         for
           resolvedTo    <- resolve(to)
           redirectCount <- state.patchRedirectCountRef.updateAndGet(_ + 1)
-          _ <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
-          _ <-
+          _             <- state.pendingNavigationModelRef.set(Some(model))
+          _             <-
             if redirectCount > 20 then
               SocketModelRuntime.publishPayload(
                 Payload.Error,
@@ -322,7 +340,6 @@ private[scalive] object SocketInbound:
         for
           resolvedTo <- resolve(to)
           token      <- flashToken
-          _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
           _          <- publish(Payload.LiveRedirect(resolvedTo, LivePatchKind.Push, token))
           _          <- SocketFlashRuntime.resetNavigation(state.flashRef)
         yield ()
@@ -330,7 +347,6 @@ private[scalive] object SocketInbound:
         for
           resolvedTo <- resolve(to)
           token      <- flashToken
-          _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
           _          <- publish(Payload.LiveRedirect(resolvedTo, LivePatchKind.Replace, token))
           _          <- SocketFlashRuntime.resetNavigation(state.flashRef)
         yield ()
@@ -338,7 +354,6 @@ private[scalive] object SocketInbound:
         for
           resolvedTo <- resolve(to)
           token      <- flashToken
-          _          <- state.ref.update { case (_, currentRendered) => (model, currentRendered) }
           _          <- publish(Payload.Redirect(resolvedTo, token))
           _          <- SocketFlashRuntime.resetNavigation(state.flashRef)
         yield ()

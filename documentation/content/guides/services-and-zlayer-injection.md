@@ -83,12 +83,18 @@ final class ReportsLiveView(reports: Reports)
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Refresh => reports.recent.map(Model.Loaded.apply)
 
-  def render(model: Model) = model match
-    case Model.Loaded(reports) =>
-      div(
-        button(on.click(Msg.Refresh), "Refresh"),
-        ul(reports.map(report => li(report.title)))
-      )
+  def view(model: Signal[Model]) =
+    val loaded = model.map {
+      case Model.Loaded(reports) => Some(reports)
+    }
+    div(
+      button(on.click(Msg.Refresh), "Refresh"),
+      loaded.option { reports =>
+        ul(reports.splitBy(_.id) { (_, report) =>
+          li(report.map(_.title))
+        })
+      }
+    )
 ```
 
 `LiveIO` is a `Task`, so the constructor-captured service is directly available

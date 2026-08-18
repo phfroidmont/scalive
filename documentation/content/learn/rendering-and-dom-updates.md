@@ -5,20 +5,50 @@ order = 4
 section = learn
 %}
 
-## Render From The Model {#render-from-the-model}
+## Build A View From The Model {#render-from-the-model}
 
-@:apiSymbol(def:scalive.LiveView.render)`render(model)`@:@ returns an
-@:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Treat it as a pure
-projection: read the model, build the intended tree, and leave effects and state
-transitions in lifecycle methods.
+@:apiSymbol(def:scalive.LiveView.view)`view(model)`@:@ receives a
+`Signal[Model]` and returns an
+@:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Scalive invokes it
+once to construct the signal-backed view graph for a disconnected request or
+connected socket lifetime. Use the model signal directly for dynamic content,
+or derive smaller signals with pure `.map` transformations. Leave effects and
+state transitions in lifecycle methods.
 
-The counter renders its count directly. The cart derives disabled states,
-quantities, subtotals, and totals from the same model used by its handler.
-Ordinary Scala expressions choose between the empty state and the cart table.
+The counter places its mapped count signal directly in a text position. The cart
+derives disabled states, quantities, subtotals, and totals from the same model
+signal. Staged operators such as `choose`, `option`, and signal `splitBy`
+construct dynamic branches and keyed rows once, then update their content as the
+model changes.
 
-Pure rendering gives Scalive a deterministic description it can recreate and
-compare after every successful model transition. Application code describes the
-resulting HTML; it does not issue imperative DOM mutations.
+## Evaluation And Graph Lifetime {#evaluation-and-graph-lifetime}
+
+Each successful lifecycle turn evaluates one signal transaction at one new
+revision. A derived `map` or `zip` is sampled at most once in that transaction.
+If Scala equality says its value and dependency revisions are unchanged, Scalive
+reuses the committed sample; the final tree diff independently suppresses
+unchanged encoded scalar values. All sinks observe the same proposed model, and
+the model, signal evaluation, bindings, and rendered snapshot commit together.
+
+Signals belong to the disconnected request, connected socket, component, or
+staged row scope that created them. A signal is visible in its own scope and
+descendants, but cannot escape from a child or sibling scope. Scalive disposes
+the graph when that owner ends. Removed keyed and stream rows are disposed after
+the enclosing transaction commits; a failed transaction keeps the previously
+committed rows and disposes candidate-only rows.
+
+The finite branches declared by `choose` are constructed once and retained even
+while inactive, preserving their binding and component identity when selected
+again. They are released with the owning graph. Keyed and stream collections use
+explicit identity instead: rows are retained while their key is present and are
+released when it is removed. This trades bounded retained memory for stable
+branch identity and avoids reconstructing ordinary tree structure on updates.
+
+Pure graph construction gives Scalive a deterministic description it can
+evaluate after every successful model transition without rebuilding the whole
+HTML tree. Application code describes the resulting HTML; it does not issue
+imperative DOM mutations. Signal transformations must also remain pure because
+Scalive may skip them when their dependencies have not changed.
 
 ## Bind Events To Typed Messages {#bind-events-to-typed-messages}
 
@@ -36,20 +66,21 @@ untrusted input and must still be decoded and validated at their boundaries.
 
 One connected interaction follows this sequence:
 
-1. `render` emits an event binding associated with a typed message.
+1. The view graph contains an event binding associated with a typed message.
 2. The browser captures the DOM event and sends its binding data.
 3. Scalive resolves the binding to the corresponding `Msg`.
 4. `handleMessage` receives the committed model and proposes the next model.
-5. Scalive renders and compiles the proposed HTML tree.
-6. The tree diff compares it with the last committed tree.
-7. After a successful render, Scalive commits the new model and tree.
+5. Scalive evaluates affected signals and compiles the proposed snapshot.
+6. The diff compares it with the last committed snapshot.
+7. After a successful evaluation, Scalive commits the new model and snapshot.
 8. The browser receives the diff and patches its existing DOM.
 
 ## From Tree Changes To DOM Changes {#from-tree-changes-to-dom-changes}
 
-An unchanged tree may produce no diff. Changed dynamic text, attributes, or
-subtrees produce updates for those positions rather than replacing the whole
-document. This normally preserves unaffected DOM nodes and their browser state.
+An evaluation whose dynamic slots are unchanged may produce no diff. Changed
+dynamic text, attributes, or staged subtrees produce updates for those positions
+rather than replacing the whole document. This normally preserves unaffected
+DOM nodes and their browser state.
 
 The diff encoding and generated binding identifiers are framework details.
 Application code should depend on models, messages, and rendered structure, not
@@ -57,22 +88,22 @@ on a particular wire payload.
 
 ## Preserve Collection Identity {#preserve-collection-identity}
 
-Use @:apiSymbol(extension:scalive.splitBy)`splitBy(key)(render)`@:@ for a
-collection whose entries have stable domain identity. The shopping cart keys
-each row by product SKU:
+Use @:apiSymbol(extension:scalive.splitBy)`splitBy(key) { ... }`@:@ on a collection
+signal whose entries have stable domain identity. The shopping cart keys each
+retained row by product SKU:
 
 ```scala
-model.lines.splitBy(_.product.sku) { line =>
+model.map(_.lines).splitBy(_.product.sku) { (_, line) =>
   tr(
-    td(line.product.name),
-    td(line.quantity.toString)
+    td(line.map(_.product.name)),
+    td(line.map(_.quantity.toString))
   )
 }
 ```
 
 Stable keys let the diff distinguish insertion, removal, movement, and an update
 to an existing entry. Keys must be unique within that collection and stable
-across renders. Prefer a domain identifier such as `sku`; use an index only when
+across updates. Prefer a domain identifier such as `sku`; use an index only when
 position really is the entry's identity.
 
 The [HTML and event bindings guide](../guides/html-dsl-and-event-bindings.md)

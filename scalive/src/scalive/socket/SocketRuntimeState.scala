@@ -127,11 +127,13 @@ private[scalive] object FlashRuntimeState:
 final private[scalive] case class RenderedView(
   compiled: RenderSnapshot.Compiled,
   bindings: Map[String, BindingHandler[Any]],
-  pageTitle: Option[String])
+  pageTitle: Option[String],
+  signalEvaluation: SignalEvaluation,
+  signalRevision: Long)
 
 final private[scalive] case class RuntimeState[Msg, Model](
   lv: LiveView[Msg, Model],
-  renderRoot: (Model, URL) => HtmlElement[Msg],
+  viewGraph: ViewGraph.Root[(Model, URL)],
   paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
   runtimeTrace: RuntimeTrace,
   msgClassTag: ClassTag[Msg],
@@ -144,6 +146,7 @@ final private[scalive] case class RuntimeState[Msg, Model](
   outQueue: Queue[(Payload, WebSocketMessage.Meta)],
   lifecycleLock: Semaphore,
   ref: Ref[(Model, RenderedView)],
+  pendingNavigationModelRef: Ref[Option[Model]],
   currentUrlRef: Ref[URL],
   subscriptionsRef: SubscriptionRef[Map[String, ZStream[Any, Nothing, Msg]]],
   navigationRef: Ref[Option[LiveNavigationCommand]],
@@ -160,3 +163,23 @@ final private[scalive] case class RuntimeState[Msg, Model](
   ownsPageTitle: Boolean,
   bootstrapPayloads: Chunk[(Payload, WebSocketMessage.Meta)],
   initDiff: Diff)
+
+private[scalive] object SocketViewGraphRuntime:
+  def disposeAll[Msg, Model](state: RuntimeState[Msg, Model]): UIO[Unit] =
+    ZIO.succeed(state.viewGraph.dispose()) *>
+      disposeComponents(state.componentsRef)
+
+  def disposeComponents(componentsRef: Ref[ComponentRuntimeState]): UIO[Unit] =
+    componentsRef.get.flatMap(components =>
+      ZIO.succeed(components.instances.values.foreach(_.viewGraph.dispose()))
+    )
+
+  def removeComponents(
+    componentsRef: Ref[ComponentRuntimeState],
+    cids: Set[Int]
+  ): UIO[Unit] =
+    componentsRef
+      .modify { state =>
+        val removed = cids.flatMap(state.instance)
+        removed -> state.removeCids(cids)
+      }.flatMap(removed => ZIO.succeed(removed.foreach(_.viewGraph.dispose())))

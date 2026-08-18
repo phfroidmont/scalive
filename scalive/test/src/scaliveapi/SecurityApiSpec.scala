@@ -19,11 +19,12 @@ object SecurityApiSpec extends ZIOSpecDefault:
 
   final class LoginView extends LiveView.Eventless[Unit]:
     def mount(ctx: MountContext) = ZIO.unit
-    def render(model: Unit)     = div("Login")
+    override def view(model: Signal[Unit]) = div("Login")
 
-  final class ProtectedView(user: User) extends LiveView.Eventless[User]:
+  final class ProtectedView(user: User)
+      extends LiveView.Eventless[User]:
     def mount(ctx: MountContext) = ZIO.succeed(user)
-    def render(model: User)      = div(model.id)
+    override def view(model: Signal[User]) = div(model.map(_.id))
 
   private val Login = _root_.scalive.live / "login"
   private val Protected = _root_.scalive.live / "protected"

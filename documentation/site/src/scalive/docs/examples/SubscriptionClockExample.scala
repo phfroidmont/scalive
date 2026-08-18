@@ -35,31 +35,31 @@ final class SubscriptionClockExample(instanceId: String)
     case Msg.Tick(at) =>
       ZIO.succeed(model.copy(lastTick = Some(at), tickCount = model.tickCount + 1))
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-managed-work",
       sectionTag(
         cls        := "docs-managed-work-state",
         aria.label := "Clock subscription state",
-        p("Mode", strong(dataAttr("clock-mode") := "", model.mode.label)),
-        p("Ticks received", strong(dataAttr("clock-count") := "", model.tickCount.toString)),
+        p("Mode", strong(dataAttr("clock-mode") := "", model.map(_.mode.label))),
+        p("Ticks received", strong(dataAttr("clock-count") := "", model.map(_.tickCount.toString))),
         p(
           "Latest tick",
-          span(dataAttr("clock-tick") := "", model.lastTick.fold("Waiting")(_.toString))
+          span(dataAttr("clock-tick") := "", model.map(_.lastTick.fold("Waiting")(_.toString)))
         )
       ),
       div(
         cls := "docs-managed-work-controls",
         button(
           typ      := "button",
-          disabled := (model.mode != Mode.Stopped),
+          disabled := model.map(_.mode != Mode.Stopped),
           on.click(Msg.Start),
           "Start every second"
         ),
         button(typ := "button", on.click(Msg.Replace), "Replace with fast clock"),
         button(
           typ      := "button",
-          disabled := (model.mode == Mode.Stopped),
+          disabled := model.map(_.mode == Mode.Stopped),
           on.click(Msg.Cancel),
           "Cancel clock"
         )

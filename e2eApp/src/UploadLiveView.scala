@@ -36,7 +36,9 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
     case Msg.Save =>
       saveCompletedEntries(model, ctx.uploads)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val upload = model.map(_.upload)
+
     div(
       styleAttr := "padding: 1rem;",
       h1("Uploads"),
@@ -45,62 +47,63 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
         on.submit(Msg.Save),
         on.change(_ => Msg.Validate),
         liveFileInput(
-          model.upload,
-          model.upload.onProgress(_ => Msg.Progress)
+          upload,
+          upload.onProgress(_ => Msg.Progress)
         ),
         button(
           typ := "submit",
           "Upload"
         ),
         sectionTag(
-          model.upload.dropTarget,
-          model.upload.entries.splitBy(_.ref) { (_, entry) =>
+          upload.dropTarget,
+          upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
             articleTag(
               cls := "upload-entry",
               figure(
-                figCaption(entry.client.fileName)
+                figCaption(entry.map(_.client.fileName))
               ),
               progressTag(
-                value   := entry.progress.toString,
+                value   := entry.map(_.progress.toString),
                 maxAttr := "100",
-                s"${entry.progress}%"
+                entry.map(current => s"${current.progress}%")
               ),
               button(
                 typ := "button",
-                on.click(Msg.CancelUpload(entry)),
-                phx.value("ref") := entry.ref.value,
+                on.click(entry.map(Msg.CancelUpload.apply)),
+                phx.value("ref") := entry.map(_.ref.value),
                 ariaLabel        := "cancel",
                 "x"
               ),
               uploadErrors(entry)
-                .filterNot(_ == LiveUploadError.TooManyFiles)
+                .map(_.filterNot(_ == LiveUploadError.TooManyFiles))
                 .splitBy(_.toString) { (_, error) =>
                   p(
                     cls := "alert alert-danger",
-                    errorToString(error)
+                    error.map(errorToString)
                   )
                 }
             )
           },
-          uploadErrors(model.upload).splitBy(_.toString) { (_, error) =>
+          uploadErrors(upload).splitBy(_.toString) { (_, error) =>
             p(
               cls := "alert alert-danger",
-              errorToString(error)
+              error.map(errorToString)
             )
           }
         ),
         ul(
-          model.uploadedFiles.splitBy(_.storedName) { (_, file) =>
+          model.map(_.uploadedFiles).splitBy(_.storedName) { (_, file) =>
             li(
               a(
-                href := downloadUrl(file.storedName),
-                file.name
+                href := file.map(current => downloadUrl(current.storedName)),
+                file.map(_.name)
               )
             )
           }
         )
       )
     )
+  end view
 
   private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
     uploads.get(model.upload.definition).map {

@@ -6,6 +6,7 @@ import zio.json.ast.Json
 
 import scalive.*
 import scalive.LiveIO.given
+import scalive.Signal.*
 
 class ErrorLiveView
     extends LiveView.Routed[ErrorLiveView.Msg, ErrorLiveView.Model, ErrorLiveView.QueryParams]:
@@ -22,25 +23,30 @@ class ErrorLiveView
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.CrashMain => ZIO.fail(RuntimeException("boom"))
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val child         = model.map(_.child)
+    val childBoxStyle = "border: 1px solid lightgray; padding: 4px; margin-top: 16px;"
+
     div(
-      p(idAttr := "render-time", "main rendered at: ", model.renderTime),
+      p(idAttr := "render-time", "main rendered at: ", model.map(_.renderTime)),
       button(on.click(Msg.CrashMain), "Crash main"),
       p(cls := "if-phx-error", "Error"),
       p(cls := "if-phx-client-error", "Client Error"),
       p(cls := "if-phx-server-error", "Server Error"),
       p(cls := "if-phx-disconnected", "Disconnected"),
       p(cls := "if-phx-loading", "Loading"),
-      div(
-        styleAttr := "border: 1px solid lightgray; padding: 4px; margin-top: 16px;",
-        model.child.map(behavior =>
+      child.option(behavior =>
+        div(
+          styleAttr := childBoxStyle,
           liveView(
             "child",
-            ChildLiveView(behavior),
-            linkParentOnCrash = behavior.linkParentOnCrash
-          )
+            behavior,
+            sticky = false,
+            linkParentOnCrash = _.linkParentOnCrash
+          )(ChildLiveView(_))
         )
       ),
+      child.map(_.isEmpty).when(div(styleAttr := childBoxStyle)),
       styleTag(
         rawHtml("""
           [data-phx-session] .if-phx-error { display: none; }
@@ -56,6 +62,7 @@ class ErrorLiveView
         """)
       )
     )
+  end view
 end ErrorLiveView
 
 object ErrorLiveView:
@@ -109,10 +116,10 @@ object ErrorLiveView:
     def handleMessage(model: ChildModel, ctx: MessageContext) =
       case ChildMsg.CrashChild => ZIO.fail(RuntimeException("boom"))
 
-    def render(model: ChildModel) =
+    override def view(model: Signal[ChildModel]) =
       div(
-        if model.connected then "Child connected" else "Child rendered (dead)",
-        p(idAttr := "child-render-time", "child rendered at: ", model.renderTime),
+        model.map(child => if child.connected then "Child connected" else "Child rendered (dead)"),
+        p(idAttr := "child-render-time", "child rendered at: ", model.map(_.renderTime)),
         button(on.click(ChildMsg.CrashChild), "Crash child"),
         p(cls := "if-phx-error", "Error"),
         p(cls := "if-phx-client-error", "Client Error"),

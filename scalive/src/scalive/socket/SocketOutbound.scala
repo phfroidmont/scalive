@@ -36,18 +36,20 @@ private[scalive] object SocketOutbound:
         val operation  = RuntimeTraceOperation.resolve(state.runtimeTrace, meta, kind, initiator)
         val tracedMeta = RuntimeTraceOperation.attach(meta, operation)
         handleServerEvent(event, tracedMeta, state).catchAllCause(cause =>
-          RuntimeTraceOperation.event(
-            operation,
-            RuntimeTraceStage.Crash,
-            "Server message operation crashed"
-          ) *>
-            SocketCrashRuntime.crash(
-              state,
-              s"LiveView ${state.meta.topic} server message crashed",
-              Some(cause)
-            )
+          if cause.isInterruptedOnly then ZIO.failCause(cause)
+          else
+            RuntimeTraceOperation.event(
+              operation,
+              RuntimeTraceStage.Crash,
+              "Server message operation crashed"
+            ) *>
+              SocketCrashRuntime.crash(
+                state,
+                s"LiveView ${state.meta.topic} server message crashed",
+                Some(cause)
+              )
         )
-      ).fork
+      ).interruptible.forkScoped
 
   def buildOutbox[Msg, Model](
     state: RuntimeState[Msg, Model]
@@ -72,7 +74,19 @@ private[scalive] object SocketOutbound:
         state.componentOutputQueue.shutdown *>
         state.outQueue.shutdown *>
         clientFiber.interrupt.unit *>
-        serverFiber.interrupt.unit
+        serverFiber.interrupt.unit *>
+        state.lifecycleLock.withPermit(SocketViewGraphRuntime.disposeAll(state))
+    )
+
+  def buildBootstrapShutdown[Msg, Model](state: RuntimeState[Msg, Model]): UIO[Unit] =
+    ZIO.uninterruptible(
+      SocketAsyncRuntime.interruptAll(state.asyncTasksRef) *>
+        SocketUploadRuntime.shutdown(state.uploadRef) *>
+        state.inbox.shutdown *>
+        state.asyncQueue.shutdown *>
+        state.componentOutputQueue.shutdown *>
+        state.outQueue.shutdown *>
+        state.lifecycleLock.withPermit(SocketViewGraphRuntime.disposeAll(state))
     )
 
   private def serverEventStream[Msg, Model](
@@ -159,7 +173,7 @@ private[scalive] object SocketOutbound:
              RuntimeTraceStage.LifecycleStarted,
              "Server message lifecycle and handler started"
            )
-      (currentModel, rendered)   <- state.ref.get
+      (currentModel, rendered)   <- SocketModelRuntime.currentModelAndRendered(state)
       (updatedModel, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
           runMessageHooks(currentModel, msg, hookStage, state.ctx).flatMap {
@@ -333,7 +347,7 @@ private[scalive] object SocketOutbound:
              s"Async task '$name' could not map its result to a message",
              Cause.fail(cause)
            )
-      (currentModel, rendered)   <- state.ref.get
+      (currentModel, rendered)   <- SocketModelRuntime.currentModelAndRendered(state)
       (updatedModel, navigation) <-
         SocketModelRuntime.captureNavigation(state)(
           state.ctx.hooks.runAsync(

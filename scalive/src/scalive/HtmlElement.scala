@@ -1,5 +1,6 @@
 package scalive
 
+import scala.annotation.targetName
 import scala.concurrent.duration.FiniteDuration
 
 import scalive.JSCommands.JSCommand
@@ -147,6 +148,21 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
       )
     else Mod.Attr.Static(name, codec.encode(value))
 
+  /** Encodes the current signal value as a dynamic attribute slot.
+    *
+    * The signal remains read-only and is sampled only by its owning view graph transaction.
+    * Boolean-presence attributes emit the bare name while true and an empty slot while false.
+    */
+  def :=(value: Signal[V]): Mod.Attr[Nothing] =
+    if isBooleanAsAttrPresence then
+      Mod.Attr.SignalValueAsPresence(name, value.asInstanceOf[Signal[Boolean]])
+    else Mod.Attr.SignalValue(name, value.map(codec.encode))
+
+  /** Emits this attribute only while `value` is present. */
+  def optional(value: Signal[Option[V]]): Mod.Attr[Nothing] =
+    Mod.Attr.SignalOptionalValue(name, value.map(_.map(codec.encode)))
+end HtmlAttr
+
 /** A typed server-event or JavaScript-command attribute builder.
   *
   * Values such as `on.click`, `on.change`, and `dom.onMount` are instances of this class.
@@ -267,7 +283,7 @@ class HtmlAttrBinding(
   /** Routes `message` to the component represented by `ref`.
     *
     * This emits both the event binding and `phx-target` with the component's current numeric ID. A
-    * typed [[ComponentRef]] is normally the `self` value supplied to `LiveComponent.render`, so a
+    * typed [[ComponentRef]] is normally the `self` value supplied to `LiveComponent.view`, so a
     * component cannot accidentally bind another component's message type. The event payload is
     * ignored.
     */
@@ -307,9 +323,30 @@ class HtmlAttrBinding(
   def apply[Msg](cmd: JSCommand[Msg]): Mod.Attr[Msg] =
     configured(Mod.Attr.JsBinding(name, cmd))
 
+  /** Binds a browser command sampled from the committed view snapshot. */
+  @targetName("applySignalCommand")
+  def apply[Msg](cmd: Signal[JSCommand[Msg]]): Mod.Attr[Msg] =
+    configured(Mod.Attr.SignalJsBinding(name, cmd))
+
   /** Binds a constant server message, ignoring the browser event payload. */
   def apply[Msg](msg: Msg): Mod.Attr[Msg] =
     apply(_ => msg)
+
+  /** Binds the message held by `msg` when the committed view snapshot is evaluated.
+    *
+    * The resulting handler is stored with that snapshot, so an event can never observe a newer
+    * uncommitted signal value.
+    */
+  def apply[Msg](msg: Signal[Msg]): Mod.Attr[Msg] =
+    configured(Mod.Attr.SignalBinding(name, msg, (value, _) => value))
+
+  /** Combines committed signal state with raw browser event parameters. */
+  def apply[A, Msg](
+    current: Signal[A]
+  )(
+    f: (A, Map[String, String]) => Msg
+  ): Mod.Attr[Msg] =
+    configured(Mod.Attr.SignalBinding(name, current, (value, payload) => f(value, payload.params)))
 
   /** Binds a message computed from the browser event's string parameters.
     *
@@ -439,8 +476,23 @@ object Mod:
     /** A boolean-presence attribute: `true` emits the bare name and `false` emits nothing. */
     case StaticValueAsPresence(name: String, value: Boolean) extends Attr[Nothing]
 
+    /** A named signal-backed string value that is escaped when evaluated. */
+    case SignalValue(name: String, value: Signal[String]) extends Attr[Nothing]
+
+    /** An optional named signal-backed string value. */
+    case SignalOptionalValue(name: String, value: Signal[Option[String]]) extends Attr[Nothing]
+
+    /** A signal-backed boolean-presence attribute. */
+    case SignalValueAsPresence(name: String, value: Signal[Boolean]) extends Attr[Nothing]
+
     /** A server binding whose generated attribute ID invokes `f` with string event parameters. */
     case Binding[Msg](name: String, f: Map[String, String] => Msg) extends Attr[Msg]
+
+    /** A server binding derived from a signal in the committed view snapshot. */
+    case SignalBinding[A, Msg](
+      name: String,
+      signal: Signal[A],
+      f: (A, BindingPayload) => Msg) extends Attr[Msg]
 
     /** A server binding that retains the browser form payload as [[FormData]]. */
     case FormBinding[Msg](name: String, f: FormData => Msg) extends Attr[Msg]
@@ -451,6 +503,9 @@ object Mod:
 
     /** A JSON-encoded browser command sequence, including any typed `JS.push` bindings. */
     case JsBinding[Msg](name: String, command: JSCommand[Msg]) extends Attr[Msg]
+
+    /** A signal-backed browser command whose JSON and push bindings are sampled when evaluated. */
+    case SignalJsBinding[Msg](name: String, command: Signal[JSCommand[Msg]]) extends Attr[Msg]
 
     /** Framework routing for a message delivered to a component rather than the root LiveView. */
     case RoutedBinding(name: String, f: BindingPayload => ComponentRoutedMessage)
@@ -478,6 +533,40 @@ object Mod:
       */
     case Text(text: String, raw: Boolean = false) extends Content[Nothing]
 
+    /** A signal-backed text node. */
+    case SignalText(value: Signal[String], raw: Boolean = false) extends Content[Nothing]
+
+    /** A staged choice whose branch trees are constructed once and activated by signal value. */
+    case SignalChoice[A, Msg](
+      value: Signal[A],
+      branches: Vector[(A, HtmlElement[Msg])]) extends Content[Msg]
+
+    /** A staged wrapper-free choice between preconstructed modifiers. */
+    case SignalModChoice[A, Msg](
+      value: Signal[A],
+      branches: Vector[(A, Mod[Msg])]) extends Content[Msg]
+
+    /** Optional staged content with a child-scoped signal for the present value. */
+    case SignalOption[A, Msg](
+      value: Signal[Option[A]],
+      project: Signal[A] => HtmlElement[Msg]) extends Content[Msg]
+
+    /** A signal-backed keyed collection projected once for each stable key. */
+    case SignalKeyed[A, Key, Msg](
+      values: Signal[Iterable[A]],
+      key: A => Key,
+      project: (Key, Signal[A]) => HtmlElement[Msg]) extends Content[Msg]
+
+    /** A signal-backed positional collection keyed by each current zero-based index. */
+    case SignalKeyedByIndex[A, Msg](
+      values: Signal[Iterable[A]],
+      project: (Int, Signal[A]) => HtmlElement[Msg]) extends Content[Msg]
+
+    /** A signal-backed LiveView stream with browser patch metadata and child-scoped row signals. */
+    case SignalStream[A, Msg](
+      value: Signal[streams.LiveStream[A]],
+      project: (String, Signal[A]) => HtmlElement[Msg]) extends Content[Msg]
+
     /** A nested HTML element. */
     case Tag[Msg](el: HtmlElement[Msg]) extends Content[Msg]
 
@@ -487,8 +576,17 @@ object Mod:
     /** An unresolved stateful LiveComponent request produced by component rendering helpers. */
     case LiveComponent[Msg](spec: LiveComponentSpec[?, ?, ?, ?]) extends Content[Msg]
 
+    /** An unresolved stateful LiveComponent whose props come from the parent view graph. */
+    case SignalLiveComponent[Msg](spec: LiveComponentSignalSpec[?, ?, ?, ?]) extends Content[Msg]
+
+    /** An unresolved LiveComponent whose logical ID and props are committed signal values. */
+    case DynamicLiveComponent[Msg](spec: LiveComponentDynamicSpec[?, ?, ?, ?]) extends Content[Msg]
+
     /** An unresolved nested LiveView request produced by [[scalive.liveView]]. */
     case LiveView(spec: NestedLiveViewSpec[?, ?]) extends Content[Nothing]
+
+    /** A nested LiveView definition staged from one committed signal value. */
+    case SignalLiveView(spec: SignalNestedLiveViewSpec[?, ?, ?]) extends Content[Nothing]
 
     /** Deferred flash content resolved against the owning socket's message for `kind`. */
     case Flash(kind: String, f: String => HtmlElement[Nothing]) extends Content[Nothing]

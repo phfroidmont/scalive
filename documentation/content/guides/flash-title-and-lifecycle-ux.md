@@ -23,7 +23,7 @@ private val Saved = FlashKind("saved")
 case Msg.Save =>
   save *> ctx.flash.put(Saved, "Changes saved.").as(model)
 
-def render(model: Model) =
+def view(model: Signal[Model]) =
   div(
     flash(Saved) { message =>
       p(role := "status", aria.live := "polite", message)
@@ -45,7 +45,7 @@ application state instead.
 
 Override @:apiSymbol(def:scalive.LiveView.pageTitle)`pageTitle`@:@ on the routed root
 @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ and derive it from the same
-model used by @:apiSymbol(def:scalive.LiveView.render)`render`@:@:
+model exposed as a signal to @:apiSymbol(def:scalive.LiveView.view)`view`@:@:
 
 ```scala
 override def pageTitle(model: Model): Option[String] =

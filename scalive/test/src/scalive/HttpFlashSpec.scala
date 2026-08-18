@@ -16,14 +16,14 @@ object HttpFlashSpec extends ZIOSpecDefault:
   private val target = new LiveView.Eventless[Unit]:
     def mount(ctx: MountContext) = ZIO.unit
 
-    def render(model: Unit): HtmlElement[Nothing] =
+    override def view(model: Signal[Unit]): HtmlElement[Nothing] =
       div(flash(Info)(message => p(idAttr := "flash", message)))
 
   private val source = new LiveView.Eventless[Unit]:
     def mount(ctx: MountContext) =
       ctx.nav.redirect(TargetRoute.location)
 
-    def render(model: Unit): HtmlElement[Nothing] = div("source")
+    override def view(model: Signal[Unit]): HtmlElement[Nothing] = div("source")
 
   private val routes = scalive.Live.router.withSecurity(security)(
     SourceRoute(source),

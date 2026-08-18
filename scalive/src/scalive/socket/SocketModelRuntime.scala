@@ -9,6 +9,14 @@ import scalive.WebSocketMessage.LiveResponse
 import scalive.WebSocketMessage.Payload
 
 private[scalive] object SocketModelRuntime:
+  def currentModelAndRendered[Msg, Model](
+    state: RuntimeState[Msg, Model]
+  ): UIO[(Model, RenderedView)] =
+    state.ref.get.zipWith(state.pendingNavigationModelRef.get) {
+      case ((committedModel, rendered), pendingModel) =>
+        pendingModel.getOrElse(committedModel) -> rendered
+    }
+
   def captureNavigation[Msg, Model, A](
     state: RuntimeState[Msg, Model],
     initial: Option[LiveNavigationCommand] = None,
@@ -282,6 +290,36 @@ private[scalive] object SocketModelRuntime:
     state: RuntimeState[Msg, Model],
     traceOperation: RuntimeTraceOperation = RuntimeTraceOperation.Disabled
   ): Task[Diff] =
+    state.componentsRef.get.flatMap(previousComponents =>
+      state.ctx.nestedLiveViews
+        .renderTransaction(
+          updateModelAndSubscriptionsUnchecked(rendered, model, state, traceOperation)
+        )
+        .onError(_ => restoreComponentsAfterFailure(state.componentsRef, previousComponents))
+    )
+
+  private def restoreComponentsAfterFailure(
+    componentsRef: Ref[ComponentRuntimeState],
+    previous: ComponentRuntimeState
+  ): UIO[Unit] =
+    componentsRef.get.flatMap { candidate =>
+      val newGraphs = candidate.instances.collect {
+        case (identity, instance)
+            if previous.instances
+              .get(identity).forall(previousInstance =>
+                previousInstance.viewGraph ne instance.viewGraph
+              ) =>
+          instance.viewGraph
+      }
+      ZIO.succeed(newGraphs.foreach(_.dispose())) *> componentsRef.set(previous)
+    }
+
+  private def updateModelAndSubscriptionsUnchecked[Msg, Model](
+    rendered: RenderedView,
+    model: Model,
+    state: RuntimeState[Msg, Model],
+    traceOperation: RuntimeTraceOperation
+  ): Task[Diff] =
     for
       _ <- RuntimeTraceOperation.model(
              traceOperation,
@@ -295,8 +333,17 @@ private[scalive] object SocketModelRuntime:
              RuntimeTraceStage.RenderStarted,
              "Render started"
            )
-      nextRoot <- SocketComponentRuntime.renderRoot(state.renderRoot(model, currentUrl), state)
-      _        <- RuntimeTraceOperation.model(
+      nextSignalRevision = rendered.signalRevision + 1L
+      nextEvaluation <- SocketComponentRuntime.evaluateViewGraph(
+                          state.viewGraph,
+                          model -> currentUrl,
+                          rendered.signalEvaluation,
+                          nextSignalRevision,
+                          state.componentsRef,
+                          state.ctx,
+                          manageNestedRender = false
+                        )
+      _ <- RuntimeTraceOperation.model(
              traceOperation,
              RuntimeTraceStage.ModelRendered,
              "Proposed model rendered",
@@ -307,7 +354,7 @@ private[scalive] object SocketModelRuntime:
              RuntimeTraceStage.RenderCompleted,
              "Render completed"
            )
-      nextCompiled = RenderSnapshot.compile(nextRoot)
+      nextCompiled = nextEvaluation.compiled
       diff         = TreeDiff.diff(rendered.compiled, nextCompiled)
       _ <- RuntimeTraceOperation.event(
              traceOperation,
@@ -319,7 +366,9 @@ private[scalive] object SocketModelRuntime:
       nextRendered = RenderedView(
                        compiled = nextCompiled,
                        bindings = BindingRegistry.collect[Any](nextCompiled),
-                       pageTitle = nextPageTitle
+                       pageTitle = nextPageTitle,
+                       signalEvaluation = nextEvaluation.evaluation,
+                       signalRevision = nextSignalRevision
                      )
       _      <- state.ctx.hooks.runAfterRender[Msg, Model](model, state.ctx)
       events <- SocketClientEventRuntime.drain(state.clientEventsRef)
@@ -336,6 +385,7 @@ private[scalive] object SocketModelRuntime:
              )
            )
       _ <- state.ref.set((model, nextRendered))
+      _ <- state.pendingNavigationModelRef.set(None)
       _ <- RuntimeTraceOperation.model(
              traceOperation,
              RuntimeTraceStage.ModelCommitted,

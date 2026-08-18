@@ -19,8 +19,8 @@ final class NavigationExample extends LiveView[NavigationExample.Msg, Navigation
     case Msg.Select(query) => ZIO.succeed(Model(query))
     case Msg.Reset         => ZIO.succeed(Model.initial)
 
-  def render(model: Model): HtmlElement[Msg] =
-    val destination = searchLocation(model.query)
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
+    val destination = model.map(model => searchLocation(model.query))
     div(
       cls := "docs-navigation-example",
       sectionTag(
@@ -41,7 +41,7 @@ final class NavigationExample extends LiveView[NavigationExample.Msg, Navigation
               typ                           := "button",
               cls                           := "docs-navigation-preset",
               dataAttr("navigation-preset") := query.value,
-              ariaPressed                   := (query == model.query),
+              ariaPressed                   := model.map(_.query == query),
               on.click(Msg.Select(query)),
               query.label
             )
@@ -61,24 +61,28 @@ final class NavigationExample extends LiveView[NavigationExample.Msg, Navigation
           cls := "docs-navigation-route",
           div(
             span(cls                          := "docs-navigation-route-label", "Typed query"),
-            code(dataAttr("navigation-query") := "", model.query.value)
+            code(dataAttr("navigation-query") := "", model.map(_.query.value))
           ),
           div(
             span(cls := "docs-navigation-route-label", "Encoded destination"),
-            code(dataAttr("navigation-destination") := "", destination.href)
+            code(dataAttr("navigation-destination") := "", destination.map(_.href))
           )
         ),
         div(
           cls := "docs-navigation-actions",
-          link.pushNavigate(
-            destination,
+          a(
+            href                        := destination.map(_.href),
+            phx.link                    := "redirect",
+            phx.linkState               := "push",
             cls                         := "docs-navigation-primary",
             dataAttr("push-navigation") := "",
             span("Open search"),
             small("Push history")
           ),
-          link.replaceNavigate(
-            destination,
+          a(
+            href                           := destination.map(_.href),
+            phx.link                       := "redirect",
+            phx.linkState                  := "replace",
             cls                            := "docs-navigation-secondary",
             dataAttr("replace-navigation") := "",
             span("Open and replace"),
@@ -93,7 +97,7 @@ final class NavigationExample extends LiveView[NavigationExample.Msg, Navigation
         )
       )
     )
-  end render
+  end view
 end NavigationExample
 
 object NavigationExample:

@@ -18,6 +18,7 @@ import scalive.socket.SocketFlashRuntime
 import scalive.socket.SocketNavigationRuntime
 import scalive.socket.SocketStreamRuntime
 import scalive.socket.SocketUploadRuntime
+import scalive.socket.SocketViewGraphRuntime
 import scalive.socket.StreamRuntimeState
 import scalive.socket.UploadRuntimeState
 
@@ -174,30 +175,20 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
   ): URIO[R & Scope, LiveView[Msg, Model]] =
     liveViewBuilder(params, request, mountContext)
 
-  private[scalive] def renderLiveRoot(
-    lv: LiveView[Msg, Model],
-    model: Model,
-    params: A,
-    request: Request,
-    currentUrl: URL,
-    mountContext: Ctx,
-    globalLayouts: List[LiveLayout[Any, Any]]
-  ): HtmlElement[Msg] =
-    applyLiveLayouts(lv.render(model), params, request, currentUrl, mountContext, globalLayouts)
-
-  private[scalive] def socketRenderRoot(
+  private[scalive] def socketViewRoot(
     lv: LiveView[Msg, Model],
     params: A,
     request: Request,
     mountContext: Ctx,
     globalLayouts: List[LiveLayout[Any, Any]]
-  ): (Model, URL) => HtmlElement[Msg] =
-    (model, currentUrl) =>
-      val currentParams  = pathCodec.decode(currentUrl.path).getOrElse(params)
-      val currentRequest = request.copy(url = currentUrl)
-      renderLiveRoot(
-        lv,
-        model,
+  ): Signal[(Model, URL)] => HtmlElement[Msg] =
+    input =>
+      val model          = input.map(_._1)
+      val currentUrl     = input.map(_._2)
+      val currentParams  = currentUrl.map(url => pathCodec.decode(url.path).getOrElse(params))
+      val currentRequest = currentUrl.map(url => request.copy(url = url))
+      applyLiveLayouts(
+        lv.view(model),
         currentParams,
         currentRequest,
         currentUrl,
@@ -207,9 +198,9 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
 
   private def applyLiveLayouts[Msg](
     content: HtmlElement[Msg],
-    params: A,
-    request: Request,
-    currentUrl: URL,
+    params: Signal[A],
+    request: Signal[Request],
+    currentUrl: Signal[URL],
     mountContext: Ctx,
     globalLayouts: List[LiveLayout[Any, Any]]
   ): HtmlElement[Msg] =
@@ -217,7 +208,13 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
       LiveLayoutLayer[A, Ctx, Any](layout.asInstanceOf[LiveLayout[A, Any]], identity)
     )
     (globalLayers ++ liveLayouts).foldRight(content) { (layer, current) =>
-      layer.render(current, params, request, currentUrl, mountContext)
+      layer.view(
+        current,
+        params,
+        request,
+        currentUrl,
+        mountContext
+      )
     }
 
   private[scalive] def renderRootHtml[Msg](
@@ -248,11 +245,24 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
     mountContext: Ctx,
     globalLayouts: List[LiveLayout[Any, Any]],
     globalRootLayout: LiveRootLayout[Any, Any]
-  ): List[String] =
-    val live = applyLiveLayouts(div(), params, request, currentUrl, mountContext, globalLayouts)
-    StaticTracking.collect(
-      renderRootHtml(live, None, params, request, currentUrl, mountContext, globalRootLayout)
+  ): Task[List[String]] =
+    val rootTracked = StaticTracking.collect(
+      renderRootHtml(div(), None, params, request, currentUrl, mountContext, globalRootLayout)
     )
+    StaticTracking
+      .collectView(params -> request -> currentUrl) { input =>
+        val paramsSignal  = input.map(_._1._1)
+        val requestSignal = input.map(_._1._2)
+        val urlSignal     = input.map(_._2)
+        applyLiveLayouts(
+          div(),
+          paramsSignal,
+          requestSignal,
+          urlSignal,
+          mountContext,
+          globalLayouts
+        )
+      }.map(rootTracked ++ _)
 
   private def rootLayer(
     globalRootLayout: LiveRootLayout[Any, Any]
@@ -304,7 +314,8 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                           s"lv:$id",
                           id,
                           tokenConfig,
-                          req.url
+                          req.url,
+                          Some(csrf.value)
                         )
                       )
                 _               <- SocketFlashRuntime.resetNavigation(flashRef)
@@ -339,44 +350,53 @@ final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (
                                             hasRouteMountAspect,
                                             rootKey
                                           )
-                                  el = applyLiveLayouts(
-                                         lv.render(model),
-                                         params,
-                                         req,
-                                         req.url,
-                                         mountContext,
-                                         globalLayouts
-                                       )
-                                  rendered <- SocketComponentRuntime.renderRoot(
-                                                div(
+                                  viewGraph = ViewGraph.build[(Model, URL)] { input =>
+                                                val viewRoot = socketViewRoot(
+                                                  lv,
+                                                  params,
+                                                  req,
+                                                  mountContext,
+                                                  globalLayouts
+                                                )(input)
+                                                val liveRoot = div(
                                                   idAttr      := id,
                                                   phx.main    := true,
                                                   phx.session := token,
-                                                  el
-                                                ),
-                                                componentsRef,
-                                                ctx
-                                              )
-                                  document = renderRootHtml(
-                                               rendered,
-                                               normalizePageTitle(lv.pageTitle(model)),
-                                               params,
-                                               req,
-                                               req.url,
-                                               mountContext,
-                                               globalRootLayout
-                                             )
-                                  documentWithCsrf = CsrfProtection.inject(document, csrf.value)
+                                                  viewRoot
+                                                )
+                                                CsrfProtection.inject(
+                                                  renderRootHtml(
+                                                    liveRoot,
+                                                    normalizePageTitle(lv.pageTitle(model)),
+                                                    params,
+                                                    req,
+                                                    req.url,
+                                                    mountContext,
+                                                    globalRootLayout
+                                                  ),
+                                                  csrf.value
+                                                )
+                                              }
+                                  documentHtml <- SocketComponentRuntime
+                                                    .evaluateViewGraph(
+                                                      viewGraph,
+                                                      model -> req.url,
+                                                      SignalEvaluation.empty,
+                                                      revision = 1L,
+                                                      componentsRef,
+                                                      ctx
+                                                    ).map(evaluated =>
+                                                      RenderSnapshot.renderHtml(evaluated.compiled)
+                                                    ).ensuring(
+                                                      ZIO.succeed(viewGraph.dispose()) *>
+                                                        SocketViewGraphRuntime
+                                                          .disposeComponents(componentsRef)
+                                                    )
                                   _ <- ctx.hooks.runAfterRender[Msg, Model](model, ctx)
                                 yield security.flash.clearCookie(
                                   CsrfProtection.addCookie(
                                     Response.html(
-                                      Html.raw(
-                                        HtmlBuilder.build(
-                                          documentWithCsrf,
-                                          isRoot = false
-                                        )
-                                      )
+                                      Html.raw(documentHtml)
                                     ),
                                     csrf.cookie
                                   ),

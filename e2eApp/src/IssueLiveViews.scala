@@ -23,14 +23,14 @@ class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveVie
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Change(event) => model.copy(target = event.target.map(_.segments))
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       form(
         on.change.form(FormCodec.formData)(Msg.Change(_)),
         input(idAttr := "a", typ := "text", nameAttr := "foo"),
         input(idAttr := "b", typ := "text", nameAttr := "foo[bar]")
       ),
-      span(idAttr := "target", renderTarget(model.target))
+      span(idAttr := "target", model.map(current => renderTarget(current.target)))
     )
 
   private def renderTarget(target: Option[Vector[String]]): String =
@@ -65,7 +65,9 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
       ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
     case Msg.Save => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val upload = model.map(_.upload)
+
     mainTag(
       h1("Uploader reproduction"),
       form(
@@ -73,20 +75,22 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
         on.change(_ => Msg.Validate),
         sectionTag(
           liveFileInput(
-            model.upload,
+            upload,
             styleAttr := "display: none;",
-            model.upload.onProgress(_ => Msg.Progress)
+            upload.onProgress(_ => Msg.Progress)
           ),
           input(
             dom.hook("QueuedUploaderHook", DomRef("fileinput")),
             typ                         := "file",
             multiple                    := true,
             dataAttr("max-concurrency") := "3",
-            disabled                    := filePickerDisabled(model.upload)
+            disabled                    := upload.map(filePickerDisabled)
           ),
-          if model.fileNames.nonEmpty || model.upload.entries.nonEmpty then
+          Signal.when(
+            model.map(current => current.fileNames.nonEmpty || current.upload.entries.nonEmpty)
+          )(
             h2("Currently uploading files")
-          else "",
+          ),
           div(
             table(
               thead(
@@ -102,12 +106,13 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
               )
             )
           ),
-          uploadErrors(model.upload).splitBy(_.toString) { (_, error) =>
-            p(styleAttr := "color: red;", errorToString(error))
+          uploadErrors(upload).splitBy(_.toString) { (_, error) =>
+            p(styleAttr := "color: red;", error.map(errorToString))
           }
         )
       )
     )
+  end view
 
   private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
     uploads.get(Upload).map {
@@ -136,48 +141,59 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
   private def filePickerDisabled(upload: LiveUpload[Unit]): Boolean =
     upload.entries.exists(_.status != LiveUploadEntryStatus.Completed)
 
-  private def uploadRows(model: Model): Mod[Msg] =
-    if model.fileNames.nonEmpty then
-      model.fileNames.zipWithIndex.splitBy { case (fileName, _) => fileName } {
-        case (_, (fileName, index)) =>
-          queuedUploadRow(fileName, if index < model.completedCount then 100 else 0)
-      }
-    else
-      model.upload.entries.filter(_.client.fileName.nonEmpty).splitBy(_.ref) { (_, entry) =>
-        uploadEntryRow(model.upload, entry)
-      }
+  private def uploadRows(model: Signal[Model]): Mod[Msg] =
+    model
+      .map(_.fileNames.nonEmpty).chooseMod(
+        model.map(_.fileNames.zipWithIndex).splitBy { case (fileName, _) => fileName } {
+          case (_, file) => queuedUploadRow(model, file)
+        },
+        model
+          .map(_.upload.entries.filter(_.client.fileName.nonEmpty))
+          .splitBy(_.ref)((_, entry) => uploadEntryRow(model.map(_.upload), entry))
+      )
 
-  private def queuedUploadRow(fileName: String, progress: Int) =
+  private def queuedUploadRow(model: Signal[Model], file: Signal[(String, Int)]) =
+    val progress = model.zip(file).map { case (current, (_, index)) =>
+      if index < current.completedCount then 100 else 0
+    }
     tr(
-      td(fileName),
-      td(progressTag(value := progress.toString, maxAttr := "100", s"$progress%")),
+      td(file.map(_._1)),
+      td(
+        progressTag(value := progress.map(_.toString), maxAttr := "100", progress.map(p => s"$p%"))
+      ),
       td(button(typ := "button", aria.label := "cancel", span("x"))),
       td()
     )
 
-  private def uploadEntryRow(upload: LiveUpload[Unit], entry: LiveUploadEntry[Unit]) =
+  private def uploadEntryRow(
+    upload: Signal[LiveUpload[Unit]],
+    entry: Signal[LiveUploadEntry[Unit]]
+  ) =
     tr(
-      td(entry.client.fileName),
+      td(entry.map(_.client.fileName)),
       td(
         progressTag(
-          value   := entry.progress.toString,
+          value   := entry.map(_.progress.toString),
           maxAttr := "100",
-          s"${entry.progress}%"
+          entry.map(current => s"${current.progress}%")
         )
       ),
       td(
         button(
           typ := "button",
-          on.click(Msg.CancelUpload(entry)),
-          phx.value("ref") := entry.ref.value,
+          on.click(entry.map(Msg.CancelUpload.apply)),
+          phx.value("ref") := entry.map(_.ref.value),
           aria.label       := "cancel",
           span("x")
         )
       ),
       td(
-        uploadErrors(upload, entry).splitBy(_.toString) { (_, error) =>
-          p(styleAttr := "color: red;", errorToString(error))
-        }
+        upload
+          .zip(entry).map { case (currentUpload, currentEntry) =>
+            uploadErrors(currentUpload, currentEntry)
+          }.splitBy(_.toString) { (_, error) =>
+            p(styleAttr := "color: red;", error.map(errorToString))
+          }
       )
     )
 end Issue2965LiveView
@@ -244,10 +260,10 @@ class Issue3814LiveView extends LiveView[Issue3814LiveView.Msg, Issue3814LiveVie
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Submit => model.copy(triggerSubmit = true)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     form(
       on.submit(Msg.Submit),
-      phx.triggerAction := model.triggerSubmit,
+      phx.triggerAction := model.map(_.triggerSubmit),
       action            := "/submit",
       method            := "post",
       input(typ := "hidden", nameAttr := "greeting", value := "hello"),
@@ -275,24 +291,27 @@ class Issue3040LiveView extends LiveView[Issue3040LiveView.Msg, Issue3040LiveVie
     case Msg.Close  => model.copy(open = false)
     case Msg.Submit => model.copy(submitted = true)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val open      = model.map(_.open)
+    val submitted = model.map(_.submitted)
+
     div(
       a(href := "#", on.click(Msg.Open), "Add new"),
       div(
         idAttr    := "my-modal-container",
-        styleAttr := (if model.open then "position: fixed; inset: 0" else "display: none"),
+        styleAttr := open.map(if _ then "position: fixed; inset: 0" else "display: none"),
         on.windowKeyDown.key(Key.Escape)(Msg.Close),
-        if model.open then
+        Signal.when(open)(
           div(
             styleAttr := "margin: 320px 0 0 300px; width: 300px; padding: 20px",
             on.clickAway(Msg.Close),
             dom.onMount(JS.focusFirst(to = DomSelector.css("#my-modal-container"))),
             form(
               on.submit(Msg.Submit),
-              if model.submitted then "Form was submitted!" else input(nameAttr := "name")
+              submitted.chooseMod("Form was submitted!", input(nameAttr := "name"))
             )
           )
-        else ""
+        )
       )
     )
 end Issue3040LiveView
@@ -310,7 +329,7 @@ class Issue3047LiveView(pageName: String) extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     span(idAttr := "page", s"Page $pageName")
 
 object Issue3047LiveView:
@@ -335,7 +354,7 @@ object Issue3047LiveView:
           .reset(ItemsStreamDef, ResetItems)
           .map(items => model.copy(items = items))
 
-    def render(model: Model) =
+    override def view(model: Signal[Model]) =
       div(
         styleAttr := "border: 2px solid black;",
         h1("This is the sticky liveview"),
@@ -343,7 +362,7 @@ object Issue3047LiveView:
           idAttr     := "items",
           phx.update := PhxUpdate.Stream,
           styleAttr  := "display: flex; flex-direction: column; gap: 4px;",
-          model.items.stream((domId, item) => span(idAttr := domId, item.name))
+          model.map(_.items).stream((domId, item) => span(idAttr := domId, item.map(_.name)))
         ),
         button(on.click(Reset), "Reset")
       )
@@ -373,11 +392,17 @@ class Issue3529LiveView extends LiveView.Routed[Unit, Issue3529LiveView.Model, O
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
-      h1(s"Mounted at ${model.mounted}"),
-      link.pushNavigate(E2ERoutes.issue3529.location(Some(model.next)), "Navigate"),
-      link.pushPatch(E2ERoutes.issue3529.location(Some(model.next)), "Patch")
+      h1(model.map(current => s"Mounted at ${current.mounted}")),
+      link.pushNavigate(
+        model.map(current => E2ERoutes.issue3529.location(Some(current.next))),
+        "Navigate"
+      ),
+      link.pushPatch(
+        model.map(current => E2ERoutes.issue3529.location(Some(current.next))),
+        "Patch"
+      )
     )
 
 object Issue3529LiveView:
@@ -418,17 +443,18 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       ul(
         idAttr     := "stream-list",
         phx.update := PhxUpdate.Stream,
-        model.items.stream((domId, item) =>
-          div(
-            idAttr := domId,
-            liveView(domId, NestedLive(item.id))
+        model
+          .map(_.items).stream((domId, item) =>
+            div(
+              idAttr := domId,
+              liveView(domId, item.map(_.id))(NestedLive(_))
+            )
           )
-        )
       ),
       link.pushPatch(E2ERoutes.issue3530.location(Some("a")), "patch a"),
       link.pushPatch(E2ERoutes.issue3530.location(Some("b")), "patch b"),
@@ -452,7 +478,7 @@ object Issue3530LiveView:
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(model: Unit) =
+    override def view(model: Signal[Unit]) =
       div(
         idAttr := s"item-outer-$itemId",
         "test hook with nested liveview",
@@ -482,7 +508,9 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
     case Msg.CancelUpload(entry) =>
       ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val upload = model.map(_.upload)
+
     div(
       form(
         idAttr := "user-form",
@@ -490,7 +518,7 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
         input(
           idAttr   := "user_name",
           nameAttr := "user[name]",
-          value    := model.userName,
+          value    := model.map(_.userName),
           typ      := "text"
         ),
         button(dom.hook("JsUpload", DomRef("x")), typ := "button", "Upload then Input"),
@@ -501,31 +529,31 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
           "Input then Upload"
         ),
         liveFileInput(
-          model.upload,
+          upload,
           formId := "auto-form",
-          model.upload.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", "")))
+          upload.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", "")))
         )
       ),
       form(idAttr := "auto-form", on.change(_ => Msg.Validate)),
       sectionTag(
         cls := "pending-uploads",
-        model.upload.dropTarget,
+        upload.dropTarget,
         styleAttr := "min-height: 100%;",
-        h3(s"Pending Uploads (${model.upload.entries.length})"),
-        model.upload.entries.splitBy(_.ref) { (_, entry) =>
+        h3(model.map(current => s"Pending Uploads (${current.upload.entries.length})")),
+        upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
           div(
             progressTag(
-              value   := entry.progress.toString,
+              value   := entry.map(_.progress.toString),
               maxAttr := "100",
-              s"${entry.progress}%"
+              entry.map(current => s"${current.progress}%")
             ),
             div(
-              entry.ref.value,
+              entry.map(_.ref.value),
               br(),
               a(
                 href := "#",
-                on.click(Msg.CancelUpload(entry)),
-                phx.value("ref") := entry.ref.value,
+                on.click(entry.map(Msg.CancelUpload.apply)),
+                phx.value("ref") := entry.map(_.ref.value),
                 cls              := "upload-entry__cancel",
                 "Cancel Upload"
               )
@@ -534,11 +562,12 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
         }
       ),
       ul(
-        model.uploadedFiles.splitBy(identity) { (_, fileName) =>
+        model.map(_.uploadedFiles).splitBy(identity) { (_, fileName) =>
           li(a(href := fileName, fileName))
         }
       )
     )
+  end view
 
   private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
     uploads.get(Upload).map {
@@ -592,7 +621,7 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
       else LiveEventHookResult.cont(model)
     }
 
-  def render(reconnected: Boolean) =
+  override def view(reconnected: Signal[Boolean]) =
     div(
       form(
         idAttr := "recover",
@@ -600,7 +629,7 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
         on.submit.form(Msg.Noop(_)),
         button("Submit")
       ),
-      if reconnected then p(idAttr := "reconnected", "Reconnected!") else ""
+      Signal.when(reconnected)(p(idAttr := "reconnected", "Reconnected!"))
     )
 
 object Issue3819LiveView:
@@ -614,7 +643,7 @@ class Issue3107LiveView extends LiveView[Issue3107LiveView.Msg.type, Boolean]:
   def handleMessage(model: Boolean, ctx: MessageContext) =
     (_: Issue3107LiveView.Msg.type) => false
 
-  def render(disabledButton: Boolean) =
+  override def view(disabledButton: Signal[Boolean]) =
     form(
       on.change(Issue3107LiveView.Msg),
       select(
@@ -659,7 +688,7 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
           case None => E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     form(
       idAttr := "form",
       on.change(Msg),
@@ -670,7 +699,7 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
         (1 to 5).map(number =>
           option(
             value    := number.toString,
-            selected := model.selected.contains(number),
+            selected := model.map(_.selected.contains(number)),
             number.toString
           )
         )
@@ -696,7 +725,7 @@ class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveVie
       model.copy(select1 = select1, select2 = select2)
     case Msg.Submitted(_) => Model()
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       form(
         on.change.form(Msg.Updated(_)),
@@ -707,7 +736,7 @@ class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveVie
           option(value := "", "Select"),
           Vector("greetings", "goodbyes").map(optionValue =>
             option(
-              selected := model.select1.contains(optionValue),
+              selected := model.map(_.select1.contains(optionValue)),
               value    := optionValue,
               optionValue
             )
@@ -717,13 +746,15 @@ class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveVie
           idAttr   := "demo_select2",
           nameAttr := "demo[select2]",
           option(value := "", "Select"),
-          model.select2Options.map(optionValue =>
+          model.map(_.select2Options).splitBy(identity) { (_, optionValue) =>
             option(
-              selected := model.select2.contains(optionValue),
-              value    := optionValue,
+              selected := model.zip(optionValue).map { case (current, value) =>
+                current.select2.contains(value)
+              },
+              value := optionValue,
               optionValue
             )
-          )
+          }
         ),
         input(typ  := "text", idAttr := "demo_dummy", nameAttr := "demo[dummy]"),
         button(typ := "submit", "Submit")
@@ -753,12 +784,12 @@ class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
     case Msg.Validate(data) => data.values("a[]")
     case Msg.Search         => model
 
-  def render(selectedValues: Vector[String]) =
+  override def view(selectedValues: Signal[Vector[String]]) =
     form(
       idAttr := "my_form",
       on.change.form(Msg.Validate(_)),
       div(
-        selectedValues.map(value => div(value)),
+        selectedValues.splitBy(identity)((_, value) => div(value)),
         input(idAttr := "search", typ := "search", nameAttr := "value", on.change(Msg.Search))
       ),
       div(
@@ -767,7 +798,7 @@ class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
             typ      := "checkbox",
             nameAttr := "a[]",
             value    := optionValue,
-            checked  := selectedValues.contains(optionValue),
+            checked  := selectedValues.map(_.contains(optionValue)),
             on.click(JS.dispatch("input").focus(to = DomSelector.css("#search")))
           )
         )
@@ -790,7 +821,7 @@ class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg, Unit]:
     case Msg.Validate => model
     case Msg.Submit   => ctx.nav.pushNavigate(E2ERoutes.issue3194Other.location).as(model)
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     form(
       on.change(Msg.Validate),
       on.submit(Msg.Submit),
@@ -813,7 +844,7 @@ class Issue3194OtherLiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) = h2("Another LiveView")
+  override def view(model: Signal[Unit]) = h2("Another LiveView")
 
 class Issue3200LiveView
     extends LiveView.Routed[Issue3200LiveView.Msg, Issue3200LiveView.Model, String]:
@@ -830,7 +861,7 @@ class Issue3200LiveView
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Msg) => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       button(
         typ := "button",
@@ -842,9 +873,11 @@ class Issue3200LiveView
         on.click(JS.pushPatch(E2ERoutes.issue3200.location("settings"))),
         "Settings tab"
       ),
-      model.tab match
-        case Tab.Settings => liveComponent(SettingsTab, id = "settings_tab", props = ())
-        case Tab.Messages => liveComponent(MessagesTab, id = "messages_tab", props = ())
+      model
+        .map(_.tab == Tab.Settings).chooseMod(
+          liveComponent(SettingsTab, id = "settings_tab", props = ()),
+          liveComponent(MessagesTab, id = "messages_tab", props = ())
+        )
     )
 end Issue3200LiveView
 
@@ -864,7 +897,7 @@ object Issue3200LiveView:
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: Unit, model: Unit, self: ComponentRef[Unit]) =
+    override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
       div("Settings")
 
   object MessagesTab extends LiveComponent[Unit, MessagesTab.Msg, String]:
@@ -879,7 +912,7 @@ object Issue3200LiveView:
       case Msg.Change(data) => data.getOrElse("new_message", "")
       case Msg.Submit       => model
 
-    def render(props: Unit, model: String, self: ComponentRef[Msg]) =
+    override def view(props: Signal[Unit], model: Signal[String], self: ComponentRef[Msg]) =
       div(
         liveComponent(MessageComponent, id = "some_unique_message_id", props = "Example message"),
         form(
@@ -891,7 +924,7 @@ object Issue3200LiveView:
         )
       )
 
-    private def inputComponent(inputValue: String) =
+    private def inputComponent(inputValue: Signal[String]) =
       div(
         phx.feedbackFor := "new_message",
         input(idAttr := "new_message_input", nameAttr := "new_message", value := inputValue)
@@ -907,7 +940,11 @@ object Issue3200LiveView:
     def handleMessage(props: String, model: String, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: String, model: String, self: ComponentRef[Unit]) =
+    override def view(
+      props: Signal[String],
+      model: Signal[String],
+      self: ComponentRef[Unit]
+    ) =
       div(model)
 end Issue3200LiveView
 
@@ -943,7 +980,9 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
       model.copy(status = Status.Loaded, name = result.name, email = result.email)
     case Msg.Loaded(_) => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val status = model.map(_.status)
+
     div(
       form(
         on.change.form(Msg.ChangeStatus(_)),
@@ -952,20 +991,21 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
           Vector(Status.Connecting, Status.Loading, Status.Connected, Status.Loaded).map(status =>
             option(
               value    := status.value,
-              selected := (status == model.status),
+              selected := model.map(_.status == status),
               status.value.capitalize
             )
           )
         )
       ),
-      model.status match
-        case Status.Loaded =>
+      status
+        .map(_ == Status.Loaded).chooseMod(
           liveComponent(
             Issue3026FormComponent,
             id = "my-form",
-            props = FormProps(model.name, model.email)
-          )
-        case other => div(cls := "p-8 bg-gray-200 mb-4", other.value)
+            props = model.map(current => FormProps(current.name, current.email))
+          ),
+          div(cls := "p-8 bg-gray-200 mb-4", status.map(_.value))
+        )
     )
 end Issue3026LiveView
 
@@ -995,14 +1035,18 @@ object Issue3026LiveView:
     def handleMessage(props: FormProps, model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: FormProps, model: Unit, self: ComponentRef[Unit]) =
+    override def view(
+      props: Signal[FormProps],
+      model: Signal[Unit],
+      self: ComponentRef[Unit]
+    ) =
       div(
         "Example form",
         form(
           phxChangeAttr := "validate",
           phxSubmitAttr := "submit",
-          input(nameAttr := "name", typ  := "text", value := props.name),
-          input(nameAttr := "email", typ := "text", value := props.email),
+          input(nameAttr := "name", typ  := "text", value := props.map(_.name)),
+          input(nameAttr := "email", typ := "text", value := props.map(_.email)),
           button(typ     := "submit", "Submit")
         )
       )
@@ -1015,7 +1059,7 @@ class Issue3117LiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     div(
       link.pushNavigateUnsafe("/issues/3117?nav", idAttr := "navigate", "Navigate"),
       (1 to 2).map(i =>
@@ -1042,13 +1086,22 @@ object Issue3117LiveView:
       case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => model.copy(result = Some(value))
       case Msg.Loaded(_)                                => model
 
-    def render(props: String, model: Model, self: ComponentRef[Msg]) =
-      val result = model.result.map(value => s"Some($value)").getOrElse("None")
+    override def view(
+      props: Signal[String],
+      model: Signal[Model],
+      self: ComponentRef[Msg]
+    ) =
+      val content = model.map { current =>
+        val result = current.result.map(value => s"Some($value)").getOrElse("None")
+        s"Example LC Row $result"
+      }
       div(
         idAttr := props,
-        s"Example LC Row $result",
+        content,
         div(cls := "static", "static content")
       )
+  end Row
+end Issue3117LiveView
 
 class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
   import Issue3169LiveView.*
@@ -1059,7 +1112,7 @@ class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
   def handleMessage(model: Option[String], ctx: MessageContext) =
     case Msg.Select(name) => Some(name)
 
-  def render(selected: Option[String]) =
+  override def view(selected: Signal[Option[String]]) =
     div(
       "HomeLive ",
       liveComponent(FormComponent, id = "form_view", props = selected),
@@ -1112,12 +1165,19 @@ object Issue3169LiveView:
       case Msg.Loaded(LiveAsyncResult.Succeeded(record)) => Some(record)
       case Msg.Loaded(_)                                 => model
 
-    def render(props: Option[String], model: Option[Record], self: ComponentRef[Msg]) =
+    override def view(
+      props: Signal[Option[String]],
+      model: Signal[Option[Record]],
+      self: ComponentRef[Msg]
+    ) =
       div(
         "FormComponent (c1)",
-        model.map(record => div(liveComponent(FormCore, id = "core", props = record))),
+        Signal.option(model)((record: Signal[Record]) =>
+          div(liveComponent(FormCore, id = "core", props = record))
+        ),
         hr()
       )
+  end FormComponent
 
   object FormCore extends LiveComponent[Record, Unit, Record]:
     def mount(props: Record, ctx: MountContext) =
@@ -1129,10 +1189,12 @@ object Issue3169LiveView:
     def handleMessage(props: Record, model: Record, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: Record, model: Record, self: ComponentRef[Unit]) =
+    override def view(props: Signal[Record], model: Signal[Record], self: ComponentRef[Unit]) =
       div(
         "FormCore (c2)",
-        form(liveComponent(FormColumn, id = s"column-${model.id}", props = model))
+        form(
+          liveComponent(FormColumn, id = model.map(record => s"column-${record.id}"), props = model)
+        )
       )
 
   object FormColumn extends LiveComponent[Record, Unit, Record]:
@@ -1145,25 +1207,25 @@ object Issue3169LiveView:
     def handleMessage(props: Record, model: Record, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: Record, model: Record, self: ComponentRef[Unit]) =
+    override def view(props: Signal[Record], model: Signal[Record], self: ComponentRef[Unit]) =
       div(
         "FormColumn (c3) ",
-        input(typ := "text", value := model.name),
+        input(typ := "text", value := model.map(_.name)),
         inputComponent(model),
         testComponent("foo")
       )
 
-  private def inputComponent(record: Record) =
+  private def inputComponent(record: Signal[Record]) =
     div(
-      record.name,
-      input(typ := "text", value := record.name),
+      record.map(_.name),
+      input(typ := "text", value := record.map(_.name)),
       inputTwo(record)
     )
 
-  private def inputTwo(record: Record) =
+  private def inputTwo(record: Signal[Record]) =
     div(
-      record.name,
-      input(typ := "text", value := record.name)
+      record.map(_.name),
+      input(typ := "text", value := record.map(_.name))
     )
 
   private def testComponent(value: String) =
@@ -1177,7 +1239,7 @@ class Issue3378LiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     div(liveView("appbar", Issue3378LiveView.AppBarLive()))
 
 object Issue3378LiveView:
@@ -1193,7 +1255,7 @@ object Issue3378LiveView:
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(model: Unit) =
+    override def view(model: Signal[Unit]) =
       div(liveView("notifications", NotificationsLive()))
 
   class NotificationsLive extends LiveView[Unit, LiveStream[Notification]]:
@@ -1203,7 +1265,7 @@ object Issue3378LiveView:
     def handleMessage(model: LiveStream[Notification], ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(model: LiveStream[Notification]) =
+    override def view(model: Signal[LiveStream[Notification]]) =
       div(
         ul(
           idAttr     := "notifications_list",
@@ -1220,7 +1282,7 @@ class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends Li
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     div(
       h1(s"Page $pageName"),
       if pageName == "A" then link.pushNavigate(E2ERoutes.issue3496B.location, "Go to page B")
@@ -1240,7 +1302,7 @@ object Issue3496LiveView:
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(model: Unit) =
+    override def view(model: Signal[Unit]) =
       div(myComponent)
 
 class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
@@ -1250,7 +1312,7 @@ class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     div(
       liveView("sticky", Issue3612LiveView.StickyLive(), sticky = true),
       h1(s"Page $pageName")
@@ -1270,7 +1332,7 @@ object Issue3612LiveView:
       case NavigateToA => ctx.nav.pushNavigate(E2ERoutes.issue3612A.location).as(model)
       case NavigateToB => ctx.nav.pushNavigate(E2ERoutes.issue3612B.location).as(model)
 
-    def render(model: Unit) =
+    override def view(model: Signal[Unit]) =
       div(
         a(href := "#", on.click(NavigateToA), "Go to page A"),
         a(href := "#", on.click(NavigateToB), "Go to page B")
@@ -1283,7 +1345,7 @@ class Issue3636LiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     focusWrap("focus-wrap")(
       button("One"),
       button("Two"),
@@ -1316,11 +1378,14 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeId => model.copy(id = 2)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       div(
         dom.hook("OuterHook", DomRef("main")),
-        div(dom.hook("InnerHook", DomRef(s"id-${model.id}"))),
+        div(
+          idAttr   := model.map(current => s"id-${current.id}"),
+          phx.hook := "InnerHook"
+        ),
         "This is an example of nested hooks resulting in a ghost element that isn't on the DOM, and is never cleaned up.",
         p("Doing any of the following things fixes it:"),
         ol(
@@ -1336,7 +1401,7 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
         styleAttr := "color: blue; font-size: 20px",
         idAttr    := "counter",
         "Total Event Calls: ",
-        span(idAttr := "total", model.counter.toString)
+        span(idAttr := "total", model.map(_.counter.toString))
       ),
       div(
         styleAttr  := "color: red; font-size: 72px",
@@ -1362,7 +1427,7 @@ class Issue3658LiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     div(
       link.pushNavigateUnsafe("/issues/3658?navigated=true", "Link 1"),
       liveView("sticky", Issue3658LiveView.Sticky(), sticky = true)
@@ -1376,7 +1441,7 @@ object Issue3658LiveView:
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(model: Unit) =
+    override def view(model: Signal[Unit]) =
       div(
         div(idAttr := "foo", dom.onRemove(JS.dispatch("my-event")), "Hi")
       )
@@ -1388,7 +1453,7 @@ class Issue3656LiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     div(
       styleTag(
         "* { font-size: 1.1em }",
@@ -1414,7 +1479,7 @@ object Issue3656LiveView:
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(model: Unit) =
+    override def view(model: Signal[Unit]) =
       navTag(
         link.pushNavigateUnsafe("/issues/3656?navigated=true", "Link 1")
       )
@@ -1433,7 +1498,7 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       liveView("sticky", Issue3681LiveView.StickyLive(), sticky = true),
       hr(),
@@ -1449,9 +1514,9 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
           div(
             idAttr     := "msgs-normal",
             phx.update := PhxUpdate.Stream,
-            model.messages.map(
-              _.stream((domId, message) => div(idAttr := domId, div(message.value.toString)))
-            )
+            model
+              .map(_.messages.get)
+              .stream((domId, message) => div(idAttr := domId, div(message.map(_.value.toString))))
           )
         )
       else
@@ -1480,11 +1545,13 @@ object Issue3681LiveView:
     def handleMessage(model: LiveStream[Message], ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(messages: LiveStream[Message]) =
+    override def view(messages: Signal[LiveStream[Message]]) =
       div(
         idAttr     := "msgs-sticky",
         phx.update := PhxUpdate.Stream,
-        messages.stream((domId, message) => div(idAttr := domId, div(message.value.toString)))
+        messages.stream((domId, message) =>
+          div(idAttr := domId, div(message.map(_.value.toString)))
+        )
       )
 
 class Issue3684LiveView extends LiveView[Unit, Unit]:
@@ -1494,7 +1561,7 @@ class Issue3684LiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     div(liveComponent(Issue3684LiveView.BadgeForm, id = "badge_form", props = ()))
 
 object Issue3684LiveView:
@@ -1508,7 +1575,7 @@ object Issue3684LiveView:
     def handleMessage(props: Unit, model: String, ctx: MessageContext) =
       case Msg.ChangeType(value) => value
 
-    def render(props: Unit, selected: String, self: ComponentRef[Msg]) =
+    override def view(props: Signal[Unit], selected: Signal[String], self: ComponentRef[Msg]) =
       div(
         form(
           idAttr        := "foo",
@@ -1519,7 +1586,7 @@ object Issue3684LiveView:
         )
       )
 
-    private def radios(selected: String, self: ComponentRef[Msg]) =
+    private def radios(selected: Signal[String], self: ComponentRef[Msg]) =
       fieldset(
         legend("Radio example:"),
         Vector("huey", "dewey").map(radioType =>
@@ -1532,7 +1599,7 @@ object Issue3684LiveView:
               idAttr   := radioType,
               nameAttr := "type",
               value    := radioType,
-              checked  := selected == radioType
+              checked  := selected.map(_ == radioType)
             ),
             label(radioType)
           )
@@ -1560,7 +1627,7 @@ class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg
           ctx.flash.put(Info, "Flash from C") *>
             ctx.nav.pushNavigate(E2ERoutes.issue3686A.location).as(model)
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     val next = pageName match
       case "A" => "B"
       case "B" => "C"
@@ -1589,7 +1656,7 @@ class Issue3709LiveView extends LiveView.Routed[Unit, String, Option[String]]:
   def handleMessage(model: String, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: String) =
+  override def view(model: Signal[String]) =
     div(
       ul(
         (1 to 10).map { i =>
@@ -1597,8 +1664,8 @@ class Issue3709LiveView extends LiveView.Routed[Unit, String, Option[String]]:
         }
       ),
       div(
-        liveComponent(SomeComponent, id = s"user-$model", props = ()),
-        s" id: $model",
+        liveComponent(SomeComponent, id = model.map(value => s"user-$value"), props = ()),
+        model.map(value => s" id: $value"),
         div(
           "Click the button, then click any link.",
           button(
@@ -1619,7 +1686,7 @@ object Issue3709LiveView:
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: Unit, model: Unit, self: ComponentRef[Unit]) =
+    override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
       div("Hello")
 
 class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Issue3919LiveView.Action]:
@@ -1633,21 +1700,18 @@ class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Issue3919LiveVie
       if model.attrs.nonEmpty then Action(text = "No red")
       else Action(text = "Red", attrs = Some(ComponentAttrs(special = true)))
 
-  def render(model: Action) =
-    val renderedComponent =
-      model.attrs match
-        case Some(attrs) => myComponent(attrs)(model.text)
-        case None        => myComponent()(model.text)
-
+  override def view(model: Signal[Action]) =
     div(
-      renderedComponent,
+      myComponent(model),
       button(on.click(Msg.Toggle), "toggle")
     )
 
-  private def myComponent(attrs: ComponentAttrs = ComponentAttrs())(inner: String) =
+  private def myComponent(action: Signal[Action]) =
     div(
-      styleAttr := (if attrs.special then "background-color: red;" else ""),
-      inner
+      styleAttr := action.map(current =>
+        if current.attrs.exists(_.special) then "background-color: red;" else ""
+      ),
+      action.map(_.text)
     )
 
 object Issue3919LiveView:
@@ -1677,18 +1741,18 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
 
       model.copy(selectedItems = selectedItems)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
-      AllItems.map(item => itemCheckbox(item, model.selectedItems)),
-      AllItems.map(item => selectedItem(item, model.selectedItems))
+      AllItems.map(item => itemCheckbox(item, model.map(_.selectedItems))),
+      AllItems.map(item => selectedItem(item, model.map(_.selectedItems)))
     )
 
-  private def selectedItem(item: String, selected: Set[String]): Mod[Msg] =
-    if selected.contains(item) then
-      Mod.Content.Tag(div(liveComponent(ItemComponent, id = s"item-$item", props = item)))
-    else Mod.Content.Text("")
+  private def selectedItem(item: String, selected: Signal[Set[String]]): Mod[Msg] =
+    Signal.when(selected.map(_.contains(item)))(
+      div(liveComponent(ItemComponent, id = s"item-$item", props = item))
+    )
 
-  private def itemCheckbox(id: String, selected: Set[String]) =
+  private def itemCheckbox(id: String, selected: Signal[Set[String]]) =
     label(
       forId := s"item-select-$id",
       input(
@@ -1696,7 +1760,7 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
         typ      := "checkbox",
         nameAttr := "select",
         value    := id,
-        checked  := selected.contains(id),
+        checked  := selected.map(_.contains(id)),
         on.click(Msg.Toggle(id))
       ),
       id
@@ -1715,11 +1779,19 @@ object Issue3941LiveView:
     def mount(props: String, ctx: MountContext) =
       ()
 
-    def render(props: String, model: Unit, self: ComponentRef[Nothing]) =
+    override def view(
+      props: Signal[String],
+      model: Signal[Unit],
+      self: ComponentRef[Nothing]
+    ) =
       div(
-        idAttr   := s"item-$props",
+        idAttr   := props.map(value => s"item-$value"),
         phx.hook := "PagePositionNotifier",
-        liveComponent(ItemHeaderComponent, id = s"item-header-$props", props = props)
+        liveComponent(
+          ItemHeaderComponent,
+          id = props.map(value => s"item-header-$value"),
+          props = props
+        )
       )
 
   object ItemHeaderComponent
@@ -1747,23 +1819,29 @@ object Issue3941LiveView:
       case Msg.Loaded(result) =>
         model.copy(asyncAssign = model.asyncAssign.updated(result))
 
-    def render(props: String, model: Model, self: ComponentRef[Msg]) =
+    override def view(
+      props: Signal[String],
+      model: Signal[Model],
+      self: ComponentRef[Msg]
+    ) =
+      val item   = model.map(_.item)
+      val loaded = model.map(_.asyncAssign.isInstanceOf[AsyncValue.Ok[?]])
+
       div(
-        idAttr := s"header-${model.item}",
-        model.asyncAssign match
-          case AsyncValue.Ok(_) =>
-            div(
-              idAttr := model.item,
-              cls    := "border border-y-0 bg-green-500 text-white",
-              s"${model.item} - I AM LOADED!"
-            )
-          case _ =>
-            div(
-              idAttr := model.item,
-              cls    := "border border-y-0 bg-red-500 text-white",
-              s"${model.item} - I AM LOADING"
-            ),
-        model.asyncAssign.toString
+        idAttr := item.map(value => s"header-$value"),
+        loaded.chooseMod(
+          div(
+            idAttr := item,
+            cls    := "border border-y-0 bg-green-500 text-white",
+            item.map(value => s"$value - I AM LOADED!")
+          ),
+          div(
+            idAttr := item,
+            cls    := "border border-y-0 bg-red-500 text-white",
+            item.map(value => s"$value - I AM LOADING")
+          )
+        ),
+        model.map(_.asyncAssign.toString)
       )
   end ItemHeaderComponent
 end Issue3941LiveView
@@ -1777,11 +1855,11 @@ class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
   def handleMessage(model: Boolean, ctx: MessageContext) =
     case Msg.Toggle => !model
 
-  def render(model: Boolean) =
+  override def view(model: Signal[Boolean]) =
     div(
       liveComponent(Component, id = "comp", props = ()),
       button(on.click(Msg.Toggle), "Show"),
-      if model then liveView("nested_view", NestedViewLive()) else ""
+      model.chooseMod(liveView("nested_view", NestedViewLive()), "")
     )
 
 object Issue3953LiveView:
@@ -1795,7 +1873,7 @@ object Issue3953LiveView:
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: Unit, model: Unit, self: ComponentRef[Unit]) =
+    override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
       div("Component")
 
   class NestedViewLive extends LiveView[Unit, Unit]:
@@ -1805,7 +1883,7 @@ object Issue3953LiveView:
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(model: Unit) =
+    override def view(model: Signal[Unit]) =
       div(
         "Nested Content",
         liveComponent(Component, id = "comp2", props = ())
@@ -1840,14 +1918,16 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
         case None => model
     case Msg.DelayedUpdate(_) => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
-      model.components.map { component =>
+      (1 to 10).map { id =>
         liveComponent(
           CounterComponent,
-          id = s"comp-${component.id}",
-          props =
-            CounterProps(component.id, domCounter = component.counter, counter = component.counter)
+          id = s"comp-$id",
+          props = model
+            .map(_.components.find(_.id == id).get).map(current =>
+              CounterProps(current.id, domCounter = current.counter, counter = current.counter)
+            )
         )
       },
       button(on.click(Msg.Bump), "Bump ID (and counter)")
@@ -1873,8 +1953,15 @@ object Issue3979LiveView:
     def handleMessage(props: CounterProps, model: CounterProps, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: CounterProps, model: CounterProps, self: ComponentRef[Unit]) =
-      div(idAttr := s"hello-${model.id}-${model.domCounter}", model.counter.toString)
+    override def view(
+      props: Signal[CounterProps],
+      model: Signal[CounterProps],
+      self: ComponentRef[Unit]
+    ) =
+      div(
+        idAttr := model.map(current => s"hello-${current.id}-${current.domCounter}"),
+        model.map(_.counter.toString)
+      )
 
 class Issue4027LiveView
     extends LiveView.Routed[
@@ -1899,26 +1986,39 @@ class Issue4027LiveView
       )
     case Msg.Loaded(result) => model.copy(data = model.data.updated(result))
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val caseName     = model.map(_.caseName)
+    val data         = model.map(_.data)
+    val currentItems = data.map(AsyncValue.currentValue)
+
     div(
       cls := "p-4",
       p(
         cls := "my-4",
         "Click Load Data. 3 items should be displayed. Then click Remove First entry. The expected result is 2 items displayed."
       ),
-      if model.caseName == "second" then
+      Signal.when(caseName.map(_ == "second"))(
         div(styleAttr := "margin: 10px; height: 1px; background-color: black;")
-      else "",
-      if model.caseName == "first" then
-        AsyncValue.currentValue(model.data) match
-          case Some(items) => liveComponent(ReproLiveComponent, id = "repro", props = items)
-          case None        => ""
-      else liveComponent(ReproLiveComponentWithAsyncResult, id = "repro_async", props = model.data),
+      ),
+      caseName
+        .map(_ == "first").chooseMod(
+          currentItems
+            .map(_.isDefined).chooseMod(
+              liveComponent(
+                ReproLiveComponent,
+                id = "repro",
+                props = currentItems.map(_.getOrElse(Vector.empty))
+              ),
+              ""
+            ),
+          liveComponent(ReproLiveComponentWithAsyncResult, id = "repro_async", props = data)
+        ),
       div(
         button(on.click(Msg.Load), "Load data"),
         button(on.click(Msg.Remove), "Remove first entry")
       )
     )
+  end view
 end Issue4027LiveView
 
 object Issue4027LiveView:
@@ -1949,11 +2049,19 @@ object Issue4027LiveView:
     def handleMessage(props: Vector[Item], model: Vector[Item], ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(props: Vector[Item], model: Vector[Item], self: ComponentRef[Unit]) =
+    override def view(
+      props: Signal[Vector[Item]],
+      model: Signal[Vector[Item]],
+      self: ComponentRef[Unit]
+    ) =
       keyedResult(model)
 
   object ReproLiveComponentWithAsyncResult
-      extends LiveComponent[AsyncValue[Vector[Item]], Unit, AsyncValue[Vector[Item]]]:
+      extends LiveComponent[
+        AsyncValue[Vector[Item]],
+        Unit,
+        AsyncValue[Vector[Item]]
+      ]:
     def mount(props: AsyncValue[Vector[Item]], ctx: MountContext) =
       props
 
@@ -1971,29 +2079,33 @@ object Issue4027LiveView:
     ) =
       (_: Unit) => model
 
-    def render(
-      props: AsyncValue[Vector[Item]],
-      model: AsyncValue[Vector[Item]],
+    override def view(
+      props: Signal[AsyncValue[Vector[Item]]],
+      model: Signal[AsyncValue[Vector[Item]]],
       self: ComponentRef[Unit]
     ) =
       asyncResult(model)
 
-  private def keyedResult(items: Vector[Item]) =
+  private def keyedResult(items: Signal[Vector[Item]]) =
     div(
       idAttr := "result",
       keyedItems(items)
     )
 
-  private def asyncResult(data: AsyncValue[Vector[Item]]) =
+  private def asyncResult(data: Signal[AsyncValue[Vector[Item]]]) =
     div(
       idAttr := "result",
-      AsyncValue.currentValue(data) match
-        case Some(items) => keyedItems(items)
-        case None        => ""
+      data
+        .map(AsyncValue.currentValue)
+        .map(_.isDefined)
+        .chooseMod(
+          keyedItems(data.map(current => AsyncValue.currentValue(current).getOrElse(Vector.empty))),
+          ""
+        )
     )
 
-  private def keyedItems(items: Vector[Item]) =
-    items.splitBy(_.id)((_, item) => p(item.value))
+  private def keyedItems(items: Signal[Vector[Item]]) =
+    items.splitBy(_.id)((_, item) => p(item.map(_.value)))
 end Issue4027LiveView
 
 class Issue4066LiveView
@@ -2013,13 +2125,15 @@ class Issue4066LiveView
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Toggle => model.copy(renderInput = !model.renderInput)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
-      p(idAttr := "render-time", model.renderTime),
+      p(idAttr := "render-time", model.map(_.renderTime)),
       button(on.click(Msg.Toggle), "Toggle"),
-      Option.when(model.renderInput)(
-        liveComponent(DelayedInputComponent, id = "foo", props = model.delay)
-      )
+      model
+        .map(_.renderInput).chooseMod(
+          liveComponent(DelayedInputComponent, id = "foo", props = model.map(_.delay)),
+          ""
+        )
     )
 
 object Issue4066LiveView:
@@ -2043,11 +2157,11 @@ object Issue4066LiveView:
     def handleMessage(props: Int, model: Unit, ctx: MessageContext) =
       (_: Unit) => model
 
-    def render(delay: Int, model: Unit, self: ComponentRef[Unit]) =
+    override def view(props: Signal[Int], model: Signal[Unit], self: ComponentRef[Unit]) =
       input(
         dom.hook("Issue4066Hook", DomRef("foo")),
         phx.target(self),
-        dataAttr("delay") := delay.toString
+        dataAttr("delay") := props.map(_.toString)
       )
 
 class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveView.Model]:
@@ -2064,15 +2178,17 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
         if model.customClass == "initial-class" then "updated-class" else "initial-class"
       model.copy(customClass = nextClass)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val upload = model.map(_.upload)
+
     div(
       form(
         idAttr := "upload-form",
         on.change(_ => Msg.Validate),
         liveFileInput(
-          model.upload,
-          disabled := model.disabled,
-          cls      := model.customClass
+          upload,
+          disabled := model.map(_.disabled),
+          cls      := model.map(_.customClass)
         )
       ),
       button(
@@ -2087,8 +2203,8 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
         on.click(Msg.ToggleClass),
         "Toggle Class"
       ),
-      model.upload.entries.splitBy(_.ref) { (_, entry) =>
-        articleTag(cls := "upload-entry", span(cls := "entry-name", entry.client.fileName))
+      upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+        articleTag(cls := "upload-entry", span(cls := "entry-name", entry.map(_.client.fileName)))
       }
     )
 
@@ -2132,7 +2248,7 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
   def handleMessage(model: String, ctx: MessageContext) =
     (_: Msg) => model
 
-  def render(value: String) =
+  override def view(value: Signal[String]) =
     div(dom.hook("Issue4088Hook", DomRef("foo")), value)
 
 object Issue4088LiveView:
@@ -2151,7 +2267,7 @@ class Issue4094LiveView extends LiveView.Routed[Unit, Unit, Option[String]]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     link.pushPatch(E2ERoutes.issue4094.location(Some("bar")), "Patch")
 
 class Issue4095LiveView extends LiveView[Issue4095LiveView.Msg, String]:
@@ -2163,14 +2279,14 @@ class Issue4095LiveView extends LiveView[Issue4095LiveView.Msg, String]:
   def handleMessage(model: String, ctx: MessageContext) =
     case Msg.Validate(data) => data.getOrElse("show?", "")
 
-  def render(show: String) =
+  override def view(show: Signal[String]) =
     div(
       form(
         idAttr := "issue-4095-form",
         on.change.form(Msg.Validate(_)),
         input(typ := "text", nameAttr := "show?", idAttr := "show?", value := show),
         portal("portal", target = DomSelector.css("#portal_target"))(
-          div(Option.when(show.nonEmpty)(button("Show?")))
+          div(Signal.when(show.map(_.nonEmpty))(button("Show?")))
         )
       ),
       div(idAttr := "portal_target")
@@ -2190,7 +2306,7 @@ class Issue4102LiveView extends LiveView[Issue4102LiveView.Msg, String]:
     case Msg.Validate(data) => data.getOrElse("name", model)
     case Msg.Submit(data)   => data.getOrElse("name", model)
 
-  def render(name: String) =
+  override def view(name: Signal[String]) =
     div(
       input(
         formId       := "my-form",
@@ -2220,7 +2336,7 @@ class Issue4107LiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     div(
       portal("test-form-portal", target = DomSelector.css("body"))(
         form(
@@ -2244,14 +2360,14 @@ class Issue4121LiveView extends LiveView[Issue4121LiveView.Msg.type, Issue4121Li
       val id = System.nanoTime.toInt
       ctx.streams.reset(ItemsStream, Vector(Item(id, s"Item $id"))).map(Model(_))
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       button(on.click(Msg), "Reset teleported stream"),
       portal("teleported-stream", target = DomSelector.css("body"))(
         ul(
           idAttr     := "stream-in-lv",
           phx.update := PhxUpdate.Stream,
-          model.items.stream((domId, item) => li(idAttr := domId, item.name))
+          model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
         )
       )
     )
@@ -2271,5 +2387,5 @@ class Issue4147LiveView extends LiveView[Unit, Unit]:
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]) =
     h1("Inside")

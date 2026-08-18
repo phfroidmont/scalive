@@ -18,7 +18,8 @@ object ComponentApiSpec extends ZIOSpecDefault:
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
+        object CounterComponent
+            extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
           object Msg
 
           def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
@@ -26,7 +27,11 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
             (_: Msg.type) => LiveIO.succeed(())
 
-          def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) = div()
+          override def view(
+            props: Signal[Unit],
+            model: Signal[Unit],
+            self: ComponentRef[Msg.type]
+          ) = div()
 
         val binding = component[CounterComponent.type](CounterComponent.Msg)
       """)
@@ -37,7 +42,8 @@ object ComponentApiSpec extends ZIOSpecDefault:
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
+        object CounterComponent
+            extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
           object Msg
 
           def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
@@ -45,7 +51,11 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
             (_: Msg.type) => LiveIO.succeed(())
 
-          def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) = div()
+          override def view(
+            props: Signal[Unit],
+            model: Signal[Unit],
+            self: ComponentRef[Msg.type]
+          ) = div()
 
         val binding = scalive.on.click.toComponent(CounterComponent)(CounterComponent.Msg)
       """)
@@ -56,7 +66,8 @@ object ComponentApiSpec extends ZIOSpecDefault:
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
+        object CounterComponent
+            extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
           object Msg
 
           def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
@@ -64,7 +75,11 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
             (_: Msg.type) => LiveIO.succeed(())
 
-          def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) = div()
+          override def view(
+            props: Signal[Unit],
+            model: Signal[Unit],
+            self: ComponentRef[Msg.type]
+          ) = div()
 
         object OtherMsg
         val binding = scalive.on.click.toComponent(CounterComponent)(OtherMsg)
@@ -76,7 +91,8 @@ object ComponentApiSpec extends ZIOSpecDefault:
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, Int]:
+        object CounterComponent
+            extends LiveComponent[String, CounterComponent.Msg.type, Int]:
           object Msg
 
           def mount(props: String, ctx: MountContext) = LiveIO.succeed(0)
@@ -84,7 +100,11 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: String, model: Int, ctx: MessageContext) =
             (_: Msg.type) => LiveIO.succeed(model + 1)
 
-          def render(props: String, model: Int, self: ComponentRef[Msg.type]) = div()
+          override def view(
+            props: Signal[String],
+            model: Signal[Int],
+            self: ComponentRef[Msg.type]
+          ) = div()
 
         val counter = component(CounterComponent, "counter")
         val rendered = counter.render("Counter")
@@ -100,7 +120,8 @@ object ComponentApiSpec extends ZIOSpecDefault:
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
+        object CounterComponent
+            extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
           object Msg
 
           def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
@@ -108,7 +129,11 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
             (_: Msg.type) => LiveIO.succeed(())
 
-          def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) = div()
+          override def view(
+            props: Signal[Unit],
+            model: Signal[Unit],
+            self: ComponentRef[Msg.type]
+          ) = div()
 
         object OtherMsg
         val counter = component(CounterComponent, "counter")
@@ -127,7 +152,11 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: String, model: Unit, ctx: MessageContext) =
             (_: Unit) => LiveIO.succeed(())
 
-          def render(props: String, model: Unit, self: ComponentRef[Unit]) = div()
+          override def view(
+            props: Signal[String],
+            model: Signal[Unit],
+            self: ComponentRef[Unit]
+          ) = div()
 
         val label = component(LabelComponent, "label")
 
@@ -153,7 +182,11 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
             (_: Msg.type) => ctx.emit(model + 1).as(model + 1)
 
-          def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) = div()
+          override def view(
+            props: Signal[Unit],
+            model: Signal[Int],
+            self: ComponentRef[Msg.type]
+          ) = div()
 
         val counter = component(CounterComponent, "counter")
         val rendered: Mod[ParentMsg] = counter.render((), ParentMsg.CountChanged.apply)
@@ -180,7 +213,11 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
             (_: Msg.type) => ctx.emit(model + 1).as(model + 1)
 
-          def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) = div()
+          override def view(
+            props: Signal[Unit],
+            model: Signal[Int],
+            self: ComponentRef[Msg.type]
+          ) = div()
 
         val counter = component(CounterComponent, "counter")
         val rendered: Mod[ParentMsg] = counter.render((), OtherMsg.CountChanged.apply)
@@ -192,11 +229,16 @@ object ComponentApiSpec extends ZIOSpecDefault:
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        object CounterComponent extends LiveComponent.WithOutput[Unit, Unit, Unit, Int]:
+        object CounterComponent
+            extends LiveComponent.WithOutput[Unit, Unit, Unit, Int]:
           def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
             (_: Unit) => LiveIO.succeed(())
-          def render(props: Unit, model: Unit, self: ComponentRef[Unit]) = div()
+          override def view(
+            props: Signal[Unit],
+            model: Signal[Unit],
+            self: ComponentRef[Unit]
+          ) = div()
 
         val counter = component(CounterComponent, "counter")
         val rendered = counter.render(())
@@ -208,11 +250,16 @@ object ComponentApiSpec extends ZIOSpecDefault:
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        object CounterComponent extends LiveComponent.WithOutput[Unit, Unit, Unit, Int]:
+        object CounterComponent
+            extends LiveComponent.WithOutput[Unit, Unit, Unit, Int]:
           def mount(props: Unit, ctx: MountContext) = ctx.emit(1).as(())
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
             (_: Unit) => LiveIO.succeed(())
-          def render(props: Unit, model: Unit, self: ComponentRef[Unit]) = div()
+          override def view(
+            props: Signal[Unit],
+            model: Signal[Unit],
+            self: ComponentRef[Unit]
+          ) = div()
       """)
 
       assertTrue(errors.nonEmpty)

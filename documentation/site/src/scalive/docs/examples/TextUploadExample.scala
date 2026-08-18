@@ -23,48 +23,52 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
       ctx.uploads.disallow(TextFiles) *>
         ctx.uploads.allow(TextFiles).map(Model(_))
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
+    val upload = model.map(_.upload)
     div(
       cls := "docs-text-upload",
       p(
         cls := "docs-example-lede",
         "Choose one small text file. The server validates UTF-8, keeps only aggregate facts, and immediately releases the uploaded bytes."
       ),
-      model.notice.map(notice => p(role := "status", cls := "docs-upload-notice", notice)),
+      model
+        .map(_.notice).option(notice => p(role := "status", cls := "docs-upload-notice", notice)),
       form(
         dataAttr("text-upload-form") := "",
         on.change(_ => Msg.Validate),
         on.submit(Msg.Summarize),
         div(
           cls := "docs-upload-dropzone",
-          model.upload.dropTarget,
-          label(forId := model.upload.ref.value, "Text file"),
+          upload.dropTarget,
+          label(forId := upload.map(_.ref.value), "Text file"),
           liveFileInput(
-            model.upload,
+            upload,
             dataAttr("text-upload-input") := "",
-            model.upload.onProgress(_ => Msg.Progress)
+            upload.onProgress(Msg.Progress)
           ),
           p(cls := "docs-upload-help", "Accepted: .txt and .md. Maximum: one file, 64 KiB."),
-          errorList(uploadErrors(model.upload)),
+          errorList(uploadErrors(upload)),
           div(
             cls := "docs-upload-entries",
-            model.upload.entries.splitBy(_.ref) { (_, entry) =>
+            upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
               articleTag(
                 cls := "docs-upload-entry",
                 div(
-                  strong(entry.client.fileName),
-                  span(formatBytes(entry.client.sizeBytes))
+                  strong(entry.map(_.client.fileName)),
+                  span(entry.map(entry => formatBytes(entry.client.sizeBytes)))
                 ),
                 progressTag(
-                  value      := entry.progress.toString,
+                  value      := entry.map(_.progress.toString),
                   maxAttr    := "100",
-                  aria.label := s"Upload progress for ${entry.client.fileName}"
+                  aria.label := entry.map(entry => s"Upload progress for ${entry.client.fileName}")
                 ),
                 span(
-                  if entry.status == LiveUploadEntryStatus.Completed then "Ready"
-                  else s"${entry.progress}%"
+                  entry.map(entry =>
+                    if entry.status == LiveUploadEntryStatus.Completed then "Ready"
+                    else s"${entry.progress}%"
+                  )
                 ),
-                button(typ := "button", on.click(Msg.Cancel(entry)), "Cancel"),
+                button(typ := "button", on.click(entry.map(Msg.Cancel(_))), "Cancel"),
                 errorList(uploadErrors(entry))
               )
             }
@@ -82,21 +86,36 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
       ),
       div(
         cls := "docs-upload-summaries",
-        model.summaries.splitBy(_.id) { (_, summary) =>
+        model.map(_.summaries).splitBy(_.id) { (_, summary) =>
           articleTag(
             dataAttr("upload-summary") := "",
             cls                        := "docs-upload-summary",
-            h3(dataAttr("summary-name") := "", summary.fileName),
+            h3(dataAttr("summary-name") := "", summary.map(_.fileName)),
             dl(
-              div(dt("Size"), dd(dataAttr("summary-bytes") := "", formatBytes(summary.bytes))),
-              div(dt("Lines"), dd(dataAttr("summary-lines") := "", plural(summary.lines, "line"))),
-              div(dt("Words"), dd(dataAttr("summary-words") := "", plural(summary.words, "word")))
+              div(
+                dt("Size"),
+                dd(dataAttr("summary-bytes") := "", summary.map(value => formatBytes(value.bytes)))
+              ),
+              div(
+                dt("Lines"),
+                dd(
+                  dataAttr("summary-lines") := "",
+                  summary.map(value => plural(value.lines, "line"))
+                )
+              ),
+              div(
+                dt("Words"),
+                dd(
+                  dataAttr("summary-words") := "",
+                  summary.map(value => plural(value.words, "word"))
+                )
+              )
             )
           )
         }
       )
     )
-  end render
+  end view
 
   private def refresh(model: Model, uploads: Uploads): LiveIO[Model] =
     uploads.get(TextFiles).map(_.fold(model)(upload => model.copy(upload = upload, notice = None)))
@@ -137,8 +156,12 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
     try Right(decoder.decode(ByteBuffer.wrap(bytes.toArray)).toString)
     catch case _: java.nio.charset.CharacterCodingException => Left(())
 
-  private def errorList(errors: List[LiveUploadError]): HtmlElement[Nothing] =
-    div(errors.distinct.map(error => p(role := "alert", uploadErrorMessage(error))))
+  private def errorList(errors: Signal[List[LiveUploadError]]): HtmlElement[Nothing] =
+    div(
+      errors.map(_.distinct).splitBy(identity) { (_, error) =>
+        p(role := "alert", error.map(uploadErrorMessage))
+      }
+    )
 end TextUploadExample
 
 object TextUploadExample:

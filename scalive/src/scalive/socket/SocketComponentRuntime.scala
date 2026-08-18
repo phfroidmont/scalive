@@ -5,28 +5,59 @@ import zio.*
 import zio.json.ast.Json
 
 import scalive.*
-import scalive.Mod.Attr
 import scalive.Mod.Content
 
 private[scalive] object SocketComponentRuntime:
-  def renderRoot[Msg, Model](
-    root: HtmlElement[Msg],
-    state: RuntimeState[Msg, Model]
-  ): Task[HtmlElement[Any]] =
-    renderRoot(root, state.componentsRef, state.ctx)
-
-  def renderRoot[Msg](
-    root: HtmlElement[Msg],
+  def evaluateViewGraph[Model](
+    graph: ViewGraph.Root[Model],
+    model: Model,
+    previous: SignalEvaluation,
+    revision: Long,
     componentsRef: Ref[ComponentRuntimeState],
+    ctx: LiveContext,
+    manageNestedRender: Boolean = true
+  ): Task[ViewGraph.Evaluated] =
+    val render =
+      for
+        initial <- componentsRef.get
+        cursor   = ComponentCursor(initial)
+        resolver = viewGraphResolver(cursor, ctx)
+        evaluated <- graph.evaluateZIO(model, previous, revision, resolver)
+        _         <- componentsRef.set(cursor.state)
+      yield evaluated
+    if manageNestedRender then ctx.nestedLiveViews.renderTransaction(render) else render
+
+  private def viewGraphResolver(
+    cursor: ComponentCursor,
     ctx: LiveContext
-  ): Task[HtmlElement[Any]] =
-    for
-      initial <- componentsRef.get
-      cursor = ComponentCursor(initial)
-      rendered <- renderElement(root, cursor, ctx)
-      _        <- ctx.nestedLiveViews.afterParentRender
-      _        <- componentsRef.set(cursor.state)
-    yield ctx.csrfToken.fold(rendered)(CsrfProtection.injectForms(rendered, _))
+  ): ViewGraph.Resolver =
+    new ViewGraph.Resolver:
+      def component(
+        spec: LiveComponentSpec[?, ?, ?, ?],
+        path: BindingId.Path,
+        transaction: SignalEvaluation.Transaction
+      ): Task[ViewGraph.ResolvedContent] =
+        val typed = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any, Any]]
+        resolveViewGraphComponent(typed, path, cursor, ctx, transaction)
+
+      def liveView(
+        spec: NestedLiveViewSpec[?, ?],
+        path: BindingId.Path
+      ): Task[ViewGraph.ResolvedContent] =
+        val _ = path
+        renderLiveView(spec, cursor, ctx).map(compileResolved)
+
+      def flash(kind: String): Task[Option[String]] =
+        ctx.flash.get(kind)
+
+      private def compileResolved(mod: Mod[Any]): ViewGraph.ResolvedContent =
+        val wrapper  = ctx.csrfToken.fold(div(mod))(CsrfProtection.injectForms(div(mod), _))
+        val compiled = RenderSnapshot.compile(wrapper)
+        ViewGraph.ResolvedContent(
+          compiled.root.slots.headOption.getOrElse(RenderSnapshot.StringSlot("")),
+          compiled.bindings,
+          compiled.trackedStaticUrls
+        )
 
   def handleComponentMessage[Msg, Model](
     cid: Int,
@@ -83,7 +114,7 @@ private[scalive] object SocketComponentRuntime:
                                 current.instances.updated(instance.identity, updated)
                               )
                             }
-                       (parentModel, _) <- state.ref.get
+                       (parentModel, _) <- SocketModelRuntime.currentModelAndRendered(state)
                        diff             <- SocketModelRuntime.updateModelAndSubscriptions(
                                  rendered,
                                  parentModel,
@@ -261,7 +292,7 @@ private[scalive] object SocketComponentRuntime:
                                 current.instances.updated(instance.identity, updated)
                               )
                             }
-                       (parentModel, _) <- state.ref.get
+                       (parentModel, _) <- SocketModelRuntime.currentModelAndRendered(state)
                        _                <- handleComponentLifecycleResult(
                               result,
                               navigation,
@@ -358,7 +389,7 @@ private[scalive] object SocketComponentRuntime:
                               "Component model committed",
                               model
                             )
-                       (parentModel, _) <- state.ref.get
+                       (parentModel, _) <- SocketModelRuntime.currentModelAndRendered(state)
                        _                <- handleComponentLifecycleResult(
                               result,
                               navigation,
@@ -560,7 +591,7 @@ private[scalive] object SocketComponentRuntime:
                                 current.instances.updated(instance.identity, updated)
                               )
                             }
-                       (parentModel, _) <- state.ref.get
+                       (parentModel, _) <- SocketModelRuntime.currentModelAndRendered(state)
                        _                <- handleComponentLifecycleResult(
                               result,
                               navigation,
@@ -578,92 +609,13 @@ private[scalive] object SocketComponentRuntime:
     var renderedIdentities: Set[ComponentIdentity] = Set.empty,
     var renderedLiveViewIds: Set[String] = Set.empty)
 
-  private def renderElement[Msg, Model](
-    element: HtmlElement[Msg],
+  private def resolveViewGraphComponent(
+    typed: LiveComponentSpec[Any, Any, Any, Any],
+    path: BindingId.Path,
     cursor: ComponentCursor,
-    ctx: LiveContext
-  ): Task[HtmlElement[Any]] =
-    nestedLiveViewRoot(element) match
-      case Some(spec) => renderLiveViewElement(spec, cursor, ctx)
-      case None       =>
-        ZIO
-          .foreach(element.mods)(renderMod(_, cursor, ctx)).map(mods =>
-            HtmlElement(element.tag, mods)
-          )
-
-  private def nestedLiveViewRoot[Msg](element: HtmlElement[Msg]): Option[NestedLiveViewSpec[?, ?]] =
-    element.contentMods match
-      case Seq(Content.LiveView(spec))
-          if element.tag.name == "div" && hasOnlyMatchingId(element, spec) =>
-        Some(spec)
-      case _ => None
-
-  private def hasOnlyMatchingId[Msg](
-    element: HtmlElement[Msg],
-    spec: NestedLiveViewSpec[?, ?]
-  ): Boolean =
-    element.attrMods match
-      case Seq(Attr.Static(name, value)) => name == idAttr.name && value == spec.id
-      case _                             => false
-
-  private def renderMod[Msg, Model](
-    mod: Mod[Msg],
-    cursor: ComponentCursor,
-    ctx: LiveContext
-  ): Task[Mod[Any]] =
-    mod match
-      case attr: Attr[Msg]            => ZIO.succeed(attr.asInstanceOf[Mod[Any]])
-      case Content.Text(text, raw)    => ZIO.succeed(Content.Text(text, raw))
-      case Content.Tag(el)            => renderElement(el, cursor, ctx).map(Content.Tag(_))
-      case Content.Component(cid, el) =>
-        renderElement(el, cursor, ctx).map(rendered => Content.Component(cid, rendered))
-      case Content.LiveComponent(spec)                => renderComponent(spec, cursor, ctx)
-      case Content.LiveView(spec)                     => renderLiveView(spec, cursor, ctx)
-      case Content.Flash(kind, f)                     => renderFlash(kind, f, cursor, ctx)
-      case Content.Keyed(entries, stream, allEntries) =>
-        renderKeyed(entries, stream, allEntries, cursor, ctx)
-
-  private def renderKeyed[Msg](
-    entries: Vector[Content.Keyed.Entry[Msg]],
-    stream: Option[Diff.Stream],
-    allEntries: Option[Vector[Content.Keyed.Entry[Msg]]],
-    cursor: ComponentCursor,
-    ctx: LiveContext
-  ): Task[Content.Keyed[Any]] =
-    allEntries match
-      case None =>
-        ZIO
-          .foreach(entries)(entry => renderKeyedEntry(entry, cursor, ctx)).map(renderedEntries =>
-            Content.Keyed(renderedEntries, stream, None)
-          )
-      case Some(snapshotEntries) =>
-        for
-          renderedSnapshot <-
-            ZIO.foreach(snapshotEntries)(entry => renderKeyedEntry(entry, cursor, ctx))
-          renderedByKey = renderedSnapshot.iterator.map(entry => entry.key -> entry).toMap
-          renderedEntries <- ZIO.foreach(entries)(entry =>
-                               renderedByKey.get(entry.key) match
-                                 case Some(rendered) => ZIO.succeed(rendered)
-                                 case None           => renderKeyedEntry(entry, cursor, ctx)
-                             )
-        yield Content.Keyed(renderedEntries, stream, Some(renderedSnapshot))
-  end renderKeyed
-
-  private def renderKeyedEntry[Msg](
-    entry: Content.Keyed.Entry[Msg],
-    cursor: ComponentCursor,
-    ctx: LiveContext
-  ): Task[Content.Keyed.Entry[Any]] =
-    renderElement(entry.element, cursor, ctx).map(rendered =>
-      Content.Keyed.Entry(entry.key, rendered)
-    )
-
-  private def renderComponent(
-    spec: LiveComponentSpec[?, ?, ?, ?],
-    cursor: ComponentCursor,
-    ctx: LiveContext
-  ): Task[Content.Component[Any]] =
-    val typed          = spec.asInstanceOf[LiveComponentSpec[Any, Any, Any, Any]]
+    ctx: LiveContext,
+    parentTransaction: SignalEvaluation.Transaction
+  ): Task[ViewGraph.ResolvedContent] =
     val identity       = ComponentIdentity(typed.component.getClass, typed.id)
     val duplicated     = cursor.renderedIdentities.contains(identity)
     val existing       = cursor.state.instances.get(identity)
@@ -681,20 +633,21 @@ private[scalive] object SocketComponentRuntime:
             )
           )
         else ZIO.succeed(cursor.renderedIdentities = cursor.renderedIdentities + identity)
-      hooksRef <-
-        Ref.make(
-          existing.map(_.hooks).getOrElse(LiveHookRuntimeState.component(typed.component.hooks))
-        )
+      _ = if existing.isEmpty then
+            cursor.state = cursor.state.copy(nextCid = cursor.state.nextCid + 1)
+      hooksRef <- Ref.make(
+                    existing.map(_.hooks).getOrElse(LiveHookRuntimeState.component(component.hooks))
+                  )
       outputOwner  = ctx.componentOutputOwner
       outputMapper = typed.outputMapper.orElse(existing.flatMap(_.outputMapper))
       componentCtx = componentContext(ctx, cid, identity, hooksRef, outputMapper, outputOwner)
-      model <- existing match
-                 case Some(instance) => ZIO.succeed(instance.model)
-                 case None           =>
-                   component.mount(
-                     typed.props,
-                     componentCtx.componentMountContext[Any, Any, Any]
-                   )
+      mountedModel <- existing match
+                        case Some(instance) => ZIO.succeed(instance.model)
+                        case None           =>
+                          component.mount(
+                            typed.props,
+                            componentCtx.componentMountContext[Any, Any, Any]
+                          )
       shouldUpdate = existing.isEmpty || pendingUpdates.nonEmpty || existing.exists(
                        _.parentProps != typed.props
                      )
@@ -702,14 +655,34 @@ private[scalive] object SocketComponentRuntime:
         if shouldUpdate then
           component.update(
             updateProps,
-            model,
+            mountedModel,
             componentCtx.componentUpdateContext[Any, Any, Any]
           )
-        else ZIO.succeed(model)
-      hooks <- hooksRef.get
+        else ZIO.succeed(mountedModel)
       renderProps =
         if shouldUpdate then updateProps
         else existing.map(_.props).getOrElse(updateProps)
+      ref   = ComponentRef[Any](cid)
+      graph = existing
+                .map(_.viewGraph).getOrElse(
+                  ViewGraph.buildComponent[Any, Any](
+                    (props, model) =>
+                      component.view(props, model, ref).prepended(phx.component := cid.toString),
+                    BindingId.childComponentPath(path, 0, cid)
+                  )
+                )
+      _        = if existing.isEmpty then parentTransaction.onRollback(graph.dispose())
+      revision = existing.fold(1L)(_.signalRevision + 1L)
+      evaluated <- graph.evaluateZIO(
+                     renderProps,
+                     updatedModel,
+                     existing.fold(SignalEvaluation.empty)(_.signalEvaluation),
+                     revision,
+                     viewGraphResolver(cursor, componentCtx),
+                     Some(parentTransaction)
+                   )
+      _ <- componentCtx.hooks.runComponentAfterRender(updateProps, updatedModel, componentCtx)
+      afterRenderHooks <- hooksRef.get
       instance = ComponentInstance(
                    cid,
                    identity,
@@ -717,31 +690,34 @@ private[scalive] object SocketComponentRuntime:
                    renderProps,
                    typed.props,
                    updatedModel,
-                   hooks,
+                   afterRenderHooks,
                    outputMapper,
-                   outputOwner
+                   outputOwner,
+                   viewGraph = graph,
+                   signalEvaluation = evaluated.evaluation,
+                   signalRevision = revision
                  )
       _ = cursor.state = cursor.state.copy(
             instances = cursor.state.instances.updated(identity, instance),
             byCid = cursor.state.byCid.updated(cid, identity),
-            pendingUpdates = cursor.state.pendingUpdates.removed(identity),
-            nextCid = if existing.isDefined then cursor.state.nextCid else cursor.state.nextCid + 1
+            pendingUpdates = cursor.state.pendingUpdates.removed(identity)
           )
-      ref = ComponentRef[Any](cid)
-      rendered <-
-        renderElement(component.render(renderProps, updatedModel, ref), cursor, componentCtx)
-      _ <- componentCtx.hooks.runComponentAfterRender(updateProps, updatedModel, componentCtx)
-      afterRenderHooks <- hooksRef.get
-      _ = cursor.state = cursor.state.copy(instances =
-            cursor.state.instances.updated(
-              identity,
-              instance.copy(model = updatedModel, hooks = afterRenderHooks)
-            )
-          )
-      wrapped <- wrapComponentMessages(cid, rendered.prepended(phx.component := cid.toString))
-    yield Content.Component(cid, wrapped)
+      wrappedBindings = evaluated.compiled.bindings.map { case (id, handler) =>
+                          id -> ((payload: BindingPayload) =>
+                            handler(payload) match
+                              case message: ComponentMessage         => message
+                              case message: ComponentInstanceMessage => message
+                              case message: ComponentTargetMessage   => message
+                              case message => ComponentMessage(cid, message)
+                          )
+                        }
+    yield ViewGraph.ResolvedContent(
+      RenderSnapshot.ComponentSlot(RenderSnapshot.CompiledComponent(cid, evaluated.compiled.root)),
+      wrappedBindings,
+      evaluated.compiled.trackedStaticUrls
+    )
     end for
-  end renderComponent
+  end resolveViewGraphComponent
 
   private enum ComponentResponseMode:
     case EventReply
@@ -810,81 +786,12 @@ private[scalive] object SocketComponentRuntime:
         div(
           idAttr      := registration.id,
           phx.session := registration.session,
+          phx.static  := registration.static,
           Option.unless(registration.sticky)(phx.parentId := registration.parentDomId),
-          Option.unless(registration.sticky)(phx.childId  := registration.id),
           phx.sticky := registration.sticky,
           Option.when(registration.loading)(cls := "phx-loading"),
-          registration.rendered.map(Content.Tag(_))
+          registration.rendered
         )
       }
 
-  private def renderFlash(
-    kind: String,
-    f: String => HtmlElement[Nothing],
-    cursor: ComponentCursor,
-    ctx: LiveContext
-  ): Task[Mod[Any]] =
-    ctx.flash.get(kind).flatMap {
-      case Some(message) => renderElement(f(message), cursor, ctx).map(Content.Tag(_))
-      case None          => ZIO.succeed(Content.Text(""))
-    }
-
-  private def wrapComponentMessages(cid: Int, element: HtmlElement[Any]): Task[HtmlElement[Any]] =
-    ZIO.foreach(element.mods)(wrapComponentMod(cid, _)).map(mods => HtmlElement(element.tag, mods))
-
-  private def wrapComponentMod(cid: Int, mod: Mod[Any]): Task[Mod[Any]] =
-    mod match
-      case Attr.Binding(name, f) =>
-        ZIO.succeed(Attr.Binding(name, payload => ComponentMessage(cid, f(payload))))
-      case Attr.FormBinding(name, f) =>
-        ZIO.succeed(Attr.FormBinding(name, data => ComponentMessage(cid, f(data))))
-      case Attr.FormEventBinding(name, codec, f) =>
-        val wrapped = f.asInstanceOf[FormEvent[Any] => Any]
-        ZIO.succeed(
-          Attr.FormEventBinding(
-            name,
-            codec.asInstanceOf[FormCodec[Any]],
-            event => ComponentMessage(cid, wrapped(event))
-          )
-        )
-      case Attr.JsBinding(_, _) =>
-        mod match
-          case Attr.JsBinding(name, command) =>
-            ZIO.succeed(
-              Attr.JsBinding(name, command.map(message => ComponentMessage(cid, message)))
-            )
-          case _ => ZIO.succeed(mod)
-      case Attr.Group(attrs) =>
-        ZIO.foreach(attrs)(attr => wrapComponentMod(cid, attr)).map { wrapped =>
-          Attr.Group(wrapped.collect { case attr: Attr[Any] => attr })
-        }
-      case attr: Attr[Any] =>
-        ZIO.succeed(attr)
-      case Content.Text(_, _) =>
-        ZIO.succeed(mod)
-      case Content.Tag(el) =>
-        wrapComponentMessages(cid, el).map(Content.Tag(_))
-      case Content.Component(_, _) =>
-        ZIO.succeed(mod)
-      case Content.LiveComponent(_) =>
-        ZIO.fail(
-          new IllegalStateException("nested live components must be resolved before wrapping")
-        )
-      case Content.LiveView(_) =>
-        ZIO.fail(new IllegalStateException("nested LiveViews must be resolved before wrapping"))
-      case Content.Flash(_, _) =>
-        ZIO.fail(new IllegalStateException("flash content must be resolved before wrapping"))
-      case Content.Keyed(entries, stream, allEntries) =>
-        for
-          renderedEntries <- ZIO.foreach(entries)(entry =>
-                               wrapComponentMessages(cid, entry.element)
-                                 .map(rendered => Content.Keyed.Entry(entry.key, rendered))
-                             )
-          renderedAll <- ZIO.foreach(allEntries)(entries =>
-                           ZIO.foreach(entries)(entry =>
-                             wrapComponentMessages(cid, entry.element)
-                               .map(rendered => Content.Keyed.Entry(entry.key, rendered))
-                           )
-                         )
-        yield Content.Keyed(renderedEntries, stream, renderedAll)
 end SocketComponentRuntime

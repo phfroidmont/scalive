@@ -422,6 +422,18 @@ final class FormDefinition[Owner, A] private[scalive] (
   /** The decoder used for initial values and LiveView form events. */
   val codec: FormCodec[A]):
 
+  /** Creates a typed change binding using this definition's stable codec. */
+  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    on.change.form(codec)(f)
+
+  /** Creates a typed submit binding using this definition's stable codec. */
+  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    on.submit.form(codec)(f)
+
+  /** Creates a typed recovery binding using this definition's stable codec. */
+  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+    on.recover.form(codec)(f)
+
   /** The rooted form type produced by this definition. */
   type Form = RootedForm[Owner, A]
 
@@ -538,3 +550,8 @@ end RootedForm
 private[scalive] object RootedForm:
   def apply[Owner, A](form: Form[A]): RootedForm[Owner, A] =
     new RootedForm(form)
+
+extension [Owner, A](form: Signal[RootedForm[Owner, A]])
+  /** Returns a signal-backed value for a field owned by this rooted form. */
+  def field[B](definition: RootedFormField[Owner, B]): Signal[FormFieldView[B]] =
+    form.map(_.field(definition))

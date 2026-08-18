@@ -37,10 +37,10 @@ object AsyncSpec extends ZIOSpecDefault:
 
   private def containsValue(diff: Diff, value: String): Boolean =
     diff match
-      case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
-        dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
-          containsValue(_, value)
-        )
+      case Diff.Tag(static, dynamic, _, _, _, components, _, _) =>
+        static.exists(_.contains(value)) ||
+          dynamic.exists(d => containsValue(d.diff, value)) ||
+          components.values.exists(containsValue(_, value))
       case Diff.Value(current)   => current == value
       case Diff.Dynamic(_, diff) => containsValue(diff, value)
       case _                     => false
@@ -127,8 +127,8 @@ object AsyncSpec extends ZIOSpecDefault:
       case Msg.Done(LiveAsyncResult.Cancelled(reason)) =>
         ZIO.succeed(model.copy(result = s"cancelled:${reason.getOrElse("none")}"))
 
-    def render(props: Action, model: Model, self: ComponentRef[Msg]) =
-      div(s"lc: ${model.result}")
+    override def view(props: Signal[Action], model: Signal[Model], self: ComponentRef[Msg]) =
+      div(model.map(current => s"lc: ${current.result}"))
 
     private def effect(action: Action): Task[String] =
       action match
@@ -152,7 +152,7 @@ object AsyncSpec extends ZIOSpecDefault:
           case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => ZIO.succeed(value)
           case _                                            => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Msg] =
+        override def view(model: Signal[String]): HtmlElement[Msg] =
           div(idAttr := "root", model)
 
       for
@@ -176,7 +176,7 @@ object AsyncSpec extends ZIOSpecDefault:
             ZIO.succeed(s"failed:${cause.getMessage}")
           case ResultMsg.Completed(_) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[ResultMsg] =
+        override def view(model: Signal[String]): HtmlElement[ResultMsg] =
           div(idAttr := "root", model)
 
       for
@@ -200,7 +200,7 @@ object AsyncSpec extends ZIOSpecDefault:
           val _ = page
           ZIO.succeed(url.path.encode)
 
-        def render(model: String): HtmlElement[Msg] =
+        override def view(model: Signal[String]): HtmlElement[Msg] =
           div(idAttr := "root", model)
 
       for
@@ -233,7 +233,7 @@ object AsyncSpec extends ZIOSpecDefault:
             ctx.nav.pushNavigateUnsafe("/start_async?test=ok").as(model)
           case _ => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Msg] =
+        override def view(model: Signal[String]): HtmlElement[Msg] =
           div(idAttr := "root", model)
 
       for
@@ -253,7 +253,7 @@ object AsyncSpec extends ZIOSpecDefault:
             ctx.nav.redirectUnsafe("/not_found").as(model)
           case _ => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Msg] =
+        override def view(model: Signal[String]): HtmlElement[Msg] =
           div(idAttr := "root", model)
 
       for
@@ -271,7 +271,7 @@ object AsyncSpec extends ZIOSpecDefault:
             ctx.flash.put(Info, message).as("loaded")
           case _ => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Msg] =
+        override def view(model: Signal[String]): HtmlElement[Msg] =
           div(
             idAttr := "root",
             span(model),
@@ -298,7 +298,7 @@ object AsyncSpec extends ZIOSpecDefault:
                  case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => ZIO.succeed(value)
                  case _                                            => ZIO.succeed(model)
 
-               def render(model: String): HtmlElement[Msg] =
+               override def view(model: Signal[String]): HtmlElement[Msg] =
                  div(idAttr := "root", button(scalive.on.click(Msg.Start), "start"), span(model))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
@@ -330,7 +330,7 @@ object AsyncSpec extends ZIOSpecDefault:
                  case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => ZIO.succeed(value)
                  case _                                            => ZIO.succeed(model)
 
-               def render(model: String): HtmlElement[Msg] =
+               override def view(model: Signal[String]): HtmlElement[Msg] =
                  div(idAttr := "root", button(scalive.on.click(Msg.Cancel), "cancel"), span(model))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
@@ -367,7 +367,7 @@ object AsyncSpec extends ZIOSpecDefault:
                    ZIO.succeed(s"cancelled:${reason.getOrElse("none")}")
                  case CancelMsg.Completed(_) => ZIO.succeed(model)
 
-               def render(model: String): HtmlElement[CancelMsg] =
+               override def view(model: Signal[String]): HtmlElement[CancelMsg] =
                  div(idAttr := "root", button(scalive.on.click(CancelMsg.Cancel), "cancel"), span(model))
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
@@ -399,7 +399,7 @@ object AsyncSpec extends ZIOSpecDefault:
                  case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => ZIO.succeed(value)
                  case _                                            => ZIO.succeed(model)
 
-               def render(model: String): HtmlElement[Msg] =
+               override def view(model: Signal[String]): HtmlElement[Msg] =
                  div(idAttr := "root", model)
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         update <- socket.outbox.drop(1).runHead.some
@@ -418,7 +418,7 @@ object AsyncSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(
             liveComponent(UpdateAsyncComponent, id = "lc", props = UpdateAsyncComponent.Action.Ok)
           )
@@ -467,9 +467,9 @@ object AsyncSpec extends ZIOSpecDefault:
         def handleMessage(model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Unit] =
+        override def view(model: Signal[String]): HtmlElement[Unit] =
           div(
-            p(s"test:$model"),
+            p(model.map(value => s"test:$value")),
             liveComponent(
               UpdateAsyncComponent,
               id = "lc",
@@ -580,12 +580,12 @@ object AsyncSpec extends ZIOSpecDefault:
         ) =
           ZIO.succeed(model)
 
-        def render(
-          props: Promise[Nothing, Unit],
-          model: (Promise[Nothing, Unit], String),
+        override def view(
+          props: Signal[Promise[Nothing, Unit]],
+          model: Signal[(Promise[Nothing, Unit], String)],
           self: ComponentRef[Msg]
         ) =
-          button(scalive.on.click(Msg.Start), phx.target(self), model._2)
+          button(scalive.on.click(Msg.Start), phx.target(self), model.map(_._2))
       end AsyncComponent
 
       for
@@ -597,15 +597,20 @@ object AsyncSpec extends ZIOSpecDefault:
                def handleMessage(model: Unit, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Unit): HtmlElement[Unit] =
+               override def view(model: Signal[Unit]): HtmlElement[Unit] =
                  div(liveComponent(AsyncComponent, id = "async", props = release))
+        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        binding <- socket.renderedHtml.flatMap(html =>
+                     ZIO
+                       .fromOption("phx-click=\"([^\"]+)\"".r.findFirstMatchIn(html).map(_.group(1)))
+                       .orElseFail(new RuntimeException("Missing component click binding"))
+                   )
         event = Payload.Event(
                   `type` = "click",
-                  event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
+                  event = binding,
                   value = Json.Obj.empty,
                   cid = Some(1)
                 )
-        socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
                       _      <- socket.inbox.offer(event -> meta)
@@ -635,7 +640,7 @@ object AsyncSpec extends ZIOSpecDefault:
                def handleMessage(model: String, ctx: MessageContext) =
                  (_: Msg) => ZIO.succeed(model)
 
-               def render(model: String): HtmlElement[Msg] =
+               override def view(model: Signal[String]): HtmlElement[Msg] =
                  div(idAttr := "root", model)
         result <- ZIO.scoped {
                     for
@@ -649,7 +654,8 @@ object AsyncSpec extends ZIOSpecDefault:
       yield result
     },
     test("confirmed component removal interrupts component async tasks") {
-      object InterruptComponent extends LiveComponent[Promise[Nothing, Unit], Unit, Boolean]:
+      object InterruptComponent
+          extends LiveComponent[Promise[Nothing, Unit], Unit, Boolean]:
         private val Load = AsyncKey[Unit]("component-interrupt")
 
         def mount(props: Promise[Nothing, Unit], ctx: MountContext) =
@@ -667,7 +673,11 @@ object AsyncSpec extends ZIOSpecDefault:
         def handleMessage(props: Promise[Nothing, Unit], model: Boolean, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(props: Promise[Nothing, Unit], model: Boolean, self: ComponentRef[Unit]) =
+        override def view(
+          props: Signal[Promise[Nothing, Unit]],
+          model: Signal[Boolean],
+          self: ComponentRef[Unit]
+        ) =
           div("component")
 
       enum ParentMsg:
@@ -682,12 +692,13 @@ object AsyncSpec extends ZIOSpecDefault:
                def handleMessage(model: Boolean, ctx: MessageContext) =
                  case ParentMsg.Toggle => ZIO.succeed(!model)
 
-               def render(model: Boolean): HtmlElement[ParentMsg] =
+               override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
                  div(
                    button(scalive.on.click(ParentMsg.Toggle), "toggle"),
-                   if model then
-                     liveComponent(InterruptComponent, id = "interrupt", props = stopped)
-                   else "gone"
+                   model.chooseMod(
+                     liveComponent(InterruptComponent, id = "interrupt", props = stopped),
+                     "gone"
+                   )
                  )
         destroyed: Payload.Event = Payload.Event(
                                      `type` = "click",
@@ -717,6 +728,6 @@ object AsyncSpec extends ZIOSpecDefault:
       def handleMessage(model: Unit, ctx: MessageContext) =
         (_: Unit) => ZIO.succeed(model)
 
-      def render(model: Unit): HtmlElement[Unit] =
+      override def view(model: Signal[Unit]): HtmlElement[Unit] =
         div(liveComponent(UpdateAsyncComponent, id = "lc", props = action))
 end AsyncSpec

@@ -112,21 +112,21 @@ trait LiveView[Msg, Model]:
 
   def mount(ctx: MountContext): LiveIO[Model]
   def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
-  def render(model: Model): HtmlElement[Msg]
+  def view(model: Signal[Model]): HtmlElement[Msg]
 ```
 
 Lifecycle methods:
 
 - `mount` creates the initial model for disconnected and connected lifecycle phases.
 - `handleMessage` handles typed messages produced by HTML bindings, JS push commands, async tasks, and subscriptions.
-- `render` returns the current HTML tree.
+- `view` constructs one signal-backed view graph of HTML for each disconnected request or connected socket. Its read-only model signal drives dynamic scalar slots and explicit staged structures without rebuilding the ordinary tree after every update.
 - `pageTitle` derives optional document-title state from the model. Root layouts render it during the disconnected request and connected diffs update `document.title`.
 - `hooks` installs static lifecycle hooks, including typed browser events and low-level raw event interception.
 - Runtime subscriptions are started explicitly from phase contexts with `ctx.subscriptions.start`.
 
 ### `LiveView.Eventless[Model]`
 
-Use `LiveView.Eventless` when a view has no server messages. It fixes the message type to `Nothing` and supplies the no-op `handleMessage`, so application code only needs to define `mount` and `render`. The `Nothing` message type also prevents server event bindings from appearing in the rendered HTML.
+Use `LiveView.Eventless` when a view has no server messages. It fixes the message type to `Nothing` and supplies the no-op `handleMessage`, so application code only needs to define `mount` and `view`. The `Nothing` message type also prevents server event bindings from appearing in the rendered HTML.
 
 ```scala
 trait LiveView.Eventless[Model] extends LiveView[Nothing, Model]
@@ -193,13 +193,18 @@ trait LiveComponent[Props, Msg, Model]:
   def mount(props: Props, ctx: MountContext): LiveIO[Model]
   def update(props: Props, model: Model, ctx: UpdateContext): LiveIO[Model]
   def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => LiveIO[Model]
-  def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
+  def view(
+    props: Signal[Props],
+    model: Signal[Model],
+    self: ComponentRef[Msg]
+  ): HtmlElement[Msg]
 
 final case class LiveComponentInstance[Props, Msg, Model](
   component: LiveComponent[Props, Msg, Model],
   id: String
 ):
   def render(props: Props): Mod[Nothing]
+  def render(props: Signal[Props]): Mod[Nothing]
 ```
 
 Create one stable instance handle when a parent needs to render, target, or update a specific
@@ -240,7 +245,7 @@ object LiveIO:
   given [A]: Conversion[A, LiveIO[A]]
 ```
 
-Plain model returns are opt-in. Import the conversion where you want that style:
+Direct model returns are opt-in. Import the conversion where you want that style:
 
 ```scala
 import scalive.LiveIO.given
@@ -1191,16 +1196,16 @@ enum LiveRoute.InitialLifecycleOutcome[+Model]:
 
 ```scala
 final case class LiveLayoutContext[+A, +Ctx](
-  params: A,
-  request: zio.http.Request,
-  currentUrl: zio.http.URL,
+  params: Signal[A],
+  request: Signal[zio.http.Request],
+  currentUrl: Signal[zio.http.URL],
   context: Ctx
 )
 ```
 
 ```scala
 trait LiveLayout[-A, -Ctx]:
-  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
+  def view[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
 ```
 
 Helpers:
@@ -1211,9 +1216,16 @@ LiveLayout((content, ctx) => html)
 ```
 
 ```scala
+final case class LiveRootLayoutContext[+A, +Ctx](
+  params: A,
+  request: zio.http.Request,
+  currentUrl: zio.http.URL,
+  context: Ctx
+)
+
 trait LiveRootLayout[-A, -Ctx]:
-  def key(ctx: LiveLayoutContext[A, Ctx]): String
-  def render[Msg](content: HtmlElement[Msg], pageTitle: Option[String], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
+  def key(ctx: LiveRootLayoutContext[A, Ctx]): String
+  def render[Msg](content: HtmlElement[Msg], pageTitle: Option[String], ctx: LiveRootLayoutContext[A, Ctx]): HtmlElement[Msg]
 ```
 
 Helpers:

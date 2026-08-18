@@ -13,7 +13,7 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
     case Msg.PushJs             =>
       ctx.client.exec(JS.toggle(to = DomSelector.css("#hello"))).as(model)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       form(
         on.submit(params => Msg.SubmitPhone(params.getOrElse("user[phone_number]", ""))),
@@ -24,7 +24,7 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
           placeholder := "phone"
         )
       ),
-      p(idAttr := "phone", model.phone),
+      p(idAttr := "phone", model.map(_.phone)),
       div(
         dom.hook(".Runtime", DomRef("runtime")),
         styleAttr := "display: none;",

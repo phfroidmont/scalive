@@ -249,6 +249,10 @@ object JSCommands:
     def pushNavigate(to: LiveLocation) =
       pushNavigateUnsafe(to.href)
 
+    /** Builds a signal-backed command for a navigation destination. */
+    def pushNavigate(to: Signal[LiveLocation]): Signal[JSCommand[Msg]] =
+      to.map(location => ops.pushNavigate(location))
+
     /** Appends a live navigation to the raw `href` and pushes a browser history entry.
       *
       * The string is passed through without route typing, validation, or normalization. "Unsafe"
@@ -258,6 +262,10 @@ object JSCommands:
     def pushNavigateUnsafe(href: String) =
       ops.addOp("navigate", Args.Href(href, None))
 
+    /** Builds a signal-backed command for a raw navigation destination. */
+    def pushNavigateUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
+      href.map(value => ops.pushNavigateUnsafe(value))
+
     /** Appends a live navigation to a typed location and replaces the current history entry.
       *
       * This changes LiveViews rather than patching the current one. Use [[replaceNavigateUnsafe]]
@@ -266,12 +274,20 @@ object JSCommands:
     def replaceNavigate(to: LiveLocation) =
       replaceNavigateUnsafe(to.href)
 
+    /** Builds a signal-backed command for replacement navigation. */
+    def replaceNavigate(to: Signal[LiveLocation]): Signal[JSCommand[Msg]] =
+      to.map(location => ops.replaceNavigate(location))
+
     /** Appends a live navigation to raw `href` and replaces the current browser history entry.
       *
       * The string is passed through without route typing, validation, or normalization.
       */
     def replaceNavigateUnsafe(href: String) =
       ops.addOp("navigate", Args.Href(href, Some(true)))
+
+    /** Builds a signal-backed command for raw replacement navigation. */
+    def replaceNavigateUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
+      href.map(value => ops.replaceNavigateUnsafe(value))
 
     /** Appends a live patch to a typed location and pushes a browser history entry.
       *
@@ -282,6 +298,10 @@ object JSCommands:
     def pushPatch(to: LiveLocation) =
       pushPatchUnsafe(to.href)
 
+    /** Builds a signal-backed command for a patch destination. */
+    def pushPatch(to: Signal[LiveLocation]): Signal[JSCommand[Msg]] =
+      to.map(location => ops.pushPatch(location))
+
     /** Appends a live patch to raw `href` and pushes a browser history entry.
       *
       * The string is passed through without route typing, validation, or normalization. This is the
@@ -290,9 +310,17 @@ object JSCommands:
     def pushPatchUnsafe(href: String) =
       ops.addOp("patch", Args.Href(href, None))
 
+    /** Builds a signal-backed command for a raw patch destination. */
+    def pushPatchUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
+      href.map(value => ops.pushPatchUnsafe(value))
+
     /** Appends a live patch to a typed location and replaces the current browser history entry. */
     def replacePatch(to: LiveLocation) =
       replacePatchUnsafe(to.href)
+
+    /** Builds a signal-backed command for replacement patching. */
+    def replacePatch(to: Signal[LiveLocation]): Signal[JSCommand[Msg]] =
+      to.map(location => ops.replacePatch(location))
 
     /** Appends a live patch to raw `href` and replaces the current browser history entry.
       *
@@ -300,6 +328,10 @@ object JSCommands:
       */
     def replacePatchUnsafe(href: String) =
       ops.addOp("patch", Args.Href(href, Some(true)))
+
+    /** Builds a signal-backed command for raw replacement patching. */
+    def replacePatchUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
+      href.map(value => ops.replacePatchUnsafe(value))
 
     /** Appends a command which focuses the most recently pushed focus target, if one exists. */
     def popFocus() =

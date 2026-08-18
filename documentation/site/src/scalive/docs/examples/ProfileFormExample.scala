@@ -24,26 +24,26 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
     case Msg.Reset =>
       ZIO.succeed(Model(Profile.Definition.initial()))
 
-  def render(model: Model): HtmlElement[Msg] =
-    val profileForm    = model.form
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
+    val profileForm    = model.map(_.form)
     val nameField      = profileForm.field(Profile.Name)
     val emailField     = profileForm.field(Profile.Email)
     val biographyField = profileForm.field(Profile.Biography)
 
     div(
       cls := "docs-profile-form",
-      model.saved.map { profile =>
+      model.map(_.saved).option { profile =>
         p(
           dataAttr("profile-saved") := "",
           cls                       := "docs-profile-saved",
           role                      := "status",
-          s"Saved ${profile.name}'s profile."
+          profile.map(profile => s"Saved ${profile.name}'s profile.")
         )
       },
       form(
         dataAttr("profile-form") := "",
-        profileForm.onChange(Msg.Validate(_)),
-        profileForm.onSubmit(Msg.Save(_)),
+        Profile.Definition.onChange(Msg.Validate(_)),
+        Profile.Definition.onSubmit(Msg.Save(_)),
         field(
           label(forId := nameField.id, "Name"),
           nameField.text(
@@ -76,7 +76,7 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
         )
       )
     )
-  end render
+  end view
 
   private def field(content: Mod[Msg]*): HtmlElement[Msg] =
     div(cls := "docs-profile-field", content)

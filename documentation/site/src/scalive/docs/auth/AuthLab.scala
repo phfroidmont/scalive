@@ -106,7 +106,7 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
 
   def mount(ctx: MountContext) = ZIO.unit
 
-  def render(model: Unit) =
+  override def view(model: Signal[Unit]): HtmlElement[Nothing] =
     val loginForm     = Definition.initial(Email.initial(AuthService.DemoEmail))
     val emailField    = loginForm.field(Email)
     val passwordField = loginForm.field(Password)
@@ -165,7 +165,7 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
         )
       )
     )
-  end render
+  end view
 end LoginLiveView
 
 object LoginLiveView:
@@ -177,13 +177,13 @@ final class ProfileLiveView(currentSession: CurrentSession)
     extends LiveView.Eventless[CurrentSession]:
   def mount(ctx: MountContext) = ZIO.succeed(currentSession)
 
-  def render(model: CurrentSession) =
+  override def view(model: Signal[CurrentSession]): HtmlElement[Nothing] =
     articleTag(
       cls := "docs-auth-lab",
       headerTag(
         cls := "docs-auth-header",
         p(cls := "docs-auth-kicker", "Authenticated session"),
-        h1(s"Welcome, ${model.user.name}"),
+        h1(model.map(session => s"Welcome, ${session.user.name}")),
         p(
           "The connected mount resumed this session from a signed, non-secret public identifier and checked the server record again."
         )
@@ -192,9 +192,9 @@ final class ProfileLiveView(currentSession: CurrentSession)
         cls := "docs-auth-card docs-auth-profile",
         dl(
           dt("Current user"),
-          dd(model.user.email),
+          dd(model.map(_.user.email)),
           dt("Public session ID"),
-          dd(code(model.publicSessionId.value))
+          dd(code(model.map(_.publicSessionId.value)))
         ),
         scalive.Form.http(FormAction.from(AuthLabRoutes.ResetRoute))(
           button(typ := "submit", "Sign out and reset lab")

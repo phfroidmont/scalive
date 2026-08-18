@@ -21,12 +21,14 @@ abstraction:
 - @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ creates an initial model.
 - @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ uses a ZIO
   effect to produce the next model.
-- @:apiSymbol(def:scalive.LiveView.render)`render`@:@ projects the model into
-  typed HTML.
+- @:apiSymbol(def:scalive.LiveView.view)`view`@:@ constructs a signal-backed
+  view graph of typed HTML from a read-only model signal.
 
-Scalive compares consecutive render trees and sends only their differences to
-the Phoenix LiveView JavaScript client. Ordinary application behavior therefore
-stays in Scala without requiring a second client-side state tree.
+Scalive constructs that graph once per disconnected request or connected socket
+lifetime, evaluates its signals as the model changes, and sends only snapshot
+differences to the Phoenix LiveView JavaScript client. Ordinary application
+behavior therefore stays in Scala without requiring a second client-side state
+tree.
 
 ## Follow One Page From HTTP To DOM {#follow-one-page-from-http-to-dom}
 
@@ -40,9 +42,10 @@ A page reaches the DOM and becomes live in three stages:
    to create an independent connected model; it does not continue the
    disconnected model instance.
 3. **Live updates.** Browser interactions resolve to typed `Msg` values.
-   `handleMessage` proposes a model through `LiveIO`, `render` produces typed
-   HTML, and Scalive commits the model and sends the resulting diff. A rejoin
-   cleans up connection-owned work and repeats the connected mount.
+   `handleMessage` proposes a model through `LiveIO`, the view graph
+   evaluates affected signals, and Scalive commits the model and sends the
+   resulting diff. A rejoin cleans up connection-owned work and repeats the
+   connected mount.
 
 The boundary between the first two stages is easy to miss. Follow the initial
 HTTP request until its temporary lifecycle ends:
@@ -59,7 +62,7 @@ explains which side owns each part of the application.
 | Concern | Server | Browser |
 | --- | --- | --- |
 | Application state | Owns models, transitions, services, and durable data | Keeps the rendered DOM and intentional browser-local state |
-| Rendering | Produces typed HTML trees and diffs | Applies patches to the existing DOM |
+| Rendering | Produces view graphs of typed HTML, snapshots, and diffs | Applies patches to the existing DOM |
 | Events | Resolves bindings to typed messages and runs handlers | Captures DOM events and sends binding data |
 | Effects | Runs ZIO effects, async work, and subscriptions | Runs hooks and commands that require browser APIs |
 | Connection | Validates the join and owns connection-scoped resources | Opens, monitors, disconnects, and reconnects `LiveSocket` |

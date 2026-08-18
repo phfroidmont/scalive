@@ -18,7 +18,7 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
       ZIO.unit
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => ZIO.unit
-    def render(model: Unit): HtmlElement[Unit] = div(text)
+    override def view(model: Signal[Unit]): HtmlElement[Unit] = div(text)
 
   private def url(path: String): URL =
     URL.decode(path).toOption.get
@@ -35,7 +35,7 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
           def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-          def render(model: Unit): HtmlElement[Unit] = div()
+          override def view(model: Signal[Unit]): HtmlElement[Unit] = div()
 
         val routes = scalive.Live.router(
           scalive.live { (_: Unit, _: Request, user: User) => view }
@@ -58,7 +58,7 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
         def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
           def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-          def render(model: Unit): HtmlElement[Unit] = div()
+          override def view(model: Signal[Unit]): HtmlElement[Unit] = div()
 
         val aspect = LiveMountAspect.fromRequest[Any, Any, Claims, User](
           _ => ZIO.succeed(Claims("signed") -> User("disconnected")),
@@ -125,7 +125,8 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
       final class LayeredView(users: Users, orgs: Orgs) extends LiveView[Unit, Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-        def render(model: Unit): HtmlElement[Unit] = div(s"${users.name}:${orgs.name}")
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
+          div(s"${users.name}:${orgs.name}")
 
       val viewLayer = ZLayer.fromFunction(LayeredView.apply)
       val routes    = scalive.Live.router((scalive.live / "layered") -> viewLayer)
@@ -275,7 +276,7 @@ object LiveRoutesTypeSafetySpec extends ZIOSpecDefault:
             ctx: ParamsContext
           ) = ZIO.succeed(model)
           def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-          def render(model: Unit): HtmlElement[Unit] = div()
+          override def view(model: Signal[Unit]): HtmlElement[Unit] = div()
 
         val mounted = route -> view
       """)

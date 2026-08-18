@@ -11,7 +11,7 @@ import zio.*
   * component lifecycles.
   *
   * Event bindings rendered by the component deliver their messages to [[handleMessage]]. Use the
-  * [[ComponentRef]] passed to [[render]] when a raw Phoenix event or an event outside the component
+  * [[ComponentRef]] passed to [[view]] when a raw Phoenix event or an event outside the component
   * tree must target this particular instance.
   *
   * A failed lifecycle effect fails the active render or message lifecycle. Rendering the same
@@ -92,20 +92,24 @@ trait LiveComponent[Props, Msg, Model]:
     */
   def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => LiveIO[Model]
 
-  /** Renders this component instance as a typed HTML tree.
+  /** Constructs this component instance's signal-backed view graph.
     *
-    * The `Msg` type restricts event bindings in the returned tree to messages accepted by this
-    * component. `self` identifies the current mounted instance and may be passed to targeted event
-    * binding helpers or `phx.target`.
+    * The runtime invokes this method once for each mounted instance. The `Msg` type restricts event
+    * bindings in the returned tree to messages accepted by this component. `self` identifies the
+    * current mounted instance and may be passed to targeted event binding helpers or `phx.target`.
     *
     * @param props
-    *   the properties currently assigned to the instance
+    *   the read-only signal containing the properties currently assigned to the instance
     * @param model
-    *   the component model to render
+    *   the read-only signal containing the current component model
     * @param self
     *   the current instance's typed client target
     */
-  def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]
+  def view(
+    props: Signal[Props],
+    model: Signal[Model],
+    self: ComponentRef[Msg]
+  ): HtmlElement[Msg]
 end LiveComponent
 
 object LiveComponent:
@@ -160,6 +164,10 @@ final case class LiveComponentInstance[Props, Msg, Model](
   def render(props: Props): Mod[Nothing] =
     Mod.Content.LiveComponent(LiveComponentSpec(component, id, props, None))
 
+  /** Renders this instance with props sampled from the committed parent graph. */
+  def render(props: Signal[Props]): Mod[Nothing] =
+    Mod.Content.SignalLiveComponent(LiveComponentSignalSpec(component, id, props, None))
+
 final case class LiveComponentOutputInstance[Props, Msg, Model, Output](
   component: LiveComponent.WithOutput[Props, Msg, Model, Output],
   id: String):
@@ -176,11 +184,25 @@ final case class LiveComponentOutputInstance[Props, Msg, Model, Output](
       LiveComponentSpec(component, id, props, Some(value => onOutput(value.asInstanceOf[Output])))
     )
 
+  /** Renders this instance with signal props and maps its typed outputs to owner messages. */
+  def render[OwnerMsg](
+    props: Signal[Props],
+    onOutput: Output => OwnerMsg
+  ): Mod[OwnerMsg] =
+    Mod.Content.SignalLiveComponent(
+      LiveComponentSignalSpec(
+        component,
+        id,
+        props,
+        Some(value => onOutput(value.asInstanceOf[Output]))
+      )
+    )
+
 /** A typed reference to one mounted [[LiveComponent]] instance.
   *
   * References are created by the runtime and are valid only for the instance whose
-  * [[LiveComponent.render render]] call received them. Use a reference with component-targeted
-  * event helpers rather than retaining or constructing one.
+  * [[LiveComponent.view view]] call received them. Use a reference with component-targeted event
+  * helpers rather than retaining or constructing one.
   *
   * @tparam Msg
   *   the messages accepted by the referenced component
@@ -193,6 +215,18 @@ final private[scalive] case class LiveComponentSpec[Props, Msg, Model, Output](
   component: LiveComponent[Props, Msg, Model],
   id: String,
   props: Props,
+  outputMapper: Option[Any => Any])
+
+final private[scalive] case class LiveComponentSignalSpec[Props, Msg, Model, Output](
+  component: LiveComponent[Props, Msg, Model],
+  id: String,
+  props: Signal[Props],
+  outputMapper: Option[Any => Any])
+
+final private[scalive] case class LiveComponentDynamicSpec[Props, Msg, Model, Output](
+  component: LiveComponent[Props, Msg, Model],
+  id: Signal[String],
+  props: Signal[Props],
   outputMapper: Option[Any => Any])
 
 private[scalive] enum ComponentOutputOwner:

@@ -1,5 +1,7 @@
 package scalive.defs.components
 
+import scala.annotation.targetName
+
 import scalive.*
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
@@ -89,11 +91,53 @@ trait Components:
     )
   end liveFileInput
 
+  /** Renders a signal-backed upload input from the committed upload snapshot. */
+  def liveFileInput[Msg, R](
+    upload: Signal[LiveUpload[R]],
+    mods: Mod[Msg]*
+  ): HtmlElement[Msg] =
+    input(
+      idAttr                      := upload.map(_.ref.value),
+      phx.hook                    := "Phoenix.LiveFileUpload",
+      typ                         := "file",
+      nameAttr                    := upload.map(_.name),
+      accept                      := upload.map(_.accept.toHtmlValue),
+      dataAttr("phx-upload-ref")  := upload.map(_.ref.value),
+      dataAttr("phx-active-refs") := upload.map(
+        _.entries.map(_.ref.value).mkString(",")
+      ),
+      dataAttr("phx-done-refs") := upload.map(
+        _.entries
+          .filter(_.status == LiveUploadEntryStatus.Completed)
+          .map(_.ref.value)
+          .mkString(",")
+      ),
+      dataAttr("phx-preflighted-refs") := upload.map(
+        _.entries
+          .filter(entry =>
+            entry.status match
+              case LiveUploadEntryStatus.Preflighted | LiveUploadEntryStatus.Uploading(_) |
+                  LiveUploadEntryStatus.Completed =>
+                true
+              case _ => false
+          )
+          .map(_.ref.value)
+          .mkString(",")
+      ),
+      dataPhxAutoUpload := upload.map(_.autoUpload),
+      multiple          := upload.map(_.maxEntries > 1),
+      mods
+    )
+
   /** Returns upload-wide errors, such as selecting more files than the definition permits.
     *
     * Entry-specific validation or transfer errors are available from an entry overload.
     */
   def uploadErrors[R](upload: LiveUpload[R]): List[LiveUploadError] = upload.errors
+
+  /** Returns upload-wide errors from a signal-backed upload value. */
+  def uploadErrors[R](upload: Signal[LiveUpload[R]]): Signal[List[LiveUploadError]] =
+    upload.map(_.errors)
 
   /** Returns current errors for `entry` as recorded in `upload`.
     *
@@ -108,5 +152,10 @@ trait Components:
     * An entry that is not in the invalid state has no errors and returns `Nil`.
     */
   def uploadErrors[R](entry: LiveUploadEntry[R]): List[LiveUploadError] = entry.errors
+
+  /** Returns entry errors from a signal-backed upload-entry value. */
+  @targetName("uploadEntryErrorsSignal")
+  def uploadErrors[R](entry: Signal[LiveUploadEntry[R]]): Signal[List[LiveUploadError]] =
+    entry.map(_.errors)
 
 end Components

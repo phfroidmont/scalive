@@ -83,7 +83,8 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                def handleMessage(model: Boolean, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Boolean): HtmlElement[Unit] = div(model.toString)
+               override def view(model: Signal[Boolean]): HtmlElement[Unit] =
+                 div(model.map(_.toString))
         routes = scalive.Live.router(scalive.live(lv))
         response <- runRequest(routes, "/")
         body     <- response.body.asString
@@ -107,7 +108,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def handleMessage(model: Int, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Int): HtmlElement[Unit] = div(model.toString)
+        override def view(model: Signal[Int]): HtmlElement[Unit] = div(model.map(_.toString))
 
       def browserEvent(value: Json, cid: Option[Int] = None) =
         Payload.Event(
@@ -168,8 +169,8 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def handleMessage(model: Int, ctx: MessageContext) =
           case Msg.Inc => ZIO.succeed(model + 1)
 
-        def render(model: Int): HtmlElement[Msg] =
-          div(span(model.toString), button(scalive.on.click(Msg.Inc), "inc"))
+        override def view(model: Signal[Int]): HtmlElement[Msg] =
+          div(span(model.map(_.toString)), button(scalive.on.click(Msg.Inc), "inc"))
 
       ZIO.scoped(for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
@@ -204,8 +205,8 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def handleMessage(model: Int, ctx: MessageContext) =
           case Msg.Inc => ZIO.succeed(model + 100)
 
-        def render(model: Int): HtmlElement[Msg] =
-          div(span(model.toString), button(scalive.on.click(Msg.Inc), "inc"))
+        override def view(model: Signal[Int]): HtmlElement[Msg] =
+          div(span(model.map(_.toString)), button(scalive.on.click(Msg.Inc), "inc"))
 
       ZIO.scoped(for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
@@ -252,9 +253,9 @@ object LifecycleHookSpec extends ZIOSpecDefault:
           case Msg.Inc    => ZIO.succeed(model + 1)
           case Msg.Detach => ctx.hooks.event.detach("add").as(model)
 
-        def render(model: Int): HtmlElement[Msg] =
+        override def view(model: Signal[Int]): HtmlElement[Msg] =
           div(
-            span(model.toString),
+            span(model.map(_.toString)),
             button(scalive.on.click(Msg.Inc), "inc"),
             button(scalive.on.click(Msg.Detach), "detach")
           )
@@ -294,7 +295,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def handleMessage(model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Unit] = div(idAttr := "root", model)
+        override def view(model: Signal[String]): HtmlElement[Unit] = div(idAttr := "root", model)
 
       for
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
@@ -336,7 +337,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def handleMessage(model: Int, ctx: MessageContext) =
           case Msg.Tick => ZIO.succeed(model + 1)
 
-        def render(model: Int): HtmlElement[Msg] = div(model.toString)
+        override def view(model: Signal[Int]): HtmlElement[Msg] = div(model.map(_.toString))
 
       ZIO.scoped(for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
@@ -367,7 +368,7 @@ object LifecycleHookSpec extends ZIOSpecDefault:
             ZIO.succeed(s"$model|handle:$value")
           case Msg.Completed(_) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Msg] = div(idAttr := "root", model)
+        override def view(model: Signal[String]): HtmlElement[Msg] = div(idAttr := "root", model)
 
       ZIO.scoped(
         for
@@ -378,8 +379,9 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("afterRender hooks run after initial render and message render") {
+    test("afterRender hooks run after initial, empty-diff, and changed renders") {
       enum Msg:
+        case Noop
         case Inc
 
       for
@@ -398,28 +400,39 @@ object LifecycleHookSpec extends ZIOSpecDefault:
                  ZIO.succeed(0)
 
                def handleMessage(model: Int, ctx: MessageContext) =
-                 case Msg.Inc => ZIO.succeed(model + 1)
+                  case Msg.Noop => ZIO.succeed(model)
+                  case Msg.Inc  => ZIO.succeed(model + 1)
 
-               def render(model: Int): HtmlElement[Msg] =
-                 div(button(scalive.on.click(Msg.Inc), "inc"), span(model.toString))
+               override def view(model: Signal[Int]): HtmlElement[Msg] =
+                 div(
+                   button(scalive.on.click(Msg.Noop), "noop"),
+                   button(scalive.on.click(Msg.Inc), "inc"),
+                   span(model.map(_.toString))
+                 )
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
         result <- withOutbox(socket) { outbox =>
                     for
                       _ <- outbox.take
                       _ <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
-                       reply <- outbox.take
-                       recorded <- calls.get
-                     yield
-                       val renderedEvents = diffFromPayload(reply._1).toVector.flatMap {
-                         case Diff.Tag(_, _, events, _, _, _, _, _) =>
-                           events.filter(_.name == RenderedEvent.value)
-                         case _ => Vector.empty
-                       }
-                       assertTrue(
-                         recorded == Vector(0, 0, 1, 1),
-                         renderedEvents.map(_.payload) == Vector.fill(2)(Json.Obj("model" -> Json.Num(1)))
-                       )
-                  }
+                      noopReply <- outbox.take
+                      _ <- socket.inbox.offer(click(Vector("root:div", "tag:1:button")) -> meta)
+                      changedReply <- outbox.take
+                      recorded     <- calls.get
+                    yield
+                      def renderedEvents(payload: Payload) =
+                        diffFromPayload(payload).toVector.flatMap {
+                          case Diff.Tag(_, _, events, _, _, _, _, _) =>
+                            events.filter(_.name == RenderedEvent.value)
+                          case _ => Vector.empty
+                        }
+                      assertTrue(
+                        recorded == Vector(0, 0, 0, 0, 1, 1),
+                        renderedEvents(noopReply._1).map(_.payload) ==
+                          Vector.fill(2)(Json.Obj("model" -> Json.Num(0))),
+                        renderedEvents(changedReply._1).map(_.payload) ==
+                          Vector.fill(2)(Json.Obj("model" -> Json.Num(1)))
+                      )
+                   }
       yield result
     },
     test("component event hooks run before component handleMessage") {
@@ -439,8 +452,11 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
           case Msg.Inc => ZIO.succeed(model + 1)
 
-        def render(props: Unit, model: Int, self: ComponentRef[Msg]) =
-          div(button(scalive.on.click(Msg.Inc), phx.target(self), "inc"), span(model.toString))
+        override def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[Msg]) =
+          div(
+            button(scalive.on.click(Msg.Inc), phx.target(self), "inc"),
+            span(model.map(_.toString))
+          )
 
       val lv = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
@@ -449,13 +465,22 @@ object LifecycleHookSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(idAttr := "root", liveComponent(HookedComponent, id = "hooked", props = ()))
-
-      val event = click(Vector("root:div", "component:0:1", "tag:0:button"), cid = Some(1))
 
       ZIO.scoped(for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        binding <- socket.renderedHtml.flatMap(html =>
+                     ZIO
+                       .fromOption("phx-click=\"([^\"]+)\"".r.findFirstMatchIn(html).map(_.group(1)))
+                       .orElseFail(new RuntimeException("Missing component click binding"))
+                   )
+        event = Payload.Event(
+                  `type` = "click",
+                  event = binding,
+                  value = Json.Obj.empty,
+                  cid = Some(1)
+                )
         result <- withOutbox(socket) { outbox =>
                     for
                       _     <- outbox.take

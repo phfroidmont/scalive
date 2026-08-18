@@ -49,10 +49,11 @@ final private[docs] class DocumentationExamplesLiveView(
   override def pageTitle(model: DocumentationExamplesModel): Option[String] =
     Some(s"${page.metadata.title} | Scalive")
 
-  def render(model: DocumentationExamplesModel): HtmlElement[Nothing] =
-    val examples    = application.bundle.examples.filter(matches(_, model.params))
-    val labs        = LabCatalog.entries.filter(matches(_, model.params))
-    val resultCount = examples.size + labs.size
+  override def view(model: Signal[DocumentationExamplesModel]): HtmlElement[Nothing] =
+    val params      = model.map(_.params)
+    val examples    = params.map(value => application.bundle.examples.filter(matches(_, value)))
+    val labs        = params.map(value => LabCatalog.entries.filter(matches(_, value)))
+    val resultCount = examples.zip(labs).map { case (examples, labs) => examples.size + labs.size }
     articleTag(
       cls                         := "docs-content docs-prose docs-examples-catalog",
       dataAttr("example-catalog") := "",
@@ -61,22 +62,22 @@ final private[docs] class DocumentationExamplesLiveView(
         h1(page.metadata.title),
         page.content.map(renderer.renderBlock(page.route))
       ),
-      discoveryControls(model.params),
+      discoveryControls(params),
       div(
         cls := "docs-example-catalog-toolbar",
         p(
           cls  := "docs-example-catalog-status",
           role := "status",
-          resultLabel(resultCount, model.params)
+          resultCount.zip(params).map { case (count, params) => resultLabel(count, params) }
         ),
-        topicFilters(model.params)
+        topicFilters(params)
       ),
-      if resultCount == 0 then emptyState()
-      else listing(examples, labs, model.params),
+      resultCount.map(_ == 0).when(emptyState()),
+      resultCount.map(_ != 0).when(listing(examples, labs, params)),
       renderer.pageLinks(page)
     )
 
-  private def discoveryControls(params: DocumentationExamplesParams): HtmlElement[Nothing] =
+  private def discoveryControls(params: Signal[DocumentationExamplesParams]): HtmlElement[Nothing] =
     sectionTag(
       cls        := "docs-example-discovery",
       aria.label := "Find an example",
@@ -89,42 +90,44 @@ final private[docs] class DocumentationExamplesLiveView(
           htmlAttr("for", StringAsIsEncoder) := "docs-example-search-input",
           "Search examples"
         ),
-        params.topic.map(topic =>
-          input(
-            typ      := "hidden",
-            nameAttr := DocumentationApplication.TopicParameter,
-            value    := topic
-          )
-        ),
+        params
+          .map(_.topic).option(topic =>
+            input(
+              typ      := "hidden",
+              nameAttr := DocumentationApplication.TopicParameter,
+              value    := topic
+            )
+          ),
         div(
           cls := "docs-example-search-control",
           input(
             idAttr      := "docs-example-search-input",
             typ         := "search",
             nameAttr    := DocumentationApplication.ExamplesQueryParameter,
-            value       := params.q.getOrElse(""),
+            value       := params.map(_.q.getOrElse("")),
             placeholder := "Search APIs and concepts, like LiveStream or ZLayer",
             htmlAttr("autocomplete", StringAsIsEncoder) := "off"
           ),
           button(typ := "submit", "Search")
         )
       ),
-      Option.when(params.q.isEmpty && params.topic.isEmpty)(
-        navTag(
-          cls        := "docs-example-category-nav",
-          aria.label := "Example categories",
-          span("Explore:"),
-          categories.map(category => a(href := s"#${categoryId(category)}", category.label)),
-          a(href := "#complete-applications", "Complete applications")
+      params
+        .map(value => value.q.isEmpty && value.topic.isEmpty).when(
+          navTag(
+            cls        := "docs-example-category-nav",
+            aria.label := "Example categories",
+            span("Explore:"),
+            categories.map(category => a(href := s"#${categoryId(category)}", category.label)),
+            a(href := "#complete-applications", "Complete applications")
+          )
         )
-      )
     )
 
-  private def topicFilters(params: DocumentationExamplesParams): HtmlElement[Nothing] =
+  private def topicFilters(params: Signal[DocumentationExamplesParams]): HtmlElement[Nothing] =
     detailsTag(
       cls := "docs-example-topic-disclosure",
       summaryTag(
-        span(activeTopicLabel(params.topic)),
+        span(params.map(value => activeTopicLabel(value.topic))),
         span(cls := "docs-example-topic-count", s"${topics.size}")
       ),
       navTag(
@@ -138,104 +141,112 @@ final private[docs] class DocumentationExamplesLiveView(
   private def topicLink(
     topic: Option[String],
     label: String,
-    params: DocumentationExamplesParams
+    params: Signal[DocumentationExamplesParams]
   ): HtmlElement[Nothing] =
-    val active = params.topic == topic
-    val mods   = Vector[Mod[Nothing]](
-      dataAttr("example-topic-filter") := topic.getOrElse("all")
-    ) ++ Option.when(active)((ariaCurrent := "page"): Mod[Nothing]).toVector ++
-      Vector(Mod.Content.Text(label))
     link.pushPatch(
-      DocumentationApplication.ExamplesCatalogRoute.location(params.copy(topic = topic)),
-      mods*
+      params.map(value =>
+        DocumentationApplication.ExamplesCatalogRoute.location(value.copy(topic = topic))
+      ),
+      dataAttr("example-topic-filter") := topic.getOrElse("all"),
+      ariaCurrent.optional(params.map(value => Option.when(value.topic == topic)("page"))),
+      label
     )
 
   private def listing(
-    examples: Vector[ExampleDefinition],
-    labs: Vector[LabDescriptor],
-    params: DocumentationExamplesParams
+    examples: Signal[Vector[ExampleDefinition]],
+    labs: Signal[Vector[LabDescriptor]],
+    params: Signal[DocumentationExamplesParams]
   ): HtmlElement[Nothing] =
-    val filtered = params.q.isDefined || params.topic.isDefined
-    val sections =
-      if filtered then
-        Vector(
-          sectionTag(
-            cls := "docs-example-category docs-example-filtered-results",
-            h2("Matching examples"),
-            div(
-              cls := "docs-example-card-grid",
-              examples.map(exampleCard(_, showCategory = true)),
-              labs.map(labCard(_, showCategory = true))
-            )
+    val filtered = params.map(value => value.q.isDefined || value.topic.isDefined)
+    div(
+      cls := "docs-example-listing",
+      filtered.when(
+        sectionTag(
+          cls := "docs-example-category docs-example-filtered-results",
+          h2("Matching examples"),
+          div(
+            cls := "docs-example-card-grid",
+            examples.splitBy(_.descriptor.id) { (_, example) =>
+              exampleCard(example, showCategory = true)
+            },
+            labs.splitBy(_.id)((_, lab) => labCard(lab, showCategory = true))
           )
         )
-      else
-        categories.map { category =>
-          val entries = examples.filter(_.descriptor.category == category)
+      ),
+      categories.map { category =>
+        filtered
+          .map(!_).when(
+            sectionTag(
+              idAttr := categoryId(category),
+              cls    := "docs-example-category",
+              div(
+                cls := "docs-example-category-heading",
+                h2(category.label),
+                p(category.description)
+              ),
+              div(
+                cls := "docs-example-card-grid",
+                examples.map(_.filter(_.descriptor.category == category)).splitBy(_.descriptor.id) {
+                  (_, example) => exampleCard(example, showCategory = false)
+                }
+              )
+            )
+          )
+      },
+      filtered
+        .zip(labs).map { case (filtered, labs) => !filtered && labs.nonEmpty }.when(
           sectionTag(
-            idAttr := categoryId(category),
-            cls    := "docs-example-category",
+            idAttr := "complete-applications",
+            cls    := "docs-example-category docs-example-lab-category",
             div(
               cls := "docs-example-category-heading",
-              h2(category.label),
-              p(category.description)
+              h2("Complete applications"),
+              p("Standalone routes that combine multiple Scalive capabilities.")
             ),
             div(
               cls := "docs-example-card-grid",
-              entries.map(exampleCard(_, showCategory = false))
+              labs.splitBy(_.id)((_, lab) => labCard(lab, showCategory = false))
             )
           )
-        }
-    val labSection = Option
-      .when(!filtered && labs.nonEmpty)(
-        sectionTag(
-          idAttr := "complete-applications",
-          cls    := "docs-example-category docs-example-lab-category",
-          div(
-            cls := "docs-example-category-heading",
-            h2("Complete applications"),
-            p("Standalone routes that combine multiple Scalive capabilities.")
-          ),
-          div(
-            cls := "docs-example-card-grid",
-            labs.map(labCard(_, showCategory = false))
-          )
         )
-      ).toVector
-    div(
-      cls := "docs-example-listing",
-      sections.map(section => Mod.Content.Tag(section): Mod[Nothing]),
-      labSection.map(section => Mod.Content.Tag(section): Mod[Nothing])
     )
   end listing
 
   private def exampleCard(
-    example: ExampleDefinition,
+    example: Signal[ExampleDefinition],
     showCategory: Boolean
   ): HtmlElement[Nothing] =
-    val descriptor = example.descriptor
-    val route      = s"/examples/${descriptor.id}"
-    val location   = application.location(route).getOrElse {
-      throw new IllegalArgumentException(s"Missing validated example route: $route")
+    val descriptor = example.map(_.descriptor)
+    val location   = descriptor.map { descriptor =>
+      val route = s"/examples/${descriptor.id}"
+      application.location(route).getOrElse {
+        throw new IllegalArgumentException(s"Missing validated example route: $route")
+      }
     }
-    val sources = example.sources.map(source =>
-      source.label -> application.bundle.apiReference.metadata.sourceLink(
-        ApiSource.Repository(source.region)
+    val sources = example.map(
+      _.sources.map(source =>
+        source.label -> application.bundle.apiReference.metadata.sourceLink(
+          ApiSource.Repository(source.region)
+        )
       )
     )
     articleTag(
       cls                      := "docs-example-card",
-      dataAttr("example-card") := descriptor.id,
-      Option.when(showCategory)(p(cls := "docs-example-card-kind", descriptor.category.label)),
-      h3(link.pushNavigate(location, descriptor.title, span(aria.hidden := true, " →"))),
-      p(descriptor.description),
+      dataAttr("example-card") := descriptor.map(_.id),
+      Option.when(showCategory)(
+        p(cls := "docs-example-card-kind", descriptor.map(_.category.label))
+      ),
+      h3(link.pushNavigate(location, descriptor.map(_.title), span(aria.hidden := true, " →"))),
+      p(descriptor.map(_.description)),
       ul(
         cls := "docs-example-card-topics",
-        descriptor.topics.take(2).map { topic =>
+        descriptor.map(_.topics.take(2)).splitBy(identity) { (_, topic) =>
           li(
             link.pushPatch(
-              DocumentationApplication.ExamplesCatalogRoute.location(
-                DocumentationExamplesParams(None, Some(ExampleTopic.key(topic)))
+              topic.map(value =>
+                DocumentationApplication.ExamplesCatalogRoute.location(
+                  DocumentationExamplesParams(None, Some(ExampleTopic.key(value)))
+                )
               ),
               topic
             )
@@ -246,10 +257,12 @@ final private[docs] class DocumentationExamplesLiveView(
         link.pushNavigate(location, "Open example"),
         div(
           cls := "docs-example-source-links",
-          sources.map { case (label, source) =>
+          sources.splitBy(_._1) { (_, entry) =>
             a(
-              href := source.url,
-              if sources.size == 1 then "Source" else label
+              href := entry.map(_._2.url),
+              entry.zip(sources).map { case ((label, _), sources) =>
+                if sources.size == 1 then "Source" else label
+              }
             )
           }
         )
@@ -257,21 +270,23 @@ final private[docs] class DocumentationExamplesLiveView(
     )
   end exampleCard
 
-  private def labCard(lab: LabDescriptor, showCategory: Boolean): HtmlElement[Nothing] =
+  private def labCard(lab: Signal[LabDescriptor], showCategory: Boolean): HtmlElement[Nothing] =
     articleTag(
       cls                        := "docs-example-card docs-lab-card",
-      dataAttr("example-card")   := lab.id,
+      dataAttr("example-card")   := lab.map(_.id),
       dataAttr("standalone-lab") := "",
       Option.when(showCategory)(p(cls := "docs-example-card-kind", "Complete application")),
-      h3(a(href := lab.route, lab.title, span(aria.hidden := true, " →"))),
-      p(lab.description),
+      h3(a(href := lab.map(_.route), lab.map(_.title), span(aria.hidden := true, " →"))),
+      p(lab.map(_.description)),
       ul(
         cls := "docs-example-card-topics",
-        lab.topics.take(2).map { topic =>
+        lab.map(_.topics.take(2)).splitBy(identity) { (_, topic) =>
           li(
             link.pushPatch(
-              DocumentationApplication.ExamplesCatalogRoute.location(
-                DocumentationExamplesParams(None, Some(ExampleTopic.key(topic)))
+              topic.map(value =>
+                DocumentationApplication.ExamplesCatalogRoute.location(
+                  DocumentationExamplesParams(None, Some(ExampleTopic.key(value)))
+                )
               ),
               topic
             )
@@ -279,7 +294,7 @@ final private[docs] class DocumentationExamplesLiveView(
         }
       ),
       footerTag(
-        a(href := lab.route, lab.actionLabel),
+        a(href := lab.map(_.route), lab.map(_.actionLabel)),
         link.pushNavigate(
           application.location("/guides/authentication").getOrElse {
             throw new IllegalArgumentException("Missing authentication guide route")

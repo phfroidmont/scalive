@@ -19,19 +19,22 @@ Import `scalive.*`, then call tag values such as @:apiSymbol(lazy-val:scalive.di
 Pass attributes and children in document order:
 
 ```scala
-def render(model: Model): HtmlElement[Msg] =
+def view(model: Signal[Model]): HtmlElement[Msg] =
   sectionTag(
     cls        := "cart",
     aria.label := "Shopping cart",
     h1("Cart"),
-    p(s"${model.itemCount} items")
+    p(model.map(model => s"${model.itemCount} items"))
   )
 ```
 
 A tag call produces an @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Strings
 become escaped text content, nested elements become child content, and an
-`IterableOnce` of modifiers can be passed directly. Use ordinary Scala
-expressions for conditional and repeated content.
+`IterableOnce` of static modifiers can be passed directly. Derive dynamic text
+and attributes with signal `.map`; use staged signal operators such as
+`choose`, `option`, and `splitBy` for conditional and repeated content. The
+`view` method constructs this signal-backed view graph once per graph lifetime
+rather than rebuilding the tree after every model update.
 
 Use the named tag definitions when they exist. The DSL gives Scala-safe names to
 HTML names that would otherwise conflict with Scala or another exported symbol:
@@ -126,7 +129,7 @@ button(on.click(Msg.Clear), "Clear")
 ```
 
 The message type remains part of the whole tree. If
-@:apiSymbol(def:scalive.LiveView.render)`render`@:@ returns
+@:apiSymbol(def:scalive.LiveView.view)`view`@:@ returns
 `HtmlElement[Msg]`, a binding that produces another message type does not
 compile. The shopping cart uses this directly for product-specific add and
 remove messages.
@@ -163,23 +166,24 @@ input(on.blur.debounce(300.millis).withValue(Msg.SearchChanged.apply))
 
 ## Key Repeated Content {#key-repeated-content}
 
-Use @:apiSymbol(extension:scalive.splitBy)`splitBy(key)(render)`@:@ when collection entries have stable
-domain identity. Choose a key that is unique within that rendered collection and
+Use @:apiSymbol(extension:scalive.splitBy)`splitBy(key) { ... }`@:@ on a collection
+signal when entries have stable domain identity. Choose a key that is unique
+within that collection and
 does not change while the entry represents the same entity:
 
 ```scala
 tbody(
-  model.lines.splitBy(_.product.sku) { (sku, line) =>
+  model.map(_.lines).splitBy(_.product.sku) { (sku, line) =>
     tr(
       dataAttr("cart-line") := sku,
-      td(line.product.name),
-      td(line.quantity.toString)
+      td(line.map(_.product.name)),
+      td(line.map(_.quantity.toString))
     )
   }
 )
 ```
 
-Scalive's tree diff uses the keys to match entries between renders. Current
+Scalive's keyed diff uses the keys to match entries between updates. Current
 tests cover unchanged keyed subtrees producing no diff, reorders producing
 index changes without resending unchanged entry payloads, changed entries being
 merged into reorder payloads, and deletion reducing the keyed count. Prefer a
@@ -187,8 +191,8 @@ SKU, database identifier, or another domain key. Use
 @:apiSymbol(extension:scalive.splitByIndex)`splitByIndex`@:@ only when
 position is the identity and reordering is not meaningful.
 
-The migrated shopping cart combines typed attributes, product-specific event
-messages, conditional content, and SKU-keyed rows in one render function:
+The shopping cart example combines typed attributes, product-specific event
+messages, staged conditional content, and SKU-keyed rows in one view graph:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/ShoppingCartExample.scala, shopping-cart-example)
 

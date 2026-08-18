@@ -156,7 +156,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
           symbols.find(_.qualifiedName == name)
             .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))
         ),
-        liveComponent.exists(_.signatures.size == 3),
+        liveComponent.exists(_.signatures.size == 8),
         liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
         hasSignature(symbols, "scalive.dropTarget", ApiSymbolKind.Extension,
           "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"),

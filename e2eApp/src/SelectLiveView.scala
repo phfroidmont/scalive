@@ -12,7 +12,10 @@ class SelectLiveView extends LiveView[Msg, Model]:
     case Msg.ChangeSelected(value) =>
       model.copy(selected = value, validated = true)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val selectedValue = model.map(_.selected)
+    val hasError      = model.map(_.hasError)
+
     div(
       styleAttr := "padding: 20px; max-width: 500px; font-family: sans-serif;",
       styleTag(
@@ -36,21 +39,22 @@ class SelectLiveView extends LiveView[Msg, Model]:
           select(
             idAttr   := "select_form_select3",
             nameAttr := "select_form[select3]",
-            cls      := (if model.hasError then "has-error" else ""),
-            option(value := "1", selected  := (model.selected == "1"), "1"),
-            option(value := "2", selected  := (model.selected == "2"), "2"),
-            option(value := "3", selected  := (model.selected == "3"), "3"),
-            option(value := "4", selected  := (model.selected == "4"), "4"),
-            option(value := "5", selected  := (model.selected == "5"), "5"),
-            option(value := "6", selected  := (model.selected == "6"), "6"),
-            option(value := "7", selected  := (model.selected == "7"), "7"),
-            option(value := "8", selected  := (model.selected == "8"), "8"),
-            option(value := "9", selected  := (model.selected == "9"), "9"),
-            option(value := "10", selected := (model.selected == "10"), "10")
+            cls      := hasError.map(if _ then "has-error" else ""),
+            option(value := "1", selected  := selectedValue.map(_ == "1"), "1"),
+            option(value := "2", selected  := selectedValue.map(_ == "2"), "2"),
+            option(value := "3", selected  := selectedValue.map(_ == "3"), "3"),
+            option(value := "4", selected  := selectedValue.map(_ == "4"), "4"),
+            option(value := "5", selected  := selectedValue.map(_ == "5"), "5"),
+            option(value := "6", selected  := selectedValue.map(_ == "6"), "6"),
+            option(value := "7", selected  := selectedValue.map(_ == "7"), "7"),
+            option(value := "8", selected  := selectedValue.map(_ == "8"), "8"),
+            option(value := "9", selected  := selectedValue.map(_ == "9"), "9"),
+            option(value := "10", selected := selectedValue.map(_ == "10"), "10")
           )
         )
       )
     )
+  end view
 
 end SelectLiveView
 

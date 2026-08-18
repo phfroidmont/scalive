@@ -61,6 +61,24 @@ val router = Live.router
   .withLayout(applicationShell)
 ```
 
+Ordinary layouts are signal-backed view graphs. Their `params`, `request`, and
+`currentUrl` context values are read-only `Signal`s, so route-dependent chrome
+updates without reconstructing the layout:
+
+```scala
+val routeShell = LiveLayout[WorkspaceId, CurrentUser] { (content, ctx) =>
+  div(
+    dataAttr("workspace") := ctx.params.map(_.value),
+    p("Signed in as ", ctx.context.name),
+    mainTag(content)
+  )
+}
+```
+
+Root-layout context remains value-backed because the root document is rendered
+only for the disconnected HTTP response; connected diffs patch the LiveView
+inside it.
+
 Router layouts are outermost, followed by session layouts and route layouts.
 Within one level, registration order is preserved. Root layouts do not compose:
 a route root overrides a session root, which overrides the router root.

@@ -30,5 +30,6 @@ private[scalive] object SocketCrashRuntime:
             state.inbox.shutdown *>
             state.asyncQueue.shutdown *>
             state.componentOutputQueue.shutdown *>
+            state.lifecycleLock.withPermit(SocketViewGraphRuntime.disposeAll(state)) *>
             state.onCrash
       }

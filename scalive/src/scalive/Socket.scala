@@ -19,6 +19,8 @@ import scalive.socket.SocketUploadProtocol
 final private[scalive] case class Socket[Msg, Model] private (
   id: String,
   token: String,
+  joinRef: Option[Int],
+  nestedGeneration: Option[Long],
   inbox: Queue[(Payload.Event, WebSocketMessage.Meta)],
   livePatch: (String, WebSocketMessage.Meta) => Task[Payload.Reply],
   allowUpload: Payload.AllowUpload => Task[Payload.Reply],
@@ -45,15 +47,84 @@ private[scalive] object Socket:
     tokenConfig: TokenConfig = TokenConfig.default,
     initialUrl: URL = URL.root,
     initialFlash: Map[String, String] = Map.empty,
-    renderRoot: Option[(Model, URL) => HtmlElement[Msg]] = None,
     paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model] =
       LiveRouteParamsRuntime.none[Any, Msg, Model],
     enqueueInitReply: Boolean = true,
     onCrash: UIO[Unit] = ZIO.unit,
     ownsPageTitle: Boolean = true,
-    runtimeTrace: RuntimeTrace = RuntimeTrace.Disabled
+    runtimeTrace: RuntimeTrace = RuntimeTrace.Disabled,
+    nestedGeneration: Option[Long] = None
   ): RIO[Scope, Socket[Msg, Model]] =
-    val rootRenderer   = renderRoot.getOrElse((model: Model, _: URL) => lv.render(model))
+    startWithRoot(
+      id,
+      token,
+      lv,
+      ctx,
+      meta,
+      tokenConfig,
+      initialUrl,
+      initialFlash,
+      input => lv.view(input.map(_._1)),
+      paramsRuntime,
+      enqueueInitReply,
+      onCrash,
+      ownsPageTitle,
+      runtimeTrace,
+      nestedGeneration
+    )
+
+  def start[Msg: ClassTag, Model](
+    id: String,
+    token: String,
+    lv: LiveView[Msg, Model],
+    ctx: LiveContext,
+    meta: WebSocketMessage.Meta,
+    tokenConfig: TokenConfig,
+    initialUrl: URL,
+    initialFlash: Map[String, String],
+    rootView: Signal[(Model, URL)] => HtmlElement[Msg],
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
+    enqueueInitReply: Boolean,
+    onCrash: UIO[Unit],
+    ownsPageTitle: Boolean,
+    runtimeTrace: RuntimeTrace,
+    nestedGeneration: Option[Long]
+  ): RIO[Scope, Socket[Msg, Model]] =
+    startWithRoot(
+      id,
+      token,
+      lv,
+      ctx,
+      meta,
+      tokenConfig,
+      initialUrl,
+      initialFlash,
+      rootView,
+      paramsRuntime,
+      enqueueInitReply,
+      onCrash,
+      ownsPageTitle,
+      runtimeTrace,
+      nestedGeneration
+    )
+
+  private def startWithRoot[Msg: ClassTag, Model](
+    id: String,
+    token: String,
+    lv: LiveView[Msg, Model],
+    ctx: LiveContext,
+    meta: WebSocketMessage.Meta,
+    tokenConfig: TokenConfig,
+    initialUrl: URL,
+    initialFlash: Map[String, String],
+    rootView: Signal[(Model, URL)] => HtmlElement[Msg],
+    paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
+    enqueueInitReply: Boolean,
+    onCrash: UIO[Unit],
+    ownsPageTitle: Boolean,
+    runtimeTrace: RuntimeTrace,
+    nestedGeneration: Option[Long]
+  ): RIO[Scope, Socket[Msg, Model]] =
     val traceOperation = RuntimeTraceOperation.resolve(
       runtimeTrace,
       meta,
@@ -74,14 +145,16 @@ private[scalive] object Socket:
                    tokenConfig,
                    initialUrl,
                    initialFlash,
-                   rootRenderer,
                    paramsRuntime,
                    onCrash,
                    ownsPageTitle,
-                   runtimeTrace
+                   runtimeTrace,
+                   rootView
                  )
         clientFiber <- SocketInbound.startClientFiber(state)
         serverFiber <- SocketOutbound.startServerFiber(state)
+        stop = SocketOutbound.buildShutdown(state, clientFiber, serverFiber)
+        _ <- ZIO.addFinalizerExit(_ => stop.exit.unit)
         initReply    = Payload.okReply(LiveResponse.InitDiff(state.initDiff))
         initPayloads =
           if enqueueInitReply then (initReply -> state.meta) +: state.bootstrapPayloads.toList
@@ -125,11 +198,11 @@ private[scalive] object Socket:
         replaceNavigationFlash = (flash: Map[String, String]) =>
                                    SocketFlashRuntime.replaceNavigation(state.flashRef, flash)
         crash = SocketCrashRuntime.crash(state, s"LiveView $id crashed by linked child")
-        stop  = SocketOutbound.buildShutdown(state, clientFiber, serverFiber)
-        _ <- ZIO.addFinalizerExit(_ => stop.exit.unit)
       yield Socket[Msg, Model](
         id,
         token,
+        meta.joinRef,
+        nestedGeneration,
         state.inbox,
         livePatch,
         allowUpload,
@@ -147,5 +220,5 @@ private[scalive] object Socket:
         stop
       )
     }
-  end start
+  end startWithRoot
 end Socket

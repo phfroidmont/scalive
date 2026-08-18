@@ -17,7 +17,7 @@ final class ShoppingCartExample
     case Msg.Remove(product) => ZIO.succeed(model.remove(product))
     case Msg.Clear           => ZIO.succeed(Model.empty)
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-cart",
       fieldSet(
@@ -48,61 +48,71 @@ final class ShoppingCartExample
               role                        := "status",
               aria.live                   := "polite",
               aria.atomic                 := true,
-              itemCountLabel(model.itemCount)
+              model.map(model => itemCountLabel(model.itemCount))
             )
           ),
           button(
             typ                    := "button",
             dataAttr("cart-clear") := "",
-            disabled               := model.lines.isEmpty,
+            disabled               := model.map(_.lines.isEmpty),
             on.click(Msg.Clear),
             "Clear"
           )
         ),
-        if model.lines.isEmpty then
-          p(dataAttr("cart-empty") := "", cls := "docs-cart-empty", "Add a product to begin.")
-        else
-          div(
-            cls := "docs-cart-table-scroll",
-            table(
-              cls        := "docs-cart-table",
-              aria.label := "Cart contents",
-              thead(
-                tr(
-                  th("Product"),
-                  th("Quantity"),
-                  th("Subtotal"),
-                  th(cls := "docs-visually-hidden", "Actions")
-                )
-              ),
-              tbody(
-                model.lines.splitBy(_.product.sku) { (sku, line) =>
+        model
+          .map(_.lines.isEmpty).choose(
+            p(dataAttr("cart-empty") := "", cls := "docs-cart-empty", "Add a product to begin."),
+            div(
+              cls := "docs-cart-table-scroll",
+              table(
+                cls        := "docs-cart-table",
+                aria.label := "Cart contents",
+                thead(
                   tr(
-                    dataAttr("cart-line") := sku,
-                    td(
-                      strong(line.product.name),
-                      span(cls := "docs-cart-unit-price", money(line.product.priceInCents))
-                    ),
-                    td(dataAttr("cart-quantity") := "", line.quantity.toString),
-                    td(dataAttr("cart-subtotal") := "", money(line.subtotalInCents)),
-                    td(
-                      button(
-                        typ                        := "button",
-                        dataAttr("remove-product") := sku,
-                        aria.label                 := s"Remove one ${line.product.name}",
-                        on.click(Msg.Remove(line.product)),
-                        "Remove one"
+                    th("Product"),
+                    th("Quantity"),
+                    th("Subtotal"),
+                    th(cls := "docs-visually-hidden", "Actions")
+                  )
+                ),
+                tbody(
+                  model.map(_.lines).splitBy(_.product.sku) { (sku, line) =>
+                    tr(
+                      dataAttr("cart-line") := sku,
+                      td(
+                        strong(line.map(_.product.name)),
+                        span(
+                          cls := "docs-cart-unit-price",
+                          line.map(line => money(line.product.priceInCents))
+                        )
+                      ),
+                      td(dataAttr("cart-quantity") := "", line.map(_.quantity.toString)),
+                      td(
+                        dataAttr("cart-subtotal") := "",
+                        line.map(line => money(line.subtotalInCents))
+                      ),
+                      td(
+                        button(
+                          typ                        := "button",
+                          dataAttr("remove-product") := sku,
+                          aria.label := line.map(line => s"Remove one ${line.product.name}"),
+                          on.click(line.map(line => Msg.Remove(line.product))),
+                          "Remove one"
+                        )
                       )
                     )
+                  }
+                ),
+                tfoot(
+                  tr(
+                    th("Total"),
+                    td(),
+                    td(
+                      dataAttr("cart-total") := "",
+                      model.map(model => money(model.totalInCents))
+                    ),
+                    td()
                   )
-                }
-              ),
-              tfoot(
-                tr(
-                  th("Total"),
-                  td(),
-                  td(dataAttr("cart-total") := "", money(model.totalInCents)),
-                  td()
                 )
               )
             )

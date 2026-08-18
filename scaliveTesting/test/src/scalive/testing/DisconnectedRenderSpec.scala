@@ -31,9 +31,9 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
         def handleMessage(model: Option[String], ctx: MessageContext) =
           case Msg.Changed | Msg.Submitted => ZIO.succeed(model)
 
-        def render(model: Option[String]) =
+        override def view(model: Signal[Option[String]]) =
           div(
-            p(model.getOrElse("missing")),
+            p(model.map(_.getOrElse("missing"))),
             form(
               idAttr            := "profile-form",
               action            := "/profiles",
@@ -77,7 +77,7 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
     test("reports zero and multiple form matches explicitly") {
       val view = new LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
-        def render(model: Unit) =
+        override def view(model: Signal[Unit]) =
           div(
             form(action := "/first"),
             form(action := "/second")

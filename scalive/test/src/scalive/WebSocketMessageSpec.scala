@@ -119,6 +119,39 @@ object WebSocketMessageSpec extends ZIOSpecDefault:
 
       assertTrue(result.exists(_.payload.isInstanceOf[Payload.Join]), flash.contains("flash-token"))
     },
+    test("accepts nested static tokens and preserves root tracked statics") {
+      def join(static: Json) = decode(
+        Json.Arr(
+          Json.Null,
+          Json.Str("1"),
+          Json.Str("lv:test"),
+          Json.Str(Protocol.EventJoin),
+          Json.Obj(
+            "url"      -> Json.Str("http://localhost/live"),
+            "redirect" -> Json.Null,
+            "session"  -> Json.Str("session-token"),
+            "static"   -> static,
+            "params"   -> Json.Null,
+            "flash"    -> Json.Null,
+            "sticky"   -> Json.Bool(false)
+          )
+        )
+      )
+
+      val nested = join(Json.Str("nested-static-token"))
+      val root   = join(Json.Arr(Json.Str("/assets/app.js"), Json.Str("/assets/app.css")))
+      val nestedStatic = nested.toOption.collect {
+        case WebSocketMessage(_, _, _, _, value: Payload.Join, _) => value.static
+      }.flatten
+      val rootStatics = root.toOption.collect {
+        case WebSocketMessage(_, _, _, _, value: Payload.Join, _) => value.static
+      }.flatten
+
+      assertTrue(
+        nestedStatic.isEmpty,
+        rootStatics.contains(List("/assets/app.js", "/assets/app.css"))
+      )
+    },
     test("decodeBinaryPush returns Left for unsupported event") {
       val result = WebSocketMessage.decodeBinaryPush(
         binaryFrame(

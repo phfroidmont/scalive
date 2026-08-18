@@ -3,7 +3,7 @@ package scalive
 import zio.http.Request
 import zio.http.URL
 
-/** Values available while rendering a Live layout or choosing a root layout key.
+/** Signal-backed route values available while constructing a Live layout graph.
   *
   * @param params
   *   the path values for the currently matched route
@@ -15,6 +15,13 @@ import zio.http.URL
   *   the typed mount-aspect context visible where the layout was attached
   */
 final case class LiveLayoutContext[+A, +Ctx](
+  params: Signal[A],
+  request: Signal[Request],
+  currentUrl: Signal[URL],
+  context: Ctx)
+
+/** Value-backed route inputs used to render and identify the disconnected root document. */
+final case class LiveRootLayoutContext[+A, +Ctx](
   params: A,
   request: Request,
   currentUrl: URL,
@@ -33,7 +40,7 @@ final case class LiveLayoutContext[+A, +Ctx](
   *   the mount context accepted by this layout
   */
 trait LiveLayout[-A, -Ctx]:
-  /** Wraps rendered LiveView content.
+  /** Constructs this layout once around signal-backed LiveView content.
     *
     * @param content
     *   the current typed LiveView tree
@@ -42,14 +49,17 @@ trait LiveLayout[-A, -Ctx]:
     * @return
     *   the wrapped tree with the same message type
     */
-  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
+  def view[Msg](
+    content: HtmlElement[Msg],
+    ctx: LiveLayoutContext[A, Ctx]
+  ): HtmlElement[Msg]
 
 /** Constructors and the no-op implementation for [[LiveLayout]]. */
 object LiveLayout:
   /** A layout that returns content unchanged. */
   val identity: LiveLayout[Any, Any] =
     new LiveLayout[Any, Any]:
-      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]) = content
+      def view[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]) = content
 
   /** Creates a layout from a rendering function.
     *
@@ -66,7 +76,7 @@ object LiveLayout:
     f: (HtmlElement[?], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
   ): LiveLayout[A, Ctx] =
     new LiveLayout[A, Ctx]:
-      def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]) =
+      def view[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]) =
         f(content, ctx).asInstanceOf[HtmlElement[Msg]]
 
 /** Renders the outer document shell and identifies live-navigation-compatible shells.
@@ -94,7 +104,7 @@ trait LiveRootLayout[-A, -Ctx]:
     * @return
     *   a stable root-layout compatibility identifier
     */
-  def key(ctx: LiveLayoutContext[A, Ctx]): String
+  def key(ctx: LiveRootLayoutContext[A, Ctx]): String
 
   /** Renders the outer document around laid-out LiveView content.
     *
@@ -110,7 +120,7 @@ trait LiveRootLayout[-A, -Ctx]:
   def render[Msg](
     content: HtmlElement[Msg],
     pageTitle: Option[String],
-    ctx: LiveLayoutContext[A, Ctx]
+    ctx: LiveRootLayoutContext[A, Ctx]
   ): HtmlElement[Msg]
 end LiveRootLayout
 
@@ -119,11 +129,11 @@ object LiveRootLayout:
   /** A transparent root layout with a framework-stable compatibility key. */
   val identity: LiveRootLayout[Any, Any] =
     new LiveRootLayout[Any, Any]:
-      def key(ctx: LiveLayoutContext[Any, Any]) = "scalive:identity-root"
+      def key(ctx: LiveRootLayoutContext[Any, Any]) = "scalive:identity-root"
       def render[Msg](
         content: HtmlElement[Msg],
         pageTitle: Option[String],
-        ctx: LiveLayoutContext[Any, Any]
+        ctx: LiveRootLayoutContext[Any, Any]
       ) = content
 
   /** Creates a root layout with a constant compatibility key.
@@ -141,14 +151,14 @@ object LiveRootLayout:
   def apply[A, Ctx](
     rootKey: String
   )(
-    f: (HtmlElement[?], Option[String], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
+    f: (HtmlElement[?], Option[String], LiveRootLayoutContext[A, Ctx]) => HtmlElement[?]
   ): LiveRootLayout[A, Ctx] =
     new LiveRootLayout[A, Ctx]:
-      def key(ctx: LiveLayoutContext[A, Ctx]) = rootKey
+      def key(ctx: LiveRootLayoutContext[A, Ctx]) = rootKey
       def render[Msg](
         content: HtmlElement[Msg],
         pageTitle: Option[String],
-        ctx: LiveLayoutContext[A, Ctx]
+        ctx: LiveRootLayoutContext[A, Ctx]
       ) = f(content, pageTitle, ctx).asInstanceOf[HtmlElement[Msg]]
 
   /** Creates a root layout whose compatibility key depends on the current layout context.
@@ -165,30 +175,34 @@ object LiveRootLayout:
     *   a context-sensitive root layout
     */
   def dynamic[A, Ctx](
-    rootKey: LiveLayoutContext[A, Ctx] => String
+    rootKey: LiveRootLayoutContext[A, Ctx] => String
   )(
-    f: (HtmlElement[?], Option[String], LiveLayoutContext[A, Ctx]) => HtmlElement[?]
+    f: (HtmlElement[?], Option[String], LiveRootLayoutContext[A, Ctx]) => HtmlElement[?]
   ): LiveRootLayout[A, Ctx] =
     new LiveRootLayout[A, Ctx]:
-      def key(ctx: LiveLayoutContext[A, Ctx]) = rootKey(ctx)
+      def key(ctx: LiveRootLayoutContext[A, Ctx]) = rootKey(ctx)
       def render[Msg](
         content: HtmlElement[Msg],
         pageTitle: Option[String],
-        ctx: LiveLayoutContext[A, Ctx]
+        ctx: LiveRootLayoutContext[A, Ctx]
       ) = f(content, pageTitle, ctx).asInstanceOf[HtmlElement[Msg]]
 end LiveRootLayout
 
 final private[scalive] case class LiveLayoutLayer[A, Ctx, LayerCtx](
   layout: LiveLayout[A, LayerCtx],
   project: Ctx => LayerCtx):
-  def render[Msg](
+  def view[Msg](
     content: HtmlElement[Msg],
-    params: A,
-    request: Request,
-    currentUrl: URL,
+    params: Signal[A],
+    request: Signal[Request],
+    currentUrl: Signal[URL],
     context: Ctx
   ): HtmlElement[Msg] =
-    layout.render(content, LiveLayoutContext(params, request, currentUrl, project(context)))
+    val layerContext = project(context)
+    layout.view(
+      content,
+      LiveLayoutContext(params, request, currentUrl, layerContext)
+    )
 
   def mapContext[Ctx2](f: Ctx2 => Ctx): LiveLayoutLayer[A, Ctx2, LayerCtx] =
     copy(project = project.compose(f))
@@ -197,7 +211,7 @@ final private[scalive] case class LiveRootLayoutLayer[A, Ctx, LayerCtx](
   layout: LiveRootLayout[A, LayerCtx],
   project: Ctx => LayerCtx):
   def key(params: A, request: Request, currentUrl: URL, context: Ctx): String =
-    layout.key(LiveLayoutContext(params, request, currentUrl, project(context)))
+    layout.key(LiveRootLayoutContext(params, request, currentUrl, project(context)))
 
   def render[Msg](
     content: HtmlElement[Msg],
@@ -210,7 +224,7 @@ final private[scalive] case class LiveRootLayoutLayer[A, Ctx, LayerCtx](
     layout.render(
       content,
       pageTitle,
-      LiveLayoutContext(params, request, currentUrl, project(context))
+      LiveRootLayoutContext(params, request, currentUrl, project(context))
     )
 
   def mapContext[Ctx2](f: Ctx2 => Ctx): LiveRootLayoutLayer[A, Ctx2, LayerCtx] =

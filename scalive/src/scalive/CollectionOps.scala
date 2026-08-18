@@ -35,6 +35,56 @@ extension [T](items: IterableOnce[T])
     Mod.Content.Keyed(entries)
 end extension
 
+extension [T](stream: Signal[streams.LiveStream[T]])
+  /** Projects each stable stream DOM ID once while updating its child-scoped item signal. */
+  def stream[Msg](project: (String, Signal[T]) => HtmlElement[Msg]): Mod[Msg] =
+    Mod.Content.SignalStream(stream, project)
+
+  /** Renders a signal-backed stream in a protocol-owned container. */
+  def renderIn[Msg](
+    container: HtmlTag,
+    mods: Mod[Msg]*
+  )(
+    project: Signal[T] => HtmlElement[Msg]
+  ): HtmlElement[Msg] =
+    val containerMods = mods.filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
+    val entries       = stream.stream { (domId, item) =>
+      val element = project(item)
+      HtmlElement(
+        element.tag,
+        element.mods.filterNot(isAttr(_, "id")).prepended(idAttr := domId)
+      )
+    }
+
+    HtmlElement(
+      container,
+      Vector(
+        idAttr     := stream.map(_.name),
+        phx.update := PhxUpdate.Stream
+      ) ++ containerMods :+ entries
+    )
+
+extension [T, Items <: Iterable[T]](items: Signal[Items])
+  /** Projects each stable key once and updates its child-scoped item signal on later evaluations.
+    */
+  def splitBy[Key, Msg](
+    key: T => Key
+  )(
+    project: (Key, Signal[T]) => HtmlElement[Msg]
+  ): Mod[Msg] =
+    Mod.Content.SignalKeyed(
+      items.asInstanceOf[Signal[Iterable[T]]],
+      key,
+      project
+    )
+
+  /** Projects positional rows whose identity is their current zero-based index. */
+  def splitByIndex[Msg](project: (Int, Signal[T]) => HtmlElement[Msg]): Mod[Msg] =
+    Mod.Content.SignalKeyedByIndex(
+      items.asInstanceOf[Signal[Iterable[T]]],
+      project
+    )
+
 extension [T](stream: streams.LiveStream[T])
   /** Renders a LiveView stream as low-level keyed stream content.
     *
@@ -132,10 +182,15 @@ private def isAttr(mod: Mod[?], expectedName: String): Boolean =
   mod match
     case Mod.Attr.Static(name, _)                => name == expectedName
     case Mod.Attr.StaticValueAsPresence(name, _) => name == expectedName
+    case Mod.Attr.SignalValue(name, _)           => name == expectedName
+    case Mod.Attr.SignalOptionalValue(name, _)   => name == expectedName
+    case Mod.Attr.SignalValueAsPresence(name, _) => name == expectedName
     case Mod.Attr.Binding(name, _)               => name == expectedName
+    case Mod.Attr.SignalBinding(name, _, _)      => name == expectedName
     case Mod.Attr.FormBinding(name, _)           => name == expectedName
     case Mod.Attr.FormEventBinding(name, _, _)   => name == expectedName
     case Mod.Attr.JsBinding(name, _)             => name == expectedName
+    case Mod.Attr.SignalJsBinding(name, _)       => name == expectedName
     case Mod.Attr.RoutedBinding(name, _)         => name == expectedName
     case Mod.Attr.Group(attrs)                   => attrs.exists(isAttr(_, expectedName))
     case _: Mod.Content[?]                       => false

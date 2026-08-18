@@ -43,7 +43,7 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
       def handleMessage(model: String, ctx: MessageContext) =
         (_: Unit) => ZIO.succeed(model)
 
-      def render(model: String): HtmlElement[Unit] =
+      override def view(model: Signal[String]): HtmlElement[Unit] =
         div(model)
 
   private def runtimeFor(
@@ -159,7 +159,8 @@ object LiveMountAspectSpec extends ZIOSpecDefault:
 
         def mount(ctx: MountContext) = ZIO.succeed(instance)
         def handleMessage(model: Int, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
-        def render(model: Int): HtmlElement[Unit] = div(s"${dependency.value}:$model")
+        override def view(model: Signal[Int]): HtmlElement[Unit] =
+          div(model.map(value => s"${dependency.value}:$value"))
 
       val dependency = new Dependency:
         def value = "dependency"

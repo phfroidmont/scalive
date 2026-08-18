@@ -33,7 +33,7 @@ final class ActivityStreamExample
         Model(InitialActivities, stream, InitialNextId)
       }
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-activity-stream",
       sectionTag(
@@ -44,7 +44,7 @@ final class ActivityStreamExample
           strong(
             cls                        := "docs-activity-count",
             dataAttr("activity-count") := "",
-            model.activities.size.toString
+            model.map(_.activities.size.toString)
           )
         ),
         p(
@@ -61,29 +61,30 @@ final class ActivityStreamExample
           "Insert activity"
         )
       ),
-      model.activityStream.renderIn(
-        ol,
-        cls        := "docs-activity-list",
-        aria.label := "Recent activity"
-      ) { activity =>
-        li(
-          dataAttr("activity-row") := "",
-          div(
-            cls := "docs-activity-row-content",
-            span(cls  := "docs-activity-category", activity.category),
-            p(cls     := "docs-activity-message", activity.summary),
-            small(cls := "docs-activity-id", s"Activity #${activity.id}")
-          ),
-          button(
-            cls                         := "docs-activity-delete",
-            typ                         := "button",
-            dataAttr("delete-activity") := activity.id.toString,
-            aria.label                  := s"Delete activity ${activity.id}",
-            on.click(Msg.Delete(activity)),
-            "Delete"
+      model
+        .map(_.activityStream).renderIn(
+          ol,
+          cls        := "docs-activity-list",
+          aria.label := "Recent activity"
+        ) { activity =>
+          li(
+            dataAttr("activity-row") := "",
+            div(
+              cls := "docs-activity-row-content",
+              span(cls  := "docs-activity-category", activity.map(_.category)),
+              p(cls     := "docs-activity-message", activity.map(_.summary)),
+              small(cls := "docs-activity-id", activity.map(value => s"Activity #${value.id}"))
+            ),
+            button(
+              cls                         := "docs-activity-delete",
+              typ                         := "button",
+              dataAttr("delete-activity") := activity.map(_.id.toString),
+              aria.label                  := activity.map(value => s"Delete activity ${value.id}"),
+              on.click(activity.map(Msg.Delete(_))),
+              "Delete"
+            )
           )
-        )
-      }
+        }
     )
 
   private def initialModel(ctx: MountContext): LiveIO[Model] =

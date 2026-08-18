@@ -190,7 +190,53 @@ private[scalive] object WebSocketMessage:
     meta: Option[Json] = None)
 
   object Payload:
-    given JsonCodec[Payload.Join]                                = JsonCodec.derived
+    final private case class JoinWire(
+      url: Option[String],
+      redirect: Option[String],
+      session: String,
+      static: Option[Json],
+      params: Option[Map[String, Json]],
+      flash: Option[String],
+      sticky: Boolean)
+        derives JsonCodec
+
+    given JsonCodec[Payload.Join] = JsonCodec(
+      JsonEncoder[JoinWire].contramap(join =>
+        JoinWire(
+          join.url,
+          join.redirect,
+          join.session,
+          join.static.map(values => Json.Arr(values.map(Json.Str(_))*)),
+          join.params,
+          join.flash,
+          join.sticky
+        )
+      ),
+      JsonDecoder[JoinWire].mapOrFail { join =>
+        val trackedStatics = join.static match
+          case None | Some(Json.Str(_)) => Right(None)
+          case Some(Json.Arr(values))   =>
+            values
+              .foldLeft[Either[String, List[String]]](Right(Nil)) {
+                case (Right(result), Json.Str(value)) => Right(result :+ value)
+                case (_, other) => Left(s"Expected tracked static URL string, got $other")
+              }.map(Some(_))
+          case Some(other) =>
+            Left(s"Expected nested static token or tracked static URLs, got $other")
+
+        trackedStatics.map(static =>
+          Payload.Join(
+            join.url,
+            join.redirect,
+            join.session,
+            static,
+            join.params,
+            join.flash,
+            join.sticky
+          )
+        )
+      }
+    )
     given JsonCodec[Payload.UploadJoin]                          = JsonCodec.derived
     given JsonCodec[Payload.LivePatch]                           = JsonCodec.derived
     given JsonCodec[UploadPreflightEntry]                        = JsonCodec.derived

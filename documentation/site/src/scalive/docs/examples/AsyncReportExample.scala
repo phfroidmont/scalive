@@ -30,7 +30,8 @@ final class AsyncReportExample(instanceId: String)
     case Msg.ReportCompleted(result) =>
       ZIO.succeed(model.copy(report = model.report.updated(result)))
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
+    val report = model.map(_.report)
     div(
       cls := "docs-managed-work",
       div(
@@ -41,54 +42,72 @@ final class AsyncReportExample(instanceId: String)
         button(typ := "button", on.click(Msg.Retry), "Retry report"),
         button(
           typ      := "button",
-          disabled := !model.report.isLoading,
+          disabled := report.map(!_.isLoading),
           on.click(Msg.Cancel),
           "Cancel report"
         )
       ),
-      renderReportState(model.report)
+      report
+        .map(_ == AsyncValue.Empty).choose(
+          sectionTag(
+            dataAttr("report-state") := "",
+            aria.live                := "polite",
+            "Empty"
+          ),
+          reportPanel(
+            report.map(reportState),
+            report.map(reportValue),
+            report.map(reportStatus)
+          )
+        )
     )
+  end view
 
   private def start(model: Model, ctx: MessageContext, task: Task[Report]) =
     ctx.async
       .start(ReportTask)(task)(Msg.ReportCompleted(_))
       .as(model.copy(report = model.report.loading()))
 
-  private def renderReportState(value: AsyncValue[Report]): HtmlElement[Msg] =
-    value match
-      case AsyncValue.Empty =>
-        sectionTag(
-          dataAttr("report-state") := "",
-          aria.live                := "polite",
-          "Empty"
-        )
-      case AsyncValue.Loading(previous) =>
-        reportPanel("Loading", previous, "Generating report...")
-      case AsyncValue.Ok(report) =>
-        reportPanel("Succeeded", Some(report), "Report completed.")
-      case AsyncValue.Failed(previous, _) =>
-        reportPanel("Failed", previous, "The deterministic data source rejected the report.")
-      case AsyncValue.Cancelled(previous, reason) =>
-        reportPanel("Cancelled", previous, reason.getOrElse("Report generation was cancelled."))
-
   private def reportPanel(
-    state: String,
-    report: Option[Report],
-    status: String
+    state: Signal[String],
+    report: Signal[Option[Report]],
+    status: Signal[String]
   ): HtmlElement[Msg] =
     sectionTag(
       dataAttr("report-state") := "",
       aria.live                := "polite",
       h2(dataAttr("report-status") := "", state),
       p(status),
-      report.map { value =>
+      report.option { value =>
         articleTag(
-          h3(dataAttr("report-title") := "", value.title),
-          p(value.summary),
-          p(s"${value.rows} rows")
+          h3(dataAttr("report-title") := "", value.map(_.title)),
+          p(value.map(_.summary)),
+          p(value.map(value => s"${value.rows} rows"))
         )
       }
     )
+
+  private def reportState(value: AsyncValue[Report]): String = value match
+    case AsyncValue.Empty           => "Empty"
+    case AsyncValue.Loading(_)      => "Loading"
+    case AsyncValue.Ok(_)           => "Succeeded"
+    case AsyncValue.Failed(_, _)    => "Failed"
+    case AsyncValue.Cancelled(_, _) => "Cancelled"
+
+  private def reportValue(value: AsyncValue[Report]): Option[Report] = value match
+    case AsyncValue.Empty                  => None
+    case AsyncValue.Loading(previous)      => previous
+    case AsyncValue.Ok(report)             => Some(report)
+    case AsyncValue.Failed(previous, _)    => previous
+    case AsyncValue.Cancelled(previous, _) => previous
+
+  private def reportStatus(value: AsyncValue[Report]): String = value match
+    case AsyncValue.Empty                => "Empty"
+    case AsyncValue.Loading(_)           => "Generating report..."
+    case AsyncValue.Ok(_)                => "Report completed."
+    case AsyncValue.Failed(_, _)         => "The deterministic data source rejected the report."
+    case AsyncValue.Cancelled(_, reason) =>
+      reason.getOrElse("Report generation was cancelled.")
 end AsyncReportExample
 
 object AsyncReportExample:

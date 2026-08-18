@@ -16,24 +16,38 @@ private[scalive] object StaticBuilder:
       case Attr.Static(name, value)         => List(Some(s""" $name="${Escaping.escape(value)}"""))
       case Attr.StaticValueAsPresence(_, _) =>
         List(Some(""), None, Some(""))
+      case Attr.SignalValue(name, _) => List(Some(s""" $name="""), None, Some('"'.toString))
+      case Attr.SignalOptionalValue(_, _) | Attr.SignalValueAsPresence(_, _) =>
+        List(Some(""), None, Some(""))
       case Attr.Binding(name, _)             => List(Some(s""" $name="""), None, Some('"'.toString))
+      case Attr.SignalBinding(name, _, _)    => List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.FormBinding(name, _)         => List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.FormEventBinding(name, _, _) =>
         List(Some(s""" $name="""), None, Some('"'.toString))
-      case Attr.JsBinding(name, _)     => List(Some(s""" $name="""), None, Some('"'.toString))
+      case Attr.JsBinding(name, _)       => List(Some(s""" $name="""), None, Some('"'.toString))
+      case Attr.SignalJsBinding(name, _) =>
+        List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.RoutedBinding(name, _) => List(Some(s""" $name="""), None, Some('"'.toString))
       case Attr.Group(_)               =>
         throw new IllegalStateException("attribute groups must be flattened before rendering")
     }
 
     val children = el.contentMods.flatMap {
-      case Content.Text(text, raw)  => List(Some(if raw then text else Escaping.escape(text)))
-      case Content.Tag(child)       => buildStaticFragments(child)
-      case Content.Component(_, _)  => List(None)
-      case Content.LiveComponent(_) => List(None)
-      case Content.LiveView(_)      => List(None)
-      case Content.Flash(_, _)      => List(None)
-      case Content.Keyed(_, _, _)   => List(None)
+      case Content.Text(text, raw)        => List(Some(if raw then text else Escaping.escape(text)))
+      case Content.SignalText(_, _)       => List(None)
+      case Content.Tag(child)             => buildStaticFragments(child)
+      case Content.Component(_, _)        => List(None)
+      case Content.LiveComponent(_)       => List(None)
+      case Content.SignalLiveComponent(_) => List(None)
+      case Content.DynamicLiveComponent(_) => List(None)
+      case Content.LiveView(_)             => List(None)
+      case Content.SignalLiveView(_)       => List(None)
+      case Content.Flash(_, _)             => List(None)
+      case Content.Keyed(_, _, _)          => List(None)
+      case Content.SignalChoice(_, _) | Content.SignalModChoice(_, _) | Content.SignalOption(_, _) |
+          Content.SignalKeyed(_, _, _) | Content.SignalKeyedByIndex(_, _) |
+          Content.SignalStream(_, _) =>
+        List(None)
     }
 
     val static         = ListBuffer.empty[Option[String]]

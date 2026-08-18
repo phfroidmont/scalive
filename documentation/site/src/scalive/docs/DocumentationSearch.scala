@@ -31,12 +31,12 @@ final private[docs] class DocumentationSearchLiveView(application: Documentation
   override def pageTitle(model: DocumentationSearchModel): Option[String] =
     Some("Search | Scalive")
 
-  def render(model: DocumentationSearchModel): HtmlElement[Nothing] =
+  override def view(model: Signal[DocumentationSearchModel]): HtmlElement[Nothing] =
     articleTag(
       cls := "docs-content docs-search-page",
       h1("Search"),
       p("Search learning content, examples, API symbols, and compatibility notes."),
-      searchForm(model.query),
+      searchForm(model.map(_.query)),
       searchResults(model)
     )
 
@@ -47,7 +47,7 @@ final private[docs] class DocumentationSearchLiveView(application: Documentation
     )
     DocumentationSearchModel(query, all.take(MaxResults), all.size)
 
-  private def searchForm(query: Option[String]): HtmlElement[Nothing] =
+  private def searchForm(query: Signal[Option[String]]): HtmlElement[Nothing] =
     form(
       cls    := "docs-search-page-form",
       action := DocumentationApplication.SearchRoute,
@@ -62,7 +62,7 @@ final private[docs] class DocumentationSearchLiveView(application: Documentation
           idAttr                                      := "docs-search-page-input",
           typ                                         := "search",
           nameAttr                                    := DocumentationApplication.SearchParameter,
-          value                                       := query.getOrElse(""),
+          value                                       := query.map(_.getOrElse("")),
           placeholder                                 := "Try LiveView or handleMessage",
           htmlAttr("autocomplete", StringAsIsEncoder) := "off"
         ),
@@ -70,52 +70,57 @@ final private[docs] class DocumentationSearchLiveView(application: Documentation
       )
     )
 
-  private def searchResults(model: DocumentationSearchModel): HtmlElement[Nothing] =
+  private def searchResults(model: Signal[DocumentationSearchModel]): HtmlElement[Nothing] =
+    val noQuery    = model.map(_.query.isEmpty)
+    val noResults  = model.map(value => value.query.nonEmpty && value.results.isEmpty)
+    val hasResults = model.map(_.results.nonEmpty)
     sectionTag(
       cls      := "docs-search-results",
       ariaLive := "polite",
-      model.query match
-        case None =>
-          Vector[Mod[Nothing]](
-            Mod.Content.Tag(p("Enter a term to search the generated documentation index."))
-          )
-        case Some(query) if model.results.isEmpty =>
-          Vector[Mod[Nothing]](
-            Mod.Content.Tag(p(role := "status", s"No results for '$query'."))
-          )
-        case Some(query) =>
-          val summary =
-            if model.total <= MaxResults then s"${model.total} results for '$query'."
-            else s"Showing the first $MaxResults of ${model.total} results for '$query'."
-          Vector[Mod[Nothing]](
-            Mod.Content.Tag(p(role := "status", cls := "docs-search-summary", summary)),
-            Mod.Content.Tag(
-              ol(
-                model.results.map { entry =>
-                  li(
-                    cls := "docs-search-result",
-                    application.searchLocation(entry) match
-                      case Some(location) =>
-                        Vector[Mod[Nothing]](
-                          Mod.Content.Tag(link.pushNavigate(location, entry.title)),
-                          Mod.Content.Tag(
-                            span(
-                              cls := "docs-search-result-kind",
-                              DocumentationSearchLiveView.kindLabel(entry.kind)
-                            )
-                          ),
-                          Mod.Content.Tag(p(entry.description))
-                        )
-                      case None =>
-                        throw new IllegalArgumentException(
-                          s"Invalid search result destination: ${entry.id}"
-                        )
-                  )
-                }
-              )
+      noQuery.when(p("Enter a term to search the generated documentation index.")),
+      noResults.when(
+        p(
+          role := "status",
+          model.map(value => s"No results for '${value.query.getOrElse("")}'.")
+        )
+      ),
+      hasResults.when(
+        p(
+          role := "status",
+          cls  := "docs-search-summary",
+          model.map { value =>
+            val query = value.query.getOrElse("")
+            if value.total <= MaxResults then s"${value.total} results for '$query'."
+            else s"Showing the first $MaxResults of ${value.total} results for '$query'."
+          }
+        )
+      ),
+      hasResults.when(
+        ol(
+          model.map(_.results).splitBy(_.id) { (_, entry) =>
+            li(
+              cls := "docs-search-result",
+              link.pushNavigate(
+                entry.map(value =>
+                  application.searchLocation(value).getOrElse {
+                    throw new IllegalArgumentException(
+                      s"Invalid search result destination: ${value.id}"
+                    )
+                  }
+                ),
+                entry.map(_.title)
+              ),
+              span(
+                cls := "docs-search-result-kind",
+                entry.map(value => DocumentationSearchLiveView.kindLabel(value.kind))
+              ),
+              p(entry.map(_.description))
             )
-          )
+          }
+        )
+      )
     )
+  end searchResults
 end DocumentationSearchLiveView
 
 private[docs] object DocumentationSearchLiveView:

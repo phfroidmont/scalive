@@ -347,7 +347,7 @@ private[docs] object SiteLiveViewHarness:
                   def handleMessage(model: Model, ctx: MessageContext) =
                     liveView.handleMessage(model, ctx)
 
-                  def render(model: Model) = liveView.render(model)
+                  override def view(model: Signal[Model]) = liveView.view(model)
       channel <- LiveChannel.make(TokenConfig.default, None, runtimeTrace)
       context = LiveContext(
                   staticChanged = false,

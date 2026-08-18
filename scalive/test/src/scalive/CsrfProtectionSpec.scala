@@ -26,7 +26,7 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
   private def view = new LiveView[Unit, Unit]:
     def mount(ctx: MountContext) = ZIO.unit
     def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-    def render(model: Unit): HtmlElement[Unit] = div("ok")
+    override def view(model: Signal[Unit]): HtmlElement[Unit] = div("ok")
 
   private def ordinaryFormsView = new LiveView[Unit, Unit]:
     private val formModel = scalive.Form.of(
@@ -37,7 +37,7 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
 
     def mount(ctx: MountContext) = ZIO.unit
     def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-    def render(model: Unit): HtmlElement[Unit] =
+    override def view(model: Signal[Unit]): HtmlElement[Unit] =
       div(
         formModel.http(FormAction.from(SubmitRoute))(idAttr := "checked-post"),
         formModel.http(FormAction.from(SearchRoute))(idAttr := "checked-get"),
@@ -198,16 +198,22 @@ object CsrfProtectionSpec extends ZIOSpecDefault:
       val token = "connected-csrf-token"
       for
         components <- Ref.make(ComponentRuntimeState.empty)
-        rendered <- SocketComponentRuntime.renderRoot(
-                      scalive.Form.http(FormAction.from(SubmitRoute))(idAttr := "logout"),
+        graph = ViewGraph.build[Unit](_ =>
+                  CsrfProtection.injectForms(
+                    scalive.Form.http(FormAction.from(SubmitRoute))(idAttr := "logout"),
+                    token
+                  )
+                )
+        rendered <- SocketComponentRuntime.evaluateViewGraph(
+                      graph,
+                      (),
+                      SignalEvaluation.empty,
+                      revision = 1L,
                       components,
-                      LiveContext(
-                        staticChanged = false,
-                        connected = true,
-                        csrfToken = Some(token)
-                      )
+                      LiveContext(staticChanged = false, connected = true)
                     )
-        html = HtmlBuilder.build(rendered)
+        html = RenderSnapshot.renderHtml(rendered.compiled)
+        _   <- ZIO.succeed(graph.dispose())
       yield assertTrue(
         html.contains(s"name=\"${CsrfProtection.ParamName}\""),
         html.contains(s"value=\"$token\""),

@@ -40,7 +40,11 @@ final class ReportsExample(reports: Reports)
     case Msg.ResetSelection => ZIO.succeed(model.resetSelection)
     case Msg.Refresh        => load
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
+    val loaded = model.map {
+      case Model.Loaded(reports, selected) => Some((reports, selected))
+      case _                               => None
+    }
     div(
       cls := "docs-reports-example",
       div(
@@ -66,66 +70,76 @@ final class ReportsExample(reports: Reports)
           )
         )
       ),
-      model match
-        case Model.Loaded(reports, selected) =>
-          sectionTag(
-            cls        := "docs-reports-console",
-            aria.label := "Reports",
-            navTag(
-              cls        := "docs-reports-picker",
-              aria.label := "Available reports",
-              p(cls := "docs-reports-picker-label", "Available reports"),
-              reports.map { report =>
-                button(
-                  cls                   := "docs-report-option",
-                  typ                   := "button",
-                  dataAttr("report-id") := report.id.toString,
-                  dataAttr("selected")  := (report == selected).toString,
-                  aria.pressed          := (report == selected).toString,
-                  on.click(Msg.Select(report)),
-                  span(cls := "docs-report-option-title", report.title),
-                  span(
-                    cls := "docs-report-option-state",
-                    if report == selected then "Selected" else "View report"
-                  )
-                )
+      loaded.option { loaded =>
+        val reports  = loaded.map(_._1)
+        val selected = loaded.map(_._2)
+        sectionTag(
+          cls        := "docs-reports-console",
+          aria.label := "Reports",
+          navTag(
+            cls        := "docs-reports-picker",
+            aria.label := "Available reports",
+            p(cls := "docs-reports-picker-label", "Available reports"),
+            reports.splitBy(_.id) { (_, report) =>
+              val isSelected = report.zip(selected).map { case (report, selected) =>
+                report == selected
               }
-            ),
-            articleTag(
-              cls                     := "docs-report-detail",
-              dataAttr("report-card") := selected.id.toString,
-              p(cls := "docs-report-detail-label", "Selected report"),
-              h4(
-                cls                         := "docs-report-detail-title",
-                dataAttr("report-selected") := "",
-                selected.title
-              ),
-              p(
-                cls                        := "docs-report-detail-summary",
-                dataAttr("report-summary") := "",
-                selected.summary
-              ),
-              footerTag(
-                span("Report ID"),
-                code(s"#${selected.id}")
+              button(
+                cls                   := "docs-report-option",
+                typ                   := "button",
+                dataAttr("report-id") := report.map(_.id.toString),
+                dataAttr("selected")  := isSelected.map(_.toString),
+                aria.pressed          := isSelected.map(_.toString),
+                on.click(report.map(Msg.Select(_))),
+                span(cls := "docs-report-option-title", report.map(_.title)),
+                span(
+                  cls := "docs-report-option-state",
+                  isSelected.map(if _ then "Selected" else "View report")
+                )
               )
+            }
+          ),
+          articleTag(
+            cls                     := "docs-report-detail",
+            dataAttr("report-card") := selected.map(_.id.toString),
+            p(cls := "docs-report-detail-label", "Selected report"),
+            h4(
+              cls                         := "docs-report-detail-title",
+              dataAttr("report-selected") := "",
+              selected.map(_.title)
+            ),
+            p(
+              cls                        := "docs-report-detail-summary",
+              dataAttr("report-summary") := "",
+              selected.map(_.summary)
+            ),
+            footerTag(
+              span("Report ID"),
+              code(selected.map(report => s"#${report.id}"))
             )
           )
-        case Model.Empty =>
+        )
+      },
+      model
+        .map(_ == Model.Empty).when(
           div(
             cls                       := "docs-reports-status docs-reports-status-empty",
             dataAttr("reports-empty") := "",
             strong("No reports are available."),
             span("Refresh to ask the service again.")
           )
-        case Model.Failed =>
+        ),
+      model
+        .map(_ == Model.Failed).when(
           div(
             cls                        := "docs-reports-status docs-reports-status-failed",
             dataAttr("reports-failed") := "",
             strong("Reports are temporarily unavailable."),
             span("Refresh to retry the service request.")
           )
+        )
     )
+  end view
 
   private def load: UIO[Model] =
     reports.recent

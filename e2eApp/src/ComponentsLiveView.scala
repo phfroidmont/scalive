@@ -19,8 +19,9 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.SetTab(tab) => model.copy(activeTab = tab)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     val focusWrap = E2ERoutes.components.location(UrlParams(Some("focus_wrap")))
+    val activeTab = model.map(_.activeTab)
     div(
       styleAttr := "padding: 1.5rem;",
       h1(
@@ -36,17 +37,19 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
             on.click(
               JS.pushPatch(focusWrap).push(Msg.SetTab("focus_wrap"))
             ),
-            styleAttr :=
-              (if model.activeTab == "focus_wrap" then
-                 "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid #3b82f6; color: #2563eb; font-weight: 500; font-size: 0.875rem;"
-               else
-                 "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid transparent; color: #6b7280; font-weight: 500; font-size: 0.875rem;"),
+            styleAttr := activeTab.map(activeTab =>
+              if activeTab == "focus_wrap" then
+                "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid #3b82f6; color: #2563eb; font-weight: 500; font-size: 0.875rem;"
+              else
+                "white-space: nowrap; padding: 0.5rem 0.25rem; border-bottom: 2px solid transparent; color: #6b7280; font-weight: 500; font-size: 0.875rem;"
+            ),
             "Focus Wrap"
           )
         )
       ),
-      if model.activeTab == "focus_wrap" then focusWrapDemo else ""
+      activeTab.choose("focus_wrap" -> focusWrapDemo)
     )
+  end view
 
   private def focusWrapDemo =
     div(

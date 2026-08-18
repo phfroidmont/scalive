@@ -1,5 +1,6 @@
 package scalive
 
+import java.util.concurrent.atomic.AtomicInteger
 import scala.reflect.ClassTag
 
 import zio.*
@@ -54,8 +55,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
             case ChildMsg.Increment => ZIO.succeed(model + 1)
             case _                  => ZIO.succeed(model)
 
-      def render(model: Int): HtmlElement[ChildMsg] =
-        button(scalive.on.click(ChildMsg.Increment), model.toString)
+      override def view(model: Signal[Int]): HtmlElement[ChildMsg] =
+        button(scalive.on.click(ChildMsg.Increment), model.map(_.toString))
 
   private def nestedChildLiveView =
     new LiveView[ChildMsg, Int]:
@@ -66,9 +67,9 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
             case ChildMsg.Increment => ZIO.succeed(model + 1)
             case _                  => ZIO.succeed(model)
 
-      def render(model: Int): HtmlElement[ChildMsg] =
+      override def view(model: Signal[Int]): HtmlElement[ChildMsg] =
         div(
-          button(scalive.on.click(ChildMsg.Increment), s"child $model"),
+          button(scalive.on.click(ChildMsg.Increment), model.map(value => s"child $value")),
           liveView("grandchild", childLiveView)
         )
 
@@ -86,8 +87,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
             case ChildMsg.Redirect(to)        => ctx.nav.redirectUnsafe(to).as(model + 1)
             case ChildMsg.Crash               => ZIO.fail(RuntimeException("boom"))
 
-      def render(model: Int): HtmlElement[ChildMsg] =
-        button(scalive.on.click(command), model.toString)
+      override def view(model: Signal[Int]): HtmlElement[ChildMsg] =
+        button(scalive.on.click(command), model.map(_.toString))
 
   private def redirectAwareParent(child: LiveView[ChildMsg, Int]) =
     new LiveView.Routed[Unit, String, Option[String]]:
@@ -100,9 +101,9 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       def handleMessage(model: String, ctx: MessageContext) =
         (_: Unit) => ZIO.succeed(model)
 
-      def render(model: String): HtmlElement[Unit] =
+      override def view(model: Signal[String]): HtmlElement[Unit] =
         div(
-          p(s"Redirect: $model"),
+          p(model.map(value => s"Redirect: $value")),
           liveView("child", child)
         )
 
@@ -234,7 +235,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       val liveView = new LiveView.Eventless[String]:
         def mount(ctx: MountContext) = ZIO.succeed("Notifications")
         override def pageTitle(model: String) = Some(model)
-        def render(model: String) = div(model)
+        override def view(model: Signal[String]) = div(model)
 
       for
         response <- runRequest(runtimeFor(scalive.live(liveView)).routes, "/")
@@ -242,6 +243,64 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       yield assertTrue(
         response.status == Status.Ok,
         body.contains(">Notifications | Test</title>")
+      )
+    },
+    test("constructs a view graph once for disconnected rendering") {
+      val constructions = new AtomicInteger(0)
+      val liveView = new LiveView[Unit, Int]:
+        def mount(ctx: MountContext) = ZIO.succeed(7)
+        def handleMessage(model: Int, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
+        override def view(model: Signal[Int]) =
+          val _ = constructions.incrementAndGet()
+          div(cls := "view-graph-route", span("Value ", model.map(_.toString)))
+
+      for
+        response <- runRequest(runtimeFor(scalive.live(liveView)).routes, "/")
+        body     <- response.body.asString
+      yield assertTrue(
+        response.status == Status.Ok,
+        constructions.get() == 1,
+        body.contains("<div class=\"view-graph-route\"><span>Value 7</span></div>")
+      )
+    },
+    test("disconnected and connected graphs render equivalent view HTML") {
+      val contentPattern = "(?s)(<section id=\"parity-content\".*?</section>)".r
+      val liveView = new LiveView[Unit, Int]:
+        def mount(ctx: MountContext) = ZIO.succeed(7)
+        def handleMessage(model: Int, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
+        override def view(model: Signal[Int]) =
+          div(
+            sectionTag(
+              idAttr := "parity-content",
+              dataAttr("value") := model.map(_.toString),
+              span("Value ", model.map(_.toString))
+            )
+          )
+
+      val runtime = runtimeFor(scalive.live(liveView))
+      for
+        response <- runRequest(runtime.routes, "/")
+        body     <- response.body.asString
+        session  <- extractAttr(body, "data-phx-session")
+        liveViewId <- ZIO
+                        .fromEither(LiveSessionPayload.verify(tokenConfig, session))
+                        .map(_._1)
+                        .mapError(new IllegalArgumentException(_))
+        topic   = s"lv:$liveViewId"
+        channel <- LiveChannel.make(tokenConfig)
+        _       <- runtime.handleMessage(joinMessage(topic, session, "/"), channel)
+        socket  <- channel.socket(topic).some
+        connectedHtml <- socket.renderedHtml
+        disconnectedContent <- ZIO
+                                 .fromOption(contentPattern.findFirstMatchIn(body).map(_.group(1)))
+                                 .orElseFail(new RuntimeException("missing disconnected parity content"))
+        connectedContent <- ZIO
+                              .fromOption(
+                                contentPattern.findFirstMatchIn(connectedHtml).map(_.group(1))
+                              ).orElseFail(new RuntimeException("missing connected parity content"))
+      yield assertTrue(
+        response.status == Status.Ok,
+        disconnectedContent == connectedContent
       )
     },
     test("root upload renders while disconnected and gets a fresh ref when connected") {
@@ -257,7 +316,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
                      def handleMessage(model: LiveUpload[Chunk[Byte]], ctx: MessageContext) =
                        (_: Unit) => ZIO.succeed(model)
 
-                     def render(model: LiveUpload[Chunk[Byte]]) =
+                     override def view(model: Signal[LiveUpload[Chunk[Byte]]]) =
                        div(liveFileInput(model))
         runtime     = runtimeFor(scalive.live(liveView))
         response   <- runRequest(runtime.routes, "/")
@@ -295,7 +354,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
                def handleMessage(model: Unit, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Unit): HtmlElement[Unit] = div("ok")
+               override def view(model: Signal[Unit]): HtmlElement[Unit] = div("ok")
         routes   = scalive.Live.router(scalive.live.queryOptional[String]("q")(lv))
         response <- runRequest(routes, "/?q=1")
         calls    <- callsRef.get
@@ -322,7 +381,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
                def handleMessage(model: Unit, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Unit): HtmlElement[Unit] = div("ok")
+               override def view(model: Signal[Unit]): HtmlElement[Unit] = div("ok")
         paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, Unit, Int](
                           PathCodec.empty,
                           LiveParamsDecoder.custom[Unit, Int]((_, _) => Left("malformed initial params"))
@@ -363,7 +422,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Unit] = div(model)
+        override def view(model: Signal[String]): HtmlElement[Unit] = div(model)
 
       val routes = scalive.Live.router(
         (scalive.live / "users" / PathCodec.int("userId"))
@@ -389,7 +448,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] = div("ok")
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div("ok")
 
       val routes = scalive.Live.router(scalive.live.params(lv))
 
@@ -399,15 +458,29 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
     test("renders nested LiveView content during disconnected render") {
       for
         callsRef <- Ref.make(List.empty[String])
+        grandchild = new LiveView[Unit, String]:
+                       def mount(ctx: MountContext) =
+                         callsRef.update(_ :+ "grandchild mount").as("mount")
+
+                       def handleMessage(model: String, ctx: MessageContext) =
+                         (_: Unit) => ZIO.succeed(model)
+
+                       override def view(model: Signal[String]): HtmlElement[Unit] =
+                         strong(idAttr := "grandchild-content", "grandchild ", model)
         child = new LiveView[Unit, String]:
-                  def mount(ctx: MountContext) =
-                    callsRef.update(_ :+ "child mount").as("mount")
+                   def mount(ctx: MountContext) =
+                     callsRef.update(_ :+ "child mount").as("mount")
 
-                  def handleMessage(model: String, ctx: MessageContext) =
-                    (_: Unit) => ZIO.succeed(model)
+                   def handleMessage(model: String, ctx: MessageContext) =
+                     (_: Unit) => ZIO.succeed(model)
 
-                  def render(model: String): HtmlElement[Unit] =
-                    div(idAttr := "child-content", s"child $model")
+                   override def view(model: Signal[String]): HtmlElement[Unit] =
+                     span(
+                       idAttr := "child-content",
+                       "child ",
+                       model,
+                       liveView("grandchild", grandchild)
+                     )
         parent = new LiveView[Unit, Unit]:
                    def mount(ctx: MountContext) =
                      ZIO.unit
@@ -415,17 +488,19 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
                    def handleMessage(model: Unit, ctx: MessageContext) =
                      (_: Unit) => ZIO.succeed(model)
 
-                   def render(model: Unit): HtmlElement[Unit] = div(liveView("child", child))
+                   override def view(model: Signal[Unit]): HtmlElement[Unit] =
+                     div(liveView("child", child))
         routes   = scalive.Live.router(scalive.live(parent))
         response <- runRequest(routes, "/?q=1")
         body     <- response.body.asString
         calls    <- callsRef.get
       yield assertTrue(
         response.status == Status.Ok,
-          calls == List("child mount"),
-          body.contains("child mount"),
-        body.contains("data-phx-child-id=\"child\""),
+        calls == List("child mount", "grandchild mount"),
+        body.contains("<span id=\"child-content\">child mount"),
+        body.contains("<strong id=\"grandchild-content\">grandchild mount</strong>"),
         body.contains("data-phx-parent-id=\"phx-"),
+        body.contains("data-phx-parent-id=\"child\""),
         body.contains("data-phx-session=")
       )
     },
@@ -437,7 +512,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveView("child", childLiveView, sticky = true))
 
       val routes = scalive.Live.router(scalive.live(parent))
@@ -448,8 +523,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
       yield assertTrue(
         response.status == Status.Ok,
         body.contains("data-phx-sticky"),
-        !body.contains("data-phx-parent-id=\""),
-        !body.contains("data-phx-child-id=\"child\"")
+        !body.contains("data-phx-parent-id=\"")
       )
     },
     test("connected parent render registers nested LiveView for join") {
@@ -460,13 +534,166 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] = div(liveView("child", childLiveView))
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div(liveView("child", childLiveView))
 
       ZIO.scoped(for
         channel <- LiveChannel.make(TokenConfig.default)
         _       <- joinRoot(channel, parent)
         entry   <- channel.nestedEntry(childTopic)
       yield assertTrue(entry.exists(_.parentTopic == rootTopic)))
+    },
+    test("non-sticky first generation accepts its disconnected session token") {
+      val parent = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.unit
+
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
+          div(liveView("child", childLiveView))
+
+      val routes = scalive.Live.router(scalive.live(parent))
+
+      for
+        response <- runRequest(routes, "/")
+        body     <- response.body.asString
+        disconnectedToken <- ZIO
+                               .fromOption(
+                                 "<div id=\"child\" data-phx-session=\"([^\"]+)\"".r
+                                   .findFirstMatchIn(body).map(_.group(1))
+                               ).orElseFail(new RuntimeException("missing nested session token"))
+        result <- ZIO.scoped(for
+                    channel <- LiveChannel.make(tokenConfig)
+                    _       <- joinRoot(channel, parent)
+                    entry   <- channel.nestedEntry(childTopic).some
+                    rejected <- channel.joinNested(
+                                  childTopic,
+                                  disconnectedToken,
+                                  false,
+                                  rootMeta.copy(topic = childTopic),
+                                  URL.root
+                                )
+                    child <- channel.socket(childTopic)
+                  yield assertTrue(entry.generation == 1L, rejected.isEmpty, child.nonEmpty))
+      yield result
+    },
+    test("sticky child registration follows a replacement root") {
+      val parent = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.unit
+
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
+          div(
+            liveView(
+              "child",
+              childLiveView,
+              sticky = true,
+              linkParentOnCrash = true
+            )
+          )
+
+      val replacementTopic = "lv:replacement-root"
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(tokenConfig)
+        _       <- joinRoot(channel, parent)
+        originalRoot <- channel.socket(rootTopic).some
+        originalOut  <- subscribe(originalRoot)
+        before  <- channel.nestedEntry(childTopic).some
+        _ <- channel.joinNested(
+               childTopic,
+               before.token,
+               false,
+               rootMeta.copy(topic = childTopic),
+               URL.root
+             )
+        socketBefore <- channel.socket(childTopic).some
+        replacementContext = LiveContext(
+                               staticChanged = false,
+                               nestedLiveViews = channel.nestedRuntime(replacementTopic)
+                             )
+        _ <- channel.join(
+               replacementTopic,
+               "replacement-token",
+               parent,
+               replacementContext,
+               rootMeta.copy(topic = replacementTopic, joinRef = Some(2)),
+               URL.root
+             )
+        after       <- channel.nestedEntry(childTopic).some
+        socketAfter <- channel.socket(childTopic).some
+        replacementRoot <- channel.socket(replacementTopic).some
+        replacementOut  <- subscribe(replacementRoot)
+        _ <- socketAfter.crash
+        replacementError <- Live.live(
+                              takeMatching(replacementOut) {
+                                case (Payload.Error, meta) => meta.topic == replacementTopic
+                                case _                     => false
+                              }.timeout(1.second)
+                            )
+        originalError <- Live.live(
+                           takeMatching(originalOut) {
+                             case (Payload.Error, meta) => meta.topic == rootTopic
+                             case _                     => false
+                           }.timeout(100.millis)
+                         )
+      yield assertTrue(
+        after.parentTopic == replacementTopic,
+        after.generation == before.generation,
+        after.token == before.token,
+        socketAfter.asInstanceOf[AnyRef] eq socketBefore.asInstanceOf[AnyRef],
+        replacementError.nonEmpty,
+        originalError.isEmpty
+      ))
+    },
+    test("replacement root retires a sticky child omitted from its render") {
+      val withSticky = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.unit
+
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
+          div(liveView("child", childLiveView, sticky = true))
+
+      val withoutSticky = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          (_: Unit) => ZIO.unit
+
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div("replacement")
+
+      val replacementTopic = "lv:replacement-root"
+
+      ZIO.scoped(for
+        channel <- LiveChannel.make(tokenConfig)
+        _       <- joinRoot(channel, withSticky)
+        entry   <- channel.nestedEntry(childTopic).some
+        _ <- channel.joinNested(
+               childTopic,
+               entry.token,
+               false,
+               rootMeta.copy(topic = childTopic),
+               URL.root
+             )
+        replacementContext = LiveContext(
+                               staticChanged = false,
+                               nestedLiveViews = channel.nestedRuntime(replacementTopic)
+                             )
+        _ <- channel.join(
+               replacementTopic,
+               "replacement-token",
+               withoutSticky,
+               replacementContext,
+               rootMeta.copy(topic = replacementTopic, joinRef = Some(2)),
+               URL.root
+             )
+        retiredEntry  <- channel.nestedEntry(childTopic)
+        retiredSocket <- channel.socket(childTopic)
+      yield assertTrue(retiredEntry.isEmpty, retiredSocket.isEmpty))
     },
     test("connected mount crashes return a generic join error") {
       val crashing = new LiveView[Unit, Unit]:
@@ -476,7 +703,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] = div("ok")
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div("ok")
 
       val runtime = runtimeFor(scalive.live(crashing))
 
@@ -502,12 +729,12 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] = div("child")
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div("child")
 
       val parent = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit]          = div(liveView("child", child))
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div(liveView("child", child))
 
       ZIO.scoped(for
         channel <- LiveChannel.make(tokenConfig)
@@ -536,8 +763,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           case ChildMsg.Crash => ZIO.fail(RuntimeException("boom"))
           case _              => ZIO.succeed(model)
 
-        def render(model: Int): HtmlElement[ChildMsg] =
-          button(scalive.on.click(ChildMsg.Crash), model.toString)
+        override def view(model: Signal[Int]): HtmlElement[ChildMsg] =
+          button(scalive.on.click(ChildMsg.Crash), model.map(_.toString))
 
       ZIO.scoped(for
         channel      <- LiveChannel.make(tokenConfig)
@@ -564,13 +791,13 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
           case ChildMsg.Crash => ZIO.fail(RuntimeException("boom"))
           case _              => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[ChildMsg] =
+        override def view(model: Signal[Unit]): HtmlElement[ChildMsg] =
           button(scalive.on.click(ChildMsg.Crash), "crash")
 
       val parent = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveView("child", child, linkParentOnCrash = true))
 
       ZIO.scoped(for
@@ -607,12 +834,12 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Unit] = div(model)
+        override def view(model: Signal[String]): HtmlElement[Unit] = div(model)
 
       val parent = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit]          = div(liveView("child", child))
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div(liveView("child", child))
 
       ZIO.scoped(for
         channel <- LiveChannel.make(tokenConfig)
@@ -645,8 +872,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Unit] =
-          div(s"child:$model")
+        override def view(model: Signal[String]): HtmlElement[Unit] =
+          div(model.map(value => s"child:$value"))
 
       val parent = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
@@ -655,7 +882,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] = div(liveView("child", child))
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div(liveView("child", child))
 
       ZIO.scoped(for
         initialUrl <- url("/parent?q=1")
@@ -690,10 +917,13 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
               case ParentMsg.HideChild => ZIO.succeed(false)
               case _                   => ZIO.succeed(model)
 
-        def render(model: Boolean): HtmlElement[ParentMsg] =
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
           div(
             button(scalive.on.click(ParentMsg.ShowChild), "show"),
-            if model then liveView("child", nestedChildLiveView) else "hidden"
+            model.chooseMod(
+              whenTrue = liveView("child", nestedChildLiveView),
+              whenFalse = "hidden"
+            )
           )
 
       val showChild      = click(Vector("root:div", "tag:0:button"))
@@ -738,10 +968,10 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
               case ParentMsg.Rerender => ZIO.succeed(model + 1)
               case _                  => ZIO.succeed(model)
 
-        def render(model: Int): HtmlElement[ParentMsg] =
+        override def view(model: Signal[Int]): HtmlElement[ParentMsg] =
           div(
             button(scalive.on.click(ParentMsg.Rerender), "rerender"),
-            span(model.toString),
+            span(model.map(_.toString)),
             liveView("child", childLiveView)
           )
 
@@ -770,7 +1000,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveView("child", childLiveView), liveView("second", childLiveView))
 
       val childMeta  = rootMeta.copy(topic = childTopic)
@@ -813,7 +1043,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveView("child", childLiveView), liveView("child", childLiveView))
 
       ZIO.scoped(for
@@ -834,7 +1064,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(props: Unit, model: Unit, self: ComponentRef[Unit]) =
+        override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
           div(liveView("child", childLiveView))
 
       val parent = new LiveView[Unit, Unit]:
@@ -844,7 +1074,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveComponent(HostComponent, id = "host", props = ()))
 
       ZIO.scoped(for
@@ -861,19 +1091,38 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] = div(liveView("child", childLiveView))
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div(liveView("child", nestedChildLiveView))
 
       ZIO.scoped(for
         channel <- LiveChannel.make(TokenConfig.default)
         _       <- joinRoot(channel, parent)
         entry   <- channel.nestedEntry(childTopic).some
         _       <- channel.joinNested(childTopic, entry.token, false, rootMeta.copy(topic = childTopic), URL.root)
+        grandchildEntry <- channel.nestedEntry(grandchildTopic).some
+        _ <- channel.joinNested(
+               grandchildTopic,
+               grandchildEntry.token,
+               false,
+               rootMeta.copy(topic = grandchildTopic),
+               URL.root
+             )
         childBefore <- channel.socket(childTopic)
+        grandchildBefore <- channel.socket(grandchildTopic)
         _           <- channel.leave(rootTopic)
         parentAfter <- channel.socket(rootTopic)
         childAfter  <- channel.socket(childTopic)
+        grandchildAfter <- channel.socket(grandchildTopic)
         entryAfter  <- channel.nestedEntry(childTopic)
-      yield assertTrue(childBefore.nonEmpty, parentAfter.isEmpty, childAfter.isEmpty, entryAfter.isEmpty))
+        grandchildEntryAfter <- channel.nestedEntry(grandchildTopic)
+      yield assertTrue(
+        childBefore.nonEmpty,
+        grandchildBefore.nonEmpty,
+        parentAfter.isEmpty,
+        childAfter.isEmpty,
+        grandchildAfter.isEmpty,
+        entryAfter.isEmpty,
+        grandchildEntryAfter.isEmpty
+      ))
     },
     test("parent leave preserves sticky child sockets") {
       val parent = new LiveView[Unit, Unit]:
@@ -883,7 +1132,8 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] = div(liveView("child", childLiveView, sticky = true))
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
+          div(liveView("child", childLiveView, sticky = true))
 
       ZIO.scoped(for
         channel <- LiveChannel.make(TokenConfig.default)
@@ -968,7 +1218,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(idAttr := s"item-outer-$itemId", "child")
 
       ZIO.scoped(for
@@ -977,24 +1227,62 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         stream        <- streams.create(items, List(Item(1), Item(2)))
         componentsRef <- Ref.make(ComponentRuntimeState.empty)
         channel       <- LiveChannel.make(TokenConfig.default)
-        rendered <- SocketComponentRuntime.renderRoot(
-                      ul(
-                        idAttr     := "items",
-                        phx.update := PhxUpdate.Stream,
-                        stream.stream((domId, item) => div(idAttr := domId, liveView(domId, child(item.id))))
-                      ),
-                      componentsRef,
-                      LiveContext(
-                        staticChanged = false,
-                        nestedLiveViews = channel.nestedRuntime(rootTopic)
-                      )
-                    )
-        body = HtmlBuilder.build(rendered)
+        staticInputGraph = ViewGraph.build[Unit](_ =>
+                             ul(
+                               idAttr     := "items",
+                               phx.update := PhxUpdate.Stream,
+                               stream.stream((domId, item) =>
+                                 div(idAttr := domId, liveView(domId, child(item.id)))
+                               )
+                             )
+                           )
+        staticInputResult <- SocketComponentRuntime.evaluateViewGraph(
+                               staticInputGraph,
+                               (),
+                               SignalEvaluation.empty,
+                               revision = 1L,
+                               componentsRef,
+                               LiveContext(
+                                 staticChanged = false,
+                                 nestedLiveViews = channel.nestedRuntime(rootTopic)
+                               )
+                              )
+        staticInputBody = RenderSnapshot.renderHtml(staticInputResult.compiled)
+        signalDrivenGraph = ViewGraph.build[LiveStream[Item]](current =>
+                              ul(
+                                idAttr     := "items-signal-driven",
+                                phx.update := PhxUpdate.Stream,
+                                current.stream((domId, item) =>
+                                  div(
+                                    idAttr := domId,
+                                    liveView(domId, item.map(_.id))(child)
+                                  )
+                                )
+                              )
+                            )
+        signalDrivenResult <- SocketComponentRuntime.evaluateViewGraph(
+                                signalDrivenGraph,
+                                stream,
+                                SignalEvaluation.empty,
+                                revision = 1L,
+                                componentsRef,
+                                LiveContext(
+                                  staticChanged = false,
+                                  nestedLiveViews = channel.nestedRuntime(rootTopic)
+                                )
+                              )
+        signalDrivenBody = RenderSnapshot.renderHtml(signalDrivenResult.compiled)
+        _ <- ZIO.succeed(staticInputGraph.dispose())
+        _ <- ZIO.succeed(signalDrivenGraph.dispose())
       yield assertTrue(
-        body.contains("<div id=\"item-1\" data-phx-session="),
-        body.contains("<div id=\"item-2\" data-phx-session="),
-        !body.contains("<div id=\"item-1\"><div id=\"item-1\""),
-        !body.contains("<div id=\"item-2\"><div id=\"item-2\"")
+        staticInputBody.contains("<div id=\"item-1\" data-phx-session="),
+        staticInputBody.contains("<div id=\"item-2\" data-phx-session="),
+        !staticInputBody.contains("<div id=\"item-1\"><div id=\"item-1\""),
+        !staticInputBody.contains("<div id=\"item-2\"><div id=\"item-2\""),
+        signalDrivenBody.contains("<div id=\"item-1\" data-phx-session="),
+        signalDrivenBody.contains("<div id=\"item-2\" data-phx-session="),
+        !signalDrivenBody.contains("<div id=\"item-1\"><div id=\"item-1\""),
+        !signalDrivenBody.contains("<div id=\"item-2\"><div id=\"item-2\"")
       ))
     },
     test("diffsStream keeps rapid streamed nested LiveView join replies") {
@@ -1008,7 +1296,7 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(idAttr := s"item-outer-$itemId", "child")
 
       val parent = new LiveView[Unit, LiveStream[Item]]:
@@ -1018,11 +1306,13 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         def handleMessage(model: LiveStream[Item], ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: LiveStream[Item]): HtmlElement[Unit] =
+        override def view(model: Signal[LiveStream[Item]]): HtmlElement[Unit] =
           ul(
             idAttr     := "items",
             phx.update := PhxUpdate.Stream,
-            model.stream((domId, item) => div(idAttr := domId, liveView(domId, child(item.id))))
+            model.stream((domId, item) =>
+              div(idAttr := domId, liveView(domId, item.map(_.id))(child))
+            )
           )
 
       ZIO.scoped(for
@@ -1054,9 +1344,9 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
               case ParentMsg.HideChild => ZIO.succeed(model)
               case _                   => ZIO.succeed(model)
 
-        def render(model: Int): HtmlElement[ParentMsg] =
+        override def view(model: Signal[Int]): HtmlElement[ParentMsg] =
           div(
-            button(scalive.on.click(ParentMsg.Rerender), model.toString),
+            button(scalive.on.click(ParentMsg.Rerender), model.map(_.toString)),
             liveView("child", childLiveView)
           )
 
@@ -1073,6 +1363,225 @@ object LiveRoutesLifecycleSpec extends ZIOSpecDefault:
         _       <- channel.event(rootTopic, patchEvent, rootMeta.copy(eventType = "event"))
         after   <- channel.nestedEntry(childTopic).some
       yield assertTrue(before.parentTopic == rootTopic, after.parentTopic == rootTopic))
+    },
+    test("committed child removal retires its registration before browser leave") {
+      val parent = new LiveView[ParentMsg, Boolean]:
+        def mount(ctx: MountContext) =
+          ZIO.succeed(true)
+
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+              case ParentMsg.HideChild => ZIO.succeed(false)
+              case ParentMsg.ShowChild => ZIO.succeed(true)
+              case _                   => ZIO.succeed(model)
+
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
+          div(
+            button(scalive.on.click(ParentMsg.HideChild), "hide"),
+            button(scalive.on.click(ParentMsg.ShowChild), "show"),
+            Signal.when(model)(div(liveView("child", childLiveView)))
+          )
+
+      ZIO.scoped(for
+        channel    <- LiveChannel.make(TokenConfig.default)
+        _          <- joinRoot(channel, parent)
+        rootSocket <- channel.socket(rootTopic).some
+        outQueue   <- subscribe(rootSocket)
+        initial    <- channel.nestedEntry(childTopic).some
+        _ <- channel.event(
+               rootTopic,
+               click(Vector("root:div", "tag:0:button")),
+               rootMeta.copy(eventType = "event")
+             )
+        _ <- takeMatching(outQueue) {
+               case (Payload.Reply(ReplyStatus.Ok, _), payloadMeta) =>
+                 payloadMeta.topic == rootTopic
+               case _ => false
+             }
+        removed <- channel.nestedEntry(childTopic)
+        _ <- channel.event(
+               rootTopic,
+               click(Vector("root:div", "tag:1:button")),
+               rootMeta.copy(eventType = "event")
+             )
+        _ <- takeMatching(outQueue) {
+               case (Payload.Reply(ReplyStatus.Ok, _), payloadMeta) =>
+                 payloadMeta.topic == rootTopic
+               case _ => false
+             }
+        replacement <- channel.nestedEntry(childTopic).some
+        _           <- channel.leave(childTopic, rootMeta.joinRef)
+        preserved   <- channel.nestedEntry(childTopic).some
+        staleJoin <- channel.joinNested(
+                       childTopic,
+                       initial.token,
+                       false,
+                       rootMeta.copy(topic = childTopic, joinRef = Some(2)),
+                       URL.root
+                     )
+        replacementJoin <- channel.joinNested(
+                             childTopic,
+                             replacement.token,
+                             false,
+                             rootMeta.copy(topic = childTopic, joinRef = Some(3)),
+                             URL.root
+                           )
+        replacementSocket <- channel.socket(childTopic).some
+      yield assertTrue(
+        removed.isEmpty,
+        replacement.token != initial.token,
+        preserved.generation == replacement.generation,
+        staleJoin.nonEmpty,
+        replacementJoin.isEmpty,
+        replacementSocket.nestedGeneration.contains(replacement.generation)
+      ))
+    },
+    test("committed child removal retires its joined nested subtree") {
+      val parent = new LiveView[ParentMsg, Boolean]:
+        def mount(ctx: MountContext) = ZIO.succeed(true)
+
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+              case ParentMsg.HideChild => ZIO.succeed(false)
+              case _                   => ZIO.succeed(model)
+
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
+          div(
+            button(scalive.on.click(ParentMsg.HideChild), "hide"),
+            Signal.when(model)(div(liveView("child", nestedChildLiveView)))
+          )
+
+      ZIO.scoped(for
+        channel    <- LiveChannel.make(tokenConfig)
+        _          <- joinRoot(channel, parent)
+        rootSocket <- channel.socket(rootTopic).some
+        outQueue   <- subscribe(rootSocket)
+        childEntry <- channel.nestedEntry(childTopic).some
+        _ <- channel.joinNested(
+               childTopic,
+               childEntry.token,
+               false,
+               rootMeta.copy(topic = childTopic),
+               URL.root
+             )
+        grandchildEntry <- channel.nestedEntry(grandchildTopic).some
+        _ <- channel.joinNested(
+               grandchildTopic,
+               grandchildEntry.token,
+               false,
+               rootMeta.copy(topic = grandchildTopic),
+               URL.root
+             )
+        _ <- channel.event(
+               rootTopic,
+               click(Vector("root:div", "tag:0:button")),
+               rootMeta.copy(eventType = "event")
+             )
+        _ <- takeMatching(outQueue) {
+               case (Payload.Reply(ReplyStatus.Ok, _), payloadMeta) =>
+                 payloadMeta.topic == rootTopic
+               case _ => false
+             }
+        childAfter           <- channel.nestedEntry(childTopic)
+        grandchildAfter      <- channel.nestedEntry(grandchildTopic)
+        childSocketAfter     <- channel.socket(childTopic)
+        grandchildSocketAfter <- channel.socket(grandchildTopic)
+      yield assertTrue(
+        childAfter.isEmpty,
+        grandchildAfter.isEmpty,
+        childSocketAfter.isEmpty,
+        grandchildSocketAfter.isEmpty
+      ))
+    },
+    test("failed view graph evaluation rolls back a staged nested registration") {
+      val parent = new LiveView[ParentMsg, Boolean]:
+        def mount(ctx: MountContext) =
+          ZIO.succeed(false)
+
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+              case ParentMsg.ShowChild => ZIO.succeed(true)
+              case _                   => ZIO.succeed(model)
+
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
+          div(
+            button(scalive.on.click(ParentMsg.ShowChild), "show"),
+            Signal.when(model)(div(liveView("child", childLiveView))),
+            model.map { show =>
+              if show then throw new IllegalStateException("view graph evaluation failed after nested child")
+              else "hidden"
+            }
+          )
+
+      ZIO.scoped(for
+        channel    <- LiveChannel.make(TokenConfig.default)
+        _          <- joinRoot(channel, parent)
+        rootSocket <- channel.socket(rootTopic).some
+        outQueue   <- subscribe(rootSocket)
+        _ <- channel.event(
+               rootTopic,
+               click(Vector("root:div", "tag:0:button")),
+               rootMeta.copy(eventType = "event")
+             )
+        _ <- takeMatching(outQueue) {
+               case (Payload.Error, payloadMeta) => payloadMeta.topic == rootTopic
+               case _                            => false
+             }
+        entry <- channel.nestedEntry(childTopic)
+      yield assertTrue(entry.isEmpty))
+    },
+    test("child join finishing after committed removal cannot install a stale socket") {
+      for
+        mountStarted <- Promise.make[Nothing, Unit]
+        releaseMount <- Promise.make[Nothing, Unit]
+        child = new LiveView[Unit, Unit]:
+                  def mount(ctx: MountContext) =
+                    mountStarted.succeed(()).unit *> releaseMount.await
+
+                  def handleMessage(model: Unit, ctx: MessageContext) =
+                    (_: Unit) => ZIO.succeed(model)
+
+                  override def view(model: Signal[Unit]): HtmlElement[Unit] = div("child")
+        parent = new LiveView[ParentMsg, Boolean]:
+                   def mount(ctx: MountContext) = ZIO.succeed(true)
+
+                   def handleMessage(model: Boolean, ctx: MessageContext) =
+                         case ParentMsg.HideChild => ZIO.succeed(false)
+                         case _                   => ZIO.succeed(model)
+
+                   override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
+                     div(
+                       button(scalive.on.click(ParentMsg.HideChild), "hide"),
+                       Signal.when(model)(div(liveView("child", child)))
+                     )
+        result <- ZIO.scoped(for
+                    channel    <- LiveChannel.make(TokenConfig.default)
+                    _          <- joinRoot(channel, parent)
+                    rootSocket <- channel.socket(rootTopic).some
+                    outQueue   <- subscribe(rootSocket)
+                    entry      <- channel.nestedEntry(childTopic).some
+                    joinFiber <- channel
+                                   .joinNested(
+                                     childTopic,
+                                     entry.token,
+                                     false,
+                                     rootMeta.copy(topic = childTopic, joinRef = Some(2)),
+                                     URL.root
+                                   ).forkScoped
+                    _ <- mountStarted.await
+                    _ <- channel.event(
+                           rootTopic,
+                           click(Vector("root:div", "tag:0:button")),
+                           rootMeta.copy(eventType = "event")
+                         )
+                    _ <- takeMatching(outQueue) {
+                           case (Payload.Reply(ReplyStatus.Ok, _), payloadMeta) =>
+                             payloadMeta.topic == rootTopic
+                           case _ => false
+                         }
+                    _          <- releaseMount.succeed(())
+                    joinResult <- joinFiber.join
+                    active     <- channel.nestedEntry(childTopic)
+                    socket     <- channel.socket(childTopic)
+                  yield assertTrue(joinResult.nonEmpty, active.isEmpty, socket.isEmpty))
+      yield result
     }
   )
 end LiveRoutesLifecycleSpec

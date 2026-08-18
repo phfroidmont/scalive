@@ -10,12 +10,12 @@ final private[docs] class DocumentationRootLayout(
   origin: PublicOrigin)
     extends LiveRootLayout[Any, Any]:
 
-  def key(ctx: LiveLayoutContext[Any, Any]): String = "documentation-root"
+  def key(ctx: LiveRootLayoutContext[Any, Any]): String = "documentation-root"
 
   def render[Msg](
     content: HtmlElement[Msg],
     pageTitle: Option[String],
-    ctx: LiveLayoutContext[Any, Any]
+    ctx: LiveRootLayoutContext[Any, Any]
   ): HtmlElement[Msg] =
     val route    = ctx.currentUrl.path.encode
     val metadata = application
@@ -72,42 +72,83 @@ final private[docs] class DocumentationLayout(
     .groupBy(_.route)
     .view.mapValues(_.map(_.kind).distinct.sortBy(apiKindRank)).toMap
 
-  def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
-    val currentRoute         = ctx.currentUrl.path.encode
-    val page                 = application.page(currentRoute)
-    val documentPage         = page.filterNot(_.metadata.section == Section.Home)
-    val hasSectionNavigation = documentPage.exists(sectionNavigationVisible)
-    val metadata             = application
-      .metadata(currentRoute).getOrElse(
-        throw new IllegalArgumentException(
-          s"Missing documentation metadata for route '$currentRoute'."
+  def view[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
+    val currentRoute = ctx.currentUrl.map(_.path.encode)
+    val page         = currentRoute.map(application.page)
+    val documentPage = page.map(_.filterNot(_.metadata.section == Section.Home))
+    val metadata     = currentRoute.map(route =>
+      application
+        .metadata(route).getOrElse(
+          throw new IllegalArgumentException(
+            s"Missing documentation metadata for route '$route'."
+          )
         )
-      )
+    )
+    val shellClass = documentPage.map { current =>
+      val hasSectionNavigation = current.exists(sectionNavigationVisible)
+      if current.exists(_.metadata.section == Section.Api) then "docs-shell docs-shell-api"
+      else if current.nonEmpty && !hasSectionNavigation then "docs-shell docs-shell-no-section"
+      else if current.nonEmpty then "docs-shell"
+      else "docs-shell docs-shell-wide"
+    }
+    val apiSectionRoutes = currentRoute.map(route =>
+      application
+        .page(route).filterNot(_.metadata.section == Section.Home)
+        .filter(_.metadata.section == Section.Api).toList.map(_ => route)
+    )
+    val editorialSectionRoutes = currentRoute.map(route =>
+      application
+        .page(route).filterNot(_.metadata.section == Section.Home)
+        .filter(page => page.metadata.section != Section.Api && sectionNavigationVisible(page))
+        .toList.map(_ => route)
+    )
+    val outlineRoutes = currentRoute.map(route =>
+      application
+        .page(route).filterNot(_.metadata.section == Section.Home)
+        .filter(_.outline.items.nonEmpty).toList.map(_ => route)
+    )
     div(
       dom.hook("PageMetadata", DomRef("docs-page-metadata")),
-      dataAttr("page-description") := metadata.description,
-      dataAttr("page-canonical")   := origin.absolute(metadata.canonicalPath),
-      dataAttr("page-indexable")   := metadata.indexable.toString,
+      dataAttr("page-description") := metadata.map(_.description),
+      dataAttr("page-canonical")   := metadata.map(value => origin.absolute(value.canonicalPath)),
+      dataAttr("page-indexable")   := metadata.map(_.indexable.toString),
       a(cls := "docs-skip-link", href := "#docs-main", "Skip to content"),
       header(page, currentRoute),
       div(
-        cls :=
-          (if documentPage.exists(_.metadata.section == Section.Api) then
-             "docs-shell docs-shell-api"
-           else if documentPage.nonEmpty && !hasSectionNavigation then
-             "docs-shell docs-shell-no-section"
-           else if documentPage.nonEmpty then "docs-shell"
-           else "docs-shell docs-shell-wide"),
-        documentPage
-          .filter(_.metadata.section == Section.Api)
-          .map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
+        cls := shellClass,
+        apiSectionRoutes.splitBy(identity) { (route, _) =>
+          sectionNavigation(
+            application
+              .page(route).getOrElse(
+                throw new IllegalArgumentException(
+                  s"Missing documentation page for route '$route'."
+                )
+              ),
+            route
+          )
+        },
         mainTag(idAttr := "docs-main", cls := "docs-main", content),
-        documentPage
-          .filter(value => value.metadata.section != Section.Api && sectionNavigationVisible(value))
-          .map(value => Mod.Content.Tag(sectionNavigation(value, currentRoute))).toVector,
-        documentPage
-          .filter(_.outline.items.nonEmpty)
-          .map(value => Mod.Content.Tag(outline(value))).toVector
+        editorialSectionRoutes.splitBy(identity) { (route, _) =>
+          sectionNavigation(
+            application
+              .page(route).getOrElse(
+                throw new IllegalArgumentException(
+                  s"Missing documentation page for route '$route'."
+                )
+              ),
+            route
+          )
+        },
+        outlineRoutes.splitBy(identity) { (route, _) =>
+          outline(
+            application
+              .page(route).getOrElse(
+                throw new IllegalArgumentException(
+                  s"Missing documentation page for route '$route'."
+                )
+              )
+          )
+        }
       ),
       footerTag(
         cls := "docs-footer",
@@ -116,9 +157,12 @@ final private[docs] class DocumentationLayout(
         "."
       )
     )
-  end render
+  end view
 
-  private def header[Msg](page: Option[Page], currentRoute: String): HtmlElement[Msg] =
+  private def header[Msg](
+    page: Signal[Option[Page]],
+    currentRoute: Signal[String]
+  ): HtmlElement[Msg] =
     headerTag(
       cls := "docs-header",
       div(
@@ -142,9 +186,11 @@ final private[docs] class DocumentationLayout(
                 application.bundle.navigation.items
                   .filterNot(_.section == Section.Home)
                   .map { item =>
-                    val className =
-                      if page.exists(_.metadata.section == item.section) then "docs-current-section"
+                    val className = page.map(current =>
+                      if current.exists(_.metadata.section == item.section) then
+                        "docs-current-section"
                       else ""
+                    )
                     li(
                       navigationLink(
                         application
@@ -153,7 +199,7 @@ final private[docs] class DocumentationLayout(
                               s"Unknown navigation route: ${item.route}"
                             )
                           ),
-                        item.route == currentRoute,
+                        currentRoute.map(_ == item.route),
                         className,
                         item.title
                       )
@@ -172,16 +218,14 @@ final private[docs] class DocumentationLayout(
       )
     )
 
-  private def brandLink[Msg](currentRoute: String): HtmlElement[Msg] =
-    val mods                                     = Vector.newBuilder[Mod[Msg]]
-    mods += (cls                                     := "docs-brand")
-    mods += (aria.label                              := "Scalive home")
-    if currentRoute == "/" then mods += (ariaCurrent := "page")
-    mods += Mod.Content.Tag(DocumentationBrand.lockup)
+  private def brandLink[Msg](currentRoute: Signal[String]): HtmlElement[Msg] =
     link.pushNavigate(
       application
         .location("/").getOrElse(throw new IllegalStateException("Missing homepage route.")),
-      mods.result()*
+      cls        := "docs-brand",
+      aria.label := "Scalive home",
+      ariaCurrent.optional(currentRoute.map(route => Option.when(route == "/")("page"))),
+      DocumentationBrand.lockup
     )
 
   private def searchForm[Msg]: HtmlElement[Msg] =
@@ -424,15 +468,16 @@ final private[docs] class DocumentationLayout(
 
   private def navigationLink[Msg](
     location: LiveLocation,
-    active: Boolean,
-    className: String,
+    active: Signal[Boolean],
+    className: Signal[String],
     text: String
   ): HtmlElement[Msg] =
-    val mods = Vector.newBuilder[Mod[Msg]]
-    if className.nonEmpty then mods += (cls := className)
-    if active then mods += (ariaCurrent     := "page")
-    mods += Mod.Content.Text(text)
-    link.pushNavigate(location, mods.result()*)
+    link.pushNavigate(
+      location,
+      cls.optional(className.map(value => Option.when(value.nonEmpty)(value))),
+      ariaCurrent.optional(active.map(value => Option.when(value)("page"))),
+      text
+    )
 
   private def outline[Msg](page: Page): HtmlElement[Msg] =
     asideTag(
@@ -519,4 +564,4 @@ final private[docs] class DocumentationPageLiveView(
   override def pageTitle(model: Unit): Option[String] =
     Some(if page.route == "/" then "Scalive" else s"${page.metadata.title} | Scalive")
 
-  def render(model: Unit): HtmlElement[Nothing] = renderer.render(page)
+  override def view(model: Signal[Unit]): HtmlElement[Nothing] = renderer.render(page)

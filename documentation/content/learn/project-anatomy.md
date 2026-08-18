@@ -20,8 +20,8 @@ process toward the browser:
 7. Scalive validates the join and creates a separate connected lifecycle.
 8. The connected LiveView mounts and renders before processing browser events.
 
-After the join, each event follows the message, transition, render, diff, and
-DOM-patch loop introduced on [Start here](index.md#follow-one-page-from-http-to-dom).
+After the join, each event follows the message, transition, signal evaluation,
+diff, and DOM-patch loop introduced on [Start here](index.md#follow-one-page-from-http-to-dom).
 
 ## Separate The Application Boundaries {#separate-the-application-boundaries}
 
@@ -44,9 +44,9 @@ CSRF meta token into its `<head>`.
 `CounterLiveView.scala` is the interactive-page boundary.
 @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ creates connection-local
 state, @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ changes
-connected state, and @:apiSymbol(def:scalive.LiveView.render)`render`@:@ turns
-the current model into typed HTML. A LiveView does not start the HTTP server or
-locate its own asset files.
+connected state, and @:apiSymbol(def:scalive.LiveView.view)`view`@:@ constructs a
+signal-backed view graph of typed HTML from the current model signal. A LiveView
+does not start the HTTP server or locate its own asset files.
 
 `assets/js/app.js` is the browser boundary. It creates `LiveSocket`, passes the
 server-issued CSRF token, and connects to the socket path. Add hooks here only

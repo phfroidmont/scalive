@@ -27,10 +27,10 @@ object CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
     case Msg.Increment => ZIO.succeed(model + 1)
     case Msg.Decrement => ZIO.succeed(model - 1)
 
-  def render(model: Int): HtmlElement[Msg] =
+  def view(model: Signal[Int]): HtmlElement[Msg] =
     div(
       button(on.click(Msg.Decrement), "-"),
-      span(s"Count: $model"),
+      span(model.map(count => s"Count: $count")),
       button(on.click(Msg.Increment), "+")
     )
 ```

@@ -392,8 +392,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.LiveLayoutContext:e96c176c9c9866ad",
-          "signature" : "class LiveLayoutContext[+A, +Ctx](params: A, request: zio.http.Request, currentUrl: zio.http.URL, context: Ctx)"
+          "id" : "class:scalive.LiveLayoutContext:dbc96b77ad230a0f",
+          "signature" : "class LiveLayoutContext[+A, +Ctx](params: Signal[A], request: Signal[zio.http.Request], currentUrl: Signal[zio.http.URL], context: Ctx)"
         }
       ]
     },
@@ -466,6 +466,18 @@
         {
           "id" : "class:scalive.LiveParamsCodec.Encoded:c4e3505e8a0015c4",
           "signature" : "class Encoded[PathParams](pathParams: PathParams, queryParams: zio.http.QueryParams)"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveRootLayoutContext",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveRootLayoutContext",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveRootLayoutContext:1e1229531235f106",
+          "signature" : "class LiveRootLayoutContext[+A, +Ctx](params: A, request: zio.http.Request, currentUrl: zio.http.URL, context: Ctx)"
         }
       ]
     },
@@ -2318,6 +2330,42 @@
       ]
     },
     {
+      "id" : "def:scalive.FormDefinition.onChange",
+      "ownerId" : "class:scalive.FormDefinition",
+      "qualifiedName" : "scalive.FormDefinition.onChange",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormDefinition.onChange:fd3d62b228d07630",
+          "signature" : "def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormDefinition.onRecover",
+      "ownerId" : "class:scalive.FormDefinition",
+      "qualifiedName" : "scalive.FormDefinition.onRecover",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormDefinition.onRecover:37244ec2bdfbed6e",
+          "signature" : "def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormDefinition.onSubmit",
+      "ownerId" : "class:scalive.FormDefinition",
+      "qualifiedName" : "scalive.FormDefinition.onSubmit",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormDefinition.onSubmit:da7df102ad911482",
+          "signature" : "def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormError.apply",
       "ownerId" : "object:scalive.FormError",
       "qualifiedName" : "scalive.FormError.apply",
@@ -3252,8 +3300,24 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.HtmlAttr.:=:482deecf19763149",
+          "signature" : "def :=(value: Signal[V]): Mod.Attr[Nothing]"
+        },
+        {
           "id" : "def:scalive.HtmlAttr.:=:e4ec6796ba2ae60c",
           "signature" : "def :=(value: V): Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.HtmlAttr.optional",
+      "ownerId" : "class:scalive.HtmlAttr",
+      "qualifiedName" : "scalive.HtmlAttr.optional",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.HtmlAttr.optional:ec488895391b0506",
+          "signature" : "def optional(value: Signal[Option[V]]): Mod.Attr[Nothing]"
         }
       ]
     },
@@ -3264,8 +3328,20 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.HtmlAttrBinding.apply:422c8499ce8c53d4",
+          "signature" : "def apply[Msg](cmd: Signal[JSCommands.JSCommand[Msg]]): Mod.Attr[Msg]"
+        },
+        {
           "id" : "def:scalive.HtmlAttrBinding.apply:940a7573e437f15e",
           "signature" : "def apply[Msg](cmd: JSCommands.JSCommand[Msg]): Mod.Attr[Msg]"
+        },
+        {
+          "id" : "def:scalive.HtmlAttrBinding.apply:99efb1c653e357af",
+          "signature" : "def apply[Msg](msg: Signal[Msg]): Mod.Attr[Msg]"
+        },
+        {
+          "id" : "def:scalive.HtmlAttrBinding.apply:c169587917cbec58",
+          "signature" : "def apply[A, Msg](current: Signal[A])(f: (A, Map[String, String]) => Msg): Mod.Attr[Msg]"
         },
         {
           "id" : "def:scalive.HtmlAttrBinding.apply:c79683316f5db7b3",
@@ -3746,18 +3822,6 @@
       ]
     },
     {
-      "id" : "def:scalive.LiveComponent.render",
-      "ownerId" : "trait:scalive.LiveComponent",
-      "qualifiedName" : "scalive.LiveComponent.render",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveComponent.render:fe597a0b3de85f37",
-          "signature" : "def render(props: Props, model: Model, self: ComponentRef[Msg]): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.LiveComponent.update",
       "ownerId" : "trait:scalive.LiveComponent",
       "qualifiedName" : "scalive.LiveComponent.update",
@@ -3770,11 +3834,27 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveComponent.view",
+      "ownerId" : "trait:scalive.LiveComponent",
+      "qualifiedName" : "scalive.LiveComponent.view",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveComponent.view:5fa0cd3292588204",
+          "signature" : "def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveComponentInstance.render",
       "ownerId" : "class:scalive.LiveComponentInstance",
       "qualifiedName" : "scalive.LiveComponentInstance.render",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.LiveComponentInstance.render:12b89faf177789bb",
+          "signature" : "def render(props: Signal[Props]): Mod[Nothing]"
+        },
         {
           "id" : "def:scalive.LiveComponentInstance.render:16ecea6756ec2b33",
           "signature" : "def render(props: Props): Mod[Nothing]"
@@ -3790,6 +3870,10 @@
         {
           "id" : "def:scalive.LiveComponentOutputInstance.render:10b3f1a441738db1",
           "signature" : "def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
+        },
+        {
+          "id" : "def:scalive.LiveComponentOutputInstance.render:40ddd3731c76e83e",
+          "signature" : "def render[OwnerMsg](props: Signal[Props], onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
         }
       ]
     },
@@ -4006,14 +4090,14 @@
       ]
     },
     {
-      "id" : "def:scalive.LiveLayout.render",
+      "id" : "def:scalive.LiveLayout.view",
       "ownerId" : "trait:scalive.LiveLayout",
-      "qualifiedName" : "scalive.LiveLayout.render",
+      "qualifiedName" : "scalive.LiveLayout.view",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveLayout.render:2adc8595cd304f67",
-          "signature" : "def render[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]"
+          "id" : "def:scalive.LiveLayout.view:1687ec155b75d967",
+          "signature" : "def view[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]"
         }
       ]
     },
@@ -4332,8 +4416,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRootLayout.apply:1c6cf0bf242cdbcd",
-          "signature" : "def apply[A, Ctx](rootKey: String)(f: (HtmlElement[?], Option[String], LiveLayoutContext[A, Ctx]) => HtmlElement[?]): LiveRootLayout[A, Ctx]"
+          "id" : "def:scalive.LiveRootLayout.apply:8390fa6363abde57",
+          "signature" : "def apply[A, Ctx](rootKey: String)(f: (HtmlElement[?], Option[String], LiveRootLayoutContext[A, Ctx]) => HtmlElement[?]): LiveRootLayout[A, Ctx]"
         }
       ]
     },
@@ -4344,8 +4428,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRootLayout.dynamic:c7cfa4b7ad39a0f6",
-          "signature" : "def dynamic[A, Ctx](rootKey: LiveLayoutContext[A, Ctx] => String)(f: (HtmlElement[?], Option[String], LiveLayoutContext[A, Ctx]) => HtmlElement[?]): LiveRootLayout[A, Ctx]"
+          "id" : "def:scalive.LiveRootLayout.dynamic:f6e5094963c4ae19",
+          "signature" : "def dynamic[A, Ctx](rootKey: LiveRootLayoutContext[A, Ctx] => String)(f: (HtmlElement[?], Option[String], LiveRootLayoutContext[A, Ctx]) => HtmlElement[?]): LiveRootLayout[A, Ctx]"
         }
       ]
     },
@@ -4356,8 +4440,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRootLayout.key:0a7695a32128cf67",
-          "signature" : "def key(ctx: LiveLayoutContext[A, Ctx]): String"
+          "id" : "def:scalive.LiveRootLayout.key:5989d5c742a61a5d",
+          "signature" : "def key(ctx: LiveRootLayoutContext[A, Ctx]): String"
         }
       ]
     },
@@ -4368,8 +4452,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRootLayout.render:81740667ef4ac236",
-          "signature" : "def render[Msg](content: HtmlElement[Msg], pageTitle: Option[String], ctx: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]"
+          "id" : "def:scalive.LiveRootLayout.render:293343db4e125027",
+          "signature" : "def render[Msg](content: HtmlElement[Msg], pageTitle: Option[String], ctx: LiveRootLayoutContext[A, Ctx]): HtmlElement[Msg]"
         }
       ]
     },
@@ -5322,14 +5406,14 @@
       ]
     },
     {
-      "id" : "def:scalive.LiveView.render",
+      "id" : "def:scalive.LiveView.view",
       "ownerId" : "trait:scalive.LiveView",
-      "qualifiedName" : "scalive.LiveView.render",
+      "qualifiedName" : "scalive.LiveView.view",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveView.render:04db3806e7b7d547",
-          "signature" : "def render(model: Model): HtmlElement[Msg]"
+          "id" : "def:scalive.LiveView.view:aa861cb0b5f3be92",
+          "signature" : "def view(model: Signal[Model]): HtmlElement[Msg]"
         }
       ]
     },
@@ -6270,6 +6354,30 @@
       ]
     },
     {
+      "id" : "def:scalive.Signal.map",
+      "ownerId" : "trait:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.map",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Signal.map:8a2dcb124c7cee1c",
+          "signature" : "def map[B](f: A => B): Signal[B]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.Signal.zip",
+      "ownerId" : "trait:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.zip",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Signal.zip:1caeb5109e34381a",
+          "signature" : "def zip[B](that: Signal[B]): Signal[(A, B)]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.StaticAssetConfig.classpath",
       "ownerId" : "object:scalive.StaticAssetConfig",
       "qualifiedName" : "scalive.StaticAssetConfig.classpath",
@@ -6774,6 +6882,10 @@
         {
           "id" : "def:scalive.link.pushNavigate:28137fa17e33550e",
           "signature" : "def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.link.pushNavigate:3808f2ef92c406a5",
+          "signature" : "def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -6783,6 +6895,10 @@
       "qualifiedName" : "scalive.link.pushNavigateUnsafe",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.link.pushNavigateUnsafe:177728369064f17a",
+          "signature" : "def pushNavigateUnsafe[Msg](path: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
         {
           "id" : "def:scalive.link.pushNavigateUnsafe:eb0d14da61e90b09",
           "signature" : "def pushNavigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
@@ -6796,6 +6912,10 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.link.pushPatch:34416e3f8cbd986c",
+          "signature" : "def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
           "id" : "def:scalive.link.pushPatch:5a67d6a14b5371f1",
           "signature" : "def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
         }
@@ -6807,6 +6927,10 @@
       "qualifiedName" : "scalive.link.pushPatchUnsafe",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.link.pushPatchUnsafe:ad1cb2089a258c85",
+          "signature" : "def pushPatchUnsafe[Msg](path: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
         {
           "id" : "def:scalive.link.pushPatchUnsafe:bfcd9d5a2ad04a11",
           "signature" : "def pushPatchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
@@ -6822,6 +6946,10 @@
         {
           "id" : "def:scalive.link.replaceNavigate:1683970dcf8c6e64",
           "signature" : "def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.link.replaceNavigate:5f93db0baa971e19",
+          "signature" : "def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -6834,6 +6962,10 @@
         {
           "id" : "def:scalive.link.replaceNavigateUnsafe:88141303e771336e",
           "signature" : "def replaceNavigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.link.replaceNavigateUnsafe:b9f466a72c314e9f",
+          "signature" : "def replaceNavigateUnsafe[Msg](path: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -6846,6 +6978,10 @@
         {
           "id" : "def:scalive.link.replacePatch:d2d4801de398e9b4",
           "signature" : "def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.link.replacePatch:e5c872ef836db843",
+          "signature" : "def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -6855,6 +6991,10 @@
       "qualifiedName" : "scalive.link.replacePatchUnsafe",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.link.replacePatchUnsafe:706814c3d8d238bc",
+          "signature" : "def replacePatchUnsafe[Msg](path: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
         {
           "id" : "def:scalive.link.replacePatchUnsafe:a84cc06dd7e96b4f",
           "signature" : "def replacePatchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
@@ -6868,12 +7008,32 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.liveComponent:3eb37ec8ac30b7ff",
+          "signature" : "def liveComponent[Props, Msg, Model](component: LiveComponent[Props, Msg, Model], id: String, props: Signal[Props]): Mod[Nothing]"
+        },
+        {
           "id" : "def:scalive.liveComponent:52dfef577a6c2bcb",
           "signature" : "def liveComponent[Props, Msg, Model](component: LiveComponent[Props, Msg, Model], id: String, props: Props): Mod[Nothing]"
         },
         {
+          "id" : "def:scalive.liveComponent:53e6799d3efea328",
+          "signature" : "def liveComponent[Props, Msg, Model, Output, OwnerMsg](component: LiveComponent.WithOutput[Props, Msg, Model, Output], id: Signal[String], props: Signal[Props], onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
+        },
+        {
           "id" : "def:scalive.liveComponent:6020e0664c715aca",
           "signature" : "def liveComponent[Props, Msg, Model, Output, OwnerMsg](component: LiveComponent.WithOutput[Props, Msg, Model, Output], id: String, props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
+        },
+        {
+          "id" : "def:scalive.liveComponent:731f05811be501b9",
+          "signature" : "def liveComponent[Props, Msg, Model, Output, OwnerMsg](component: LiveComponent.WithOutput[Props, Msg, Model, Output], id: String, props: Signal[Props], onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
+        },
+        {
+          "id" : "def:scalive.liveComponent:7bac53de2eb15f61",
+          "signature" : "def liveComponent[Props, Msg, Model](component: LiveComponent[Props, Msg, Model], id: Signal[String], props: Props): Mod[Nothing]"
+        },
+        {
+          "id" : "def:scalive.liveComponent:d354d0023ac6d58d",
+          "signature" : "def liveComponent[Props, Msg, Model](component: LiveComponent[Props, Msg, Model], id: Signal[String], props: Signal[Props]): Mod[Nothing]"
         },
         {
           "id" : "def:scalive.liveComponent:de40dfefa58b9b09",
@@ -6888,6 +7048,10 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.liveFileInput:087d73c8fb67519b",
+          "signature" : "def liveFileInput[Msg, R](upload: Signal[LiveUpload[R]], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
           "id" : "def:scalive.liveFileInput:c09740dfc9f12518",
           "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
@@ -6899,6 +7063,14 @@
       "qualifiedName" : "scalive.liveTitle",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.liveTitle:004d1983ed111bb6",
+          "signature" : "def liveTitle(pageTitle: Signal[Option[String]], default: String, prefix: String, suffix: String): HtmlElement[Nothing]"
+        },
+        {
+          "id" : "def:scalive.liveTitle:3bf138ca49c19f1f",
+          "signature" : "def liveTitle(pageTitle: Signal[Option[String]], default: String): HtmlElement[Nothing]"
+        },
         {
           "id" : "def:scalive.liveTitle:fc8e516de427aa81",
           "signature" : "def liveTitle(pageTitle: Option[String], default: String, prefix: String = ..., suffix: String = ...): HtmlElement[Nothing]"
@@ -6912,8 +7084,16 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.liveView:3f4fc0f1763290ce",
+          "signature" : "def liveView[A, Msg, Model](id: String, value: Signal[A])(build: A => LiveView[Msg, Model])(using evidence$1: LiveMessageTag[Msg]): Mod[Nothing]"
+        },
+        {
           "id" : "def:scalive.liveView:462552625e32a1d2",
           "signature" : "def liveView[Msg, Model](id: String, liveView: => LiveView[Msg, Model], sticky: Boolean = ..., linkParentOnCrash: Boolean = ...)(using evidence$1: LiveMessageTag[Msg]): Mod[Nothing]"
+        },
+        {
+          "id" : "def:scalive.liveView:de5f9c14ab397695",
+          "signature" : "def liveView[A, Msg, Model](id: String, value: Signal[A], sticky: Boolean, linkParentOnCrash: A => Boolean)(build: A => LiveView[Msg, Model])(using evidence$1: LiveMessageTag[Msg]): Mod[Nothing]"
         }
       ]
     },
@@ -6966,6 +7146,22 @@
         {
           "id" : "def:scalive.rawHtml:2222f09fcb9732a9",
           "signature" : "def rawHtml(html: String): Mod[Nothing]"
+        },
+        {
+          "id" : "def:scalive.rawHtml:7c64f5b96bf0d524",
+          "signature" : "def rawHtml(html: Signal[String]): Mod[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.signalStringToMod",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.signalStringToMod",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.signalStringToMod:b5470b0956c6ac44",
+          "signature" : "def signalStringToMod(v: Signal[String]): Mod[Nothing]"
         }
       ]
     },
@@ -7238,6 +7434,14 @@
         {
           "id" : "def:scalive.uploadErrors:3c74553d913d9c36",
           "signature" : "def uploadErrors[R](upload: LiveUpload[R], entry: LiveUploadEntry[R]): List[LiveUploadError]"
+        },
+        {
+          "id" : "def:scalive.uploadErrors:70dc5527823c5dff",
+          "signature" : "def uploadErrors[R](upload: Signal[LiveUpload[R]]): Signal[List[LiveUploadError]]"
+        },
+        {
+          "id" : "def:scalive.uploadErrors:af3af1b4d860d489",
+          "signature" : "def uploadErrors[R](entry: Signal[LiveUploadEntry[R]]): Signal[List[LiveUploadError]]"
         },
         {
           "id" : "def:scalive.uploadErrors:b96049c28958247d",
@@ -7606,6 +7810,18 @@
       ]
     },
     {
+      "id" : "enum:scalive.Mod.Content.DynamicLiveComponent",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.DynamicLiveComponent",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.DynamicLiveComponent:27548ea99dfef51d",
+          "signature" : "enum DynamicLiveComponent[Msg](spec: LiveComponentDynamicSpec[?, ?, ?, ?]) extends Mod.Content[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.Mod.Content.Flash",
       "ownerId" : "object:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.Flash",
@@ -7650,6 +7866,114 @@
         {
           "id" : "enum:scalive.Mod.Content.LiveView:e30667b89829fbb0",
           "signature" : "enum LiveView(spec: NestedLiveViewSpec[?, ?]) extends Mod.Content[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalChoice",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalChoice",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalChoice:e8bf5b5d3f08c90e",
+          "signature" : "enum SignalChoice[A, Msg](value: Signal[A], branches: Vector[(A, HtmlElement[Msg])]) extends Mod.Content[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalKeyed",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalKeyed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalKeyed:fd6900db0b25c75d",
+          "signature" : "enum SignalKeyed[A, Key, Msg](values: Signal[Iterable[A]], key: A => Key, project: (Key, Signal[A]) => HtmlElement[Msg]) extends Mod.Content[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalKeyedByIndex",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalKeyedByIndex",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalKeyedByIndex:3e8b18dae8e8b62d",
+          "signature" : "enum SignalKeyedByIndex[A, Msg](values: Signal[Iterable[A]], project: (Int, Signal[A]) => HtmlElement[Msg]) extends Mod.Content[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalLiveComponent",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalLiveComponent",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalLiveComponent:3527ea8129978cba",
+          "signature" : "enum SignalLiveComponent[Msg](spec: LiveComponentSignalSpec[?, ?, ?, ?]) extends Mod.Content[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalLiveView",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalLiveView",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalLiveView:e70bebd4c96e2ad2",
+          "signature" : "enum SignalLiveView(spec: SignalNestedLiveViewSpec[?, ?, ?]) extends Mod.Content[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalModChoice",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalModChoice",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalModChoice:a92140655bfebe3c",
+          "signature" : "enum SignalModChoice[A, Msg](value: Signal[A], branches: Vector[(A, Mod[Msg])]) extends Mod.Content[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalOption",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalOption",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalOption:ad0974084bb87c21",
+          "signature" : "enum SignalOption[A, Msg](value: Signal[Option[A]], project: Signal[A] => HtmlElement[Msg]) extends Mod.Content[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalStream",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalStream",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalStream:b76f4a431a0d60cb",
+          "signature" : "enum SignalStream[A, Msg](value: Signal[streams.LiveStream[A]], project: (String, Signal[A]) => HtmlElement[Msg]) extends Mod.Content[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Content.SignalText",
+      "ownerId" : "object:scalive.Mod.Content",
+      "qualifiedName" : "scalive.Mod.Content.SignalText",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Content.SignalText:bf98bc183a7af7a5",
+          "signature" : "enum SignalText(value: Signal[String], raw: Boolean = ...) extends Mod.Content[Nothing]"
         }
       ]
     },
@@ -7834,6 +8158,78 @@
       ]
     },
     {
+      "id" : "extension:scalive.FormFieldView.email",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.email",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.email:578b86da541b794c",
+          "signature" : "extension def email[A](field: Signal[FormFieldView[A]])[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.FormFieldView.errorFeedback",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.errorFeedback",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.errorFeedback:5a930ea10c14b20e",
+          "signature" : "extension def errorFeedback[A](field: Signal[FormFieldView[A]])(mods: |[Mod[Nothing], IterableOnce[Mod[Nothing]]]*): HtmlElement[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.FormFieldView.id",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.id",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.id:eb1a0578bde91ae6",
+          "signature" : "extension def id[A](field: Signal[FormFieldView[A]]): Signal[String]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.FormFieldView.text",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.text",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.text:f3b77a07854fbd93",
+          "signature" : "extension def text[A](field: Signal[FormFieldView[A]])[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.FormFieldView.textarea",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.textarea",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.textarea:488e501c0b261011",
+          "signature" : "extension def textarea[A](field: Signal[FormFieldView[A]])[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.FormFieldView.validationAttributes",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.validationAttributes",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.validationAttributes:b088b207a7296a46",
+          "signature" : "extension def validationAttributes[A](field: Signal[FormFieldView[A]]): Vector[Mod.Attr[Nothing]]"
+        }
+      ]
+    },
+    {
       "id" : "extension:scalive.JSCommands.addClass",
       "ownerId" : "object:scalive.JSCommands",
       "qualifiedName" : "scalive.JSCommands.addClass",
@@ -7962,6 +8358,10 @@
         {
           "id" : "extension:scalive.JSCommands.pushNavigate:6aa82d0dc85109a1",
           "signature" : "extension def pushNavigate[Msg](ops: JSCommands.JSCommand[Msg])(to: LiveLocation): JSCommands.JSCommand[Msg]"
+        },
+        {
+          "id" : "extension:scalive.JSCommands.pushNavigate:e78314720811a8dd",
+          "signature" : "extension def pushNavigate[Msg](ops: JSCommands.JSCommand[Msg])(to: Signal[LiveLocation]): Signal[JSCommands.JSCommand[Msg]]"
         }
       ]
     },
@@ -7974,6 +8374,10 @@
         {
           "id" : "extension:scalive.JSCommands.pushNavigateUnsafe:1fab5661843c7c95",
           "signature" : "extension def pushNavigateUnsafe[Msg](ops: JSCommands.JSCommand[Msg])(href: String): JSCommands.JSCommand[Msg]"
+        },
+        {
+          "id" : "extension:scalive.JSCommands.pushNavigateUnsafe:72b7e18d3a226ffa",
+          "signature" : "extension def pushNavigateUnsafe[Msg](ops: JSCommands.JSCommand[Msg])(href: Signal[String]): Signal[JSCommands.JSCommand[Msg]]"
         }
       ]
     },
@@ -7983,6 +8387,10 @@
       "qualifiedName" : "scalive.JSCommands.pushPatch",
       "kind" : "extension",
       "signatures" : [
+        {
+          "id" : "extension:scalive.JSCommands.pushPatch:492c3a37f8c0cef1",
+          "signature" : "extension def pushPatch[Msg](ops: JSCommands.JSCommand[Msg])(to: Signal[LiveLocation]): Signal[JSCommands.JSCommand[Msg]]"
+        },
         {
           "id" : "extension:scalive.JSCommands.pushPatch:4b94c294ecf46c8b",
           "signature" : "extension def pushPatch[Msg](ops: JSCommands.JSCommand[Msg])(to: LiveLocation): JSCommands.JSCommand[Msg]"
@@ -7995,6 +8403,10 @@
       "qualifiedName" : "scalive.JSCommands.pushPatchUnsafe",
       "kind" : "extension",
       "signatures" : [
+        {
+          "id" : "extension:scalive.JSCommands.pushPatchUnsafe:4657c1933aa6062b",
+          "signature" : "extension def pushPatchUnsafe[Msg](ops: JSCommands.JSCommand[Msg])(href: Signal[String]): Signal[JSCommands.JSCommand[Msg]]"
+        },
         {
           "id" : "extension:scalive.JSCommands.pushPatchUnsafe:d635904aca143978",
           "signature" : "extension def pushPatchUnsafe[Msg](ops: JSCommands.JSCommand[Msg])(href: String): JSCommands.JSCommand[Msg]"
@@ -8032,6 +8444,10 @@
       "kind" : "extension",
       "signatures" : [
         {
+          "id" : "extension:scalive.JSCommands.replaceNavigate:192618e16bba8f00",
+          "signature" : "extension def replaceNavigate[Msg](ops: JSCommands.JSCommand[Msg])(to: Signal[LiveLocation]): Signal[JSCommands.JSCommand[Msg]]"
+        },
+        {
           "id" : "extension:scalive.JSCommands.replaceNavigate:37efe8e294793ee2",
           "signature" : "extension def replaceNavigate[Msg](ops: JSCommands.JSCommand[Msg])(to: LiveLocation): JSCommands.JSCommand[Msg]"
         }
@@ -8046,6 +8462,10 @@
         {
           "id" : "extension:scalive.JSCommands.replaceNavigateUnsafe:50c44e7016572bb7",
           "signature" : "extension def replaceNavigateUnsafe[Msg](ops: JSCommands.JSCommand[Msg])(href: String): JSCommands.JSCommand[Msg]"
+        },
+        {
+          "id" : "extension:scalive.JSCommands.replaceNavigateUnsafe:6ca6fc71f5eaf805",
+          "signature" : "extension def replaceNavigateUnsafe[Msg](ops: JSCommands.JSCommand[Msg])(href: Signal[String]): Signal[JSCommands.JSCommand[Msg]]"
         }
       ]
     },
@@ -8055,6 +8475,10 @@
       "qualifiedName" : "scalive.JSCommands.replacePatch",
       "kind" : "extension",
       "signatures" : [
+        {
+          "id" : "extension:scalive.JSCommands.replacePatch:0f7e03c8bcf9c66b",
+          "signature" : "extension def replacePatch[Msg](ops: JSCommands.JSCommand[Msg])(to: Signal[LiveLocation]): Signal[JSCommands.JSCommand[Msg]]"
+        },
         {
           "id" : "extension:scalive.JSCommands.replacePatch:f8cee35e68826395",
           "signature" : "extension def replacePatch[Msg](ops: JSCommands.JSCommand[Msg])(to: LiveLocation): JSCommands.JSCommand[Msg]"
@@ -8067,6 +8491,10 @@
       "qualifiedName" : "scalive.JSCommands.replacePatchUnsafe",
       "kind" : "extension",
       "signatures" : [
+        {
+          "id" : "extension:scalive.JSCommands.replacePatchUnsafe:a4cfe2de096a41e5",
+          "signature" : "extension def replacePatchUnsafe[Msg](ops: JSCommands.JSCommand[Msg])(href: Signal[String]): Signal[JSCommands.JSCommand[Msg]]"
+        },
         {
           "id" : "extension:scalive.JSCommands.replacePatchUnsafe:afe3af74d7b23e27",
           "signature" : "extension def replacePatchUnsafe[Msg](ops: JSCommands.JSCommand[Msg])(href: String): JSCommands.JSCommand[Msg]"
@@ -8170,6 +8598,62 @@
       ]
     },
     {
+      "id" : "extension:scalive.Signal.choose",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.choose",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.Signal.choose:0519f3fedaae177b",
+          "signature" : "extension def choose[A](value: Signal[A])[Msg](branches: (A, HtmlElement[Msg])*): Mod[Msg]"
+        },
+        {
+          "id" : "extension:scalive.Signal.choose:661b01b8237ca357",
+          "signature" : "extension def choose(condition: Signal[Boolean])[Msg](whenTrue: => HtmlElement[Msg], whenFalse: => HtmlElement[Msg]): Mod[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.Signal.chooseMod",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.chooseMod",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.Signal.chooseMod:7ea83c4e210f25c2",
+          "signature" : "extension def chooseMod(condition: Signal[Boolean])[Msg](whenTrue: => Mod[Msg], whenFalse: => Mod[Msg]): Mod[Msg]"
+        },
+        {
+          "id" : "extension:scalive.Signal.chooseMod:9eb85c9fed672756",
+          "signature" : "extension def chooseMod[A](value: Signal[A])[Msg](branches: (A, Mod[Msg])*): Mod[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.Signal.option",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.option",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.Signal.option:0f25dfb6f1cca77f",
+          "signature" : "extension def option[A](value: Signal[Option[A]])[Msg](project: Signal[A] => HtmlElement[Msg]): Mod[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.Signal.when",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.when",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.Signal.when:cdbaba38720b7766",
+          "signature" : "extension def when(condition: Signal[Boolean])[Msg](content: => HtmlElement[Msg]): Mod[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "extension:scalive.SubscriptionKey.value",
       "ownerId" : "object:scalive.SubscriptionKey",
       "qualifiedName" : "scalive.SubscriptionKey.value",
@@ -8190,6 +8674,22 @@
         {
           "id" : "extension:scalive.dropTarget:04e06996d5a634e8",
           "signature" : "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"
+        },
+        {
+          "id" : "extension:scalive.dropTarget:f8e0d7cb2578e8a5",
+          "signature" : "extension def dropTarget[R](upload: Signal[LiveUpload[R]]): Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.field",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.field",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.field:65de79fd6036b2aa",
+          "signature" : "extension def field[Owner, A](form: Signal[RootedForm[Owner, A]])[B](definition: RootedFormField[Owner, B]): Signal[FormFieldView[B]]"
         }
       ]
     },
@@ -8200,12 +8700,20 @@
       "kind" : "extension",
       "signatures" : [
         {
+          "id" : "extension:scalive.onProgress:1c1894b4074b8e28",
+          "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](message: Msg): Mod.Attr[Msg]"
+        },
+        {
           "id" : "extension:scalive.onProgress:abca07fe690923da",
           "signature" : "extension def onProgress[R](upload: LiveUpload[R])[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg]"
         },
         {
           "id" : "extension:scalive.onProgress:d43d66c916f2e9e6",
           "signature" : "extension def onProgress[R](upload: LiveUpload[R])[Msg](message: Msg): Mod.Attr[Msg]"
+        },
+        {
+          "id" : "extension:scalive.onProgress:f6762142e1517066",
+          "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg]"
         }
       ]
     },
@@ -8218,6 +8726,10 @@
         {
           "id" : "extension:scalive.renderIn:0b78bdde110bcf1c",
           "signature" : "extension def renderIn[T](stream: streams.LiveStream[T])[Msg](container: HtmlTag, mods: Mod[Msg]*)(project: T => HtmlElement[Msg]): HtmlElement[Msg]"
+        },
+        {
+          "id" : "extension:scalive.renderIn:f79d639e070b2568",
+          "signature" : "extension def renderIn[T](stream: Signal[streams.LiveStream[T]])[Msg](container: HtmlTag, mods: Mod[Msg]*)(project: Signal[T] => HtmlElement[Msg]): HtmlElement[Msg]"
         }
       ]
     },
@@ -8227,6 +8739,10 @@
       "qualifiedName" : "scalive.splitBy",
       "kind" : "extension",
       "signatures" : [
+        {
+          "id" : "extension:scalive.splitBy:4f77e643fe3a5a62",
+          "signature" : "extension def splitBy[T, Items <: Iterable[T]](items: Signal[Items])[Key, Msg](key: T => Key)(project: (Key, Signal[T]) => HtmlElement[Msg]): Mod[Msg]"
+        },
         {
           "id" : "extension:scalive.splitBy:d3d8aa5efb616766",
           "signature" : "extension def splitBy[T](items: IterableOnce[T])[Key, Msg](key: T => Key)(project: (Key, T) => HtmlElement[Msg]): Mod[Msg]"
@@ -8240,6 +8756,10 @@
       "kind" : "extension",
       "signatures" : [
         {
+          "id" : "extension:scalive.splitByIndex:0376f26c22e53f02",
+          "signature" : "extension def splitByIndex[T, Items <: Iterable[T]](items: Signal[Items])[Msg](project: (Int, Signal[T]) => HtmlElement[Msg]): Mod[Msg]"
+        },
+        {
           "id" : "extension:scalive.splitByIndex:4ed816a06973c370",
           "signature" : "extension def splitByIndex[T](items: IterableOnce[T])[Msg](project: (Int, T) => HtmlElement[Msg]): Mod[Msg]"
         }
@@ -8251,6 +8771,10 @@
       "qualifiedName" : "scalive.stream",
       "kind" : "extension",
       "signatures" : [
+        {
+          "id" : "extension:scalive.stream:9d63f97d45014549",
+          "signature" : "extension def stream[T](stream: Signal[streams.LiveStream[T]])[Msg](project: (String, Signal[T]) => HtmlElement[Msg]): Mod[Msg]"
+        },
         {
           "id" : "extension:scalive.stream:af077c87754980c4",
           "signature" : "extension def stream[T](stream: streams.LiveStream[T])[Msg](project: (String, T) => HtmlElement[Msg]): Mod[Msg]"
@@ -11994,6 +12518,18 @@
       ]
     },
     {
+      "id" : "object:scalive.FormFieldView",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormFieldView",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.FormFieldView:77d0104a87f6ab10",
+          "signature" : "object FormFieldView"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.FormPath",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormPath",
@@ -12386,6 +12922,18 @@
         {
           "id" : "object:scalive.ServerToBrowserEvent:a9cb1274040f9383",
           "signature" : "object ServerToBrowserEvent"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.Signal",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.Signal",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.Signal:c52ad9d6fdab1676",
+          "signature" : "object Signal"
         }
       ]
     },
@@ -13309,6 +13857,18 @@
         {
           "id" : "trait:scalive.RootRawEventHooks:b59ba1016941e079",
           "signature" : "trait RootRawEventHooks[Msg, Model]"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.Signal",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.Signal",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.Signal:0472a3f5cc9e5df2",
+          "signature" : "trait Signal[+A]"
         }
       ]
     },
@@ -14891,8 +15451,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveLayoutContext.currentUrl:e2f4e99cf11f7a48",
-          "signature" : "val currentUrl: zio.http.URL"
+          "id" : "val:scalive.LiveLayoutContext.currentUrl:16839ed759dbed73",
+          "signature" : "val currentUrl: Signal[zio.http.URL]"
         }
       ]
     },
@@ -14903,8 +15463,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveLayoutContext.params:39730ec8ff1e0a2b",
-          "signature" : "val params: A"
+          "id" : "val:scalive.LiveLayoutContext.params:a4a144ac7d82a956",
+          "signature" : "val params: Signal[A]"
         }
       ]
     },
@@ -14915,8 +15475,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveLayoutContext.request:cd3737f9089832e4",
-          "signature" : "val request: zio.http.Request"
+          "id" : "val:scalive.LiveLayoutContext.request:fa1b6bdbc21ec4bb",
+          "signature" : "val request: Signal[zio.http.Request]"
         }
       ]
     },
@@ -15077,6 +15637,54 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveRootLayoutContext.context",
+      "ownerId" : "class:scalive.LiveRootLayoutContext",
+      "qualifiedName" : "scalive.LiveRootLayoutContext.context",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveRootLayoutContext.context:6b6ffaeebca41cd3",
+          "signature" : "val context: Ctx"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveRootLayoutContext.currentUrl",
+      "ownerId" : "class:scalive.LiveRootLayoutContext",
+      "qualifiedName" : "scalive.LiveRootLayoutContext.currentUrl",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveRootLayoutContext.currentUrl:e2f4e99cf11f7a48",
+          "signature" : "val currentUrl: zio.http.URL"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveRootLayoutContext.params",
+      "ownerId" : "class:scalive.LiveRootLayoutContext",
+      "qualifiedName" : "scalive.LiveRootLayoutContext.params",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveRootLayoutContext.params:c80dfd531302a173",
+          "signature" : "val params: A"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveRootLayoutContext.request",
+      "ownerId" : "class:scalive.LiveRootLayoutContext",
+      "qualifiedName" : "scalive.LiveRootLayoutContext.request",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveRootLayoutContext.request:cd3737f9089832e4",
+          "signature" : "val request: zio.http.Request"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveSecurity.cookies",
       "ownerId" : "class:scalive.LiveSecurity",
       "qualifiedName" : "scalive.LiveSecurity.cookies",
@@ -15133,6 +15741,18 @@
         {
           "id" : "val:scalive.Mod.Content.Component.el:050c564f61124eb3",
           "signature" : "val el: HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.DynamicLiveComponent.spec",
+      "ownerId" : "enum:scalive.Mod.Content.DynamicLiveComponent",
+      "qualifiedName" : "scalive.Mod.Content.DynamicLiveComponent.spec",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.DynamicLiveComponent.spec:620aa57ae8b73877",
+          "signature" : "val spec: LiveComponentDynamicSpec[?, ?, ?, ?]"
         }
       ]
     },
@@ -15241,6 +15861,210 @@
         {
           "id" : "val:scalive.Mod.Content.LiveView.spec:394c889f68b72c27",
           "signature" : "val spec: NestedLiveViewSpec[?, ?]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalChoice.branches",
+      "ownerId" : "enum:scalive.Mod.Content.SignalChoice",
+      "qualifiedName" : "scalive.Mod.Content.SignalChoice.branches",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalChoice.branches:7058d8ce2068e4d5",
+          "signature" : "val branches: Vector[(A, HtmlElement[Msg])]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalChoice.value",
+      "ownerId" : "enum:scalive.Mod.Content.SignalChoice",
+      "qualifiedName" : "scalive.Mod.Content.SignalChoice.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalChoice.value:3fbcc93cd200a897",
+          "signature" : "val value: Signal[A]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalKeyed.key",
+      "ownerId" : "enum:scalive.Mod.Content.SignalKeyed",
+      "qualifiedName" : "scalive.Mod.Content.SignalKeyed.key",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalKeyed.key:f13705a43523cc2a",
+          "signature" : "val key: A => Key"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalKeyed.project",
+      "ownerId" : "enum:scalive.Mod.Content.SignalKeyed",
+      "qualifiedName" : "scalive.Mod.Content.SignalKeyed.project",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalKeyed.project:038bd9e05a161e22",
+          "signature" : "val project: (Key, Signal[A]) => HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalKeyed.values",
+      "ownerId" : "enum:scalive.Mod.Content.SignalKeyed",
+      "qualifiedName" : "scalive.Mod.Content.SignalKeyed.values",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalKeyed.values:da0753fafae4206c",
+          "signature" : "val values: Signal[collection.Iterable[A]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalKeyedByIndex.project",
+      "ownerId" : "enum:scalive.Mod.Content.SignalKeyedByIndex",
+      "qualifiedName" : "scalive.Mod.Content.SignalKeyedByIndex.project",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalKeyedByIndex.project:2103bb73a851f2cc",
+          "signature" : "val project: (Int, Signal[A]) => HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalKeyedByIndex.values",
+      "ownerId" : "enum:scalive.Mod.Content.SignalKeyedByIndex",
+      "qualifiedName" : "scalive.Mod.Content.SignalKeyedByIndex.values",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalKeyedByIndex.values:3e61ddefe4b2ab20",
+          "signature" : "val values: Signal[collection.Iterable[A]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalLiveComponent.spec",
+      "ownerId" : "enum:scalive.Mod.Content.SignalLiveComponent",
+      "qualifiedName" : "scalive.Mod.Content.SignalLiveComponent.spec",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalLiveComponent.spec:9343f15cb189c8b4",
+          "signature" : "val spec: LiveComponentSignalSpec[?, ?, ?, ?]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalLiveView.spec",
+      "ownerId" : "enum:scalive.Mod.Content.SignalLiveView",
+      "qualifiedName" : "scalive.Mod.Content.SignalLiveView.spec",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalLiveView.spec:c8453998e23ae9d7",
+          "signature" : "val spec: SignalNestedLiveViewSpec[?, ?, ?]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalModChoice.branches",
+      "ownerId" : "enum:scalive.Mod.Content.SignalModChoice",
+      "qualifiedName" : "scalive.Mod.Content.SignalModChoice.branches",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalModChoice.branches:6aa840cf2b9a8f51",
+          "signature" : "val branches: Vector[(A, Mod[Msg])]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalModChoice.value",
+      "ownerId" : "enum:scalive.Mod.Content.SignalModChoice",
+      "qualifiedName" : "scalive.Mod.Content.SignalModChoice.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalModChoice.value:6a2e38af8dfd5c1e",
+          "signature" : "val value: Signal[A]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalOption.project",
+      "ownerId" : "enum:scalive.Mod.Content.SignalOption",
+      "qualifiedName" : "scalive.Mod.Content.SignalOption.project",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalOption.project:57be00793dd6ba0c",
+          "signature" : "val project: Signal[A] => HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalOption.value",
+      "ownerId" : "enum:scalive.Mod.Content.SignalOption",
+      "qualifiedName" : "scalive.Mod.Content.SignalOption.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalOption.value:89d4d238b726cb73",
+          "signature" : "val value: Signal[Option[A]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalStream.project",
+      "ownerId" : "enum:scalive.Mod.Content.SignalStream",
+      "qualifiedName" : "scalive.Mod.Content.SignalStream.project",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalStream.project:d6c552dc405b748d",
+          "signature" : "val project: (String, Signal[A]) => HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalStream.value",
+      "ownerId" : "enum:scalive.Mod.Content.SignalStream",
+      "qualifiedName" : "scalive.Mod.Content.SignalStream.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalStream.value:0827967866938a0c",
+          "signature" : "val value: Signal[streams.LiveStream[A]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalText.raw",
+      "ownerId" : "enum:scalive.Mod.Content.SignalText",
+      "qualifiedName" : "scalive.Mod.Content.SignalText.raw",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalText.raw:49d3516f72ac2e41",
+          "signature" : "val raw: Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Content.SignalText.value",
+      "ownerId" : "enum:scalive.Mod.Content.SignalText",
+      "qualifiedName" : "scalive.Mod.Content.SignalText.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Content.SignalText.value:a829306237c228ce",
+          "signature" : "val value: Signal[String]"
         }
       ]
     },

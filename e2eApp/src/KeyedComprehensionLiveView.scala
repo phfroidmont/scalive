@@ -38,7 +38,10 @@ class KeyedComprehensionLiveView(assets: StaticAssets)
         )
       )
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val activeTab = model.map(_.activeTab)
+    val count     = model.map(_.count)
+
     div(
       assets.stylesheet("daisy.css", typ := "text/css"),
       cls := "p-8",
@@ -49,17 +52,17 @@ class KeyedComprehensionLiveView(assets: StaticAssets)
           cls  := "tabs tabs-border",
           link.pushPatch(
             E2ERoutes.keyedComprehension.location(UrlParams(Some("all_keyed"))),
-            cls := tabClass(model.activeTab, "all_keyed"),
+            cls := activeTab.map(tabClass(_, "all_keyed")),
             "All keyed"
           ),
           link.pushPatch(
             E2ERoutes.keyedComprehension.location(UrlParams(Some("rows_keyed"))),
-            cls := tabClass(model.activeTab, "rows_keyed"),
+            cls := activeTab.map(tabClass(_, "rows_keyed")),
             "Rows keyed"
           ),
           link.pushPatch(
             E2ERoutes.keyedComprehension.location(UrlParams(Some("no_keyed"))),
-            cls := tabClass(model.activeTab, "no_keyed"),
+            cls := activeTab.map(tabClass(_, "no_keyed")),
             "No keyed"
           )
         )
@@ -73,18 +76,44 @@ class KeyedComprehensionLiveView(assets: StaticAssets)
             Msg.ChangeSize(params.get("size").flatMap(_.toIntOption).getOrElse(0))
           ),
           nameAttr := "size",
-          value    := model.size.toString
+          value    := model.map(_.size.toString)
         )
       ),
-      (1 to 2).map(i => renderTable(i, model))
+      (1 to 2).map(i =>
+        activeTab.choose(
+          "all_keyed" -> renderTable(
+            i,
+            model.map(_.items),
+            count,
+            keyedRows = true,
+            keyedCells = true
+          ),
+          "rows_keyed" -> renderTable(
+            i,
+            model.map(_.items),
+            count,
+            keyedRows = true,
+            keyedCells = false
+          ),
+          "no_keyed" -> renderTable(
+            i,
+            model.map(_.items),
+            count,
+            keyedRows = false,
+            keyedCells = false
+          )
+        )
+      )
     )
+  end view
 
-  private def renderTable(i: Int, model: Model) =
-    val rows = model.activeTab match
-      case "all_keyed"  => renderRows(model, keyedRows = true, keyedCells = true, i)
-      case "rows_keyed" => renderRows(model, keyedRows = true, keyedCells = false, i)
-      case _            => renderRows(model, keyedRows = false, keyedCells = false, i)
-
+  private def renderTable(
+    i: Int,
+    items: Signal[List[Item]],
+    count: Signal[Int],
+    keyedRows: Boolean,
+    keyedCells: Boolean
+  ) =
     div(
       cls := "mt-8 flow-root",
       div(
@@ -101,52 +130,64 @@ class KeyedComprehensionLiveView(assets: StaticAssets)
             ),
             tbody(
               cls := "divide-y divide-gray-200",
-              rows
+              renderRows(items, count, keyedRows, keyedCells, i)
             )
           )
         )
       )
     )
 
-  private def renderRows(model: Model, keyedRows: Boolean, keyedCells: Boolean, i: Int): Mod[Msg] =
+  private def renderRows(
+    items: Signal[List[Item]],
+    count: Signal[Int],
+    keyedRows: Boolean,
+    keyedCells: Boolean,
+    i: Int
+  ): Mod[Msg] =
     if keyedRows then
-      model.items.splitBy(_.id) { (_, item) =>
-        renderRow(model, keyedCells, item, i)
+      items.splitBy(_.id) { (itemId, item) =>
+        renderRow(count, keyedCells, Some(itemId), item, i)
       }
     else
-      model.items.splitByIndex { (_, item) =>
-        renderRow(model, keyedCells, item, i)
+      items.splitByIndex { (_, item) =>
+        renderRow(count, keyedCells, None, item, i)
       }
 
-  private def renderRow(model: Model, keyedCells: Boolean, item: Item, i: Int) =
+  private def renderRow(
+    count: Signal[Int],
+    keyedCells: Boolean,
+    itemId: Option[Int],
+    item: Signal[Item],
+    i: Int
+  ) =
     val cells = Vector(
       "1" -> renderCell(
         prefix = " Count: ",
-        count = model.count.toString,
+        count = count.map(_.toString),
         separator = " Name: ",
-        name = item.entry.foo.bar,
+        name = item.map(_.entry.foo.bar),
         suffix = s" $i "
       ),
       "2" -> renderCell(
         prefix = " ",
-        count = model.count.toString,
+        count = count.map(_.toString),
         separator = "",
-        name = "",
+        name = item.map(_ => ""),
         suffix = " "
       )
     )
 
     tr(
       if keyedCells then
-        cells.splitBy { case (slotId, _) => s"${item.id}_$slotId" }((_, cell) => cell._2)
+        cells.splitBy { case (slotId, _) => s"${itemId.get}_$slotId" }((_, cell) => cell._2)
       else cells.map(_._2)
     )
 
   private def renderCell(
     prefix: String,
-    count: String,
+    count: Signal[String],
     separator: String,
-    name: String,
+    name: Signal[String],
     suffix: String
   ) =
     td(

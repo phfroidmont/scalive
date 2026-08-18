@@ -149,7 +149,7 @@ object StreamApiSpec extends ZIOSpecDefault:
       val child = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-        def render(model: Unit) = div("child")
+        override def view(model: Signal[Unit]) = div("child")
 
       for
         streamRef     <- Ref.make(StreamRuntimeState.empty)
@@ -167,14 +167,21 @@ object StreamApiSpec extends ZIOSpecDefault:
                                 session = "token",
                                 sticky = false
                               )
-                            )
+                             )
         componentsRef <- Ref.make(ComponentRuntimeState.empty)
-        _ <- SocketComponentRuntime.renderRoot(
-               users.renderIn(ul)(user => div(liveView(s"user-${user.id}", child))),
+        graph = ViewGraph.build[Unit](_ =>
+                  users.renderIn(ul)(user => div(liveView(s"user-${user.id}", child)))
+                )
+        _ <- SocketComponentRuntime.evaluateViewGraph(
+               graph,
+               (),
+               SignalEvaluation.empty,
+               revision = 1L,
                componentsRef,
                LiveContext(staticChanged = false, nestedLiveViews = nestedRuntime)
              )
         count <- registrations.get
+        _     <- ZIO.succeed(graph.dispose())
       yield assertTrue(count == 1)
     }
   )

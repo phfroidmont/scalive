@@ -5,6 +5,7 @@ import zio.schema.derived
 
 import scalive.*
 import scalive.LiveIO.given
+import scalive.Signal.*
 
 class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
 
@@ -17,18 +18,21 @@ class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
   def handleMessage(model: Model, ctx: MessageContext) =
     _ => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val nextLocation =
+      model.map(current => E2ERoutes.navigationA.location(AParams(Some(current.paramNext))))
+
     NavigationLayout(
       div(
         h1("This is page A"),
-        p("Current param: ", model.paramCurrent.getOrElse("")),
+        p("Current param: ", model.map(_.paramCurrent.getOrElse(""))),
         link.pushPatch(
-          E2ERoutes.navigationA.location(AParams(Some(model.paramNext))),
+          nextLocation,
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch this LiveView"
         ),
         link.replacePatch(
-          E2ERoutes.navigationA.location(AParams(Some(model.paramNext))),
+          nextLocation,
           cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch (Replace)"
         ),
@@ -59,7 +63,10 @@ class NavigationBLiveView() extends LiveView.Routed[Msg, Model, BParams]:
       selectedItem = selectedItem
     )
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val withContainer = model.map(_.withContainer)
+    val selectedItem  = model.map(_.selectedItem)
+
     NavigationLayout(
       div(
         h1("This is page B"),
@@ -68,39 +75,44 @@ class NavigationBLiveView() extends LiveView.Routed[Msg, Model, BParams]:
           cls  := "mb-2 inline-flex rounded bg-slate-200 px-4 py-2",
           "Go to 42."
         ),
-        if model.selectedItem.isEmpty then
-          div(
-            idAttr    := "my-scroll-container",
-            styleAttr :=
-              (if model.withContainer then
-                 "height: 85vh; overflow-y: scroll; width: 100%; border: 1px solid #e2e8f0; border-radius: 0.375rem;"
-               else "width: 100%; border: 1px solid #e2e8f0; border-radius: 0.375rem;"),
-            ul(
-              idAttr    := "items",
-              styleAttr := "padding: 1rem; list-style: none;",
-              model.items.splitBy(_.id) { (_, item) =>
-                li(
-                  idAttr    := s"items-${item.id}",
-                  styleAttr := "padding: 0.5rem; border-bottom: 1px solid #e2e8f0;",
-                  link.pushPatch(
-                    E2ERoutes.navigationBItemLocation.location(
-                      item.id -> Option.when(model.withContainer)("1")
-                    ),
-                    "Item ",
-                    item.name.toString
+        selectedItem
+          .map(_.isEmpty).when(
+            div(
+              idAttr    := "my-scroll-container",
+              styleAttr := withContainer.map(enabled =>
+                if enabled then
+                  "height: 85vh; overflow-y: scroll; width: 100%; border: 1px solid #e2e8f0; border-radius: 0.375rem;"
+                else "width: 100%; border: 1px solid #e2e8f0; border-radius: 0.375rem;"
+              ),
+              ul(
+                idAttr    := "items",
+                styleAttr := "padding: 1rem; list-style: none;",
+                model.map(_.items).splitBy(_.id) { (_, item) =>
+                  li(
+                    idAttr    := item.map(current => s"items-${current.id}"),
+                    styleAttr := "padding: 0.5rem; border-bottom: 1px solid #e2e8f0;",
+                    link.pushPatch(
+                      item.zip(withContainer).map { case (current, enabled) =>
+                        E2ERoutes.navigationBItemLocation.location(
+                          current.id -> Option.when(enabled)("1")
+                        )
+                      },
+                      "Item ",
+                      item.map(_.name.toString)
+                    )
                   )
-                )
-              }
+                }
+              )
             )
-          )
-        else "",
-        if model.selectedItem.nonEmpty then
+          ),
+        selectedItem.option(item =>
           div(
-            p("Item ", model.selectedItem.getOrElse(""))
+            p("Item ", item)
           )
-        else ""
+        )
       )
     )
+  end view
 end NavigationBLiveView
 
 class RedirectLoopLiveView() extends LiveView.Routed[Msg, Model, RedirectLoopParams]:
@@ -124,15 +136,16 @@ class RedirectLoopLiveView() extends LiveView.Routed[Msg, Model, RedirectLoopPar
       else model.copy(message = Some("Too many redirects"), shouldLoop = false)
     else model.copy(message = None, shouldLoop = true)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     NavigationLayout(
       div(
-        if model.message.nonEmpty then
-          div(
-            idAttr := "message",
-            model.message.getOrElse("")
-          )
-        else "",
+        model
+          .map(_.message).option(message =>
+            div(
+              idAttr := "message",
+              message
+            )
+          ),
         link.pushPatchUnsafe(
           "?loop=true",
           "Redirect Loop"

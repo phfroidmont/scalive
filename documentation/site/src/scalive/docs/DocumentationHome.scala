@@ -184,7 +184,7 @@ final private[docs] class DocumentationHomeLiveView(
 
   override def pageTitle(model: Unit): Option[String] = Some("Scalive")
 
-  def render(model: Unit): HtmlElement[Nothing] =
+  override def view(model: Signal[Unit]): HtmlElement[Nothing] =
     articleTag(
       cls := "docs-content docs-prose docs-home",
       sectionTag(

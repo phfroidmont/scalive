@@ -15,11 +15,11 @@ final class CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
     case Msg.Decrement => ZIO.succeed(model - 1)
     case Msg.Increment => ZIO.succeed(model + 1)
 
-  def render(model: Int): HtmlElement[Msg] =
+  override def view(model: Signal[Int]): HtmlElement[Msg] =
     mainTag(
       h1("Scalive counter"),
       button(typ          := "button", on.click(Msg.Decrement), "Decrease"),
-      outputTag(aria.live := "polite", model.toString),
+      outputTag(aria.live := "polite", model.map(_.toString)),
       button(typ          := "button", on.click(Msg.Increment), "Increase")
     )
 

@@ -11,7 +11,7 @@ class JsLiveView extends LiveView[Msg, Model]:
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Increment => model.copy(count = model.count + 1)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       div(
         Modal.attr,
@@ -48,7 +48,7 @@ class JsLiveView extends LiveView[Msg, Model]:
         summaryTag("Details"),
         button(
           on.click(Msg.Increment),
-          model.count.toString
+          model.map(_.count.toString)
         )
       )
     )

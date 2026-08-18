@@ -48,33 +48,35 @@ class StreamLiveView()
             E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val count = model.map(_.count.toString)
+
     div(
       div(
         idAttr     := "users",
         phx.update := PhxUpdate.Stream,
-        model.users.stream { (domId, user) =>
+        model.map(_.users).stream { (domId, user) =>
           div(
             idAttr            := domId,
-            dataAttr("count") := model.count.toString,
-            user.name,
+            dataAttr("count") := count,
+            user.map(_.name),
             button(
-              on.click(params => Msg.DeleteUser(params.getOrElse("id", ""))),
+              on.click(user.map(value => Msg.DeleteUser(s"$UsersPrefix${value.id}"))),
               phx.value("id") := domId,
               "delete"
             ),
             button(
-              on.click(params => Msg.UpdateUser(params.getOrElse("id", ""))),
+              on.click(user.map(value => Msg.UpdateUser(s"$UsersPrefix${value.id}"))),
               phx.value("id") := domId,
               "update"
             ),
             button(
-              on.click(params => Msg.MoveUserToFirst(params.getOrElse("id", ""))),
+              on.click(user.map(value => Msg.MoveUserToFirst(s"$UsersPrefix${value.id}"))),
               phx.value("id") := domId,
               "make first"
             ),
             button(
-              on.click(params => Msg.MoveUserToLast(params.getOrElse("id", ""))),
+              on.click(user.map(value => Msg.MoveUserToLast(s"$UsersPrefix${value.id}"))),
               phx.value("id") := domId,
               "make last"
             ),
@@ -84,39 +86,39 @@ class StreamLiveView()
             )
           )
         },
-        if model.extraItemWithId then
+        Signal.when(model.map(_.extraItemWithId))(
           div(
             idAttr    := "users-empty",
             onlyChild := true,
             "Empty!"
           )
-        else ""
+        )
       ),
       div(
         idAttr     := "admins",
         phx.update := PhxUpdate.Stream,
-        model.admins.stream { (domId, user) =>
+        model.map(_.admins).stream { (domId, user) =>
           div(
             idAttr            := domId,
-            dataAttr("count") := model.count.toString,
-            user.name,
+            dataAttr("count") := count,
+            user.map(_.name),
             button(
-              on.click(params => Msg.DeleteAdmin(params.getOrElse("id", ""))),
+              on.click(user.map(value => Msg.DeleteAdmin(s"$AdminsPrefix${value.id}"))),
               phx.value("id") := domId,
               "delete"
             ),
             button(
-              on.click(params => Msg.UpdateAdmin(params.getOrElse("id", ""))),
+              on.click(user.map(value => Msg.UpdateAdmin(s"$AdminsPrefix${value.id}"))),
               phx.value("id") := domId,
               "update"
             ),
             button(
-              on.click(params => Msg.MoveAdminToFirst(params.getOrElse("id", ""))),
+              on.click(user.map(value => Msg.MoveAdminToFirst(s"$AdminsPrefix${value.id}"))),
               phx.value("id") := domId,
               "make first"
             ),
             button(
-              on.click(params => Msg.MoveAdminToLast(params.getOrElse("id", ""))),
+              on.click(user.map(value => Msg.MoveAdminToLast(s"$AdminsPrefix${value.id}"))),
               phx.value("id") := domId,
               "make last"
             )
@@ -126,27 +128,35 @@ class StreamLiveView()
       div(
         idAttr     := "c_users",
         phx.update := PhxUpdate.Stream,
-        model.componentUsers.stream { (domId, user) =>
+        model.map(_.componentUsers).stream { (domId, user) =>
           div(
             idAttr := domId,
-            user.name,
+            user.map(_.name),
             button(
-              on.click(params => Msg.DeleteComponentUser(params.getOrElse("id", ""))),
+              on.click(
+                user.map(value => Msg.DeleteComponentUser(s"$ComponentUsersPrefix${value.id}"))
+              ),
               phx.value("id") := domId,
               "delete"
             ),
             button(
-              on.click(params => Msg.UpdateComponentUser(params.getOrElse("id", ""))),
+              on.click(
+                user.map(value => Msg.UpdateComponentUser(s"$ComponentUsersPrefix${value.id}"))
+              ),
               phx.value("id") := domId,
               "update"
             ),
             button(
-              on.click(params => Msg.MoveComponentUserToFirst(params.getOrElse("id", ""))),
+              on.click(
+                user.map(value => Msg.MoveComponentUserToFirst(s"$ComponentUsersPrefix${value.id}"))
+              ),
               phx.value("id") := domId,
               "make first"
             ),
             button(
-              on.click(params => Msg.MoveComponentUserToLast(params.getOrElse("id", ""))),
+              on.click(
+                user.map(value => Msg.MoveComponentUserToLast(s"$ComponentUsersPrefix${value.id}"))
+              ),
               phx.value("id") := domId,
               "make last"
             )
@@ -170,6 +180,7 @@ class StreamLiveView()
         "}"
       )
     )
+  end view
 
   private def handle(model: Model, msg: Msg, streams: Streams): LiveIO[Model] =
     msg match
@@ -394,22 +405,17 @@ class HealthyLiveView(initialCategory: String)
       )
       .map(items => model.copy(category = category, items = items))
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       p(
-        link.pushPatch(E2ERoutes.healthy.location(otherCategory(model.category)), "Switch")
-      ),
-      h1(model.category.capitalize),
-      ul(
-        idAttr     := "items",
-        phx.update := PhxUpdate.Stream,
-        model.items.stream { (domId, item) =>
-          li(
-            idAttr := domId,
-            item.name
+        model
+          .map(_.category).choose(
+            "fruits"  -> link.pushPatch(E2ERoutes.healthy.location("veggies"), "Switch"),
+            "veggies" -> link.pushPatch(E2ERoutes.healthy.location("fruits"), "Switch")
           )
-        }
-      )
+      ),
+      h1(model.map(_.category.capitalize)),
+      model.map(_.items).renderIn(ul)(item => li(item.map(_.name)))
     )
 
 end HealthyLiveView
@@ -435,9 +441,6 @@ object HealthyLiveView:
 
   private def itemsFor(category: String): List[Item] =
     HealthyStuff.getOrElse(normalizeCategory(category), HealthyStuff("fruits"))
-
-  private def otherCategory(category: String): String =
-    if category == "fruits" then "veggies" else "fruits"
 
 class StreamResetLiveView()
     extends LiveView.Routed[StreamResetLiveView.Msg, StreamResetLiveView.Model, Option[String]]:
@@ -550,10 +553,15 @@ class StreamResetLiveView()
         .map(items => model.copy(items = items))
   end handleMessage
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val items = model.map(_.items)
+
     div(
-      if model.usePhxRemove then streamList(model, withPhxRemove = true) else "",
-      if !model.usePhxRemove then streamList(model, withPhxRemove = false) else "",
+      model
+        .map(_.usePhxRemove).choose(
+          streamList(items, withPhxRemove = true),
+          streamList(items, withPhxRemove = false)
+        ),
       button(on.click(Msg.Filter), "Filter"),
       button(on.click(Msg.Reorder), "Reorder"),
       button(on.click(Msg.Reset), "Reset"),
@@ -569,22 +577,19 @@ class StreamResetLiveView()
       button(on.click(Msg.ExistingUpdateOnly), "Update C (update only)")
     )
 
-  private def streamList(model: Model, withPhxRemove: Boolean): HtmlElement[Msg] =
+  private def streamList(items: Signal[LiveStream[Item]], withPhxRemove: Boolean)
+    : HtmlElement[Msg] =
     ul(
       idAttr     := "thelist",
       phx.update := PhxUpdate.Stream,
-      model.items.stream { (domId, item) =>
+      items.stream { (domId, item) =>
         if withPhxRemove then
           li(
             idAttr := domId,
             dom.onRemove(JS.hide()),
-            item.name
+            item.map(_.name)
           )
-        else
-          li(
-            idAttr := domId,
-            item.name
-          )
+        else li(idAttr := domId, item.map(_.name))
       }
     )
 
@@ -650,17 +655,12 @@ class StreamResetLCLiveView
         .reset(ItemsStreamDef, ReorderedItems)
         .map(items => model.copy(items = items))
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       ul(
         idAttr     := "thelist",
         phx.update := PhxUpdate.Stream,
-        model.items.stream { (domId, item) =>
-          li(
-            idAttr := domId,
-            item.name
-          )
-        }
+        model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
       ),
       button(on.click(Msg.Reorder), "Reorder")
     )
@@ -746,7 +746,7 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         .map(nextItems => model.copy(items = nextItems, lastId = 0))
   end handleMessage
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       form(
         on.submit(params =>
@@ -759,13 +759,13 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         input(
           typ      := "text",
           nameAttr := "at",
-          value    := model.at.toString
+          value    := model.map(_.at.toString)
         ),
         " limit: ",
         input(
           typ      := "text",
           nameAttr := "limit",
-          value    := model.limit.toString
+          value    := model.map(_.limit.toString)
         ),
         button(
           typ := "submit",
@@ -774,9 +774,9 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
       ),
       div(
         "configured with at: ",
-        model.at.toString,
+        model.map(_.at.toString),
         ", limit: ",
-        model.limit.toString
+        model.map(_.limit.toString)
       ),
       button(on.click(Msg.Insert10), "add 10"),
       button(on.click(Msg.Insert1), "add 1"),
@@ -785,12 +785,7 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         idAttr     := "items",
         phx.update := PhxUpdate.Stream,
         rawHtml("\n"),
-        model.items.stream { (domId, item) =>
-          li(
-            idAttr := domId,
-            item.id.toString
-          )
-        },
+        model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.id.toString))),
         rawHtml("\n")
       )
     )
@@ -847,28 +842,26 @@ class StreamNestedComponentResetLiveView
     case Msg.ReorderParents =>
       reorderParents(model, ctx.streams)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       ul(
         idAttr     := "thelist",
         phx.update := PhxUpdate.Stream,
-        model.items.stream { (domId, item) =>
+        model.map(_.items).stream { (domId, item) =>
           li(
             idAttr := domId,
-            item.name,
+            item.map(_.name),
             div(
               phx.update := PhxUpdate.Stream,
               styleAttr  := "display: flex; gap: 4px;",
-              item.nested.stream { (nestedDomId, nestedItem) =>
-                span(
-                  idAttr := nestedDomId,
-                  nestedItem.name
+              item
+                .map(_.nested).stream((nestedDomId, nestedItem) =>
+                  span(idAttr := nestedDomId, nestedItem.map(_.name))
                 )
-              }
             ),
             button(
-              on.click(params => Msg.ReorderNested(params.getOrElse("id", ""))),
-              phx.value("id") := item.id,
+              on.click(item.map(value => Msg.ReorderNested(value.id))),
+              phx.value("id") := item.map(_.id),
               "Reorder"
             )
           )
@@ -978,18 +971,13 @@ class StreamInsideForLiveView
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Msg) => model
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
     div(
       List(1).map(_ =>
         ul(
           idAttr     := "thelist",
           phx.update := PhxUpdate.Stream,
-          model.items.stream { (domId, item) =>
-            li(
-              idAttr := domId,
-              item.name
-            )
-          }
+          model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
         )
       )
     )

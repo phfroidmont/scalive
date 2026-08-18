@@ -30,15 +30,15 @@ does not have component props or an output mapper; pass construction data into
 the child definition and coordinate longer-lived shared data through an
 application service.
 
-Use an ordinary render function when neither isolated state nor a separate
-lifecycle is needed.
+Use an ordinary function returning typed HTML when neither isolated state nor a
+separate lifecycle is needed.
 
 ## Render A Stable Child {#render-a-stable-child}
 
 Embed the child with @:apiSymbol(def:scalive.liveView)`liveView`@:@:
 
 ```scala
-def render(model: Model) =
+def view(model: Signal[Model]) =
   section(
     liveView(
       id = "support-chat",
@@ -49,11 +49,11 @@ def render(model: Model) =
 ```
 
 The `id` is application identity and determines the child topic. Keep it stable
-across parent rerenders, and derive repeated IDs from stable domain identity
-rather than list position. Reusing an ID preserves the connected registration
-and session; changing it creates a different child lifecycle.
+across parent graph evaluations, and derive repeated IDs from stable domain
+identity rather than list position. Reusing an ID preserves the connected
+registration and session; changing it creates a different child lifecycle.
 
-Every nested LiveView ID in one parent render must be unique, even when the
+Every nested LiveView ID in one active parent graph must be unique, even when the
 children use different LiveView classes or are emitted through components and
 streams. Rendering the same ID twice fails the parent render with
 `IllegalArgumentException` and a `Duplicate nested LiveView id` message. Two
@@ -61,7 +61,7 @@ instances of the same child type are valid when their IDs differ.
 
 The child argument is by-name and is evaluated when a disconnected or connected
 child lifecycle starts. Construct the intended child there; do not depend on
-side effects performed by the parent's render.
+side effects performed while constructing the parent's view graph.
 
 ## Design For Two Mounts {#design-for-two-mounts}
 
@@ -85,7 +85,7 @@ belong to the browser's current root route.
 
 ## Keep State And Resources Independent {#keep-state-and-resources-independent}
 
-Parent rerenders and patches do not reset a child whose ID remains stable. The
+Parent graph evaluations and patches do not reset a child whose ID remains stable. The
 child handles its own events serially and owns its component tree and managed
 resources. Equal async, subscription, stream, or upload keys in parent and child
 therefore do not refer to the same registration.

@@ -36,8 +36,8 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
     def handleMessage(model: Model, ctx: MessageContext) =
       case Msg.Increment => ZIO.succeed(model.copy(count = model.count + 1))
 
-    def render(model: Model): HtmlElement[Msg] =
-      button(on.click(Msg.Increment), model.count.toString)
+    override def view(model: Signal[Model]): HtmlElement[Msg] =
+      button(on.click(Msg.Increment), model.map(_.count.toString))
 
   private final case class Observation(initialHtml: Array[Byte], finalHtml: Array[Byte], frames: Vector[Array[Byte]])
 
@@ -174,6 +174,29 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
       traceOperation = RuntimeTraceOperation.Disabled
     )
 
+  private def componentEvent(
+    socket: Socket[?, ?],
+    messageRef: Int,
+    cid: Int
+  ): Task[(Payload.Event, WebSocketMessage.Meta)] =
+    socket.renderedHtml.flatMap { html =>
+      ZIO
+        .fromOption("phx-click=\"([^\"]+)\"".r.findFirstMatchIn(html).map(_.group(1)))
+        .orElseFail(new RuntimeException("Missing component click binding"))
+        .map { binding =>
+          Payload.Event(
+            `type` = "click",
+            event = binding,
+            value = Json.Obj.empty,
+            cid = Some(cid)
+          ) -> JoinMeta.copy(
+            messageRef = Some(messageRef),
+            eventType = WebSocketMessage.Protocol.EventEvent,
+            traceOperation = RuntimeTraceOperation.Disabled
+          )
+        }
+    }
+
   private def recordIndex(
     records: Vector[RuntimeTraceRecord],
     stage: RuntimeTraceStage
@@ -284,9 +307,12 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
         def handleMessage(model: EdgeModel, ctx: MessageContext) =
           case EdgeMsg.NoChange   => ZIO.succeed(model)
           case EdgeMsg.FailRender => ZIO.succeed(model.copy(failRender = true))
-        def render(model: EdgeModel) =
-          if model.failRender then throw new IllegalStateException("render failed")
+        override def view(model: Signal[EdgeModel]) =
           div(
+            model.map { model =>
+              if model.failRender then throw new IllegalStateException("render failed")
+              else ""
+            },
             button(on.click(EdgeMsg.NoChange), "No change"),
             button(on.click(EdgeMsg.FailRender), "Fail")
           )
@@ -331,8 +357,8 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
           case AsyncMsg.Done(LiveAsyncResult.Succeeded(value)) =>
             ZIO.succeed(model.copy(value = value))
           case AsyncMsg.Done(_) => ZIO.succeed(model)
-        def render(model: AsyncModel) =
-          div(button(on.click(AsyncMsg.Start), "Start"), span(model.value.toString))
+        override def view(model: Signal[AsyncModel]) =
+          div(button(on.click(AsyncMsg.Start), "Start"), span(model.map(_.value.toString)))
 
       ZIO.scoped {
         for
@@ -355,17 +381,18 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
       }
     },
     test("records component model commits") {
-      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+      object CounterComponent
+          extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
         object Msg
         def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
         def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
           (_: Msg.type) => ZIO.succeed(model + 1)
-        def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
-          button(on.click(Msg), phx.target(self), model.toString)
+        override def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[Msg.type]) =
+          button(on.click(Msg), phx.target(self), model.map(_.toString))
       val componentView = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit) =
+        override def view(model: Signal[Unit]) =
           div(liveComponent(CounterComponent, id = "trace-counter", props = ()))
 
       ZIO.scoped {
@@ -373,9 +400,8 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
           records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
           socket  <- startTraced(componentView, records)
           output  <- subscribe(socket)
-          _ <- socket.inbox.offer(
-                 event(2, Vector("root:div", "component:0:1"), attrIndex = 1, cid = Some(1))
-               )
+          click   <- componentEvent(socket, messageRef = 2, cid = 1)
+          _       <- socket.inbox.offer(click)
           _        <- output.take
           captured  = records.iterator().asScala.toVector
           componentRecords = captured.filter(_.identity.messageReference.contains(2))
@@ -394,29 +420,29 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
       enum ParentMsg:
         case Changed(value: Int)
 
-      object OutputComponent extends LiveComponent.WithOutput[Unit, Unit, Int, Int]:
+      object OutputComponent
+          extends LiveComponent.WithOutput[Unit, Unit, Int, Int]:
         def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
         def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
           (_: Unit) => ctx.emit(model + 1).as(model + 1)
-        def render(props: Unit, model: Int, self: ComponentRef[Unit]) =
-          button(on.click.to(self)(()), model.toString)
+        override def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[Unit]) =
+          button(on.click.to(self)(()), model.map(_.toString))
 
       val instance = component(OutputComponent, "output-trace")
       val componentView = new LiveView[ParentMsg, Int]:
         def mount(ctx: MountContext) = ZIO.succeed(0)
         def handleMessage(model: Int, ctx: MessageContext) =
           case ParentMsg.Changed(value) => ZIO.succeed(value)
-        def render(model: Int): HtmlElement[ParentMsg] =
-          div(instance.render((), ParentMsg.Changed.apply), p(model.toString))
+        override def view(model: Signal[Int]): HtmlElement[ParentMsg] =
+          div(instance.render((), ParentMsg.Changed.apply), p(model.map(_.toString)))
 
       ZIO.scoped {
         for
           records <- ZIO.succeed(ConcurrentLinkedQueue[RuntimeTraceRecord]())
           socket  <- startTraced(componentView, records)
           queue   <- subscribe(socket)
-          _ <- socket.inbox.offer(
-                 event(2, Vector("root:div", "component:0:1"), attrIndex = 1, cid = Some(1))
-               )
+          click   <- componentEvent(socket, messageRef = 2, cid = 1)
+          _       <- socket.inbox.offer(click)
           _        <- queue.take
           _        <- queue.take
           captured  = records.iterator().asScala.toVector
@@ -456,11 +482,11 @@ object RuntimeTraceSpec extends ZIOSpecDefault:
           case StreamMsg.Add =>
             ctx.streams.insert(users, User(2, "two")).map(items => model.copy(items = items))
           case StreamMsg.SetTitle => ZIO.succeed(model.copy(title = "Updated"))
-        def render(model: StreamModel) =
+        override def view(model: Signal[StreamModel]) =
           div(
             button(on.click(StreamMsg.Add), "Add"),
             button(on.click(StreamMsg.SetTitle), "Title"),
-            model.items.renderIn(ul)(user => li(user.name))
+            model.map(_.items).renderIn(ul)(user => li(user.map(_.name)))
           )
 
       ZIO.scoped {

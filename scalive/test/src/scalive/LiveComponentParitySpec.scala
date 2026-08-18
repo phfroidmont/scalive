@@ -44,8 +44,8 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         val updated = model + 1
         ctx.emit(updated).as(updated)
 
-    def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
-      button(scalive.on.click(Msg), phx.target(self), s"Child: $model")
+    override def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[Msg.type]) =
+      button(scalive.on.click(Msg), phx.target(self), model.map(value => s"Child: $value"))
 
   private object ForwardingComponent
       extends LiveComponent.WithOutput[Unit, ForwardingComponent.Msg, Unit, Int]:
@@ -57,7 +57,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
       case Msg.ChildChanged(value) => ctx.emit(value).as(model)
 
-    def render(props: Unit, model: Unit, self: ComponentRef[Msg]) =
+    override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Msg]) =
       div(NestedOutput.render((), Msg.ChildChanged.apply))
 
   private val NestedOutput = component(OutputComponent, "nested-output")
@@ -69,8 +69,8 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
       ZIO.succeed(props)
     def handleMessage(props: String, model: String, ctx: MessageContext) =
       (_: Unit) => ZIO.succeed(model)
-    def render(props: String, model: String, self: ComponentRef[Unit]) =
-      div(idAttr := model, s"$model says hi")
+    override def view(props: Signal[String], model: Signal[String], self: ComponentRef[Unit]) =
+      div(idAttr := model, model.map(value => s"$value says hi"))
 
   private object NavComponent extends LiveComponent[Unit, NavMsg, Unit]:
     def mount(props: Unit, ctx: MountContext) =
@@ -82,22 +82,23 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
             ctx.nav.pushPatchUnsafe("/components?redirect=patch").as(model)
           case NavMsg.Redirect =>
             ctx.nav.redirectUnsafe("/components?redirect=redirect").as(model)
-    def render(props: Unit, model: Unit, self: ComponentRef[NavMsg]) =
+    override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[NavMsg]) =
       div(
         button(scalive.on.click(NavMsg.PushNavigate), phx.target(self), "push navigate"),
         button(scalive.on.click(NavMsg.PushPatch), phx.target(self), "push patch"),
         button(scalive.on.click(NavMsg.Redirect), phx.target(self), "redirect")
       )
 
-  private object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+  private object CounterComponent
+      extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
     object Msg
 
     def mount(props: Unit, ctx: MountContext) =
       ZIO.succeed(0)
     def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
       (_: Msg.type) => ZIO.succeed(model + 1)
-    def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
-      button(scalive.on.click(Msg), phx.target(self), model.toString)
+    override def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[Msg.type]) =
+      button(scalive.on.click(Msg), phx.target(self), model.map(_.toString))
 
   private object RawTargetComponent extends LiveComponent[Unit, Unit, String]:
     override def hooks: ComponentLiveHooks[Unit, Unit, String] =
@@ -111,7 +112,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
     def handleMessage(props: Unit, model: String, ctx: MessageContext) =
       (_: Unit) => ZIO.succeed(model)
 
-    def render(props: Unit, model: String, self: ComponentRef[Unit]) =
+    override def view(props: Signal[Unit], model: Signal[String], self: ComponentRef[Unit]) =
       form(phxChangeAttr := "validate", phx.target(self), span(model))
 
   private def containsValue(diff: Diff, value: String): Boolean =
@@ -138,6 +139,18 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
       value = Json.Obj.empty,
       cid = cid
     )
+
+  private def renderedClick(
+    socket: Socket[?, ?],
+    index: Int,
+    cid: Option[Int]
+  ): Task[Payload.Event] =
+    socket.renderedHtml.flatMap { html =>
+      ZIO
+        .fromOption("phx-click=\"([^\"]+)\"".r.findAllMatchIn(html).drop(index).nextOption().map(_.group(1)))
+        .orElseFail(new RuntimeException(s"Missing click binding at index $index"))
+        .map(binding => Payload.Event("click", binding, Json.Obj.empty, cid = cid))
+    }
 
   private def runRequest(routes: Routes[Any, Nothing], path: String) =
     URL.decode(path) match
@@ -190,7 +203,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveComponent(RawTargetComponent, id = "raw", props = ()))
 
       val event = Payload.Event(
@@ -218,7 +231,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveComponent(LabelComponent, id = "chris", props = "chris"))
 
       val routes = scalive.Live.router(
@@ -240,7 +253,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(
             liveComponent(LabelComponent, id = "chris", props = "chris"),
             liveComponent(LabelComponent, id = "jose", props = "jose")
@@ -269,17 +282,27 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         def handleMessage(model: Boolean, ctx: MessageContext) =
               case ParentMsg.Toggle            => ZIO.succeed(true)
               case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
-        def render(model: Boolean): HtmlElement[ParentMsg] =
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
           div(
             button(scalive.on.click(ParentMsg.Toggle), "toggle"),
-            liveComponent(LabelComponent, id = "chris", props = if model then "DISABLED" else "chris"),
-            liveComponent(LabelComponent, id = "jose", props = if model then "DISABLED" else "jose"),
-            if model then
-              Seq(
-                liveComponent(LabelComponent, id = "chris-new", props = "chris-new"),
-                liveComponent(LabelComponent, id = "jose-new", props = "jose-new")
-              )
-            else Seq.empty
+            liveComponent(
+              LabelComponent,
+              id = "chris",
+              props = model.map(if _ then "DISABLED" else "chris")
+            ),
+            liveComponent(
+              LabelComponent,
+              id = "jose",
+              props = model.map(if _ then "DISABLED" else "jose")
+            ),
+            model.chooseMod(
+              liveComponent(LabelComponent, id = "chris-new", props = "chris-new"),
+              ""
+            ),
+            model.chooseMod(
+              liveComponent(LabelComponent, id = "jose-new", props = "jose-new"),
+              ""
+            )
           )
 
       for
@@ -306,15 +329,21 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         def handleMessage(model: Boolean, ctx: MessageContext) =
               case ParentMsg.Toggle            => ZIO.succeed(false)
               case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
-        def render(model: Boolean): HtmlElement[ParentMsg] =
-          if model then
-            div(button(scalive.on.click(ParentMsg.Toggle), "disable"), liveComponent(LabelComponent, id = "chris", props = "chris"))
-          else div("Disabled")
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
+          div(
+            model.chooseMod(button(scalive.on.click(ParentMsg.Toggle), "disable"), ""),
+            model.chooseMod(
+              liveComponent(LabelComponent, id = "chris", props = "chris"),
+              ""
+            ),
+            model.map(if _ then "" else "Disabled")
+          )
 
       for
         socket     <- start(parent)
         replyFiber <- nextAfterInit(socket).fork
-        _          <- socket.inbox.offer(click(Vector("root:div", "tag:0:button")) -> meta)
+        event      <- renderedClick(socket, index = 0, cid = None)
+        _          <- socket.inbox.offer(event -> meta)
         reply      <- replyFiber.join
       yield
         val disabled = reply._1 match
@@ -330,11 +359,13 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         def handleMessage(model: Boolean, ctx: MessageContext) =
               case ParentMsg.Toggle            => ZIO.succeed(false)
               case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
-        def render(model: Boolean): HtmlElement[ParentMsg] =
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
           div(
             button(scalive.on.click(ParentMsg.Toggle), "disable"),
-            if model then liveComponent(LabelComponent, id = "hello", props = "Hello World")
-            else "disabled"
+            model.chooseMod(
+              liveComponent(LabelComponent, id = "hello", props = "Hello World"),
+              "disabled"
+            )
           )
 
       val parent = new LiveView[Unit, Unit]:
@@ -342,7 +373,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] = div(liveView("child", child))
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div(liveView("child", child))
 
       val childMeta = meta.copy(topic = childTopic)
 
@@ -365,7 +396,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] = div("world")
+        override def view(model: Signal[Unit]): HtmlElement[Unit] = div("world")
 
       val parent = new LiveView[ParentMsg, Boolean]:
         def mount(ctx: MountContext) =
@@ -373,15 +404,15 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         def handleMessage(model: Boolean, ctx: MessageContext) =
               case ParentMsg.Toggle            => ZIO.succeed(false)
               case ParentMsg.SendMissingUpdate => ZIO.succeed(model)
-        def render(model: Boolean): HtmlElement[ParentMsg] =
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
           div(
             button(scalive.on.click(ParentMsg.Toggle), "disable"),
-            if model then
-              Seq(
-                liveComponent(LabelComponent, id = "hello", props = "hello"),
-                liveView("child", child)
-              )
-            else Seq(rawHtml("disabled"))
+            model.chooseMod(
+              liveComponent(LabelComponent, id = "hello", props = "hello"),
+              ""
+            ),
+            model.chooseMod(liveView("child", child), ""),
+            model.map(if _ then "" else "disabled")
           )
 
       ZIO.scoped(for
@@ -397,7 +428,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
                           case _ => false
                         }
         after <- channel.nestedEntry(childTopic)
-      yield assertTrue(before.nonEmpty, after.nonEmpty, removed._2.topic == meta.topic))
+      yield assertTrue(before.nonEmpty, after.isEmpty, removed._2.topic == meta.topic))
     },
     test("sendUpdate to a missing component is ignored instead of applied on later mount") {
       val parent = new LiveView[ParentMsg, Boolean]:
@@ -407,10 +438,13 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               case ParentMsg.SendMissingUpdate =>
                 ctx.components.sendUpdate[LabelComponent.type]("missing", "stale").as(true)
               case ParentMsg.Toggle => ZIO.succeed(model)
-        def render(model: Boolean): HtmlElement[ParentMsg] =
+        override def view(model: Signal[Boolean]): HtmlElement[ParentMsg] =
           div(
             button(scalive.on.click(ParentMsg.SendMissingUpdate), "add"),
-            if model then liveComponent(LabelComponent, id = "missing", props = "fresh") else "hidden"
+            model.chooseMod(
+              liveComponent(LabelComponent, id = "missing", props = "fresh"),
+              "hidden"
+            )
           )
 
       for
@@ -434,11 +468,11 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
               case ParentMsg.SendMissingUpdate =>
                 ctx.components.sendUpdate[LabelComponent.type]("stable", "sent").as(model)
               case ParentMsg.Toggle => ZIO.succeed(model + 1)
-        def render(model: Int): HtmlElement[ParentMsg] =
+        override def view(model: Signal[Int]): HtmlElement[ParentMsg] =
           div(
             button(scalive.on.click(ParentMsg.SendMissingUpdate), "send update"),
             button(scalive.on.click(ParentMsg.Toggle), "rerender"),
-            p(model.toString),
+            p(model.map(_.toString)),
             liveComponent(LabelComponent, id = "stable", props = "parent")
           )
 
@@ -465,18 +499,17 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.succeed(0)
         def handleMessage(model: Int, ctx: MessageContext) =
           case OutputParentMsg.ChildChanged(value) => ZIO.succeed(value)
-        def render(model: Int): HtmlElement[OutputParentMsg] =
+        override def view(model: Signal[Int]): HtmlElement[OutputParentMsg] =
           div(
-            p(s"Parent: $model"),
+            p(model.map(value => s"Parent: $value")),
             child.render((), OutputParentMsg.ChildChanged.apply)
           )
 
       for
         socket   <- start(parent)
         outQueue <- subscribe(socket)
-        _ <- socket.inbox.offer(
-               click(Vector("root:div", "component:1:1"), attrIndex = 1, cid = Some(1)) -> meta
-             )
+        event    <- renderedClick(socket, index = 0, cid = Some(1))
+        _        <- socket.inbox.offer(event -> meta)
         childReply <- outQueue.take
         parentDiff <- outQueue.take
       yield assertTrue(
@@ -497,19 +530,18 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.succeed(0)
         def handleMessage(model: Int, ctx: MessageContext) =
           case OutputParentMsg.ChildChanged(value) => ZIO.succeed(value)
-        def render(model: Int): HtmlElement[OutputParentMsg] =
+        override def view(model: Signal[Int]): HtmlElement[OutputParentMsg] =
           div(
             button(scalive.on.click.to(NestedOutput)(OutputComponent.Msg), "increment nested"),
-            p(s"Parent: $model"),
+            p(model.map(value => s"Parent: $value")),
             forwarding.render((), OutputParentMsg.ChildChanged.apply)
           )
 
       for
         socket   <- start(parent)
         outQueue <- subscribe(socket)
-        _ <- socket.inbox.offer(
-               click(Vector("root:div", "tag:0:button")) -> meta
-             )
+        event    <- renderedClick(socket, index = 0, cid = None)
+        _        <- socket.inbox.offer(event -> meta)
         childReply <- outQueue.take
         parentDiff <- outQueue.take
       yield assertTrue(
@@ -525,7 +557,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveComponent(NavComponent, id = "nav", props = ()))
 
       for
@@ -533,9 +565,8 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         navigationFiber <- socket.outbox.drop(1).collect {
                              case (payload @ Payload.LiveRedirect(_, _, _), _) => payload
                            }.runHead.fork
-        _ <- socket.inbox.offer(
-               click(Vector("root:div", "component:0:1", "tag:0:button"), cid = Some(1)) -> meta
-             )
+        event <- renderedClick(socket, index = 0, cid = Some(1))
+        _     <- socket.inbox.offer(event -> meta)
         navigation <- navigationFiber.join.some
       yield assertTrue(
         navigation == Payload.LiveRedirect("/components?redirect=push", LivePatchKind.Push, None)
@@ -549,8 +580,11 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           ZIO.succeed(redirect.getOrElse("none"))
         def handleMessage(model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: String): HtmlElement[Unit] =
-          div(p(s"Redirect: $model"), liveComponent(NavComponent, id = "nav", props = ()))
+        override def view(model: Signal[String]): HtmlElement[Unit] =
+          div(
+            p(model.map(value => s"Redirect: $value")),
+            liveComponent(NavComponent, id = "nav", props = ())
+          )
 
       for
         initialUrl <- ZIO.fromEither(URL.decode("/components?redirect=none")).orDie
@@ -572,9 +606,8 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         navigationFiber <- socket.outbox.drop(1).collect {
                              case (payload @ Payload.LiveNavigation(_, _), _) => payload
                            }.runHead.fork
-        _ <- socket.inbox.offer(
-               click(Vector("root:div", "component:1:1", "tag:1:button"), cid = Some(1)) -> meta
-             )
+        event <- renderedClick(socket, index = 1, cid = Some(1))
+        _     <- socket.inbox.offer(event -> meta)
         navigation <- navigationFiber.join.some
         reply      <- socket.livePatch("/components?redirect=patch", meta.copy(eventType = "live_patch"))
       yield
@@ -590,7 +623,7 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
           ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveComponent(NavComponent, id = "nav", props = ()))
 
       for
@@ -598,9 +631,8 @@ object LiveComponentParitySpec extends ZIOSpecDefault:
         redirectFiber <- socket.outbox.drop(1).collect {
                            case (payload @ Payload.Redirect(_, _), _) => payload
                          }.runHead.fork
-        _ <- socket.inbox.offer(
-               click(Vector("root:div", "component:0:1", "tag:2:button"), cid = Some(1)) -> meta
-             )
+        event <- renderedClick(socket, index = 2, cid = Some(1))
+        _     <- socket.inbox.offer(event -> meta)
         redirect <- redirectFiber.join.some
       yield assertTrue(redirect == Payload.Redirect("/components?redirect=redirect", None))
     }

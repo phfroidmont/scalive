@@ -31,10 +31,10 @@ it for an application.
 | Phoenix LiveView concept | Scalive concept | What it means |
 | --- | --- | --- |
 | LiveView | @:apiSymbol(trait:scalive.LiveView)`LiveView[Msg, Model]`@:@ | A server-owned interactive page with a typed model and typed messages. |
-| Socket assigns | `Model` | Immutable application state passed explicitly to lifecycle and rendering methods. |
+| Socket assigns | `Model` and `Signal[Model]` | Immutable application state passed to lifecycle methods and exposed read-only to the signal-backed view graph. |
 | `mount` | @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ | Creates the initial model for the HTTP render and again for the connected live process. |
 | `handle_event` and other callbacks | @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ | Handles values from the view's `Msg` type and returns the next model in @:apiSymbol(type-alias:scalive.LiveIO)`LiveIO`@:@. |
-| HEEx template | @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@ and Scala HTML builders | Produces typed HTML directly from Scala values. |
+| HEEx template | @:apiSymbol(def:scalive.LiveView.view)`view`@:@, @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@, and Scala HTML builders | Constructs typed HTML from signals and Scala values. |
 | `phx-*` event binding | Typed bindings such as @:apiSymbol(lazy-val:scalive.on.click)`on.click(message)`@:@ | Connects browser interactions to values accepted by the LiveView's message type. |
 | Diff and DOM patch | Scalive tree diff and the Phoenix LiveView JavaScript client | Sends changed render data to the browser instead of replacing the whole document. |
 | LiveComponent | @:apiSymbol(trait:scalive.LiveComponent)`LiveComponent[Props, Msg, Model]`@:@ | Gives a stateful child component typed inputs, messages, and local state. |
@@ -51,16 +51,17 @@ where to start when a Phoenix guide or discussion uses a familiar concept.
 
 A Scalive interaction has four explicit parts:
 
-1. @:apiSymbol(def:scalive.LiveView.render)`render(model)`@:@ builds an
-   @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@ and binds an interaction to a
-   typed message.
+1. @:apiSymbol(def:scalive.LiveView.view)`view(model)`@:@ has constructed a view
+   graph of @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@ values
+   and bound an interaction to a typed message. It runs once for the current
+   graph lifetime, not once per update.
 2. The Phoenix LiveView JavaScript client sends the interaction over the live
    connection.
 3. @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage(model, ctx)`@:@ receives the message and uses
    @:apiSymbol(type-alias:scalive.LiveIO)`LiveIO`@:@ to produce
    the next model.
-4. Scalive renders again, computes a tree diff, and sends the update for the
-   browser to patch into the existing DOM.
+4. Scalive evaluates the affected signals, computes a snapshot diff, and sends
+   the update for the browser to patch into the existing DOM.
 
 The model remains on the server. Scalive does not require a second client-side
 state tree or a JavaScript component framework for ordinary interactions.

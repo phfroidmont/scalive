@@ -12,7 +12,10 @@ final private[scalive] case class ComponentInstance(
   model: Any,
   hooks: LiveHookRuntimeState,
   outputMapper: Option[Any => Any],
-  outputOwner: ComponentOutputOwner)
+  outputOwner: ComponentOutputOwner,
+  viewGraph: ViewGraph.Component[Any, Any],
+  signalEvaluation: SignalEvaluation,
+  signalRevision: Long)
 
 final private[scalive] class SocketComponentOutputRuntime(
   queue: Queue[ComponentOutputMessage],

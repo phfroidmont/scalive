@@ -73,7 +73,7 @@ does not modify `zio-vote`.
 
 ## Map Component Outputs {#map-component-outputs}
 
-Emit only from `handleMessage`; mount, update, render, and after-render contexts
+Emit only from `handleMessage`; mount, update, view construction, and after-render contexts
 do not expose this capability:
 
 ```scala

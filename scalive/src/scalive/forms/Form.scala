@@ -314,10 +314,15 @@ object Form:
     mod match
       case Mod.Attr.Static(name, _)                => Some(name)
       case Mod.Attr.StaticValueAsPresence(name, _) => Some(name)
+      case Mod.Attr.SignalValue(name, _)           => Some(name)
+      case Mod.Attr.SignalOptionalValue(name, _)   => Some(name)
+      case Mod.Attr.SignalValueAsPresence(name, _) => Some(name)
       case Mod.Attr.Binding(name, _)               => Some(name)
+      case Mod.Attr.SignalBinding(name, _, _)      => Some(name)
       case Mod.Attr.FormBinding(name, _)           => Some(name)
       case Mod.Attr.FormEventBinding(name, _, _)   => Some(name)
       case Mod.Attr.JsBinding(name, _)             => Some(name)
+      case Mod.Attr.SignalJsBinding(name, _)       => Some(name)
       case Mod.Attr.RoutedBinding(name, _)         => Some(name)
       case Mod.Attr.Group(attrs)                   => attrs.flatMap(attributeName).headOption
       case _: Mod.Content[?]                       => None
@@ -525,5 +530,71 @@ final class FormFieldView[A] private[scalive] (
     mods.toVector.flatMap {
       case mod: Mod[Msg]                => Some(mod)
       case mods: IterableOnce[Mod[Msg]] => mods
+    }
+end FormFieldView
+
+object FormFieldView:
+  extension [A](field: Signal[FormFieldView[A]])
+    /** The signal-backed field's complete rooted browser ID. */
+    def id: Signal[String] = field.map(_.id)
+
+    /** Attributes pairing a signal-backed control with its dynamic error feedback. */
+    def validationAttributes: Vector[Mod.Attr[Nothing]] =
+      Vector(
+        aria.describedby := field.map(_.errorId),
+        aria.invalid.optional(field.map(value => Option.when(value.hasVisibleErrors)("true")))
+      )
+
+    /** Renders a signal-backed text input. */
+    def text[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
+      input(
+        typ      := "text",
+        idAttr   := field.map(_.id),
+        nameAttr := field.map(_.name),
+        value    := field.map(_.fieldValue),
+        flattenSignalMods(mods)
+      )
+
+    /** Renders a signal-backed email input. */
+    def email[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
+      input(
+        typ      := "email",
+        idAttr   := field.map(_.id),
+        nameAttr := field.map(_.name),
+        value    := field.map(_.fieldValue),
+        flattenSignalMods(mods)
+      )
+
+    /** Renders a signal-backed textarea. */
+    def textarea[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
+      Form.textareaTag(
+        idAttr   := field.map(_.id),
+        nameAttr := field.map(_.name),
+        flattenSignalMods(mods),
+        field.map(_.fieldValue)
+      )
+
+    /** Renders signal-backed interaction-visible errors with stable accessibility relationships. */
+    def errorFeedback(
+      mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
+    ): HtmlElement[Nothing] =
+      div(
+        idAttr           := field.map(_.errorId),
+        Form.feedbackFor := field.map(_.name),
+        aria.live        := "polite",
+        cls              := "form-errors",
+        flattenSignalMods(mods),
+        field.map(_.visibleErrors).splitByIndex { (_, error) =>
+          span(cls := "form-error", error.map(_.message))
+        }
+      )
+  end extension
+
+  private def flattenSignalMods[Msg](
+    mods: Seq[Mod[Msg] | IterableOnce[Mod[Msg]]]
+  ): Vector[Mod[Msg]] =
+    mods.toVector.flatMap {
+      case mod: Mod[Msg]                  => Some(mod)
+      case values: IterableOnce[Mod[Msg]] => values
     }
 end FormFieldView

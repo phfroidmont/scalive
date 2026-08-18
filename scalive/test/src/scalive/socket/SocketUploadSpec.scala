@@ -45,7 +45,7 @@ object SocketUploadSpec extends ZIOSpecDefault:
       def handleMessage(model: Unit, ctx: MessageContext) =
         (_: Unit) => ZIO.succeed(model)
 
-      def render(model: Unit): HtmlElement[Unit] =
+      override def view(model: Signal[Unit]): HtmlElement[Unit] =
         div("upload")
 
       override def hooks: LiveHooks[Unit, Unit] =
@@ -571,7 +571,7 @@ object SocketUploadSpec extends ZIOSpecDefault:
         () => new LiveView[Unit, LiveUpload[Chunk[Byte]]]:
           def mount(ctx: MountContext) = ctx.uploads.allow(definition)
           def handleMessage(model: LiveUpload[Chunk[Byte]], ctx: MessageContext) = _ => ZIO.succeed(model)
-          def render(model: LiveUpload[Chunk[Byte]]) = div(model.name),
+          override def view(model: Signal[LiveUpload[Chunk[Byte]]]) = div(model.map(_.name)),
         scala.reflect.classTag[Unit],
         sticky = false,
         linkParentOnCrash = false

@@ -28,15 +28,16 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
       case FormMsg.Changed(event)   => ZIO.succeed(event)
       case FormMsg.Submitted(event) => ZIO.succeed(event)
 
-    def render(model: FormEvent[String] | Null) =
+    override def view(model: Signal[FormEvent[String] | Null]) =
+      val event = model.map(Option(_))
       form(
         dataAttr("profile-form") := "",
         Name.onChange(FormMsg.Changed(_)),
         Name.onSubmit(FormMsg.Submitted(_)),
         input(nameAttr := Name.name),
-        span(dataAttr("target") := "", Option(model).flatMap(_.target).fold("")(_.name)),
-        span(dataAttr("submitted") := "", Option(model).exists(_.submitted).toString),
-        span(dataAttr("used") := "", Option(model).exists(_.state.isUsed(Name.path)).toString)
+        span(dataAttr("target") := "", event.map(_.flatMap(_.target).fold("")(_.name))),
+        span(dataAttr("submitted") := "", event.map(_.exists(_.submitted).toString)),
+        span(dataAttr("used") := "", event.map(_.exists(_.state.isUsed(Name.path)).toString))
       )
 
   private val testLiveView = new LiveView[Msg, Int]:
@@ -45,9 +46,9 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
     def handleMessage(model: Int, ctx: MessageContext) =
       case Msg.Increment => ZIO.succeed(model + 1)
 
-    def render(model: Int) =
+    override def view(model: Signal[Int]) =
       div(
-        span(dataAttr("count") := "", model.toString),
+        span(dataAttr("count") := "", model.map(_.toString)),
         button(dataAttr("increment") := "", on.click(Msg.Increment), "Increment")
       )
 
@@ -110,11 +111,12 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
                       def handleMessage(model: Unit, ctx: MessageContext) =
                         case ResourceMsg.Tick => ZIO.succeed(model)
 
-                      def render(model: Unit) = div("resource child")
+                      override def view(model: Signal[Unit]) = div("resource child")
 
                     val parent = new LiveView.Eventless[Unit]:
                       def mount(ctx: MountContext) = ZIO.unit
-                      def render(model: Unit)     = div(liveView("resource-child", child))
+                      override def view(model: Signal[Unit]) =
+                        div(liveView("resource-child", child))
 
                     for
                       harness <- SiteLiveViewHarness.join(parent)

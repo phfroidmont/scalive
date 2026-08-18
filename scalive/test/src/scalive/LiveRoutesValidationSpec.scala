@@ -11,7 +11,7 @@ object LiveRoutesValidationSpec extends ZIOSpecDefault:
       ZIO.unit
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => ZIO.unit
-    def render(model: Unit): HtmlElement[Unit] = div()
+    override def view(model: Signal[Unit]): HtmlElement[Unit] = div()
 
   override def spec = suite("LiveRoutesValidationSpec")(
     test("duplicate live route paths fail fast") {
@@ -82,7 +82,7 @@ object LiveRoutesValidationSpec extends ZIOSpecDefault:
         def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
           def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-          def render(model: Unit): HtmlElement[Unit] = div()
+          override def view(model: Signal[Unit]): HtmlElement[Unit] = div()
 
         val routes = scalive.Live.router(
           scalive.live(Method.POST / "submit")(view)
@@ -100,7 +100,7 @@ object LiveRoutesValidationSpec extends ZIOSpecDefault:
         def view: LiveView[Unit, Unit] = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
           def handleMessage(model: Unit, ctx: MessageContext) = (_: Unit) => ZIO.unit
-          def render(model: Unit): HtmlElement[Unit] = div()
+          override def view(model: Signal[Unit]): HtmlElement[Unit] = div()
 
         val routes = scalive.Live.router(
           scalive.Live.session("admin")(

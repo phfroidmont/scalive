@@ -4,12 +4,12 @@ package quickstart
 import scalive.*
 
 final class RootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]:
-  def key(ctx: LiveLayoutContext[Any, Any]): String = "quick-start-root"
+  def key(ctx: LiveRootLayoutContext[Any, Any]): String = "quick-start-root"
 
   def render[Msg](
     content: HtmlElement[Msg],
     pageTitle: Option[String],
-    ctx: LiveLayoutContext[Any, Any]
+    ctx: LiveRootLayoutContext[Any, Any]
   ): HtmlElement[Msg] =
     htmlRootTag(
       lang := "en",

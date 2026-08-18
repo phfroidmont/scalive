@@ -42,7 +42,7 @@ final class BrowserInteropExample(instanceId: String)
         .as(model.copy(requestNumber = requestNumber, operation = CopyOperation.Pending(requestId)))
     case Msg.Reset => ZIO.succeed(Model())
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       dom.hook(HookName, hookRef),
       cls := "docs-browser-integration",
@@ -75,14 +75,16 @@ final class BrowserInteropExample(instanceId: String)
           button(
             typ := "button",
             on.click(Msg.CopySample),
-            if model.operation.isPending then "Retry copy" else "Copy sample text"
+            model.map(model =>
+              if model.operation.isPending then "Retry copy" else "Copy sample text"
+            )
           ),
           button(typ := "button", on.click(resetCommand), "Reset browser integration")
         ),
         p(
           dataAttr("browser-copy-status") := "",
           role                            := "status",
-          model.operation.label
+          model.map(_.operation.label)
         )
       )
     )

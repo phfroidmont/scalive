@@ -1,5 +1,7 @@
 package scalive
 
+import java.nio.channels.ClosedChannelException
+
 import zio.*
 import zio.http.*
 import zio.http.ChannelEvent.Read
@@ -47,17 +49,42 @@ final private[scalive] class LiveRoutesRuntime[R](
     runtimeTrace: RuntimeTrace
   ): WebSocketApp[R] =
     val app = Handler.webSocket { channel =>
-      def sendMessage(message: WebSocketMessage) =
-        RuntimeTraceFrame
-          .encode(message)
-          .flatMap(encoded => channel.send(Read(WebSocketFrame.text(encoded))))
-
       ZIO
         .scoped(for
           liveChannel <- LiveChannel.make(tokenConfig, csrfToken, runtimeTrace)
-          _           <- liveChannel.diffsStream
+          writer      <- SerialWriter.make[WebSocketMessage](message =>
+                      RuntimeTraceFrame
+                        .encode(message)
+                        .flatMap(encoded => channel.send(Read(WebSocketFrame.text(encoded))))
+                    )
+          dispatcher <- TopicDispatcher.make[R & Scope, (WebSocketMessage, RuntimeTraceStage)] {
+                          case (traceTopic, (decoded, traceStage)) =>
+                            val traceMeta =
+                              if traceTopic == decoded.topic then decoded.meta
+                              else decoded.meta.copy(topic = traceTopic)
+                            val operation = RuntimeTraceOperation.resolve(
+                              runtimeTrace,
+                              traceMeta,
+                              incomingOperationKind(decoded.payload)
+                            )
+                            val message = RuntimeTraceOperation.attach(decoded, operation)
+                            for
+                              _ <- RuntimeTraceOperation.protocol(
+                                     operation,
+                                     traceStage,
+                                     if traceStage == RuntimeTraceStage.Upload then
+                                       "Inbound binary upload frame decoded"
+                                     else "Inbound protocol frame decoded",
+                                     message,
+                                     None
+                                   )
+                              reply <- handleMessage(message, liveChannel)
+                              _     <- ZIO.foreachDiscard(reply)(writer.send)
+                            yield ()
+                        }
+          _ <- liveChannel.diffsStream
                  .runForeach((payload, meta) =>
-                   sendMessage(
+                   writer.send(
                      WebSocketMessage(
                        joinRef = meta.joinRef,
                        messageRef = payload match
@@ -70,69 +97,42 @@ final private[scalive] class LiveRoutesRuntime[R](
                      )
                    )
                  )
-                 .tapErrorCause(c => ZIO.logErrorCause("diffsStream pipeline failed", c))
-                 .ensuring(ZIO.logWarning("WS out fiber terminated"))
-                 .fork
-          _ <- channel
-                 .receiveAll {
-                   case Read(WebSocketFrame.Close) => ZIO.logDebug("WS connection closed by client")
-                   case Read(WebSocketFrame.Text(content)) =>
-                     for
-                       decoded <- ZIO
-                                    .fromEither(content.fromJson[WebSocketMessage])
-                                    .mapError(new IllegalArgumentException(_))
-                       traceTopic <- liveChannel.traceTopic(decoded.topic)
-                       traceMeta =
-                         if traceTopic == decoded.topic then decoded.meta
-                         else decoded.meta.copy(topic = traceTopic)
-                       operation = RuntimeTraceOperation.resolve(
-                                     runtimeTrace,
-                                     traceMeta,
-                                     incomingOperationKind(decoded.payload)
-                                   )
-                       message = RuntimeTraceOperation.attach(decoded, operation)
-                       _ <- RuntimeTraceOperation.protocol(
-                              operation,
-                              RuntimeTraceStage.DecodedEvent,
-                              "Inbound protocol frame decoded",
-                              message,
-                              None
-                            )
-                       reply <- handleMessage(message, liveChannel)
-                       _     <- reply match
-                              case Some(r) => sendMessage(r)
-                              case None    => ZIO.unit
-                     yield ()
-                   case Read(WebSocketFrame.Binary(bytes)) =>
-                     for
-                       decoded <- ZIO
-                                    .fromEither(WebSocketMessage.decodeBinaryPush(bytes))
-                                    .mapError(new IllegalArgumentException(_))
-                       traceTopic <- liveChannel.traceTopic(decoded.topic)
-                       traceMeta =
-                         if traceTopic == decoded.topic then decoded.meta
-                         else decoded.meta.copy(topic = traceTopic)
-                       operation = RuntimeTraceOperation.resolve(
-                                     runtimeTrace,
-                                     traceMeta,
-                                     incomingOperationKind(decoded.payload)
-                                   )
-                       message = RuntimeTraceOperation.attach(decoded, operation)
-                       _ <- RuntimeTraceOperation.protocol(
-                              operation,
-                              RuntimeTraceStage.Upload,
-                              "Inbound binary upload frame decoded",
-                              message,
-                              None
-                            )
-                       reply <- handleMessage(message, liveChannel)
-                       _     <- reply match
-                              case Some(r) => sendMessage(r)
-                              case None    => ZIO.unit
-                     yield ()
-                   case _ => ZIO.unit
+                 .catchAllCause { cause =>
+                   if isClosedChannel(cause) then ZIO.unit else ZIO.failCause(cause)
                  }
-        yield ()).tapErrorCause(ZIO.logErrorCause(_))
+                 .tapErrorCause(c => ZIO.logErrorCause("diffsStream pipeline failed", c))
+                 .ensuring(ZIO.logDebug("WS out fiber terminated"))
+                 .forkScoped
+          receive = channel.receiveAll {
+                      case Read(WebSocketFrame.Close) =>
+                        ZIO.logDebug("WS connection closed by client")
+                      case Read(WebSocketFrame.Text(content)) =>
+                        for
+                          decoded <- ZIO
+                                       .fromEither(content.fromJson[WebSocketMessage])
+                                       .mapError(new IllegalArgumentException(_))
+                          traceTopic <- liveChannel.traceTopic(decoded.topic)
+                          dispatch =
+                            if isRootJoin(decoded.payload) then dispatcher.submitBarrier
+                            else dispatcher.submit
+                          _ <- dispatch(traceTopic, decoded -> RuntimeTraceStage.DecodedEvent)
+                        yield ()
+                      case Read(WebSocketFrame.Binary(bytes)) =>
+                        for
+                          decoded <- ZIO
+                                       .fromEither(WebSocketMessage.decodeBinaryPush(bytes))
+                                       .mapError(new IllegalArgumentException(_))
+                          traceTopic <- liveChannel.traceTopic(decoded.topic)
+                          _ <- dispatcher.submit(traceTopic, decoded -> RuntimeTraceStage.Upload)
+                        yield ()
+                      case _ => ZIO.unit
+                    }
+          _ <- receive.raceFirst(dispatcher.failure).raceFirst(writer.failure)
+        yield ()).catchAllCause { cause =>
+          if isClosedChannel(cause) then
+            ZIO.logDebug("WebSocket closed while flushing an outbound message")
+          else ZIO.failCause(cause)
+        }.tapErrorCause(ZIO.logErrorCause(_))
 
     }
     WebSocketApp(app.handler, Some(websocketConfig))
@@ -377,24 +377,6 @@ final private[scalive] class LiveRoutesRuntime[R](
       mountContext,
       globalRootLayout
     )
-    val serverStatics = route.trackedStatic(
-      pathParams,
-      req,
-      decodedUrl,
-      mountContext,
-      globalLayouts,
-      globalRootLayout
-    )
-    val staticChanged = StaticTracking.staticChanged(clientStatics, serverStatics)
-    val ctx           = LiveContext(
-      staticChanged = staticChanged,
-      connectParams = connectParams,
-      csrfToken = liveChannel.csrfToken,
-      nestedLiveViews = liveChannel.nestedRuntime(
-        message.topic,
-        loadingOnInitialNestedRender(connectParams)
-      )
-    )
     if rootKey != session.rootLayoutKey then
       val rejection: RIO[R & Scope, Option[WebSocketMessage]] =
         ZIO.logWarning(
@@ -404,30 +386,49 @@ final private[scalive] class LiveRoutesRuntime[R](
       rejection
     else
       route
-        .buildLiveView(pathParams, req, mountContext).flatMap { lv =>
-          val renderRoot = route.socketRenderRoot(
-            lv,
-            pathParams,
-            req,
-            mountContext,
-            globalLayouts
+        .trackedStatic(
+          pathParams,
+          req,
+          decodedUrl,
+          mountContext,
+          globalLayouts,
+          globalRootLayout
+        ).flatMap { serverStatics =>
+          val staticChanged = StaticTracking.staticChanged(clientStatics, serverStatics)
+          val ctx           = LiveContext(
+            staticChanged = staticChanged,
+            connectParams = connectParams,
+            csrfToken = liveChannel.csrfToken,
+            nestedLiveViews = liveChannel.nestedRuntime(
+              message.topic,
+              loadingOnInitialNestedRender(connectParams)
+            )
           )
-          ZIO.logDebug(
-            s"Joining LiveView ${route.pathCodec} ${message.topic}"
-          ) *>
-            liveChannel
-              .join(
-                message.topic,
-                join.session,
-                lv,
-                ctx,
-                message.meta,
-                decodedUrl,
-                initialFlash,
-                Some(renderRoot),
-                route.paramsRuntime
-              )(using route.msgClassTag)
-              .as(None)
+          route.buildLiveView(pathParams, req, mountContext).flatMap { lv =>
+            val rootView = route.socketViewRoot(
+              lv,
+              pathParams,
+              req,
+              mountContext,
+              globalLayouts
+            )
+            ZIO.logDebug(
+              s"Joining LiveView ${route.pathCodec} ${message.topic}"
+            ) *>
+              liveChannel
+                .join(
+                  message.topic,
+                  join.session,
+                  lv,
+                  ctx,
+                  message.meta,
+                  decodedUrl,
+                  initialFlash,
+                  rootView,
+                  route.paramsRuntime
+                )(using route.msgClassTag)
+                .as(None)
+          }
         }.catchAllCause(cause =>
           ZIO.logErrorCause(cause) *>
             ZIO.succeed(Some(errorReply(message, LiveResponse.Empty)))
@@ -447,7 +448,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     liveChannel: LiveChannel
   ): UIO[Option[WebSocketMessage]] =
     if isLiveViewTopic(message.topic) then
-      liveChannel.leave(message.topic).as(Some(message.okReply))
+      liveChannel.leave(message.topic, message.joinRef).as(Some(message.okReply))
     else
       ZIO.logDebug(s"Ignoring leave for non-liveview topic ${message.topic}") *>
         ZIO.succeed(Some(message.okReply))
@@ -457,7 +458,7 @@ final private[scalive] class LiveRoutesRuntime[R](
     liveChannel: LiveChannel
   ): UIO[Option[WebSocketMessage]] =
     if isLiveViewTopic(message.topic) then
-      liveChannel.leave(message.topic).as(Some(message.okReply))
+      liveChannel.leave(message.topic, message.joinRef).as(Some(message.okReply))
     else
       ZIO.logDebug(s"Ignoring close for non-liveview topic ${message.topic}") *>
         ZIO.succeed(Some(message.okReply))
@@ -629,6 +630,15 @@ final private[scalive] class LiveRoutesRuntime[R](
       case _: Payload.Progress    => RuntimeTraceOperationKind.Upload
       case Payload.Leave          => RuntimeTraceOperationKind.Leave
       case _                      => RuntimeTraceOperationKind.Other
+
+  private def isRootJoin(payload: Payload): Boolean =
+    payload match
+      case Payload.Join(url, redirect, _, _, _, _, _) => url.orElse(redirect).nonEmpty
+      case _                                          => false
+
+  private def isClosedChannel(cause: Cause[Throwable]): Boolean =
+    cause.failureOption.exists(_.isInstanceOf[ClosedChannelException]) ||
+      cause.dieOption.exists(_.isInstanceOf[ClosedChannelException])
 
   private def isLiveViewTopic(topic: String): Boolean =
     topic.startsWith("lv:") && topic.length > 3

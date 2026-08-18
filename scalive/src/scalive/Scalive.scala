@@ -33,6 +33,9 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     */
   def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
 
+  /** Inserts trusted HTML supplied by a signal-backed value without escaping it. */
+  def rawHtml(html: Signal[String]): Mod[Nothing] = Mod.Content.SignalText(html, raw = true)
+
   /** Renders the LiveView-aware document title expected by the browser client.
     *
     * `default` is used when `pageTitle` is absent, empty, or whitespace-only. The prefix and suffix
@@ -61,6 +64,28 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       dataAttr("suffix")  := suffix,
       s"$prefix$title$suffix"
     )
+
+  /** Renders a signal-backed LiveView-aware document title. */
+  def liveTitle(
+    pageTitle: Signal[Option[String]],
+    default: String,
+    prefix: String,
+    suffix: String
+  ): HtmlElement[Nothing] =
+    val title = pageTitle.map(normalizePageTitle(_).getOrElse(default))
+    titleTag(
+      dataAttr("prefix")  := prefix,
+      dataAttr("default") := default,
+      dataAttr("suffix")  := suffix,
+      title.map(value => s"$prefix$value$suffix")
+    )
+
+  /** Renders a signal-backed title without a prefix or suffix. */
+  def liveTitle(
+    pageTitle: Signal[Option[String]],
+    default: String
+  ): HtmlElement[Nothing] =
+    liveTitle(pageTitle, default, "", "")
 
   private[scalive] def normalizePageTitle(pageTitle: Option[String]): Option[String] =
     pageTitle.filter(_.trim.nonEmpty)
@@ -101,6 +126,30 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): Mod[Nothing] =
     Mod.Content.LiveComponent(LiveComponentSpec(component, id, props, None))
 
+  /** Renders a stateful LiveComponent with props sampled from the committed parent graph. */
+  def liveComponent[Props, Msg, Model](
+    component: LiveComponent[Props, Msg, Model],
+    id: String,
+    props: Signal[Props]
+  ): Mod[Nothing] =
+    Mod.Content.SignalLiveComponent(LiveComponentSignalSpec(component, id, props, None))
+
+  /** Renders a LiveComponent whose explicit logical ID and props are signal-backed values. */
+  def liveComponent[Props, Msg, Model](
+    component: LiveComponent[Props, Msg, Model],
+    id: Signal[String],
+    props: Signal[Props]
+  ): Mod[Nothing] =
+    Mod.Content.DynamicLiveComponent(LiveComponentDynamicSpec(component, id, props, None))
+
+  /** Renders a LiveComponent whose logical ID is a signal and props are static. */
+  def liveComponent[Props, Msg, Model](
+    component: LiveComponent[Props, Msg, Model],
+    id: Signal[String],
+    props: Props
+  ): Mod[Nothing] =
+    liveComponent(component, id, id.map(_ => props))
+
   /** Renders an output-producing LiveComponent and maps its outputs into enclosing messages. */
   def liveComponent[Props, Msg, Model, Output, OwnerMsg](
     component: LiveComponent.WithOutput[Props, Msg, Model, Output],
@@ -110,6 +159,38 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): Mod[OwnerMsg] =
     Mod.Content.LiveComponent(
       LiveComponentSpec(component, id, props, Some(value => onOutput(value.asInstanceOf[Output])))
+    )
+
+  /** Renders an output component whose logical ID and props are signal-backed values. */
+  def liveComponent[Props, Msg, Model, Output, OwnerMsg](
+    component: LiveComponent.WithOutput[Props, Msg, Model, Output],
+    id: Signal[String],
+    props: Signal[Props],
+    onOutput: Output => OwnerMsg
+  ): Mod[OwnerMsg] =
+    Mod.Content.DynamicLiveComponent(
+      LiveComponentDynamicSpec(
+        component,
+        id,
+        props,
+        Some(value => onOutput(value.asInstanceOf[Output]))
+      )
+    )
+
+  /** Renders an output-producing LiveComponent with signal props. */
+  def liveComponent[Props, Msg, Model, Output, OwnerMsg](
+    component: LiveComponent.WithOutput[Props, Msg, Model, Output],
+    id: String,
+    props: Signal[Props],
+    onOutput: Output => OwnerMsg
+  ): Mod[OwnerMsg] =
+    Mod.Content.SignalLiveComponent(
+      LiveComponentSignalSpec(
+        component,
+        id,
+        props,
+        Some(value => onOutput(value.asInstanceOf[Output]))
+      )
     )
 
   /** Embeds an independently mounted LiveView inside the current LiveView.
@@ -148,6 +229,35 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
         linkParentOnCrash
       )
     )
+
+  /** Embeds a nested LiveView constructed from one committed parent signal value. */
+  def liveView[A, Msg: LiveMessageTag, Model](
+    id: String,
+    value: Signal[A],
+    sticky: Boolean,
+    linkParentOnCrash: A => Boolean
+  )(
+    build: A => LiveView[Msg, Model]
+  ): Mod[Nothing] =
+    Mod.Content.SignalLiveView(
+      SignalNestedLiveViewSpec(
+        id,
+        value,
+        build,
+        summon[LiveMessageTag[Msg]].classTag,
+        sticky,
+        linkParentOnCrash
+      )
+    )
+
+  /** Embeds a non-sticky nested LiveView from one committed parent signal value. */
+  def liveView[A, Msg: LiveMessageTag, Model](
+    id: String,
+    value: Signal[A]
+  )(
+    build: A => LiveView[Msg, Model]
+  ): Mod[Nothing] =
+    liveView(id, value, sticky = false, linkParentOnCrash = (_: A) => false)(build)
 
   /** Helpers for rendering and clearing socket-scoped flash messages. */
   object flash:
@@ -239,6 +349,13 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       pushNavigateUnsafe(to.href, mods*)
 
+    /** Live-navigates to a signal-backed location. */
+    def pushNavigate[Msg](
+      to: Signal[LiveLocation],
+      mods: Mod[Msg]*
+    ): HtmlElement[Msg] =
+      pushNavigateUnsafe(to.map(_.href), mods*)
+
     /** Live-navigates to a raw destination and pushes a browser-history entry.
       *
       * This bypasses typed route construction and URI validation/encoding.
@@ -246,9 +363,23 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def pushNavigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "redirect", phx.linkState := "push", mods)
 
+    /** Live-navigates to a raw signal-backed destination. */
+    def pushNavigateUnsafe[Msg](
+      path: Signal[String],
+      mods: Mod[Msg]*
+    ): HtmlElement[Msg] =
+      a(href := path, phx.link := "redirect", phx.linkState := "push", mods)
+
     /** Live-navigates to `to` and replaces the current browser-history entry. */
     def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       replaceNavigateUnsafe(to.href, mods*)
+
+    /** Live-navigates with history replacement to a signal-backed location. */
+    def replaceNavigate[Msg](
+      to: Signal[LiveLocation],
+      mods: Mod[Msg]*
+    ): HtmlElement[Msg] =
+      replaceNavigateUnsafe(to.map(_.href), mods*)
 
     /** Live-navigates to a raw destination and replaces the current browser-history entry.
       *
@@ -257,9 +388,20 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def replaceNavigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "redirect", phx.linkState := "replace", mods)
 
+    /** Replaces navigation with a raw signal-backed destination. */
+    def replaceNavigateUnsafe[Msg](
+      path: Signal[String],
+      mods: Mod[Msg]*
+    ): HtmlElement[Msg] =
+      a(href := path, phx.link := "redirect", phx.linkState := "replace", mods)
+
     /** Patches the current LiveView to `to` and pushes a browser-history entry. */
     def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       pushPatchUnsafe(to.href, mods*)
+
+    /** Live-patches to a signal-backed location. */
+    def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
+      pushPatchUnsafe(to.map(_.href), mods*)
 
     /** Patches the current LiveView to a raw destination and pushes a browser-history entry.
       *
@@ -268,15 +410,27 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def pushPatchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "patch", phx.linkState := "push", mods)
 
+    /** Live-patches to a raw signal-backed destination. */
+    def pushPatchUnsafe[Msg](path: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
+      a(href := path, phx.link := "patch", phx.linkState := "push", mods)
+
     /** Patches the current LiveView to `to` and replaces the current browser-history entry. */
     def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       replacePatchUnsafe(to.href, mods*)
+
+    /** Live-patches with history replacement to a signal-backed location. */
+    def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
+      replacePatchUnsafe(to.map(_.href), mods*)
 
     /** Patches the current LiveView to a raw destination and replaces browser history.
       *
       * This bypasses typed route construction and URI validation/encoding.
       */
     def replacePatchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg] =
+      a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
+
+    /** Replaces the current patch destination from a signal-backed value. */
+    def replacePatchUnsafe[Msg](path: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := path, phx.link := "patch", phx.linkState := "replace", mods)
   end link
 
@@ -298,9 +452,9 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       dataAttr(s"phx-$suffix")
 
     private[scalive] lazy val session   = dataPhxAttr("session")
+    private[scalive] lazy val static    = dataPhxAttr("static")
     private[scalive] lazy val main      = htmlAttr("data-phx-main", BooleanAsAttrPresenceEncoder)
     private[scalive] lazy val parentId  = dataPhxAttr("parent-id")
-    private[scalive] lazy val childId   = dataPhxAttr("child-id")
     private[scalive] lazy val sticky    = htmlAttr("data-phx-sticky", BooleanAsAttrPresenceEncoder)
     private[scalive] lazy val link      = dataPhxAttr("link")
     private[scalive] lazy val linkState = dataPhxAttr("link-state")
@@ -426,6 +580,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
     /** Boolean marker for static assets tracked across live navigation. */
     lazy val trackStatic = htmlAttr("phx-track-static", BooleanAsAttrPresenceEncoder)
+
   end phx
 
   /** Typed server-event and JavaScript-command bindings.
@@ -578,11 +733,26 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def onProgress[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] =
       on.uploadProgress(f)
 
+  extension [R](upload: Signal[LiveUpload[R]])
+    /** Marks an element as a drop target for the committed upload snapshot. */
+    def dropTarget: Mod.Attr[Nothing] = phx.dropTarget := upload.map(_.ref)
+
+    /** Creates a progress binding associated with this signal-backed upload value. */
+    def onProgress[Msg](message: Msg): Mod.Attr[Msg] =
+      on.uploadProgress(message)
+
+    /** Creates a raw progress binding associated with this signal-backed upload value. */
+    def onProgress[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] =
+      on.uploadProgress(f)
+
   /** Converts ordinary string content to an escaped HTML text modifier.
     *
     * Use [[rawHtml]] only when deliberately inserting trusted markup without escaping.
     */
   implicit def stringToMod(v: String): Mod[Nothing] = Mod.Content.Text(v)
+
+  /** Converts a read-only string signal to escaped dynamic text. */
+  implicit def signalStringToMod(v: Signal[String]): Mod[Nothing] = Mod.Content.SignalText(v)
 
   /** Converts an [[HtmlElement]] to a child-content modifier while preserving its message type. */
   implicit def htmlElementToMod[Msg](el: HtmlElement[Msg]): Mod[Msg] = Mod.Content.Tag(el)

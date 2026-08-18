@@ -18,183 +18,224 @@ private[scalive] object SocketBootstrap:
     tokenConfig: TokenConfig,
     initialUrl: URL,
     initialFlash: Map[String, String],
-    renderRoot: (Model, URL) => HtmlElement[Msg],
     paramsRuntime: LiveRouteParamsRuntime[?, Msg, Model],
     onCrash: UIO[Unit],
     ownsPageTitle: Boolean,
-    runtimeTrace: RuntimeTrace
-  ): Task[RuntimeState[Msg, Model]] =
-    for
-      inbox      <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
-      asyncQueue <- Queue.unbounded[LiveAsyncCompletion]
-      componentOutputQueue <- Queue.unbounded[ComponentOutputMessage]
-      outQueue             <- Queue.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
-      lifecycleLock        <- Semaphore.make(1)
-      uploadRef            <- Ref.make(UploadRuntimeState.empty)
-      streamRef            <- Ref.make(StreamRuntimeState.empty)
-      clientEventsRef      <- Ref.make(Vector.empty[Diff.Event])
-      flashRef             <- Ref.make(FlashRuntimeState(initialFlash))
-      asyncTasksRef        <- Ref.make(LiveAsyncRuntimeState.empty)
-      navigationRef        <- Ref.make(Option.empty[LiveNavigationCommand])
-      componentsRef        <- Ref.make(ComponentRuntimeState.empty)
-      subscriptionsRef     <- SubscriptionRef.make(Map.empty[String, ZStream[Any, Nothing, Msg]])
-      hooksRef             <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
-      runtimeCtx = ctx.copy(
-                     connected = true,
-                     uploads = new SocketUploadRuntime(uploadRef),
-                     streams = new SocketStreamRuntime(streamRef),
-                     clientEvents = new SocketClientEventRuntime(clientEventsRef),
-                     navigation = new SocketNavigationRuntime(navigationRef),
-                     flash = new SocketFlashRuntime(flashRef),
-                     async = new SocketAsyncRuntime(
-                       asyncQueue,
-                       asyncTasksRef,
-                       LiveAsyncOwner.Root
-                     ),
-                     components = new SocketComponentUpdateRuntime(componentsRef),
-                     componentOutput = new SocketComponentOutputRuntime(componentOutputQueue),
-                     subscriptions = new SocketSubscriptionRuntime[Msg](subscriptionsRef)
-                       .asInstanceOf[SubscriptionRuntime[Any]],
-                     hooks = new SocketLiveHookRuntime(hooksRef),
-                     runtimeTrace = runtimeTrace
+    runtimeTrace: RuntimeTrace,
+    rootView: Signal[(Model, URL)] => HtmlElement[Msg]
+  ): RIO[Scope, RuntimeState[Msg, Model]] =
+    ZIO.uninterruptibleMask { restore =>
+      for
+        inbox      <- Queue.bounded[(WebSocketMessage.Payload.Event, WebSocketMessage.Meta)](4)
+        asyncQueue <- Queue.unbounded[LiveAsyncCompletion]
+        componentOutputQueue <- Queue.unbounded[ComponentOutputMessage]
+        outQueue             <- Queue.unbounded[(WebSocketMessage.Payload, WebSocketMessage.Meta)]
+        lifecycleLock        <- Semaphore.make(1)
+        uploadRef            <- Ref.make(UploadRuntimeState.empty)
+        streamRef            <- Ref.make(StreamRuntimeState.empty)
+        clientEventsRef      <- Ref.make(Vector.empty[Diff.Event])
+        flashRef             <- Ref.make(FlashRuntimeState(initialFlash))
+        asyncTasksRef        <- Ref.make(LiveAsyncRuntimeState.empty)
+        navigationRef        <- Ref.make(Option.empty[LiveNavigationCommand])
+        componentsRef        <- Ref.make(ComponentRuntimeState.empty)
+        subscriptionsRef     <- SubscriptionRef.make(Map.empty[String, ZStream[Any, Nothing, Msg]])
+        hooksRef             <- Ref.make(LiveHookRuntimeState.root(lv.hooks))
+        runtimeCtx = ctx.copy(
+                       connected = true,
+                       uploads = new SocketUploadRuntime(uploadRef),
+                       streams = new SocketStreamRuntime(streamRef),
+                       clientEvents = new SocketClientEventRuntime(clientEventsRef),
+                       navigation = new SocketNavigationRuntime(navigationRef),
+                       flash = new SocketFlashRuntime(flashRef),
+                       async = new SocketAsyncRuntime(
+                         asyncQueue,
+                         asyncTasksRef,
+                         LiveAsyncOwner.Root
+                       ),
+                       components = new SocketComponentUpdateRuntime(componentsRef),
+                       componentOutput = new SocketComponentOutputRuntime(componentOutputQueue),
+                       subscriptions = new SocketSubscriptionRuntime[Msg](subscriptionsRef)
+                         .asInstanceOf[SubscriptionRuntime[Any]],
+                       hooks = new SocketLiveHookRuntime(hooksRef),
+                       runtimeTrace = runtimeTrace
+                     )
+        _ <- SocketFlashRuntime.resetNavigation(flashRef)
+        _ <- navigationRef.set(None)
+        _ <- RuntimeTraceOperation.event(
+               meta.traceOperation,
+               RuntimeTraceStage.LifecycleStarted,
+               "Mount lifecycle started"
+             )
+        mounted <- restore(paramsRuntime.mount(lv, initialUrl, runtimeCtx))
+        _       <- RuntimeTraceOperation.event(
+               meta.traceOperation,
+               RuntimeTraceStage.LifecycleCompleted,
+               "Mount lifecycle completed"
+             )
+        mountNavigation                                   <- navigationRef.getAndSet(None)
+        (bootstrapModel, bootstrapPayloads, bootstrapUrl) <-
+          restore(
+            runInitialLifecycle(
+              lv,
+              runtimeCtx,
+              navigationRef,
+              flashRef,
+              tokenConfig,
+              mounted.model,
+              initialUrl,
+              mountNavigation,
+              paramsRuntime,
+              mounted.handleInitialParams
+            )
+          )
+        _ <- RuntimeTraceOperation.model(
+               meta.traceOperation,
+               RuntimeTraceStage.ModelProposed,
+               "Mount proposed a model",
+               bootstrapModel
+             )
+        _ <- RuntimeTraceOperation.event(
+               meta.traceOperation,
+               RuntimeTraceStage.RenderStarted,
+               "Initial render started"
+             )
+        viewGraph <- ZIO.attempt {
+                       ViewGraph.build[(Model, URL)] { input =>
+                         val root = rootView(input)
+                         runtimeCtx.csrfToken.fold(root)(CsrfProtection.injectForms(root, _))
+                       }
+                     }
+        initialized <- restore(
+                         runtimeCtx.nestedLiveViews
+                           .renderTransaction {
+                             for
+                               rendering <-
+                                 SocketComponentRuntime
+                                   .evaluateViewGraph(
+                                     viewGraph,
+                                     bootstrapModel -> bootstrapUrl,
+                                     SignalEvaluation.empty,
+                                     revision = 1L,
+                                     componentsRef,
+                                     runtimeCtx,
+                                     manageNestedRender = false
+                                   ).map { evaluated =>
+                                     (evaluated.compiled, evaluated.evaluation, 1L)
+                                   }
+                               _ <- RuntimeTraceOperation.event(
+                                      meta.traceOperation,
+                                      RuntimeTraceStage.LifecycleStarted,
+                                      "After-render lifecycle started"
+                                    )
+                               _ <- runtimeCtx.hooks.runAfterRender[Msg, Model](
+                                      bootstrapModel,
+                                      runtimeCtx
+                                    )
+                               _ <- RuntimeTraceOperation.event(
+                                      meta.traceOperation,
+                                      RuntimeTraceStage.LifecycleCompleted,
+                                      "After-render lifecycle completed"
+                                    )
+                             yield rendering
+                           }.map { rendering =>
+                             val initPageTitle = Option
+                               .when(ownsPageTitle)(
+                                 normalizePageTitle(lv.pageTitle(bootstrapModel))
+                               )
+                               .flatten
+                             rendering -> initPageTitle
+                           }
+                       ).onError(_ =>
+                         ZIO.succeed(viewGraph.dispose()) *>
+                           SocketViewGraphRuntime.disposeComponents(componentsRef)
+                       )
+        _ <- RuntimeTraceOperation.model(
+               meta.traceOperation,
+               RuntimeTraceStage.ModelRendered,
+               "Initial model rendered",
+               bootstrapModel
+             )
+        _ <- RuntimeTraceOperation.event(
+               meta.traceOperation,
+               RuntimeTraceStage.RenderCompleted,
+               "Initial render completed"
+             )
+        ((initCompiled, initSignalEvaluation, initSignalRevision), initPageTitle) = initialized
+        initView                                                                  = RenderedView(
+                     compiled = initCompiled,
+                     bindings = BindingRegistry.collect[Any](initCompiled),
+                     pageTitle = initPageTitle,
+                     signalEvaluation = initSignalEvaluation,
+                     signalRevision = initSignalRevision
                    )
-      _ <- SocketFlashRuntime.resetNavigation(flashRef)
-      _ <- navigationRef.set(None)
-      _ <- RuntimeTraceOperation.event(
-             meta.traceOperation,
-             RuntimeTraceStage.LifecycleStarted,
-             "Mount lifecycle started"
-           )
-      mounted <- paramsRuntime.mount(lv, initialUrl, runtimeCtx)
-      _       <- RuntimeTraceOperation.event(
-             meta.traceOperation,
-             RuntimeTraceStage.LifecycleCompleted,
-             "Mount lifecycle completed"
-           )
-      mountNavigation                                   <- navigationRef.getAndSet(None)
-      (bootstrapModel, bootstrapPayloads, bootstrapUrl) <-
-        runInitialLifecycle(
-          lv,
-          runtimeCtx,
-          navigationRef,
-          flashRef,
-          tokenConfig,
-          mounted.model,
-          initialUrl,
-          mountNavigation,
-          paramsRuntime,
-          mounted.handleInitialParams
-        )
-      _ <- RuntimeTraceOperation.model(
-             meta.traceOperation,
-             RuntimeTraceStage.ModelProposed,
-             "Mount proposed a model",
-             bootstrapModel
-           )
-      _ <- RuntimeTraceOperation.event(
-             meta.traceOperation,
-             RuntimeTraceStage.RenderStarted,
-             "Initial render started"
-           )
-      initRoot <-
-        SocketComponentRuntime.renderRoot(
-          renderRoot(bootstrapModel, bootstrapUrl),
-          componentsRef,
-          runtimeCtx
-        )
-      _ <- RuntimeTraceOperation.model(
-             meta.traceOperation,
-             RuntimeTraceStage.ModelRendered,
-             "Initial model rendered",
-             bootstrapModel
-           )
-      _ <- RuntimeTraceOperation.event(
-             meta.traceOperation,
-             RuntimeTraceStage.RenderCompleted,
-             "Initial render completed"
-           )
-      initCompiled  = RenderSnapshot.compile(initRoot)
-      initPageTitle =
-        Option.when(ownsPageTitle)(normalizePageTitle(lv.pageTitle(bootstrapModel))).flatten
-      initView = RenderedView(
-                   compiled = initCompiled,
-                   bindings = BindingRegistry.collect[Any](initCompiled),
-                   pageTitle = initPageTitle
-                 )
-      _ <- RuntimeTraceOperation.event(
-             meta.traceOperation,
-             RuntimeTraceStage.LifecycleStarted,
-             "After-render lifecycle started"
-           )
-      _ <- runtimeCtx.hooks.runAfterRender[Msg, Model](bootstrapModel, runtimeCtx)
-      _ <- RuntimeTraceOperation.event(
-             meta.traceOperation,
-             RuntimeTraceStage.LifecycleCompleted,
-             "After-render lifecycle completed"
-           )
-      ref <- Ref.make((bootstrapModel, initView))
-      _   <- RuntimeTraceOperation.model(
-             meta.traceOperation,
-             RuntimeTraceStage.ModelCommitted,
-             "Initial model committed",
-             bootstrapModel
-           )
-      currentUrlRef <- Ref.make(bootstrapUrl)
-      rawInitDiff = TreeDiff.initial(initCompiled)
-      _ <- RuntimeTraceOperation.event(
-             meta.traceOperation,
-             RuntimeTraceStage.TreeDiff,
-             "Initial tree diff completed"
-           )
-      initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
-      initDiffWithoutTitle = SocketModelRuntime.withClientEvents(rawInitDiff, initEvents)
-      initDiff             =
-        if ownsPageTitle then
-          SocketModelRuntime.withTitle(initDiffWithoutTitle, Some(initPageTitle.getOrElse("")))
-        else initDiffWithoutTitle
-      _                <- SocketFlashRuntime.resetNavigation(flashRef)
-      componentCidsRef <- Ref.make(
-                            initDiff match
-                              case Diff.Tag(_, _, _, _, _, components, _, _) => components.keySet
-                              case _                                         => Set.empty[Int]
-                          )
-      _                     <- SocketStreamRuntime.prune(streamRef)
-      patchRedirectCountRef <- Ref.make(0)
-      crashedRef            <- Ref.make(false)
-      bootstrapPayloadEnvelopes =
-        bootstrapPayloads.map(_ -> meta.copy(messageRef = None))
-    yield RuntimeState(
-      lv = lv,
-      renderRoot = renderRoot,
-      paramsRuntime = paramsRuntime,
-      runtimeTrace = runtimeTrace,
-      msgClassTag = summon[ClassTag[Msg]],
-      ctx = runtimeCtx,
-      meta = meta,
-      tokenConfig = tokenConfig,
-      inbox = inbox,
-      asyncQueue = asyncQueue,
-      componentOutputQueue = componentOutputQueue,
-      outQueue = outQueue,
-      lifecycleLock = lifecycleLock,
-      ref = ref,
-      currentUrlRef = currentUrlRef,
-      subscriptionsRef = subscriptionsRef,
-      navigationRef = navigationRef,
-      uploadRef = uploadRef,
-      streamRef = streamRef,
-      clientEventsRef = clientEventsRef,
-      flashRef = flashRef,
-      asyncTasksRef = asyncTasksRef,
-      componentsRef = componentsRef,
-      componentCidsRef = componentCidsRef,
-      patchRedirectCountRef = patchRedirectCountRef,
-      crashedRef = crashedRef,
-      onCrash = onCrash,
-      ownsPageTitle = ownsPageTitle,
-      bootstrapPayloads = bootstrapPayloadEnvelopes,
-      initDiff = initDiff
-    )
+        ref                       <- Ref.make((bootstrapModel, initView))
+        pendingNavigationModelRef <- Ref.make(Option.empty[Model])
+        _                         <- RuntimeTraceOperation.model(
+               meta.traceOperation,
+               RuntimeTraceStage.ModelCommitted,
+               "Initial model committed",
+               bootstrapModel
+             )
+        currentUrlRef <- Ref.make(bootstrapUrl)
+        rawInitDiff = TreeDiff.initial(initCompiled)
+        _ <- RuntimeTraceOperation.event(
+               meta.traceOperation,
+               RuntimeTraceStage.TreeDiff,
+               "Initial tree diff completed"
+             )
+        initEvents <- SocketClientEventRuntime.drain(clientEventsRef)
+        initDiffWithoutTitle = SocketModelRuntime.withClientEvents(rawInitDiff, initEvents)
+        initDiff             =
+          if ownsPageTitle then
+            SocketModelRuntime.withTitle(initDiffWithoutTitle, Some(initPageTitle.getOrElse("")))
+          else initDiffWithoutTitle
+        _                <- SocketFlashRuntime.resetNavigation(flashRef)
+        componentCidsRef <- Ref.make(
+                              initDiff match
+                                case Diff.Tag(_, _, _, _, _, components, _, _) => components.keySet
+                                case _                                         => Set.empty[Int]
+                            )
+        _                     <- SocketStreamRuntime.prune(streamRef)
+        patchRedirectCountRef <- Ref.make(0)
+        crashedRef            <- Ref.make(false)
+        bootstrapPayloadEnvelopes =
+          bootstrapPayloads.map(_ -> meta.copy(messageRef = None))
+        state = RuntimeState(
+                  lv = lv,
+                  viewGraph = viewGraph,
+                  paramsRuntime = paramsRuntime,
+                  runtimeTrace = runtimeTrace,
+                  msgClassTag = summon[ClassTag[Msg]],
+                  ctx = runtimeCtx,
+                  meta = meta,
+                  tokenConfig = tokenConfig,
+                  inbox = inbox,
+                  asyncQueue = asyncQueue,
+                  componentOutputQueue = componentOutputQueue,
+                  outQueue = outQueue,
+                  lifecycleLock = lifecycleLock,
+                  ref = ref,
+                  pendingNavigationModelRef = pendingNavigationModelRef,
+                  currentUrlRef = currentUrlRef,
+                  subscriptionsRef = subscriptionsRef,
+                  navigationRef = navigationRef,
+                  uploadRef = uploadRef,
+                  streamRef = streamRef,
+                  clientEventsRef = clientEventsRef,
+                  flashRef = flashRef,
+                  asyncTasksRef = asyncTasksRef,
+                  componentsRef = componentsRef,
+                  componentCidsRef = componentCidsRef,
+                  patchRedirectCountRef = patchRedirectCountRef,
+                  crashedRef = crashedRef,
+                  onCrash = onCrash,
+                  ownsPageTitle = ownsPageTitle,
+                  bootstrapPayloads = bootstrapPayloadEnvelopes,
+                  initDiff = initDiff
+                )
+        _ <- ZIO.addFinalizer(SocketOutbound.buildBootstrapShutdown(state))
+      yield state
+    }
 
   private val MaxBootstrapRedirects = 20
 

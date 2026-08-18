@@ -69,16 +69,16 @@ trait LiveView[Msg, Model]:
     */
   def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
 
-  /** Renders the current model as a typed HTML tree.
+  /** Constructs this LiveView's signal-backed view graph from its read-only model signal.
     *
-    * This method runs after successful initial lifecycle handling and after connected model changes
-    * that do not navigate away. The `Msg` type of the returned tree restricts its server event
-    * bindings to messages accepted by this LiveView.
+    * The runtime invokes this method once for each disconnected request and connected socket graph
+    * lifetime. The `Msg` type of the returned tree restricts its server event bindings to messages
+    * accepted by this LiveView.
     *
     * @param model
-    *   the model to render
+    *   the read-only signal containing the current model
     */
-  def render(model: Model): HtmlElement[Msg]
+  def view(model: Signal[Model]): HtmlElement[Msg]
 end LiveView
 
 /** Variants of [[LiveView]] for eventless views and views with typed route parameters. */
@@ -87,7 +87,7 @@ object LiveView:
     *
     * The message type is fixed to `Nothing`, which supplies the unreachable message handler and
     * prevents server event bindings from being rendered. Implementations only need to define
-    * [[LiveView.mount mount]] and [[LiveView.render render]].
+    * [[LiveView.mount mount]] and [[LiveView.view view]].
     *
     * @tparam Model
     *   the state owned by this LiveView
@@ -202,8 +202,8 @@ object LiveView:
     /** Defines a routed LiveView that cannot receive server messages.
       *
       * This combines typed route parameters with the `Nothing` message type from
-      * [[LiveView.Eventless]]. Implementations define the parameterized mount and render methods,
-      * and may override [[LiveView.Routed.handleParams handleParams]].
+      * [[LiveView.Eventless]]. Implementations define the parameterized mount and view methods, and
+      * may override [[LiveView.Routed.handleParams handleParams]].
       *
       * @tparam Model
       *   the state owned by this LiveView

@@ -144,12 +144,17 @@ private[scalive] object RenderSnapshot:
           staticFragment += "\""
         case Attr.StaticValueAsPresence(name, value) =>
           pushStringSlot(if value then s" $name" else "")
+        case Attr.SignalValue(_, _) | Attr.SignalOptionalValue(_, _) |
+            Attr.SignalValueAsPresence(_, _) =>
+          throw new IllegalStateException("signal attributes require view-graph rendering")
         case Attr.Binding(name, f) =>
           val id = BindingId.attrBindingId(path, attrIndex)
           staticFragment += s" $name=\""
           pushStringSlot(Escaping.escape(id))
           staticFragment += "\""
           bindings.update(id, payload => f(payload.params))
+        case Attr.SignalBinding(_, _, _) =>
+          throw new IllegalStateException("signal bindings require view-graph rendering")
         case Attr.FormBinding(name, f) =>
           val id = BindingId.attrBindingId(path, attrIndex)
           staticFragment += s" $name=\""
@@ -173,6 +178,8 @@ private[scalive] object RenderSnapshot:
           command.bindings(scope).foreach { case (id, msg) =>
             bindings.update(id, _ => msg)
           }
+        case Attr.SignalJsBinding(_, _) =>
+          throw new IllegalStateException("signal JS bindings require view-graph rendering")
         case Attr.RoutedBinding(name, f) =>
           val id = BindingId.attrBindingId(path, attrIndex)
           staticFragment += s" $name=\""
@@ -190,6 +197,12 @@ private[scalive] object RenderSnapshot:
       case Content.Text(text, raw) =>
         if raw then pushStringSlot(text)
         else pushStringSlot(Escaping.escape(text))
+      case Content.SignalText(_, _) | Content.SignalChoice(_, _) | Content.SignalModChoice(_, _) |
+          Content.SignalOption(_, _) | Content.SignalKeyed(_, _, _) |
+          Content.SignalKeyedByIndex(_, _) | Content.SignalStream(_, _) |
+          Content.SignalLiveComponent(_) | Content.DynamicLiveComponent(_) |
+          Content.SignalLiveView(_) =>
+        throw new IllegalStateException("signal content requires view-graph rendering")
       case Content.Tag(child) =>
         val childPath = BindingId.childTagPath(path, structuralChildIndex, child.tag.name)
         structuralChildIndex = structuralChildIndex + 1
@@ -224,7 +237,7 @@ private[scalive] object RenderSnapshot:
         structuralChildIndex = structuralChildIndex + 1
         pushNodeSlot(
           compileElement(
-            div(idAttr := spec.id, phx.childId := spec.id, phx.sticky := spec.sticky),
+            div(idAttr := spec.id, phx.sticky := spec.sticky),
             isTopLevel = false,
             path = childPath,
             bindings = bindings,
@@ -278,7 +291,7 @@ private[scalive] object RenderSnapshot:
     )
   end compileElement
 
-  private def buildTagNode(
+  private[scalive] def buildTagNode(
     static: Vector[String],
     slots: Vector[CompiledSlot],
     root: Boolean
@@ -295,7 +308,7 @@ private[scalive] object RenderSnapshot:
       templateFingerprint = templateFingerprint
     )
 
-  private def buildKeyedNode(
+  private[scalive] def buildKeyedNode(
     entries: Vector[KeyedEntry],
     stream: Option[Diff.Stream]
   ): KeyedNode =
@@ -354,7 +367,7 @@ private[scalive] object RenderSnapshot:
       case KeyedSlot(node)          => node.templateFingerprint
       case ComponentSlot(component) => MurmurHash3.mix(0x636f6d74, component.cid)
 
-  private def keyedEntryFingerprint(key: Any, node: CompiledNode): Int =
+  private[scalive] def keyedEntryFingerprint(key: Any, node: CompiledNode): Int =
     val hash = MurmurHash3.mix(MurmurHash3.mix(0x656e7472, stableKeyHash(key)), node.fingerprint)
     MurmurHash3.finalizeHash(hash, 2)
 
@@ -394,6 +407,8 @@ private[scalive] object RenderSnapshot:
         case Attr.Binding(_, f) =>
           val id = BindingId.attrBindingId(path, attrIndex)
           bindings.update(id, payload => f(payload.params))
+        case Attr.SignalBinding(_, _, _) =>
+          throw new IllegalStateException("signal bindings require view-graph rendering")
         case Attr.FormBinding(_, f) =>
           val id = BindingId.attrBindingId(path, attrIndex)
           bindings.update(id, payload => f(payload.formData))
@@ -402,6 +417,8 @@ private[scalive] object RenderSnapshot:
           command.bindings(scope).foreach { case (id, msg) =>
             bindings.update(id, _ => msg)
           }
+        case Attr.SignalJsBinding(_, _) =>
+          throw new IllegalStateException("signal JS bindings require view-graph rendering")
         case Attr.RoutedBinding(_, f) =>
           val id = BindingId.attrBindingId(path, attrIndex)
           bindings.update(id, f)
@@ -412,6 +429,12 @@ private[scalive] object RenderSnapshot:
     el.contentMods.foreach {
       case Content.Text(_, _) =>
         ()
+      case Content.SignalText(_, _) | Content.SignalChoice(_, _) | Content.SignalModChoice(_, _) |
+          Content.SignalOption(_, _) | Content.SignalKeyed(_, _, _) |
+          Content.SignalKeyedByIndex(_, _) | Content.SignalStream(_, _) |
+          Content.SignalLiveComponent(_) | Content.DynamicLiveComponent(_) |
+          Content.SignalLiveView(_) =>
+        throw new IllegalStateException("signal content requires view-graph rendering")
       case Content.Tag(child) =>
         val childPath = BindingId.childTagPath(path, structuralChildIndex, child.tag.name)
         structuralChildIndex = structuralChildIndex + 1

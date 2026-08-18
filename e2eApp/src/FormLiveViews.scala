@@ -90,24 +90,40 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
             case _             => LiveEventHookResult.cont(model)
       }
 
-  def render(model: Model) =
-    val formContent = renderFormContent(model)
+  override def view(model: Signal[Model]) =
+    val query      = model.map(_.query)
+    val values     = model.map(_.values)
+    val submitted  = model.map(_.submitted)
+    val portalMode = query.map(_.portal)
+
     div(
-      if model.query.portal then h1("Form") else "",
-      if model.query.portal then
-        portal("form-portal", target = DomSelector.css("body"))(formContent)
-      else formContent,
-      if model.submitted then p("Form was submitted!") else ""
+      Signal.when(portalMode)(h1("Form")),
+      portalMode.chooseMod(
+        portal("form-portal", target = DomSelector.css("body"))(
+          renderFormContent(query, values)
+        ),
+        renderFormContent(query, values)
+      ),
+      Signal.when(submitted)(p("Form was submitted!"))
     )
 
-  private def renderFormContent(model: Model): Mod[Msg] =
-    if model.query.liveComponent then
+  private def renderFormContent(
+    query: Signal[FormQueryParams],
+    values: Signal[Map[String, String]]
+  ): Mod[Msg] =
+    val liveComponentMode = query.map(_.liveComponent)
+    val componentProps    = query.zip(values).map { case (currentQuery, currentValues) =>
+      FormComponent.Props(currentQuery, currentValues)
+    }
+
+    liveComponentMode.chooseMod(
       liveComponent(
         FormComponent,
         id = "form-component",
-        props = FormComponent.Props(model.query, model.values)
-      )
-    else FormLiveView.renderForm(model.query, model.values, Some(Msg.Validate(EmptyFormEvent)))
+        props = componentProps
+      ),
+      FormLiveView.renderForm(query, values, Msg.Validate(EmptyFormEvent))
+    )
 
   private def applyRawFormValue(model: Model, value: Json): Model =
     value match
@@ -162,49 +178,63 @@ object FormLiveView:
       .getOrElse(FormData.fromMap(event.params))
 
   private def renderForm[Msg](
-    query: FormQueryParams,
-    values: Map[String, String],
-    jsChangeMessage: Option[Msg],
+    query: Signal[FormQueryParams],
+    values: Signal[Map[String, String]],
+    jsChangeMessage: Msg,
     target: Option[Mod.Attr[Nothing]] = None
   ) =
-    val formAttrs = Vector.newBuilder[Mod[Msg]]
-    if !query.noId then formAttrs += (idAttr := "test-form")
-    formAttrs += (phxSubmitAttr              := "save")
-    if !query.noChangeEvent then
-      formAttrs += (
-        if query.jsChange then on.change(JS.push(jsChangeMessage.get))
-        else phxChangeAttr := "validate"
-      )
-    query.autoRecover.foreach(event => formAttrs += (phxAutoRecoverAttr := event))
-    target.foreach(formAttrs += _)
-    formAttrs += (cls := "myformclass")
+    val idValue    = query.map(current => Option.unless(current.noId)("test-form"))
+    val changeMode = query.map { current =>
+      if current.noChangeEvent then 0
+      else if current.jsChange then 1
+      else 2
+    }
+    val autoRecover   = query.map(_.autoRecover)
+    val disabledValue = query.map(_.disabledFieldset)
+    val hasId         = query.map(current => !current.noId)
+    val valueA        = values.map(_.getOrElse("a", ""))
+    val valueB        = values.map(_.getOrElse("b", ""))
+    val valueC        = values.map(_.getOrElse("c", ""))
+    val selectedFoo   = values.map(_.get("d").contains("foo"))
+    val selectedBar   = values.map(_.get("d").contains("bar"))
+    val selectedBaz   = values.map(_.get("d").contains("baz"))
+    val valueE        = values.map(_.getOrElse("e", ""))
+    val valueF        = values.map(_.getOrElse("f", ""))
 
     div(
       form(
-        formAttrs.result(),
+        idAttr.optional(idValue),
+        phxSubmitAttr := "save",
+        changeMode.chooseMod(
+          1 -> on.change(JS.push(jsChangeMessage)),
+          2 -> (phxChangeAttr := "validate")
+        ),
+        phxAutoRecoverAttr.optional(autoRecover),
+        target,
+        cls := "myformclass",
         fieldset(
-          disabled := query.disabledFieldset,
+          disabled := disabledValue,
           input(
             typ      := "text",
             nameAttr := "a",
             readonly := true,
-            value    := values.getOrElse("a", "")
+            value    := valueA
           ),
-          input(typ := "text", nameAttr := "b", value := values.getOrElse("b", ""))
+          input(typ := "text", nameAttr := "b", value := valueB)
         ),
-        input(typ := "text", nameAttr := "c", value := values.getOrElse("c", "")),
+        input(typ := "text", nameAttr := "c", value := valueC),
         select(
           nameAttr := "d",
-          option(value := "foo", selected := values.get("d").contains("foo"), "foo"),
-          option(value := "bar", selected := values.get("d").contains("bar"), "bar"),
-          option(value := "baz", selected := values.get("d").contains("baz"), "baz")
+          option(value := "foo", selected := selectedFoo, "foo"),
+          option(value := "bar", selected := selectedBar, "bar"),
+          option(value := "baz", selected := selectedBaz, "baz")
         ),
-        Option.when(!query.noId)(
+        Signal.when(hasId)(
           input(
             typ      := "text",
             nameAttr := "e",
             formAttr := "test-form",
-            value    := values.getOrElse("e", "")
+            value    := valueE
           )
         ),
         button(
@@ -226,19 +256,23 @@ object FormLiveView:
           "Non-form Button"
         )
       ),
-      Option.when(!query.noId)(
+      Signal.when(hasId)(
         input(
           typ      := "text",
           nameAttr := "f",
           formAttr := "test-form",
-          value    := values.getOrElse("f", "")
+          value    := valueF
         )
       )
     )
   end renderForm
 
   object FormComponent
-      extends LiveComponent[FormComponent.Props, FormComponent.Msg, FormComponent.Model]:
+      extends LiveComponent[
+        FormComponent.Props,
+        FormComponent.Msg,
+        FormComponent.Model
+      ]:
     final case class Props(query: FormQueryParams, values: Map[String, String])
     final case class Model(
       query: FormQueryParams,
@@ -286,15 +320,23 @@ object FormLiveView:
       case Msg.Validate(event) =>
         maybeAwait(model.query, "validate").as(model.copy(values = model.values ++ event.raw.asMap))
 
-    def render(props: Props, model: Model, self: ComponentRef[Msg]) =
+    override def view(
+      _props: Signal[Props],
+      model: Signal[Model],
+      self: ComponentRef[Msg]
+    ) =
+      val query     = model.map(_.query)
+      val values    = model.map(_.values)
+      val submitted = model.map(_.submitted)
+
       div(
         FormLiveView.renderForm(
-          model.query,
-          model.values,
-          Some(Msg.Validate(EmptyFormEvent)),
+          query,
+          values,
+          Msg.Validate(EmptyFormEvent),
           Some(phx.target(self))
         ),
-        if model.submitted then p("LC Form was submitted!") else ""
+        Signal.when(submitted)(p("LC Form was submitted!"))
       )
   end FormComponent
 end FormLiveView
@@ -314,8 +356,8 @@ class NestedFormLiveView extends LiveView.Routed[Unit, FormQueryParams, FormQuer
   def handleMessage(model: FormQueryParams, ctx: MessageContext) =
     (_: Unit) => model
 
-  def render(model: FormQueryParams) =
-    div(liveView("nested", NestedFormContentLiveView(model)))
+  override def view(model: Signal[FormQueryParams]) =
+    div(liveView("nested", model)(NestedFormContentLiveView(_)))
 
 private class NestedFormContentLiveView(initialQuery: FormQueryParams)
     extends LiveView[FormLiveView.Msg, FormLiveView.Model]:
@@ -329,8 +371,8 @@ private class NestedFormContentLiveView(initialQuery: FormQueryParams)
   def handleMessage(model: FormLiveView.Model, ctx: MessageContext) =
     delegate.handleMessage(model, ctx)
 
-  def render(model: FormLiveView.Model) =
-    delegate.render(model)
+  override def view(model: Signal[FormLiveView.Model]) =
+    delegate.view(model)
 
 class FormDynamicInputsLiveView
     extends LiveView.Routed[
@@ -350,41 +392,42 @@ class FormDynamicInputsLiveView
     case Msg.Validate(event) => updateFromEvent(model, event)
     case Msg.Save(event)     => updateFromEvent(model, event).copy(submitted = true)
 
-  def render(model: Model) =
-    val formModel = Form.of(
-      "my_form",
-      FormState(formData(model), Right(dynamicInputsForm(model)), submitted = false),
-      DynamicInputsForm.codec
-    )
-    val usersSortName = formModel.name(FormPath("users_sort").array)
-    val usersDropName = formModel.name(FormPath("users_drop").array)
+  override def view(model: Signal[Model]) =
+    val name       = model.map(_.name)
+    val users      = model.map(_.users)
+    val checkboxes = model.map(_.checkboxes)
+    val submitted  = model.map(_.submitted)
+
+    val usersSortName = FormPath("my_form", "users_sort").array.name
+    val usersDropName = FormPath("my_form", "users_drop").array.name
 
     div(
       form(
         idAttr := "my-form",
-        formModel.onChange(Msg.Validate(_)),
-        formModel.onSubmit(Msg.Save(_)),
+        on.change.form(DynamicInputsForm.codec)(Msg.Validate(_)),
+        on.submit.form(DynamicInputsForm.codec)(Msg.Save(_)),
         styleAttr := "display: flex; flex-direction: column; gap: 4px; max-width: 500px;",
         fieldset(
           input(
             typ         := "text",
             idAttr      := "my-form_name",
-            nameAttr    := formModel.name("name"),
-            value       := formModel.value("name"),
+            nameAttr    := "my_form[name]",
+            value       := name,
             placeholder := "name"
           ),
-          model.users.indices.map { index =>
+          users.splitByIndex { (index, user) =>
+            val userName = user.map(_.name)
             div(
               styleAttr := "padding: 4px; border: 1px solid gray;",
               input(typ := "hidden", nameAttr := usersSortName, value := index.toString),
               input(
                 typ         := "text",
                 idAttr      := s"my-form_users_${index}_name",
-                nameAttr    := formModel.name(FormPath("users", index.toString, "name")),
-                value       := formModel.value(FormPath("users", index.toString, "name")),
+                nameAttr    := FormPath("my_form", "users", index.toString, "name").name,
+                value       := userName,
                 placeholder := "name"
               ),
-              if model.checkboxes then
+              checkboxes.choose(
                 label(
                   input(
                     typ      := "checkbox",
@@ -392,8 +435,7 @@ class FormDynamicInputsLiveView
                     value    := index.toString
                   ),
                   " Remove"
-                )
-              else
+                ),
                 button(
                   typ      := "button",
                   nameAttr := usersDropName,
@@ -401,16 +443,16 @@ class FormDynamicInputsLiveView
                   on.click(JS.dispatch("change")),
                   "Remove"
                 )
+              )
             )
           }
         ),
         input(typ := "hidden", nameAttr := usersDropName),
-        if model.checkboxes then
+        checkboxes.choose(
           label(
             input(typ := "checkbox", nameAttr := usersSortName),
             " add more"
-          )
-        else
+          ),
           button(
             typ      := "button",
             nameAttr := usersSortName,
@@ -418,10 +460,11 @@ class FormDynamicInputsLiveView
             on.click(JS.dispatch("change")),
             "add more"
           )
+        )
       ),
-      if model.submitted then p("Form was submitted!") else ""
+      Signal.when(submitted)(p("Form was submitted!"))
     )
-  end render
+  end view
 end FormDynamicInputsLiveView
 
 object FormDynamicInputsLiveView:
@@ -478,24 +521,6 @@ object FormDynamicInputsLiveView:
       }
     model.copy(name = data.name, users = users)
 
-  private def dynamicInputsForm(model: Model): DynamicInputsForm =
-    DynamicInputsForm(
-      name = model.name,
-      usersSort = model.users.indices.map(_.toString).toVector,
-      usersDrop = Set.empty,
-      userNames = model.users.zipWithIndex.map { case (user, index) =>
-        index.toString -> user.name
-      }.toMap
-    )
-
-  private def formData(model: Model): FormData =
-    val raw = Vector.newBuilder[(String, String)]
-    raw += "my_form[name]" -> model.name
-    model.users.zipWithIndex.foreach { case (user, index) =>
-      raw += "my_form[users_sort][]"         -> index.toString
-      raw += s"my_form[users][$index][name]" -> user.name
-    }
-    FormData(raw.result())
 end FormDynamicInputsLiveView
 
 class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLiveView.Model]:
@@ -514,18 +539,19 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
       E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
 
-  def render(model: Model) =
-    val data = FormData(Vector("myname" -> model.count.toString, "other" -> model.count.toString))
-    val formModel = Form.of("", FormState(data, Right(data), submitted = false), FormCodec.formData)
+  override def view(model: Signal[Model]) =
+    val count      = model.map(_.count)
+    val countValue = count.map(_.toString)
+    val items      = model.map(_.items)
 
     div(
-      model.count.toString,
+      countValue,
       form(
         idAttr := "test-form",
-        formModel.onChange(Msg.Validate(_)),
-        formModel.onSubmit(Msg.Save(_)),
-        formModel.text("myname"),
-        formModel.text("other"),
+        on.change.form(FormCodec.formData)(Msg.Validate(_)),
+        on.submit.form(FormCodec.formData)(Msg.Save(_)),
+        input(typ := "text", idAttr := "myname", nameAttr := "myname", value := countValue),
+        input(typ := "text", idAttr := "other", nameAttr  := "other", value  := countValue),
         div(
           dom.hook("FormHook", DomRef("form-stream-hook")),
           phx.update := PhxUpdate.Ignore
@@ -533,8 +559,9 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
         ul(
           idAttr     := "form-stream",
           phx.update := PhxUpdate.Stream,
-          model.items.stream { (domId, item) =>
-            li(dom.hook("FormStreamHook", DomRef(domId)), s"*%{id: ${item.id}}")
+          items.stream { (domId, item) =>
+            val itemText = item.map(value => s"*%{id: ${value.id}}")
+            li(dom.hook("FormStreamHook", DomRef(domId)), itemText)
           }
         ),
         button(idAttr := "submit", submission.replaceTextWith("Saving..."), "Submit")
@@ -592,35 +619,58 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
         LiveEventHookResult.cont(model.copy(feedbackUsed = model.feedbackUsed || usedFeedback))
     }
 
-  def render(model: Model) =
-    val data      = FormData.empty
-    val formModel = Form.of("", FormState(data, Right(data), submitted = false), FormCodec.formData)
+  override def view(model: Signal[Model]) =
+    val count         = model.map(_.count)
+    val validateCount = model.map(_.validateCount)
+    val submitCount   = model.map(_.submitCount)
+    val feedback      = model.map(_.feedback)
+    val feedbackUsed  = model.map(_.feedbackUsed)
+
+    val feedbackFor   = feedback.map(enabled => Option.when(enabled)("myfeedback"))
+    val feedbackClass = feedback.zip(feedbackUsed).map { case (enabled, used) =>
+      if enabled && !used then "phx-no-feedback" else ""
+    }
 
     div(
       styleTag(".phx-no-feedback { display: none; }"),
-      p("Button Count: ", model.count.toString),
-      p("Validate Count: ", model.validateCount.toString),
-      p("Submit Count: ", model.submitCount.toString),
+      p("Button Count: ", count.map(_.toString)),
+      p("Validate Count: ", validateCount.map(_.toString)),
+      p("Submit Count: ", submitCount.map(_.toString)),
       button(on.click(Msg.Inc), cls := "bg-blue-500 text-white p-4", "+"),
       button(on.click(Msg.Dec), cls := "bg-blue-500 text-white p-4", "-"),
       form(
         idAttr   := "myform",
         nameAttr := "test",
-        formModel.onChange(Msg.Validate(_)),
-        formModel.onSubmit(Msg.Submit(_)),
-        formModel.text("name", cls       := "border border-gray-500", placeholder := "type sth"),
-        formModel.text("myfeedback", cls := "border border-gray-500", placeholder := "myfeedback"),
-        button(typ                       := "submit", "Submit"),
-        button(typ                       := "reset", "Reset")
+        on.change.form(FormCodec.formData)(Msg.Validate(_)),
+        on.submit.form(FormCodec.formData)(Msg.Submit(_)),
+        input(
+          typ         := "text",
+          idAttr      := "name",
+          nameAttr    := "name",
+          value       := "",
+          cls         := "border border-gray-500",
+          placeholder := "type sth"
+        ),
+        input(
+          typ         := "text",
+          idAttr      := "myfeedback",
+          nameAttr    := "myfeedback",
+          value       := "",
+          cls         := "border border-gray-500",
+          placeholder := "myfeedback"
+        ),
+        button(typ := "submit", "Submit"),
+        button(typ := "reset", "Reset")
       ),
       div(
-        Option.when(model.feedback)(phxFeedbackFor := "myfeedback"),
-        cls := (if model.feedback && !model.feedbackUsed then "phx-no-feedback" else ""),
+        phxFeedbackFor.optional(feedbackFor),
+        cls                            := feedbackClass,
         dataAttr("feedback-container") := "",
         "I am visible, because phx-no-feedback is not set for myfeedback!"
       ),
       button(on.click(Msg.ToggleFeedback), "Toggle feedback")
     )
+  end view
 end FormFeedbackLiveView
 
 object FormFeedbackLiveView:

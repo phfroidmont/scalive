@@ -191,6 +191,29 @@ object CsrfProtection:
           _.map(entry => entry.copy(element = transform(entry.element, token, injectMeta)))
         )
         Content.Keyed(transformedEntries, stream, transformedAllEntries)
+      case Content.SignalChoice(value, branches) =>
+        Content.SignalChoice(
+          value,
+          branches.map((key, element) => key -> transform(element, token, injectMeta))
+        )
+      case Content.SignalOption(value, project) =>
+        Content.SignalOption(value, signal => transform(project(signal), token, injectMeta))
+      case Content.SignalKeyed(values, key, project) =>
+        Content.SignalKeyed(
+          values,
+          key,
+          (entryKey, signal) => transform(project(entryKey, signal), token, injectMeta)
+        )
+      case Content.SignalKeyedByIndex(values, project) =>
+        Content.SignalKeyedByIndex(
+          values,
+          (index, signal) => transform(project(index, signal), token, injectMeta)
+        )
+      case Content.SignalStream(value, project) =>
+        Content.SignalStream(
+          value,
+          (domId, signal) => transform(project(domId, signal), token, injectMeta)
+        )
       case other => other
 
   private def isProtectedForm(element: HtmlElement[?]): Boolean =

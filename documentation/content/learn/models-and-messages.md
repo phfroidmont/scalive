@@ -14,12 +14,13 @@ type and accepts one message type:
 trait LiveView[Msg, Model]:
   def mount(ctx: MountContext): LiveIO[Model]
   def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
-  def render(model: Model): HtmlElement[Msg]
+  def view(model: Signal[Model]): HtmlElement[Msg]
 ```
 
-`Model` contains the state needed to render this LiveView. `Msg` lists the
-inputs that may change that state. Context values provide capabilities valid at
-the current lifecycle stage; they are not additional application state.
+`Model` contains the state needed to display this LiveView. `view` constructs a
+signal-backed view graph from a read-only signal carrying that state. `Msg`
+lists the inputs that may change the state. Context values provide capabilities
+valid at the current lifecycle stage; they are not additional application state.
 
 The quick start deliberately used an `Int` and two messages. A more
 representative counter makes the model extensible and adds another intent:
@@ -56,8 +57,8 @@ an unmanaged fiber.
 @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ produces the initial model.
 @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ receives the
 last committed model and returns an effect producing a proposed next model.
-Scalive renders and commits that model only when the transition and render
-succeed.
+Scalive evaluates the view graph and commits that model only when the
+transition and graph evaluation succeed.
 
 The cart keeps repeated transitions beside `Model`: `add` increments an existing
 line or appends one, `remove` decrements or deletes one, and `Clear` returns
@@ -77,7 +78,8 @@ Prefer messages that describe application intent and carry already typed
 values. This keeps decoding at the binding boundary and lets
 `handleMessage` work only with valid `Msg` values.
 
-Keep source state in the model and derive presentation values during rendering.
+Keep source state in the model and derive presentation values with pure signal
+transformations in `view`.
 Keep durable records behind a service or database. Keep lifecycle capabilities,
 fibers, and subscription handles out of the model.
 

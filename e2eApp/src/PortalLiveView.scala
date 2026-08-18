@@ -7,6 +7,7 @@ import zio.schema.derived
 
 import scalive.*
 import scalive.LiveIO.given
+import scalive.Signal.*
 
 class PortalLiveView
     extends LiveView.Routed[PortalLiveView.Msg, PortalLiveView.Model, PortalLiveView.QueryParams]:
@@ -39,16 +40,18 @@ class PortalLiveView
       model.copy(nestedPortalCount = model.nestedPortalCount + 1)
     case Msg.Tick => model.copy(count = model.count + 1)
 
-  def render(model: Model) =
+  override def view(model: Signal[Model]) =
+    val count = model.map(_.count)
+
     div(
       mainTag(
         styleAttr := "flex: 1; padding: 2rem;",
         h1("Modal example"),
-        p("Current param: ", model.param.getOrElse("")),
+        p("Current param: ", model.map(_.param.getOrElse(""))),
         button(
           on.click(
             JS.pushPatch(
-              E2ERoutes.portal.location(QueryParams(Some((model.count + 1).toString)))
+              count.map(value => E2ERoutes.portal.location(QueryParams(Some((value + 1).toString))))
             )
           ),
           "Patch this LiveView"
@@ -64,32 +67,34 @@ class PortalLiveView
         button(on.click(Msg.Tick), "Tick"),
         button(on.click(JS.pushNavigate(E2ERoutes.formLocation.location)), "Live navigate"),
         liveView("nested", NestedLive()),
-        tooltip("tooltip-example-portal", "Hover me", portal = true, model.count),
-        tooltip("tooltip-example-no-portal", "Hover me (no portal)", portal = false, model.count),
+        tooltip("tooltip-example-portal", "Hover me", portal = true, count),
+        tooltip("tooltip-example-no-portal", "Hover me (no portal)", portal = false, count),
         nestedPortalExample(model),
         button(on.click(showModal("non-teleported-modal")), "Open non-teleported modal")
       ),
-      if model.renderModal then
-        portal("portal-source", target = DomSelector.css("#root-portal"))(
-          modal("my-modal", model.count, first = true),
-          div(
-            dom.hook("InsidePortal", DomRef("hook-test")),
-            "This should get a data attribute"
+      model
+        .map(_.renderModal).when(
+          portal("portal-source", target = DomSelector.css("#root-portal"))(
+            modal("my-modal", count, first = true),
+            div(
+              dom.hook("InsidePortal", DomRef("hook-test")),
+              "This should get a data attribute"
+            )
           )
-        )
-      else "",
+        ),
       portal("portal-with-live-component", target = DomSelector.css("#root-portal"))(
         liveComponent(LiveComponentFixture, id = "lc", props = ())
       ),
       portal("tooltip-example-portal-portal", target = DomSelector.css("body"))(
-        tooltipBody("tooltip-example-portal", model.count)
+        tooltipBody("tooltip-example-portal", count)
       ),
       portal("portal-source-2", target = DomSelector.css("#app-portal"))(
-        modal("my-modal-2", model.count, first = false, inner = Vector(secondModalInnerPortal))
+        modal("my-modal-2", count, first = false, inner = Vector(secondModalInnerPortal))
       ),
-      modal("non-teleported-modal", model.count, first = false, inner = nonTeleportedModalMenu),
+      modal("non-teleported-modal", count, first = false, inner = nonTeleportedModalMenu),
       div(idAttr := "app-portal")
     )
+  end view
 end PortalLiveView
 
 object PortalLiveView:
@@ -112,7 +117,7 @@ object PortalLiveView:
 
   private def modal(
     id: String,
-    count: Int,
+    count: Signal[Int],
     first: Boolean,
     inner: Vector[Mod[Msg]] = Vector.empty
   ) =
@@ -120,10 +125,14 @@ object PortalLiveView:
       if first then
         Vector(
           span("This is a modal."),
-          p("DOM patching works as expected: ", count.toString),
+          p("DOM patching works as expected: ", count.map(_.toString)),
           button(
             on.click(
-              JS.pushPatch(E2ERoutes.portal.location(QueryParams(Some((count + 1).toString))))
+              JS.pushPatch(
+                count.map(value =>
+                  E2ERoutes.portal.location(QueryParams(Some((value + 1).toString)))
+                )
+              )
             ),
             "Patch this LiveView"
           )
@@ -167,31 +176,32 @@ object PortalLiveView:
       .hide(to = DomSelector.css(s"#$id-bg"))
       .hide(to = DomSelector.css(s"#$id"))
 
-  private def nestedPortalExample(model: Model) =
+  private def nestedPortalExample(model: Signal[Model]) =
     div(
       cls := "border border-purple-600 mt-8 p-4",
       h2("Nested Portal Test"),
       button(on.click(Msg.ToggleNestedPortals), "Toggle nested portals"),
       p(
         "Nested portal count: ",
-        span(idAttr := "nested-portal-count", model.nestedPortalCount.toString)
+        span(idAttr := "nested-portal-count", model.map(_.nestedPortalCount.toString))
       ),
-      if model.renderNestedPortals then
-        portal("nested-portal-source", target = DomSelector.css("#root-portal"))(
-          div(
-            idAttr := "outer-portal",
-            h3("Outer Portal"),
-            portal("inner-portal-source", target = DomSelector.css("body"))(
-              div(
-                idAttr := "inner-portal",
-                h4("Inner Portal (nested inside outer)"),
-                p(idAttr := "nested-portal-content", "Tick count: ", model.count.toString),
-                button(on.click(Msg.NestedPortalClick), "Click nested portal button")
+      model
+        .map(_.renderNestedPortals).when(
+          portal("nested-portal-source", target = DomSelector.css("#root-portal"))(
+            div(
+              idAttr := "outer-portal",
+              h3("Outer Portal"),
+              portal("inner-portal-source", target = DomSelector.css("body"))(
+                div(
+                  idAttr := "inner-portal",
+                  h4("Inner Portal (nested inside outer)"),
+                  p(idAttr := "nested-portal-content", "Tick count: ", model.map(_.count.toString)),
+                  button(on.click(Msg.NestedPortalClick), "Click nested portal button")
+                )
               )
             )
           )
         )
-      else ""
     )
 
   private def nonTeleportedModalMenu: Vector[Mod[Msg]] =
@@ -238,7 +248,7 @@ object PortalLiveView:
       )
     )
 
-  private def tooltip(id: String, label: String, portal: Boolean, count: Int) =
+  private def tooltip(id: String, label: String, portal: Boolean, count: Signal[Int]) =
     div(
       dom.hook("PortalTooltip", DomRef(s"$id-wrapper")),
       dataAttr("id")   := id,
@@ -248,13 +258,13 @@ object PortalLiveView:
       if portal then "" else tooltipBody(id, count)
     )
 
-  private def tooltipBody(id: String, count: Int) =
+  private def tooltipBody(id: String, count: Signal[Int]) =
     div(
       idAttr    := id,
       role      := "tooltip",
       styleAttr := "display: none; position: absolute; top: 0; left: 0;",
       "Hey there! ",
-      count.toString
+      count.map(_.toString)
     )
 
   private def evalCode(value: Json): String =
@@ -270,11 +280,11 @@ object PortalLiveView:
     def handleMessage(model: Int, ctx: MessageContext) =
       (_: NestedLive.Msg.type) => model + 1
 
-    def render(count: Int) =
+    override def view(count: Signal[Int]) =
       div(
         cls := "border border-orange-200",
         h1("Nested LiveView"),
-        p(idAttr := "nested-event-count", count.toString),
+        p(idAttr := "nested-event-count", count.map(_.toString)),
         button(on.click(NestedLive.Msg), "Trigger event in nested LV"),
         portal("nested-lv-button", target = DomSelector.css("body"))(
           button(
@@ -297,7 +307,7 @@ object PortalLiveView:
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: NestedTeleportedLive.Msg.type) => model
 
-    def render(model: Unit) =
+    override def view(model: Signal[Unit]) =
       div(
         cls := "border border-green-200",
         h1("Nested teleport LiveView"),
@@ -308,7 +318,11 @@ object PortalLiveView:
     case object Msg
 
   object LiveComponentFixture
-      extends LiveComponent[Unit, LiveComponentFixture.Msg.type, LiveComponentFixture.Model]:
+      extends LiveComponent[
+        Unit,
+        LiveComponentFixture.Msg.type,
+        LiveComponentFixture.Model
+      ]:
     import LiveComponentFixture.*
 
     def mount(props: Unit, ctx: MountContext) =
@@ -324,7 +338,11 @@ object PortalLiveView:
         else LiveEventHookResult.cont(model)
       }
 
-    def render(props: Unit, model: Model, self: ComponentRef[Msg.type]) =
+    override def view(
+      props: Signal[Unit],
+      model: Signal[Model],
+      self: ComponentRef[Msg.type]
+    ) =
       div(
         idAttr := "teleported-lc",
         cls    := "border border-red-200",
@@ -332,7 +350,7 @@ object PortalLiveView:
         ul(
           idAttr     := "stream-in-lc",
           phx.update := PhxUpdate.Stream,
-          model.items.stream((domId, item) => li(idAttr := domId, item.name))
+          model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
         ),
         button(on.click(Msg), phx.target(self), "Prepend item"),
         portal("teleported-from-lc-button", target = DomSelector.css("body"))(

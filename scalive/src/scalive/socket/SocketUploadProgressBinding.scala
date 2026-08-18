@@ -17,7 +17,7 @@ private[scalive] object SocketUploadProgressBinding:
     state: RuntimeState[Msg, Model]
   ): Task[Payload.Reply] =
     for
-      (currentModel, rendered) <- state.ref.get
+      (currentModel, rendered) <- SocketModelRuntime.currentModelAndRendered(state)
       reply                    <- rendered.bindings.get(eventRef) match
                  case Some(binding) =>
                    binding(progressPayloadToParams(payload)) match

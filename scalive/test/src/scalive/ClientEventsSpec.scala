@@ -58,7 +58,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
               case Msg.EmitEvent => ZIO.succeed(model)
               case Msg.EmitJs    => ZIO.succeed(model)
 
-        def render(model: Model): HtmlElement[Msg] =
+        override def view(model: Signal[Model]): HtmlElement[Msg] =
           div(idAttr := "root", "ready")
 
       for
@@ -89,7 +89,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
                 ctx.client.push(TickEvent, TickPayload(value = 1)).as(model)
               case Msg.EmitJs => ZIO.succeed(model)
 
-        def render(model: Model): HtmlElement[Msg] =
+        override def view(model: Signal[Model]): HtmlElement[Msg] =
           div(idAttr := "root", "constant")
 
       for
@@ -122,7 +122,7 @@ object ClientEventsSpec extends ZIOSpecDefault:
               case Msg.EmitJs    =>
                 ctx.client.exec(JS.show(to = DomSelector.css("#modal"))).as(model)
 
-        def render(model: Model): HtmlElement[Msg] =
+        override def view(model: Signal[Model]): HtmlElement[Msg] =
           div(idAttr := "root", "constant")
 
       for
@@ -147,7 +147,8 @@ object ClientEventsSpec extends ZIOSpecDefault:
         )
     },
     test("component events include pushEvent without title updates") {
-      object EffectsComponent extends LiveComponent[Unit, EffectsComponent.Msg.type, Unit]:
+      object EffectsComponent
+          extends LiveComponent[Unit, EffectsComponent.Msg.type, Unit]:
         object Msg
 
         def mount(props: Unit, ctx: MountContext) =
@@ -157,7 +158,11 @@ object ClientEventsSpec extends ZIOSpecDefault:
           (_: Msg.type) =>
             ctx.client.push(ComponentEvent, ReadyPayload(ok = true)).as(model)
 
-        def render(props: Unit, model: Unit, self: ComponentRef[Msg.type]) =
+        override def view(
+          props: Signal[Unit],
+          model: Signal[Unit],
+          self: ComponentRef[Msg.type]
+        ) =
           button(scalive.on.click(Msg), phx.target(self), "emit")
 
       val lv = new LiveView[Unit, Unit]:
@@ -165,18 +170,22 @@ object ClientEventsSpec extends ZIOSpecDefault:
           ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(idAttr := "root", liveComponent(EffectsComponent, id = "effects", props = ()))
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        binding <- socket.renderedHtml.flatMap(html =>
+                     ZIO
+                       .fromOption("phx-click=\"([^\"]+)\"".r.findFirstMatchIn(html).map(_.group(1)))
+                       .orElseFail(new RuntimeException("Missing component click binding"))
+                   )
+        event = Payload.Event(
+                  `type` = "click",
+                  event = binding,
+                  value = Json.Obj.empty,
+                  cid = Some(1)
+                )
         replyFiber <- socket.outbox.drop(1).runHead.fork
         _     <- socket.inbox.offer(event -> meta)
         reply <- replyFiber.join.some

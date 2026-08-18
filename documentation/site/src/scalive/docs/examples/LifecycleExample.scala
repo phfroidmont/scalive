@@ -31,7 +31,7 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
     case Msg.Reset =>
       ctx.flash.clear(NotificationFlash).as(model.copy(currentTitle = DefaultTitle))
 
-  def render(model: Model): HtmlElement[Msg] =
+  override def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-lifecycle",
       div(
@@ -40,12 +40,14 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
           p(cls := "docs-lifecycle-label", "Mount phase"),
           strong(
             dataAttr("mount-phase") := "",
-            if model.connectedMount then "Connected socket mount" else "Disconnected HTTP mount"
+            model.map(model =>
+              if model.connectedMount then "Connected socket mount" else "Disconnected HTTP mount"
+            )
           )
         ),
         sectionTag(
           p(cls                              := "docs-lifecycle-label", "Projected page title"),
-          strong(dataAttr("lifecycle-title") := "", model.currentTitle)
+          strong(dataAttr("lifecycle-title") := "", model.map(_.currentTitle))
         )
       ),
       div(

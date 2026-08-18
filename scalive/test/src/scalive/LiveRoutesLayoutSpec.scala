@@ -6,6 +6,7 @@ import zio.*
 import zio.http.*
 import zio.http.codec.PathCodec
 import zio.json.*
+import zio.json.ast.Json
 import zio.test.*
 
 import scalive.WebSocketMessage.JoinErrorReason
@@ -26,7 +27,7 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
       ZIO.unit
     def handleMessage(model: Unit, ctx: MessageContext) =
       (_: Unit) => ZIO.unit
-    def render(model: Unit): HtmlElement[Unit] = div(idAttr := "view", text)
+    override def view(model: Signal[Unit]): HtmlElement[Unit] = div(idAttr := "view", text)
 
   private def runtimeFor(route: LiveRouteFragment[Any, Any], tokenConfig: TokenConfig) =
     new LiveRoutesRuntime[Any](
@@ -49,7 +50,13 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
         new NoSuchElementException(attr)
       )
 
-  private def joinMessage(topic: String, session: String, url: String, redirect: Boolean = false) =
+  private def joinMessage(
+    topic: String,
+    session: String,
+    url: String,
+    redirect: Boolean = false,
+    params: Option[Map[String, Json]] = None
+  ) =
     WebSocketMessage(
       joinRef = Some(1),
       messageRef = Some(1),
@@ -60,7 +67,7 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
         redirect = Option.when(redirect)(url),
         session = session,
         static = None,
-        params = None,
+        params = params,
         flash = None,
         sticky = false
       )
@@ -68,10 +75,10 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
 
   private def containsValue(diff: Diff, value: String): Boolean =
     diff match
-      case Diff.Tag(_, dynamic, _, _, _, components, _, _) =>
-        dynamic.exists(d => containsValue(d.diff, value)) || components.values.exists(
-          containsValue(_, value)
-        )
+      case Diff.Tag(static, dynamic, _, _, _, components, _, _) =>
+        static.exists(_.contains(value)) ||
+          dynamic.exists(d => containsValue(d.diff, value)) ||
+          components.values.exists(containsValue(_, value))
       case Diff.Comprehension(_, entries, _, _, _) =>
         entries.exists {
           case Diff.Dynamic(_, diff)       => containsValue(diff, value)
@@ -109,13 +116,17 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
         globalLayout =
           LiveLayout[Any, Any]((content, _) => div(idAttr := "global-layout", "global", content))
         sessionLayout = LiveLayout[Any, User]((content, ctx) =>
-                          div(idAttr := "session-layout", s"session:${ctx.context.name}", content)
+                          div(
+                            idAttr := "session-layout",
+                            ctx.currentUrl.map(_ => s"session:${ctx.context.name}"),
+                            content
+                          )
                         )
         routeLayout = LiveLayout[Int, (User, Org)]((content, ctx) =>
                         val (user, org) = ctx.context
                         div(
                           idAttr := "route-layout",
-                          s"route:${ctx.params}:${user.name}:${org.name}",
+                          ctx.params.map(id => s"route:$id:${user.name}:${org.name}"),
                           content
                         )
                       )
@@ -145,6 +156,14 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
         initDiff = init._1 match
                      case Payload.Reply(_, LiveResponse.InitDiff(diff)) => Some(diff)
                      case _                                             => None
+        patch <- channel.livePatch(
+                   topic,
+                   "/orgs/43",
+                   WebSocketMessage.Meta(Some(1), Some(2), topic, Protocol.EventLivePatch)
+                 )
+        patchDiff = patch match
+                      case Payload.Reply(_, LiveResponse.Diff(diff)) => Some(diff)
+                      case _                                         => None
       yield assertTrue(
         response.status == Status.Ok,
         body.contains("global"),
@@ -154,7 +173,59 @@ object LiveRoutesLayoutSpec extends ZIOSpecDefault:
         reply.isEmpty,
         initDiff.exists(containsValue(_, "session:connected-user")),
         initDiff.exists(containsValue(_, "route:42:connected-user:connected-user:org-42")),
-        initDiff.exists(containsValue(_, "view:42:connected-user:connected-user:org-42"))
+        initDiff.exists(containsValue(_, "view:42:connected-user:connected-user:org-42")),
+        patchDiff.exists(containsValue(_, "route:43:connected-user:connected-user:org-42"))
+      )
+    },
+    test("signal-backed layout assets participate in static tracking") {
+      val tokenConfig = TokenConfig("layout-static-secret", 1.hour)
+      val layout = LiveLayout[Any, Any]((content, _) =>
+        div(
+          scriptTag(phx.trackStatic := true, src := "/layout.js"),
+          content
+        )
+      )
+      val liveView = new LiveView[Unit, Boolean]:
+        def mount(ctx: MountContext) = ZIO.succeed(ctx.staticChanged)
+
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+          (_: Unit) => ZIO.succeed(model)
+
+        override def view(model: Signal[Boolean]): HtmlElement[Unit] =
+          div(idAttr := "static-changed", model.map(_.toString))
+
+      val route = (scalive.live / "tracked-layout").withLayout[Any](layout)(liveView)
+      val runtime = runtimeFor(route, tokenConfig)
+
+      for
+        response   <- runRequest(runtime.routes, "/tracked-layout")
+        body       <- response.body.asString
+        session    <- extractAttr(body, "data-phx-session")
+        liveViewId <- ZIO
+                        .fromEither(LiveSessionPayload.verify(tokenConfig, session))
+                        .map(_._1)
+                        .mapError(new IllegalArgumentException(_))
+        topic = s"lv:$liveViewId"
+        channel <- LiveChannel.make(tokenConfig)
+        _ <- runtime.handleMessage(
+               joinMessage(
+                 topic,
+                 session,
+                 "/tracked-layout",
+                 params = Some(
+                   Map("_track_static" -> Json.Arr(Json.Str("/different.js")))
+                 )
+               ),
+               channel
+             )
+        socket <- channel.socket(topic).some
+        init   <- socket.outbox.take(1).runHead.some
+        initDiff = init._1 match
+                     case Payload.Reply(_, LiveResponse.InitDiff(diff)) => Some(diff)
+                     case _                                             => None
+      yield assertTrue(
+        body.contains("/layout.js"),
+        initDiff.exists(containsValue(_, "true"))
       )
     },
     test("root layout key changes reject websocket live navigation") {

@@ -48,12 +48,12 @@ object SocketSpec extends ZIOSpecDefault:
         case Msg.SetTitle   => ZIO.succeed(model.copy(pageTitle = Some("Updated title")))
         case Msg.ResetTitle => ZIO.succeed(model.copy(pageTitle = None))
 
-      def render(model: Model): HtmlElement[Msg] =
+      override def view(model: Signal[Model]): HtmlElement[Msg] =
         div(
           idAttr := "root",
           scalive.on.click(Msg.FromClient),
-          span(model.counter.toString),
-          span(model.staticFlag.map(_.toString).getOrElse("none"))
+          span(model.map(_.counter.toString)),
+          span(model.map(_.staticFlag.map(_.toString).getOrElse("none")))
         )
 
   private def makeSocket(ctx: LiveContext, lv: LiveView[Msg, Model]) =
@@ -151,10 +151,10 @@ object SocketSpec extends ZIOSpecDefault:
                  case Msg.FromClient => handled.succeed(()).as(model.copy(counter = 1))
                  case _              => ZIO.succeed(model)
 
-               def render(model: Model): HtmlElement[Msg] =
+               override def view(model: Signal[Model]): HtmlElement[Msg] =
                  div(
                    idAttr := "root",
-                   button(scalive.on.click(Msg.FromClient), model.counter.toString)
+                   button(scalive.on.click(Msg.FromClient), model.map(_.counter.toString))
                  )
         event: Payload.Event = Payload.Event(
                   `type` = "click",
@@ -274,7 +274,7 @@ object SocketSpec extends ZIOSpecDefault:
                def handleMessage(model: Int, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Int): HtmlElement[Unit] = div(model.toString)
+               override def view(model: Signal[Int]): HtmlElement[Unit] = div(model.map(_.toString))
         initialUrl <- ZIO.fromEither(URL.decode("/?q=1")).orDie
         paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, Int, (Option[String], String)](
                           PathCodec.empty,
@@ -319,7 +319,7 @@ object SocketSpec extends ZIOSpecDefault:
                def handleMessage(model: Int, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Int): HtmlElement[Unit] = div(model.toString)
+               override def view(model: Signal[Int]): HtmlElement[Unit] = div(model.map(_.toString))
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
         socket <- Socket.start(
                     "id",
@@ -362,7 +362,7 @@ object SocketSpec extends ZIOSpecDefault:
                def handleMessage(model: Int, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
-               def render(model: Int): HtmlElement[Unit] = div(model.toString)
+               override def view(model: Signal[Int]): HtmlElement[Unit] = div(model.map(_.toString))
         initialUrl <- ZIO.fromEither(URL.decode("/start")).orDie
         paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, Int, Option[String]](
                           PathCodec.empty / "start",
@@ -416,7 +416,7 @@ object SocketSpec extends ZIOSpecDefault:
                def handleMessage(model: String, ctx: MessageContext) =
                  (_: Unit) => ZIO.succeed(model)
 
-               def render(model: String): HtmlElement[Unit] = div(model)
+               override def view(model: Signal[String]): HtmlElement[Unit] = div(model)
         initialUrl <- ZIO.fromEither(URL.decode("/search?q=valid")).orDie
         paramsRuntime = LiveRouteParamsRuntime.routed[Unit, Unit, String, String](
                           PathCodec.empty / "search",
@@ -451,7 +451,7 @@ object SocketSpec extends ZIOSpecDefault:
       final case class LoopModel(shouldLoop: Boolean)
 
       val ctx = LiveContext(staticChanged = false)
-      val lv  = new LiveView.Routed[Unit, LoopModel, Unit]:
+      val lv = new LiveView.Routed[Unit, LoopModel, Unit]:
         def mount(params: Unit, ctx: MountContext) =
           ZIO.succeed(LoopModel(shouldLoop = false))
 
@@ -470,7 +470,8 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(model: LoopModel, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: LoopModel): HtmlElement[Unit] = div(model.shouldLoop.toString)
+        override def view(model: Signal[LoopModel]): HtmlElement[Unit] =
+          div(model.map(_.shouldLoop.toString))
 
       for
         initialUrl <- ZIO.fromEither(URL.decode("/redirectloop")).orDie
@@ -514,7 +515,7 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: String): HtmlElement[Unit] = div(model)
+        override def view(model: Signal[String]): HtmlElement[Unit] = div(model)
 
       val event: Payload.Event =
         Payload.Event(`type` = "click", event = "intercept", value = Json.Obj.empty)
@@ -538,7 +539,8 @@ object SocketSpec extends ZIOSpecDefault:
       yield result
     },
     test("routes self-targeted live component events to component state") {
-      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+      object CounterComponent
+          extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
         object Msg
 
         def mount(props: Unit, ctx: MountContext) =
@@ -547,8 +549,8 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
           (_: Msg.type) => ZIO.succeed(model + 1)
 
-        def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
-          button(scalive.on.click(Msg), phx.target(self), model.toString)
+        override def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[Msg.type]) =
+          button(scalive.on.click(Msg), phx.target(self), model.map(_.toString))
 
       val lv = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
@@ -557,18 +559,21 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(liveComponent(CounterComponent, id = "counter", props = ()))
-
-      val event: Payload.Event = Payload.Event(
-        `type` = "click",
-        event = BindingId.attrBindingId(Vector("root:div", "component:0:1"), 1),
-        value = Json.Obj.empty,
-        cid = Some(1)
-      )
 
       for
         socket <- Socket.start("id", "token", lv, LiveContext(staticChanged = false), meta)
+        html   <- socket.renderedHtml
+        binding <- ZIO
+                     .fromOption("phx-click=\"([^\"]+)\"".r.findFirstMatchIn(html).map(_.group(1)))
+                     .orElseFail(new RuntimeException("Missing component click binding"))
+        event = Payload.Event(
+                  `type` = "click",
+                  event = binding,
+                  value = Json.Obj.empty,
+                  cid = Some(1)
+                )
         result <- withOutbox(socket) { outbox =>
                     for
                       _     <- socket.inbox.offer(event -> meta)
@@ -578,7 +583,8 @@ object SocketSpec extends ZIOSpecDefault:
       yield result
     },
     test("routes selector-targeted typed events to the selected component") {
-      object CounterComponent extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
+      object CounterComponent
+          extends LiveComponent[Unit, CounterComponent.Msg.type, Int]:
         object Msg
 
         def mount(props: Unit, ctx: MountContext) =
@@ -587,8 +593,8 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
           (_: Msg.type) => ZIO.succeed(model + 1)
 
-        def render(props: Unit, model: Int, self: ComponentRef[Msg.type]) =
-          div(idAttr := "counter", model.toString)
+        override def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[Msg.type]) =
+          div(idAttr := "counter", model.map(_.toString))
 
       val lv = new LiveView[Unit, Unit]:
         def mount(ctx: MountContext) =
@@ -597,7 +603,7 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(
             button(
               scalive.on.click.toComponent(CounterComponent)(CounterComponent.Msg),
@@ -625,7 +631,8 @@ object SocketSpec extends ZIOSpecDefault:
       yield result
     },
     test("routes instance-targeted events without a client component id") {
-      object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, Int]:
+      object CounterComponent
+          extends LiveComponent[String, CounterComponent.Msg.type, Int]:
         object Msg
 
         def mount(props: String, ctx: MountContext) =
@@ -634,8 +641,12 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(props: String, model: Int, ctx: MessageContext) =
           (_: Msg.type) => ZIO.succeed(model + 1)
 
-        def render(props: String, model: Int, self: ComponentRef[Msg.type]) =
-          div(s"$props:$model")
+        override def view(
+          props: Signal[String],
+          model: Signal[Int],
+          self: ComponentRef[Msg.type]
+        ) =
+          div(props.zip(model).map((props, model) => s"$props:$model"))
 
       val first  = component(CounterComponent, "first")
       val second = component(CounterComponent, "second")
@@ -646,7 +657,7 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(
             button(scalive.on.click.to(first)(CounterComponent.Msg), "increment first"),
             first.render("first"),
@@ -684,7 +695,7 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(props: String, model: String, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model)
 
-        def render(props: String, model: String, self: ComponentRef[Unit]) =
+        override def view(props: Signal[String], model: Signal[String], self: ComponentRef[Unit]) =
           div(model)
 
       val label = component(LabelComponent, "label")
@@ -695,7 +706,7 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(model: Unit, ctx: MessageContext) =
           (_: Unit) => ctx.components.sendUpdate(label, "updated").as(model)
 
-        def render(model: Unit): HtmlElement[Unit] =
+        override def view(model: Signal[Unit]): HtmlElement[Unit] =
           div(
             button(scalive.on.click(()), "update"),
             label.render("initial")
@@ -728,8 +739,8 @@ object SocketSpec extends ZIOSpecDefault:
         def handleMessage(props: String, model: Int, ctx: MessageContext) =
           (_: Unit) => ZIO.succeed(model + 1)
 
-        def render(props: String, model: Int, self: ComponentRef[Unit]) =
-          articleTag(h2(props), p(s"Votes: $model"))
+        override def view(props: Signal[String], model: Signal[Int], self: ComponentRef[Unit]) =
+          articleTag(h2(props), p(model.map(model => s"Votes: $model")))
 
       val lv = new LiveView[Unit, Int]:
         def mount(ctx: MountContext) =
@@ -740,9 +751,9 @@ object SocketSpec extends ZIOSpecDefault:
             ctx.components
               .sendUpdate[StatefulLabelComponent.type]("label", "Revision 1").as(model + 1)
 
-        def render(model: Int): HtmlElement[Unit] =
+        override def view(model: Signal[Int]): HtmlElement[Unit] =
           div(
-            p(s"Revision: $model"),
+            p(model.map(model => s"Revision: $model")),
             button(scalive.on.click(()), "update props"),
             div(liveComponent(StatefulLabelComponent, id = "label", props = "Initial"))
           )

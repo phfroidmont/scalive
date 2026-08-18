@@ -157,7 +157,7 @@ model.activityStream.renderIn(ol, aria.label := "Recent activity") { activity =>
 Do not override the container or row IDs produced by the stream. Keep controls
 inside each projected row typed to the owning LiveView's message type as usual.
 
-The complete migrated implementation is extracted from executable source:
+The complete implementation is extracted from executable source:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/ActivityStreamExample.scala, activity-stream-example)
 

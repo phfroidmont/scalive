@@ -23,7 +23,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   config: SessionConfig,
   logic: SessionLogic[Msg, Model],
   renderProgram: RenderProgram[Model, Msg],
-  outbound: OutboundReservations[RenderDelta],
+  outbound: OutboundReservations[SessionOutput],
   mailbox: Queue[SessionKernel.Envelope[Msg, Model]],
   terminal: Promise[Nothing, SessionState[Msg, Model]],
   sessionScope: Scope.Closeable,
@@ -33,7 +33,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   def submit(command: SessionCommand[Msg]): ZIO[Any, SessionRejection, TurnResult] =
     for
-      id <- ZIO.fromEither(CommandId.fresh()).mapError(SessionRejection.IdentityUnavailable(_))
+      id     <- ZIO.fromEither(CommandId.fresh()).mapError(SessionRejection.IdentityUnavailable(_))
+      result <- submit(id, command)
+    yield result
+
+  private[scalive] def submit(
+    id: CommandId,
+    command: SessionCommand[Msg]
+  ): ZIO[Any, SessionRejection, TurnResult] =
+    for
       response <- Promise.make[SessionRejection, TurnResult]
       accepted <- offer(Envelope.Execute(id, command, response))
       result   <- if accepted then awaitResponse(response) else rejectOffer
@@ -92,7 +100,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     val bootstrap                               = runTurn(
       previous = None,
       draft = phase(SessionStage.BootstrapHandler)(logic.bootstrap),
-      continuations = ImmutableQueue.empty
+      continuations = ImmutableQueue.empty,
+      command = None
     )
 
     controlled(bootstrap).exit
@@ -143,7 +152,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[(CommandId, Promise[SessionRejection, TurnResult])]
   ): UIO[Unit] =
     controlled(
-      runTurn(Some(state.committed), phase(SessionStage.Handler)(draft), continuations)
+      runTurn(
+        Some(state.committed),
+        phase(SessionStage.Handler)(draft),
+        continuations,
+        response.map(_._1)
+      )
     ).exit.flatMap {
       case Exit.Success(outcome) =>
         val complete = response.fold[UIO[Unit]](ZIO.unit) { case (command, promise) =>
@@ -168,14 +182,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def runTurn(
     previous: Option[Committed[Msg, Model]],
     draft: ZIO[Any, SessionFailure, TurnDraft[Msg, Model]],
-    continuations: ImmutableQueue[Msg]
+    continuations: ImmutableQueue[Msg],
+    command: Option[CommandId]
   ): ZIO[Any, SessionFailure, TurnOutcome[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
         turnId    <- restore(identity(TurnId.fresh()))
         nextDraft <- restore(draft)
         candidate <- restore(buildCandidate(turnId, previous, nextDraft, continuations.size))
-        committed <- restore(commit(previous, candidate, continuations)).onExit {
+        committed <- restore(commit(previous, candidate, continuations, command)).onExit {
                        case Exit.Success(_) => ZIO.unit
                        case Exit.Failure(_) => candidate.render.stagedScope.closeFromOwner
                      }
@@ -234,7 +249,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private def reserve(
     candidateScope: CandidateScope
-  ): ZIO[Any, SessionFailure, OutboundReservation[RenderDelta]] =
+  ): ZIO[Any, SessionFailure, OutboundReservation[SessionOutput]] =
     ZIO.uninterruptible {
       reservationPhase(outbound.reserve).flatMap { reservation =>
         candidateScope
@@ -245,7 +260,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def commit(
     previous: Option[Committed[Msg, Model]],
     candidate: TurnCandidate[Msg, Model],
-    continuations: ImmutableQueue[Msg]
+    continuations: ImmutableQueue[Msg],
+    command: Option[CommandId]
   ): ZIO[Any, SessionFailure, CommitResult[Msg, Model]] =
     val commitTail = for
       render <- ZIO.succeed(candidate.render.commit)
@@ -259,7 +275,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       _ <- activeOwner.activate(render.scope)
       _ <- candidate.resources.activate
       _ <- ZIO.foreachDiscard(previous)(_.resources.markStale)
-      _ <- candidate.reservation.publish(OutboundBatch.single(candidate.delta))
+      _ <- candidate.reservation.publish(
+             OutboundBatch.single(SessionOutput(command, candidate.delta))
+           )
     yield CommitResult(next, nextContinuations)
 
     ZIO.uninterruptible(commitTail.exit).flatMap {
@@ -435,7 +453,7 @@ private[scalive] object SessionKernel:
     config: SessionConfig,
     logic: SessionLogic[Msg, Model],
     renderProgram: RenderProgram[Model, Msg],
-    outbound: OutboundReservations[RenderDelta]
+    outbound: OutboundReservations[SessionOutput]
   ): ZIO[Scope, SessionFailure, SessionKernel[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for

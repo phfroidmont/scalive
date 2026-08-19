@@ -50,9 +50,9 @@ object TreeDiffer:
             left.attributes.zip(right.attributes).exists { case (oldAttribute, newAttribute) =>
               oldAttribute.revision != newAttribute.revision && newAttribute.slot.isEmpty
             }
-          if changedWithoutSlot then Vector(RenderChange.Replace(right.id, right))
+          if changedWithoutSlot then Vector(RenderChange.Replace(left.id, right))
           else attributeChanges ++ childChanges
-        case _ => Vector(RenderChange.Replace(current.id, current))
+        case _ => Vector(RenderChange.Replace(previous.id, current))
 
   private def sameElementShape(
     previous: EvaluatedNode.Element,
@@ -62,7 +62,6 @@ object TreeDiffer:
       previous.attributes.length == current.attributes.length &&
       previous.attributes.zip(current.attributes).forall { case (left, right) =>
         left.name == right.name && left.slot == right.slot
-      } &&
-      previous.children.length == current.children.length &&
+      } && previous.children.length == current.children.length &&
       previous.children.zip(current.children).forall { case (left, right) => left.id == right.id }
 end TreeDiffer

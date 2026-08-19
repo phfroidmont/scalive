@@ -61,6 +61,10 @@ final private[scalive] case class Committed[Msg, Model](
   resources: PreparedResources,
   revision: TurnRevision)
 
+final private[scalive] case class SessionOutput(
+  command: Option[CommandId],
+  delta: RenderDelta)
+
 final private[scalive] case class PendingNavigation[Msg, Model](
   committed: Committed[Msg, Model],
   deferred: Vector[SessionCommand[Msg]])
@@ -80,7 +84,7 @@ final private[scalive] case class TurnCandidate[Msg, Model](
   render: RenderCandidate[Msg],
   resources: PreparedResources,
   delta: RenderDelta,
-  reservation: OutboundReservation[RenderDelta])
+  reservation: OutboundReservation[SessionOutput])
 
 enum SessionStage:
   case BootstrapHandler

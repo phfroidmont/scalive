@@ -99,3 +99,12 @@ object e2eApp extends ScalaCommon with NpmAssets:
   def resources = Task {
     super.resources() :+ bundle()
   }
+
+object rootSliceApp extends ScalaCommon with NpmAssets:
+  def moduleDeps = Seq(scalive)
+
+  override def bundleOutputs = Seq("app.js")
+
+  def resources = Task {
+    super.resources() :+ bundle()
+  }

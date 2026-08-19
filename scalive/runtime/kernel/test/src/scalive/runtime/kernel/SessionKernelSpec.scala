@@ -12,22 +12,22 @@ object SessionKernelSpec extends ZIOSpecDefault:
   private val config = SessionConfig.make(4, 8).toOption.get
 
   private final class ProbeReservation(
-    publishEffect: OutboundBatch[RenderDelta] => UIO[Unit],
+    publishEffect: OutboundBatch[SessionOutput] => UIO[Unit],
     releaseEffect: UIO[Unit] = ZIO.unit)
-      extends OutboundReservation[RenderDelta]:
-    override def publish(batch: OutboundBatch[RenderDelta]): UIO[Unit] = publishEffect(batch)
+      extends OutboundReservation[SessionOutput]:
+    override def publish(batch: OutboundBatch[SessionOutput]): UIO[Unit] = publishEffect(batch)
     override def release: UIO[Unit] = releaseEffect
 
   private final class ProbeOutbound(
-    reserveEffect: ZIO[Any, OutboundReservationError, OutboundReservation[RenderDelta]])
-      extends OutboundReservations[RenderDelta]:
+    reserveEffect: ZIO[Any, OutboundReservationError, OutboundReservation[SessionOutput]])
+      extends OutboundReservations[SessionOutput]:
     override def reserve = reserveEffect
     override def take = ZIO.fail(OutboundReservationError.Shutdown)
     override def shutdown = ZIO.unit
 
   private def recordingOutbound
-    : UIO[(OutboundReservations[RenderDelta], Ref[Vector[OutboundBatch[RenderDelta]]])] =
-    Ref.make(Vector.empty[OutboundBatch[RenderDelta]]).map { batches =>
+    : UIO[(OutboundReservations[SessionOutput], Ref[Vector[OutboundBatch[SessionOutput]]])] =
+    Ref.make(Vector.empty[OutboundBatch[SessionOutput]]).map { batches =>
       val outbound = ProbeOutbound(
         ZIO.succeed(ProbeReservation(batch => batches.update(_ :+ batch)))
       )
@@ -46,17 +46,19 @@ object SessionKernelSpec extends ZIOSpecDefault:
     )
 
   override def spec = suite("SessionKernelSpec")(
-    test("bootstrap commits and a typed message publishes the exact delta") {
+    test("bootstrap is uncorrelated and a typed message publishes its exact command id") {
       ZIO.scoped {
         for
           program             <- textProgram
           (outbound, batches) <- recordingOutbound
           kernel              <- SessionKernel.start(config, standardLogic(1), program, outbound)
           boot                <- kernel.inspect
-          result              <- kernel.submit(SessionCommand.Message(kernel.epoch, 2))
+          commandId = CommandId.fresh().toOption.get
+          result              <- kernel.submit(commandId, SessionCommand.Message(kernel.epoch, 2))
           committed           <- kernel.inspect
           published           <- batches.get
-          bootDelta = published.head.items.head
+          bootOutput = published.head.items.head
+          bootDelta = bootOutput.delta
           slot = bootDelta match
             case RenderDelta.Replace(tree) =>
               tree.root.children.head.asInstanceOf[EvaluatedNode.Text].slot.get
@@ -66,11 +68,16 @@ object SessionKernelSpec extends ZIOSpecDefault:
             Vector(RenderChange.Text(slot, "3", raw = false))
           )
         yield assertTrue(
+          bootOutput.command.isEmpty,
           boot.model == 1,
           committed.model == 3,
           committed.revision == result.revision,
+          result.command == commandId,
           result.delta == expected,
-          published.map(_.items) == Vector(Vector(bootDelta), Vector(expected))
+          published.map(_.items) == Vector(
+            Vector(SessionOutput(None, bootDelta)),
+            Vector(SessionOutput(Some(commandId), expected))
+          )
         )
       }
     },
@@ -134,7 +141,8 @@ object SessionKernelSpec extends ZIOSpecDefault:
           afterRejections.revision == before.revision,
           after.model == 15,
           accepted.delta != RenderDelta.Empty,
-          output.size == 2
+          output.size == 2,
+          output.last.items.map(_.command) == Vector(Some(accepted.command))
         )
       }
     },
@@ -269,7 +277,8 @@ object SessionKernelSpec extends ZIOSpecDefault:
             output <- batches.get
           yield assertTrue(
             result.left.exists(_.isInstanceOf[SessionRejection.SessionFailed]),
-            output.size == 1
+            output.size == 1,
+            output.flatMap(_.items).map(_.command) == Vector(None)
           )
         }
       }.map(results => assertTrue(results.forall(_.isSuccess)))
@@ -337,7 +346,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
         for
           handled <- Ref.make(Vector.empty[Int])
           program <- textProgram
-          (outbound, _) <- recordingOutbound
+          (outbound, batches) <- recordingOutbound
           tiny = SessionConfig.make(1, 4).toOption.get
           logic = SessionLogic[Int, Int](
             bootstrap = ZIO.succeed(TurnDraft(0, Vector(1, 2, 3))),
@@ -346,7 +355,13 @@ object SessionKernelSpec extends ZIOSpecDefault:
           kernel <- SessionKernel.start(tiny, logic, program, outbound)
           finalState <- kernel.inspect
           order      <- handled.get
-        yield assertTrue(order == Vector(1, 2, 3), finalState.model == 6)
+          output     <- batches.get
+        yield assertTrue(
+          order == Vector(1, 2, 3),
+          finalState.model == 6,
+          output.size == 4,
+          output.flatMap(_.items).forall(_.command.isEmpty)
+        )
       }
     },
     test("mailbox saturation is explicit") {
@@ -391,7 +406,11 @@ object SessionKernelSpec extends ZIOSpecDefault:
                 },
             afterRender = draft =>
               if draft.model == 0 then ZIO.unit
-              else entered.succeed(()).unit *> never.await.onInterrupt(interrupted.succeed(()).unit)
+              else
+                ZIO.uninterruptibleMask { restore =>
+                  entered.succeed(()).unit *>
+                    restore(never.await).onInterrupt(interrupted.succeed(()).unit)
+                }
           )
           kernel <- SessionKernel.start(config, logic, program, outbound)
           turn   <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).fork
@@ -455,7 +474,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
         for
           secondPublishing <- Promise.make[Nothing, Unit]
           allowPublication <- Promise.make[Nothing, Unit]
-          published        <- Ref.make(Vector.empty[OutboundBatch[RenderDelta]])
+          published        <- Ref.make(Vector.empty[OutboundBatch[SessionOutput]])
           reserveCount     <- Ref.make(0)
           candidate        <- Ref.make(Option.empty[PreparedResource])
           program          <- textProgram
@@ -504,8 +523,10 @@ object SessionKernelSpec extends ZIOSpecDefault:
             program     <- textProgram
             (outbound, batches) <- recordingOutbound
             logic = standardLogic().copy(bootstrap =
-              entered.succeed(()).unit *>
-                ZIO.never.onInterrupt(interrupted.succeed(()).unit)
+              ZIO.uninterruptibleMask { restore =>
+                entered.succeed(()).unit *>
+                  restore(ZIO.never).onInterrupt(interrupted.succeed(()).unit)
+              }
             )
             starting <- SessionKernel.start(config, logic, program, outbound).fork
             _        <- entered.await

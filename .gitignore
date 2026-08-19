@@ -11,6 +11,7 @@ e2eApp/dist
 documentation/site/dist
 opencode.json
 .e2e-upstream
+.playwright-mcp
 test-results
 monocart-report
 .worktrees/

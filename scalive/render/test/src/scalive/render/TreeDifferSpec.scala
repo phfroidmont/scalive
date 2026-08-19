@@ -53,6 +53,28 @@ object TreeDifferSpec extends ZIOSpecDefault:
         second  <- program.evaluate("two", Some(first.commit))
       yield assertTrue(TreeDiffer.diff(first.tree, second.tree) == RenderDelta.Empty)
     },
+    test("targets the previous containing node when a child identity changes") {
+      val compiled = RenderProgram.compile[String, Nothing](model => div(span(model)))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate("first")
+        second  <- program.evaluate("second", Some(first.commit))
+        currentChild  = second.tree.root.children.head
+        replacement   = currentChild match
+          case element: EvaluatedNode.Element =>
+            element.copy(id = TemplateId(element.id.value + 1000L))
+          case _ => currentChild
+        currentRoot = second.tree.root.copy(children = Vector(replacement))
+        currentTree = second.tree.copy(root = currentRoot)
+      yield assertTrue(
+        first.tree.root.children.head.id != replacement.id,
+        TreeDiffer.diff(first.tree, currentTree) == RenderDelta.Update(
+          currentTree.revision,
+          Vector(RenderChange.Replace(first.tree.root.id, currentTree.root))
+        )
+      )
+    },
     test("does not equate sibling candidates or independent programs") {
       val firstProgram  = RenderProgram.compile[String, Nothing](model => div(model))
       val secondProgram = RenderProgram.compile[String, Nothing](model => div(model))

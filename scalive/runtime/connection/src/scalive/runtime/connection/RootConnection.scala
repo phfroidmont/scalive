@@ -64,6 +64,17 @@ final private[scalive] class RootConnection[Msg, Model] private (
   def offerPatch(command: CommandId, destination: URL): IO[ConnectionError, Unit] =
     enqueuePatch(command, destination).unit
 
+  private[scalive] def offerInternalPatch(destination: URL): IO[ConnectionError, Unit] =
+    for
+      command <- ZIO
+                   .fromEither(CommandId.fresh()).mapError(error =>
+                     ConnectionError.KernelRejected(SessionRejection.IdentityUnavailable(error))
+                   )
+      _ <- kernel
+             .enqueuePatchAcknowledgement(command, epoch, destination).unit
+             .mapError(connectionError)
+    yield ()
+
   private def enqueueEvent(
     command: CommandId,
     binding: BindingId,
@@ -116,24 +127,23 @@ final private[scalive] class RootConnection[Msg, Model] private (
 
   def awaitFailure: UIO[ConnectionError] = failure.await
 
+  private[scalive] def pollFailure: UIO[Option[ConnectionError]] =
+    failure.poll.flatMap(ZIO.foreach(_)(identity))
+
+  private[scalive] def awaitClosed: UIO[Unit] = closed.await
+
   private[connection] def inspectModel: IO[ConnectionError, Model] =
-    kernel.inspect.map(_.model.model).mapError(ConnectionError.KernelRejected.apply)
+    kernel.inspect.map(_.model.model).mapError(connectionError)
 
   private[connection] def inspectFlash: IO[ConnectionError, Map[FlashKind, String]] =
-    kernel.inspect.map(_.model.flash).mapError(ConnectionError.KernelRejected.apply)
+    kernel.inspect.map(_.model.flash).mapError(connectionError)
 
   private[connection] def submitInfo(message: Msg): IO[ConnectionError, Unit] =
-    kernel.submit(SessionCommand.Message(epoch, message)).unit.mapError {
-      case SessionRejection.SessionFailed(value) => ConnectionError.SessionFailed(value)
-      case other                                 => ConnectionError.KernelRejected(other)
-    }
+    kernel.submit(SessionCommand.Message(epoch, message)).unit.mapError(connectionError)
 
   private[connection] def submitAsyncCompletion(event: LiveAsyncEvent[Msg])
     : IO[ConnectionError, Unit] =
-    kernel.submit(SessionCommand.AsyncCompletion(epoch, event)).unit.mapError {
-      case SessionRejection.SessionFailed(value) => ConnectionError.SessionFailed(value)
-      case other                                 => ConnectionError.KernelRejected(other)
-    }
+    kernel.submit(SessionCommand.AsyncCompletion(epoch, event)).unit.mapError(connectionError)
 
   private[connection] def ingressDepth: UIO[Int] = ingress.size
 
@@ -197,6 +207,8 @@ final private[scalive] class RootConnection[Msg, Model] private (
               )
           case SessionRejection.SessionFailed(sessionFailure) =>
             terminate(ConnectionError.SessionFailed(sessionFailure))
+          case _: SessionRejection.Terminal =>
+            complete(command, Left(ConnectionError.Closed))
           case other => terminate(ConnectionError.KernelRejected(other))
     }
 
@@ -223,67 +235,87 @@ final private[scalive] class RootConnection[Msg, Model] private (
   private def writeBatch(outputs: Vector[SessionOutput], first: Boolean): UIO[Boolean] =
     outputs.foldLeft[UIO[Boolean]](ZIO.succeed(first)) { (state, output) =>
       state.flatMap { isFirst =>
-        val connectionOutput =
-          if isFirst then
-            output.navigation.fold[ConnectionOutput](
-              ConnectionOutput.Joined(output.delta, output.effects)
-            )(
-              ConnectionOutput.JoinedNavigation(output.delta, _, output.effects)
+        pending.get.flatMap { pendingCommands =>
+          val correlatedCommand = output.command.filter(pendingCommands.contains)
+          val connectionOutput  =
+            if isFirst then
+              output.navigation.fold[ConnectionOutput](
+                ConnectionOutput.Joined(output.delta, output.effects)
+              )(
+                ConnectionOutput.JoinedNavigation(output.delta, _, output.effects)
+              )
+            else
+              (correlatedCommand, output.navigation) match
+                case (Some(command), Some(navigation)) =>
+                  ConnectionOutput.ReplyNavigation(
+                    command,
+                    output.delta,
+                    navigation,
+                    output.effects
+                  )
+                case (Some(command), None) =>
+                  ConnectionOutput.Reply(command, output.delta, output.effects)
+                case (None, Some(navigation)) =>
+                  ConnectionOutput.DiffNavigation(output.delta, navigation, output.effects)
+                case (None, None) => ConnectionOutput.Diff(output.delta, output.effects)
+
+          val ordered = connectionOutput match
+            case ConnectionOutput.Reply(command, _, _)              => awaitEarlierCommands(command)
+            case ConnectionOutput.ReplyNavigation(command, _, _, _) => awaitEarlierCommands(command)
+            case _                                                  => ZIO.unit
+
+          ordered *> writer
+            .send(connectionOutput).foldZIO(
+              error =>
+                closing.isDone
+                  .flatMap {
+                    case false => terminate(writerFailure(error))
+                    case true  =>
+                      connectionOutput match
+                        case ConnectionOutput.Reply(command, _, _) =>
+                          complete(command, Left(ConnectionError.Closed))
+                        case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
+                          complete(command, Left(ConnectionError.Closed))
+                        case ConnectionOutput.Rejected(command, _) =>
+                          complete(command, Left(ConnectionError.Closed))
+                        case ConnectionOutput.Joined(_, _) |
+                            ConnectionOutput.JoinedNavigation(_, _, _) =>
+                          bootstrapReady.fail(ConnectionError.Closed).unit
+                        case ConnectionOutput.Diff(_, _) |
+                            ConnectionOutput.DiffNavigation(_, _, _) =>
+                          ZIO.unit
+                  }.as(false),
+              _ =>
+                val signal = connectionOutput match
+                  case ConnectionOutput.Joined(_, _) | ConnectionOutput.JoinedNavigation(_, _, _) =>
+                    bootstrapReady.succeed(()).unit
+                  case ConnectionOutput.Reply(command, _, _) => complete(command, Right(()))
+                  case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
+                    complete(command, Right(()))
+                  case ConnectionOutput.Rejected(command, _) => complete(command, Right(()))
+                  case ConnectionOutput.Diff(_, _) | ConnectionOutput.DiffNavigation(_, _, _) =>
+                    ZIO.unit
+                val finish = connectionOutput match
+                  case ConnectionOutput.JoinedNavigation(_, navigation, _)
+                      if !navigation.kind.isPatch =>
+                    close
+                  case ConnectionOutput.ReplyNavigation(_, _, navigation, _)
+                      if !navigation.kind.isPatch =>
+                    close
+                  case ConnectionOutput.DiffNavigation(_, navigation, _)
+                      if !navigation.kind.isPatch =>
+                    close
+                  case _ => ZIO.unit
+                (signal *> finish).as(false)
             )
-          else
-            (output.command, output.navigation) match
-              case (Some(command), Some(navigation)) =>
-                ConnectionOutput.ReplyNavigation(
-                  command,
-                  output.delta,
-                  navigation,
-                  output.effects
-                )
-              case (Some(command), None) =>
-                ConnectionOutput.Reply(command, output.delta, output.effects)
-              case (None, Some(navigation)) =>
-                ConnectionOutput.DiffNavigation(output.delta, navigation, output.effects)
-              case (None, None) => ConnectionOutput.Diff(output.delta, output.effects)
-
-        val ordered = connectionOutput match
-          case ConnectionOutput.Reply(command, _, _)              => awaitEarlierCommands(command)
-          case ConnectionOutput.ReplyNavigation(command, _, _, _) => awaitEarlierCommands(command)
-          case _                                                  => ZIO.unit
-
-        ordered *> writer
-          .send(connectionOutput).foldZIO(
-            error =>
-              closing.isDone
-                .flatMap {
-                  case false => terminate(writerFailure(error))
-                  case true  =>
-                    connectionOutput match
-                      case ConnectionOutput.Reply(command, _, _) =>
-                        complete(command, Left(ConnectionError.Closed))
-                      case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
-                        complete(command, Left(ConnectionError.Closed))
-                      case ConnectionOutput.Rejected(command, _) =>
-                        complete(command, Left(ConnectionError.Closed))
-                      case ConnectionOutput.Joined(_, _) |
-                          ConnectionOutput.JoinedNavigation(_, _, _) =>
-                        bootstrapReady.fail(ConnectionError.Closed).unit
-                      case ConnectionOutput.Diff(_, _) | ConnectionOutput.DiffNavigation(_, _, _) =>
-                        ZIO.unit
-                }.as(false),
-            _ =>
-              val signal = connectionOutput match
-                case ConnectionOutput.Joined(_, _) | ConnectionOutput.JoinedNavigation(_, _, _) =>
-                  bootstrapReady.succeed(()).unit
-                case ConnectionOutput.Reply(command, _, _) => complete(command, Right(()))
-                case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
-                  complete(command, Right(()))
-                case ConnectionOutput.Rejected(command, _) => complete(command, Right(()))
-                case ConnectionOutput.Diff(_, _) | ConnectionOutput.DiffNavigation(_, _, _) =>
-                  ZIO.unit
-              signal.as(false)
-          )
+        }
       }
     }
+
+  private def connectionError(rejection: SessionRejection): ConnectionError = rejection match
+    case SessionRejection.SessionFailed(value) => ConnectionError.SessionFailed(value)
+    case _: SessionRejection.Terminal          => ConnectionError.Closed
+    case other                                 => ConnectionError.KernelRejected(other)
 
   private def monitorKernel: UIO[Unit] =
     kernel.awaitTermination.flatMap {
@@ -391,7 +423,7 @@ private[scalive] object RootConnection:
         logic        = SessionLogic[Msg, RootState[Msg, Model]](
                   bootstrap =
                     for
-                      journal <- RootTurnJournal.make(initialHooks)
+                      journal <- RootTurnJournal.make(initialHooks, metadata.initialFlash)
                       mountContext = RootMountContext.connected[Msg, Model](
                                        metadata,
                                        lifecycle.initialUrl,

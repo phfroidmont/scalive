@@ -179,6 +179,7 @@ enum SessionState[Msg, Model]:
   case Bootstrapping(epoch: Epoch)
   case Active(epoch: Epoch, committed: Committed[Msg, Model])
   case Navigating(epoch: Epoch, pending: PendingNavigation[Msg, Model])
+  case Redirected(epoch: Epoch, navigation: NavigationOutput)
   case Closing(epoch: Epoch, committed: Option[Committed[Msg, Model]])
   case Crashed(epoch: Epoch, failure: SessionFailure)
   case Closed(epoch: Epoch)

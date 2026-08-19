@@ -147,6 +147,26 @@ object RootConnectionSpec extends ZIOSpecDefault:
         yield assertTrue(result == Left(ConnectionError.SinkFailed(boom)))
       }
     },
+    test("a failure remains observable after the connection has fully closed") {
+      ZIO.scoped {
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     _ => ZIO.fail(Exception("handler failed"))
+                   def view(model: Signal[Int]) = div(model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          submitted  <- connection.submitInfo(1).either
+          _          <- connection.awaitClosed
+          failure    <- connection.pollFailure
+        yield assertTrue(
+          submitted.left.exists(_.isInstanceOf[ConnectionError.SessionFailed]),
+          failure.exists(_.isInstanceOf[ConnectionError.SessionFailed])
+        )
+      }
+    },
     test("connected mount and message contexts expose the exact metadata") {
       ZIO.scoped {
         for
@@ -277,7 +297,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
         yield assertTrue(
           seen == Vector("params", "callback"),
           after == Vector("static", "dynamic", "static", "dynamic"),
-          reply.isInstanceOf[ConnectionOutput.Reply]
+          reply.isInstanceOf[ConnectionOutput.Diff]
         )
       }
     },
@@ -351,9 +371,39 @@ object RootConnectionSpec extends ZIOSpecDefault:
           afterClear <- connection.inspectFlash
         yield assertTrue(
           afterPut == Map(notice -> "saved"),
-          navigation.isInstanceOf[ConnectionOutput.ReplyNavigation],
+          navigation.isInstanceOf[ConnectionOutput.DiffNavigation],
           afterPatch == afterPut,
           afterClear.isEmpty
+        )
+      }
+    },
+    test("terminal navigation flushes once and closes without failing the physical connection") {
+      ZIO.scoped {
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     case 1 => ctx.nav.pushNavigateUnsafe("/next").as(model + 1)
+                     case n => ZIO.succeed(model + n)
+                   def view(model: Signal[Int]) = div(model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          failure    <- connection.awaitFailure.fork
+          _          <- connection.submitInfo(1)
+          navigation <- outputs.take
+          _          <- connection.isClosing.repeatUntil(identity)
+          later      <- connection.submitInfo(2).either
+          failed     <- failure.poll
+          _          <- failure.interrupt
+        yield assertTrue(
+          navigation match
+            case ConnectionOutput.DiffNavigation(_, output, _) =>
+              output.kind == scalive.runtime.kernel.NavigationKind.PushNavigate &&
+                output.destination == URL.decode("/next").toOption.get
+            case _ => false,
+          later == Left(ConnectionError.Closed),
+          failed.isEmpty
         )
       }
     },
@@ -402,8 +452,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
           _      <- connection.submitInfo(2)
           second <- outputs.take
           secondEffects = second match
-                            case ConnectionOutput.Reply(_, _, effects) => effects
-                            case other => throw AssertionError(s"unexpected second output: $other")
+                             case ConnectionOutput.Diff(_, effects) => effects
+                             case other => throw AssertionError(s"unexpected second output: $other")
         yield assertTrue(
           initialEffects.pageTitle.contains("zero"),
           initialEffects.clientEvents == Vector(
@@ -463,6 +513,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           connection <- RootConnection.start(config, metadata, Counter(mounts), outputs.offer(_).unit)
           _       <- outputs.take
           _       <- connection.close *> connection.close
+          closed  <- connection.awaitClosed.timeout(1.second)
           command = CommandId.fresh().toOption.get
           result <- connection
                       .submitEvent(
@@ -470,7 +521,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
                         BindingId.fromEncoded("closed"),
                         BindingPayload.Params(Map.empty)
                       ).either
-        yield assertTrue(result == Left(ConnectionError.Closed))
+        yield assertTrue(closed.nonEmpty, result == Left(ConnectionError.Closed))
       }
     },
     test("interrupted close finishes cleanup before publishing closed") {

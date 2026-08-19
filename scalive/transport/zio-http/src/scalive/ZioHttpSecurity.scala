@@ -62,10 +62,13 @@ private[scalive] object ZioHttpSecurity:
     routeMountClaims: Vector[String] = Vector.empty,
     hasRouteClaims: Boolean = false,
     issuedAtEpochSecond: Long,
-    trackedStatics: Vector[String] = Vector.empty)
+    trackedStatics: Vector[String] = Vector.empty,
+    initialFlash: Map[String, String] = Map.empty)
       derives JsonCodec
 
   final case class CsrfClaims(browserSecret: String, issuedAtEpochSecond: Long) derives JsonCodec
+  final case class FlashClaims(values: Map[String, String], issuedAtEpochSecond: Long)
+      derives JsonCodec
 
   final case class IssuedCsrf(cookieToken: String, token: String)
 
@@ -84,6 +87,7 @@ private[scalive] object ZioHttpSecurity:
     case Static     extends Purpose("static")
     case CsrfCookie extends Purpose("csrf-cookie")
     case Csrf       extends Purpose("csrf")
+    case Flash      extends Purpose("flash")
 
   private val Version       = "v1"
   private val HmacAlgorithm = "HmacSHA256"
@@ -101,7 +105,8 @@ private[scalive] object ZioHttpSecurity:
     sessionMountClaims: Vector[String] = Vector.empty,
     routeMountClaims: Vector[String] = Vector.empty,
     hasRouteClaims: Boolean = false,
-    trackedStatics: Vector[String] = Vector.empty
+    trackedStatics: Vector[String] = Vector.empty,
+    initialFlash: Map[String, String] = Map.empty
   ): UIO[String] =
     issueRoot(
       config,
@@ -115,7 +120,8 @@ private[scalive] object ZioHttpSecurity:
       sessionMountClaims,
       routeMountClaims,
       hasRouteClaims,
-      trackedStatics
+      trackedStatics,
+      initialFlash
     )
 
   def verifySession(
@@ -136,7 +142,8 @@ private[scalive] object ZioHttpSecurity:
     sessionMountClaims: Vector[String] = Vector.empty,
     routeMountClaims: Vector[String] = Vector.empty,
     hasRouteClaims: Boolean = false,
-    trackedStatics: Vector[String] = Vector.empty
+    trackedStatics: Vector[String] = Vector.empty,
+    initialFlash: Map[String, String] = Map.empty
   ): UIO[String] =
     issueRoot(
       config,
@@ -150,7 +157,8 @@ private[scalive] object ZioHttpSecurity:
       sessionMountClaims,
       routeMountClaims,
       hasRouteClaims,
-      trackedStatics
+      trackedStatics,
+      initialFlash
     )
 
   def verifyStatic(
@@ -159,6 +167,18 @@ private[scalive] object ZioHttpSecurity:
   ): IO[Error, RootClaims] =
     verify[RootClaims](config, Purpose.Static, token)
       .flatMap(claims => validateAge(config, claims, _.issuedAtEpochSecond))
+
+  def issueFlash(config: ZioHttpConfig, values: Map[String, String]): UIO[Option[String]] =
+    if values.isEmpty then ZIO.none
+    else
+      currentEpochSecond.map(issuedAt =>
+        Some(encode(config, Purpose.Flash, FlashClaims(values, issuedAt)))
+      )
+
+  def verifyFlash(config: ZioHttpConfig, token: String): IO[Error, Map[String, String]] =
+    verify[FlashClaims](config, Purpose.Flash, token)
+      .flatMap(claims => validateAge(Duration.ofSeconds(60), claims, _.issuedAtEpochSecond))
+      .map(_.values)
 
   private def generateCsrfBrowserSecret: UIO[String] =
     Random.nextBytes(32).map(bytes => encoder.encodeToString(bytes.toArray))
@@ -219,7 +239,8 @@ private[scalive] object ZioHttpSecurity:
     sessionMountClaims: Vector[String],
     routeMountClaims: Vector[String],
     hasRouteClaims: Boolean,
-    trackedStatics: Vector[String]
+    trackedStatics: Vector[String],
+    initialFlash: Map[String, String]
   ): UIO[String] =
     currentEpochSecond.map { issuedAt =>
       encode(
@@ -236,7 +257,8 @@ private[scalive] object ZioHttpSecurity:
           routeMountClaims,
           hasRouteClaims,
           issuedAt,
-          trackedStatics
+          trackedStatics,
+          initialFlash
         )
       )
     }
@@ -310,6 +332,12 @@ private[scalive] object ZioHttpSecurity:
     config: ZioHttpConfig,
     claims: A,
     issuedAtEpochSecond: A => Long
+  ): IO[Error, A] = validateAge(config.sessionMaxAge, claims, issuedAtEpochSecond)
+
+  private def validateAge[A](
+    maxAge: Duration,
+    claims: A,
+    issuedAtEpochSecond: A => Long
   ): IO[Error, A] =
     currentEpochSecond.flatMap { now =>
       val issuedAt = issuedAtEpochSecond(claims)
@@ -318,9 +346,9 @@ private[scalive] object ZioHttpSecurity:
         ZIO
           .attempt(Duration.between(Instant.ofEpochSecond(issuedAt), Instant.ofEpochSecond(now)))
           .mapError(error => Error.InvalidClaims(error.getMessage))
-          .flatMap { age =>
-            if age.compareTo(config.sessionMaxAge) > 0 then ZIO.fail(Error.Expired)
+          .flatMap(age =>
+            if age.compareTo(maxAge) > 0 then ZIO.fail(Error.Expired)
             else ZIO.succeed(claims)
-          }
+          )
     }
 end ZioHttpSecurity

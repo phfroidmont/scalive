@@ -17,8 +17,11 @@ import scalive.runtime.contracts.*
 /** ZIO HTTP assembly for root LiveView routes. */
 object ZioHttp:
   final class AssemblyException(message: String) extends IllegalArgumentException(message)
+  final private case class ConnectedMountRejected(failure: LiveMountFailure)
+      extends Exception("connected mount rejected")
 
   private val CsrfCookieName       = "_scalive_csrf"
+  private val FlashCookieName      = "__phoenix_flash__"
   private val RootIngressCapacity  = 64
   private val OutboundCapacity     = 64
   private val KernelCapacity       = 64
@@ -146,6 +149,7 @@ object ZioHttp:
     def routeIdentity: String
     def pathDescription: String
     def pathCodec: PathCodec[PathParams]
+    def hasRouteMountAspect: Boolean
     def rootLayoutKey(path: PathParams, request: Request, context: Any): String
 
     final def matches(url: URL): Boolean = pathCodec.decode(url.path).isRight
@@ -168,8 +172,15 @@ object ZioHttp:
       for
         path       <- ZIO.fromEither(pathCodec.decode(url.path).left.map(Exception(_)))
         lifecycle  <- connectedLifecycle(path, request, url, claims)
-        connection <- RootConnection.startLifecycle(connectionConfig, metadata, lifecycle, sink)
+        connection <- startPrepared(lifecycle, metadata, sink)
       yield connection
+
+    final def startPrepared(
+      lifecycle: RootLifecycle[Msg, Model],
+      metadata: RootConnectionMetadata,
+      sink: ConnectionOutput => Task[Unit]
+    ): ZIO[Scope, Throwable, RootConnection[Msg, Model]] =
+      RootConnection.startLifecycle(connectionConfig, metadata, lifecycle, sink)
 
     protected def disconnectedLifecycle(
       path: PathParams,
@@ -229,11 +240,62 @@ object ZioHttp:
       selectedRootLayout: LiveRootLayout[PathParams, Any]
     ): Task[Response] =
       for
-        mountContext = RootMountContext.disconnected[Msg, Model]
-        mounted  <- lifecycle.mount(mountContext)
-        prepared <- lifecycle.prepareParams(request.url)
-        model    <- prepared.run(mounted, disconnectedParamsContext(mountContext))
-        rootId   <- randomRootId
+        initialFlash <-
+          request
+            .cookie(FlashCookieName).fold[UIO[Map[String, String]]](ZIO.succeed(Map.empty))(
+              cookie =>
+                ZioHttpSecurity
+                  .verifyFlash(config, cookie.content).orElseSucceed(Map.empty)
+            )
+        typedFlash = initialFlash.view.map((key, value) => FlashKind(key) -> value).toMap
+        turn            <- DisconnectedRootTurn.make(lifecycle.hooks, request.url, typedFlash)
+        mounted         <- lifecycle.mount(turn.mountContext)
+        mountNavigation <- turn.navigation
+        response        <- mountNavigation match
+                      case Some(navigation) =>
+                        disconnectedNavigationResponse(config, request, navigation)
+                      case None =>
+                        for
+                          prepared         <- lifecycle.prepareParams(request.url)
+                          model            <- turn.runParams(mounted, request.url, prepared)
+                          paramsNavigation <- turn.navigation
+                          response         <- paramsNavigation match
+                                        case Some(navigation) =>
+                                          disconnectedNavigationResponse(
+                                            config,
+                                            request,
+                                            navigation
+                                          )
+                                        case None =>
+                                          renderDisconnectedModel(
+                                            path,
+                                            request,
+                                            config,
+                                            lifecycle,
+                                            erasedContext,
+                                            mountClaims,
+                                            selectedRootLayout,
+                                            turn,
+                                            model
+                                          )
+                        yield response
+      yield response
+
+    private def renderDisconnectedModel(
+      path: PathParams,
+      request: Request,
+      config: ZioHttpConfig,
+      lifecycle: RootLifecycle[Msg, Model],
+      erasedContext: Any,
+      mountClaims: MountClaims,
+      selectedRootLayout: LiveRootLayout[PathParams, Any],
+      turn: DisconnectedRootTurn[Msg, Model],
+      model: Model
+    ): Task[Response] =
+      for
+        typedFlash <- turn.flash
+        initialFlash = typedFlash.view.map((key, value) => key.value -> value).toMap
+        rootId <- randomRootId
         canonical = canonicalUrl(request.url)
         csrf <- refreshOrIssueCsrf(config, request.cookie(CsrfCookieName).map(_.content))
         (issuedCsrf, setCsrfCookie) = csrf
@@ -251,7 +313,8 @@ object ZioHttp:
           if selectedRootLayout eq LiveRootLayout.identity then
             renderElement(
               (input: Signal[(Model, URL)]) => withRootAttrs(lifecycle.view(input), rootAttrs),
-              model -> request.url
+              model -> request.url,
+              typedFlash
             )
               .map(inner => inner.copy(html = document(issuedCsrf.token, inner.html)))
           else
@@ -260,7 +323,13 @@ object ZioHttp:
               val rooted  =
                 selectedRootLayout.render(content, lifecycle.pageTitle(model), rootContext)
               injectCsrf(rooted, issuedCsrf.token)
-            renderElement(rootView, model -> request.url, includeDoctype = true)
+            renderElement(
+              rootView,
+              model -> request.url,
+              typedFlash,
+              includeDoctype = true
+            )
+        _      <- turn.runAfterRender(model)
         tokens <- issueRootTokens(
                     config,
                     rootId,
@@ -270,7 +339,8 @@ object ZioHttp:
                     sessionName,
                     rootKey,
                     mountClaims,
-                    rendered.trackedStatics
+                    rendered.trackedStatics,
+                    initialFlash
                   )
         (session, static) = tokens
         html              = rendered.html
@@ -290,7 +360,11 @@ object ZioHttp:
           if setCsrfCookie then
             response.addCookie(csrfCookie(issuedCsrf.cookieToken, config.secureCookie))
           else response
-      yield withCookie
+        consumedFlash =
+          if request.cookie(FlashCookieName).nonEmpty then
+            withCookie.addCookie(expiredFlashCookie(config.secureCookie))
+          else withCookie
+      yield consumedFlash
   end CompiledRoute
 
   private object CompiledRoute:
@@ -335,11 +409,12 @@ object ZioHttp:
       type Msg        = Message
       type Model      = State
 
-      val index           = routeIndex
-      val sessionName     = declaredSession
-      val pathCodec       = codec
-      val pathDescription = RoutePattern(Method.GET, codec).toString
-      val routeIdentity   = s"$routeIndex:$pathDescription"
+      val index               = routeIndex
+      val sessionName         = declaredSession
+      val pathCodec           = codec
+      val pathDescription     = RoutePattern(Method.GET, codec).toString
+      val routeIdentity       = s"$routeIndex:$pathDescription"
+      val hasRouteMountAspect = routeContextHasMountAspect(contextDefinition)
 
       private def selectedRoot: LiveRootLayout[A, Ctx] =
         root.getOrElse(applicationRoot.asInstanceOf[LiveRootLayout[A, Ctx]])
@@ -383,10 +458,10 @@ object ZioHttp:
           request,
           ().asInstanceOf[In],
           supplied
-        ).mapError(failure => Exception(s"connected mount rejected: $failure")).flatMap { context =>
+        ).mapError(ConnectedMountRejected.apply).flatMap { context =>
           val rootContext = LiveRootLayoutContext(path, request, url, context)
           ZIO
-            .fail(Exception("root layout key differs"))
+            .fail(ConnectedMountRejected(LiveMountFailure.unauthorized("root layout key differs")))
             .unless(selectedRoot.key(rootContext) == claims.rootLayoutKey) *>
             make(path, request, context, url).map { lifecycle =>
               composeLayouts(
@@ -528,6 +603,14 @@ object ZioHttp:
           }
       }
 
+  private def routeContextHasMountAspect[R, A, In, Ctx](
+    context: LiveRouteContext[R, A, In, Ctx]
+  ): Boolean = context match
+    case _: LiveRouteContext.Mounted[?, ?, ?, ?]                    => true
+    case session: LiveRouteContext.SessionMounted[?, ?, ?, ?, ?, ?] =>
+      routeContextHasMountAspect(session.route)
+    case _ => false
+
   private def runConnectedPipeline[R, A, In, Ctx](
     pipeline: LiveMountPipeline[R, A, In, Ctx],
     group: ClaimGroup,
@@ -665,14 +748,30 @@ object ZioHttp:
       def pushPatchUnsafe(to: String)       = unsupported("push patch")
       def replacePatchUnsafe(to: String)    = unsupported("replace patch")
 
+  private def disconnectedNavigationResponse(
+    config: ZioHttpConfig,
+    request: Request,
+    navigation: scalive.runtime.kernel.NavigationRequest
+  ): UIO[Response] =
+    val values = navigation.flash.view.map((kind, message) => kind.value -> message).toMap
+    ZioHttpSecurity.issueFlash(config, values).map { token =>
+      val response = Response.seeOther(navigation.destination)
+      token match
+        case Some(value) => response.addCookie(flashCookie(value, config.secureCookie))
+        case None if request.cookie(FlashCookieName).nonEmpty =>
+          response.addCookie(expiredFlashCookie(config.secureCookie))
+        case None => response
+    }
+
   final private case class RenderedElement(html: String, trackedStatics: Vector[String])
 
   private def renderElement[A, Msg](
     view: Signal[A] => HtmlElement[Msg],
     value: A,
+    initialFlash: Map[FlashKind, String] = Map.empty,
     includeDoctype: Boolean = false
   ): Task[RenderedElement] =
-    ZIO.fromEither(RenderProgram.compile(view)).flatMap { program =>
+    ZIO.fromEither(RenderProgram.compile(view, _ => initialFlash)).flatMap { program =>
       program
         .evaluate(value).flatMap { candidate =>
           ZIO
@@ -763,7 +862,9 @@ object ZioHttp:
     topic: String,
     joinRef: PhoenixRef.Value,
     connection: RootConnection[?, ?],
-    correlations: Ref[Map[CommandId, (PhoenixRef, PhoenixRef)]])
+    correlations: Ref[Map[CommandId, (PhoenixRef, PhoenixRef)]],
+    scope: Scope.Closeable):
+    def close: UIO[Unit] = connection.close *> scope.close(Exit.unit)
 
   private def runSocket[R](
     channel: WebSocketChannel,
@@ -778,7 +879,9 @@ object ZioHttp:
         SerialWriter.make[PhoenixEnvelope](PhysicalWriterSize) { envelope =>
           channel.send(ChannelEvent.read(WebSocketFrame.text(PhoenixEnvelope.encode(envelope))))
         }
-      root <- Ref.make(Option.empty[JoinedRoot])
+      root         <- Ref.make(Option.empty[JoinedRoot])
+      registration <- Ref.make(Option.empty[ZioHttpSecurity.RootClaims])
+      joinGate     <- Semaphore.make(1L)
       receive = channel.receiveAll {
                   case ChannelEvent.Read(WebSocketFrame.Text(text))
                       if text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <=
@@ -795,9 +898,10 @@ object ZioHttp:
                               config,
                               csrfCookie,
                               csrfToken,
-                              channel,
                               socketRequest,
                               root,
+                              registration,
+                              joinGate,
                               writer,
                               joinRef,
                               ref,
@@ -820,7 +924,7 @@ object ZioHttp:
                 }
       _ <- receive
              .raceFirst(writer.awaitFailure.flatMap(ZIO.fail(_)))
-             .ensuring(root.get.flatMap(ZIO.foreachDiscard(_)(_.connection.close)) *> writer.close)
+             .ensuring(root.get.flatMap(ZIO.foreachDiscard(_)(_.close)) *> writer.close)
     yield ()
 
   private def joinRoot[R](
@@ -828,9 +932,10 @@ object ZioHttp:
     config: ZioHttpConfig,
     csrfCookie: Option[String],
     csrfToken: Option[String],
-    channel: WebSocketChannel,
     socketRequest: Request,
     currentRoot: Ref[Option[JoinedRoot]],
+    registration: Ref[Option[ZioHttpSecurity.RootClaims]],
+    joinGate: Semaphore,
     writer: SerialWriter[PhoenixEnvelope],
     joinRef: PhoenixRef,
     ref: PhoenixRef,
@@ -840,60 +945,164 @@ object ZioHttp:
     effectiveJoinRef(joinRef, ref) match
       case None               => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
       case Some(effectiveRef) =>
-        currentRoot.get.flatMap { existing =>
-          ZioHttpAdmission
-            .admit(routes, config, csrfCookie, csrfToken, existing.nonEmpty, topic, join).foldZIO(
+        joinGate.withPermit {
+          registration.get.flatMap { registered =>
+            val admission = join.redirect match
+              case Some(_) =>
+                ZIO
+                  .fromOption(registered).orElseFail("missing root registration").flatMap(
+                    ZioHttpAdmission.admitRedirect(
+                      routes,
+                      config,
+                      csrfCookie,
+                      csrfToken,
+                      _,
+                      topic,
+                      join
+                    )
+                  )
+              case None =>
+                ZioHttpAdmission.admit(
+                  routes,
+                  config,
+                  csrfCookie,
+                  csrfToken,
+                  registered.nonEmpty,
+                  topic,
+                  join
+                )
+            admission.foldZIO(
               error =>
                 ZIO.logWarning(s"Rejecting root join topic=$topic: $error") *>
-                  writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason)),
+                  writer.offer(PhoenixOutput.error(joinRef, ref, topic, unauthorizedReason)),
               admitted =>
-                for
-                  renderedState <- Ref.make(Option.empty[PhoenixRenderedState])
-                  correlations  <- Ref.make(Map.empty[CommandId, (PhoenixRef, PhoenixRef)])
-                  request  = connectedRequest(socketRequest, admitted.url)
+                val install = for
+                  request = connectedRequest(socketRequest, admitted.url)
+                  lifecycle <- admitted.route.prepareConnected(
+                                 admitted.url,
+                                 request,
+                                 admitted.claims
+                               )
+                  flash           <- joinedFlash(config, join, admitted.claims)
+                  renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
+                  correlations    <- Ref.make(Map.empty[CommandId, (PhoenixRef, PhoenixRef)])
+                  connectionReady <- Promise.make[Nothing, RootConnection[?, ?]]
                   metadata = RootConnectionMetadata(
                                staticChanged = staticChanged(
                                  clientTrackedStatics(join.params),
                                  admitted.claims.trackedStatics,
                                  admitted.url
                                ),
-                               connectParams = join.params
+                               connectParams = join.params,
+                               initialFlash = flash
                              )
                   sink = rootSink(
+                           config,
                            writer,
                            renderedState,
                            correlations,
                            effectiveRef,
                            ref,
-                           topic
+                           topic,
+                           destination =>
+                             connectionReady.await.flatMap(_.offerInternalPatch(destination))
                          )
-                  connection <- admitted.route.startConnected(
-                                  admitted.url,
-                                  request,
-                                  admitted.claims,
-                                  metadata,
-                                  sink
+                  rootScope <- Scope.make
+                  _         <- (for
+                         previous   <- currentRoot.getAndSet(None)
+                         _          <- ZIO.foreachDiscard(previous)(_.close)
+                         connection <- rootScope.extend(
+                                         admitted.route.startPrepared(lifecycle, metadata, sink)
+                                       )
+                         _ <- connectionReady.succeed(connection)
+                         _ <- currentRoot.set(
+                                Some(
+                                  JoinedRoot(
+                                    topic,
+                                    effectiveRef,
+                                    connection,
+                                    correlations,
+                                    rootScope
+                                  )
                                 )
-                  installed <- currentRoot.modify {
-                                 case None =>
-                                   true -> Some(
-                                     JoinedRoot(topic, effectiveRef, connection, correlations)
-                                   )
-                                 case some => false -> some
-                               }
-                  _ <- ZIO.fail(Exception("root already joined")).unless(installed)
-                  _ <- (connection.awaitFailure *> channel.shutdown).forkScoped
+                              )
+                         _ <- registration.set(Some(admitted.claims))
+                         _ <- connection.awaitFailure
+                                .map(Some(_)).raceFirst(
+                                  connection.awaitClosed *> connection.pollFailure
+                                ).flatMap {
+                                  case Some(_) =>
+                                    currentRoot
+                                      .modify {
+                                        case Some(joined)
+                                            if joined.connection.asInstanceOf[AnyRef] eq
+                                              connection.asInstanceOf[AnyRef] =>
+                                          true -> None
+                                        case current => false -> current
+                                      }.flatMap {
+                                        case true =>
+                                          registration.set(None) *>
+                                            writer.send(
+                                              PhoenixOutput.channelError(effectiveRef, topic)
+                                            )
+                                        case false => ZIO.unit
+                                      }
+                                  case None => ZIO.unit
+                                }.ensuring(rootScope.close(Exit.unit)).forkScoped
+                       yield ()).onError(_ => rootScope.close(Exit.unit))
                 yield ()
+                install.catchAll { error =>
+                  val clearInitial =
+                    ZIO.when(join.redirect.isEmpty)(registration.set(None))
+                  clearInitial *>
+                    ZIO.logWarningCause(
+                      s"Rejecting connected root lifecycle topic=$topic",
+                      Cause.fail(error)
+                    ) *>
+                    writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+                }
             )
+          }
         }
 
+  private def joinedFlash(
+    config: ZioHttpConfig,
+    join: RootJoin,
+    claims: ZioHttpSecurity.RootClaims
+  ): UIO[Map[FlashKind, String]] =
+    val values =
+      if join.redirect.nonEmpty then
+        join.flash.fold[UIO[Map[String, String]]](ZIO.succeed(Map.empty))(token =>
+          ZioHttpSecurity.verifyFlash(config, token).orElseSucceed(Map.empty)
+        )
+      else ZIO.succeed(claims.initialFlash)
+    values.map(_.view.map((key, value) => FlashKind(key) -> value).toMap)
+
+  private def joinFailureEnvelope(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    error: Throwable
+  ): PhoenixEnvelope = error match
+    case ConnectedMountRejected(LiveMountFailure.Redirect(to)) =>
+      PhoenixOutput.joinErrorRedirect(joinRef, ref, topic, to.href)
+    case ConnectedMountRejected(LiveMountFailure.RedirectUnsafe(to)) =>
+      PhoenixOutput.joinErrorRedirect(joinRef, ref, topic, to.encode)
+    case ConnectedMountRejected(_: LiveMountFailure.Unauthorized) =>
+      PhoenixOutput.error(joinRef, ref, topic, unauthorizedReason)
+    case ConnectedMountRejected(_: LiveMountFailure.Stale) =>
+      PhoenixOutput.error(joinRef, ref, topic, staleReason)
+    case _ => PhoenixOutput.error(joinRef, ref, topic, staleReason)
+
   private def rootSink(
+    config: ZioHttpConfig,
     writer: SerialWriter[PhoenixEnvelope],
     state: Ref[Option[PhoenixRenderedState]],
     correlations: Ref[Map[CommandId, (PhoenixRef, PhoenixRef)]],
     joinRef: PhoenixRef,
     joinReplyRef: PhoenixRef,
-    topic: String
+    topic: String,
+    acknowledgePatch: URL => Task[Unit]
   ): ConnectionOutput => Task[Unit] = output =>
     def update(delta: RenderDelta): IO[Throwable, Json.Obj] =
       state.modify { previous =>
@@ -918,10 +1127,11 @@ object ZioHttp:
             writer.offer(PhoenixOutput.join(joinRef, joinReplyRef, topic, json))
           )
       case ConnectionOutput.JoinedNavigation(delta, navigation, effects) =>
-        update(delta)
-          .map(addEffects(_, effects)).flatMap(json =>
-            writer.offer(PhoenixOutput.join(joinRef, joinReplyRef, topic, json)) *>
-              writer.offer(navigationEnvelope(joinRef, topic, navigation))
+        if navigation.kind.isPatch then
+          ZIO.fail(Exception(s"patch navigation ${navigation.kind} is unavailable during join"))
+        else
+          navigationJoinEnvelope(config, joinRef, joinReplyRef, topic, navigation).flatMap(
+            writer.offer
           )
       case ConnectionOutput.Reply(command, delta, effects) =>
         correlations.modify(current => current.get(command) -> (current - command)).flatMap {
@@ -937,8 +1147,19 @@ object ZioHttp:
           case Some((eventJoinRef, eventRef)) =>
             update(delta)
               .map(addEffects(_, effects)).flatMap(json =>
-                writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json)) *>
-                  writer.offer(navigationEnvelope(eventJoinRef, topic, navigation))
+                if navigation.kind.isPatch then
+                  writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json)) *>
+                    writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                    acknowledgePatch(navigation.destination)
+                else
+                  navigationReplyEnvelope(
+                    config,
+                    eventJoinRef,
+                    eventRef,
+                    topic,
+                    navigation,
+                    Option.when(json.fields.nonEmpty)(json)
+                  ).flatMap(writer.offer)
               )
           case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
         }
@@ -956,8 +1177,15 @@ object ZioHttp:
       case ConnectionOutput.DiffNavigation(delta, navigation, effects) =>
         update(delta)
           .map(addEffects(_, effects)).flatMap(json =>
-            writer.offer(PhoenixOutput.diff(joinRef, topic, json)) *>
-              writer.offer(navigationEnvelope(joinRef, topic, navigation))
+            val diff =
+              ZIO.when(json.fields.nonEmpty)(writer.offer(PhoenixOutput.diff(joinRef, topic, json)))
+            if navigation.kind.isPatch then
+              diff *> writer.offer(patchEnvelope(joinRef, topic, navigation)) *>
+                acknowledgePatch(navigation.destination)
+            else
+              diff *> navigationEventEnvelope(config, joinRef, topic, navigation).flatMap(
+                writer.offer
+              )
           )
     end match
 
@@ -975,7 +1203,7 @@ object ZioHttp:
         )
       )
 
-  private def navigationEnvelope(
+  private def patchEnvelope(
     joinRef: PhoenixRef,
     topic: String,
     navigation: scalive.runtime.kernel.NavigationOutput
@@ -985,6 +1213,114 @@ object ZioHttp:
       case scalive.runtime.kernel.NavigationKind.ReplacePatch => "replace"
       case other => throw IllegalStateException(s"unsupported navigation output $other")
     PhoenixOutput.livePatch(joinRef, topic, navigation.destination.encode, kind)
+
+  private def navigationEventEnvelope(
+    config: ZioHttpConfig,
+    joinRef: PhoenixRef,
+    topic: String,
+    navigation: scalive.runtime.kernel.NavigationOutput
+  ): UIO[PhoenixEnvelope] =
+    ZioHttpSecurity.issueFlash(config, flashValues(navigation)).map { flash =>
+      navigation.kind match
+        case scalive.runtime.kernel.NavigationKind.PushNavigate =>
+          PhoenixOutput.liveRedirect(joinRef, topic, navigation.destination.encode, "push", flash)
+        case scalive.runtime.kernel.NavigationKind.ReplaceNavigate =>
+          PhoenixOutput.liveRedirect(
+            joinRef,
+            topic,
+            navigation.destination.encode,
+            "replace",
+            flash
+          )
+        case scalive.runtime.kernel.NavigationKind.Redirect =>
+          PhoenixOutput.redirect(joinRef, topic, navigation.destination.encode, flash)
+        case other => throw IllegalStateException(s"unsupported terminal navigation output $other")
+    }
+
+  private def navigationReplyEnvelope(
+    config: ZioHttpConfig,
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    navigation: scalive.runtime.kernel.NavigationOutput,
+    diff: Option[Json.Obj]
+  ): UIO[PhoenixEnvelope] =
+    ZioHttpSecurity.issueFlash(config, flashValues(navigation)).map { flash =>
+      navigation.kind match
+        case scalive.runtime.kernel.NavigationKind.PushNavigate =>
+          PhoenixOutput.eventLiveRedirect(
+            joinRef,
+            ref,
+            topic,
+            navigation.destination.encode,
+            "push",
+            flash,
+            diff
+          )
+        case scalive.runtime.kernel.NavigationKind.ReplaceNavigate =>
+          PhoenixOutput.eventLiveRedirect(
+            joinRef,
+            ref,
+            topic,
+            navigation.destination.encode,
+            "replace",
+            flash,
+            diff
+          )
+        case scalive.runtime.kernel.NavigationKind.Redirect =>
+          PhoenixOutput.eventRedirect(
+            joinRef,
+            ref,
+            topic,
+            navigation.destination.encode,
+            flash,
+            diff
+          )
+        case other => throw IllegalStateException(s"unsupported terminal navigation output $other")
+    }
+
+  private def navigationJoinEnvelope(
+    config: ZioHttpConfig,
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    navigation: scalive.runtime.kernel.NavigationOutput
+  ): UIO[PhoenixEnvelope] =
+    ZioHttpSecurity.issueFlash(config, flashValues(navigation)).map { flash =>
+      navigation.kind match
+        case scalive.runtime.kernel.NavigationKind.PushNavigate =>
+          PhoenixOutput.joinErrorLiveRedirect(
+            joinRef,
+            ref,
+            topic,
+            navigation.destination.encode,
+            "push",
+            flash
+          )
+        case scalive.runtime.kernel.NavigationKind.ReplaceNavigate =>
+          PhoenixOutput.joinErrorLiveRedirect(
+            joinRef,
+            ref,
+            topic,
+            navigation.destination.encode,
+            "replace",
+            flash
+          )
+        case scalive.runtime.kernel.NavigationKind.Redirect =>
+          PhoenixOutput.joinErrorRedirect(
+            joinRef,
+            ref,
+            topic,
+            navigation.destination.encode,
+            flash
+          )
+        case other => throw IllegalStateException(s"unsupported terminal navigation output $other")
+    }
+
+  private def flashValues(
+    navigation: scalive.runtime.kernel.NavigationOutput
+  ): Map[String, String] =
+    navigation.flash.view.map((kind, message) => kind.value -> message).toMap
 
   private def offerEvent(
     root: Ref[Option[JoinedRoot]],
@@ -1079,7 +1415,9 @@ object ZioHttp:
         case current => None -> current
       }.flatMap {
         case Some(joined) =>
-          joined.connection.close *> writer.offer(PhoenixOutput.leave(joinRef, ref, topic))
+          joined.close *>
+            writer.offer(PhoenixOutput.close(joined.joinRef, topic)) *>
+            writer.offer(PhoenixOutput.leave(joinRef, ref, topic))
         case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
       }
 
@@ -1111,7 +1449,8 @@ object ZioHttp:
     sessionName: Option[String],
     rootLayoutKey: String,
     mountClaims: MountClaims,
-    trackedStatics: Vector[String]
+    trackedStatics: Vector[String],
+    initialFlash: Map[String, String] = Map.empty
   ): UIO[(String, String)] =
     ZioHttpSecurity
       .issueSession(
@@ -1125,7 +1464,8 @@ object ZioHttp:
         mountClaims.session,
         mountClaims.route,
         mountClaims.route.nonEmpty,
-        trackedStatics
+        trackedStatics,
+        initialFlash
       ).zipPar(
         ZioHttpSecurity.issueStatic(
           config,
@@ -1138,7 +1478,8 @@ object ZioHttp:
           mountClaims.session,
           mountClaims.route,
           mountClaims.route.nonEmpty,
-          trackedStatics
+          trackedStatics,
+          initialFlash
         )
       ).flatMap { case tokens @ (session, static) =>
         ZioHttpSecurity
@@ -1153,7 +1494,8 @@ object ZioHttp:
                 sessionName,
                 rootLayoutKey,
                 mountClaims,
-                trackedStatics
+                trackedStatics,
+                initialFlash
               ),
             claims =>
               if claims._1 == claims._2 then ZIO.succeed(tokens)
@@ -1167,7 +1509,8 @@ object ZioHttp:
                   sessionName,
                   rootLayoutKey,
                   mountClaims,
-                  trackedStatics
+                  trackedStatics,
+                  initialFlash
                 )
           )
       }
@@ -1202,7 +1545,26 @@ object ZioHttp:
       sameSite = Some(Cookie.SameSite.Lax)
     )
 
-  private def staleReason: Json.Obj = Json.Obj("reason" -> Json.Str("stale"))
+  private def expiredFlashCookie(secure: Boolean): Cookie.Response =
+    flashCookie("", secure, zio.Duration.Zero)
+
+  private def flashCookie(
+    token: String,
+    secure: Boolean,
+    maxAge: zio.Duration = zio.Duration.fromSeconds(60)
+  ): Cookie.Response =
+    Cookie.Response(
+      FlashCookieName,
+      token,
+      path = Some(Path.root),
+      isSecure = secure,
+      isHttpOnly = true,
+      maxAge = Some(maxAge),
+      sameSite = Some(Cookie.SameSite.Lax)
+    )
+
+  private def staleReason: Json.Obj        = Json.Obj("reason" -> Json.Str("stale"))
+  private def unauthorizedReason: Json.Obj = Json.Obj("reason" -> Json.Str("unauthorized"))
 end ZioHttp
 
 private[scalive] object ZioHttpAdmission:
@@ -1252,4 +1614,50 @@ private[scalive] object ZioHttpAdmission:
     yield Admitted(route, url, session)
     checked
   end admit
+
+  def admitRedirect[R](
+    routes: Vector[ZioHttp.CompiledRoute[R]],
+    config: ZioHttpConfig,
+    csrfCookie: Option[String],
+    csrfToken: Option[String],
+    registered: ZioHttpSecurity.RootClaims,
+    topic: String,
+    join: RootJoin
+  ): IO[String, Admitted[R]] =
+    val checked = for
+      rootId <- ZIO
+                  .fromOption(topic.stripPrefix("lv:") match
+                    case value if topic.startsWith("lv:") && value.nonEmpty => Some(value)
+                    case _ => None).orElseFail("invalid root topic")
+      _           <- ZIO.fail("URL joins cannot replace a root").when(join.url.nonEmpty)
+      _           <- ZIO.fail("sticky roots are unsupported").when(join.sticky)
+      urlText     <- ZIO.fromOption(join.redirect).orElseFail("missing redirect URL")
+      url         <- ZIO.fromEither(URL.decode(urlText).left.map(_.getMessage))
+      session     <- ZioHttpSecurity.verifySession(config, join.session).mapError(_.toString)
+      staticToken <- ZIO.fromOption(join.static).orElseFail("missing static token")
+      static      <- ZioHttpSecurity.verifyStatic(config, staticToken).mapError(_.toString)
+      _           <- ZIO.fail("session/static claims differ").unless(session == static)
+      _           <- ZIO.fail("root registration differs").unless(session == registered)
+      _           <- ZIO.fail("root id differs").unless(session.rootId == rootId)
+      cookie      <- ZIO.fromOption(csrfCookie).orElseFail("missing CSRF cookie")
+      token       <- ZIO.fromOption(csrfToken).orElseFail("missing CSRF token")
+      _           <- ZioHttpSecurity.verifyCsrf(config, token, cookie).mapError(_.toString)
+      route       <- ZIO.fromOption(routes.find(_.matches(url))).orElseFail("unknown route")
+      _ <- ZIO.fail("session identity differs").unless(session.sessionIdentity == route.sessionName)
+      _ <- ZIO
+             .fail("route claim marker differs").unless(
+               session.hasRouteClaims == session.routeMountClaims.nonEmpty
+             )
+      _ <- ZIO
+             .fail("source route mount claims require a fresh HTTP render").when(
+               session.hasRouteClaims
+             )
+      _ <- ZIO
+             .fail("destination route mount claims require a fresh HTTP render").when(
+               route.hasRouteMountAspect
+             )
+      _ <- ZIO.fail("missing root layout identity").when(session.rootLayoutKey.isEmpty)
+    yield Admitted(route, url, session)
+    checked
+  end admitRedirect
 end ZioHttpAdmission

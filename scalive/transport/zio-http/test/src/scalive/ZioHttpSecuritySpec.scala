@@ -72,7 +72,8 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
                     "root:v2",
                     Vector("session-claim"),
                     Vector("route-claim"),
-                    hasRouteClaims = true
+                    hasRouteClaims = true,
+                    initialFlash = Map("notice" -> "saved")
                   )
         claims <- ZioHttpSecurity.verifyStatic(config(), token)
       yield assertTrue(
@@ -86,8 +87,28 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
           sessionMountClaims = Vector("session-claim"),
           routeMountClaims = Vector("route-claim"),
           hasRouteClaims = true,
-          issuedAtEpochSecond = now
+          issuedAtEpochSecond = now,
+          initialFlash = Map("notice" -> "saved")
         )
+      )
+    },
+    test("flash tokens are purpose-bound, omit empty values, and expire after sixty seconds") {
+      for
+        empty <- ZioHttpSecurity.issueFlash(config(), Map.empty)
+        token <- ZioHttpSecurity.issueFlash(config(), Map("notice" -> "saved")).someOrFail(
+                   AssertionError("non-empty flash did not produce a token")
+                 )
+        values <- ZioHttpSecurity.verifyFlash(config(), token)
+        wrongPurpose <- ZioHttpSecurity.verifySession(config(), token).either
+        _             <- TestClock.adjust(61.seconds)
+        expired       <- ZioHttpSecurity.verifyFlash(config(), token).either
+      yield assertTrue(
+        empty.isEmpty,
+        values == Map("notice" -> "saved"),
+        wrongPurpose == Left(
+          ZioHttpSecurity.Error.PurposeMismatch(expected = "session", actual = "flash")
+        ),
+        expired == Left(ZioHttpSecurity.Error.Expired)
       )
     },
     test("CSRF cookie and render tokens hide the shared secret and verify exactly") {

@@ -23,7 +23,9 @@ export default {
     screenshot: "only-on-failure"
   },
   webServer: {
-    command: "SCALIVE_SERVER_PORT=4004 mill -i e2eApp.run",
+    command:
+      process.env.SCALIVE_UPSTREAM_SERVER_COMMAND ||
+      "SCALIVE_SERVER_PORT=4004 mill -i e2eApp.run",
     cwd: repoRoot,
     url: "http://localhost:4004/health",
     reuseExistingServer: !process.env.CI,

@@ -8,6 +8,7 @@ import zio.Cause
 import zio.Exit
 import zio.Promise
 import zio.Queue
+import zio.Ref
 import zio.Scope
 import zio.Task
 import zio.UIO
@@ -27,6 +28,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   renderProgram: RenderProgram[Model, Msg],
   outbound: OutboundReservations[SessionOutput],
   mailbox: Queue[SessionKernel.Envelope[Msg, Model]],
+  regularQueued: Ref[Int],
+  patchAcknowledgementQueued: Ref[Boolean],
   terminal: Promise[Nothing, SessionState[Msg, Model]],
   sessionScope: Scope.Closeable,
   activeOwner: SessionKernel.ActiveRenderOwner,
@@ -52,15 +55,31 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     ZIO.uninterruptible {
       for
         response <- Promise.make[SessionRejection, TurnResult]
-        accepted <- offer(Envelope.Execute(id, command, response))
+        accepted <- offerRegular(Envelope.Execute(id, command, response))
         await    <- if accepted then ZIO.succeed(awaitResponse(response)) else rejectOffer
+      yield await
+    }
+
+  /** Uses the mailbox slot reserved for the protocol adapter's server-patch acknowledgement. */
+  private[scalive] def enqueuePatchAcknowledgement(
+    id: CommandId,
+    actualEpoch: Epoch,
+    destination: URL
+  ): ZIO[Any, SessionRejection, ZIO[Any, SessionRejection, TurnResult]] =
+    ZIO.uninterruptible {
+      for
+        response <- Promise.make[SessionRejection, TurnResult]
+        accepted <- offerPatchAcknowledgement(
+                      Envelope.PatchAcknowledgement(id, actualEpoch, destination, response)
+                    )
+        await <- if accepted then ZIO.succeed(awaitResponse(response)) else rejectOffer
       yield await
     }
 
   def inspect: ZIO[Any, SessionRejection, Committed[Msg, Model]] =
     for
       response <- Promise.make[SessionRejection, Committed[Msg, Model]]
-      accepted <- offer(Envelope.Inspect(response))
+      accepted <- offerRegular(Envelope.Inspect(response))
       result   <- if accepted then awaitResponse(response) else rejectOffer
     yield result
 
@@ -69,19 +88,57 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   def close: UIO[Unit] =
     shutdown.succeed(()).unit *> terminal.await.unit *> sessionScope.close(Exit.unit)
 
-  private def offer(envelope: Envelope[Msg, Model]): UIO[Boolean] =
-    terminal.poll.flatMap {
-      case Some(_) => ZIO.succeed(false)
-      case None    =>
-        mailbox
-          .offer(envelope).foldCauseZIO(
-            cause =>
-              terminal.poll.flatMap {
-                case Some(_) => ZIO.succeed(false)
-                case None    => ZIO.failCause(cause)
-              },
-            ZIO.succeed(_)
-          )
+  private def offerRegular(envelope: Envelope[Msg, Model]): UIO[Boolean] =
+    ZIO.uninterruptible {
+      terminal.poll.flatMap {
+        case Some(_) => ZIO.succeed(false)
+        case None    =>
+          regularQueued
+            .modify { queued =>
+              if queued >= config.mailboxCapacity then false -> queued
+              else true                                      -> (queued + 1)
+            }.flatMap {
+              case false => ZIO.succeed(false)
+              case true  =>
+                offerMailbox(envelope)
+                  .tap(accepted => ZIO.unless(accepted)(regularQueued.update(_ - 1)))
+            }
+      }
+    }
+
+  private def offerPatchAcknowledgement(envelope: Envelope[Msg, Model]): UIO[Boolean] =
+    ZIO.uninterruptible {
+      terminal.poll.flatMap {
+        case Some(_) => ZIO.succeed(false)
+        case None    =>
+          patchAcknowledgementQueued
+            .modify {
+              case true  => false -> true
+              case false => true  -> true
+            }.flatMap {
+              case false => ZIO.succeed(false)
+              case true  =>
+                offerMailbox(envelope)
+                  .tap(accepted => ZIO.unless(accepted)(patchAcknowledgementQueued.set(false)))
+            }
+      }
+    }
+
+  private def offerMailbox(envelope: Envelope[Msg, Model]): UIO[Boolean] =
+    mailbox
+      .offer(envelope).foldCauseZIO(
+        cause =>
+          terminal.poll.flatMap {
+            case Some(_) => ZIO.succeed(false)
+            case None    => ZIO.failCause(cause)
+          },
+        ZIO.succeed(_)
+      )
+
+  private def takeEnvelope: UIO[Envelope[Msg, Model]] =
+    controlled(mailbox.take).tap {
+      case Envelope.PatchAcknowledgement(_, _, _, _) => patchAcknowledgementQueued.set(false)
+      case _                                         => regularQueued.update(_ - 1)
     }
 
   private def controlled[E, A](effect: ZIO[Any, E, A]): ZIO[Any, E, A] =
@@ -107,21 +164,37 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private[kernel] def run(ready: Promise[SessionFailure, Unit]): UIO[Unit] =
     val bootstrapping: SessionState[Msg, Model] = SessionState.Bootstrapping(epoch)
-    val bootstrap                               = runTurn(
-      previous = None,
-      draft = phase(SessionStage.BootstrapHandler)(logic.bootstrap),
-      work = ImmutableQueue.empty,
-      command = None
-    )
+    val bootstrap = phase(SessionStage.BootstrapHandler)(logic.bootstrap).flatMap { draft =>
+      draft.navigation match
+        case Some(request) if request.kind.isPatch =>
+          ZIO.fail(
+            SessionFailure.StageFailed(
+              SessionStage.Validation,
+              s"patch navigation ${request.kind} is unavailable during bootstrap"
+            )
+          )
+        case Some(_) =>
+          publishTerminalNavigation(draft, None, existingContinuations = 0).map(Right(_))
+        case None =>
+          runTurn(
+            previous = None,
+            draft = ZIO.succeed(draft),
+            work = ImmutableQueue.empty,
+            command = None
+          ).map(Left(_))
+    }
 
     controlled(bootstrap).exit
       .flatMap {
-        case Exit.Success(outcome) =>
+        case Exit.Success(Left(outcome)) =>
           ready.succeed(()).unit *>
             loop(
               SessionState.Active(epoch, outcome.committed),
               outcome.work
             )
+        case Exit.Success(Right((_, navigation))) =>
+          ready.succeed(()).unit *>
+            terminal.succeed(SessionState.Redirected(epoch, navigation)).unit
         case Exit.Failure(cause) if cause.isInterruptedOnly =>
           ready.fail(SessionFailure.Interrupted()).unit
         case Exit.Failure(cause) =>
@@ -130,6 +203,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             crash(bootstrapping, failure)
       }.onInterrupt(ready.fail(SessionFailure.Interrupted()).unit)
       .ensuring(cleanupSession)
+  end run
 
   private def loop(
     state: SessionState[Msg, Model],
@@ -151,11 +225,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       case Some((Work.Correlated(deferred), remaining)) =>
         executeEnvelope(state, remaining, deferred.command, deferred.input, deferred.response)
       case None =>
-        controlled(mailbox.take).flatMap {
+        takeEnvelope.flatMap {
           case Envelope.Inspect(response) =>
             response.succeed(state.committed).unit *> loop(state, work)
           case Envelope.Execute(commandId, command, response) =>
             executeEnvelope(state, work, commandId, command, response)
+          case Envelope.PatchAcknowledgement(_, _, _, response) =>
+            response.fail(SessionRejection.UnexpectedPatch).unit *> loop(state, work)
         }
 
   private def executeEnvelope(
@@ -255,7 +331,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       remaining = JavaDuration.between(now, pending.deadline)
       envelope <- if remaining.isZero || remaining.isNegative then ZIO.succeed(None)
                   else
-                    controlled(mailbox.take)
+                    takeEnvelope
                       .map(Some(_)).raceFirst(
                         zio.Clock.sleep(zio.Duration.fromJava(remaining)).as(None)
                       )
@@ -278,6 +354,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 loop(state, work)
             else acknowledgePatch(state, work, commandId, response)
           case _ => deferCommand(state, work, commandId, command, response)
+      case Some(Envelope.PatchAcknowledgement(commandId, actualEpoch, destination, response)) =>
+        if actualEpoch != state.epoch then
+          response.fail(SessionRejection.InvalidEpoch(state.epoch, actualEpoch)).unit *>
+            loop(state, work)
+        else if destination != pending.destination then
+          response
+            .fail(SessionRejection.MismatchedPatch(pending.destination, destination)).unit *>
+            loop(state, work)
+        else acknowledgePatch(state, work, commandId, response)
     }
   end navigatingLoop
 
@@ -540,15 +625,21 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     deferred: Vector[DeferredSessionCommand[Msg, Model]]
   ): UIO[Unit] =
     val request = draft.navigation.get
+    if request.kind.isPatch then
+      stagePatchNavigation(committed, draft, work, response, redirectCount, deferred)
+    else stageTerminalNavigation(committed, draft, work, response, deferred)
+
+  private def stagePatchNavigation(
+    committed: Committed[Msg, Model],
+    draft: TurnDraft[Msg, Model],
+    work: ImmutableQueue[Work[Msg, Model]],
+    response: Option[(CommandId, Promise[SessionRejection, TurnResult])],
+    redirectCount: Int,
+    deferred: Vector[DeferredSessionCommand[Msg, Model]]
+  ): UIO[Unit] =
+    val request = draft.navigation.get
     val failure =
-      if !request.kind.isPatch then
-        Some(
-          SessionFailure.StageFailed(
-            SessionStage.Validation,
-            s"unsupported navigation kind ${request.kind}"
-          )
-        )
-      else if redirectCount > config.navigationRedirectLimit then
+      if redirectCount > config.navigationRedirectLimit then
         Some(SessionFailure.NavigationRedirectOverflow(config.navigationRedirectLimit))
       else None
 
@@ -617,7 +708,80 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               failDeferred(deferred, SessionRejection.SessionFailed(value))
         }
     end match
-  end stageNavigation
+  end stagePatchNavigation
+
+  private def stageTerminalNavigation(
+    committed: Committed[Msg, Model],
+    draft: TurnDraft[Msg, Model],
+    work: ImmutableQueue[Work[Msg, Model]],
+    response: Option[(CommandId, Promise[SessionRejection, TurnResult])],
+    deferred: Vector[DeferredSessionCommand[Msg, Model]]
+  ): UIO[Unit] =
+    controlled(
+      publishTerminalNavigation(
+        draft,
+        response.map(_._1),
+        work.size
+      )
+    ).exit.flatMap {
+      case Exit.Success((turnId, navigation)) =>
+        val complete = response.fold[UIO[Unit]](ZIO.unit) { case (command, promise) =>
+          promise
+            .succeed(TurnResult(command, turnId, committed.revision, RenderDelta.Empty)).unit
+        }
+        val rejection = SessionRejection.Terminal("redirected")
+        complete *>
+          failDeferred(deferred, rejection) *>
+          failWork(work, rejection) *>
+          terminal.succeed(SessionState.Redirected(epoch, navigation)).unit
+      case Exit.Failure(cause) if cause.isInterruptedOnly =>
+        val rejection = SessionRejection.Terminal("closed")
+        response.fold[UIO[Unit]](ZIO.unit)(_._2.fail(rejection).unit) *>
+          failDeferred(deferred, rejection) *>
+          failWork(work, rejection)
+      case Exit.Failure(cause) =>
+        val failure = failureFrom(cause, SessionStage.OutputReservation)
+        failActiveTurn(SessionState.Active(epoch, committed), response, failure) *>
+          failDeferred(deferred, SessionRejection.SessionFailed(failure)) *>
+          failWork(work, SessionRejection.SessionFailed(failure))
+    }
+  end stageTerminalNavigation
+
+  private def publishTerminalNavigation(
+    draft: TurnDraft[Msg, Model],
+    command: Option[CommandId],
+    existingContinuations: Int
+  ): ZIO[Any, SessionFailure, (TurnId, NavigationOutput)] =
+    val request = draft.navigation.get
+    ZIO.uninterruptibleMask { restore =>
+      for
+        reservation <- restore(reservationPhase(outbound.reserve))
+        result      <- (for
+                    _ <- restore(
+                           validateContinuations(existingContinuations, draft.continuations.size)
+                         )
+                    navigationId <- restore(identity(NavigationId.fresh()))
+                    turnId       <- restore(identity(TurnId.fresh()))
+                    navigation = NavigationOutput(
+                                   navigationId,
+                                   request.destination,
+                                   request.kind,
+                                   request.flash
+                                 )
+                    _ <- reservation.publish(
+                           OutboundBatch.single(
+                             SessionOutput(
+                               command,
+                               RenderDelta.Empty,
+                               Some(navigation),
+                               draft.effects
+                             )
+                           )
+                         )
+                  yield turnId -> navigation).onError(_ => reservation.release)
+      yield result
+    }
+  end publishTerminalNavigation
 
   private def navigationCrash(
     state: SessionState.Navigating[Msg, Model],
@@ -735,8 +899,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       rejection = SessionRejection.Terminal(stateName(terminalState))
       pending <- mailbox.takeAll
       _       <- ZIO.foreachDiscard(pending) {
-             case Envelope.Execute(_, _, response) => response.fail(rejection).unit
-             case Envelope.Inspect(response)       => response.fail(rejection).unit
+             case Envelope.Execute(_, _, response)                 => response.fail(rejection).unit
+             case Envelope.Inspect(response)                       => response.fail(rejection).unit
+             case Envelope.PatchAcknowledgement(_, _, _, response) =>
+               response.fail(rejection).unit
            }
       _ <- mailbox.shutdown
     yield ()
@@ -747,6 +913,11 @@ private[scalive] object SessionKernel:
     case Execute(
       id: CommandId,
       command: SessionCommand[Msg],
+      response: Promise[SessionRejection, TurnResult])
+    case PatchAcknowledgement(
+      id: CommandId,
+      epoch: Epoch,
+      destination: URL,
       response: Promise[SessionRejection, TurnResult])
     case Inspect(response: Promise[SessionRejection, Committed[Msg, Model]])
 
@@ -789,12 +960,14 @@ private[scalive] object SessionKernel:
                        .fromEither(LifecycleId.fresh()).mapError(error =>
                          SessionFailure.StageFailed(SessionStage.Identity, error.toString)
                        )
-        sessionScope <- ZIO.acquireRelease(Scope.make)(_.close(Exit.unit))
-        mailbox      <- Queue.dropping[Envelope[Msg, Model]](config.mailboxCapacity)
-        terminal     <- Promise.make[Nothing, SessionState[Msg, Model]]
-        ready        <- Promise.make[SessionFailure, Unit]
-        shutdown     <- Promise.make[Nothing, Unit]
-        activeOwner  <- ActiveRenderOwner.make
+        sessionScope  <- ZIO.acquireRelease(Scope.make)(_.close(Exit.unit))
+        mailbox       <- Queue.dropping[Envelope[Msg, Model]](config.mailboxCapacity + 1)
+        regularQueued <- Ref.make(0)
+        patchAcknowledgementQueued <- Ref.make(false)
+        terminal                   <- Promise.make[Nothing, SessionState[Msg, Model]]
+        ready                      <- Promise.make[SessionFailure, Unit]
+        shutdown                   <- Promise.make[Nothing, Unit]
+        activeOwner                <- ActiveRenderOwner.make
         kernel = SessionKernel(
                    lifecycle,
                    Epoch.initial,
@@ -803,6 +976,8 @@ private[scalive] object SessionKernel:
                    renderProgram,
                    outbound,
                    mailbox,
+                   regularQueued,
+                   patchAcknowledgementQueued,
                    terminal,
                    sessionScope,
                    activeOwner,
@@ -828,6 +1003,7 @@ private[scalive] object SessionKernel:
     case SessionState.Bootstrapping(_) => "bootstrapping"
     case SessionState.Active(_, _)     => "active"
     case SessionState.Navigating(_, _) => "navigating"
+    case SessionState.Redirected(_, _) => "redirected"
     case SessionState.Closing(_, _)    => "closing"
     case SessionState.Crashed(_, _)    => "crashed"
     case SessionState.Closed(_)        => "closed"

@@ -2,6 +2,7 @@ package scalive.runtime.connection
 
 import zio.json.ast.Json
 
+import scalive.FlashKind
 import scalive.render.RenderDelta
 import scalive.runtime.contracts.CommandId
 import scalive.runtime.kernel.NavigationOutput
@@ -11,7 +12,8 @@ import scalive.runtime.kernel.SessionRejection
 
 final private[scalive] case class RootConnectionMetadata(
   staticChanged: Boolean,
-  connectParams: Map[String, Json])
+  connectParams: Map[String, Json],
+  initialFlash: Map[FlashKind, String] = Map.empty)
 
 final private[scalive] case class ConnectionConfig private (
   ingressCapacity: Int,

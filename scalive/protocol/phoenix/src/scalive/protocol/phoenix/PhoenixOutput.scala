@@ -80,6 +80,12 @@ private[scalive] object PhoenixOutput:
   def leave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String): PhoenixEnvelope =
     PhoenixEnvelope(joinRef, ref, topic, "phx_reply", ok(Json.Obj.empty))
 
+  def close(joinRef: PhoenixRef, topic: String): PhoenixEnvelope =
+    PhoenixEnvelope(joinRef, PhoenixRef.Null, topic, "phx_close", Json.Obj.empty)
+
+  def channelError(joinRef: PhoenixRef, topic: String): PhoenixEnvelope =
+    PhoenixEnvelope(joinRef, PhoenixRef.Null, topic, "phx_error", Json.Obj.empty)
+
   def livePatch(
     joinRef: PhoenixRef,
     topic: String,
@@ -91,6 +97,129 @@ private[scalive] object PhoenixOutput:
       "kind" -> Json.Str(kind)
     )
     PhoenixEnvelope(joinRef, PhoenixRef.Null, topic, "live_patch", payload)
+
+  def liveRedirect(
+    joinRef: PhoenixRef,
+    topic: String,
+    to: String,
+    kind: String,
+    flash: Option[String] = None
+  ): PhoenixEnvelope =
+    PhoenixEnvelope(
+      joinRef,
+      PhoenixRef.Null,
+      topic,
+      "live_redirect",
+      withFlash(Json.Obj("to" -> Json.Str(to), "kind" -> Json.Str(kind)), flash)
+    )
+
+  def redirect(
+    joinRef: PhoenixRef,
+    topic: String,
+    to: String,
+    flash: Option[String] = None
+  ): PhoenixEnvelope =
+    PhoenixEnvelope(
+      joinRef,
+      PhoenixRef.Null,
+      topic,
+      "redirect",
+      withFlash(Json.Obj("to" -> Json.Str(to)), flash)
+    )
+
+  def eventLiveRedirect(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    to: String,
+    kind: String,
+    flash: Option[String] = None,
+    diff: Option[Json.Obj] = None
+  ): PhoenixEnvelope =
+    navigationReply(
+      joinRef,
+      ref,
+      topic,
+      "ok",
+      "live_redirect",
+      withFlash(Json.Obj("to" -> Json.Str(to), "kind" -> Json.Str(kind)), flash),
+      diff
+    )
+
+  def eventRedirect(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    to: String,
+    flash: Option[String] = None,
+    diff: Option[Json.Obj] = None
+  ): PhoenixEnvelope =
+    navigationReply(
+      joinRef,
+      ref,
+      topic,
+      "ok",
+      "redirect",
+      withFlash(Json.Obj("to" -> Json.Str(to)), flash),
+      diff
+    )
+
+  def joinErrorLiveRedirect(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    to: String,
+    kind: String,
+    flash: Option[String] = None
+  ): PhoenixEnvelope =
+    navigationReply(
+      joinRef,
+      ref,
+      topic,
+      "error",
+      "live_redirect",
+      withFlash(Json.Obj("to" -> Json.Str(to), "kind" -> Json.Str(kind)), flash),
+      None
+    )
+
+  def joinErrorRedirect(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    to: String,
+    flash: Option[String] = None
+  ): PhoenixEnvelope =
+    navigationReply(
+      joinRef,
+      ref,
+      topic,
+      "error",
+      "redirect",
+      withFlash(Json.Obj("to" -> Json.Str(to)), flash),
+      None
+    )
+
+  private def withFlash(payload: Json.Obj, flash: Option[String]): Json.Obj =
+    flash.fold(payload)(value => payload.add("flash", Json.Str(value)))
+
+  private def navigationReply(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    status: String,
+    navigation: String,
+    payload: Json.Obj,
+    diff: Option[Json.Obj]
+  ): PhoenixEnvelope =
+    val navigationResponse = Json.Obj(navigation -> payload)
+    val response = diff.fold(navigationResponse)(value => navigationResponse.add("diff", value))
+    PhoenixEnvelope(
+      joinRef,
+      ref,
+      topic,
+      "phx_reply",
+      Json.Obj("status" -> Json.Str(status), "response" -> response)
+    )
 
   private def ok(response: Json.Obj): Json.Obj =
     Json.Obj("status" -> Json.Str("ok"), "response" -> response)

@@ -421,6 +421,18 @@ private[scalive] object RootMountContext:
       DeferredFlash
     )
 
+  private[connection] def disconnected[Msg, Model](
+    currentUrl: URL,
+    journal: RootTurnJournal
+  ): MountContext[Msg, Model] =
+    RootMountContext(
+      Connection.Disconnected,
+      new RootMountNavigation(currentUrl, journal),
+      JournaledRootHooks(journal),
+      JournaledFlash(journal)
+    )
+end RootMountContext
+
 final private[connection] class RootMessageContext[Msg, Model](
   metadata: RootConnectionMetadata,
   currentUrl: URL,
@@ -462,12 +474,16 @@ final private[connection] class RootParamsContext[Msg, Model](
 
 final private[connection] class RootAfterRenderContext[Msg, Model](
   metadata: RootConnectionMetadata,
-  journal: RootTurnJournal)
+  journal: RootTurnJournal,
+  connected: Boolean = true)
     extends AfterRenderContext[Msg, Model]:
-  val connection: Connection[RootAfterRenderConnected] = Connection.Connected(
-    new RootAfterRenderConnected:
-      val staticChanged = metadata.staticChanged
-      val connectParams = metadata.connectParams
-      val client        = JournaledClient(journal)
-  )
+  val connection: Connection[RootAfterRenderConnected] =
+    if connected then
+      Connection.Connected(
+        new RootAfterRenderConnected:
+          val staticChanged = metadata.staticChanged
+          val connectParams = metadata.connectParams
+          val client        = JournaledClient(journal)
+      )
+    else Connection.Disconnected
   val hooks: RootHooks[Msg, Model] = JournaledRootHooks(journal)

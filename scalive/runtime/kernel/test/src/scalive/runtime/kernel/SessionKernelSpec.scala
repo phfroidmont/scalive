@@ -54,6 +54,13 @@ object SessionKernelSpec extends ZIOSpecDefault:
   private def patchDraft(model: Int, destination: URL = firstUrl): TurnDraft[Int, Int] =
     TurnDraft(model, navigation = Some(NavigationRequest(destination, NavigationKind.PushPatch)))
 
+  private def navigationDraft(
+    model: Int,
+    kind: NavigationKind,
+    destination: URL = firstUrl
+  ): TurnDraft[Int, Int] =
+    TurnDraft(model, navigation = Some(NavigationRequest(destination, kind)))
+
   override def spec = suite("SessionKernelSpec")(
     test("bootstrap is uncorrelated and a typed message publishes its exact command id") {
       ZIO.scoped {
@@ -416,6 +423,79 @@ object SessionKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a matching internal patch remains admissible when the regular mailbox is full") {
+      ZIO.scoped {
+        for
+          entered             <- Promise.make[Nothing, Unit]
+          release             <- Promise.make[Nothing, Unit]
+          program             <- textProgram
+          (outbound, batches) <- recordingOutbound
+          tiny = SessionConfig.make(1, 4).toOption.get
+          logic = standardLogic().copy(
+                    handle = (model, message) =>
+                      if message == 1 then
+                        entered.succeed(()).unit *> release.await.as(patchDraft(model + message))
+                      else ZIO.succeed(TurnDraft(model + message)),
+                    handleParams = (model, url) =>
+                      ZIO.succeed(TurnDraft(model * 10, url = Some(url)))
+                  )
+          kernel <- SessionKernel.start(tiny, logic, program, outbound)
+          first  <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).fork
+          _      <- entered.await
+          queuedId = CommandId.fresh().toOption.get
+          queued <- kernel.submit(queuedId, SessionCommand.Message(kernel.epoch, 2)).fork
+          _      <- ZIO.yieldNow
+          patchId = CommandId.fresh().toOption.get
+          patch <- kernel
+                     .enqueuePatchAcknowledgement(patchId, kernel.epoch, firstUrl).flatten.fork
+          saturated <- kernel.submit(SessionCommand.Message(kernel.epoch, 3)).either
+          _         <- release.succeed(())
+          _         <- first.join
+          patched   <- patch.join
+          replayed  <- queued.join
+          committed <- kernel.inspect
+          output    <- batches.get
+        yield assertTrue(
+          saturated == Left(SessionRejection.MailboxSaturated(1)),
+          patched.command == patchId,
+          replayed.command == queuedId,
+          committed.model == 12,
+          committed.url == firstUrl,
+          output.flatMap(_.items).flatMap(_.command).takeRight(2) == Vector(patchId, queuedId)
+        )
+      }
+    },
+    test("a delayed internal patch cannot commit matching params twice") {
+      ZIO.scoped {
+        for
+          paramsCalls         <- Ref.make(0)
+          program             <- textProgram
+          (outbound, batches) <- recordingOutbound
+          logic = standardLogic().copy(
+                    handle = (model, message) => ZIO.succeed(patchDraft(model + message)),
+                    handleParams = (model, url) =>
+                      paramsCalls.update(_ + 1).as(TurnDraft(model * 10, url = Some(url)))
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          patchId = CommandId.fresh().toOption.get
+          patch <- kernel.enqueue(patchId, SessionCommand.ParamsPatch(kernel.epoch, firstUrl))
+          internalId = CommandId.fresh().toOption.get
+          internal <- kernel.enqueuePatchAcknowledgement(internalId, kernel.epoch, firstUrl)
+          patched  <- patch
+          duplicate <- internal.either
+          committed <- kernel.inspect
+          calls     <- paramsCalls.get
+          output    <- batches.get
+        yield assertTrue(
+          patched.command == patchId,
+          duplicate == Left(SessionRejection.UnexpectedPatch),
+          committed.model == 10,
+          calls == 1,
+          output.flatMap(_.items).flatMap(_.command).takeRight(1) == Vector(patchId)
+        )
+      }
+    },
     test("a mismatched patch preserves pending navigation") {
       ZIO.scoped {
         for
@@ -553,6 +633,95 @@ object SessionKernelSpec extends ZIOSpecDefault:
             case _ => false
           },
           state.isInstanceOf[SessionState.Crashed[?, ?]]
+        )
+      }
+    },
+    test("live navigation and redirects publish once and terminate without pending patch state") {
+      ZIO.foreach(
+        Vector(
+          NavigationKind.PushNavigate,
+          NavigationKind.ReplaceNavigate,
+          NavigationKind.Redirect
+        )
+      ) { kind =>
+        ZIO.scoped {
+          for
+            program             <- textProgram
+            (outbound, batches) <- recordingOutbound
+            logic = standardLogic(4).copy(handle = (model, message) =>
+                      ZIO.succeed(navigationDraft(model + message, kind))
+                    )
+            kernel  <- SessionKernel.start(config, logic, program, outbound)
+            command  = CommandId.fresh().toOption.get
+            result  <- kernel.submit(command, SessionCommand.Message(kernel.epoch, 2))
+            terminal <- kernel.awaitTermination
+            rejected <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
+            published <- batches.get
+            navigations = published.flatMap(_.items).flatMap(_.navigation)
+          yield assertTrue(
+            result.command == command,
+            result.delta == RenderDelta.Empty,
+            navigations.map(_.kind) == Vector(kind),
+            navigations.map(_.destination) == Vector(firstUrl),
+            terminal match
+              case SessionState.Redirected(_, output) => output == navigations.head
+              case _                                  => false,
+            rejected == Left(SessionRejection.Terminal("redirected"))
+          )
+        }
+      }.map(_.reduce(_ && _))
+    },
+    test("connected bootstrap navigation publishes no render and terminates") {
+      ZIO.scoped {
+        for
+          program             <- textProgram
+          (outbound, batches) <- recordingOutbound
+          logic = standardLogic().copy(
+                    bootstrap = ZIO.succeed(
+                      navigationDraft(7, NavigationKind.PushNavigate, secondUrl)
+                    )
+                  )
+          kernel    <- SessionKernel.start(config, logic, program, outbound)
+          terminal  <- kernel.awaitTermination
+          published <- batches.get
+          output     = published.flatMap(_.items).head
+        yield assertTrue(
+          output.command.isEmpty,
+          output.delta == RenderDelta.Empty,
+          output.navigation.exists(navigation =>
+            navigation.kind == NavigationKind.PushNavigate &&
+              navigation.destination == secondUrl
+          ),
+          terminal match
+            case SessionState.Redirected(_, navigation) => output.navigation.contains(navigation)
+            case _                                       => false
+        )
+      }
+    },
+    test("terminal navigation during patch acknowledgement rejects deferred commands exactly") {
+      ZIO.scoped {
+        for
+          program             <- textProgram
+          (outbound, batches) <- recordingOutbound
+          logic = standardLogic().copy(
+                    handle = (model, message) => ZIO.succeed(patchDraft(model + message)),
+                    handleParams = (model, _) =>
+                      ZIO.succeed(navigationDraft(model + 1, NavigationKind.Redirect, secondUrl))
+                  )
+          kernel   <- SessionKernel.start(config, logic, program, outbound)
+          _        <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          deferred <- kernel.submit(SessionCommand.Message(kernel.epoch, 2)).either.fork
+          _        <- kernel.inspect
+          patch    <- kernel.submit(SessionCommand.ParamsPatch(kernel.epoch, firstUrl))
+          result   <- deferred.join
+          terminal <- kernel.awaitTermination
+          output   <- batches.get
+        yield assertTrue(
+          patch.delta == RenderDelta.Empty,
+          result == Left(SessionRejection.Terminal("redirected")),
+          output.flatMap(_.items).flatMap(_.navigation).map(_.kind) ==
+            Vector(NavigationKind.PushPatch, NavigationKind.Redirect),
+          terminal.isInstanceOf[SessionState.Redirected[?, ?]]
         )
       }
     },

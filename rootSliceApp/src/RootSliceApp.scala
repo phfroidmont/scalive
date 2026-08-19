@@ -23,8 +23,121 @@ object RootSliceApp extends ZIOAppDefault:
       .flatMap(_.toIntOption)
       .getOrElse(defaultPort)
 
-  private val application = Live.router(
-    live -> RootSliceLiveView(mountSequence)
+  private val navigationA         = live / "nav" / "a"
+  private val navigationB         = live / "nav" / "b"
+  private val navigationC         = live / "nav" / "c"
+  private val navigationD         = live / "nav" / "d"
+  private val upstreamNavigationA = live / "navigation" / "a"
+  private val upstreamNavigationB = live / "navigation" / "b"
+  private val upstreamStream      = live / "stream"
+  private val redirectLoop        = (live / "navigation" / "redirectloop").paramsDecodeOnly(
+    LiveParamsDecoder.custom[Unit, Boolean]((_, url) =>
+      Right(url.queryParam("loop").contains("true"))
+    )
+  )
+  private val issue3686A = live / "issues" / "3686" / "a"
+  private val issue3686B = live / "issues" / "3686" / "b"
+  private val issue3686C = live / "issues" / "3686" / "c"
+
+  private val rootOne = LiveRootLayout[Any, Any]("root-one")([Msg] =>
+    (content, _, _) =>
+      htmlRootTag(
+        headTag(),
+        bodyTag(idAttr := "root-one", content, scriptTag(src := "/app.js"))
+      )
+  )
+  private val rootTwo = LiveRootLayout[Any, Any]("root-two")([Msg] =>
+    (content, _, _) =>
+      htmlRootTag(
+        headTag(),
+        bodyTag(idAttr := "root-two", content, scriptTag(src := "/app.js"))
+      )
+  )
+
+  private val application = Live.router.withRootLayout(rootOne)(
+    live -> RootSliceLiveView(mountSequence),
+    Live.session("navigation")(
+      navigationA -> NavigationLiveView(
+        "a",
+        mountSequence,
+        navigationA.location,
+        navigationB.location,
+        navigationC.location,
+        navigationD.location
+      ),
+      navigationB -> NavigationLiveView(
+        "b",
+        mountSequence,
+        navigationA.location,
+        navigationB.location,
+        navigationC.location,
+        navigationD.location
+      ),
+      navigationD.withRootLayout(rootTwo) -> NavigationLiveView(
+        "d",
+        mountSequence,
+        navigationA.location,
+        navigationB.location,
+        navigationC.location,
+        navigationD.location
+      )
+    ),
+    Live
+      .session("other").withRootLayout(rootTwo)(
+        navigationC -> NavigationLiveView(
+          "c",
+          mountSequence,
+          navigationA.location,
+          navigationB.location,
+          navigationC.location,
+          navigationD.location
+        )
+      ),
+    Live.session("upstream-navigation")(
+      upstreamNavigationA -> UpstreamNavigationLiveView(
+        "a",
+        upstreamNavigationA.location,
+        upstreamNavigationB.location,
+        upstreamStream.location
+      ),
+      upstreamNavigationB -> UpstreamNavigationLiveView(
+        "b",
+        upstreamNavigationA.location,
+        upstreamNavigationB.location,
+        upstreamStream.location
+      ),
+      redirectLoop -> RedirectLoopLiveView()
+    ),
+    Live.session("upstream-other")(
+      upstreamStream -> UpstreamNavigationLiveView(
+        "stream",
+        upstreamNavigationA.location,
+        upstreamNavigationB.location,
+        upstreamStream.location
+      )
+    ),
+    Live.session("issue-3686")(
+      issue3686A -> Issue3686LiveView(
+        "A",
+        issue3686A.location,
+        issue3686B.location,
+        issue3686C.location
+      ),
+      issue3686B -> Issue3686LiveView(
+        "B",
+        issue3686A.location,
+        issue3686B.location,
+        issue3686C.location
+      )
+    ),
+    Live.session("issue-3686-other")(
+      issue3686C -> Issue3686LiveView(
+        "C",
+        issue3686A.location,
+        issue3686B.location,
+        issue3686C.location
+      )
+    )
   )
 
   private val supportRoutes = Routes(
@@ -73,9 +186,135 @@ final class RootSliceLiveView(mountSequence: AtomicInteger)
         ariaLabel := "Counter value",
         model.map(_.toString)
       ),
-      button(on.click(Msg), "Increment"),
-      scriptTag(src := "/app.js")
+      button(on.click(Msg), "Increment")
     )
 
 object RootSliceLiveView:
   case object Msg
+
+final class NavigationLiveView(
+  page: String,
+  mountSequence: AtomicInteger,
+  a: LiveLocation,
+  b: LiveLocation,
+  c: LiveLocation,
+  d: LiveLocation)
+    extends LiveView[NavigationLiveView.Msg, Int]:
+  import NavigationLiveView.*
+
+  def mount(ctx: MountContext) = mountSequence.incrementAndGet()
+
+  def handleMessage(model: Int, ctx: MessageContext) =
+    case Msg.ToB =>
+      ctx.flash.put(Notice, "Flash from A") *>
+        ctx.nav.pushNavigate(b).as(model)
+    case Msg.ToC =>
+      ctx.flash.put(Notice, s"Flash from ${page.toUpperCase}") *>
+        ctx.nav.pushNavigate(c).as(model)
+    case Msg.ToD =>
+      ctx.flash.put(Notice, "Flash from A") *>
+        ctx.nav.pushNavigate(d).as(model)
+    case Msg.RedirectC =>
+      ctx.flash.put(Notice, "Flash from B") *>
+        ctx.nav.redirect(c).as(model)
+    case Msg.ToA =>
+      ctx.flash.put(Notice, "Flash from C") *>
+        ctx.nav.pushNavigate(a).as(model)
+
+  override def view(model: Signal[Int]) =
+    mainTag(
+      idAttr := s"view-$page",
+      h1(s"Navigation ${page.toUpperCase}"),
+      span(idAttr := "mount-id", model.map(_.toString)),
+      div(idAttr  := "flash", flash(Notice)(message => span(message))),
+      page match
+        case "a" =>
+          div(
+            button(on.click(Msg.ToB), "To B"),
+            button(on.click(Msg.ToC), "To C"),
+            button(on.click(Msg.ToD), "To D"),
+            link.pushNavigate(b, "Link to B")
+          )
+        case "b" => button(on.click(Msg.RedirectC), "Redirect to C")
+        case _   => button(on.click(Msg.ToA), "To A")
+    )
+end NavigationLiveView
+
+object NavigationLiveView:
+  private val Notice = FlashKind("notice")
+
+  enum Msg:
+    case ToB, ToC, ToD, RedirectC, ToA
+
+final class UpstreamNavigationLiveView(
+  page: String,
+  a: LiveLocation,
+  b: LiveLocation,
+  stream: LiveLocation)
+    extends LiveView.Eventless[Unit]:
+  def mount(ctx: MountContext) = ()
+
+  def view(model: Signal[Unit]) =
+    mainTag(
+      idAttr := s"upstream-$page",
+      h1(s"Navigation $page"),
+      link.pushNavigate(a, "LiveView A"),
+      link.pushNavigate(b, "LiveView B"),
+      link.pushNavigate(stream, "LiveView (other session)"),
+      if page == "a" then link.pushPatchUnsafe("?patched=true", "Patch this LiveView")
+      else span()
+    )
+
+final class Issue3686LiveView(
+  page: String,
+  a: LiveLocation,
+  b: LiveLocation,
+  c: LiveLocation)
+    extends LiveView[Issue3686LiveView.Msg.type, Unit]:
+  import Issue3686LiveView.*
+
+  def mount(ctx: MountContext) = ()
+
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    case Msg =>
+      page match
+        case "A" => ctx.flash.put(Info, "Flash from A") *> ctx.nav.pushNavigate(b)
+        case "B" => ctx.flash.put(Info, "Flash from B") *> ctx.nav.redirect(c)
+        case _   => ctx.flash.put(Info, "Flash from C") *> ctx.nav.pushNavigate(a)
+
+  def view(model: Signal[Unit]) =
+    val next = page match
+      case "A" => "B"
+      case "B" => "C"
+      case _   => "A"
+    mainTag(
+      h1(page),
+      button(on.click(Msg), s"To $next"),
+      div(idAttr := "flash", "%{}", flash(Info)(message => span(message)))
+    )
+
+object Issue3686LiveView:
+  private val Info = FlashKind("info")
+  case object Msg
+
+final class RedirectLoopLiveView
+    extends LiveView.Routed.Eventless[RedirectLoopLiveView.Model, Boolean]:
+  import RedirectLoopLiveView.*
+
+  def mount(loop: Boolean, ctx: MountContext) =
+    if loop then Model(shouldLoop = false, message = "Too many redirects")
+    else Model(shouldLoop = true, message = "")
+
+  override def handleParams(model: Model, loop: Boolean, url: URL, ctx: ParamsContext) =
+    if loop && model.shouldLoop then ctx.nav.pushPatchUnsafe("?loop=true").as(model)
+    else if loop then model.copy(message = "Too many redirects")
+    else model.copy(shouldLoop = true, message = "")
+
+  def view(model: Signal[Model]) =
+    mainTag(
+      div(idAttr := "message", model.map(_.message)),
+      link.pushPatchUnsafe("?loop=true", "Redirect Loop")
+    )
+
+object RedirectLoopLiveView:
+  final case class Model(shouldLoop: Boolean, message: String)

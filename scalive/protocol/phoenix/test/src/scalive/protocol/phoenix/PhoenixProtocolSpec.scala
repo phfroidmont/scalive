@@ -295,5 +295,115 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
         pushed.ref == PhoenixRef.Null,
         pushed.event == "diff"
       )
+    },
+    test("builds exact uncorrelated non-patch navigation envelopes") {
+      val joinRef = PhoenixRef.Value("4")
+
+      assertTrue(
+        PhoenixOutput.liveRedirect(joinRef, "lv:root", "/next", "push") == PhoenixEnvelope(
+          joinRef,
+          PhoenixRef.Null,
+          "lv:root",
+          "live_redirect",
+          Json.Obj("to" -> Json.Str("/next"), "kind" -> Json.Str("push"))
+        ),
+        PhoenixOutput.redirect(joinRef, "lv:root", "/login", Some("flash-token")) ==
+          PhoenixEnvelope(
+            joinRef,
+            PhoenixRef.Null,
+            "lv:root",
+            "redirect",
+            Json.Obj("to" -> Json.Str("/login"), "flash" -> Json.Str("flash-token"))
+          )
+      )
+    },
+    test("builds the root channel close event used during replacement") {
+      val joinRef = PhoenixRef.Value("4")
+      assertTrue(
+        PhoenixOutput.close(joinRef, "lv:root") == PhoenixEnvelope(
+          joinRef,
+          PhoenixRef.Null,
+          "lv:root",
+          "phx_close",
+          Json.Obj.empty
+        ),
+        PhoenixOutput.channelError(joinRef, "lv:root") == PhoenixEnvelope(
+          joinRef,
+          PhoenixRef.Null,
+          "lv:root",
+          "phx_error",
+          Json.Obj.empty
+        )
+      )
+    },
+    test("builds exact correlated non-patch navigation replies") {
+      val joinRef = PhoenixRef.Value("4")
+      val ref     = PhoenixRef.Value("5")
+      val diff    = Json.Obj("0" -> Json.Str("updated"))
+
+      assertTrue(
+        PhoenixOutput.eventLiveRedirect(
+          joinRef,
+          ref,
+          "lv:root",
+          "/next",
+          "replace",
+          Some("flash-token"),
+          Some(diff)
+        ).payload == Json.Obj(
+          "status" -> Json.Str("ok"),
+          "response" -> Json.Obj(
+            "live_redirect" -> Json.Obj(
+              "to"    -> Json.Str("/next"),
+              "kind"  -> Json.Str("replace"),
+              "flash" -> Json.Str("flash-token")
+            ),
+            "diff" -> diff
+          )
+        ),
+        PhoenixOutput.eventRedirect(joinRef, ref, "lv:root", "/login").payload == Json.Obj(
+          "status" -> Json.Str("ok"),
+          "response" -> Json.Obj(
+            "redirect" -> Json.Obj("to" -> Json.Str("/login"))
+          )
+        )
+      )
+    },
+    test("builds exact join error navigation replies") {
+      val joinRef = PhoenixRef.Value("4")
+      val ref     = PhoenixRef.Value("4")
+
+      assertTrue(
+        PhoenixOutput.joinErrorLiveRedirect(
+          joinRef,
+          ref,
+          "lv:root",
+          "/next",
+          "push"
+        ).payload == Json.Obj(
+          "status" -> Json.Str("error"),
+          "response" -> Json.Obj(
+            "live_redirect" -> Json.Obj(
+              "to"   -> Json.Str("/next"),
+              "kind" -> Json.Str("push")
+            )
+          )
+        ),
+        PhoenixOutput.joinErrorRedirect(
+          joinRef,
+          ref,
+          "lv:root",
+          "/login",
+          Some("flash-token")
+        ).payload == Json.Obj(
+          "status" -> Json.Str("error"),
+          "response" -> Json.Obj(
+            "redirect" -> Json.Obj(
+              "to"    -> Json.Str("/login"),
+              "flash" -> Json.Str("flash-token")
+            )
+          )
+        )
+      )
     }
   )

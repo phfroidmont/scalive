@@ -68,6 +68,35 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("a successful disconnected render consumes signed flash into HTML and root claims") {
+      val notice = FlashKind("notice")
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div(flash(notice)(message => span(message)))
+
+      for
+        token <- ZioHttpSecurity
+                   .issueFlash(config, Map("notice" -> "saved")).someOrFail(
+                     AssertionError("flash token was not issued")
+                   )
+        request = Request.get(URL.root).addCookie(Cookie.Request("__phoenix_flash__", token))
+        response <- run(ZioHttp.routes(scalive.Live.router(scalive.live(View)), config), request)
+        body     <- response.body.asString.orDie
+        claims  <- ZioHttpSecurity.verifySession(
+                     config,
+                     attribute(body, "data-phx-session").get
+                   )
+        consumed = response.headers(Header.SetCookie).map(_.value)
+          .find(_.name == "__phoenix_flash__")
+      yield assertTrue(
+        body.contains("<span>saved</span>"),
+        claims.initialFlash == Map("notice" -> "saved"),
+        consumed.exists(cookie =>
+          cookie.content.isEmpty && cookie.maxAge.contains(zio.Duration.Zero) &&
+            cookie.isHttpOnly && cookie.sameSite.contains(Cookie.SameSite.Lax)
+        )
+      )
+    },
     test("signed bootstrap captures and compares tracked static assets") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
@@ -317,6 +346,89 @@ object ZioHttpSpec extends ZIOSpecDefault:
         wrongPath.isLeft
       )
     },
+    test("redirect admission stays in the registered session and rejects route mount claims") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val routeAspect = LiveMountAspect.fromRequest[Any, Unit, String, Unit](
+        _ => ZIO.succeed("route-claim" -> ()),
+        (_, _) => ZIO.unit
+      )
+      val application = scalive.Live.router(
+        scalive.live / "a" -> View,
+        scalive.live / "b" -> View,
+        (scalive.live / "guard").withMountAspect(routeAspect)(View),
+        scalive.Live.session("other")(scalive.live / "c" -> View)
+      )
+      val catalog = ZioHttp.validate(application)
+      val source  = catalog.find(_.matches(URL.decode("/a").toOption.get)).get
+
+      for
+        csrf  <- ZioHttpSecurity.issueCsrf(config)
+        token <- ZioHttpSecurity.issueSession(
+                   config,
+                   "root-id",
+                   source.index,
+                   "/a",
+                   source.routeIdentity,
+                   source.sessionName,
+                   "shared-root"
+                 )
+        static <- ZioHttpSecurity.issueStatic(
+                    config,
+                    "root-id",
+                    source.index,
+                    "/a",
+                    source.routeIdentity,
+                    source.sessionName,
+                    "shared-root"
+                  )
+        registered <- ZioHttpSecurity.verifySession(config, token)
+        join = RootJoin(
+                 url = None,
+                 redirect = Some("/b"),
+                 flash = None,
+                 session = token,
+                 static = Some(static),
+                 params = Map("_mounts" -> Json.Num(1)),
+                 sticky = false
+               )
+        valid <- ZioHttpAdmission
+                   .admitRedirect(
+                     catalog,
+                     config,
+                     Some(csrf.cookieToken),
+                     Some(csrf.token),
+                     registered,
+                     "lv:root-id",
+                     join
+                   ).either
+        guarded <- ZioHttpAdmission
+                     .admitRedirect(
+                       catalog,
+                       config,
+                       Some(csrf.cookieToken),
+                       Some(csrf.token),
+                       registered,
+                       "lv:root-id",
+                       join.copy(redirect = Some("/guard"))
+                     ).either
+        other <- ZioHttpAdmission
+                   .admitRedirect(
+                     catalog,
+                     config,
+                     Some(csrf.cookieToken),
+                     Some(csrf.token),
+                     registered,
+                     "lv:root-id",
+                     join.copy(redirect = Some("/c"))
+                   ).either
+      yield assertTrue(
+        valid.exists(_.route.matches(URL.decode("/b").toOption.get)),
+        guarded.left.exists(_.contains("destination route mount claims")),
+        other.left.exists(_.contains("session identity differs"))
+      )
+    },
     test("effective Phoenix join ref falls back to the initial push ref") {
       val one = PhoenixRef.Value("1")
       val two = PhoenixRef.Value("2")
@@ -393,6 +505,82 @@ object ZioHttpSpec extends ZIOSpecDefault:
                     )
         body <- response.body.asString.orDie
       yield assertTrue(events.toVector == Vector("mount", "params"), body.contains("handled"))
+    },
+    test("disconnected params and after-render hooks include dynamically mounted hooks") {
+      val events = scala.collection.mutable.ArrayBuffer.empty[String]
+      object View extends LiveView.Routed.Eventless[Int, Unit]:
+        override val hooks = LiveHooks.empty[Nothing, Int]
+          .onParams((model, _, _) => ZIO.succeed {
+            events += "static-params"
+            LiveHookResult.cont(model + 1)
+          })
+          .afterRender((_, _) => ZIO.succeed(events += "static-after").unit)
+        def mount(params: Unit, ctx: MountContext) =
+          ctx.hooks.params.attach("dynamic")((model, _, _) => ZIO.succeed {
+            events += "dynamic-params"
+            LiveHookResult.cont(model + 1)
+          }) *>
+            ctx.hooks.afterRender.attach("dynamic")((_, _) =>
+              ZIO.succeed(events += "dynamic-after").unit
+            ).as(0)
+        override def handleParams(model: Int, params: Unit, url: URL, ctx: ParamsContext) =
+          ZIO.succeed {
+            events += "callback"
+            model + 1
+          }
+        def view(model: Signal[Int]) = div(model.map(_.toString))
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live.params(View)), config),
+                      Request.get(URL.root)
+                    )
+        body <- response.body.asString.orDie
+      yield assertTrue(
+        events.toVector == Vector(
+          "static-params",
+          "dynamic-params",
+          "callback",
+          "static-after",
+          "dynamic-after"
+        ),
+        body.contains(">3</div>")
+      )
+    },
+    test("disconnected mount navigation returns an HTTP redirect with transferable flash") {
+      val notice  = FlashKind("notice")
+      val renders = AtomicInteger()
+      val from    = scalive.live / "from"
+      val to      = scalive.live / "to"
+      object From extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) =
+          ctx.flash.put(notice, "moved") *> ctx.nav.pushNavigate(to.location)
+        def view(model: Signal[Unit]) =
+          renders.incrementAndGet()
+          div()
+      object To extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div(flash(notice)(message => span(message)))
+      val routes = ZioHttp.routes(scalive.Live.router(from -> From, to -> To), config)
+
+      for
+        redirect <- run(routes, Request.get(URL.decode("/from").toOption.get))
+        flashCookie <- ZIO.fromOption(
+                         redirect.headers(Header.SetCookie).map(_.value)
+                           .find(_.name == "__phoenix_flash__")
+                       ).orElseFail(AssertionError("redirect flash cookie was not issued"))
+        destination <- run(
+                         routes,
+                         Request.get(URL.decode("/to").toOption.get)
+                           .addCookie(Cookie.Request(flashCookie.name, flashCookie.content))
+                       )
+        body <- destination.body.asString.orDie
+      yield assertTrue(
+        redirect.status == Status.SeeOther,
+        redirect.header(Header.Location).exists(_.url.encode == "/to"),
+        renders.get() == 0,
+        body.contains("<span>moved</span>")
+      )
     },
     test("initial routed decode failure happens before factory and mount") {
       val factories = AtomicInteger()

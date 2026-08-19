@@ -95,6 +95,36 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         replaced._2.fields.exists(_._1 == "s"),
         reconstruct(replaced._2) == HtmlRenderer.render(secondTree.tree)
       )
+    },
+    test("flash insertion points remain transparent across structural updates") {
+      val notice = FlashKind("notice")
+      val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
+        _ => div("before", flash(notice)(message => span(message)), "after"),
+        identity
+      )
+      for
+        program <- ZIO.fromEither(compiled)
+        absent  <- program.evaluate(Map.empty)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(absent.tree))
+        present <- program.evaluate(Map(notice -> "saved"), Some(absent.commit))
+        inserted <- ZIO.fromEither(
+                      PhoenixRenderedEncoder.update(
+                        initial._1,
+                        TreeDiffer.diff(absent.tree, present.tree)
+                      )
+                    )
+        removed <- program.evaluate(Map.empty, Some(present.commit))
+        deleted <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       inserted._1,
+                       TreeDiffer.diff(present.tree, removed.tree)
+                     )
+                   )
+      yield assertTrue(
+        reconstruct(initial._2) == "<div>beforeafter</div>",
+        reconstruct(inserted._2) == "<div>before<span>saved</span>after</div>",
+        reconstruct(deleted._2) == "<div>beforeafter</div>"
+      )
     }
   )
 

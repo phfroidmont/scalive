@@ -2,6 +2,8 @@ package scalive.runtime.connection
 
 import zio.*
 import zio.json.ast.Json
+import zio.json.*
+import zio.http.URL
 import zio.test.*
 
 import scalive.*
@@ -31,7 +33,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           connection <- RootConnection.start(config, metadata, Counter(mounts), outputs.offer(_).unit)
           joined     <- outputs.take
           binding = joined match
-                      case ConnectionOutput.Joined(RenderDelta.Replace(tree)) =>
+                      case ConnectionOutput.Joined(RenderDelta.Replace(tree), _) =>
                         val encoded = tree.root.attributes
                           .flatMap(_.value).collectFirst { case AttributeValue.Text(value) => value }.get
                         BindingId.fromEncoded(encoded)
@@ -42,8 +44,11 @@ object RootConnectionSpec extends ZIOSpecDefault:
           count   <- mounts.get
         yield assertTrue(
           count == 1,
+          joined match
+            case ConnectionOutput.Joined(_, effects) => effects.pageTitle.isEmpty
+            case _                                   => false,
           reply match
-            case ConnectionOutput.Reply(`command`, _) => true
+            case ConnectionOutput.Reply(`command`, _, _) => true
             case _                                    => false
         )
       }
@@ -94,11 +99,43 @@ object RootConnectionSpec extends ZIOSpecDefault:
                       }
         yield assertTrue(observed.forall {
           case (
-                ConnectionOutput.Reply(accepted, _),
+                ConnectionOutput.Reply(accepted, _, _),
                 ConnectionOutput.Rejected(rejected, _)
               ) => accepted.value < rejected.value
           case _ => false
         })
+      }
+    },
+    test("output ordering follows admission rather than command identity") {
+      ZIO.scoped {
+        for
+          mounts  <- Ref.make(0)
+          outputs <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, Counter(mounts), outputs.offer(_).unit)
+          joined     <- outputs.take
+          accepted    = CommandId(1000L)
+          rejected    = CommandId(1L)
+          _ <- connection.offerEvent(
+                 accepted,
+                 bindingFrom(joined),
+                 BindingPayload.Params(Map.empty)
+               )
+          _ <- connection.offerEvent(
+                 rejected,
+                 BindingId.fromEncoded("unknown"),
+                 BindingPayload.Params(Map.empty)
+               )
+          first  <- outputs.take
+          second <- outputs.take
+        yield assertTrue(
+          first.isInstanceOf[ConnectionOutput.Reply],
+          second == ConnectionOutput.Rejected(
+            rejected,
+            scalive.runtime.kernel.SessionRejection.UnknownBinding(
+              BindingId.fromEncoded("unknown")
+            )
+          )
+        )
       }
     },
     test("a sink failure terminates the connection") {
@@ -147,6 +184,276 @@ object RootConnectionSpec extends ZIOSpecDefault:
         context.connection == Connection.Disconnected,
         failure.isLeft
       )
+    },
+    test("static and dynamic event hooks keep order, replacement position, and halt the handler") {
+      ZIO.scoped {
+        for
+          order <- Ref.make(Vector.empty[String])
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   override val hooks = LiveHooks.empty[Int, Int].onEvent { (model, _, _) =>
+                     order.update(_ :+ "static").as(LiveHookResult.cont(model + 1))
+                   }
+                   def mount(ctx: MountContext): LiveIO[Int] =
+                     ctx.hooks.event.attach("a")((model, _, _) =>
+                       order.update(_ :+ "old-a").as(LiveHookResult.cont(model + 1000))) *>
+                       ctx.hooks.event.attach("b")((model, _, _) =>
+                         order.update(_ :+ "b").as(LiveHookResult.halt(model + 100))) *>
+                       ctx.hooks.event.attach("removed")((model, _, _) =>
+                         order.update(_ :+ "removed").as(LiveHookResult.cont(model))) *>
+                       ctx.hooks.event.attach("a")((model, _, _) =>
+                         order.update(_ :+ "a").as(LiveHookResult.cont(model + 10))) *>
+                       ctx.hooks.event.detach("removed").as(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     _ => order.update(_ :+ "handler").as(model + 10000)
+                   def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          joined <- outputs.take
+          command = CommandId.fresh().toOption.get
+          _ <- connection.submitEvent(command, bindingFrom(joined), BindingPayload.Params(Map.empty))
+          _ <- outputs.take
+          seen <- order.get
+          model <- connection.inspectModel
+        yield assertTrue(seen == Vector("static", "a", "b"), model == 111)
+      }
+    },
+    test("named browser hooks consume malformed payloads and bypass binding lookup") {
+      ZIO.scoped {
+        val named = BrowserToServerEvent[Int]("counter")
+        for
+          calls <- Ref.make(0)
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   override val hooks = LiveHooks.empty[Int, Int].onBrowserEvent(named) {
+                     (model, amount, _) => calls.update(_ + 1).as(model + amount)
+                   }
+                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(5)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     amount => ZIO.succeed(model + amount)
+                   def view(model: Signal[Int]) = div(model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _ <- outputs.take
+          unknown = BindingId.fromEncoded("not-a-binding")
+          good = CommandId.fresh().toOption.get
+          _ <- connection.submitNamedEvent(good, unknown, BindingPayload.Params(Map.empty), "counter", "2")
+          _ <- outputs.take
+          afterGood <- connection.inspectModel
+          bad = CommandId.fresh().toOption.get
+          _ <- connection.submitNamedEvent(bad, unknown, BindingPayload.Params(Map.empty), "counter", "nope")
+          _ <- outputs.take
+          afterBad <- connection.inspectModel
+          count <- calls.get
+        yield assertTrue(afterGood == 7, afterBad == 7, count == 1)
+      }
+    },
+    test("params hooks precede the callback and after-render hooks run on empty diffs") {
+      ZIO.scoped {
+        for
+          order <- Ref.make(Vector.empty[String])
+          renders <- Ref.make(Vector.empty[String])
+          outputs <- Queue.unbounded[ConnectionOutput]
+          lifecycle = RootLifecycle[Int, Int](
+            URL.root,
+            LiveHooks.empty[Int, Int]
+              .onParams((model, _, _) => order.update(_ :+ "params").as(LiveHookResult.cont(model + 1)))
+              .afterRender((_, _) => renders.update(_ :+ "static")),
+            _ => None,
+            ctx => ctx.hooks.afterRender.attach("dynamic")((_, _) => renders.update(_ :+ "dynamic")).as(0),
+            (model, _, _) => ZIO.succeed(model),
+            _ => ZIO.succeed(
+              RootParamsHandler(
+                runHooks = true,
+                (model, _) => order.update(_ :+ "callback").as(model + 1)
+              )
+            ),
+            state => div(state.map(_._1.toString))
+          )
+          connection <- RootConnection.startLifecycle(config, metadata, lifecycle, outputs.offer(_).unit)
+          _ <- outputs.take
+          _ <- connection.submitInfo(0)
+          reply <- outputs.take
+          seen <- order.get
+          after <- renders.get
+        yield assertTrue(
+          seen == Vector("params", "callback"),
+          after == Vector("static", "dynamic", "static", "dynamic"),
+          reply.isInstanceOf[ConnectionOutput.Reply]
+        )
+      }
+    },
+    test("info hook attachment survives patch acknowledgement and deferred replay") {
+      ZIO.scoped {
+        val destination = URL.decode("/next").toOption.get
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     message =>
+                       if message == 1 then
+                         ctx.hooks.info.attach("persist")((value, amount, _) =>
+                           ZIO.succeed(LiveHookResult.halt(value + amount * 10))) *>
+                           ctx.nav.pushPatchUnsafe("/next").as(model + 1)
+                       else ZIO.succeed(model + message)
+                   def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          joined <- outputs.take
+          eventId = CommandId.fresh().toOption.get
+          _ <- connection.submitEvent(eventId, bindingFrom(joined), BindingPayload.Params(Map.empty))
+          navigation <- outputs.take
+          deferred <- connection.submitInfo(2).fork
+          _ <- ZIO.yieldNow
+          patchId = CommandId.fresh().toOption.get
+          _ <- connection.submitPatch(patchId, destination)
+          _ <- deferred.join
+          model <- connection.inspectModel
+        yield assertTrue(
+          navigation.isInstanceOf[ConnectionOutput.ReplyNavigation],
+          model == 21
+        )
+      }
+    },
+    test("flash commits transactionally and survives patch acknowledgement") {
+      ZIO.scoped {
+        val notice      = FlashKind("notice")
+        val destination = URL.decode("/next").toOption.get
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     message =>
+                       message match
+                         case 1 => ctx.flash.put(notice, "saved").as(model + 1)
+                         case 2 => ctx.nav.pushPatchUnsafe("/next").as(model + 1)
+                         case _ => ctx.flash.clear(notice).as(model + 1)
+                   def view(model: Signal[Int]) =
+                     button(
+                       on.click(1),
+                       "put",
+                       flash(notice)(message => span(message))
+                     )
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          joined     <- outputs.take
+          binding     = bindingFrom(joined)
+          putId       = CommandId.fresh().toOption.get
+          _          <- connection.submitEvent(putId, binding, BindingPayload.Params(Map.empty))
+          _          <- outputs.take
+          afterPut   <- connection.inspectFlash
+          patchId     = CommandId.fresh().toOption.get
+          _          <- connection.submitInfo(2)
+          navigation <- outputs.take
+          _          <- connection.submitPatch(patchId, destination)
+          _          <- outputs.take
+          afterPatch <- connection.inspectFlash
+          _          <- connection.submitInfo(3)
+          _          <- outputs.take
+          afterClear <- connection.inspectFlash
+        yield assertTrue(
+          afterPut == Map(notice -> "saved"),
+          navigation.isInstanceOf[ConnectionOutput.ReplyNavigation],
+          afterPatch == afterPut,
+          afterClear.isEmpty
+        )
+      }
+    },
+    test("page titles and client events commit in lifecycle order") {
+      ZIO.scoped {
+        val countEvent = ServerToBrowserEvent[Int]("count")
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   override val hooks = LiveHooks.empty[Int, Int].afterRender { (model, ctx) =>
+                     ctx.connection match
+                       case Connection.Connected(connected) =>
+                         connected.client.push(countEvent, model + 10)
+                       case Connection.Disconnected => ZIO.unit
+                   }
+                   override def pageTitle(model: Int): Option[String] = model match
+                     case 0 => Some("zero")
+                     case 1 => Some("one")
+                     case _ => None
+                   def mount(ctx: MountContext): LiveIO[Int] =
+                     ctx.connection match
+                       case Connection.Connected(connected) =>
+                         connected.client.push(countEvent, 0).as(0)
+                       case Connection.Disconnected => ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     message =>
+                       ctx.client.push(countEvent, message) *>
+                         ctx.client.exec(JS) *>
+                         ZIO.succeed(message)
+                   def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          joined     <- outputs.take
+          initialEffects = joined match
+                             case ConnectionOutput.Joined(_, effects) => effects
+                             case other => throw AssertionError(s"unexpected bootstrap output: $other")
+          firstId = CommandId.fresh().toOption.get
+          _ <- connection.submitEvent(
+                 firstId,
+                 bindingFrom(joined),
+                 BindingPayload.Params(Map.empty)
+               )
+          first <- outputs.take
+          firstEffects = first match
+                           case ConnectionOutput.Reply(`firstId`, _, effects) => effects
+                           case other => throw AssertionError(s"unexpected first output: $other")
+          _      <- connection.submitInfo(2)
+          second <- outputs.take
+          secondEffects = second match
+                            case ConnectionOutput.Reply(_, _, effects) => effects
+                            case other => throw AssertionError(s"unexpected second output: $other")
+        yield assertTrue(
+          initialEffects.pageTitle.contains("zero"),
+          initialEffects.clientEvents == Vector(
+            scalive.runtime.kernel.ClientEffect("count", Json.Num(0)),
+            scalive.runtime.kernel.ClientEffect("count", Json.Num(10))
+          ),
+          firstEffects.pageTitle.contains("one"),
+          firstEffects.clientEvents == Vector(
+            scalive.runtime.kernel.ClientEffect("count", Json.Num(1)),
+            scalive.runtime.kernel.ClientEffect(
+              "js:exec",
+              Json.Obj("cmd" -> Json.Str("[]"))
+            ),
+            scalive.runtime.kernel.ClientEffect("count", Json.Num(11))
+          ),
+          secondEffects.pageTitle.contains(""),
+          secondEffects.clientEvents == Vector(
+            scalive.runtime.kernel.ClientEffect("count", Json.Num(2)),
+            scalive.runtime.kernel.ClientEffect(
+              "js:exec",
+              Json.Obj("cmd" -> Json.Str("[]"))
+            ),
+            scalive.runtime.kernel.ClientEffect("count", Json.Num(12))
+          )
+        )
+      }
+    },
+    test("async completion has its own hook boundary and honors halt") {
+      ZIO.scoped {
+        for
+          handled <- Ref.make(false)
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   def mount(ctx: MountContext): LiveIO[Int] =
+                     ctx.hooks.async.attach("async")((model, event, _) => event.result match
+                       case LiveAsyncResult.Succeeded(value) =>
+                         ZIO.succeed(LiveHookResult.halt(model + value * 10))
+                       case _ => ZIO.succeed(LiveHookResult.cont(model))).as(1)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     message => handled.set(true).as(model + message)
+                   def view(model: Signal[Int]) = div(model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _ <- outputs.take
+          event = LiveAsyncEvent(AsyncKey[Any]("work"), LiveAsyncResult.Succeeded(2))
+          _ <- connection.submitAsyncCompletion(event)
+          _ <- outputs.take
+          model <- connection.inspectModel
+          called <- handled.get
+        yield assertTrue(model == 21, !called)
+      }
     },
     test("normal close is idempotent and rejects future submissions") {
       ZIO.scoped {
@@ -244,7 +551,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           _      <- entered.await
           second <- connection
                       .submitEvent(secondCommand, binding, BindingPayload.Params(Map.empty)).fork
-          _ <- connection.ingressDepth.repeatUntil(_ == 1)
+          _ <- connection.pendingCount.repeatUntil(_ == 2)
           saturated <- connection
                          .submitEvent(thirdCommand, binding, BindingPayload.Params(Map.empty)).either
           terminal <- connection.awaitFailure
@@ -291,7 +598,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
   )
 
   private def bindingFrom(output: ConnectionOutput): BindingId = output match
-    case ConnectionOutput.Joined(RenderDelta.Replace(tree)) =>
+    case ConnectionOutput.Joined(RenderDelta.Replace(tree), _) =>
       val encoded = tree.root.attributes
         .flatMap(_.value).collectFirst { case AttributeValue.Text(value) => value }.get
       BindingId.fromEncoded(encoded)

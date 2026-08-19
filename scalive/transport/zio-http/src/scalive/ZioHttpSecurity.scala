@@ -55,7 +55,14 @@ private[scalive] object ZioHttpSecurity:
     rootId: String,
     routeIndex: Int,
     canonicalUrl: String,
-    issuedAtEpochSecond: Long)
+    routeIdentity: String = "",
+    sessionIdentity: Option[String] = None,
+    rootLayoutKey: String = "scalive:identity-root",
+    sessionMountClaims: Vector[String] = Vector.empty,
+    routeMountClaims: Vector[String] = Vector.empty,
+    hasRouteClaims: Boolean = false,
+    issuedAtEpochSecond: Long,
+    trackedStatics: Vector[String] = Vector.empty)
       derives JsonCodec
 
   final case class CsrfClaims(browserSecret: String, issuedAtEpochSecond: Long) derives JsonCodec
@@ -87,9 +94,29 @@ private[scalive] object ZioHttpSecurity:
     config: ZioHttpConfig,
     rootId: String,
     routeIndex: Int,
-    canonicalUrl: String
+    canonicalUrl: String,
+    routeIdentity: String = "",
+    sessionIdentity: Option[String] = None,
+    rootLayoutKey: String = "scalive:identity-root",
+    sessionMountClaims: Vector[String] = Vector.empty,
+    routeMountClaims: Vector[String] = Vector.empty,
+    hasRouteClaims: Boolean = false,
+    trackedStatics: Vector[String] = Vector.empty
   ): UIO[String] =
-    issueRoot(config, Purpose.Session, rootId, routeIndex, canonicalUrl)
+    issueRoot(
+      config,
+      Purpose.Session,
+      rootId,
+      routeIndex,
+      canonicalUrl,
+      routeIdentity,
+      sessionIdentity,
+      rootLayoutKey,
+      sessionMountClaims,
+      routeMountClaims,
+      hasRouteClaims,
+      trackedStatics
+    )
 
   def verifySession(
     config: ZioHttpConfig,
@@ -102,9 +129,29 @@ private[scalive] object ZioHttpSecurity:
     config: ZioHttpConfig,
     rootId: String,
     routeIndex: Int,
-    canonicalUrl: String
+    canonicalUrl: String,
+    routeIdentity: String = "",
+    sessionIdentity: Option[String] = None,
+    rootLayoutKey: String = "scalive:identity-root",
+    sessionMountClaims: Vector[String] = Vector.empty,
+    routeMountClaims: Vector[String] = Vector.empty,
+    hasRouteClaims: Boolean = false,
+    trackedStatics: Vector[String] = Vector.empty
   ): UIO[String] =
-    issueRoot(config, Purpose.Static, rootId, routeIndex, canonicalUrl)
+    issueRoot(
+      config,
+      Purpose.Static,
+      rootId,
+      routeIndex,
+      canonicalUrl,
+      routeIdentity,
+      sessionIdentity,
+      rootLayoutKey,
+      sessionMountClaims,
+      routeMountClaims,
+      hasRouteClaims,
+      trackedStatics
+    )
 
   def verifyStatic(
     config: ZioHttpConfig,
@@ -165,10 +212,33 @@ private[scalive] object ZioHttpSecurity:
     purpose: Purpose,
     rootId: String,
     routeIndex: Int,
-    canonicalUrl: String
+    canonicalUrl: String,
+    routeIdentity: String,
+    sessionIdentity: Option[String],
+    rootLayoutKey: String,
+    sessionMountClaims: Vector[String],
+    routeMountClaims: Vector[String],
+    hasRouteClaims: Boolean,
+    trackedStatics: Vector[String]
   ): UIO[String] =
     currentEpochSecond.map { issuedAt =>
-      encode(config, purpose, RootClaims(rootId, routeIndex, canonicalUrl, issuedAt))
+      encode(
+        config,
+        purpose,
+        RootClaims(
+          rootId,
+          routeIndex,
+          canonicalUrl,
+          routeIdentity,
+          sessionIdentity,
+          rootLayoutKey,
+          sessionMountClaims,
+          routeMountClaims,
+          hasRouteClaims,
+          issuedAt,
+          trackedStatics
+        )
+      )
     }
 
   private def currentEpochSecond: UIO[Long] =

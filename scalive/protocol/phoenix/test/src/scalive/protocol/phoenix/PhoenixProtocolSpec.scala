@@ -6,6 +6,14 @@ import zio.test.*
 import scalive.*
 
 object PhoenixProtocolSpec extends ZIOSpecDefault:
+  private def eventFrame(payload: Json): Json = Json.Arr(
+    Json.Str("1"),
+    Json.Str("2"),
+    Json.Str("lv:root"),
+    Json.Str("event"),
+    payload
+  )
+
   override def spec = suite("PhoenixProtocolSpec")(
     test("strictly round-trips the five-tuple and nullable refs") {
       val envelope = PhoenixEnvelope(
@@ -123,12 +131,148 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
         ).left.exists(_.contains("url' or 'redirect"))
       )
     },
-    test("rejects nested and form-shaped click values explicitly") {
-      val nested = RootEvent("click", "save", Json.Obj("user" -> Json.Obj.empty), None)
-      val form   = RootEvent("click", "save", Json.Str("user%5Bname%5D=x"), None)
+    test("decodes ordered form data and semantic metadata") {
+      val event = RootEvent(
+        "form",
+        "save",
+        Json.Str("tag=first&tag=second&save=Publish"),
+        None,
+        meta = Some(
+          Json.Obj(
+            "_target" -> Json.Arr(Json.Str("user"), Json.Str("name")),
+            "submitter" -> Json.Obj(
+              "name"  -> Json.Str("save"),
+              "value" -> Json.Str("Publish")
+            ),
+            "_recovery" -> Json.Bool(true),
+            "details"   -> Json.Obj("count" -> Json.Num(2))
+          )
+        )
+      )
+
       assertTrue(
-        nested.rootClickParams.left.exists(_.contains("nested")),
-        form.rootClickParams.left.exists(_.contains("form-encoded"))
+        event.toBindingPayload.exists {
+          case BindingPayload.Form(data, meta) =>
+            data.raw == Vector("tag" -> "first", "tag" -> "second", "save" -> "Publish") &&
+              meta.target.contains(FormPath("user", "name")) &&
+              meta.submitter.contains(FormSubmitter("save", "Publish")) && meta.recovery &&
+              meta.metadata("details") == "{\"count\":2}"
+          case _ => false
+        }
+      )
+    },
+    test("decodes target undefined and submitter field-name metadata") {
+      val event = RootEvent(
+        "form",
+        "save",
+        Json.Str("save=Draft"),
+        None,
+        meta = Some(
+          Json.Obj(
+            "_target"    -> Json.Arr(Json.Str("undefined")),
+            "_submitter" -> Json.Str("save"),
+            "recovery"   -> Json.Str("true")
+          )
+        )
+      )
+
+      assertTrue(
+        event.toBindingPayload.exists {
+          case BindingPayload.Form(_, meta) =>
+            meta.target.isEmpty && meta.submitter.contains(FormSubmitter("save", "Draft")) &&
+              meta.recovery
+          case _ => false
+        }
+      )
+    },
+    test("rejects malformed form encoding and non-string form values") {
+      val malformed = RootEvent("form", "save", Json.Str("name=%ZZ"), None)
+      val nonString = RootEvent("form", "save", Json.Obj("name" -> Json.Str("value")), None)
+      assertTrue(malformed.toBindingPayload.isLeft, nonString.toBindingPayload.isLeft)
+    },
+    test("stringifies primitive and nested non-form parameters") {
+      val event = RootEvent(
+        "click",
+        "save",
+        Json.Obj(
+          "string" -> Json.Str("value"),
+          "number" -> Json.Num(42),
+          "flag"   -> Json.Bool(true),
+          "empty"  -> Json.Null,
+          "nested" -> Json.Obj("id" -> Json.Num(7)),
+          "array"  -> Json.Arr(Json.Str("a"), Json.Num(2))
+        ),
+        None
+      )
+
+      assertTrue(
+        event.toBindingPayload == Right(
+          BindingPayload.Params(
+            Map(
+              "string" -> "value",
+              "number" -> "42",
+              "flag"   -> "true",
+              "empty"  -> "",
+              "nested" -> "{\"id\":7}",
+              "array"  -> "[\"a\",2]"
+            )
+          )
+        ),
+        RootEvent("click", "save", Json.Str("value"), None).toBindingPayload.isLeft
+      )
+    },
+    test("strictly decodes root event optional fields") {
+      val valid = Json.Obj(
+        "type"    -> Json.Str("click"),
+        "event"   -> Json.Str("save"),
+        "value"   -> Json.Obj.empty,
+        "uploads" -> Json.Obj("avatar" -> Json.Arr()),
+        "cid"     -> Json.Num(3),
+        "meta"    -> Json.Obj("key" -> Json.Str("value"))
+      )
+
+      assertTrue(
+        PhoenixProtocol.decode(eventFrame(valid)).exists {
+          case PhoenixInbound.Event(_, _, _, payload) =>
+            payload.cid.contains(3) && payload.uploads.nonEmpty && payload.meta.nonEmpty
+          case _ => false
+        },
+        PhoenixProtocol.decode(eventFrame(valid.add("unknown", Json.Null))).isLeft,
+        PhoenixProtocol.decode(eventFrame(valid.add("meta", Json.Arr()))).isLeft,
+        PhoenixProtocol.decode(eventFrame(valid.add("uploads", Json.Str("bad")))).isLeft,
+        PhoenixProtocol.decode(eventFrame(valid.add("cid", Json.Str("3")))).isLeft
+      )
+    },
+    test("strictly decodes live_patch and phx_leave") {
+      def frame(event: String, payload: Json, topic: String = "lv:root") = Json.Arr(
+        Json.Str("1"),
+        Json.Str("2"),
+        Json.Str(topic),
+        Json.Str(event),
+        payload
+      )
+
+      assertTrue(
+        PhoenixProtocol.decode(
+          frame("live_patch", Json.Obj("url" -> Json.Str("/next")))
+        ) == Right(
+          PhoenixInbound.LivePatch(
+            PhoenixRef.Value("1"),
+            PhoenixRef.Value("2"),
+            "lv:root",
+            "/next"
+          )
+        ),
+        PhoenixProtocol.decode(frame("live_patch", Json.Obj.empty)).isLeft,
+        PhoenixProtocol.decode(
+          frame("live_patch", Json.Obj("url" -> Json.Str("/next"), "extra" -> Json.Null))
+        ).isLeft,
+        PhoenixProtocol.decode(frame("live_patch", Json.Obj("url" -> Json.Num(1)))).isLeft,
+        PhoenixProtocol.decode(frame("phx_leave", Json.Obj.empty)) == Right(
+          PhoenixInbound.Leave(PhoenixRef.Value("1"), PhoenixRef.Value("2"), "lv:root")
+        ),
+        PhoenixProtocol.decode(frame("phx_leave", Json.Obj("reason" -> Json.Str("bye")))).isLeft,
+        PhoenixProtocol.decode(frame("phx_leave", Json.Obj.empty, topic = "room:root")).isLeft
       )
     },
     test("builds exact reply and uncorrelated diff envelopes") {

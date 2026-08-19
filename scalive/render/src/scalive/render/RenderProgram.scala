@@ -1,6 +1,7 @@
 package scalive.render
 
 import java.util.Locale
+import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
 import zio.IO
@@ -9,6 +10,7 @@ import zio.ZIO
 
 import scalive.BindingPayload
 import scalive.Escaping
+import scalive.FlashKind
 import scalive.HtmlElement
 import scalive.JSCommands.JSCommand
 import scalive.Mod
@@ -24,6 +26,7 @@ final class RenderProgram[Input, Msg] private (
   private val identity: RenderProgramId,
   private val source: Signal[Input],
   private val rootScope: SignalScope,
+  private val resolveFlash: Input => Map[FlashKind, String],
   private val template: RenderProgram.ElementTemplate[Msg]):
 
   /** Evaluates `input` against an optional committed render from this program. */
@@ -37,6 +40,9 @@ final class RenderProgram[Input, Msg] private (
 
   /** Closes the program's signal graph when its lifecycle ends. */
   def close: UIO[Unit] = ZIO.succeed(rootScope.close())
+
+  private[render] def retainedFlashProjectionCount: Int =
+    RenderProgram.retainedFlashProjectionCount(template)
 
   private[scalive] def evaluateIn(
     input: Input,
@@ -61,9 +67,20 @@ final class RenderProgram[Input, Msg] private (
           ZIO.fromEither(RenderRevision.next(signalState.revision)).flatMap { revision =>
             val transaction = SignalEvaluation.begin(signalState, revision, source, input)
             ZIO
-              .attempt(RenderProgram.evaluateElement(template, previousRoot, revision, transaction))
+              .attempt {
+                val flash = resolveFlash(input)
+                if flash == null then Left(RenderError.InvalidHtml("flash resolver returned null"))
+                else
+                  RenderProgram.evaluateElement(
+                    template,
+                    previousRoot,
+                    revision,
+                    transaction,
+                    flash
+                  )
+              }
               .mapError(RenderError.EvaluationFailed.apply).flatMap(ZIO.fromEither(_)).flatMap {
-                case (root, bindings) =>
+                case (root, bindings, commit) =>
                   ZIO
                     .fromEither(candidateScope.completeEvaluation()).as(
                       RenderCandidate(
@@ -71,7 +88,8 @@ final class RenderProgram[Input, Msg] private (
                         bindings,
                         transaction.result,
                         candidateScope,
-                        identity
+                        identity,
+                        commit
                       )
                     )
               }
@@ -86,6 +104,18 @@ object RenderProgram:
   def compile[Input, Msg](
     view: Signal[Input] => HtmlElement[Msg]
   ): Either[RenderError, RenderProgram[Input, Msg]] =
+    compile(view, _ => Map.empty)
+
+  /** Compiles a view once and resolves protocol-neutral flash values from each evaluated input.
+    *
+    * Each declaration retains only its currently committed present projection. Candidate
+    * projections remain isolated until commit. Structurally equivalent continuous projections share
+    * template identities; removal clears that identity before any later reintroduction.
+    */
+  def compile[Input, Msg](
+    view: Signal[Input] => HtmlElement[Msg],
+    resolveFlash: Input => Map[FlashKind, String]
+  ): Either[RenderError, RenderProgram[Input, Msg]] =
     val scope       = SignalScope.root()
     val sourceToken = SignalSource[Input](scope)
     val source      = Signal.source[Input](sourceToken)
@@ -95,7 +125,7 @@ object RenderProgram:
       (for
         identity <- RenderProgramId.fresh()
         template <- Compiler(allocator, scope, identity).compileElement(view(source))
-      yield RenderProgram(identity, source, scope, template)) match
+      yield RenderProgram(identity, source, scope, resolveFlash, template)) match
         case Right(program) => Right(program)
         case Left(error)    =>
           scope.close()
@@ -124,16 +154,36 @@ object RenderProgram:
     value: TextTemplate.Value)
       extends NodeTemplate[Nothing]
 
+  final private case class FlashTemplate(
+    id: TemplateId,
+    kind: FlashKind,
+    project: String => HtmlElement[Nothing],
+    compiler: Compiler,
+    state: FlashTemplate.State)
+      extends NodeTemplate[Nothing]
+
+  private object FlashTemplate:
+    final class State:
+      private var retained: Option[(String, ElementTemplate[Nothing])] = None
+
+      def snapshot: Option[(String, ElementTemplate[Nothing])] = synchronized(retained)
+
+      def assignment(next: Option[(String, ElementTemplate[Nothing])]): () => Unit =
+        () => synchronized { retained = next }
+
   private object TextTemplate:
     enum Value:
-      case Static(value: String, raw: Boolean)
+      case Static(value: String, raw: Boolean, slot: Option[TemplateSlotId] = None)
       case Dynamic(slot: TemplateSlotId, signal: Signal[String], raw: Boolean)
 
   sealed private trait AttributeTemplate[+Msg]:
     def name: String
 
   private object AttributeTemplate:
-    final case class Static(name: String, value: Option[AttributeValue])
+    final case class Static(
+      name: String,
+      value: Option[AttributeValue],
+      slot: Option[TemplateSlotId] = None)
         extends AttributeTemplate[Nothing]
     final case class DynamicValue(name: String, slot: TemplateSlotId, signal: Signal[String])
         extends AttributeTemplate[Nothing]
@@ -169,6 +219,8 @@ object RenderProgram:
     allocator: IdentityAllocator,
     scope: SignalScope,
     program: RenderProgramId):
+
+    private val lock = Object()
 
     def compileElement[Msg](element: HtmlElement[Msg]): Either[RenderError, ElementTemplate[Msg]] =
       for
@@ -296,9 +348,18 @@ object RenderProgram:
           Left(RenderError.Unsupported("keyed collections"))
         case Mod.Content.Stream(_, _) | Mod.Content.SignalStream(_, _) =>
           Left(RenderError.Unsupported("streams"))
-        case Mod.Content.Component(_)  => Left(RenderError.Unsupported("components"))
-        case Mod.Content.NestedView(_) => Left(RenderError.Unsupported("nested LiveViews"))
-        case Mod.Content.Flash(_, _)   => Left(RenderError.Unsupported("flash"))
+        case Mod.Content.Component(_)         => Left(RenderError.Unsupported("components"))
+        case Mod.Content.NestedView(_)        => Left(RenderError.Unsupported("nested LiveViews"))
+        case Mod.Content.Flash(kind, project) =>
+          allocator.template().map { id =>
+            FlashTemplate(
+              id,
+              kind,
+              project,
+              this,
+              FlashTemplate.State()
+            )
+          }
 
     private def validateAttributeNames[Msg](
       attributes: Vector[AttributeTemplate[Msg]]
@@ -313,6 +374,132 @@ object RenderProgram:
             else Right(names + attribute.name.toLowerCase(Locale.ROOT))
           }
         }.map(_ => ())
+
+    /** Compiles a changed projection candidate without changing committed retained state. */
+    def flashProjectionCandidate(
+      template: FlashTemplate,
+      message: String
+    ): Either[RenderError, ElementTemplate[Nothing]] = lock.synchronized {
+      template.state.snapshot match
+        case Some((retainedMessage, retained)) if retainedMessage == message => Right(retained)
+        case retained                                                        =>
+          compileElement(template.project(message)).map { compiled =>
+            retained
+              .flatMap((_, existing) => alignElement(compiled, existing))
+              .getOrElse(markStaticScalars(compiled))
+          }
+    }
+
+    private def markStaticScalars(
+      element: ElementTemplate[Nothing]
+    ): ElementTemplate[Nothing] =
+      element.copy(
+        attributes = element.attributes.map {
+          case static: AttributeTemplate.Static =>
+            static.copy(slot = allocator.slot().fold(throw _, Some(_)))
+          case other => other
+        },
+        children = element.children.map {
+          case child: ElementTemplate[Nothing] => markStaticScalars(child)
+          case text: TextTemplate              =>
+            text.value match
+              case TextTemplate.Value.Static(value, raw, _) =>
+                text.copy(value =
+                  TextTemplate.Value.Static(
+                    value,
+                    raw,
+                    allocator.slot().fold(throw _, Some(_))
+                  )
+                )
+              case _ => text
+          case flash: FlashTemplate => flash
+        }
+      )
+
+    private def alignElement(
+      candidate: ElementTemplate[Nothing],
+      retained: ElementTemplate[Nothing]
+    ): Option[ElementTemplate[Nothing]] =
+      if candidate.tag != retained.tag || candidate.void != retained.void ||
+        candidate.attributes.length != retained.attributes.length ||
+        candidate.children.length != retained.children.length
+      then None
+      else
+        val attributes = candidate.attributes.zip(retained.attributes).map(alignAttribute)
+        val children   = candidate.children.zip(retained.children).map(alignNode)
+        if attributes.forall(_.nonEmpty) && children.forall(_.nonEmpty) then
+          Some(
+            candidate.copy(
+              id = retained.id,
+              attributes = attributes.flatten,
+              children = children.flatten
+            )
+          )
+        else None
+
+    private def alignNode(
+      candidate: NodeTemplate[Nothing],
+      retained: NodeTemplate[Nothing]
+    ): Option[NodeTemplate[Nothing]] = (candidate, retained) match
+      case (left: ElementTemplate[Nothing], right: ElementTemplate[Nothing]) =>
+        alignElement(left, right)
+      case (left: TextTemplate, right: TextTemplate) =>
+        (left.value, right.value) match
+          case (
+                TextTemplate.Value.Static(value, raw, _),
+                TextTemplate.Value.Static(_, oldRaw, slot)
+              ) if raw == oldRaw =>
+            Some(left.copy(id = right.id, value = TextTemplate.Value.Static(value, raw, slot)))
+          case (
+                TextTemplate.Value.Dynamic(slot, signal, raw),
+                TextTemplate.Value.Dynamic(oldSlot, _, oldRaw)
+              ) if raw == oldRaw =>
+            Some(left.copy(id = right.id, value = TextTemplate.Value.Dynamic(oldSlot, signal, raw)))
+          case _ => None
+      case (left: FlashTemplate, right: FlashTemplate) if left.kind == right.kind =>
+        Some(left.copy(id = right.id))
+      case _ => None
+
+    private def alignAttribute(
+      candidate: AttributeTemplate[Nothing],
+      retained: AttributeTemplate[Nothing]
+    ): Option[AttributeTemplate[Nothing]] =
+      if candidate.name != retained.name then None
+      else
+        (candidate, retained) match
+          case (left: AttributeTemplate.Static, right: AttributeTemplate.Static) =>
+            Some(left.copy(slot = right.slot))
+          case (left: AttributeTemplate.DynamicValue, right: AttributeTemplate.DynamicValue) =>
+            Some(left.copy(slot = right.slot))
+          case (
+                left: AttributeTemplate.DynamicOptional,
+                right: AttributeTemplate.DynamicOptional
+              ) =>
+            Some(left.copy(slot = right.slot))
+          case (
+                left: AttributeTemplate.DynamicPresence,
+                right: AttributeTemplate.DynamicPresence
+              ) =>
+            Some(left.copy(slot = right.slot))
+          case (left: AttributeTemplate.Binding[?], right: AttributeTemplate.Binding[?]) =>
+            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Nothing]])
+          case (
+                left: AttributeTemplate.SignalBinding[?, ?],
+                right: AttributeTemplate.SignalBinding[?, ?]
+              ) =>
+            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Nothing]])
+          case (left: AttributeTemplate.JsBinding[?], right: AttributeTemplate.JsBinding[?]) =>
+            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Nothing]])
+          case (
+                left: AttributeTemplate.SignalJsBinding[?],
+                right: AttributeTemplate.SignalJsBinding[?]
+              ) =>
+            Some(
+              left
+                .copy(valueSlot = right.valueSlot, id = right.id)
+                .asInstanceOf[AttributeTemplate[Nothing]]
+            )
+          case _ => None
   end Compiler
 
   private object Compiler:
@@ -327,9 +514,11 @@ object RenderProgram:
     template: ElementTemplate[Msg],
     previous: Option[EvaluatedNode.Element],
     revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction
-  ): Either[RenderError, (EvaluatedNode.Element, BindingTable[Msg])] =
-    val bindings = BindingTable.Builder[Msg]()
+    transaction: SignalEvaluation.Transaction,
+    flash: Map[FlashKind, String]
+  ): Either[RenderError, (EvaluatedNode.Element, BindingTable[Msg], CandidateCommit)] =
+    val bindings      = BindingTable.Builder[Msg]()
+    val commitActions = ArrayBuffer.empty[() => Unit]
     for
       attributes <- traverse(template.attributes.zipWithIndex) { case (attribute, index) =>
                       val previousAttribute = previous.flatMap(_.attributes.lift(index))
@@ -343,17 +532,28 @@ object RenderProgram:
                     }
       children <- traverse(template.children.zipWithIndex) { case (child, index) =>
                     val previousChild = previous.flatMap(_.children.lift(index))
-                    evaluateNode(child, previousChild, revision, transaction, bindings)
+                    evaluateNode(
+                      child,
+                      previousChild,
+                      revision,
+                      transaction,
+                      flash,
+                      bindings,
+                      commitActions
+                    )
                   }
       element = retainElementRevision(template, attributes, children, previous, revision)
-    yield element -> bindings.result()
+    yield (element, bindings.result(), CandidateCommit(commitActions.toArray))
+  end evaluateElement
 
   private def evaluateNode[Msg](
     template: NodeTemplate[Msg],
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    bindings: BindingTable.Builder[Msg]
+    flash: Map[FlashKind, String],
+    bindings: BindingTable.Builder[Msg],
+    commitActions: ArrayBuffer[() => Unit]
   ): Either[RenderError, EvaluatedNode] =
     template match
       case element: ElementTemplate[Msg] =>
@@ -374,7 +574,15 @@ object RenderProgram:
                         val previousChild = previous
                           .collect { case node: EvaluatedNode.Element => node }
                           .flatMap(_.children.lift(index))
-                        evaluateNode(child, previousChild, revision, transaction, bindings)
+                        evaluateNode(
+                          child,
+                          previousChild,
+                          revision,
+                          transaction,
+                          flash,
+                          bindings,
+                          commitActions
+                        )
                       }
         yield retainElementRevision(
           element,
@@ -383,7 +591,35 @@ object RenderProgram:
           previous.collect { case node: EvaluatedNode.Element => node },
           revision
         )
-      case text: TextTemplate => evaluateText(text, previous, revision, transaction)
+      case text: TextTemplate      => evaluateText(text, previous, revision, transaction)
+      case template: FlashTemplate =>
+        val oldFlash = previous.collect { case node: EvaluatedNode.Flash => node }
+        flash.get(template.kind) match
+          case None =>
+            commitActions += template.state.assignment(None)
+            oldFlash match
+              case Some(node) if node.id == template.id && node.child.isEmpty => Right(node)
+              case _ => Right(EvaluatedNode.Flash(template.id, None, revision))
+          case Some(message) =>
+            for
+              value     <- nonNullString(message, s"flash '${template.kind.value}'")
+              projected <- template.compiler.flashProjectionCandidate(template, value)
+              child     <- evaluateNode(
+                         projected,
+                         oldFlash.flatMap(_.child),
+                         revision,
+                         transaction,
+                         flash,
+                         bindings,
+                         commitActions
+                       ).map(_.asInstanceOf[EvaluatedNode.Element])
+            yield
+              commitActions += template.state.assignment(Some(value -> projected))
+              oldFlash match
+                case Some(node)
+                    if node.id == template.id && node.child.exists(_.revision == child.revision) =>
+                  node.copy(child = Some(child))
+                case _ => EvaluatedNode.Flash(template.id, Some(child), revision)
 
   private def evaluateText(
     template: TextTemplate,
@@ -392,7 +628,7 @@ object RenderProgram:
     transaction: SignalEvaluation.Transaction
   ): Either[RenderError, EvaluatedNode.Text] =
     val value = template.value match
-      case TextTemplate.Value.Static(value, raw)         => Right((None, value, raw))
+      case TextTemplate.Value.Static(value, raw, slot)   => Right((slot, value, raw))
       case TextTemplate.Value.Dynamic(slot, signal, raw) =>
         transaction
           .sample(signal).flatMap(sample =>
@@ -419,7 +655,7 @@ object RenderProgram:
 
     val evaluated: Either[RenderError, (Option[TemplateSlotId], Option[AttributeValue])] =
       template match
-        case Static(_, value)              => Right(None -> value)
+        case Static(_, value, slot)        => Right(slot -> value)
         case DynamicValue(_, slot, signal) =>
           transaction
             .sample(signal).flatMap(sample =>
@@ -523,4 +759,12 @@ object RenderProgram:
 
   private def nonNullString(value: String, location: String): Either[RenderError, String] =
     Either.cond(value != null, value, RenderError.InvalidHtml(s"$location has a null value"))
+
+  private def retainedFlashProjectionCount(template: NodeTemplate[?]): Int = template match
+    case element: ElementTemplate[?] => element.children.map(retainedFlashProjectionCount).sum
+    case flash: FlashTemplate        =>
+      flash.state.snapshot match
+        case Some((_, projection)) => 1 + retainedFlashProjectionCount(projection)
+        case None                  => 0
+    case _: TextTemplate => 0
 end RenderProgram

@@ -101,6 +101,112 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("session aspect context reaches route factories") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.json.*
+
+        val sessionAspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+          _ => ZIO.succeed("claim" -> "session"),
+          (claim, _) => ZIO.succeed(claim)
+        )
+
+        object View extends LiveView.Eventless[String]:
+          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def view(model: Signal[String]) = div(model)
+
+        val session: LiveSession[Any] = Live.session("main")
+          .withMountAspect(sessionAspect)(
+            live.apply((_, _, context: String) => View)
+          )
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("session aspects run before route aspects in the typed pipeline") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.json.*
+
+        trait SessionEnvironment
+        trait RouteEnvironment
+
+        val sessionAspect = LiveMountAspect.fromRequest[SessionEnvironment, Any, String, String](
+          _ => ZIO.succeed("session-claim" -> "session"),
+          (claim, _) => ZIO.succeed(claim)
+        )
+        val routeAspect = LiveMountAspect.make[RouteEnvironment, Unit, String, Int, Int](
+          (_, session) => ZIO.succeed(1 -> session.length),
+          (_, _, session) => ZIO.succeed(session.length)
+        )
+
+        object View extends LiveView.Eventless[(String, Int)]:
+          def mount(ctx: MountContext) = LiveIO.succeed("" -> 0)
+          def view(model: Signal[(String, Int)]) = div()
+
+        val route = live
+          .withMountAspect(routeAspect)
+          .apply((_, _, context: (String, Int)) => View)
+
+        val session: LiveSession[SessionEnvironment & RouteEnvironment] = Live.session("main")
+          .withMountAspect(sessionAspect)(route)
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("session layouts retain their earlier context projection") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.json.*
+
+        val first = LiveMountAspect.fromRequest[Any, Any, String, String](
+          _ => ZIO.succeed("first-claim" -> "first"),
+          (claim, _) => ZIO.succeed(claim)
+        )
+        val second = LiveMountAspect.make[Any, Any, String, Int, Int](
+          (_, first) => ZIO.succeed(1 -> first.length),
+          (_, _, first) => ZIO.succeed(first.length)
+        )
+        val layout = LiveLayout[Any, String]([Msg] => (content, context) =>
+          if context.context.nonEmpty then content else content
+        )
+
+        object View extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def view(model: Signal[Unit]) = div()
+
+        val session: LiveSession[Any] = Live.session("main")
+          .withMountAspect(first)
+          .withLayout(layout)
+          .withMountAspect(second)(live(View))
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("incompatible session and route contexts are rejected") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.json.*
+
+        val sessionAspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+          _ => ZIO.succeed("claim" -> "session"),
+          (claim, _) => ZIO.succeed(claim)
+        )
+
+        object View extends LiveView.Eventless[Int]:
+          def mount(ctx: MountContext) = LiveIO.succeed(0)
+          def view(model: Signal[Int]) = div()
+
+        val route = live.apply((_, _, context: Int) => View)
+        val session = Live.session("main").withMountAspect(sessionAspect)(route)
+      """)
+
+      assertTrue(errors.nonEmpty)
+    },
     test("router assembly remains declarative") {
       val applicationErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

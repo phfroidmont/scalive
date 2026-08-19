@@ -5,9 +5,12 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*
 import zio.http.*
+import zio.json.*
+import zio.json.ast.Json
 import zio.test.*
 
 import scalive.protocol.phoenix.{PhoenixRef, RootJoin}
+import scalive.runtime.kernel.{ClientEffect, SessionEffects}
 
 object ZioHttpSpec extends ZIOSpecDefault:
   private val config = ZioHttpConfig(
@@ -65,6 +68,60 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("signed bootstrap captures and compares tracked static assets") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) =
+          div(
+            scriptTag(phx.trackStatic := true, src := "/assets/app-123.js?vsn=d"),
+            linkTag(phx.trackStatic := true, href := "/assets/app-123.css")
+          )
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live(View)), config),
+                      Request.get(URL.root)
+                    )
+        body   <- response.body.asString.orDie
+        claims <- ZioHttpSecurity.verifySession(
+                    config,
+                    attribute(body, "data-phx-session").get
+                  )
+        staticClaims <- ZioHttpSecurity.verifyStatic(
+                          config,
+                          attribute(body, "data-phx-static").get
+                        )
+        matching = ZioHttp.clientTrackedStatics(
+                     Map(
+                       "_track_static" -> Json.Arr(
+                         Json.Str("https://example.test/assets/app-123.js"),
+                         Json.Str("/assets/app-123.css?cache=1")
+                       )
+                     )
+                   )
+      yield assertTrue(
+        claims == staticClaims,
+        claims.trackedStatics == Vector(
+          "/assets/app-123.js?vsn=d",
+          "/assets/app-123.css"
+        ),
+        !ZioHttp.staticChanged(matching, claims.trackedStatics, URL.root),
+        ZioHttp.staticChanged(Some(Vector("/assets/other.js")), claims.trackedStatics, URL.root),
+        !ZioHttp.staticChanged(None, claims.trackedStatics, URL.root),
+        !ZioHttp.staticChanged(Some(Vector.empty), claims.trackedStatics, URL.root),
+        !ZioHttp.staticChanged(
+          Some(Vector("https://example.test/pages/assets/app%20name.js")),
+          Vector("assets/app name.js"),
+          URL.decode("/pages/").toOption.get
+        ),
+        ZioHttp.staticChanged(
+          Some(Vector("/assets/a%2Fb.js")),
+          Vector("/assets/a/b.js"),
+          URL.root
+        ),
+        ZioHttp.clientTrackedStatics(Map("_track_static" -> Json.Arr(Json.Num(1)))).isEmpty
+      )
+    },
     test("a disconnected lifecycle failure is logged and becomes 500") {
       object Broken extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.fail(Exception("broken mount"))
@@ -77,7 +134,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         assertTrue(response.status == Status.InternalServerError)
       )
     },
-    test("unsupported sessions and application layouts fail during assembly") {
+    test("sessions, application layouts, and routed views assemble") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
@@ -93,14 +150,14 @@ object ZioHttpSpec extends ZIOSpecDefault:
         .withLayout(LiveLayout.identity)(scalive.live(View))
       val routedApplication = scalive.Live.router(scalive.live.params(RoutedView))
 
-      val sessionFailure = scala.util.Try(ZioHttp.routes(sessionApplication, config)).failed.toOption
-      val layoutFailure  = scala.util.Try(ZioHttp.routes(layoutApplication, config)).failed.toOption
-      val routedFailure  = scala.util.Try(ZioHttp.routes(routedApplication, config)).failed.toOption
-
-      assertTrue(
-        sessionFailure.exists(_.isInstanceOf[ZioHttp.AssemblyException]),
-        layoutFailure.exists(_.isInstanceOf[ZioHttp.AssemblyException]),
-        routedFailure.exists(_.isInstanceOf[ZioHttp.AssemblyException])
+      for
+        session <- run(ZioHttp.routes(sessionApplication, config), Request.get(URL.root))
+        layout  <- run(ZioHttp.routes(layoutApplication, config), Request.get(URL.root))
+        routed  <- run(ZioHttp.routes(routedApplication, config), Request.get(URL.root))
+      yield assertTrue(
+        session.status == Status.Ok,
+        layout.status == Status.Ok,
+        routed.status == Status.Ok
       )
     },
     test("join admission binds all bootstrap claims before invoking a route factory") {
@@ -118,8 +175,25 @@ object ZioHttpSpec extends ZIOSpecDefault:
       for
         csrf   <- ZioHttpSecurity.issueCsrf(config)
         rootId  = "root-id"
-        session <- ZioHttpSecurity.issueSession(config, rootId, 0, "/")
-        static  <- ZioHttpSecurity.issueStatic(config, rootId, 0, "/")
+        route    = directRoutes.head
+        session <- ZioHttpSecurity.issueSession(
+                     config,
+                     rootId,
+                     0,
+                     "/",
+                     route.routeIdentity,
+                     route.sessionName,
+                     "scalive:identity-root"
+                   )
+        static  <- ZioHttpSecurity.issueStatic(
+                     config,
+                     rootId,
+                     0,
+                     "/",
+                     route.routeIdentity,
+                     route.sessionName,
+                     "scalive:identity-root"
+                   )
         join     = RootJoin(
                      url = Some("/"),
                      redirect = None,
@@ -147,11 +221,33 @@ object ZioHttpSpec extends ZIOSpecDefault:
                        Some(csrf.token),
                        rootExists = false,
                        s"lv:$rootId",
-                       join.copy(session = session + "tampered")
+                      join.copy(session = session + "tampered")
+                    ).either
+        missing <- ZioHttpAdmission
+                     .admit(
+                       directRoutes,
+                       config,
+                       Some(csrf.cookieToken),
+                       Some(csrf.token),
+                       rootExists = false,
+                       s"lv:$rootId",
+                       join.copy(static = None)
                      ).either
+        redirect <- ZioHttpAdmission
+                      .admit(
+                        directRoutes,
+                        config,
+                        Some(csrf.cookieToken),
+                        Some(csrf.token),
+                        rootExists = false,
+                        s"lv:$rootId",
+                        join.copy(redirect = Some("/next"))
+                      ).either
       yield assertTrue(
         valid.exists(_.route.index == 0),
         invalid.isLeft,
+        missing.isLeft,
+        redirect.isLeft,
         factories.get() == 0
       )
     },
@@ -231,7 +327,30 @@ object ZioHttpSpec extends ZIOSpecDefault:
         ZioHttp.effectiveJoinRef(PhoenixRef.Null, PhoenixRef.Null).isEmpty
       )
     },
-    test("connected requests preserve socket metadata but use the admitted page identity") {
+    test("page titles and ordered client events use Phoenix diff fields") {
+      val rendered = Json.Obj("s" -> Json.Arr(Json.Str("<div></div>")))
+      val effects = SessionEffects(
+        pageTitle = Some("Dashboard"),
+        clientEvents = Vector(
+          ClientEffect("ready", Json.Obj("count" -> Json.Num(1))),
+          ClientEffect("js:exec", Json.Obj("cmd" -> Json.Str("[]")))
+        )
+      )
+
+      assertTrue(
+        ZioHttp.addEffects(rendered, effects) == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div></div>")),
+          "t" -> Json.Str("Dashboard"),
+          "e" -> Json.Arr(
+            Json.Arr(Json.Str("ready"), Json.Obj("count" -> Json.Num(1))),
+            Json.Arr(Json.Str("js:exec"), Json.Obj("cmd" -> Json.Str("[]")))
+          )
+        ),
+        ZioHttp.addEffects(Json.Obj.empty, SessionEffects(pageTitle = Some(""))) ==
+          Json.Obj("t" -> Json.Str(""))
+      )
+    },
+    test("connected requests strip socket metadata and use the admitted page identity") {
       val remote      = java.net.InetAddress.getLoopbackAddress
       val socketUrl   = URL.decode("https://socket.example/live/websocket?vsn=2.0.0").toOption.get
       val admittedUrl = URL.decode("https://page.example/page?tab=one#ignored").toOption.get
@@ -247,9 +366,235 @@ object ZioHttpSpec extends ZIOSpecDefault:
       assertTrue(
         connected.method == Method.GET,
         connected.url == URL(path = admittedUrl.path, queryParams = admittedUrl.queryParams),
-        connected.headers == socketRequest.headers,
-        connected.cookie("session").exists(_.content == "browser-session"),
-        connected.remoteAddress.contains(remote)
+        connected.headers.isEmpty,
+        connected.cookie("session").isEmpty,
+        connected.remoteAddress.isEmpty,
+        connected.body == Body.empty
+      )
+    },
+    test("routed disconnected mount decodes before mount and then handles initial params") {
+      val events = scala.collection.mutable.ArrayBuffer.empty[String]
+      object View extends LiveView.Routed.Eventless[String, Unit]:
+        def mount(params: Unit, ctx: MountContext) = ZIO.succeed {
+          events += "mount"
+          "mounted"
+        }
+        override def handleParams(model: String, params: Unit, url: URL, ctx: ParamsContext) =
+          ZIO.succeed {
+            events += "params"
+            "handled"
+          }
+        def view(model: Signal[String]) = div(model)
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live.params(View)), config),
+                      Request.get(URL.root)
+                    )
+        body <- response.body.asString.orDie
+      yield assertTrue(events.toVector == Vector("mount", "params"), body.contains("handled"))
+    },
+    test("initial routed decode failure happens before factory and mount") {
+      val factories = AtomicInteger()
+      val mounts     = AtomicInteger()
+      val decoder = LiveParamsDecoder.custom[Unit, Unit]((_, _) => Left("invalid params"))
+      object View extends LiveView.Routed.Eventless[Unit, Unit]:
+        def mount(params: Unit, ctx: MountContext) = ZIO.succeed(mounts.incrementAndGet()).unit
+        def view(model: Signal[Unit]) = div()
+
+      for
+        response <- run(
+                      ZioHttp.routes(
+                        scalive.Live.router(scalive.live.paramsDecodeOnly(decoder) {
+                          factories.incrementAndGet()
+                          View
+                        }),
+                        config
+                      ),
+                      Request.get(URL.root)
+                    )
+      yield assertTrue(
+        response.status == Status.InternalServerError,
+        factories.get() == 0,
+        mounts.get() == 0
+      )
+    },
+    test("routed connected lifecycle mounts, handles params, and recovers patch decode failures") {
+      val events = scala.collection.mutable.ArrayBuffer.empty[String]
+      val decoder = LiveParamsDecoder.custom[Unit, String]((_, url) =>
+        if url.queryParam("bad").nonEmpty then Left("bad patch") else Right("decoded")
+      )
+      object View extends LiveView.Routed.Eventless[String, String]:
+        def mount(params: String, ctx: MountContext) = ZIO.succeed {
+          events += s"mount:$params"
+          "mounted"
+        }
+        override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
+          ZIO.succeed { events += s"params:$params"; "handled" }
+        override def handleParamsDecodeError(
+          model: String,
+          error: LiveParamsCodec.DecodeError,
+          url: URL,
+          ctx: ParamsContext
+        ) = ZIO.succeed { events += s"recover:${error.message}"; "recovered" }
+        def view(model: Signal[String]) = div(model)
+      val application = scalive.Live.router(scalive.live.paramsDecodeOnly(decoder)(View))
+      val route = ZioHttp.validate(application).head.asInstanceOf[
+        ZioHttp.CompiledRoute[Any] { type Msg = Nothing; type Model = String }
+      ]
+
+      for
+        response <- run(ZioHttp.routes(application, config), Request.get(URL.root))
+        body     <- response.body.asString.orDie
+        claims  <- ZioHttpSecurity.verifySession(config, attribute(body, "data-phx-session").get)
+        _         = events.clear()
+        lifecycle <- route.prepareConnected(URL.root, Request.get(URL.root), claims)
+        mountContext = scalive.runtime.connection.RootMountContext.disconnected[Nothing, String]
+        paramsContext = ZioHttp.disconnectedParamsContext(mountContext)
+        mounted   <- lifecycle.mount(mountContext)
+        initial   <- lifecycle.prepareParams(URL.root)
+        handled   <- initial.run(mounted, paramsContext)
+        badUrl     = URL.decode("/?bad=1").toOption.get
+        recovery  <- lifecycle.prepareParams(badUrl)
+        recovered <- recovery.run(handled, paramsContext)
+      yield assertTrue(
+        events.toVector == Vector("mount:decoded", "params:decoded", "recover:bad patch"),
+        recovered == "recovered"
+      )
+    },
+    test("environment routes receive the provided service") {
+      final case class Greeting(value: String)
+      val application = scalive.Live.router(
+        scalive.live.from[Greeting, Nothing, String]((_, _, greeting) =>
+          new LiveView.Eventless[String]:
+            def mount(ctx: MountContext) = ZIO.succeed(greeting.value)
+            def view(model: Signal[String]) = div(model)
+        )
+      )
+
+      for
+        response <- run(
+                      ZioHttp.routes(application, config).provideEnvironment(ZEnvironment(Greeting("hello"))),
+                      Request.get(URL.root)
+                    )
+        body <- response.body.asString.orDie
+      yield assertTrue(body.contains("hello"))
+    },
+    test("duplicate route patterns and separately declared session names fail synchronously") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val duplicateRoutes = scalive.Live.router(scalive.live(View), scalive.live(View))
+      val duplicateSessions = scalive.Live.router(
+        scalive.Live.session("same")(scalive.live(View)),
+        scalive.Live.session("same")(scalive.live / "other" -> View)
+      )
+
+      assertTrue(
+        scala.util.Try(ZioHttp.routes(duplicateRoutes, config)).failed.toOption
+          .exists(_.isInstanceOf[ZioHttp.AssemblyException]),
+        scala.util.Try(ZioHttp.routes(duplicateSessions, config)).failed.toOption
+          .exists(_.isInstanceOf[ZioHttp.AssemblyException])
+      )
+    },
+    test("session and route aspects preserve order and independently signed claims") {
+      val events = scala.collection.mutable.ArrayBuffer.empty[String]
+      val sessionAspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+        _ => ZIO.succeed {
+          events += "session-disconnected"
+          "session-claim" -> "session-context"
+        },
+        (claim, _) => ZIO.succeed {
+          events += s"session-connected:$claim"
+          "session-connected-context"
+        }
+      )
+      val routeAspect = LiveMountAspect.make[Any, Unit, String, String, String](
+        (_, input) => ZIO.succeed {
+          events += s"route-disconnected:$input"
+          "route-claim" -> "route-context"
+        },
+        (claim, _, input) => ZIO.succeed {
+          events += s"route-connected:$claim:$input"
+          "route-connected-context"
+        }
+      )
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.succeed { events += "mount" }
+        def view(model: Signal[Unit]) = div()
+      val route = scalive.live.withMountAspect(routeAspect) {
+        (_, _, _: (String, String)) =>
+          events += "factory"
+          View
+      }
+      val application = scalive.Live.router(
+        scalive.Live.session("main").withMountAspect(sessionAspect)(route)
+      )
+      val catalog = ZioHttp.validate(application)
+
+      for
+        response <- run(ZioHttp.routes(application, config), Request.get(URL.root))
+        body     <- response.body.asString.orDie
+        claims  <- ZioHttpSecurity.verifySession(config, attribute(body, "data-phx-session").get)
+        _         = events.clear()
+        lifecycle <- catalog.head.prepareConnected(
+                       URL.root,
+                       Request.get(URL.root),
+                       claims
+                     )
+        _ <- lifecycle.mount(scalive.runtime.connection.RootMountContext.disconnected).orDie
+        validEvents = events.toVector
+        malformed <- catalog.head.prepareConnected(
+                       URL.root,
+                       Request.get(URL.root),
+                       claims.copy(routeMountClaims = Vector("{"))
+                     ).either
+      yield assertTrue(
+        claims.sessionIdentity.contains("main"),
+        claims.sessionMountClaims.nonEmpty,
+        claims.routeMountClaims.nonEmpty,
+        claims.hasRouteClaims,
+        validEvents == Vector(
+          "session-connected:session-claim",
+          "route-connected:route-claim:session-connected-context",
+          "factory",
+          "mount"
+        ),
+        malformed.isLeft,
+        events.count(_ == "factory") == 1
+      )
+    },
+    test("ordinary layouts nest inside application layout and route root layout wins") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div(idAttr := "view")
+      val appLayout = LiveLayout[Any, Any]([Msg] => (content, _) =>
+        sectionTag(idAttr := "application", content)
+      )
+      val routeLayout = LiveLayout[Unit, Any]([Msg] => (content, _) =>
+        mainTag(idAttr := "route", content)
+      )
+      val routeRoot = LiveRootLayout[Unit, Any]("route-root")([Msg] => (content, _, _) =>
+        htmlRootTag(headTag(titleTag("custom")), bodyTag(content))
+      )
+      val application = scalive.Live.router
+        .withLayout(appLayout)
+        .withRootLayout(LiveRootLayout[Any, Any]("application-root")([Msg] =>
+          (content, _, _) => htmlRootTag(bodyTag(content))
+        ))(
+          scalive.live.withLayout(routeLayout).withRootLayout(routeRoot)(View)
+        )
+
+      for
+        response <- run(ZioHttp.routes(application, config), Request.get(URL.root))
+        body     <- response.body.asString.orDie
+        claims  <- ZioHttpSecurity.verifySession(config, attribute(body, "data-phx-session").get)
+      yield assertTrue(
+        claims.rootLayoutKey == "route-root",
+        body.startsWith("<!doctype html><html>"),
+        body.contains("<meta name=\"csrf-token\""),
+        body.contains("data-phx-main"),
+        body.contains("<main id=\"route\"><div id=\"view\"></div></main>")
       )
     },
     test("event references must belong to the active channel generation") {

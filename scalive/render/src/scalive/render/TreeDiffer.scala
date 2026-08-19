@@ -52,6 +52,12 @@ object TreeDiffer:
             }
           if changedWithoutSlot then Vector(RenderChange.Replace(left.id, right))
           else attributeChanges ++ childChanges
+        case (left: EvaluatedNode.Flash, right: EvaluatedNode.Flash) if left.id == right.id =>
+          (left.child, right.child) match
+            case (None, None)                                                   => Vector.empty
+            case (Some(oldChild), Some(newChild)) if oldChild.id == newChild.id =>
+              diffNode(oldChild, newChild)
+            case _ => Vector(RenderChange.Replace(left.id, right))
         case _ => Vector(RenderChange.Replace(previous.id, current))
 
   private def sameElementShape(

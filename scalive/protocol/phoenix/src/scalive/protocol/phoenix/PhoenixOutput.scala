@@ -77,6 +77,21 @@ private[scalive] object PhoenixOutput:
   def serverDiff(joinRef: PhoenixRef, topic: String, value: Json.Obj): PhoenixEnvelope =
     diff(joinRef, topic, value)
 
+  def leave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String): PhoenixEnvelope =
+    PhoenixEnvelope(joinRef, ref, topic, "phx_reply", ok(Json.Obj.empty))
+
+  def livePatch(
+    joinRef: PhoenixRef,
+    topic: String,
+    to: String,
+    kind: String
+  ): PhoenixEnvelope =
+    val payload = Json.Obj(
+      "to"   -> Json.Str(to),
+      "kind" -> Json.Str(kind)
+    )
+    PhoenixEnvelope(joinRef, PhoenixRef.Null, topic, "live_patch", payload)
+
   private def ok(response: Json.Obj): Json.Obj =
     Json.Obj("status" -> Json.Str("ok"), "response" -> response)
 end PhoenixOutput

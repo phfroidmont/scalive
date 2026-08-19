@@ -67,5 +67,22 @@ object HtmlRendererSpec extends ZIOSpecDefault:
         HtmlRenderer.render(documentCandidate.tree, includeDoctype = true) ==
           "<!doctype html><html><body>content</body></html>"
       )
+    },
+    test("renders present and absent flash as transparent content") {
+      val info = FlashKind("info")
+      val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
+        _ => mainTag("before", flash(info)(message => span(message)), "after"),
+        identity
+      )
+
+      for
+        program <- ZIO.fromEither(compiled)
+        absent  <- program.evaluate(Map.empty)
+        present <- program.evaluate(Map(info -> "hello & goodbye"), Some(absent.commit))
+      yield assertTrue(
+        HtmlRenderer.render(absent.tree) == "<main>beforeafter</main>",
+        HtmlRenderer.render(present.tree) ==
+          "<main>before<span>hello &amp; goodbye</span>after</main>"
+      )
     }
   )

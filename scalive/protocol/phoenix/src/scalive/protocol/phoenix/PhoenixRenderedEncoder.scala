@@ -92,6 +92,8 @@ private[scalive] object PhoenixRenderedEncoder:
       element.children.foreach(child => opening += ProjectedPart.Node(project(child)))
       if !element.void then opening += ProjectedPart.Static(s"</${element.tag}>")
       ProjectedNode(element.id, opening.result())
+    case flash: EvaluatedNode.Flash =>
+      ProjectedNode(flash.id, flash.child.toVector.map(child => ProjectedPart.Node(project(child))))
 
   private def attributeFragment(name: String, value: Option[AttributeValue]): String = value match
     case None                            => ""

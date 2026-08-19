@@ -66,6 +66,18 @@ object TurnRevision:
 
   extension (revision: TurnRevision) def value: Long = revision
 
+opaque type NavigationId = Long
+
+object NavigationId:
+  private val counter = AtomicLong(0L)
+
+  private[scalive] def fresh(): Either[RuntimeIdentityError, NavigationId] =
+    RuntimeIdentityAllocator.next(counter, "navigation identity")(identity => identity)
+
+  private[scalive] def apply(value: Long): NavigationId = value
+
+  extension (identity: NavigationId) def value: Long = identity
+
 private object RuntimeIdentityAllocator:
   def next[A](
     counter: AtomicLong,

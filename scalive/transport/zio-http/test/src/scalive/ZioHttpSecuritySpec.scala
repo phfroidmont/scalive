@@ -62,13 +62,30 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
     test("roundtrips root claims exactly") {
       for
         now    <- Clock.currentTime(java.util.concurrent.TimeUnit.SECONDS)
-        token  <- ZioHttpSecurity.issueStatic(config(), "root-42", 7, "https://example.test/a?x=1")
+        token  <- ZioHttpSecurity.issueStatic(
+                    config(),
+                    "root-42",
+                    7,
+                    "https://example.test/a?x=1",
+                    "7:GET /a",
+                    Some("admin"),
+                    "root:v2",
+                    Vector("session-claim"),
+                    Vector("route-claim"),
+                    hasRouteClaims = true
+                  )
         claims <- ZioHttpSecurity.verifyStatic(config(), token)
       yield assertTrue(
         claims == ZioHttpSecurity.RootClaims(
           rootId = "root-42",
           routeIndex = 7,
           canonicalUrl = "https://example.test/a?x=1",
+          routeIdentity = "7:GET /a",
+          sessionIdentity = Some("admin"),
+          rootLayoutKey = "root:v2",
+          sessionMountClaims = Vector("session-claim"),
+          routeMountClaims = Vector("route-claim"),
+          hasRouteClaims = true,
           issuedAtEpochSecond = now
         )
       )

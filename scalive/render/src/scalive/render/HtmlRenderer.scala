@@ -21,6 +21,7 @@ object HtmlRenderer:
       case text: EvaluatedNode.Text       =>
         if text.raw then output.append(text.value)
         else output.append(Escaping.escape(text.value))
+      case flash: EvaluatedNode.Flash => flash.child.foreach(appendElement(_, output))
 
   private def appendElement(element: EvaluatedNode.Element, output: StringBuilder): Unit =
     val _ = output.append('<').append(element.tag)

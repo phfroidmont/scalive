@@ -111,5 +111,38 @@ object TreeDifferSpec extends ZIOSpecDefault:
         id = second.bindings.ids.head
         result = second.bindings.resolve(id).get.dispatch(BindingPayload.Params(Map.empty))
       yield assertTrue(TreeDiffer.diff(first.tree, second.tree) == RenderDelta.Empty, result == Right(2))
+    },
+    test("diffs flash scalar changes sparsely and structural changes exactly") {
+      val notice = FlashKind("notice")
+      val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
+        _ => div(flash(notice) { message =>
+          if message.startsWith("!") then strong(dataAttr("message") := message, message)
+          else span(dataAttr("message") := message, message)
+        }),
+        identity
+      )
+
+      for
+        program <- ZIO.fromEither(compiled)
+        absent  <- program.evaluate(Map.empty)
+        first   <- program.evaluate(Map(notice -> "one"), Some(absent.commit))
+        second  <- program.evaluate(Map(notice -> "two"), Some(first.commit))
+        removed <- program.evaluate(Map.empty, Some(second.commit))
+        strong  <- program.evaluate(Map(notice -> "!three"), Some(removed.commit))
+        scalarDelta = TreeDiffer.diff(first.tree, second.tree)
+      yield assertTrue(
+        scalarDelta match
+          case RenderDelta.Update(_, changes) =>
+            changes.collect { case _: RenderChange.Attribute => 1 }.size == 1 &&
+              changes.collect { case _: RenderChange.Text => 1 }.size == 1 &&
+              changes.collect { case _: RenderChange.Replace => 1 }.isEmpty
+          case _ => false,
+        TreeDiffer.diff(second.tree, removed.tree) match
+          case RenderDelta.Update(_, Vector(_: RenderChange.Replace)) => true
+          case _ => false,
+        TreeDiffer.diff(removed.tree, strong.tree) match
+          case RenderDelta.Update(_, Vector(_: RenderChange.Replace)) => true
+          case _ => false
+      )
     }
   )

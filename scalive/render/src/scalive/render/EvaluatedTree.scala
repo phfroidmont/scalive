@@ -40,6 +40,13 @@ object EvaluatedNode:
     revision: RenderRevision)
       extends EvaluatedNode
 
+  /** A transparent, retained insertion point for one flash declaration. */
+  final case class Flash private[render] (
+    id: TemplateId,
+    child: Option[Element],
+    revision: RenderRevision)
+      extends EvaluatedNode
+
 /** The immutable semantic tree consumed by both exact diffing and full HTML rendering. */
 final case class EvaluatedTree private[render] (
   root: EvaluatedNode.Element,
@@ -130,12 +137,22 @@ final case class RenderCandidate[+Msg] private[render] (
   bindings: BindingTable[Msg],
   signalEvaluation: SignalEvaluation,
   private[scalive] val stagedScope: CandidateScope,
-  private[render] val programIdentity: RenderProgramId):
+  private[render] val programIdentity: RenderProgramId,
+  private val commitTail: CandidateCommit):
   /** Transfers scope ownership to a committed render. A candidate can be committed only once. */
   def commit: CommittedRender[Msg] =
     if stagedScope.retain() then
+      commitTail.run()
       CommittedRender(tree, bindings, signalEvaluation, stagedScope, programIdentity)
     else throw IllegalStateException("render candidate is no longer staged")
 
   /** Closes candidate-owned resources without changing previously committed state. */
   def discard: UIO[Unit] = stagedScope.discard
+
+/** Infallible, allocation-free assignments performed only after candidate ownership is claimed. */
+final private[render] class CandidateCommit(private val actions: Array[() => Unit]):
+  def run(): Unit =
+    var index = 0
+    while index < actions.length do
+      actions(index)()
+      index += 1

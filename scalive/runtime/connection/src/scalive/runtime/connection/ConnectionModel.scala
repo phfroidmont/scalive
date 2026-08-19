@@ -4,6 +4,8 @@ import zio.json.ast.Json
 
 import scalive.render.RenderDelta
 import scalive.runtime.contracts.CommandId
+import scalive.runtime.kernel.NavigationOutput
+import scalive.runtime.kernel.SessionEffects
 import scalive.runtime.kernel.SessionFailure
 import scalive.runtime.kernel.SessionRejection
 
@@ -68,9 +70,22 @@ private[scalive] object ConnectionConfig:
 end ConnectionConfig
 
 enum ConnectionOutput:
-  case Joined(delta: RenderDelta)
-  case Reply(command: CommandId, delta: RenderDelta)
-  case Diff(delta: RenderDelta)
+  case Joined(delta: RenderDelta, effects: SessionEffects)
+  case Reply(command: CommandId, delta: RenderDelta, effects: SessionEffects)
+  case Diff(delta: RenderDelta, effects: SessionEffects)
+  case JoinedNavigation(
+    delta: RenderDelta,
+    navigation: NavigationOutput,
+    effects: SessionEffects)
+  case ReplyNavigation(
+    command: CommandId,
+    delta: RenderDelta,
+    navigation: NavigationOutput,
+    effects: SessionEffects)
+  case DiffNavigation(
+    delta: RenderDelta,
+    navigation: NavigationOutput,
+    effects: SessionEffects)
   case Rejected(command: CommandId, rejection: SessionRejection)
 
 sealed abstract class ConnectionError(message: String) extends Exception(message)

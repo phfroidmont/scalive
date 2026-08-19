@@ -2,15 +2,19 @@ package scalive.runtime.connection
 
 import scala.reflect.ClassTag
 
+import zio.Ref
 import zio.Task
+import zio.UIO
 import zio.ZIO
 import zio.http.URL
+import zio.json.EncoderOps
 import zio.json.JsonDecoder
 import zio.json.JsonEncoder
 import zio.json.ast.Json
 import zio.stream.ZStream
 
 import scalive.*
+import scalive.runtime.kernel.*
 import scalive.streams.*
 import scalive.upload.*
 
@@ -20,17 +24,80 @@ private object Deferred:
 
   def fail[A](operation: String): LiveIO[A] = ZIO.fail(Unsupported(operation))
 
-private object DeferredMountNavigation extends MountNavigation:
-  def pushNavigateUnsafe(to: String): LiveIO[Unit]    = Deferred.fail("push navigate")
-  def replaceNavigateUnsafe(to: String): LiveIO[Unit] = Deferred.fail("replace navigate")
-  def redirectUnsafe(to: String): LiveIO[Unit]        = Deferred.fail("redirect")
+final private[connection] class RootTurnJournal private (
+  val navigation: Ref[Option[NavigationRequest]],
+  val hooks: Ref[RootHookRegistry[Any, Any]],
+  val flash: Ref[Map[FlashKind, String]],
+  val clientEvents: Ref[Vector[ClientEffect]]):
 
-private object DeferredNavigation extends Navigation:
-  def pushNavigateUnsafe(to: String): LiveIO[Unit]    = Deferred.fail("push navigate")
-  def replaceNavigateUnsafe(to: String): LiveIO[Unit] = Deferred.fail("replace navigate")
-  def redirectUnsafe(to: String): LiveIO[Unit]        = Deferred.fail("redirect")
-  def pushPatchUnsafe(to: String): LiveIO[Unit]       = Deferred.fail("push patch")
-  def replacePatchUnsafe(to: String): LiveIO[Unit]    = Deferred.fail("replace patch")
+  def hookRegistry[Msg, Model]: UIO[RootHookRegistry[Msg, Model]] =
+    hooks.get.map(_.asInstanceOf[RootHookRegistry[Msg, Model]])
+
+  def updateHooks[Msg, Model](
+    f: RootHookRegistry[Msg, Model] => RootHookRegistry[Msg, Model]
+  ): UIO[Unit] = hooks.update(value =>
+    f(value.asInstanceOf[RootHookRegistry[Msg, Model]]).asInstanceOf[RootHookRegistry[Any, Any]]
+  )
+
+  def navigationWithFlash: UIO[Option[NavigationRequest]] =
+    navigation.get.zipWith(flash.get)((request, values) => request.map(_.copy(flash = values)))
+
+private[connection] object RootTurnJournal:
+  def make[Msg, Model](
+    registry: RootHookRegistry[Msg, Model],
+    initialFlash: Map[FlashKind, String] = Map.empty,
+    initialClientEvents: Vector[ClientEffect] = Vector.empty
+  ): LiveIO[RootTurnJournal] =
+    for
+      navigation   <- Ref.make(Option.empty[NavigationRequest])
+      hooks        <- Ref.make(registry.asInstanceOf[RootHookRegistry[Any, Any]])
+      flash        <- Ref.make(initialFlash)
+      clientEvents <- Ref.make(initialClientEvents)
+    yield new RootTurnJournal(navigation, hooks, flash, clientEvents)
+
+final private class RootNavigation(
+  currentUrl: URL,
+  journal: RootTurnJournal,
+  allowPatch: Boolean)
+    extends Navigation:
+  def pushNavigateUnsafe(to: String): LiveIO[Unit] =
+    record(to, NavigationKind.PushNavigate)
+  def replaceNavigateUnsafe(to: String): LiveIO[Unit] =
+    record(to, NavigationKind.ReplaceNavigate)
+  def redirectUnsafe(to: String): LiveIO[Unit]  = record(to, NavigationKind.Redirect)
+  def pushPatchUnsafe(to: String): LiveIO[Unit] =
+    if allowPatch then record(to, NavigationKind.PushPatch)
+    else Deferred.fail("push patch")
+  def replacePatchUnsafe(to: String): LiveIO[Unit] =
+    if allowPatch then record(to, NavigationKind.ReplacePatch)
+    else Deferred.fail("replace patch")
+
+  private def record(to: String, kind: NavigationKind): LiveIO[Unit] =
+    for
+      destination <- ZIO.fromEither(RootNavigation.resolve(currentUrl, to))
+      accepted    <- journal.navigation.modify {
+                    case None           => true  -> Some(NavigationRequest(destination, kind))
+                    case some @ Some(_) => false -> some
+                  }
+      _ <- ZIO
+             .fail(IllegalStateException("a lifecycle turn requested more than one navigation"))
+             .unless(accepted)
+    yield ()
+
+private object RootNavigation:
+  def resolve(current: URL, destination: String): Either[Throwable, URL] =
+    val value =
+      if destination.startsWith("?") || destination.startsWith("#") then
+        s"${current.path.encode}$destination"
+      else destination
+    URL.decode(value).left.map(error => IllegalArgumentException(error.getMessage))
+
+final private class RootMountNavigation(currentUrl: URL, journal: RootTurnJournal)
+    extends MountNavigation:
+  private val navigation = new RootNavigation(currentUrl, journal, allowPatch = false)
+  def pushNavigateUnsafe(to: String): LiveIO[Unit]    = navigation.pushNavigateUnsafe(to)
+  def replaceNavigateUnsafe(to: String): LiveIO[Unit] = navigation.replaceNavigateUnsafe(to)
+  def redirectUnsafe(to: String): LiveIO[Unit]        = navigation.redirectUnsafe(to)
 
 private object DeferredFlash extends Flash:
   def put(kind: FlashKind, message: String): LiveIO[Unit] = Deferred.fail("put flash")
@@ -38,6 +105,15 @@ private object DeferredFlash extends Flash:
   def clearAll: LiveIO[Unit]                              = Deferred.fail("clear all flash")
   def get(kind: FlashKind): LiveIO[Option[String]]        = Deferred.fail("get flash")
   def snapshot: LiveIO[Map[FlashKind, String]]            = Deferred.fail("snapshot flash")
+
+final private class JournaledFlash(journal: RootTurnJournal) extends Flash:
+  def put(kind: FlashKind, message: String): LiveIO[Unit] =
+    ZIO.fail(NullPointerException("flash message must not be null")).when(message == null) *>
+      journal.flash.update(_.updated(kind, message))
+  def clear(kind: FlashKind): LiveIO[Unit]         = journal.flash.update(_ - kind)
+  def clearAll: LiveIO[Unit]                       = journal.flash.set(Map.empty)
+  def get(kind: FlashKind): LiveIO[Option[String]] = journal.flash.get.map(_.get(kind))
+  def snapshot: LiveIO[Map[FlashKind, String]]     = journal.flash.get
 
 private object DeferredUploads extends Uploads:
   def allow[R](definition: LiveUploadDef[R]): LiveIO[LiveUpload[R]] = Deferred.fail("allow upload")
@@ -93,11 +169,20 @@ final private class DeferredSubscriptions[Msg] extends Subscriptions[Msg]:
     Deferred.fail("replace subscription")
   def cancel(key: SubscriptionKey): LiveIO[Unit] = Deferred.fail("cancel subscription")
 
-private object DeferredClient extends Client:
+final private class JournaledClient(journal: RootTurnJournal) extends Client:
   def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit] =
-    Deferred.fail("push client event")
+    payload.toJsonAST match
+      case Right(value) => journal.clientEvents.update(_ :+ ClientEffect(event.value, value))
+      case Left(error)  =>
+        ZIO.fail(
+          IllegalArgumentException(s"Could not encode client event '${event.value}': $error")
+        )
+
   def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit] =
-    Deferred.fail("execute client command")
+    import JSCommands.JSCommand.given
+    journal.clientEvents.update(
+      _ :+ ClientEffect("js:exec", Json.Obj("cmd" -> Json.Str(js.toJson)))
+    )
 
 private object DeferredComponentUpdates extends ComponentUpdates:
   def sendUpdate[Props, Msg, Model](
@@ -166,40 +251,223 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
     def detach(id: String): LiveIO[Unit] = Deferred.fail("detach after-render hook")
 end DeferredRootHooks
 
-final private class RootConnected[Msg](metadata: RootConnectionMetadata)
+final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
+    extends RootHooks[Msg, Model]:
+  val browserEvent: RootBrowserEventHooks[Msg, Model] = new RootBrowserEventHooks[Msg, Model]:
+    def attach[A: JsonDecoder](
+      id: String,
+      event: BrowserToServerEvent[A]
+    )(
+      hook: (Model, A, MessageContext[Msg, Model]) => LiveIO[Model]
+    ) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(
+        dynamicBrowser = RootHookRegistry.replace(
+          registry.dynamicBrowser,
+          id,
+          RootHookRegistry.browserHook(event, summon[JsonDecoder[A]], hook)
+        )
+      )
+    )
+    def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(dynamicBrowser = RootHookRegistry.detach(registry.dynamicBrowser, id))
+    )
+
+  val event: RootEventHooks[Msg, Model] = new RootEventHooks[Msg, Model]:
+    def attach(
+      id: String
+    )(
+      hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
+    ) =
+      journal.updateHooks[Msg, Model](registry =>
+        registry.copy(
+          dynamicEvent = RootHookRegistry.replace(
+            registry.dynamicEvent,
+            id,
+            new RootHookRegistry.Event[Msg, Model]:
+              def invoke(model: Model, message: Msg, context: MessageContext[Msg, Model]) =
+                hook(model, message, context)
+          )
+        )
+      )
+    def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(dynamicEvent = RootHookRegistry.detach(registry.dynamicEvent, id))
+    )
+
+  val params: RootParamsHooks[Msg, Model] = new RootParamsHooks[Msg, Model]:
+    def attach(
+      id: String
+    )(
+      hook: (Model, URL, ParamsContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
+    ) =
+      journal.updateHooks[Msg, Model](registry =>
+        registry.copy(
+          dynamicParams = RootHookRegistry.replace(
+            registry.dynamicParams,
+            id,
+            new RootHookRegistry.Params[Msg, Model]:
+              def invoke(model: Model, url: URL, context: ParamsContext[Msg, Model]) =
+                hook(model, url, context)
+          )
+        )
+      )
+    def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(dynamicParams = RootHookRegistry.detach(registry.dynamicParams, id))
+    )
+
+  val info: RootInfoHooks[Msg, Model] = new RootInfoHooks[Msg, Model]:
+    def attach(
+      id: String
+    )(
+      hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
+    ) =
+      journal.updateHooks[Msg, Model](registry =>
+        registry.copy(
+          dynamicInfo = RootHookRegistry.replace(
+            registry.dynamicInfo,
+            id,
+            new RootHookRegistry.Event[Msg, Model]:
+              def invoke(model: Model, message: Msg, context: MessageContext[Msg, Model]) =
+                hook(model, message, context)
+          )
+        )
+      )
+    def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(dynamicInfo = RootHookRegistry.detach(registry.dynamicInfo, id))
+    )
+
+  val async: RootAsyncHooks[Msg, Model] = new RootAsyncHooks[Msg, Model]:
+    def attach(
+      id: String
+    )(
+      hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => LiveIO[
+        LiveHookResult[Model]
+      ]
+    ) =
+      journal.updateHooks[Msg, Model](registry =>
+        registry.copy(
+          dynamicAsync = RootHookRegistry.replace(
+            registry.dynamicAsync,
+            id,
+            new RootHookRegistry.Async[Msg, Model]:
+              def invoke(
+                model: Model,
+                event: LiveAsyncEvent[Msg],
+                context: MessageContext[Msg, Model]
+              ) = hook(model, event, context)
+          )
+        )
+      )
+    def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(dynamicAsync = RootHookRegistry.detach(registry.dynamicAsync, id))
+    )
+
+  val afterRender: RootAfterRenderHooks[Msg, Model] = new RootAfterRenderHooks[Msg, Model]:
+    def attach(id: String)(hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]) =
+      journal.updateHooks[Msg, Model](registry =>
+        registry.copy(
+          dynamicAfterRender = RootHookRegistry.replace(
+            registry.dynamicAfterRender,
+            id,
+            new RootHookRegistry.AfterRender[Msg, Model]:
+              def invoke(model: Model, context: AfterRenderContext[Msg, Model]) =
+                hook(model, context)
+          )
+        )
+      )
+    def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(dynamicAfterRender = RootHookRegistry.detach(registry.dynamicAfterRender, id))
+    )
+end JournaledRootHooks
+
+final private class RootConnected[Msg](metadata: RootConnectionMetadata, journal: RootTurnJournal)
     extends RootMountConnected[Msg]:
   val staticChanged: Boolean            = metadata.staticChanged
   val connectParams: Map[String, Json]  = metadata.connectParams
   val async: Async[Msg]                 = DeferredAsync()
   val subscriptions: Subscriptions[Msg] = DeferredSubscriptions()
-  val client: Client                    = DeferredClient
+  val client: Client                    = JournaledClient(journal)
 
 final private[connection] class RootMountContext[Msg, Model] private (
-  val connection: Connection[RootMountConnected[Msg]])
+  val connection: Connection[RootMountConnected[Msg]],
+  val nav: MountNavigation,
+  val hooks: RootHooks[Msg, Model],
+  val flash: Flash)
     extends MountContext[Msg, Model]:
-  val nav: MountNavigation         = DeferredMountNavigation
-  val flash: Flash                 = DeferredFlash
-  val uploads: Uploads             = DeferredUploads
-  val streams: Streams             = DeferredStreams
-  val hooks: RootHooks[Msg, Model] = DeferredRootHooks()
+  val uploads: Uploads = DeferredUploads
+  val streams: Streams = DeferredStreams
 
 private[scalive] object RootMountContext:
-  def connected[Msg, Model](metadata: RootConnectionMetadata): RootMountContext[Msg, Model] =
-    RootMountContext(Connection.Connected(RootConnected(metadata)))
+  def connected[Msg, Model](
+    metadata: RootConnectionMetadata,
+    currentUrl: URL,
+    journal: RootTurnJournal
+  ): RootMountContext[Msg, Model] =
+    RootMountContext(
+      Connection.Connected(RootConnected(metadata, journal)),
+      new RootMountNavigation(currentUrl, journal),
+      JournaledRootHooks(journal),
+      JournaledFlash(journal)
+    )
 
   def disconnected[Msg, Model]: MountContext[Msg, Model] =
-    RootMountContext(Connection.Disconnected)
+    RootMountContext(
+      Connection.Disconnected,
+      new MountNavigation:
+        def pushNavigateUnsafe(to: String)    = Deferred.fail("push navigate")
+        def replaceNavigateUnsafe(to: String) = Deferred.fail("replace navigate")
+        def redirectUnsafe(to: String)        = Deferred.fail("redirect")
+      ,
+      DeferredRootHooks(),
+      DeferredFlash
+    )
 
-final private[connection] class RootMessageContext[Msg, Model](metadata: RootConnectionMetadata)
+final private[connection] class RootMessageContext[Msg, Model](
+  metadata: RootConnectionMetadata,
+  currentUrl: URL,
+  journal: RootTurnJournal)
     extends MessageContext[Msg, Model]:
   val staticChanged: Boolean            = metadata.staticChanged
   val connectParams: Map[String, Json]  = metadata.connectParams
-  val nav: Navigation                   = DeferredNavigation
-  val flash: Flash                      = DeferredFlash
+  val nav: Navigation                   = new RootNavigation(currentUrl, journal, allowPatch = true)
+  val flash: Flash                      = JournaledFlash(journal)
   val uploads: Uploads                  = DeferredUploads
   val streams: Streams                  = DeferredStreams
   val async: Async[Msg]                 = DeferredAsync()
   val subscriptions: Subscriptions[Msg] = DeferredSubscriptions()
-  val client: Client                    = DeferredClient
+  val client: Client                    = JournaledClient(journal)
   val components: ComponentUpdates      = DeferredComponentUpdates
-  val hooks: RootHooks[Msg, Model]      = DeferredRootHooks()
+  val hooks: RootHooks[Msg, Model]      = JournaledRootHooks(journal)
+
+final private[connection] class RootParamsContext[Msg, Model](
+  metadata: RootConnectionMetadata,
+  currentUrl: URL,
+  journal: RootTurnJournal,
+  connected: Boolean)
+    extends ParamsContext[Msg, Model]:
+  val connection: Connection[RootParamsConnected[Msg]] =
+    if connected then
+      Connection.Connected(new RootParamsConnected[Msg]:
+        val staticChanged                     = metadata.staticChanged
+        val connectParams                     = metadata.connectParams
+        val async: Async[Msg]                 = DeferredAsync()
+        val subscriptions: Subscriptions[Msg] = DeferredSubscriptions()
+        val client: Client                    = JournaledClient(journal)
+        val components: ComponentUpdates      = DeferredComponentUpdates)
+    else Connection.Disconnected
+  val nav: Navigation              = new RootNavigation(currentUrl, journal, allowPatch = true)
+  val flash: Flash                 = JournaledFlash(journal)
+  val uploads: Uploads             = DeferredUploads
+  val streams: Streams             = DeferredStreams
+  val hooks: RootHooks[Msg, Model] = JournaledRootHooks(journal)
+
+final private[connection] class RootAfterRenderContext[Msg, Model](
+  metadata: RootConnectionMetadata,
+  journal: RootTurnJournal)
+    extends AfterRenderContext[Msg, Model]:
+  val connection: Connection[RootAfterRenderConnected] = Connection.Connected(
+    new RootAfterRenderConnected:
+      val staticChanged = metadata.staticChanged
+      val connectParams = metadata.connectParams
+      val client        = JournaledClient(journal)
+  )
+  val hooks: RootHooks[Msg, Model] = JournaledRootHooks(journal)

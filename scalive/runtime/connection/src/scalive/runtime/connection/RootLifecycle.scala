@@ -1,0 +1,35 @@
+package scalive.runtime.connection
+
+import zio.http.URL
+
+import scalive.*
+
+/** Typed root callbacks after route, session, and layout assembly. */
+final private[scalive] case class RootLifecycle[Msg, Model](
+  initialUrl: URL,
+  hooks: LiveHooks[Msg, Model],
+  pageTitle: Model => Option[String],
+  mount: MountContext[Msg, Model] => LiveIO[Model],
+  handleMessage: (Model, MessageContext[Msg, Model], Msg) => LiveIO[Model],
+  prepareParams: URL => LiveIO[RootParamsHandler[Msg, Model]],
+  view: Signal[(Model, URL)] => HtmlElement[Msg])
+
+final private[scalive] case class RootParamsHandler[Msg, Model](
+  runHooks: Boolean,
+  run: (Model, ParamsContext[Msg, Model]) => LiveIO[Model])
+
+private[scalive] object RootLifecycle:
+  def ordinary[Msg, Model](
+    liveView: LiveView[Msg, Model],
+    initialUrl: URL = URL.root
+  ): RootLifecycle[Msg, Model] =
+    RootLifecycle(
+      initialUrl = initialUrl,
+      hooks = liveView.hooks,
+      pageTitle = liveView.pageTitle,
+      mount = liveView.mount,
+      handleMessage = (model, context, message) => liveView.handleMessage(model, context)(message),
+      prepareParams = _ =>
+        LiveIO.succeed(RootParamsHandler(runHooks = false, (model, _) => LiveIO.succeed(model))),
+      view = input => liveView.view(input.map(_._1))
+    )

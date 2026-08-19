@@ -3,7 +3,7 @@ package scalive.protocol.phoenix
 import zio.json.*
 import zio.json.ast.Json
 
-import scalive.BindingPayload
+import scalive.*
 
 /** The nullable references used by Phoenix's JSON serializer. */
 private[scalive] enum PhoenixRef:
@@ -67,6 +67,8 @@ private[scalive] enum PhoenixInbound:
   case Heartbeat(joinRef: PhoenixRef, ref: PhoenixRef)
   case Join(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, payload: RootJoin)
   case Event(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, payload: RootEvent)
+  case LivePatch(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, url: String)
+  case Leave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String)
 
 final private[scalive] case class RootJoin(
   url: Option[String],
@@ -81,26 +83,86 @@ final private[scalive] case class RootEvent(
   eventType: String,
   event: String,
   value: Json,
-  cid: Option[Long]):
+  cid: Option[Long],
+  uploads: Option[Json.Obj] = None,
+  meta: Option[Json.Obj] = None):
 
-  /** Converts only Phoenix's flat root click payload to Scalive binding parameters. */
+  /** Converts a non-form root event value to Scalive binding parameters. */
   def rootClickParams: Either[String, BindingPayload.Params] =
-    if eventType != "click" then Left(s"unsupported root event type '$eventType'")
+    if eventType == "form" then Left("form events do not contain parameter objects")
     else
       value match
         case Json.Obj(fields) =>
-          fields
-            .foldLeft[Either[String, Map[String, String]]](Right(Map.empty)) {
-              case (result, (name, Json.Str(fieldValue))) =>
-                result.map(_.updated(name, fieldValue))
-              case (_, (name, _: Json.Obj | _: Json.Arr)) =>
-                Left(s"unsupported nested click value at '$name'")
-              case (_, (name, _)) => Left(s"click value '$name' must be a string")
-            }.map(BindingPayload.Params.apply)
-        case Json.Str(_) => Left("form-encoded click values are unsupported")
-        case _           => Left("root click value must be a flat JSON object")
+          Right(
+            BindingPayload.Params(
+              fields.map((name, fieldValue) => name -> stringify(fieldValue)).toMap
+            )
+          )
+        case _ => Left("non-form root event value must be a JSON object")
 
-  def toBindingPayload: Either[String, BindingPayload] = rootClickParams
+  def toBindingPayload: Either[String, BindingPayload] =
+    if eventType == "form" then
+      value match
+        case Json.Str(encoded) =>
+          FormData
+            .fromUrlEncoded(encoded)
+            .left.map(error => s"could not decode form event value: $error")
+            .map(data => BindingPayload.Form(data, formMeta(data)))
+        case _ => Left("form event value must be a URL-encoded string")
+    else rootClickParams
+
+  private def formMeta(data: FormData): FormEvent.Meta =
+    val fields = meta.fold(Map.empty[String, Json])(_.fields.toMap)
+    FormEvent.Meta(
+      target = fields.get("_target").flatMap(decodeTarget),
+      submitter = decodeSubmitter(fields, data),
+      recovery = fields
+        .get("_recover")
+        .orElse(fields.get("_recovery"))
+        .orElse(fields.get("recovery"))
+        .exists(asBoolean),
+      metadata = fields.view.mapValues(stringify).toMap
+    )
+
+  private def decodeTarget(json: Json): Option[FormPath] = json match
+    case Json.Str("undefined") => None
+    case Json.Str(value)       => Some(FormPath.parse(value))
+    case Json.Arr(values)      =>
+      val segments = values.collect {
+        case Json.Str(segment) if segment.nonEmpty && segment != "undefined" => segment
+      }.toVector
+      if segments.isEmpty && values.exists(_.asString.contains("undefined")) then None
+      else Some(FormPath(segments))
+    case _ => None
+
+  private def decodeSubmitter(
+    fields: Map[String, Json],
+    data: FormData
+  ): Option[FormSubmitter] =
+    fields.get("submitter").orElse(fields.get("_submitter")).flatMap {
+      case Json.Obj(rawSubmitterFields) =>
+        val submitterFields = rawSubmitterFields.toMap
+        submitterFields.get("name").flatMap(_.asString).filter(_.nonEmpty).map { name =>
+          val value = submitterFields.get("value").flatMap(_.asString).getOrElse("")
+          FormSubmitter(name, value)
+        }
+      case Json.Str(name) if name.nonEmpty =>
+        data.get(name).map(value => FormSubmitter(name, value))
+      case _ => None
+    }
+
+  private def asBoolean(json: Json): Boolean = json match
+    case Json.Bool(value) => value
+    case Json.Str(value)  => value == "true"
+    case _                => false
+
+  private def stringify(json: Json): String = json match
+    case Json.Str(value)  => value
+    case Json.Num(value)  => value.toString
+    case Json.Bool(value) => value.toString
+    case Json.Null        => ""
+    case nested           => nested.toJson
+end RootEvent
 
 private[scalive] object PhoenixProtocol:
   val PhoenixVersion  = "1.7.21"
@@ -123,6 +185,13 @@ private[scalive] object PhoenixProtocol:
         decodeJoin(payload).map(PhoenixInbound.Join(joinRef, ref, topic, _))
       case PhoenixEnvelope(joinRef, ref, topic, "event", payload) if topic.startsWith("lv:") =>
         decodeEvent(payload).map(PhoenixInbound.Event(joinRef, ref, topic, _))
+      case PhoenixEnvelope(joinRef, ref, topic, "live_patch", payload) if topic.startsWith("lv:") =>
+        decodeLivePatch(payload).map(PhoenixInbound.LivePatch(joinRef, ref, topic, _))
+      case PhoenixEnvelope(joinRef, ref, topic, "phx_leave", Json.Obj(fields))
+          if topic.startsWith("lv:") && fields.isEmpty =>
+        Right(PhoenixInbound.Leave(joinRef, ref, topic))
+      case PhoenixEnvelope(_, _, topic, "phx_leave", _) if topic.startsWith("lv:") =>
+        Left("phx_leave payload must be an empty object")
       case other => Left(s"unsupported Phoenix message '${other.topic}:${other.event}'")
 
   private def decodeJoin(json: Json): Either[String, RootJoin] = json match
@@ -152,15 +221,23 @@ private[scalive] object PhoenixProtocol:
   private def decodeEvent(json: Json): Either[String, RootEvent] = json match
     case Json.Obj(rawFields) =>
       val fields = rawFields.toMap
-      rejectUnknown(fields, Set("type", "event", "value", "cid")).flatMap { _ =>
+      rejectUnknown(fields, Set("type", "event", "value", "uploads", "cid", "meta")).flatMap { _ =>
         for
           eventType <- requiredString(fields, "type")
           event     <- requiredString(fields, "event")
           value     <- fields.get("value").toRight("missing field 'value'")
+          uploads   <- optionalObject(fields, "uploads")
           cid       <- optionalCid(fields)
-        yield RootEvent(eventType, event, value, cid)
+          meta      <- optionalObject(fields, "meta")
+        yield RootEvent(eventType, event, value, cid, uploads, meta)
       }
     case _ => Left("event payload must be an object")
+
+  private def decodeLivePatch(json: Json): Either[String, String] = json match
+    case Json.Obj(rawFields) if rawFields.size == 1 =>
+      requiredString(rawFields.toMap, "url")
+    case Json.Obj(_) => Left("live_patch payload must contain exactly one 'url' field")
+    case _           => Left("live_patch payload must be an object")
 
   private def requiredString(fields: Map[String, Json], name: String): Either[String, String] =
     fields.get(name) match
@@ -191,6 +268,14 @@ private[scalive] object PhoenixProtocol:
     case None                   => Right(default)
     case Some(Json.Bool(value)) => Right(value)
     case Some(_)                => Left(s"field '$name' must be a boolean")
+
+  private def optionalObject(
+    fields: Map[String, Json],
+    name: String
+  ): Either[String, Option[Json.Obj]] = fields.get(name) match
+    case None | Some(Json.Null) => Right(None)
+    case Some(value: Json.Obj)  => Right(Some(value))
+    case Some(_)                => Left(s"field '$name' must be an object or null")
 
   private def optionalCid(fields: Map[String, Json]): Either[String, Option[Long]] =
     fields.get("cid") match

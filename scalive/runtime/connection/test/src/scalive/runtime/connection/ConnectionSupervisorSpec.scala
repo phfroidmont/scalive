@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import zio.*
 import zio.http.URL
 import zio.json.ast.Json
+import zio.stream.ZStream
 import zio.test.*
 
 import scalive.*
@@ -436,6 +437,68 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
         yield assertTrue(
           leave == ConnectionSupervisor.LeaveResult.Left,
           grandLookup.isEmpty
+        )
+      }
+    },
+    test("cleanup defects cannot suppress remaining lifecycle closure") {
+      ZIO.scoped {
+        for
+          rootFinalized <- Promise.make[Nothing, Unit]
+          rootStarted   <- Promise.make[Nothing, Unit]
+          childStarted  <- Promise.make[Nothing, Unit]
+          value         <- fixture
+          rootOutput    <- Queue.bounded[ConnectionOutput](4)
+          childOutput   <- Queue.bounded[ConnectionOutput](4)
+          child = new LiveView.Eventless[Unit]:
+                    def mount(ctx: MountContext): LiveIO[Unit] =
+                      ctx.connection match
+                        case Connection.Connected(connected) =>
+                          connected.subscriptions.start(
+                            SubscriptionKey("defect"),
+                            SubscriptionDelivery.Lossless
+                          )(
+                            (ZStream.fromZIO(childStarted.succeed(()).unit) *> ZStream.never)
+                              .ensuring(ZIO.dieMessage("child cleanup defect"))
+                          )
+                        case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                    def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
+          parent = new LiveView.Eventless[Unit]:
+                     def mount(ctx: MountContext): LiveIO[Unit] =
+                       ctx.connection match
+                         case Connection.Connected(connected) =>
+                           connected.subscriptions.start(
+                             SubscriptionKey("root"),
+                             SubscriptionDelivery.Lossless
+                           )(
+                             (ZStream.fromZIO(rootStarted.succeed(()).unit) *> ZStream.never)
+                               .ensuring(rootFinalized.succeed(()).unit)
+                           )
+                         case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                     def view(model: Signal[Unit]): HtmlElement[Nothing] =
+                       div(liveView("child", child))
+          root        <- startRoot(value, parent, rootOutput)
+          _           <- rootOutput.take
+          childClaims <- claimsFor(value)
+          reservation <- value.supervisor.reserveNested(childClaims)
+          nested <- value.supervisor.startNested(
+                      reservation,
+                      URL.root,
+                      metadata,
+                      "child",
+                      false,
+                      childOutput.offer(_).unit
+                    )
+          _         <- childOutput.take
+          _         <- rootStarted.await *> childStarted.await
+          closeExit <- value.supervisor.close.exit
+          rootClosed <- root.awaitClosed.timeout(1.second)
+          childClosed <- nested.awaitClosed.timeout(1.second)
+          rootRan    <- rootFinalized.isDone
+        yield assertTrue(
+          closeExit.isSuccess,
+          rootClosed.nonEmpty,
+          childClosed.nonEmpty,
+          rootRan
         )
       }
     }

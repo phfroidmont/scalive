@@ -4,9 +4,8 @@ import zio.*
 
 import scalive.*
 import scalive.render.*
-import scalive.runtime.contracts.LifecycleId
 import scalive.runtime.contracts.ComponentInstanceId
-import scalive.runtime.resources.OwnerId
+import scalive.runtime.contracts.LifecycleId
 import scalive.runtime.resources.OwnerId
 
 private[scalive] trait DisconnectedNestedResolver:

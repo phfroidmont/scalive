@@ -1,6 +1,7 @@
 package scalive
 
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*
 import zio.http.*
@@ -352,6 +353,58 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       .encodeBinary(PhoenixUploadBinaryFrame(joinRef, ref, topic, "chunk", bytes)).toOption.get
 
   def spec = suite("ZIO HTTP upload transport")(
+    test("unauthorized joins allocate no lifecycle and malformed frames close the socket") {
+      val factories = AtomicInteger(0)
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+        def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
+      val application = scalive.Live.router(scalive.live {
+        factories.incrementAndGet()
+        View
+      })
+
+      withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          before = factories.get()
+          _ <- socket.send(
+                 PhoenixEnvelope(
+                   PhoenixRef.Value("unauthorized"),
+                   PhoenixRef.Value("1"),
+                   "lv:unknown",
+                   "phx_join",
+                   Json.Obj(
+                     "session" -> Json.Str("invalid"),
+                     "params"  -> Json.Obj.empty
+                   )
+                 )
+               )
+          rejected <- socket.receiveReply("1", "lv:unknown")
+          afterRejected = factories.get()
+          _ <- socket.send(
+                 PhoenixEnvelope(
+                   PhoenixRef.Null,
+                   PhoenixRef.Value("2"),
+                   "phoenix",
+                   "heartbeat",
+                   Json.Obj.empty
+                 )
+               )
+          heartbeat <- socket.receiveReply("2", "phoenix")
+          _ <- socket.channel.send(ChannelEvent.read(WebSocketFrame.text("{")))
+          closed <- socket.closed.await.timeout(5.seconds)
+          afterMalformed = factories.get()
+        yield assertTrue(
+          before == 1,
+          status(rejected) == "error",
+          afterRejected == 1,
+          heartbeat.event == "phx_reply",
+          closed.nonEmpty,
+          afterMalformed == 1
+        )
+      }
+    },
     test("root preflight projects canonical hosted and external responses with exact claims") {
       for
         fixture <- fixture()

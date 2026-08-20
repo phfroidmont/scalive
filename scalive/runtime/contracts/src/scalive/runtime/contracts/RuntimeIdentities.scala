@@ -5,6 +5,18 @@ import java.util.concurrent.atomic.AtomicLong
 enum RuntimeIdentityError:
   case Exhausted(identity: String)
 
+opaque type ConnectionId = Long
+
+object ConnectionId:
+  private val counter = AtomicLong(0L)
+
+  private[scalive] def fresh(): Either[RuntimeIdentityError, ConnectionId] =
+    RuntimeIdentityAllocator.next(counter, "connection identity")(identity => identity)
+
+  private[scalive] def apply(value: Long): ConnectionId = value
+
+  extension (identity: ConnectionId) def value: Long = identity
+
 opaque type LifecycleId = Long
 
 object LifecycleId:
@@ -29,6 +41,18 @@ object ComponentInstanceId:
   private[scalive] def apply(value: Long): ComponentInstanceId = value
 
   extension (identity: ComponentInstanceId) def value: Long = identity
+
+opaque type ResourceId = Long
+
+object ResourceId:
+  private val counter = AtomicLong(0L)
+
+  private[scalive] def fresh(): Either[RuntimeIdentityError, ResourceId] =
+    RuntimeIdentityAllocator.next(counter, "resource identity")(identity => identity)
+
+  private[scalive] def apply(value: Long): ResourceId = value
+
+  extension (identity: ResourceId) def value: Long = identity
 
 opaque type Epoch = Long
 

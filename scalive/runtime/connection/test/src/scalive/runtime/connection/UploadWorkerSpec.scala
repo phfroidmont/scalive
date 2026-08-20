@@ -5,7 +5,6 @@ import zio.json.ast.Json
 import zio.test.*
 
 import scalive.*
-import scalive.render.*
 import scalive.runtime.contracts.*
 import scalive.runtime.resources.*
 import scalive.upload.*
@@ -38,6 +37,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
     aborts: Ref[Vector[(String, LiveUploadAbortReason)]],
     discards: Ref[Int],
     blockedNames: Set[String],
+    defectiveNames: Set[String],
     entered: Queue[String],
     release: Promise[Nothing, Unit])
       extends LiveUploadWriter[WriterState, Chunk[Byte]]:
@@ -50,6 +50,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
       )(_ => activeWrites.update(_ - 1)) { _ =>
         writes.update(_ :+ (state.name -> data)) *>
           ZIO.when(blockedNames.contains(state.name))(entered.offer(state.name) *> release.await) *>
+          ZIO.when(defectiveNames.contains(state.name))(ZIO.dieMessage("write defect")) *>
           ZIO.succeed(state.copy(bytes = state.bytes ++ data))
       }
 
@@ -73,7 +74,10 @@ object UploadWorkerSpec extends ZIOSpecDefault:
     entered: Queue[String],
     release: Promise[Nothing, Unit])
 
-  private def writerFixture(blockedNames: Set[String] = Set.empty): UIO[WriterFixture] =
+  private def writerFixture(
+    blockedNames: Set[String] = Set.empty,
+    defectiveNames: Set[String] = Set.empty
+  ): UIO[WriterFixture] =
     for
       initialized <- Ref.make(0)
       writes      <- Ref.make(Vector.empty[(String, Chunk[Byte])])
@@ -92,6 +96,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
         aborts,
         discards,
         blockedNames,
+        defectiveNames,
         entered,
         release
       ),
@@ -230,6 +235,51 @@ object UploadWorkerSpec extends ZIOSpecDefault:
           maximum == 1,
           model.upload.get.entries.head.status == LiveUploadEntryStatus.Completed,
           model.consumed.contains(Chunk[Byte](1, 2, 3, 4))
+        )
+      }
+    },
+    test("a processing defect fails the in-flight chunk promptly") {
+      ZIO.scoped {
+        for
+          fixture <- writerFixture(
+                       blockedNames = Set("defective"),
+                       defectiveNames = Set("defective")
+                     )
+          scope   <- ZIO.service[Scope]
+          handle <- HostedUploadWorker.initialize(
+                      HostedWorkerId(
+                        OwnerId.Root(LifecycleId(1L)),
+                        Epoch.initial,
+                        UploadRef("upload"),
+                        UploadEntryRef("entry"),
+                        1L
+                      ),
+                      fixture.writer,
+                      client("defective", 1L)
+                    )
+          worker <- UploadEntryWorker.start(
+                      handle,
+                      expectedBytes = 1L,
+                      maxChunkBytes = 4,
+                      capacity = 1,
+                      callbacks = UploadWorkerCallbacks(
+                        complete = _ => ZIO.unit,
+                        fail = _ => ZIO.dieMessage("failure callback defect")
+                      ),
+                      scope = scope
+                    )
+          first <- worker.offer(Chunk.single(1.toByte)).either.fork
+          _     <- fixture.entered.take
+          queued <- worker.offer(Chunk.single(2.toByte)).either.fork
+          _      <- queued.status.repeatUntil(_.isSuspended)
+          _      <- fixture.release.succeed(())
+          firstResult  <- first.join.timeout(5.seconds)
+          queuedResult <- queued.join.timeout(5.seconds)
+          future       <- worker.offer(Chunk.single(3.toByte)).either
+        yield assertTrue(
+          firstResult == Some(Left(UploadChunkError.WriterFailed("writer_error"))),
+          queuedResult == Some(Left(UploadChunkError.WriterFailed("writer_error"))),
+          future == Left(UploadChunkError.Closed)
         )
       }
     },

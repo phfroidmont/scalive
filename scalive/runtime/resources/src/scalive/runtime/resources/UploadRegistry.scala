@@ -1,11 +1,12 @@
 package scalive.runtime.resources
 
-import scalive.runtime.contracts.Epoch
-import scalive.runtime.contracts.ComponentInstanceId
-import scalive.runtime.contracts.LifecycleId
-import scalive.upload.*
 import zio.*
 import zio.json.ast.Json
+
+import scalive.runtime.contracts.ComponentInstanceId
+import scalive.runtime.contracts.Epoch
+import scalive.runtime.contracts.LifecycleId
+import scalive.upload.*
 
 final private[scalive] case class UploadKey[Result](definition: LiveUploadDef[Result])
 

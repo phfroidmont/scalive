@@ -152,6 +152,7 @@ object ConnectionError:
       )
   final case class IngressSaturated(capacity: Int)
       extends ConnectionError(s"connection ingress capacity $capacity is saturated")
+  case object IngressFailed extends ConnectionError("connection ingress failed unexpectedly")
   final case class KernelRejected(rejection: SessionRejection)
       extends ConnectionError(s"kernel rejected an event: $rejection")
   final case class DuplicateCommand(command: CommandId)

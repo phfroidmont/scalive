@@ -316,7 +316,7 @@ Unqualified runtime suites are under `scalive/test/src/scalive`; compile-time AP
 | Verified-route macros | Intentional Scala divergence; typed codecs and locations are the replacement | `LiveRoutesTypeSafetySpec.scala`, `LiveLocationSpec.scala` |
 | Long-poll transport fallback | Scope decision still required; no current target milestone implements it | No long-poll evidence; WebSocket coverage exists in `WebSocketMessageSpec.scala` and the browser suite |
 | Phoenix endpoint process options | Out of scope as direct API parity; applicable ZIO HTTP configuration remains transport-owned | Socket path coverage in `LiveRoutesTypeSafetySpec.scala` |
-| Observability | Required target behavior with a Scala/ZIO event model, not Phoenix telemetry API parity | `RuntimeTraceSpec.scala` is legacy evidence; target correlated tracing remains unimplemented |
+| Observability | Required target behavior with a Scala/ZIO event model, not Phoenix telemetry API parity | `RuntimeObservabilitySpec.scala` covers correlated, ordered, payload-redacted runtime events and sink-defect isolation |
 | Test harness helpers | Required Scalive-native harness, not Phoenix helper API parity | `DisconnectedRenderSpec.scala`; connected harness remains unimplemented |
 
 ## Maintenance Rules

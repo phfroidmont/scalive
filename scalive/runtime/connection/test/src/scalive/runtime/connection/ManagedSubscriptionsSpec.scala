@@ -180,6 +180,39 @@ object ManagedSubscriptionsSpec extends ZIOSpecDefault:
           model       <- awaitModel(connection)(_.size == 2)
         yield assertTrue(firstModel == Vector(1), restarted.isRight, model == Vector(1, 2))
       }
+    },
+    test("a lossless stream defect stops and unregisters only that subscription") {
+      ZIO.scoped {
+        for
+          started    <- Promise.make[Nothing, Unit]
+          stopped    <- Promise.make[Nothing, Unit]
+          outputCount <- Ref.make(0)
+          retired     <- Promise.make[Nothing, Unit]
+          connection  <- RootConnection.start(
+                           config,
+                           metadata,
+                           Fixture(),
+                           _ =>
+                             outputCount.updateAndGet(_ + 1).flatMap(count =>
+                               retired.succeed(()).unit.when(count == 3).unit
+                             )
+                         )
+          key         = SubscriptionKey("defect")
+          broken      = (ZStream.fromZIO(started.succeed(()).unit) *> ZStream.dieMessage("broken"))
+                          .ensuring(stopped.succeed(()).unit)
+          _         <- connection.submitInfo(Message.Start(key, SubscriptionDelivery.Lossless, broken))
+          _         <- started.await *> stopped.await *> retired.await
+          restarted <- connection
+                         .submitInfo(
+                           Message.Start(
+                             key,
+                             SubscriptionDelivery.Lossless,
+                             ZStream.succeed(Message.Value(3))
+                           )
+                         ).either
+          model <- awaitModel(connection)(_.contains(3))
+        yield assertTrue(restarted.isRight, model == Vector(3))
+      }
     }
   ) @@ TestAspect.timeout(10.seconds)
 

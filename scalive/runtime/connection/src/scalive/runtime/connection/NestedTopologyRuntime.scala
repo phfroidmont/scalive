@@ -8,8 +8,8 @@ import zio.ZIO
 import scalive.LiveView
 import scalive.runtime.contracts.*
 import scalive.runtime.topology.AttachedNestedLifecycle
-import scalive.runtime.topology.NestedTopologyNavigation
 import scalive.runtime.topology.NestedRegistrationCandidate
+import scalive.runtime.topology.NestedTopologyNavigation
 import scalive.runtime.topology.NestedTopologyPlan
 import scalive.runtime.topology.NestedTopologyState
 
@@ -337,7 +337,7 @@ final private[scalive] class NestedTopologyRuntime private (
     pending = pending -- revokedSet
 
   private def retireAll(lifecycles: Vector[LifecycleId]): UIO[Unit] =
-    ZIO.foreachDiscard(lifecycles.distinct)(retireLifecycle)
+    RuntimeCleanup.all(lifecycles.distinct.map(retireLifecycle))
 
   private def withGate[E, A](effect: => IO[E, A]): IO[E, A] =
     gate.withPermit(ZIO.suspendSucceed(effect))

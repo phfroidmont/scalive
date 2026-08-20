@@ -3,6 +3,7 @@ package scalive.runtime.resources
 import scalive.runtime.contracts.ComponentInstanceId
 import scalive.runtime.contracts.Epoch
 import scalive.runtime.contracts.LifecycleId
+import scalive.runtime.contracts.ResourceId
 import scalive.runtime.contracts.RuntimeIdentityError
 
 private[scalive] enum OwnerId:
@@ -17,6 +18,7 @@ private[scalive] enum ResourceKey:
   case Upload(name: String)
 
 final private[scalive] case class ResourceToken private (
+  identity: ResourceId,
   owner: OwnerId,
   ownerEpoch: Epoch,
   key: ResourceKey,
@@ -24,11 +26,15 @@ final private[scalive] case class ResourceToken private (
 
   def advance(epoch: Epoch = ownerEpoch): Either[RuntimeIdentityError, ResourceToken] =
     if generation == Long.MaxValue then Left(RuntimeIdentityError.Exhausted("resource generation"))
-    else Right(ResourceToken.unsafe(owner, epoch, key, generation + 1L))
+    else ResourceId.fresh().map(ResourceToken.unsafe(_, owner, epoch, key, generation + 1L))
 
 private[scalive] object ResourceToken:
-  def initial(owner: OwnerId, ownerEpoch: Epoch, key: ResourceKey): ResourceToken =
-    unsafe(owner, ownerEpoch, key, 1L)
+  def initial(
+    owner: OwnerId,
+    ownerEpoch: Epoch,
+    key: ResourceKey
+  ): Either[RuntimeIdentityError, ResourceToken] =
+    ResourceId.fresh().map(unsafe(_, owner, ownerEpoch, key, 1L))
 
   def from(
     owner: OwnerId,
@@ -36,15 +42,16 @@ private[scalive] object ResourceToken:
     key: ResourceKey,
     generation: Long
   ): Option[ResourceToken] =
-    Option.when(generation > 0L)(unsafe(owner, ownerEpoch, key, generation))
+    Option.when(generation > 0L)(unsafe(ResourceId(generation), owner, ownerEpoch, key, generation))
 
   private def unsafe(
+    identity: ResourceId,
     owner: OwnerId,
     ownerEpoch: Epoch,
     key: ResourceKey,
     generation: Long
   ): ResourceToken =
-    new ResourceToken(owner, ownerEpoch, key, generation)
+    new ResourceToken(identity, owner, ownerEpoch, key, generation)
 
 final private[scalive] case class ResourceIndex[A] private (
   private val entries: Vector[ResourceIndex.Entry[A]],
@@ -69,7 +76,7 @@ final private[scalive] case class ResourceIndex[A] private (
   ): Either[RuntimeIdentityError, ResourceToken] =
     latestTokens.get(owner -> key) match
       case Some(current) => current.advance(ownerEpoch)
-      case None          => Right(ResourceToken.initial(owner, ownerEpoch, key))
+      case None          => ResourceToken.initial(owner, ownerEpoch, key)
 
   def install(token: ResourceToken, handle: A): Replacement[A] =
     val position =

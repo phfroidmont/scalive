@@ -11,6 +11,7 @@ import scalive.runtime.resources.*
 
 /** Owns one connected, unrouted root lifecycle. */
 final private[scalive] class RootConnection[Msg, Model] private (
+  val connectionId: ConnectionId,
   val lifecycle: LifecycleId,
   val epoch: Epoch,
   config: ConnectionConfig,
@@ -26,7 +27,8 @@ final private[scalive] class RootConnection[Msg, Model] private (
   failure: Promise[Nothing, ConnectionError],
   bootstrapReady: Promise[ConnectionError, Unit],
   closing: Promise[Nothing, Unit],
-  closed: Promise[Nothing, Unit]):
+  closed: Promise[Nothing, Unit],
+  observer: RuntimeObserver):
   import RootConnection.*
 
   def submitEvent(
@@ -330,7 +332,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
             ).as(Left(UploadAdmissionError.Rejected(UploadRegistryError.StaleAuthority)))
         else
           for
-            worker <- UploadEntryWorker.start(
+            worker <- uploadRuntime.startEntry(
                         handle,
                         claim.expectedBytes,
                         math.min(claim.chunkSize, config.maxUploadChunkBytes),
@@ -482,6 +484,12 @@ final private[scalive] class RootConnection[Msg, Model] private (
                       case Left(_) => UploadMutationResult(registry, ())
                   }
       _ <- mutateUpload(mutation)
+      _ <- observer.emit(
+             RuntimeEvent.TurnFailed(
+               RuntimeCorrelation(connectionId, lifecycle, epoch),
+               RuntimeFailure.UploadEntry
+             )
+           )
     yield ()
 
   private[scalive] def offerInternalPatch(destination: URL): IO[ConnectionError, Unit] =
@@ -626,20 +634,28 @@ final private[scalive] class RootConnection[Msg, Model] private (
         case false => restore(closed.await)
         case true  =>
           for
-            _ <- ingressGate.withPermit {
-                   for
-                     queued <- ingress.takeAll
-                     _      <- ZIO.foreachDiscard(queued)(event =>
-                            complete(event.id, Left(ConnectionError.Closed))
-                          )
-                     _ <- ingress.shutdown
-                   yield ()
-                 }
-            _ <- kernel.close
-            _ <- outbound.shutdown
-            _ <- writer.close
-            _ <- failPending(ConnectionError.Closed)
+            cleanup <- RuntimeCleanup
+                         .all(
+                           Vector(
+                             ingressGate.withPermit {
+                               for
+                                 queued <- ingress.takeAll
+                                 _      <- ZIO.foreachDiscard(queued)(event =>
+                                        complete(event.id, Left(ConnectionError.Closed))
+                                      )
+                                 _ <- ingress.shutdown
+                               yield ()
+                             },
+                             kernel.close,
+                             outbound.shutdown,
+                             writer.close,
+                             failPending(ConnectionError.Closed)
+                           )
+                         ).exit
             _ <- closed.succeed(())
+            _ <- cleanup match
+                   case Exit.Success(_)     => ZIO.unit
+                   case Exit.Failure(cause) => ZIO.failCause(cause)
           yield ()
       }
     }
@@ -681,7 +697,14 @@ final private[scalive] class RootConnection[Msg, Model] private (
                 .foldZIO(rejection => reject(command, rejection), _ => awaitCompletion(command))
                 .forkScoped.unit
           ) *> runIngress
-      }.catchAllCause(_ => ZIO.unit)
+      }.catchAllCause { cause =>
+        if cause.isInterruptedOnly then ZIO.unit
+        else
+          closing.isDone.flatMap {
+            case true  => ZIO.unit
+            case false => terminate(ConnectionError.IngressFailed)
+          }
+      }
 
   private def reject(command: CommandId, rejection: SessionRejection): UIO[Unit] =
     closing.isDone.flatMap {
@@ -834,7 +857,12 @@ final private[scalive] class RootConnection[Msg, Model] private (
     }
 
   private def terminate(error: ConnectionError): UIO[Unit] =
-    failure.succeed(error).flatMap {
+    observer.emit(
+      RuntimeEvent.TurnFailed(
+        RuntimeCorrelation(connectionId, lifecycle, epoch),
+        runtimeFailure(error)
+      )
+    ) *> failure.succeed(error).flatMap {
       case true =>
         bootstrapReady.fail(error).unit *> failPending(error) *> close
       case false => ZIO.unit
@@ -860,6 +888,14 @@ final private[scalive] class RootConnection[Msg, Model] private (
   private def writerFailure(error: SerialWriter.Error): ConnectionError = error match
     case SerialWriter.Error.WriteFailed(cause) => ConnectionError.SinkFailed(cause)
     case other                                 => ConnectionError.OutboundFailed(other.toString)
+
+  private def runtimeFailure(error: ConnectionError): RuntimeFailure = error match
+    case _: ConnectionError.IngressSaturated => RuntimeFailure.IngressSaturated
+    case ConnectionError.IngressFailed       => RuntimeFailure.RuntimeDefect
+    case _: ConnectionError.SinkFailed       => RuntimeFailure.Writer
+    case _: ConnectionError.UploadFailed     => RuntimeFailure.UploadEntry
+    case _: ConnectionError.SessionFailed    => RuntimeFailure.RuntimeDefect
+    case _                                   => RuntimeFailure.RuntimeDefect
 
   private def completeAfterWriterClose(
     command: CommandId,
@@ -916,7 +952,9 @@ private[scalive] object RootConnection:
     sink: ConnectionOutput => Task[Unit],
     topologyPreparer: NestedTopologyPreparer = NestedTopologyPreparer.unavailable,
     ownsPageTitle: Boolean = true,
-    requestedLifecycle: Option[LifecycleId] = None
+    requestedLifecycle: Option[LifecycleId] = None,
+    providedConnection: Option[ConnectionId] = None,
+    observer: RuntimeObserver = RuntimeObserver.noop
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     startLifecycle(
       config,
@@ -925,7 +963,9 @@ private[scalive] object RootConnection:
       sink,
       topologyPreparer,
       ownsPageTitle,
-      requestedLifecycle
+      requestedLifecycle,
+      providedConnection,
+      observer
     )
 
   def startLifecycle[Msg, Model](
@@ -935,10 +975,20 @@ private[scalive] object RootConnection:
     sink: ConnectionOutput => Task[Unit],
     topologyPreparer: NestedTopologyPreparer = NestedTopologyPreparer.unavailable,
     ownsPageTitle: Boolean = true,
-    requestedLifecycle: Option[LifecycleId] = None
+    requestedLifecycle: Option[LifecycleId] = None,
+    providedConnection: Option[ConnectionId] = None,
+    observer: RuntimeObserver = RuntimeObserver.noop
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
+        connectionId <- providedConnection.fold(
+                          ZIO
+                            .fromEither(ConnectionId.fresh()).mapError(error =>
+                              ConnectionError.SessionFailed(
+                                SessionFailure.StageFailed(SessionStage.Identity, error.toString)
+                              )
+                            )
+                        )(ZIO.succeed(_))
         lifecycleId <- requestedLifecycle.fold(
                          ZIO
                            .fromEither(LifecycleId.fresh()).mapError(error =>
@@ -1301,7 +1351,9 @@ private[scalive] object RootConnection:
                       outbound,
                       componentEnvironment,
                       Some(lifecycleId),
-                      topologyPreparer
+                      topologyPreparer,
+                      Some(connectionId),
+                      observer
                     )
                     .mapError(ConnectionError.SessionFailed.apply)
         ingress        <- Queue.dropping[Event](config.ingressCapacity)
@@ -1312,6 +1364,7 @@ private[scalive] object RootConnection:
         closing        <- Promise.make[Nothing, Unit]
         closed         <- Promise.make[Nothing, Unit]
         connection = RootConnection(
+                       connectionId,
                        kernel.lifecycle,
                        kernel.epoch,
                        config,
@@ -1327,7 +1380,8 @@ private[scalive] object RootConnection:
                        failure,
                        bootstrapReady,
                        closing,
-                       closed
+                       closed,
+                       observer
                      )
         _ <- connection.runOutbound(first = true).interruptible.forkScoped
         _ <- connection.runIngress.interruptible.forkScoped
@@ -1502,10 +1556,8 @@ private[scalive] object RootConnection:
           case Right(model)        =>
             hook.invoke(model, raw, context) match
               case Right(next) => next.map(Right(_))
-              case Left(error) =>
-                ZIO.logWarning(
-                  s"root browser event '${hook.name}' payload was malformed: $error"
-                ) *>
+              case Left(_)     =>
+                ZIO.logWarning("root browser event payload was malformed") *>
                   ZIO.succeed(Left(()))
         }
       }.map(_.fold(_ => committedModel, identity))

@@ -260,7 +260,7 @@ final private[scalive] case class SessionLogic[Msg, Model](
   retireUploads: UploadRetirementPlan => UIO[Unit] = (plan: UploadRetirementPlan) =>
     ZIO.foreachDiscard(plan.instructions) {
       case UploadRetirementInstruction.Cleanup(operation) =>
-        operation.run.catchAllCause(cause => ZIO.logWarningCause("upload cleanup failed", cause))
+        operation.run.catchAllCause(_ => ZIO.logWarning("upload cleanup failed"))
       case UploadRetirementInstruction.Hosted(_, _) => ZIO.unit
     },
   closeUploads: Model => UIO[Unit] = (_: Model) => ZIO.unit)

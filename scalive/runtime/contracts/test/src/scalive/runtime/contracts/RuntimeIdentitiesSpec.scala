@@ -5,6 +5,14 @@ import zio.test.*
 
 object RuntimeIdentitiesSpec extends ZIOSpecDefault:
   override def spec = suite("RuntimeIdentitiesSpec")(
+    test("allocates positive monotonic connection identities") {
+      val first  = ConnectionId.fresh()
+      val second = ConnectionId.fresh()
+      assertTrue(
+        first.exists(_.value > 0L),
+        second.exists(value => first.exists(_.value < value.value))
+      )
+    },
     test("allocates positive monotonic identities") {
       for
         first  <- ZIO.fromEither(TurnId.fresh())

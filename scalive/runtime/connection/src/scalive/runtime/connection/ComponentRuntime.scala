@@ -277,11 +277,8 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
           case Right(model)        =>
             hook.invoke(props, model, raw, context) match
               case Right(next) => next.map(Right(_))
-              case Left(error) =>
-                ZIO
-                  .logWarning(
-                    s"component browser event '${hook.name}' payload was malformed: $error"
-                  ).as(Left(()))
+              case Left(_)     =>
+                ZIO.logWarning("component browser event payload was malformed").as(Left(()))
         }
       }.map(_.fold(_ => committed, identity))
 end ConnectedComponentEnvironment

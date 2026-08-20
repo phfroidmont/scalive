@@ -70,7 +70,7 @@ final private[scalive] class SerialWriter[A] private (
                 ).exit.flatMap(exit => complete(entry, exit))
             }
         }
-      }.flatMap(_ => run).catchAllCause(_ => ZIO.unit)
+      }.flatMap(_ => run).catchAllCause(failUnexpected)
 
   private def complete(entry: Entry[A], exit: Exit[Error, Unit]): UIO[Unit] =
     gate.withPermit {
@@ -94,6 +94,24 @@ final private[scalive] class SerialWriter[A] private (
       .catchAllCause(_ => ZIO.succeed(Chunk.empty)).flatMap(entries =>
         ZIO.foreachDiscard(entries)(_.result.fail(error).unit)
       )
+
+  private def failUnexpected(cause: Cause[Error]): UIO[Unit] =
+    if cause.isInterruptedOnly then ZIO.unit
+    else
+      val error = cause.failureOption.getOrElse(Error.WriteFailed(cause.squash))
+      gate.withPermit {
+        terminal.poll.flatMap {
+          case Some(_) => ZIO.unit
+          case None    =>
+            terminal.succeed(error).unit *>
+              inFlight
+                .getAndSet(None).flatMap(
+                  ZIO.foreachDiscard(_)(_.result.fail(error).unit)
+                ) *>
+              failPending(error) *>
+              queue.shutdown
+        }
+      }
 end SerialWriter
 
 private[scalive] object SerialWriter:

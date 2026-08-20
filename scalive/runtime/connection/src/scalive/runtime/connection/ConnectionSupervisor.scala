@@ -8,10 +8,11 @@ import scalive.render.BindingId
 import scalive.render.EvaluatedTree
 import scalive.render.RenderDelta
 import scalive.runtime.contracts.*
+import scalive.runtime.kernel.RuntimeObserver
 import scalive.runtime.kernel.SessionEffects
+import scalive.runtime.resources.HostedWorkerId
 import scalive.runtime.resources.UploadPreflightView
 import scalive.runtime.resources.UploadRegistryError
-import scalive.runtime.resources.HostedWorkerId
 import scalive.runtime.topology.DetachedStickyNestedLifecycle
 import scalive.upload.UploadClientMetadata
 import scalive.upload.UploadEntryRef
@@ -185,10 +186,12 @@ end ConnectedLifecycle
 
 /** Owns all connected LiveView lifecycles belonging to one physical connection. */
 final private[scalive] class ConnectionSupervisor private (
+  connectionId: ConnectionId,
   config: ConnectionConfig,
   topology: NestedTopologyRuntime,
   supervisorScope: Scope.Closeable,
-  gate: Semaphore):
+  gate: Semaphore,
+  observer: RuntimeObserver):
   import ConnectionSupervisor.*
 
   private var state: State = State.empty
@@ -217,7 +220,9 @@ final private[scalive] class ConnectionSupervisor private (
               sink,
               topology.preparer(domId, loading),
               ownsPageTitle = true,
-              requestedLifecycle = requestedLifecycle
+              requestedLifecycle = requestedLifecycle,
+              providedConnection = Some(connectionId),
+              observer = observer
             )
           ).map(connection => ConnectedLifecycle(connection, topic, domId))
       }(entry => installRoot(slot, entry))
@@ -313,7 +318,9 @@ final private[scalive] class ConnectionSupervisor private (
                                       output.offer,
                                       topology.preparer(domId, loading),
                                       ownsPageTitle = false,
-                                      requestedLifecycle = requestedLifecycle
+                                      requestedLifecycle = requestedLifecycle,
+                                      providedConnection = Some(connectionId),
+                                      observer = observer
                                     )
                                   )
                     connected = ConnectedLifecycle(
@@ -513,10 +520,14 @@ final private[scalive] class ConnectionSupervisor private (
       }.flatMap { case (entries, starts, first) =>
         if !first then ZIO.unit
         else
-          topology.close *>
-            ZIO.foreachDiscard(entries)(closeEntry) *>
-            ZIO.foreachDiscard(starts)(_.close(Exit.unit)) *>
-            supervisorScope.close(Exit.unit)
+          RuntimeCleanup.all(
+            Vector(
+              topology.close,
+              RuntimeCleanup.all(entries.map(closeEntry)),
+              RuntimeCleanup.all(starts.map(_.close(Exit.unit))),
+              supervisorScope.close(Exit.unit)
+            )
+          )
       }
 
   private def route(
@@ -908,7 +919,7 @@ final private[scalive] class ConnectionSupervisor private (
       }
 
   private def closeEntry(entry: Entry): UIO[Unit] =
-    entry.handle.close *> entry.scope.close(Exit.unit)
+    RuntimeCleanup.all(Vector(entry.handle.close, entry.scope.close(Exit.unit)))
 
   private def releaseSlot(slot: StartSlot): UIO[Unit] = gate.withPermit {
     if slotIsCurrent(slot) then
@@ -1055,9 +1066,14 @@ private[scalive] object ConnectionSupervisor:
   def make(
     config: ConnectionConfig,
     credentialIssuer: NestedCredentialIssuer,
-    topicFor: String => NestedTopic
+    topicFor: String => NestedTopic,
+    observer: RuntimeObserver = RuntimeObserver.logging
   ): ZIO[Scope, Nothing, ConnectionSupervisor] =
     for
+      connectionId <- ZIO
+                        .fromEither(ConnectionId.fresh()).orDieWith(error =>
+                          IllegalStateException(error.toString)
+                        )
       scope    <- Scope.make
       gate     <- Semaphore.make(1L)
       owner    <- Ref.make(Option.empty[ConnectionSupervisor])
@@ -1066,7 +1082,7 @@ private[scalive] object ConnectionSupervisor:
                     topicFor,
                     lifecycle => owner.get.flatMap(ZIO.foreachDiscard(_)(_.retireById(lifecycle)))
                   )
-      supervisor = new ConnectionSupervisor(config, topology, scope, gate)
+      supervisor = new ConnectionSupervisor(connectionId, config, topology, scope, gate, observer)
       _ <- owner.set(Some(supervisor))
       _ <- ZIO.addFinalizer(supervisor.close)
     yield supervisor

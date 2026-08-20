@@ -6,6 +6,7 @@ import java.util.Base64
 import zio.*
 
 import scalive.runtime.contracts.LifecycleId
+import scalive.runtime.contracts.RuntimeCleanup
 import scalive.runtime.resources.*
 import scalive.upload.*
 
@@ -66,12 +67,29 @@ final private[connection] class UploadEntryWorker private (
             interruptLoop *>
               failQueued(UploadChunkError.Closed) *>
               queue.shutdown *>
-              handle.abort(reason).catchAllCause(cause => logFailure("retire", cause))
+              handle.abort(reason).catchAllCause(_ => logFailure("retire"))
           ).unit
       }
 
   private def run: UIO[Unit] =
-    queue.take.flatMap(process).forever.catchAllCause(_ => ZIO.unit)
+    queue.take
+      .flatMap { request =>
+        process(request).catchAllCause { cause =>
+          if cause.isInterruptedOnly then ZIO.interrupt
+          else
+            logFailure("process") *>
+              fail(
+                "worker_error",
+                UploadChunkError.WriterFailed("worker_error"),
+                Some(request.response)
+              )
+        }
+      }.forever.catchAllCause { cause =>
+        if cause.isInterruptedOnly then ZIO.unit
+        else
+          logFailure("loop") *>
+            fail("worker_error", UploadChunkError.WriterFailed("worker_error"), None)
+      }
 
   private def process(request: Request): UIO[Unit] =
     received.get.flatMap { previous =>
@@ -85,8 +103,8 @@ final private[connection] class UploadEntryWorker private (
       else
         handle
           .write(request.data).foldCauseZIO(
-            cause =>
-              logFailure("write", cause) *>
+            _ =>
+              logFailure("write") *>
                 fail(
                   "writer_error",
                   UploadChunkError.WriterFailed("writer_error"),
@@ -101,8 +119,8 @@ final private[connection] class UploadEntryWorker private (
 
   private def finish(response: Promise[UploadChunkError, Int]): UIO[Unit] =
     handle.complete.foldCauseZIO(
-      cause =>
-        logFailure("complete", cause) *>
+      _ =>
+        logFailure("complete") *>
           fail(
             "writer_error",
             UploadChunkError.WriterFailed("writer_error"),
@@ -111,8 +129,8 @@ final private[connection] class UploadEntryWorker private (
       completion =>
         callbacks
           .complete(completion).foldCauseZIO(
-            cause =>
-              logFailure("completion transition", cause) *>
+            _ =>
+              logFailure("completion transition") *>
                 handle.abort(LiveUploadAbortReason.Failed("completion_transition")).ignore *>
                 response.fail(UploadChunkError.WriterFailed("completion_transition")).unit,
             _ =>
@@ -136,13 +154,11 @@ final private[connection] class UploadEntryWorker private (
         val completeResponse = ZIO.foreachDiscard(response)(_.fail(error).unit)
         if claimed then
           handle
-            .abort(LiveUploadAbortReason.Failed(reason)).catchAllCause(cause =>
-              logFailure("abort", cause)
-            ) *>
-            callbacks.fail(reason) *>
-            completeResponse *>
+            .abort(LiveUploadAbortReason.Failed(reason)).catchAllCause(_ => logFailure("abort")) *>
             failQueued(error) *>
-            queue.shutdown
+            queue.shutdown *>
+            callbacks.fail(reason).catchAllCause(_ => logFailure("failure callback")) *>
+            completeResponse
         else completeResponse
       }
 
@@ -156,11 +172,8 @@ final private[connection] class UploadEntryWorker private (
   private def interruptLoop: UIO[Unit] =
     fiber.get.flatMap(ZIO.foreachDiscard(_)(_.interrupt.unit))
 
-  private def logFailure(stage: String, cause: Cause[Throwable]): UIO[Unit] =
-    ZIO.logWarningCause(
-      s"upload worker $stage failed upload=${id.uploadRef.value} entry=${id.entryRef.value}",
-      cause
-    )
+  private def logFailure(stage: String): UIO[Unit] =
+    ZIO.logWarning(s"upload worker $stage failed")
 end UploadEntryWorker
 
 private object UploadEntryWorker:
@@ -173,54 +186,82 @@ private object UploadEntryWorker:
     expectedBytes: Long,
     maxChunkBytes: Int,
     capacity: Int,
-    callbacks: UploadWorkerCallbacks
+    callbacks: UploadWorkerCallbacks,
+    scope: Scope
   ): UIO[UploadEntryWorker] =
-    for
-      queue    <- Queue.dropping[Request](capacity)
-      received <- Ref.make(0L)
-      terminal <- Ref.Synchronized.make(false)
-      fiberRef <- Ref.make(Option.empty[Fiber.Runtime[Nothing, Unit]])
-      worker = new UploadEntryWorker(
-                 handle.id,
-                 handle,
-                 expectedBytes,
-                 maxChunkBytes,
-                 capacity,
-                 queue,
-                 received,
-                 terminal,
-                 callbacks,
-                 fiberRef
-               )
-      running <- worker.run.forkDaemon
-      _       <- fiberRef.set(Some(running))
-    yield worker
+    ZIO.uninterruptible {
+      for
+        queue    <- Queue.dropping[Request](capacity)
+        received <- Ref.make(0L)
+        terminal <- Ref.Synchronized.make(false)
+        fiberRef <- Ref.make(Option.empty[Fiber.Runtime[Nothing, Unit]])
+        worker = new UploadEntryWorker(
+                   handle.id,
+                   handle,
+                   expectedBytes,
+                   maxChunkBytes,
+                   capacity,
+                   queue,
+                   received,
+                   terminal,
+                   callbacks,
+                   fiberRef
+                 )
+        running <- worker.run.interruptible.forkIn(scope)
+        _       <- fiberRef.set(Some(running))
+      yield worker
+    }
 end UploadEntryWorker
 
 /** Connection-owned execution boundary for upload workers and cleanup instructions. */
 final private[connection] class UploadRuntime private (
-  workers: Ref.Synchronized[Map[HostedWorkerId, UploadRuntime.WorkerSlot]]):
+  state: Ref.Synchronized[UploadRuntime.State],
+  workerScope: Scope.Closeable):
   import UploadRuntime.*
 
   def reserve(worker: HostedUploadWorker): UIO[Boolean] =
-    workers.modify { current =>
-      if current.contains(worker.id) then false -> current
-      else true -> current.updated(worker.id, WorkerSlot.Pending(worker))
+    state.modify { current =>
+      if current.closed || current.workers.contains(worker.id) then false -> current
+      else
+        true -> current.copy(workers =
+          current.workers.updated(worker.id, WorkerSlot.Pending(worker))
+        )
     }
 
   def activate(worker: UploadEntryWorker): UIO[Boolean] =
-    workers.modify { current =>
-      current.get(worker.id) match
+    state.modify { current =>
+      current.workers.get(worker.id) match
+        case _ if current.closed         => false -> current
         case Some(WorkerSlot.Pending(_)) =>
-          true -> current.updated(worker.id, WorkerSlot.Active(worker))
+          true -> current.copy(
+            workers = current.workers.updated(worker.id, WorkerSlot.Active(worker))
+          )
         case _ => false -> current
     }
 
   def active(id: HostedWorkerId): UIO[Option[UploadEntryWorker]] =
-    workers.get.map(_.get(id).collect { case WorkerSlot.Active(worker) => worker })
+    state.get.map(_.workers.get(id).collect { case WorkerSlot.Active(worker) => worker })
 
   private def remove(id: HostedWorkerId): UIO[Option[WorkerSlot]] =
-    workers.modify(current => current.get(id) -> current.removed(id))
+    state.modify(current =>
+      current.workers.get(id) -> current.copy(workers = current.workers.removed(id))
+    )
+
+  def startEntry(
+    handle: HostedUploadWorker,
+    expectedBytes: Long,
+    maxChunkBytes: Int,
+    capacity: Int,
+    callbacks: UploadWorkerCallbacks
+  ): UIO[UploadEntryWorker] =
+    UploadEntryWorker.start(
+      handle,
+      expectedBytes,
+      maxChunkBytes,
+      capacity,
+      callbacks,
+      workerScope
+    )
 
   def forget(id: HostedWorkerId): UIO[Boolean] =
     remove(id).map(_.nonEmpty)
@@ -229,40 +270,51 @@ final private[connection] class UploadRuntime private (
     remove(id).flatMap(ZIO.foreachDiscard(_)(_.retire(reason)))
 
   def retire(plan: UploadRetirementPlan): UIO[Unit] =
-    ZIO.foreachDiscard(plan.instructions) {
+    RuntimeCleanup.all(plan.instructions.map {
       case UploadRetirementInstruction.Hosted(id, reason) =>
         removeAndRetire(id, reason)
       case UploadRetirementInstruction.Cleanup(operation) =>
-        operation.run.catchAllCause(cause =>
-          ZIO.logWarningCause("upload destination cleanup failed", cause)
-        )
-    }
+        operation.run.catchAllCause(_ => ZIO.logWarning("upload destination cleanup failed"))
+    })
 
   def close(registry: UploadRegistry, lifecycle: LifecycleId): UIO[Unit] =
-    retire(registry.retireLifecycle(lifecycle).retirement) *>
-      workers
-        .getAndSet(Map.empty).flatMap(remaining =>
-          ZIO.foreachDiscard(remaining.values)(_.retire(LiveUploadAbortReason.SocketShutdown))
+    state
+      .modify(current =>
+        current.workers.values.toVector -> State(closed = true, Map.empty)
+      ).flatMap { remaining =>
+        RuntimeCleanup.all(
+          Vector(
+            retire(registry.retireLifecycle(lifecycle).retirement),
+            RuntimeCleanup.all(
+              remaining.map(_.retire(LiveUploadAbortReason.SocketShutdown))
+            ),
+            workerScope.close(Exit.unit)
+          )
         )
+      }
 end UploadRuntime
 
 private[connection] object UploadRuntime:
+  final private case class State(closed: Boolean, workers: Map[HostedWorkerId, WorkerSlot])
+
   sealed private trait WorkerSlot:
     def retire(reason: LiveUploadAbortReason): UIO[Unit]
 
   private object WorkerSlot:
     final case class Pending(worker: HostedUploadWorker) extends WorkerSlot:
       def retire(reason: LiveUploadAbortReason): UIO[Unit] = worker
-        .abort(reason).catchAllCause(cause =>
-          ZIO.logWarningCause("pending upload worker cleanup failed", cause)
-        )
+        .abort(reason).catchAllCause(_ => ZIO.logWarning("pending upload worker cleanup failed"))
     final case class Active(worker: UploadEntryWorker) extends WorkerSlot:
       def retire(reason: LiveUploadAbortReason): UIO[Unit] = worker.retire(reason)
 
   private val random = new SecureRandom()
 
-  def make: UIO[UploadRuntime] =
-    Ref.Synchronized.make(Map.empty[HostedWorkerId, WorkerSlot]).map(new UploadRuntime(_))
+  def make: ZIO[Scope, Nothing, UploadRuntime] =
+    for
+      state <- Ref.Synchronized.make(State(closed = false, Map.empty))
+      scope <- Scope.make
+      _     <- ZIO.addFinalizer(scope.close(Exit.unit))
+    yield new UploadRuntime(state, scope)
 
   def freshRef: UIO[UploadRef] = ZIO.succeed {
     val bytes = new Array[Byte](18)

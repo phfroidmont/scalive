@@ -4,6 +4,7 @@ import zio.*
 import zio.json.ast.Json
 import zio.json.*
 import zio.http.URL
+import zio.stream.ZStream
 import zio.test.*
 
 import scalive.*
@@ -549,6 +550,42 @@ object RootConnectionSpec extends ZIOSpecDefault:
                         BindingPayload.Params(Map.empty)
                       ).either
         yield assertTrue(closed.nonEmpty, result == Left(ConnectionError.Closed))
+      }
+    },
+    test("cleanup defects cannot suppress connection closure") {
+      ZIO.scoped {
+        for
+          laterFinalized <- Promise.make[Nothing, Unit]
+          defectStarted  <- Promise.make[Nothing, Unit]
+          laterStarted   <- Promise.make[Nothing, Unit]
+          outputs        <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView.Eventless[Unit]:
+                   def mount(ctx: MountContext): LiveIO[Unit] =
+                     ctx.connection match
+                       case Connection.Connected(connected) =>
+                         connected.subscriptions.start(
+                           SubscriptionKey("defect"),
+                           SubscriptionDelivery.Lossless
+                         )(
+                           (ZStream.fromZIO(defectStarted.succeed(()).unit) *> ZStream.never)
+                             .ensuring(ZIO.dieMessage("subscription cleanup defect"))
+                         ) *>
+                           connected.subscriptions.start(
+                             SubscriptionKey("later"),
+                             SubscriptionDelivery.Lossless
+                           )(
+                             (ZStream.fromZIO(laterStarted.succeed(()).unit) *> ZStream.never)
+                               .ensuring(laterFinalized.succeed(()).unit)
+                           )
+                       case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                   def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          _          <- defectStarted.await *> laterStarted.await
+          closeExit  <- connection.close.exit
+          closed     <- connection.awaitClosed.timeout(1.second)
+          laterRan   <- laterFinalized.isDone
+        yield assertTrue(closeExit.isSuccess, closed.nonEmpty, laterRan)
       }
     },
     test("interrupted close finishes cleanup before publishing closed") {

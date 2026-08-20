@@ -11,6 +11,7 @@ import scalive.runtime.kernel.NavigationOutput
 import scalive.runtime.kernel.SessionEffects
 import scalive.runtime.kernel.SessionFailure
 import scalive.runtime.kernel.SessionRejection
+import scalive.runtime.resources.UploadControlReply
 
 final private[scalive] case class RootConnectionMetadata(
   staticChanged: Boolean,
@@ -22,7 +23,9 @@ final private[scalive] case class ConnectionConfig private (
   outboundReservationCapacity: Int,
   kernelMailboxCapacity: Int,
   continuationCapacity: Int,
-  writerCapacity: Int)
+  writerCapacity: Int,
+  uploadChunkCapacity: Int,
+  maxUploadChunkBytes: Int)
 
 private[scalive] object ConnectionConfig:
   def make(
@@ -46,6 +49,25 @@ private[scalive] object ConnectionConfig:
     continuationCapacity: Int,
     writerCapacity: Int
   ): Either[Error, ConnectionConfig] =
+    make(
+      ingressCapacity,
+      outboundReservationCapacity,
+      kernelMailboxCapacity,
+      continuationCapacity,
+      writerCapacity,
+      uploadChunkCapacity = 8,
+      maxUploadChunkBytes = 1_000_000
+    )
+
+  def make(
+    ingressCapacity: Int,
+    outboundReservationCapacity: Int,
+    kernelMailboxCapacity: Int,
+    continuationCapacity: Int,
+    writerCapacity: Int,
+    uploadChunkCapacity: Int,
+    maxUploadChunkBytes: Int
+  ): Either[Error, ConnectionConfig] =
     if ingressCapacity <= 0 then Left(Error.InvalidIngressCapacity(ingressCapacity))
     else if outboundReservationCapacity <= 0 then
       Left(Error.InvalidOutboundReservationCapacity(outboundReservationCapacity))
@@ -54,6 +76,10 @@ private[scalive] object ConnectionConfig:
     else if continuationCapacity <= 0 then
       Left(Error.InvalidContinuationCapacity(continuationCapacity))
     else if writerCapacity <= 0 then Left(Error.InvalidWriterCapacity(writerCapacity))
+    else if uploadChunkCapacity <= 0 then
+      Left(Error.InvalidUploadChunkCapacity(uploadChunkCapacity))
+    else if maxUploadChunkBytes <= 0 then
+      Left(Error.InvalidMaxUploadChunkBytes(maxUploadChunkBytes))
     else
       Right(
         ConnectionConfig(
@@ -61,7 +87,9 @@ private[scalive] object ConnectionConfig:
           outboundReservationCapacity,
           kernelMailboxCapacity,
           continuationCapacity,
-          writerCapacity
+          writerCapacity,
+          uploadChunkCapacity,
+          maxUploadChunkBytes
         )
       )
 
@@ -71,11 +99,18 @@ private[scalive] object ConnectionConfig:
     case InvalidKernelMailboxCapacity(capacity: Int)
     case InvalidContinuationCapacity(capacity: Int)
     case InvalidWriterCapacity(capacity: Int)
+    case InvalidUploadChunkCapacity(capacity: Int)
+    case InvalidMaxUploadChunkBytes(bytes: Int)
 end ConnectionConfig
 
 enum ConnectionOutput:
   case Joined(delta: RenderDelta, effects: SessionEffects)
   case Reply(command: CommandId, delta: RenderDelta, effects: SessionEffects)
+  case UploadReply(
+    command: CommandId,
+    delta: RenderDelta,
+    effects: SessionEffects,
+    upload: UploadControlReply)
   case Diff(delta: RenderDelta, effects: SessionEffects)
   case JoinedNavigation(
     delta: RenderDelta,
@@ -103,6 +138,8 @@ object ConnectionError:
       extends ConnectionError(s"outbound reservations failed: $details")
   final case class SinkFailed(cause: Throwable)
       extends ConnectionError(s"connection sink failed: ${cause.getMessage}")
+  final case class UploadFailed(cause: Throwable)
+      extends ConnectionError(s"upload operation failed: ${cause.getMessage}")
   final case class LinkedChildFailed(child: LifecycleId, cause: ConnectionError)
       extends ConnectionError(
         s"linked child lifecycle ${child.value} failed: ${cause.getMessage}"

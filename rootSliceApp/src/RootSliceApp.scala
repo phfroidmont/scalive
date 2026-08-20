@@ -1,4 +1,5 @@
 import java.time.Duration
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*
@@ -30,6 +31,7 @@ object RootSliceApp extends ZIOAppDefault:
   private val upstreamNavigationA = live / "navigation" / "a"
   private val upstreamNavigationB = live / "navigation" / "b"
   private val upstreamStream      = live / "stream"
+  private val uploadRoute         = live / "upload"
   private val nestedRoute         = live / "nested"
   private val nestedStickyA       = live / "nested" / "a"
   private val nestedStickyB       = live / "nested" / "b"
@@ -59,6 +61,7 @@ object RootSliceApp extends ZIOAppDefault:
 
   private val application = Live.router.withRootLayout(rootOne)(
     live        -> RootSliceLiveView(mountSequence),
+    uploadRoute -> HostedUploadLiveView(),
     nestedRoute -> NestedParentLiveView(),
     Live.session("nested-sticky")(
       nestedStickyA -> StickyNestedParentLiveView("a", nestedStickyB.location),
@@ -416,3 +419,98 @@ final class RedirectLoopLiveView
 
 object RedirectLoopLiveView:
   final case class Model(shouldLoop: Boolean, message: String)
+
+final class HostedUploadLiveView
+    extends LiveView[HostedUploadLiveView.Msg, HostedUploadLiveView.Model]:
+  import HostedUploadLiveView.*
+
+  def mount(ctx: MountContext) =
+    ctx.uploads.allow(Upload).map { upload =>
+      Model(
+        upload,
+        connected = ctx.connection match
+          case Connection.Connected(_) => true
+          case Connection.Disconnected => false
+      )
+    }
+
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.Validate | Msg.Progress =>
+      ctx.uploads.get(Upload).map {
+        case Some(upload) => model.copy(upload = upload)
+        case None         => model
+      }
+    case Msg.Save =>
+      ctx.uploads
+        .consumeCompleted(Upload) { entry =>
+          val content = String(entry.result.toArray, StandardCharsets.UTF_8)
+          ZIO.succeed(ConsumeDecision.Consume(UploadedFile(entry.client.fileName, content)))
+        }.map { case (files, upload) =>
+          model.copy(upload = upload, uploaded = model.uploaded ++ files)
+        }
+
+  def view(model: Signal[Model]) =
+    val upload = model.map(_.upload)
+    mainTag(
+      h1("Hosted upload"),
+      span(idAttr := "upload-connected", model.map(_.connected.toString)),
+      form(
+        idAttr := "hosted-upload-form",
+        on.change(_ => Msg.Validate),
+        on.submit(Msg.Save),
+        liveFileInput(upload, upload.onProgress(_ => Msg.Progress)),
+        button(typ := "submit", "Upload"),
+        upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+          articleTag(
+            cls := "upload-entry",
+            span(cls := "upload-name", entry.map(_.client.fileName)),
+            progressTag(
+              cls     := "upload-progress",
+              value   := entry.map(_.progress.toString),
+              maxAttr := "100",
+              entry.map(current => s"${current.progress}%")
+            ),
+            uploadErrors(entry).splitBy(_.toString) { (_, error) =>
+              p(cls := "upload-error", error.map(errorMessage))
+            }
+          )
+        },
+        uploadErrors(upload).splitBy(_.toString) { (_, error) =>
+          p(cls := "upload-error", error.map(errorMessage))
+        }
+      ),
+      model.map(_.uploaded).splitBy(_.name) { (_, file) =>
+        sectionTag(
+          cls := "uploaded-file",
+          span(idAttr := "uploaded-name", file.map(_.name)),
+          pre(idAttr  := "uploaded-content", file.map(_.content))
+        )
+      }
+    )
+  end view
+end HostedUploadLiveView
+
+object HostedUploadLiveView:
+  private val Upload = LiveUploadDef.inMemory(
+    name = "document",
+    accept = LiveUploadAccept.only(".txt"),
+    maxEntries = 1,
+    maxFileSize = 1024L,
+    chunkSize = 16
+  )
+
+  enum Msg:
+    case Validate, Progress, Save
+
+  final case class UploadedFile(name: String, content: String)
+
+  final case class Model(
+    upload: LiveUpload[Chunk[Byte]],
+    connected: Boolean,
+    uploaded: Vector[UploadedFile] = Vector.empty)
+
+  private def errorMessage(error: LiveUploadError): String = error match
+    case LiveUploadError.NotAccepted  => "Unacceptable file type"
+    case LiveUploadError.TooLarge     => "File is too large"
+    case LiveUploadError.TooManyFiles => "Too many files"
+    case _                            => "Upload failed"

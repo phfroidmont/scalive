@@ -6,14 +6,16 @@ import zio.json.JsonDecoder
 import scalive.*
 import scalive.render.StreamRequirement
 import scalive.runtime.contracts.ComponentInstanceId
+import scalive.runtime.contracts.Epoch
 import scalive.runtime.contracts.LifecycleId
 import scalive.runtime.kernel.*
-import scalive.runtime.resources.OwnerId
+import scalive.runtime.resources.*
 
 /** Connection-owned adapter from component callbacks to transactional root turn drafts. */
 final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel] private (
   metadata: RootConnectionMetadata,
   lifecycle: LifecycleId,
+  ownerEpoch: Epoch,
   closedInstances: Ref[Set[ComponentInstanceId]],
   discardedInstances: Ref[Set[ComponentInstanceId]])
     extends ComponentEnvironment[RootMsg, RootState[RootMsg, RootModel]]:
@@ -34,6 +36,7 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
                 ComponentHookRegistry.fromStatic(component.hooks),
                 lifecycle,
                 id,
+                ownerEpoch,
                 StreamStore.empty
               )
       model  <- ZIO.suspend(component.mount(props, ComponentMountContextImpl(metadata, turn)))
@@ -49,7 +52,14 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
+      turn <- ComponentTurn.make(
+                draft,
+                registry[P, M, A](state),
+                lifecycle,
+                id,
+                ownerEpoch,
+                streamStore(state)
+              )
       next <-
         ZIO.suspend(component.update(props, model, ComponentUpdateContextImpl(metadata, turn)))
       result <- turn.result(next)
@@ -66,7 +76,14 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
+      turn <- ComponentTurn.make(
+                draft,
+                registry[P, M, A](state),
+                lifecycle,
+                id,
+                ownerEpoch,
+                streamStore(state)
+              )
       context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
       hooks  <- turn.hookRegistry[P, M, A]
       hooked <- runEventHooks(hooks.event, props, model, value, context)
@@ -88,7 +105,14 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
+      turn <- ComponentTurn.make(
+                draft,
+                registry[P, M, A](state),
+                lifecycle,
+                id,
+                ownerEpoch,
+                streamStore(state)
+              )
       context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
       hooks  <- turn.hookRegistry[P, M, A]
       hooked <- runAsyncHooks(hooks.async, props, model, event, context)
@@ -114,7 +138,14 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
+      turn <- ComponentTurn.make(
+                draft,
+                registry[P, M, A](state),
+                lifecycle,
+                id,
+                ownerEpoch,
+                streamStore(state)
+              )
       context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
       hooks  <- turn.hookRegistry[P, M, A]
       hooked <- runAsyncHooks(hooks.async, props, model, event, context)
@@ -143,6 +174,7 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
                     registry[P, M, A](state),
                     lifecycle,
                     id,
+                    ownerEpoch,
                     streamStore(state)
                   )
           hooks <- turn.hookRegistry[P, M, A]
@@ -165,7 +197,14 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentAfterRenderResult[RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
+      turn <- ComponentTurn.make(
+                draft,
+                registry[P, M, A](state),
+                lifecycle,
+                id,
+                ownerEpoch,
+                streamStore(state)
+              )
       context = ComponentAfterRenderContextImpl[P, M, A](metadata, turn)
       hooks  <- turn.hookRegistry[P, M, A]
       _      <- ZIO.foreachDiscard(hooks.afterRender)(_.invoke(props, model, context))
@@ -250,12 +289,13 @@ end ConnectedComponentEnvironment
 private[connection] object ConnectedComponentEnvironment:
   def make[RootMsg, RootModel](
     metadata: RootConnectionMetadata,
-    lifecycle: LifecycleId
+    lifecycle: LifecycleId,
+    ownerEpoch: Epoch = Epoch.initial
   ): UIO[ConnectedComponentEnvironment[RootMsg, RootModel]] =
     for
       closed    <- Ref.make(Set.empty[ComponentInstanceId])
       discarded <- Ref.make(Set.empty[ComponentInstanceId])
-    yield new ConnectedComponentEnvironment(metadata, lifecycle, closed, discarded)
+    yield new ConnectedComponentEnvironment(metadata, lifecycle, ownerEpoch, closed, discarded)
 
 final private case class ComponentState[P, M, A](
   hooks: ComponentHookRegistry[P, M, A],
@@ -293,20 +333,24 @@ final private class ComponentTurn[RootMsg, RootModel] private (
   private def snapshot
     : UIO[(TurnDraft[RootMsg, RootState[RootMsg, RootModel]], ComponentEnvironmentState)] =
     for
-      navigation <- root.navigationWithFlash
-      flash      <- root.flash.get
-      events     <- root.clientEvents.get
-      updates    <- root.componentUpdates.get
-      operations <- root.resourceOperationSnapshot
-      streams    <- root.streamSnapshot
-      hooks      <- componentHooks.get
+      navigation  <- root.navigationWithFlash
+      flash       <- root.flash.get
+      events      <- root.clientEvents.get
+      updates     <- root.componentUpdates.get
+      operations  <- root.resourceOperationSnapshot
+      streams     <- root.streamSnapshot
+      uploadState <- root.uploadSnapshot
+      hooks       <- componentHooks.get
+      (uploads, uploadCommit, uploadRollback) = uploadState
       state = ComponentEnvironmentState(ComponentState(hooks, streams))
       draft = initial.copy(
-                model = initial.model.copy(flash = flash),
+                model = initial.model.copy(flash = flash, uploads = uploads),
                 navigation = navigation,
                 effects = initial.effects.copy(clientEvents = events),
                 componentUpdates = updates,
-                resourceOperations = operations
+                resourceOperations = operations,
+                uploadCommit = uploadCommit,
+                uploadRollback = uploadRollback
               )
     yield draft -> state
 end ComponentTurn
@@ -317,6 +361,7 @@ private object ComponentTurn:
     hooks: ComponentHookRegistry[P, M, A],
     lifecycle: LifecycleId,
     id: ComponentInstanceId,
+    ownerEpoch: Epoch = Epoch.initial,
     initialStreams: StreamStore = StreamStore.empty
   ): Task[ComponentTurn[RootMsg, RootModel]] =
     for
@@ -328,7 +373,11 @@ private object ComponentTurn:
                 draft.componentUpdates,
                 draft.navigation,
                 draft.resourceOperations,
-                initialStreams
+                initialStreams,
+                ownerEpoch = ownerEpoch,
+                initialUploads = draft.model.uploads,
+                initialUploadCommit = draft.uploadCommit,
+                initialUploadRollback = draft.uploadRollback
               )
       componentHooks <- Ref.make(hooks.asInstanceOf[ComponentHookRegistry[Any, Any, Any]])
     yield ComponentTurn(draft, root, componentHooks)
@@ -525,7 +574,7 @@ final private case class ComponentMountContextImpl[P, M, A](
     extends ComponentMountContext[P, M, A]:
   val connection = Connection.Connected(ComponentConnectedImpl[M](metadata, turn))
   val flash      = JournaledFlash(turn.root)
-  val uploads    = DeferredUploads
+  val uploads    = JournaledUploads(turn.root)
   val streams    = JournaledStreams(turn.root.streams)
   val hooks      = JournaledComponentHooks[P, M, A](turn)
 
@@ -535,7 +584,7 @@ final private case class ComponentUpdateContextImpl[P, M, A](
     extends ComponentUpdateContext[P, M, A]:
   val connection = Connection.Connected(ComponentConnectedImpl[M](metadata, turn))
   val flash      = JournaledFlash(turn.root)
-  val uploads    = DeferredUploads
+  val uploads    = JournaledUploads(turn.root)
   val streams    = JournaledStreams(turn.root.streams)
   val hooks      = JournaledComponentHooks[P, M, A](turn)
 
@@ -549,7 +598,7 @@ final private case class ComponentMessageContextImpl[P, M, A, O](
   val connectParams = metadata.connectParams
   val nav           = RootNavigation(turn.currentUrl, turn.root, allowPatch = true)
   val flash         = JournaledFlash(turn.root)
-  val uploads       = DeferredUploads
+  val uploads       = JournaledUploads(turn.root)
   val streams       = JournaledStreams(turn.root.streams)
   val async         = JournaledAsync[M](turn.root)
   val client        = JournaledClient(turn.root)

@@ -7,7 +7,7 @@ import scalive.*
 import scalive.render.*
 import scalive.runtime.contracts.*
 import scalive.runtime.kernel.*
-import scalive.runtime.resources.OwnerId
+import scalive.runtime.resources.*
 
 /** Owns one connected, unrouted root lifecycle. */
 final private[scalive] class RootConnection[Msg, Model] private (
@@ -16,6 +16,8 @@ final private[scalive] class RootConnection[Msg, Model] private (
   config: ConnectionConfig,
   kernel: SessionKernel[Msg, RootState[Msg, Model]],
   componentEnvironment: ConnectedComponentEnvironment[Msg, Model],
+  uploadRuntime: UploadRuntime,
+  uploadReplies: Ref[Map[CommandId, UploadControlReply]],
   outbound: InMemoryOutboundReservations[SessionOutput],
   writer: SerialWriter[ConnectionOutput],
   ingress: Queue[RootConnection.Event],
@@ -132,6 +134,355 @@ final private[scalive] class RootConnection[Msg, Model] private (
 
   def offerPatch(command: CommandId, destination: URL): IO[ConnectionError, Unit] =
     enqueuePatch(command, destination).unit
+
+  private[connection] def submitUpload[A](
+    command: CommandId,
+    mutation: UploadMutation[A]
+  ): IO[ConnectionError, A] =
+    enqueue(command, Event.Upload(command, mutation))
+      .flatMap(_.await)
+      .zipRight(mutation.await.mapError(ConnectionError.UploadFailed.apply))
+      .onError(_ => uploadReplies.update(_ - command))
+
+  private[connection] def mutateUpload[A](
+    mutation: UploadMutation[A]
+  ): IO[ConnectionError, A] =
+    for
+      command <- ZIO
+                   .fromEither(CommandId.fresh()).mapError(error =>
+                     ConnectionError.KernelRejected(SessionRejection.IdentityUnavailable(error))
+                   )
+      _ <- kernel
+             .submit(command, SessionCommand.Upload(epoch, command, mutation))
+             .mapError(connectionError)
+      result <- mutation.await.mapError(ConnectionError.UploadFailed.apply)
+    yield result
+
+  private[connection] def preflightUpload(
+    command: CommandId,
+    component: Option[ComponentInstanceId],
+    ref: scalive.upload.UploadRef,
+    selected: Vector[(scalive.upload.UploadEntryRef, scalive.upload.UploadClientMetadata)]
+  ): IO[ConnectionError, Either[UploadRegistryError, UploadPreflightView]] =
+    val owner = component.fold[OwnerId](OwnerId.Root(lifecycle))(OwnerId.Component(lifecycle, _))
+    for
+      mutation <- UploadMutation.make(registry => runPreflight(registry, owner, ref, selected))
+      result   <- submitUpload(command, mutation)
+    yield result
+
+  private[connection] def syncUploadSelection(
+    component: Option[ComponentInstanceId],
+    ref: scalive.upload.UploadRef,
+    selected: Vector[(scalive.upload.UploadEntryRef, scalive.upload.UploadClientMetadata)]
+  ): IO[ConnectionError, Either[UploadRegistryError, UploadPreflightView]] =
+    val owner = component.fold[OwnerId](OwnerId.Root(lifecycle))(OwnerId.Component(lifecycle, _))
+    for
+      mutation <- UploadMutation.succeed { registry =>
+                    registry.synchronizeSelection(owner, epoch, ref, selected) match
+                      case Left(error)      => UploadMutationResult(registry, Left(error))
+                      case Right(selection) =>
+                        val value = selection.registry.preflightView(selection.upload)
+                        UploadMutationResult(
+                          selection.registry,
+                          value,
+                          commit = selection.retirement
+                        )
+                  }
+      result <- mutateUpload(mutation)
+    yield result
+
+  private def runPreflight(
+    registry: UploadRegistry,
+    owner: OwnerId,
+    ref: scalive.upload.UploadRef,
+    selected: Vector[(scalive.upload.UploadEntryRef, scalive.upload.UploadClientMetadata)]
+  ): Task[UploadMutationResult[Either[UploadRegistryError, UploadPreflightView]]] =
+    registry.preflight(owner, epoch, ref, selected) match
+      case Left(error) =>
+        ZIO.succeed(
+          UploadMutationResult(
+            registry,
+            Left(error),
+            reply = Some(UploadControlError(error.toString))
+          )
+        )
+      case Right(preflight) =>
+        ZIO
+          .foldLeft(preflight.externalPreparations)(
+            (preflight.registry, UploadRetirementPlan.empty, UploadRetirementPlan.empty)
+          ) { case ((current, commit, rollback), plan) =>
+            plan.operation.run.flatMap {
+              case Left(error) =>
+                ZIO
+                  .fromEither(
+                    current
+                      .rejectExternal(plan.entry, error).left.map(value =>
+                        IllegalStateException(s"upload external rejection became stale: $value")
+                      )
+                  )
+                  .map(next => (next, commit, rollback))
+              case Right(preparation) =>
+                val installation = current.installExternal(preparation)
+                val nextCommit   = commit ++ installation.retirement
+                val nextRollback =
+                  if installation.accepted then
+                    rollback ++ UploadRetirementPlan(
+                      Vector(UploadRetirementInstruction.Cleanup(preparation.result.cleanup))
+                    )
+                  else rollback
+                ZIO.succeed((installation.registry, nextCommit, nextRollback))
+            }
+          }.map { case (next, installationCommit, rollback) =>
+            next.preflightView(preflight.upload) match
+              case Left(error) =>
+                val value: Either[UploadRegistryError, UploadPreflightView] = Left(error)
+                UploadMutationResult(
+                  next,
+                  value,
+                  preflight.retirement ++ installationCommit,
+                  rollback,
+                  Some(UploadControlError(error.toString))
+                )
+              case Right(view) =>
+                val boundedView =
+                  view.copy(chunkSize = math.min(view.chunkSize, config.maxUploadChunkBytes))
+                val value: Either[UploadRegistryError, UploadPreflightView] = Right(boundedView)
+                UploadMutationResult(
+                  next,
+                  value,
+                  preflight.retirement ++ installationCommit,
+                  rollback,
+                  Some(boundedView)
+                )
+          }
+
+  private[connection] def admitUpload(
+    component: Option[ComponentInstanceId],
+    uploadRef: scalive.upload.UploadRef,
+    entryRef: scalive.upload.UploadEntryRef,
+    generation: Long
+  ): IO[ConnectionError, Either[UploadAdmissionError, HostedWorkerId]] =
+    val owner = component.fold[OwnerId](OwnerId.Root(lifecycle))(OwnerId.Component(lifecycle, _))
+    for
+      claimMutation <- UploadMutation.succeed { registry =>
+                         val claimed = for
+                           token <- registry.resolveEntry(owner, epoch, uploadRef, entryRef)
+                           _     <- Either.cond(
+                                  token.upload.generation == generation,
+                                  (),
+                                  UploadRegistryError.StaleAuthority
+                                )
+                           claim <- registry.claimHostedJoin(
+                                      token.asInstanceOf[UploadEntryToken[Any]]
+                                    )
+                         yield claim
+                         claimed match
+                           case Right(claim) => UploadMutationResult(claim.registry, Right(claim))
+                           case Left(error)  => UploadMutationResult(registry, Left(error))
+                       }
+      claimed <- mutateUpload(claimMutation)
+      result  <- claimed match
+                  case Left(error)  => ZIO.succeed(Left(UploadAdmissionError.Rejected(error)))
+                  case Right(claim) => initializeClaimedUpload(claim)
+    yield result
+
+  private def initializeClaimedUpload(
+    claim: HostedJoinClaim
+  ): IO[ConnectionError, Either[UploadAdmissionError, HostedWorkerId]] =
+    claim.factory.initialize.run.either.flatMap {
+      case Left(_) =>
+        failUploadEntry(claim.entry, "writer_error")
+          .as(Left(UploadAdmissionError.WriterInitializationFailed))
+      case Right(handle) =>
+        uploadRuntime.reserve(handle).flatMap {
+          case false =>
+            handle
+              .abort(LiveUploadAbortReason.Failed("registration_conflict")).ignore.as(
+                Left(UploadAdmissionError.RegistrationConflict)
+              )
+          case true => installClaimedUpload(claim, handle)
+        }
+    }
+
+  private def installClaimedUpload(
+    claim: HostedJoinClaim,
+    handle: HostedUploadWorker
+  ): IO[ConnectionError, Either[UploadAdmissionError, HostedWorkerId]] =
+    for
+      mutation <- UploadMutation.succeed { registry =>
+                    val installation = registry.installHostedWorker(
+                      claim.entry.asInstanceOf[UploadEntryToken[Any]],
+                      handle
+                    )
+                    UploadMutationResult(
+                      installation.registry,
+                      installation.accepted,
+                      commit = installation.retirement
+                    )
+                  }
+      accepted <- mutateUpload(mutation)
+      result   <-
+        if !accepted then
+          uploadRuntime
+            .removeAndRetire(
+              handle.id,
+              LiveUploadAbortReason.Failed("stale_join")
+            ).as(Left(UploadAdmissionError.Rejected(UploadRegistryError.StaleAuthority)))
+        else
+          for
+            worker <- UploadEntryWorker.start(
+                        handle,
+                        claim.expectedBytes,
+                        math.min(claim.chunkSize, config.maxUploadChunkBytes),
+                        config.uploadChunkCapacity,
+                        UploadWorkerCallbacks(
+                          completion => completeUploadEntry(claim.entry, completion),
+                          reason => failUploadEntry(claim.entry, reason).ignore
+                        )
+                      )
+            active <- uploadRuntime.activate(worker)
+            value  <- if active then ZIO.succeed(Right(worker.id))
+                     else
+                       worker.retire(LiveUploadAbortReason.Failed("stale_join")) *>
+                         failUploadEntry(claim.entry, "stale_join").ignore.as(
+                           Left(UploadAdmissionError.Rejected(UploadRegistryError.StaleAuthority))
+                         )
+          yield value
+    yield result
+
+  private[connection] def uploadChunk(
+    worker: HostedWorkerId,
+    data: Chunk[Byte]
+  ): IO[UploadChunkError, Int] =
+    uploadRuntime.active(worker).flatMap {
+      case Some(active) => active.offer(data)
+      case None         => ZIO.fail(UploadChunkError.Closed)
+    }
+
+  private[connection] def leaveUpload(worker: HostedWorkerId): IO[ConnectionError, Unit] =
+    for
+      mutation <-
+        UploadMutation.succeed { registry =>
+          registry
+            .resolveEntry(worker.owner, worker.ownerEpoch, worker.uploadRef, worker.entryRef)
+            .flatMap(token =>
+              registry.failEntry(
+                token.asInstanceOf[UploadEntryToken[Any]],
+                "channel_closed"
+              )
+            ) match
+            case Right(removal) =>
+              UploadMutationResult(
+                removal.registry,
+                (),
+                commit = removal.retirement
+              )
+            case Left(_) => UploadMutationResult(registry, ())
+        }
+      _ <- mutateUpload(mutation)
+    yield ()
+
+  private[connection] def progressUpload(
+    command: CommandId,
+    component: Option[ComponentInstanceId],
+    uploadRef: scalive.upload.UploadRef,
+    entryRef: scalive.upload.UploadEntryRef,
+    progress: Int
+  ): IO[ConnectionError, Either[UploadRegistryError, Unit]] =
+    val owner = component.fold[OwnerId](OwnerId.Root(lifecycle))(OwnerId.Component(lifecycle, _))
+    for
+      mutation <- UploadMutation.make { registry =>
+                    registry.resolveEntry(owner, epoch, uploadRef, entryRef) match
+                      case Left(error) =>
+                        ZIO.succeed(
+                          UploadMutationResult(
+                            registry,
+                            Left(error): Either[UploadRegistryError, Task[Unit]],
+                            reply = Some(UploadControlError(error.toString))
+                          )
+                        )
+                      case Right(token) =>
+                        registry.progress(token.asInstanceOf[UploadEntryToken[Any]], progress) match
+                          case Left(error) =>
+                            ZIO.succeed(
+                              UploadMutationResult(
+                                registry,
+                                Left(error): Either[UploadRegistryError, Task[Unit]],
+                                reply = Some(UploadControlError(error.toString))
+                              )
+                            )
+                          case Right(next) =>
+                            val definition =
+                              token.upload.key.definition.asInstanceOf[LiveUploadDef[Any]]
+                            val callback = next
+                              .snapshotForToken(token.upload.asInstanceOf[UploadToken[Any]])
+                              .toOption
+                              .flatMap(_.entries.find(_.ref == entryRef))
+                              .flatMap(entry => definition.progress.map(_.onProgress(entry)))
+                              .getOrElse(ZIO.unit)
+                            ZIO.succeed(
+                              UploadMutationResult(
+                                next,
+                                Right(callback): Either[UploadRegistryError, Task[Unit]]
+                              )
+                            )
+                  }
+      result <- submitUpload(command, mutation)
+      value  <- result match
+                 case Left(error)     => ZIO.succeed(Left(error))
+                 case Right(callback) =>
+                   callback
+                     .mapError(ConnectionError.UploadFailed.apply)
+                     .as(Right(()))
+    yield value
+    end for
+  end progressUpload
+
+  private def completeUploadEntry(
+    entry: UploadEntryToken[?],
+    completion: HostedUploadCompletion
+  ): Task[Unit] =
+    (for
+      mutation <- UploadMutation.succeed { registry =>
+                    val installation = registry.installHostedCompletion(
+                      entry.asInstanceOf[UploadEntryToken[Any]],
+                      completion
+                    )
+                    val rollback =
+                      if installation.accepted then
+                        UploadRetirementPlan(
+                          Vector(UploadRetirementInstruction.Cleanup(completion.cleanup))
+                        )
+                      else UploadRetirementPlan.empty
+                    UploadMutationResult(
+                      installation.registry,
+                      installation.accepted,
+                      commit = installation.retirement,
+                      rollback = rollback
+                    )
+                  }
+      accepted <- mutateUpload(mutation)
+      _        <- uploadRuntime.forget(completion.workerId)
+      _        <- ZIO.fail(IllegalStateException("stale upload completion")).unless(accepted)
+    yield ()).mapError(error => error: Throwable)
+
+  private def failUploadEntry(
+    entry: UploadEntryToken[?],
+    reason: String
+  ): IO[ConnectionError, Unit] =
+    for
+      mutation <- UploadMutation.succeed { registry =>
+                    registry.failEntry(entry.asInstanceOf[UploadEntryToken[Any]], reason) match
+                      case Right(removal) =>
+                        UploadMutationResult(
+                          removal.registry,
+                          (),
+                          commit = removal.retirement
+                        )
+                      case Left(_) => UploadMutationResult(registry, ())
+                  }
+      _ <- mutateUpload(mutation)
+    yield ()
 
   private[scalive] def offerInternalPatch(destination: URL): IO[ConnectionError, Unit] =
     for
@@ -319,6 +670,8 @@ final private[scalive] class RootConnection[Msg, Model] private (
             )
           case Event.ComponentUpdate(_, component) =>
             SessionCommand.ComponentUpdate(epoch, component)
+          case Event.Upload(command, mutation) =>
+            SessionCommand.Upload(epoch, command, mutation)
           case Event.Patch(_, destination) => SessionCommand.ParamsPatch(epoch, destination)
         kernel
           .enqueue(command, input).foldZIO(
@@ -374,78 +727,96 @@ final private[scalive] class RootConnection[Msg, Model] private (
     outputs.foldLeft[UIO[Boolean]](ZIO.succeed(first)) { (state, output) =>
       state.flatMap { isFirst =>
         pending.get.flatMap { pendingCommands =>
-          val correlatedCommand = output.command.filter(pendingCommands.contains)
-          val connectionOutput  =
-            if isFirst then
-              output.navigation.fold[ConnectionOutput](
-                ConnectionOutput.Joined(output.delta, output.effects)
-              )(
-                ConnectionOutput.JoinedNavigation(output.delta, _, output.effects)
-              )
-            else
-              (correlatedCommand, output.navigation) match
-                case (Some(command), Some(navigation)) =>
-                  ConnectionOutput.ReplyNavigation(
-                    command,
-                    output.delta,
-                    navigation,
-                    output.effects
+          uploadReplies
+            .modify { current =>
+              val reply = output.command.flatMap(current.get)
+              reply -> output.command.fold(current)(current - _)
+            }.flatMap { uploadReply =>
+              val correlatedCommand = output.command.filter(pendingCommands.contains)
+              val connectionOutput  =
+                if isFirst then
+                  output.navigation.fold[ConnectionOutput](
+                    ConnectionOutput.Joined(output.delta, output.effects)
+                  )(
+                    ConnectionOutput.JoinedNavigation(output.delta, _, output.effects)
                   )
-                case (Some(command), None) =>
-                  ConnectionOutput.Reply(command, output.delta, output.effects)
-                case (None, Some(navigation)) =>
-                  ConnectionOutput.DiffNavigation(output.delta, navigation, output.effects)
-                case (None, None) => ConnectionOutput.Diff(output.delta, output.effects)
+                else
+                  (correlatedCommand, output.navigation) match
+                    case (Some(command), Some(navigation)) =>
+                      ConnectionOutput.ReplyNavigation(
+                        command,
+                        output.delta,
+                        navigation,
+                        output.effects
+                      )
+                    case (Some(command), None) =>
+                      uploadReply.fold[ConnectionOutput](
+                        ConnectionOutput.Reply(command, output.delta, output.effects)
+                      )(reply =>
+                        ConnectionOutput.UploadReply(command, output.delta, output.effects, reply)
+                      )
+                    case (None, Some(navigation)) =>
+                      ConnectionOutput.DiffNavigation(output.delta, navigation, output.effects)
+                    case (None, None) => ConnectionOutput.Diff(output.delta, output.effects)
 
-          val ordered = connectionOutput match
-            case ConnectionOutput.Reply(command, _, _)              => awaitEarlierCommands(command)
-            case ConnectionOutput.ReplyNavigation(command, _, _, _) => awaitEarlierCommands(command)
-            case _                                                  => ZIO.unit
+              val ordered = connectionOutput match
+                case ConnectionOutput.Reply(command, _, _)          => awaitEarlierCommands(command)
+                case ConnectionOutput.UploadReply(command, _, _, _) =>
+                  awaitEarlierCommands(command)
+                case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
+                  awaitEarlierCommands(command)
+                case _ => ZIO.unit
 
-          ordered *> writer
-            .send(connectionOutput).foldZIO(
-              error =>
-                closing.isDone
-                  .flatMap {
-                    case false => terminate(writerFailure(error))
-                    case true  =>
-                      connectionOutput match
-                        case ConnectionOutput.Reply(command, _, _) =>
-                          complete(command, Left(ConnectionError.Closed))
-                        case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
-                          complete(command, Left(ConnectionError.Closed))
-                        case ConnectionOutput.Rejected(command, _) =>
-                          complete(command, Left(ConnectionError.Closed))
-                        case ConnectionOutput.Joined(_, _) |
-                            ConnectionOutput.JoinedNavigation(_, _, _) =>
-                          bootstrapReady.fail(ConnectionError.Closed).unit
-                        case ConnectionOutput.Diff(_, _) |
-                            ConnectionOutput.DiffNavigation(_, _, _) =>
-                          ZIO.unit
-                  }.as(false),
-              _ =>
-                val signal = connectionOutput match
-                  case ConnectionOutput.Joined(_, _) | ConnectionOutput.JoinedNavigation(_, _, _) =>
-                    bootstrapReady.succeed(()).unit
-                  case ConnectionOutput.Reply(command, _, _) => complete(command, Right(()))
-                  case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
-                    complete(command, Right(()))
-                  case ConnectionOutput.Rejected(command, _) => complete(command, Right(()))
-                  case ConnectionOutput.Diff(_, _) | ConnectionOutput.DiffNavigation(_, _, _) =>
-                    ZIO.unit
-                val finish = connectionOutput match
-                  case ConnectionOutput.JoinedNavigation(_, navigation, _)
-                      if !navigation.kind.isPatch =>
-                    close
-                  case ConnectionOutput.ReplyNavigation(_, _, navigation, _)
-                      if !navigation.kind.isPatch =>
-                    close
-                  case ConnectionOutput.DiffNavigation(_, navigation, _)
-                      if !navigation.kind.isPatch =>
-                    close
-                  case _ => ZIO.unit
-                (signal *> finish).as(false)
-            )
+              ordered *> writer
+                .send(connectionOutput).foldZIO(
+                  error =>
+                    closing.isDone
+                      .flatMap {
+                        case false => terminate(writerFailure(error))
+                        case true  =>
+                          connectionOutput match
+                            case ConnectionOutput.Reply(command, _, _) =>
+                              complete(command, Left(ConnectionError.Closed))
+                            case ConnectionOutput.UploadReply(command, _, _, _) =>
+                              complete(command, Left(ConnectionError.Closed))
+                            case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
+                              complete(command, Left(ConnectionError.Closed))
+                            case ConnectionOutput.Rejected(command, _) =>
+                              complete(command, Left(ConnectionError.Closed))
+                            case ConnectionOutput.Joined(_, _) |
+                                ConnectionOutput.JoinedNavigation(_, _, _) =>
+                              bootstrapReady.fail(ConnectionError.Closed).unit
+                            case ConnectionOutput.Diff(_, _) |
+                                ConnectionOutput.DiffNavigation(_, _, _) =>
+                              ZIO.unit
+                      }.as(false),
+                  _ =>
+                    val signal = connectionOutput match
+                      case ConnectionOutput.Joined(_, _) |
+                          ConnectionOutput.JoinedNavigation(_, _, _) =>
+                        bootstrapReady.succeed(()).unit
+                      case ConnectionOutput.Reply(command, _, _) => complete(command, Right(()))
+                      case ConnectionOutput.UploadReply(command, _, _, _) =>
+                        complete(command, Right(()))
+                      case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
+                        complete(command, Right(()))
+                      case ConnectionOutput.Rejected(command, _) => complete(command, Right(()))
+                      case ConnectionOutput.Diff(_, _) | ConnectionOutput.DiffNavigation(_, _, _) =>
+                        ZIO.unit
+                    val finish = connectionOutput match
+                      case ConnectionOutput.JoinedNavigation(_, navigation, _)
+                          if !navigation.kind.isPatch =>
+                        close
+                      case ConnectionOutput.ReplyNavigation(_, _, navigation, _)
+                          if !navigation.kind.isPatch =>
+                        close
+                      case ConnectionOutput.DiffNavigation(_, navigation, _)
+                          if !navigation.kind.isPatch =>
+                        close
+                      case _ => ZIO.unit
+                    (signal *> finish).as(false)
+                )
+            }
         }
       }
     }
@@ -476,7 +847,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
       case None => ZIO.unit)
 
   private def failPending(error: ConnectionError): UIO[Unit] =
-    pending
+    uploadReplies.set(Map.empty) *> pending
       .getAndSet(Map.empty).flatMap(values =>
         ZIO.foreachDiscard(values.values)(_.response.fail(error).unit)
       )
@@ -525,6 +896,7 @@ private[scalive] object RootConnection:
       component: ComponentInstanceId,
       event: LiveAsyncEvent[?])
     case ComponentUpdate(command: CommandId, component: ComponentInstanceId)
+    case Upload(command: CommandId, mutation: UploadMutation[?])
     case Patch(command: CommandId, destination: URL)
 
     def id: CommandId = this match
@@ -533,7 +905,9 @@ private[scalive] object RootConnection:
       case ComponentMessage(command, _, _)          => command
       case ComponentAsync(command, _, _)            => command
       case ComponentUpdate(command, _)              => command
+      case Upload(command, _)                       => command
       case Patch(command, _)                        => command
+  end Event
 
   def start[Msg, Model](
     config: ConnectionConfig,
@@ -597,16 +971,23 @@ private[scalive] object RootConnection:
         writer <- SerialWriter
                     .make[ConnectionOutput](config.writerCapacity)(sink)
                     .mapError(error => ConnectionError.OutboundFailed(error.toString))
+        uploadRuntime        <- UploadRuntime.make
+        uploadReplies        <- Ref.make(Map.empty[CommandId, UploadControlReply])
         componentEnvironment <- ConnectedComponentEnvironment.make[Msg, Model](
                                   metadata,
-                                  lifecycleId
+                                  lifecycleId,
+                                  Epoch.initial
                                 )
         initialHooks = RootHookRegistry.fromStatic(lifecycle.hooks)
         logic        = SessionLogic[Msg, RootState[Msg, Model]](
                   bootstrap =
                     for
-                      journal <-
-                        RootTurnJournal.make(rootOwner, initialHooks, metadata.initialFlash)
+                      journal <- RootTurnJournal.make(
+                                   rootOwner,
+                                   initialHooks,
+                                   metadata.initialFlash,
+                                   ownerEpoch = Epoch.initial
+                                 )
                       mountContext = RootMountContext.connected[Msg, Model](
                                        metadata,
                                        lifecycle.initialUrl,
@@ -647,15 +1028,27 @@ private[scalive] object RootConnection:
                       componentUpdates   <- journal.componentUpdates.get
                       resourceOperations <- journal.resourceOperationSnapshot
                       streams            <- journal.streamSnapshot
-                      pageTitle = lifecycle.pageTitle(model)
+                      uploadState        <- journal.uploadSnapshot
+                      (uploads, uploadCommit, uploadRollback) = uploadState
+                      pageTitle                               = lifecycle.pageTitle(model)
                     yield TurnDraft(
-                      RootState(model, lifecycle.initialUrl, hooks, flash, pageTitle, streams),
+                      RootState(
+                        model,
+                        lifecycle.initialUrl,
+                        hooks,
+                        flash,
+                        pageTitle,
+                        streams,
+                        uploads
+                      ),
                       url = Some(lifecycle.initialUrl),
                       navigation = navigation,
                       effects =
                         SessionEffects(Option.when(ownsPageTitle)(pageTitle).flatten, clientEvents),
                       componentUpdates = componentUpdates,
-                      resourceOperations = resourceOperations
+                      resourceOperations = resourceOperations,
+                      uploadCommit = uploadCommit,
+                      uploadRollback = uploadRollback
                     ),
                   handle = (state, message) =>
                     for
@@ -663,7 +1056,9 @@ private[scalive] object RootConnection:
                                    rootOwner,
                                    state.hooks,
                                    state.flash,
-                                   initialStreams = state.streams
+                                   initialStreams = state.streams,
+                                   ownerEpoch = Epoch.initial,
+                                   initialUploads = state.uploads
                                  )
                       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
                       model <- ZIO.suspend(lifecycle.handleMessage(state.model, context, message))
@@ -674,9 +1069,11 @@ private[scalive] object RootConnection:
                       componentUpdates   <- journal.componentUpdates.get
                       resourceOperations <- journal.resourceOperationSnapshot
                       streams            <- journal.streamSnapshot
-                      pageTitle = lifecycle.pageTitle(model)
+                      uploadState        <- journal.uploadSnapshot
+                      (uploads, uploadCommit, uploadRollback) = uploadState
+                      pageTitle                               = lifecycle.pageTitle(model)
                     yield TurnDraft(
-                      RootState(model, state.url, hooks, flash, pageTitle, streams),
+                      RootState(model, state.url, hooks, flash, pageTitle, streams, uploads),
                       url = Some(state.url),
                       navigation = navigation,
                       effects = SessionEffects(
@@ -684,7 +1081,9 @@ private[scalive] object RootConnection:
                         clientEvents
                       ),
                       componentUpdates = componentUpdates,
-                      resourceOperations = resourceOperations
+                      resourceOperations = resourceOperations,
+                      uploadCommit = uploadCommit,
+                      uploadRollback = uploadRollback
                     ),
                   handleEvent = Some((state, message) =>
                     runMessageTurn(
@@ -726,6 +1125,20 @@ private[scalive] object RootConnection:
                       Some(message)
                     )
                   ),
+                  handleUpload = Some((state, command, mutation) =>
+                    mutation.execute(state.uploads).flatMap { result =>
+                      ZIO.foreachDiscard(result.reply)(reply =>
+                        uploadReplies.update(_.updated(command, reply))
+                      ) *>
+                        ZIO.succeed(
+                          TurnDraft(
+                            state.copy(uploads = result.registry),
+                            uploadCommit = result.commit,
+                            uploadRollback = result.rollback
+                          )
+                        )
+                    }
+                  ),
                   interceptClientEvent = (state, event) =>
                     (event.eventName, event.rawJson) match
                       case (Some(name), Some(raw)) =>
@@ -737,7 +1150,9 @@ private[scalive] object RootConnection:
                                          rootOwner,
                                          state.hooks,
                                          state.flash,
-                                         initialStreams = state.streams
+                                         initialStreams = state.streams,
+                                         ownerEpoch = Epoch.initial,
+                                         initialUploads = state.uploads
                                        )
                             context = RootMessageContext[Msg, Model](metadata, state.url, journal)
                             model            <- runBrowserHooks(matching, state.model, raw, context)
@@ -748,10 +1163,20 @@ private[scalive] object RootConnection:
                             componentUpdates <- journal.componentUpdates.get
                             resourceOperations <- journal.resourceOperationSnapshot
                             streams            <- journal.streamSnapshot
-                            pageTitle = lifecycle.pageTitle(model)
+                            uploadState        <- journal.uploadSnapshot
+                            (uploads, uploadCommit, uploadRollback) = uploadState
+                            pageTitle                               = lifecycle.pageTitle(model)
                           yield Some(
                             TurnDraft(
-                              RootState(model, state.url, hooks, flash, pageTitle, streams),
+                              RootState(
+                                model,
+                                state.url,
+                                hooks,
+                                flash,
+                                pageTitle,
+                                streams,
+                                uploads
+                              ),
                               url = Some(state.url),
                               navigation = navigation,
                               effects = SessionEffects(
@@ -762,7 +1187,9 @@ private[scalive] object RootConnection:
                                 clientEvents
                               ),
                               componentUpdates = componentUpdates,
-                              resourceOperations = resourceOperations
+                              resourceOperations = resourceOperations,
+                              uploadCommit = uploadCommit,
+                              uploadRollback = uploadRollback
                             )
                           )
                         end if
@@ -773,7 +1200,9 @@ private[scalive] object RootConnection:
                                    rootOwner,
                                    state.hooks,
                                    state.flash,
-                                   initialStreams = state.streams
+                                   initialStreams = state.streams,
+                                   ownerEpoch = Epoch.initial,
+                                   initialUploads = state.uploads
                                  )
                       context = RootParamsContext[Msg, Model](
                                   metadata,
@@ -797,9 +1226,11 @@ private[scalive] object RootConnection:
                       componentUpdates   <- journal.componentUpdates.get
                       resourceOperations <- journal.resourceOperationSnapshot
                       streams            <- journal.streamSnapshot
-                      pageTitle = lifecycle.pageTitle(model)
+                      uploadState        <- journal.uploadSnapshot
+                      (uploads, uploadCommit, uploadRollback) = uploadState
+                      pageTitle                               = lifecycle.pageTitle(model)
                     yield TurnDraft(
-                      RootState(model, destination, hooks, flash, pageTitle, streams),
+                      RootState(model, destination, hooks, flash, pageTitle, streams, uploads),
                       url = Some(destination),
                       navigation = navigation,
                       effects = SessionEffects(
@@ -807,7 +1238,9 @@ private[scalive] object RootConnection:
                         clientEvents
                       ),
                       componentUpdates = componentUpdates,
-                      resourceOperations = resourceOperations
+                      resourceOperations = resourceOperations,
+                      uploadCommit = uploadCommit,
+                      uploadRollback = uploadRollback
                     ),
                   afterRender = draft =>
                     for
@@ -819,7 +1252,11 @@ private[scalive] object RootConnection:
                                    draft.componentUpdates,
                                    draft.navigation,
                                    draft.resourceOperations,
-                                   draft.model.streams
+                                   draft.model.streams,
+                                   ownerEpoch = Epoch.initial,
+                                   initialUploads = draft.model.uploads,
+                                   initialUploadCommit = draft.uploadCommit,
+                                   initialUploadRollback = draft.uploadRollback
                                  )
                       context = RootAfterRenderContext[Msg, Model](metadata, journal)
                       _ <- ZIO.foreachDiscard(draft.model.hooks.afterRender)(
@@ -830,14 +1267,31 @@ private[scalive] object RootConnection:
                       clientEvents       <- journal.clientEvents.get
                       componentUpdates   <- journal.componentUpdates.get
                       resourceOperations <- journal.resourceOperationSnapshot
+                      uploadState        <- journal.uploadSnapshot
+                      (uploads, uploadCommit, uploadRollback) = uploadState
                     yield draft.copy(
-                      model = draft.model.copy(hooks = hooks, flash = flash),
+                      model = draft.model.copy(hooks = hooks, flash = flash, uploads = uploads),
                       effects = draft.effects.copy(clientEvents = clientEvents),
                       componentUpdates = componentUpdates,
-                      resourceOperations = resourceOperations
+                      resourceOperations = resourceOperations,
+                      uploadCommit = uploadCommit,
+                      uploadRollback = uploadRollback
                     ),
                   validateStreams =
-                    (state, requirements) => ZIO.attempt(state.streams.validate(requirements))
+                    (state, requirements) => ZIO.attempt(state.streams.validate(requirements)),
+                  reconcileUploads = (draft, activeComponents) =>
+                    ZIO.succeed {
+                      val removal = draft.model.uploads.retireMissingComponents(
+                        lifecycleId,
+                        activeComponents
+                      )
+                      draft.copy(
+                        model = draft.model.copy(uploads = removal.registry),
+                        uploadCommit = draft.uploadCommit ++ removal.retirement
+                      )
+                    },
+                  retireUploads = uploadRuntime.retire,
+                  closeUploads = state => uploadRuntime.close(state.uploads, lifecycleId)
                 )
         kernel <- SessionKernel
                     .start(
@@ -863,6 +1317,8 @@ private[scalive] object RootConnection:
                        config,
                        kernel,
                        componentEnvironment,
+                       uploadRuntime,
+                       uploadReplies,
                        outbound,
                        writer,
                        ingress,
@@ -903,7 +1359,9 @@ private[scalive] object RootConnection:
                    owner,
                    state.hooks,
                    state.flash,
-                   initialStreams = state.streams
+                   initialStreams = state.streams,
+                   ownerEpoch = Epoch.initial,
+                   initialUploads = state.uploads
                  )
       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
       hooked <- runEventHooks(select(state.hooks), state.model, message, context)
@@ -920,14 +1378,18 @@ private[scalive] object RootConnection:
       componentUpdates   <- journal.componentUpdates.get
       resourceOperations <- journal.resourceOperationSnapshot
       streams            <- journal.streamSnapshot
-      pageTitle = lifecycle.pageTitle(model)
+      uploadState        <- journal.uploadSnapshot
+      (uploads, uploadCommit, uploadRollback) = uploadState
+      pageTitle                               = lifecycle.pageTitle(model)
     yield TurnDraft(
-      RootState(model, state.url, hooks, flash, pageTitle, streams),
+      RootState(model, state.url, hooks, flash, pageTitle, streams, uploads),
       url = Some(state.url),
       navigation = navigation,
       effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
       componentUpdates = componentUpdates,
-      resourceOperations = resourceOperations
+      resourceOperations = resourceOperations,
+      uploadCommit = uploadCommit,
+      uploadRollback = uploadRollback
     )
 
   private def runEventHooks[Msg, Model](
@@ -978,7 +1440,9 @@ private[scalive] object RootConnection:
                    owner,
                    state.hooks,
                    state.flash,
-                   initialStreams = state.streams
+                   initialStreams = state.streams,
+                   ownerEpoch = Epoch.initial,
+                   initialUploads = state.uploads
                  )
       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
       hooked <- state.hooks.async.foldLeft[LiveIO[Hooked[Model]]](
@@ -1011,14 +1475,18 @@ private[scalive] object RootConnection:
       componentUpdates   <- journal.componentUpdates.get
       resourceOperations <- journal.resourceOperationSnapshot
       streams            <- journal.streamSnapshot
-      pageTitle = lifecycle.pageTitle(model)
+      uploadState        <- journal.uploadSnapshot
+      (uploads, uploadCommit, uploadRollback) = uploadState
+      pageTitle                               = lifecycle.pageTitle(model)
     yield TurnDraft(
-      RootState(model, state.url, hooks, flash, pageTitle, streams),
+      RootState(model, state.url, hooks, flash, pageTitle, streams, uploads),
       url = Some(state.url),
       navigation = navigation,
       effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
       componentUpdates = componentUpdates,
-      resourceOperations = resourceOperations
+      resourceOperations = resourceOperations,
+      uploadCommit = uploadCommit,
+      uploadRollback = uploadRollback
     )
 
   private def runBrowserHooks[Msg, Model](

@@ -495,6 +495,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 ComponentAction.Update,
                 Some(commandId -> response)
               )
+            case SessionCommand.Upload(_, uploadCommand, mutation) =>
+              logic.handleUpload match
+                case Some(handler) =>
+                  executeTurn(
+                    state,
+                    work,
+                    handler(state.committed.model, uploadCommand, mutation),
+                    Some(commandId -> response)
+                  )
+                case None =>
+                  response.fail(SessionRejection.UploadUnavailable).unit *> loop(state, work)
             case client: SessionCommand.ComponentClientEvent =>
               executeComponentTurn(
                 state,
@@ -831,6 +842,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         auxiliaryScope <- CandidateScope.make
         registry       <- PreparedResourceRegistry.make(auxiliaryScope.addFinalizer)
         componentOwner <- Ref.make(Option.empty[Ref[Vector[StagedComponent[Msg]]]])
+        uploadRollback <- Ref.make(draft.uploadRollback)
         result         <- restore(
                     for
                       discoveryScope <- CandidateScope.make
@@ -875,6 +887,14 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       render           = finalized._1
                       nestedComponents = finalized._2
                       topology         = finalized._3
+                      _ <- uploadRollback.set(nestedComponents.draft.uploadRollback)
+                      finalComponentIds = nestedComponents.forest.components.map(_.id).toSet
+                      reconciledDraft <- phase(SessionStage.Validation)(
+                                           logic.reconcileUploads(
+                                             nestedComponents.draft,
+                                             finalComponentIds
+                                           )
+                                         ).tap(next => uploadRollback.set(next.uploadRollback))
                       _ <- ZIO.foreachDiscard(nestedComponents.forest.components) { component =>
                              phase(SessionStage.Validation)(
                                componentEnvironment.validateStreams[Any](
@@ -886,12 +906,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                            }
                       _ <- phase(SessionStage.Validation)(
                              logic.validateStreams(
-                               nestedComponents.draft.model,
+                               reconciledDraft.model,
                                render.streamRequirements
                              )
                            )
                       _ <- phase(SessionStage.ResourcePreparation)(
-                             logic.prepare(nestedComponents.draft, registry)
+                             logic.prepare(reconciledDraft, registry)
                            )
                       resources <- registry.result
                       managed   <- prepareManagedResources(
@@ -899,19 +919,20 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                      .map(_.managedResources).getOrElse(
                                        ResourceIndex.empty[ManagedResource]
                                      ),
-                                   nestedComponents.draft.resourceOperations,
+                                   reconciledDraft.resourceOperations,
                                    nestedComponents.forest.components.map(_.id).toSet,
                                    auxiliaryScope
                                  )
                       reservation <- reserve(auxiliaryScope)
                       finalDraft  <- phase(SessionStage.AfterRender)(
-                                      logic.afterRender(nestedComponents.draft)
-                                    )
+                                      logic.afterRender(reconciledDraft)
+                                    ).tap(next => uploadRollback.set(next.uploadRollback))
                       _ <- validateContinuations(
                              existingContinuations,
                              finalDraft.continuations.size + nestedComponents.outputs.size +
                                managed.continuations.size
                            )
+                      rollbackClaim <- Ref.make(true)
                       delta = diffBaseline.orElse(previous.map(_.render)) match
                                 case Some(committed) => TreeDiffer.diff(committed.tree, render.tree)
                                 case None            => TreeDiffer.initial(render.tree)
@@ -930,16 +951,19 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       managed.continuations,
                       delta,
                       reservation,
-                      auxiliaryScope
+                      auxiliaryScope,
+                      finalDraft.uploadRollback,
+                      rollbackClaim
                     )
                   ).onExit {
                     case Exit.Success(_) => ZIO.unit
                     case Exit.Failure(_) =>
-                      componentOwner.get.flatMap(
-                        ZIO.foreachDiscard(_)(owner =>
-                          owner.get.flatMap(ZIO.foreachDiscard(_)(_.discard))
-                        )
-                      ) *>
+                      uploadRollback.get.flatMap(retireUploads) *>
+                        componentOwner.get.flatMap(
+                          ZIO.foreachDiscard(_)(owner =>
+                            owner.get.flatMap(ZIO.foreachDiscard(_)(_.discard))
+                          )
+                        ) *>
                         auxiliaryScope.closeFromOwner
                   }
       yield result
@@ -2155,7 +2179,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     }
 
   private def discardCandidate(candidate: TurnCandidate[Msg, Model]): UIO[Unit] =
-    candidate.render.discard *>
+    rollbackCandidate(candidate) *>
+      candidate.render.discard *>
       ZIO.foreachDiscard(candidate.components.components)(_.discard) *>
       candidate.auxiliaryScope.closeFromOwner
 
@@ -2197,6 +2222,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         )
       nextWork = work.enqueueAll(rootWork ++ outputWork ++ managedWork)
       _ <- activeOwner.activate(closeCommitted(next))
+      _ <- retireUploads(candidate.draft.uploadCommit)
       _ <- ZIO.foreachDiscard(previous)(_.resources.markStale)
       _ <- ZIO.foreachDiscard(candidate.managedRetirements)(_.prepared.markStale)
       _ <- closeManaged(candidate.managedRetirements)
@@ -2216,7 +2242,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       case Exit.Success(result) =>
         ZIO.uninterruptible(retire(previous, result.value) *> candidate.topology.retire).as(result)
       case Exit.Failure(cause) =>
-        val candidateCleanup = candidate.render.stagedScope.closeFromOwner *>
+        val candidateCleanup = rollbackCandidate(candidate) *>
+          candidate.render.stagedScope.closeFromOwner *>
           candidate.auxiliaryScope.closeFromOwner *>
           closeManaged(candidate.managedActivations) *>
           ZIO.foreachDiscard(candidate.components.components)(_.abortCommitted)
@@ -2358,11 +2385,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             ZIO.uninterruptible(activeOwner.close) *>
             terminal.succeed(SessionState.Redirected(epoch, navigation)).unit
         case Exit.Failure(cause) if cause.isInterruptedOnly =>
-          response.fold[UIO[Unit]](ZIO.unit)(
-            _._2.fail(SessionRejection.Terminal("closed")).unit
-          )
+          discardCandidate(candidate) *>
+            response.fold[UIO[Unit]](ZIO.unit)(
+              _._2.fail(SessionRejection.Terminal("closed")).unit
+            )
         case Exit.Failure(cause) =>
-          failActiveTurn(state, response, failureFrom(cause, SessionStage.OutputReservation))
+          discardCandidate(candidate) *>
+            failActiveTurn(state, response, failureFrom(cause, SessionStage.OutputReservation))
       }
     end if
   end stageCandidateNavigation
@@ -2681,7 +2710,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     )
 
   private def closeCommitted(committed: Committed[Msg, Model]): UIO[Unit] =
-    closeManaged(committed.managedResources.values) *>
+    closeUploads(committed.model) *>
+      closeManaged(committed.managedResources.values) *>
       committed.render.scope.closeFromOwner *>
       committed.auxiliaryScope.closeFromOwner *>
       ZIO.foreachDiscard(committed.components.values) { component =>
@@ -2689,6 +2719,23 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           component.program.close *>
           componentEnvironment.close(component.id, component.environmentState)
       }
+
+  private def retireUploads(plan: UploadRetirementPlan): UIO[Unit] =
+    logic
+      .retireUploads(plan).catchAllCause(cause =>
+        ZIO.logWarningCause("upload retirement hook failed", cause)
+      )
+
+  private def rollbackCandidate(candidate: TurnCandidate[Msg, Model]): UIO[Unit] =
+    candidate.uploadRollbackClaim
+      .modify(claimed => claimed -> false)
+      .flatMap(claimed => ZIO.when(claimed)(retireUploads(candidate.uploadRollback)).unit)
+
+  private def closeUploads(model: Model): UIO[Unit] =
+    logic
+      .closeUploads(model).catchAllCause(cause =>
+        ZIO.logWarningCause("upload close hook failed", cause)
+      )
 
   private def closeManaged(resources: Vector[ManagedResource]): UIO[Unit] =
     PreparedResources(resources.map(_.prepared)).close

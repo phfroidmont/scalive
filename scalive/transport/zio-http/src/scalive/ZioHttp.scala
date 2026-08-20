@@ -13,6 +13,8 @@ import scalive.protocol.phoenix.*
 import scalive.render.*
 import scalive.runtime.connection.*
 import scalive.runtime.contracts.*
+import scalive.runtime.resources.*
+import scalive.upload.*
 
 /** ZIO HTTP assembly for root LiveView routes. */
 object ZioHttp:
@@ -27,7 +29,9 @@ object ZioHttp:
   private val KernelCapacity       = 64
   private val ContinuationCapacity = 64
   private val PhysicalWriterSize   = 64
-  private val MaxFramePayloadBytes = 64 * 1024
+  private val UploadChunkCapacity  = 8
+  private val MaxUploadChunkBytes  = 1_000_000
+  private val MaxFramePayloadBytes = MaxUploadChunkBytes + 1024
   private val secureRandom         = SecureRandom()
 
   /** Stable browser-page identity used by both HTTP bootstrap tokens and websocket joins. */
@@ -962,6 +966,13 @@ object ZioHttp:
     isRoot: Boolean,
     sticky: Boolean)
 
+  final private case class JoinedUpload(
+    topic: String,
+    joinRef: PhoenixRef.Value,
+    connection: ConnectedLifecycle,
+    worker: HostedWorkerId,
+    claims: UploadCredentialClaims)
+
   final private class LifecycleStartupSink private (
     capacity: Int,
     destination: ConnectionOutput => Task[Unit],
@@ -1044,6 +1055,7 @@ object ZioHttp:
                       applicationId => NestedTopic(s"lv:$applicationId")
                     )
       joined       <- Ref.make(Map.empty[String, JoinedLifecycle])
+      uploads      <- Ref.make(Map.empty[String, JoinedUpload])
       registration <- Ref.make(Option.empty[ZioHttpSecurity.RootClaims])
       joinGate     <- Semaphore.make(1L)
       receive = channel.receiveAll {
@@ -1073,6 +1085,33 @@ object ZioHttp:
                               topic,
                               payload
                             )
+                          case Right(
+                                PhoenixInbound.UploadJoin(
+                                  joinRef,
+                                  ref,
+                                  topic,
+                                  entryRef,
+                                  token
+                                )
+                              ) =>
+                            joinUpload(
+                              config,
+                              joined,
+                              uploads,
+                              joinGate,
+                              writer,
+                              joinRef,
+                              ref,
+                              topic,
+                              entryRef,
+                              token
+                            )
+                          case Right(PhoenixInbound.AllowUpload(joinRef, ref, topic, payload)) =>
+                            offerUploadPreflight(joined, writer, joinRef, ref, topic, payload)
+                          case Right(
+                                PhoenixInbound.UploadProgress(joinRef, ref, topic, payload)
+                              ) =>
+                            offerUploadProgress(joined, writer, joinRef, ref, topic, payload)
                           case Right(PhoenixInbound.Event(joinRef, ref, topic, payload)) =>
                             offerEvent(joined, writer, joinRef, ref, topic, payload)
                           case Right(PhoenixInbound.LivePatch(joinRef, ref, topic, url)) =>
@@ -1086,7 +1125,11 @@ object ZioHttp:
                               ref,
                               topic
                             )
+                          case Right(PhoenixInbound.UploadLeave(joinRef, ref, topic, _)) =>
+                            leaveUpload(uploads, writer, joinRef, ref, topic)
                     }
+                  case ChannelEvent.Read(WebSocketFrame.Binary(bytes)) =>
+                    offerUploadChunk(uploads, writer, bytes)
                   case ChannelEvent.Read(_: WebSocketFrame.Close) => ZIO.unit
                   case ChannelEvent.Registered | ChannelEvent.Unregistered |
                       ChannelEvent.UserEventTriggered(_) =>
@@ -1477,6 +1520,11 @@ object ZioHttp:
             )
         case ConnectionOutput.Reply(command, delta, effects) =>
           correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((eventJoinRef, PhoenixRef.Null)) =>
+              update(delta)
+                .map(addEffects(_, effects)).flatMap(json =>
+                  writer.offer(PhoenixOutput.diff(eventJoinRef, topic, json))
+                )
             case Some((eventJoinRef, eventRef)) =>
               update(delta)
                 .map(addEffects(_, effects)).flatMap(json =>
@@ -1484,8 +1532,56 @@ object ZioHttp:
                 )
             case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
           }
+        case ConnectionOutput.UploadReply(command, delta, effects, uploadReply) =>
+          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((eventJoinRef, eventRef)) =>
+              update(delta).map(addEffects(_, effects)).flatMap { diff =>
+                uploadReply match
+                  case preflight: UploadPreflightView =>
+                    encodeUploadPreflight(config, preflight).flatMap { response =>
+                      val reply = writer.offer(
+                        PhoenixUploadProtocol.preflightReply(
+                          eventJoinRef,
+                          eventRef,
+                          topic,
+                          response
+                        )
+                      )
+                      val pushedEffects = ZIO
+                        .when(diff.fields.nonEmpty)(
+                          writer.offer(PhoenixOutput.diff(joinRef, topic, diff))
+                        ).unit
+                      reply *> pushedEffects
+                    }
+                  case UploadControlError(reason) =>
+                    writer.offer(
+                      PhoenixOutput.error(
+                        eventJoinRef,
+                        eventRef,
+                        topic,
+                        Json.Obj("reason" -> Json.Str(reason))
+                      )
+                    )
+              }
+            case None => ZIO.fail(Exception(s"missing upload correlation ${command.value}"))
+          }
         case ConnectionOutput.ReplyNavigation(command, delta, navigation, effects) =>
           correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((eventJoinRef, PhoenixRef.Null)) =>
+              update(delta)
+                .map(addEffects(_, effects)).flatMap { json =>
+                  val diff = ZIO.when(json.fields.nonEmpty)(
+                    writer.offer(PhoenixOutput.diff(eventJoinRef, topic, json))
+                  )
+                  if navigation.kind.isPatch then
+                    diff *> writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                      acknowledgePatch(navigation.destination)
+                  else
+                    diff *> navigationEventEnvelope(config, eventJoinRef, topic, navigation)
+                      .flatMap(
+                        writer.offer
+                      )
+                }
             case Some((eventJoinRef, eventRef)) =>
               update(delta)
                 .map(addEffects(_, effects)).flatMap(json =>
@@ -1507,6 +1603,7 @@ object ZioHttp:
           }
         case ConnectionOutput.Rejected(command, _) =>
           correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((_, PhoenixRef.Null))     => ZIO.unit
             case Some((eventJoinRef, eventRef)) =>
               writer.offer(PhoenixOutput.error(eventJoinRef, eventRef, topic, staleReason))
             case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
@@ -1533,6 +1630,55 @@ object ZioHttp:
             )
       end match
     }
+
+  private def encodeUploadPreflight(
+    config: ZioHttpConfig,
+    view: UploadPreflightView
+  ): UIO[PhoenixUploadPreflightResponse] =
+    ZIO
+      .foreach(view.entries) { entry =>
+        entry.hosted match
+          case Some(token) =>
+            val (lifecycle, component) = token.upload.owner match
+              case OwnerId.Root(lifecycle)                 => lifecycle -> None
+              case OwnerId.Component(lifecycle, component) => lifecycle -> Some(component)
+            val topic  = s"lvu:${entry.ref.value}"
+            val claims = UploadCredentialClaims(
+              lifecycle,
+              token.upload.ownerEpoch,
+              component,
+              token.upload.ref,
+              entry.ref,
+              token.upload.generation,
+              topic
+            )
+            ZioHttpSecurity
+              .issueUploadCredential(config, claims)
+              .map(credential =>
+                entry.ref.value -> Some(PhoenixUploadEntryConfig.Hosted(credential))
+              )
+          case None =>
+            ZIO.succeed(
+              entry.ref.value -> entry.external.map(PhoenixUploadEntryConfig.External.apply)
+            )
+      }.map { encoded =>
+        val entries = encoded.collect { case (ref, Some(value)) => ref -> value }.toMap
+        val errors  = view.entries.collect {
+          case entry if entry.errors.nonEmpty =>
+            entry.ref.value -> entry.errors.map(LiveUploadError.toJson).toVector
+        }.toMap
+        PhoenixUploadPreflightResponse(
+          view.ref.value,
+          PhoenixUploadClientConfig(
+            view.maxFileSize,
+            view.maxEntries,
+            view.chunkSize,
+            view.chunkTimeoutMillis
+          ),
+          entries,
+          errors
+        )
+      }
 
   private[scalive] def addEffects(
     json: Json.Obj,
@@ -1679,19 +1825,397 @@ object ZioHttp:
       case Some(joined) =>
         correlatedEventRefs(joined.joinRef, joinRef, ref) match
           case Some(eventRefs) =>
-            event.cid match
-              case None =>
-                ZIO.fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
-                  enqueueLifecycleEvent(joined, eventRefs, event, payload)
-                }
-              case Some(cid) =>
-                offerComponentEvent(joined, eventRefs, event, cid).flatMap {
-                  case true  => ZIO.unit
-                  case false => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
-                }
+            syncEventUploads(joined, event).flatMap { _ =>
+              event.cid match
+                case None =>
+                  ZIO.fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
+                    enqueueLifecycleEvent(joined, eventRefs, event, payload)
+                  }
+                case Some(cid) =>
+                  offerComponentEvent(joined, eventRefs, event, cid).flatMap {
+                    case true  => ZIO.unit
+                    case false =>
+                      writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+                  }
+            }
           case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
       case _ => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
     }
+
+  private def syncEventUploads(joined: JoinedLifecycle, event: RootEvent): Task[Unit] =
+    event.uploads match
+      case None      => ZIO.unit
+      case Some(raw) =>
+        for
+          uploads <- ZIO.fromEither(
+                       PhoenixUploadProtocol.decodeEventUploads(raw).left.map(Exception(_))
+                     )
+          component <- event.cid match
+                         case None      => ZIO.none
+                         case Some(cid) =>
+                           resolveComponentCid(
+                             joined.renderedState,
+                             joined.projectionGate,
+                             cid,
+                             joined.connection.componentForToken
+                           ).someOrFail(Exception("stale upload component")).map(Some(_))
+          _ <- ZIO.foreachDiscard(uploads) { upload =>
+                 val entries = upload.entries.map { entry =>
+                   UploadEntryRef(entry.ref) -> new UploadClientMetadata(
+                     entry.name,
+                     entry.relativePath,
+                     entry.size,
+                     entry.mediaType,
+                     entry.lastModified,
+                     entry.meta
+                   )
+                 }
+                 joined.connection
+                   .syncUploadSelection(component, UploadRef(upload.uploadRef), entries).flatMap {
+                     case Right(_)    => ZIO.unit
+                     case Left(error) => ZIO.fail(Exception(s"upload selection rejected: $error"))
+                   }
+               }
+        yield ()
+
+  private def offerUploadPreflight(
+    lifecycles: Ref[Map[String, JoinedLifecycle]],
+    writer: SerialWriter[PhoenixEnvelope],
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    preflight: PhoenixUploadPreflight
+  ): Task[Unit] =
+    lifecycles.get.map(exactTopicGeneration(_, topic, joinRef, _.joinRef)).flatMap {
+      case Some(joined) =>
+        correlatedEventRefs(joined.joinRef, joinRef, ref) match
+          case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+          case Some(eventRefs) =>
+            resolveUploadComponent(joined, preflight.cid).flatMap {
+              case Left(_) => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+              case Right(component) =>
+                val entries = preflight.entries.map { entry =>
+                  UploadEntryRef(entry.ref) -> new UploadClientMetadata(
+                    entry.name,
+                    entry.relativePath,
+                    entry.size,
+                    entry.mediaType,
+                    entry.lastModified,
+                    entry.meta
+                  )
+                }
+                enqueueCorrelated(joined, eventRefs) { command =>
+                  joined.connection
+                    .preflightUpload(
+                      command,
+                      component,
+                      UploadRef(preflight.uploadRef),
+                      entries
+                    ).unit
+                }
+            }
+      case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+    }
+
+  private def offerUploadProgress(
+    lifecycles: Ref[Map[String, JoinedLifecycle]],
+    writer: SerialWriter[PhoenixEnvelope],
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    progress: PhoenixUploadProgress
+  ): Task[Unit] =
+    lifecycles.get.map(exactTopicGeneration(_, topic, joinRef, _.joinRef)).flatMap {
+      case Some(joined) =>
+        correlatedEventRefs(joined.joinRef, joinRef, ref) match
+          case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+          case Some(eventRefs) =>
+            resolveUploadComponent(joined, progress.cid).flatMap {
+              case Left(_) => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+              case Right(component) =>
+                for
+                  accepted <- Ref.make(false)
+                  _        <- enqueueCorrelated(joined, eventRefs) { command =>
+                         joined.connection
+                           .progressUpload(
+                             command,
+                             component,
+                             UploadRef(progress.uploadRef),
+                             UploadEntryRef(progress.entryRef),
+                             progress.progress
+                           ).flatMap(result => accepted.set(result.isRight))
+                       }
+                  _ <- ZIO.whenZIO(accepted.get)(
+                         ZIO.foreachDiscard(progress.event)(event =>
+                           offerUploadProgressEvent(joined, component, progress, event)
+                         )
+                       )
+                yield ()
+            }
+      case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+    }
+
+  private def offerUploadProgressEvent(
+    joined: JoinedLifecycle,
+    component: Option[ComponentInstanceId],
+    progress: PhoenixUploadProgress,
+    event: String
+  ): Task[Unit] =
+    enqueueUncorrelated(joined) { command =>
+      val values = Map(
+        "ref"       -> progress.uploadRef,
+        "entry_ref" -> progress.entryRef,
+        "progress"  -> progress.progress.toString
+      )
+      val payload = BindingPayload.Params(values)
+      val raw     = Json
+        .Obj(
+          "ref"       -> Json.Str(progress.uploadRef),
+          "entry_ref" -> Json.Str(progress.entryRef),
+          "progress"  -> Json.Num(progress.progress)
+        ).toJson
+      component match
+        case None =>
+          joined.connection.browserEvent(
+            command,
+            BindingId.fromEncoded(event),
+            payload,
+            Some(event),
+            Some(raw)
+          )
+        case Some(owner) =>
+          joined.connection.componentEvent(
+            command,
+            owner,
+            BindingId.fromEncoded(event),
+            payload,
+            event,
+            raw
+          )
+    }
+
+  private def resolveUploadComponent(
+    joined: JoinedLifecycle,
+    cid: Option[Long]
+  ): IO[ConnectionError, Either[Unit, Option[ComponentInstanceId]]] = cid match
+    case None        => ZIO.succeed(Right(None))
+    case Some(value) =>
+      resolveComponentCid(
+        joined.renderedState,
+        joined.projectionGate,
+        value,
+        joined.connection.componentForToken
+      ).map(_.toRight(()).map(Some(_)))
+
+  private def joinUpload(
+    config: ZioHttpConfig,
+    lifecycles: Ref[Map[String, JoinedLifecycle]],
+    uploads: Ref[Map[String, JoinedUpload]],
+    joinGate: Semaphore,
+    writer: SerialWriter[PhoenixEnvelope],
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    entryRef: String,
+    token: String
+  ): Task[Unit] = joinGate.withPermit {
+    effectiveJoinRef(joinRef, ref) match
+      case None =>
+        writer.offer(
+          PhoenixUploadProtocol.uploadJoinErrorReply(
+            joinRef,
+            ref,
+            topic,
+            PhoenixUploadJoinError.InvalidToken
+          )
+        )
+      case Some(effective) =>
+        uploads.get.flatMap { current =>
+          if current.contains(topic) then
+            writer.offer(
+              PhoenixUploadProtocol.uploadJoinErrorReply(
+                joinRef,
+                ref,
+                topic,
+                PhoenixUploadJoinError.AlreadyRegistered
+              )
+            )
+          else
+            ZioHttpSecurity.verifyUploadCredential(config, token).either.flatMap {
+              case Left(_) =>
+                writer.offer(
+                  PhoenixUploadProtocol.uploadJoinErrorReply(
+                    joinRef,
+                    ref,
+                    topic,
+                    PhoenixUploadJoinError.InvalidToken
+                  )
+                )
+              case Right(claims)
+                  if claims.expectedTopic != topic || claims.entryRef.value != entryRef =>
+                writer.offer(
+                  PhoenixUploadProtocol.uploadJoinErrorReply(
+                    joinRef,
+                    ref,
+                    topic,
+                    PhoenixUploadJoinError.InvalidToken
+                  )
+                )
+              case Right(claims) =>
+                lifecycles.get.flatMap { active =>
+                  active.valuesIterator.find(joined =>
+                    joined.connection.lifecycle == claims.lifecycleId &&
+                      joined.connection.epoch == claims.epoch
+                  ) match
+                    case None =>
+                      writer.offer(
+                        PhoenixUploadProtocol.uploadJoinErrorReply(
+                          joinRef,
+                          ref,
+                          topic,
+                          PhoenixUploadJoinError.Disallowed
+                        )
+                      )
+                    case Some(joined) =>
+                      joined.connection
+                        .admitUpload(
+                          claims.componentInstanceId,
+                          claims.uploadRef,
+                          claims.entryRef,
+                          claims.registrationGeneration
+                        ).flatMap {
+                          case Left(UploadAdmissionError.WriterInitializationFailed) =>
+                            writer.offer(
+                              PhoenixUploadProtocol.uploadJoinErrorReply(
+                                joinRef,
+                                ref,
+                                topic,
+                                PhoenixUploadJoinError.WriterError
+                              )
+                            )
+                          case Left(UploadAdmissionError.RegistrationConflict) =>
+                            writer.offer(
+                              PhoenixUploadProtocol.uploadJoinErrorReply(
+                                joinRef,
+                                ref,
+                                topic,
+                                PhoenixUploadJoinError.AlreadyRegistered
+                              )
+                            )
+                          case Left(_) =>
+                            writer.offer(
+                              PhoenixUploadProtocol.uploadJoinErrorReply(
+                                joinRef,
+                                ref,
+                                topic,
+                                PhoenixUploadJoinError.Disallowed
+                              )
+                            )
+                          case Right(worker) =>
+                            val registration =
+                              JoinedUpload(topic, effective, joined.connection, worker, claims)
+                            uploads
+                              .modify { values =>
+                                if values.contains(topic) then false -> values
+                                else true -> values.updated(topic, registration)
+                              }.flatMap {
+                                case true =>
+                                  writer.offer(
+                                    PhoenixUploadProtocol.uploadJoinAcknowledgement(
+                                      joinRef,
+                                      ref,
+                                      topic
+                                    )
+                                  )
+                                case false =>
+                                  joined.connection.leaveUpload(worker) *>
+                                    writer.offer(
+                                      PhoenixUploadProtocol.uploadJoinErrorReply(
+                                        joinRef,
+                                        ref,
+                                        topic,
+                                        PhoenixUploadJoinError.AlreadyRegistered
+                                      )
+                                    )
+                              }
+                        }
+                }
+            }
+        }
+  }
+
+  private def leaveUpload(
+    uploads: Ref[Map[String, JoinedUpload]],
+    writer: SerialWriter[PhoenixEnvelope],
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String
+  ): Task[Unit] =
+    uploads
+      .modify { current =>
+        current.get(topic) match
+          case Some(value) if value.joinRef == joinRef => Some(value) -> current.removed(topic)
+          case _                                       => None        -> current
+      }.flatMap {
+        case Some(upload) =>
+          upload.connection.leaveUpload(upload.worker) *>
+            writer.offer(PhoenixOutput.leave(joinRef, ref, topic))
+        case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+      }
+
+  private def offerUploadChunk(
+    uploads: Ref[Map[String, JoinedUpload]],
+    writer: SerialWriter[PhoenixEnvelope],
+    bytes: Chunk[Byte]
+  ): Task[Unit] =
+    ZIO.fromEither(PhoenixUploadProtocol.decodeBinary(bytes).left.map(Exception(_))).flatMap {
+      frame =>
+        val frameJoinRef = PhoenixRef.Value(frame.joinRef)
+        val frameRef     = PhoenixRef.Value(frame.ref)
+        uploads.get.flatMap(_.get(frame.topic) match
+          case Some(upload)
+              if upload.joinRef.value == frame.joinRef &&
+                upload.claims.expectedTopic == frame.topic =>
+            upload.connection
+              .uploadChunk(upload.worker, frame.payload).foldZIO(
+                error =>
+                  uploads.update(_ - frame.topic) *>
+                    writer.offer(
+                      PhoenixUploadProtocol.chunkErrorReply(
+                        frameJoinRef,
+                        frameRef,
+                        frame.topic,
+                        uploadChunkError(error)
+                      )
+                    ),
+                _ =>
+                  writer.offer(
+                    PhoenixUploadProtocol.chunkAcknowledgement(
+                      frameJoinRef,
+                      frameRef,
+                      frame.topic
+                    )
+                  )
+              )
+          case _ =>
+            writer.offer(
+              PhoenixUploadProtocol.chunkErrorReply(
+                frameJoinRef,
+                frameRef,
+                frame.topic,
+                PhoenixUploadChunkError.Disallowed
+              )
+            ))
+    }
+
+  private def uploadChunkError(error: UploadChunkError): PhoenixUploadChunkError = error match
+    case UploadChunkError.QueueOverflow(_)           => PhoenixUploadChunkError.QueueOverflow
+    case UploadChunkError.ChunkTooLarge(maxBytes, _) =>
+      PhoenixUploadChunkError.FileSizeLimitExceeded(maxBytes.toLong)
+    case UploadChunkError.DeclaredSizeExceeded(expectedBytes, _) =>
+      PhoenixUploadChunkError.FileSizeLimitExceeded(expectedBytes)
+    case UploadChunkError.WriterFailed(_) => PhoenixUploadChunkError.WriterError
+    case UploadChunkError.Closed          => PhoenixUploadChunkError.Disallowed
 
   private def enqueueLifecycleEvent(
     joined: JoinedLifecycle,
@@ -1767,6 +2291,23 @@ object ZioHttp:
           .modify { current =>
             if current.size >= RootIngressCapacity then false -> current
             else true                                         -> current.updated(command, eventRefs)
+          }.flatMap {
+            case false => ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
+            case true  => offer(command).onError(_ => joined.correlations.update(_ - command))
+          }
+    }
+
+  private def enqueueUncorrelated(
+    joined: JoinedLifecycle
+  )(
+    offer: CommandId => IO[ConnectionError, Unit]
+  ): Task[Unit] =
+    ZIO.fromEither(CommandId.fresh().left.map(error => Exception(error.toString))).flatMap {
+      command =>
+        joined.correlations
+          .modify { current =>
+            if current.size >= RootIngressCapacity then false -> current
+            else true -> current.updated(command, joined.joinRef -> PhoenixRef.Null)
           }.flatMap {
             case false => ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
             case true  => offer(command).onError(_ => joined.correlations.update(_ - command))
@@ -1878,7 +2419,9 @@ object ZioHttp:
         OutboundCapacity,
         KernelCapacity,
         ContinuationCapacity,
-        OutboundCapacity
+        OutboundCapacity,
+        UploadChunkCapacity,
+        MaxUploadChunkBytes
       ).fold(error => throw IllegalStateException(error.toString), identity)
 
   private def randomRootId: Task[String] = ZIO.attempt {

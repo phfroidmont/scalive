@@ -48,6 +48,86 @@ object SessionKernelSpec extends ZIOSpecDefault:
       handle = (model, message) => ZIO.succeed(TurnDraft(model + message))
     )
 
+  private def uploadPlan(effect: Task[Unit]): UploadRetirementPlan =
+    UploadRetirementPlan(
+      Vector(UploadRetirementInstruction.Cleanup(UploadOperation(effect)))
+    )
+
+  private val retainedComponent = new LiveComponent[Int, Int, Int]:
+    def mount(props: Int, ctx: MountContext)                       = ZIO.succeed(props)
+    def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
+      ZIO.succeed(model + message)
+    def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+      div(model.map(_.toString))
+
+  private val componentEnvironment = new ComponentEnvironment[Int, Int]:
+    def mount[P, M, A](
+      id: ComponentInstanceId,
+      component: LiveComponent[P, M, A],
+      props: P,
+      draft: TurnDraft[Int, Int]
+    ) =
+      ZIO.succeed(
+        ComponentCallbackResult(
+          props.asInstanceOf[A],
+          draft,
+          ComponentEnvironmentState(new Object())
+        )
+      )
+    def update[P, M, A](
+      id: ComponentInstanceId,
+      component: LiveComponent[P, M, A],
+      props: P,
+      model: A,
+      state: ComponentEnvironmentState,
+      draft: TurnDraft[Int, Int]
+    ) =
+      ZIO.succeed(ComponentCallbackResult(model, draft, state))
+    def message[P, M, A, O](
+      id: ComponentInstanceId,
+      component: LiveComponent[P, M, A],
+      props: P,
+      model: A,
+      value: M,
+      emit: O => Task[Unit],
+      state: ComponentEnvironmentState,
+      draft: TurnDraft[Int, Int]
+    ) =
+      ZIO.succeed(ComponentCallbackResult(model, draft, state))
+    def async[P, M, A, O](
+      id: ComponentInstanceId,
+      component: LiveComponent[P, M, A],
+      props: P,
+      model: A,
+      event: LiveAsyncEvent[M],
+      emit: O => Task[Unit],
+      state: ComponentEnvironmentState,
+      draft: TurnDraft[Int, Int]
+    ) =
+      ZIO.succeed(ComponentCallbackResult(model, draft, state))
+    def browserEvent[P, M, A, O](
+      id: ComponentInstanceId,
+      component: LiveComponent[P, M, A],
+      props: P,
+      model: A,
+      command: SessionCommand.ComponentClientEvent,
+      emit: O => Task[Unit],
+      state: ComponentEnvironmentState,
+      draft: TurnDraft[Int, Int]
+    ) =
+      ZIO.none
+    def afterRender[P, M, A](
+      id: ComponentInstanceId,
+      component: LiveComponent[P, M, A],
+      props: P,
+      model: A,
+      state: ComponentEnvironmentState,
+      draft: TurnDraft[Int, Int]
+    ) =
+      ZIO.succeed(ComponentAfterRenderResult(draft, state))
+    def discard(id: ComponentInstanceId, state: ComponentEnvironmentState) = ZIO.unit
+    def close(id: ComponentInstanceId, state: ComponentEnvironmentState)   = ZIO.unit
+
   private val firstUrl  = URL.decode("/first").toOption.get
   private val secondUrl = URL.decode("/second").toOption.get
 
@@ -430,14 +510,14 @@ object SessionKernelSpec extends ZIOSpecDefault:
           release             <- Promise.make[Nothing, Unit]
           program             <- textProgram
           (outbound, batches) <- recordingOutbound
-          tiny = SessionConfig.make(1, 4).toOption.get
+          tiny  = SessionConfig.make(1, 4).toOption.get
           logic = standardLogic().copy(
                     handle = (model, message) =>
                       if message == 1 then
                         entered.succeed(()).unit *> release.await.as(patchDraft(model + message))
                       else ZIO.succeed(TurnDraft(model + message)),
-                    handleParams = (model, url) =>
-                      ZIO.succeed(TurnDraft(model * 10, url = Some(url)))
+                    handleParams =
+                      (model, url) => ZIO.succeed(TurnDraft(model * 10, url = Some(url)))
                   )
           kernel <- SessionKernel.start(tiny, logic, program, outbound)
           first  <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).fork
@@ -481,8 +561,8 @@ object SessionKernelSpec extends ZIOSpecDefault:
           patchId = CommandId.fresh().toOption.get
           patch <- kernel.enqueue(patchId, SessionCommand.ParamsPatch(kernel.epoch, firstUrl))
           internalId = CommandId.fresh().toOption.get
-          internal <- kernel.enqueuePatchAcknowledgement(internalId, kernel.epoch, firstUrl)
-          patched  <- patch
+          internal  <- kernel.enqueuePatchAcknowledgement(internalId, kernel.epoch, firstUrl)
+          patched   <- patch
           duplicate <- internal.either
           committed <- kernel.inspect
           calls     <- paramsCalls.get
@@ -637,39 +717,40 @@ object SessionKernelSpec extends ZIOSpecDefault:
       }
     },
     test("live navigation and redirects publish once and terminate without pending patch state") {
-      ZIO.foreach(
-        Vector(
-          NavigationKind.PushNavigate,
-          NavigationKind.ReplaceNavigate,
-          NavigationKind.Redirect
-        )
-      ) { kind =>
-        ZIO.scoped {
-          for
-            program             <- textProgram
-            (outbound, batches) <- recordingOutbound
-            logic = standardLogic(4).copy(handle = (model, message) =>
-                      ZIO.succeed(navigationDraft(model + message, kind))
-                    )
-            kernel  <- SessionKernel.start(config, logic, program, outbound)
-            command  = CommandId.fresh().toOption.get
-            result  <- kernel.submit(command, SessionCommand.Message(kernel.epoch, 2))
-            terminal <- kernel.awaitTermination
-            rejected <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
-            published <- batches.get
-            navigations = published.flatMap(_.items).flatMap(_.navigation)
-          yield assertTrue(
-            result.command == command,
-            result.delta == RenderDelta.Empty,
-            navigations.map(_.kind) == Vector(kind),
-            navigations.map(_.destination) == Vector(firstUrl),
-            terminal match
-              case SessionState.Redirected(_, output) => output == navigations.head
-              case _                                  => false,
-            rejected == Left(SessionRejection.Terminal("redirected"))
+      ZIO
+        .foreach(
+          Vector(
+            NavigationKind.PushNavigate,
+            NavigationKind.ReplaceNavigate,
+            NavigationKind.Redirect
           )
-        }
-      }.map(_.reduce(_ && _))
+        ) { kind =>
+          ZIO.scoped {
+            for
+              program             <- textProgram
+              (outbound, batches) <- recordingOutbound
+              logic = standardLogic(4).copy(handle =
+                        (model, message) => ZIO.succeed(navigationDraft(model + message, kind))
+                      )
+              kernel <- SessionKernel.start(config, logic, program, outbound)
+              command = CommandId.fresh().toOption.get
+              result    <- kernel.submit(command, SessionCommand.Message(kernel.epoch, 2))
+              terminal  <- kernel.awaitTermination
+              rejected  <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
+              published <- batches.get
+              navigations = published.flatMap(_.items).flatMap(_.navigation)
+            yield assertTrue(
+              result.command == command,
+              result.delta == RenderDelta.Empty,
+              navigations.map(_.kind) == Vector(kind),
+              navigations.map(_.destination) == Vector(firstUrl),
+              terminal match
+                case SessionState.Redirected(_, output) => output == navigations.head
+                case _                                  => false,
+              rejected == Left(SessionRejection.Terminal("redirected"))
+            )
+          }
+        }.map(_.reduce(_ && _))
     },
     test("connected bootstrap navigation publishes no render and terminates") {
       ZIO.scoped {
@@ -684,7 +765,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
           kernel    <- SessionKernel.start(config, logic, program, outbound)
           terminal  <- kernel.awaitTermination
           published <- batches.get
-          output     = published.flatMap(_.items).head
+          output = published.flatMap(_.items).head
         yield assertTrue(
           output.command.isEmpty,
           output.delta == RenderDelta.Empty,
@@ -694,7 +775,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
           ),
           terminal match
             case SessionState.Redirected(_, navigation) => output.navigation.contains(navigation)
-            case _                                       => false
+            case _                                      => false
         )
       }
     },
@@ -947,6 +1028,181 @@ object SessionKernelSpec extends ZIOSpecDefault:
           _           <- kernel.close
           afterClose  <- finalized.get
         yield assertTrue(beforeClose == 100, afterClose == 101)
+      }
+    },
+    test("upload commit runs after installation and before publication without rollback") {
+      ZIO.scoped {
+        for
+          events  <- Ref.make(Vector.empty[String])
+          program <- textProgram
+          reserve <- Ref.make(0)
+          outbound = ProbeOutbound(
+                       reserve.getAndUpdate(_ + 1).map { index =>
+                         ProbeReservation(_ =>
+                           if index == 0 then ZIO.unit else events.update(_ :+ "publish")
+                         )
+                       }
+                     )
+          logic = standardLogic().copy(handle =
+                    (model, message) =>
+                      ZIO.succeed(
+                        TurnDraft(
+                          model + message,
+                          uploadCommit = uploadPlan(events.update(_ :+ "commit")),
+                          uploadRollback = uploadPlan(events.update(_ :+ "rollback"))
+                        )
+                      )
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          state  <- kernel.inspect
+          seen   <- events.get
+        yield assertTrue(state.model == 1, seen == Vector("commit", "publish"))
+      }
+    },
+    test("failed upload candidate runs rollback without commit") {
+      ZIO.scoped {
+        for
+          events              <- Ref.make(Vector.empty[String])
+          program             <- textProgram
+          (outbound, batches) <- recordingOutbound
+          logic = standardLogic().copy(
+                    handle = (model, message) =>
+                      ZIO.succeed(
+                        TurnDraft(
+                          model + message,
+                          uploadCommit = uploadPlan(events.update(_ :+ "commit")),
+                          uploadRollback = uploadPlan(events.update(_ :+ "rollback"))
+                        )
+                      ),
+                    afterRender = draft =>
+                      if draft.model == 0 then ZIO.succeed(draft)
+                      else ZIO.fail(IllegalStateException("candidate failure"))
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          failed <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
+          seen   <- events.get
+          output <- batches.get
+        yield assertTrue(
+          failed.left.exists(_.isInstanceOf[SessionRejection.SessionFailed]),
+          seen == Vector("rollback"),
+          output.size == 1
+        )
+      }
+    },
+    test("commit-tail failure runs upload rollback only once") {
+      ZIO.scoped {
+        for
+          events  <- Ref.make(Vector.empty[String])
+          program <- textProgram
+          reserve <- Ref.make(0)
+          outbound = ProbeOutbound(
+                       reserve.getAndUpdate(_ + 1).map { index =>
+                         ProbeReservation(_ =>
+                           if index == 0 then ZIO.unit else ZIO.dieMessage("publish failed")
+                         )
+                       }
+                     )
+          logic = standardLogic().copy(handle =
+                    (model, message) =>
+                      ZIO.succeed(
+                        TurnDraft(
+                          model + message,
+                          uploadCommit = uploadPlan(events.update(_ :+ "commit")),
+                          uploadRollback = uploadPlan(events.update(_ :+ "rollback"))
+                        )
+                      )
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          failed <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
+          seen   <- events.get
+        yield assertTrue(
+          failed.left.exists {
+            case SessionRejection.SessionFailed(_: SessionFailure.CommitDefect) => true
+            case _                                                              => false
+          },
+          seen == Vector("commit", "rollback")
+        )
+      }
+    },
+    test("discarded navigation candidate runs upload rollback once") {
+      ZIO.scoped {
+        for
+          rollbacks     <- Ref.make(0)
+          program       <- textProgram
+          (outbound, _) <- recordingOutbound
+          logic = standardLogic().copy(
+                    handle = (model, message) =>
+                      ZIO.succeed(
+                        TurnDraft(
+                          model + message,
+                          uploadRollback = uploadPlan(rollbacks.update(_ + 1))
+                        )
+                      ),
+                    afterRender = draft =>
+                      ZIO.succeed(
+                        if draft.model == 0 then draft
+                        else
+                          draft.copy(navigation =
+                            Some(
+                              NavigationRequest(firstUrl, NavigationKind.Redirect)
+                            )
+                          )
+                      )
+                  )
+          kernel   <- SessionKernel.start(config, logic, program, outbound)
+          _        <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          terminal <- kernel.awaitTermination
+          count    <- rollbacks.get
+        yield assertTrue(terminal.isInstanceOf[SessionState.Redirected[?, ?]], count == 1)
+      }
+    },
+    test("ordinary turns retain uploads until session close") {
+      ZIO.scoped {
+        for
+          closes        <- Ref.make(Vector.empty[Int])
+          program       <- textProgram
+          (outbound, _) <- recordingOutbound
+          logic = standardLogic().copy(closeUploads = model => closes.update(_ :+ model))
+          kernel    <- SessionKernel.start(config, logic, program, outbound)
+          _         <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          _         <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          before    <- closes.get
+          committed <- kernel.inspect
+          _         <- kernel.close
+          after     <- closes.get
+        yield assertTrue(before.isEmpty, committed.model == 2, after == Vector(2))
+      }
+    },
+    test("session close invokes committed model upload cleanup once") {
+      ZIO.scoped {
+        for
+          closes        <- Ref.make(0)
+          program       <- textProgram
+          (outbound, _) <- recordingOutbound
+          logic = standardLogic(7).copy(closeUploads = _ => closes.update(_ + 1))
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          _      <- kernel.close
+          _      <- kernel.close
+          count  <- closes.get
+        yield assertTrue(count == 1)
+      }
+    },
+    test("upload reconciliation receives the exact retained component ids") {
+      ZIO.scoped {
+        val instance = component(retainedComponent, "retained-upload-owner")
+        for
+          seen    <- Ref.make(Vector.empty[Set[ComponentInstanceId]])
+          program <- ZIO.fromEither(RenderProgram.compile[Int, Int](_ => div(instance.render(1))))
+          (outbound, _) <- recordingOutbound
+          logic = standardLogic().copy(reconcileUploads =
+                    (draft, activeIds) => seen.update(_ :+ activeIds).as(draft)
+                  )
+          kernel    <- SessionKernel.start(config, logic, program, outbound, componentEnvironment)
+          committed <- kernel.inspect
+          observed  <- seen.get
+          expected = committed.components.values.map(_.id).toSet
+        yield assertTrue(expected.nonEmpty, observed == Vector(expected))
       }
     },
     test("configuration validates mailbox, continuation, and navigation bounds") {

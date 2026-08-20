@@ -201,3 +201,50 @@ test("full redirect performs HTTP navigation and transfers flash", async ({ page
   await expect(page.locator("#flash")).toContainText("Flash from B")
   expect(documents.some(url => url.endsWith("/nav/c"))).toBe(true)
 })
+
+test("hosted upload transfers and consumes file bytes", async ({ page }) => {
+  const errors = []
+
+  page.on("pageerror", error => errors.push(error.message))
+  page.on("console", message => {
+    if (message.type() === "error") errors.push(message.text())
+  })
+
+  await page.goto("/upload")
+  await expect(page.locator("#upload-connected")).toHaveText("true", { timeout: 15_000 })
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "proof.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("hosted payload"),
+  })
+  await expect(page.locator(".upload-name")).toHaveText("proof.txt")
+
+  await page.getByRole("button", { name: "Upload" }).click()
+
+  await expect(page.locator("#uploaded-name")).toHaveText("proof.txt")
+  await expect(page.locator("#uploaded-content")).toHaveText("hosted payload")
+  await expect(page.locator(".upload-entry")).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test("hosted upload rejects an unacceptable file without consuming it", async ({ page }) => {
+  const errors = []
+
+  page.on("pageerror", error => errors.push(error.message))
+  page.on("console", message => {
+    if (message.type() === "error") errors.push(message.text())
+  })
+
+  await page.goto("/upload")
+  await expect(page.locator("#upload-connected")).toHaveText("true", { timeout: 15_000 })
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "blocked.exe",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("blocked"),
+  })
+
+  await expect(page.locator(".upload-error")).toContainText("Unacceptable file type")
+  await page.getByRole("button", { name: "Upload" }).click()
+  await expect(page.locator(".uploaded-file")).toHaveCount(0)
+  expect(errors).toEqual([])
+})

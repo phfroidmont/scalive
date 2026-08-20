@@ -15,6 +15,7 @@ import zio.json.ast.Json
 import zio.stream.ZStream
 
 import scalive.*
+import scalive.runtime.contracts.Epoch
 import scalive.runtime.kernel.*
 import scalive.runtime.resources.*
 import scalive.streams.*
@@ -28,13 +29,17 @@ private object Deferred:
 
 final private[scalive] class RootTurnJournal private (
   val owner: OwnerId,
+  val ownerEpoch: Epoch,
   val navigation: Ref[Option[NavigationRequest]],
   val hooks: Ref[RootHookRegistry[Any, Any]],
   val flash: Ref[Map[FlashKind, String]],
   val clientEvents: Ref[Vector[ClientEffect]],
   val componentUpdates: Ref[Vector[ComponentUpdateRequest]],
   val resourceOperations: Ref[Vector[ResourceOperation]],
-  val streams: Ref[StreamStore]):
+  val streams: Ref[StreamStore],
+  val uploads: Ref[UploadRegistry],
+  val uploadCommit: Ref[UploadRetirementPlan],
+  val uploadRollback: Ref[UploadRetirementPlan]):
 
   def hookRegistry[Msg, Model]: UIO[RootHookRegistry[Msg, Model]] =
     hooks.get.map(_.asInstanceOf[RootHookRegistry[Msg, Model]])
@@ -55,6 +60,34 @@ final private[scalive] class RootTurnJournal private (
 
   def streamSnapshot: UIO[StreamStore] = streams.get.map(_.prune)
 
+  def recordUploadCommit(plan: UploadRetirementPlan): UIO[Unit] =
+    uploadCommit.update(_ ++ plan)
+
+  def recordUploadRollback(plan: UploadRetirementPlan): UIO[Unit] =
+    uploadRollback.update(_ ++ plan)
+
+  def uploadSnapshot: UIO[(UploadRegistry, UploadRetirementPlan, UploadRetirementPlan)] =
+    uploads.get.zipWith(uploadCommit.get)(_ -> _).zipWith(uploadRollback.get) {
+      case ((registry, commit), rollback) => (registry, commit, rollback)
+    }
+
+  def scoped(scopedOwner: OwnerId): RootTurnJournal =
+    new RootTurnJournal(
+      scopedOwner,
+      ownerEpoch,
+      navigation,
+      hooks,
+      flash,
+      clientEvents,
+      componentUpdates,
+      resourceOperations,
+      streams,
+      uploads,
+      uploadCommit,
+      uploadRollback
+    )
+end RootTurnJournal
+
 private[scalive] object RootTurnJournal:
   def make[Msg, Model](
     owner: OwnerId,
@@ -64,26 +97,38 @@ private[scalive] object RootTurnJournal:
     initialComponentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
     initialNavigation: Option[NavigationRequest] = None,
     initialResourceOperations: Vector[ResourceOperation] = Vector.empty,
-    initialStreams: StreamStore = StreamStore.empty
+    initialStreams: StreamStore = StreamStore.empty,
+    ownerEpoch: Epoch = Epoch.initial,
+    initialUploads: UploadRegistry = UploadRegistry.empty,
+    initialUploadCommit: UploadRetirementPlan = UploadRetirementPlan.empty,
+    initialUploadRollback: UploadRetirementPlan = UploadRetirementPlan.empty
   ): LiveIO[RootTurnJournal] =
     for
-      navigation   <- Ref.make(initialNavigation)
-      hooks        <- Ref.make(registry.asInstanceOf[RootHookRegistry[Any, Any]])
-      flash        <- Ref.make(initialFlash)
-      clientEvents <- Ref.make(initialClientEvents)
-      updates      <- Ref.make(initialComponentUpdates)
-      operations   <- Ref.make(initialResourceOperations)
-      streams      <- Ref.make(initialStreams)
+      navigation     <- Ref.make(initialNavigation)
+      hooks          <- Ref.make(registry.asInstanceOf[RootHookRegistry[Any, Any]])
+      flash          <- Ref.make(initialFlash)
+      clientEvents   <- Ref.make(initialClientEvents)
+      updates        <- Ref.make(initialComponentUpdates)
+      operations     <- Ref.make(initialResourceOperations)
+      streams        <- Ref.make(initialStreams)
+      uploads        <- Ref.make(initialUploads)
+      uploadCommit   <- Ref.make(initialUploadCommit)
+      uploadRollback <- Ref.make(initialUploadRollback)
     yield new RootTurnJournal(
       owner,
+      ownerEpoch,
       navigation,
       hooks,
       flash,
       clientEvents,
       updates,
       operations,
-      streams
+      streams,
+      uploads,
+      uploadCommit,
+      uploadRollback
     )
+end RootTurnJournal
 
 final private class RootNavigation(
   currentUrl: URL,
@@ -161,6 +206,133 @@ private object DeferredUploads extends Uploads:
   )(
     callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
   ): LiveIO[(List[A], LiveUpload[R])] = Deferred.fail("consume completed uploads")
+
+final private[connection] class JournaledUploads(journal: RootTurnJournal) extends Uploads:
+  def allow[R](definition: LiveUploadDef[R]): LiveIO[LiveUpload[R]] =
+    for
+      ref    <- UploadRuntime.freshRef
+      result <- journal.uploads.modify { current =>
+                  current.allow(journal.owner, journal.ownerEpoch, UploadKey(definition), ref) match
+                    case Right((next, token)) =>
+                      next.snapshotForToken(token).left.map(operationError) -> next
+                    case Left(error) => Left(operationError(error)) -> current
+                }
+      upload <- ZIO.fromEither(result)
+    yield upload
+
+  def disallow[R](definition: LiveUploadDef[R]): LiveIO[Unit] = ZIO.uninterruptible {
+    journal.uploads
+      .modify { current =>
+        current.disallow(journal.owner, journal.ownerEpoch, UploadKey(definition)) match
+          case Right(removal) => Right(removal)              -> removal.registry
+          case Left(error)    => Left(operationError(error)) -> current
+      }.flatMap(ZIO.fromEither)
+      .flatMap(removal => journal.recordUploadCommit(removal.retirement))
+  }
+
+  def get[R](definition: LiveUploadDef[R]): LiveIO[Option[LiveUpload[R]]] =
+    journal.uploads.get.flatMap { current =>
+      current.get(journal.owner, journal.ownerEpoch, UploadKey(definition)) match
+        case Right((_, upload))                      => ZIO.some(upload)
+        case Left(UploadRegistryError.NotAllowed(_)) => ZIO.none
+        case Left(error)                             => ZIO.fail(operationError(error))
+    }
+
+  def cancel[R](entry: LiveUploadEntry[R]): LiveIO[LiveUpload[R]] = ZIO.uninterruptible {
+    journal.uploads
+      .modify { current =>
+        current.cancel(journal.owner, journal.ownerEpoch, entry) match
+          case Right(removal) => Right(removal)              -> removal.registry
+          case Left(error)    => Left(operationError(error)) -> current
+      }.flatMap(ZIO.fromEither)
+      .flatMap { removal =>
+        journal.recordUploadCommit(removal.retirement) *>
+          ZIO.fromEither(
+            removal.registry
+              .snapshotFor(journal.owner, journal.ownerEpoch, entry).left.map(operationError)
+          )
+      }
+  }
+
+  def consume[R, A](
+    entry: LiveUploadEntry[R]
+  )(
+    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+  ): LiveIO[(A, LiveUpload[R])] =
+    for
+      begin <- journal.uploads.get.flatMap(current =>
+                 ZIO.fromEither(
+                   current
+                     .beginConsume(journal.owner, journal.ownerEpoch, entry)(callback)
+                     .left.map(consumeError(_, entry.ref))
+                 )
+               )
+      decision <- begin.operation.run
+      result   <- ZIO.uninterruptible {
+                  journal.uploads
+                    .modify { current =>
+                      current.finishConsume(begin, decision) match
+                        case Right(value) => Right(value)                         -> value.registry
+                        case Left(error)  => Left(consumeError(error, entry.ref)) -> current
+                    }.flatMap(ZIO.fromEither)
+                    .flatMap { value =>
+                      val transfer = value.ownership.fold(UploadRetirementPlan.empty)(operation =>
+                        UploadRetirementPlan(
+                          Vector(UploadRetirementInstruction.Cleanup(operation))
+                        )
+                      )
+                      journal.recordUploadCommit(transfer) *>
+                        ZIO
+                          .fromEither(
+                            value.registry
+                              .snapshotFor(journal.owner, journal.ownerEpoch, entry)
+                              .left.map(operationError)
+                          ).map(upload => valueOf(decision) -> upload)
+                    }
+                }
+    yield result
+
+  def consumeCompleted[R, A](
+    definition: LiveUploadDef[R]
+  )(
+    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
+  ): LiveIO[(List[A], LiveUpload[R])] =
+    for
+      current <- get(definition).someOrFail(LiveUploadOperationError.NotAllowed(definition.name))
+      _       <- ZIO
+             .fail(LiveUploadOperationError.EntriesInProgress(definition.name)).when(
+               current.entries.exists(entry =>
+                 entry.status match
+                   case LiveUploadEntryStatus.Completed | LiveUploadEntryStatus.Invalid(_) => false
+                   case _                                                                  => true
+               )
+             )
+      completed = current.entries.filter(_.status == LiveUploadEntryStatus.Completed)
+      consumed <- ZIO.foldLeft(completed)(List.empty[A]) { (values, entry) =>
+                    consume(entry)(callback).map { case (value, _) => values :+ value }
+                  }
+      upload <- get(definition).someOrFail(LiveUploadOperationError.NotAllowed(definition.name))
+    yield consumed -> upload
+
+  private def valueOf[A](decision: ConsumeDecision[A]): A = decision match
+    case ConsumeDecision.Consume(value)  => value
+    case ConsumeDecision.Postpone(value) => value
+
+  private def consumeError(
+    error: UploadRegistryError,
+    ref: UploadEntryRef
+  ): Throwable = error match
+    case UploadRegistryError.InvalidEntryState(_) => LiveUploadOperationError.EntryNotCompleted(ref)
+    case other                                    => operationError(other)
+
+  private def operationError(error: UploadRegistryError): Throwable = error match
+    case UploadRegistryError.NotAllowed(name)         => LiveUploadOperationError.NotAllowed(name)
+    case UploadRegistryError.DefinitionMismatch(name) =>
+      LiveUploadOperationError.DefinitionMismatch(name)
+    case UploadRegistryError.ActiveEntries(name) => LiveUploadOperationError.ActiveEntries(name)
+    case UploadRegistryError.EntryInactive(ref)  => LiveUploadOperationError.EntryNotActive(ref)
+    case other => IllegalStateException(s"Upload operation rejected: $other")
+end JournaledUploads
 
 final private class JournaledStreams(streams: Ref[StreamStore]) extends Streams:
   def create[A](definition: LiveStreamDef[A], items: Iterable[A]): LiveIO[LiveStream[A]] =
@@ -475,9 +647,9 @@ final private[connection] class RootMountContext[Msg, Model] private (
   val nav: MountNavigation,
   val hooks: RootHooks[Msg, Model],
   val flash: Flash,
+  val uploads: Uploads,
   val streams: Streams)
-    extends MountContext[Msg, Model]:
-  val uploads: Uploads = DeferredUploads
+    extends MountContext[Msg, Model]
 
 private[scalive] object RootMountContext:
   def connected[Msg, Model](
@@ -490,6 +662,7 @@ private[scalive] object RootMountContext:
       new RootMountNavigation(currentUrl, journal),
       JournaledRootHooks(journal),
       JournaledFlash(journal),
+      JournaledUploads(journal),
       JournaledStreams(journal.streams)
     )
 
@@ -503,6 +676,7 @@ private[scalive] object RootMountContext:
       ,
       DeferredRootHooks(),
       DeferredFlash,
+      DeferredUploads,
       DeferredStreams
     )
 
@@ -515,6 +689,7 @@ private[scalive] object RootMountContext:
       new RootMountNavigation(currentUrl, journal),
       JournaledRootHooks(journal),
       JournaledFlash(journal),
+      JournaledUploads(journal),
       JournaledStreams(journal.streams)
     )
 end RootMountContext
@@ -528,7 +703,7 @@ final private[connection] class RootMessageContext[Msg, Model](
   val connectParams: Map[String, Json]  = metadata.connectParams
   val nav: Navigation                   = new RootNavigation(currentUrl, journal, allowPatch = true)
   val flash: Flash                      = JournaledFlash(journal)
-  val uploads: Uploads                  = DeferredUploads
+  val uploads: Uploads                  = JournaledUploads(journal)
   val streams: Streams                  = JournaledStreams(journal.streams)
   val async: Async[Msg]                 = JournaledAsync(journal)
   val subscriptions: Subscriptions[Msg] = JournaledSubscriptions(journal)
@@ -554,7 +729,7 @@ final private[connection] class RootParamsContext[Msg, Model](
     else Connection.Disconnected
   val nav: Navigation              = new RootNavigation(currentUrl, journal, allowPatch = true)
   val flash: Flash                 = JournaledFlash(journal)
-  val uploads: Uploads             = DeferredUploads
+  val uploads: Uploads             = JournaledUploads(journal)
   val streams: Streams             = JournaledStreams(journal.streams)
   val hooks: RootHooks[Msg, Model] = JournaledRootHooks(journal)
 

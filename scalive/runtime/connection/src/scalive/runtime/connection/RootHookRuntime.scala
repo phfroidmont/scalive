@@ -5,6 +5,7 @@ import zio.http.URL
 import zio.json.JsonDecoder
 
 import scalive.*
+import scalive.runtime.resources.UploadRegistry
 
 /** Immutable hook state owned by the session model. */
 final private[connection] case class RootHookRegistry[Msg, Model](
@@ -146,4 +147,5 @@ final private[connection] case class RootState[Msg, Model](
   hooks: RootHookRegistry[Msg, Model],
   flash: Map[FlashKind, String] = Map.empty,
   pageTitle: Option[String] = None,
-  streams: StreamStore = StreamStore.empty)
+  streams: StreamStore = StreamStore.empty,
+  uploads: UploadRegistry = UploadRegistry.empty)

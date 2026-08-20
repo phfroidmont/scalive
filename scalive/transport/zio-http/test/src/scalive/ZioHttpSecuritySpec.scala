@@ -6,6 +6,7 @@ import zio.*
 import zio.test.*
 
 import scalive.runtime.contracts.*
+import scalive.upload.*
 
 object ZioHttpSecuritySpec extends ZIOSpecDefault:
   private val secret = "0123456789abcdef0123456789abcdef"
@@ -17,6 +18,25 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
     val signatureStart = token.lastIndexOf('.') + 1
     val replacement    = if token.charAt(signatureStart) == 'A' then 'B' else 'A'
     token.updated(signatureStart, replacement)
+
+  private def uploadClaims(
+    lifecycle: Long = 7L,
+    epoch: Long = 3L,
+    component: Option[Long] = None,
+    uploadRef: String = "upload-1",
+    entryRef: String = "entry-1",
+    generation: Long = 2L,
+    topic: String = "lvu:entry-1"
+  ): UploadCredentialClaims =
+    UploadCredentialClaims(
+      LifecycleId(lifecycle),
+      Epoch(epoch),
+      component.map(ComponentInstanceId(_)),
+      UploadRef(uploadRef),
+      UploadEntryRef(entryRef),
+      generation,
+      topic
+    )
 
   def spec = suite("ZioHttpSecurity")(
     test("config validates its secret and maximum age and redacts the secret") {
@@ -74,6 +94,68 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
             expected = "nested-join",
             actual = "nested-static"
           )
+        )
+      )
+    },
+    test("roundtrips exact root and component upload credential claims") {
+      val root      = uploadClaims()
+      val component = uploadClaims(component = Some(19L))
+      for
+        rootToken      <- ZioHttpSecurity.issueUploadCredential(config(), root)
+        componentToken <- ZioHttpSecurity.issueUploadCredential(config(), component)
+        verifiedRoot   <- ZioHttpSecurity.verifyUploadCredential(config(), rootToken)
+        verifiedComponent <- ZioHttpSecurity.verifyUploadCredential(config(), componentToken)
+      yield assertTrue(verifiedRoot == root, verifiedComponent == component)
+    },
+    test("rejects tampered and wrong-purpose upload credentials") {
+      for
+        uploadToken <- ZioHttpSecurity.issueUploadCredential(config(), uploadClaims())
+        sessionToken <- ZioHttpSecurity
+                          .issueSession(config(), "root", LifecycleId(1L), 0, "/")
+        tampered <- ZioHttpSecurity
+                      .verifyUploadCredential(config(), tamperSignature(uploadToken))
+                      .either
+        wrongPurpose <- ZioHttpSecurity.verifyUploadCredential(config(), sessionToken).either
+      yield assertTrue(
+        tampered == Left(ZioHttpSecurity.Error.InvalidSignature),
+        wrongPurpose == Left(
+          ZioHttpSecurity.Error.PurposeMismatch(expected = "upload-join", actual = "session")
+        )
+      )
+    },
+    test("expires upload credentials") {
+      val shortConfig = config(Duration.ofSeconds(10))
+      for
+        token   <- ZioHttpSecurity.issueUploadCredential(shortConfig, uploadClaims())
+        _       <- TestClock.adjust(11.seconds)
+        expired <- ZioHttpSecurity.verifyUploadCredential(shortConfig, token).either
+      yield assertTrue(expired == Left(ZioHttpSecurity.Error.Expired))
+    },
+    test("rejects invalid upload credential identities, generation, refs, and topic") {
+      val invalidClaims = Vector(
+        uploadClaims(lifecycle = 0L),
+        uploadClaims(epoch = 0L),
+        uploadClaims(component = Some(0L)),
+        uploadClaims(generation = 0L),
+        uploadClaims(uploadRef = ""),
+        uploadClaims(entryRef = "", topic = "lvu:"),
+        uploadClaims(topic = "")
+      )
+      for
+        tokens  <- ZIO.foreach(invalidClaims)(ZioHttpSecurity.issueUploadCredential(config(), _))
+        results <- ZIO.foreach(tokens)(ZioHttpSecurity.verifyUploadCredential(config(), _).either)
+      yield assertTrue(results.forall(_.isLeft))
+    },
+    test("rejects an upload topic whose entry ref differs from the claim") {
+      for
+        token <- ZioHttpSecurity.issueUploadCredential(
+                   config(),
+                   uploadClaims(topic = "lvu:other-entry")
+                 )
+        result <- ZioHttpSecurity.verifyUploadCredential(config(), token).either
+      yield assertTrue(
+        result == Left(
+          ZioHttpSecurity.Error.InvalidClaims("upload topic must exactly match the entry ref")
         )
       )
     },

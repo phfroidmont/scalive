@@ -5,6 +5,8 @@ import zio.*
 import scalive.*
 import scalive.render.*
 import scalive.runtime.contracts.LifecycleId
+import scalive.runtime.contracts.ComponentInstanceId
+import scalive.runtime.resources.OwnerId
 import scalive.runtime.resources.OwnerId
 
 private[scalive] trait DisconnectedNestedResolver:
@@ -423,19 +425,27 @@ private object DisconnectedComponentLifecycle:
     root: RootTurnJournal
   ): Task[DisconnectedComponentLifecycle[P, M, A]] =
     for
+      id <- ZIO
+              .fromEither(ComponentInstanceId.fresh())
+              .mapError(error => IllegalStateException(error.toString))
       streams  <- Ref.make(StreamStore.empty)
       registry <- Ref.make(
                     ComponentHookRegistry
                       .fromStatic(hooks).asInstanceOf[ComponentHookRegistry[Any, Any, Any]]
                   )
-    yield DisconnectedComponentLifecycle(root, streams, registry)
+      componentRoot = root.owner match
+                        case OwnerId.Root(lifecycle) =>
+                          root.scoped(OwnerId.Component(lifecycle, id))
+                        case OwnerId.Component(lifecycle, _) =>
+                          root.scoped(OwnerId.Component(lifecycle, id))
+    yield DisconnectedComponentLifecycle(componentRoot, streams, registry)
 
 final private case class DisconnectedComponentMountContext[P, M, A](
   lifecycle: DisconnectedComponentLifecycle[P, M, A])
     extends ComponentMountContext[P, M, A]:
   val connection = Connection.Disconnected
   val flash      = JournaledFlash(lifecycle.root)
-  val uploads    = DeferredUploads
+  val uploads    = JournaledUploads(lifecycle.root)
   val streams    = JournaledStreams(lifecycle.streams)
   val hooks      = JournaledComponentHooks[P, M, A](lifecycle)
 
@@ -444,7 +454,7 @@ final private case class DisconnectedComponentUpdateContext[P, M, A](
     extends ComponentUpdateContext[P, M, A]:
   val connection = Connection.Disconnected
   val flash      = JournaledFlash(lifecycle.root)
-  val uploads    = DeferredUploads
+  val uploads    = JournaledUploads(lifecycle.root)
   val streams    = JournaledStreams(lifecycle.streams)
   val hooks      = JournaledComponentHooks[P, M, A](lifecycle)
 

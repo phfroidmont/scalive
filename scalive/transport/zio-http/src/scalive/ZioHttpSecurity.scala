@@ -12,6 +12,19 @@ import zio.*
 import zio.json.*
 
 import scalive.runtime.contracts.*
+import scalive.upload.*
+
+/** Authenticated upload join claims. Verification proves only that these claims were signed and are
+  * fresh; [[ZioHttp]] must still admit them against the current live upload registry.
+  */
+final private[scalive] case class UploadCredentialClaims(
+  lifecycleId: LifecycleId,
+  epoch: Epoch,
+  componentInstanceId: Option[ComponentInstanceId],
+  uploadRef: UploadRef,
+  entryRef: UploadEntryRef,
+  registrationGeneration: Long,
+  expectedTopic: String)
 
 /** Validated security configuration for the ZIO HTTP transport.
   *
@@ -82,6 +95,16 @@ private[scalive] object ZioHttpSecurity:
     childLifecycle: Option[Long],
     issuedAtEpochSecond: Long)
       derives JsonCodec
+  final private case class UploadClaims(
+    lifecycle: Long,
+    epoch: Long,
+    component: Option[Long],
+    uploadRef: String,
+    entryRef: String,
+    registrationGeneration: Long,
+    topic: String,
+    issuedAtEpochSecond: Long)
+      derives JsonCodec
 
   final case class IssuedCsrf(cookieToken: String, token: String)
 
@@ -103,6 +126,7 @@ private[scalive] object ZioHttpSecurity:
     case Flash        extends Purpose("flash")
     case NestedJoin   extends Purpose("nested-join")
     case NestedStatic extends Purpose("nested-static")
+    case UploadJoin   extends Purpose("upload-join")
 
   private val Version       = "v1"
   private val HmacAlgorithm = "HmacSHA256"
@@ -237,6 +261,35 @@ private[scalive] object ZioHttpSecurity:
   ): IO[Error, NestedCredentialClaims] =
     verifyNested(config, Purpose.NestedStatic, token)
 
+  def issueUploadCredential(
+    config: ZioHttpConfig,
+    claims: UploadCredentialClaims
+  ): UIO[String] =
+    currentEpochSecond.map { issuedAt =>
+      val encoded = UploadClaims(
+        claims.lifecycleId.value,
+        claims.epoch.value,
+        claims.componentInstanceId.map(_.value),
+        claims.uploadRef.value,
+        claims.entryRef.value,
+        claims.registrationGeneration,
+        claims.expectedTopic,
+        issuedAt
+      )
+      encode(config, Purpose.UploadJoin, encoded)
+    }
+
+  /** Verifies credential authenticity and freshness, not active upload admission. The caller must
+    * still match the returned claims against the live upload registry.
+    */
+  def verifyUploadCredential(
+    config: ZioHttpConfig,
+    token: String
+  ): IO[Error, UploadCredentialClaims] =
+    verify[UploadClaims](config, Purpose.UploadJoin, token)
+      .flatMap(claims => validateAge(config, claims, _.issuedAtEpochSecond))
+      .flatMap(validateUploadCredential)
+
   private def generateCsrfBrowserSecret: UIO[String] =
     Random.nextBytes(32).map(bytes => encoder.encodeToString(bytes.toArray))
 
@@ -316,6 +369,39 @@ private[scalive] object ZioHttpSecurity:
             )
           )
       }
+
+  private def validateUploadCredential(
+    claims: UploadClaims
+  ): IO[Error, UploadCredentialClaims] =
+    val expectedTopic = s"lvu:${claims.entryRef}"
+    if claims.lifecycle <= 0L then
+      ZIO.fail(Error.InvalidClaims("upload lifecycle must be positive"))
+    else if claims.epoch <= 0L then ZIO.fail(Error.InvalidClaims("upload epoch must be positive"))
+    else if claims.component.exists(_ <= 0L) then
+      ZIO.fail(Error.InvalidClaims("upload component must be positive"))
+    else if claims.registrationGeneration <= 0L then
+      ZIO.fail(Error.InvalidClaims("upload registration generation must be positive"))
+    else if claims.uploadRef.isEmpty then
+      ZIO.fail(Error.InvalidClaims("upload ref must be non-empty"))
+    else if claims.entryRef.isEmpty then
+      ZIO.fail(Error.InvalidClaims("upload entry ref must be non-empty"))
+    else if claims.topic.isEmpty then
+      ZIO.fail(Error.InvalidClaims("upload topic must be non-empty"))
+    else if claims.topic != expectedTopic then
+      ZIO.fail(Error.InvalidClaims("upload topic must exactly match the entry ref"))
+    else
+      ZIO.succeed(
+        UploadCredentialClaims(
+          LifecycleId(claims.lifecycle),
+          Epoch(claims.epoch),
+          claims.component.map(ComponentInstanceId(_)),
+          UploadRef(claims.uploadRef),
+          UploadEntryRef(claims.entryRef),
+          claims.registrationGeneration,
+          claims.topic
+        )
+      )
+  end validateUploadCredential
 
   private def issueRoot(
     config: ZioHttpConfig,

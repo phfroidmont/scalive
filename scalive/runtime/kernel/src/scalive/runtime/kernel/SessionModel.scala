@@ -4,6 +4,7 @@ import java.time.Duration
 import java.time.Instant
 
 import zio.Promise
+import zio.Ref
 import zio.Task
 import zio.UIO
 import zio.ZIO
@@ -187,7 +188,11 @@ enum SessionCommand[+Msg]:
   private[scalive] case ComponentAsyncCompletion(
     epoch: Epoch,
     component: ComponentInstanceId,
-    event: LiveAsyncEvent[Any])                    extends SessionCommand[Nothing]
+    event: LiveAsyncEvent[Any]) extends SessionCommand[Nothing]
+  private[scalive] case Upload(
+    epoch: Epoch,
+    command: CommandId,
+    mutation: UploadMutation[?])                   extends SessionCommand[Nothing]
   case ParamsPatch(epoch: Epoch, destination: URL) extends SessionCommand[Nothing]
 
   def expectedEpoch: Epoch = this match
@@ -201,6 +206,7 @@ enum SessionCommand[+Msg]:
     case ComponentMessage(epoch, _, _)              => epoch
     case ComponentUpdate(epoch, _)                  => epoch
     case ComponentAsyncCompletion(epoch, _, _)      => epoch
+    case Upload(epoch, _, _)                        => epoch
     case ParamsPatch(epoch, _)                      => epoch
 end SessionCommand
 
@@ -211,7 +217,9 @@ final private[scalive] case class TurnDraft[+Msg, Model](
   navigation: Option[NavigationRequest] = None,
   effects: SessionEffects = SessionEffects(),
   componentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
-  resourceOperations: Vector[ResourceOperation] = Vector.empty)
+  resourceOperations: Vector[ResourceOperation] = Vector.empty,
+  uploadCommit: UploadRetirementPlan = UploadRetirementPlan.empty,
+  uploadRollback: UploadRetirementPlan = UploadRetirementPlan.empty)
 
 /** Typed lifecycle operations interpreted by the protocol-neutral session owner.
   *
@@ -231,6 +239,9 @@ final private[scalive] case class SessionLogic[Msg, Model](
   handleManagedAsync: Option[
     (Model, LiveAsyncEvent[Msg], Msg) => Task[TurnDraft[Msg, Model]]
   ] = None,
+  handleUpload: Option[
+    (Model, CommandId, UploadMutation[?]) => Task[TurnDraft[Msg, Model]]
+  ] = None,
   prepare: (TurnDraft[Msg, Model], PreparedResourceRegistry) => Task[Unit] = (
     _: TurnDraft[Msg, Model],
     _: PreparedResourceRegistry
@@ -240,7 +251,19 @@ final private[scalive] case class SessionLogic[Msg, Model](
   validateStreams: (Model, Vector[StreamRequirement[Msg]]) => Task[Unit] = (
     _: Model,
     _: Vector[StreamRequirement[Msg]]
-  ) => ZIO.unit)
+  ) => ZIO.unit,
+  reconcileUploads: (
+    TurnDraft[Msg, Model],
+    Set[ComponentInstanceId]
+  ) => Task[TurnDraft[Msg, Model]] = (draft: TurnDraft[Msg, Model], _: Set[ComponentInstanceId]) =>
+    ZIO.succeed(draft),
+  retireUploads: UploadRetirementPlan => UIO[Unit] = (plan: UploadRetirementPlan) =>
+    ZIO.foreachDiscard(plan.instructions) {
+      case UploadRetirementInstruction.Cleanup(operation) =>
+        operation.run.catchAllCause(cause => ZIO.logWarningCause("upload cleanup failed", cause))
+      case UploadRetirementInstruction.Hosted(_, _) => ZIO.unit
+    },
+  closeUploads: Model => UIO[Unit] = (_: Model) => ZIO.unit)
 
 /** Reference-identity wrapper: component definitions are not value keys. */
 final private[kernel] class ComponentDefinitionIdentity private (val value: AnyRef):
@@ -573,7 +596,9 @@ final private[scalive] case class TurnCandidate[Msg, Model](
   managedContinuations: Vector[ManagedAsyncContinuation],
   delta: RenderDelta,
   reservation: OutboundReservation[SessionOutput],
-  auxiliaryScope: CandidateScope)
+  auxiliaryScope: CandidateScope,
+  uploadRollback: UploadRetirementPlan,
+  uploadRollbackClaim: Ref[Boolean])
 
 final private[kernel] case class ManagedAsyncContinuation(
   owner: OwnerId,
@@ -623,6 +648,7 @@ enum SessionRejection:
   case UnknownComponentTarget
   case StaleComponent(component: ComponentInstanceId)
   case StaleResource(token: ResourceToken)
+  case UploadUnavailable
   case AmbiguousComponent(applicationId: Option[String])
   case BindingFailed(binding: BindingId, error: Throwable)
   case UnexpectedPatch

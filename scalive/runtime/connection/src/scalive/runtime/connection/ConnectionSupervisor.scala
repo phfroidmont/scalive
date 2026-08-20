@@ -9,7 +9,13 @@ import scalive.render.EvaluatedTree
 import scalive.render.RenderDelta
 import scalive.runtime.contracts.*
 import scalive.runtime.kernel.SessionEffects
+import scalive.runtime.resources.UploadPreflightView
+import scalive.runtime.resources.UploadRegistryError
+import scalive.runtime.resources.HostedWorkerId
 import scalive.runtime.topology.DetachedStickyNestedLifecycle
+import scalive.upload.UploadClientMetadata
+import scalive.upload.UploadEntryRef
+import scalive.upload.UploadRef
 
 /** A protocol-neutral handle for one heterogeneously typed connected lifecycle. */
 sealed private[scalive] trait ConnectedLifecycle:
@@ -34,6 +40,37 @@ sealed private[scalive] trait ConnectedLifecycle:
     eventName: String,
     rawJson: String
   ): IO[ConnectionError, Unit]
+
+  def preflightUpload(
+    command: CommandId,
+    component: Option[ComponentInstanceId],
+    ref: UploadRef,
+    selected: Vector[(UploadEntryRef, UploadClientMetadata)]
+  ): IO[ConnectionError, Either[UploadRegistryError, UploadPreflightView]]
+
+  def syncUploadSelection(
+    component: Option[ComponentInstanceId],
+    ref: UploadRef,
+    selected: Vector[(UploadEntryRef, UploadClientMetadata)]
+  ): IO[ConnectionError, Either[UploadRegistryError, UploadPreflightView]]
+
+  def admitUpload(
+    component: Option[ComponentInstanceId],
+    uploadRef: UploadRef,
+    entryRef: UploadEntryRef,
+    generation: Long
+  ): IO[ConnectionError, Either[UploadAdmissionError, HostedWorkerId]]
+
+  def uploadChunk(worker: HostedWorkerId, data: Chunk[Byte]): IO[UploadChunkError, Int]
+  def leaveUpload(worker: HostedWorkerId): IO[ConnectionError, Unit]
+
+  def progressUpload(
+    command: CommandId,
+    component: Option[ComponentInstanceId],
+    uploadRef: UploadRef,
+    entryRef: UploadEntryRef,
+    progress: Int
+  ): IO[ConnectionError, Either[UploadRegistryError, Unit]]
 
   def patch(command: CommandId, destination: URL): IO[ConnectionError, Unit]
   def internalPatch(destination: URL): IO[ConnectionError, Unit]
@@ -87,6 +124,43 @@ private[connection] object ConnectedLifecycle:
           eventName,
           rawJson
         )
+
+      def preflightUpload(
+        command: CommandId,
+        component: Option[ComponentInstanceId],
+        ref: UploadRef,
+        selected: Vector[(UploadEntryRef, UploadClientMetadata)]
+      ): IO[ConnectionError, Either[UploadRegistryError, UploadPreflightView]] =
+        connection.preflightUpload(command, component, ref, selected)
+
+      def syncUploadSelection(
+        component: Option[ComponentInstanceId],
+        ref: UploadRef,
+        selected: Vector[(UploadEntryRef, UploadClientMetadata)]
+      ): IO[ConnectionError, Either[UploadRegistryError, UploadPreflightView]] =
+        connection.syncUploadSelection(component, ref, selected)
+
+      def admitUpload(
+        component: Option[ComponentInstanceId],
+        uploadRef: UploadRef,
+        entryRef: UploadEntryRef,
+        generation: Long
+      ): IO[ConnectionError, Either[UploadAdmissionError, HostedWorkerId]] =
+        connection.admitUpload(component, uploadRef, entryRef, generation)
+
+      def uploadChunk(worker: HostedWorkerId, data: Chunk[Byte]): IO[UploadChunkError, Int] =
+        connection.uploadChunk(worker, data)
+      def leaveUpload(worker: HostedWorkerId): IO[ConnectionError, Unit] =
+        connection.leaveUpload(worker)
+
+      def progressUpload(
+        command: CommandId,
+        component: Option[ComponentInstanceId],
+        uploadRef: UploadRef,
+        entryRef: UploadEntryRef,
+        progress: Int
+      ): IO[ConnectionError, Either[UploadRegistryError, Unit]] =
+        connection.progressUpload(command, component, uploadRef, entryRef, progress)
 
       def patch(command: CommandId, destination: URL): IO[ConnectionError, Unit] =
         connection.offerPatch(command, destination)

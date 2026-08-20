@@ -66,9 +66,26 @@ end PhoenixEnvelope
 private[scalive] enum PhoenixInbound:
   case Heartbeat(joinRef: PhoenixRef, ref: PhoenixRef)
   case Join(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, payload: RootJoin)
+  case UploadJoin(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    entryRef: String,
+    token: String)
   case Event(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, payload: RootEvent)
+  case AllowUpload(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    payload: PhoenixUploadPreflight)
+  case UploadProgress(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    payload: PhoenixUploadProgress)
   case LivePatch(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, url: String)
   case Leave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String)
+  case UploadLeave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, entryRef: String)
 
 final private[scalive] case class RootJoin(
   url: Option[String],
@@ -181,8 +198,28 @@ private[scalive] object PhoenixProtocol:
         Right(PhoenixInbound.Heartbeat(joinRef, ref))
       case PhoenixEnvelope(_, _, "phoenix", "heartbeat", _) =>
         Left("heartbeat payload must be an empty object")
+      case PhoenixEnvelope(joinRef, ref, topic, "phx_join", payload)
+          if PhoenixUploadProtocol.entryRef(topic).nonEmpty =>
+        PhoenixUploadProtocol.decodeJoin(payload).map { token =>
+          PhoenixInbound.UploadJoin(
+            joinRef,
+            ref,
+            topic,
+            PhoenixUploadProtocol.entryRef(topic).get,
+            token
+          )
+        }
       case PhoenixEnvelope(joinRef, ref, topic, "phx_join", payload) if topic.startsWith("lv:") =>
         decodeJoin(payload).map(PhoenixInbound.Join(joinRef, ref, topic, _))
+      case PhoenixEnvelope(joinRef, ref, topic, "allow_upload", payload)
+          if topic.startsWith("lv:") =>
+        PhoenixUploadProtocol
+          .decodePreflight(payload)
+          .map(PhoenixInbound.AllowUpload(joinRef, ref, topic, _))
+      case PhoenixEnvelope(joinRef, ref, topic, "progress", payload) if topic.startsWith("lv:") =>
+        PhoenixUploadProtocol
+          .decodeProgress(payload)
+          .map(PhoenixInbound.UploadProgress(joinRef, ref, topic, _))
       case PhoenixEnvelope(joinRef, ref, topic, "event", payload) if topic.startsWith("lv:") =>
         decodeEvent(payload).map(PhoenixInbound.Event(joinRef, ref, topic, _))
       case PhoenixEnvelope(joinRef, ref, topic, "live_patch", payload) if topic.startsWith("lv:") =>
@@ -192,6 +229,19 @@ private[scalive] object PhoenixProtocol:
         Right(PhoenixInbound.Leave(joinRef, ref, topic))
       case PhoenixEnvelope(_, _, topic, "phx_leave", _) if topic.startsWith("lv:") =>
         Left("phx_leave payload must be an empty object")
+      case PhoenixEnvelope(joinRef, ref, topic, "phx_leave", Json.Obj(fields))
+          if PhoenixUploadProtocol.entryRef(topic).nonEmpty && fields.isEmpty =>
+        Right(
+          PhoenixInbound.UploadLeave(
+            joinRef,
+            ref,
+            topic,
+            PhoenixUploadProtocol.entryRef(topic).get
+          )
+        )
+      case PhoenixEnvelope(_, _, topic, "phx_leave", _)
+          if PhoenixUploadProtocol.entryRef(topic).nonEmpty =>
+        Left("upload phx_leave payload must be an empty object")
       case other => Left(s"unsupported Phoenix message '${other.topic}:${other.event}'")
 
   private def decodeJoin(json: Json): Either[String, RootJoin] = json match

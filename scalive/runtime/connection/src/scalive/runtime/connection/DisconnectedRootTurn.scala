@@ -56,6 +56,9 @@ final private[scalive] class DisconnectedRootTurn[Msg, Model] private[connection
   def navigation: UIO[Option[NavigationRequest]] = journal.navigationWithFlash
 
   def flash: UIO[Map[FlashKind, String]] = journal.flash.get
+
+  /** Shared request journal used by disconnected component rendering. */
+  private[scalive] def componentJournal: RootTurnJournal = journal
 end DisconnectedRootTurn
 
 private[scalive] object DisconnectedRootTurn:

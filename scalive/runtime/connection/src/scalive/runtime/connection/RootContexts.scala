@@ -24,11 +24,12 @@ private object Deferred:
 
   def fail[A](operation: String): LiveIO[A] = ZIO.fail(Unsupported(operation))
 
-final private[connection] class RootTurnJournal private (
+final private[scalive] class RootTurnJournal private (
   val navigation: Ref[Option[NavigationRequest]],
   val hooks: Ref[RootHookRegistry[Any, Any]],
   val flash: Ref[Map[FlashKind, String]],
-  val clientEvents: Ref[Vector[ClientEffect]]):
+  val clientEvents: Ref[Vector[ClientEffect]],
+  val componentUpdates: Ref[Vector[ComponentUpdateRequest]]):
 
   def hookRegistry[Msg, Model]: UIO[RootHookRegistry[Msg, Model]] =
     hooks.get.map(_.asInstanceOf[RootHookRegistry[Msg, Model]])
@@ -42,18 +43,21 @@ final private[connection] class RootTurnJournal private (
   def navigationWithFlash: UIO[Option[NavigationRequest]] =
     navigation.get.zipWith(flash.get)((request, values) => request.map(_.copy(flash = values)))
 
-private[connection] object RootTurnJournal:
+private[scalive] object RootTurnJournal:
   def make[Msg, Model](
     registry: RootHookRegistry[Msg, Model],
     initialFlash: Map[FlashKind, String] = Map.empty,
-    initialClientEvents: Vector[ClientEffect] = Vector.empty
+    initialClientEvents: Vector[ClientEffect] = Vector.empty,
+    initialComponentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
+    initialNavigation: Option[NavigationRequest] = None
   ): LiveIO[RootTurnJournal] =
     for
-      navigation   <- Ref.make(Option.empty[NavigationRequest])
+      navigation   <- Ref.make(initialNavigation)
       hooks        <- Ref.make(registry.asInstanceOf[RootHookRegistry[Any, Any]])
       flash        <- Ref.make(initialFlash)
       clientEvents <- Ref.make(initialClientEvents)
-    yield new RootTurnJournal(navigation, hooks, flash, clientEvents)
+      updates      <- Ref.make(initialComponentUpdates)
+    yield new RootTurnJournal(navigation, hooks, flash, clientEvents, updates)
 
 final private class RootNavigation(
   currentUrl: URL,
@@ -184,19 +188,29 @@ final private class JournaledClient(journal: RootTurnJournal) extends Client:
       _ :+ ClientEffect("js:exec", Json.Obj("cmd" -> Json.Str(js.toJson)))
     )
 
-private object DeferredComponentUpdates extends ComponentUpdates:
+final private class JournaledComponentUpdates(journal: RootTurnJournal) extends ComponentUpdates:
   def sendUpdate[Props, Msg, Model](
     instance: LiveComponentInstance[Props, Msg, Model],
     props: Props
-  ): LiveIO[Unit] = Deferred.fail("send component update")
+  ): LiveIO[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
   def sendUpdate[Props, Msg, Model, Output](
     instance: LiveComponentOutputInstance[Props, Msg, Model, Output],
     props: Props
-  ): LiveIO[Unit] = Deferred.fail("send component output update")
+  ): LiveIO[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
     id: String,
     props: LiveComponent.PropsOf[C]
-  ): LiveIO[Unit] = Deferred.fail("send component update by id")
+  ): LiveIO[Unit] =
+    ZIO
+      .attempt {
+        val component = summon[ClassTag[C]].runtimeClass
+          .getField("MODULE$").get(null).asInstanceOf[C]
+        ComponentUpdateRequest(
+          component.asInstanceOf[LiveComponent[LiveComponent.PropsOf[C], Any, Any]],
+          id,
+          props
+        )
+      }.flatMap(request => journal.componentUpdates.update(_ :+ request))
 
 final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
   val browserEvent: RootBrowserEventHooks[Msg, Model] = new RootBrowserEventHooks[Msg, Model]:
@@ -447,7 +461,7 @@ final private[connection] class RootMessageContext[Msg, Model](
   val async: Async[Msg]                 = DeferredAsync()
   val subscriptions: Subscriptions[Msg] = DeferredSubscriptions()
   val client: Client                    = JournaledClient(journal)
-  val components: ComponentUpdates      = DeferredComponentUpdates
+  val components: ComponentUpdates      = JournaledComponentUpdates(journal)
   val hooks: RootHooks[Msg, Model]      = JournaledRootHooks(journal)
 
 final private[connection] class RootParamsContext[Msg, Model](
@@ -464,7 +478,7 @@ final private[connection] class RootParamsContext[Msg, Model](
         val async: Async[Msg]                 = DeferredAsync()
         val subscriptions: Subscriptions[Msg] = DeferredSubscriptions()
         val client: Client                    = JournaledClient(journal)
-        val components: ComponentUpdates      = DeferredComponentUpdates)
+        val components: ComponentUpdates      = JournaledComponentUpdates(journal))
     else Connection.Disconnected
   val nav: Navigation              = new RootNavigation(currentUrl, journal, allowPatch = true)
   val flash: Flash                 = JournaledFlash(journal)

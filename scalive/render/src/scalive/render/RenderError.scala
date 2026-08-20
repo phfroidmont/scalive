@@ -20,6 +20,16 @@ object RenderError:
   final case class DuplicateBinding(id: BindingId)
       extends RenderError(s"duplicate binding identity '${id.encoded}'")
 
+  final case class DuplicateKey(key: Any)
+      extends RenderError(s"duplicate keyed collection key '$key'")
+
+  final case class ComponentResolutionInvalid(message: String) extends RenderError(message)
+
+  final case class UnresolvedComponents(locations: Vector[TemplateId])
+      extends RenderError(
+        s"unresolved component declarations: ${locations.map(_.value).mkString(", ")}"
+      )
+
   final case class ProgramMismatch()
       extends RenderError("the committed render belongs to a different render program")
 
@@ -31,3 +41,4 @@ object RenderError:
 
   final case class EvaluationFailed(error: Throwable)
       extends RenderError("render evaluation failed", error)
+end RenderError

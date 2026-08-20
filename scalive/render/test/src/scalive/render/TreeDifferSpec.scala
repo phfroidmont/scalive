@@ -110,7 +110,10 @@ object TreeDifferSpec extends ZIOSpecDefault:
         second  <- program.evaluate(2, Some(first.commit))
         id = second.bindings.ids.head
         result = second.bindings.resolve(id).get.dispatch(BindingPayload.Params(Map.empty))
-      yield assertTrue(TreeDiffer.diff(first.tree, second.tree) == RenderDelta.Empty, result == Right(2))
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, second.tree) == RenderDelta.Empty,
+        result == Right(BindingDispatch.Owner(2))
+      )
     },
     test("diffs flash scalar changes sparsely and structural changes exactly") {
       val notice = FlashKind("notice")

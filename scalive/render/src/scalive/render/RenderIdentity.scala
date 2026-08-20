@@ -26,6 +26,21 @@ object BindingSlotId:
 
   extension (id: BindingSlotId) def value: Long = id
 
+/** Monotonic identity of one retained keyed row. Keys select rows; they are never themselves used
+  * as protocol identities.
+  */
+opaque type RowId = Long
+
+object RowId:
+  private val nextValue = AtomicLong(0L)
+
+  private[render] def fresh(): Either[RenderError, RowId] =
+    val id = nextValue.incrementAndGet()
+    if id <= 0L then Left(RenderError.IdentityExhausted("keyed row identity"))
+    else Right(id)
+
+  extension (id: RowId) def value: Long = id
+
 /** Unique identity of a render program and its owning lifecycle graph. */
 opaque type RenderProgramId = Long
 

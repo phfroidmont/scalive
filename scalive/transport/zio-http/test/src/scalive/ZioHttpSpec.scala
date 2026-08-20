@@ -9,7 +9,10 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
 
-import scalive.protocol.phoenix.{PhoenixRef, RootJoin}
+import scalive.protocol.phoenix.{PhoenixRef, PhoenixRenderedEncoder, RootJoin}
+import scalive.render.{BindingId, RenderDelta}
+import scalive.runtime.connection.{ConnectionConfig, ConnectionOutput, RootConnection, RootConnectionMetadata}
+import scalive.runtime.contracts.CommandId
 import scalive.runtime.kernel.{ClientEffect, SessionEffects}
 
 object ZioHttpSpec extends ZIOSpecDefault:
@@ -97,6 +100,54 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("disconnected component flash changes reproject root HTML and signed claims") {
+      val oldKind = FlashKind("old")
+      val newKind = FlashKind("component")
+      val mounts  = AtomicInteger()
+      val definition = new LiveComponent.Eventless[Unit, Unit]:
+        def mount(props: Unit, ctx: MountContext) =
+          ZIO.succeed(mounts.incrementAndGet()).unit *>
+            ctx.flash.clear(oldKind) *>
+            ctx.flash.put(newKind, "component-final")
+        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) = div()
+      val instance = component(definition, "flash-mutator")
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) =
+          div(
+            flash(oldKind)(message => span(idAttr := "old-flash", message)),
+            flash(newKind)(message =>
+              sectionTag(
+                idAttr := "new-flash",
+                message,
+                scriptTag(phx.trackStatic := true, src := "/assets/final-flash.js")
+              )
+            ),
+            instance.render(())
+          )
+
+      for
+        token <- ZioHttpSecurity
+                   .issueFlash(config, Map(oldKind.value -> "remove-me")).someOrFail(
+                     AssertionError("flash token was not issued")
+                   )
+        request = Request.get(URL.root).addCookie(Cookie.Request("__phoenix_flash__", token))
+        response <- run(ZioHttp.routes(scalive.Live.router(scalive.live(View)), config), request)
+        body     <- response.body.asString.orDie
+        claims  <- ZioHttpSecurity.verifySession(
+                     config,
+                     attribute(body, "data-phx-session").get
+                   )
+      yield assertTrue(
+        mounts.get() == 1,
+        !body.contains("old-flash"),
+        !body.contains("remove-me"),
+        body.contains("id=\"new-flash\""),
+        body.contains("component-final"),
+        claims.initialFlash == Map(newKind.value -> "component-final"),
+        claims.trackedStatics == Vector("/assets/final-flash.js")
+      )
+    },
     test("signed bootstrap captures and compares tracked static assets") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
@@ -150,6 +201,200 @@ object ZioHttpSpec extends ZIOSpecDefault:
         ),
         ZioHttp.clientTrackedStatics(Map("_track_static" -> Json.Arr(Json.Num(1)))).isEmpty
       )
+    },
+    test("disconnected GET mounts components and emits CID-addressable component HTML") {
+      val mounts = AtomicInteger()
+      val definition = new LiveComponent.Eventless[String, String]:
+        def mount(props: String, ctx: MountContext) = ZIO.succeed {
+          mounts.incrementAndGet()
+          props
+        }
+        def view(
+          props: Signal[String],
+          model: Signal[String],
+          self: ComponentRef[Nothing]
+        ) =
+          sectionTag(
+            button(phx.target(self), model),
+            scriptTag(phx.trackStatic := true, src := "/assets/component.js")
+          )
+      val instance = component(definition, "disconnected-component")
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div(instance.render("component model"))
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live(View)), config),
+                      Request.get(URL.root)
+                    )
+        body   <- response.body.asString.orDie
+        claims <- ZioHttpSecurity.verifySession(
+                    config,
+                    attribute(body, "data-phx-session").get
+                  )
+      yield assertTrue(
+        response.status == Status.Ok,
+        mounts.get() == 1,
+        body.contains("<section data-phx-component=\"1\">"),
+        body.contains("phx-target=\"1\""),
+        body.contains("component model"),
+        claims.trackedStatics == Vector("/assets/component.js")
+      )
+    },
+    test("connected CID ingress releases the projection gate before exact component inspection") {
+      ZIO.scoped {
+        val componentEvent = BrowserToServerEvent[String]("component:event")
+        val removeEvent    = BrowserToServerEvent[Boolean]("root:show-second")
+        for
+          calls <- Ref.make(Vector.empty[String])
+          definition = new LiveComponent[String, String, String]:
+                         override val hooks = ComponentLiveHooks.empty[String, String, String]
+                           .onBrowserEvent(componentEvent) { (props, model, value, _) =>
+                             calls.update(_ :+ props).as(s"$model:$value")
+                           }
+                         def mount(props: String, ctx: MountContext) = ZIO.succeed(props)
+                         def handleMessage(
+                           props: String,
+                           model: String,
+                           ctx: MessageContext
+                         ): String => LiveIO[String] = _ => ZIO.succeed(model)
+                         def view(
+                           props: Signal[String],
+                           model: Signal[String],
+                           self: ComponentRef[String]
+                         ) = button(phx.target(self), model)
+          first  = component(definition, "cid-first")
+          second = component(definition, "cid-second")
+          view = new LiveView[Nothing, Boolean]:
+                   override val hooks = LiveHooks.empty[Nothing, Boolean]
+                     .onBrowserEvent(removeEvent)((_, show, _) => ZIO.succeed(show))
+                   def mount(ctx: MountContext) = ZIO.succeed(true)
+                   def handleMessage(
+                     model: Boolean,
+                     ctx: MessageContext
+                   ): Nothing => LiveIO[Boolean] = identity
+                   def view(model: Signal[Boolean]) =
+                     div(first.render("first"), model.when(span(second.render("second"))))
+          connectionConfig = ConnectionConfig.make(8, 8, 8, 8, 8).toOption.get
+          metadata = RootConnectionMetadata(
+                       staticChanged = false,
+                       connectParams = Map.empty[String, Json]
+                     )
+          firstSink  <- Queue.bounded[ConnectionOutput](8)
+          secondSink <- Queue.bounded[ConnectionOutput](8)
+          firstConnection <- RootConnection.start(
+                               connectionConfig,
+                               metadata,
+                               view,
+                               firstSink.offer(_).unit
+                             )
+          secondConnection <- RootConnection.start(
+                                connectionConfig,
+                                metadata,
+                                view,
+                                secondSink.offer(_).unit
+                              )
+          firstJoined  <- firstSink.take
+          secondJoined <- secondSink.take
+          firstTree = firstJoined match
+                        case ConnectionOutput.Joined(RenderDelta.Replace(tree), _) => tree
+                        case other => throw AssertionError(s"unexpected first join output: $other")
+          secondTree = secondJoined match
+                         case ConnectionOutput.Joined(RenderDelta.Replace(tree), _) => tree
+                         case other => throw AssertionError(s"unexpected second join output: $other")
+          firstProjection  <- ZIO.fromEither(PhoenixRenderedEncoder.initial(firstTree))
+          secondProjection <- ZIO.fromEither(PhoenixRenderedEncoder.initial(secondTree))
+          html             <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(firstTree))
+          firstState       <- Ref.make(Option(firstProjection._1))
+          secondState      <- Ref.make(Option(secondProjection._1))
+          firstGate        <- Semaphore.make(1L)
+          secondGate       <- Semaphore.make(1L)
+          target <- ZioHttp
+                      .resolveComponentCid(
+                        firstState,
+                        firstGate,
+                        2L,
+                        firstConnection.componentForToken
+                      )
+                      .someOrFail(AssertionError("CID 2 did not resolve"))
+          secondTarget <- ZioHttp.resolveComponentCid(
+                            secondState,
+                            secondGate,
+                            2L,
+                            secondConnection.componentForToken
+                          )
+          unknown <- ZioHttp.resolveComponentCid(
+                       firstState,
+                       firstGate,
+                       999L,
+                       firstConnection.componentForToken
+                     )
+          isolated <- ZioHttp.resolveComponentCid(
+                         secondState,
+                         secondGate,
+                         2L,
+                         firstConnection.componentForToken
+                       )
+          componentCommand = CommandId.fresh().toOption.get
+          _ <- firstConnection.offerComponentNamedEvent(
+                 componentCommand,
+                 target,
+                 BindingId.fromEncoded("not-a-binding"),
+                 BindingPayload.Params(Map.empty),
+                 componentEvent.value,
+                 "\"handled\""
+               )
+          componentReply <- firstSink.take
+          routedCalls    <- calls.get
+          componentReplied = componentReply match
+                               case ConnectionOutput.Reply(`componentCommand`, delta, _) =>
+                                 delta != RenderDelta.Empty
+                               case _ => false
+          removeCommand   = CommandId.fresh().toOption.get
+          _ <- firstConnection.offerNamedEvent(
+                 removeCommand,
+                 BindingId.fromEncoded("not-a-binding"),
+                 BindingPayload.Params(Map.empty),
+                 removeEvent.value,
+                 "false"
+               )
+          removalReply <- firstSink.take
+          removalDelta = removalReply match
+                           case ConnectionOutput.Reply(`removeCommand`, delta, _) => delta
+                           case other => throw AssertionError(s"unexpected removal output: $other")
+          removedProjection <- ZIO.fromEither(
+                                 PhoenixRenderedEncoder.update(firstProjection._1, removalDelta)
+                               )
+          inspectionDelayed <- Promise.make[Nothing, Unit]
+          allowInspection   <- Promise.make[Nothing, Unit]
+          delayedLookup <- ZioHttp
+                             .resolveComponentCid(
+                               firstState,
+                               firstGate,
+                               2L,
+                               token =>
+                                 inspectionDelayed.succeed(()).unit *>
+                                   allowInspection.await *>
+                                   firstConnection.componentForToken(token)
+                             ).fork
+          _ <- inspectionDelayed.await
+          projectionCompleted <- firstGate
+                                   .withPermit(firstState.set(Some(removedProjection._1)))
+                                   .timeout(zio.Duration.fromSeconds(1))
+          _       <- allowInspection.succeed(())
+          retired <- delayedLookup.join
+        yield assertTrue(
+          html._2.contains("phx-target=\"2\""),
+          componentReplied,
+          routedCalls == Vector("second"),
+          secondTarget.nonEmpty,
+          unknown.isEmpty,
+          isolated.isEmpty,
+          projectionCompleted.nonEmpty,
+          retired.isEmpty
+        )
+      }
     },
     test("a disconnected lifecycle failure is logged and becomes 500") {
       object Broken extends LiveView.Eventless[Unit]:

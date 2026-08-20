@@ -112,6 +112,24 @@ object SignalEvaluation:
     revision: RenderRevision,
     source: PackedSignalValue[[Value] =>> Value]):
     private val evaluated = IdentityHashMap[Signal[?], PackedSignalValue[SignalSample]]()
+    private val sources   = IdentityHashMap[Signal[?], PackedSignalValue[[Value] =>> Value]]()
+    sources.put(source.signal, source)
+
+    /** Supplies one child-scope source for this candidate only. */
+    def bindSource[A](signal: Signal[A], value: A): Either[RenderError, Unit] =
+      signal.expression match
+        case Signal.Expression.Source(_) =>
+          scopeOf(signal).flatMap { owner =>
+            if owner.isClosed then
+              Left(RenderError.SignalScopeViolation(s"signal scope ${owner.id} is closed"))
+            else if sources.containsKey(signal) then
+              Left(RenderError.SignalScopeViolation("signal source was bound more than once"))
+            else
+              sources.put(signal, PackedSignalValue[[Value] =>> Value, A](signal, value))
+              Right(())
+          }
+        case _ =>
+          Left(RenderError.SignalScopeViolation("only source signals can be candidate-bound"))
 
     def sample[A](signal: Signal[A]): Either[RenderError, SignalSample[A]] =
       Option(evaluated.get(signal)).flatMap(_.get(signal)) match
@@ -123,13 +141,14 @@ object SignalEvaluation:
           }
 
     def result: SignalEvaluation =
-      SignalEvaluation(revision, previous.samples.appended(evaluated.values().asScala))
+      SignalEvaluation(revision, SignalCache.empty.appended(evaluated.values().asScala))
 
     private def evaluate[A](signal: Signal[A]): Either[RenderError, SignalSample[A]] =
       signal.expression match
         case Signal.Expression.Source(_) =>
-          source
-            .get(signal).toRight(RenderError.MissingSignalSource()).flatMap(value =>
+          Option(sources.get(signal))
+            .flatMap(_.get(signal))
+            .toRight(RenderError.MissingSignalSource()).flatMap(value =>
               changedSample(signal, value, Vector.empty)
             )
         case Signal.Expression.Mapped(parent, f) =>

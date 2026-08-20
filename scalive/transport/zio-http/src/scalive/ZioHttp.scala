@@ -293,8 +293,6 @@ object ZioHttp:
       model: Model
     ): Task[Response] =
       for
-        typedFlash <- turn.flash
-        initialFlash = typedFlash.view.map((key, value) => key.value -> value).toMap
         rootId <- randomRootId
         canonical = canonicalUrl(request.url)
         csrf <- refreshOrIssueCsrf(config, request.cookie(CsrfCookieName).map(_.content))
@@ -314,7 +312,7 @@ object ZioHttp:
             renderElement(
               (input: Signal[(Model, URL)]) => withRootAttrs(lifecycle.view(input), rootAttrs),
               model -> request.url,
-              typedFlash
+              turn
             )
               .map(inner => inner.copy(html = document(issuedCsrf.token, inner.html)))
           else
@@ -326,7 +324,7 @@ object ZioHttp:
             renderElement(
               rootView,
               model -> request.url,
-              typedFlash,
+              turn,
               includeDoctype = true
             )
         _      <- turn.runAfterRender(model)
@@ -340,7 +338,7 @@ object ZioHttp:
                     rootKey,
                     mountClaims,
                     rendered.trackedStatics,
-                    initialFlash
+                    rendered.finalFlash.view.map((key, value) => key.value -> value).toMap
                   )
         (session, static) = tokens
         html              = rendered.html
@@ -763,27 +761,28 @@ object ZioHttp:
         case None => response
     }
 
-  final private case class RenderedElement(html: String, trackedStatics: Vector[String])
+  final private case class RenderedElement(
+    html: String,
+    trackedStatics: Vector[String],
+    finalFlash: Map[FlashKind, String])
 
   private def renderElement[A, Msg](
     view: Signal[A] => HtmlElement[Msg],
     value: A,
-    initialFlash: Map[FlashKind, String] = Map.empty,
+    turn: DisconnectedRootTurn[?, ?],
     includeDoctype: Boolean = false
   ): Task[RenderedElement] =
-    ZIO.fromEither(RenderProgram.compile(view, _ => initialFlash)).flatMap { program =>
-      program
-        .evaluate(value).flatMap { candidate =>
-          ZIO
-            .succeed(
-              RenderedElement(
-                HtmlRenderer.render(candidate.tree, includeDoctype),
-                collectTrackedStatics(candidate.tree.root)
-              )
-            ).ensuring(
-              candidate.discard
-            )
-        }.ensuring(program.close)
+    DisconnectedComponentRenderer.renderTurnWith(view, value, turn) { (tree, finalFlash) =>
+      ZIO
+        .fromEither(
+          PhoenixRenderedEncoder.fullHtml(tree).left.map(error => Exception(error.toString))
+        ).map { case (_, html) =>
+          RenderedElement(
+            if includeDoctype then s"<!doctype html>$html" else html,
+            collectTrackedStatics(tree.root),
+            finalFlash
+          )
+        }
     }
 
   private def collectTrackedStatics(node: EvaluatedNode): Vector[String] = node match
@@ -798,8 +797,13 @@ object ZioHttp:
           }.toVector
         else Vector.empty
       own ++ element.children.flatMap(collectTrackedStatics)
-    case flash: EvaluatedNode.Flash => flash.child.toVector.flatMap(collectTrackedStatics)
-    case _: EvaluatedNode.Text      => Vector.empty
+    case flash: EvaluatedNode.Flash   => flash.child.toVector.flatMap(collectTrackedStatics)
+    case choice: EvaluatedNode.Choice => choice.child.toVector.flatMap(collectTrackedStatics)
+    case keyed: EvaluatedNode.Keyed   =>
+      keyed.rows.flatMap(row => collectTrackedStatics(row.child))
+    case component: EvaluatedNode.Component =>
+      component.resolution.toVector.flatMap(value => collectTrackedStatics(value.child.root))
+    case _: EvaluatedNode.Text | _: EvaluatedNode.Nested | _: EvaluatedNode.Stream => Vector.empty
 
   private def injectCsrf[Msg](root: HtmlElement[Msg], token: String): HtmlElement[Msg] =
     val csrfMeta = metaTag(nameAttr := "csrf-token", contentAttr := token)
@@ -862,6 +866,8 @@ object ZioHttp:
     topic: String,
     joinRef: PhoenixRef.Value,
     connection: RootConnection[?, ?],
+    renderedState: Ref[Option[PhoenixRenderedState]],
+    projectionGate: Semaphore,
     correlations: Ref[Map[CommandId, (PhoenixRef, PhoenixRef)]],
     scope: Scope.Closeable):
     def close: UIO[Unit] = connection.close *> scope.close(Exit.unit)
@@ -985,6 +991,7 @@ object ZioHttp:
                                )
                   flash           <- joinedFlash(config, join, admitted.claims)
                   renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
+                  projectionGate  <- Semaphore.make(1L)
                   correlations    <- Ref.make(Map.empty[CommandId, (PhoenixRef, PhoenixRef)])
                   connectionReady <- Promise.make[Nothing, RootConnection[?, ?]]
                   metadata = RootConnectionMetadata(
@@ -1000,6 +1007,7 @@ object ZioHttp:
                            config,
                            writer,
                            renderedState,
+                           projectionGate,
                            correlations,
                            effectiveRef,
                            ref,
@@ -1021,6 +1029,8 @@ object ZioHttp:
                                     topic,
                                     effectiveRef,
                                     connection,
+                                    renderedState,
+                                    projectionGate,
                                     correlations,
                                     rootScope
                                   )
@@ -1098,96 +1108,101 @@ object ZioHttp:
     config: ZioHttpConfig,
     writer: SerialWriter[PhoenixEnvelope],
     state: Ref[Option[PhoenixRenderedState]],
+    projectionGate: Semaphore,
     correlations: Ref[Map[CommandId, (PhoenixRef, PhoenixRef)]],
     joinRef: PhoenixRef,
     joinReplyRef: PhoenixRef,
     topic: String,
     acknowledgePatch: URL => Task[Unit]
   ): ConnectionOutput => Task[Unit] = output =>
-    def update(delta: RenderDelta): IO[Throwable, Json.Obj] =
-      state.modify { previous =>
-        val encoded: Either[Throwable, (PhoenixRenderedState, Json.Obj)] = previous match
-          case None =>
-            delta match
-              case RenderDelta.Replace(tree) =>
-                PhoenixRenderedEncoder.initial(tree).left.map(error => Exception(error.toString))
-              case _ => Left(Exception("initial root output was not a replacement"))
-          case Some(current) =>
-            PhoenixRenderedEncoder
-              .update(current, delta).left.map(error => Exception(error.toString))
-        encoded match
-          case Right((next, json)) => Right(json) -> Some(next)
-          case Left(error)         => Left(error) -> previous
-      }.absolve
+    projectionGate.withPermit {
+      def update(delta: RenderDelta): IO[Throwable, Json.Obj] =
+        state.modify { previous =>
+          val encoded: Either[Throwable, (PhoenixRenderedState, Json.Obj)] = previous match
+            case None =>
+              delta match
+                case RenderDelta.Replace(tree) =>
+                  PhoenixRenderedEncoder.initial(tree).left.map(error => Exception(error.toString))
+                case _ => Left(Exception("initial root output was not a replacement"))
+            case Some(current) =>
+              PhoenixRenderedEncoder
+                .update(current, delta).left.map(error => Exception(error.toString))
+          encoded match
+            case Right((next, json)) => Right(json) -> Some(next)
+            case Left(error)         => Left(error) -> previous
+        }.absolve
 
-    output match
-      case ConnectionOutput.Joined(delta, effects) =>
-        update(delta)
-          .map(addEffects(_, effects)).flatMap(json =>
-            writer.offer(PhoenixOutput.join(joinRef, joinReplyRef, topic, json))
-          )
-      case ConnectionOutput.JoinedNavigation(delta, navigation, effects) =>
-        if navigation.kind.isPatch then
-          ZIO.fail(Exception(s"patch navigation ${navigation.kind} is unavailable during join"))
-        else
-          navigationJoinEnvelope(config, joinRef, joinReplyRef, topic, navigation).flatMap(
-            writer.offer
-          )
-      case ConnectionOutput.Reply(command, delta, effects) =>
-        correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-          case Some((eventJoinRef, eventRef)) =>
-            update(delta)
-              .map(addEffects(_, effects)).flatMap(json =>
-                writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json))
-              )
-          case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
-        }
-      case ConnectionOutput.ReplyNavigation(command, delta, navigation, effects) =>
-        correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-          case Some((eventJoinRef, eventRef)) =>
-            update(delta)
-              .map(addEffects(_, effects)).flatMap(json =>
-                if navigation.kind.isPatch then
-                  writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json)) *>
-                    writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
-                    acknowledgePatch(navigation.destination)
-                else
-                  navigationReplyEnvelope(
-                    config,
-                    eventJoinRef,
-                    eventRef,
-                    topic,
-                    navigation,
-                    Option.when(json.fields.nonEmpty)(json)
-                  ).flatMap(writer.offer)
-              )
-          case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
-        }
-      case ConnectionOutput.Rejected(command, _) =>
-        correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-          case Some((eventJoinRef, eventRef)) =>
-            writer.offer(PhoenixOutput.error(eventJoinRef, eventRef, topic, staleReason))
-          case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
-        }
-      case ConnectionOutput.Diff(delta, effects) =>
-        update(delta)
-          .map(addEffects(_, effects)).flatMap(json =>
-            writer.offer(PhoenixOutput.diff(joinRef, topic, json))
-          )
-      case ConnectionOutput.DiffNavigation(delta, navigation, effects) =>
-        update(delta)
-          .map(addEffects(_, effects)).flatMap(json =>
-            val diff =
-              ZIO.when(json.fields.nonEmpty)(writer.offer(PhoenixOutput.diff(joinRef, topic, json)))
-            if navigation.kind.isPatch then
-              diff *> writer.offer(patchEnvelope(joinRef, topic, navigation)) *>
-                acknowledgePatch(navigation.destination)
-            else
-              diff *> navigationEventEnvelope(config, joinRef, topic, navigation).flatMap(
-                writer.offer
-              )
-          )
-    end match
+      output match
+        case ConnectionOutput.Joined(delta, effects) =>
+          update(delta)
+            .map(addEffects(_, effects)).flatMap(json =>
+              writer.offer(PhoenixOutput.join(joinRef, joinReplyRef, topic, json))
+            )
+        case ConnectionOutput.JoinedNavigation(delta, navigation, effects) =>
+          if navigation.kind.isPatch then
+            ZIO.fail(Exception(s"patch navigation ${navigation.kind} is unavailable during join"))
+          else
+            navigationJoinEnvelope(config, joinRef, joinReplyRef, topic, navigation).flatMap(
+              writer.offer
+            )
+        case ConnectionOutput.Reply(command, delta, effects) =>
+          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((eventJoinRef, eventRef)) =>
+              update(delta)
+                .map(addEffects(_, effects)).flatMap(json =>
+                  writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json))
+                )
+            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+          }
+        case ConnectionOutput.ReplyNavigation(command, delta, navigation, effects) =>
+          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((eventJoinRef, eventRef)) =>
+              update(delta)
+                .map(addEffects(_, effects)).flatMap(json =>
+                  if navigation.kind.isPatch then
+                    writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json)) *>
+                      writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                      acknowledgePatch(navigation.destination)
+                  else
+                    navigationReplyEnvelope(
+                      config,
+                      eventJoinRef,
+                      eventRef,
+                      topic,
+                      navigation,
+                      Option.when(json.fields.nonEmpty)(json)
+                    ).flatMap(writer.offer)
+                )
+            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+          }
+        case ConnectionOutput.Rejected(command, _) =>
+          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((eventJoinRef, eventRef)) =>
+              writer.offer(PhoenixOutput.error(eventJoinRef, eventRef, topic, staleReason))
+            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+          }
+        case ConnectionOutput.Diff(delta, effects) =>
+          update(delta)
+            .map(addEffects(_, effects)).flatMap(json =>
+              writer.offer(PhoenixOutput.diff(joinRef, topic, json))
+            )
+        case ConnectionOutput.DiffNavigation(delta, navigation, effects) =>
+          update(delta)
+            .map(addEffects(_, effects)).flatMap(json =>
+              val diff =
+                ZIO.when(json.fields.nonEmpty)(
+                  writer.offer(PhoenixOutput.diff(joinRef, topic, json))
+                )
+              if navigation.kind.isPatch then
+                diff *> writer.offer(patchEnvelope(joinRef, topic, navigation)) *>
+                  acknowledgePatch(navigation.destination)
+              else
+                diff *> navigationEventEnvelope(config, joinRef, topic, navigation).flatMap(
+                  writer.offer
+                )
+            )
+      end match
+    }
 
   private[scalive] def addEffects(
     json: Json.Obj,
@@ -1331,35 +1346,99 @@ object ZioHttp:
     event: RootEvent
   ): Task[Unit] =
     root.get.flatMap {
-      case Some(joined) if joined.topic == topic && event.cid.isEmpty =>
+      case Some(joined) if joined.topic == topic =>
         correlatedEventRefs(joined.joinRef, joinRef, ref) match
           case Some(eventRefs) =>
-            ZIO.fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
-              ZIO
-                .fromEither(CommandId.fresh().left.map(error => Exception(error.toString))).flatMap {
-                  command =>
-                    joined.correlations
-                      .modify { current =>
-                        if current.size >= RootIngressCapacity then false -> current
-                        else true -> current.updated(command, eventRefs)
-                      }.flatMap {
-                        case false =>
-                          ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
-                        case true =>
-                          joined.connection
-                            .offerNamedEvent(
-                              command,
-                              BindingId.fromEncoded(event.event),
-                              payload,
-                              event.event,
-                              event.value.toJson
-                            )
-                            .onError(_ => joined.correlations.update(_ - command))
-                      }
+            event.cid match
+              case None =>
+                ZIO.fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
+                  enqueueRootEvent(joined, eventRefs, event, payload)
                 }
-            }
+              case Some(cid) =>
+                offerComponentEvent(joined, eventRefs, event, cid).flatMap {
+                  case true  => ZIO.unit
+                  case false => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+                }
           case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
       case _ => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+    }
+
+  private def enqueueRootEvent(
+    joined: JoinedRoot,
+    eventRefs: (PhoenixRef, PhoenixRef),
+    event: RootEvent,
+    payload: BindingPayload
+  ): Task[Unit] =
+    enqueueCorrelated(joined, eventRefs) { command =>
+      joined.connection.offerNamedEvent(
+        command,
+        BindingId.fromEncoded(event.event),
+        payload,
+        event.event,
+        event.value.toJson
+      )
+    }
+
+  private def offerComponentEvent(
+    joined: JoinedRoot,
+    eventRefs: (PhoenixRef, PhoenixRef),
+    event: RootEvent,
+    cid: Long
+  ): Task[Boolean] =
+    resolveComponentCid(
+      joined.renderedState,
+      joined.projectionGate,
+      cid,
+      joined.connection.componentForToken
+    ).flatMap {
+      case None            => ZIO.succeed(false)
+      case Some(component) =>
+        ZIO
+          .fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
+            enqueueCorrelated(joined, eventRefs) { command =>
+              joined.connection.offerComponentNamedEvent(
+                command,
+                component,
+                BindingId.fromEncoded(event.event),
+                payload,
+                event.event,
+                event.value.toJson
+              )
+            }
+          }.as(true)
+    }
+
+  private[scalive] def resolveComponentCid(
+    state: Ref[Option[PhoenixRenderedState]],
+    projectionGate: Semaphore,
+    cid: Long,
+    resolveToken: Object => IO[ConnectionError, Option[scalive.runtime.kernel.ComponentInstanceId]]
+  ): IO[ConnectionError, Option[scalive.runtime.kernel.ComponentInstanceId]] =
+    val token = projectionGate.withPermit {
+      if cid < Int.MinValue.toLong || cid > Int.MaxValue.toLong then ZIO.none
+      else state.get.map(_.flatMap(_.tokenForCid(cid.toInt)))
+    }
+    token.flatMap {
+      case None        => ZIO.none
+      case Some(value) => resolveToken(value)
+    }
+
+  private def enqueueCorrelated(
+    joined: JoinedRoot,
+    eventRefs: (PhoenixRef, PhoenixRef)
+  )(
+    offer: CommandId => IO[ConnectionError, Unit]
+  ): Task[Unit] =
+    ZIO.fromEither(CommandId.fresh().left.map(error => Exception(error.toString))).flatMap {
+      command =>
+        joined.correlations
+          .modify { current =>
+            if current.size >= RootIngressCapacity then false -> current
+            else true                                         -> current.updated(command, eventRefs)
+          }.flatMap {
+            case false => ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
+            case true  => offer(command).onError(_ => joined.correlations.update(_ - command))
+          }
     }
 
   private def offerPatch(

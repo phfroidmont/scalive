@@ -13,6 +13,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
   val epoch: Epoch,
   config: ConnectionConfig,
   kernel: SessionKernel[Msg, RootState[Msg, Model]],
+  componentEnvironment: ConnectedComponentEnvironment[Msg, Model],
   outbound: InMemoryOutboundReservations[SessionOutput],
   writer: SerialWriter[ConnectionOutput],
   ingress: Queue[RootConnection.Event],
@@ -58,6 +59,72 @@ final private[scalive] class RootConnection[Msg, Model] private (
   ): IO[ConnectionError, Unit] =
     enqueue(command, Event.Browser(command, binding, payload, Some(eventName), Some(rawJson))).unit
 
+  private[connection] def submitComponentNamedEvent(
+    command: CommandId,
+    component: ComponentInstanceId,
+    binding: BindingId,
+    payload: BindingPayload,
+    eventName: String,
+    rawJson: String
+  ): IO[ConnectionError, Unit] =
+    enqueue(
+      command,
+      Event.ComponentBrowser(command, component, binding, payload, Some(eventName), Some(rawJson))
+    ).flatMap(_.await)
+
+  private[scalive] def offerComponentNamedEvent(
+    command: CommandId,
+    component: ComponentInstanceId,
+    binding: BindingId,
+    payload: BindingPayload,
+    eventName: String,
+    rawJson: String
+  ): IO[ConnectionError, Unit] =
+    enqueue(
+      command,
+      Event.ComponentBrowser(command, component, binding, payload, Some(eventName), Some(rawJson))
+    ).unit
+
+  private[connection] def submitComponentMessage[M](
+    command: CommandId,
+    component: ComponentInstanceId,
+    message: M
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.ComponentMessage(command, component, message)).flatMap(_.await)
+
+  private[scalive] def offerComponentMessage[M](
+    command: CommandId,
+    component: ComponentInstanceId,
+    message: M
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.ComponentMessage(command, component, message)).unit
+
+  private[connection] def submitComponentAsyncCompletion[M](
+    command: CommandId,
+    component: ComponentInstanceId,
+    event: LiveAsyncEvent[M]
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.ComponentAsync(command, component, event)).flatMap(_.await)
+
+  private[scalive] def offerComponentAsyncCompletion[M](
+    command: CommandId,
+    component: ComponentInstanceId,
+    event: LiveAsyncEvent[M]
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.ComponentAsync(command, component, event)).unit
+
+  private[connection] def submitComponentUpdate(
+    command: CommandId,
+    component: ComponentInstanceId
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.ComponentUpdate(command, component)).flatMap(_.await)
+
+  private[scalive] def offerComponentUpdate(
+    command: CommandId,
+    component: ComponentInstanceId
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.ComponentUpdate(command, component)).unit
+
   def submitPatch(command: CommandId, destination: URL): IO[ConnectionError, Unit] =
     enqueuePatch(command, destination).flatMap(_.await)
 
@@ -102,8 +169,8 @@ final private[scalive] class RootConnection[Msg, Model] private (
                    case false =>
                      pending.modify { current =>
                        val limit = event match
-                         case Event.Patch(_, _)            => config.ingressCapacity + 2
-                         case Event.Browser(_, _, _, _, _) => config.ingressCapacity + 1
+                         case Event.Patch(_, _) => config.ingressCapacity + 2
+                         case _                 => config.ingressCapacity + 1
                        if current.contains(command) then
                          Left(ConnectionError.DuplicateCommand(command)) -> current
                        else if current.size >= limit then
@@ -137,6 +204,40 @@ final private[scalive] class RootConnection[Msg, Model] private (
 
   private[connection] def inspectFlash: IO[ConnectionError, Map[FlashKind, String]] =
     kernel.inspect.map(_.model.flash).mapError(connectionError)
+
+  private[connection] def inspectComponentIds: IO[ConnectionError, Vector[ComponentInstanceId]] =
+    kernel.inspect.map(_.components.values.map(_.id)).mapError(connectionError)
+
+  private[connection] def inspectComponentModel[A](
+    component: ComponentInstanceId
+  ): IO[ConnectionError, Option[A]] =
+    kernel.inspect
+      .map(_.components.get(component).map(_.model.asInstanceOf[A])).mapError(connectionError)
+
+  private[connection] def inspectComponentProps[A](
+    component: ComponentInstanceId
+  ): IO[ConnectionError, Option[A]] =
+    kernel.inspect
+      .map(_.components.get(component).map(_.props.asInstanceOf[A])).mapError(connectionError)
+
+  private[connection] def inspectComponentTree(
+    component: ComponentInstanceId
+  ): IO[ConnectionError, Option[EvaluatedTree]] =
+    kernel.inspect.map(_.components.get(component).map(_.render.tree)).mapError(connectionError)
+
+  private[scalive] def componentForToken(
+    token: Object
+  ): IO[ConnectionError, Option[ComponentInstanceId]] =
+    kernel.inspect
+      .map(
+        _.components.values.find(component => component.ref.asInstanceOf[AnyRef] eq token).map(_.id)
+      ).mapError(connectionError)
+
+  private[connection] def componentWasClosed(component: ComponentInstanceId): UIO[Boolean] =
+    componentEnvironment.wasClosed(component)
+
+  private[connection] def componentWasDiscarded(component: ComponentInstanceId): UIO[Boolean] =
+    componentEnvironment.wasDiscarded(component)
 
   private[connection] def submitInfo(message: Msg): IO[ConnectionError, Unit] =
     kernel.submit(SessionCommand.Message(epoch, message)).unit.mapError(connectionError)
@@ -183,6 +284,25 @@ final private[scalive] class RootConnection[Msg, Model] private (
         val input: SessionCommand[Msg] = event match
           case Event.Browser(_, binding, payload, name, rawJson) =>
             SessionCommand.ClientEvent(epoch, binding, payload, name, rawJson)
+          case Event.ComponentBrowser(_, component, binding, payload, name, rawJson) =>
+            SessionCommand.ComponentClientEvent(
+              epoch,
+              component,
+              binding,
+              payload,
+              name,
+              rawJson
+            )
+          case Event.ComponentMessage(_, component, message) =>
+            SessionCommand.ComponentMessage(epoch, component, message)
+          case Event.ComponentAsync(_, component, event) =>
+            SessionCommand.ComponentAsyncCompletion(
+              epoch,
+              component,
+              event.asInstanceOf[LiveAsyncEvent[Any]]
+            )
+          case Event.ComponentUpdate(_, component) =>
+            SessionCommand.ComponentUpdate(epoch, component)
           case Event.Patch(_, destination) => SessionCommand.ParamsPatch(epoch, destination)
         kernel
           .enqueue(command, input).foldZIO(
@@ -199,7 +319,9 @@ final private[scalive] class RootConnection[Msg, Model] private (
       case true  => complete(command, Left(ConnectionError.Closed))
       case false =>
         rejection match
-          case _: SessionRejection.UnknownBinding | _: SessionRejection.BindingFailed =>
+          case _: SessionRejection.UnknownBinding | _: SessionRejection.BindingFailed |
+              _: SessionRejection.UnknownComponent | _: SessionRejection.StaleComponent |
+              SessionRejection.UnknownComponentTarget | _: SessionRejection.AmbiguousComponent =>
             awaitEarlierCommands(command) *> writer
               .send(ConnectionOutput.Rejected(command, rejection)).foldZIO(
                 error => completeAfterWriterClose(command, error),
@@ -374,11 +496,28 @@ private[scalive] object RootConnection:
       payload: BindingPayload,
       eventName: Option[String],
       rawJson: Option[String])
+    case ComponentBrowser(
+      command: CommandId,
+      component: ComponentInstanceId,
+      binding: BindingId,
+      payload: BindingPayload,
+      eventName: Option[String],
+      rawJson: Option[String])
+    case ComponentMessage(command: CommandId, component: ComponentInstanceId, message: Any)
+    case ComponentAsync(
+      command: CommandId,
+      component: ComponentInstanceId,
+      event: LiveAsyncEvent[?])
+    case ComponentUpdate(command: CommandId, component: ComponentInstanceId)
     case Patch(command: CommandId, destination: URL)
 
     def id: CommandId = this match
-      case Browser(command, _, _, _, _) => command
-      case Patch(command, _)            => command
+      case Browser(command, _, _, _, _)             => command
+      case ComponentBrowser(command, _, _, _, _, _) => command
+      case ComponentMessage(command, _, _)          => command
+      case ComponentAsync(command, _, _)            => command
+      case ComponentUpdate(command, _)              => command
+      case Patch(command, _)                        => command
 
   def start[Msg, Model](
     config: ConnectionConfig,
@@ -419,6 +558,7 @@ private[scalive] object RootConnection:
         writer <- SerialWriter
                     .make[ConnectionOutput](config.writerCapacity)(sink)
                     .mapError(error => ConnectionError.OutboundFailed(error.toString))
+        componentEnvironment <- ConnectedComponentEnvironment.make[Msg, Model](metadata)
         initialHooks = RootHookRegistry.fromStatic(lifecycle.hooks)
         logic        = SessionLogic[Msg, RootState[Msg, Model]](
                   bootstrap =
@@ -457,33 +597,37 @@ private[scalive] object RootConnection:
                                                  case Hooked.Continue(value) =>
                                                    ZIO.suspend(prepared.run(value, paramsContext))
                                    yield result
-                      navigation   <- journal.navigationWithFlash
-                      hooks        <- journal.hookRegistry[Msg, Model]
-                      flash        <- journal.flash.get
-                      clientEvents <- journal.clientEvents.get
+                      navigation       <- journal.navigationWithFlash
+                      hooks            <- journal.hookRegistry[Msg, Model]
+                      flash            <- journal.flash.get
+                      clientEvents     <- journal.clientEvents.get
+                      componentUpdates <- journal.componentUpdates.get
                       pageTitle = lifecycle.pageTitle(model)
                     yield TurnDraft(
                       RootState(model, lifecycle.initialUrl, hooks, flash, pageTitle),
                       url = Some(lifecycle.initialUrl),
                       navigation = navigation,
-                      effects = SessionEffects(pageTitle, clientEvents)
+                      effects = SessionEffects(pageTitle, clientEvents),
+                      componentUpdates = componentUpdates
                     ),
                   handle = (state, message) =>
                     for
                       journal <- RootTurnJournal.make(state.hooks, state.flash)
                       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
                       model <- ZIO.suspend(lifecycle.handleMessage(state.model, context, message))
-                      navigation   <- journal.navigationWithFlash
-                      hooks        <- journal.hookRegistry[Msg, Model]
-                      flash        <- journal.flash.get
-                      clientEvents <- journal.clientEvents.get
+                      navigation       <- journal.navigationWithFlash
+                      hooks            <- journal.hookRegistry[Msg, Model]
+                      flash            <- journal.flash.get
+                      clientEvents     <- journal.clientEvents.get
+                      componentUpdates <- journal.componentUpdates.get
                       pageTitle = lifecycle.pageTitle(model)
                     yield TurnDraft(
                       RootState(model, state.url, hooks, flash, pageTitle),
                       url = Some(state.url),
                       navigation = navigation,
                       effects =
-                        SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents)
+                        SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
+                      componentUpdates = componentUpdates
                     ),
                   handleEvent = Some((state, message) =>
                     runMessageTurn(
@@ -520,11 +664,12 @@ private[scalive] object RootConnection:
                           for
                             journal <- RootTurnJournal.make(state.hooks, state.flash)
                             context = RootMessageContext[Msg, Model](metadata, state.url, journal)
-                            model        <- runBrowserHooks(matching, state.model, raw, context)
-                            navigation   <- journal.navigationWithFlash
-                            hooks        <- journal.hookRegistry[Msg, Model]
-                            flash        <- journal.flash.get
-                            clientEvents <- journal.clientEvents.get
+                            model            <- runBrowserHooks(matching, state.model, raw, context)
+                            navigation       <- journal.navigationWithFlash
+                            hooks            <- journal.hookRegistry[Msg, Model]
+                            flash            <- journal.flash.get
+                            clientEvents     <- journal.clientEvents.get
+                            componentUpdates <- journal.componentUpdates.get
                             pageTitle = lifecycle.pageTitle(model)
                           yield Some(
                             TurnDraft(
@@ -534,7 +679,8 @@ private[scalive] object RootConnection:
                               effects = SessionEffects(
                                 titleChange(state.pageTitle, pageTitle),
                                 clientEvents
-                              )
+                              ),
+                              componentUpdates = componentUpdates
                             )
                           )
                       case _ => ZIO.none,
@@ -556,39 +702,44 @@ private[scalive] object RootConnection:
                                  case Hooked.Halt(value)     => ZIO.succeed(value)
                                  case Hooked.Continue(value) =>
                                    ZIO.suspend(prepared.run(value, context))
-                      navigation   <- journal.navigationWithFlash
-                      hooks        <- journal.hookRegistry[Msg, Model]
-                      flash        <- journal.flash.get
-                      clientEvents <- journal.clientEvents.get
+                      navigation       <- journal.navigationWithFlash
+                      hooks            <- journal.hookRegistry[Msg, Model]
+                      flash            <- journal.flash.get
+                      clientEvents     <- journal.clientEvents.get
+                      componentUpdates <- journal.componentUpdates.get
                       pageTitle = lifecycle.pageTitle(model)
                     yield TurnDraft(
                       RootState(model, destination, hooks, flash, pageTitle),
                       url = Some(destination),
                       navigation = navigation,
                       effects =
-                        SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents)
+                        SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
+                      componentUpdates = componentUpdates
                     ),
                   afterRender = draft =>
                     for
                       journal <- RootTurnJournal.make(
                                    draft.model.hooks,
                                    draft.model.flash,
-                                   draft.effects.clientEvents
+                                   draft.effects.clientEvents,
+                                   draft.componentUpdates
                                  )
                       context = RootAfterRenderContext[Msg, Model](metadata, journal)
                       _ <- ZIO.foreachDiscard(draft.model.hooks.afterRender)(
                              _.invoke(draft.model.model, context)
                            )
-                      hooks        <- journal.hookRegistry[Msg, Model]
-                      flash        <- journal.flash.get
-                      clientEvents <- journal.clientEvents.get
+                      hooks            <- journal.hookRegistry[Msg, Model]
+                      flash            <- journal.flash.get
+                      clientEvents     <- journal.clientEvents.get
+                      componentUpdates <- journal.componentUpdates.get
                     yield draft.copy(
                       model = draft.model.copy(hooks = hooks, flash = flash),
-                      effects = draft.effects.copy(clientEvents = clientEvents)
+                      effects = draft.effects.copy(clientEvents = clientEvents),
+                      componentUpdates = componentUpdates
                     )
                 )
         kernel <- SessionKernel
-                    .start(sessionConfig, logic, program, outbound)
+                    .start(sessionConfig, logic, program, outbound, componentEnvironment)
                     .mapError(ConnectionError.SessionFailed.apply)
         ingress        <- Queue.dropping[Event](config.ingressCapacity)
         ingressGate    <- Semaphore.make(1L)
@@ -601,6 +752,7 @@ private[scalive] object RootConnection:
                        kernel.epoch,
                        config,
                        kernel,
+                       componentEnvironment,
                        outbound,
                        writer,
                        ingress,
@@ -645,16 +797,18 @@ private[scalive] object RootConnection:
                    ZIO.suspend(
                      lifecycle.handleMessage(value, context, message)
                    )
-      navigation   <- journal.navigationWithFlash
-      hooks        <- journal.hookRegistry[Msg, Model]
-      flash        <- journal.flash.get
-      clientEvents <- journal.clientEvents.get
+      navigation       <- journal.navigationWithFlash
+      hooks            <- journal.hookRegistry[Msg, Model]
+      flash            <- journal.flash.get
+      clientEvents     <- journal.clientEvents.get
+      componentUpdates <- journal.componentUpdates.get
       pageTitle = lifecycle.pageTitle(model)
     yield TurnDraft(
       RootState(model, state.url, hooks, flash, pageTitle),
       url = Some(state.url),
       navigation = navigation,
-      effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents)
+      effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
+      componentUpdates = componentUpdates
     )
 
   private def runEventHooks[Msg, Model](
@@ -722,16 +876,18 @@ private[scalive] object RootConnection:
                          lifecycle.handleMessage(value, context, message)
                        )
                      case _ => ZIO.succeed(value)
-      navigation   <- journal.navigationWithFlash
-      hooks        <- journal.hookRegistry[Msg, Model]
-      flash        <- journal.flash.get
-      clientEvents <- journal.clientEvents.get
+      navigation       <- journal.navigationWithFlash
+      hooks            <- journal.hookRegistry[Msg, Model]
+      flash            <- journal.flash.get
+      clientEvents     <- journal.clientEvents.get
+      componentUpdates <- journal.componentUpdates.get
       pageTitle = lifecycle.pageTitle(model)
     yield TurnDraft(
       RootState(model, state.url, hooks, flash, pageTitle),
       url = Some(state.url),
       navigation = navigation,
-      effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents)
+      effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
+      componentUpdates = componentUpdates
     )
 
   private def runBrowserHooks[Msg, Model](

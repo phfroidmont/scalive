@@ -4,15 +4,43 @@ import scala.collection.mutable
 import scala.util.control.NonFatal
 
 import scalive.BindingPayload
+import scalive.ComponentDispatch
+import scalive.ComponentRef
+
+/** Renderer-owned destination selected by one evaluated binding. */
+sealed trait BindingDispatch[+OwnerMsg]
+
+object BindingDispatch:
+  final case class Owner[OwnerMsg](message: OwnerMsg)  extends BindingDispatch[OwnerMsg]
+  final case class Routed(dispatch: ComponentDispatch) extends BindingDispatch[Nothing]
+
+  sealed trait Targeted extends BindingDispatch[Nothing]:
+    type Message
+    def target: ComponentRef[Message]
+    def message: Message
+
+  object Targeted:
+    final private[render] case class Value[Message0](
+      target: ComponentRef[Message0],
+      message: Message0)
+        extends Targeted:
+      type Message = Message0
 
 /** A typed browser-payload operation captured from one evaluated render snapshot. */
 sealed trait BindingOperation[+Msg]:
-  private[scalive] def dispatch(payload: BindingPayload): Either[Throwable, Msg]
+  private[scalive] def dispatch(payload: BindingPayload): Either[Throwable, BindingDispatch[Msg]]
 
 object BindingOperation:
   private[render] def apply[Msg](operation: BindingPayload => Msg): BindingOperation[Msg] =
+    dispatching(payload => BindingDispatch.Owner(operation(payload)))
+
+  private[render] def dispatching[Msg](
+    operation: BindingPayload => BindingDispatch[Msg]
+  ): BindingOperation[Msg] =
     new BindingOperation[Msg]:
-      private[scalive] def dispatch(payload: BindingPayload): Either[Throwable, Msg] =
+      private[scalive] def dispatch(
+        payload: BindingPayload
+      ): Either[Throwable, BindingDispatch[Msg]] =
         try Right(operation(payload))
         catch case NonFatal(error) => Left(error)
 

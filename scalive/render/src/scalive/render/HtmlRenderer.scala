@@ -21,7 +21,15 @@ object HtmlRenderer:
       case text: EvaluatedNode.Text       =>
         if text.raw then output.append(text.value)
         else output.append(Escaping.escape(text.value))
-      case flash: EvaluatedNode.Flash => flash.child.foreach(appendElement(_, output))
+      case flash: EvaluatedNode.Flash   => flash.child.foreach(appendElement(_, output))
+      case choice: EvaluatedNode.Choice => choice.child.foreach(appendNode(_, output))
+      case keyed: EvaluatedNode.Keyed => keyed.rows.foreach(row => appendElement(row.child, output))
+      case component: EvaluatedNode.Component =>
+        component.resolution match
+          case Some(value) => appendElement(value.child.root, output)
+          case None        =>
+            throw IllegalStateException(s"component ${component.id.value} is unresolved")
+      case _: EvaluatedNode.Nested | _: EvaluatedNode.Stream => ()
 
   private def appendElement(element: EvaluatedNode.Element, output: StringBuilder): Unit =
     val _ = output.append('<').append(element.tag)
@@ -32,6 +40,10 @@ object HtmlRenderer:
           output
             .append(' ').append(attribute.name).append("=\"")
             .append(Escaping.escape(value)).append('"')
+        case AttributeValue.ComponentTarget(_) =>
+          throw IllegalStateException(
+            s"component target attribute '${attribute.name}' requires protocol serialization"
+          )
       }
     }
     output.append('>')

@@ -2,16 +2,22 @@ package scalive.runtime.kernel
 
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicLong
 
 import zio.Promise
 import zio.Task
+import zio.UIO
 import zio.ZIO
 import zio.http.URL
 import zio.json.ast.Json
 
 import scalive.BindingPayload
+import scalive.ComponentRef
 import scalive.FlashKind
 import scalive.LiveAsyncEvent
+import scalive.LiveComponent
+import scalive.LiveComponentInstance
+import scalive.LiveComponentOutputInstance
 import scalive.render.*
 import scalive.runtime.contracts.*
 import scalive.runtime.resources.*
@@ -105,23 +111,46 @@ enum SessionCommand[+Msg]:
     binding: BindingId,
     payload: BindingPayload,
     eventName: Option[String] = None,
+    rawJson: Option[String] = None) extends SessionCommand[Nothing]
+  case ComponentClientEvent(
+    epoch: Epoch,
+    component: ComponentInstanceId,
+    binding: BindingId,
+    payload: BindingPayload,
+    eventName: Option[String] = None,
     rawJson: Option[String] = None)             extends SessionCommand[Nothing]
   case Message[Msg](epoch: Epoch, message: Msg) extends SessionCommand[Msg]
   case AsyncCompletion[Msg](epoch: Epoch, event: LiveAsyncEvent[Msg]) extends SessionCommand[Msg]
+  private[scalive] case ComponentMessage(
+    epoch: Epoch,
+    component: ComponentInstanceId,
+    message: Any) extends SessionCommand[Nothing]
+  private[scalive] case ComponentUpdate(epoch: Epoch, component: ComponentInstanceId)
+      extends SessionCommand[Nothing]
+  private[scalive] case ComponentAsyncCompletion(
+    epoch: Epoch,
+    component: ComponentInstanceId,
+    event: LiveAsyncEvent[Any])                    extends SessionCommand[Nothing]
   case ParamsPatch(epoch: Epoch, destination: URL) extends SessionCommand[Nothing]
 
   def expectedEpoch: Epoch = this match
-    case ClientEvent(epoch, _, _, _, _) => epoch
-    case Message(epoch, _)              => epoch
-    case AsyncCompletion(epoch, _)      => epoch
-    case ParamsPatch(epoch, _)          => epoch
+    case ClientEvent(epoch, _, _, _, _)             => epoch
+    case ComponentClientEvent(epoch, _, _, _, _, _) => epoch
+    case Message(epoch, _)                          => epoch
+    case AsyncCompletion(epoch, _)                  => epoch
+    case ComponentMessage(epoch, _, _)              => epoch
+    case ComponentUpdate(epoch, _)                  => epoch
+    case ComponentAsyncCompletion(epoch, _, _)      => epoch
+    case ParamsPatch(epoch, _)                      => epoch
+end SessionCommand
 
 final private[scalive] case class TurnDraft[+Msg, Model](
   model: Model,
   continuations: Vector[Msg] = Vector.empty,
   url: Option[URL] = None,
   navigation: Option[NavigationRequest] = None,
-  effects: SessionEffects = SessionEffects())
+  effects: SessionEffects = SessionEffects(),
+  componentUpdates: Vector[ComponentUpdateRequest] = Vector.empty)
 
 /** Typed lifecycle operations interpreted by the protocol-neutral session owner.
   *
@@ -145,11 +174,289 @@ final private[scalive] case class SessionLogic[Msg, Model](
   afterRender: TurnDraft[Msg, Model] => Task[TurnDraft[Msg, Model]] =
     (draft: TurnDraft[Msg, Model]) => ZIO.succeed(draft))
 
+/** Runtime identity of one mounted component. It is deliberately unrelated to Phoenix CIDs. */
+opaque type ComponentInstanceId = Long
+
+private[scalive] object ComponentInstanceId:
+  private val counter = AtomicLong(0L)
+
+  private[scalive] def fresh(): Either[RuntimeIdentityError, ComponentInstanceId] =
+    var allocated = false
+    var value     = 0L
+    while !allocated do
+      val previous = counter.get()
+      if previous == Long.MaxValue then
+        return Left(RuntimeIdentityError.Exhausted("component instance identity"))
+      value = previous + 1L
+      allocated = counter.compareAndSet(previous, value)
+    Right(value)
+
+  private[scalive] def apply(value: Long): ComponentInstanceId = value
+  extension (id: ComponentInstanceId) def value: Long          = id
+
+/** Reference-identity wrapper: component definitions are not value keys. */
+final private[kernel] class ComponentDefinitionIdentity private (val value: AnyRef):
+  override def equals(other: Any): Boolean = other match
+    case identity: ComponentDefinitionIdentity => value eq identity.value
+    case _                                     => false
+  override def hashCode(): Int = System.identityHashCode(value)
+
+private[kernel] object ComponentDefinitionIdentity:
+  def apply(value: AnyRef): ComponentDefinitionIdentity = new ComponentDefinitionIdentity(value)
+
+final private[kernel] case class ComponentKey(
+  definition: ComponentDefinitionIdentity,
+  applicationId: String)
+
+/** The only erased boundary around heterogeneously typed component instances. */
+sealed private[scalive] trait MountedComponent[OwnerMsg]:
+  type Props
+  type Message
+  type Model
+  type Output
+
+  def id: ComponentInstanceId
+  def key: ComponentKey
+  def definition: LiveComponent[Props, Message, Model]
+  def props: Props
+  def model: Model
+  def ref: ComponentRef[Message]
+  def render: CommittedRender[Message]
+  def program: RenderProgram[(Props, Model, Map[FlashKind, String]), Message]
+  def parent: Option[ComponentInstanceId]
+  def children: Vector[ComponentInstanceId]
+  def environmentState: ComponentEnvironmentState
+  def mapOutput(output: Output): Option[OwnerMsg]
+
+final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message0, Model0, Output0](
+  id: ComponentInstanceId,
+  key: ComponentKey,
+  definition: LiveComponent[Props0, Message0, Model0],
+  props: Props0,
+  model: Model0,
+  ref: ComponentRef[Message0],
+  render: CommittedRender[Message0],
+  program: RenderProgram[(Props0, Model0, Map[FlashKind, String]), Message0],
+  parent: Option[ComponentInstanceId],
+  children: Vector[ComponentInstanceId],
+  environmentState: ComponentEnvironmentState,
+  outputMapper: Option[Output0 => OwnerMsg])
+    extends MountedComponent[OwnerMsg]:
+  type Props   = Props0
+  type Message = Message0
+  type Model   = Model0
+  type Output  = Output0
+  def mapOutput(output: Output0): Option[OwnerMsg] = outputMapper.map(_(output))
+
+final private[scalive] case class ComponentForest[OwnerMsg] private (
+  roots: Vector[ComponentInstanceId],
+  private val entries: Map[ComponentInstanceId, MountedComponent[OwnerMsg]],
+  private val refs: Map[AnyRef, ComponentInstanceId]):
+  def get(id: ComponentInstanceId): Option[MountedComponent[OwnerMsg]]  = entries.get(id)
+  def byRef(ref: ComponentRef[Any]): Option[MountedComponent[OwnerMsg]] =
+    entries.get(refs.getOrElse(ref.asInstanceOf[AnyRef], ComponentInstanceId(0L)))
+  def values: Vector[MountedComponent[OwnerMsg]] =
+    def descendants(ids: Vector[ComponentInstanceId]): Vector[MountedComponent[OwnerMsg]] =
+      ids.flatMap(id =>
+        entries.get(id).toVector.flatMap(value => value +: descendants(value.children))
+      )
+    descendants(roots)
+  private[kernel] def byKey: Map[ComponentKey, MountedComponent[OwnerMsg]] =
+    entries.valuesIterator.map(component => component.key -> component).toMap
+
+private[scalive] object ComponentForest:
+  val empty: ComponentForest[Nothing] = ComponentForest(Vector.empty, Map.empty, Map.empty)
+  private[kernel] def apply[OwnerMsg](
+    roots: Vector[ComponentInstanceId],
+    values: Vector[MountedComponent[OwnerMsg]]
+  ): ComponentForest[OwnerMsg] =
+    ComponentForest(
+      roots,
+      values.iterator.map(value => value.id -> value).toMap,
+      values.iterator.map(value => value.ref.asInstanceOf[AnyRef] -> value.id).toMap
+    )
+
+/** Opaque candidate-owned connection context and dynamic-hook state. */
+opaque type ComponentEnvironmentState = AnyRef
+
+private[scalive] object ComponentEnvironmentState:
+  def apply(value: AnyRef): ComponentEnvironmentState            = value
+  extension (state: ComponentEnvironmentState) def value: AnyRef = state
+
+final private[scalive] case class ComponentCallbackResult[A, RootMsg, RootModel](
+  model: A,
+  draft: TurnDraft[RootMsg, RootModel],
+  state: ComponentEnvironmentState)
+
+final private[scalive] case class ComponentAfterRenderResult[RootMsg, RootModel](
+  draft: TurnDraft[RootMsg, RootModel],
+  state: ComponentEnvironmentState)
+
+/** Typed, turn-local send-update journal entry. */
+sealed trait ComponentUpdateRequest:
+  type Props
+  type Message
+  type Model
+  def definition: LiveComponent[Props, Message, Model]
+  def applicationId: String
+  def props: Props
+
+private[scalive] object ComponentUpdateRequest:
+  final private case class Value[P, M, A](
+    definition: LiveComponent[P, M, A],
+    applicationId: String,
+    props: P)
+      extends ComponentUpdateRequest:
+    type Props   = P
+    type Message = M
+    type Model   = A
+
+  def apply[P, M, A](
+    definition: LiveComponent[P, M, A],
+    applicationId: String,
+    props: P
+  ): ComponentUpdateRequest = Value(definition, applicationId, props)
+
+  def apply[P, M, A](
+    instance: LiveComponentInstance[P, M, A],
+    props: P
+  ): ComponentUpdateRequest = Value(instance.component, instance.id, props)
+
+  def apply[P, M, A, O](
+    instance: LiveComponentOutputInstance[P, M, A, O],
+    props: P
+  ): ComponentUpdateRequest = Value(instance.component, instance.id, props)
+
+/** Connection-owned lifecycle contexts are adapted at this protocol-neutral boundary. */
+trait ComponentEnvironment[RootMsg, RootModel]:
+  def flash(draft: TurnDraft[RootMsg, RootModel]): Map[FlashKind, String] =
+    Option(draft.model).fold(Map.empty[FlashKind, String])(_ => Map.empty)
+  def mount[P, M, A](
+    id: ComponentInstanceId,
+    component: LiveComponent[P, M, A],
+    props: P,
+    draft: TurnDraft[RootMsg, RootModel]
+  ): Task[ComponentCallbackResult[A, RootMsg, RootModel]]
+  def update[P, M, A](
+    id: ComponentInstanceId,
+    component: LiveComponent[P, M, A],
+    props: P,
+    model: A,
+    state: ComponentEnvironmentState,
+    draft: TurnDraft[RootMsg, RootModel]
+  ): Task[ComponentCallbackResult[A, RootMsg, RootModel]]
+  def message[P, M, A, O](
+    id: ComponentInstanceId,
+    component: LiveComponent[P, M, A],
+    props: P,
+    model: A,
+    value: M,
+    emit: O => Task[Unit],
+    state: ComponentEnvironmentState,
+    draft: TurnDraft[RootMsg, RootModel]
+  ): Task[ComponentCallbackResult[A, RootMsg, RootModel]]
+  def async[P, M, A, O](
+    id: ComponentInstanceId,
+    component: LiveComponent[P, M, A],
+    props: P,
+    model: A,
+    event: LiveAsyncEvent[M],
+    emit: O => Task[Unit],
+    state: ComponentEnvironmentState,
+    draft: TurnDraft[RootMsg, RootModel]
+  ): Task[ComponentCallbackResult[A, RootMsg, RootModel]]
+  def browserEvent[P, M, A, O](
+    id: ComponentInstanceId,
+    component: LiveComponent[P, M, A],
+    props: P,
+    model: A,
+    command: SessionCommand.ComponentClientEvent,
+    emit: O => Task[Unit],
+    state: ComponentEnvironmentState,
+    draft: TurnDraft[RootMsg, RootModel]
+  ): Task[Option[ComponentCallbackResult[A, RootMsg, RootModel]]]
+  def afterRender[P, M, A](
+    id: ComponentInstanceId,
+    component: LiveComponent[P, M, A],
+    props: P,
+    model: A,
+    state: ComponentEnvironmentState,
+    draft: TurnDraft[RootMsg, RootModel]
+  ): Task[ComponentAfterRenderResult[RootMsg, RootModel]]
+  def discard(id: ComponentInstanceId, state: ComponentEnvironmentState): UIO[Unit]
+  def close(id: ComponentInstanceId, state: ComponentEnvironmentState): UIO[Unit]
+end ComponentEnvironment
+
+private[scalive] object ComponentEnvironment:
+  def unavailable[RootMsg, RootModel]: ComponentEnvironment[RootMsg, RootModel] =
+    new ComponentEnvironment:
+      private def missing[A]: Task[A] =
+        ZIO.fail(IllegalStateException("component lifecycle context environment was not installed"))
+      def mount[P, M, A](
+        id: ComponentInstanceId,
+        component: LiveComponent[P, M, A],
+        props: P,
+        draft: TurnDraft[RootMsg, RootModel]
+      ) =
+        missing[ComponentCallbackResult[A, RootMsg, RootModel]]
+      def update[P, M, A](
+        id: ComponentInstanceId,
+        component: LiveComponent[P, M, A],
+        props: P,
+        model: A,
+        state: ComponentEnvironmentState,
+        draft: TurnDraft[RootMsg, RootModel]
+      ) = missing[ComponentCallbackResult[A, RootMsg, RootModel]]
+      def message[P, M, A, O](
+        id: ComponentInstanceId,
+        component: LiveComponent[P, M, A],
+        props: P,
+        model: A,
+        value: M,
+        emit: O => Task[Unit],
+        state: ComponentEnvironmentState,
+        draft: TurnDraft[RootMsg, RootModel]
+      ) = missing[ComponentCallbackResult[A, RootMsg, RootModel]]
+      def async[P, M, A, O](
+        id: ComponentInstanceId,
+        component: LiveComponent[P, M, A],
+        props: P,
+        model: A,
+        event: LiveAsyncEvent[M],
+        emit: O => Task[Unit],
+        state: ComponentEnvironmentState,
+        draft: TurnDraft[RootMsg, RootModel]
+      ) = missing[ComponentCallbackResult[A, RootMsg, RootModel]]
+      def browserEvent[P, M, A, O](
+        id: ComponentInstanceId,
+        component: LiveComponent[P, M, A],
+        props: P,
+        model: A,
+        command: SessionCommand.ComponentClientEvent,
+        emit: O => Task[Unit],
+        state: ComponentEnvironmentState,
+        draft: TurnDraft[RootMsg, RootModel]
+      ) =
+        ZIO.succeed(None)
+      def afterRender[P, M, A](
+        id: ComponentInstanceId,
+        component: LiveComponent[P, M, A],
+        props: P,
+        model: A,
+        state: ComponentEnvironmentState,
+        draft: TurnDraft[RootMsg, RootModel]
+      ) = missing[ComponentAfterRenderResult[RootMsg, RootModel]]
+      def discard(id: ComponentInstanceId, state: ComponentEnvironmentState) = ZIO.unit
+      def close(id: ComponentInstanceId, state: ComponentEnvironmentState)   = ZIO.unit
+end ComponentEnvironment
+
 final private[scalive] case class Committed[Msg, Model](
   model: Model,
   url: URL,
   render: CommittedRender[Msg],
+  components: ComponentForest[Msg],
   resources: PreparedResources,
+  auxiliaryScope: CandidateScope,
   revision: TurnRevision)
 
 final private[scalive] case class SessionOutput(
@@ -173,7 +480,8 @@ final private[scalive] case class PendingNavigation[Msg, Model](
   flash: Map[FlashKind, String],
   deadline: Instant,
   redirectCount: Int,
-  deferred: Vector[DeferredSessionCommand[Msg, Model]])
+  deferred: Vector[DeferredSessionCommand[Msg, Model]],
+  componentCandidate: Option[TurnCandidate[Msg, Model]] = None)
 
 enum SessionState[Msg, Model]:
   case Bootstrapping(epoch: Epoch)
@@ -189,9 +497,12 @@ final private[scalive] case class TurnCandidate[Msg, Model](
   revision: TurnRevision,
   draft: TurnDraft[Msg, Model],
   render: RenderCandidate[Msg],
+  components: ComponentForestCandidate[Msg],
+  outputs: Vector[ComponentOutput[Msg]],
   resources: PreparedResources,
   delta: RenderDelta,
-  reservation: OutboundReservation[SessionOutput])
+  reservation: OutboundReservation[SessionOutput],
+  auxiliaryScope: CandidateScope)
 
 enum SessionStage:
   case BootstrapHandler
@@ -203,6 +514,11 @@ enum SessionStage:
   case Validation
   case Identity
   case Retirement
+  case ComponentMount
+  case ComponentUpdate
+  case ComponentMessage
+  case ComponentAsync
+  case ComponentAfterRender
 
 sealed abstract class SessionFailure(message: String) extends Exception(message)
 
@@ -227,6 +543,10 @@ enum SessionRejection:
   case MailboxSaturated(capacity: Int)
   case InvalidEpoch(expected: Epoch, actual: Epoch)
   case UnknownBinding(binding: BindingId)
+  case UnknownComponent(component: ComponentInstanceId)
+  case UnknownComponentTarget
+  case StaleComponent(component: ComponentInstanceId)
+  case AmbiguousComponent(applicationId: Option[String])
   case BindingFailed(binding: BindingId, error: Throwable)
   case UnexpectedPatch
   case MismatchedPatch(expected: URL, actual: URL)
@@ -239,3 +559,26 @@ final private[scalive] case class TurnResult(
   turn: TurnId,
   revision: TurnRevision,
   delta: RenderDelta)
+
+final private[kernel] case class ComponentForestCandidate[OwnerMsg](
+  roots: Vector[ComponentInstanceId],
+  components: Vector[StagedComponent[OwnerMsg]],
+  resolutions: Vector[ComponentResolution])
+
+private[kernel] enum ComponentOutput[+RootMsg]:
+  case Root(message: RootMsg)
+  case Parent(component: ComponentInstanceId, message: Any)
+
+private[kernel] trait StagedComponent[OwnerMsg]:
+  def id: ComponentInstanceId
+  def key: ComponentKey
+  def parent: Option[ComponentInstanceId]
+  def previous: Option[MountedComponent[OwnerMsg]]
+  def candidateScope: CandidateScope
+  def environmentState: ComponentEnvironmentState
+  def appliedUpdate: Option[ComponentUpdateRequest]
+  def matches(requirement: ComponentRequirement[?]): Boolean
+  def resolutionFor(requirement: ComponentRequirement[?]): ComponentResolution
+  def commitValue: MountedComponent[OwnerMsg]
+  def discard: UIO[Unit]
+  def abortCommitted: UIO[Unit]

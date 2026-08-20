@@ -6,6 +6,9 @@ enum RenderChange:
   case Attribute(slot: TemplateSlotId, name: String, value: Option[AttributeValue])
   case Replace(id: TemplateId, node: EvaluatedNode)
 
+  /** A child-program delta scoped by the exact semantic component instance that owns its ids. */
+  case Component(instanceToken: Object, delta: RenderDelta)
+
 /** Exact semantic difference between committed and candidate render trees. */
 enum RenderDelta:
   case Empty
@@ -58,6 +61,34 @@ object TreeDiffer:
             case (Some(oldChild), Some(newChild)) if oldChild.id == newChild.id =>
               diffNode(oldChild, newChild)
             case _ => Vector(RenderChange.Replace(left.id, right))
+        case (left: EvaluatedNode.Choice, right: EvaluatedNode.Choice) if left.id == right.id =>
+          (left.child, right.child) match
+            case (None, None)                                                   => Vector.empty
+            case (Some(oldChild), Some(newChild)) if oldChild.id == newChild.id =>
+              diffNode(oldChild, newChild)
+            case _ => Vector(RenderChange.Replace(left.id, right))
+        case (left: EvaluatedNode.Keyed, right: EvaluatedNode.Keyed) if left.id == right.id =>
+          if left.rows.map(_.id) != right.rows.map(_.id) then
+            Vector(RenderChange.Replace(left.id, right))
+          else
+            left.rows
+              .zip(right.rows).flatMap((oldRow, newRow) => diffNode(oldRow.child, newRow.child))
+        case (left: EvaluatedNode.Component, right: EvaluatedNode.Component)
+            if left.id == right.id && left.applicationId == right.applicationId =>
+          (left.resolution, right.resolution) match
+            case (None, None) => Vector.empty
+            case (Some(oldValue), Some(newValue))
+                if oldValue.instanceToken eq newValue.instanceToken =>
+              TreeDiffer.diff(oldValue.child, newValue.child) match
+                case RenderDelta.Empty => Vector.empty
+                case delta => Vector(RenderChange.Component(newValue.instanceToken, delta))
+            case _ => Vector(RenderChange.Replace(left.id, right))
+        case (left: EvaluatedNode.Nested, right: EvaluatedNode.Nested)
+            if left.id == right.id && left.applicationId == right.applicationId =>
+          Vector.empty
+        case (left: EvaluatedNode.Stream, right: EvaluatedNode.Stream)
+            if left.id == right.id && (left.snapshot eq right.snapshot) =>
+          Vector.empty
         case _ => Vector(RenderChange.Replace(previous.id, current))
 
   private def sameElementShape(

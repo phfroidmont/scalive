@@ -44,7 +44,7 @@ object BindingTableSpec extends ZIOSpecDefault:
         result = candidate.bindings
           .resolve(BindingId.fromEncoded(id.encoded)).get
           .dispatch(BindingPayload.Params(Map("value" -> "42")))
-      yield assertTrue(result == Right(42))
+      yield assertTrue(result == Right(BindingDispatch.Owner(42)))
     },
     test("signal bindings retain the committed rendered value") {
       val compiled = RenderProgram.compile[Int, Int] { model =>
@@ -60,7 +60,10 @@ object BindingTableSpec extends ZIOSpecDefault:
         payload = BindingPayload.Params(Map.empty)
         committedResult = firstCommitted.bindings.resolve(id).get.dispatch(payload)
         candidateResult = second.bindings.resolve(id).get.dispatch(payload)
-      yield assertTrue(committedResult == Right(1), candidateResult == Right(2))
+      yield assertTrue(
+        committedResult == Right(BindingDispatch.Owner(1)),
+        candidateResult == Right(BindingDispatch.Owner(2))
+      )
     },
     test("registers typed JS push messages through checked insertion") {
       val compiled = RenderProgram.compile[Unit, String] { _ =>
@@ -74,7 +77,7 @@ object BindingTableSpec extends ZIOSpecDefault:
         result = candidate.bindings.resolve(id).get.dispatch(BindingPayload.Params(Map.empty))
       yield assertTrue(
         id.encoded.endsWith(":1:js:0"),
-        result == Right("save"),
+        result == Right(BindingDispatch.Owner("save")),
         HtmlRenderer.render(candidate.tree).contains("$scalive-unresolved-binding") == false
       )
     }

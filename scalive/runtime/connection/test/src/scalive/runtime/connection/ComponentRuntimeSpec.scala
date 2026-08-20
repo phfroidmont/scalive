@@ -7,7 +7,9 @@ import zio.test.*
 
 import scalive.*
 import scalive.render.EvaluatedNode
-import scalive.runtime.contracts.CommandId
+import scalive.runtime.contracts.*
+import scalive.runtime.kernel.*
+import scalive.runtime.resources.OwnerId
 
 object ComponentRuntimeSpec extends ZIOSpecDefault:
   private val config = ConnectionConfig.make(8, 8, 8, 8, 8).toOption.get
@@ -387,26 +389,108 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("later-milestone resources fail explicitly while dynamic hooks remain available") {
+    test("component async operations are journaled under the exact component owner") {
       for
+        started   <- Ref.make(false)
+        lifecycle = LifecycleId(1L)
+        id        = ComponentInstanceId(2L)
         turn <- ComponentTurn.make[Unit, Unit, Int, Int, Int](
-                  scalive.runtime.kernel.TurnDraft(
+                  TurnDraft(
                     RootState(
                       (),
                       URL.root,
                       RootHookRegistry.fromStatic(LiveHooks.empty[Unit, Unit])
                     )
                   ),
-                  ComponentHookRegistry.empty[Int, Int, Int]
+                  ComponentHookRegistry.empty[Int, Int, Int],
+                  lifecycle,
+                  id
                 )
         context = ComponentMountContextImpl[Int, Int, Int](metadata, turn)
-        async <- context.connection match
-                   case Connection.Connected(value) =>
-                     value.async.start(AsyncKey[Int]("unsupported"))(ZIO.succeed(1))(_ => 1).either
-                   case Connection.Disconnected => ZIO.dieMessage("expected connected context")
-        upload <- context.uploads.get(null).either
-        hook   <- context.hooks.event.detach("missing").either
-      yield assertTrue(async.isLeft, upload.isLeft, hook.isRight)
+        _ <- context.connection match
+               case Connection.Connected(value) =>
+                 value.async.start(AsyncKey[Int]("work"))(started.set(true).as(1))(_ => 1) *>
+                   value.async.cancel(AsyncKey[Int]("work"), Some("done"))
+               case Connection.Disconnected => ZIO.dieMessage("expected connected context")
+        operations <- turn.root.resourceOperationSnapshot
+        taskStarted <- started.get
+        owners = operations.map {
+                   case operation: ResourceOperation.StartAsync[?, ?] => operation.owner
+                   case operation: ResourceOperation.CancelAsync      => operation.owner
+                   case _ => throw AssertionError("unexpected resource operation")
+                 }
+      yield assertTrue(
+        !taskStarted,
+        operations.size == 2,
+        owners.forall(_ == OwnerId.Component(lifecycle, id))
+      )
+    },
+    test("managed failed and cancelled async results run hooks then mapped component messages") {
+      val lifecycle = LifecycleId(3L)
+      val id        = ComponentInstanceId(4L)
+      val draft = TurnDraft[Unit, RootState[Unit, Unit]](
+        RootState((), URL.root, RootHookRegistry.fromStatic(LiveHooks.empty[Unit, Unit]))
+      )
+      for
+        statuses <- Ref.make(Vector.empty[String])
+        definition = new LiveComponent[Unit, Int, Int]:
+                       override val hooks = ComponentLiveHooks.empty[Unit, Int, Int]
+                         .onAsync((_, model, event, _) =>
+                           val status = event.result match
+                             case LiveAsyncResult.Succeeded(_) => "succeeded"
+                             case LiveAsyncResult.Failed(_)    => "failed"
+                             case LiveAsyncResult.Cancelled(_) => "cancelled"
+                           statuses.update(_ :+ status).as(LiveHookResult.cont(model))
+                         )
+                       def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+                       def handleMessage(
+                         props: Unit,
+                         model: Int,
+                         ctx: MessageContext
+                       ): Int => LiveIO[Int] = message => ZIO.succeed(model + message)
+                       def view(
+                         props: Signal[Unit],
+                         model: Signal[Int],
+                         self: ComponentRef[Int]
+                       ) = div()
+        environment <- ConnectedComponentEnvironment.make[Unit, Unit](metadata, lifecycle)
+        mounted     <- environment.mount(id, definition, (), draft)
+        failedEvent: LiveAsyncEvent[Int] = LiveAsyncEvent(
+                        AsyncKey[Any]("failed"),
+                        LiveAsyncResult.Failed(Exception("failed"))
+                      )
+        failed <- environment.managedAsync(
+                    id,
+                    definition,
+                    (),
+                    mounted.model,
+                    failedEvent,
+                    5,
+                    (_: Nothing) => ZIO.unit,
+                    mounted.state,
+                    mounted.draft
+                  )
+        cancelledEvent: LiveAsyncEvent[Int] = LiveAsyncEvent(
+                           AsyncKey[Any]("cancelled"),
+                           LiveAsyncResult.Cancelled(Some("cancelled"))
+                         )
+        cancelled <- environment.managedAsync(
+                       id,
+                       definition,
+                       (),
+                       failed.model,
+                       cancelledEvent,
+                       7,
+                       (_: Nothing) => ZIO.unit,
+                       failed.state,
+                       failed.draft
+                     )
+        observed <- statuses.get
+      yield assertTrue(
+        failed.model == 5,
+        cancelled.model == 12,
+        observed == Vector("failed", "cancelled")
+      )
     }
   )
 end ComponentRuntimeSpec

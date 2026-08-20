@@ -7,6 +7,7 @@ import zio.json.ast.Json
 import scalive.ComponentTarget
 import scalive.Escaping
 import scalive.render.*
+import scalive.streams.*
 
 private[scalive] enum PhoenixEncodingError:
   case UnknownTarget(id: TemplateId)
@@ -20,13 +21,25 @@ private[scalive] enum PhoenixEncodingError:
   case DuplicateComponentRoot(cid: Int)
   case UnknownComponentTarget
   case ComponentIdExhausted
+  case UnknownStreamTarget(id: TemplateId)
+  case DuplicateStreamTarget(id: TemplateId)
+  case UnknownStreamIdentity
+  case DuplicateStreamIdentity
+  case DuplicateStreamDomId(id: String)
+  case InvalidStreamDomId
+  case InvalidStreamPosition
+  case InvalidStreamLimit
+  case InvalidStreamRowTemplate
+  case StreamRefExhausted
 
 /** Connection-local projection state for Phoenix's rendered protocol and component CIDs. */
 final private[scalive] class PhoenixRenderedState private[phoenix] (
   private[phoenix] val root: PhoenixRenderedEncoder.ProjectedNode,
   private[phoenix] val components: Map[Int, PhoenixRenderedEncoder.ProjectedComponent],
   private[phoenix] val tokenCids: Map[PhoenixRenderedEncoder.IdentityKey, Int],
-  private[phoenix] val nextCid: Long):
+  private[phoenix] val nextCid: Long,
+  private[phoenix] val streamRefs: Map[PhoenixRenderedEncoder.IdentityKey, String],
+  private[phoenix] val nextStreamRef: Long):
 
   private[scalive] def cidForToken(token: Object): Option[Int] =
     tokenCids.get(PhoenixRenderedEncoder.IdentityKey(token))
@@ -36,6 +49,9 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
   private[scalive] def componentCid(token: Object): Option[Int] = cidForToken(token)
 
   private[scalive] def componentToken(cid: Int): Option[Object] = tokenForCid(cid)
+
+  private[scalive] def streamRef(identity: LiveStreamIdentity): Option[String] =
+    streamRefs.get(PhoenixRenderedEncoder.IdentityKey(identity))
 
 private[scalive] object PhoenixRenderedEncoder:
   final private[phoenix] class IdentityKey(val value: Object):
@@ -57,6 +73,8 @@ private[scalive] object PhoenixRenderedEncoder:
     case Target(value: ProjectedValue.ComponentTarget)
     case Node(value: ProjectedNode)
     case Component(cid: Int)
+    case Stream(value: ProjectedStream)
+    case StreamDomId(value: String)
 
   final private[phoenix] case class ProjectedNode(id: TemplateId, parts: Vector[ProjectedPart])
   final private[phoenix] case class ProjectedComponent(
@@ -64,21 +82,48 @@ private[scalive] object PhoenixRenderedEncoder:
     ref: Object,
     refIdentity: Object,
     root: ProjectedNode)
+  final private[phoenix] case class ProjectedStreamRow(domId: String, child: ProjectedNode)
+  final private[phoenix] case class ProjectedStreamInsert(
+    row: ProjectedStreamRow,
+    at: StreamAt,
+    limit: Option[StreamLimit],
+    updateOnly: Boolean)
+  final private[phoenix] case class ProjectedStreamOperations(
+    inserts: Vector[ProjectedStreamInsert],
+    deletes: Vector[String],
+    reset: Boolean)
+  final private[phoenix] case class ProjectedStream(
+    id: TemplateId,
+    identity: Object,
+    ref: String,
+    rows: Vector[ProjectedStreamRow],
+    operations: ProjectedStreamOperations,
+    hasTemplate: Boolean,
+    includeStatics: Boolean)
+  final private case class SparseChanges(
+    slots: Set[TemplateSlotId],
+    streams: Set[TemplateId])
 
   final private class ProjectionContext(state: Option[PhoenixRenderedState]):
     val components: mutable.Map[Int, ProjectedComponent] = mutable.Map.from(
       state.fold(Map.empty[Int, ProjectedComponent])(_.components)
     )
-    val projectedCids: mutable.Set[Int]                               = mutable.Set.empty
-    val allocatedCids: mutable.Set[Int]                               = mutable.Set.empty
-    val componentDiffs: mutable.Map[Int, Option[Set[TemplateSlotId]]] = mutable.Map.empty
-    private val existing = state.fold(Map.empty[IdentityKey, Int])(_.tokenCids)
-    private var next     = state.fold(1L)(_.nextCid)
+    val projectedCids: mutable.Set[Int]                         = mutable.Set.empty
+    val allocatedCids: mutable.Set[Int]                         = mutable.Set.empty
+    val componentDiffs: mutable.Map[Int, Option[SparseChanges]] = mutable.Map.empty
+    private val existing              = state.fold(Map.empty[IdentityKey, Int])(_.tokenCids)
+    private val newlyAllocated        = mutable.Map.empty[IdentityKey, Int]
+    private var next                  = state.fold(1L)(_.nextCid)
+    private val existingStreams       = state.fold(Map.empty[IdentityKey, String])(_.streamRefs)
+    private val newlyAllocatedStreams = mutable.Map.empty[IdentityKey, String]
+    private var nextStream            = state.fold(0L)(_.nextStreamRef)
 
-    def nextCid: Long = next
+    def nextCid: Long       = next
+    def nextStreamRef: Long = nextStream
 
     def cid(token: Object): Either[PhoenixEncodingError, Int] =
-      existing.get(IdentityKey(token)) match
+      val key = IdentityKey(token)
+      existing.get(key).orElse(newlyAllocated.get(key)) match
         case Some(value) => Right(value)
         case None        =>
           if next > Int.MaxValue.toLong then Left(PhoenixEncodingError.ComponentIdExhausted)
@@ -86,13 +131,28 @@ private[scalive] object PhoenixRenderedEncoder:
             val value = next.toInt
             next += 1L
             allocatedCids += value
+            newlyAllocated.update(key, value)
             Right(value)
+
+    def streamRef(identity: Object): Either[PhoenixEncodingError, String] =
+      val key = IdentityKey(identity)
+      existingStreams.get(key).orElse(newlyAllocatedStreams.get(key)) match
+        case Some(value) => Right(value)
+        case None        =>
+          if nextStream == Long.MaxValue then Left(PhoenixEncodingError.StreamRefExhausted)
+          else
+            val value = nextStream.toString
+            nextStream += 1L
+            newlyAllocatedStreams.update(key, value)
+            Right(value)
+  end ProjectionContext
 
   final private case class ProgramUpdate(
     root: ProjectedNode,
     changedSlots: Set[TemplateSlotId],
     structural: Boolean,
-    changedComponents: Set[Int])
+    changedComponents: Set[Int],
+    changedStreams: Set[TemplateId] = Set.empty)
 
   def initial(
     tree: EvaluatedTree
@@ -102,7 +162,7 @@ private[scalive] object PhoenixRenderedEncoder:
       root  <- project(tree.root, None, context)
       state <- finish(root, context)
       json  <- fullPayload(state)
-    yield state -> json
+    yield clearPending(state) -> json
 
   /** Projects a disconnected render with fresh connection-local CIDs and inlines components. */
   private[scalive] def fullHtml(
@@ -113,7 +173,7 @@ private[scalive] object PhoenixRenderedEncoder:
       root  <- project(tree.root, None, context)
       state <- finish(root, context)
       html  <- renderHtml(state.root, state.components)
-    yield state -> html
+    yield clearPending(state) -> html
 
   def update(
     state: PhoenixRenderedState,
@@ -126,7 +186,7 @@ private[scalive] object PhoenixRenderedEncoder:
         root <- project(tree.root, None, context)
         next <- finish(root, context)
         json <- fullPayload(next)
-      yield next -> json
+      yield clearPending(next) -> json
     case update: RenderDelta.Update =>
       val context = ProjectionContext(Some(state))
       for
@@ -136,9 +196,37 @@ private[scalive] object PhoenixRenderedEncoder:
           if result.structural then fullPayload(next)
           else
             val diffs = context.componentDiffs.toMap ++
-              context.allocatedCids.iterator.map(_ -> Option.empty[Set[TemplateSlotId]])
-            sparsePayload(next, result.changedSlots, diffs)
-      yield next -> json
+              context.allocatedCids.iterator.map(_ -> Option.empty[SparseChanges])
+            sparsePayload(next, SparseChanges(result.changedSlots, result.changedStreams), diffs)
+      yield clearPending(next) -> json
+
+  private val emptyStreamOperations =
+    ProjectedStreamOperations(Vector.empty, Vector.empty, reset = false)
+
+  private def clearPending(state: PhoenixRenderedState): PhoenixRenderedState =
+    def clearNode(node: ProjectedNode): ProjectedNode = node.copy(parts = node.parts.map {
+      case ProjectedPart.Node(child)    => ProjectedPart.Node(clearNode(child))
+      case ProjectedPart.Stream(stream) =>
+        ProjectedPart.Stream(
+          stream.copy(
+            rows = stream.rows.map(row => row.copy(child = clearNode(row.child))),
+            operations = emptyStreamOperations,
+            includeStatics = false
+          )
+        )
+      case part => part
+    })
+    val root       = clearNode(state.root)
+    val components = state.components.view
+      .mapValues(component => component.copy(root = clearNode(component.root))).toMap
+    PhoenixRenderedState(
+      root,
+      components,
+      state.tokenCids,
+      state.nextCid,
+      state.streamRefs,
+      state.nextStreamRef
+    )
 
   private def project(
     node: EvaluatedNode,
@@ -196,7 +284,83 @@ private[scalive] object PhoenixRenderedEncoder:
             context.projectedCids += cid
             ProjectedNode(component.id, Vector(ProjectedPart.Component(cid)))
     case nested: EvaluatedNode.Nested => Right(ProjectedNode(nested.id, Vector.empty))
-    case stream: EvaluatedNode.Stream => Right(ProjectedNode(stream.id, Vector.empty))
+    case stream: EvaluatedNode.Stream =>
+      projectStream(stream, context).map(value =>
+        ProjectedNode(stream.id, Vector(ProjectedPart.Stream(value)))
+      )
+
+  private def projectStream(
+    stream: EvaluatedNode.Stream,
+    context: ProjectionContext
+  ): Either[PhoenixEncodingError, ProjectedStream] =
+    for
+      ref     <- context.streamRef(stream.identity)
+      rows    <- traverse(stream.rows)(row => projectStreamRow(row, context))
+      _       <- validateDomIds(rows.map(_.domId))
+      inserts <- traverse(stream.operations.inserts)(insert =>
+                   validateStreamOperation(insert.at, insert.limit).flatMap { _ =>
+                     projectStreamRow(insert.row, context).map(row =>
+                       ProjectedStreamInsert(
+                         row,
+                         insert.at,
+                         insert.limit,
+                         insert.updateOnly
+                       )
+                     )
+                   }
+                 )
+      _ <- validateDomIds(inserts.map(_.row.domId))
+      _ <- validateDomIds(stream.operations.deletes)
+    yield ProjectedStream(
+      stream.id,
+      stream.identity,
+      ref,
+      rows,
+      ProjectedStreamOperations(inserts, stream.operations.deletes, stream.operations.reset),
+      rows.nonEmpty || inserts.nonEmpty,
+      includeStatics = true
+    )
+
+  private def projectStreamRow(
+    row: EvaluatedNode.StreamRow,
+    context: ProjectionContext
+  ): Either[PhoenixEncodingError, ProjectedStreamRow] =
+    project(row.child, None, context).map { child =>
+      val idAttribute = s" id=\"${Escaping.escape(row.domId)}\""
+      val parts       = child.parts.flatMap {
+        case ProjectedPart.Static(`idAttribute`) =>
+          Vector(
+            ProjectedPart.Static(" id=\""),
+            ProjectedPart.StreamDomId(Escaping.escape(row.domId)),
+            ProjectedPart.Static("\"")
+          )
+        case part => Vector(part)
+      }
+      ProjectedStreamRow(row.domId, child.copy(parts = parts))
+    }
+
+  private def validateStreamOperation(
+    at: StreamAt,
+    limit: Option[StreamLimit]
+  ): Either[PhoenixEncodingError, Unit] =
+    at match
+      case StreamAt.Index(value) if value < 0 => Left(PhoenixEncodingError.InvalidStreamPosition)
+      case _                                  =>
+        limit match
+          case Some(StreamLimit.KeepFirst(count)) if count <= 0 =>
+            Left(PhoenixEncodingError.InvalidStreamLimit)
+          case Some(StreamLimit.KeepLast(count)) if count <= 0 =>
+            Left(PhoenixEncodingError.InvalidStreamLimit)
+          case _ => Right(())
+
+  private def validateDomIds(ids: Iterable[String]): Either[PhoenixEncodingError, Unit] =
+    val seen = mutable.HashSet.empty[String]
+    ids.find(_.isEmpty) match
+      case Some(_) => Left(PhoenixEncodingError.InvalidStreamDomId)
+      case None    =>
+        ids.find(id => !seen.add(id)) match
+          case Some(id) => Left(PhoenixEncodingError.DuplicateStreamDomId(id))
+          case None     => Right(())
 
   private def projectAttribute(
     attribute: EvaluatedAttribute
@@ -279,6 +443,24 @@ private[scalive] object PhoenixRenderedEncoder:
             changedComponents = current.changedComponents ++ newlyProjected
           )
         }
+    case RenderChange.Stream(id, identity, _, operations) =>
+      val targets = collectStreams(current.root).filter(_.id == id)
+      targets match
+        case Vector() => Left(PhoenixEncodingError.UnknownStreamTarget(id))
+        case Vector(target) if !(target.identity eq identity) =>
+          Left(PhoenixEncodingError.UnknownStreamIdentity)
+        case Vector(target) =>
+          val previouslyProjected = context.projectedCids.toSet
+          projectStreamOperations(operations, context).map { projectedOperations =>
+            val updated        = applyStreamOperations(target, projectedOperations)
+            val newlyProjected = context.projectedCids.toSet -- previouslyProjected
+            current.copy(
+              root = replaceStream(current.root, id, identity, updated),
+              changedComponents = current.changedComponents ++ newlyProjected,
+              changedStreams = current.changedStreams + id
+            )
+          }
+        case _ => Left(PhoenixEncodingError.DuplicateStreamTarget(id))
     case RenderChange.Component(token, delta) =>
       val matches = componentCids(current.root).filter(cid =>
         context.components.get(cid).exists(component => component.token eq token)
@@ -289,11 +471,13 @@ private[scalive] object PhoenixRenderedEncoder:
           val component = context.components(cid)
           applyDelta(component.root, delta, Some(cid), context).map { update =>
             context.components.update(cid, component.copy(root = update.root))
-            val ownChange = update.structural || update.changedSlots.nonEmpty
+            val ownChange =
+              update.structural || update.changedSlots.nonEmpty || update.changedStreams.nonEmpty
             if ownChange then
               context.componentDiffs.update(
                 cid,
-                if update.structural then None else Some(update.changedSlots)
+                if update.structural then None
+                else Some(SparseChanges(update.changedSlots, update.changedStreams))
               )
             if update.structural then
               update.changedComponents.foreach(nested =>
@@ -305,6 +489,54 @@ private[scalive] object PhoenixRenderedEncoder:
             )
           }
         case _ => Left(PhoenixEncodingError.DuplicateComponentToken)
+
+  private def projectStreamOperations(
+    operations: EvaluatedNode.StreamOperations,
+    context: ProjectionContext
+  ): Either[PhoenixEncodingError, ProjectedStreamOperations] =
+    for
+      inserts <- traverse(operations.inserts)(insert =>
+                   validateStreamOperation(insert.at, insert.limit).flatMap { _ =>
+                     projectStreamRow(insert.row, context).map(row =>
+                       ProjectedStreamInsert(
+                         row,
+                         insert.at,
+                         insert.limit,
+                         insert.updateOnly
+                       )
+                     )
+                   }
+                 )
+      _ <- validateDomIds(inserts.map(_.row.domId))
+      _ <- validateDomIds(operations.deletes)
+    yield ProjectedStreamOperations(inserts, operations.deletes, operations.reset)
+
+  private def applyStreamOperations(
+    stream: ProjectedStream,
+    operations: ProjectedStreamOperations
+  ): ProjectedStream =
+    var rows = if operations.reset then Vector.empty else stream.rows
+    operations.deletes.foreach(domId => rows = rows.filterNot(_.domId == domId))
+    operations.inserts.foreach { insert =>
+      val existing = rows.indexWhere(_.domId == insert.row.domId)
+      if existing >= 0 then rows = rows.updated(existing, insert.row)
+      else if !insert.updateOnly then
+        val index = insert.at match
+          case StreamAt.First        => 0
+          case StreamAt.Last         => rows.length
+          case StreamAt.Index(value) => math.min(value, rows.length)
+        rows = rows.patch(index, Vector(insert.row), 0)
+      insert.limit.foreach {
+        case StreamLimit.KeepFirst(count) => rows = rows.take(count)
+        case StreamLimit.KeepLast(count)  => rows = rows.takeRight(count)
+      }
+    }
+    stream.copy(
+      rows = rows,
+      operations = operations,
+      hasTemplate = stream.hasTemplate || operations.inserts.nonEmpty,
+      includeStatics = !stream.hasTemplate && operations.inserts.nonEmpty
+    )
 
   private def updateSlot(
     root: ProjectedNode,
@@ -321,8 +553,12 @@ private[scalive] object PhoenixRenderedEncoder:
         case ProjectedPart.Dynamic(`slot`, _, attributeName) =>
           if attributeName != expectedAttribute then mismatch = true
           ProjectedPart.Dynamic(slot, value, attributeName)
-        case ProjectedPart.Node(child) => ProjectedPart.Node(loop(child))
-        case part                      => part
+        case ProjectedPart.Node(child)    => ProjectedPart.Node(loop(child))
+        case ProjectedPart.Stream(stream) =>
+          ProjectedPart.Stream(
+            stream.copy(rows = stream.rows.map(row => row.copy(child = loop(row.child))))
+          )
+        case part => part
       })
       val updated = loop(root)
       if mismatch then Left(PhoenixEncodingError.SlotKindMismatch(slot)) else Right(updated)
@@ -336,31 +572,48 @@ private[scalive] object PhoenixRenderedEncoder:
       active = context.components.toMap.view.filterKeys(reachable.contains).toMap
       tokens =
         active.iterator.map { case (cid, component) => IdentityKey(component.token) -> cid }.toMap
-    yield PhoenixRenderedState(root, active, tokens, context.nextCid)
+      streams = collectStreams(root) ++ active.valuesIterator.flatMap(component =>
+                  collectStreams(component.root)
+                )
+      streamRefs = streams.iterator.map(stream => IdentityKey(stream.identity) -> stream.ref).toMap
+    yield PhoenixRenderedState(
+      root,
+      active,
+      tokens,
+      context.nextCid,
+      streamRefs,
+      context.nextStreamRef
+    )
 
   private def validateGraph(
     root: ProjectedNode,
     components: Map[Int, ProjectedComponent]
   ): Either[PhoenixEncodingError, Set[Int]] =
-    val seenCids   = mutable.HashSet.empty[Int]
-    val seenTokens = mutable.HashSet.empty[IdentityKey]
-    val targets    = Vector.newBuilder[ProjectedValue.ComponentTarget]
+    val seenCids    = mutable.HashSet.empty[Int]
+    val seenTokens  = mutable.HashSet.empty[IdentityKey]
+    val seenStreams = mutable.HashSet.empty[IdentityKey]
+    val targets     = Vector.newBuilder[ProjectedValue.ComponentTarget]
 
     def loopProgram(program: ProjectedNode): Either[PhoenixEncodingError, Unit] =
       validateProgram(program).flatMap { _ =>
-        collectTargets(program).foreach(targets += _)
-        componentCids(program).foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) {
-          (result, cid) =>
-            result.flatMap { _ =>
-              components.get(cid) match
-                case None            => Left(PhoenixEncodingError.DuplicateComponentRoot(cid))
-                case Some(component) =>
-                  if !seenCids.add(cid) then Left(PhoenixEncodingError.DuplicateComponentRoot(cid))
-                  else if !seenTokens.add(IdentityKey(component.token)) then
-                    Left(PhoenixEncodingError.DuplicateComponentToken)
-                  else loopProgram(component.root)
-            }
-        }
+        val duplicateStream =
+          collectStreams(program).find(stream => !seenStreams.add(IdentityKey(stream.identity)))
+        if duplicateStream.nonEmpty then Left(PhoenixEncodingError.DuplicateStreamIdentity)
+        else
+          collectTargets(program).foreach(targets += _)
+          componentCids(program).foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) {
+            (result, cid) =>
+              result.flatMap { _ =>
+                components.get(cid) match
+                  case None            => Left(PhoenixEncodingError.DuplicateComponentRoot(cid))
+                  case Some(component) =>
+                    if !seenCids.add(cid) then
+                      Left(PhoenixEncodingError.DuplicateComponentRoot(cid))
+                    else if !seenTokens.add(IdentityKey(component.token)) then
+                      Left(PhoenixEncodingError.DuplicateComponentToken)
+                    else loopProgram(component.root)
+              }
+          }
       }
 
     loopProgram(root).flatMap { _ =>
@@ -390,8 +643,10 @@ private[scalive] object PhoenixRenderedEncoder:
             result.flatMap(_ =>
               if slots.add(slot) then Right(()) else Left(PhoenixEncodingError.DuplicateSlot(slot))
             )
-          case (result, ProjectedPart.Node(child)) => result.flatMap(_ => loop(child))
-          case (result, _)                         => result
+          case (result, ProjectedPart.Node(child))    => result.flatMap(_ => loop(child))
+          case (result, ProjectedPart.Stream(stream)) =>
+            stream.rows.foldLeft(result)((current, row) => current.flatMap(_ => loop(row.child)))
+          case (result, _) => result
         }
     loop(root)
 
@@ -406,10 +661,10 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def sparsePayload(
     state: PhoenixRenderedState,
-    changedSlots: Set[TemplateSlotId],
-    changedComponents: Map[Int, Option[Set[TemplateSlotId]]]
+    changed: SparseChanges,
+    changedComponents: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
-    sparse(state.root, changedSlots, state.components).flatMap { root =>
+    sparse(state.root, changed, state.components).flatMap { root =>
       val activeChanges = changedComponents.view.filterKeys(state.components.contains).toMap
       if activeChanges.isEmpty then Right(root)
       else componentDiffs(state.components, activeChanges).map(value => root.add("c", value))
@@ -425,7 +680,7 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def componentDiffs(
     components: Map[Int, ProjectedComponent],
-    cids: Map[Int, Option[Set[TemplateSlotId]]]
+    cids: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
     traverse(cids.toVector.sortBy(_._1)) { case (cid, slots) =>
       slots
@@ -437,7 +692,7 @@ private[scalive] object PhoenixRenderedEncoder:
   private def full(
     root: ProjectedNode,
     components: Map[Int, ProjectedComponent]
-  ): Either[PhoenixEncodingError, Json.Obj] = flatten(root, components).map {
+  ): Either[PhoenixEncodingError, Json.Obj] = flatten(root, components, None).map {
     case (statics, dynamics) =>
       val fields = Vector("s" -> Json.Arr(statics.map(Json.Str(_))*)) ++
         dynamics.zipWithIndex.map { case ((_, value), index) => index.toString -> value }
@@ -446,17 +701,20 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def sparse(
     root: ProjectedNode,
-    changed: Set[TemplateSlotId],
+    changed: SparseChanges,
     components: Map[Int, ProjectedComponent]
-  ): Either[PhoenixEncodingError, Json.Obj] = flatten(root, components).map { case (_, dynamics) =>
-    Json.Obj(dynamics.zipWithIndex.collect {
-      case ((Some(slot), value), index) if changed.contains(slot) => index.toString -> value
-    }*)
+  ): Either[PhoenixEncodingError, Json.Obj] = flatten(root, components, Some(changed)).map {
+    case (_, dynamics) =>
+      Json.Obj(dynamics.zipWithIndex.collect {
+        case ((Some(slot), value), index) if changed.slots.contains(slot) => index.toString -> value
+        case ((None, value: Json.Obj), index) if value != Json.Obj.empty  => index.toString -> value
+      }*)
   }
 
   private def flatten(
     root: ProjectedNode,
-    components: Map[Int, ProjectedComponent]
+    components: Map[Int, ProjectedComponent],
+    sparseChanges: Option[SparseChanges]
   ): Either[PhoenixEncodingError, (Vector[String], Vector[(Option[TemplateSlotId], Json)])] =
     val statics  = Vector.newBuilder[String]
     val dynamics = Vector.newBuilder[(Option[TemplateSlotId], Json)]
@@ -481,6 +739,12 @@ private[scalive] object PhoenixRenderedEncoder:
           result.flatMap(_ => renderTarget(value, components).map(current.append).map(_ => ()))
         case (result, ProjectedPart.Node(child))    => result.flatMap(_ => loop(child))
         case (result, ProjectedPart.Component(cid)) => result.map(_ => dynamic(None, Json.Num(cid)))
+        case (result, ProjectedPart.StreamDomId(value)) =>
+          result.map(_ => dynamic(None, Json.Str(value)))
+        case (result, ProjectedPart.Stream(stream)) =>
+          result.flatMap(_ =>
+            streamJson(stream, components, sparseChanges).map(value => dynamic(None, value))
+          )
       }
 
     loop(root).map { _ =>
@@ -488,6 +752,75 @@ private[scalive] object PhoenixRenderedEncoder:
       statics.result() -> dynamics.result()
     }
   end flatten
+
+  private def streamJson(
+    stream: ProjectedStream,
+    components: Map[Int, ProjectedComponent],
+    sparseChanges: Option[SparseChanges]
+  ): Either[PhoenixEncodingError, Json.Obj] =
+    val selectedRows = sparseChanges match
+      case None                                                 => stream.rows
+      case Some(changes) if changes.streams.contains(stream.id) =>
+        val inserted    = stream.operations.inserts.map(_.row)
+        val insertedIds = inserted.map(_.domId).toSet
+        inserted ++ stream.rows.filter(row =>
+          !insertedIds.contains(row.domId) && rowContainsChangedSlot(row.child, changes.slots)
+        )
+      case Some(changes) =>
+        stream.rows.filter(row => rowContainsChangedSlot(row.child, changes.slots))
+
+    val shouldEmit = sparseChanges.isEmpty || selectedRows.nonEmpty ||
+      sparseChanges.exists(_.streams.contains(stream.id))
+    if !shouldEmit then Right(Json.Obj.empty)
+    else
+      val templateRows = selectedRows ++ stream.rows
+      val flattened    = traverse(templateRows)(row => flatten(row.child, components, None))
+      flattened.flatMap { rows =>
+        val statics = rows.headOption.map(_._1).getOrElse(Vector(""))
+        if rows.exists(_._1 != statics) then Left(PhoenixEncodingError.InvalidStreamRowTemplate)
+        else
+          val selectedCount    = selectedRows.length
+          val selectedPayloads = rows.take(selectedCount).map { case (_, dynamics) =>
+            Json.Obj(dynamics.zipWithIndex.map { case ((_, value), index) =>
+              index.toString -> value
+            }*)
+          }
+          val keyedFields = selectedPayloads.zipWithIndex.map { case (value, index) =>
+            index.toString -> value
+          } :+ ("kc" -> Json.Num(selectedCount))
+          val metadata       = streamMetadata(stream)
+          val includeStatics = sparseChanges.isEmpty || stream.includeStatics
+          val fields         =
+            (if includeStatics then Vector("s" -> Json.Arr(statics.map(Json.Str(_))*))
+             else Vector.empty) ++
+              Vector("k" -> Json.Obj(keyedFields*), "stream" -> metadata)
+          Right(Json.Obj(fields*))
+      }
+  end streamJson
+
+  private def streamMetadata(stream: ProjectedStream): Json.Arr =
+    val inserts = stream.operations.inserts.map { insert =>
+      val at = insert.at match
+        case StreamAt.First        => 0
+        case StreamAt.Last         => -1
+        case StreamAt.Index(value) => value
+      val limit = insert.limit match
+        case None                               => Json.Null
+        case Some(StreamLimit.KeepFirst(count)) => Json.Num(count)
+        case Some(StreamLimit.KeepLast(count))  => Json.Num(-count)
+      Json.Arr(
+        Json.Str(insert.row.domId),
+        Json.Num(at),
+        limit,
+        Json.Bool(insert.updateOnly)
+      )
+    }
+    val values = Vector[Json](
+      Json.Str(stream.ref),
+      Json.Arr(inserts*),
+      Json.Arr(stream.operations.deletes.map(Json.Str(_))*)
+    ) ++ (if stream.operations.reset then Vector(Json.Bool(true)) else Vector.empty)
+    Json.Arr(values*)
 
   private def renderHtml(
     root: ProjectedNode,
@@ -512,9 +845,14 @@ private[scalive] object PhoenixRenderedEncoder:
               case Some(component) => loop(component.root)
               case None            => Left(PhoenixEncodingError.DuplicateComponentRoot(cid))
           )
+        case (result, ProjectedPart.Stream(stream)) =>
+          stream.rows.foldLeft(result)((current, row) => current.flatMap(_ => loop(row.child)))
+        case (result, ProjectedPart.StreamDomId(value)) =>
+          result.map(_ => output.append(value)).map(_ => ())
       }
 
     loop(root).map(_ => output.result())
+  end renderHtml
 
   private def renderTarget(
     value: ProjectedValue.ComponentTarget,
@@ -531,8 +869,10 @@ private[scalive] object PhoenixRenderedEncoder:
       case _           => Left(PhoenixEncodingError.UnknownComponentTarget)
 
   private def countTargets(node: ProjectedNode, id: TemplateId): Int =
-    (if node.id == id then 1 else 0) + node.parts.collect { case ProjectedPart.Node(child) =>
-      countTargets(child, id)
+    (if node.id == id then 1 else 0) + node.parts.map {
+      case ProjectedPart.Node(child)    => countTargets(child, id)
+      case ProjectedPart.Stream(stream) => stream.rows.map(row => countTargets(row.child, id)).sum
+      case _                            => 0
     }.sum
 
   private def replaceTarget(node: ProjectedNode, id: TemplateId, replacement: ProjectedNode)
@@ -541,13 +881,41 @@ private[scalive] object PhoenixRenderedEncoder:
     else
       node.copy(parts = node.parts.map {
         case ProjectedPart.Node(child) => ProjectedPart.Node(replaceTarget(child, id, replacement))
-        case part                      => part
+        case ProjectedPart.Stream(stream) =>
+          ProjectedPart.Stream(
+            stream.copy(rows =
+              stream.rows.map(row => row.copy(child = replaceTarget(row.child, id, replacement)))
+            )
+          )
+        case part => part
       })
+
+  private def replaceStream(
+    node: ProjectedNode,
+    id: TemplateId,
+    identity: Object,
+    replacement: ProjectedStream
+  ): ProjectedNode = node.copy(parts = node.parts.map {
+    case ProjectedPart.Stream(stream) if stream.id == id && (stream.identity eq identity) =>
+      ProjectedPart.Stream(replacement)
+    case ProjectedPart.Stream(stream) =>
+      ProjectedPart.Stream(
+        stream.copy(rows =
+          stream.rows.map(row =>
+            row.copy(child = replaceStream(row.child, id, identity, replacement))
+          )
+        )
+      )
+    case ProjectedPart.Node(child) =>
+      ProjectedPart.Node(replaceStream(child, id, identity, replacement))
+    case part => part
+  })
 
   private def componentCids(root: ProjectedNode): Vector[Int] =
     root.parts.flatMap {
       case ProjectedPart.Component(cid) => Vector(cid)
       case ProjectedPart.Node(child)    => componentCids(child)
+      case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => componentCids(row.child))
       case _                            => Vector.empty
     }
 
@@ -555,22 +923,39 @@ private[scalive] object PhoenixRenderedEncoder:
     root.parts.flatMap {
       case ProjectedPart.Dynamic(slot, value, _) => Vector(slot -> value)
       case ProjectedPart.Node(child)             => collectDynamics(child)
-      case _                                     => Vector.empty
+      case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => collectDynamics(row.child))
+      case _                            => Vector.empty
     }
 
   private def collectTargets(root: ProjectedNode): Vector[ProjectedValue.ComponentTarget] =
     root.parts.flatMap {
       case ProjectedPart.Target(value)                                        => Vector(value)
       case ProjectedPart.Dynamic(_, value: ProjectedValue.ComponentTarget, _) => Vector(value)
-      case ProjectedPart.Node(child) => collectTargets(child)
+      case ProjectedPart.Node(child)    => collectTargets(child)
+      case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => collectTargets(row.child))
+      case _                            => Vector.empty
+    }
+
+  private def collectStreams(root: ProjectedNode): Vector[ProjectedStream] =
+    root.parts.flatMap {
+      case ProjectedPart.Stream(stream) =>
+        stream +: stream.rows.flatMap(row => collectStreams(row.child))
+      case ProjectedPart.Node(child) => collectStreams(child)
       case _                         => Vector.empty
     }
 
+  private def rowContainsChangedSlot(
+    root: ProjectedNode,
+    changed: Set[TemplateSlotId]
+  ): Boolean = collectDynamics(root).exists((slot, _) => changed.contains(slot))
+
   private def detectDuplicateChanges(changes: Vector[RenderChange])
     : Either[PhoenixEncodingError, Unit] =
-    val slots   = mutable.HashSet.empty[TemplateSlotId]
-    val targets = mutable.HashSet.empty[TemplateId]
-    val tokens  = mutable.HashSet.empty[IdentityKey]
+    val slots            = mutable.HashSet.empty[TemplateSlotId]
+    val targets          = mutable.HashSet.empty[TemplateId]
+    val tokens           = mutable.HashSet.empty[IdentityKey]
+    val streamTargets    = mutable.HashSet.empty[TemplateId]
+    val streamIdentities = mutable.HashSet.empty[IdentityKey]
     changes.foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) {
       case (result, RenderChange.Text(slot, _, _)) =>
         result.flatMap(_ =>
@@ -584,12 +969,20 @@ private[scalive] object PhoenixRenderedEncoder:
         result.flatMap(_ =>
           if targets.add(id) then Right(()) else Left(PhoenixEncodingError.DuplicateTarget(id))
         )
+      case (result, RenderChange.Stream(id, identity, _, _)) =>
+        result.flatMap { _ =>
+          if !streamTargets.add(id) then Left(PhoenixEncodingError.DuplicateStreamTarget(id))
+          else if !streamIdentities.add(IdentityKey(identity)) then
+            Left(PhoenixEncodingError.DuplicateStreamIdentity)
+          else Right(())
+        }
       case (result, RenderChange.Component(token, _)) =>
         result.flatMap(_ =>
           if tokens.add(IdentityKey(token)) then Right(())
           else Left(PhoenixEncodingError.DuplicateComponentToken)
         )
     }
+  end detectDuplicateChanges
 
   private def traverse[A, B](
     values: Iterable[A]

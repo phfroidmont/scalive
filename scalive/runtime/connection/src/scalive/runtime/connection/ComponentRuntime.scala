@@ -4,11 +4,16 @@ import zio.*
 import zio.json.JsonDecoder
 
 import scalive.*
+import scalive.render.StreamRequirement
+import scalive.runtime.contracts.ComponentInstanceId
+import scalive.runtime.contracts.LifecycleId
 import scalive.runtime.kernel.*
+import scalive.runtime.resources.OwnerId
 
 /** Connection-owned adapter from component callbacks to transactional root turn drafts. */
 final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel] private (
   metadata: RootConnectionMetadata,
+  lifecycle: LifecycleId,
   closedInstances: Ref[Set[ComponentInstanceId]],
   discardedInstances: Ref[Set[ComponentInstanceId]])
     extends ComponentEnvironment[RootMsg, RootState[RootMsg, RootModel]]:
@@ -24,7 +29,13 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn   <- ComponentTurn.make(draft, ComponentHookRegistry.fromStatic(component.hooks))
+      turn <- ComponentTurn.make(
+                draft,
+                ComponentHookRegistry.fromStatic(component.hooks),
+                lifecycle,
+                id,
+                StreamStore.empty
+              )
       model  <- ZIO.suspend(component.mount(props, ComponentMountContextImpl(metadata, turn)))
       result <- turn.result(model)
     yield result
@@ -38,7 +49,7 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state))
+      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
       next <-
         ZIO.suspend(component.update(props, model, ComponentUpdateContextImpl(metadata, turn)))
       result <- turn.result(next)
@@ -55,7 +66,7 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state))
+      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
       context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
       hooks  <- turn.hookRegistry[P, M, A]
       hooked <- runEventHooks(hooks.event, props, model, value, context)
@@ -77,7 +88,7 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state))
+      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
       context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
       hooks  <- turn.hookRegistry[P, M, A]
       hooked <- runAsyncHooks(hooks.async, props, model, event, context)
@@ -88,6 +99,29 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
                     case LiveAsyncResult.Succeeded(message) =>
                       ZIO.suspend(component.handleMessage(props, current, context)(message))
                     case _ => ZIO.succeed(current)
+      result <- turn.result(next)
+    yield result
+
+  override def managedAsync[P, M, A, O](
+    id: ComponentInstanceId,
+    component: LiveComponent[P, M, A],
+    props: P,
+    model: A,
+    event: LiveAsyncEvent[M],
+    message: M,
+    emit: O => Task[Unit],
+    state: ComponentEnvironmentState,
+    draft: Draft
+  ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
+    for
+      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
+      context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
+      hooks  <- turn.hookRegistry[P, M, A]
+      hooked <- runAsyncHooks(hooks.async, props, model, event, context)
+      next   <- hooked match
+                case LiveHookResult.Halt(current)     => ZIO.succeed(current)
+                case LiveHookResult.Continue(current) =>
+                  ZIO.suspend(component.handleMessage(props, current, context)(message))
       result <- turn.result(next)
     yield result
 
@@ -104,7 +138,13 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     (command.eventName, command.rawJson) match
       case (Some(name), Some(raw)) =>
         for
-          turn  <- ComponentTurn.make(draft, registry[P, M, A](state))
+          turn <- ComponentTurn.make(
+                    draft,
+                    registry[P, M, A](state),
+                    lifecycle,
+                    id,
+                    streamStore(state)
+                  )
           hooks <- turn.hookRegistry[P, M, A]
           matching = hooks.browser.filter(_.name == name)
           result <-
@@ -125,12 +165,18 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     draft: Draft
   ): Task[ComponentAfterRenderResult[RootMsg, RootState[RootMsg, RootModel]]] =
     for
-      turn <- ComponentTurn.make(draft, registry[P, M, A](state))
+      turn <- ComponentTurn.make(draft, registry[P, M, A](state), lifecycle, id, streamStore(state))
       context = ComponentAfterRenderContextImpl[P, M, A](metadata, turn)
       hooks  <- turn.hookRegistry[P, M, A]
       _      <- ZIO.foreachDiscard(hooks.afterRender)(_.invoke(props, model, context))
       result <- turn.afterRenderResult
     yield result
+
+  override def validateStreams[M](
+    _id: ComponentInstanceId,
+    state: ComponentEnvironmentState,
+    requirements: Vector[StreamRequirement[M]]
+  ): Task[Unit] = ZIO.attempt(streamStore(state).validate(requirements))
 
   def discard(id: ComponentInstanceId, state: ComponentEnvironmentState): UIO[Unit] =
     discardedInstances.update(_ + id)
@@ -144,6 +190,9 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
 
   private def registry[P, M, A](state: ComponentEnvironmentState): ComponentHookRegistry[P, M, A] =
     state.value.asInstanceOf[ComponentState[P, M, A]].hooks
+
+  private def streamStore(state: ComponentEnvironmentState): StreamStore =
+    state.value.asInstanceOf[ComponentState[Any, Any, Any]].streams
 
   private def runEventHooks[P, M, A](
     hooks: Vector[ComponentHookRegistry.Event[P, M, A]],
@@ -200,14 +249,17 @@ end ConnectedComponentEnvironment
 
 private[connection] object ConnectedComponentEnvironment:
   def make[RootMsg, RootModel](
-    metadata: RootConnectionMetadata
+    metadata: RootConnectionMetadata,
+    lifecycle: LifecycleId
   ): UIO[ConnectedComponentEnvironment[RootMsg, RootModel]] =
     for
       closed    <- Ref.make(Set.empty[ComponentInstanceId])
       discarded <- Ref.make(Set.empty[ComponentInstanceId])
-    yield new ConnectedComponentEnvironment(metadata, closed, discarded)
+    yield new ConnectedComponentEnvironment(metadata, lifecycle, closed, discarded)
 
-final private case class ComponentState[P, M, A](hooks: ComponentHookRegistry[P, M, A])
+final private case class ComponentState[P, M, A](
+  hooks: ComponentHookRegistry[P, M, A],
+  streams: StreamStore)
 
 private trait ComponentHookJournal:
   def updateHooks[P, M, A](
@@ -245,13 +297,16 @@ final private class ComponentTurn[RootMsg, RootModel] private (
       flash      <- root.flash.get
       events     <- root.clientEvents.get
       updates    <- root.componentUpdates.get
+      operations <- root.resourceOperationSnapshot
+      streams    <- root.streamSnapshot
       hooks      <- componentHooks.get
-      state = ComponentEnvironmentState(ComponentState(hooks))
+      state = ComponentEnvironmentState(ComponentState(hooks, streams))
       draft = initial.copy(
                 model = initial.model.copy(flash = flash),
                 navigation = navigation,
                 effects = initial.effects.copy(clientEvents = events),
-                componentUpdates = updates
+                componentUpdates = updates,
+                resourceOperations = operations
               )
     yield draft -> state
 end ComponentTurn
@@ -259,15 +314,21 @@ end ComponentTurn
 private object ComponentTurn:
   def make[RootMsg, RootModel, P, M, A](
     draft: TurnDraft[RootMsg, RootState[RootMsg, RootModel]],
-    hooks: ComponentHookRegistry[P, M, A]
+    hooks: ComponentHookRegistry[P, M, A],
+    lifecycle: LifecycleId,
+    id: ComponentInstanceId,
+    initialStreams: StreamStore = StreamStore.empty
   ): Task[ComponentTurn[RootMsg, RootModel]] =
     for
       root <- RootTurnJournal.make(
+                OwnerId.Component(lifecycle, id),
                 draft.model.hooks,
                 draft.model.flash,
                 draft.effects.clientEvents,
                 draft.componentUpdates,
-                draft.navigation
+                draft.navigation,
+                draft.resourceOperations,
+                initialStreams
               )
       componentHooks <- Ref.make(hooks.asInstanceOf[ComponentHookRegistry[Any, Any, Any]])
     yield ComponentTurn(draft, root, componentHooks)
@@ -455,7 +516,7 @@ final private class ComponentConnectedImpl[M](
     extends ComponentConnected[M]:
   val staticChanged = metadata.staticChanged
   val connectParams = metadata.connectParams
-  val async         = DeferredAsync[M]()
+  val async         = JournaledAsync[M](turn.root)
   val client        = JournaledClient(turn.root)
 
 final private case class ComponentMountContextImpl[P, M, A](
@@ -465,7 +526,7 @@ final private case class ComponentMountContextImpl[P, M, A](
   val connection = Connection.Connected(ComponentConnectedImpl[M](metadata, turn))
   val flash      = JournaledFlash(turn.root)
   val uploads    = DeferredUploads
-  val streams    = DeferredStreams
+  val streams    = JournaledStreams(turn.root.streams)
   val hooks      = JournaledComponentHooks[P, M, A](turn)
 
 final private case class ComponentUpdateContextImpl[P, M, A](
@@ -475,7 +536,7 @@ final private case class ComponentUpdateContextImpl[P, M, A](
   val connection = Connection.Connected(ComponentConnectedImpl[M](metadata, turn))
   val flash      = JournaledFlash(turn.root)
   val uploads    = DeferredUploads
-  val streams    = DeferredStreams
+  val streams    = JournaledStreams(turn.root.streams)
   val hooks      = JournaledComponentHooks[P, M, A](turn)
 
 final private case class ComponentMessageContextImpl[P, M, A, O](
@@ -489,8 +550,8 @@ final private case class ComponentMessageContextImpl[P, M, A, O](
   val nav           = RootNavigation(turn.currentUrl, turn.root, allowPatch = true)
   val flash         = JournaledFlash(turn.root)
   val uploads       = DeferredUploads
-  val streams       = DeferredStreams
-  val async         = DeferredAsync[M]()
+  val streams       = JournaledStreams(turn.root.streams)
+  val async         = JournaledAsync[M](turn.root)
   val client        = JournaledClient(turn.root)
   val components    = JournaledComponentUpdates(turn.root)
   val hooks         = JournaledComponentHooks[P, M, A](turn)

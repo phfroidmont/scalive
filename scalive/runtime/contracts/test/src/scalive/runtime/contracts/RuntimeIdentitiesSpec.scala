@@ -17,6 +17,12 @@ object RuntimeIdentitiesSpec extends ZIOSpecDefault:
         values = identities.map(_.value)
       yield assertTrue(values.forall(_ > 0L), values.distinct.size == values.size)
     },
+    test("allocates positive monotonic component instance identities") {
+      for
+        first  <- ZIO.fromEither(ComponentInstanceId.fresh())
+        second <- ZIO.fromEither(ComponentInstanceId.fresh())
+      yield assertTrue(first.value > 0L, second.value > first.value)
+    },
     test("advances epochs without a global allocator") {
       val next = Epoch.next(Epoch.initial)
       assertTrue(Epoch.initial.value == 1L, next.map(_.value) == Right(2L))
@@ -29,11 +35,13 @@ object RuntimeIdentitiesSpec extends ZIOSpecDefault:
     test("keeps all runtime identity types distinct") {
       for
         lifecycle <- ZIO.fromEither(LifecycleId.fresh())
+        component <- ZIO.fromEither(ComponentInstanceId.fresh())
         command   <- ZIO.fromEither(CommandId.fresh())
         turn      <- ZIO.fromEither(TurnId.fresh())
         revision  <- ZIO.fromEither(TurnRevision.fresh())
       yield assertTrue(
         lifecycle.value > 0L,
+        component.value > 0L,
         command.value > 0L,
         turn.value > 0L,
         revision.value > 0L

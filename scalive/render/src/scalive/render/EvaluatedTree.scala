@@ -8,6 +8,9 @@ import zio.Scope
 import zio.UIO
 
 import scalive.ComponentRef
+import scalive.streams.LiveStreamIdentity
+import scalive.streams.StreamAt
+import scalive.streams.StreamLimit
 
 /** The semantic value of an evaluated HTML attribute before serialization. */
 enum AttributeValue:
@@ -60,6 +63,19 @@ object EvaluatedNode:
 
   final case class KeyedRow private[render] (id: RowId, child: Element)
 
+  final case class StreamRow private[render] (domId: String, child: Element)
+
+  final case class StreamInsert private[render] (
+    row: StreamRow,
+    at: StreamAt,
+    limit: Option[StreamLimit],
+    updateOnly: Boolean)
+
+  final case class StreamOperations private[render] (
+    inserts: Vector[StreamInsert],
+    deletes: Vector[String],
+    reset: Boolean)
+
   /** A transparent collection insertion point. Row identity is independent of current order. */
   final case class Keyed private[render] (
     id: TemplateId,
@@ -82,10 +98,13 @@ object EvaluatedNode:
     revision: RenderRevision)
       extends EvaluatedNode
 
-  /** Transparent opaque stream declaration awaiting runtime snapshot integration. */
+  /** A transparent semantic stream snapshot and its pending protocol-neutral operations. */
   final case class Stream private[render] (
     id: TemplateId,
-    snapshot: Object,
+    identity: LiveStreamIdentity,
+    generation: Long,
+    rows: Vector[StreamRow],
+    operations: StreamOperations,
     revision: RenderRevision)
       extends EvaluatedNode
 end EvaluatedNode
@@ -252,11 +271,12 @@ object EvaluatedTree:
     case element: EvaluatedNode.Element => element.children.flatMap(unresolvedComponents)
     case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(unresolvedComponents)
     case choice: EvaluatedNode.Choice   => choice.child.toVector.flatMap(unresolvedComponents)
-    case keyed: EvaluatedNode.Keyed => keyed.rows.flatMap(row => unresolvedComponents(row.child))
+    case keyed: EvaluatedNode.Keyed   => keyed.rows.flatMap(row => unresolvedComponents(row.child))
+    case stream: EvaluatedNode.Stream => stream.rows.flatMap(row => unresolvedComponents(row.child))
     case component: EvaluatedNode.Component if component.resolution.isEmpty => Vector(component.id)
     case component: EvaluatedNode.Component                                 =>
       component.resolution.toVector.flatMap(value => unresolvedComponents(value.child.root))
-    case _: EvaluatedNode.Text | _: EvaluatedNode.Nested | _: EvaluatedNode.Stream => Vector.empty
+    case _: EvaluatedNode.Text | _: EvaluatedNode.Nested => Vector.empty
 
   private[render] def resolveComponents[Msg](
     root: EvaluatedNode.Element,
@@ -337,6 +357,22 @@ object EvaluatedTree:
               child       <- resolveNode(row.child, resolutions)
             yield accumulated :+ row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
         }.map(rows => keyed.copy(rows = rows))
+    case stream: EvaluatedNode.Stream =>
+      stream.rows
+        .foldLeft[Either[RenderError, Vector[EvaluatedNode.StreamRow]]](Right(Vector.empty)) {
+          (result, row) =>
+            for
+              accumulated <- result
+              child       <- resolveNode(row.child, resolutions)
+            yield accumulated :+ row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
+        }.map { rows =>
+          val byId       = rows.map(row => row.domId -> row).toMap
+          val operations = stream.operations.copy(inserts =
+            stream.operations.inserts
+              .map(insert => insert.copy(row = byId.getOrElse(insert.row.domId, insert.row)))
+          )
+          stream.copy(rows = rows, operations = operations)
+        }
     case component: EvaluatedNode.Component =>
       resolutions
         .get(component.id)
@@ -365,6 +401,7 @@ object EvaluatedTree:
       case flash: EvaluatedNode.Flash         => loopAll(flash.child.toVector)
       case choice: EvaluatedNode.Choice       => loopAll(choice.child.toVector)
       case keyed: EvaluatedNode.Keyed         => loopAll(keyed.rows.map(_.child))
+      case stream: EvaluatedNode.Stream       => loopAll(stream.rows.map(_.child))
       case component: EvaluatedNode.Component =>
         component.resolution match
           case None        => Left(RenderError.UnresolvedComponents(Vector(component.id)))
@@ -376,7 +413,7 @@ object EvaluatedTree:
                 )
               )
             else loop(value.child.root)
-      case _: EvaluatedNode.Text | _: EvaluatedNode.Nested | _: EvaluatedNode.Stream => Right(())
+      case _: EvaluatedNode.Text | _: EvaluatedNode.Nested => Right(())
 
     def loopAll(nodes: Vector[EvaluatedNode]): Either[RenderError, Unit] =
       nodes.foldLeft[Either[RenderError, Unit]](Right(()))((result, node) =>

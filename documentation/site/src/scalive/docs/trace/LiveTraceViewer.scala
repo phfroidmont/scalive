@@ -30,7 +30,10 @@ final private[docs] class LiveTraceViewer(
       case Some(session) =>
         for
           owner = s"$viewerTopic:${java.util.UUID.randomUUID()}"
-          _ <- ctx.subscriptions.start(SubscriptionKey(s"live-trace:$viewerTopic"))(
+          _ <- ctx.subscriptions.start(
+                 SubscriptionKey(s"live-trace:$viewerTopic"),
+                 SubscriptionDelivery.Latest
+               )(
                  zio.stream.ZStream
                    .acquireReleaseWith(store.attach(session, observedTopic, owner))(_ =>
                      store.detach(session, observedTopic, owner)

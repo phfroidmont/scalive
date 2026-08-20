@@ -41,7 +41,14 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
               case Connection.Disconnected => ZIO.unit
               case Connection.Connected(connected) =>
                 connected.async.start(AsyncKey[Int]("load"))(ZIO.succeed(1))(_ => ()) *>
-                  connected.subscriptions.start(SubscriptionKey("ticks"))(ZStream.succeed(())))
+                  connected.subscriptions.start(
+                    SubscriptionKey("ticks"),
+                    SubscriptionDelivery.Lossless
+                  )(ZStream.succeed(())) *>
+                  connected.subscriptions.replace(
+                    SubscriptionKey("ticks"),
+                    SubscriptionDelivery.Latest
+                  )(ZStream.succeed(())))
 
         def params(ctx: ParamsContext[Unit, Unit]) =
           ctx.connection match
@@ -55,6 +62,17 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("subscription delivery policy is required") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.stream.ZStream
+
+        def invalid(ctx: MessageContext[Unit, Unit]) =
+          ctx.subscriptions.start(SubscriptionKey("ticks"))(ZStream.succeed(()))
+      """)
+
+      assertTrue(errors.nonEmpty)
     },
     test("component disconnected phases gate connected operations") {
       val directErrors = scala.compiletime.testing.typeCheckErrors("""

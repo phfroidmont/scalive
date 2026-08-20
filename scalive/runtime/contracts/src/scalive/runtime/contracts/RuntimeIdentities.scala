@@ -17,6 +17,19 @@ object LifecycleId:
 
   extension (identity: LifecycleId) def value: Long = identity
 
+/** Runtime identity of one mounted component. It is deliberately unrelated to Phoenix CIDs. */
+opaque type ComponentInstanceId = Long
+
+object ComponentInstanceId:
+  private val counter = AtomicLong(0L)
+
+  private[scalive] def fresh(): Either[RuntimeIdentityError, ComponentInstanceId] =
+    RuntimeIdentityAllocator.next(counter, "component instance identity")(identity => identity)
+
+  private[scalive] def apply(value: Long): ComponentInstanceId = value
+
+  extension (identity: ComponentInstanceId) def value: Long = identity
+
 opaque type Epoch = Long
 
 object Epoch:

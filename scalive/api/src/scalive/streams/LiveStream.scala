@@ -105,7 +105,55 @@ object LiveStreamDef:
   * @tparam A
   *   the streamed item type
   */
-abstract class LiveStream[+A] private[scalive] ()
+abstract class LiveStream[+A] private[scalive] ():
+  private[scalive] def identity: LiveStreamIdentity          = unsupported
+  private[scalive] def name: String                          = unsupported
+  private[scalive] def generation: Long                      = unsupported
+  private[scalive] def entries: Vector[LiveStreamEntry[A]]   = unsupported
+  private[scalive] def inserted: Vector[LiveStreamInsert[A]] = unsupported
+  private[scalive] def deleted: Vector[String]               = unsupported
+  private[scalive] def reset: Boolean                        = unsupported
+
+  private def unsupported: Nothing =
+    throw UnsupportedOperationException("LiveStream was not created by the managed stream runtime")
+
+/** Runtime-only identity shared by all replacement handles for one managed stream. */
+final private[scalive] class LiveStreamIdentity private ()
+
+private[scalive] object LiveStreamIdentity:
+  def fresh(): LiveStreamIdentity = new LiveStreamIdentity()
+
+/** One entry in the runtime's complete, ordered stream snapshot. */
+final private[scalive] case class LiveStreamEntry[+A](domId: String, value: A)
+
+/** One pending insertion or in-place update, expressed without wire-level conventions. */
+final private[scalive] case class LiveStreamInsert[+A](
+  entry: LiveStreamEntry[A],
+  at: StreamAt,
+  limit: Option[StreamLimit],
+  updateOnly: Boolean)
+
+private[scalive] object LiveStream:
+  def apply[A](
+    identity: LiveStreamIdentity,
+    name: String,
+    generation: Long,
+    entries: Vector[LiveStreamEntry[A]],
+    inserted: Vector[LiveStreamInsert[A]],
+    deleted: Vector[String],
+    reset: Boolean
+  ): LiveStream[A] =
+    Impl(identity, name, generation, entries, inserted, deleted, reset)
+
+  final private case class Impl[+A](
+    override val identity: LiveStreamIdentity,
+    override val name: String,
+    override val generation: Long,
+    override val entries: Vector[LiveStreamEntry[A]],
+    override val inserted: Vector[LiveStreamInsert[A]],
+    override val deleted: Vector[String],
+    override val reset: Boolean)
+      extends LiveStream[A]
 
 object api:
   export _root_.scalive.streams.{LiveStream, LiveStreamDef, StreamAt, StreamLimit}

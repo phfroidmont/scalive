@@ -72,8 +72,18 @@ trait Async[Msg]:
   def cancel[A](key: AsyncKey[A], reason: Option[String] = None): LiveIO[Unit]
 
 trait Subscriptions[Msg]:
-  def start(key: SubscriptionKey)(stream: ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def replace(key: SubscriptionKey)(stream: ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def start(
+    key: SubscriptionKey,
+    delivery: SubscriptionDelivery
+  )(
+    stream: ZStream[Any, Nothing, Msg]
+  ): LiveIO[Unit]
+  def replace(
+    key: SubscriptionKey,
+    delivery: SubscriptionDelivery
+  )(
+    stream: ZStream[Any, Nothing, Msg]
+  ): LiveIO[Unit]
   def cancel(key: SubscriptionKey): LiveIO[Unit]
 
 trait Client:

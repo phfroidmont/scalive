@@ -5,6 +5,11 @@ enum RenderChange:
   case Text(slot: TemplateSlotId, value: String, raw: Boolean)
   case Attribute(slot: TemplateSlotId, name: String, value: Option[AttributeValue])
   case Replace(id: TemplateId, node: EvaluatedNode)
+  case Stream(
+    id: TemplateId,
+    identity: scalive.streams.LiveStreamIdentity,
+    generation: Long,
+    operations: EvaluatedNode.StreamOperations)
 
   /** A child-program delta scoped by the exact semantic component instance that owns its ids. */
   case Component(instanceToken: Object, delta: RenderDelta)
@@ -87,8 +92,23 @@ object TreeDiffer:
             if left.id == right.id && left.applicationId == right.applicationId =>
           Vector.empty
         case (left: EvaluatedNode.Stream, right: EvaluatedNode.Stream)
-            if left.id == right.id && (left.snapshot eq right.snapshot) =>
-          Vector.empty
+            if left.id == right.id && (left.identity eq right.identity) =>
+          val operatedIds = right.operations.inserts.map(_.row.domId).toSet
+          val oldRows     = left.rows.map(row => row.domId -> row.child).toMap
+          val rowChanges  = right.rows.flatMap { row =>
+            if operatedIds.contains(row.domId) then Vector.empty
+            else oldRows.get(row.domId).toVector.flatMap(diffNode(_, row.child))
+          }
+          val streamChanges =
+            if left.generation == right.generation then Vector.empty
+            else if right.operations.inserts.nonEmpty || right.operations.deletes.nonEmpty ||
+              right.operations.reset
+            then
+              Vector(
+                RenderChange.Stream(right.id, right.identity, right.generation, right.operations)
+              )
+            else Vector.empty
+          streamChanges ++ rowChanges
         case _ => Vector(RenderChange.Replace(previous.id, current))
 
   private def sameElementShape(

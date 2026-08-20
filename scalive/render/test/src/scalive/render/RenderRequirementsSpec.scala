@@ -5,6 +5,8 @@ import zio.test.*
 
 import scalive.*
 import scalive.streams.LiveStream
+import scalive.streams.LiveStreamEntry
+import scalive.streams.LiveStreamIdentity
 
 object RenderRequirementsSpec extends ZIOSpecDefault:
   object PlainComponent extends LiveComponent[String, String, Unit]:
@@ -499,13 +501,29 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
           case _ => false
       )
     },
-    test("extracts nested and opaque stream declarations without starting them") {
+    test("extracts nested and semantic stream declarations without starting nested views") {
       var nestedSamples = 0
       var linkedSamples = 0
       var constructions = 0
-      val staticStream  = new LiveStream[String] {}
-      val signalStream  = new LiveStream[String] {}
-      val compiled = RenderProgram.compile[(String, LiveStream[String]), Nothing] { model =>
+      val staticStream = LiveStream(
+        LiveStreamIdentity.fresh(),
+        "static-stream",
+        0L,
+        Vector(LiveStreamEntry("static-row", "static")),
+        Vector.empty,
+        Vector.empty,
+        false
+      )
+      val signalStream = LiveStream(
+        LiveStreamIdentity.fresh(),
+        "signal-stream",
+        0L,
+        Vector(LiveStreamEntry("signal-row", "signal")),
+        Vector.empty,
+        Vector.empty,
+        false
+      )
+      val compiled = RenderProgram.compile[(String, LiveStream[String]), String] { model =>
         val nested = model.map { value =>
           nestedSamples += 1
           value._1
@@ -523,8 +541,22 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
             constructions += 1
             ChildView
           },
-          staticStream.stream((id, value) => span(id, value)),
-          stream.stream((id, value) => span(id, value))
+          staticStream.stream((id, value) =>
+            span(
+              id,
+              value,
+              liveComponent(PlainComponent, s"component-$id", value),
+              liveView(s"nested-$id", ChildView)
+            )
+          ),
+          stream.stream((id, value) =>
+            span(
+              id,
+              value,
+              liveComponent(PlainComponent, s"component-$id", value),
+              liveView(s"nested-$id", ChildView)
+            )
+          )
         )
       }
 
@@ -534,15 +566,18 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
         nested = candidate.nestedRequirements
         streams = candidate.streamRequirements
       yield assertTrue(
-        nested.map(_.applicationId) == Vector("static", "dynamic"),
-        nested.map(_.linkParentOnCrash) == Vector(false, true),
+        nested.map(_.applicationId) ==
+          Vector("static", "dynamic", "nested-static-row", "nested-signal-row"),
+        nested.map(_.linkParentOnCrash) == Vector(false, true, false, false),
         nested(1).sticky,
         nestedSamples == 1,
         linkedSamples == 1,
         constructions == 0,
         streams.size == 2,
         streams.head.stream eq staticStream,
-        streams(1).stream eq signalStream
+        streams(1).stream eq signalStream,
+        candidate.componentRequirements.map(_.applicationId) ==
+          Vector("component-static-row", "component-signal-row")
       )
     }
   )

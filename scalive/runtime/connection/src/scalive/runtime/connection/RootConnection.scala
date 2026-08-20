@@ -7,6 +7,7 @@ import scalive.*
 import scalive.render.*
 import scalive.runtime.contracts.*
 import scalive.runtime.kernel.*
+import scalive.runtime.resources.OwnerId
 
 /** Owns one connected, unrouted root lifecycle. */
 final private[scalive] class RootConnection[Msg, Model] private (
@@ -535,6 +536,13 @@ private[scalive] object RootConnection:
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
+        lifecycleId <- ZIO
+                         .fromEither(LifecycleId.fresh()).mapError(error =>
+                           ConnectionError.SessionFailed(
+                             SessionFailure.StageFailed(SessionStage.Identity, error.toString)
+                           )
+                         )
+        rootOwner = OwnerId.Root(lifecycleId)
         program <- ZIO.acquireRelease(
                      ZIO
                        .fromEither(
@@ -558,12 +566,16 @@ private[scalive] object RootConnection:
         writer <- SerialWriter
                     .make[ConnectionOutput](config.writerCapacity)(sink)
                     .mapError(error => ConnectionError.OutboundFailed(error.toString))
-        componentEnvironment <- ConnectedComponentEnvironment.make[Msg, Model](metadata)
+        componentEnvironment <- ConnectedComponentEnvironment.make[Msg, Model](
+                                  metadata,
+                                  lifecycleId
+                                )
         initialHooks = RootHookRegistry.fromStatic(lifecycle.hooks)
         logic        = SessionLogic[Msg, RootState[Msg, Model]](
                   bootstrap =
                     for
-                      journal <- RootTurnJournal.make(initialHooks, metadata.initialFlash)
+                      journal <-
+                        RootTurnJournal.make(rootOwner, initialHooks, metadata.initialFlash)
                       mountContext = RootMountContext.connected[Msg, Model](
                                        metadata,
                                        lifecycle.initialUrl,
@@ -597,43 +609,55 @@ private[scalive] object RootConnection:
                                                  case Hooked.Continue(value) =>
                                                    ZIO.suspend(prepared.run(value, paramsContext))
                                    yield result
-                      navigation       <- journal.navigationWithFlash
-                      hooks            <- journal.hookRegistry[Msg, Model]
-                      flash            <- journal.flash.get
-                      clientEvents     <- journal.clientEvents.get
-                      componentUpdates <- journal.componentUpdates.get
+                      navigation         <- journal.navigationWithFlash
+                      hooks              <- journal.hookRegistry[Msg, Model]
+                      flash              <- journal.flash.get
+                      clientEvents       <- journal.clientEvents.get
+                      componentUpdates   <- journal.componentUpdates.get
+                      resourceOperations <- journal.resourceOperationSnapshot
+                      streams            <- journal.streamSnapshot
                       pageTitle = lifecycle.pageTitle(model)
                     yield TurnDraft(
-                      RootState(model, lifecycle.initialUrl, hooks, flash, pageTitle),
+                      RootState(model, lifecycle.initialUrl, hooks, flash, pageTitle, streams),
                       url = Some(lifecycle.initialUrl),
                       navigation = navigation,
                       effects = SessionEffects(pageTitle, clientEvents),
-                      componentUpdates = componentUpdates
+                      componentUpdates = componentUpdates,
+                      resourceOperations = resourceOperations
                     ),
                   handle = (state, message) =>
                     for
-                      journal <- RootTurnJournal.make(state.hooks, state.flash)
+                      journal <- RootTurnJournal.make(
+                                   rootOwner,
+                                   state.hooks,
+                                   state.flash,
+                                   initialStreams = state.streams
+                                 )
                       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
                       model <- ZIO.suspend(lifecycle.handleMessage(state.model, context, message))
-                      navigation       <- journal.navigationWithFlash
-                      hooks            <- journal.hookRegistry[Msg, Model]
-                      flash            <- journal.flash.get
-                      clientEvents     <- journal.clientEvents.get
-                      componentUpdates <- journal.componentUpdates.get
+                      navigation         <- journal.navigationWithFlash
+                      hooks              <- journal.hookRegistry[Msg, Model]
+                      flash              <- journal.flash.get
+                      clientEvents       <- journal.clientEvents.get
+                      componentUpdates   <- journal.componentUpdates.get
+                      resourceOperations <- journal.resourceOperationSnapshot
+                      streams            <- journal.streamSnapshot
                       pageTitle = lifecycle.pageTitle(model)
                     yield TurnDraft(
-                      RootState(model, state.url, hooks, flash, pageTitle),
+                      RootState(model, state.url, hooks, flash, pageTitle, streams),
                       url = Some(state.url),
                       navigation = navigation,
                       effects =
                         SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
-                      componentUpdates = componentUpdates
+                      componentUpdates = componentUpdates,
+                      resourceOperations = resourceOperations
                     ),
                   handleEvent = Some((state, message) =>
                     runMessageTurn(
                       state,
                       metadata,
                       lifecycle,
+                      rootOwner,
                       message,
                       _.event
                     )
@@ -643,6 +667,7 @@ private[scalive] object RootConnection:
                       state,
                       metadata,
                       lifecycle,
+                      rootOwner,
                       message,
                       _.info
                     )
@@ -652,7 +677,19 @@ private[scalive] object RootConnection:
                       state,
                       metadata,
                       lifecycle,
-                      event
+                      rootOwner,
+                      event,
+                      None
+                    )
+                  ),
+                  handleManagedAsync = Some((state, event, message) =>
+                    runAsyncTurn(
+                      state,
+                      metadata,
+                      lifecycle,
+                      rootOwner,
+                      event,
+                      Some(message)
                     )
                   ),
                   interceptClientEvent = (state, event) =>
@@ -662,7 +699,12 @@ private[scalive] object RootConnection:
                         if matching.isEmpty then ZIO.none
                         else
                           for
-                            journal <- RootTurnJournal.make(state.hooks, state.flash)
+                            journal <- RootTurnJournal.make(
+                                         rootOwner,
+                                         state.hooks,
+                                         state.flash,
+                                         initialStreams = state.streams
+                                       )
                             context = RootMessageContext[Msg, Model](metadata, state.url, journal)
                             model            <- runBrowserHooks(matching, state.model, raw, context)
                             navigation       <- journal.navigationWithFlash
@@ -670,23 +712,32 @@ private[scalive] object RootConnection:
                             flash            <- journal.flash.get
                             clientEvents     <- journal.clientEvents.get
                             componentUpdates <- journal.componentUpdates.get
+                            resourceOperations <- journal.resourceOperationSnapshot
+                            streams            <- journal.streamSnapshot
                             pageTitle = lifecycle.pageTitle(model)
                           yield Some(
                             TurnDraft(
-                              RootState(model, state.url, hooks, flash, pageTitle),
+                              RootState(model, state.url, hooks, flash, pageTitle, streams),
                               url = Some(state.url),
                               navigation = navigation,
                               effects = SessionEffects(
                                 titleChange(state.pageTitle, pageTitle),
                                 clientEvents
                               ),
-                              componentUpdates = componentUpdates
+                              componentUpdates = componentUpdates,
+                              resourceOperations = resourceOperations
                             )
                           )
+                        end if
                       case _ => ZIO.none,
                   handleParams = (state, destination) =>
                     for
-                      journal <- RootTurnJournal.make(state.hooks, state.flash)
+                      journal <- RootTurnJournal.make(
+                                   rootOwner,
+                                   state.hooks,
+                                   state.flash,
+                                   initialStreams = state.streams
+                                 )
                       context = RootParamsContext[Msg, Model](
                                   metadata,
                                   destination,
@@ -702,44 +753,62 @@ private[scalive] object RootConnection:
                                  case Hooked.Halt(value)     => ZIO.succeed(value)
                                  case Hooked.Continue(value) =>
                                    ZIO.suspend(prepared.run(value, context))
-                      navigation       <- journal.navigationWithFlash
-                      hooks            <- journal.hookRegistry[Msg, Model]
-                      flash            <- journal.flash.get
-                      clientEvents     <- journal.clientEvents.get
-                      componentUpdates <- journal.componentUpdates.get
+                      navigation         <- journal.navigationWithFlash
+                      hooks              <- journal.hookRegistry[Msg, Model]
+                      flash              <- journal.flash.get
+                      clientEvents       <- journal.clientEvents.get
+                      componentUpdates   <- journal.componentUpdates.get
+                      resourceOperations <- journal.resourceOperationSnapshot
+                      streams            <- journal.streamSnapshot
                       pageTitle = lifecycle.pageTitle(model)
                     yield TurnDraft(
-                      RootState(model, destination, hooks, flash, pageTitle),
+                      RootState(model, destination, hooks, flash, pageTitle, streams),
                       url = Some(destination),
                       navigation = navigation,
                       effects =
                         SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
-                      componentUpdates = componentUpdates
+                      componentUpdates = componentUpdates,
+                      resourceOperations = resourceOperations
                     ),
                   afterRender = draft =>
                     for
                       journal <- RootTurnJournal.make(
+                                   rootOwner,
                                    draft.model.hooks,
                                    draft.model.flash,
                                    draft.effects.clientEvents,
-                                   draft.componentUpdates
+                                   draft.componentUpdates,
+                                   draft.navigation,
+                                   draft.resourceOperations,
+                                   draft.model.streams
                                  )
                       context = RootAfterRenderContext[Msg, Model](metadata, journal)
                       _ <- ZIO.foreachDiscard(draft.model.hooks.afterRender)(
                              _.invoke(draft.model.model, context)
                            )
-                      hooks            <- journal.hookRegistry[Msg, Model]
-                      flash            <- journal.flash.get
-                      clientEvents     <- journal.clientEvents.get
-                      componentUpdates <- journal.componentUpdates.get
+                      hooks              <- journal.hookRegistry[Msg, Model]
+                      flash              <- journal.flash.get
+                      clientEvents       <- journal.clientEvents.get
+                      componentUpdates   <- journal.componentUpdates.get
+                      resourceOperations <- journal.resourceOperationSnapshot
                     yield draft.copy(
                       model = draft.model.copy(hooks = hooks, flash = flash),
                       effects = draft.effects.copy(clientEvents = clientEvents),
-                      componentUpdates = componentUpdates
-                    )
+                      componentUpdates = componentUpdates,
+                      resourceOperations = resourceOperations
+                    ),
+                  validateStreams =
+                    (state, requirements) => ZIO.attempt(state.streams.validate(requirements))
                 )
         kernel <- SessionKernel
-                    .start(sessionConfig, logic, program, outbound, componentEnvironment)
+                    .start(
+                      sessionConfig,
+                      logic,
+                      program,
+                      outbound,
+                      componentEnvironment,
+                      Some(lifecycleId)
+                    )
                     .mapError(ConnectionError.SessionFailed.apply)
         ingress        <- Queue.dropping[Event](config.ingressCapacity)
         ingressGate    <- Semaphore.make(1L)
@@ -784,11 +853,17 @@ private[scalive] object RootConnection:
     state: RootState[Msg, Model],
     metadata: RootConnectionMetadata,
     lifecycle: RootLifecycle[Msg, Model],
+    owner: OwnerId,
     message: Msg,
     select: RootHookRegistry[Msg, Model] => Vector[RootHookRegistry.Event[Msg, Model]]
   ): Task[TurnDraft[Msg, RootState[Msg, Model]]] =
     for
-      journal <- RootTurnJournal.make(state.hooks, state.flash)
+      journal <- RootTurnJournal.make(
+                   owner,
+                   state.hooks,
+                   state.flash,
+                   initialStreams = state.streams
+                 )
       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
       hooked <- runEventHooks(select(state.hooks), state.model, message, context)
       model  <- hooked match
@@ -797,18 +872,21 @@ private[scalive] object RootConnection:
                    ZIO.suspend(
                      lifecycle.handleMessage(value, context, message)
                    )
-      navigation       <- journal.navigationWithFlash
-      hooks            <- journal.hookRegistry[Msg, Model]
-      flash            <- journal.flash.get
-      clientEvents     <- journal.clientEvents.get
-      componentUpdates <- journal.componentUpdates.get
+      navigation         <- journal.navigationWithFlash
+      hooks              <- journal.hookRegistry[Msg, Model]
+      flash              <- journal.flash.get
+      clientEvents       <- journal.clientEvents.get
+      componentUpdates   <- journal.componentUpdates.get
+      resourceOperations <- journal.resourceOperationSnapshot
+      streams            <- journal.streamSnapshot
       pageTitle = lifecycle.pageTitle(model)
     yield TurnDraft(
-      RootState(model, state.url, hooks, flash, pageTitle),
+      RootState(model, state.url, hooks, flash, pageTitle, streams),
       url = Some(state.url),
       navigation = navigation,
       effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
-      componentUpdates = componentUpdates
+      componentUpdates = componentUpdates,
+      resourceOperations = resourceOperations
     )
 
   private def runEventHooks[Msg, Model](
@@ -850,10 +928,17 @@ private[scalive] object RootConnection:
     state: RootState[Msg, Model],
     metadata: RootConnectionMetadata,
     lifecycle: RootLifecycle[Msg, Model],
-    event: LiveAsyncEvent[Msg]
+    owner: OwnerId,
+    event: LiveAsyncEvent[Msg],
+    mappedMessage: Option[Msg]
   ): Task[TurnDraft[Msg, RootState[Msg, Model]]] =
     for
-      journal <- RootTurnJournal.make(state.hooks, state.flash)
+      journal <- RootTurnJournal.make(
+                   owner,
+                   state.hooks,
+                   state.flash,
+                   initialStreams = state.streams
+                 )
       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
       hooked <- state.hooks.async.foldLeft[LiveIO[Hooked[Model]]](
                   ZIO.succeed(Hooked.Continue(state.model))
@@ -870,24 +955,29 @@ private[scalive] object RootConnection:
       model <- hooked match
                  case Hooked.Halt(value)     => ZIO.succeed(value)
                  case Hooked.Continue(value) =>
-                   event.result match
-                     case LiveAsyncResult.Succeeded(message) =>
-                       ZIO.suspend(
-                         lifecycle.handleMessage(value, context, message)
-                       )
-                     case _ => ZIO.succeed(value)
-      navigation       <- journal.navigationWithFlash
-      hooks            <- journal.hookRegistry[Msg, Model]
-      flash            <- journal.flash.get
-      clientEvents     <- journal.clientEvents.get
-      componentUpdates <- journal.componentUpdates.get
+                   mappedMessage.orElse(
+                     event.result match
+                       case LiveAsyncResult.Succeeded(message) => Some(message)
+                       case _                                  => None
+                   ) match
+                     case Some(message) =>
+                       ZIO.suspend(lifecycle.handleMessage(value, context, message))
+                     case None => ZIO.succeed(value)
+      navigation         <- journal.navigationWithFlash
+      hooks              <- journal.hookRegistry[Msg, Model]
+      flash              <- journal.flash.get
+      clientEvents       <- journal.clientEvents.get
+      componentUpdates   <- journal.componentUpdates.get
+      resourceOperations <- journal.resourceOperationSnapshot
+      streams            <- journal.streamSnapshot
       pageTitle = lifecycle.pageTitle(model)
     yield TurnDraft(
-      RootState(model, state.url, hooks, flash, pageTitle),
+      RootState(model, state.url, hooks, flash, pageTitle, streams),
       url = Some(state.url),
       navigation = navigation,
       effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
-      componentUpdates = componentUpdates
+      componentUpdates = componentUpdates,
+      resourceOperations = resourceOperations
     )
 
   private def runBrowserHooks[Msg, Model](

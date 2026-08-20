@@ -105,7 +105,10 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
         def start(ctx: MountContext[Unit, Unit]) =
           ctx.connection match
             case Connection.Connected(connected) =>
-              connected.subscriptions.start(FlashKind("clock"))(ZStream.succeed(()))
+              connected.subscriptions.start(
+                FlashKind("clock"),
+                SubscriptionDelivery.Lossless
+              )(ZStream.succeed(()))
             case Connection.Disconnected => zio.ZIO.unit
       """)
       val errors = scala.compiletime.testing.typeCheckErrors("""
@@ -114,7 +117,9 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
         def start(ctx: MountContext[Unit, Unit]) =
           ctx.connection match
             case Connection.Connected(connected) =>
-              connected.subscriptions.start("clock")(ZStream.succeed(()))
+              connected.subscriptions.start("clock", SubscriptionDelivery.Lossless)(
+                ZStream.succeed(())
+              )
             case Connection.Disconnected => zio.ZIO.unit
       """)
 

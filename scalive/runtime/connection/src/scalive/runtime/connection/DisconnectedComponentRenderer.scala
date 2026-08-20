@@ -4,6 +4,8 @@ import zio.*
 
 import scalive.*
 import scalive.render.*
+import scalive.runtime.contracts.LifecycleId
+import scalive.runtime.resources.OwnerId
 
 /** One-shot disconnected rendering. The rendered tree is valid only for the supplied callback. */
 private[scalive] object DisconnectedComponentRenderer:
@@ -24,11 +26,8 @@ private[scalive] object DisconnectedComponentRenderer:
     consume: (EvaluatedTree, Map[FlashKind, String]) => Task[A]
   ): Task[A] =
     for
-      journal <- RootTurnJournal.make(
-                   RootHookRegistry.fromStatic(LiveHooks.empty[Any, Any]),
-                   flash
-                 )
-      result <- renderWithJournal(view, input, journal)(consume)
+      journal <- makeJournal(flash)
+      result  <- renderWithJournal(view, input, journal)(consume)
     yield result
 
   def renderTurnWith[Input, Msg, A](
@@ -65,11 +64,8 @@ private[scalive] object DisconnectedComponentRenderer:
     consume: EvaluatedTree => Task[A]
   ): Task[A] =
     for
-      journal <- RootTurnJournal.make(
-                   RootHookRegistry.fromStatic(LiveHooks.empty[Any, Any]),
-                   flash
-                 )
-      result <- renderOwnedProgramWith(program, input, journal)((tree, _) => consume(tree))
+      journal <- makeJournal(flash)
+      result  <- renderOwnedProgramWith(program, input, journal)((tree, _) => consume(tree))
     yield result
 
   private def renderJournaledProgramWith[Input, Msg, A](
@@ -89,6 +85,18 @@ private[scalive] object DisconnectedComponentRenderer:
       yield result
     }
 
+  private def makeJournal(flash: Map[FlashKind, String]): Task[RootTurnJournal] =
+    for
+      lifecycle <-
+        ZIO
+          .fromEither(LifecycleId.fresh()).mapError(error => IllegalStateException(error.toString))
+      journal <- RootTurnJournal.make(
+                   OwnerId.Root(lifecycle),
+                   RootHookRegistry.fromStatic(LiveHooks.empty[Any, Any]),
+                   flash
+                 )
+    yield journal
+
   private def stabilize[Input, Msg](
     program: RenderProgram[(Input, Map[FlashKind, String]), Msg],
     input: Input,
@@ -105,7 +113,7 @@ private[scalive] object DisconnectedComponentRenderer:
       for
         flash       <- journal.flash.get
         candidate   <- ZIO.acquireRelease(program.evaluate(input -> flash))(_.discard)
-        _           <- environment.validateRequirements(candidate)
+        _           <- environment.validateRequirements(candidate, journal.streams)
         resolutions <- environment.reconcile(candidate.componentRequirements)
         finalFlash  <- journal.flash.get
         identities = candidate.componentRequirements.map(requirement =>
@@ -133,7 +141,7 @@ private[scalive] object DisconnectedComponentRenderer:
         environment  <- DisconnectedComponentEnvironment.make(journal)
         ownedProgram <- ZIO.acquireRelease(ZIO.succeed(program))(_.close)
         candidate    <- ZIO.acquireRelease(ownedProgram.evaluate(input))(_.discard)
-        _            <- environment.validateRequirements(candidate)
+        _            <- environment.validateRequirements(candidate, journal.streams)
         resolutions  <- environment.reconcile(candidate.componentRequirements)
         resolved     <- ZIO.fromEither(candidate.resolveComponents(resolutions))
         finalFlash   <- journal.flash.get
@@ -147,14 +155,21 @@ final private class DisconnectedComponentEnvironment private (
   identities: Ref[Set[DisconnectedComponentIdentity]],
   cache: Ref[Map[DisconnectedComponentIdentity, DisconnectedCachedComponent]]):
 
-  def validateRequirements(candidate: RenderCandidate[?]): Task[Unit] =
-    if candidate.nestedRequirements.nonEmpty then
-      ZIO.fail(
-        IllegalStateException(
-          "nested LiveViews are unavailable during disconnected component render"
+  def validateRequirements(
+    candidate: RenderCandidate[?],
+    streams: Ref[StreamStore]
+  ): Task[Unit] =
+    val nested =
+      if candidate.nestedRequirements.nonEmpty then
+        ZIO.fail(
+          IllegalStateException(
+            "nested LiveViews are unavailable during disconnected component render"
+          )
         )
-      )
-    else ZIO.unit
+      else ZIO.unit
+    nested *> streams.get.flatMap(store =>
+      ZIO.attempt(store.validate(candidate.streamRequirements))
+    )
 
   def reconcile[Owner](
     requirements: Vector[ComponentRequirement[Owner]]
@@ -215,7 +230,7 @@ final private class DisconnectedComponentEnvironment private (
             candidate <- ZIO.acquireRelease(
                            cached.program.evaluate((requirement.props, updated, flash))
                          )(_.discard)
-            _        <- validateRequirements(candidate)
+            _        <- validateRequirements(candidate, cached.lifecycle.streams)
             children <- stageRequirements(candidate.componentRequirements)
             resolved <- ZIO.fromEither(candidate.resolveComponents(children))
             hooks    <- cached.lifecycle.registry
@@ -256,7 +271,7 @@ final private class DisconnectedComponentEnvironment private (
           candidate <- ZIO.acquireRelease(
                          program.evaluate((requirement.props, updated, flash))
                        )(_.discard)
-          _        <- validateRequirements(candidate)
+          _        <- validateRequirements(candidate, lifecycle.streams)
           children <- stageRequirements(candidate.componentRequirements)
           resolved <- ZIO.fromEither(candidate.resolveComponents(children))
           hooks    <- lifecycle.registry
@@ -315,6 +330,7 @@ private object DisconnectedCachedComponent:
 
 final private class DisconnectedComponentLifecycle[P, M, A] private (
   val root: RootTurnJournal,
+  val streams: Ref[StreamStore],
   hooks: Ref[ComponentHookRegistry[Any, Any, Any]])
     extends ComponentHookJournal:
   def registry: UIO[ComponentHookRegistry[P, M, A]] =
@@ -332,11 +348,13 @@ private object DisconnectedComponentLifecycle:
     hooks: ComponentLiveHooks[P, M, A],
     root: RootTurnJournal
   ): Task[DisconnectedComponentLifecycle[P, M, A]] =
-    for registry <- Ref.make(
-                      ComponentHookRegistry
-                        .fromStatic(hooks).asInstanceOf[ComponentHookRegistry[Any, Any, Any]]
-                    )
-    yield DisconnectedComponentLifecycle(root, registry)
+    for
+      streams  <- Ref.make(StreamStore.empty)
+      registry <- Ref.make(
+                    ComponentHookRegistry
+                      .fromStatic(hooks).asInstanceOf[ComponentHookRegistry[Any, Any, Any]]
+                  )
+    yield DisconnectedComponentLifecycle(root, streams, registry)
 
 final private case class DisconnectedComponentMountContext[P, M, A](
   lifecycle: DisconnectedComponentLifecycle[P, M, A])
@@ -344,7 +362,7 @@ final private case class DisconnectedComponentMountContext[P, M, A](
   val connection = Connection.Disconnected
   val flash      = JournaledFlash(lifecycle.root)
   val uploads    = DeferredUploads
-  val streams    = DeferredStreams
+  val streams    = JournaledStreams(lifecycle.streams)
   val hooks      = JournaledComponentHooks[P, M, A](lifecycle)
 
 final private case class DisconnectedComponentUpdateContext[P, M, A](
@@ -353,7 +371,7 @@ final private case class DisconnectedComponentUpdateContext[P, M, A](
   val connection = Connection.Disconnected
   val flash      = JournaledFlash(lifecycle.root)
   val uploads    = DeferredUploads
-  val streams    = DeferredStreams
+  val streams    = JournaledStreams(lifecycle.streams)
   val hooks      = JournaledComponentHooks[P, M, A](lifecycle)
 
 final private case class DisconnectedComponentAfterRenderContext[P, M, A](

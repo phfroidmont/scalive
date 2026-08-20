@@ -1,6 +1,7 @@
 package scalive.runtime.connection
 
 import scala.reflect.ClassTag
+import scala.util.Try
 
 import zio.Ref
 import zio.Task
@@ -15,6 +16,7 @@ import zio.stream.ZStream
 
 import scalive.*
 import scalive.runtime.kernel.*
+import scalive.runtime.resources.*
 import scalive.streams.*
 import scalive.upload.*
 
@@ -25,11 +27,14 @@ private object Deferred:
   def fail[A](operation: String): LiveIO[A] = ZIO.fail(Unsupported(operation))
 
 final private[scalive] class RootTurnJournal private (
+  val owner: OwnerId,
   val navigation: Ref[Option[NavigationRequest]],
   val hooks: Ref[RootHookRegistry[Any, Any]],
   val flash: Ref[Map[FlashKind, String]],
   val clientEvents: Ref[Vector[ClientEffect]],
-  val componentUpdates: Ref[Vector[ComponentUpdateRequest]]):
+  val componentUpdates: Ref[Vector[ComponentUpdateRequest]],
+  val resourceOperations: Ref[Vector[ResourceOperation]],
+  val streams: Ref[StreamStore]):
 
   def hookRegistry[Msg, Model]: UIO[RootHookRegistry[Msg, Model]] =
     hooks.get.map(_.asInstanceOf[RootHookRegistry[Msg, Model]])
@@ -43,13 +48,23 @@ final private[scalive] class RootTurnJournal private (
   def navigationWithFlash: UIO[Option[NavigationRequest]] =
     navigation.get.zipWith(flash.get)((request, values) => request.map(_.copy(flash = values)))
 
+  def record(operation: ResourceOperation): UIO[Unit] =
+    resourceOperations.update(_ :+ operation)
+
+  def resourceOperationSnapshot: UIO[Vector[ResourceOperation]] = resourceOperations.get
+
+  def streamSnapshot: UIO[StreamStore] = streams.get.map(_.prune)
+
 private[scalive] object RootTurnJournal:
   def make[Msg, Model](
+    owner: OwnerId,
     registry: RootHookRegistry[Msg, Model],
     initialFlash: Map[FlashKind, String] = Map.empty,
     initialClientEvents: Vector[ClientEffect] = Vector.empty,
     initialComponentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
-    initialNavigation: Option[NavigationRequest] = None
+    initialNavigation: Option[NavigationRequest] = None,
+    initialResourceOperations: Vector[ResourceOperation] = Vector.empty,
+    initialStreams: StreamStore = StreamStore.empty
   ): LiveIO[RootTurnJournal] =
     for
       navigation   <- Ref.make(initialNavigation)
@@ -57,7 +72,18 @@ private[scalive] object RootTurnJournal:
       flash        <- Ref.make(initialFlash)
       clientEvents <- Ref.make(initialClientEvents)
       updates      <- Ref.make(initialComponentUpdates)
-    yield new RootTurnJournal(navigation, hooks, flash, clientEvents, updates)
+      operations   <- Ref.make(initialResourceOperations)
+      streams      <- Ref.make(initialStreams)
+    yield new RootTurnJournal(
+      owner,
+      navigation,
+      hooks,
+      flash,
+      clientEvents,
+      updates,
+      operations,
+      streams
+    )
 
 final private class RootNavigation(
   currentUrl: URL,
@@ -136,42 +162,85 @@ private object DeferredUploads extends Uploads:
     callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
   ): LiveIO[(List[A], LiveUpload[R])] = Deferred.fail("consume completed uploads")
 
-private object DeferredStreams extends Streams:
+final private class JournaledStreams(streams: Ref[StreamStore]) extends Streams:
   def create[A](definition: LiveStreamDef[A], items: Iterable[A]): LiveIO[LiveStream[A]] =
-    Deferred.fail("create stream")
+    update(_.create(definition, items))
   def insertAll[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
     at: StreamAt
-  ): LiveIO[LiveStream[A]] = Deferred.fail("insert stream items")
+  ): LiveIO[LiveStream[A]] = update(_.insertAll(definition, items, at))
   def reset[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
     at: StreamAt
-  ): LiveIO[LiveStream[A]] = Deferred.fail("reset stream")
+  ): LiveIO[LiveStream[A]] = update(_.reset(definition, items, at))
   def insert[A](
     definition: LiveStreamDef[A],
     item: A,
     at: StreamAt,
     updateOnly: Boolean
-  ): LiveIO[LiveStream[A]] = Deferred.fail("insert stream item")
+  ): LiveIO[LiveStream[A]] = update(_.insert(definition, item, at, updateOnly))
   def delete[A](definition: LiveStreamDef[A], item: A): LiveIO[LiveStream[A]] =
-    Deferred.fail("delete stream item")
+    update(_.delete(definition, item))
   def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]] =
+    update(_.deleteByDomId(definition, domId))
+
+  private def update[A](
+    operation: StreamStore => StreamStore.Replacement[A]
+  ): LiveIO[LiveStream[A]] =
+    streams
+      .modify { current =>
+        Try(operation(current)).toEither match
+          case Right(replacement) => Right(replacement.stream) -> replacement.store
+          case Left(error)        => Left(error)               -> current
+      }.flatMap(ZIO.fromEither)
+end JournaledStreams
+
+private object DeferredStreams extends Streams:
+  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): LiveIO[LiveStream[A]] =
+    Deferred.fail("create stream")
+  def insertAll[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt) =
+    Deferred.fail("insert stream items")
+  def reset[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt) =
+    Deferred.fail("reset stream")
+  def insert[A](definition: LiveStreamDef[A], item: A, at: StreamAt, updateOnly: Boolean) =
+    Deferred.fail("insert stream item")
+  def delete[A](definition: LiveStreamDef[A], item: A) =
+    Deferred.fail("delete stream item")
+  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String) =
     Deferred.fail("delete stream item by DOM id")
 
-final private class DeferredAsync[Msg] extends Async[Msg]:
+final private class JournaledAsync[Msg](journal: RootTurnJournal) extends Async[Msg]:
   def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: LiveAsyncResult[A] => Msg): LiveIO[Unit] =
-    Deferred.fail("start async task")
+    journal.record(ResourceOperation.StartAsync(journal.owner, key, task, toMsg))
   def cancel[A](key: AsyncKey[A], reason: Option[String]): LiveIO[Unit] =
-    Deferred.fail("cancel async task")
+    journal.record(
+      ResourceOperation.CancelAsync(journal.owner, key.asInstanceOf[AsyncKey[Any]], reason)
+    )
 
-final private class DeferredSubscriptions[Msg] extends Subscriptions[Msg]:
-  def start(key: SubscriptionKey)(stream: ZStream[Any, Nothing, Msg]): LiveIO[Unit] =
-    Deferred.fail("start subscription")
-  def replace(key: SubscriptionKey)(stream: ZStream[Any, Nothing, Msg]): LiveIO[Unit] =
-    Deferred.fail("replace subscription")
-  def cancel(key: SubscriptionKey): LiveIO[Unit] = Deferred.fail("cancel subscription")
+final private class JournaledSubscriptions[Msg](journal: RootTurnJournal)
+    extends Subscriptions[Msg]:
+  def start(
+    key: SubscriptionKey,
+    delivery: SubscriptionDelivery
+  )(
+    stream: ZStream[Any, Nothing, Msg]
+  ): LiveIO[Unit] =
+    journal.record(
+      ResourceOperation.StartSubscription(journal.owner, key, delivery, stream, replace = false)
+    )
+  def replace(
+    key: SubscriptionKey,
+    delivery: SubscriptionDelivery
+  )(
+    stream: ZStream[Any, Nothing, Msg]
+  ): LiveIO[Unit] =
+    journal.record(
+      ResourceOperation.StartSubscription(journal.owner, key, delivery, stream, replace = true)
+    )
+  def cancel(key: SubscriptionKey): LiveIO[Unit] =
+    journal.record(ResourceOperation.CancelSubscription(journal.owner, key))
 
 final private class JournaledClient(journal: RootTurnJournal) extends Client:
   def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit] =
@@ -397,18 +466,18 @@ final private class RootConnected[Msg](metadata: RootConnectionMetadata, journal
     extends RootMountConnected[Msg]:
   val staticChanged: Boolean            = metadata.staticChanged
   val connectParams: Map[String, Json]  = metadata.connectParams
-  val async: Async[Msg]                 = DeferredAsync()
-  val subscriptions: Subscriptions[Msg] = DeferredSubscriptions()
+  val async: Async[Msg]                 = JournaledAsync(journal)
+  val subscriptions: Subscriptions[Msg] = JournaledSubscriptions(journal)
   val client: Client                    = JournaledClient(journal)
 
 final private[connection] class RootMountContext[Msg, Model] private (
   val connection: Connection[RootMountConnected[Msg]],
   val nav: MountNavigation,
   val hooks: RootHooks[Msg, Model],
-  val flash: Flash)
+  val flash: Flash,
+  val streams: Streams)
     extends MountContext[Msg, Model]:
   val uploads: Uploads = DeferredUploads
-  val streams: Streams = DeferredStreams
 
 private[scalive] object RootMountContext:
   def connected[Msg, Model](
@@ -420,7 +489,8 @@ private[scalive] object RootMountContext:
       Connection.Connected(RootConnected(metadata, journal)),
       new RootMountNavigation(currentUrl, journal),
       JournaledRootHooks(journal),
-      JournaledFlash(journal)
+      JournaledFlash(journal),
+      JournaledStreams(journal.streams)
     )
 
   def disconnected[Msg, Model]: MountContext[Msg, Model] =
@@ -432,7 +502,8 @@ private[scalive] object RootMountContext:
         def redirectUnsafe(to: String)        = Deferred.fail("redirect")
       ,
       DeferredRootHooks(),
-      DeferredFlash
+      DeferredFlash,
+      DeferredStreams
     )
 
   private[connection] def disconnected[Msg, Model](
@@ -443,7 +514,8 @@ private[scalive] object RootMountContext:
       Connection.Disconnected,
       new RootMountNavigation(currentUrl, journal),
       JournaledRootHooks(journal),
-      JournaledFlash(journal)
+      JournaledFlash(journal),
+      JournaledStreams(journal.streams)
     )
 end RootMountContext
 
@@ -457,9 +529,9 @@ final private[connection] class RootMessageContext[Msg, Model](
   val nav: Navigation                   = new RootNavigation(currentUrl, journal, allowPatch = true)
   val flash: Flash                      = JournaledFlash(journal)
   val uploads: Uploads                  = DeferredUploads
-  val streams: Streams                  = DeferredStreams
-  val async: Async[Msg]                 = DeferredAsync()
-  val subscriptions: Subscriptions[Msg] = DeferredSubscriptions()
+  val streams: Streams                  = JournaledStreams(journal.streams)
+  val async: Async[Msg]                 = JournaledAsync(journal)
+  val subscriptions: Subscriptions[Msg] = JournaledSubscriptions(journal)
   val client: Client                    = JournaledClient(journal)
   val components: ComponentUpdates      = JournaledComponentUpdates(journal)
   val hooks: RootHooks[Msg, Model]      = JournaledRootHooks(journal)
@@ -475,15 +547,15 @@ final private[connection] class RootParamsContext[Msg, Model](
       Connection.Connected(new RootParamsConnected[Msg]:
         val staticChanged                     = metadata.staticChanged
         val connectParams                     = metadata.connectParams
-        val async: Async[Msg]                 = DeferredAsync()
-        val subscriptions: Subscriptions[Msg] = DeferredSubscriptions()
+        val async: Async[Msg]                 = JournaledAsync(journal)
+        val subscriptions: Subscriptions[Msg] = JournaledSubscriptions(journal)
         val client: Client                    = JournaledClient(journal)
         val components: ComponentUpdates      = JournaledComponentUpdates(journal))
     else Connection.Disconnected
   val nav: Navigation              = new RootNavigation(currentUrl, journal, allowPatch = true)
   val flash: Flash                 = JournaledFlash(journal)
   val uploads: Uploads             = DeferredUploads
-  val streams: Streams             = DeferredStreams
+  val streams: Streams             = JournaledStreams(journal.streams)
   val hooks: RootHooks[Msg, Model] = JournaledRootHooks(journal)
 
 final private[connection] class RootAfterRenderContext[Msg, Model](

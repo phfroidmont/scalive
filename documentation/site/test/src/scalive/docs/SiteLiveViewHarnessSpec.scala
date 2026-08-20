@@ -106,7 +106,9 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
                         val stream = ZStream.fromZIO(
                           ZIO.acquireReleaseWith(ZIO.unit)(_ => released.succeed(()).unit)(_ => ZIO.never)
                         )
-                        ctx.subscriptions.start(ResourceSubscription)(stream).as(())
+                        ctx.subscriptions
+                          .start(ResourceSubscription, SubscriptionDelivery.Lossless)(stream)
+                          .as(())
 
                       def handleMessage(model: Unit, ctx: MessageContext) =
                         case ResourceMsg.Tick => ZIO.succeed(model)

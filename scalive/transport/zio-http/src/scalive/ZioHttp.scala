@@ -1412,8 +1412,10 @@ object ZioHttp:
     state: Ref[Option[PhoenixRenderedState]],
     projectionGate: Semaphore,
     cid: Long,
-    resolveToken: Object => IO[ConnectionError, Option[scalive.runtime.kernel.ComponentInstanceId]]
-  ): IO[ConnectionError, Option[scalive.runtime.kernel.ComponentInstanceId]] =
+    resolveToken: Object => IO[ConnectionError, Option[
+      scalive.runtime.contracts.ComponentInstanceId
+    ]]
+  ): IO[ConnectionError, Option[scalive.runtime.contracts.ComponentInstanceId]] =
     val token = projectionGate.withPermit {
       if cid < Int.MinValue.toLong || cid > Int.MaxValue.toLong then ZIO.none
       else state.get.map(_.flatMap(_.tokenForCid(cid.toInt)))

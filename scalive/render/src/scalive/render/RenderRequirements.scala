@@ -94,7 +94,7 @@ object NestedRequirement:
     type Model   = Model0
     def create(): LiveView[Message0, Model0] = factory()
 
-/** Opaque stream handle plus the declaration projection retained for later runtime integration. */
+/** The evaluated stream declaration retained as runtime-facing metadata alongside semantic rows. */
 sealed trait StreamRequirement[+OwnerMsg]:
   type Item
   def location: TemplateId

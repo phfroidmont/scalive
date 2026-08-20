@@ -142,6 +142,29 @@ object PreparedResourceSpec extends ZIOSpecDefault:
         closed == PreparedResource.State.Closed
       )
     },
+    test("candidate discard closes inactive resources but leaves committed resources owned") {
+      for
+        inactiveClosed <- Ref.make(0)
+        inactive       <- PreparedResource.make(inactiveClosed.update(_ + 1))
+        _              <- inactive.discard
+        inactiveState  <- inactive.state
+        inactiveCount  <- inactiveClosed.get
+        activeClosed   <- Ref.make(0)
+        active         <- PreparedResource.make(activeClosed.update(_ + 1))
+        _              <- active.activate
+        _              <- active.discard
+        activeState    <- active.state
+        retainedCount  <- activeClosed.get
+        _              <- active.close
+        finalCount     <- activeClosed.get
+      yield assertTrue(
+        inactiveState == PreparedResource.State.Closed,
+        inactiveCount == 1,
+        activeState == PreparedResource.State.Active,
+        retainedCount == 0,
+        finalCount == 1
+      )
+    },
     test("registry registers ownership before returning and snapshots resources") {
       for
         registered <- Ref.make(Vector.empty[ZIO[Any, Nothing, Unit]])

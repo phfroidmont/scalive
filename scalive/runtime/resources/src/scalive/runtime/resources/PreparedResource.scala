@@ -62,6 +62,18 @@ final private[scalive] class PreparedResource private (
       }
   }
 
+  /** Rolls back an inactive candidate without closing a resource retained by a later commit. */
+  def discard: UIO[Unit] = ZIO.uninterruptible {
+    lifecycle
+      .modify {
+        case current @ Lifecycle(State.Inactive, false) =>
+          true -> current.copy(state = State.Stale)
+        case current => false -> current
+      }.flatMap { discarded =>
+        ZIO.when(discarded)(activation.fail(Closed).unit *> close).unit
+      }
+  }
+
   /** Observable lifecycle state for runtime integration and module tests. */
   def state: UIO[State] = lifecycle.get.map(_.state)
 end PreparedResource

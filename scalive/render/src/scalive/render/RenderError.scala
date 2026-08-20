@@ -23,6 +23,9 @@ object RenderError:
   final case class DuplicateKey(key: Any)
       extends RenderError(s"duplicate keyed collection key '$key'")
 
+  final case class DuplicateStreamDomId(domId: String)
+      extends RenderError(s"duplicate stream DOM id '$domId'")
+
   final case class ComponentResolutionInvalid(message: String) extends RenderError(message)
 
   final case class UnresolvedComponents(locations: Vector[TemplateId])

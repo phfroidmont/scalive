@@ -24,12 +24,14 @@ object HtmlRenderer:
       case flash: EvaluatedNode.Flash   => flash.child.foreach(appendElement(_, output))
       case choice: EvaluatedNode.Choice => choice.child.foreach(appendNode(_, output))
       case keyed: EvaluatedNode.Keyed => keyed.rows.foreach(row => appendElement(row.child, output))
+      case stream: EvaluatedNode.Stream =>
+        stream.rows.foreach(row => appendElement(row.child, output))
       case component: EvaluatedNode.Component =>
         component.resolution match
           case Some(value) => appendElement(value.child.root, output)
           case None        =>
             throw IllegalStateException(s"component ${component.id.value} is unresolved")
-      case _: EvaluatedNode.Nested | _: EvaluatedNode.Stream => ()
+      case _: EvaluatedNode.Nested => ()
 
   private def appendElement(element: EvaluatedNode.Element, output: StringBuilder): Unit =
     val _ = output.append('<').append(element.tag)

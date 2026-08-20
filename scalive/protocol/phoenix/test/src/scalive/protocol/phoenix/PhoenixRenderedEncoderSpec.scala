@@ -6,9 +6,30 @@ import zio.test.*
 
 import scalive.*
 import scalive.render.*
+import scalive.streams.*
 
 object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
   final case class Model(text: String, raw: String, title: Option[String], disabled: Boolean)
+  final case class StreamItem(id: String, label: String)
+
+  private def stream(
+    identity: LiveStreamIdentity,
+    generation: Long,
+    rows: Vector[StreamItem],
+    inserts: Vector[(StreamItem, StreamAt, Option[StreamLimit], Boolean)] = Vector.empty,
+    deletes: Vector[String] = Vector.empty,
+    reset: Boolean = false
+  ): LiveStream[StreamItem] = LiveStream(
+    identity,
+    "items",
+    generation,
+    rows.map(item => LiveStreamEntry(item.id, item)),
+    inserts.map { case (item, at, limit, updateOnly) =>
+      LiveStreamInsert(LiveStreamEntry(item.id, item), at, limit, updateOnly)
+    },
+    deletes,
+    reset
+  )
 
   object TestComponent extends LiveComponent[String, String, Unit]:
     def mount(props: String, ctx: MountContext): LiveIO[Unit] = ZIO.unit
@@ -32,7 +53,378 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       child.asInstanceOf[RenderCandidate[requirement.Message]]
     )
 
+  private def projectedStreamRows(state: PhoenixRenderedState): Vector[String] =
+    def loop(node: PhoenixRenderedEncoder.ProjectedNode): Vector[String] =
+      node.parts.flatMap {
+        case PhoenixRenderedEncoder.ProjectedPart.Node(child) => loop(child)
+        case PhoenixRenderedEncoder.ProjectedPart.Stream(value) => value.rows.map(_.domId)
+        case _ => Vector.empty
+      }
+    loop(state.root) ++ state.components.valuesIterator.flatMap(component => loop(component.root))
+
+  private def dynamic(rendered: Json.Obj, index: Int = 0): Json.Obj =
+    field(rendered, index.toString).asInstanceOf[Json.Obj]
+
+  private def field(rendered: Json.Obj, name: String): Json =
+    rendered.fields.toMap.apply(name)
+
   override def spec = suite("PhoenixRenderedEncoderSpec")(
+    test("projects an initial stream as a Phoenix 1.1 keyed comprehension") {
+      val identity = LiveStreamIdentity.fresh()
+      val first = stream(
+        identity,
+        1L,
+        Vector(StreamItem("a", "one"), StreamItem("b", "two")),
+        Vector(
+          (StreamItem("a", "one"), StreamAt.Last, None, false),
+          (StreamItem("b", "two"), StreamAt.Last, None, false)
+        )
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
+      )
+      for
+        program <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(first)
+        encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(candidate.tree))
+        secondHandle = stream(
+          identity,
+          2L,
+          Vector(StreamItem("c", "three"), StreamItem("a", "one"), StreamItem("b", "two")),
+          Vector((StreamItem("c", "three"), StreamAt.First, None, false))
+        )
+        second <- program.evaluate(secondHandle, Some(candidate.commit))
+        appended <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(encoded._1, TreeDiffer.diff(candidate.tree, second.tree))
+        )
+        thirdHandle = stream(
+          identity,
+          2L,
+          Vector(StreamItem("c", "three"), StreamItem("a", "updated"), StreamItem("b", "two"))
+        )
+        third <- program.evaluate(thirdHandle, Some(second.commit))
+        rowUpdated <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(appended._1, TreeDiffer.diff(second.tree, third.tree))
+        )
+      yield assertTrue(
+        encoded._1.streamRef(identity).contains("0"),
+        html._2 == "<div><span id=\"a\">one</span><span id=\"b\">two</span></div>",
+        encoded._2 == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
+          "0" -> Json.Obj(
+            "s" -> Json.Arr(Json.Str("<span id=\""), Json.Str("\">"), Json.Str("</span>")),
+            "k" -> Json.Obj(
+              "0" -> Json.Obj("0" -> Json.Str("a"), "1" -> Json.Str("one")),
+              "1" -> Json.Obj("0" -> Json.Str("b"), "1" -> Json.Str("two")),
+              "kc" -> Json.Num(2)
+            ),
+            "stream" -> Json.Arr(
+              Json.Str("0"),
+              Json.Arr(
+                Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false)),
+                Json.Arr(Json.Str("b"), Json.Num(-1), Json.Null, Json.Bool(false))
+              ),
+              Json.Arr()
+            )
+          )
+        ),
+        appended._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "0" -> Json.Obj("0" -> Json.Str("c"), "1" -> Json.Str("three")),
+              "kc" -> Json.Num(1)
+            ),
+            "stream" -> Json.Arr(
+              Json.Str("0"),
+              Json.Arr(Json.Arr(Json.Str("c"), Json.Num(0), Json.Null, Json.Bool(false))),
+              Json.Arr()
+            )
+          )
+        ),
+        rowUpdated._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "0" -> Json.Obj("0" -> Json.Str("a"), "1" -> Json.Str("updated")),
+              "kc" -> Json.Num(1)
+            ),
+            "stream" -> Json.Arr(Json.Str("0"), Json.Arr(), Json.Arr())
+          )
+        )
+      )
+    },
+    test("encodes Index and Last positions, signed limits, and retains the bounded order") {
+      val identity = LiveStreamIdentity.fresh()
+      val initialHandle = stream(identity, 1L, Vector(StreamItem("a", "one"), StreamItem("b", "two")))
+      val nextHandle = stream(
+        identity,
+        2L,
+        Vector(StreamItem("d", "four"), StreamItem("b", "two"), StreamItem("e", "five")),
+        Vector(
+          (StreamItem("d", "four"), StreamAt.Index(1), Some(StreamLimit.KeepFirst(3)), false),
+          (StreamItem("e", "five"), StreamAt.Last, Some(StreamLimit.KeepLast(3)), false)
+        )
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
+      )
+      for
+        program <- ZIO.fromEither(compiled)
+        first <- program.evaluate(initialHandle)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        next <- program.evaluate(nextHandle, Some(first.commit))
+        updated <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(initial._1, TreeDiffer.diff(first.tree, next.tree))
+        )
+        streamDiff = dynamic(updated._2)
+      yield assertTrue(
+        field(streamDiff, "stream") == Json.Arr(
+          Json.Str("0"),
+          Json.Arr(
+            Json.Arr(Json.Str("d"), Json.Num(1), Json.Num(3), Json.Bool(false)),
+            Json.Arr(Json.Str("e"), Json.Num(-1), Json.Num(-3), Json.Bool(false))
+          ),
+          Json.Arr()
+        ),
+        field(streamDiff, "k") == Json.Obj(
+          "0" -> Json.Obj("0" -> Json.Str("d"), "1" -> Json.Str("four")),
+          "1" -> Json.Obj("0" -> Json.Str("e"), "1" -> Json.Str("five")),
+          "kc" -> Json.Num(2)
+        ),
+        projectedStreamRows(updated._1) == Vector("d", "b", "e")
+      )
+    },
+    test("keeps updateOnly missing IDs out of retained state and updates existing IDs in place") {
+      val identity = LiveStreamIdentity.fresh()
+      val firstHandle = stream(
+        identity,
+        1L,
+        Vector(StreamItem("a", "one"), StreamItem("b", "two"))
+      )
+      val updateOnlyHandle = stream(
+        identity,
+        2L,
+        Vector(
+          StreamItem("a", "one"),
+          StreamItem("b", "updated"),
+          StreamItem("ghost", "ignored")
+        ),
+        Vector(
+          (StreamItem("b", "updated"), StreamAt.First, None, true),
+          (StreamItem("ghost", "ignored"), StreamAt.Last, None, true)
+        )
+      )
+      val insertedHandle = stream(
+        identity,
+        3L,
+        Vector(StreamItem("a", "one"), StreamItem("b", "updated"), StreamItem("ghost", "inserted")),
+        Vector((StreamItem("ghost", "inserted"), StreamAt.Last, None, false))
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
+      )
+      for
+        program <- ZIO.fromEither(compiled)
+        first <- program.evaluate(firstHandle)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        updateOnly <- program.evaluate(updateOnlyHandle, Some(first.commit))
+        updated <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(initial._1, TreeDiffer.diff(first.tree, updateOnly.tree))
+        )
+        inserted <- program.evaluate(insertedHandle, Some(updateOnly.commit))
+        added <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(updated._1, TreeDiffer.diff(updateOnly.tree, inserted.tree))
+        )
+        metadata = field(dynamic(updated._2), "stream")
+      yield assertTrue(
+        metadata == Json.Arr(
+          Json.Str("0"),
+          Json.Arr(
+            Json.Arr(Json.Str("b"), Json.Num(0), Json.Null, Json.Bool(true)),
+            Json.Arr(Json.Str("ghost"), Json.Num(-1), Json.Null, Json.Bool(true))
+          ),
+          Json.Arr()
+        ),
+        projectedStreamRows(updated._1) == Vector("a", "b"),
+        projectedStreamRows(added._1) == Vector("a", "b", "ghost")
+      )
+    },
+    test("encodes delete and reset metadata and applies both to retained rows") {
+      val identity = LiveStreamIdentity.fresh()
+      val firstHandle = stream(identity, 1L, Vector(StreamItem("a", "one"), StreamItem("b", "two")))
+      val deletedHandle = stream(
+        identity,
+        2L,
+        Vector(StreamItem("b", "two")),
+        deletes = Vector("a")
+      )
+      val resetHandle = stream(
+        identity,
+        3L,
+        Vector(StreamItem("c", "three"), StreamItem("a", "again")),
+        Vector(
+          (StreamItem("c", "three"), StreamAt.Last, None, false),
+          (StreamItem("a", "again"), StreamAt.Last, None, false)
+        ),
+        reset = true
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
+      )
+      for
+        program <- ZIO.fromEither(compiled)
+        first <- program.evaluate(firstHandle)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        deleted <- program.evaluate(deletedHandle, Some(first.commit))
+        afterDelete <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(initial._1, TreeDiffer.diff(first.tree, deleted.tree))
+        )
+        reset <- program.evaluate(resetHandle, Some(deleted.commit))
+        afterReset <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(afterDelete._1, TreeDiffer.diff(deleted.tree, reset.tree))
+        )
+      yield assertTrue(
+        field(dynamic(afterDelete._2), "stream") ==
+          Json.Arr(Json.Str("0"), Json.Arr(), Json.Arr(Json.Str("a"))),
+        field(dynamic(afterDelete._2), "k") == Json.Obj("kc" -> Json.Num(0)),
+        projectedStreamRows(afterDelete._1) == Vector("b"),
+        field(dynamic(afterReset._2), "stream") == Json.Arr(
+          Json.Str("0"),
+          Json.Arr(
+            Json.Arr(Json.Str("c"), Json.Num(-1), Json.Null, Json.Bool(false)),
+            Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))
+          ),
+          Json.Arr(),
+          Json.Bool(true)
+        ),
+        projectedStreamRows(afterReset._1) == Vector("c", "a")
+      )
+    },
+    test("retires stream identities and never reuses their connection-local references") {
+      val firstIdentity = LiveStreamIdentity.fresh()
+      val secondIdentity = LiveStreamIdentity.fresh()
+      val firstHandle = stream(firstIdentity, 1L, Vector(StreamItem("a", "one")))
+      val secondHandle = stream(secondIdentity, 1L, Vector(StreamItem("b", "two")))
+      val firstAgain = stream(firstIdentity, 1L, Vector(StreamItem("c", "three")))
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
+      )
+      for
+        program <- ZIO.fromEither(compiled)
+        first <- program.evaluate(firstHandle)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        second <- program.evaluate(secondHandle, Some(first.commit))
+        replaced <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(initial._1, TreeDiffer.diff(first.tree, second.tree))
+        )
+        third <- program.evaluate(firstAgain, Some(second.commit))
+        reintroduced <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(replaced._1, TreeDiffer.diff(second.tree, third.tree))
+        )
+      yield assertTrue(
+        initial._1.streamRef(firstIdentity).contains("0"),
+        replaced._1.streamRef(firstIdentity).isEmpty,
+        replaced._1.streamRef(secondIdentity).contains("1"),
+        field(dynamic(replaced._2), "stream").asInstanceOf[Json.Arr].elements.head == Json.Str("1"),
+        reintroduced._1.streamRef(secondIdentity).isEmpty,
+        reintroduced._1.streamRef(firstIdentity).contains("2"),
+        field(dynamic(reintroduced._2), "stream").asInstanceOf[Json.Arr].elements.head == Json.Str("2")
+      )
+    },
+    test("projects a stream inside a resolved component CID payload") {
+      val identity = LiveStreamIdentity.fresh()
+      val handle = stream(
+        identity,
+        1L,
+        Vector(StreamItem("a", "one")),
+        Vector((StreamItem("a", "one"), StreamAt.Last, None, false))
+      )
+      val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
+        div(liveComponent(TestComponent, "stream", "stream"))
+      )
+      val childCompiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
+      )
+      val token = Object()
+      val ref = ComponentRef.runtime[String](token)
+      for
+        rootProgram <- ZIO.fromEither(rootCompiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        root <- rootProgram.evaluate(())
+        child <- childProgram.evaluate(handle)
+        resolved <- ZIO.fromEither(
+          root.resolveComponents(Vector(resolve(root.componentRequirements.head, ref, token, child)))
+        )
+        encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
+        components = field(encoded._2, "c").asInstanceOf[Json.Obj]
+        component = field(components, "1").asInstanceOf[Json.Obj]
+      yield assertTrue(
+        encoded._1.cidForToken(token).contains(1),
+        encoded._1.streamRef(identity).contains("0"),
+        field(component, "s") == Json.Arr(
+          Json.Str("<div data-phx-component=\"1\">"),
+          Json.Str("</div>")
+        ),
+        field(dynamic(component), "stream") == Json.Arr(
+          Json.Str("0"),
+          Json.Arr(Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))),
+          Json.Arr()
+        ),
+        projectedStreamRows(encoded._1) == Vector("a")
+      )
+    },
+    test("retains and retires a component nested in a stream row") {
+      val identity = LiveStreamIdentity.fresh()
+      val initialHandle = stream(
+        identity,
+        1L,
+        Vector(StreamItem("a", "one")),
+        Vector((StreamItem("a", "one"), StreamAt.Last, None, false))
+      )
+      val removedHandle = stream(
+        identity,
+        2L,
+        Vector.empty,
+        deletes = Vector("a")
+      )
+      val rootCompiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(
+          model.stream((domId, _) =>
+            div(idAttr := domId, liveComponent(TestComponent, domId, domId))
+          )
+        )
+      )
+      val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
+      val token = Object()
+      val ref = ComponentRef.runtime[String](token)
+      for
+        rootProgram <- ZIO.fromEither(rootCompiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        unresolved <- rootProgram.evaluate(initialHandle)
+        child <- childProgram.evaluate("child")
+        resolved <- ZIO.fromEither(
+          unresolved.resolveComponents(
+            Vector(resolve(unresolved.componentRequirements.head, ref, token, child))
+          )
+        )
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
+        removed <- rootProgram.evaluate(removedHandle, Some(resolved.commit))
+        updated <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(initial._1, TreeDiffer.diff(resolved.tree, removed.tree))
+        )
+        row = field(dynamic(initial._2), "k").asInstanceOf[Json.Obj]
+        rowZero = field(row, "0").asInstanceOf[Json.Obj]
+      yield assertTrue(
+        initial._1.cidForToken(token).contains(1),
+        field(initial._2, "c").asInstanceOf[Json.Obj].fields.map(_._1).toSet == Set("1"),
+        field(rowZero, "1") == Json.Num(1),
+        updated._1.cidForToken(token).isEmpty,
+        updated._1.tokenForCid(1).isEmpty,
+        field(dynamic(updated._2), "stream") ==
+          Json.Arr(Json.Str("0"), Json.Arr(), Json.Arr(Json.Str("a"))),
+        projectedStreamRows(updated._1).isEmpty
+      )
+    },
     test("initial rendered maps reconstruct exactly to HtmlRenderer") {
       val compiled = RenderProgram.compile[Model, Nothing] { model =>
         div(

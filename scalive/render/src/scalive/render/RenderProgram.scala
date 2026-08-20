@@ -18,6 +18,8 @@ import scalive.Mod
 import scalive.NestedViewSpec
 import scalive.Signal
 import scalive.streams.LiveStream
+import scalive.streams.LiveStreamEntry
+import scalive.streams.LiveStreamIdentity
 
 /** A retained, protocol-neutral render program compiled once for one lifecycle graph.
   *
@@ -188,17 +190,58 @@ object RenderProgram:
   final private case class NestedTemplate(id: TemplateId, spec: NestedViewSpec)
       extends NodeTemplate[Nothing]
 
-  final private case class StaticStreamTemplate[A, +Msg](
+  final private case class StaticStreamTemplate[A, Msg](
     id: TemplateId,
     stream: LiveStream[A],
-    project: (String, A) => HtmlElement[Msg])
+    project: (String, A) => HtmlElement[Msg],
+    compiler: Compiler,
+    state: StreamTemplate.State[A, Msg])
       extends NodeTemplate[Msg]
 
-  final private case class SignalStreamTemplate[A, +Msg](
+  final private case class SignalStreamTemplate[A, Msg](
     id: TemplateId,
     stream: Signal[LiveStream[A]],
-    project: (String, Signal[A]) => HtmlElement[Msg])
+    project: (String, Signal[A]) => HtmlElement[Msg],
+    compiler: Compiler,
+    state: StreamTemplate.State[A, Msg])
       extends NodeTemplate[Msg]
+
+  final private case class StreamRowTemplate[A, Msg](
+    id: RowId,
+    scope: SignalScope,
+    source: Signal[A],
+    element: ElementTemplate[Msg]):
+    def retire(): Unit = scope.close()
+
+  private object StreamTemplate:
+    final class State[A, Msg]:
+      private var retainedIdentity: Option[LiveStreamIdentity] = None
+      private var retained = Map.empty[String, StreamRowTemplate[A, Msg]]
+
+      def snapshot(identity: LiveStreamIdentity): Map[String, StreamRowTemplate[A, Msg]] =
+        synchronized {
+          if retainedIdentity.exists(_ eq identity) then retained else Map.empty
+        }
+
+      def assignment(
+        identity: LiveStreamIdentity,
+        next: Map[String, StreamRowTemplate[A, Msg]]
+      ): () => Unit = () =>
+        synchronized {
+          val old          = retained
+          val sameIdentity = retainedIdentity.exists(_ eq identity)
+          retainedIdentity = Some(identity)
+          retained = next
+          old.foreach { case (domId, row) =>
+            if !sameIdentity || !next.get(domId).exists(_.scope eq row.scope) then row.retire()
+          }
+        }
+
+      def closeAll(): Unit = synchronized {
+        retained.values.foreach(_.retire())
+        retained = Map.empty
+        retainedIdentity = None
+      }
 
   sealed private trait KeyedRowTemplate[+Msg]:
     def id: RowId
@@ -259,15 +302,19 @@ object RenderProgram:
       extends NodeTemplate[Msg]
 
   final private class CandidateRows:
-    private val rows = ArrayBuffer.empty[DynamicKeyedRowTemplate[?, ?]]
+    private val rows = ArrayBuffer.empty[(RowId, SignalScope, () => Unit)]
 
-    def register(row: DynamicKeyedRowTemplate[?, ?]): Unit = rows += row
+    def register(row: DynamicKeyedRowTemplate[?, ?]): Unit =
+      rows += ((row.id, row.scope, () => row.retire()))
 
-    def rollback(): Unit = rows.foreach(_.retire())
+    def register[A, Msg](row: StreamRowTemplate[A, Msg]): Unit =
+      rows += ((row.id, row.scope, () => row.retire()))
 
-    def rollbackActions: Array[() => Unit] = rows.map(row => () => row.retire()).toArray
+    def rollback(): Unit = rows.foreach(_._3())
 
-    def scopes: Map[RowId, SignalScope] = rows.iterator.map(row => row.id -> row.scope).toMap
+    def rollbackActions: Array[() => Unit] = rows.map(_._3).toArray
+
+    def scopes: Map[RowId, SignalScope] = rows.iterator.map(row => row._1 -> row._2).toMap
 
   final private class Requirements[Msg]:
     val components = ArrayBuffer.empty[ComponentRequirement[Msg]]
@@ -597,12 +644,13 @@ object RenderProgram:
             SignalKeyedTemplate.State()
           )
         case Mod.Content.Stream(stream, project) =>
-          allocator.template().map(StaticStreamTemplate(_, stream, project))
+          allocator
+            .template().map(StaticStreamTemplate(_, stream, project, this, StreamTemplate.State()))
         case Mod.Content.SignalStream(stream, project) =>
           for
             _  <- scope.validate(stream)
             id <- allocator.template()
-          yield SignalStreamTemplate(id, stream, project)
+          yield SignalStreamTemplate(id, stream, project, this, StreamTemplate.State())
         case Mod.Content.Component(spec) =>
           for
             _  <- validateComponentSpec(spec)
@@ -688,6 +736,62 @@ object RenderProgram:
       dynamicRowCandidate(signal => project(index, signal), candidateRows)
     }
 
+    def staticStreamRowCandidate[A, Msg](
+      domId: String,
+      value: A,
+      project: (String, A) => HtmlElement[Msg],
+      retained: Option[StreamRowTemplate[A, Msg]],
+      candidateRows: CandidateRows
+    ): Either[RenderError, StreamRowTemplate[A, Msg]] = lock.synchronized {
+      retained match
+        case Some(old) =>
+          try
+            Compiler(allocator, old.scope, program, lock)
+              .compileElement(project(domId, value)).map { compiled =>
+                val aligned =
+                  alignElement(compiled, old.element).getOrElse(markStaticScalars(compiled))
+                old.copy(element = aligned)
+              }
+          catch
+            case error: RenderError => Left(error)
+            case NonFatal(error)    => Left(RenderError.EvaluationFailed(error))
+        case None =>
+          newStreamRowCandidate(_ => project(domId, value), candidateRows)
+    }
+
+    def signalStreamRowCandidate[A, Msg](
+      domId: String,
+      project: (String, Signal[A]) => HtmlElement[Msg],
+      candidateRows: CandidateRows
+    ): Either[RenderError, StreamRowTemplate[A, Msg]] = lock.synchronized {
+      newStreamRowCandidate(signal => project(domId, signal), candidateRows)
+    }
+
+    private def newStreamRowCandidate[A, Msg](
+      project: Signal[A] => HtmlElement[Msg],
+      candidateRows: CandidateRows
+    ): Either[RenderError, StreamRowTemplate[A, Msg]] =
+      scope.child().flatMap { childScope =>
+        val source = Signal.source[A](SignalSource[A](childScope))
+        val result =
+          try
+            for
+              rowId   <- RowId.fresh()
+              element <-
+                Compiler(allocator, childScope, program, lock).compileElement(project(source))
+            yield StreamRowTemplate(rowId, childScope, source, element)
+          catch
+            case error: RenderError => Left(error)
+            case NonFatal(error)    => Left(RenderError.EvaluationFailed(error))
+        result match
+          case Right(row) =>
+            candidateRows.register(row)
+            Right(row)
+          case Left(error) =>
+            childScope.close()
+            Left(error)
+      }
+
     private def dynamicRowCandidate[A, Msg](
       project: Signal[A] => HtmlElement[Msg],
       candidateRows: CandidateRows
@@ -743,9 +847,9 @@ object RenderProgram:
           }
     }
 
-    private def markStaticScalars(
-      element: ElementTemplate[Nothing]
-    ): ElementTemplate[Nothing] =
+    private def markStaticScalars[Msg](
+      element: ElementTemplate[Msg]
+    ): ElementTemplate[Msg] =
       element.copy(
         attributes = element.attributes.map {
           case static: AttributeTemplate.Static =>
@@ -753,8 +857,8 @@ object RenderProgram:
           case other => other
         },
         children = element.children.map {
-          case child: ElementTemplate[Nothing] => markStaticScalars(child)
-          case text: TextTemplate              =>
+          case child: ElementTemplate[Msg] => markStaticScalars(child)
+          case text: TextTemplate          =>
             text.value match
               case TextTemplate.Value.Static(value, raw, _) =>
                 text.copy(value =
@@ -765,22 +869,22 @@ object RenderProgram:
                   )
                 )
               case _ => text
-          case flash: FlashTemplate                          => flash
-          case choice: ChoiceTemplate[Nothing]               => choice
-          case keyed: KeyedTemplate[Nothing]                 => keyed
-          case keyed: SignalKeyedTemplate[?, ?, Nothing]     => keyed
-          case keyed: SignalKeyedByIndexTemplate[?, Nothing] => keyed
-          case component: ComponentTemplate[Nothing]         => component
-          case nested: NestedTemplate                        => nested
-          case stream: StaticStreamTemplate[?, Nothing]      => stream
-          case stream: SignalStreamTemplate[?, Nothing]      => stream
+          case flash: FlashTemplate                      => flash
+          case choice: ChoiceTemplate[Msg]               => choice
+          case keyed: KeyedTemplate[Msg]                 => keyed
+          case keyed: SignalKeyedTemplate[?, ?, Msg]     => keyed
+          case keyed: SignalKeyedByIndexTemplate[?, Msg] => keyed
+          case component: ComponentTemplate[Msg]         => component
+          case nested: NestedTemplate                    => nested
+          case stream: StaticStreamTemplate[?, Msg]      => stream
+          case stream: SignalStreamTemplate[?, Msg]      => stream
         }
       )
 
-    private def alignElement(
-      candidate: ElementTemplate[Nothing],
-      retained: ElementTemplate[Nothing]
-    ): Option[ElementTemplate[Nothing]] =
+    private def alignElement[Msg](
+      candidate: ElementTemplate[Msg],
+      retained: ElementTemplate[Msg]
+    ): Option[ElementTemplate[Msg]] =
       if candidate.tag != retained.tag || candidate.void != retained.void ||
         candidate.attributes.length != retained.attributes.length ||
         candidate.children.length != retained.children.length
@@ -798,11 +902,11 @@ object RenderProgram:
           )
         else None
 
-    private def alignNode(
-      candidate: NodeTemplate[Nothing],
-      retained: NodeTemplate[Nothing]
-    ): Option[NodeTemplate[Nothing]] = (candidate, retained) match
-      case (left: ElementTemplate[Nothing], right: ElementTemplate[Nothing]) =>
+    private def alignNode[Msg](
+      candidate: NodeTemplate[Msg],
+      retained: NodeTemplate[Msg]
+    ): Option[NodeTemplate[Msg]] = (candidate, retained) match
+      case (left: ElementTemplate[Msg], right: ElementTemplate[Msg]) =>
         alignElement(left, right)
       case (left: TextTemplate, right: TextTemplate) =>
         (left.value, right.value) match
@@ -821,10 +925,10 @@ object RenderProgram:
         Some(left.copy(id = right.id))
       case _ => None
 
-    private def alignAttribute(
-      candidate: AttributeTemplate[Nothing],
-      retained: AttributeTemplate[Nothing]
-    ): Option[AttributeTemplate[Nothing]] =
+    private def alignAttribute[Msg](
+      candidate: AttributeTemplate[Msg],
+      retained: AttributeTemplate[Msg]
+    ): Option[AttributeTemplate[Msg]] =
       if candidate.name != retained.name then None
       else
         (candidate, retained) match
@@ -843,14 +947,14 @@ object RenderProgram:
               ) =>
             Some(left.copy(slot = right.slot))
           case (left: AttributeTemplate.Binding[?], right: AttributeTemplate.Binding[?]) =>
-            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Nothing]])
+            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Msg]])
           case (
                 left: AttributeTemplate.SignalBinding[?, ?],
                 right: AttributeTemplate.SignalBinding[?, ?]
               ) =>
-            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Nothing]])
+            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Msg]])
           case (left: AttributeTemplate.JsBinding[?], right: AttributeTemplate.JsBinding[?]) =>
-            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Nothing]])
+            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Msg]])
           case (
                 left: AttributeTemplate.SignalJsBinding[?],
                 right: AttributeTemplate.SignalJsBinding[?]
@@ -858,7 +962,7 @@ object RenderProgram:
             Some(
               left
                 .copy(valueSlot = right.valueSlot, id = right.id)
-                .asInstanceOf[AttributeTemplate[Nothing]]
+                .asInstanceOf[AttributeTemplate[Msg]]
             )
           case (left: AttributeTemplate.RoutedBinding, right: AttributeTemplate.RoutedBinding) =>
             Some(left.copy(id = right.id))
@@ -1077,23 +1181,36 @@ object RenderProgram:
           template.project
         )
         requirements.streams += requirement
-        previous match
-          case Some(old: EvaluatedNode.Stream)
-              if old.id == template.id && (old.snapshot eq template.stream) =>
-            Right(old)
-          case _ => Right(EvaluatedNode.Stream(template.id, template.stream, revision))
+        evaluateStaticStream(
+          template,
+          previous,
+          revision,
+          transaction,
+          flash,
+          bindings,
+          commitActions,
+          candidateRows,
+          requirements
+        )
       case template: SignalStreamTemplate[?, Msg] =>
-        transaction.sample(template.stream).map { sample =>
+        transaction.sample(template.stream).flatMap { sample =>
           requirements.streams += StreamRequirement.SignalBacked(
             template.id,
             sample.value,
             template.project
           )
-          previous match
-            case Some(old: EvaluatedNode.Stream)
-                if old.id == template.id && (old.snapshot eq sample.value) =>
-              old
-            case _ => EvaluatedNode.Stream(template.id, sample.value, revision)
+          evaluateSignalStream(
+            template,
+            sample.value,
+            previous,
+            revision,
+            transaction,
+            flash,
+            bindings,
+            commitActions,
+            candidateRows,
+            requirements
+          )
         }
       case template: FlashTemplate =>
         val oldFlash = previous.collect { case node: EvaluatedNode.Flash => node }
@@ -1125,6 +1242,150 @@ object RenderProgram:
                     if node.id == template.id && node.child.exists(_.revision == child.revision) =>
                   node.copy(child = Some(child))
                 case _ => EvaluatedNode.Flash(template.id, Some(child), revision)
+
+  private def evaluateStaticStream[A, Msg](
+    template: StaticStreamTemplate[A, Msg],
+    previous: Option[EvaluatedNode],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    flash: Map[FlashKind, String],
+    bindings: BindingTable.Builder[Msg],
+    commitActions: ArrayBuffer[() => Unit],
+    candidateRows: CandidateRows,
+    requirements: Requirements[Msg]
+  ): Either[RenderError, EvaluatedNode.Stream] =
+    evaluateStream(
+      template.id,
+      template.stream,
+      template.state,
+      previous,
+      revision,
+      transaction,
+      flash,
+      bindings,
+      commitActions,
+      candidateRows,
+      requirements,
+      (domId, value, retained) =>
+        template.compiler.staticStreamRowCandidate(
+          domId,
+          value,
+          template.project,
+          retained,
+          candidateRows
+        )
+    )
+
+  private def evaluateSignalStream[A, Msg](
+    template: SignalStreamTemplate[A, Msg],
+    stream: LiveStream[A],
+    previous: Option[EvaluatedNode],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    flash: Map[FlashKind, String],
+    bindings: BindingTable.Builder[Msg],
+    commitActions: ArrayBuffer[() => Unit],
+    candidateRows: CandidateRows,
+    requirements: Requirements[Msg]
+  ): Either[RenderError, EvaluatedNode.Stream] =
+    evaluateStream(
+      template.id,
+      stream,
+      template.state,
+      previous,
+      revision,
+      transaction,
+      flash,
+      bindings,
+      commitActions,
+      candidateRows,
+      requirements,
+      (domId, _, retained) =>
+        retained match
+          case Some(row) => Right(row)
+          case None      =>
+            template.compiler.signalStreamRowCandidate(domId, template.project, candidateRows)
+    )
+
+  private def evaluateStream[A, Msg](
+    id: TemplateId,
+    stream: LiveStream[A],
+    state: StreamTemplate.State[A, Msg],
+    previous: Option[EvaluatedNode],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    flash: Map[FlashKind, String],
+    bindings: BindingTable.Builder[Msg],
+    commitActions: ArrayBuffer[() => Unit],
+    candidateRows: CandidateRows,
+    requirements: Requirements[Msg],
+    rowCandidate: (String, A, Option[StreamRowTemplate[A, Msg]]) => Either[
+      RenderError,
+      StreamRowTemplate[A, Msg]
+    ]
+  ): Either[RenderError, EvaluatedNode.Stream] =
+    val entries = stream.entries
+    for
+      _ <- validateStreamDomIds(entries)
+      retained = state.snapshot(stream.identity)
+      templates <- traverse(entries) { entry =>
+                     rowCandidate(entry.domId, entry.value, retained.get(entry.domId))
+                   }
+      _ <- traverse(templates.zip(entries)) { case (row, entry) =>
+             transaction.bindSource(row.source, entry.value)
+           }
+      old     = previous.collect { case value: EvaluatedNode.Stream => value }
+      oldRows = old.toVector.flatMap(_.rows).map(row => row.domId -> row.child).toMap
+      rows <- traverse(templates.zip(entries)) { case (row, entry) =>
+                evaluateNode(
+                  row.element,
+                  oldRows.get(entry.domId),
+                  revision,
+                  transaction,
+                  flash,
+                  bindings,
+                  commitActions,
+                  candidateRows,
+                  requirements
+                ).map(child =>
+                  EvaluatedNode.StreamRow(entry.domId, child.asInstanceOf[EvaluatedNode.Element])
+                )
+              }
+    yield
+      val rowsById = rows.map(row => row.domId -> row).toMap
+      val inserts  = stream.inserted.map { insert =>
+        val row = rowsById.getOrElse(
+          insert.entry.domId,
+          throw RenderError.InvalidHtml(
+            s"stream insertion '${insert.entry.domId}' is absent from the retained snapshot"
+          )
+        )
+        EvaluatedNode.StreamInsert(row, insert.at, insert.limit, insert.updateOnly)
+      }
+      val operations = EvaluatedNode.StreamOperations(inserts, stream.deleted, stream.reset)
+      val next       = Map.from(entries.map(_.domId).zip(templates))
+      commitActions += state.assignment(stream.identity, next)
+      old match
+        case Some(node)
+            if node.id == id && (node.identity eq stream.identity) &&
+              node.generation == stream.generation &&
+              node.rows.map(_.child.revision) == rows.map(_.child.revision) =>
+          node.copy(rows = rows, operations = operations)
+        case _ =>
+          EvaluatedNode.Stream(id, stream.identity, stream.generation, rows, operations, revision)
+    end for
+  end evaluateStream
+
+  private def validateStreamDomIds[A](
+    entries: Vector[LiveStreamEntry[A]]
+  ): Either[RenderError, Unit] =
+    entries
+      .foldLeft[Either[RenderError, Set[String]]](Right(Set.empty)) { (result, entry) =>
+        result.flatMap { seen =>
+          if seen.contains(entry.domId) then Left(RenderError.DuplicateStreamDomId(entry.domId))
+          else Right(seen + entry.domId)
+        }
+      }.map(_ => ())
 
   private def evaluateSignalKeyed[A, Key, Msg](
     template: SignalKeyedTemplate[A, Key, Msg],
@@ -1533,10 +1794,15 @@ object RenderProgram:
       keyed.state.snapshot.values.map(row => retainedFlashProjectionCount(row.element)).sum
     case keyed: SignalKeyedByIndexTemplate[?, ?] =>
       keyed.state.snapshot.values.map(row => retainedFlashProjectionCount(row.element)).sum
-    case _: ComponentTemplate[?] | _: NestedTemplate | _: StaticStreamTemplate[?, ?] |
-        _: SignalStreamTemplate[?, ?] =>
+    case _: ComponentTemplate[?] | _: NestedTemplate =>
       0
-    case _: TextTemplate => 0
+    case stream: StaticStreamTemplate[?, ?] =>
+      stream.state
+        .snapshot(stream.stream.identity).values.map(row =>
+          retainedFlashProjectionCount(row.element)
+        ).sum
+    case _: SignalStreamTemplate[?, ?] => 0
+    case _: TextTemplate               => 0
 
   private def retainedKeyedRowCount(template: NodeTemplate[?]): Int = template match
     case element: ElementTemplate[?] => element.children.map(retainedKeyedRowCount).sum
@@ -1547,10 +1813,11 @@ object RenderProgram:
     case keyed: SignalKeyedByIndexTemplate[?, ?] => keyed.state.snapshot.size
     case flash: FlashTemplate                    =>
       flash.state.snapshot.map((_, child) => retainedKeyedRowCount(child)).getOrElse(0)
-    case _: ComponentTemplate[?] | _: NestedTemplate | _: StaticStreamTemplate[?, ?] |
-        _: SignalStreamTemplate[?, ?] =>
+    case _: ComponentTemplate[?] | _: NestedTemplate =>
       0
-    case _: TextTemplate => 0
+    case stream: StaticStreamTemplate[?, ?] => stream.state.snapshot(stream.stream.identity).size
+    case _: SignalStreamTemplate[?, ?]      => 0
+    case _: TextTemplate                    => 0
 
   private def closeRetainedRows(template: NodeTemplate[?]): Unit = template match
     case element: ElementTemplate[?] => element.children.foreach(closeRetainedRows)
@@ -1565,7 +1832,8 @@ object RenderProgram:
       keyed.state.closeAll()
     case flash: FlashTemplate =>
       flash.state.snapshot.foreach((_, child) => closeRetainedRows(child))
-    case _: TextTemplate | _: ComponentTemplate[?] | _: NestedTemplate |
-        _: StaticStreamTemplate[?, ?] | _: SignalStreamTemplate[?, ?] =>
+    case stream: StaticStreamTemplate[?, ?]                            => stream.state.closeAll()
+    case stream: SignalStreamTemplate[?, ?]                            => stream.state.closeAll()
+    case _: TextTemplate | _: ComponentTemplate[?] | _: NestedTemplate =>
       ()
 end RenderProgram

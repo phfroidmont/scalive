@@ -2,7 +2,6 @@ package scalive.runtime.kernel
 
 import java.time.Duration
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicLong
 
 import zio.Promise
 import zio.Task
@@ -10,14 +9,19 @@ import zio.UIO
 import zio.ZIO
 import zio.http.URL
 import zio.json.ast.Json
+import zio.stream.ZStream
 
+import scalive.AsyncKey
 import scalive.BindingPayload
 import scalive.ComponentRef
 import scalive.FlashKind
 import scalive.LiveAsyncEvent
+import scalive.LiveAsyncResult
 import scalive.LiveComponent
 import scalive.LiveComponentInstance
 import scalive.LiveComponentOutputInstance
+import scalive.SubscriptionDelivery
+import scalive.SubscriptionKey
 import scalive.render.*
 import scalive.runtime.contracts.*
 import scalive.runtime.resources.*
@@ -105,6 +109,49 @@ final private[scalive] case class SessionEffects(
   pageTitle: Option[String] = None,
   clientEvents: Vector[ClientEffect] = Vector.empty)
 
+sealed private[scalive] trait ResourceOperation
+
+private[scalive] object ResourceOperation:
+  final case class StartAsync[A, Msg](
+    owner: OwnerId,
+    key: AsyncKey[A],
+    task: Task[A],
+    toMessage: LiveAsyncResult[A] => Msg)
+      extends ResourceOperation
+
+  final case class CancelAsync(
+    owner: OwnerId,
+    key: AsyncKey[Any],
+    reason: Option[String])
+      extends ResourceOperation
+
+  final case class StartSubscription[Msg](
+    owner: OwnerId,
+    key: SubscriptionKey,
+    delivery: SubscriptionDelivery,
+    stream: ZStream[Any, Nothing, Msg],
+    replace: Boolean)
+      extends ResourceOperation
+
+  final case class CancelSubscription(owner: OwnerId, key: SubscriptionKey)
+      extends ResourceOperation
+
+  final case class Complete(token: ResourceToken) extends ResourceOperation
+
+final private[kernel] case class ManagedAsyncCompletion(
+  name: String,
+  result: LiveAsyncResult[Any],
+  message: Any)
+
+private[kernel] enum ManagedResourceKind:
+  case Async(mapResult: LiveAsyncResult[Any] => Any)
+  case Subscription(delivery: SubscriptionDelivery)
+
+final private[kernel] case class ManagedResource(
+  token: ResourceToken,
+  prepared: PreparedResource,
+  kind: ManagedResourceKind)
+
 enum SessionCommand[+Msg]:
   case ClientEvent(
     epoch: Epoch,
@@ -121,6 +168,16 @@ enum SessionCommand[+Msg]:
     rawJson: Option[String] = None)             extends SessionCommand[Nothing]
   case Message[Msg](epoch: Epoch, message: Msg) extends SessionCommand[Msg]
   case AsyncCompletion[Msg](epoch: Epoch, event: LiveAsyncEvent[Msg]) extends SessionCommand[Msg]
+  private[kernel] case ManagedAsync(
+    epoch: Epoch,
+    token: ResourceToken,
+    result: LiveAsyncResult[Any]) extends SessionCommand[Nothing]
+  private[kernel] case ManagedSubscription(
+    epoch: Epoch,
+    token: ResourceToken,
+    message: Any) extends SessionCommand[Nothing]
+  private[kernel] case ManagedSubscriptionEnded(epoch: Epoch, token: ResourceToken)
+      extends SessionCommand[Nothing]
   private[scalive] case ComponentMessage(
     epoch: Epoch,
     component: ComponentInstanceId,
@@ -138,6 +195,9 @@ enum SessionCommand[+Msg]:
     case ComponentClientEvent(epoch, _, _, _, _, _) => epoch
     case Message(epoch, _)                          => epoch
     case AsyncCompletion(epoch, _)                  => epoch
+    case ManagedAsync(epoch, _, _)                  => epoch
+    case ManagedSubscription(epoch, _, _)           => epoch
+    case ManagedSubscriptionEnded(epoch, _)         => epoch
     case ComponentMessage(epoch, _, _)              => epoch
     case ComponentUpdate(epoch, _)                  => epoch
     case ComponentAsyncCompletion(epoch, _, _)      => epoch
@@ -150,7 +210,8 @@ final private[scalive] case class TurnDraft[+Msg, Model](
   url: Option[URL] = None,
   navigation: Option[NavigationRequest] = None,
   effects: SessionEffects = SessionEffects(),
-  componentUpdates: Vector[ComponentUpdateRequest] = Vector.empty)
+  componentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
+  resourceOperations: Vector[ResourceOperation] = Vector.empty)
 
 /** Typed lifecycle operations interpreted by the protocol-neutral session owner.
   *
@@ -167,32 +228,19 @@ final private[scalive] case class SessionLogic[Msg, Model](
   handleEvent: Option[(Model, Msg) => Task[TurnDraft[Msg, Model]]] = None,
   handleInfo: Option[(Model, Msg) => Task[TurnDraft[Msg, Model]]] = None,
   handleAsync: Option[(Model, LiveAsyncEvent[Msg]) => Task[TurnDraft[Msg, Model]]] = None,
+  handleManagedAsync: Option[
+    (Model, LiveAsyncEvent[Msg], Msg) => Task[TurnDraft[Msg, Model]]
+  ] = None,
   prepare: (TurnDraft[Msg, Model], PreparedResourceRegistry) => Task[Unit] = (
     _: TurnDraft[Msg, Model],
     _: PreparedResourceRegistry
   ) => ZIO.unit,
   afterRender: TurnDraft[Msg, Model] => Task[TurnDraft[Msg, Model]] =
-    (draft: TurnDraft[Msg, Model]) => ZIO.succeed(draft))
-
-/** Runtime identity of one mounted component. It is deliberately unrelated to Phoenix CIDs. */
-opaque type ComponentInstanceId = Long
-
-private[scalive] object ComponentInstanceId:
-  private val counter = AtomicLong(0L)
-
-  private[scalive] def fresh(): Either[RuntimeIdentityError, ComponentInstanceId] =
-    var allocated = false
-    var value     = 0L
-    while !allocated do
-      val previous = counter.get()
-      if previous == Long.MaxValue then
-        return Left(RuntimeIdentityError.Exhausted("component instance identity"))
-      value = previous + 1L
-      allocated = counter.compareAndSet(previous, value)
-    Right(value)
-
-  private[scalive] def apply(value: Long): ComponentInstanceId = value
-  extension (id: ComponentInstanceId) def value: Long          = id
+    (draft: TurnDraft[Msg, Model]) => ZIO.succeed(draft),
+  validateStreams: (Model, Vector[StreamRequirement[Msg]]) => Task[Unit] = (
+    _: Model,
+    _: Vector[StreamRequirement[Msg]]
+  ) => ZIO.unit)
 
 /** Reference-identity wrapper: component definitions are not value keys. */
 final private[kernel] class ComponentDefinitionIdentity private (val value: AnyRef):
@@ -365,6 +413,18 @@ trait ComponentEnvironment[RootMsg, RootModel]:
     state: ComponentEnvironmentState,
     draft: TurnDraft[RootMsg, RootModel]
   ): Task[ComponentCallbackResult[A, RootMsg, RootModel]]
+  def managedAsync[P, M, A, O](
+    id: ComponentInstanceId,
+    component: LiveComponent[P, M, A],
+    props: P,
+    model: A,
+    event: LiveAsyncEvent[M],
+    _message: M,
+    emit: O => Task[Unit],
+    state: ComponentEnvironmentState,
+    draft: TurnDraft[RootMsg, RootModel]
+  ): Task[ComponentCallbackResult[A, RootMsg, RootModel]] =
+    async(id, component, props, model, event, emit, state, draft)
   def browserEvent[P, M, A, O](
     id: ComponentInstanceId,
     component: LiveComponent[P, M, A],
@@ -383,6 +443,11 @@ trait ComponentEnvironment[RootMsg, RootModel]:
     state: ComponentEnvironmentState,
     draft: TurnDraft[RootMsg, RootModel]
   ): Task[ComponentAfterRenderResult[RootMsg, RootModel]]
+  def validateStreams[M](
+    _id: ComponentInstanceId,
+    _state: ComponentEnvironmentState,
+    _requirements: Vector[StreamRequirement[M]]
+  ): Task[Unit] = ZIO.unit
   def discard(id: ComponentInstanceId, state: ComponentEnvironmentState): UIO[Unit]
   def close(id: ComponentInstanceId, state: ComponentEnvironmentState): UIO[Unit]
 end ComponentEnvironment
@@ -456,6 +521,7 @@ final private[scalive] case class Committed[Msg, Model](
   render: CommittedRender[Msg],
   components: ComponentForest[Msg],
   resources: PreparedResources,
+  managedResources: ResourceIndex[ManagedResource],
   auxiliaryScope: CandidateScope,
   revision: TurnRevision)
 
@@ -500,9 +566,17 @@ final private[scalive] case class TurnCandidate[Msg, Model](
   components: ComponentForestCandidate[Msg],
   outputs: Vector[ComponentOutput[Msg]],
   resources: PreparedResources,
+  managedResources: ResourceIndex[ManagedResource],
+  managedActivations: Vector[ManagedResource],
+  managedRetirements: Vector[ManagedResource],
+  managedContinuations: Vector[ManagedAsyncContinuation],
   delta: RenderDelta,
   reservation: OutboundReservation[SessionOutput],
   auxiliaryScope: CandidateScope)
+
+final private[kernel] case class ManagedAsyncContinuation(
+  owner: OwnerId,
+  completion: ManagedAsyncCompletion)
 
 enum SessionStage:
   case BootstrapHandler
@@ -546,6 +620,7 @@ enum SessionRejection:
   case UnknownComponent(component: ComponentInstanceId)
   case UnknownComponentTarget
   case StaleComponent(component: ComponentInstanceId)
+  case StaleResource(token: ResourceToken)
   case AmbiguousComponent(applicationId: Option[String])
   case BindingFailed(binding: BindingId, error: Throwable)
   case UnexpectedPatch

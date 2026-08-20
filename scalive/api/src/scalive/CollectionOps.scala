@@ -41,7 +41,18 @@ extension [A](stream: streams.LiveStream[A])
   )(
     project: A => HtmlElement[Msg]
   ): HtmlElement[Msg] =
-    container(mods, Mod.Content.Stream(stream, (_, item) => project(item)))
+    val containerMods = mods.filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
+    val entries       = stream.stream { (domId, item) =>
+      val element = project(item)
+      HtmlElement(
+        element.tag,
+        element.mods.filterNot(isAttr(_, "id")).prepended(idAttr := domId)
+      )
+    }
+    HtmlElement(
+      container,
+      Vector(idAttr := stream.name, phx.update := PhxUpdate.Stream) ++ containerMods :+ entries
+    )
 
 extension [A](stream: Signal[streams.LiveStream[A]])
   /** Declares signal-backed streamed rows. */
@@ -55,4 +66,34 @@ extension [A](stream: Signal[streams.LiveStream[A]])
   )(
     project: Signal[A] => HtmlElement[Msg]
   ): HtmlElement[Msg] =
-    container(mods, Mod.Content.SignalStream(stream, (_, item) => project(item)))
+    val containerMods = mods.filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
+    val entries       = stream.stream { (domId, item) =>
+      val element = project(item)
+      HtmlElement(
+        element.tag,
+        element.mods.filterNot(isAttr(_, "id")).prepended(idAttr := domId)
+      )
+    }
+    HtmlElement(
+      container,
+      Vector(idAttr := stream.map(_.name), phx.update := PhxUpdate.Stream) ++
+        containerMods :+ entries
+    )
+
+private def isAttr(mod: Mod[?], expectedName: String): Boolean = mod match
+  case Mod.Attr.Static(name, _)                => name == expectedName
+  case Mod.Attr.StaticValueAsPresence(name, _) => name == expectedName
+  case Mod.Attr.SignalValue(name, _)           => name == expectedName
+  case Mod.Attr.SignalOptionalValue(name, _)   => name == expectedName
+  case Mod.Attr.SignalValueAsPresence(name, _) => name == expectedName
+  case Mod.Attr.Binding(name, _)               => name == expectedName
+  case Mod.Attr.SignalBinding(name, _, _)      => name == expectedName
+  case Mod.Attr.FormBinding(name, _)           => name == expectedName
+  case Mod.Attr.FormEventBinding(name, _, _)   => name == expectedName
+  case Mod.Attr.JsBinding(name, _)             => name == expectedName
+  case Mod.Attr.SignalJsBinding(name, _)       => name == expectedName
+  case Mod.Attr.RoutedBinding(name, _)         => name == expectedName
+  case Mod.Attr.ComponentBinding(name, _, _)   => name == expectedName
+  case Mod.Attr.ComponentTarget(_)             => false
+  case Mod.Attr.Group(attrs)                   => attrs.exists(isAttr(_, expectedName))
+  case _: Mod.Content[?]                       => false

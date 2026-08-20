@@ -15,12 +15,15 @@ import zio.UIO
 import zio.ZIO
 import zio.http.URL
 
+import scalive.AsyncKey
 import scalive.ComponentDispatch
 import scalive.ComponentRef
 import scalive.LiveAsyncEvent
+import scalive.LiveAsyncResult
+import scalive.SubscriptionDelivery
 import scalive.render.*
 import scalive.runtime.contracts.*
-import scalive.runtime.resources.PreparedResourceRegistry
+import scalive.runtime.resources.*
 
 /** Single-owner, protocol-neutral lifecycle state machine. */
 final private[scalive] class SessionKernel[Msg, Model] private (
@@ -32,7 +35,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   componentEnvironment: ComponentEnvironment[Msg, Model],
   outbound: OutboundReservations[SessionOutput],
   mailbox: Queue[SessionKernel.Envelope[Msg, Model]],
-  regularQueued: Ref[Int],
+  regularSlots: Queue[Unit],
   patchAcknowledgementQueued: Ref[Boolean],
   terminal: Promise[Nothing, SessionState[Msg, Model]],
   sessionScope: Scope.Closeable,
@@ -120,17 +123,29 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       terminal.poll.flatMap {
         case Some(_) => ZIO.succeed(false)
         case None    =>
-          regularQueued
-            .modify { queued =>
-              if queued >= config.mailboxCapacity then false -> queued
-              else true                                      -> (queued + 1)
-            }.flatMap {
-              case false => ZIO.succeed(false)
-              case true  =>
-                offerMailbox(envelope)
-                  .tap(accepted => ZIO.unless(accepted)(regularQueued.update(_ - 1)))
-            }
+          regularSlots.poll.flatMap {
+            case None     => ZIO.succeed(false)
+            case Some(()) =>
+              offerMailbox(envelope)
+                .tap(accepted => ZIO.unless(accepted)(regularSlots.offer(()).unit))
+          }
       }
+    }
+
+  /** Backpressures a runtime-owned producer without weakening external saturation rejection. */
+  private def offerOwned(envelope: Envelope[Msg, Model]): UIO[Boolean] =
+    takeOwnedSlot.flatMap {
+      case true =>
+        offerMailbox(envelope)
+          .tap(accepted => ZIO.unless(accepted)(regularSlots.offer(()).unit))
+      case false => ZIO.succeed(false)
+    }
+
+  private def takeOwnedSlot: UIO[Boolean] =
+    controlled(regularSlots.take).exit.flatMap {
+      case Exit.Success(())                               => ZIO.succeed(true)
+      case Exit.Failure(cause) if cause.isInterruptedOnly => ZIO.succeed(false)
+      case Exit.Failure(cause)                            => ZIO.failCause(cause)
     }
 
   private def offerPatchAcknowledgement(envelope: Envelope[Msg, Model]): UIO[Boolean] =
@@ -165,7 +180,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def takeEnvelope: UIO[Envelope[Msg, Model]] =
     controlled(mailbox.take).tap {
       case Envelope.PatchAcknowledgement(_, _, _, _) => patchAcknowledgementQueued.set(false)
-      case _                                         => regularQueued.update(_ - 1)
+      case _                                         => regularSlots.offer(()).unit
     }
 
   private def controlled[E, A](effect: ZIO[Any, E, A]): ZIO[Any, E, A] =
@@ -266,6 +281,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         executeTurn(state, remaining, logic.handle(state.committed.model, message), None)
       case Some((Work.ComponentContinuation(component, message), remaining)) =>
         executeComponentTurn(state, remaining, component, ComponentAction.Message(message), None)
+      case Some((Work.ManagedAsyncContinuation(owner, completion), remaining)) =>
+        owner match
+          case OwnerId.Root(_) => executeManagedRootAsync(state, remaining, completion, None, None)
+          case OwnerId.Component(_, component) =>
+            executeComponentTurn(
+              state,
+              remaining,
+              component,
+              ComponentAction.ManagedAsync(completion),
+              None
+            )
       case Some((Work.Correlated(deferred), remaining)) =>
         executeEnvelope(state, remaining, deferred.command, deferred.input, deferred.response)
       case None =>
@@ -370,6 +396,80 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                         ZIO.succeed(TurnDraft(state.committed.model)),
                         Some(commandId -> response)
                       )
+            case SessionCommand.ManagedAsync(_, token, result) =>
+              state.committed.managedResources.current(token) match
+                case Some(ManagedResource(_, _, ManagedResourceKind.Async(mapResult))) =>
+                  controlled(phase(SessionStage.Handler)(ZIO.attempt(mapResult(result)))).exit
+                    .flatMap {
+                      case Exit.Success(message) =>
+                        val name = token.key match
+                          case ResourceKey.Async(value) => value
+                          case _                        => ""
+                        val completion = ManagedAsyncCompletion(name, result, message)
+                        token.owner match
+                          case OwnerId.Root(_) =>
+                            executeManagedRootAsync(
+                              state,
+                              work,
+                              completion,
+                              Some(token),
+                              Some(commandId -> response)
+                            )
+                          case OwnerId.Component(_, component) =>
+                            executeComponentTurn(
+                              state,
+                              work,
+                              component,
+                              ComponentAction.ManagedAsync(completion),
+                              Some(commandId -> response),
+                              Vector(ResourceOperation.Complete(token))
+                            )
+                      case Exit.Failure(cause) if cause.isInterruptedOnly =>
+                        response.fail(SessionRejection.Terminal("closed")).unit
+                      case Exit.Failure(cause) =>
+                        failActiveTurn(
+                          state,
+                          Some(commandId -> response),
+                          failureFrom(cause, SessionStage.Handler)
+                        )
+                    }
+                case _ =>
+                  response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
+            case SessionCommand.ManagedSubscription(_, token, message) =>
+              state.committed.managedResources.current(token) match
+                case Some(ManagedResource(_, _, ManagedResourceKind.Subscription(_))) =>
+                  token.owner match
+                    case OwnerId.Root(_) =>
+                      executeTurn(
+                        state,
+                        work,
+                        logic.handleInfo.getOrElse(logic.handle)(
+                          state.committed.model,
+                          message.asInstanceOf[Msg]
+                        ),
+                        Some(commandId -> response)
+                      )
+                    case OwnerId.Component(_, _) =>
+                      response.fail(SessionRejection.StaleResource(token)).unit *>
+                        loop(state, work)
+                case _ =>
+                  response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
+            case SessionCommand.ManagedSubscriptionEnded(_, token) =>
+              state.committed.managedResources.current(token) match
+                case Some(ManagedResource(_, _, ManagedResourceKind.Subscription(_))) =>
+                  executeTurn(
+                    state,
+                    work,
+                    ZIO.succeed(
+                      TurnDraft(
+                        state.committed.model,
+                        resourceOperations = Vector(ResourceOperation.Complete(token))
+                      )
+                    ),
+                    Some(commandId -> response)
+                  )
+                case _ =>
+                  response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
             case SessionCommand.ComponentMessage(_, component, message) =>
               executeComponentTurn(
                 state,
@@ -578,7 +678,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     component: ComponentInstanceId,
     action: ComponentAction,
-    response: Option[(CommandId, Promise[SessionRejection, TurnResult])]
+    response: Option[(CommandId, Promise[SessionRejection, TurnResult])],
+    resourceOperations: Vector[ResourceOperation] = Vector.empty
   ): UIO[Unit] =
     state.committed.components.get(component) match
       case None =>
@@ -587,7 +688,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       case Some(_) =>
         runTurn(
           Some(state.committed),
-          ZIO.succeed(TurnDraft(state.committed.model)),
+          ZIO.succeed(
+            TurnDraft(state.committed.model, resourceOperations = resourceOperations)
+          ),
           work,
           response.map(_._1),
           Some(component -> action)
@@ -599,6 +702,30 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           case Exit.Failure(cause) =>
             failActiveTurn(state, response, failureFrom(cause, SessionStage.ComponentMessage))
         }
+
+  private def executeManagedRootAsync(
+    state: SessionState.Active[Msg, Model],
+    work: ImmutableQueue[Work[Msg, Model]],
+    completion: ManagedAsyncCompletion,
+    token: Option[ResourceToken],
+    response: Option[(CommandId, Promise[SessionRejection, TurnResult])]
+  ): UIO[Unit] =
+    val message                      = completion.message.asInstanceOf[Msg]
+    val result: LiveAsyncResult[Msg] = completion.result match
+      case LiveAsyncResult.Succeeded(_)      => LiveAsyncResult.Succeeded(message)
+      case LiveAsyncResult.Failed(cause)     => LiveAsyncResult.Failed(cause)
+      case LiveAsyncResult.Cancelled(reason) => LiveAsyncResult.Cancelled(reason)
+    val event = LiveAsyncEvent(AsyncKey[Any](completion.name), result)
+    val next  = logic.handleManagedAsync match
+      case Some(handler) => handler(state.committed.model, event, message)
+      case None          => logic.handle(state.committed.model, message)
+    val operations = token.toVector.map(ResourceOperation.Complete(_))
+    executeTurn(
+      state,
+      work,
+      next.map(draft => draft.copy(resourceOperations = draft.resourceOperations ++ operations)),
+      response
+    )
 
   private def executePreparedTurn(
     state: SessionState.Active[Msg, Model],
@@ -705,8 +832,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         componentOwner <- Ref.make(Option.empty[Ref[Vector[StagedComponent[Msg]]]])
         result         <- restore(
                     for
-                      _ <- phase(SessionStage.ResourcePreparation)(logic.prepare(draft, registry))
-                      resources      <- registry.result
                       discoveryScope <- CandidateScope.make
                       discovery      <- renderPhase(
                                      renderProgram.evaluateIn(
@@ -743,13 +868,33 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                     rootRender.resolveComponents(finalComponents.resolutions)
                                   )
                                 ).onError(_ => rootRender.discard)
+                      _ <- phase(SessionStage.Validation)(
+                             logic.validateStreams(
+                               finalComponents.draft.model,
+                               render.streamRequirements
+                             )
+                           )
+                      _ <- phase(SessionStage.ResourcePreparation)(
+                             logic.prepare(finalComponents.draft, registry)
+                           )
+                      resources <- registry.result
+                      managed   <- prepareManagedResources(
+                                   previous
+                                     .map(_.managedResources).getOrElse(
+                                       ResourceIndex.empty[ManagedResource]
+                                     ),
+                                   finalComponents.draft.resourceOperations,
+                                   finalComponents.forest.components.map(_.id).toSet,
+                                   auxiliaryScope
+                                 )
                       reservation <- reserve(auxiliaryScope)
                       finalDraft  <- phase(SessionStage.AfterRender)(
                                       logic.afterRender(finalComponents.draft)
                                     )
                       _ <- validateContinuations(
                              existingContinuations,
-                             finalDraft.continuations.size + finalComponents.outputs.size
+                             finalDraft.continuations.size + finalComponents.outputs.size +
+                               managed.continuations.size
                            )
                       revision <- identity(TurnRevision.fresh())
                       delta = diffBaseline.orElse(previous.map(_.render)) match
@@ -763,6 +908,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       finalComponents.forest,
                       finalComponents.outputs,
                       resources,
+                      managed.index,
+                      managed.activations,
+                      managed.retirements,
+                      managed.continuations,
                       delta,
                       reservation,
                       auxiliaryScope
@@ -1176,6 +1325,31 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                      )
                                    )
                                  )
+                               case Some((target, ComponentAction.ManagedAsync(completion)))
+                                   if target == id =>
+                                 val message                    = completion.message.asInstanceOf[M]
+                                 val result: LiveAsyncResult[M] = completion.result match
+                                   case LiveAsyncResult.Succeeded(_) =>
+                                     LiveAsyncResult.Succeeded(message)
+                                   case LiveAsyncResult.Failed(cause) =>
+                                     LiveAsyncResult.Failed(cause)
+                                   case LiveAsyncResult.Cancelled(reason) =>
+                                     LiveAsyncResult.Cancelled(reason)
+                                 restore(
+                                   phase(SessionStage.ComponentAsync)(
+                                     componentEnvironment.managedAsync[P, M, A, O](
+                                       id,
+                                       component,
+                                       effectiveProps,
+                                       updated.model,
+                                       LiveAsyncEvent(AsyncKey[Any](completion.name), result),
+                                       message,
+                                       output,
+                                       updated.state,
+                                       updated.draft
+                                     )
+                                   )
+                                 )
                                case Some((target, ComponentAction.Browser(command)))
                                    if target == id =>
                                  restore(
@@ -1321,6 +1495,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           )
                         )
                       )
+                    _ <- restore(
+                           phase(SessionStage.Validation)(
+                             componentEnvironment.validateStreams(
+                               id,
+                               postChildResult.state,
+                               resolved.streamRequirements
+                             )
+                           )
+                         )
                     afterDraft <- draft.get
                     after      <- restore(
                                phase(SessionStage.ComponentAfterRender)(
@@ -1548,6 +1731,289 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     draftRef.set(draft) *>
       updatesRef.update(current => current ++ lastComponentUpdates(draft.componentUpdates))
 
+  final private case class ManagedPreparation(
+    index: ResourceIndex[ManagedResource],
+    activations: Vector[ManagedResource] = Vector.empty,
+    retirements: Vector[ManagedResource] = Vector.empty,
+    continuations: Vector[ManagedAsyncContinuation] = Vector.empty):
+    def retire(resources: Vector[ManagedResource]): ManagedPreparation =
+      val retiredTokens = resources.map(_.token).toSet
+      copy(
+        activations = activations.filterNot(resource => retiredTokens.contains(resource.token)),
+        retirements = retirements ++ resources
+      )
+
+  private def prepareManagedResources(
+    initial: ResourceIndex[ManagedResource],
+    operations: Vector[ResourceOperation],
+    activeComponents: Set[ComponentInstanceId],
+    candidateScope: CandidateScope
+  ): ZIO[Any, SessionFailure, ManagedPreparation] =
+    val activeOperations = operations.filter {
+      case ResourceOperation.StartAsync(owner, _, _, _) => ownerIsActive(owner, activeComponents)
+      case ResourceOperation.CancelAsync(owner, _, _)   => ownerIsActive(owner, activeComponents)
+      case ResourceOperation.StartSubscription(owner, _, _, _, _) =>
+        ownerIsActive(owner, activeComponents)
+      case ResourceOperation.CancelSubscription(owner, _) => ownerIsActive(owner, activeComponents)
+      case ResourceOperation.Complete(token) => ownerIsActive(token.owner, activeComponents)
+    }
+    ZIO
+      .foldLeft(activeOperations)(ManagedPreparation(initial)) { (prepared, operation) =>
+        operation match
+          case start: ResourceOperation.StartAsync[?, ?] =>
+            val owner = start.owner
+            val key   = ResourceKey.Async(start.key.value)
+            for
+              _        <- validateOwner(owner)
+              token    <- identity(prepared.index.nextToken(owner, epoch, key))
+              resource <- prepareAsyncResource(
+                            token,
+                            start.task.asInstanceOf[Task[Any]],
+                            start.toMessage.asInstanceOf[LiveAsyncResult[Any] => Any],
+                            candidateScope
+                          )
+              replacement = prepared.index.install(token, resource)
+              retired     = prepared.retire(replacement.replaced.toVector)
+            yield retired.copy(
+              index = replacement.index,
+              activations = retired.activations :+ resource
+            )
+          case ResourceOperation.CancelAsync(owner, key, reason) =>
+            validateOwner(owner) *>
+              ZIO.suspendSucceed {
+                val removal = prepared.index.remove(owner, ResourceKey.Async(key.value))
+                removal.removed match
+                  case Some(
+                        resource @ ManagedResource(_, _, ManagedResourceKind.Async(mapResult))
+                      ) =>
+                    phase(SessionStage.ResourcePreparation)(
+                      ZIO.attempt(mapResult(LiveAsyncResult.Cancelled(reason)))
+                    ).map { message =>
+                      val completion = ManagedAsyncCompletion(
+                        key.value,
+                        LiveAsyncResult.Cancelled(reason),
+                        message
+                      )
+                      prepared
+                        .retire(Vector(resource)).copy(
+                          index = removal.index,
+                          continuations = prepared.continuations :+
+                            ManagedAsyncContinuation(owner, completion)
+                        )
+                    }
+                  case Some(_) =>
+                    ZIO.fail(
+                      SessionFailure.StageFailed(
+                        SessionStage.Validation,
+                        s"resource '${key.value}' is not an async task"
+                      )
+                    )
+                  case None => ZIO.succeed(prepared)
+              }
+          case ResourceOperation.Complete(token) =>
+            prepared.index.current(token) match
+              case Some(resource) =>
+                val removal = prepared.index.remove(token.owner, token.key)
+                ZIO.succeed(
+                  prepared.retire(Vector(resource)).copy(index = removal.index)
+                )
+              case None => ZIO.succeed(prepared)
+          case start: ResourceOperation.StartSubscription[?] =>
+            val owner = start.owner
+            val key   = ResourceKey.Subscription(start.key.value)
+            for
+              _ <- validateOwner(owner)
+              _ <- ZIO
+                     .fail(
+                       SessionFailure.StageFailed(
+                         SessionStage.Validation,
+                         "subscription key must not be empty"
+                       )
+                     ).when(start.key.value.isEmpty)
+              _ <- ZIO
+                     .fail(
+                       SessionFailure.StageFailed(
+                         SessionStage.Validation,
+                         s"subscription '${start.key.value}' is already active"
+                       )
+                     ).when(!start.replace && prepared.index.get(owner, key).nonEmpty)
+              token    <- identity(prepared.index.nextToken(owner, epoch, key))
+              resource <- prepareSubscriptionResource(
+                            token,
+                            start.delivery,
+                            start.stream.asInstanceOf[zio.stream.ZStream[Any, Nothing, Any]],
+                            candidateScope
+                          )
+              replacement = prepared.index.install(token, resource)
+              retired     = prepared.retire(replacement.replaced.toVector)
+            yield retired.copy(
+              index = replacement.index,
+              activations = retired.activations :+ resource
+            )
+          case ResourceOperation.CancelSubscription(owner, key) =>
+            validateOwner(owner).flatMap { _ =>
+              val removal = prepared.index.remove(owner, ResourceKey.Subscription(key.value))
+              ZIO.succeed(
+                prepared.retire(removal.removed.toVector).copy(index = removal.index)
+              )
+            }
+      }.map { prepared =>
+        prepared.index.owners.foldLeft(prepared) {
+          case (current, owner @ OwnerId.Component(ownerLifecycle, component))
+              if ownerLifecycle == lifecycle && !activeComponents.contains(component) =>
+            val removal = current.index.removeOwner(owner)
+            current.retire(removal.removed).copy(index = removal.index)
+          case (current, _) => current
+        }
+      }
+  end prepareManagedResources
+
+  private def ownerIsActive(owner: OwnerId, activeComponents: Set[ComponentInstanceId]): Boolean =
+    owner match
+      case OwnerId.Root(ownerLifecycle)                 => ownerLifecycle == lifecycle
+      case OwnerId.Component(ownerLifecycle, component) =>
+        ownerLifecycle == lifecycle && activeComponents.contains(component)
+
+  private def prepareAsyncResource(
+    token: ResourceToken,
+    task: Task[Any],
+    mapResult: LiveAsyncResult[Any] => Any,
+    candidateScope: CandidateScope
+  ): UIO[ManagedResource] =
+    for
+      scope    <- Scope.make
+      prepared <- PreparedResource.make(scope.close(Exit.unit))
+      _        <- candidateScope.addFinalizer(prepared.discard)
+      resource = ManagedResource(token, prepared, ManagedResourceKind.Async(mapResult))
+      worker   = prepared.awaitActivation.foldZIO(
+                 _ => ZIO.unit,
+                 _ =>
+                   task.exit.flatMap { exit =>
+                     val result = exit match
+                       case Exit.Success(value) => LiveAsyncResult.Succeeded(value)
+                       case Exit.Failure(cause) => LiveAsyncResult.Failed(cause.squash)
+                     enqueueOwnedCommand(SessionCommand.ManagedAsync(epoch, token, result))
+                   }
+               )
+      _ <- worker.forkIn(scope)
+    yield resource
+
+  private def prepareSubscriptionResource(
+    token: ResourceToken,
+    delivery: SubscriptionDelivery,
+    stream: zio.stream.ZStream[Any, Nothing, Any],
+    candidateScope: CandidateScope
+  ): UIO[ManagedResource] =
+    for
+      scope    <- Scope.make
+      prepared <- PreparedResource.make(scope.close(Exit.unit))
+      _        <- candidateScope.addFinalizer(prepared.discard)
+      resource = ManagedResource(token, prepared, ManagedResourceKind.Subscription(delivery))
+      _ <- delivery match
+             case SubscriptionDelivery.Lossless =>
+               val worker = prepared.awaitActivation.foldZIO(
+                 _ => ZIO.unit,
+                 _ =>
+                   stream.runForeach(message =>
+                     enqueueOwnedCommand(
+                       SessionCommand.ManagedSubscription(epoch, token, message)
+                     )
+                   ) *> enqueueOwnedCommand(
+                     SessionCommand.ManagedSubscriptionEnded(epoch, token)
+                   )
+               )
+               worker.forkIn(scope).unit
+             case SubscriptionDelivery.Latest =>
+               for
+                 latest   <- Ref.make(Option.empty[Any])
+                 signal   <- Queue.dropping[Unit](1)
+                 first    <- Ref.make(true)
+                 admitted <- Promise.make[Nothing, Unit]
+                 done     <- Promise.make[Nothing, Unit]
+                 producer = prepared.awaitActivation.foldZIO(
+                              _ => ZIO.unit,
+                              _ =>
+                                stream
+                                  .runForeach(message =>
+                                    for
+                                      isFirst <- first.getAndSet(false)
+                                      _       <- latest.set(Some(message)) *> signal.offer(()).unit
+                                      _       <- admitted.await.when(isFirst)
+                                    yield ()
+                                  ).ensuring(done.succeed(()).unit *> signal.offer(()).unit)
+                            )
+                 consumer = prepared.awaitActivation.foldZIO(
+                              _ => ZIO.unit,
+                              _ => deliverLatestSubscription(token, latest, signal, admitted, done)
+                            )
+                 _ <- producer.forkIn(scope)
+                 _ <- consumer.forkIn(scope)
+               yield ()
+    yield resource
+
+  private def deliverLatestSubscription(
+    token: ResourceToken,
+    latest: Ref[Option[Any]],
+    signal: Queue[Unit],
+    admitted: Promise[Nothing, Unit],
+    done: Promise[Nothing, Unit]
+  ): UIO[Unit] =
+    for
+      _        <- signal.take
+      reserved <- takeOwnedSlot
+      message  <- if reserved then latest.getAndSet(None) else ZIO.none
+      _        <- message match
+             case Some(value) =>
+               enqueueOwnedCommandReserved(
+                 SessionCommand.ManagedSubscription(epoch, token, value)
+               ) *> admitted.succeed(()).unit
+             case None => ZIO.when(reserved)(regularSlots.offer(()).unit).unit
+      completed <- done.isDone
+      remaining <- latest.get
+      _         <-
+        if completed && remaining.isEmpty then
+          enqueueOwnedCommand(SessionCommand.ManagedSubscriptionEnded(epoch, token))
+        else deliverLatestSubscription(token, latest, signal, admitted, done)
+    yield ()
+
+  private def validateOwner(owner: OwnerId): ZIO[Any, SessionFailure, Unit] =
+    val ownerLifecycle = owner match
+      case OwnerId.Root(value)         => value
+      case OwnerId.Component(value, _) => value
+    ZIO
+      .fail(
+        SessionFailure.StageFailed(
+          SessionStage.Validation,
+          "resource owner belongs to another lifecycle"
+        )
+      ).unless(ownerLifecycle == lifecycle).unit
+
+  private def enqueueOwnedCommand(command: SessionCommand[Msg]): UIO[Unit] =
+    ZIO
+      .fromEither(CommandId.fresh()).foldZIO(
+        error =>
+          ZIO.logError(s"managed resource command identity failed: $error") *>
+            shutdown.succeed(()).unit,
+        commandId =>
+          Promise.make[SessionRejection, TurnResult].flatMap { response =>
+            offerOwned(Envelope.Execute(commandId, command, response)).unit
+          }
+      )
+
+  private def enqueueOwnedCommandReserved(command: SessionCommand[Msg]): UIO[Unit] =
+    ZIO
+      .fromEither(CommandId.fresh()).foldZIO(
+        error =>
+          regularSlots.offer(()).unit *>
+            ZIO.logError(s"managed resource command identity failed: $error") *>
+            shutdown.succeed(()).unit,
+        commandId =>
+          Promise.make[SessionRejection, TurnResult].flatMap { response =>
+            offerMailbox(Envelope.Execute(commandId, command, response))
+              .tap(accepted => ZIO.unless(accepted)(regularSlots.offer(()).unit)).unit
+          }
+      )
+
   private def reserve(
     candidateScope: CandidateScope
   ): ZIO[Any, SessionFailure, OutboundReservation[SessionOutput]] =
@@ -1580,6 +2046,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                render,
                forest,
                candidate.resources,
+               candidate.managedResources,
                candidate.auxiliaryScope,
                candidate.revision
              )
@@ -1594,10 +2061,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                                    message
                                                  )
                                              }
-      nextWork = work.enqueueAll(rootWork ++ outputWork)
+      managedWork: Vector[Work[Msg, Model]] =
+        candidate.managedContinuations.map(value =>
+          Work.ManagedAsyncContinuation[Msg, Model](value.owner, value.completion)
+        )
+      nextWork = work.enqueueAll(rootWork ++ outputWork ++ managedWork)
       _ <- activeOwner.activate(closeCommitted(next))
-      _ <- candidate.resources.activate
       _ <- ZIO.foreachDiscard(previous)(_.resources.markStale)
+      _ <- ZIO.foreachDiscard(candidate.managedRetirements)(_.prepared.markStale)
+      _ <- closeManaged(candidate.managedRetirements)
+      _ <- candidate.resources.activate
+      _ <- ZIO.foreachDiscard(candidate.managedActivations)(_.prepared.activate)
       _ <- ZIO.when(publish)(
              candidate.reservation.publish(
                OutboundBatch.single(
@@ -1613,6 +2087,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       case Exit.Failure(cause) =>
         val candidateCleanup = candidate.render.stagedScope.closeFromOwner *>
           candidate.auxiliaryScope.closeFromOwner *>
+          closeManaged(candidate.managedActivations) *>
           ZIO.foreachDiscard(candidate.components.components)(_.abortCommitted)
         val previousCleanup = ZIO.foreachDiscard(previous)(closeCommitted)
         ZIO.uninterruptible {
@@ -2010,9 +2485,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     rejection: SessionRejection
   ): UIO[Unit] =
     ZIO.foreachDiscard(work) {
-      case Work.Correlated(deferred)        => deferred.response.fail(rejection).unit
-      case Work.Continuation(_)             => ZIO.unit
-      case Work.ComponentContinuation(_, _) => ZIO.unit
+      case Work.Correlated(deferred)           => deferred.response.fail(rejection).unit
+      case Work.Continuation(_)                => ZIO.unit
+      case Work.ComponentContinuation(_, _)    => ZIO.unit
+      case Work.ManagedAsyncContinuation(_, _) => ZIO.unit
     }
 
   private def validateContinuations(
@@ -2074,13 +2550,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     )
 
   private def closeCommitted(committed: Committed[Msg, Model]): UIO[Unit] =
-    committed.render.scope.closeFromOwner *>
+    closeManaged(committed.managedResources.values) *>
+      committed.render.scope.closeFromOwner *>
       committed.auxiliaryScope.closeFromOwner *>
       ZIO.foreachDiscard(committed.components.values) { component =>
         component.render.scope.closeFromOwner *>
           component.program.close *>
           componentEnvironment.close(component.id, component.environmentState)
       }
+
+  private def closeManaged(resources: Vector[ManagedResource]): UIO[Unit] =
+    PreparedResources(resources.map(_.prepared)).close
 
   private def crash(
     state: SessionState[Msg, Model],
@@ -2116,6 +2596,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                response.fail(rejection).unit
            }
       _ <- mailbox.shutdown
+      _ <- regularSlots.shutdown
     yield ()
 end SessionKernel
 
@@ -2135,11 +2616,13 @@ private[scalive] object SessionKernel:
   private enum Work[Msg, Model]:
     case Continuation(message: Msg)
     case ComponentContinuation(component: ComponentInstanceId, message: Any)
+    case ManagedAsyncContinuation(owner: OwnerId, completion: ManagedAsyncCompletion)
     case Correlated(command: DeferredSessionCommand[Msg, Model])
 
   private enum ComponentAction:
     case Message(value: Any)
     case Async(event: LiveAsyncEvent[Any])
+    case ManagedAsync(completion: ManagedAsyncCompletion)
     case Update
     case Browser(command: SessionCommand.ComponentClientEvent)
 
@@ -2182,17 +2665,22 @@ private[scalive] object SessionKernel:
     renderProgram: RenderProgram[Model, Msg],
     outbound: OutboundReservations[SessionOutput],
     componentEnvironment: ComponentEnvironment[Msg, Model] =
-      ComponentEnvironment.unavailable[Msg, Model]
+      ComponentEnvironment.unavailable[Msg, Model],
+    providedLifecycle: Option[LifecycleId] = None
   ): ZIO[Scope, SessionFailure, SessionKernel[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
-        lifecycle <- ZIO
-                       .fromEither(LifecycleId.fresh()).mapError(error =>
-                         SessionFailure.StageFailed(SessionStage.Identity, error.toString)
-                       )
-        sessionScope  <- ZIO.acquireRelease(Scope.make)(_.close(Exit.unit))
-        mailbox       <- Queue.dropping[Envelope[Msg, Model]](config.mailboxCapacity + 1)
-        regularQueued <- Ref.make(0)
+        lifecycle <- providedLifecycle match
+                       case Some(value) => ZIO.succeed(value)
+                       case None        =>
+                         ZIO
+                           .fromEither(LifecycleId.fresh()).mapError(error =>
+                             SessionFailure.StageFailed(SessionStage.Identity, error.toString)
+                           )
+        sessionScope <- ZIO.acquireRelease(Scope.make)(_.close(Exit.unit))
+        mailbox      <- Queue.bounded[Envelope[Msg, Model]](config.mailboxCapacity + 1)
+        regularSlots <- Queue.bounded[Unit](config.mailboxCapacity)
+        _            <- regularSlots.offerAll(Vector.fill(config.mailboxCapacity)(()))
         patchAcknowledgementQueued <- Ref.make(false)
         terminal                   <- Promise.make[Nothing, SessionState[Msg, Model]]
         ready                      <- Promise.make[SessionFailure, Unit]
@@ -2207,7 +2695,7 @@ private[scalive] object SessionKernel:
                    componentEnvironment,
                    outbound,
                    mailbox,
-                   regularQueued,
+                   regularSlots,
                    patchAcknowledgementQueued,
                    terminal,
                    sessionScope,

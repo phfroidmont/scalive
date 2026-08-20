@@ -5,7 +5,9 @@ import zio.ZIO
 import zio.http.URL
 
 import scalive.*
+import scalive.runtime.contracts.LifecycleId
 import scalive.runtime.kernel.NavigationRequest
+import scalive.runtime.resources.OwnerId
 
 final private[scalive] class DisconnectedRootTurn[Msg, Model] private[connection] (
   journal: RootTurnJournal,
@@ -67,6 +69,13 @@ private[scalive] object DisconnectedRootTurn:
     initialUrl: URL,
     initialFlash: Map[FlashKind, String]
   ): LiveIO[DisconnectedRootTurn[Msg, Model]] =
-    RootTurnJournal
-      .make(RootHookRegistry.fromStatic(hooks), initialFlash)
-      .map(new DisconnectedRootTurn(_, initialUrl))
+    for
+      lifecycle <-
+        ZIO
+          .fromEither(LifecycleId.fresh()).mapError(error => IllegalStateException(error.toString))
+      journal <- RootTurnJournal.make(
+                   OwnerId.Root(lifecycle),
+                   RootHookRegistry.fromStatic(hooks),
+                   initialFlash
+                 )
+    yield new DisconnectedRootTurn(journal, initialUrl)

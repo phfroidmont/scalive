@@ -16,6 +16,7 @@ private[scalive] enum PhoenixEncodingError:
   case DuplicateSlot(slot: TemplateSlotId)
   case SlotKindMismatch(slot: TemplateSlotId)
   case UnresolvedComponent(id: TemplateId)
+  case UnresolvedNested(id: TemplateId)
   case UnknownComponentToken
   case DuplicateComponentToken
   case DuplicateComponentRoot(cid: Int)
@@ -72,6 +73,10 @@ private[scalive] object PhoenixRenderedEncoder:
     case Dynamic(slot: TemplateSlotId, value: ProjectedValue, attributeName: Option[String])
     case Target(value: ProjectedValue.ComponentTarget)
     case Node(value: ProjectedNode)
+
+    /** A finalized disconnected child program. Its template ids and slots have their own namespace.
+      */
+    case Nested(value: ProjectedNode)
     case Component(cid: Int)
     case Stream(value: ProjectedStream)
     case StreamDomId(value: String)
@@ -206,6 +211,7 @@ private[scalive] object PhoenixRenderedEncoder:
   private def clearPending(state: PhoenixRenderedState): PhoenixRenderedState =
     def clearNode(node: ProjectedNode): ProjectedNode = node.copy(parts = node.parts.map {
       case ProjectedPart.Node(child)    => ProjectedPart.Node(clearNode(child))
+      case ProjectedPart.Nested(child)  => ProjectedPart.Nested(clearNode(child))
       case ProjectedPart.Stream(stream) =>
         ProjectedPart.Stream(
           stream.copy(
@@ -283,7 +289,36 @@ private[scalive] object PhoenixRenderedEncoder:
             )
             context.projectedCids += cid
             ProjectedNode(component.id, Vector(ProjectedPart.Component(cid)))
-    case nested: EvaluatedNode.Nested => Right(ProjectedNode(nested.id, Vector.empty))
+    case nested: EvaluatedNode.Nested =>
+      nested.resolution match
+        case None             => Left(PhoenixEncodingError.UnresolvedNested(nested.id))
+        case Some(resolution) =>
+          traverse(resolution.child)(tree => project(tree.root, None, context)).map { children =>
+            val opening = StringBuilder()
+            opening.append("<div id=\"")
+            opening.append(Escaping.escape(resolution.applicationId))
+            if !resolution.sticky || resolution.child.nonEmpty then
+              opening.append("\" data-phx-parent-id=\"")
+              opening.append(Escaping.escape(resolution.parentDomId))
+            opening.append("\" data-phx-session=\"")
+            opening.append(Escaping.escape(resolution.joinCredential))
+            opening.append('"')
+            resolution.staticCredential.foreach { credential =>
+              opening.append(" data-phx-static=\"")
+              opening.append(Escaping.escape(credential))
+              opening.append('"')
+            }
+            if resolution.sticky then opening.append(" data-phx-sticky")
+            if resolution.loading then opening.append(" class=\"phx-loading\"")
+            opening.append('>')
+
+            ProjectedNode(
+              nested.id,
+              Vector(ProjectedPart.Static(opening.result())) ++
+                children.map(ProjectedPart.Nested(_)) :+
+                ProjectedPart.Static("</div>")
+            )
+          }
     case stream: EvaluatedNode.Stream =>
       projectStream(stream, context).map(value =>
         ProjectedNode(stream.id, Vector(ProjectedPart.Stream(value)))
@@ -644,6 +679,7 @@ private[scalive] object PhoenixRenderedEncoder:
               if slots.add(slot) then Right(()) else Left(PhoenixEncodingError.DuplicateSlot(slot))
             )
           case (result, ProjectedPart.Node(child))    => result.flatMap(_ => loop(child))
+          case (result, ProjectedPart.Nested(child))  => result.flatMap(_ => validateProgram(child))
           case (result, ProjectedPart.Stream(stream)) =>
             stream.rows.foldLeft(result)((current, row) => current.flatMap(_ => loop(row.child)))
           case (result, _) => result
@@ -738,6 +774,7 @@ private[scalive] object PhoenixRenderedEncoder:
         case (result, ProjectedPart.Target(value)) =>
           result.flatMap(_ => renderTarget(value, components).map(current.append).map(_ => ()))
         case (result, ProjectedPart.Node(child))    => result.flatMap(_ => loop(child))
+        case (result, ProjectedPart.Nested(child))  => result.flatMap(_ => loop(child))
         case (result, ProjectedPart.Component(cid)) => result.map(_ => dynamic(None, Json.Num(cid)))
         case (result, ProjectedPart.StreamDomId(value)) =>
           result.map(_ => dynamic(None, Json.Str(value)))
@@ -839,6 +876,7 @@ private[scalive] object PhoenixRenderedEncoder:
         case (result, ProjectedPart.Target(value)) =>
           result.flatMap(_ => renderTarget(value, components).map(output.append).map(_ => ()))
         case (result, ProjectedPart.Node(child))    => result.flatMap(_ => loop(child))
+        case (result, ProjectedPart.Nested(child))  => result.flatMap(_ => loop(child))
         case (result, ProjectedPart.Component(cid)) =>
           result.flatMap(_ =>
             components.get(cid) match
@@ -915,6 +953,7 @@ private[scalive] object PhoenixRenderedEncoder:
     root.parts.flatMap {
       case ProjectedPart.Component(cid) => Vector(cid)
       case ProjectedPart.Node(child)    => componentCids(child)
+      case ProjectedPart.Nested(child)  => componentCids(child)
       case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => componentCids(row.child))
       case _                            => Vector.empty
     }
@@ -932,6 +971,7 @@ private[scalive] object PhoenixRenderedEncoder:
       case ProjectedPart.Target(value)                                        => Vector(value)
       case ProjectedPart.Dynamic(_, value: ProjectedValue.ComponentTarget, _) => Vector(value)
       case ProjectedPart.Node(child)    => collectTargets(child)
+      case ProjectedPart.Nested(child)  => collectTargets(child)
       case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => collectTargets(row.child))
       case _                            => Vector.empty
     }
@@ -940,8 +980,9 @@ private[scalive] object PhoenixRenderedEncoder:
     root.parts.flatMap {
       case ProjectedPart.Stream(stream) =>
         stream +: stream.rows.flatMap(row => collectStreams(row.child))
-      case ProjectedPart.Node(child) => collectStreams(child)
-      case _                         => Vector.empty
+      case ProjectedPart.Node(child)   => collectStreams(child)
+      case ProjectedPart.Nested(child) => collectStreams(child)
+      case _                           => Vector.empty
     }
 
   private def rowContainsChangedSlot(

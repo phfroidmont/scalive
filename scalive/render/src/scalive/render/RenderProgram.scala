@@ -1171,8 +1171,8 @@ object RenderProgram:
           previous match
             case Some(old: EvaluatedNode.Nested)
                 if old.id == template.id && old.applicationId == requirement.applicationId =>
-              old
-            case _ => EvaluatedNode.Nested(template.id, requirement.applicationId, revision)
+              EvaluatedNode.Nested(template.id, requirement.applicationId, None, old.revision)
+            case _ => EvaluatedNode.Nested(template.id, requirement.applicationId, None, revision)
         }
       case template: StaticStreamTemplate[?, Msg] =>
         val requirement = StreamRequirement.Static(

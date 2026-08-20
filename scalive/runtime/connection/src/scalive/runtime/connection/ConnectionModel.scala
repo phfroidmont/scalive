@@ -5,6 +5,8 @@ import zio.json.ast.Json
 import scalive.FlashKind
 import scalive.render.RenderDelta
 import scalive.runtime.contracts.CommandId
+import scalive.runtime.contracts.LifecycleId
+import scalive.runtime.contracts.NestedRegistrationId
 import scalive.runtime.kernel.NavigationOutput
 import scalive.runtime.kernel.SessionEffects
 import scalive.runtime.kernel.SessionFailure
@@ -101,6 +103,16 @@ object ConnectionError:
       extends ConnectionError(s"outbound reservations failed: $details")
   final case class SinkFailed(cause: Throwable)
       extends ConnectionError(s"connection sink failed: ${cause.getMessage}")
+  final case class LinkedChildFailed(child: LifecycleId, cause: ConnectionError)
+      extends ConnectionError(
+        s"linked child lifecycle ${child.value} failed: ${cause.getMessage}"
+      )
+  final case class LinkedChildJoinFailed(
+    registration: NestedRegistrationId,
+    cause: ConnectionError)
+      extends ConnectionError(
+        s"linked child registration ${registration.value} failed to join: ${cause.getMessage}"
+      )
   final case class IngressSaturated(capacity: Int)
       extends ConnectionError(s"connection ingress capacity $capacity is saturated")
   final case class KernelRejected(rejection: SessionRejection)

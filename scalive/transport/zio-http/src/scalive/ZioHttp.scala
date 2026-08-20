@@ -85,6 +85,14 @@ object ZioHttp:
       Some(actualJoinRef -> actualRef)
     case _ => None
 
+  private[scalive] def exactTopicGeneration[A](
+    states: Map[String, A],
+    topic: String,
+    joinRef: PhoenixRef,
+    generation: A => PhoenixRef.Value
+  ): Option[A] =
+    states.get(topic).filter(state => joinRef == generation(state))
+
   /** Assembles the HTTP and websocket routes after synchronously validating the catalog. */
   def routes[R](application: LiveApplication[R], config: ZioHttpConfig): Routes[R, Nothing] =
     val catalog     = validate(application)
@@ -301,18 +309,28 @@ object ZioHttp:
         rootKey <- ZIO.attempt(selectedRootLayout.key(rootContext))
         sessionPlaceholder = s"pending-session-$rootId"
         staticPlaceholder  = s"pending-static-$rootId"
-        rootAttrs          = Vector(
+        nestedLifecycles <- Ref.make(Map.empty[String, Long])
+        rootAttrs = Vector(
                       Mod.Attr.Static("id", rootId),
                       Mod.Attr.StaticValueAsPresence("data-phx-main", true),
                       Mod.Attr.Static("data-phx-session", sessionPlaceholder),
                       Mod.Attr.Static("data-phx-static", staticPlaceholder)
                     )
+        nestedResolver = disconnectedNestedResolver(
+                           config,
+                           request.url,
+                           rootId,
+                           turn.lifecycle,
+                           (applicationId, lifecycle) =>
+                             nestedLifecycles.update(_.updated(applicationId, lifecycle.value))
+                         )
         rendered <-
           if selectedRootLayout eq LiveRootLayout.identity then
             renderElement(
               (input: Signal[(Model, URL)]) => withRootAttrs(lifecycle.view(input), rootAttrs),
               model -> request.url,
-              turn
+              turn,
+              nestedResolver
             )
               .map(inner => inner.copy(html = document(issuedCsrf.token, inner.html)))
           else
@@ -325,12 +343,15 @@ object ZioHttp:
               rootView,
               model -> request.url,
               turn,
+              nestedResolver,
               includeDoctype = true
             )
-        _      <- turn.runAfterRender(model)
-        tokens <- issueRootTokens(
+        _               <- turn.runAfterRender(model)
+        childLifecycles <- nestedLifecycles.get
+        tokens          <- issueRootTokens(
                     config,
                     rootId,
+                    turn.lifecycle,
                     index,
                     canonical,
                     routeIdentity,
@@ -338,7 +359,8 @@ object ZioHttp:
                     rootKey,
                     mountClaims,
                     rendered.trackedStatics,
-                    rendered.finalFlash.view.map((key, value) => key.value -> value).toMap
+                    rendered.finalFlash.view.map((key, value) => key.value -> value).toMap,
+                    childLifecycles
                   )
         (session, static) = tokens
         html              = rendered.html
@@ -770,20 +792,83 @@ object ZioHttp:
     view: Signal[A] => HtmlElement[Msg],
     value: A,
     turn: DisconnectedRootTurn[?, ?],
+    nestedResolver: DisconnectedNestedResolver = DisconnectedNestedResolver.unavailable,
     includeDoctype: Boolean = false
   ): Task[RenderedElement] =
-    DisconnectedComponentRenderer.renderTurnWith(view, value, turn) { (tree, finalFlash) =>
-      ZIO
-        .fromEither(
-          PhoenixRenderedEncoder.fullHtml(tree).left.map(error => Exception(error.toString))
-        ).map { case (_, html) =>
-          RenderedElement(
-            if includeDoctype then s"<!doctype html>$html" else html,
-            collectTrackedStatics(tree.root),
-            finalFlash
-          )
-        }
+    DisconnectedComponentRenderer.renderTurnWith(view, value, turn, nestedResolver) {
+      (tree, finalFlash) =>
+        ZIO
+          .fromEither(
+            PhoenixRenderedEncoder.fullHtml(tree).left.map(error => Exception(error.toString))
+          ).map { case (_, html) =>
+            RenderedElement(
+              if includeDoctype then s"<!doctype html>$html" else html,
+              collectTrackedStatics(tree.root),
+              finalFlash
+            )
+          }
     }
+
+  private def disconnectedNestedResolver(
+    config: ZioHttpConfig,
+    initialUrl: URL,
+    parentDomId: String,
+    parentLifecycle: LifecycleId,
+    recordChildLifecycle: (String, LifecycleId) => UIO[Unit] = (_, _) => ZIO.unit
+  ): DisconnectedNestedResolver = new DisconnectedNestedResolver:
+    def resolve(requirement: NestedRequirement): Task[NestedResolution] =
+      type Msg   = requirement.Message
+      type Model = requirement.Model
+
+      for
+        registration <- ZIO
+                          .fromEither(NestedRegistrationId.fresh())
+                          .mapError(error => IllegalStateException(error.toString))
+        topic = NestedTopic(s"lv:${requirement.applicationId}")
+        liveView <- ZIO.attempt(requirement.create())
+        turn     <- DisconnectedRootTurn.make[Msg, Model](liveView.hooks, initialUrl, Map.empty)
+        _        <- recordChildLifecycle(requirement.applicationId, turn.lifecycle)
+        claims = NestedCredentialClaims(
+                   registration,
+                   NestedRegistrationEpoch.initial,
+                   parentLifecycle,
+                   Epoch.initial,
+                   topic,
+                   childLifecycle = Some(turn.lifecycle)
+                 )
+        credentials <- ZioHttpSecurity.issueNested(config, claims)
+        model       <- liveView.mount(turn.mountContext)
+        navigation  <- turn.navigation
+        child       <- navigation match
+                   case Some(_) => ZIO.none
+                   case None    =>
+                     val nested = disconnectedNestedResolver(
+                       config,
+                       initialUrl,
+                       requirement.applicationId,
+                       turn.lifecycle
+                     )
+                     DisconnectedComponentRenderer
+                       .renderTurnWith[Model, Msg, Option[EvaluatedTree]](
+                         liveView.view,
+                         model,
+                         turn,
+                         nested
+                       ) { (tree, _) =>
+                         turn.runAfterRender(model).as(Some(tree))
+                       }
+        resolution = requirement.resolve(
+                       new Object(),
+                       parentDomId,
+                       topic.value,
+                       credentials.join.value,
+                       credentials.static.map(_.value),
+                       loading = false,
+                       child = child
+                     )
+      yield resolution
+      end for
+    end resolve
 
   private def collectTrackedStatics(node: EvaluatedNode): Vector[String] = node match
     case element: EvaluatedNode.Element =>
@@ -803,7 +888,10 @@ object ZioHttp:
       keyed.rows.flatMap(row => collectTrackedStatics(row.child))
     case component: EvaluatedNode.Component =>
       component.resolution.toVector.flatMap(value => collectTrackedStatics(value.child.root))
-    case _: EvaluatedNode.Text | _: EvaluatedNode.Nested | _: EvaluatedNode.Stream => Vector.empty
+    case nested: EvaluatedNode.Nested =>
+      nested.resolution.toVector
+        .flatMap(_.child.toVector).flatMap(tree => collectTrackedStatics(tree.root))
+    case _: EvaluatedNode.Text | _: EvaluatedNode.Stream => Vector.empty
 
   private def injectCsrf[Msg](root: HtmlElement[Msg], token: String): HtmlElement[Msg] =
     val csrfMeta = metaTag(nameAttr := "csrf-token", contentAttr := token)
@@ -862,15 +950,77 @@ object ZioHttp:
       app.toResponse
     }
 
-  final private case class JoinedRoot(
-    topic: String,
+  final private case class JoinedLifecycle(
+    topic: NestedTopic,
     joinRef: PhoenixRef.Value,
-    connection: RootConnection[?, ?],
+    connection: ConnectedLifecycle,
     renderedState: Ref[Option[PhoenixRenderedState]],
     projectionGate: Semaphore,
     correlations: Ref[Map[CommandId, (PhoenixRef, PhoenixRef)]],
-    scope: Scope.Closeable):
-    def close: UIO[Unit] = connection.close *> scope.close(Exit.unit)
+    currentUrl: Ref[URL],
+    parent: Option[(LifecycleId, Epoch)],
+    isRoot: Boolean,
+    sticky: Boolean)
+
+  final private class LifecycleStartupSink private (
+    capacity: Int,
+    destination: ConnectionOutput => Task[Unit],
+    gate: Semaphore):
+    private var outputs: Vector[ConnectionOutput] = Vector.empty
+    private var active: Boolean                   = false
+
+    def offer(output: ConnectionOutput): Task[Unit] = gate.withPermit {
+      if active then destination(output)
+      else if outputs.size >= capacity then
+        ZIO.fail(IllegalStateException(s"lifecycle startup output exceeded capacity $capacity"))
+      else
+        outputs = outputs :+ output
+        ZIO.unit
+    }
+
+    def activate: Task[Unit] = gate.withPermit {
+      ZIO.foreachDiscard(outputs)(destination) *> ZIO.succeed {
+        outputs = Vector.empty
+        active = true
+      }
+    }
+
+  private object LifecycleStartupSink:
+    def make(
+      capacity: Int,
+      destination: ConnectionOutput => Task[Unit]
+    ): UIO[LifecycleStartupSink] =
+      Semaphore.make(1L).map(new LifecycleStartupSink(capacity, destination, _))
+
+  private[scalive] def nestedJoinUrl(value: Option[String], inherited: URL): Either[String, URL] =
+    value match
+      case None          => Right(URL(path = inherited.path, queryParams = inherited.queryParams))
+      case Some(encoded) =>
+        URL
+          .decode(encoded).left.map(_.getMessage).map(url =>
+            URL(path = url.path, queryParams = url.queryParams)
+          )
+
+  private[scalive] def verifyNestedAdmission(
+    config: ZioHttpConfig,
+    topic: String,
+    join: RootJoin
+  ): IO[String, NestedCredentialClaims] =
+    for
+      claims       <- ZioHttpSecurity.verifyNestedJoin(config, join.session).mapError(_.toString)
+      _            <- ZIO.fail("nested topic differs").unless(claims.topic.value == topic)
+      staticClaims <- ZIO.foreach(join.static) { token =>
+                        ZioHttpSecurity.verifyNestedStatic(config, token).mapError(_.toString)
+                      }
+      _ <- ZIO.fail("nested redirect joins are unsupported").when(join.redirect.nonEmpty)
+      childLifecycle = staticClaims
+                         .filter(value =>
+                           value.parentLifecycle == claims.parentLifecycle &&
+                             value.parentEpoch == claims.parentEpoch &&
+                             value.registrationEpoch == claims.registrationEpoch &&
+                             value.topic == claims.topic
+                         ).flatMap(_.childLifecycle)
+    yield claims.copy(childLifecycle = childLifecycle)
 
   private def runSocket[R](
     channel: WebSocketChannel,
@@ -885,7 +1035,15 @@ object ZioHttp:
         SerialWriter.make[PhoenixEnvelope](PhysicalWriterSize) { envelope =>
           channel.send(ChannelEvent.read(WebSocketFrame.text(PhoenixEnvelope.encode(envelope))))
         }
-      root         <- Ref.make(Option.empty[JoinedRoot])
+      supervisor <- ConnectionSupervisor.make(
+                      connectionConfig,
+                      new NestedCredentialIssuer:
+                        def issue(claims: NestedCredentialClaims) =
+                          ZioHttpSecurity.issueNested(config, claims)
+                      ,
+                      applicationId => NestedTopic(s"lv:$applicationId")
+                    )
+      joined       <- Ref.make(Map.empty[String, JoinedLifecycle])
       registration <- Ref.make(Option.empty[ZioHttpSecurity.RootClaims])
       joinGate     <- Semaphore.make(1L)
       receive = channel.receiveAll {
@@ -899,13 +1057,14 @@ object ZioHttp:
                           case Right(PhoenixInbound.Heartbeat(joinRef, ref)) =>
                             writer.offer(PhoenixOutput.heartbeat(joinRef, ref))
                           case Right(PhoenixInbound.Join(joinRef, ref, topic, payload)) =>
-                            joinRoot(
+                            joinLifecycle(
                               routes,
                               config,
                               csrfCookie,
                               csrfToken,
                               socketRequest,
-                              root,
+                              supervisor,
+                              joined,
                               registration,
                               joinGate,
                               writer,
@@ -915,11 +1074,18 @@ object ZioHttp:
                               payload
                             )
                           case Right(PhoenixInbound.Event(joinRef, ref, topic, payload)) =>
-                            offerEvent(root, writer, joinRef, ref, topic, payload)
+                            offerEvent(joined, writer, joinRef, ref, topic, payload)
                           case Right(PhoenixInbound.LivePatch(joinRef, ref, topic, url)) =>
-                            offerPatch(root, writer, joinRef, ref, topic, url)
+                            offerPatch(joined, writer, joinRef, ref, topic, url)
                           case Right(PhoenixInbound.Leave(joinRef, ref, topic)) =>
-                            leaveRoot(root, writer, joinRef, ref, topic)
+                            leaveLifecycle(
+                              supervisor,
+                              joined,
+                              writer,
+                              joinRef,
+                              ref,
+                              topic
+                            )
                     }
                   case ChannelEvent.Read(_: WebSocketFrame.Close) => ZIO.unit
                   case ChannelEvent.Registered | ChannelEvent.Unregistered |
@@ -930,16 +1096,17 @@ object ZioHttp:
                 }
       _ <- receive
              .raceFirst(writer.awaitFailure.flatMap(ZIO.fail(_)))
-             .ensuring(root.get.flatMap(ZIO.foreachDiscard(_)(_.close)) *> writer.close)
+             .ensuring(supervisor.close *> writer.close)
     yield ()
 
-  private def joinRoot[R](
+  private def joinLifecycle[R](
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
     csrfCookie: Option[String],
     csrfToken: Option[String],
     socketRequest: Request,
-    currentRoot: Ref[Option[JoinedRoot]],
+    supervisor: ConnectionSupervisor,
+    joined: Ref[Map[String, JoinedLifecycle]],
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
     joinGate: Semaphore,
     writer: SerialWriter[PhoenixEnvelope],
@@ -952,128 +1119,245 @@ object ZioHttp:
       case None               => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
       case Some(effectiveRef) =>
         joinGate.withPermit {
-          registration.get.flatMap { registered =>
-            val admission = join.redirect match
-              case Some(_) =>
-                ZIO
-                  .fromOption(registered).orElseFail("missing root registration").flatMap(
-                    ZioHttpAdmission.admitRedirect(
+          ZioHttpSecurity.verifyNestedJoin(config, join.session).either.flatMap {
+            case Right(_) =>
+              joinNested(
+                config,
+                supervisor,
+                joined,
+                registration,
+                writer,
+                effectiveRef,
+                joinRef,
+                ref,
+                topic,
+                join
+              )
+            case Left(_) =>
+              registration.get.flatMap { registered =>
+                val admission = join.redirect match
+                  case Some(_) =>
+                    ZIO
+                      .fromOption(registered).orElseFail("missing root registration").flatMap(
+                        ZioHttpAdmission.admitRedirect(
+                          routes,
+                          config,
+                          csrfCookie,
+                          csrfToken,
+                          _,
+                          topic,
+                          join
+                        )
+                      )
+                  case None =>
+                    ZioHttpAdmission.admit(
                       routes,
                       config,
                       csrfCookie,
                       csrfToken,
-                      _,
+                      registered.nonEmpty,
                       topic,
                       join
                     )
-                  )
-              case None =>
-                ZioHttpAdmission.admit(
-                  routes,
-                  config,
-                  csrfCookie,
-                  csrfToken,
-                  registered.nonEmpty,
-                  topic,
-                  join
-                )
-            admission.foldZIO(
-              error =>
-                ZIO.logWarning(s"Rejecting root join topic=$topic: $error") *>
-                  writer.offer(PhoenixOutput.error(joinRef, ref, topic, unauthorizedReason)),
-              admitted =>
-                val install = for
-                  request = connectedRequest(socketRequest, admitted.url)
-                  lifecycle <- admitted.route.prepareConnected(
-                                 admitted.url,
-                                 request,
-                                 admitted.claims
-                               )
-                  flash           <- joinedFlash(config, join, admitted.claims)
-                  renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
-                  projectionGate  <- Semaphore.make(1L)
-                  correlations    <- Ref.make(Map.empty[CommandId, (PhoenixRef, PhoenixRef)])
-                  connectionReady <- Promise.make[Nothing, RootConnection[?, ?]]
-                  metadata = RootConnectionMetadata(
-                               staticChanged = staticChanged(
-                                 clientTrackedStatics(join.params),
-                                 admitted.claims.trackedStatics,
-                                 admitted.url
-                               ),
-                               connectParams = join.params,
-                               initialFlash = flash
+                admission.foldZIO(
+                  error =>
+                    ZIO.logWarning(s"Rejecting root join topic=$topic: $error") *>
+                      writer.offer(PhoenixOutput.error(joinRef, ref, topic, unauthorizedReason)),
+                  admitted =>
+                    val install = for
+                      request = connectedRequest(socketRequest, admitted.url)
+                      lifecycle <- admitted.route.prepareConnected(
+                                     admitted.url,
+                                     request,
+                                     admitted.claims
+                                   )
+                      flash           <- joinedFlash(config, join, admitted.claims)
+                      renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
+                      projectionGate  <- Semaphore.make(1L)
+                      correlations    <- Ref.make(Map.empty[CommandId, (PhoenixRef, PhoenixRef)])
+                      currentUrl      <- Ref.make(admitted.url)
+                      connectionReady <- Promise.make[Nothing, ConnectedLifecycle]
+                      metadata = RootConnectionMetadata(
+                                   staticChanged = staticChanged(
+                                     clientTrackedStatics(join.params),
+                                     admitted.claims.trackedStatics,
+                                     admitted.url
+                                   ),
+                                   connectParams = join.params,
+                                   initialFlash = flash
+                                 )
+                      sink = lifecycleSink(
+                               config,
+                               writer,
+                               renderedState,
+                               projectionGate,
+                               correlations,
+                               effectiveRef,
+                               ref,
+                               topic,
+                               destination =>
+                                 currentUrl.set(destination) *>
+                                   connectionReady.await.flatMap(_.internalPatch(destination))
                              )
-                  sink = rootSink(
-                           config,
-                           writer,
-                           renderedState,
-                           projectionGate,
-                           correlations,
-                           effectiveRef,
-                           ref,
-                           topic,
-                           destination =>
-                             connectionReady.await.flatMap(_.offerInternalPatch(destination))
-                         )
-                  rootScope <- Scope.make
-                  _         <- (for
-                         previous   <- currentRoot.getAndSet(None)
-                         _          <- ZIO.foreachDiscard(previous)(_.close)
-                         connection <- rootScope.extend(
-                                         admitted.route.startPrepared(lifecycle, metadata, sink)
-                                       )
-                         _ <- connectionReady.succeed(connection)
-                         _ <- currentRoot.set(
-                                Some(
-                                  JoinedRoot(
-                                    topic,
-                                    effectiveRef,
-                                    connection,
-                                    renderedState,
-                                    projectionGate,
-                                    correlations,
-                                    rootScope
-                                  )
-                                )
+                      startup  <- LifecycleStartupSink.make(OutboundCapacity, sink)
+                      previous <- joined.modify { current =>
+                                    val roots = current.values.filter(_.isRoot).toVector
+                                    roots -> retainProtocolStickySubtrees(current)
+                                  }
+                      _ <- ZIO.foreachDiscard(previous)(entry =>
+                             if join.redirect.nonEmpty then
+                               supervisor.routeNavigationLeave(entry.topic).unit
+                             else supervisor.routeLeave(entry.topic).unit
+                           )
+                      connection <- supervisor
+                                      .startRootLifecycle(
+                                        lifecycle,
+                                        metadata,
+                                        admitted.claims.rootId,
+                                        NestedTopic(topic),
+                                        loading = false,
+                                        startup.offer,
+                                        requestedLifecycle =
+                                          Some(LifecycleId(admitted.claims.lifecycle)),
+                                        bootstrapChildLifecycles =
+                                          admitted.claims.nestedLifecycles.view
+                                            .mapValues(LifecycleId(_)).toMap
+                                      ).mapError(error => Exception(error.toString))
+                      _        <- connectionReady.succeed(connection)
+                      retained <- joined.get
+                      _ <- ZIO.foreachDiscard(retained.values)(_.currentUrl.set(admitted.url))
+                      entry = JoinedLifecycle(
+                                NestedTopic(topic),
+                                effectiveRef,
+                                connection,
+                                renderedState,
+                                projectionGate,
+                                correlations,
+                                currentUrl,
+                                parent = None,
+                                isRoot = true,
+                                sticky = false
                               )
-                         _ <- registration.set(Some(admitted.claims))
-                         _ <- connection.awaitFailure
-                                .map(Some(_)).raceFirst(
-                                  connection.awaitClosed *> connection.pollFailure
-                                ).flatMap {
-                                  case Some(_) =>
-                                    currentRoot
-                                      .modify {
-                                        case Some(joined)
-                                            if joined.connection.asInstanceOf[AnyRef] eq
-                                              connection.asInstanceOf[AnyRef] =>
-                                          true -> None
-                                        case current => false -> current
-                                      }.flatMap {
-                                        case true =>
-                                          registration.set(None) *>
-                                            writer.send(
-                                              PhoenixOutput.channelError(effectiveRef, topic)
-                                            )
-                                        case false => ZIO.unit
-                                      }
-                                  case None => ZIO.unit
-                                }.ensuring(rootScope.close(Exit.unit)).forkScoped
-                       yield ()).onError(_ => rootScope.close(Exit.unit))
-                yield ()
-                install.catchAll { error =>
-                  val clearInitial =
-                    ZIO.when(join.redirect.isEmpty)(registration.set(None))
-                  clearInitial *>
-                    ZIO.logWarningCause(
-                      s"Rejecting connected root lifecycle topic=$topic",
-                      Cause.fail(error)
-                    ) *>
-                    writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
-                }
-            )
+                      _ <- joined.update(_.updated(topic, entry))
+                      _ <- registration.set(Some(admitted.claims))
+                      _ <- monitorLifecycle(joined, registration, writer, entry).forkScoped
+                      _ <- activateInstalledLifecycle(
+                             startup.activate,
+                             removeJoinedLifecycle(joined, entry),
+                             supervisor.retireLifecycle(connection)
+                           )
+                    yield ()
+                    install.catchAll { error =>
+                      val clearInitial =
+                        ZIO.when(join.redirect.isEmpty)(registration.set(None))
+                      clearInitial *>
+                        ZIO.logWarningCause(
+                          s"Rejecting connected root lifecycle topic=$topic",
+                          Cause.fail(error)
+                        ) *>
+                        writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+                    }
+                )
+              }
           }
         }
+
+  private def joinNested(
+    config: ZioHttpConfig,
+    supervisor: ConnectionSupervisor,
+    joined: Ref[Map[String, JoinedLifecycle]],
+    registration: Ref[Option[ZioHttpSecurity.RootClaims]],
+    writer: SerialWriter[PhoenixEnvelope],
+    effectiveRef: PhoenixRef.Value,
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    join: RootJoin
+  ): ZIO[Scope, Throwable, Unit] =
+    val admitted = for
+      claims <- verifyNestedAdmission(config, topic, join)
+      parent <- joined.get
+                  .map(
+                    _.values.find(entry =>
+                      entry.connection.lifecycle == claims.parentLifecycle &&
+                        entry.connection.epoch == claims.parentEpoch
+                    )
+                  ).someOrFail("nested parent is unavailable")
+      inherited   <- parent.currentUrl.get
+      url         <- ZIO.fromEither(nestedJoinUrl(join.url, inherited))
+      reservation <- supervisor.reserveNested(claims).mapError(_.toString)
+    yield (claims, url, reservation)
+
+    admitted.foldZIO(
+      error =>
+        ZIO.logWarning(s"Rejecting nested join topic=$topic: $error") *>
+          writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason)),
+      (claims, url, reservation) =>
+        (for
+          renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
+          projectionGate  <- Semaphore.make(1L)
+          correlations    <- Ref.make(Map.empty[CommandId, (PhoenixRef, PhoenixRef)])
+          currentUrl      <- Ref.make(url)
+          connectionReady <- Promise.make[Nothing, ConnectedLifecycle]
+          metadata = RootConnectionMetadata(
+                       staticChanged = false,
+                       connectParams = join.params,
+                       initialFlash = Map.empty
+                     )
+          sink = lifecycleSink(
+                   config,
+                   writer,
+                   renderedState,
+                   projectionGate,
+                   correlations,
+                   effectiveRef,
+                   ref,
+                   topic,
+                   destination =>
+                     currentUrl.set(destination) *>
+                       connectionReady.await.flatMap(_.internalPatch(destination))
+                 )
+          startup    <- LifecycleStartupSink.make(OutboundCapacity, sink)
+          connection <- supervisor
+                          .startNested(
+                            reservation,
+                            url,
+                            metadata,
+                            reservation.registration.applicationId,
+                            loading = false,
+                            startup.offer,
+                            reattach = join.sticky,
+                            requestedLifecycle = claims.childLifecycle
+                          ).mapError(error => Exception(error.toString))
+          _ <- connectionReady.succeed(connection)
+          entry = JoinedLifecycle(
+                    NestedTopic(topic),
+                    effectiveRef,
+                    connection,
+                    renderedState,
+                    projectionGate,
+                    correlations,
+                    currentUrl,
+                    parent = Some(claims.parentLifecycle -> claims.parentEpoch),
+                    isRoot = false,
+                    sticky = reservation.registration.sticky
+                  )
+          _ <- joined.update(_.updated(topic, entry))
+          _ <- monitorLifecycle(joined, registration, writer, entry).forkScoped
+          _ <- activateInstalledLifecycle(
+                 startup.activate,
+                 removeJoinedLifecycle(joined, entry),
+                 supervisor.retireLifecycle(connection)
+               )
+        yield ()).catchAll { error =>
+          ZIO.logWarningCause(
+            s"Rejecting connected nested lifecycle topic=$topic",
+            Cause.fail(error)
+          ) *>
+            writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+        }
+    )
+  end joinNested
 
   private def joinedFlash(
     config: ZioHttpConfig,
@@ -1104,7 +1388,53 @@ object ZioHttp:
       PhoenixOutput.error(joinRef, ref, topic, staleReason)
     case _ => PhoenixOutput.error(joinRef, ref, topic, staleReason)
 
-  private def rootSink(
+  private def monitorLifecycle(
+    joined: Ref[Map[String, JoinedLifecycle]],
+    registration: Ref[Option[ZioHttpSecurity.RootClaims]],
+    writer: SerialWriter[PhoenixEnvelope],
+    entry: JoinedLifecycle
+  ): UIO[Unit] =
+    entry.connection.awaitClosed *> entry.connection.pollFailure.flatMap { failure =>
+      joined
+        .modify { current =>
+          current.get(entry.topic.value) match
+            case Some(active)
+                if active.connection.lifecycle == entry.connection.lifecycle &&
+                  active.connection.epoch == entry.connection.epoch &&
+                  active.joinRef == entry.joinRef =>
+              true -> current.removed(entry.topic.value)
+            case _ => false -> current
+        }.flatMap {
+          case false => ZIO.unit
+          case true  =>
+            ZIO.when(entry.isRoot && failure.nonEmpty)(registration.set(None)) *>
+              ZIO
+                .when(failure.nonEmpty)(
+                  writer.send(PhoenixOutput.channelError(entry.joinRef, entry.topic.value)).ignore
+                ).unit
+        }
+    }
+
+  private def removeJoinedLifecycle(
+    joined: Ref[Map[String, JoinedLifecycle]],
+    entry: JoinedLifecycle
+  ): UIO[Unit] =
+    joined.update { current =>
+      current.get(entry.topic.value) match
+        case Some(active) if active.joinRef == entry.joinRef => current.removed(entry.topic.value)
+        case _                                               => current
+    }
+
+  private[scalive] def activateInstalledLifecycle(
+    activate: Task[Unit],
+    removeJoined: => UIO[Unit],
+    retireLifecycle: => UIO[Unit]
+  ): Task[Unit] =
+    ZIO.uninterruptible(
+      activate.onError(_ => removeJoined *> retireLifecycle)
+    )
+
+  private def lifecycleSink(
     config: ZioHttpConfig,
     writer: SerialWriter[PhoenixEnvelope],
     state: Ref[Option[PhoenixRenderedState]],
@@ -1338,21 +1668,21 @@ object ZioHttp:
     navigation.flash.view.map((kind, message) => kind.value -> message).toMap
 
   private def offerEvent(
-    root: Ref[Option[JoinedRoot]],
+    lifecycles: Ref[Map[String, JoinedLifecycle]],
     writer: SerialWriter[PhoenixEnvelope],
     joinRef: PhoenixRef,
     ref: PhoenixRef,
     topic: String,
     event: RootEvent
   ): Task[Unit] =
-    root.get.flatMap {
-      case Some(joined) if joined.topic == topic =>
+    lifecycles.get.map(exactTopicGeneration(_, topic, joinRef, _.joinRef)).flatMap {
+      case Some(joined) =>
         correlatedEventRefs(joined.joinRef, joinRef, ref) match
           case Some(eventRefs) =>
             event.cid match
               case None =>
                 ZIO.fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
-                  enqueueRootEvent(joined, eventRefs, event, payload)
+                  enqueueLifecycleEvent(joined, eventRefs, event, payload)
                 }
               case Some(cid) =>
                 offerComponentEvent(joined, eventRefs, event, cid).flatMap {
@@ -1363,24 +1693,24 @@ object ZioHttp:
       case _ => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
     }
 
-  private def enqueueRootEvent(
-    joined: JoinedRoot,
+  private def enqueueLifecycleEvent(
+    joined: JoinedLifecycle,
     eventRefs: (PhoenixRef, PhoenixRef),
     event: RootEvent,
     payload: BindingPayload
   ): Task[Unit] =
     enqueueCorrelated(joined, eventRefs) { command =>
-      joined.connection.offerNamedEvent(
+      joined.connection.browserEvent(
         command,
         BindingId.fromEncoded(event.event),
         payload,
-        event.event,
-        event.value.toJson
+        Some(event.event),
+        Some(event.value.toJson)
       )
     }
 
   private def offerComponentEvent(
-    joined: JoinedRoot,
+    joined: JoinedLifecycle,
     eventRefs: (PhoenixRef, PhoenixRef),
     event: RootEvent,
     cid: Long
@@ -1396,7 +1726,7 @@ object ZioHttp:
         ZIO
           .fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
             enqueueCorrelated(joined, eventRefs) { command =>
-              joined.connection.offerComponentNamedEvent(
+              joined.connection.componentEvent(
                 command,
                 component,
                 BindingId.fromEncoded(event.event),
@@ -1426,7 +1756,7 @@ object ZioHttp:
     }
 
   private def enqueueCorrelated(
-    joined: JoinedRoot,
+    joined: JoinedLifecycle,
     eventRefs: (PhoenixRef, PhoenixRef)
   )(
     offer: CommandId => IO[ConnectionError, Unit]
@@ -1444,15 +1774,15 @@ object ZioHttp:
     }
 
   private def offerPatch(
-    root: Ref[Option[JoinedRoot]],
+    lifecycles: Ref[Map[String, JoinedLifecycle]],
     writer: SerialWriter[PhoenixEnvelope],
     joinRef: PhoenixRef,
     ref: PhoenixRef,
     topic: String,
     value: String
   ): Task[Unit] =
-    root.get.flatMap {
-      case Some(joined) if joined.topic == topic =>
+    lifecycles.get.map(exactTopicGeneration(_, topic, joinRef, _.joinRef)).flatMap {
+      case Some(joined) =>
         correlatedEventRefs(joined.joinRef, joinRef, ref) match
           case Some(eventRefs) =>
             for
@@ -1469,7 +1799,8 @@ object ZioHttp:
               _ <-
                 if accepted then
                   joined.connection
-                    .offerPatch(command, destination)
+                    .patch(command, destination)
+                    .tap(_ => joined.currentUrl.set(destination))
                     .onError(_ => joined.correlations.update(_ - command))
                 else ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
             yield ()
@@ -1477,30 +1808,68 @@ object ZioHttp:
       case _ => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
     }
 
-  private def leaveRoot(
-    root: Ref[Option[JoinedRoot]],
+  private def leaveLifecycle(
+    supervisor: ConnectionSupervisor,
+    lifecycles: Ref[Map[String, JoinedLifecycle]],
     writer: SerialWriter[PhoenixEnvelope],
     joinRef: PhoenixRef,
     ref: PhoenixRef,
     topic: String
   ): Task[Unit] =
-    root
-      .modify {
-        case Some(joined)
-            if joined.topic == topic && correlatedEventRefs(
-              joined.joinRef,
-              joinRef,
-              ref
-            ).nonEmpty =>
-          Some(joined) -> None
-        case current => None -> current
-      }.flatMap {
-        case Some(joined) =>
-          joined.close *>
-            writer.offer(PhoenixOutput.close(joined.joinRef, topic)) *>
-            writer.offer(PhoenixOutput.leave(joinRef, ref, topic))
-        case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
-      }
+    lifecycles.get.map(exactTopicGeneration(_, topic, joinRef, _.joinRef)).flatMap {
+      case Some(joined) if correlatedEventRefs(joined.joinRef, joinRef, ref).nonEmpty =>
+        supervisor.routeLeave(joined.topic).flatMap {
+          case ConnectionSupervisor.LeaveResult.Left =>
+            lifecycles.update { current =>
+              if joined.isRoot then retainProtocolStickySubtrees(current)
+              else if joined.sticky then current.removed(joined.topic.value)
+              else removeProtocolSubtree(current, joined)
+            } *>
+              writer.offer(PhoenixOutput.close(joined.joinRef, topic)) *>
+              writer.offer(PhoenixOutput.leave(joinRef, ref, topic))
+          case ConnectionSupervisor.LeaveResult.UnknownTopic =>
+            writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+        }
+      case _ => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+    }
+
+  private def removeProtocolSubtree(
+    current: Map[String, JoinedLifecycle],
+    root: JoinedLifecycle
+  ): Map[String, JoinedLifecycle] =
+    var removed = Set(root.connection.lifecycle -> root.connection.epoch)
+    var changed = true
+    while changed do
+      val descendants = current.valuesIterator
+        .filter(entry => entry.parent.exists(removed.contains))
+        .map(entry => entry.connection.lifecycle -> entry.connection.epoch)
+        .toSet
+      val next = removed ++ descendants
+      changed = next.size != removed.size
+      removed = next
+    current.filterNot { case (_, entry) =>
+      removed(entry.connection.lifecycle -> entry.connection.epoch)
+    }
+
+  private def retainProtocolStickySubtrees(
+    current: Map[String, JoinedLifecycle]
+  ): Map[String, JoinedLifecycle] =
+    var retained = current.valuesIterator
+      .filter(entry => !entry.isRoot && entry.sticky)
+      .map(entry => entry.connection.lifecycle -> entry.connection.epoch)
+      .toSet
+    var changed = true
+    while changed do
+      val descendants = current.valuesIterator
+        .filter(entry => entry.parent.exists(retained.contains))
+        .map(entry => entry.connection.lifecycle -> entry.connection.epoch)
+        .toSet
+      val next = retained ++ descendants
+      changed = next.size != retained.size
+      retained = next
+    current.filter { case (_, entry) =>
+      retained(entry.connection.lifecycle -> entry.connection.epoch)
+    }
 
   private def connectionConfig: ConnectionConfig =
     ConnectionConfig
@@ -1524,6 +1893,7 @@ object ZioHttp:
   private def issueRootTokens(
     config: ZioHttpConfig,
     rootId: String,
+    lifecycle: LifecycleId,
     routeIndex: Int,
     canonicalUrl: String,
     routeIdentity: String,
@@ -1531,12 +1901,14 @@ object ZioHttp:
     rootLayoutKey: String,
     mountClaims: MountClaims,
     trackedStatics: Vector[String],
-    initialFlash: Map[String, String] = Map.empty
+    initialFlash: Map[String, String] = Map.empty,
+    nestedLifecycles: Map[String, Long] = Map.empty
   ): UIO[(String, String)] =
     ZioHttpSecurity
       .issueSession(
         config,
         rootId,
+        lifecycle,
         routeIndex,
         canonicalUrl,
         routeIdentity,
@@ -1546,11 +1918,13 @@ object ZioHttp:
         mountClaims.route,
         mountClaims.route.nonEmpty,
         trackedStatics,
-        initialFlash
+        initialFlash,
+        nestedLifecycles
       ).zipPar(
         ZioHttpSecurity.issueStatic(
           config,
           rootId,
+          lifecycle,
           routeIndex,
           canonicalUrl,
           routeIdentity,
@@ -1560,7 +1934,8 @@ object ZioHttp:
           mountClaims.route,
           mountClaims.route.nonEmpty,
           trackedStatics,
-          initialFlash
+          initialFlash,
+          nestedLifecycles
         )
       ).flatMap { case tokens @ (session, static) =>
         ZioHttpSecurity
@@ -1569,6 +1944,7 @@ object ZioHttp:
               issueRootTokens(
                 config,
                 rootId,
+                lifecycle,
                 routeIndex,
                 canonicalUrl,
                 routeIdentity,
@@ -1576,7 +1952,8 @@ object ZioHttp:
                 rootLayoutKey,
                 mountClaims,
                 trackedStatics,
-                initialFlash
+                initialFlash,
+                nestedLifecycles
               ),
             claims =>
               if claims._1 == claims._2 then ZIO.succeed(tokens)
@@ -1584,6 +1961,7 @@ object ZioHttp:
                 issueRootTokens(
                   config,
                   rootId,
+                  lifecycle,
                   routeIndex,
                   canonicalUrl,
                   routeIdentity,
@@ -1591,7 +1969,8 @@ object ZioHttp:
                   rootLayoutKey,
                   mountClaims,
                   trackedStatics,
-                  initialFlash
+                  initialFlash,
+                  nestedLifecycles
                 )
           )
       }

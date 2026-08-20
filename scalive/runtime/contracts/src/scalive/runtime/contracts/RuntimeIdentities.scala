@@ -91,6 +91,45 @@ object NavigationId:
 
   extension (identity: NavigationId) def value: Long = identity
 
+opaque type NestedRegistrationId = Long
+
+object NestedRegistrationId:
+  private val counter = AtomicLong(0L)
+
+  private[scalive] def fresh(): Either[RuntimeIdentityError, NestedRegistrationId] =
+    RuntimeIdentityAllocator.next(counter, "nested registration identity")(identity => identity)
+
+  private[scalive] def apply(value: Long): NestedRegistrationId = value
+
+  extension (identity: NestedRegistrationId) def value: Long = identity
+
+opaque type NestedRegistrationEpoch = Long
+
+object NestedRegistrationEpoch:
+  private[scalive] val initial: NestedRegistrationEpoch = 1L
+
+  private[scalive] def next(
+    epoch: NestedRegistrationEpoch
+  ): Either[RuntimeIdentityError, NestedRegistrationEpoch] =
+    if epoch == Long.MaxValue then Left(RuntimeIdentityError.Exhausted("nested registration epoch"))
+    else Right(epoch + 1L)
+
+  private[scalive] def apply(value: Long): NestedRegistrationEpoch = value
+
+  extension (epoch: NestedRegistrationEpoch) def value: Long = epoch
+
+opaque type TopologyTransactionId = Long
+
+object TopologyTransactionId:
+  private val counter = AtomicLong(0L)
+
+  private[scalive] def fresh(): Either[RuntimeIdentityError, TopologyTransactionId] =
+    RuntimeIdentityAllocator.next(counter, "topology transaction identity")(identity => identity)
+
+  private[scalive] def apply(value: Long): TopologyTransactionId = value
+
+  extension (identity: TopologyTransactionId) def value: Long = identity
+
 private object RuntimeIdentityAllocator:
   def next[A](
     counter: AtomicLong,

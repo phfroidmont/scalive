@@ -41,6 +41,10 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       self: ComponentRef[String]
     ): HtmlElement[String] = span(props)
 
+  object TestView extends LiveView.Eventless[Unit]:
+    def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+    def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
+
   private def resolve(
     requirement: ComponentRequirement[?],
     ref: ComponentRef[String],
@@ -51,6 +55,25 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       ref.asInstanceOf[ComponentRef[requirement.Message]],
       token,
       child.asInstanceOf[RenderCandidate[requirement.Message]]
+    )
+
+  private def resolveNested(
+    requirement: NestedRequirement,
+    token: Object,
+    parentDomId: String = "parent",
+    joinCredential: String = "join-secret",
+    staticCredential: Option[String] = None,
+    loading: Boolean = false,
+    child: Option[EvaluatedTree] = None
+  ): NestedResolution =
+    requirement.resolve(
+      instanceToken = token,
+      parentDomId = parentDomId,
+      topic = s"lv:${requirement.applicationId}",
+      joinCredential = joinCredential,
+      staticCredential = staticCredential,
+      loading = loading,
+      child = child
     )
 
   private def projectedStreamRows(state: PhoenixRenderedState): Vector[String] =
@@ -69,6 +92,188 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     rendered.fields.toMap.apply(name)
 
   override def spec = suite("PhoenixRenderedEncoderSpec")(
+    test("projects exact escaped nested LiveView wire attributes and disconnected HTML") {
+      val parentCompiled = RenderProgram.compile[Unit, Nothing](_ =>
+        mainTag(liveView("child&\"", TestView, sticky = true))
+      )
+      val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
+      val token         = Object()
+
+      for
+        parentProgram <- ZIO.fromEither(parentCompiled)
+        childProgram  <- ZIO.fromEither(childCompiled)
+        parent        <- parentProgram.evaluate(())
+        child         <- childProgram.evaluate("disconnected <child>")
+        resolved <- ZIO.fromEither(
+                      parent.resolveNested(
+                        Vector(
+                          resolveNested(
+                            parent.nestedRequirements.head,
+                            token,
+                            parentDomId = "parent&\"",
+                            joinCredential = "join<&\"",
+                            staticCredential = Some("static<&\""),
+                            loading = true,
+                            child = Some(child.tree)
+                          )
+                        )
+                      )
+                    )
+        encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
+        html    <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
+        expected =
+          "<main><div id=\"child&amp;&quot;\" data-phx-parent-id=\"parent&amp;&quot;\" data-phx-session=\"join&lt;&amp;&quot;\" data-phx-static=\"static&lt;&amp;&quot;\" data-phx-sticky class=\"phx-loading\"><span>disconnected &lt;child&gt;</span></div></main>"
+      yield assertTrue(
+        html._2 == expected,
+        encoded._2 == Json.Obj(
+          "s" -> Json.Arr(
+            Json.Str(
+              "<main><div id=\"child&amp;&quot;\" data-phx-parent-id=\"parent&amp;&quot;\" data-phx-session=\"join&lt;&amp;&quot;\" data-phx-static=\"static&lt;&amp;&quot;\" data-phx-sticky class=\"phx-loading\"><span>"
+            ),
+            Json.Str("</span></div></main>")
+          ),
+          "0" -> Json.Str("disconnected &lt;child&gt;")
+        ),
+        !expected.contains("lv:child")
+      )
+    },
+    test("projects a connected nested LiveView as an empty container without optional attributes") {
+      val compiled = RenderProgram.compile[Unit, Nothing](_ => div(liveView("child", TestView)))
+
+      for
+        program    <- ZIO.fromEither(compiled)
+        candidate  <- program.evaluate(())
+        resolved   <- ZIO.fromEither(
+                        candidate.resolveNested(
+                          Vector(resolveNested(candidate.nestedRequirements.head, Object()))
+                        )
+                      )
+        encoded    <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
+        html       <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
+        expected =
+          "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\"></div></div>"
+      yield assertTrue(
+        html._2 == expected,
+        encoded._2 == Json.Obj("s" -> Json.Arr(Json.Str(expected))),
+        !expected.contains("data-phx-static"),
+        !expected.contains("data-phx-sticky"),
+        !expected.contains("phx-loading")
+      )
+    },
+    test("uses normal component and stream projection inside a disconnected nested child") {
+      val identity = LiveStreamIdentity.fresh()
+      val handle = stream(
+        identity,
+        1L,
+        Vector(StreamItem("row", "stream child")),
+        Vector((StreamItem("row", "stream child"), StreamAt.Last, None, false))
+      )
+      val parentCompiled = RenderProgram.compile[Unit, Nothing](_ => div(liveView("child", TestView)))
+      val childCompiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(
+          liveComponent(TestComponent, "component", "component child"),
+          model.stream((domId, item) => span(idAttr := domId, item.map(_.label)))
+        )
+      )
+      val componentCompiled = RenderProgram.compile[String, Nothing](value => span(value))
+      val componentToken = Object()
+      val componentRef   = ComponentRef.runtime[String](componentToken)
+
+      for
+        parentProgram    <- ZIO.fromEither(parentCompiled)
+        childProgram     <- ZIO.fromEither(childCompiled)
+        componentProgram <- ZIO.fromEither(componentCompiled)
+        parent           <- parentProgram.evaluate(())
+        child            <- childProgram.evaluate(handle)
+        component        <- componentProgram.evaluate("component child")
+        componentTree <- ZIO.fromEither(
+                           child.resolveComponents(
+                             Vector(
+                               resolve(
+                                 child.componentRequirements.head,
+                                 componentRef,
+                                 componentToken,
+                                 component
+                               )
+                             )
+                           )
+                         )
+        resolved <- ZIO.fromEither(
+                      parent.resolveNested(
+                        Vector(
+                          resolveNested(
+                            parent.nestedRequirements.head,
+                            Object(),
+                            child = Some(componentTree.tree)
+                          )
+                        )
+                      )
+                    )
+        encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
+        html    <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
+        streamPayload = field(encoded._2, "1").asInstanceOf[Json.Obj]
+      yield assertTrue(
+        encoded._1.cidForToken(componentToken).contains(1),
+        encoded._1.streamRef(identity).contains("0"),
+        field(streamPayload, "stream").asInstanceOf[Json.Arr].elements.head == Json.Str("0"),
+        html._2 ==
+          "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\"><div><span data-phx-component=\"1\">component child</span><span id=\"row\">stream child</span></div></div></div>"
+      )
+    },
+    test("rejects unresolved nested nodes and replaces only changed nested instances") {
+      val compiled = RenderProgram.compile[Unit, Nothing](_ => div(liveView("child", TestView)))
+      val retainedToken = Object()
+      val changedToken  = Object()
+
+      for
+        program    <- ZIO.fromEither(compiled)
+        unresolved <- program.evaluate(())
+        first <- ZIO.fromEither(
+                   unresolved.resolveNested(
+                     Vector(resolveNested(unresolved.nestedRequirements.head, retainedToken))
+                   )
+                 )
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        base = first.commit
+        retainedCandidate <- program.evaluate((), Some(base))
+        retained <- ZIO.fromEither(
+                      retainedCandidate.resolveNested(
+                        Vector(
+                          resolveNested(retainedCandidate.nestedRequirements.head, retainedToken)
+                        )
+                      )
+                    )
+        retainedUpdate <- ZIO.fromEither(
+                            PhoenixRenderedEncoder.update(
+                              initial._1,
+                              TreeDiffer.diff(first.tree, retained.tree)
+                            )
+                          )
+        changedCandidate <- program.evaluate((), Some(base))
+        changed <- ZIO.fromEither(
+                     changedCandidate.resolveNested(
+                       Vector(resolveNested(changedCandidate.nestedRequirements.head, changedToken))
+                     )
+                   )
+        changedUpdate <- ZIO.fromEither(
+                           PhoenixRenderedEncoder.update(
+                             initial._1,
+                             TreeDiffer.diff(first.tree, changed.tree)
+                           )
+                         )
+      yield assertTrue(
+        PhoenixRenderedEncoder.initial(unresolved.tree) ==
+          Left(PhoenixEncodingError.UnresolvedNested(unresolved.tree.root.children.head.id)),
+        retainedUpdate._2 == Json.Obj.empty,
+        changedUpdate._2 == Json.Obj(
+          "s" -> Json.Arr(
+            Json.Str(
+              "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\"></div></div>"
+            )
+          )
+        )
+      )
+    },
     test("projects an initial stream as a Phoenix 1.1 keyed comprehension") {
       val identity = LiveStreamIdentity.fresh()
       val first = stream(

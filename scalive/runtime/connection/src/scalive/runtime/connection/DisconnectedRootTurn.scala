@@ -10,6 +10,7 @@ import scalive.runtime.kernel.NavigationRequest
 import scalive.runtime.resources.OwnerId
 
 final private[scalive] class DisconnectedRootTurn[Msg, Model] private[connection] (
+  val lifecycle: LifecycleId,
   journal: RootTurnJournal,
   initialUrl: URL):
 
@@ -78,4 +79,4 @@ private[scalive] object DisconnectedRootTurn:
                    RootHookRegistry.fromStatic(hooks),
                    initialFlash
                  )
-    yield new DisconnectedRootTurn(journal, initialUrl)
+    yield new DisconnectedRootTurn(lifecycle, journal, initialUrl)

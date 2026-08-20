@@ -95,6 +95,7 @@ object EvaluatedNode:
   final case class Nested private[render] (
     id: TemplateId,
     applicationId: String,
+    resolution: Option[NestedResolution],
     revision: RenderRevision)
       extends EvaluatedNode
 
@@ -209,9 +210,12 @@ final case class RenderCandidate[+Msg] private[render] (
   private val commitTail: CandidateCommit):
   /** Transfers scope ownership to a committed render. A candidate can be committed only once. */
   def commit: CommittedRender[Msg] =
-    val unresolved = EvaluatedTree.unresolvedComponents(tree.root)
-    if unresolved.nonEmpty then
-      throw IllegalStateException(RenderError.UnresolvedComponents(unresolved).getMessage)
+    val unresolvedComponents = EvaluatedTree.unresolvedComponents(tree.root)
+    val unresolvedNested     = EvaluatedTree.unresolvedNested(tree.root)
+    if unresolvedComponents.nonEmpty then
+      throw IllegalStateException(RenderError.UnresolvedComponents(unresolvedComponents).getMessage)
+    else if unresolvedNested.nonEmpty then
+      throw IllegalStateException(RenderError.UnresolvedNested(unresolvedNested).getMessage)
     else if stagedScope.retain() then
       commitTail.run()
       CommittedRender(
@@ -237,6 +241,14 @@ final case class RenderCandidate[+Msg] private[render] (
   ): Either[RenderError, RenderCandidate[Msg]] =
     EvaluatedTree
       .resolveComponents(tree.root, componentRequirements, resolutions)
+      .map(root => copy(tree = tree.copy(root = root)))
+
+  /** Finalizes every nested LiveView placeholder owned by this render program. */
+  private[scalive] def resolveNested(
+    resolutions: Vector[NestedResolution]
+  ): Either[RenderError, RenderCandidate[Msg]] =
+    EvaluatedTree
+      .resolveNested(tree.root, nestedRequirements, resolutions)
       .map(root => copy(tree = tree.copy(root = root)))
 end RenderCandidate
 
@@ -276,7 +288,24 @@ object EvaluatedTree:
     case component: EvaluatedNode.Component if component.resolution.isEmpty => Vector(component.id)
     case component: EvaluatedNode.Component                                 =>
       component.resolution.toVector.flatMap(value => unresolvedComponents(value.child.root))
-    case _: EvaluatedNode.Text | _: EvaluatedNode.Nested => Vector.empty
+    case nested: EvaluatedNode.Nested =>
+      nested.resolution.toVector
+        .flatMap(_.child.toVector).flatMap(tree => unresolvedComponents(tree.root))
+    case _: EvaluatedNode.Text => Vector.empty
+
+  private[render] def unresolvedNested(node: EvaluatedNode): Vector[TemplateId] = node match
+    case element: EvaluatedNode.Element => element.children.flatMap(unresolvedNested)
+    case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(unresolvedNested)
+    case choice: EvaluatedNode.Choice   => choice.child.toVector.flatMap(unresolvedNested)
+    case keyed: EvaluatedNode.Keyed     => keyed.rows.flatMap(row => unresolvedNested(row.child))
+    case stream: EvaluatedNode.Stream   => stream.rows.flatMap(row => unresolvedNested(row.child))
+    case component: EvaluatedNode.Component =>
+      component.resolution.toVector.flatMap(value => unresolvedNested(value.child.root))
+    case nested: EvaluatedNode.Nested if nested.resolution.isEmpty => Vector(nested.id)
+    case nested: EvaluatedNode.Nested                              =>
+      nested.resolution.toVector
+        .flatMap(_.child.toVector).flatMap(tree => unresolvedNested(tree.root))
+    case _: EvaluatedNode.Text => Vector.empty
 
   private[render] def resolveComponents[Msg](
     root: EvaluatedNode.Element,
@@ -308,7 +337,9 @@ object EvaluatedTree:
               s"component application id mismatch at ${resolution.location.value}"
             )
           )
-        else if unresolvedComponents(resolution.child.root).nonEmpty then
+        else if unresolvedComponents(resolution.child.root).nonEmpty ||
+          unresolvedNested(resolution.child.root).nonEmpty
+        then
           Left(
             RenderError.ComponentResolutionInvalid(
               s"component child at ${resolution.location.value} is not finalized"
@@ -328,6 +359,171 @@ object EvaluatedTree:
         }
     }
   end resolveComponents
+
+  private[render] def resolveNested(
+    root: EvaluatedNode.Element,
+    requirements: Vector[NestedRequirement],
+    resolutions: Vector[NestedResolution]
+  ): Either[RenderError, EvaluatedNode.Element] =
+    val duplicateLocations = requirements.groupBy(_.location).collectFirst {
+      case (location, values) if values.size > 1 => location
+    }
+    val duplicateApplicationIds = requirements.groupBy(_.applicationId).collectFirst {
+      case (applicationId, values) if values.size > 1 => applicationId
+    }
+
+    if duplicateLocations.nonEmpty then
+      Left(RenderError.NestedResolutionInvalid("duplicate nested declaration location"))
+    else if duplicateApplicationIds.nonEmpty then
+      Left(
+        RenderError.NestedResolutionInvalid(
+          s"duplicate nested application id '${duplicateApplicationIds.get}'"
+        )
+      )
+    else
+      val expected = requirements.map(requirement => requirement.location -> requirement).toMap
+      val supplied = resolutions.foldLeft[Either[RenderError, Map[TemplateId, NestedResolution]]](
+        Right(Map.empty)
+      ) { (result, resolution) =>
+        result.flatMap { all =>
+          expected.get(resolution.location) match
+            case None =>
+              Left(
+                RenderError.NestedResolutionInvalid(
+                  s"unknown nested declaration ${resolution.location.value}"
+                )
+              )
+            case Some(requirement) if !(resolution.requirement eq requirement) =>
+              Left(
+                RenderError.NestedResolutionInvalid("nested resolution belongs to another render")
+              )
+            case Some(_) if all.contains(resolution.location) =>
+              Left(
+                RenderError.NestedResolutionInvalid(
+                  s"duplicate nested resolution ${resolution.location.value}"
+                )
+              )
+            case Some(_)
+                if resolution.applicationId != expected(resolution.location).applicationId =>
+              Left(
+                RenderError.NestedResolutionInvalid(
+                  s"nested application id mismatch at ${resolution.location.value}"
+                )
+              )
+            case Some(requirement) if resolution.sticky != requirement.sticky =>
+              Left(
+                RenderError.NestedResolutionInvalid(
+                  s"nested sticky flag mismatch at ${resolution.location.value}"
+                )
+              )
+            case Some(_) if resolution.instanceToken == null =>
+              Left(RenderError.NestedResolutionInvalid("nested instance token is null"))
+            case Some(_)
+                if requiredNestedMetadata(resolution)
+                  .exists(value => value == null || value.isEmpty) =>
+              Left(RenderError.NestedResolutionInvalid("nested resolution metadata is empty"))
+            case Some(_)
+                if resolution.staticCredential == null ||
+                  resolution.staticCredential.exists(value => value == null || value.isEmpty) =>
+              Left(RenderError.NestedResolutionInvalid("nested static credential is empty"))
+            case Some(_) if resolution.child == null =>
+              Left(RenderError.NestedResolutionInvalid("nested child option is null"))
+            case Some(_)
+                if resolution.child.exists(tree =>
+                  unresolvedComponents(tree.root).nonEmpty || unresolvedNested(tree.root).nonEmpty
+                ) =>
+              Left(
+                RenderError.NestedResolutionInvalid(
+                  s"nested child at ${resolution.location.value} is not finalized"
+                )
+              )
+            case Some(_) => Right(all.updated(resolution.location, resolution))
+        }
+      }
+
+      supplied.flatMap { values =>
+        val missing = expected.keySet -- values.keySet
+        if missing.nonEmpty then Left(RenderError.UnresolvedNested(missing.toVector))
+        else resolveNestedNode(root, values).map(_.asInstanceOf[EvaluatedNode.Element])
+      }
+    end if
+  end resolveNested
+
+  private def requiredNestedMetadata(resolution: NestedResolution): Vector[String] =
+    Vector(
+      resolution.applicationId,
+      resolution.parentDomId,
+      resolution.topic,
+      resolution.joinCredential
+    )
+
+  private def resolveNestedNode(
+    node: EvaluatedNode,
+    resolutions: Map[TemplateId, NestedResolution]
+  ): Either[RenderError, EvaluatedNode] = node match
+    case element: EvaluatedNode.Element =>
+      traverseNestedNodes(element.children, resolutions).map(children =>
+        element.copy(children = children)
+      )
+    case flash: EvaluatedNode.Flash =>
+      flash.child match
+        case Some(child) =>
+          resolveNestedNode(child, resolutions).map(value =>
+            flash.copy(child = Some(value.asInstanceOf[EvaluatedNode.Element]))
+          )
+        case None => Right(flash)
+    case choice: EvaluatedNode.Choice =>
+      choice.child match
+        case Some(child) =>
+          resolveNestedNode(child, resolutions).map(value => choice.copy(child = Some(value)))
+        case None => Right(choice)
+    case keyed: EvaluatedNode.Keyed =>
+      keyed.rows
+        .foldLeft[Either[RenderError, Vector[EvaluatedNode.KeyedRow]]](Right(Vector.empty)) {
+          (result, row) =>
+            for
+              accumulated <- result
+              child       <- resolveNestedNode(row.child, resolutions)
+            yield accumulated :+ row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
+        }.map(rows => keyed.copy(rows = rows))
+    case stream: EvaluatedNode.Stream =>
+      stream.rows
+        .foldLeft[Either[RenderError, Vector[EvaluatedNode.StreamRow]]](Right(Vector.empty)) {
+          (result, row) =>
+            for
+              accumulated <- result
+              child       <- resolveNestedNode(row.child, resolutions)
+            yield accumulated :+ row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
+        }.map { rows =>
+          val byId = rows.map(row => row.domId -> row).toMap
+          stream.copy(
+            rows = rows,
+            operations = stream.operations.copy(inserts =
+              stream.operations.inserts
+                .map(insert => insert.copy(row = byId.getOrElse(insert.row.domId, insert.row)))
+            )
+          )
+        }
+    case nested: EvaluatedNode.Nested =>
+      resolutions
+        .get(nested.id).map(value => nested.copy(resolution = Some(value))).toRight(
+          RenderError.UnresolvedNested(Vector(nested.id))
+        )
+    // A component child is a separate finalized render program.
+    case component: EvaluatedNode.Component => Right(component)
+    case text: EvaluatedNode.Text           => Right(text)
+
+  private def traverseNestedNodes(
+    nodes: Vector[EvaluatedNode],
+    resolutions: Map[TemplateId, NestedResolution]
+  ): Either[RenderError, Vector[EvaluatedNode]] =
+    nodes.foldLeft[Either[RenderError, Vector[EvaluatedNode]]](Right(Vector.empty)) {
+      (result, node) =>
+        for
+          accumulated <- result
+          resolved    <- resolveNestedNode(node, resolutions)
+        yield accumulated :+ resolved
+    }
 
   private def resolveNode(
     node: EvaluatedNode,
@@ -413,7 +609,14 @@ object EvaluatedTree:
                 )
               )
             else loop(value.child.root)
-      case _: EvaluatedNode.Text | _: EvaluatedNode.Nested => Right(())
+      case nested: EvaluatedNode.Nested =>
+        nested.resolution match
+          case None        => Left(RenderError.UnresolvedNested(Vector(nested.id)))
+          case Some(value) =>
+            value.child match
+              case Some(child) => loop(child.root)
+              case None        => Right(())
+      case _: EvaluatedNode.Text => Right(())
 
     def loopAll(nodes: Vector[EvaluatedNode]): Either[RenderError, Unit] =
       nodes.foldLeft[Either[RenderError, Unit]](Right(()))((result, node) =>
@@ -421,4 +624,5 @@ object EvaluatedTree:
       )
 
     loop(root)
+  end validateUniqueComponentTokens
 end EvaluatedTree

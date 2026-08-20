@@ -28,6 +28,84 @@ test("direct root mounts independently and handles an event", async ({ page }) =
   expect(errors).toEqual([])
 })
 
+test("nested lifecycles join independently, handle events, and retire as a subtree", async ({ page }) => {
+  const errors = []
+  const sent = []
+
+  page.on("pageerror", error => errors.push(error.message))
+  page.on("console", message => {
+    if (message.type() === "error") errors.push(message.text())
+  })
+  page.on("websocket", socket => {
+    socket.on("framesent", event => sent.push(event.payload))
+  })
+
+  await page.goto("/nested")
+
+  await expect(page.locator("#nested-child-content")).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator("#nested-grandchild-content")).toHaveText("grandchild")
+  await expect(page.locator("#nested-child-counter")).toHaveText("0")
+  await expect
+    .poll(() => sent.some(frame => frame.includes('"lv:nested-child"') && frame.includes('"phx_join"')))
+    .toBe(true)
+  await expect
+    .poll(() => sent.some(frame => frame.includes('"lv:nested-grandchild"') && frame.includes('"phx_join"')))
+    .toBe(true)
+
+  await page.getByRole("button", { name: "Increment child" }).click()
+  await expect(page.locator("#nested-child-counter")).toHaveText("1")
+
+  await page.getByRole("button", { name: "Toggle child" }).click()
+  await expect(page.locator("#nested-child")).toHaveCount(0)
+  await expect(page.locator("#nested-grandchild")).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test("sticky nested lifecycle reattaches across compatible navigation", async ({ page }) => {
+  const errors = []
+  const sent = []
+
+  page.on("pageerror", error => errors.push(error.message))
+  page.on("console", message => {
+    if (message.type() === "error") errors.push(message.text())
+  })
+  page.on("websocket", socket => {
+    socket.on("framesent", event => sent.push(event.payload))
+  })
+
+  await page.goto("/nested/a")
+
+  await expect(page.locator("#sticky-parent-a")).toBeVisible({ timeout: 15_000 })
+  await expect
+    .poll(() => sent.filter(frame => frame.includes('"lv:sticky-nested-child"') && frame.includes('"phx_join"')).length)
+    .toBe(1)
+  await expect
+    .poll(() => sent.filter(frame => frame.includes('"lv:sticky-nested-grandchild"') && frame.includes('"phx_join"')).length)
+    .toBe(1)
+  await page.getByRole("button", { name: "Increment sticky child" }).click()
+  await expect(page.locator("#sticky-nested-counter")).toHaveText("1")
+  await page.getByRole("button", { name: "Increment sticky grandchild" }).click()
+  await expect(page.locator("#sticky-nested-grandchild-counter")).toHaveText("1")
+
+  await page.getByRole("link", { name: "To other sticky page" }).click()
+
+  await expect(page).toHaveURL(/\/nested\/b$/)
+  await expect(page.locator("#sticky-parent-b")).toBeVisible()
+  await expect(page.locator("#sticky-nested-counter")).toHaveText("1")
+  await expect(page.locator("#sticky-nested-grandchild-counter")).toHaveText("0")
+  await expect
+    .poll(() => sent.filter(frame => frame.includes('"lv:sticky-nested-child"') && frame.includes('"phx_join"')).length)
+    .toBe(2)
+  await expect
+    .poll(() => sent.filter(frame => frame.includes('"lv:sticky-nested-grandchild"') && frame.includes('"phx_join"')).length)
+    .toBe(2)
+  await page.getByRole("button", { name: "Increment sticky child" }).click()
+  await expect(page.locator("#sticky-nested-counter")).toHaveText("2")
+  await page.getByRole("button", { name: "Increment sticky grandchild" }).click()
+  await expect(page.locator("#sticky-nested-grandchild-counter")).toHaveText("1")
+  expect(errors).toEqual([])
+})
+
 test("same-session navigation replaces the root over the existing websocket", async ({ page }) => {
   const documents = []
   const frames = []

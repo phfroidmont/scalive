@@ -126,9 +126,11 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
           case _ => false
         },
         PhoenixProtocol.decode(frame(rootClientPayload.add("unknown", Json.Null))).isLeft,
-        PhoenixProtocol.decode(
-          frame(rootClientPayload.add("url", Json.Null))
-        ).left.exists(_.contains("url' or 'redirect"))
+        PhoenixProtocol.decode(frame(rootClientPayload.add("url", Json.Null))).exists {
+          case PhoenixInbound.Join(_, _, _, payload) =>
+            payload.url.isEmpty && payload.redirect.isEmpty
+          case _ => false
+        }
       )
     },
     test("decodes ordered form data and semantic metadata") {

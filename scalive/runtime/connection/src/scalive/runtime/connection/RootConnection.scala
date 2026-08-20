@@ -11,6 +11,7 @@ import scalive.runtime.resources.OwnerId
 
 /** Owns one connected, unrouted root lifecycle. */
 final private[scalive] class RootConnection[Msg, Model] private (
+  val lifecycle: LifecycleId,
   val epoch: Epoch,
   config: ConnectionConfig,
   kernel: SessionKernel[Msg, RootState[Msg, Model]],
@@ -143,6 +144,15 @@ final private[scalive] class RootConnection[Msg, Model] private (
              .mapError(connectionError)
     yield ()
 
+  private[scalive] def synchronizeUrl(destination: URL): IO[ConnectionError, Unit] =
+    for
+      command <- ZIO
+                   .fromEither(CommandId.fresh()).mapError(error =>
+                     ConnectionError.KernelRejected(SessionRejection.IdentityUnavailable(error))
+                   )
+      _ <- submitPatch(command, destination)
+    yield ()
+
   private def enqueueEvent(
     command: CommandId,
     binding: BindingId,
@@ -195,6 +205,8 @@ final private[scalive] class RootConnection[Msg, Model] private (
 
   def awaitFailure: UIO[ConnectionError] = failure.await
 
+  private[scalive] def abort(error: ConnectionError): UIO[Unit] = terminate(error)
+
   private[scalive] def pollFailure: UIO[Option[ConnectionError]] =
     failure.poll.flatMap(ZIO.foreach(_)(identity))
 
@@ -202,6 +214,9 @@ final private[scalive] class RootConnection[Msg, Model] private (
 
   private[connection] def inspectModel: IO[ConnectionError, Model] =
     kernel.inspect.map(_.model.model).mapError(connectionError)
+
+  private[scalive] def inspectTree: IO[ConnectionError, EvaluatedTree] =
+    kernel.inspect.map(_.render.tree).mapError(connectionError)
 
   private[connection] def inspectFlash: IO[ConnectionError, Map[FlashKind, String]] =
     kernel.inspect.map(_.model.flash).mapError(connectionError)
@@ -524,24 +539,40 @@ private[scalive] object RootConnection:
     config: ConnectionConfig,
     metadata: RootConnectionMetadata,
     liveView: LiveView[Msg, Model],
-    sink: ConnectionOutput => Task[Unit]
+    sink: ConnectionOutput => Task[Unit],
+    topologyPreparer: NestedTopologyPreparer = NestedTopologyPreparer.unavailable,
+    ownsPageTitle: Boolean = true,
+    requestedLifecycle: Option[LifecycleId] = None
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
-    startLifecycle(config, metadata, RootLifecycle.ordinary(liveView), sink)
+    startLifecycle(
+      config,
+      metadata,
+      RootLifecycle.ordinary(liveView),
+      sink,
+      topologyPreparer,
+      ownsPageTitle,
+      requestedLifecycle
+    )
 
   def startLifecycle[Msg, Model](
     config: ConnectionConfig,
     metadata: RootConnectionMetadata,
     lifecycle: RootLifecycle[Msg, Model],
-    sink: ConnectionOutput => Task[Unit]
+    sink: ConnectionOutput => Task[Unit],
+    topologyPreparer: NestedTopologyPreparer = NestedTopologyPreparer.unavailable,
+    ownsPageTitle: Boolean = true,
+    requestedLifecycle: Option[LifecycleId] = None
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
-        lifecycleId <- ZIO
-                         .fromEither(LifecycleId.fresh()).mapError(error =>
-                           ConnectionError.SessionFailed(
-                             SessionFailure.StageFailed(SessionStage.Identity, error.toString)
+        lifecycleId <- requestedLifecycle.fold(
+                         ZIO
+                           .fromEither(LifecycleId.fresh()).mapError(error =>
+                             ConnectionError.SessionFailed(
+                               SessionFailure.StageFailed(SessionStage.Identity, error.toString)
+                             )
                            )
-                         )
+                       )(ZIO.succeed(_))
         rootOwner = OwnerId.Root(lifecycleId)
         program <- ZIO.acquireRelease(
                      ZIO
@@ -621,7 +652,8 @@ private[scalive] object RootConnection:
                       RootState(model, lifecycle.initialUrl, hooks, flash, pageTitle, streams),
                       url = Some(lifecycle.initialUrl),
                       navigation = navigation,
-                      effects = SessionEffects(pageTitle, clientEvents),
+                      effects =
+                        SessionEffects(Option.when(ownsPageTitle)(pageTitle).flatten, clientEvents),
                       componentUpdates = componentUpdates,
                       resourceOperations = resourceOperations
                     ),
@@ -647,8 +679,10 @@ private[scalive] object RootConnection:
                       RootState(model, state.url, hooks, flash, pageTitle, streams),
                       url = Some(state.url),
                       navigation = navigation,
-                      effects =
-                        SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
+                      effects = SessionEffects(
+                        Option.when(ownsPageTitle)(titleChange(state.pageTitle, pageTitle)).flatten,
+                        clientEvents
+                      ),
                       componentUpdates = componentUpdates,
                       resourceOperations = resourceOperations
                     ),
@@ -721,7 +755,10 @@ private[scalive] object RootConnection:
                               url = Some(state.url),
                               navigation = navigation,
                               effects = SessionEffects(
-                                titleChange(state.pageTitle, pageTitle),
+                                Option
+                                  .when(ownsPageTitle)(
+                                    titleChange(state.pageTitle, pageTitle)
+                                  ).flatten,
                                 clientEvents
                               ),
                               componentUpdates = componentUpdates,
@@ -765,8 +802,10 @@ private[scalive] object RootConnection:
                       RootState(model, destination, hooks, flash, pageTitle, streams),
                       url = Some(destination),
                       navigation = navigation,
-                      effects =
-                        SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
+                      effects = SessionEffects(
+                        Option.when(ownsPageTitle)(titleChange(state.pageTitle, pageTitle)).flatten,
+                        clientEvents
+                      ),
                       componentUpdates = componentUpdates,
                       resourceOperations = resourceOperations
                     ),
@@ -807,7 +846,8 @@ private[scalive] object RootConnection:
                       program,
                       outbound,
                       componentEnvironment,
-                      Some(lifecycleId)
+                      Some(lifecycleId),
+                      topologyPreparer
                     )
                     .mapError(ConnectionError.SessionFailed.apply)
         ingress        <- Queue.dropping[Event](config.ingressCapacity)
@@ -818,6 +858,7 @@ private[scalive] object RootConnection:
         closing        <- Promise.make[Nothing, Unit]
         closed         <- Promise.make[Nothing, Unit]
         connection = RootConnection(
+                       kernel.lifecycle,
                        kernel.epoch,
                        config,
                        kernel,

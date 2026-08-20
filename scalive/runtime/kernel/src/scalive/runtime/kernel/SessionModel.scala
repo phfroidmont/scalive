@@ -565,6 +565,7 @@ final private[scalive] case class TurnCandidate[Msg, Model](
   render: RenderCandidate[Msg],
   components: ComponentForestCandidate[Msg],
   outputs: Vector[ComponentOutput[Msg]],
+  topology: PreparedNestedTopology,
   resources: PreparedResources,
   managedResources: ResourceIndex[ManagedResource],
   managedActivations: Vector[ManagedResource],
@@ -582,6 +583,7 @@ enum SessionStage:
   case BootstrapHandler
   case Handler
   case ResourcePreparation
+  case TopologyPreparation
   case Render
   case OutputReservation
   case AfterRender
@@ -648,12 +650,44 @@ private[kernel] trait StagedComponent[OwnerMsg]:
   def id: ComponentInstanceId
   def key: ComponentKey
   def parent: Option[ComponentInstanceId]
+  def children: Vector[ComponentInstanceId]
   def previous: Option[MountedComponent[OwnerMsg]]
   def candidateScope: CandidateScope
   def environmentState: ComponentEnvironmentState
   def appliedUpdate: Option[ComponentUpdateRequest]
   def matches(requirement: ComponentRequirement[?]): Boolean
   def resolutionFor(requirement: ComponentRequirement[?]): ComponentResolution
+  protected def resolutionForCandidate(
+    requirement: ComponentRequirement[?],
+    candidate: RenderCandidate[Any]
+  ): ComponentResolution
+  def renderCandidate: RenderCandidate[Any]
+  def withRenderCandidate(candidate: RenderCandidate[Any]): StagedComponent[OwnerMsg] =
+    val original = this
+    new StagedComponent[OwnerMsg]:
+      def id                                                  = original.id
+      def key                                                 = original.key
+      def parent                                              = original.parent
+      def children                                            = original.children
+      def previous                                            = original.previous
+      def candidateScope                                      = candidate.stagedScope
+      def environmentState                                    = original.environmentState
+      def appliedUpdate                                       = original.appliedUpdate
+      def matches(requirement: ComponentRequirement[?])       = original.matches(requirement)
+      def resolutionFor(requirement: ComponentRequirement[?]) =
+        original.resolutionForCandidate(requirement, candidate)
+      protected def resolutionForCandidate(
+        requirement: ComponentRequirement[?],
+        next: RenderCandidate[Any]
+      ) = original.resolutionForCandidate(requirement, next)
+      def renderCandidate                                      = candidate
+      protected def commitValueFor(next: RenderCandidate[Any]) =
+        original.commitValueFor(next)
+      def commitValue    = original.commitValueFor(candidate)
+      def discard        = original.discard
+      def abortCommitted = original.abortCommitted
+  protected def commitValueFor(candidate: RenderCandidate[Any]): MountedComponent[OwnerMsg]
   def commitValue: MountedComponent[OwnerMsg]
   def discard: UIO[Unit]
   def abortCommitted: UIO[Unit]
+end StagedComponent

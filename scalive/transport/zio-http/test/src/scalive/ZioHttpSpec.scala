@@ -11,8 +11,8 @@ import zio.test.*
 
 import scalive.protocol.phoenix.{PhoenixRef, PhoenixRenderedEncoder, RootJoin}
 import scalive.render.{BindingId, RenderDelta}
-import scalive.runtime.connection.{ConnectionConfig, ConnectionOutput, RootConnection, RootConnectionMetadata}
-import scalive.runtime.contracts.CommandId
+import scalive.runtime.connection.{ConnectionConfig, ConnectionOutput, ConnectionSupervisor, RootConnection, RootConnectionMetadata}
+import scalive.runtime.contracts.*
 import scalive.runtime.kernel.{ClientEffect, SessionEffects}
 
 object ZioHttpSpec extends ZIOSpecDefault:
@@ -69,6 +69,59 @@ object ZioHttpSpec extends ZIOSpecDefault:
           value.isHttpOnly && !value.isSecure && value.path.contains(Path.root) &&
             value.sameSite.contains(Cookie.SameSite.Lax) && value.domain.isEmpty
         )
+      )
+    },
+    test("disconnected GET recursively mounts nested lifecycles once with signed child containers") {
+      val childMounts = AtomicInteger()
+      val grandMounts = AtomicInteger()
+
+      object Grandchild extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.succeed(grandMounts.incrementAndGet()).unit
+        def view(model: Signal[Unit]) = span(idAttr := "grand-content", "grand")
+
+      object Child extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.succeed(childMounts.incrementAndGet()).unit
+        def view(model: Signal[Unit]) =
+          sectionTag(idAttr := "child-content", "child", liveView("grandchild", Grandchild))
+
+      object Parent extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = mainTag(liveView("child", Child))
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live(Parent)), config),
+                      Request.get(URL.root)
+                    )
+        body <- response.body.asString.orDie
+        childToken <- ZIO
+                        .fromOption(nestedAttribute(body, "child", "data-phx-session"))
+                        .orElseFail(AssertionError("missing child session token"))
+        childClaims <- ZioHttpSecurity.verifyNestedJoin(config, childToken)
+        rootToken <- ZIO
+                       .fromOption(attribute(body, "data-phx-session"))
+                       .orElseFail(AssertionError("missing root session token"))
+        rootClaims <- ZioHttpSecurity.verifySession(config, rootToken)
+        grandToken <- ZIO
+                        .fromOption(nestedAttribute(body, "grandchild", "data-phx-session"))
+                        .orElseFail(AssertionError("missing grandchild session token"))
+        grandClaims <- ZioHttpSecurity.verifyNestedJoin(config, grandToken)
+      yield assertTrue(
+        response.status == Status.Ok,
+        childMounts.get() == 1,
+        grandMounts.get() == 1,
+        body.contains("id=\"child-content\""),
+        body.contains("id=\"grand-content\""),
+        nestedAttribute(body, "child", "data-phx-parent-id").exists(_.nonEmpty),
+        nestedAttribute(body, "grandchild", "data-phx-parent-id").contains("child"),
+        childClaims.parentLifecycle == LifecycleId(rootClaims.lifecycle),
+        childClaims.childLifecycle.contains(grandClaims.parentLifecycle),
+        childClaims.childLifecycle.exists(lifecycle =>
+          rootClaims.nestedLifecycles.get("child").contains(lifecycle.value)
+        ),
+        grandClaims.childLifecycle.nonEmpty,
+        childClaims.topic == NestedTopic("lv:child"),
+        grandClaims.topic == NestedTopic("lv:grandchild")
       )
     },
     test("a successful disconnected render consumes signed flash into HTML and root claims") {
@@ -453,6 +506,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         session <- ZioHttpSecurity.issueSession(
                      config,
                      rootId,
+                     LifecycleId(1L),
                      0,
                      "/",
                      route.routeIdentity,
@@ -462,6 +516,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         static  <- ZioHttpSecurity.issueStatic(
                      config,
                      rootId,
+                     LifecycleId(1L),
                      0,
                      "/",
                      route.routeIdentity,
@@ -613,6 +668,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         token <- ZioHttpSecurity.issueSession(
                    config,
                    "root-id",
+                   LifecycleId(1L),
                    source.index,
                    "/a",
                    source.routeIdentity,
@@ -620,9 +676,10 @@ object ZioHttpSpec extends ZIOSpecDefault:
                    "shared-root"
                  )
         static <- ZioHttpSecurity.issueStatic(
-                    config,
-                    "root-id",
-                    source.index,
+                     config,
+                     "root-id",
+                     LifecycleId(1L),
+                     source.index,
                     "/a",
                     source.routeIdentity,
                     source.sessionName,
@@ -1030,6 +1087,145 @@ object ZioHttpSpec extends ZIOSpecDefault:
         body.contains("<main id=\"route\"><div id=\"view\"></div></main>")
       )
     },
+    test("nested join admission authenticates join claims and independently verifies static tokens") {
+      val claims = NestedCredentialClaims(
+        NestedRegistrationId(11L),
+        NestedRegistrationEpoch(2L),
+        LifecycleId(7L),
+        Epoch(3L),
+        NestedTopic("lv:child")
+      )
+      val other = claims.copy(
+        registration = NestedRegistrationId(12L),
+        childLifecycle = Some(LifecycleId(13L))
+      )
+      val stale = other.copy(registrationEpoch = NestedRegistrationEpoch(3L))
+
+      for
+        issued      <- ZioHttpSecurity.issueNested(config, claims)
+        otherIssued <- ZioHttpSecurity.issueNested(config, other)
+        staleIssued <- ZioHttpSecurity.issueNested(config, stale)
+        static      <- ZIO.fromOption(issued.static).orElseFail(AssertionError("missing static"))
+        otherStatic <- ZIO.fromOption(otherIssued.static).orElseFail(AssertionError("missing static"))
+        staleStatic <- ZIO.fromOption(staleIssued.static).orElseFail(AssertionError("missing static"))
+        join = RootJoin(
+                 url = None,
+                 redirect = None,
+                 flash = None,
+                 session = issued.join.value,
+                 static = Some(static.value),
+                 params = Map.empty,
+                 sticky = false
+               )
+        valid <- ZioHttp.verifyNestedAdmission(config, "lv:child", join).either
+        wrongTopic <- ZioHttp
+                        .verifyNestedAdmission(config, "lv:other", join).either
+        wrongStatic <- ZioHttp
+                         .verifyNestedAdmission(
+                           config,
+                           "lv:child",
+                           join.copy(static = Some(otherStatic.value))
+                         ).either
+        staticAsJoin <- ZioHttp
+                          .verifyNestedAdmission(
+                            config,
+                            "lv:child",
+                            join.copy(session = static.value, static = None)
+                          ).either
+        staleStaticResult <- ZioHttp
+                               .verifyNestedAdmission(
+                                 config,
+                                 "lv:child",
+                                 join.copy(static = Some(staleStatic.value))
+                               ).either
+        rootToken <- ZioHttpSecurity.issueSession(config, "root", LifecycleId(1L), 0, "/")
+        rootAsNested <- ZioHttp
+                          .verifyNestedAdmission(
+                            config,
+                            "lv:child",
+                            join.copy(session = rootToken, static = None)
+                          ).either
+      yield assertTrue(
+        valid == Right(claims),
+        wrongTopic.isLeft,
+        wrongStatic == Right(claims.copy(childLifecycle = other.childLifecycle)),
+        staleStaticResult == Right(claims),
+        staticAsJoin.isLeft,
+        rootAsNested.isLeft
+      )
+    },
+    test("nested URL decoding preserves exact path/query and safely inherits") {
+      val inherited = URL.decode("/parent/path?from=parent").toOption.get
+
+      assertTrue(
+        ZioHttp.nestedJoinUrl(None, inherited) == Right(inherited),
+        ZioHttp
+          .nestedJoinUrl(Some("https://example.test/child/path?one=1&two=2#ignored"), inherited)
+          .exists(url => url.encode == "/child/path?one=1&two=2"),
+        ZioHttp.nestedJoinUrl(Some("http://["), inherited).isLeft
+      )
+    },
+    test("unknown nested credentials are rejected by the supervisor before allocation") {
+      ZIO.scoped {
+        val claims = NestedCredentialClaims(
+          NestedRegistrationId(999L),
+          NestedRegistrationEpoch(1L),
+          LifecycleId(1L),
+          Epoch(1L),
+          NestedTopic("lv:unknown")
+        )
+        for
+          issuances <- Ref.make(0)
+          supervisor <- ConnectionSupervisor.make(
+                          ConnectionConfig.make(4, 4, 4, 4, 4).toOption.get,
+                          new NestedCredentialIssuer:
+                            def issue(value: NestedCredentialClaims) =
+                              issuances.updateAndGet(_ + 1).as(
+                                IssuedNestedCredentials(
+                                  NestedJoinCredential("unused"),
+                                  Some(NestedStaticCredential("unused"))
+                                )
+                              ),
+                          applicationId => NestedTopic(s"lv:$applicationId")
+                        )
+          result <- supervisor.reserveNested(claims).either
+          count  <- issuances.get
+        yield assertTrue(result.isLeft, count == 0)
+      }
+    },
+    test("lifecycle activation failure removes protocol state before retirement") {
+      for
+        cleanup <- Ref.make(Vector.empty[String])
+        failed <- ZioHttp
+                    .activateInstalledLifecycle(
+                      ZIO.fail(Exception("publication failed")),
+                      cleanup.update(_ :+ "removed"),
+                      cleanup.update(_ :+ "retired")
+                    ).either
+        afterFailure <- cleanup.get
+        _            <- cleanup.set(Vector.empty)
+        constructed = scala.collection.mutable.ArrayBuffer.empty[String]
+        succeeded <- ZioHttp
+                       .activateInstalledLifecycle(
+                         ZIO.unit,
+                         {
+                           constructed += "removed"
+                           cleanup.update(_ :+ "removed")
+                         },
+                         {
+                           constructed += "retired"
+                           cleanup.update(_ :+ "retired")
+                         }
+                       ).either
+        afterSuccess <- cleanup.get
+      yield assertTrue(
+        failed.isLeft,
+        afterFailure == Vector("removed", "retired"),
+        succeeded.isRight,
+        constructed.isEmpty,
+        afterSuccess.isEmpty
+      )
+    },
     test("event references must belong to the active channel generation") {
       val joined: PhoenixRef.Value = PhoenixRef.Value("1")
       val push: PhoenixRef.Value   = PhoenixRef.Value("2")
@@ -1040,6 +1236,26 @@ object ZioHttpSpec extends ZIOSpecDefault:
         ZioHttp.correlatedEventRefs(joined, stale, push).isEmpty,
         ZioHttp.correlatedEventRefs(joined, PhoenixRef.Null, push).isEmpty,
         ZioHttp.correlatedEventRefs(joined, joined, PhoenixRef.Null).isEmpty
+      )
+    },
+    test("joined protocol state is isolated by exact topic and generation") {
+      val rootRef: PhoenixRef.Value  = PhoenixRef.Value("root-generation")
+      val childRef: PhoenixRef.Value = PhoenixRef.Value("child-generation")
+      val states = Map(
+        "lv:root"  -> (rootRef  -> "root-state"),
+        "lv:child" -> (childRef -> "child-state")
+      )
+      def generation(value: (PhoenixRef.Value, String)) = value._1
+
+      assertTrue(
+        ZioHttp
+          .exactTopicGeneration(states, "lv:root", rootRef, generation)
+          .exists(_._2 == "root-state"),
+        ZioHttp
+          .exactTopicGeneration(states, "lv:child", childRef, generation)
+          .exists(_._2 == "child-state"),
+        ZioHttp.exactTopicGeneration(states, "lv:child", rootRef, generation).isEmpty,
+        ZioHttp.exactTopicGeneration(states, "lv:unknown", childRef, generation).isEmpty
       )
     },
     test("reloads and concurrent tabs reuse one signed CSRF cookie") {
@@ -1101,4 +1317,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
   private def attribute(html: String, name: String): Option[String] =
     val pattern = (java.util.regex.Pattern.quote(name) + "=\"([^\"]+)\"").r
     pattern.findFirstMatchIn(html).map(_.group(1))
+
+  private def nestedAttribute(html: String, id: String, name: String): Option[String] =
+    val container = ("<div id=\"" + java.util.regex.Pattern.quote(id) + "\"([^>]*)>").r
+    container.findFirstMatchIn(html).flatMap(value => attribute(value.group(1), name))
 end ZioHttpSpec

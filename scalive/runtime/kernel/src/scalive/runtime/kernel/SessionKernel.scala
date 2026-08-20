@@ -33,6 +33,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   logic: SessionLogic[Msg, Model],
   renderProgram: RenderProgram[Model, Msg],
   componentEnvironment: ComponentEnvironment[Msg, Model],
+  topologyPreparer: NestedTopologyPreparer,
   outbound: OutboundReservations[SessionOutput],
   mailbox: Queue[SessionKernel.Envelope[Msg, Model]],
   regularSlots: Queue[Unit],
@@ -862,20 +863,35 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                       componentResult,
                                       config.navigationRedirectLimit
                                     )
-                      (rootRender, finalComponents) = stabilized
-                      render <- renderPhase(
-                                  ZIO.fromEither(
-                                    rootRender.resolveComponents(finalComponents.resolutions)
-                                  )
-                                ).onError(_ => rootRender.discard)
+                      rootRender      = stabilized._1
+                      finalComponents = stabilized._2
+                      revision  <- identity(TurnRevision.fresh())
+                      finalized <- prepareNestedTopology(
+                                     rootRender,
+                                     finalComponents,
+                                     revision,
+                                     auxiliaryScope
+                                   )
+                      render           = finalized._1
+                      nestedComponents = finalized._2
+                      topology         = finalized._3
+                      _ <- ZIO.foreachDiscard(nestedComponents.forest.components) { component =>
+                             phase(SessionStage.Validation)(
+                               componentEnvironment.validateStreams[Any](
+                                 component.id,
+                                 component.environmentState,
+                                 component.renderCandidate.streamRequirements
+                               )
+                             )
+                           }
                       _ <- phase(SessionStage.Validation)(
                              logic.validateStreams(
-                               finalComponents.draft.model,
+                               nestedComponents.draft.model,
                                render.streamRequirements
                              )
                            )
                       _ <- phase(SessionStage.ResourcePreparation)(
-                             logic.prepare(finalComponents.draft, registry)
+                             logic.prepare(nestedComponents.draft, registry)
                            )
                       resources <- registry.result
                       managed   <- prepareManagedResources(
@@ -883,20 +899,19 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                      .map(_.managedResources).getOrElse(
                                        ResourceIndex.empty[ManagedResource]
                                      ),
-                                   finalComponents.draft.resourceOperations,
-                                   finalComponents.forest.components.map(_.id).toSet,
+                                   nestedComponents.draft.resourceOperations,
+                                   nestedComponents.forest.components.map(_.id).toSet,
                                    auxiliaryScope
                                  )
                       reservation <- reserve(auxiliaryScope)
                       finalDraft  <- phase(SessionStage.AfterRender)(
-                                      logic.afterRender(finalComponents.draft)
+                                      logic.afterRender(nestedComponents.draft)
                                     )
                       _ <- validateContinuations(
                              existingContinuations,
-                             finalDraft.continuations.size + finalComponents.outputs.size +
+                             finalDraft.continuations.size + nestedComponents.outputs.size +
                                managed.continuations.size
                            )
-                      revision <- identity(TurnRevision.fresh())
                       delta = diffBaseline.orElse(previous.map(_.render)) match
                                 case Some(committed) => TreeDiffer.diff(committed.tree, render.tree)
                                 case None            => TreeDiffer.initial(render.tree)
@@ -905,8 +920,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       revision,
                       finalDraft,
                       render,
-                      finalComponents.forest,
-                      finalComponents.outputs,
+                      nestedComponents.forest,
+                      nestedComponents.outputs,
+                      topology,
                       resources,
                       managed.index,
                       managed.activations,
@@ -1087,6 +1103,123 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       outputs = outputs,
       draft = draft.copy(componentUpdates = Vector.empty)
     )
+
+  private def prepareNestedTopology(
+    root: RenderCandidate[Msg],
+    components: StagedComponentsResult,
+    revision: TurnRevision,
+    auxiliaryScope: CandidateScope
+  ): ZIO[
+    Any,
+    SessionFailure,
+    (RenderCandidate[Msg], StagedComponentsResult, PreparedNestedTopology)
+  ] =
+    val staged       = components.forest.components
+    val renderOwners = root.asInstanceOf[RenderCandidate[Any]] +: staged.map(_.renderCandidate)
+    val requirements = renderOwners.flatMap(_.nestedRequirements)
+    val lifecycleRequirements = requirements.map { requirement =>
+      NestedLifecycleRequirement(
+        requirement.applicationId,
+        requirement.sticky,
+        requirement.linkParentOnCrash,
+        NestedLifecycleFactory(() => requirement.create())
+      )
+    }
+    val failed = (details: String) =>
+      SessionFailure.StageFailed(SessionStage.TopologyPreparation, details)
+
+    for
+      prepared <- topologyPreparer
+                    .prepare(lifecycle, epoch, revision, lifecycleRequirements)
+                    .mapError(error => failed(error.toString))
+      _ <- ZIO.uninterruptible(
+             auxiliaryScope
+               .addFinalizer(prepared.release).onError(_ => prepared.release)
+           )
+      _ <-
+        ZIO
+          .fail(
+            failed(
+              s"nested topology returned ${prepared.resolutions.size} resolutions for ${requirements.size} requirements"
+            )
+          ).unless(prepared.resolutions.size == requirements.size)
+      renderResolutions <-
+        ZIO.foreach(requirements.zip(prepared.resolutions)) { case (requirement, resolution) =>
+          if resolution.applicationId != requirement.applicationId then
+            ZIO.fail(
+              failed(
+                s"nested application id mismatch: expected '${requirement.applicationId}', received '${resolution.applicationId}'"
+              )
+            )
+          else
+            ZIO.succeed(
+              requirement.resolve(
+                resolution.instanceToken,
+                resolution.parentDomId,
+                resolution.topic.value,
+                resolution.joinCredential.value,
+                resolution.staticCredential.map(_.value),
+                resolution.loading
+              )
+            )
+        }
+      counts  = renderOwners.map(_.nestedRequirements.size)
+      grouped = counts
+                  .foldLeft((Vector.empty[Vector[NestedResolution]], renderResolutions)) {
+                    case ((all, remaining), count) =>
+                      val (current, rest) = remaining.splitAt(count)
+                      (all :+ current, rest)
+                  }._1
+      nestedRoot <- ZIO
+                      .fromEither(root.resolveNested(grouped.head))
+                      .mapError(error => failed(error.getMessage))
+      nestedStaged <- ZIO.foreach(staged.zip(grouped.tail)) { case (component, resolutions) =>
+                        ZIO
+                          .fromEither(component.renderCandidate.resolveNested(resolutions))
+                          .mapError(error => failed(error.getMessage))
+                          .map(component.withRenderCandidate)
+                      }
+      finalStaged <- ZIO.foreach(nestedStaged)(rebuildComponent(_, nestedStaged, failed))
+      rebuilt         = finalStaged.map(component => component.id -> component).toMap
+      rootResolutions = nestedRoot.componentRequirements.zip(components.forest.roots).map {
+                          case (requirement, id) => rebuilt(id).resolutionFor(requirement)
+                        }
+      finalRoot <- ZIO
+                     .fromEither(nestedRoot.resolveComponents(rootResolutions))
+                     .mapError(error => failed(error.getMessage))
+      finalForest = components.forest.copy(components = finalStaged, resolutions = rootResolutions)
+    yield (
+      finalRoot,
+      components.copy(forest = finalForest, resolutions = rootResolutions),
+      prepared
+    )
+    end for
+  end prepareNestedTopology
+
+  private def rebuildComponent(
+    component: StagedComponent[Msg],
+    all: Vector[StagedComponent[Msg]],
+    failed: String => SessionFailure
+  ): ZIO[Any, SessionFailure, StagedComponent[Msg]] =
+    for
+      childResolutions <-
+        ZIO.foreach(
+          component.renderCandidate.componentRequirements.zip(component.children)
+        ) { case (requirement, childId) =>
+          ZIO
+            .fromOption(
+              all.find(_.id == childId)
+            ).orElseFail(
+              failed(
+                s"component '${component.key.applicationId}' child graph is inconsistent"
+              )
+            ).flatMap(rebuildComponent(_, all, failed))
+            .map(_.resolutionFor(requirement))
+        }
+      candidate <- ZIO
+                     .fromEither(component.renderCandidate.resolveComponents(childResolutions))
+                     .mapError(error => failed(error.getMessage))
+    yield component.withRenderCandidate(candidate)
 
   private def removeStagedComponents(
     roots: Set[ComponentInstanceId],
@@ -1487,23 +1620,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                             draft,
                             updates
                           )
-                    resolved <-
-                      restore(
-                        renderPhase(
-                          ZIO.fromEither(
-                            finalCandidate.resolveComponents(finalChildResult.map(_._2))
-                          )
-                        )
-                      )
-                    _ <- restore(
-                           phase(SessionStage.Validation)(
-                             componentEnvironment.validateStreams(
-                               id,
-                               postChildResult.state,
-                               resolved.streamRequirements
-                             )
-                           )
-                         )
+                    resolved = finalCandidate
                     afterDraft <- draft.get
                     after      <- restore(
                                phase(SessionStage.ComponentAfterRender)(
@@ -1526,6 +1643,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                     val id               = componentId
                                     val key              = componentKey
                                     val parent           = componentParent
+                                    val children         = finalChildResult.map(_._1)
                                     val previous         = erasedPrevious
                                     val candidateScope   = resolved.stagedScope
                                     val environmentState = after.state
@@ -1535,14 +1653,23 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                         component.asInstanceOf[AnyRef]) &&
                                         requirement.applicationId == key.applicationId &&
                                         requirement.props == postChildProps
-                                    def resolutionFor(
-                                      requirement: ComponentRequirement[?]
+                                    protected def resolutionForCandidate(
+                                      requirement: ComponentRequirement[?],
+                                      candidate: RenderCandidate[Any]
                                     ): ComponentResolution =
                                       requirement.resolve(
                                         ref.asInstanceOf[ComponentRef[requirement.Message]],
                                         ref.asInstanceOf[AnyRef],
-                                        resolved.asInstanceOf[RenderCandidate[requirement.Message]]
+                                        candidate
+                                          .asInstanceOf[RenderCandidate[requirement.Message]]
                                       )
+                                    def resolutionFor(requirement: ComponentRequirement[?]) =
+                                      resolutionForCandidate(
+                                        requirement,
+                                        resolved.asInstanceOf[RenderCandidate[Any]]
+                                      )
+                                    def renderCandidate =
+                                      resolved.asInstanceOf[RenderCandidate[Any]]
                                     def discard =
                                       resolved.discard *>
                                         ZIO
@@ -1562,7 +1689,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                           after.state
                                         ) *>
                                         ZIO.when(old.isEmpty)(program.close).unit
-                                    def commitValue: MountedComponent[Msg] =
+                                    protected def commitValueFor(
+                                      candidate: RenderCandidate[Any]
+                                    ): MountedComponent[Msg] =
                                       MountedComponentValue[Msg, P, M, A, O](
                                         id,
                                         key,
@@ -1570,7 +1699,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                         postChildProps,
                                         postChildResult.model,
                                         ref,
-                                        resolved.commit,
+                                        candidate.asInstanceOf[RenderCandidate[M]].commit,
                                         program,
                                         parent,
                                         finalChildResult.map(_._1),
@@ -1579,6 +1708,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                           (value: O) => mapper(value).asInstanceOf[Msg]
                                         )
                                       )
+                                    def commitValue = commitValueFor(renderCandidate)
                     _ <- staged.update(_ :+ stagedValue)
                     resolution = requirement.resolve(ref, ref.asInstanceOf[AnyRef], resolved)
                   yield id -> resolution).onExit {
@@ -2072,6 +2202,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       _ <- closeManaged(candidate.managedRetirements)
       _ <- candidate.resources.activate
       _ <- ZIO.foreachDiscard(candidate.managedActivations)(_.prepared.activate)
+      _ <- candidate.topology.activate
       _ <- ZIO.when(publish)(
              candidate.reservation.publish(
                OutboundBatch.single(
@@ -2083,7 +2214,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
     ZIO.uninterruptible(commitTail.exit).flatMap {
       case Exit.Success(result) =>
-        ZIO.uninterruptible(retire(previous, result.value)).as(result)
+        ZIO.uninterruptible(retire(previous, result.value) *> candidate.topology.retire).as(result)
       case Exit.Failure(cause) =>
         val candidateCleanup = candidate.render.stagedScope.closeFromOwner *>
           candidate.auxiliaryScope.closeFromOwner *>
@@ -2666,7 +2797,8 @@ private[scalive] object SessionKernel:
     outbound: OutboundReservations[SessionOutput],
     componentEnvironment: ComponentEnvironment[Msg, Model] =
       ComponentEnvironment.unavailable[Msg, Model],
-    providedLifecycle: Option[LifecycleId] = None
+    providedLifecycle: Option[LifecycleId] = None,
+    topologyPreparer: NestedTopologyPreparer = NestedTopologyPreparer.unavailable
   ): ZIO[Scope, SessionFailure, SessionKernel[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
@@ -2693,6 +2825,7 @@ private[scalive] object SessionKernel:
                    logic,
                    renderProgram,
                    componentEnvironment,
+                   topologyPreparer,
                    outbound,
                    mailbox,
                    regularSlots,

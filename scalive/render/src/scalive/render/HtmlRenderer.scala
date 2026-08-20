@@ -31,7 +31,13 @@ object HtmlRenderer:
           case Some(value) => appendElement(value.child.root, output)
           case None        =>
             throw IllegalStateException(s"component ${component.id.value} is unresolved")
-      case _: EvaluatedNode.Nested => ()
+      case nested: EvaluatedNode.Nested =>
+        nested.resolution match
+          case Some(value) =>
+            output.append("<div id=\"").append(Escaping.escape(value.applicationId)).append("\">")
+            value.child.foreach(tree => appendElement(tree.root, output))
+            output.append("</div>")
+          case None => throw IllegalStateException(s"nested view ${nested.id.value} is unresolved")
 
   private def appendElement(element: EvaluatedNode.Element, output: StringBuilder): Unit =
     val _ = output.append('<').append(element.tag)

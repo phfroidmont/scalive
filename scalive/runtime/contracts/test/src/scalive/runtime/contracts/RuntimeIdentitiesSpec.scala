@@ -34,17 +34,30 @@ object RuntimeIdentitiesSpec extends ZIOSpecDefault:
     },
     test("keeps all runtime identity types distinct") {
       for
-        lifecycle <- ZIO.fromEither(LifecycleId.fresh())
-        component <- ZIO.fromEither(ComponentInstanceId.fresh())
-        command   <- ZIO.fromEither(CommandId.fresh())
-        turn      <- ZIO.fromEither(TurnId.fresh())
-        revision  <- ZIO.fromEither(TurnRevision.fresh())
+        lifecycle   <- ZIO.fromEither(LifecycleId.fresh())
+        component   <- ZIO.fromEither(ComponentInstanceId.fresh())
+        command     <- ZIO.fromEither(CommandId.fresh())
+        turn        <- ZIO.fromEither(TurnId.fresh())
+        revision    <- ZIO.fromEither(TurnRevision.fresh())
+        registration <- ZIO.fromEither(NestedRegistrationId.fresh())
+        transaction  <- ZIO.fromEither(TopologyTransactionId.fresh())
       yield assertTrue(
         lifecycle.value > 0L,
         component.value > 0L,
         command.value > 0L,
         turn.value > 0L,
-        revision.value > 0L
+        revision.value > 0L,
+        registration.value > 0L,
+        transaction.value > 0L
+      )
+    },
+    test("advances nested registration epochs without conflating lifecycle epochs") {
+      val next = NestedRegistrationEpoch.next(NestedRegistrationEpoch.initial)
+      assertTrue(
+        NestedRegistrationEpoch.initial.value == 1L,
+        next.map(_.value) == Right(2L),
+        NestedRegistrationEpoch.next(NestedRegistrationEpoch(Long.MaxValue)) ==
+          Left(RuntimeIdentityError.Exhausted("nested registration epoch"))
       )
     }
   )

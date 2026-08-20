@@ -11,6 +11,8 @@ import javax.crypto.spec.SecretKeySpec
 import zio.*
 import zio.json.*
 
+import scalive.runtime.contracts.*
+
 /** Validated security configuration for the ZIO HTTP transport.
   *
   * This is intentionally a top-level type until [[ZioHttp]] can expose it as `ZioHttp.Config`.
@@ -53,6 +55,7 @@ object ZioHttpConfig:
 private[scalive] object ZioHttpSecurity:
   final case class RootClaims(
     rootId: String,
+    lifecycle: Long,
     routeIndex: Int,
     canonicalUrl: String,
     routeIdentity: String = "",
@@ -63,11 +66,21 @@ private[scalive] object ZioHttpSecurity:
     hasRouteClaims: Boolean = false,
     issuedAtEpochSecond: Long,
     trackedStatics: Vector[String] = Vector.empty,
-    initialFlash: Map[String, String] = Map.empty)
+    initialFlash: Map[String, String] = Map.empty,
+    nestedLifecycles: Map[String, Long] = Map.empty)
       derives JsonCodec
 
   final case class CsrfClaims(browserSecret: String, issuedAtEpochSecond: Long) derives JsonCodec
   final case class FlashClaims(values: Map[String, String], issuedAtEpochSecond: Long)
+      derives JsonCodec
+  final case class NestedClaims(
+    registration: Long,
+    registrationEpoch: Long,
+    parentLifecycle: Long,
+    parentEpoch: Long,
+    topic: String,
+    childLifecycle: Option[Long],
+    issuedAtEpochSecond: Long)
       derives JsonCodec
 
   final case class IssuedCsrf(cookieToken: String, token: String)
@@ -83,11 +96,13 @@ private[scalive] object ZioHttpSecurity:
     case CsrfSecretMismatch
 
   private enum Purpose(val value: String):
-    case Session    extends Purpose("session")
-    case Static     extends Purpose("static")
-    case CsrfCookie extends Purpose("csrf-cookie")
-    case Csrf       extends Purpose("csrf")
-    case Flash      extends Purpose("flash")
+    case Session      extends Purpose("session")
+    case Static       extends Purpose("static")
+    case CsrfCookie   extends Purpose("csrf-cookie")
+    case Csrf         extends Purpose("csrf")
+    case Flash        extends Purpose("flash")
+    case NestedJoin   extends Purpose("nested-join")
+    case NestedStatic extends Purpose("nested-static")
 
   private val Version       = "v1"
   private val HmacAlgorithm = "HmacSHA256"
@@ -97,6 +112,7 @@ private[scalive] object ZioHttpSecurity:
   def issueSession(
     config: ZioHttpConfig,
     rootId: String,
+    lifecycle: LifecycleId,
     routeIndex: Int,
     canonicalUrl: String,
     routeIdentity: String = "",
@@ -106,12 +122,14 @@ private[scalive] object ZioHttpSecurity:
     routeMountClaims: Vector[String] = Vector.empty,
     hasRouteClaims: Boolean = false,
     trackedStatics: Vector[String] = Vector.empty,
-    initialFlash: Map[String, String] = Map.empty
+    initialFlash: Map[String, String] = Map.empty,
+    nestedLifecycles: Map[String, Long] = Map.empty
   ): UIO[String] =
     issueRoot(
       config,
       Purpose.Session,
       rootId,
+      lifecycle,
       routeIndex,
       canonicalUrl,
       routeIdentity,
@@ -121,7 +139,8 @@ private[scalive] object ZioHttpSecurity:
       routeMountClaims,
       hasRouteClaims,
       trackedStatics,
-      initialFlash
+      initialFlash,
+      nestedLifecycles
     )
 
   def verifySession(
@@ -130,10 +149,12 @@ private[scalive] object ZioHttpSecurity:
   ): IO[Error, RootClaims] =
     verify[RootClaims](config, Purpose.Session, token)
       .flatMap(claims => validateAge(config, claims, _.issuedAtEpochSecond))
+      .flatMap(validateRoot)
 
   def issueStatic(
     config: ZioHttpConfig,
     rootId: String,
+    lifecycle: LifecycleId,
     routeIndex: Int,
     canonicalUrl: String,
     routeIdentity: String = "",
@@ -143,12 +164,14 @@ private[scalive] object ZioHttpSecurity:
     routeMountClaims: Vector[String] = Vector.empty,
     hasRouteClaims: Boolean = false,
     trackedStatics: Vector[String] = Vector.empty,
-    initialFlash: Map[String, String] = Map.empty
+    initialFlash: Map[String, String] = Map.empty,
+    nestedLifecycles: Map[String, Long] = Map.empty
   ): UIO[String] =
     issueRoot(
       config,
       Purpose.Static,
       rootId,
+      lifecycle,
       routeIndex,
       canonicalUrl,
       routeIdentity,
@@ -158,7 +181,8 @@ private[scalive] object ZioHttpSecurity:
       routeMountClaims,
       hasRouteClaims,
       trackedStatics,
-      initialFlash
+      initialFlash,
+      nestedLifecycles
     )
 
   def verifyStatic(
@@ -167,6 +191,7 @@ private[scalive] object ZioHttpSecurity:
   ): IO[Error, RootClaims] =
     verify[RootClaims](config, Purpose.Static, token)
       .flatMap(claims => validateAge(config, claims, _.issuedAtEpochSecond))
+      .flatMap(validateRoot)
 
   def issueFlash(config: ZioHttpConfig, values: Map[String, String]): UIO[Option[String]] =
     if values.isEmpty then ZIO.none
@@ -179,6 +204,38 @@ private[scalive] object ZioHttpSecurity:
     verify[FlashClaims](config, Purpose.Flash, token)
       .flatMap(claims => validateAge(Duration.ofSeconds(60), claims, _.issuedAtEpochSecond))
       .map(_.values)
+
+  def issueNested(
+    config: ZioHttpConfig,
+    claims: NestedCredentialClaims
+  ): UIO[IssuedNestedCredentials] =
+    currentEpochSecond.map { issuedAt =>
+      val encoded = NestedClaims(
+        claims.registration.value,
+        claims.registrationEpoch.value,
+        claims.parentLifecycle.value,
+        claims.parentEpoch.value,
+        claims.topic.value,
+        claims.childLifecycle.map(_.value),
+        issuedAt
+      )
+      IssuedNestedCredentials(
+        NestedJoinCredential(encode(config, Purpose.NestedJoin, encoded)),
+        Some(NestedStaticCredential(encode(config, Purpose.NestedStatic, encoded)))
+      )
+    }
+
+  def verifyNestedJoin(
+    config: ZioHttpConfig,
+    token: String
+  ): IO[Error, NestedCredentialClaims] =
+    verifyNested(config, Purpose.NestedJoin, token)
+
+  def verifyNestedStatic(
+    config: ZioHttpConfig,
+    token: String
+  ): IO[Error, NestedCredentialClaims] =
+    verifyNested(config, Purpose.NestedStatic, token)
 
   private def generateCsrfBrowserSecret: UIO[String] =
     Random.nextBytes(32).map(bytes => encoder.encodeToString(bytes.toArray))
@@ -227,10 +284,44 @@ private[scalive] object ZioHttpSecurity:
     verify[CsrfClaims](config, Purpose.CsrfCookie, cookieToken)
       .flatMap(claims => validateAge(config, claims, _.issuedAtEpochSecond))
 
+  private def verifyNested(
+    config: ZioHttpConfig,
+    purpose: Purpose,
+    token: String
+  ): IO[Error, NestedCredentialClaims] =
+    verify[NestedClaims](config, purpose, token)
+      .flatMap(claims => validateAge(config, claims, _.issuedAtEpochSecond))
+      .flatMap { claims =>
+        if claims.registration <= 0L then
+          ZIO.fail(Error.InvalidClaims("registration must be positive"))
+        else if claims.registrationEpoch <= 0L then
+          ZIO.fail(Error.InvalidClaims("registration epoch must be positive"))
+        else if claims.parentLifecycle <= 0L then
+          ZIO.fail(Error.InvalidClaims("parent lifecycle must be positive"))
+        else if claims.parentEpoch <= 0L then
+          ZIO.fail(Error.InvalidClaims("parent epoch must be positive"))
+        else if claims.childLifecycle.exists(_ <= 0L) then
+          ZIO.fail(Error.InvalidClaims("child lifecycle must be positive"))
+        else if !claims.topic.startsWith("lv:") || claims.topic.length <= 3 then
+          ZIO.fail(Error.InvalidClaims("nested topic is invalid"))
+        else
+          ZIO.succeed(
+            NestedCredentialClaims(
+              NestedRegistrationId(claims.registration),
+              NestedRegistrationEpoch(claims.registrationEpoch),
+              LifecycleId(claims.parentLifecycle),
+              Epoch(claims.parentEpoch),
+              NestedTopic(claims.topic),
+              claims.childLifecycle.map(LifecycleId(_))
+            )
+          )
+      }
+
   private def issueRoot(
     config: ZioHttpConfig,
     purpose: Purpose,
     rootId: String,
+    lifecycle: LifecycleId,
     routeIndex: Int,
     canonicalUrl: String,
     routeIdentity: String,
@@ -240,7 +331,8 @@ private[scalive] object ZioHttpSecurity:
     routeMountClaims: Vector[String],
     hasRouteClaims: Boolean,
     trackedStatics: Vector[String],
-    initialFlash: Map[String, String]
+    initialFlash: Map[String, String],
+    nestedLifecycles: Map[String, Long]
   ): UIO[String] =
     currentEpochSecond.map { issuedAt =>
       encode(
@@ -248,6 +340,7 @@ private[scalive] object ZioHttpSecurity:
         purpose,
         RootClaims(
           rootId,
+          lifecycle.value,
           routeIndex,
           canonicalUrl,
           routeIdentity,
@@ -258,10 +351,19 @@ private[scalive] object ZioHttpSecurity:
           hasRouteClaims,
           issuedAt,
           trackedStatics,
-          initialFlash
+          initialFlash,
+          nestedLifecycles
         )
       )
     }
+
+  private def validateRoot(claims: RootClaims): IO[Error, RootClaims] =
+    if claims.lifecycle <= 0L then ZIO.fail(Error.InvalidClaims("root lifecycle must be positive"))
+    else if claims.nestedLifecycles.exists { case (applicationId, lifecycle) =>
+        applicationId.trim.isEmpty || lifecycle <= 0L
+      }
+    then ZIO.fail(Error.InvalidClaims("nested lifecycle bootstrap is invalid"))
+    else ZIO.succeed(claims)
 
   private def currentEpochSecond: UIO[Long] =
     Clock.currentTime(TimeUnit.SECONDS)

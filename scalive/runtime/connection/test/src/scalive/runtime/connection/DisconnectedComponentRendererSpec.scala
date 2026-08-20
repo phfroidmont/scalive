@@ -20,7 +20,30 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
     case value: EvaluatedNode.Choice => value.child.map(text).getOrElse("")
     case value: EvaluatedNode.Flash  => value.child.map(text).getOrElse("")
     case value: EvaluatedNode.Keyed  => value.rows.map(row => text(row.child)).mkString
-    case _                           => ""
+    case value: EvaluatedNode.Stream => value.rows.map(row => text(row.child)).mkString
+    case value: EvaluatedNode.Nested =>
+      value.resolution.flatMap(_.child).map(tree => text(tree.root)).getOrElse("")
+
+  private def resolvedNestedIds(node: EvaluatedNode): Vector[String] = node match
+    case value: EvaluatedNode.Element => value.children.flatMap(resolvedNestedIds)
+    case value: EvaluatedNode.Component =>
+      value.resolution.toVector.flatMap(result => resolvedNestedIds(result.child.root))
+    case value: EvaluatedNode.Choice => value.child.toVector.flatMap(resolvedNestedIds)
+    case value: EvaluatedNode.Flash  => value.child.toVector.flatMap(resolvedNestedIds)
+    case value: EvaluatedNode.Keyed  => value.rows.flatMap(row => resolvedNestedIds(row.child))
+    case value: EvaluatedNode.Stream => value.rows.flatMap(row => resolvedNestedIds(row.child))
+    case value: EvaluatedNode.Nested =>
+      value.resolution.toVector.map(_.applicationId) ++
+        value.resolution.toVector.flatMap(_.child).flatMap(tree => resolvedNestedIds(tree.root))
+    case _: EvaluatedNode.Text => Vector.empty
+
+  private def nestedAnswer(requirement: NestedRequirement): NestedResolution =
+    requirement.resolve(
+      Object(),
+      parentDomId = s"parent-${requirement.applicationId}",
+      topic = s"topic-${requirement.applicationId}",
+      joinCredential = s"join-${requirement.applicationId}"
+    )
 
   override def spec = suite("DisconnectedComponentRendererSpec")(
     test("disconnected and connected component mounts are independent") {
@@ -280,6 +303,164 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         updateProps == Vector("initial", "final"),
         afterCount == 2
       )
+    },
+    test("resolves component descendants before component and root nested declarations") {
+      object ChildView extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = span()
+
+      var constructions = 0
+      val leafDefinition = new LiveComponent.Eventless[Unit, Unit]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.unit
+        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+          div(liveView("leaf-nested", { constructions += 1; ChildView }))
+      val leaf = component(leafDefinition, "leaf-component")
+      val parentDefinition = new LiveComponent.Eventless[Unit, Unit]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.unit
+        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+          div(
+            leaf.render(()),
+            liveView("parent-nested", { constructions += 1; ChildView })
+          )
+      val parent = component(parentDefinition, "parent-component")
+
+      for
+        order <- Ref.make(Vector.empty[String])
+        resolver = new DisconnectedNestedResolver:
+                     def resolve(requirement: NestedRequirement) =
+                       order.update(_ :+ requirement.applicationId).as(nestedAnswer(requirement))
+        turn <- DisconnectedRootTurn.make[Unit, Unit](
+                  LiveHooks.empty,
+                  URL.root,
+                  Map.empty
+                )
+        ids <- DisconnectedComponentRenderer.renderTurnWith[Unit, Nothing, Vector[String]](
+                 _ => div(
+                   parent.render(()),
+                   liveView("root-nested", { constructions += 1; ChildView })
+                 ),
+                 (),
+                 turn,
+                 resolver
+               )((tree, _) => ZIO.succeed(resolvedNestedIds(tree.root)))
+        observed <- order.get
+      yield assertTrue(
+        ids == Vector("leaf-nested", "parent-nested", "root-nested"),
+        observed == Vector(
+          "leaf-nested",
+          "parent-nested",
+          "root-nested"
+        ),
+        constructions == 0
+      )
+    },
+    test("rejects duplicate nested ids across component and root before consumption") {
+      object ChildView extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = span()
+
+      val definition = new LiveComponent.Eventless[Unit, Unit]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.unit
+        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+          div(liveView("duplicate-nested", ChildView))
+      val instance = component(definition, "nested-owner")
+
+      for
+        consumed <- Ref.make(false)
+        turn     <- DisconnectedRootTurn.make[Unit, Unit](LiveHooks.empty, URL.root, Map.empty)
+        resolver = new DisconnectedNestedResolver:
+                     def resolve(requirement: NestedRequirement) =
+                       ZIO.succeed(nestedAnswer(requirement))
+        result <- DisconnectedComponentRenderer
+                    .renderTurnWith[Unit, Nothing, Unit](
+                      _ => div(instance.render(()), liveView("duplicate-nested", ChildView)),
+                      (),
+                      turn,
+                      resolver
+                    )((_, _) => consumed.set(true)).either
+        wasConsumed <- consumed.get
+      yield assertTrue(
+        result.left.exists(error =>
+          error.isInstanceOf[IllegalArgumentException] &&
+            error.getMessage.contains("Duplicate nested LiveView id")
+        ),
+        !wasConsumed
+      )
+    },
+    test("constructs a nested factory only when the injected resolver requests it") {
+      object ChildView extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = span()
+
+      var constructions = 0
+      val view = (_: Signal[Unit]) =>
+        div(liveView("factory-child", { constructions += 1; ChildView }))
+
+      for
+        turn <- DisconnectedRootTurn.make[Unit, Unit](LiveHooks.empty, URL.root, Map.empty)
+        resolver = new DisconnectedNestedResolver:
+                     def resolve(requirement: NestedRequirement) =
+                       ZIO.attempt(requirement.create()).as(nestedAnswer(requirement))
+        _ <- DisconnectedComponentRenderer.renderTurnWith(view, (), turn, resolver)((_, _) =>
+               ZIO.unit
+             )
+      yield assertTrue(constructions == 1)
+    },
+    test("resolver failure closes owned render state and never consumes the tree") {
+      object ChildView extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = span()
+
+      for
+        consumed <- Ref.make(false)
+        afters   <- Ref.make(0)
+        definition = new LiveComponent.Eventless[Unit, Unit]:
+                       override val hooks = ComponentLiveHooks.empty[Unit, Nothing, Unit]
+                         .afterRender((_, _, _) => afters.update(_ + 1))
+                       def mount(props: Unit, ctx: MountContext) = ZIO.unit
+                       def view(
+                         props: Signal[Unit],
+                         model: Signal[Unit],
+                         self: ComponentRef[Nothing]
+                       ) = div(liveView("failing-child", ChildView))
+        instance = component(definition, "failing-owner")
+        program  <- ZIO.fromEither(
+                      RenderProgram.compile[Unit, Nothing](_ => div(instance.render(())))
+                    )
+        resolver = new DisconnectedNestedResolver:
+                     def resolve(requirement: NestedRequirement) =
+                       ZIO.fail(Exception("resolver failed"))
+        result <- DisconnectedComponentRenderer
+                    .renderProgramWith(program, (), nestedResolver = resolver)(_ =>
+                      consumed.set(true)
+                    ).either
+        closed      <- program.evaluate(()).either
+        wasConsumed <- consumed.get
+        afterCount  <- afters.get
+      yield assertTrue(
+        result.left.exists(_.getMessage == "resolver failed"),
+        closed.isLeft,
+        !wasConsumed,
+        afterCount == 0
+      )
+    },
+    test("plain disconnected calls explicitly reject nested declarations") {
+      object ChildView extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = span()
+
+      var constructions = 0
+      DisconnectedComponentRenderer
+        .renderWith[Unit, Nothing, Unit](
+          _ => div(liveView("unavailable-child", { constructions += 1; ChildView })),
+          ()
+        )(_ => ZIO.unit).either
+        .map(result =>
+          assertTrue(
+            result.left.exists(_.getMessage.contains("nested LiveViews are unavailable")),
+            constructions == 0
+          )
+        )
     }
   )
 end DisconnectedComponentRendererSpec

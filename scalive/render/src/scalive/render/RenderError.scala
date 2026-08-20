@@ -28,9 +28,16 @@ object RenderError:
 
   final case class ComponentResolutionInvalid(message: String) extends RenderError(message)
 
+  final case class NestedResolutionInvalid(message: String) extends RenderError(message)
+
   final case class UnresolvedComponents(locations: Vector[TemplateId])
       extends RenderError(
         s"unresolved component declarations: ${locations.map(_.value).mkString(", ")}"
+      )
+
+  final case class UnresolvedNested(locations: Vector[TemplateId])
+      extends RenderError(
+        s"unresolved nested declarations: ${locations.map(_.value).mkString(", ")}"
       )
 
   final case class ProgramMismatch()

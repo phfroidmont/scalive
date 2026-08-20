@@ -333,6 +333,33 @@ object RootConnectionSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("URL synchronization updates the next lifecycle turn") {
+      ZIO.scoped {
+        val destination = URL.decode("/next?source=root").toOption.get
+        val expected    = URL.decode("/next?source=child").toOption.get
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Unit, Unit]:
+                   def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+                   def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+                     _ => ctx.nav.pushPatchUnsafe("?source=child")
+                   def view(model: Signal[Unit]): HtmlElement[Unit] = button(on.click(()))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          joined     <- outputs.take
+          binding     = bindingFrom(joined)
+          _           <- connection.synchronizeUrl(destination)
+          _           <- outputs.take
+          command     = CommandId.fresh().toOption.get
+          _ <- connection.submitEvent(command, binding, BindingPayload.Params(Map.empty))
+          navigation <- outputs.take
+        yield assertTrue(
+          navigation match
+            case ConnectionOutput.ReplyNavigation(`command`, _, output, _) =>
+              output.destination == expected
+            case _ => false
+        )
+      }
+    },
     test("flash commits transactionally and survives patch acknowledgement") {
       ZIO.scoped {
         val notice      = FlashKind("notice")

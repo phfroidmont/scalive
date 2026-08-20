@@ -7,6 +7,18 @@ import scalive.render.*
 import scalive.runtime.contracts.LifecycleId
 import scalive.runtime.resources.OwnerId
 
+private[scalive] trait DisconnectedNestedResolver:
+  def resolve(requirement: NestedRequirement): Task[NestedResolution]
+
+private[scalive] object DisconnectedNestedResolver:
+  val unavailable: DisconnectedNestedResolver = new DisconnectedNestedResolver:
+    def resolve(requirement: NestedRequirement): Task[NestedResolution] =
+      ZIO.fail(
+        IllegalStateException(
+          "nested LiveViews are unavailable during disconnected component render"
+        )
+      )
+
 /** One-shot disconnected rendering. The rendered tree is valid only for the supplied callback. */
 private[scalive] object DisconnectedComponentRenderer:
   def renderWith[Input, Msg, A](
@@ -33,15 +45,17 @@ private[scalive] object DisconnectedComponentRenderer:
   def renderTurnWith[Input, Msg, A](
     view: Signal[Input] => HtmlElement[Msg],
     input: Input,
-    turn: DisconnectedRootTurn[?, ?]
+    turn: DisconnectedRootTurn[?, ?],
+    nestedResolver: DisconnectedNestedResolver = DisconnectedNestedResolver.unavailable
   )(
     consume: (EvaluatedTree, Map[FlashKind, String]) => Task[A]
-  ): Task[A] = renderWithJournal(view, input, turn.componentJournal)(consume)
+  ): Task[A] = renderWithJournal(view, input, turn.componentJournal, nestedResolver)(consume)
 
   private def renderWithJournal[Input, Msg, A](
     view: Signal[Input] => HtmlElement[Msg],
     input: Input,
-    journal: RootTurnJournal
+    journal: RootTurnJournal,
+    nestedResolver: DisconnectedNestedResolver = DisconnectedNestedResolver.unavailable
   )(
     consume: (EvaluatedTree, Map[FlashKind, String]) => Task[A]
   ): Task[A] =
@@ -52,32 +66,35 @@ private[scalive] object DisconnectedComponentRenderer:
           _._2
         )
       ).flatMap { program =>
-        renderJournaledProgramWith(program, input, journal)(consume)
+        renderJournaledProgramWith(program, input, journal, nestedResolver)(consume)
       }
 
   /** Takes ownership of `program` and closes it before this effect completes. */
   def renderProgramWith[Input, Msg, A](
     program: RenderProgram[Input, Msg],
     input: Input,
-    flash: Map[FlashKind, String] = Map.empty
+    flash: Map[FlashKind, String] = Map.empty,
+    nestedResolver: DisconnectedNestedResolver = DisconnectedNestedResolver.unavailable
   )(
     consume: EvaluatedTree => Task[A]
   ): Task[A] =
     for
       journal <- makeJournal(flash)
-      result  <- renderOwnedProgramWith(program, input, journal)((tree, _) => consume(tree))
+      result  <-
+        renderOwnedProgramWith(program, input, journal, nestedResolver)((tree, _) => consume(tree))
     yield result
 
   private def renderJournaledProgramWith[Input, Msg, A](
     program: RenderProgram[(Input, Map[FlashKind, String]), Msg],
     input: Input,
-    journal: RootTurnJournal
+    journal: RootTurnJournal,
+    nestedResolver: DisconnectedNestedResolver
   )(
     consume: (EvaluatedTree, Map[FlashKind, String]) => Task[A]
   ): Task[A] =
     ZIO.scoped {
       for
-        environment  <- DisconnectedComponentEnvironment.make(journal)
+        environment  <- DisconnectedComponentEnvironment.make(journal, nestedResolver)
         ownedProgram <- ZIO.acquireRelease(ZIO.succeed(program))(_.close)
         stabilized   <- stabilize(ownedProgram, input, journal, environment, None, 0)
         (tree, finalFlash) = stabilized
@@ -123,8 +140,9 @@ private[scalive] object DisconnectedComponentRenderer:
                        )
                      )
         signature = identities -> finalFlash
-        resolved <- ZIO.fromEither(candidate.resolveComponents(resolutions))
-        result   <- if previous.contains(signature) then ZIO.succeed(resolved.tree -> finalFlash)
+        nestedResolved <- environment.resolveNested(candidate)
+        resolved       <- ZIO.fromEither(nestedResolved.resolveComponents(resolutions))
+        result <- if previous.contains(signature) then ZIO.succeed(resolved.tree -> finalFlash)
                   else
                     stabilize(program, input, journal, environment, Some(signature), iteration + 1)
       yield result
@@ -132,49 +150,88 @@ private[scalive] object DisconnectedComponentRenderer:
   private def renderOwnedProgramWith[Input, Msg, A](
     program: RenderProgram[Input, Msg],
     input: Input,
-    journal: RootTurnJournal
+    journal: RootTurnJournal,
+    nestedResolver: DisconnectedNestedResolver
   )(
     consume: (EvaluatedTree, Map[FlashKind, String]) => Task[A]
   ): Task[A] =
     ZIO.scoped {
       for
-        environment  <- DisconnectedComponentEnvironment.make(journal)
-        ownedProgram <- ZIO.acquireRelease(ZIO.succeed(program))(_.close)
-        candidate    <- ZIO.acquireRelease(ownedProgram.evaluate(input))(_.discard)
-        _            <- environment.validateRequirements(candidate, journal.streams)
-        resolutions  <- environment.reconcile(candidate.componentRequirements)
-        resolved     <- ZIO.fromEither(candidate.resolveComponents(resolutions))
-        finalFlash   <- journal.flash.get
-        result       <- consume(resolved.tree, finalFlash)
+        environment    <- DisconnectedComponentEnvironment.make(journal, nestedResolver)
+        ownedProgram   <- ZIO.acquireRelease(ZIO.succeed(program))(_.close)
+        candidate      <- ZIO.acquireRelease(ownedProgram.evaluate(input))(_.discard)
+        _              <- environment.validateRequirements(candidate, journal.streams)
+        resolutions    <- environment.reconcile(candidate.componentRequirements)
+        nestedResolved <- environment.resolveNested(candidate)
+        resolved       <- ZIO.fromEither(nestedResolved.resolveComponents(resolutions))
+        finalFlash     <- journal.flash.get
+        result         <- consume(resolved.tree, finalFlash)
       yield result
     }
 end DisconnectedComponentRenderer
 
 final private class DisconnectedComponentEnvironment private (
   root: RootTurnJournal,
+  nestedResolver: DisconnectedNestedResolver,
   identities: Ref[Set[DisconnectedComponentIdentity]],
+  nestedApplicationIds: Ref[Set[String]],
+  nestedCache: Ref[Map[String, NestedResolution]],
   cache: Ref[Map[DisconnectedComponentIdentity, DisconnectedCachedComponent]]):
 
   def validateRequirements(
     candidate: RenderCandidate[?],
     streams: Ref[StreamStore]
   ): Task[Unit] =
-    val nested =
-      if candidate.nestedRequirements.nonEmpty then
-        ZIO.fail(
-          IllegalStateException(
-            "nested LiveViews are unavailable during disconnected component render"
+    streams.get.flatMap(store => ZIO.attempt(store.validate(candidate.streamRequirements)))
+
+  def resolveNested[Msg](candidate: RenderCandidate[Msg]): Task[RenderCandidate[Msg]] =
+    claimNested(candidate.nestedRequirements) *>
+      ZIO
+        .foreach(candidate.nestedRequirements)(resolveNestedRequirement)
+        .flatMap(resolutions => ZIO.fromEither(candidate.resolveNested(resolutions)))
+
+  private def resolveNestedRequirement(requirement: NestedRequirement): Task[NestedResolution] =
+    nestedCache.get.flatMap(_.get(requirement.applicationId) match
+      case Some(cached) =>
+        ZIO.succeed(
+          requirement.resolve(
+            cached.instanceToken,
+            cached.parentDomId,
+            cached.topic,
+            cached.joinCredential,
+            cached.staticCredential,
+            cached.loading,
+            cached.child
           )
         )
-      else ZIO.unit
-    nested *> streams.get.flatMap(store =>
-      ZIO.attempt(store.validate(candidate.streamRequirements))
-    )
+      case None =>
+        nestedResolver
+          .resolve(requirement).tap(resolution =>
+            nestedCache.update(_.updated(requirement.applicationId, resolution))
+          ))
 
   def reconcile[Owner](
     requirements: Vector[ComponentRequirement[Owner]]
   ): ZIO[Scope, Throwable, Vector[ComponentResolution]] =
-    identities.set(Set.empty) *> stageRequirements(requirements)
+    identities.set(Set.empty) *> nestedApplicationIds.set(Set.empty) *> stageRequirements(
+      requirements
+    )
+
+  private def claimNested(requirements: Vector[NestedRequirement]): Task[Unit] =
+    nestedApplicationIds
+      .modify { current =>
+        requirements.foldLeft(Option.empty[String] -> current) {
+          case (found @ (Some(_), _), _)          => found
+          case ((None, accumulated), requirement) =>
+            if accumulated.contains(requirement.applicationId) then
+              Some(requirement.applicationId) -> current
+            else None                         -> (accumulated + requirement.applicationId)
+        }
+      }.flatMap {
+        case Some(applicationId) =>
+          ZIO.fail(IllegalArgumentException(s"Duplicate nested LiveView id '$applicationId'"))
+        case None => ZIO.unit
+      }
 
   private def stageRequirements[Owner](requirements: Vector[ComponentRequirement[Owner]]) =
     claim(requirements) *> ZIO.foreach(requirements)(stageComponent)
@@ -214,9 +271,11 @@ final private class DisconnectedComponentEnvironment private (
       case Some(erased) =>
         val cached = erased.asInstanceOf[DisconnectedCachedComponent.Value[P, M, A]]
         if cached.props == requirement.props then
-          ZIO.succeed(
-            requirement.resolve(cached.ref, cached.ref.asInstanceOf[Object], cached.candidate)
-          )
+          for
+            children       <- stageRequirements(cached.candidate.componentRequirements)
+            nestedResolved <- resolveNested(cached.candidate)
+            resolved       <- ZIO.fromEither(nestedResolved.resolveComponents(children))
+          yield requirement.resolve(cached.ref, cached.ref.asInstanceOf[Object], resolved)
         else
           for
             updated <- ZIO.suspend(
@@ -230,10 +289,11 @@ final private class DisconnectedComponentEnvironment private (
             candidate <- ZIO.acquireRelease(
                            cached.program.evaluate((requirement.props, updated, flash))
                          )(_.discard)
-            _        <- validateRequirements(candidate, cached.lifecycle.streams)
-            children <- stageRequirements(candidate.componentRequirements)
-            resolved <- ZIO.fromEither(candidate.resolveComponents(children))
-            hooks    <- cached.lifecycle.registry
+            _              <- validateRequirements(candidate, cached.lifecycle.streams)
+            children       <- stageRequirements(candidate.componentRequirements)
+            nestedResolved <- resolveNested(candidate)
+            resolved       <- ZIO.fromEither(nestedResolved.resolveComponents(children))
+            hooks          <- cached.lifecycle.registry
             context = DisconnectedComponentAfterRenderContext[P, M, A](cached.lifecycle)
             _ <- ZIO.foreachDiscard(hooks.afterRender)(
                    _.invoke(requirement.props, updated, context)
@@ -242,6 +302,7 @@ final private class DisconnectedComponentEnvironment private (
             next = cached.copy(props = requirement.props, model = updated, candidate = resolved)
             _ <- cache.update(_ + (identity -> next))
           yield requirement.resolve(cached.ref, cached.ref.asInstanceOf[Object], resolved)
+        end if
       case None =>
         for
           lifecycle <- DisconnectedComponentLifecycle.make[P, M, A](component.hooks, root)
@@ -271,10 +332,11 @@ final private class DisconnectedComponentEnvironment private (
           candidate <- ZIO.acquireRelease(
                          program.evaluate((requirement.props, updated, flash))
                        )(_.discard)
-          _        <- validateRequirements(candidate, lifecycle.streams)
-          children <- stageRequirements(candidate.componentRequirements)
-          resolved <- ZIO.fromEither(candidate.resolveComponents(children))
-          hooks    <- lifecycle.registry
+          _              <- validateRequirements(candidate, lifecycle.streams)
+          children       <- stageRequirements(candidate.componentRequirements)
+          nestedResolved <- resolveNested(candidate)
+          resolved       <- ZIO.fromEither(nestedResolved.resolveComponents(children))
+          hooks          <- lifecycle.registry
           context = DisconnectedComponentAfterRenderContext[P, M, A](lifecycle)
           _ <- ZIO.foreachDiscard(hooks.afterRender)(
                  _.invoke(requirement.props, updated, context)
@@ -296,11 +358,23 @@ final private class DisconnectedComponentEnvironment private (
 end DisconnectedComponentEnvironment
 
 private object DisconnectedComponentEnvironment:
-  def make(root: RootTurnJournal): UIO[DisconnectedComponentEnvironment] =
+  def make(
+    root: RootTurnJournal,
+    nestedResolver: DisconnectedNestedResolver
+  ): UIO[DisconnectedComponentEnvironment] =
     for
-      identities <- Ref.make(Set.empty[DisconnectedComponentIdentity])
-      cache      <- Ref.make(Map.empty[DisconnectedComponentIdentity, DisconnectedCachedComponent])
-    yield DisconnectedComponentEnvironment(root, identities, cache)
+      identities           <- Ref.make(Set.empty[DisconnectedComponentIdentity])
+      nestedApplicationIds <- Ref.make(Set.empty[String])
+      nestedCache          <- Ref.make(Map.empty[String, NestedResolution])
+      cache <- Ref.make(Map.empty[DisconnectedComponentIdentity, DisconnectedCachedComponent])
+    yield DisconnectedComponentEnvironment(
+      root,
+      nestedResolver,
+      identities,
+      nestedApplicationIds,
+      nestedCache,
+      cache
+    )
 
 final private class DisconnectedComponentIdentity(
   val definition: AnyRef,

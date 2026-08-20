@@ -30,6 +30,9 @@ object RootSliceApp extends ZIOAppDefault:
   private val upstreamNavigationA = live / "navigation" / "a"
   private val upstreamNavigationB = live / "navigation" / "b"
   private val upstreamStream      = live / "stream"
+  private val nestedRoute         = live / "nested"
+  private val nestedStickyA       = live / "nested" / "a"
+  private val nestedStickyB       = live / "nested" / "b"
   private val redirectLoop        = (live / "navigation" / "redirectloop").paramsDecodeOnly(
     LiveParamsDecoder.custom[Unit, Boolean]((_, url) =>
       Right(url.queryParam("loop").contains("true"))
@@ -55,7 +58,12 @@ object RootSliceApp extends ZIOAppDefault:
   )
 
   private val application = Live.router.withRootLayout(rootOne)(
-    live -> RootSliceLiveView(mountSequence),
+    live        -> RootSliceLiveView(mountSequence),
+    nestedRoute -> NestedParentLiveView(),
+    Live.session("nested-sticky")(
+      nestedStickyA -> StickyNestedParentLiveView("a", nestedStickyB.location),
+      nestedStickyB -> StickyNestedParentLiveView("b", nestedStickyA.location)
+    ),
     Live.session("navigation")(
       navigationA -> NavigationLiveView(
         "a",
@@ -190,6 +198,96 @@ final class RootSliceLiveView(mountSequence: AtomicInteger)
     )
 
 object RootSliceLiveView:
+  case object Msg
+
+final class NestedParentLiveView extends LiveView[NestedParentLiveView.Msg.type, Boolean]:
+  import NestedParentLiveView.*
+
+  def mount(ctx: MountContext) = true
+
+  def handleMessage(model: Boolean, ctx: MessageContext) =
+    case Msg => !model
+
+  def view(model: Signal[Boolean]) =
+    mainTag(
+      idAttr := "nested-parent-content",
+      button(on.click(Msg), "Toggle child"),
+      div(Signal.when(model)(div(liveView("nested-child", NestedChildLiveView()))))
+    )
+
+object NestedParentLiveView:
+  case object Msg
+
+final class NestedChildLiveView extends LiveView[NestedChildLiveView.Msg.type, Int]:
+  import NestedChildLiveView.*
+
+  def mount(ctx: MountContext) = 0
+
+  def handleMessage(model: Int, ctx: MessageContext) =
+    case Msg => model + 1
+
+  def view(model: Signal[Int]) =
+    sectionTag(
+      idAttr := "nested-child-content",
+      span(idAttr := "nested-child-counter", model.map(_.toString)),
+      button(on.click(Msg), "Increment child"),
+      liveView("nested-grandchild", NestedGrandchildLiveView)
+    )
+
+object NestedChildLiveView:
+  case object Msg
+
+object NestedGrandchildLiveView extends LiveView.Eventless[Unit]:
+  def mount(ctx: MountContext)  = ()
+  def view(model: Signal[Unit]) = asideTag(idAttr := "nested-grandchild-content", "grandchild")
+
+final class StickyNestedParentLiveView(page: String, destination: LiveLocation)
+    extends LiveView.Eventless[Unit]:
+  def mount(ctx: MountContext) = ()
+
+  def view(model: Signal[Unit]) =
+    mainTag(
+      idAttr := s"sticky-parent-$page",
+      link.pushNavigate(destination, "To other sticky page"),
+      liveView("sticky-nested-child", StickyNestedChildLiveView(), sticky = true)
+    )
+
+final class StickyNestedChildLiveView extends LiveView[StickyNestedChildLiveView.Msg.type, Int]:
+  import StickyNestedChildLiveView.*
+
+  def mount(ctx: MountContext) = 0
+
+  def handleMessage(model: Int, ctx: MessageContext) =
+    case Msg => model + 1
+
+  def view(model: Signal[Int]) =
+    sectionTag(
+      idAttr := "sticky-nested-content",
+      span(idAttr := "sticky-nested-counter", model.map(_.toString)),
+      button(on.click(Msg), "Increment sticky child"),
+      liveView("sticky-nested-grandchild", StickyNestedGrandchildLiveView())
+    )
+
+object StickyNestedChildLiveView:
+  case object Msg
+
+final class StickyNestedGrandchildLiveView
+    extends LiveView[StickyNestedGrandchildLiveView.Msg.type, Int]:
+  import StickyNestedGrandchildLiveView.*
+
+  def mount(ctx: MountContext) = 0
+
+  def handleMessage(model: Int, ctx: MessageContext) =
+    case Msg => model + 1
+
+  def view(model: Signal[Int]) =
+    sectionTag(
+      idAttr := "sticky-nested-grandchild-content",
+      span(idAttr := "sticky-nested-grandchild-counter", model.map(_.toString)),
+      button(on.click(Msg), "Increment sticky grandchild")
+    )
+
+object StickyNestedGrandchildLiveView:
   case object Msg
 
 final class NavigationLiveView(

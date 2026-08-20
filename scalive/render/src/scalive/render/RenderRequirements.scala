@@ -82,6 +82,30 @@ sealed trait NestedRequirement:
   def linkParentOnCrash: Boolean
   def create(): LiveView[Message, Model]
 
+  final def resolve(
+    instanceToken: Object,
+    parentDomId: String,
+    topic: String,
+    joinCredential: String,
+    staticCredential: Option[String] = None,
+    loading: Boolean = false,
+    child: Option[EvaluatedTree] = None
+  ): NestedResolution =
+    NestedResolution.Value(
+      location,
+      applicationId,
+      instanceToken,
+      parentDomId,
+      topic,
+      joinCredential,
+      staticCredential,
+      sticky,
+      loading,
+      child,
+      this
+    )
+end NestedRequirement
+
 object NestedRequirement:
   final private[render] case class Value[Message0, Model0](
     location: TemplateId,
@@ -93,6 +117,35 @@ object NestedRequirement:
     type Message = Message0
     type Model   = Model0
     def create(): LiveView[Message0, Model0] = factory()
+
+/** A protocol-neutral runtime answer for one nested LiveView requirement. */
+sealed trait NestedResolution:
+  def location: TemplateId
+  def applicationId: String
+  def instanceToken: Object
+  def parentDomId: String
+  def topic: String
+  def joinCredential: String
+  def staticCredential: Option[String]
+  def sticky: Boolean
+  def loading: Boolean
+  def child: Option[EvaluatedTree]
+  private[render] def requirement: NestedRequirement
+
+object NestedResolution:
+  final private[render] case class Value(
+    location: TemplateId,
+    applicationId: String,
+    instanceToken: Object,
+    parentDomId: String,
+    topic: String,
+    joinCredential: String,
+    staticCredential: Option[String],
+    sticky: Boolean,
+    loading: Boolean,
+    child: Option[EvaluatedTree],
+    requirement: NestedRequirement)
+      extends NestedResolution
 
 /** The evaluated stream declaration retained as runtime-facing metadata alongside semantic rows. */
 sealed trait StreamRequirement[+OwnerMsg]:

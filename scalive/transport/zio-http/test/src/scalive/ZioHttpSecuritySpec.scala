@@ -5,6 +5,8 @@ import java.time.Duration
 import zio.*
 import zio.test.*
 
+import scalive.runtime.contracts.*
+
 object ZioHttpSecuritySpec extends ZIOSpecDefault:
   private val secret = "0123456789abcdef0123456789abcdef"
 
@@ -32,13 +34,15 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
     },
     test("rejects a tampered HMAC") {
       for
-        token  <- ZioHttpSecurity.issueSession(config(), "root", 2, "https://example.test/a")
+        token <- ZioHttpSecurity
+                   .issueSession(config(), "root", LifecycleId(1L), 2, "https://example.test/a")
         result <- ZioHttpSecurity.verifySession(config(), tamperSignature(token)).either
       yield assertTrue(result == Left(ZioHttpSecurity.Error.InvalidSignature))
     },
     test("separates token purposes") {
       for
-        token  <- ZioHttpSecurity.issueSession(config(), "root", 2, "https://example.test/a")
+        token <- ZioHttpSecurity
+                   .issueSession(config(), "root", LifecycleId(1L), 2, "https://example.test/a")
         result <- ZioHttpSecurity.verifyStatic(config(), token).either
       yield assertTrue(
         result == Left(
@@ -46,10 +50,44 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
         )
       )
     },
+    test("roundtrips exact purpose-separated nested registration claims") {
+      val expected = NestedCredentialClaims(
+        NestedRegistrationId(11L),
+        NestedRegistrationEpoch(3L),
+        LifecycleId(7L),
+        Epoch(2L),
+        NestedTopic("lv:child"),
+        childLifecycle = Some(LifecycleId(13L))
+      )
+      for
+        issued      <- ZioHttpSecurity.issueNested(config(), expected)
+        joinClaims  <- ZioHttpSecurity.verifyNestedJoin(config(), issued.join.value)
+        staticToken  = issued.static.get
+        staticClaims <- ZioHttpSecurity.verifyNestedStatic(config(), staticToken.value)
+        wrongPurpose <- ZioHttpSecurity.verifyNestedJoin(config(), staticToken.value).either
+      yield assertTrue(
+        joinClaims == expected,
+        staticClaims == expected,
+        issued.join.value != staticToken.value,
+        wrongPurpose == Left(
+          ZioHttpSecurity.Error.PurposeMismatch(
+            expected = "nested-join",
+            actual = "nested-static"
+          )
+        )
+      )
+    },
     test("rejects expired and future-issued tokens") {
       for
         _            <- TestClock.setTime(java.time.Instant.ofEpochSecond(100))
-        token        <- ZioHttpSecurity.issueSession(config(Duration.ofSeconds(10)), "root", 0, "/")
+        token <- ZioHttpSecurity
+                   .issueSession(
+                     config(Duration.ofSeconds(10)),
+                     "root",
+                     LifecycleId(1L),
+                     0,
+                     "/"
+                   )
         _            <- TestClock.adjust(11.seconds)
         expired      <- ZioHttpSecurity.verifySession(config(Duration.ofSeconds(10)), token).either
         _            <- TestClock.setTime(java.time.Instant.EPOCH)
@@ -63,23 +101,26 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
       for
         now    <- Clock.currentTime(java.util.concurrent.TimeUnit.SECONDS)
         token  <- ZioHttpSecurity.issueStatic(
-                    config(),
-                    "root-42",
-                    7,
+                     config(),
+                     "root-42",
+                     LifecycleId(42L),
+                     7,
                     "https://example.test/a?x=1",
                     "7:GET /a",
                     Some("admin"),
                     "root:v2",
                     Vector("session-claim"),
-                    Vector("route-claim"),
-                    hasRouteClaims = true,
-                    initialFlash = Map("notice" -> "saved")
+                     Vector("route-claim"),
+                     hasRouteClaims = true,
+                     initialFlash = Map("notice" -> "saved"),
+                     nestedLifecycles = Map("sticky-child" -> 43L)
                   )
         claims <- ZioHttpSecurity.verifyStatic(config(), token)
       yield assertTrue(
         claims == ZioHttpSecurity.RootClaims(
-          rootId = "root-42",
-          routeIndex = 7,
+           rootId = "root-42",
+           lifecycle = 42L,
+           routeIndex = 7,
           canonicalUrl = "https://example.test/a?x=1",
           routeIdentity = "7:GET /a",
           sessionIdentity = Some("admin"),
@@ -88,7 +129,8 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
           routeMountClaims = Vector("route-claim"),
           hasRouteClaims = true,
           issuedAtEpochSecond = now,
-          initialFlash = Map("notice" -> "saved")
+          initialFlash = Map("notice" -> "saved"),
+          nestedLifecycles = Map("sticky-child" -> 43L)
         )
       )
     },

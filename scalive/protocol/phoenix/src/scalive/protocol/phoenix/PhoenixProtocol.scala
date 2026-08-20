@@ -204,16 +204,11 @@ private[scalive] object PhoenixProtocol:
         for
           url      <- optionalString(fields, "url")
           redirect <- optionalString(fields, "redirect")
-          _        <- Either.cond(
-                 url.nonEmpty || redirect.nonEmpty,
-                 (),
-                 "phx_join payload must contain a non-null 'url' or 'redirect'"
-               )
-          flash   <- optionalString(fields, "flash")
-          session <- requiredString(fields, "session")
-          static  <- optionalString(fields, "static")
-          params  <- requiredObject(fields, "params")
-          sticky  <- optionalBoolean(fields, "sticky", default = false)
+          flash    <- optionalString(fields, "flash")
+          session  <- requiredString(fields, "session")
+          static   <- optionalString(fields, "static")
+          params   <- requiredObject(fields, "params")
+          sticky   <- optionalBoolean(fields, "sticky", default = false)
         yield RootJoin(url, redirect, flash, session, static, params.toMap, sticky)
       }
     case _ => Left("phx_join payload must be an object")

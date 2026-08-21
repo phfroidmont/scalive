@@ -32,7 +32,7 @@ Paths below are repository-relative and identify representative evidence rather 
 
 | Area | Status | Current target evidence | Remaining gate / decision |
 | --- | --- | --- | --- |
-| Browser E2E behavior | Browser gate | On 2026-08-21 the pinned suite completed three consecutive 172-test runs with no retries in 27.2, 26.8, and 26.3 seconds. `scripts/e2e-run-upstream-cutover.sh`, the revision-specific synchronization patch under `test/upstream-patches`, and `e2eApp/src` are the executable evidence. | Keep the strict cutover command in snapshot CI and update the synchronization patch explicitly when advancing the upstream pin. |
+| Browser E2E behavior | Browser gate | On 2026-08-21 the pinned suite completed three consecutive 172-test runs with no retries in 27.2, 26.8, and 26.3 seconds. `scripts/e2e-run-upstream-cutover.sh`, the revision-specific synchronization patch under `test/upstream-patches`, and `e2eApp/src` are the executable evidence. | Run the complete suite once in snapshot CI, keep the strict cutover command for explicit cutover verification, and update the synchronization patch when advancing the upstream pin. |
 | Public lifecycle and connection capabilities | Target evidence | `scalive/api/src/scalive/lifecycle`, `scalive/api/test/src/scaliveapi/ConnectionCapabilitiesSpec.scala`, `RoutedConstructionSpec.scala`, and `ComponentApiSpec.scala` cover typed mount/message contexts, explicit `Connection.Disconnected`/`Connection.Connected`, routes, components, and capability gating. | Continue mapping callback edge cases without weakening compile-time capability boundaries. |
 | Rendering and semantic diffs | Target evidence | `scalive/render/src/scalive/render` with `TreeDifferSpec.scala`, `RenderProgramSpec.scala`, `HtmlRendererSpec.scala`, `StreamRenderingSpec.scala`, and `NestedRenderingSpec.scala`. | Audit exact browser merge behavior for every upstream regression scenario. |
 | Phoenix channel and rendered protocol | Target evidence, audit pending | `scalive/protocol/phoenix/src/scalive/protocol/phoenix` with `PhoenixProtocolSpec.scala`, `PhoenixRenderedEncoderSpec.scala`, `PhoenixUploadProtocolSpec.scala`, and `PhoenixProtocolFuzzSpec.scala` covers frames, refs, rendered projections, two-phase CID destruction/reintroduction, uploads, and malformed input. | Keep exact errors, reconnect generations, and protocol additions aligned with `v1.1.28`. |
@@ -78,7 +78,8 @@ Paths below are repository-relative and identify representative evidence rather 
   recovery variants 125/125.
 - `scripts/e2e-run-upstream-cutover.sh` runs the complete unfiltered suite three times and forces
   retries to zero. On 2026-08-21 all three runs passed all 172 scenarios in 27.2, 26.8, and 26.3
-  seconds. Snapshot CI executes this command before publication.
+  seconds. Snapshot CI runs the same complete suite once with retries disabled before publication;
+  the three-run command remains the explicit cutover gate.
 
 ## Intentional Divergences
 

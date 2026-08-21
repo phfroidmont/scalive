@@ -40,7 +40,9 @@
             export LV_UPSTREAM_SRC="${liveview-upstream}";
             export LV_UPSTREAM_REV="${liveviewRev}";
             export LV_LOCAL_E2E_DIR="$PWD/.e2e-upstream/phoenix_live_view/$LV_UPSTREAM_REV";
-            mill --bsp-install
+            if [[ -z "''${CI:-}" ]]; then
+              mill --bsp-install
+            fi
           '';
         };
       }

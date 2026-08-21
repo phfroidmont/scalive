@@ -93,8 +93,8 @@ before aborting the exact parent, preventing stale child rejoin and fallback HTT
 supervisor regressions verify mount-time and runtime ordering. Focused no-retry runs passed linked
 crash recovery 50/50, root crash recovery 25/25, issue 3530 50/50, issue 3529 25/25, and the five
 disabled-fieldset recovery variants 125/125. The strict cutover command then passed three complete
-unfiltered 172-test runs with retries forced to zero. Snapshot CI runs the same command before
-publication.
+unfiltered 172-test runs with retries forced to zero. Snapshot CI runs the complete suite once with
+retries disabled before publication; the three-run command remains the explicit cutover gate.
 
 ## Classifications
 

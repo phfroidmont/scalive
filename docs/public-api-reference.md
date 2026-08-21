@@ -908,17 +908,25 @@ The `link` object renders LiveView-aware anchors. Its default methods require fu
 ```scala
 object link:
   def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]
   def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]
   def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]
   def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]
+  def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]
 
-  def pushNavigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
-  def replaceNavigateUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
-  def pushPatchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
-  def replacePatchUnsafe[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]
+  def replaceNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def replaceNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushPatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def pushPatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]
+  def replacePatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]
+  def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]
 ```
 
-Unsafe links are the explicit escape hatch for destinations that cannot be derived from a Live route. Query-only patches remain unsafe and explicit, for example `link.pushPatchUnsafe("?page=2", "Next")`.
+Signal-backed overloads keep an anchor's ordinary `href` synchronized with a reactive destination. Unsafe links are the explicit escape hatch for destinations that cannot be derived from a Live route. Query-only patches remain unsafe and explicit, for example `link.pushPatchUnsafe("?page=2", "Next")`.
 
 ## JS Command API
 

@@ -4442,6 +4442,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveLocation.seeOther",
+      "ownerId" : "class:scalive.LiveLocation",
+      "qualifiedName" : "scalive.LiveLocation.seeOther",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveLocation.seeOther:5ad9935235d2dca7",
+          "signature" : "def seeOther: zio.http.Response"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveLocation.withFragment",
       "ownerId" : "class:scalive.LiveLocation",
       "qualifiedName" : "scalive.LiveLocation.withFragment",
@@ -7098,6 +7110,10 @@
         {
           "id" : "def:scalive.link.pushNavigate:28137fa17e33550e",
           "signature" : "def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.link.pushNavigate:3808f2ef92c406a5",
+          "signature" : "def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -7107,6 +7123,10 @@
       "qualifiedName" : "scalive.link.pushNavigateUnsafe",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.link.pushNavigateUnsafe:0a6942892459e29f",
+          "signature" : "def pushNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
         {
           "id" : "def:scalive.link.pushNavigateUnsafe:86910a1fc3f16d13",
           "signature" : "def pushNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]"
@@ -7120,6 +7140,10 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.link.pushPatch:34416e3f8cbd986c",
+          "signature" : "def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
           "id" : "def:scalive.link.pushPatch:5a67d6a14b5371f1",
           "signature" : "def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
         }
@@ -7131,6 +7155,10 @@
       "qualifiedName" : "scalive.link.pushPatchUnsafe",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.link.pushPatchUnsafe:27057e3d27ce132a",
+          "signature" : "def pushPatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
         {
           "id" : "def:scalive.link.pushPatchUnsafe:27373d13b18f7079",
           "signature" : "def pushPatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]"
@@ -7146,6 +7174,10 @@
         {
           "id" : "def:scalive.link.replaceNavigate:1683970dcf8c6e64",
           "signature" : "def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.link.replaceNavigate:5f93db0baa971e19",
+          "signature" : "def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -7158,6 +7190,10 @@
         {
           "id" : "def:scalive.link.replaceNavigateUnsafe:891784dc4e6342b3",
           "signature" : "def replaceNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.link.replaceNavigateUnsafe:f400723c948a3561",
+          "signature" : "def replaceNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -7170,6 +7206,10 @@
         {
           "id" : "def:scalive.link.replacePatch:d2d4801de398e9b4",
           "signature" : "def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.link.replacePatch:e5c872ef836db843",
+          "signature" : "def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -7179,6 +7219,10 @@
       "qualifiedName" : "scalive.link.replacePatchUnsafe",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.link.replacePatchUnsafe:90cee0fbca68ac96",
+          "signature" : "def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
         {
           "id" : "def:scalive.link.replacePatchUnsafe:dbf9d300114b230c",
           "signature" : "def replacePatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]"

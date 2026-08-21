@@ -23,11 +23,11 @@ object AuthMountAspect:
     LiveMountAspect.fromRequest(
       request =>
         request.request.cookie(AuthHttpRoutes.SessionCookieName) match
-          case None         => ZIO.fail(Response.seeOther(AuthLabRoutes.login.location.url))
+          case None         => ZIO.fail(AuthLabRoutes.login.location.seeOther)
           case Some(cookie) =>
             auth
               .authenticate(SessionCookieToken(cookie.content))
-              .someOrFail(Response.seeOther(AuthLabRoutes.login.location.url))
+              .someOrFail(AuthLabRoutes.login.location.seeOther)
               .map(current => AuthClaims(current.publicSessionId) -> current),
       (claims, _) =>
         auth
@@ -62,8 +62,7 @@ final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
           auth.login(visitor(request), credentials).flatMap {
             case LoginDecision.Successful(result) =>
               ZIO.succeed(
-                Response
-                  .seeOther(AuthLabRoutes.profile.location.url)
+                AuthLabRoutes.profile.location.seeOther
                   .addCookie(security.cookies.make(SessionCookieName, result.cookieToken.value))
               )
             case LoginDecision.Invalid     => invalidLoginResponse
@@ -79,8 +78,7 @@ final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
       auth
         .reset(visitor(request), cookieToken)
         .as(
-          Response
-            .seeOther(AuthLabRoutes.login.location.url)
+          AuthLabRoutes.login.location.seeOther
             .addCookie(security.cookies.expire(SessionCookieName))
         )
     }

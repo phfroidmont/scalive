@@ -1,7 +1,7 @@
 package scalive
 
-import zio.http.URL
 import zio.http.codec.PathCodec
+import zio.http.{Response, URL}
 
 /** An encoded destination produced by a typed Live route.
   *
@@ -16,6 +16,9 @@ final class LiveLocation private[scalive] (private[scalive] val url: URL):
     *   the encoded destination
     */
   def href: String = url.encode
+
+  /** Returns an HTTP 303 See Other response targeting this location. */
+  def seeOther: Response = Response.seeOther(url)
 
   /** Returns a copy with `fragment` as its URI fragment.
     *

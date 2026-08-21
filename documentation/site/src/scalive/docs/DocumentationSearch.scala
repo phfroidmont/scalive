@@ -98,22 +98,16 @@ final private[docs] class DocumentationSearchLiveView(application: Documentation
       hasResults.when(
         ol(
           model.map(_.results).splitBy(_.id) { (_, entry) =>
+            val location = entry.map(value =>
+              application.searchLocation(value).getOrElse {
+                throw new IllegalArgumentException(
+                  s"Invalid search result destination: ${value.id}"
+                )
+              }
+            )
             li(
               cls := "docs-search-result",
-              a(
-                phx.link      := "redirect",
-                phx.linkState := "push",
-                href          :=
-                  entry
-                    .map(value =>
-                      application.searchLocation(value).getOrElse {
-                        throw new IllegalArgumentException(
-                          s"Invalid search result destination: ${value.id}"
-                        )
-                      }
-                    ).map(_.href),
-                entry.map(_.title)
-              ),
+              link.pushNavigate(location, entry.map(_.title)),
               span(
                 cls := "docs-search-result-kind",
                 entry.map(value => DocumentationSearchLiveView.kindLabel(value.kind))

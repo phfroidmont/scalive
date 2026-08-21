@@ -70,19 +70,15 @@ final class NavigationExample extends LiveView[NavigationExample.Msg, Navigation
         ),
         div(
           cls := "docs-navigation-actions",
-          a(
-            href                        := destination.map(_.href),
-            phx.link                    := "redirect",
-            phx.linkState               := "push",
+          link.pushNavigate(
+            destination,
             cls                         := "docs-navigation-primary",
             dataAttr("push-navigation") := "",
             span("Open search"),
             small("Push history")
           ),
-          a(
-            href                           := destination.map(_.href),
-            phx.link                       := "redirect",
-            phx.linkState                  := "replace",
+          link.replaceNavigate(
+            destination,
             cls                            := "docs-navigation-secondary",
             dataAttr("replace-navigation") := "",
             span("Open and replace"),

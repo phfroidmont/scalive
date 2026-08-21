@@ -40,7 +40,6 @@ object `package` extends Module:
     private def repositoryRoot = moduleDir / os.up / os.up
 
     private def allowedSourceRoots = Seq(
-      os.sub / "scalive" / "src",
       os.sub / "scalive" / "api" / "src",
       os.sub / "scalive" / "testing" / "src",
       os.sub / "documentation" / "fixtures" / "quick-start" / "src",

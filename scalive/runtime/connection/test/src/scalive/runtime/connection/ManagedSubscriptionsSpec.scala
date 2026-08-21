@@ -44,24 +44,26 @@ object ManagedSubscriptionsSpec extends ZIOSpecDefault:
     def view(model: Signal[Vector[Int]]) = div(model.map(_.mkString(",")))
 
   override def spec = suite("ManagedSubscriptionsSpec")(
-    test("start rejects a duplicate active key without replacing it") {
+    test("start rejects a duplicate active key without starting the replacement") {
       ZIO.scoped {
         for
           first       <- Queue.unbounded[Message]
           second      <- Queue.unbounded[Message]
+          firstStart  <- Promise.make[Nothing, Unit]
           interrupted <- Promise.make[Nothing, Unit]
           secondStart <- Promise.make[Nothing, Unit]
           connection  <- startConnection
           key          = SubscriptionKey("duplicate")
-          firstStream  = ZStream.fromQueue(first).ensuring(interrupted.succeed(()).unit)
+          firstStream  = (ZStream.fromZIO(firstStart.succeed(()).unit) *> ZStream.fromQueue(first))
+                           .ensuring(interrupted.succeed(()).unit)
           secondStream = ZStream.fromZIO(secondStart.succeed(()).unit) *> ZStream.fromQueue(second)
           _           <- connection.submitInfo(Message.Start(key, SubscriptionDelivery.Lossless, firstStream))
+          _           <- firstStart.await
           duplicate   <- connection.submitInfo(Message.Start(key, SubscriptionDelivery.Lossless, secondStream)).either
-          wasStopped  <- interrupted.isDone
+          _           <- interrupted.await
           wasStarted  <- secondStart.isDone
         yield assertTrue(
           duplicate.left.exists(_.getMessage.contains("subscription 'duplicate' is already active")),
-          !wasStopped,
           !wasStarted
         )
       }

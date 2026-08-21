@@ -608,15 +608,15 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
       if event.bindingId == "sandbox:eval" then
         E2ESandboxEval.handle(model, event.bindingId, event.value)
       else
-        val usedFeedback = event.value match
+        val nextModel = event.value match
           case Json.Str(raw) =>
-            FormData
+            val usedFeedback = FormData
               .fromUrlEncoded(raw)
               .toOption
-              .flatMap(_.string("myfeedback"))
-              .exists(_.nonEmpty)
-          case _ => false
-        LiveEventHookResult.cont(model.copy(feedbackUsed = model.feedbackUsed || usedFeedback))
+              .exists(data => data.contains("myfeedback") && !data.contains("_unused_myfeedback"))
+            model.copy(feedbackUsed = usedFeedback)
+          case _ => model
+        LiveEventHookResult.cont(nextModel)
     }
 
   override def view(model: Signal[Model]) =

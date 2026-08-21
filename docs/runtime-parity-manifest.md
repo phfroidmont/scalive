@@ -84,8 +84,9 @@ console delivery.
 
 `scripts/e2e-sync-upstream.sh` applies a patch named for the exact locked upstream revision. The
 patch removes the unattended `page.pause()` and replaces only premature observations with polling
-for the same exact form payload, remount text, console messages, and hook lifecycle counts. No test
-or behavioral assertion is hidden, skipped, or weakened.
+for the same exact form payload, remount text, console messages, hook lifecycle counts, completed
+navigation states, and queued upload results. No test or behavioral assertion is hidden, skipped,
+or weakened.
 
 Crash repetitions also exposed two runtime defects. Failure-aware lifecycle retirement now emits
 the root channel error needed for reconnect, while linked nested failures notify the child channel

@@ -19,6 +19,7 @@ mkdir -p "${dest_dir}"
 
 rsync \
 	--archive \
+	--checksum \
 	--delete \
 	--chmod="Du+rwx,Fu+rw" \
 	--exclude ".git" \

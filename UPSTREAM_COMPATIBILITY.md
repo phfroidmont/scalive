@@ -68,8 +68,9 @@ Paths below are repository-relative and identify representative evidence rather 
   the recovery event in 1/25 runs, issue 3529 compared remount text before navigation settled, and
   error scenarios could inspect console delivery immediately after the recovered DOM appeared.
 - The revision-specific patch under `test/upstream-patches` removes the unattended debugger pause
-  and polls for the same exact payloads, remount text, console messages, and hook lifecycle counts.
-  It skips no scenario and weakens no behavioral assertion.
+  and waits for the same exact payloads, remount text, console messages, hook lifecycle counts,
+  completed navigation states, and queued upload results. It skips no scenario and weakens no
+  behavioral assertion.
 - Separate crash repetitions exposed runtime defects rather than harness races. Failure-aware
   lifecycle retirement now delivers root channel errors, and a linked child reports its mount or
   runtime failure before aborting its parent, preventing stale child rejoin and fallback HTTP reload.

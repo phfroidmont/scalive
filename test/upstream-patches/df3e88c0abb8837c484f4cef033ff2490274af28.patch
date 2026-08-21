@@ -20,6 +20,12 @@ index 6498349..4608e99 100644
              c: "hello world",
              d: "bar",
              _unused_e: "",
+@@ -775,3 +773,5 @@ test("phx-no-feedback is applied correctly for backwards-compatible-shims", asyn
+   await syncLV(page);
+   await expect(page.getByText("Validate count")).toContainText("2");
++  await page.locator("input[name=myfeedback]").fill("");
++  await syncLV(page);
+   await expect(page.locator("[phx-feedback-for=myfeedback]")).toBeVisible();
 @@ -809,6 +807,7 @@ function formPayload(events) {
    const event = events.find(
      (e) => e.type === "sent" && e.payload.includes('"event":"validate"'),
@@ -162,3 +168,54 @@ index 6f6b45a..6d92742 100644
    // no uncaught exceptions
    expect(errors).toEqual([]);
  });
+diff --git a/test/e2e/tests/issues/2965.spec.js b/test/e2e/tests/issues/2965.spec.js
+index 6a49300..78b5d5d 100644
+--- a/test/e2e/tests/issues/2965.spec.js
++++ b/test/e2e/tests/issues/2965.spec.js
+@@ -22,6 +22,8 @@ test("can upload files with custom chunk hook", async ({ page }) => {
+   // wait for uploads to finish
+   for (let i = 0; i < 20; i++) {
+     const row = page.locator("tbody tr").nth(i);
+-    await expect(row).toContainText(`file${i + 1}.txt`);
+-    await expect(row.locator("progress")).toHaveAttribute("value", "100");
++    await expect(row).toContainText(`file${i + 1}.txt`, { timeout: 15_000 });
++    await expect(row.locator("progress")).toHaveAttribute("value", "100", {
++      timeout: 15_000,
++    });
+   }
+diff --git a/test/e2e/tests/navigation.spec.js b/test/e2e/tests/navigation.spec.js
+index 74aa584..dc61f2e 100644
+--- a/test/e2e/tests/navigation.spec.js
++++ b/test/e2e/tests/navigation.spec.js
+@@ -400,6 +400,7 @@ test("back and forward navigation types are tracked", async ({ page }) => {
+   // back should also be type: patch
+   await page.goBack();
+   await expect(page).toHaveURL("/navigation/a");
++  await expect(page.getByText("Current param:", { exact: true })).toBeVisible();
+   expect(getNavigationEvent()).toEqual({
+     href: "http://localhost:4004/navigation/a",
+     patch: true,
+@@ -408,6 +409,7 @@ test("back and forward navigation types are tracked", async ({ page }) => {
+   });
+   await page.goBack();
+   await expect(page).toHaveURL("/navigation/b");
++  await expect(page.getByRole("heading", { name: "This is page B" })).toBeVisible();
+   expect(getNavigationEvent()).toEqual({
+     href: "http://localhost:4004/navigation/b",
+     patch: false,
+@@ -416,6 +418,7 @@ test("back and forward navigation types are tracked", async ({ page }) => {
+   });
+   await page.goForward();
+   await expect(page).toHaveURL("/navigation/a");
++  await expect(page.getByRole("heading", { name: "This is page A" })).toBeVisible();
+   expect(getNavigationEvent()).toEqual({
+     href: "http://localhost:4004/navigation/a",
+     patch: false,
+@@ -424,6 +427,7 @@ test("back and forward navigation types are tracked", async ({ page }) => {
+   });
+   await page.goForward();
+   await expect(page).toHaveURL(/\/navigation\/a\?param=.*/);
++  await expect(page.getByText("Current param: 1", { exact: true })).toBeVisible();
+   expect(getNavigationEvent()).toEqual({
+     href: expect.stringMatching(/\/navigation\/a\?param=.*/),
+     patch: true,

@@ -682,8 +682,12 @@ final private[kernel] case class ComponentForestCandidate[OwnerMsg](
   resolutions: Vector[ComponentResolution])
 
 private[kernel] enum ComponentOutput[+RootMsg]:
-  case Root(message: RootMsg)
-  case Parent(component: ComponentInstanceId, message: Any)
+  case Root(message: RootMsg, componentType: String, componentId: String)
+  case Parent(
+    component: ComponentInstanceId,
+    message: Any,
+    componentType: String,
+    componentId: String)
 
 private[kernel] trait StagedComponent[OwnerMsg]:
   def id: ComponentInstanceId

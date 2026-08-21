@@ -1,6 +1,7 @@
 package scalive
 
 import java.net.URI
+import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
 
 import zio.*
@@ -13,6 +14,7 @@ import scalive.protocol.phoenix.*
 import scalive.render.*
 import scalive.runtime.connection.*
 import scalive.runtime.contracts.*
+import scalive.runtime.kernel.RuntimeObserver
 import scalive.runtime.resources.*
 import scalive.upload.*
 
@@ -33,6 +35,13 @@ object ZioHttp:
   private val MaxUploadChunkBytes  = 1_000_000
   private val MaxFramePayloadBytes = MaxUploadChunkBytes + 1024
   private val secureRandom         = SecureRandom()
+
+  private[scalive] trait RuntimeObserverFactory:
+    def connect(request: Request): RuntimeObserver
+
+  private object RuntimeObserverFactory:
+    val logging: RuntimeObserverFactory = new RuntimeObserverFactory:
+      def connect(request: Request): RuntimeObserver = RuntimeObserver.logging
 
   /** Stable browser-page identity used by both HTTP bootstrap tokens and websocket joins. */
   private[scalive] def canonicalUrl(url: URL): String =
@@ -99,14 +108,28 @@ object ZioHttp:
 
   /** Assembles the HTTP and websocket routes after synchronously validating the catalog. */
   def routes[R](application: LiveApplication[R], config: ZioHttpConfig): Routes[R, Nothing] =
+    routes(application, config, RuntimeObserverFactory.logging)
+
+  private[scalive] def routes[R](
+    application: LiveApplication[R],
+    config: ZioHttpConfig,
+    observerFactory: RuntimeObserverFactory
+  ): Routes[R, Nothing] =
     val catalog     = validate(application)
     val getRoutes   = catalog.map(_.getRoute(config))
-    val socketRoute = websocketRoute(application.socketPath, catalog, config)
+    val socketRoute = websocketRoute(application.socketPath, catalog, config, observerFactory)
     Routes.fromIterable(getRoutes :+ socketRoute)
 
   /** Assembles routes with the security value shared by Live and ordinary HTTP handlers. */
   def routes[R](application: LiveApplication[R], security: LiveSecurity): Routes[R, Nothing] =
     routes(application, security.config)
+
+  private[scalive] def routes[R](
+    application: LiveApplication[R],
+    security: LiveSecurity,
+    observerFactory: RuntimeObserverFactory
+  ): Routes[R, Nothing] =
+    routes(application, security.config, observerFactory)
 
   private[scalive] def validate[R](application: LiveApplication[R]): Vector[CompiledRoute[R]] =
     val sessionNames = application.routes.collect { case session: LiveSession[?] => session.name }
@@ -939,15 +962,19 @@ object ZioHttp:
   private def websocketRoute[R](
     socketPath: PathCodec[Unit],
     routes: Vector[CompiledRoute[R]],
-    config: ZioHttpConfig
+    config: ZioHttpConfig,
+    observerFactory: RuntimeObserverFactory
   ): Route[R, Nothing] =
     val pattern = RoutePattern(Method.GET, socketPath / "websocket")
     pattern -> handler { (request: Request) =>
       val csrfCookieValue = request.cookie(CsrfCookieName).map(_.content)
       val csrfToken       = request.queryParam("_csrf_token")
+      val observer        = observerFactory.connect(request)
       val socketHandler   = Handler.webSocket { channel =>
         ZIO
-          .scoped(runSocket(channel, routes, config, request, csrfCookieValue, csrfToken))
+          .scoped(
+            runSocket(channel, routes, config, request, csrfCookieValue, csrfToken, observer)
+          )
           .catchAllCause(_ =>
             ZIO.logError("Root websocket failed") *>
               channel.send(ChannelEvent.read(WebSocketFrame.close(1002, None))).ignore
@@ -963,6 +990,7 @@ object ZioHttp:
       )
       app.toResponse
     }
+  end websocketRoute
 
   final private case class JoinedLifecycle(
     topic: NestedTopic,
@@ -1053,12 +1081,27 @@ object ZioHttp:
     config: ZioHttpConfig,
     socketRequest: Request,
     csrfCookie: Option[String],
-    csrfToken: Option[String]
+    csrfToken: Option[String],
+    observer: RuntimeObserver
   ): ZIO[R & Scope, Throwable, Unit] =
     for
       writer <-
         SerialWriter.make[PhoenixEnvelope](PhysicalWriterSize) { envelope =>
-          channel.send(ChannelEvent.read(WebSocketFrame.text(PhoenixEnvelope.encode(envelope))))
+          val encoded = PhoenixEnvelope.encode(envelope)
+          val send    = channel.send(ChannelEvent.read(WebSocketFrame.text(encoded)))
+          observer.takeOutput(envelope) match
+            case None        => send
+            case Some(trace) =>
+              send
+                .foldCauseZIO(
+                  cause => observer.frameFailed(trace) *> ZIO.failCause(cause),
+                  _ =>
+                    observer.frame(
+                      trace,
+                      traceProtocol(envelope),
+                      encoded.getBytes(StandardCharsets.UTF_8).length
+                    )
+                )
         }
       supervisor <- ConnectionSupervisor.make(
                       connectionConfig,
@@ -1066,7 +1109,8 @@ object ZioHttp:
                         def issue(claims: NestedCredentialClaims) =
                           ZioHttpSecurity.issueNested(config, claims)
                       ,
-                      applicationId => NestedTopic(s"lv:$applicationId")
+                      applicationId => NestedTopic(s"lv:$applicationId"),
+                      observer
                     )
       joined       <- Ref.make(Map.empty[String, JoinedLifecycle])
       uploads      <- Ref.make(Map.empty[String, JoinedUpload])
@@ -1094,6 +1138,7 @@ object ZioHttp:
                               joined,
                               registration,
                               joinGate,
+                              observer,
                               writer,
                               joinRef,
                               ref,
@@ -1167,9 +1212,12 @@ object ZioHttp:
                   case ChannelEvent.ExceptionCaught(cause) => ZIO.fail(cause)
                   case _ => ZIO.fail(Exception("unsupported websocket frame"))
                 }
-      _ <- receive
-             .raceFirst(writer.awaitFailure.flatMap(ZIO.fail(_)))
-             .ensuring(RuntimeCleanup.all(Vector(supervisor.close, writer.close)))
+      _ <-
+        receive
+          .raceFirst(writer.awaitFailure.flatMap(ZIO.fail(_)))
+          .ensuring(
+            RuntimeCleanup.all(Vector(supervisor.close, writer.close, observer.failTransportFrames))
+          )
     yield ()
 
   private def collectUploadFrame(
@@ -1223,6 +1271,7 @@ object ZioHttp:
     joined: Ref[Map[String, JoinedLifecycle]],
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
     joinGate: Semaphore,
+    observer: RuntimeObserver,
     writer: SerialWriter[PhoenixEnvelope],
     joinRef: PhoenixRef,
     ref: PhoenixRef,
@@ -1241,6 +1290,7 @@ object ZioHttp:
                 supervisor,
                 joined,
                 registration,
+                observer,
                 writer,
                 effectiveRef,
                 joinRef,
@@ -1304,6 +1354,7 @@ object ZioHttp:
                       sink = lifecycleSink(
                                config,
                                csrfToken,
+                               observer,
                                writer,
                                renderedState,
                                projectionGate,
@@ -1401,6 +1452,7 @@ object ZioHttp:
     supervisor: ConnectionSupervisor,
     joined: Ref[Map[String, JoinedLifecycle]],
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
+    observer: RuntimeObserver,
     writer: SerialWriter[PhoenixEnvelope],
     effectiveRef: PhoenixRef.Value,
     joinRef: PhoenixRef,
@@ -1456,6 +1508,7 @@ object ZioHttp:
           sink = lifecycleSink(
                    config,
                    csrfToken,
+                   observer,
                    writer,
                    renderedState,
                    projectionGate,
@@ -1600,6 +1653,7 @@ object ZioHttp:
   private def lifecycleSink(
     config: ZioHttpConfig,
     csrfToken: Option[String],
+    observer: RuntimeObserver,
     writer: SerialWriter[PhoenixEnvelope],
     state: Ref[Option[PhoenixRenderedState]],
     projectionGate: Semaphore,
@@ -1609,199 +1663,213 @@ object ZioHttp:
     topic: String,
     acknowledgePatch: URL => Task[Unit]
   ): ConnectionOutput => Task[Unit] = output =>
-    projectionGate.withPermit {
-      def update(delta: RenderDelta): IO[Throwable, Json.Obj] =
-        state.modify { previous =>
-          val encoded: Either[Throwable, (PhoenixRenderedState, Json.Obj)] = previous match
-            case None =>
-              delta match
-                case RenderDelta.Replace(tree) =>
-                  PhoenixRenderedEncoder
-                    .initial(tree, csrfToken).left.map(error => Exception(error.toString))
-                case _ => Left(Exception("initial root output was not a replacement"))
-            case Some(current) =>
-              PhoenixRenderedEncoder
-                .update(current, delta).left.map(error => Exception(error.toString))
-          encoded match
-            case Right((next, json)) => Right(json) -> Some(next)
-            case Left(error)         => Left(error) -> previous
-        }.absolve
+    projectionGate
+      .withPermit {
+        def update(delta: RenderDelta): IO[Throwable, Json.Obj] =
+          state.modify { previous =>
+            val encoded: Either[Throwable, (PhoenixRenderedState, Json.Obj)] = previous match
+              case None =>
+                delta match
+                  case RenderDelta.Replace(tree) =>
+                    PhoenixRenderedEncoder
+                      .initial(tree, csrfToken).left.map(error => Exception(error.toString))
+                  case _ => Left(Exception("initial root output was not a replacement"))
+              case Some(current) =>
+                PhoenixRenderedEncoder
+                  .update(current, delta).left.map(error => Exception(error.toString))
+            encoded match
+              case Right((next, json)) => Right(json) -> Some(next)
+              case Left(error)         => Left(error) -> previous
+          }.absolve
 
-      output match
-        case ConnectionOutput.Joined(delta, effects) =>
-          update(delta)
-            .map(addEffects(_, effects)).flatMap(json =>
-              writer.offer(PhoenixOutput.join(joinRef, joinReplyRef, topic, json))
-            )
-        case ConnectionOutput.JoinedNavigation(delta, navigation, effects) =>
-          if navigation.kind.isPatch then
-            ZIO.fail(Exception(s"patch navigation ${navigation.kind} is unavailable during join"))
-          else
-            navigationJoinEnvelope(config, joinRef, joinReplyRef, topic, navigation).flatMap(
-              writer.offer
-            )
-        case ConnectionOutput.Reply(command, delta, effects) =>
-          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-            case Some((eventJoinRef, PhoenixRef.Null)) =>
-              update(delta)
-                .map(addEffects(_, effects)).flatMap(json =>
-                  writer.offer(PhoenixOutput.diff(eventJoinRef, topic, json))
-                )
-            case Some((eventJoinRef, eventRef)) =>
-              update(delta)
-                .map(addEffects(_, effects)).flatMap(json =>
-                  writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json))
-                )
-            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+        def offer(envelope: PhoenixEnvelope): Task[Unit] =
+          writer.offer(envelope)
+
+        def offerFinal(envelope: PhoenixEnvelope): Task[Unit] =
+          ZIO.suspendSucceed {
+            observer.bindFrame(output, envelope)
+            writer
+              .offer(envelope).foldCauseZIO(
+                cause => observer.failOutput(envelope) *> ZIO.failCause(cause),
+                _ => ZIO.unit
+              )
           }
-        case ConnectionOutput.ReplyWithPayload(command, delta, effects, reply) =>
-          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-            case Some((eventJoinRef, PhoenixRef.Null)) =>
-              update(delta)
-                .map(addEffects(_, effects)).flatMap(json =>
-                  writer.offer(PhoenixOutput.diff(eventJoinRef, topic, json))
-                )
-            case Some((eventJoinRef, eventRef)) =>
-              update(delta)
-                .map(addEffects(_, effects)).flatMap(json =>
-                  writer.offer(PhoenixOutput.eventReply(eventJoinRef, eventRef, topic, json, reply))
-                )
-            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
-          }
-        case ConnectionOutput.UploadReply(command, delta, effects, uploadReply) =>
-          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-            case Some((eventJoinRef, eventRef)) =>
-              update(delta).map(addEffects(_, effects)).flatMap { diff =>
-                uploadReply match
-                  case preflight: UploadPreflightView =>
-                    encodeUploadPreflight(config, preflight).flatMap { response =>
-                      val reply = writer.offer(
-                        PhoenixUploadProtocol.preflightReply(
+
+        output match
+          case ConnectionOutput.Joined(delta, effects) =>
+            update(delta)
+              .map(addEffects(_, effects)).flatMap(json =>
+                offerFinal(PhoenixOutput.join(joinRef, joinReplyRef, topic, json))
+              )
+          case ConnectionOutput.JoinedNavigation(delta, navigation, effects) =>
+            if navigation.kind.isPatch then
+              ZIO.fail(Exception(s"patch navigation ${navigation.kind} is unavailable during join"))
+            else
+              navigationJoinEnvelope(config, joinRef, joinReplyRef, topic, navigation).flatMap(
+                offerFinal
+              )
+          case ConnectionOutput.Reply(command, delta, effects) =>
+            correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+              case Some((eventJoinRef, PhoenixRef.Null)) =>
+                update(delta)
+                  .map(addEffects(_, effects)).flatMap(json =>
+                    offerFinal(PhoenixOutput.diff(eventJoinRef, topic, json))
+                  )
+              case Some((eventJoinRef, eventRef)) =>
+                update(delta)
+                  .map(addEffects(_, effects)).flatMap(json =>
+                    offerFinal(PhoenixOutput.event(eventJoinRef, eventRef, topic, json))
+                  )
+              case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+            }
+          case ConnectionOutput.ReplyWithPayload(command, delta, effects, reply) =>
+            correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+              case Some((eventJoinRef, PhoenixRef.Null)) =>
+                update(delta)
+                  .map(addEffects(_, effects)).flatMap(json =>
+                    offerFinal(PhoenixOutput.diff(eventJoinRef, topic, json))
+                  )
+              case Some((eventJoinRef, eventRef)) =>
+                update(delta)
+                  .map(addEffects(_, effects)).flatMap(json =>
+                    offerFinal(
+                      PhoenixOutput.eventReply(eventJoinRef, eventRef, topic, json, reply)
+                    )
+                  )
+              case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+            }
+          case ConnectionOutput.UploadReply(command, delta, effects, uploadReply) =>
+            correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+              case Some((eventJoinRef, eventRef)) =>
+                update(delta).map(addEffects(_, effects)).flatMap { diff =>
+                  uploadReply match
+                    case preflight: UploadPreflightView =>
+                      encodeUploadPreflight(config, preflight).flatMap { response =>
+                        val reply = PhoenixUploadProtocol.preflightReply(
                           eventJoinRef,
                           eventRef,
                           topic,
                           response
                         )
+                        if diff.fields.isEmpty then offerFinal(reply)
+                        else
+                          offer(reply) *>
+                            offerFinal(PhoenixOutput.diff(joinRef, topic, diff))
+                      }
+                    case UploadControlError(reason) =>
+                      offerFinal(
+                        PhoenixOutput.error(
+                          eventJoinRef,
+                          eventRef,
+                          topic,
+                          Json.Obj("reason" -> Json.Str(reason))
+                        )
                       )
-                      val pushedEffects = ZIO
-                        .when(diff.fields.nonEmpty)(
-                          writer.offer(PhoenixOutput.diff(joinRef, topic, diff))
-                        ).unit
-                      reply *> pushedEffects
-                    }
-                  case UploadControlError(reason) =>
-                    writer.offer(
-                      PhoenixOutput.error(
+                }
+              case None => ZIO.fail(Exception(s"missing upload correlation ${command.value}"))
+            }
+          case ConnectionOutput.ReplyNavigation(command, delta, navigation, effects) =>
+            correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+              case Some((eventJoinRef, PhoenixRef.Null)) =>
+                update(delta)
+                  .map(addEffects(_, effects)).flatMap { json =>
+                    val diff = ZIO.when(json.fields.nonEmpty)(
+                      offer(PhoenixOutput.diff(eventJoinRef, topic, json))
+                    )
+                    if navigation.kind.isPatch then
+                      diff *> offerFinal(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                        acknowledgePatch(navigation.destination)
+                    else
+                      diff *> navigationEventEnvelope(config, eventJoinRef, topic, navigation)
+                        .flatMap(
+                          offerFinal
+                        )
+                  }
+              case Some((eventJoinRef, eventRef)) =>
+                update(delta)
+                  .map(addEffects(_, effects)).flatMap(json =>
+                    if navigation.kind.isPatch then
+                      offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json)) *>
+                        offerFinal(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                        acknowledgePatch(navigation.destination)
+                    else
+                      navigationReplyEnvelope(
+                        config,
                         eventJoinRef,
                         eventRef,
                         topic,
-                        Json.Obj("reason" -> Json.Str(reason))
-                      )
+                        navigation,
+                        Option.when(json.fields.nonEmpty)(json)
+                      ).flatMap(offerFinal)
+                  )
+              case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+            }
+          case ConnectionOutput.ReplyNavigationWithPayload(
+                command,
+                delta,
+                navigation,
+                effects,
+                reply
+              ) =>
+            correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+              case Some((eventJoinRef, PhoenixRef.Null)) =>
+                update(delta)
+                  .map(addEffects(_, effects)).flatMap { json =>
+                    val diff = ZIO.when(json.fields.nonEmpty)(
+                      offer(PhoenixOutput.diff(eventJoinRef, topic, json))
                     )
-              }
-            case None => ZIO.fail(Exception(s"missing upload correlation ${command.value}"))
-          }
-        case ConnectionOutput.ReplyNavigation(command, delta, navigation, effects) =>
-          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-            case Some((eventJoinRef, PhoenixRef.Null)) =>
-              update(delta)
-                .map(addEffects(_, effects)).flatMap { json =>
-                  val diff = ZIO.when(json.fields.nonEmpty)(
-                    writer.offer(PhoenixOutput.diff(eventJoinRef, topic, json))
+                    if navigation.kind.isPatch then
+                      diff *> offerFinal(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                        acknowledgePatch(navigation.destination)
+                    else
+                      diff *> navigationEventEnvelope(config, eventJoinRef, topic, navigation)
+                        .flatMap(offerFinal)
+                  }
+              case Some((eventJoinRef, eventRef)) =>
+                update(delta)
+                  .map(addEffects(_, effects)).flatMap(json =>
+                    val response =
+                      PhoenixOutput.eventReply(eventJoinRef, eventRef, topic, json, reply)
+                    if navigation.kind.isPatch then
+                      offer(response) *>
+                        offerFinal(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                        acknowledgePatch(navigation.destination)
+                    else
+                      offer(response) *>
+                        navigationEventEnvelope(config, eventJoinRef, topic, navigation)
+                          .flatMap(offerFinal)
                   )
-                  if navigation.kind.isPatch then
-                    diff *> writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
-                      acknowledgePatch(navigation.destination)
-                  else
-                    diff *> navigationEventEnvelope(config, eventJoinRef, topic, navigation)
-                      .flatMap(
-                        writer.offer
-                      )
-                }
-            case Some((eventJoinRef, eventRef)) =>
-              update(delta)
-                .map(addEffects(_, effects)).flatMap(json =>
-                  if navigation.kind.isPatch then
-                    writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json)) *>
-                      writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
-                      acknowledgePatch(navigation.destination)
-                  else
-                    navigationReplyEnvelope(
-                      config,
-                      eventJoinRef,
-                      eventRef,
-                      topic,
-                      navigation,
-                      Option.when(json.fields.nonEmpty)(json)
-                    ).flatMap(writer.offer)
-                )
-            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
-          }
-        case ConnectionOutput.ReplyNavigationWithPayload(
-              command,
-              delta,
-              navigation,
-              effects,
-              reply
-            ) =>
-          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-            case Some((eventJoinRef, PhoenixRef.Null)) =>
-              update(delta)
-                .map(addEffects(_, effects)).flatMap { json =>
-                  val diff = ZIO.when(json.fields.nonEmpty)(
-                    writer.offer(PhoenixOutput.diff(eventJoinRef, topic, json))
+              case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+            }
+          case ConnectionOutput.Rejected(command, _) =>
+            correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+              case Some((_, PhoenixRef.Null))     => ZIO.unit
+              case Some((eventJoinRef, eventRef)) =>
+                offerFinal(PhoenixOutput.error(eventJoinRef, eventRef, topic, staleReason))
+              case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+            }
+          case ConnectionOutput.Diff(delta, effects) =>
+            update(delta)
+              .map(addEffects(_, effects)).flatMap(json =>
+                offerFinal(PhoenixOutput.diff(joinRef, topic, json))
+              )
+          case ConnectionOutput.DiffNavigation(delta, navigation, effects) =>
+            update(delta)
+              .map(addEffects(_, effects)).flatMap(json =>
+                val diff =
+                  ZIO.when(json.fields.nonEmpty)(
+                    offer(PhoenixOutput.diff(joinRef, topic, json))
                   )
-                  if navigation.kind.isPatch then
-                    diff *> writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
-                      acknowledgePatch(navigation.destination)
-                  else
-                    diff *> navigationEventEnvelope(config, eventJoinRef, topic, navigation)
-                      .flatMap(writer.offer)
-                }
-            case Some((eventJoinRef, eventRef)) =>
-              update(delta)
-                .map(addEffects(_, effects)).flatMap(json =>
-                  writer.offer(
-                    PhoenixOutput.eventReply(eventJoinRef, eventRef, topic, json, reply)
-                  ) *>
-                    (if navigation.kind.isPatch then
-                       writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
-                         acknowledgePatch(navigation.destination)
-                     else
-                       navigationEventEnvelope(config, eventJoinRef, topic, navigation)
-                         .flatMap(writer.offer))
-                )
-            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
-          }
-        case ConnectionOutput.Rejected(command, _) =>
-          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
-            case Some((_, PhoenixRef.Null))     => ZIO.unit
-            case Some((eventJoinRef, eventRef)) =>
-              writer.offer(PhoenixOutput.error(eventJoinRef, eventRef, topic, staleReason))
-            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
-          }
-        case ConnectionOutput.Diff(delta, effects) =>
-          update(delta)
-            .map(addEffects(_, effects)).flatMap(json =>
-              writer.offer(PhoenixOutput.diff(joinRef, topic, json))
-            )
-        case ConnectionOutput.DiffNavigation(delta, navigation, effects) =>
-          update(delta)
-            .map(addEffects(_, effects)).flatMap(json =>
-              val diff =
-                ZIO.when(json.fields.nonEmpty)(
-                  writer.offer(PhoenixOutput.diff(joinRef, topic, json))
-                )
-              if navigation.kind.isPatch then
-                diff *> writer.offer(patchEnvelope(joinRef, topic, navigation)) *>
-                  acknowledgePatch(navigation.destination)
-              else
-                diff *> navigationEventEnvelope(config, joinRef, topic, navigation).flatMap(
-                  writer.offer
-                )
-            )
-      end match
-    }
+                if navigation.kind.isPatch then
+                  diff *> offerFinal(patchEnvelope(joinRef, topic, navigation)) *>
+                    acknowledgePatch(navigation.destination)
+                else
+                  diff *> navigationEventEnvelope(config, joinRef, topic, navigation).flatMap(
+                    offerFinal
+                  )
+              )
+        end match
+      }.tapError(_ => observer.failOutput(output))
 
   private def encodeUploadPreflight(
     config: ZioHttpConfig,
@@ -2508,9 +2576,32 @@ object ZioHttp:
             else true                                         -> current.updated(command, eventRefs)
           }.flatMap {
             case false => ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
-            case true  => offer(command).onError(_ => joined.correlations.update(_ - command))
+            case true  =>
+              joined.connection
+                .correlateBrowserTrace(
+                  command,
+                  traceReference(eventRefs._1),
+                  traceReference(eventRefs._2)
+                ) *>
+                offer(command).onError(_ =>
+                  joined.correlations.update(_ - command) *>
+                    ZIO.succeed(joined.connection.cancelTrace(command))
+                )
           }
     }
+
+  private def traceReference(reference: PhoenixRef): Option[String] = reference match
+    case PhoenixRef.Null         => None
+    case PhoenixRef.Value(value) => Some(value)
+
+  private def traceProtocol(envelope: PhoenixEnvelope): Json =
+    Json.Obj(
+      "joinReference"    -> traceReference(envelope.joinRef).fold[Json](Json.Null)(Json.Str(_)),
+      "messageReference" -> traceReference(envelope.ref).fold[Json](Json.Null)(Json.Str(_)),
+      "topic"            -> Json.Str(envelope.topic),
+      "event"            -> Json.Str(envelope.event),
+      "payload"          -> envelope.payload
+    )
 
   private def enqueueUncorrelated(
     joined: JoinedLifecycle
@@ -2555,9 +2646,18 @@ object ZioHttp:
               _ <-
                 if accepted then
                   joined.connection
-                    .patch(command, destination)
-                    .tap(_ => joined.currentUrl.set(destination))
-                    .onError(_ => joined.correlations.update(_ - command))
+                    .correlateBrowserTrace(
+                      command,
+                      traceReference(eventRefs._1),
+                      traceReference(eventRefs._2)
+                    ) *>
+                    joined.connection
+                      .patch(command, destination)
+                      .tap(_ => joined.currentUrl.set(destination))
+                      .onError(_ =>
+                        joined.correlations.update(_ - command) *>
+                          ZIO.succeed(joined.connection.cancelTrace(command))
+                      )
                 else ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
             yield ()
           case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))

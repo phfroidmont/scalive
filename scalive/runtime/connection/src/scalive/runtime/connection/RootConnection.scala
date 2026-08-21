@@ -775,7 +775,10 @@ final private[scalive] class RootConnection[Msg, Model] private (
       }
 
   private def reject(command: CommandId, rejection: SessionRejection): UIO[Unit] =
-    closing.isDone.flatMap {
+    observer.reject(
+      RuntimeCorrelation(connectionId, lifecycle, epoch, command = Some(command)),
+      s"Runtime command rejected: ${rejection.getClass.getSimpleName}"
+    ) *> closing.isDone.flatMap {
       case true  => complete(command, Left(ConnectionError.Closed))
       case false =>
         rejection match
@@ -881,6 +884,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
                   awaitEarlierCommands(command)
                 case _ => ZIO.unit
 
+              observer.bindOutput(output, connectionOutput)
               ordered *> writer
                 .send(connectionOutput).foldZIO(
                   error =>
@@ -1057,7 +1061,8 @@ private[scalive] object RootConnection:
     requestedLifecycle: Option[LifecycleId] = None,
     providedConnection: Option[ConnectionId] = None,
     observer: RuntimeObserver = RuntimeObserver.noop,
-    closeAfterNavigate: Boolean = true
+    closeAfterNavigate: Boolean = true,
+    topic: Option[NestedTopic] = None
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     startLifecycle(
       config,
@@ -1069,7 +1074,8 @@ private[scalive] object RootConnection:
       requestedLifecycle,
       providedConnection,
       observer,
-      closeAfterNavigate
+      closeAfterNavigate,
+      topic
     )
 
   def startLifecycle[Msg, Model](
@@ -1082,7 +1088,8 @@ private[scalive] object RootConnection:
     requestedLifecycle: Option[LifecycleId] = None,
     providedConnection: Option[ConnectionId] = None,
     observer: RuntimeObserver = RuntimeObserver.noop,
-    closeAfterNavigate: Boolean = true
+    closeAfterNavigate: Boolean = true,
+    topic: Option[NestedTopic] = None
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
@@ -1102,6 +1109,16 @@ private[scalive] object RootConnection:
                              )
                            )
                        )(ZIO.succeed(_))
+        _ <- ZIO.succeed {
+               topic.foreach(value =>
+                 observer.registerLifecycle(
+                   lifecycleId,
+                   value.value,
+                   _.asInstanceOf[RootState[Msg, Model]].model
+                 )
+               )
+             }
+        _ <- ZIO.addFinalizer(ZIO.succeed(observer.unregisterLifecycle(lifecycleId)))
         rootOwner = OwnerId.Root(lifecycleId)
         program <- ZIO.acquireRelease(
                      ZIO

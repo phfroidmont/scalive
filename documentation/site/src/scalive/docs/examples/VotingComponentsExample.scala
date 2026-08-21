@@ -68,12 +68,14 @@ object VoteComponent
           button(
             cls := "docs-vote-primary",
             typ := "button",
+            phx.target(self),
             on.click.to(self)(Msg.Vote),
             "Vote"
           ),
           button(
             cls := "docs-vote-secondary",
             typ := "button",
+            phx.target(self),
             on.click.to(self)(Msg.Reset),
             "Reset"
           )

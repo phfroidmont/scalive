@@ -7,7 +7,7 @@ import scalive.*
 import scalive.docs.auth.{AuthHttpRoutes, AuthLab, AuthLabRoutes, AuthService}
 import scalive.docs.examples.{ExampleRegistry, Reports, ReportsExample}
 import scalive.docs.model.*
-import scalive.docs.xray.DocumentationTraceStore
+import scalive.docs.xray.{DocumentationRuntimeObserverFactory, DocumentationTraceStore}
 
 final private[docs] case class DocumentationPageEntry(
   page: Page,
@@ -143,7 +143,10 @@ final private[docs] class DocumentationApplication private (
       AuthLab.protectedSession(authService)
     ) ++ fragments
     val application = router((homeRoute +: supplementalRoutes)*)
-    ZioHttp.routes(application, security) ++
+    val liveRoutes  = traceStore.fold(ZioHttp.routes(application, security))(store =>
+      ZioHttp.routes(application, security, DocumentationRuntimeObserverFactory(store))
+    )
+    liveRoutes ++
       AuthHttpRoutes(authService, security).routes ++
       DocumentationMetadataRoutes.routes(this, config.publicOrigin)
   end routes

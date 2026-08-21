@@ -16,10 +16,6 @@ const sensitiveFragments = [
   "redirect",
 ]
 
-function resolveParams(params) {
-  return typeof params === "function" ? params() : params || {}
-}
-
 function isSensitive(name) {
   const normalized = name.toLowerCase()
   return sensitiveFragments.some((fragment) => normalized.includes(fragment))
@@ -43,6 +39,13 @@ function sanitizeValue(value, fieldName = null) {
     )
   }
   return redacted
+}
+
+function encodedByteSize(value) {
+  if (typeof value === "string") return new TextEncoder().encode(value).byteLength
+  if (value instanceof ArrayBuffer) return value.byteLength
+  if (ArrayBuffer.isView(value)) return value.byteLength
+  return null
 }
 
 export function sanitizeProtocol(message) {
@@ -87,14 +90,8 @@ export function wrapDecoder(decode, observer) {
 export class LiveTraceSocket extends Socket {
   constructor(endpoint, options = {}) {
     const adapter = options.liveTraceAdapter
-    const traceSession = options.liveTraceSession
-    const transportParams = () => ({
-      ...resolveParams(options.params),
-      ...(traceSession ? { [traceSessionParameter]: traceSession } : {}),
-    })
     super(endpoint, {
       ...options,
-      params: transportParams,
       encode: adapter
         ? wrapEncoder(Serializer.encode.bind(Serializer), adapter.observeOutbound)
         : options.encode,
@@ -157,7 +154,7 @@ export function createLiveTraceAdapter() {
     return Number.isSafeInteger(reference) ? reference : nextSequence(`${message.topic}:operation`)
   }
 
-  function enqueue(topic, stage, summary, message, protocol = null) {
+  function enqueue(topic, stage, summary, message, protocol = null, byteSize = null) {
     if (!registrations.has(topic)) return
     const records = pending.get(topic) || []
     records.push({
@@ -169,6 +166,7 @@ export function createLiveTraceAdapter() {
       stage,
       summary,
       protocol,
+      byteSize,
     })
     pending.set(topic, records)
     if (!flushScheduled) {
@@ -242,13 +240,26 @@ export function createLiveTraceAdapter() {
     if (message.event === "event") {
       enqueue(message.topic, "BrowserEvent", "Browser event sent", message)
     }
-    enqueue(message.topic, "OutboundFrame", "Outbound protocol frame encoded", message, sanitizeProtocol(message))
+    enqueue(
+      message.topic,
+      "OutboundFrame",
+      "Outbound protocol frame encoded",
+      message,
+      sanitizeProtocol(message),
+    )
   }
 
-  function beginInbound(message, _raw) {
+  function beginInbound(message, raw) {
     inboundMessage = registrations.has(message.topic) ? message : null
     if (inboundMessage) {
-      enqueue(message.topic, "InboundFrame", "Inbound protocol frame decoded", message, sanitizeProtocol(message))
+      enqueue(
+        message.topic,
+        "InboundFrame",
+        "Inbound protocol frame decoded",
+        message,
+        sanitizeProtocol(message),
+        encodedByteSize(raw),
+      )
     }
   }
 

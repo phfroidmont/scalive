@@ -13,6 +13,7 @@ import zio.stream.ZStream
 
 import scalive.*
 import scalive.docs.examples.RegisteredExample
+import scalive.runtime.kernel.*
 
 final private[docs] case class TraceLimits(
   maxRecords: Int = 200,
@@ -66,7 +67,8 @@ final private[docs] case class BrowserTraceRecord(
   operationSequence: Long,
   stage: String,
   summary: String,
-  protocol: Option[Json] = None)
+  protocol: Option[Json] = None,
+  byteSize: Option[Int] = None)
     derives JsonCodec
 
 final private[docs] case class BrowserTraceBatch(records: Vector[BrowserTraceRecord])
@@ -98,6 +100,7 @@ final private[docs] class DocumentationTraceStore private (
     private var values                 = Vector.empty[DocumentationTraceRecord]
     private var bytes                  = 0
     private var lastBrowserSequence    = 0L
+    private val nextServerSequence     = AtomicLong(0L)
     private val accessSequence         = AtomicLong(0L)
     private val interactionOrdinals    = mutable.LinkedHashMap.empty[String, InteractionOrdinal]
     private val serverOrdinals         = mutable.LinkedHashMap.empty[ServerOperation, Long]
@@ -107,6 +110,51 @@ final private[docs] class DocumentationTraceStore private (
     def lastAccess: Long = accessSequence.get()
 
     private def touch(): Unit = accessSequence.set(nextStoreAccess.incrementAndGet())
+
+    def appendServer(record: RuntimeTraceRecord): Boolean = synchronized {
+      touch()
+      val identity         = record.identity
+      val joinReference    = safeReference(identity.joinReference)
+      val messageReference = safeReference(identity.messageReference)
+      val value            = DocumentationTraceRecord(
+        producer = TraceProducer.Server,
+        producerSequence = nextServerSequence.incrementAndGet(),
+        traceSession = identity.traceSession,
+        connectionEpoch = Some(identity.connectionEpoch),
+        socketEpoch = Some(identity.socketEpoch),
+        topic = identity.topic,
+        joinReference = joinReference,
+        messageReference = messageReference,
+        operationSequence = identity.operationSequence,
+        operationKind = operationKind(identity.operationKind),
+        operationRecordSequence = record.recordSequence,
+        stage = stageName(record.stage),
+        summary = record.summary,
+        value = record.value.map(value =>
+          DocumentationTraceValue(value.typeName, value.summary, value.fields, value.scalaValue)
+        ),
+        protocol = record.protocol.map(DocumentationTraceSanitizer.structure),
+        byteSize = record.byteSize,
+        initiator = identity.initiator match
+          case RuntimeTraceInitiator.Browser                 => DocumentationTraceInitiator.Browser
+          case RuntimeTraceInitiator.Runtime                 => DocumentationTraceInitiator.Runtime
+          case RuntimeTraceInitiator.Component(typeName, id) =>
+            DocumentationTraceInitiator.Component(typeName, id),
+        interactionOrdinal = interactionOrdinal(
+          correlationReference(joinReference, messageReference),
+          browserStart = false,
+          serverOperation = Some(
+            ServerOperation(
+              identity.connectionEpoch,
+              identity.socketEpoch,
+              identity.operationSequence
+            )
+          ),
+          browserFallbackStart = false
+        )
+      )
+      append(value)
+    }
 
     def appendBrowser(session: String, record: BrowserTraceRecord): Boolean = synchronized {
       if record.sequence <= lastBrowserSequence then false
@@ -132,7 +180,7 @@ final private[docs] class DocumentationTraceStore private (
             summary = summary,
             value = None,
             protocol = record.protocol.map(DocumentationTraceSanitizer.structure),
-            byteSize = None,
+            byteSize = record.byteSize.filter(value => value >= 0 && value <= limits.maxBytes),
             initiator = DocumentationTraceInitiator.Browser,
             interactionOrdinal = interactionOrdinal(
               correlationReference(safeReference(record.joinReference), messageReference),
@@ -291,6 +339,7 @@ final private[docs] class DocumentationTraceStore private (
 
   private val active           = ConcurrentHashMap[TraceKey, RegisteredExample]()
   private val histories        = ConcurrentHashMap[TraceKey, History]()
+  private val connectionEpochs = ConcurrentHashMap[String, AtomicLong]()
   private val owners           = ConcurrentHashMap[TraceKey, java.util.Set[String]]()
   private val leaseGenerations = ConcurrentHashMap[TraceKey, AtomicLong]()
   private val nextStoreAccess  = AtomicLong(0L)
@@ -308,6 +357,10 @@ final private[docs] class DocumentationTraceStore private (
               evicted += entry.getKey
               histories.remove(entry.getKey)
               active.remove(entry.getKey)
+              val sessionStillStored = histories
+                .keySet().asScala.exists(_.traceSession == entry.getKey.traceSession)
+              if !sessionStillStored then
+                val _ = connectionEpochs.remove(entry.getKey.traceSession)
           }
         val created = History()
         histories.put(key, created)
@@ -320,6 +373,7 @@ final private[docs] class DocumentationTraceStore private (
       evicted <- ZIO.succeed {
                    val (_, removed) = this.synchronized {
                      val result = history(key)
+                     connectionEpochs.putIfAbsent(session, AtomicLong(1L))
                      active.put(key, example)
                      result
                    }
@@ -340,6 +394,12 @@ final private[docs] class DocumentationTraceStore private (
 
   def isActive(session: String, topic: String): Boolean =
     active.containsKey(TraceKey(session, topic))
+
+  def registered(session: String, topic: String): Option[RegisteredExample] =
+    Option(active.get(TraceKey(session, topic)))
+
+  def nextConnectionEpoch(session: String): Long =
+    Option(connectionEpochs.get(session)).fold(1L)(_.incrementAndGet())
 
   def attach(session: String, topic: String, owner: String): UIO[Unit] =
     ZIO.succeed {
@@ -393,6 +453,17 @@ final private[docs] class DocumentationTraceStore private (
         }
       }.flatMap(appended => ZIO.when(appended)(updatesHub.publish(key).unit)).unit
 
+  def appendServer(record: RuntimeTraceRecord): UIO[Unit] =
+    val key = TraceKey(record.identity.traceSession, record.identity.topic)
+    ZIO
+      .succeed {
+        this.synchronized {
+          Option(active.get(key)).nonEmpty && Option(histories.get(key)).exists(
+            _.appendServer(record)
+          )
+        }
+      }.flatMap(appended => ZIO.when(appended)(updatesHub.publish(key).unit)).unit
+
   def records(session: String, topic: String): UIO[Vector[DocumentationTraceRecord]] =
     ZIO.succeed(Option(histories.get(TraceKey(session, topic))).fold(Vector.empty)(_.snapshot))
 
@@ -430,6 +501,34 @@ final private[docs] class DocumentationTraceStore private (
     messageReference.map(reference =>
       s"join:${joinReference.getOrElse("none")}:reference:$reference"
     )
+
+  private def operationKind(value: RuntimeTraceOperationKind): String = value match
+    case RuntimeTraceOperationKind.Join            => "Join"
+    case RuntimeTraceOperationKind.ClientEvent     => "ClientEvent"
+    case RuntimeTraceOperationKind.ServerMessage   => "ServerMessage"
+    case RuntimeTraceOperationKind.AsyncCompletion => "AsyncCompletion"
+    case RuntimeTraceOperationKind.LivePatch       => "LivePatch"
+    case RuntimeTraceOperationKind.Upload          => "Upload"
+    case RuntimeTraceOperationKind.Leave           => "Leave"
+    case RuntimeTraceOperationKind.Other           => "Other"
+
+  private def stageName(value: RuntimeTraceStage): String = value match
+    case RuntimeTraceStage.SocketJoin         => "SocketJoin"
+    case RuntimeTraceStage.DecodedEvent       => "DecodedEvent"
+    case RuntimeTraceStage.BindingResolution  => "BindingResolution"
+    case RuntimeTraceStage.TypedMessage       => "TypedMessage"
+    case RuntimeTraceStage.LifecycleStarted   => "LifecycleStarted"
+    case RuntimeTraceStage.LifecycleCompleted => "LifecycleCompleted"
+    case RuntimeTraceStage.ModelProposed      => "ModelProposed"
+    case RuntimeTraceStage.RenderStarted      => "RenderStarted"
+    case RuntimeTraceStage.ModelRendered      => "ModelRendered"
+    case RuntimeTraceStage.RenderCompleted    => "RenderCompleted"
+    case RuntimeTraceStage.TreeDiff           => "TreeDiff"
+    case RuntimeTraceStage.ModelCommitted     => "ModelCommitted"
+    case RuntimeTraceStage.FinalPayload       => "FinalPayload"
+    case RuntimeTraceStage.FinalFrame         => "FinalFrame"
+    case RuntimeTraceStage.Crash              => "Crash"
+    case RuntimeTraceStage.Upload             => "Upload"
 
 end DocumentationTraceStore
 

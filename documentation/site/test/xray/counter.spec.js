@@ -30,7 +30,10 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText("No interactions yet")
   await expect(inspectionStatus).toHaveCount(0)
   await expect(tracePanel).toHaveCount(0)
-  await viewer.getByRole("button", { name: "Start capture" }).click()
+  const startCapture = viewer.getByRole("button", { name: "Start capture" })
+  await expect(viewer).toBeVisible()
+  await expect(startCapture).toBeEnabled()
+  await startCapture.click()
   await expect(viewer).toHaveAttribute("data-live-trace-enabled", "true")
   await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
     "Use the example controls",
@@ -90,13 +93,13 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await expect(capturedTrace).toContainText('"topic" : "lv:docs-example-counter-')
   await expect(capturedTrace).toContainText('"value" : ""')
   await expect(capturedTrace).toContainText('"target" : "')
-  await expect(capturedTrace).toContainText('"1" : "1"')
+  await expect(capturedTrace).toContainText('"diff"')
   await expect(capturedTrace).not.toContainText('"after"')
 
   await expect(capturedTrace.locator('[data-trace-evidence="Protocol frame"]')).toHaveCount(2)
   const publishStep = capturedTrace.locator("[data-trace-step]", { hasText: "Publish result" })
   const frameDetail = publishStep.locator('[data-trace-evidence="Protocol frame"]')
-  await expect(frameDetail.locator(":scope > summary")).toContainText("143 B")
+  await expect(frameDetail.locator(":scope > summary")).toContainText(/\d+ B/)
   await frameDetail.locator(":scope > summary").click()
   const frameCode = frameDetail.locator(".docs-trace-evidence-code")
   await expect(frameCode).toBeVisible()

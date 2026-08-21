@@ -254,37 +254,43 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private[kernel] def run(ready: Promise[SessionFailure, Unit]): UIO[Unit] =
     val bootstrapping: SessionState[Msg, Model] = SessionState.Bootstrapping(epoch)
-    val bootstrap = phase(SessionStage.BootstrapHandler)(logic.bootstrap).flatMap { draft =>
-      draft.navigation match
-        case Some(request) if request.kind.isPatch =>
-          ZIO.fail(
-            SessionFailure.StageFailed(
-              SessionStage.Validation,
-              s"patch navigation ${request.kind} is unavailable during bootstrap"
+    val bootstrap                               = observer.beginInternal(
+      lifecycle,
+      RuntimeTraceOperationKind.Join,
+      RuntimeTraceInitiator.Browser,
+      None
+    ) *>
+      phase(SessionStage.BootstrapHandler)(logic.bootstrap).flatMap { draft =>
+        draft.navigation match
+          case Some(request) if request.kind.isPatch =>
+            ZIO.fail(
+              SessionFailure.StageFailed(
+                SessionStage.Validation,
+                s"patch navigation ${request.kind} is unavailable during bootstrap"
+              )
             )
-          )
-        case Some(_) =>
-          publishTerminalNavigation(draft, None, existingContinuations = 0).map(Right(_))
-        case None =>
-          runTurn(
-            previous = None,
-            draft = ZIO.succeed(draft),
-            work = ImmutableQueue.empty,
-            command = None
-          ).flatMap {
-            case StagedTurn.Committed(outcome)    => ZIO.succeed(Left(outcome))
-            case StagedTurn.Navigation(candidate) =>
-              if candidate.draft.navigation.exists(_.kind.isPatch) then
-                discardCandidate(candidate) *>
-                  ZIO.fail(
-                    SessionFailure.StageFailed(
-                      SessionStage.Validation,
-                      "patch navigation is unavailable during bootstrap"
+          case Some(_) =>
+            publishTerminalNavigation(draft, None, existingContinuations = 0).map(Right(_))
+          case None =>
+            runTurn(
+              previous = None,
+              draft = ZIO.succeed(draft),
+              work = ImmutableQueue.empty,
+              command = None
+            ).flatMap {
+              case StagedTurn.Committed(outcome)    => ZIO.succeed(Left(outcome))
+              case StagedTurn.Navigation(candidate) =>
+                if candidate.draft.navigation.exists(_.kind.isPatch) then
+                  discardCandidate(candidate) *>
+                    ZIO.fail(
+                      SessionFailure.StageFailed(
+                        SessionStage.Validation,
+                        "patch navigation is unavailable during bootstrap"
+                      )
                     )
-                  )
-              else publishCandidateTerminal(candidate, None).map(Right(_))
-          }
-    }
+                else publishCandidateTerminal(candidate, None).map(Right(_))
+            }
+      }
 
     controlled(bootstrap).exit
       .flatMap {
@@ -339,21 +345,40 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]]
   ): UIO[Unit] =
     work.dequeueOption match
-      case Some((Work.Continuation(message), remaining)) =>
-        executeTurn(state, remaining, logic.handle(state.committed.model, message), None)
-      case Some((Work.ComponentContinuation(component, message), remaining)) =>
-        executeComponentTurn(state, remaining, component, ComponentAction.Message(message), None)
+      case Some((Work.Continuation(message, initiator), remaining)) =>
+        observer.beginInternal(
+          lifecycle,
+          RuntimeTraceOperationKind.ServerMessage,
+          initiator,
+          Some(message)
+        ) *>
+          executeTurn(state, remaining, logic.handle(state.committed.model, message), None)
+      case Some((Work.ComponentContinuation(component, message, initiator), remaining)) =>
+        observer.beginInternal(
+          lifecycle,
+          RuntimeTraceOperationKind.ServerMessage,
+          initiator,
+          Some(message)
+        ) *>
+          executeComponentTurn(state, remaining, component, ComponentAction.Message(message), None)
       case Some((Work.ManagedAsyncContinuation(owner, completion), remaining)) =>
-        owner match
-          case OwnerId.Root(_) => executeManagedRootAsync(state, remaining, completion, None, None)
-          case OwnerId.Component(_, component) =>
-            executeComponentTurn(
-              state,
-              remaining,
-              component,
-              ComponentAction.ManagedAsync(completion),
-              None
-            )
+        observer.beginInternal(
+          lifecycle,
+          RuntimeTraceOperationKind.AsyncCompletion,
+          RuntimeTraceInitiator.Runtime,
+          Some(completion.message)
+        ) *>
+          (owner match
+            case OwnerId.Root(_) =>
+              executeManagedRootAsync(state, remaining, completion, None, None)
+            case OwnerId.Component(_, component) =>
+              executeComponentTurn(
+                state,
+                remaining,
+                component,
+                ComponentAction.ManagedAsync(completion),
+                None
+              ))
       case Some((Work.Correlated(deferred), remaining)) =>
         executeEnvelope(state, remaining, deferred.command, deferred.input, deferred.response)
       case None =>
@@ -407,7 +432,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       val handled = (logic.handleEvent, client.event) match
                         case (Some(handler), Some(event)) => handler(draft, message, event)
                         case _                            => logic.handle(draft.model, message)
-                      executeTurn(state, work, handled, Some(tracked))
+                      observer.message(commandCorrelation(state.epoch, commandId), message) *>
+                        executeTurn(state, work, handled, Some(tracked))
                     case Right(ResolvedClient.Component(component, message)) =>
                       executeComponentTurn(
                         state,
@@ -427,12 +453,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   )
               }
             case SessionCommand.Message(_, message) =>
-              executeTurn(
-                state,
-                work,
-                logic.handleInfo.getOrElse(logic.handle)(state.committed.model, message),
-                Some(tracked)
-              )
+              observer.message(commandCorrelation(state.epoch, commandId), message) *>
+                executeTurn(
+                  state,
+                  work,
+                  logic.handleInfo.getOrElse(logic.handle)(state.committed.model, message),
+                  Some(tracked)
+                )
             case SessionCommand.AsyncCompletion(_, event) =>
               logic.handleAsync match
                 case Some(handler) =>
@@ -445,12 +472,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 case None =>
                   event.result match
                     case scalive.LiveAsyncResult.Succeeded(message) =>
-                      executeTurn(
-                        state,
-                        work,
-                        logic.handle(state.committed.model, message),
-                        Some(tracked)
-                      )
+                      observer.message(commandCorrelation(state.epoch, commandId), message) *>
+                        executeTurn(
+                          state,
+                          work,
+                          logic.handle(state.committed.model, message),
+                          Some(tracked)
+                        )
                     case _ =>
                       executeTurn(
                         state,
@@ -468,24 +496,25 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           case ResourceKey.Async(value) => value
                           case _                        => ""
                         val completion = ManagedAsyncCompletion(name, result, message)
-                        token.owner match
-                          case OwnerId.Root(_) =>
-                            executeManagedRootAsync(
-                              state,
-                              work,
-                              completion,
-                              Some(token),
-                              Some(tracked)
-                            )
-                          case OwnerId.Component(_, component) =>
-                            executeComponentTurn(
-                              state,
-                              work,
-                              component,
-                              ComponentAction.ManagedAsync(completion),
-                              Some(tracked),
-                              Vector(ResourceOperation.Complete(token))
-                            )
+                        observer.message(commandCorrelation(state.epoch, commandId), message) *>
+                          (token.owner match
+                            case OwnerId.Root(_) =>
+                              executeManagedRootAsync(
+                                state,
+                                work,
+                                completion,
+                                Some(token),
+                                Some(tracked)
+                              )
+                            case OwnerId.Component(_, component) =>
+                              executeComponentTurn(
+                                state,
+                                work,
+                                component,
+                                ComponentAction.ManagedAsync(completion),
+                                Some(tracked),
+                                Vector(ResourceOperation.Complete(token))
+                              ))
                       case Exit.Failure(cause) if cause.isInterruptedOnly =>
                         response.fail(SessionRejection.Terminal("closed")).unit
                       case Exit.Failure(cause) =>
@@ -502,15 +531,16 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 case Some(ManagedResource(_, _, ManagedResourceKind.Subscription(_))) =>
                   token.owner match
                     case OwnerId.Root(_) =>
-                      executeTurn(
-                        state,
-                        work,
-                        logic.handleInfo.getOrElse(logic.handle)(
-                          state.committed.model,
-                          message.asInstanceOf[Msg]
-                        ),
-                        Some(tracked)
-                      )
+                      observer.message(commandCorrelation(state.epoch, commandId), message) *>
+                        executeTurn(
+                          state,
+                          work,
+                          logic.handleInfo.getOrElse(logic.handle)(
+                            state.committed.model,
+                            message.asInstanceOf[Msg]
+                          ),
+                          Some(tracked)
+                        )
                     case OwnerId.Component(_, _) =>
                       response.fail(SessionRejection.StaleResource(token)).unit *>
                         loop(state, work)
@@ -597,6 +627,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               response.fail(SessionRejection.UnexpectedPatch).unit *> loop(state, work)
     end match
   end executeEnvelope
+
+  private def commandCorrelation(epoch: Epoch, command: CommandId): RuntimeCorrelation =
+    RuntimeCorrelation(connection, lifecycle, epoch, command = Some(command))
 
   private def navigatingLoop(
     state: SessionState.Navigating[Msg, Model],
@@ -933,6 +966,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         handlerStarted <- Clock.nanoTime
         nextDraft      <- restore(draft)
         handlerEnded   <- Clock.nanoTime
+        _              <- observer.model(turnCorrelation, nextDraft.model)
         _              <- observer.emit(
                RuntimeEvent.HandlerCompleted(
                  turnCorrelation,
@@ -1082,6 +1116,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       delta = diffBaseline.orElse(previous.map(_.render)) match
                                 case Some(committed) => TreeDiffer.diff(committed.tree, render.tree)
                                 case None            => TreeDiffer.initial(render.tree)
+                      _ <- observer.diff(correlation, delta != RenderDelta.Empty)
                       _ <- observer.emit(RuntimeEvent.DiffCompleted(correlation))
                     yield TurnCandidate(
                       turnId,
@@ -1529,8 +1564,23 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         case Some(mapper) =>
           val message = mapper(value)
           parent match
-            case None        => outputs.update(_ :+ ComponentOutput.Root(message.asInstanceOf[Msg]))
-            case Some(owner) => outputs.update(_ :+ ComponentOutput.Parent(owner, message))
+            case None =>
+              outputs.update(
+                _ :+ ComponentOutput.Root(
+                  message.asInstanceOf[Msg],
+                  component.getClass.getName,
+                  requirement.applicationId
+                )
+              )
+            case Some(owner) =>
+              outputs.update(
+                _ :+ ComponentOutput.Parent(
+                  owner,
+                  message,
+                  component.getClass.getName,
+                  requirement.applicationId
+                )
+              )
 
     ZIO.uninterruptibleMask { restore =>
       for
@@ -2370,14 +2420,35 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                candidate.revision
              )
       rootWork: Vector[Work[Msg, Model]] =
-        candidate.draft.continuations.map(message => Work.Continuation[Msg, Model](message))
+        candidate.draft.continuations.map(message =>
+          Work.Continuation[Msg, Model](message, RuntimeTraceInitiator.Runtime)
+        )
       outputWork: Vector[Work[Msg, Model]] = candidate.outputs.map {
-                                               case ComponentOutput.Root(message) =>
-                                                 Work.Continuation[Msg, Model](message)
-                                               case ComponentOutput.Parent(component, message) =>
+                                               case ComponentOutput.Root(
+                                                     message,
+                                                     componentType,
+                                                     componentId
+                                                   ) =>
+                                                 Work.Continuation[Msg, Model](
+                                                   message,
+                                                   RuntimeTraceInitiator.Component(
+                                                     componentType,
+                                                     componentId
+                                                   )
+                                                 )
+                                               case ComponentOutput.Parent(
+                                                     component,
+                                                     message,
+                                                     componentType,
+                                                     componentId
+                                                   ) =>
                                                  Work.ComponentContinuation[Msg, Model](
                                                    component,
-                                                   message
+                                                   message,
+                                                   RuntimeTraceInitiator.Component(
+                                                     componentType,
+                                                     componentId
+                                                   )
                                                  )
                                              }
       managedWork: Vector[Work[Msg, Model]] =
@@ -2431,18 +2502,18 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       turn = Some(candidate.id),
                       revision = Some(candidate.revision)
                     )
+      output = SessionOutput(
+                 command,
+                 candidate.delta,
+                 None,
+                 candidate.draft.effects,
+                 candidate.draft.reply
+               )
       _ <- observer.emit(RuntimeEvent.StateCommitted(correlation))
+      _ <- observer.prepareOutput(correlation, output).when(publish)
       _ <- ZIO.when(publish)(
              candidate.reservation.publish(
-               OutboundBatch.single(
-                 SessionOutput(
-                   command,
-                   candidate.delta,
-                   None,
-                   candidate.draft.effects,
-                   candidate.draft.reply
-                 )
-               )
+               OutboundBatch.single(output)
              )
            )
       _ <- observer.emit(RuntimeEvent.OutputPublished(correlation)).when(publish)
@@ -2640,32 +2711,29 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     for
       navigationId <- identity(NavigationId.fresh())
       now          <- zio.Clock.instant
-      navigation = NavigationOutput(navigationId, request.destination, request.kind, request.flash)
-      nextWork   = work
-      _ <- candidate.reservation.publish(
-             OutboundBatch.single(
-               SessionOutput(
+      navigation  = NavigationOutput(navigationId, request.destination, request.kind, request.flash)
+      nextWork    = work
+      correlation = RuntimeCorrelation(
+                      connection,
+                      lifecycle,
+                      epoch,
+                      command = response.map(_.id),
+                      turn = Some(candidate.id),
+                      revision = Some(candidate.revision),
+                      navigation = Some(navigationId)
+                    )
+      output = SessionOutput(
                  response.map(_.id),
                  RenderDelta.Empty,
                  Some(navigation),
                  candidate.draft.effects,
                  candidate.draft.reply
                )
-             )
+      _ <- observer.prepareOutput(correlation, output)
+      _ <- candidate.reservation.publish(
+             OutboundBatch.single(output)
            )
-      _ <- observer.emit(
-             RuntimeEvent.OutputPublished(
-               RuntimeCorrelation(
-                 connection,
-                 lifecycle,
-                 epoch,
-                 command = response.map(_.id),
-                 turn = Some(candidate.id),
-                 revision = Some(candidate.revision),
-                 navigation = Some(navigationId)
-               )
-             )
-           )
+      _ <- observer.emit(RuntimeEvent.OutputPublished(correlation))
       pending = PendingNavigation(
                   navigationId,
                   committed.url,
@@ -2690,31 +2758,28 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     val request = candidate.draft.navigation.get
     for
       navigationId <- identity(NavigationId.fresh())
-      navigation = NavigationOutput(navigationId, request.destination, request.kind, request.flash)
-      _ <- candidate.reservation.publish(
-             OutboundBatch.single(
-               SessionOutput(
+      navigation  = NavigationOutput(navigationId, request.destination, request.kind, request.flash)
+      correlation = RuntimeCorrelation(
+                      connection,
+                      lifecycle,
+                      epoch,
+                      command = command,
+                      turn = Some(candidate.id),
+                      revision = Some(candidate.revision),
+                      navigation = Some(navigationId)
+                    )
+      output = SessionOutput(
                  command,
                  RenderDelta.Empty,
                  Some(navigation),
                  candidate.draft.effects,
                  candidate.draft.reply
                )
-             )
+      _ <- observer.prepareOutput(correlation, output)
+      _ <- candidate.reservation.publish(
+             OutboundBatch.single(output)
            )
-      _ <- observer.emit(
-             RuntimeEvent.OutputPublished(
-               RuntimeCorrelation(
-                 connection,
-                 lifecycle,
-                 epoch,
-                 command = command,
-                 turn = Some(candidate.id),
-                 revision = Some(candidate.revision),
-                 navigation = Some(navigationId)
-               )
-             )
-           )
+      _ <- observer.emit(RuntimeEvent.OutputPublished(correlation))
       _ <- discardCandidate(candidate)
     yield candidate.id -> navigation
   end publishCandidateTerminal
@@ -2779,31 +2844,35 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                     redirectCount,
                                     deferred
                                   )
-                        nextWork = work.enqueueAll(draft.continuations.map(Work.Continuation(_)))
+                        nextWork = work.enqueueAll(
+                                     draft.continuations.map(message =>
+                                       Work.Continuation(
+                                         message,
+                                         RuntimeTraceInitiator.Runtime
+                                       )
+                                     )
+                                   )
+                        correlation = RuntimeCorrelation(
+                                        connection,
+                                        lifecycle,
+                                        epoch,
+                                        command = response.map(_.id),
+                                        turn = Some(turnId),
+                                        revision = Some(committed.revision),
+                                        navigation = Some(navigationId)
+                                      )
+                        sessionOutput = SessionOutput(
+                                          response.map(_.id),
+                                          RenderDelta.Empty,
+                                          Some(output),
+                                          draft.effects,
+                                          draft.reply
+                                        )
+                        _ <- observer.prepareOutput(correlation, sessionOutput)
                         _ <- reservation.publish(
-                               OutboundBatch.single(
-                                 SessionOutput(
-                                   response.map(_.id),
-                                   RenderDelta.Empty,
-                                   Some(output),
-                                   draft.effects,
-                                   draft.reply
-                                 )
-                               )
+                               OutboundBatch.single(sessionOutput)
                              )
-                        _ <- observer.emit(
-                               RuntimeEvent.OutputPublished(
-                                 RuntimeCorrelation(
-                                   connection,
-                                   lifecycle,
-                                   epoch,
-                                   command = response.map(_.id),
-                                   turn = Some(turnId),
-                                   revision = Some(committed.revision),
-                                   navigation = Some(navigationId)
-                                 )
-                               )
-                             )
+                        _ <- observer.emit(RuntimeEvent.OutputPublished(correlation))
                       yield (turnId, pending, nextWork)).onError(_ => reservation.release)
           yield result
         }
@@ -2899,29 +2968,26 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                    request.kind,
                                    request.flash
                                  )
-                    _ <- reservation.publish(
-                           OutboundBatch.single(
-                             SessionOutput(
+                    correlation = RuntimeCorrelation(
+                                    connection,
+                                    lifecycle,
+                                    epoch,
+                                    command = command,
+                                    turn = Some(turnId),
+                                    navigation = Some(navigationId)
+                                  )
+                    output = SessionOutput(
                                command,
                                RenderDelta.Empty,
                                Some(navigation),
                                draft.effects,
                                draft.reply
                              )
-                           )
+                    _ <- observer.prepareOutput(correlation, output)
+                    _ <- reservation.publish(
+                           OutboundBatch.single(output)
                          )
-                    _ <- observer.emit(
-                           RuntimeEvent.OutputPublished(
-                             RuntimeCorrelation(
-                               connection,
-                               lifecycle,
-                               epoch,
-                               command = command,
-                               turn = Some(turnId),
-                               navigation = Some(navigationId)
-                             )
-                           )
-                         )
+                    _ <- observer.emit(RuntimeEvent.OutputPublished(correlation))
                   yield turnId -> navigation).onError(_ => reservation.release)
       yield result
     }
@@ -2952,8 +3018,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   ): UIO[Unit] =
     ZIO.foreachDiscard(work) {
       case Work.Correlated(deferred)           => deferred.response.fail(rejection).unit
-      case Work.Continuation(_)                => ZIO.unit
-      case Work.ComponentContinuation(_, _)    => ZIO.unit
+      case Work.Continuation(_, _)             => ZIO.unit
+      case Work.ComponentContinuation(_, _, _) => ZIO.unit
       case Work.ManagedAsyncContinuation(_, _) => ZIO.unit
     }
 
@@ -3118,8 +3184,11 @@ private[scalive] object SessionKernel:
     case Inspect(response: Promise[SessionRejection, Committed[Msg, Model]])
 
   private enum Work[Msg, Model]:
-    case Continuation(message: Msg)
-    case ComponentContinuation(component: ComponentInstanceId, message: Any)
+    case Continuation(message: Msg, initiator: RuntimeTraceInitiator)
+    case ComponentContinuation(
+      component: ComponentInstanceId,
+      message: Any,
+      initiator: RuntimeTraceInitiator)
     case ManagedAsyncContinuation(owner: OwnerId, completion: ManagedAsyncCompletion)
     case Correlated(command: DeferredSessionCommand[Msg, Model])
 

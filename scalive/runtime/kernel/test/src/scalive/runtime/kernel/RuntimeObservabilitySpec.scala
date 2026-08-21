@@ -1,6 +1,9 @@
 package scalive.runtime.kernel
 
+import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
+
 import zio.*
+import zio.json.ast.Json
 import zio.test.*
 
 import scalive.*
@@ -169,5 +172,281 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
           !values.mkString(" ").contains("resource-secret")
         )
       }
+    },
+    test("diagnostic tracing projects values only for observed operations") {
+      val projections = AtomicInteger(0)
+      val projectedModel = AtomicReference[Any]()
+      for
+        records <- Ref.make(Vector.empty[RuntimeTraceRecord])
+        diagnostic = new RuntimeDiagnostic.Enabled("trace-session-1234", 2L):
+                       def isObserved(topic: String) = topic == "lv:observed"
+                       def projectMessage(topic: String, value: Any) =
+                         projections.incrementAndGet()
+                         RuntimeTraceValue("Message", "Projected message")
+                       def projectModel(topic: String, value: Any) =
+                         projections.incrementAndGet()
+                         projectedModel.set(value)
+                         RuntimeTraceValue("Model", "Projected model")
+                       def publish(record: RuntimeTraceRecord) = records.update(_ :+ record)
+        observer = RuntimeObserver.withDiagnostic(_ => ZIO.unit, diagnostic)
+        _ = observer.registerLifecycle(
+              correlation.lifecycle,
+              "lv:observed",
+              value => s"application:$value"
+            )
+        _ <- observer.correlate(
+               CommandId(4L),
+               correlation.lifecycle,
+               "lv:observed",
+               Some("1"),
+               Some("7")
+             )
+        _ <- observer.emit(
+               RuntimeEvent.CommandAccepted(
+                 correlation,
+                 RuntimeCommandKind.ClientEvent,
+                 RuntimeInitiator.Browser,
+                 queueDepth = 0
+               )
+             )
+        _ <- observer.emit(
+               RuntimeEvent.TurnStarted(
+                 correlation,
+                 RuntimeCommandKind.ClientEvent,
+                 RuntimeInitiator.Browser
+               )
+             )
+        _      <- observer.message(correlation, "message-secret")
+        _      <- observer.model(correlation, "model-secret")
+        _      <- observer.diff(correlation, changed = true)
+        output = Object()
+        frame  = Object()
+        _      <- observer.prepareOutput(correlation, output)
+        _      <- observer.emit(RuntimeEvent.OutputPublished(correlation))
+        beforeFrame <- records.get
+        _ = observer.bindOutput(output, frame)
+        trace = observer.takeOutput(frame)
+        _ <- ZIO.foreachDiscard(trace)(
+               observer.frame(_, Json.Obj("status" -> Json.Str("ok")), 42)
+             )
+        values <- records.get
+      yield assertTrue(
+        trace.nonEmpty,
+        projections.get() == 2,
+        projectedModel.get() == "application:model-secret",
+        !beforeFrame.exists(_.stage == RuntimeTraceStage.FinalFrame),
+        values.map(_.stage) == Vector(
+          RuntimeTraceStage.LifecycleStarted,
+          RuntimeTraceStage.TypedMessage,
+          RuntimeTraceStage.ModelProposed,
+          RuntimeTraceStage.TreeDiff,
+          RuntimeTraceStage.FinalPayload,
+          RuntimeTraceStage.FinalFrame
+        ),
+        values.forall(_.identity.messageReference.contains("7")),
+        values.last.byteSize.contains(42),
+        !values.mkString.contains("message-secret"),
+        !values.mkString.contains("model-secret")
+      )
+    },
+    test("internal operations retain their kind and wait for transport frames") {
+      val joinCorrelation = correlation.copy(command = None, turn = Some(TurnId(10L)))
+      val componentCorrelation = correlation.copy(command = None, turn = Some(TurnId(11L)))
+      for
+        records <- Ref.make(Vector.empty[RuntimeTraceRecord])
+        diagnostic = new RuntimeDiagnostic.Enabled("trace-session-1234", 2L):
+                       def isObserved(topic: String) = true
+                       def projectMessage(topic: String, value: Any) =
+                         RuntimeTraceValue("Message", "Projected")
+                       def projectModel(topic: String, value: Any) =
+                         RuntimeTraceValue("Model", "Projected")
+                       def publish(record: RuntimeTraceRecord) = records.update(_ :+ record)
+        observer = RuntimeObserver.withDiagnostic(_ => ZIO.unit, diagnostic)
+        _ = observer.registerLifecycle(correlation.lifecycle, "lv:observed", identity)
+        _ <- observer.beginInternal(
+               correlation.lifecycle,
+               RuntimeTraceOperationKind.Join,
+               RuntimeTraceInitiator.Browser,
+               None
+             )
+        _ <- observer.emit(
+               RuntimeEvent.TurnStarted(
+                 joinCorrelation,
+                 RuntimeCommandKind.Internal,
+                 RuntimeInitiator.Runtime
+               )
+             )
+        joinOutput = Object()
+        joinFrame  = Object()
+        _ <- observer.prepareOutput(joinCorrelation, joinOutput)
+        _ <- observer.emit(RuntimeEvent.OutputPublished(joinCorrelation))
+        beforeJoinFrame <- records.get
+        _ = observer.bindOutput(joinOutput, joinFrame)
+        joinTrace = observer.takeOutput(joinFrame)
+        _ <- ZIO.foreachDiscard(joinTrace)(
+               observer.frame(_, Json.Obj("status" -> Json.Str("ok")), 20)
+             )
+        _ <- observer.beginInternal(
+               correlation.lifecycle,
+               RuntimeTraceOperationKind.ServerMessage,
+               RuntimeTraceInitiator.Component("VoteComponent", "scala-vote"),
+               Some("component-message")
+             )
+        _ <- observer.emit(
+               RuntimeEvent.TurnStarted(
+                 componentCorrelation,
+                 RuntimeCommandKind.Internal,
+                 RuntimeInitiator.Runtime
+               )
+             )
+        componentOutput = Object()
+        componentFrame  = Object()
+        _ <- observer.prepareOutput(componentCorrelation, componentOutput)
+        _ <- observer.emit(RuntimeEvent.OutputPublished(componentCorrelation))
+        _ = observer.bindOutput(componentOutput, componentFrame)
+        componentTrace = observer.takeOutput(componentFrame)
+        _ <- ZIO.foreachDiscard(componentTrace)(
+               observer.frame(_, Json.Obj("diff" -> Json.Obj.empty), 21)
+             )
+        values <- records.get
+        operations = values.groupBy(_.identity.operationSequence).toVector.sortBy(_._1)
+      yield assertTrue(
+        joinTrace.nonEmpty,
+        componentTrace.nonEmpty,
+        !beforeJoinFrame.exists(_.stage == RuntimeTraceStage.FinalFrame),
+        operations.map(_._2.head.identity.operationKind) == Vector(
+          RuntimeTraceOperationKind.Join,
+          RuntimeTraceOperationKind.ServerMessage
+        ),
+        operations.flatMap(_._2.map(_.identity.socketEpoch)).distinct.size == 1,
+        operations(1)._2.head.identity.initiator ==
+          RuntimeTraceInitiator.Component("VoteComponent", "scala-vote"),
+        values.count(_.stage == RuntimeTraceStage.FinalFrame) == 2
+      )
+    },
+    test("cancellation discards a prepared output before transport binding") {
+      val diagnostic = new RuntimeDiagnostic.Enabled("trace-session-1234", 2L):
+        def isObserved(topic: String) = true
+        def projectMessage(topic: String, value: Any) = RuntimeTraceValue.redacted(value)
+        def projectModel(topic: String, value: Any)   = RuntimeTraceValue.redacted(value)
+        def publish(record: RuntimeTraceRecord)       = ZIO.unit
+
+      val observer = RuntimeObserver.withDiagnostic(_ => ZIO.unit, diagnostic)
+      val output   = Object()
+      val frame    = Object()
+      for
+        _ <- ZIO.succeed(
+               observer.registerLifecycle(correlation.lifecycle, "lv:observed", identity)
+             )
+        _ <- observer.emit(
+               RuntimeEvent.CommandAccepted(
+                 correlation,
+                 RuntimeCommandKind.ClientEvent,
+                 RuntimeInitiator.Browser,
+                 queueDepth = 0
+               )
+             )
+        _ <- observer.prepareOutput(correlation, output)
+        _  = observer.cancel(correlation.command.get)
+        _  = observer.bindOutput(output, frame)
+      yield assertTrue(observer.takeOutput(frame).isEmpty)
+    },
+    test("transport shutdown fails frames already bound for physical writing") {
+      for
+        records <- Ref.make(Vector.empty[RuntimeTraceRecord])
+        diagnostic = new RuntimeDiagnostic.Enabled("trace-session-1234", 2L):
+                       def isObserved(topic: String) = true
+                       def projectMessage(topic: String, value: Any) =
+                         RuntimeTraceValue.redacted(value)
+                       def projectModel(topic: String, value: Any) =
+                         RuntimeTraceValue.redacted(value)
+                       def publish(record: RuntimeTraceRecord) = records.update(_ :+ record)
+        observer = RuntimeObserver.withDiagnostic(_ => ZIO.unit, diagnostic)
+        output   = Object()
+        connectionOutput = Object()
+        frame            = Object()
+        _ = observer.registerLifecycle(correlation.lifecycle, "lv:observed", identity)
+        _ <- observer.emit(
+               RuntimeEvent.CommandAccepted(
+                 correlation,
+                 RuntimeCommandKind.ClientEvent,
+                 RuntimeInitiator.Browser,
+                 queueDepth = 0
+               )
+             )
+        _ <- observer.prepareOutput(correlation, output)
+        _  = observer.bindOutput(output, connectionOutput)
+        _  = observer.bindFrame(connectionOutput, frame)
+        _  = observer.unregisterLifecycle(correlation.lifecycle)
+        _ <- observer.failTransportFrames
+        values <- records.get
+      yield assertTrue(
+        values.lastOption.exists(_.stage == RuntimeTraceStage.Crash),
+        observer.takeOutput(frame).isEmpty
+      )
+    },
+    test("bootstrap failure crashes the pending join instead of synthesizing a leave") {
+      for
+        records <- Ref.make(Vector.empty[RuntimeTraceRecord])
+        diagnostic = new RuntimeDiagnostic.Enabled("trace-session-1234", 2L):
+                       def isObserved(topic: String) = true
+                       def projectMessage(topic: String, value: Any) =
+                         RuntimeTraceValue.redacted(value)
+                       def projectModel(topic: String, value: Any) =
+                         RuntimeTraceValue.redacted(value)
+                       def publish(record: RuntimeTraceRecord) = records.update(_ :+ record)
+        observer = RuntimeObserver.withDiagnostic(_ => ZIO.unit, diagnostic)
+        _ = observer.registerLifecycle(correlation.lifecycle, "lv:observed", identity)
+        _ <- observer.beginInternal(
+               correlation.lifecycle,
+               RuntimeTraceOperationKind.Join,
+               RuntimeTraceInitiator.Browser,
+               None
+             )
+        _ <- observer.emit(
+               RuntimeEvent.SessionTerminated(
+                 correlation.copy(command = None, turn = None),
+                 RuntimeTerminal.Crashed
+               )
+             )
+        values <- records.get
+      yield assertTrue(
+        values.map(_.stage) == Vector(RuntimeTraceStage.Crash),
+        values.headOption.exists(_.identity.operationKind == RuntimeTraceOperationKind.Join)
+      )
+    },
+    test("unobserved diagnostics never invoke projectors") {
+      val projections = AtomicInteger(0)
+      val diagnostic = new RuntimeDiagnostic.Enabled("trace-session-1234", 2L):
+        def isObserved(topic: String) = false
+        def projectMessage(topic: String, value: Any) =
+          projections.incrementAndGet()
+          RuntimeTraceValue.redacted(value)
+        def projectModel(topic: String, value: Any) =
+          projections.incrementAndGet()
+          RuntimeTraceValue.redacted(value)
+        def publish(record: RuntimeTraceRecord) = ZIO.unit
+      val observer = RuntimeObserver.withDiagnostic(_ => ZIO.unit, diagnostic)
+
+      observer.registerLifecycle(correlation.lifecycle, "lv:unobserved", identity)
+      for
+        _ <- observer.correlate(
+               CommandId(4L),
+               correlation.lifecycle,
+               "lv:unobserved",
+               None,
+               None
+             )
+        _ <- observer.emit(
+               RuntimeEvent.CommandAccepted(
+                 correlation,
+                 RuntimeCommandKind.ClientEvent,
+                 RuntimeInitiator.Browser,
+                 queueDepth = 0
+               )
+             )
+        _ <- observer.message(correlation, "secret")
+        _ <- observer.model(correlation, "secret")
+      yield assertTrue(projections.get() == 0)
     }
   )

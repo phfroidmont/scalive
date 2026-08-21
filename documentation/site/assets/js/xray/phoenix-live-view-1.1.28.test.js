@@ -4,7 +4,9 @@ import test from "node:test"
 import {
   createLiveTraceAdapter,
   createTraceSession,
+  LiveTraceSocket,
   sanitizeProtocol,
+  traceSessionParameter,
   wrapDecoder,
   wrapEncoder,
 } from "./phoenix-live-view-1.1.28.js"
@@ -94,6 +96,7 @@ test("adapter emits a correlated terminal record after successful inbound proces
 
   const records = batches.flat()
   assert.deepEqual(records.map((record) => record.stage), ["InboundFrame", "InboundProcessed"])
+  assert.equal(records[0].byteSize, 9)
   const terminal = records[1]
   assert.equal(terminal.summary, "Inbound protocol frame processed")
   assert.equal(terminal.topic, decoded.topic)
@@ -345,4 +348,17 @@ test("trace sessions use page-lifetime random UUIDs", () => {
     createTraceSession({ randomUUID: () => "01234567-89ab-cdef-0123-456789abcdef" }),
     "01234567-89ab-cdef-0123-456789abcdef",
   )
+})
+
+test("trace session remains in the params supplied to the socket", () => {
+  const traceSession = createTraceSession({ randomUUID: () => "trace-session" })
+  const params = {
+    _csrf_token: "csrf-token",
+    [traceSessionParameter]: traceSession,
+  }
+
+  const socket = new LiveTraceSocket("/live", { params, transport: class TestTransport {} })
+
+  assert.strictEqual(socket.params(), params)
+  assert.equal(socket.params()[traceSessionParameter], traceSession)
 })

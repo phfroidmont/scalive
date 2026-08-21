@@ -170,7 +170,7 @@ private[docs] object CapturedTraceAdapter:
             "browser",
             "Publish result",
             "The runtime publishes the result and the browser processes it.",
-            protocolEvidence(records, "FinalFrame", "Protocol frame")
+            protocolEvidence(records, Vector("FinalFrame", "InboundFrame"), "Protocol frame")
           )
       ),
       step(
@@ -247,15 +247,24 @@ private[docs] object CapturedTraceAdapter:
     records: Vector[DocumentationTraceRecord],
     stage: String,
     label: String
+  ): Option[TraceEvidence] = protocolEvidence(records, Vector(stage), label)
+
+  private def protocolEvidence(
+    records: Vector[DocumentationTraceRecord],
+    stages: Vector[String],
+    label: String
   ): Option[TraceEvidence] =
-    records.find(record => record.stage == stage && record.protocol.nonEmpty).map { record =>
-      TraceEvidence(
-        label = label,
-        facts = record.byteSize.map(value => "size" -> s"$value B").toVector,
-        code =
-          record.protocol.map(value => DocumentationTraceSanitizer.structure(value).toJsonPretty)
-      )
-    }
+    stages.iterator
+      .flatMap(stage => records.find(record => record.stage == stage && record.protocol.nonEmpty))
+      .nextOption()
+      .map { record =>
+        TraceEvidence(
+          label = label,
+          facts = record.byteSize.map(value => "size" -> s"$value B").toVector,
+          code =
+            record.protocol.map(value => DocumentationTraceSanitizer.structure(value).toJsonPretty)
+        )
+      }
 
   private def failureEvidence(records: Vector[DocumentationTraceRecord]): Option[TraceEvidence] =
     records

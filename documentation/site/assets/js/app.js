@@ -8,6 +8,7 @@ import {
   createTraceSession,
   createLiveTraceAdapter,
   LiveTraceSocket,
+  traceSessionParameter,
 } from "./xray/phoenix-live-view-1.1.28.js"
 
 const connectionRoot = document.documentElement
@@ -16,7 +17,6 @@ const exampleControlSelector =
   "[data-example-controls], [data-example-controls] button, [data-example-controls] input, [data-example-controls] select, [data-example-controls] textarea"
 const instantSearchLimit = 8
 const liveTraceAdapter = createLiveTraceAdapter()
-const liveTraceSession = createTraceSession()
 const inlineApiReferences = createInlineApiReferenceEnhancer()
 const searchKindLabels = {
   page: "Page",
@@ -617,14 +617,16 @@ const Hooks = {
 }
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
-const liveSocketParams = csrfToken ? { _csrf_token: csrfToken } : {}
+const liveSocketParams = {
+  ...(csrfToken ? { _csrf_token: csrfToken } : {}),
+  [traceSessionParameter]: createTraceSession(),
+}
 
 const liveSocket = new LiveSocket("/live", LiveTraceSocket, {
   params: liveSocketParams,
   hooks: Hooks,
   dom: liveTraceAdapter.dom,
   liveTraceAdapter,
-  liveTraceSession,
 })
 assertLiveViewVersion(liveSocket)
 liveSocket.socket.onError(() => {

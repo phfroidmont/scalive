@@ -1,7 +1,12 @@
 package scalive.docs.xray
 
+import zio.*
+import zio.http.Request
 import zio.json.*
 import zio.json.ast.Json
+
+import scalive.*
+import scalive.runtime.kernel.*
 
 private[docs] object DocumentationTraceSanitizer:
   private val Redacted           = Json.Str("[redacted]")
@@ -50,8 +55,62 @@ private[docs] object DocumentationTraceSanitizer:
     val normalized = name.toLowerCase
     SensitiveFragments.exists(normalized.contains)
 
+  def projectedField(name: String, value: String): String =
+    if isSensitive(name) then "[redacted]" else value
+
   def browserLabel(stage: String): (String, String) =
     BrowserLabels
       .get(stage).fold("BrowserRecord" -> "Browser trace record")(summary => stage -> summary)
 
 end DocumentationTraceSanitizer
+
+final private[docs] class DocumentationRuntimeDiagnostic(
+  store: DocumentationTraceStore,
+  session: String,
+  epoch: Long)
+    extends RuntimeDiagnostic.Enabled(session, epoch):
+
+  def isObserved(topic: String): Boolean = store.isActive(session, topic)
+
+  def projectMessage(topic: String, value: Any): RuntimeTraceValue =
+    store
+      .registered(session, topic)
+      .flatMap(_.projectMessage(value))
+      .fold(RuntimeTraceValue.redacted(value))(projected)
+
+  def projectModel(topic: String, value: Any): RuntimeTraceValue =
+    store
+      .registered(session, topic)
+      .flatMap(_.projectModel(value))
+      .fold(RuntimeTraceValue.redacted(value))(projected)
+
+  def publish(record: RuntimeTraceRecord): UIO[Unit] = store.appendServer(record)
+
+  private def projected(value: scalive.docs.examples.ExampleTraceValue): RuntimeTraceValue =
+    RuntimeTraceValue(
+      value.typeName,
+      value.summary,
+      value.fields.map { case (name, fieldValue) =>
+        name -> DocumentationTraceSanitizer.projectedField(name, fieldValue)
+      },
+      value.scalaValue
+    )
+end DocumentationRuntimeDiagnostic
+
+final private[docs] class DocumentationRuntimeObserverFactory(store: DocumentationTraceStore)
+    extends ZioHttp.RuntimeObserverFactory:
+
+  def connect(request: Request): RuntimeObserver =
+    request.url.queryParams
+      .getAll(DocumentationRuntimeObserverFactory.TraceSessionParameter)
+      .headOption
+      .filter(DocumentationRuntimeObserverFactory.ValidSession.matches)
+      .fold(RuntimeObserver.logging)(session =>
+        RuntimeObserver.loggingWithDiagnostic(
+          DocumentationRuntimeDiagnostic(store, session, store.nextConnectionEpoch(session))
+        )
+      )
+
+private[docs] object DocumentationRuntimeObserverFactory:
+  val TraceSessionParameter = "_scalive_trace_session"
+  val ValidSession          = "[A-Za-z0-9_-]{16,64}".r

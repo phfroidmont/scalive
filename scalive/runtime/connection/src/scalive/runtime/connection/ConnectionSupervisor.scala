@@ -9,8 +9,7 @@ import scalive.render.BindingId
 import scalive.render.EvaluatedTree
 import scalive.render.RenderDelta
 import scalive.runtime.contracts.*
-import scalive.runtime.kernel.RuntimeObserver
-import scalive.runtime.kernel.SessionEffects
+import scalive.runtime.kernel.{RuntimeObserver, SessionEffects}
 import scalive.runtime.resources.HostedWorkerId
 import scalive.runtime.resources.UploadPreflightView
 import scalive.runtime.resources.UploadRegistryError
@@ -84,19 +83,41 @@ sealed private[scalive] trait ConnectedLifecycle:
   def awaitClosed: UIO[Unit]
   def close: UIO[Unit]
   def abort(error: ConnectionError): UIO[Unit]
+  def correlateBrowserTrace(
+    command: CommandId,
+    joinReference: Option[String],
+    messageReference: Option[String]
+  ): UIO[Unit]
+  def cancelTrace(command: CommandId): Unit
 end ConnectedLifecycle
 
 private[connection] object ConnectedLifecycle:
   def apply[Msg, Model](
     connection: RootConnection[Msg, Model],
     topic0: NestedTopic,
-    domId0: String
+    domId0: String,
+    observer: RuntimeObserver
   ): ConnectedLifecycle =
     new ConnectedLifecycle:
       val lifecycle: LifecycleId = connection.lifecycle
       val epoch: Epoch           = connection.epoch
       val topic: NestedTopic     = topic0
       val domId: String          = domId0
+
+      def correlateBrowserTrace(
+        command: CommandId,
+        joinReference: Option[String],
+        messageReference: Option[String]
+      ): UIO[Unit] =
+        observer.correlate(
+          command,
+          lifecycle,
+          topic.value,
+          joinReference,
+          messageReference
+        )
+
+      def cancelTrace(command: CommandId): Unit = observer.cancel(command)
 
       def browserEvent(
         command: CommandId,
@@ -223,9 +244,10 @@ final private[scalive] class ConnectionSupervisor private (
               ownsPageTitle = true,
               requestedLifecycle = requestedLifecycle,
               providedConnection = Some(connectionId),
-              observer = observer
+              observer = observer,
+              topic = Some(topic)
             )
-          ).map(connection => ConnectedLifecycle(connection, topic, domId))
+          ).map(connection => ConnectedLifecycle(connection, topic, domId, observer))
       }(entry => installRoot(slot, entry))
     }
     seed *> start.ensuring(
@@ -333,13 +355,15 @@ final private[scalive] class ConnectionSupervisor private (
                                       requestedLifecycle = requestedLifecycle,
                                       providedConnection = Some(connectionId),
                                       observer = observer,
-                                      closeAfterNavigate = !reservation.registration.sticky
+                                      closeAfterNavigate = !reservation.registration.sticky,
+                                      topic = Some(reservation.registration.topic)
                                     )
                                   )
                     connected = ConnectedLifecycle(
                                   connection,
                                   reservation.registration.topic,
-                                  domId
+                                  domId,
+                                  observer
                                 )
                   yield PendingNested(connected, buffer, output, failureNotifier)
                 }(pending => installNested(slot, reservation, pending))

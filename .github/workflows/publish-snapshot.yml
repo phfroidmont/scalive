@@ -26,6 +26,10 @@ jobs:
         run: nix develop --command mill --ticker false __.test
       - name: Check documentation and public API
         run: nix develop --command mill --ticker false documentation.check
+      - name: Run root-slice browser gate
+        run: nix develop --command ./scripts/e2e-run-root-slice.sh --retries=0
+      - name: Run upstream browser cutover gate
+        run: nix develop --command ./scripts/e2e-run-upstream-cutover.sh
       - name: Smoke-test benchmarks
         run: nix develop --command mill --ticker false benchmarks.runJmh -wi 0 -i 1 -r 100ms -f 0 -foe true '.*'
       - name: Build published artifacts

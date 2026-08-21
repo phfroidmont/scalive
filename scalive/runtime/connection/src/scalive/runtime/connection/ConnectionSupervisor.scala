@@ -250,10 +250,11 @@ final private[scalive] class ConnectionSupervisor private (
     domId: String,
     loading: Boolean,
     sink: ConnectionOutput => Task[Unit],
+    failureNotifier: NestedFailureNotifier = NestedFailureNotifier.noop,
     reattach: Boolean = false,
     requestedLifecycle: Option[LifecycleId] = None
   ): IO[StartError, ConnectedLifecycle] =
-    (for
+    val started = for
       active <- topology.registration(reservation.registration.id)
       _      <- ZIO
              .fail(StartError.RegistrationRevoked(reservation.registration.id)).unless(
@@ -261,7 +262,7 @@ final private[scalive] class ConnectionSupervisor private (
              )
       retained <-
         if reattach && reservation.registration.sticky then
-          reattachNested(reservation, inheritedUrl, sink)
+          reattachNested(reservation, inheritedUrl, sink, failureNotifier)
         else ZIO.none
       handle <- retained match
                   case Some(handle) => ZIO.succeed(handle)
@@ -274,15 +275,24 @@ final private[scalive] class ConnectionSupervisor private (
                         domId,
                         loading,
                         sink,
+                        failureNotifier,
                         requestedLifecycle
                       )
-    yield handle).tapError { error =>
-      topology.cancelJoin(reservation) *>
-        (error match
-          case StartError.ConnectionFailed(connectionError) =>
-            linkParentAfterStartFailure(reservation.registration, connectionError)
-          case _ => ZIO.unit)
+    yield handle
+    started.catchAll {
+      case error @ StartError.ConnectionFailed(connectionError) =>
+        topology.cancelJoin(reservation) *>
+          linkParentAfterStartFailure(
+            reservation.registration,
+            connectionError,
+            failureNotifier.onStart
+          ).flatMap { linked =>
+            if linked then ZIO.fail(StartError.LinkedConnectionFailed(connectionError))
+            else ZIO.fail(error)
+          }
+      case error => topology.cancelJoin(reservation) *> ZIO.fail(error)
     }
+  end startNested
 
   private def startFreshNested(
     reservation: NestedJoinReservation,
@@ -291,6 +301,7 @@ final private[scalive] class ConnectionSupervisor private (
     domId: String,
     loading: Boolean,
     sink: ConnectionOutput => Task[Unit],
+    failureNotifier: NestedFailureNotifier,
     requestedLifecycle: Option[LifecycleId]
   ): IO[StartError, ConnectedLifecycle] =
     for
@@ -330,14 +341,15 @@ final private[scalive] class ConnectionSupervisor private (
                                   reservation.registration.topic,
                                   domId
                                 )
-                  yield PendingNested(connected, buffer, output)
+                  yield PendingNested(connected, buffer, output, failureNotifier)
                 }(pending => installNested(slot, reservation, pending))
     yield handle
 
   private def reattachNested(
     reservation: NestedJoinReservation,
     inheritedUrl: URL,
-    sink: ConnectionOutput => Task[Unit]
+    sink: ConnectionOutput => Task[Unit],
+    failureNotifier: NestedFailureNotifier
   ): IO[StartError, Option[ConnectedLifecycle]] =
     gate
       .withPermit {
@@ -366,7 +378,11 @@ final private[scalive] class ConnectionSupervisor private (
                     entries = state.entries.updated(
                       entry.handle.lifecycle,
                       entry.copy(
-                        ownership = EntryOwnership.Reattaching(registration, output)
+                        ownership = EntryOwnership.Reattaching(
+                          registration,
+                          output,
+                          failureNotifier
+                        )
                       )
                     ),
                     byTopic = state.byTopic.removed(entry.handle.topic)
@@ -406,7 +422,11 @@ final private[scalive] class ConnectionSupervisor private (
                                    current @ Entry(
                                      _,
                                      _,
-                                     EntryOwnership.Reattaching(active, activeOutput)
+                                     EntryOwnership.Reattaching(
+                                       active,
+                                       activeOutput,
+                                       activeNotifier
+                                     )
                                    )
                                  )
                                  if current.handle.epoch == entry.handle.epoch &&
@@ -418,7 +438,11 @@ final private[scalive] class ConnectionSupervisor private (
                                  entries = state.entries.updated(
                                    current.handle.lifecycle,
                                    current.copy(
-                                     ownership = EntryOwnership.Attached(registration, output)
+                                     ownership = EntryOwnership.Attached(
+                                       registration,
+                                       output,
+                                       activeNotifier
+                                     )
                                    )
                                  ),
                                  byTopic = state.byTopic.updated(
@@ -483,7 +507,8 @@ final private[scalive] class ConnectionSupervisor private (
             case true  => LeaveResult.Left
             case false => LeaveResult.UnknownTopic
           }
-        case Some((handle, EntryOwnership.Attached(registration, output))) if registration.sticky =>
+        case Some((handle, EntryOwnership.Attached(registration, output, _)))
+            if registration.sticky =>
           detachStickyForNavigation(handle, registration, output).map {
             case true  => LeaveResult.Left
             case false => LeaveResult.UnknownTopic
@@ -642,7 +667,11 @@ final private[scalive] class ConnectionSupervisor private (
                   val entry = Entry(
                     handle,
                     slot.scope,
-                    EntryOwnership.Attached(registration, pending.output)
+                    EntryOwnership.Attached(
+                      registration,
+                      pending.output,
+                      pending.failureNotifier
+                    )
                   )
                   installEntry(slot, entry, root = false)
                   ZIO.succeed(handle)
@@ -679,7 +708,13 @@ final private[scalive] class ConnectionSupervisor private (
         .detachChild(registration.id, entry.handle.lifecycle, entry.handle.epoch).unit *>
       gate.withPermit {
         state.entries.get(entry.handle.lifecycle) match
-          case Some(current @ Entry(_, _, EntryOwnership.Reattaching(active, activeOutput)))
+          case Some(
+                current @ Entry(
+                  _,
+                  _,
+                  EntryOwnership.Reattaching(active, activeOutput, _)
+                )
+              )
               if current.handle.epoch == entry.handle.epoch &&
                 sameCoordinates(active, registration) && (activeOutput eq output) =>
             state = state.copy(
@@ -739,26 +774,31 @@ final private[scalive] class ConnectionSupervisor private (
                 topology.revokeParent(handle.lifecycle, handle.epoch) *>
                   closeEntry(claim.entry) *>
                   ZIO.foreachDiscard(
-                    activeRegistration.filter(_.linkParentOnCrash).zip(failure)
-                  ) { case (registration, childFailure) =>
-                    failParent(registration, handle.lifecycle, childFailure)
+                    activeRegistration.filter(_._1.linkParentOnCrash).zip(failure)
+                  ) { case ((registration, notifier), childFailure) =>
+                    notifier.onRuntime(childFailure) *>
+                      failParent(registration, handle.lifecycle, childFailure)
                   }
               }.ensuring(completeRetirement(claim))
         }
     }
+  end terminal
 
   private def linkParentAfterStartFailure(
     registration: NestedRegistration,
-    failure: ConnectionError
-  ): UIO[Unit] =
+    failure: ConnectionError,
+    notify: ConnectionError => UIO[Unit]
+  ): UIO[Boolean] =
     topology.registration(registration.id).flatMap {
       case Some(active) if sameCoordinates(active, registration) && active.linkParentOnCrash =>
-        lifecycle(active.parentLifecycle, active.parentEpoch).flatMap {
-          case Some(parent) =>
-            parent.abort(ConnectionError.LinkedChildJoinFailed(active.id, failure))
-          case None => ZIO.unit
-        }
-      case _ => ZIO.unit
+        notify(failure) *>
+          lifecycle(active.parentLifecycle, active.parentEpoch)
+            .flatMap {
+              case Some(parent) =>
+                parent.abort(ConnectionError.LinkedChildJoinFailed(active.id, failure))
+              case None => ZIO.unit
+            }.as(true)
+      case _ => ZIO.succeed(false)
     }
 
   private def failParent(
@@ -844,7 +884,13 @@ final private[scalive] class ConnectionSupervisor private (
           gate
             .withPermit {
               state.entries.get(handle.lifecycle) match
-                case Some(entry @ Entry(_, _, EntryOwnership.Attached(active, activeOutput)))
+                case Some(
+                      entry @ Entry(
+                        _,
+                        _,
+                        EntryOwnership.Attached(active, activeOutput, _)
+                      )
+                    )
                     if entry.handle.epoch == handle.epoch && active == registration &&
                       (activeOutput eq output) =>
                   state = state.copy(
@@ -916,13 +962,19 @@ final private[scalive] class ConnectionSupervisor private (
       root = state.root.filterNot(_ == entry.handle.lifecycle)
     )
 
-  private def detach(entry: Entry): UIO[Option[NestedRegistration]] = entry.ownership match
-    case EntryOwnership.Attached(registration, _) =>
+  private def detach(
+    entry: Entry
+  ): UIO[Option[(NestedRegistration, NestedFailureNotifier)]] = entry.ownership match
+    case EntryOwnership.Attached(registration, _, notifier) =>
       topology
-        .detachChild(registration.id, entry.handle.lifecycle, entry.handle.epoch)
-    case EntryOwnership.Reattaching(registration, _) =>
+        .detachChild(registration.id, entry.handle.lifecycle, entry.handle.epoch).map(
+          _.map(_ -> notifier)
+        )
+    case EntryOwnership.Reattaching(registration, _, notifier) =>
       topology
-        .detachChild(registration.id, entry.handle.lifecycle, entry.handle.epoch)
+        .detachChild(registration.id, entry.handle.lifecycle, entry.handle.epoch).map(
+          _.map(_ -> notifier)
+        )
     case EntryOwnership.Root | EntryOwnership.DetachedSticky(_, _, _) => ZIO.none
 
   private def detachStickyEntries(
@@ -932,7 +984,13 @@ final private[scalive] class ConnectionSupervisor private (
       .withPermit {
         detached.foreach { value =>
           state.entries.get(value.child.lifecycle) match
-            case Some(entry @ Entry(_, _, EntryOwnership.Attached(registration, output)))
+            case Some(
+                  entry @ Entry(
+                    _,
+                    _,
+                    EntryOwnership.Attached(registration, output, _)
+                  )
+                )
                 if entry.handle.epoch == value.child.epoch && registration == value.registration =>
               val ownership = EntryOwnership.DetachedSticky(
                 registration.applicationId,
@@ -987,6 +1045,9 @@ final private[scalive] class ConnectionSupervisor private (
   private[scalive] def retireLifecycle(handle: ConnectedLifecycle): UIO[Unit] =
     retireHandle(handle)
 
+  private[scalive] def retireTerminatedLifecycle(handle: ConnectedLifecycle): UIO[Unit] =
+    handle.awaitClosed *> handle.pollFailure.flatMap(terminal(handle, _))
+
   private[scalive] def awaitRetirement(handle: ConnectedLifecycle): UIO[Unit] =
     Promise.make[Nothing, Unit].flatMap { candidate =>
       gate.withPermit {
@@ -1002,6 +1063,13 @@ final private[scalive] class ConnectionSupervisor private (
 end ConnectionSupervisor
 
 private[scalive] object ConnectionSupervisor:
+  final private[scalive] case class NestedFailureNotifier(
+    onStart: ConnectionError => UIO[Unit],
+    onRuntime: ConnectionError => UIO[Unit])
+
+  private[scalive] object NestedFailureNotifier:
+    val noop: NestedFailureNotifier = NestedFailureNotifier(_ => ZIO.unit, _ => ZIO.unit)
+
   enum StartError:
     case Closed
     case DuplicateTopic(topic: NestedTopic)
@@ -1009,6 +1077,7 @@ private[scalive] object ConnectionSupervisor:
     case ParentUnavailable(lifecycle: LifecycleId, epoch: Epoch)
     case RegistrationRevoked(registration: NestedRegistrationId)
     case ConnectionFailed(error: ConnectionError)
+    case LinkedConnectionFailed(error: ConnectionError)
 
   enum LeaveResult:
     case Left
@@ -1016,8 +1085,14 @@ private[scalive] object ConnectionSupervisor:
 
   private enum EntryOwnership:
     case Root
-    case Attached(registration: NestedRegistration, output: RebindableSink)
-    case Reattaching(registration: NestedRegistration, output: RebindableSink)
+    case Attached(
+      registration: NestedRegistration,
+      output: RebindableSink,
+      failureNotifier: NestedFailureNotifier)
+    case Reattaching(
+      registration: NestedRegistration,
+      output: RebindableSink,
+      failureNotifier: NestedFailureNotifier)
     case DetachedSticky(applicationId: String, topic: NestedTopic, output: RebindableSink)
 
   final private case class Entry(
@@ -1034,7 +1109,8 @@ private[scalive] object ConnectionSupervisor:
   final private case class PendingNested(
     handle: ConnectedLifecycle,
     buffer: StartupBuffer,
-    output: RebindableSink)
+    output: RebindableSink,
+    failureNotifier: NestedFailureNotifier)
 
   final private case class ReattachSlot(
     entry: Entry,

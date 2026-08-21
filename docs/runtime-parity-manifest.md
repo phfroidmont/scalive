@@ -73,14 +73,28 @@ The following commands were run against the current Milestone-11 tree on 2026-08
 | `mill --ticker false scalive.__.publishArtifacts` | Passed for every publishable module |
 | `mill --ticker false benchmarks.listJmhBenchmarks` | Passed; discovered all maintained benchmark groups |
 | `mill --ticker false benchmarks.runJmh -wi 0 -i 1 -r 100ms -f 0 -foe true '.*'` | Passed as a non-threshold smoke run |
-| `./scripts/e2e-run-root-slice.sh` | Passed; 9 Chromium scenarios passed |
-| `./scripts/e2e-run-upstream.sh` | Completed; 170 passed without retry and 2 passed on retry in 36.3 seconds |
+| `./scripts/e2e-run-root-slice.sh --retries=0` | Passed; 9 Chromium scenarios passed |
+| `./scripts/e2e-run-upstream-cutover.sh` | Passed; three consecutive complete runs each passed all 172 scenarios with retries disabled, in 27.2, 26.8, and 26.3 seconds |
 
-The two retry-only upstream scenarios are the nested LiveComponent disabled-fieldset recovery case
-and issue 3530's nested-LiveView stream hook observation. Focused repetition completed 22/25 and
-8/10 runs without retry respectively. They remain required behavior and open stability work; they
-are not exclusions or intentional divergences. The cutover requirement for three consecutive CI
-runs without retries is therefore not yet satisfied.
+Initial no-retry repetition reproduced synchronization boundaries directly. Issue 3530 observed a
+missing asynchronous nested-hook log in 4/10 runs, while the nested LiveComponent disabled-fieldset
+recovery case inspected its WebSocket frame list before the recovery event in 1/25 runs. Later
+strict runs exposed equivalent immediate observations in issue 3529 remount text and error-scenario
+console delivery.
+
+`scripts/e2e-sync-upstream.sh` applies a patch named for the exact locked upstream revision. The
+patch removes the unattended `page.pause()` and replaces only premature observations with polling
+for the same exact form payload, remount text, console messages, and hook lifecycle counts. No test
+or behavioral assertion is hidden, skipped, or weakened.
+
+Crash repetitions also exposed two runtime defects. Failure-aware lifecycle retirement now emits
+the root channel error needed for reconnect, while linked nested failures notify the child channel
+before aborting the exact parent, preventing stale child rejoin and fallback HTTP reload. Native
+supervisor regressions verify mount-time and runtime ordering. Focused no-retry runs passed linked
+crash recovery 50/50, root crash recovery 25/25, issue 3530 50/50, issue 3529 25/25, and the five
+disabled-fieldset recovery variants 125/125. The strict cutover command then passed three complete
+unfiltered 172-test runs with retries forced to zero. Snapshot CI runs the same command before
+publication.
 
 ## Classifications
 

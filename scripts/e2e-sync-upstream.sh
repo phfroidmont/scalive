@@ -27,4 +27,14 @@ rsync \
 	"${LV_UPSTREAM_SRC}/" \
 	"${dest_dir}/"
 
+patch_file="${repo_root}/test/upstream-patches/${LV_UPSTREAM_REV}.patch"
+if [[ ! -f "${patch_file}" ]]; then
+	echo "Missing upstream synchronization patch: ${patch_file}" >&2
+	exit 1
+fi
+
+relative_dest="${dest_dir#"${repo_root}/"}"
+git -C "${repo_root}" apply --check --directory="${relative_dest}" "${patch_file}"
+git -C "${repo_root}" apply --directory="${relative_dest}" "${patch_file}"
+
 printf '%s\n' "${dest_dir}"

@@ -250,18 +250,28 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           linked       <- fixture
           linkedOutput <- Queue.bounded[ConnectionOutput](4)
           childOutput  <- Queue.bounded[ConnectionOutput](4)
+          notified     <- Promise.make[Nothing, Boolean]
           linkedRoot   <- startRoot(linked, parent(true, failMount = false), linkedOutput)
           _            <- linkedOutput.take
           linkedClaims <- claimsFor(linked)
           linkedJoin   <- linked.supervisor.reserveNested(linkedClaims)
+          notifier = ConnectionSupervisor.NestedFailureNotifier(
+                       onStart = _ => ZIO.unit,
+                       onRuntime = _ =>
+                         linked.supervisor
+                           .lifecycle(linkedRoot.lifecycle, linkedRoot.epoch).flatMap(active =>
+                             notified.succeed(active.contains(linkedRoot)).unit
+                           )
+                     )
           linkedChild <- linked.supervisor.startNested(
                            linkedJoin,
                            URL.root,
                            metadata,
                            "linked",
                            false,
-                           childOutput.offer(_).unit
-                         )
+                           childOutput.offer(_).unit,
+                           notifier
+                          )
           childBootstrap <- childOutput.take
           childBinding = bindingFrom(childBootstrap)
           linkedResult <- linkedChild
@@ -269,15 +279,65 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
                                CommandId.fresh().toOption.get,
                                childBinding,
                                BindingPayload.Params(Map.empty)
-                              ).either
-          _ <- linked.supervisor.awaitRetirement(linkedChild)
+                               ).either
+          _ <- linked.supervisor.retireTerminatedLifecycle(linkedChild)
+          parentActiveWhenNotified <- notified.await
           _ <- linkedRoot.awaitClosed
           linkedFailure <- linkedRoot.pollFailure
         yield assertTrue(
           isolatedResult.isLeft,
           rootStillActive.contains(isolatedRoot),
           linkedResult.isRight,
+          parentActiveWhenNotified,
           linkedFailure.exists(_.isInstanceOf[ConnectionError.LinkedChildFailed])
+        )
+      }
+    },
+    test("linked mount failure notifies before closing the exact parent") {
+      ZIO.scoped {
+        object Child extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.fail(Exception("mount failed"))
+          def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
+        object Parent extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] =
+            div(liveView("child", Child, linkParentOnCrash = true))
+
+        for
+          value      <- fixture
+          rootOutput <- Queue.bounded[ConnectionOutput](4)
+          childOutput <- Queue.bounded[ConnectionOutput](4)
+          notified   <- Promise.make[Nothing, Boolean]
+          root       <- startRoot(value, Parent, rootOutput)
+          _          <- rootOutput.take
+          claims     <- claimsFor(value)
+          reservation <- value.supervisor.reserveNested(claims)
+          notifier = ConnectionSupervisor.NestedFailureNotifier(
+                       onStart = _ =>
+                         value.supervisor.lifecycle(root.lifecycle, root.epoch).flatMap(active =>
+                           notified.succeed(active.contains(root)).unit
+                         ),
+                       onRuntime = _ => ZIO.unit
+                     )
+          result <- value.supervisor
+                      .startNested(
+                        reservation,
+                        URL.root,
+                        metadata,
+                        "linked",
+                        false,
+                        childOutput.offer(_).unit,
+                        notifier
+                      ).either
+          parentActiveWhenNotified <- notified.await
+          _                        <- root.awaitClosed
+          rootFailure              <- root.pollFailure
+        yield assertTrue(
+          result.swap.exists(
+            _.isInstanceOf[ConnectionSupervisor.StartError.LinkedConnectionFailed]
+          ),
+          parentActiveWhenNotified,
+          rootFailure.exists(_.isInstanceOf[ConnectionError.LinkedChildJoinFailed])
         )
       }
     },
@@ -354,12 +414,9 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           _            <- first.awaitClosed
           second       <- startRoot(value, Root, secondOutput, Some(lifecycle))
           _            <- secondOutput.take
-          staleWait    <- value.supervisor.awaitRetirement(first).fork
-          _            <- ZIO.yieldNow.repeatN(10)
-          completed    <- staleWait.poll
-          _            <- staleWait.interrupt
+          _            <- value.supervisor.awaitRetirement(first)
           active       <- value.supervisor.lifecycle(second.lifecycle, second.epoch)
-        yield assertTrue(completed.nonEmpty, active.contains(second))
+        yield assertTrue(active.contains(second))
       }
     },
     test("compatible navigation reattaches an exact sticky child without remounting") {

@@ -13,5 +13,6 @@ opencode.json
 .e2e-upstream
 .playwright-mcp
 test-results
+playwright-report
 monocart-report
 .worktrees/

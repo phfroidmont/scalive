@@ -12,8 +12,8 @@ lifecycles through production route admission and connection supervision.
 
 The detached legacy baseline in [`docs/runtime-parity-manifest.md`](docs/runtime-parity-manifest.md)
 remains a frozen historical oracle. Its passing results do not establish current target behavior.
-The latest current-tree browser result is recorded below; a fresh browser run remains the release
-gate for subsequent changes.
+The latest current-tree browser result is recorded below; the strict cutover command remains the
+release gate for subsequent changes.
 
 ## Status Legend
 
@@ -24,7 +24,7 @@ gate for subsequent changes.
 | Partial | Some behavior exists, but the upstream feature area is not complete or fully mapped. |
 | Intentional divergence | Scalive deliberately exposes a Scala-first typed contract. |
 | Out of scope | No direct equivalent is planned because the concept is Phoenix/Elixir-specific. |
-| Browser gate | Current status is determined by `./scripts/e2e-run-upstream.sh`; retry-only flakes remain visible and do not satisfy the no-retry cutover criterion. |
+| Browser gate | Current status is determined by `./scripts/e2e-run-upstream-cutover.sh`, which requires three complete consecutive runs with retries disabled. |
 
 Paths below are repository-relative and identify representative evidence rather than every test.
 
@@ -32,15 +32,15 @@ Paths below are repository-relative and identify representative evidence rather 
 
 | Area | Status | Current target evidence | Remaining gate / decision |
 | --- | --- | --- | --- |
-| Browser E2E behavior | Browser gate | On 2026-08-21 the pinned suite completed with 170 clean passes and 2 retry-only flakes. `scripts/e2e-run-upstream.sh`, `test/playwright.upstream.config.js`, and `e2eApp/src` are the executable evidence. | Eliminate the two synchronization flakes and obtain three consecutive CI runs with no retries. |
+| Browser E2E behavior | Browser gate | On 2026-08-21 the pinned suite completed three consecutive 172-test runs with no retries in 27.2, 26.8, and 26.3 seconds. `scripts/e2e-run-upstream-cutover.sh`, the revision-specific synchronization patch under `test/upstream-patches`, and `e2eApp/src` are the executable evidence. | Keep the strict cutover command in snapshot CI and update the synchronization patch explicitly when advancing the upstream pin. |
 | Public lifecycle and connection capabilities | Target evidence | `scalive/api/src/scalive/lifecycle`, `scalive/api/test/src/scaliveapi/ConnectionCapabilitiesSpec.scala`, `RoutedConstructionSpec.scala`, and `ComponentApiSpec.scala` cover typed mount/message contexts, explicit `Connection.Disconnected`/`Connection.Connected`, routes, components, and capability gating. | Continue mapping callback edge cases without weakening compile-time capability boundaries. |
 | Rendering and semantic diffs | Target evidence | `scalive/render/src/scalive/render` with `TreeDifferSpec.scala`, `RenderProgramSpec.scala`, `HtmlRendererSpec.scala`, `StreamRenderingSpec.scala`, and `NestedRenderingSpec.scala`. | Audit exact browser merge behavior for every upstream regression scenario. |
 | Phoenix channel and rendered protocol | Target evidence, audit pending | `scalive/protocol/phoenix/src/scalive/protocol/phoenix` with `PhoenixProtocolSpec.scala`, `PhoenixRenderedEncoderSpec.scala`, `PhoenixUploadProtocolSpec.scala`, and `PhoenixProtocolFuzzSpec.scala` covers frames, refs, rendered projections, two-phase CID destruction/reintroduction, uploads, and malformed input. | Keep exact errors, reconnect generations, and protocol additions aligned with `v1.1.28`. |
-| Static HTTP render and connected bootstrap | Target evidence | `scalive/transport/zio-http/test/src/scalive/ZioHttpSpec.scala`, `ZioHttpSecuritySpec.scala`, and `scalive/testing/test/src/scalive/testing/{DisconnectedRenderSpec,ConnectedRenderSpec}.scala` cover disconnected bootstrap, signed admission, connected mount, and semantic HTML projection. | Browser-test crash, reload, reconnect, and stale-page behavior. |
+| Static HTTP render and connected bootstrap | Target evidence | `scalive/transport/zio-http/test/src/scalive/ZioHttpSpec.scala`, `ZioHttpSecuritySpec.scala`, `scalive/testing/test/src/scalive/testing/{DisconnectedRenderSpec,ConnectedRenderSpec}.scala`, and the upstream error scenarios cover disconnected bootstrap, signed admission, connected mount, semantic HTML projection, crash recovery, and reconnect without fallback reload. | Preserve exact crash, reconnect, and stale-page behavior in the browser gate. |
 | Routes, sessions, aspects, and layouts | Target evidence | `scalive/api/src/scalive/routing`, `RoutedConstructionSpec.scala`, `scalive/transport/zio-http/test/src/scalive/ZioHttpApiSpec.scala`, and `ZioHttpSpec.scala` cover typed declarations, validation, session boundaries, mount claims, and layout composition. | Document intentional differences from route actions, metadata, and private assigns. |
 | Lifecycle hooks | Target evidence | `scalive/api/src/scalive/lifecycle/Hooks.scala`, `scalive/runtime/connection/src/scalive/runtime/connection/RootHookRuntime.scala`, `RootConnectionSpec.scala`, and `ComponentRuntimeSpec.scala`. | Audit all upstream hook stages and halt/error payloads. |
 | Stateful components and updates | Target evidence | `ComponentApiSpec.scala`, `scalive/runtime/kernel/test/src/scalive/runtime/kernel/ComponentKernelSpec.scala`, `scalive/runtime/connection/test/src/scalive/runtime/connection/ComponentRuntimeSpec.scala`, and `DisconnectedComponentRendererSpec.scala`. | Decide whether delayed and batched typed update helpers improve the API. |
-| Nested LiveViews | Target evidence | `NestedRenderingSpec.scala`, `NestedTopologyKernelSpec.scala`, `NestedTopologyRuntimeSpec.scala`, and connected harness coverage in `ConnectedRenderSpec.scala`. | Keep sticky/rejoin and browser cleanup behavior aligned. |
+| Nested LiveViews | Target evidence | `NestedRenderingSpec.scala`, `NestedTopologyKernelSpec.scala`, `NestedTopologyRuntimeSpec.scala`, `ConnectionSupervisorSpec.scala`, and connected harness/browser coverage verify independent, sticky, and parent-linked child lifecycles. | Keep sticky/rejoin, linked-failure ordering, and browser cleanup behavior aligned. |
 | Navigation, flash, and titles | Target evidence, audit pending | Typed navigation lives in `scalive/api`; lifecycle output is covered by `SessionKernelSpec.scala`, `RootConnectionSpec.scala`, `ZioHttpSpec.scala`, and `ConnectedRenderSpec.scala`. | Audit history, cross-session fallback, scroll, title ownership, and flash carryover in the browser gate. |
 | Forms | Target evidence, audit pending | `scalive/api/src/scalive/forms`, `FormDefinitionApiSpec.scala`, `scalive/transport/zio-http/src/scalive/HttpFormDecoder.scala`, and both testing-module render suites cover typed decoding and connected change/submit dispatch. | Complete browser recovery, auto-recover, locked-state, and ordinary-action coverage. |
 | Uploads | Target evidence, audit pending | `LiveUploadSpec.scala`, `UploadContextSpec.scala`, `UploadWorkerSpec.scala`, `PhoenixUploadProtocolSpec.scala`, `ZioHttpUploadSpec.scala`, and `ConnectedRender.upload`. | Audit auto-upload, external writer failure, cancellation, progress, and submit edge cases. |
@@ -49,7 +49,7 @@ Paths below are repository-relative and identify representative evidence rather 
 | JS commands, client events, and DOM bindings | Target evidence, audit pending | `scalive/api/src/scalive/JS.scala`, `BrowserEvent.scala`, generated HTML definitions, `BindingTableSpec.scala`, `PhoenixRenderedEncoderSpec.scala`, and connected binding dispatch in `ConnectedRenderSpec.scala`. | Audit command JSON and all client-maintained DOM states against the pinned browser suite. |
 | Static asset tracking and connect metadata | Target evidence | `StaticAssetsSpec.scala`, `ZioHttpSpec.scala`, `RootConnectionSpec.scala`, and the typed `ConnectedMetadata`/connection capability APIs cover tracked assets, connect params, and static-change metadata. | Expand public documentation and browser assertions for reconnect metadata. |
 | Security, session tokens, and CSRF | Target evidence | `ZioHttpConfig`, `LiveSecurity`, and purpose-bound credentials are covered by `HttpSecuritySpec.scala`, `ZioHttpSecuritySpec.scala`, and `ZioHttpSpec.scala`. | Tokens are authenticated rather than encrypted; continue security review and browser stale-admission testing. |
-| Error shapes, crash recovery, and observability | Target evidence, audit pending | `RuntimeObservabilitySpec.scala`, `ConnectionSupervisorSpec.scala`, `SerialWriterSpec.scala`, `PhoenixProtocolFuzzSpec.scala`, and transport suites cover correlated events, supervision, sink failures, malformed frames, and admission failures. | Verify exact browser reload/rejoin behavior and normalized error payloads. |
+| Error shapes, crash recovery, and observability | Target evidence, audit pending | `RuntimeObservabilitySpec.scala`, `ConnectionSupervisorSpec.scala`, `SerialWriterSpec.scala`, `PhoenixProtocolFuzzSpec.scala`, transport suites, and upstream error scenarios cover correlated events, supervision, ordered linked-child failure reporting, crash recovery, sink failures, malformed frames, and admission failures. | Continue auditing normalized error payloads while preserving the verified browser reload/rejoin behavior. |
 | Transport support | Partial | ZIO HTTP static and websocket routes, channel frames, uploads, security, and backpressure are covered by `scalive/transport/zio-http/test/src/scalive`. | Long-poll fallback is not implemented; decide whether it is required. |
 | Test harness helpers | Target evidence | `scalive/testing/src/scalive/testing` provides disconnected semantic queries plus `ConnectedRender`/`ConnectedView` joins, clicks, forms, typed messages, async waits, nested joins, hosted uploads, leave, and latest-HTML queries; both render suites exercise these paths. | Extend helpers only for recurring user-facing tests; do not clone Phoenix helper internals. |
 | Process-style callbacks and HEEx macros | Out of scope / intentional divergence | ZIO fibers and scopes replace process callbacks; typed Scala HTML, signals, models, codecs, and components replace assigns maps and HEEx macros. | Document equivalents when a concrete user-facing need appears. |
@@ -63,13 +63,22 @@ Paths below are repository-relative and identify representative evidence rather 
   lifecycle turns. They are performance diagnostics, not compatibility proof.
 - The frozen oracle's 172 passing Chromium scenarios remain historical comparison evidence. Current
   browser compatibility is established only by a fresh run of the browser gate.
-- The 2026-08-21 current-tree browser gate completed all 172 scenarios: 170 passed without retry and
-  2 passed on retry. The retry-only scenarios were
-  `forms.spec.js :: /form/nested live-component - form recovery :: respects disabled state of a
-  fieldset` and `issues/3530.spec.js :: hook is initialized properly when using a stream of nested
-  LiveViews`. Focused repetition produced 22/25 and 8/10 clean runs respectively, consistent with
-  client-observation timing rather than a deterministic compatibility exclusion. They remain open
-  release flakes until the no-retry cutover criterion is met.
+- Initial no-retry repetition reproduced client-observation races: issue 3530 missed an asynchronous
+  nested-hook log in 4/10 runs, nested LiveComponent form recovery inspected WebSocket frames before
+  the recovery event in 1/25 runs, issue 3529 compared remount text before navigation settled, and
+  error scenarios could inspect console delivery immediately after the recovered DOM appeared.
+- The revision-specific patch under `test/upstream-patches` removes the unattended debugger pause
+  and polls for the same exact payloads, remount text, console messages, and hook lifecycle counts.
+  It skips no scenario and weakens no behavioral assertion.
+- Separate crash repetitions exposed runtime defects rather than harness races. Failure-aware
+  lifecycle retirement now delivers root channel errors, and a linked child reports its mount or
+  runtime failure before aborting its parent, preventing stale child rejoin and fallback HTTP reload.
+  Native regressions verify this ordering. Focused no-retry runs passed linked crash recovery 50/50,
+  root crash recovery 25/25, issue 3530 50/50, issue 3529 25/25, and all five disabled-fieldset
+  recovery variants 125/125.
+- `scripts/e2e-run-upstream-cutover.sh` runs the complete unfiltered suite three times and forces
+  retries to zero. On 2026-08-21 all three runs passed all 172 scenarios in 27.2, 26.8, and 26.3
+  seconds. Snapshot CI executes this command before publication.
 
 ## Intentional Divergences
 

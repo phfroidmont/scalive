@@ -974,7 +974,11 @@ object ZioHttp:
     currentUrl: Ref[URL],
     parent: Option[(LifecycleId, Epoch)],
     isRoot: Boolean,
-    sticky: Boolean)
+    sticky: Boolean,
+    linkedParentOnCrash: Boolean)
+
+  final private case class ReportedNestedJoinFailure(error: ConnectionError)
+      extends Exception(error.toString)
 
   final private case class JoinedUpload(
     topic: String,
@@ -1359,7 +1363,8 @@ object ZioHttp:
                                 currentUrl,
                                 parent = None,
                                 isRoot = true,
-                                sticky = false
+                                sticky = false,
+                                linkedParentOnCrash = false
                               )
                       _ <- joined.update(_.updated(topic, entry))
                       _ <- registration.set(Some(admitted.claims))
@@ -1433,6 +1438,21 @@ object ZioHttp:
                        connectParams = join.params,
                        initialFlash = Map.empty
                      )
+          failureNotifier = ConnectionSupervisor.NestedFailureNotifier(
+                              onStart = error =>
+                                writer
+                                  .send(
+                                    joinFailureEnvelope(
+                                      joinRef,
+                                      ref,
+                                      topic,
+                                      Exception(error.toString)
+                                    )
+                                  ).ignore,
+                              onRuntime = _ =>
+                                writer
+                                  .send(PhoenixOutput.channelError(effectiveRef, topic)).ignore
+                            )
           sink = lifecycleSink(
                    config,
                    csrfToken,
@@ -1456,9 +1476,14 @@ object ZioHttp:
                             reservation.registration.applicationId,
                             loading = false,
                             startup.offer,
+                            failureNotifier = failureNotifier,
                             reattach = join.sticky,
                             requestedLifecycle = claims.childLifecycle
-                          ).mapError(error => Exception(error.toString))
+                          ).mapError {
+                            case ConnectionSupervisor.StartError.LinkedConnectionFailed(error) =>
+                              ReportedNestedJoinFailure(error)
+                            case error => Exception(error.toString)
+                          }
           _ <- connectionReady.succeed(connection)
           entry = JoinedLifecycle(
                     NestedTopic(topic),
@@ -1470,7 +1495,8 @@ object ZioHttp:
                     currentUrl,
                     parent = Some(claims.parentLifecycle -> claims.parentEpoch),
                     isRoot = false,
-                    sticky = reservation.registration.sticky
+                    sticky = reservation.registration.sticky,
+                    linkedParentOnCrash = reservation.registration.linkParentOnCrash
                   )
           _ <- joined.update(_.updated(topic, entry))
           _ <- monitorLifecycle(joined, registration, supervisor, writer, entry).forkScoped
@@ -1479,11 +1505,16 @@ object ZioHttp:
                  removeJoinedLifecycle(joined, entry),
                  supervisor.retireLifecycle(connection)
                )
-        yield ()).catchAll { error =>
-          ZIO.logWarning(
-            s"Rejecting connected nested lifecycle topic=$topic: ${error.getMessage}"
-          ) *>
-            writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+        yield ()).catchAll {
+          case error: ReportedNestedJoinFailure =>
+            ZIO.logWarning(
+              s"Rejecting connected linked nested lifecycle topic=$topic: ${error.getMessage}"
+            )
+          case error =>
+            ZIO.logWarning(
+              s"Rejecting connected nested lifecycle topic=$topic: ${error.getMessage}"
+            ) *>
+              writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
         }
     )
   end joinNested
@@ -1524,7 +1555,7 @@ object ZioHttp:
     writer: SerialWriter[PhoenixEnvelope],
     entry: JoinedLifecycle
   ): UIO[Unit] =
-    entry.connection.awaitClosed *> supervisor.awaitRetirement(
+    supervisor.retireTerminatedLifecycle(
       entry.connection
     ) *> entry.connection.pollFailure.flatMap { failure =>
       joined
@@ -1541,7 +1572,7 @@ object ZioHttp:
           case true  =>
             ZIO.when(entry.isRoot && failure.nonEmpty)(registration.set(None)) *>
               ZIO
-                .when(failure.nonEmpty)(
+                .when(failure.nonEmpty && !entry.linkedParentOnCrash)(
                   writer.send(PhoenixOutput.channelError(entry.joinRef, entry.topic.value)).ignore
                 ).unit
         }

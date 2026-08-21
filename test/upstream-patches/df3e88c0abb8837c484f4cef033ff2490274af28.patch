@@ -1,0 +1,164 @@
+diff --git a/test/e2e/tests/forms.spec.js b/test/e2e/tests/forms.spec.js
+index 6498349..4608e99 100644
+--- a/test/e2e/tests/forms.spec.js
++++ b/test/e2e/tests/forms.spec.js
+@@ -327,8 +327,6 @@ for (const liveComponent of [false, true]) {
+           await expect(page.locator("input[name=c]")).toBeFocused();
+           await syncLV(page);
+ 
+-          await page.pause();
+-
+           await page.evaluate(
+             () =>
+               new Promise((resolve) => window.liveSocket.disconnect(resolve)),
+@@ -340,7 +338,7 @@ for (const liveComponent of [false, true]) {
+           await syncLV(page);
+           await expect(page.locator(".phx-loading")).toHaveCount(0);
+ 
+-          expect(formPayload(webSocketEvents)).toEqual({
++          await expect.poll(() => formPayload(webSocketEvents)).toEqual({
+             c: "hello world",
+             d: "bar",
+             _unused_e: "",
+@@ -809,6 +807,7 @@ function formPayload(events) {
+   const event = events.find(
+     (e) => e.type === "sent" && e.payload.includes('"event":"validate"'),
+   );
++  if (!event) return null;
+   const parsed = JSON.parse(event.payload);
+   return querystring.parse(parsed[4].value);
+ }
+diff --git a/test/e2e/tests/errors.spec.js b/test/e2e/tests/errors.spec.js
+index ae28e26..b4caa21 100644
+--- a/test/e2e/tests/errors.spec.js
++++ b/test/e2e/tests/errors.spec.js
+@@ -271,6 +271,6 @@ test.describe("exception handling", () => {
+       // child crashed on mount, linked to parent -> parent crashed too
+       // second mounts are successful
+-      expect(consoleMessages).toEqual(
++      await expect.poll(() => consoleMessages).toEqual(
+         expect.arrayContaining([
+           expect.stringMatching(/mount/),
+           expect.stringMatching(/child error: unable to join/),
+@@ -295,7 +295,7 @@ test.describe("exception handling", () => {
+       const newParentTiem = page.locator("#render-time");
+       await expect(newParentTiem).not.toHaveText(parentTime);
+ 
+-      expect(consoleMessages).toEqual([
++      await expect.poll(() => consoleMessages).toEqual([
+         expect.stringMatching(/child error: view crashed/),
+         expect.stringMatching(/child destroyed/),
+         expect.stringMatching(/error: view crashed/),
+diff --git a/test/e2e/tests/issues/3529.spec.js b/test/e2e/tests/issues/3529.spec.js
+index e96be29..39743db 100644
+--- a/test/e2e/tests/issues/3529.spec.js
++++ b/test/e2e/tests/issues/3529.spec.js
+@@ -16,7 +16,7 @@ test("forward and backward navigation is handled properly (replaceRootHistory)",
+   await syncLV(page);
+ 
+   // navigate remounts and changes the text
+-  expect(await pageText(page)).not.toBe(text);
++  await expect.poll(() => pageText(page)).not.toBe(text);
+   text = await pageText(page);
+ 
+   await page.getByRole("link", { name: "Patch" }).click();
+@@ -34,15 +34,17 @@ test("forward and backward navigation is handled properly (replaceRootHistory)",
+   // this should be a navigate -> remount!
+   await page.goBack();
+   await syncLV(page);
+-  expect(await pageText(page)).not.toBe(text);
++  await expect.poll(() => pageText(page)).not.toBe(text);
+ 
+   // navigate
++  const textBeforeForward = await pageText(page);
+   await page.goForward();
+   await syncLV(page);
++  await expect.poll(() => pageText(page)).not.toBe(textBeforeForward);
+   text = await pageText(page);
+ 
+   // now back again (navigate)
+   await page.goBack();
+   await syncLV(page);
+-  expect(await pageText(page)).not.toBe(text);
++  await expect.poll(() => pageText(page)).not.toBe(text);
+ });
+diff --git a/test/e2e/tests/issues/3530.spec.js b/test/e2e/tests/issues/3530.spec.js
+index 6f6b45a..6d92742 100644
+--- a/test/e2e/tests/issues/3530.spec.js
++++ b/test/e2e/tests/issues/3530.spec.js
+@@ -5,48 +5,63 @@ test("hook is initialized properly when using a stream of nested LiveViews", asy
+ test("hook is initialized properly when using a stream of nested LiveViews", async ({
+   page,
+ }) => {
+-  let logs = [];
++  const logs = [];
+   page.on("console", (e) => logs.push(e.text()));
+   const errors = [];
+   page.on("pageerror", (err) => errors.push(err));
+ 
++  const logCounts = (...messages) =>
++    messages.map((message) => logs.filter((e) => e.includes(message)).length);
++
+   await page.goto("/issues/3530");
+   await syncLV(page);
+ 
+   expect(errors).toEqual([]);
+-  expect(logs.filter((e) => e.includes("item-1 mounted"))).toHaveLength(1);
+-  expect(logs.filter((e) => e.includes("item-2 mounted"))).toHaveLength(1);
+-  expect(logs.filter((e) => e.includes("item-3 mounted"))).toHaveLength(1);
++  await expect
++    .poll(() => logCounts("item-1 mounted", "item-2 mounted", "item-3 mounted"))
++    .toEqual([1, 1, 1]);
+-  logs = [];
+ 
+   await page.getByRole("link", { name: "patch a" }).click();
+   await syncLV(page);
+ 
+   expect(errors).toEqual([]);
+-  expect(logs.filter((e) => e.includes("item-2 destroyed"))).toHaveLength(1);
++  await expect
++    .poll(() => logCounts("item-2 destroyed"))
++    .toEqual([1]);
+   expect(logs.filter((e) => e.includes("item-1 destroyed"))).toHaveLength(0);
+   expect(logs.filter((e) => e.includes("item-3 destroyed"))).toHaveLength(0);
+-  logs = [];
+ 
+   await page.getByRole("link", { name: "patch b" }).click();
+   await syncLV(page);
+ 
+   expect(errors).toEqual([]);
+-  expect(logs.filter((e) => e.includes("item-1 destroyed"))).toHaveLength(1);
++  await expect
++    .poll(() => logCounts("item-1 destroyed", "item-2 mounted"))
++    .toEqual([1, 2]);
+-  expect(logs.filter((e) => e.includes("item-2 destroyed"))).toHaveLength(0);
++  expect(logs.filter((e) => e.includes("item-2 destroyed"))).toHaveLength(1);
+   expect(logs.filter((e) => e.includes("item-3 destroyed"))).toHaveLength(0);
+-  expect(logs.filter((e) => e.includes("item-2 mounted"))).toHaveLength(1);
+-  logs = [];
+ 
+   await page.locator("div[phx-click=inc]").click();
+   await syncLV(page);
+-  expect(logs.filter((e) => e.includes("item-4 mounted"))).toHaveLength(1);
++  await expect.poll(() => logCounts("item-4 mounted")).toEqual([1]);
+ 
++  expect(
++    logCounts(
++      "item-1 mounted",
++      "item-2 mounted",
++      "item-3 mounted",
++      "item-4 mounted",
++      "item-1 destroyed",
++      "item-2 destroyed",
++      "item-3 destroyed",
++    ),
++  ).toEqual([1, 2, 1, 1, 1, 1, 0]);
++
+   expect(logs).not.toEqual(
+     expect.arrayContaining([
+       expect.stringMatching("no hook found for custom element"),
+     ]),
+   );
+   // no uncaught exceptions
+   expect(errors).toEqual([]);
+ });

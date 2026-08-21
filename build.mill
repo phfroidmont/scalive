@@ -7,6 +7,7 @@
 package build
 
 import mill.*, scalalib.*, publish.*
+import mill.api.BuildCtx
 import mill.scalalib.scalafmt.ScalafmtModule
 import mill.contrib.jmh.JmhModule
 import com.goyeau.mill.scalafix.ScalafixModule
@@ -30,7 +31,13 @@ trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
   )
 
 trait PublishCommon extends PublishModule:
-  def publishVersion = "0.0.1-SNAPSHOT"
+  def publishVersion = Task.Input {
+    val revision = Task.env.getOrElse(
+      "SCALIVE_REVISION",
+      os.proc("git", "rev-parse", "HEAD").call(cwd = BuildCtx.workspaceRoot).out.text().trim
+    )
+    s"0.0.1-${revision.take(12)}-SNAPSHOT"
+  }
   def pomSettings    = PomSettings(
     description = artifactName() match
       case "scalive"                    => "Scala 3 server-driven web applications compatible with Phoenix LiveView"

@@ -8,6 +8,8 @@ section = home
 Read the [installation guide](learn/index.md#install), visit the [external docs](https://example.com/docs), and use `inline code` with **strong**, *emphasized*, and ~~deleted~~ text.
 This follows a line break.
 
+Use snapshot `{{scaliveSnapshotVersion}}`.
+
 ## Overview with *emphasis* {#overview}
 
 ### Details {#details}

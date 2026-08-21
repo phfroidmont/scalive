@@ -160,6 +160,7 @@ object `package` extends Module:
         (repositoryRoot / "documentation" / "content").toString,
         Task.dest.toString,
         sourceRevision(),
+        build.scalive.publishVersion(),
         settings.path.toString,
         snapshot.path.toString,
         targets,

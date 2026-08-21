@@ -21,6 +21,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     "DomDefsGenerator.mill"
   )
   private val emptyApiReference = ApiReference(apiMetadata, Vector.empty)
+  private val snapshotVersion   = "0.0.1-0123456789ab-SNAPSHOT"
   private val liveViewSymbol = ApiSymbol(
     id = "trait:scalive.LiveView",
     ownerId = Some("package:scalive"),
@@ -78,6 +79,10 @@ object ContentPipelineSpec extends ZIOSpecDefault:
           val links = home.content.collect { case Block.Paragraph(content) => content }.flatten
             .collect { case value: Inline.Link => value }
           val inlines = home.content.collect { case Block.Paragraph(content) => content }.flatten
+          val renderedText = inlines.collect {
+            case Inline.Text(value) => value
+            case Inline.Code(value) => value
+          }.mkString(" ")
 
           assertTrue(
             bundle.formatVersion == DocumentationBundle.CurrentFormatVersion,
@@ -90,6 +95,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             bundle.examples.head.sources.head.tokens.exists(_.styles.nonEmpty),
             bundle.examples.head.compilationFailures.isEmpty,
             bundle.apiReference.symbols == Vector(liveViewSymbol, mountSymbol),
+            renderedText.contains(snapshotVersion),
+            !renderedText.contains("{{scaliveSnapshotVersion}}"),
             bundle.searchEntries.map(_.kind).toSet == Set(
               SearchEntryKind.Page,
               SearchEntryKind.Heading,
@@ -528,7 +535,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
          repository,
          Seq(Path.of("examples")),
          emptyApiReference,
-         Vector.empty
+         Vector.empty,
+         snapshotVersion
       ) match
         case Right(_)    => assertTrue(false)
         case Left(error) =>
@@ -548,7 +556,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             docs,
             Seq(Path.of("documentation/site/src")),
             emptyApiReference,
-            Vector.empty
+            Vector.empty,
+            snapshotVersion
           ) match
             case Right(_)    => assertTrue(false)
             case Left(error) =>
@@ -592,7 +601,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
       contentRoot = repository.resolve("documentation/content"),
       allowedSourceRoots = Seq(Path.of("examples")),
       apiReference = apiReference,
-      examples = examples
+      examples = examples,
+      snapshotVersion = snapshotVersion
     )
 
   private def withTempDirectory[A](prefix: String)(use: Path => Task[A]): Task[A] =
@@ -632,7 +642,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
           content,
           Seq(Path.of("examples")),
           emptyApiReference,
-          Vector.empty
+          Vector.empty,
+          snapshotVersion
         )
       }
     }

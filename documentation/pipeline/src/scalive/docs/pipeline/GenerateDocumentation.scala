@@ -11,7 +11,7 @@ import scalive.docs.model.ExampleCatalog
 object GenerateDocumentation:
   def main(arguments: Array[String]): Unit =
     arguments.toList match
-      case repository :: content :: output :: revision :: settingsPath :: snapshotPath :: targetRoots :: dependencyClasspath :: allowedRoots
+      case repository :: content :: output :: revision :: snapshotVersion :: settingsPath :: snapshotPath :: targetRoots :: dependencyClasspath :: allowedRoots
           if allowedRoots.nonEmpty =>
         val generated = for
           api <- ApiReferenceFiles.generateReference(
@@ -31,7 +31,8 @@ object GenerateDocumentation:
                         contentRoot = Path.of(content),
                         allowedSourceRoots = allowedRoots.map(Path.of(_)),
                         apiReference = reference,
-                        examples = ExampleCatalog.entries
+                        examples = ExampleCatalog.entries,
+                        snapshotVersion = snapshotVersion
                       ).left.map(error => ApiReferenceError(error.messages))
         yield bundle
 
@@ -49,7 +50,7 @@ object GenerateDocumentation:
             )
       case _ =>
         throw new IllegalArgumentException(
-          "Expected repository root, content root, output root, revision, API settings, API snapshot, target roots, dependency classpath, and at least one allowed source root."
+          "Expected repository root, content root, output root, revision, snapshot version, API settings, API snapshot, target roots, dependency classpath, and at least one allowed source root."
         )
 
   private def write(path: Path, content: String): Unit =

@@ -17,6 +17,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SCALIVE_REVISION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31

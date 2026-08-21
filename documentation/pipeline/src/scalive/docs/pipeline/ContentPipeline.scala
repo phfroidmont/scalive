@@ -39,14 +39,15 @@ final case class PipelineError(messages: Vector[String]):
   def message: String = messages.mkString("\n")
 
 object ContentPipeline:
-  private val RequiredMetadata = Set("title", "description", "order", "section")
-  private val AllowedMetadata  = RequiredMetadata + "group"
-  private val RouteSegment     = "^[a-z0-9]+(?:-[a-z0-9]+)*$".r
-  private val HeadingId        = "^[a-z0-9]+(?:-[a-z0-9]+)*$".r
-  private val AtxHeading       = "^ {0,3}(#{1,6})(?:[ \\t]+|$)(.*)$".r
-  private val ExplicitHeading  = "^(.*\\S)[ \\t]+\\{#([^{}]+)\\}[ \\t]*$".r
-  private val Fence            = "^ {0,3}(`{3,}|~{3,})(.*)$".r
-  private val RawHtml          =
+  private val SnapshotVersionToken = "{{scaliveSnapshotVersion}}"
+  private val RequiredMetadata     = Set("title", "description", "order", "section")
+  private val AllowedMetadata      = RequiredMetadata + "group"
+  private val RouteSegment         = "^[a-z0-9]+(?:-[a-z0-9]+)*$".r
+  private val HeadingId            = "^[a-z0-9]+(?:-[a-z0-9]+)*$".r
+  private val AtxHeading           = "^ {0,3}(#{1,6})(?:[ \\t]+|$)(.*)$".r
+  private val ExplicitHeading      = "^(.*\\S)[ \\t]+\\{#([^{}]+)\\}[ \\t]*$".r
+  private val Fence                = "^ {0,3}(`{3,}|~{3,})(.*)$".r
+  private val RawHtml              =
     "(?i)<(?!https?://|mailto:)(?:!--|\\?|![a-z\\[]|/?[a-z][a-z0-9:-]*(?=[\\s/>]|$))".r
   private val DirectiveName   = "@:([A-Za-z][A-Za-z0-9]*|@)".r
   private val SingleDirective =
@@ -75,7 +76,8 @@ object ContentPipeline:
     contentRoot: Path,
     allowedSourceRoots: Seq[Path],
     apiReference: ApiReference,
-    examples: Vector[ExampleDescriptor]
+    examples: Vector[ExampleDescriptor],
+    snapshotVersion: String
   ): Either[PipelineError, DocumentationBundle] =
     try
       val traceValidation = TraceCatalog.validate()
@@ -87,7 +89,7 @@ object ContentPipeline:
              )
         paths       <- validatePaths(repositoryRoot, contentRoot, allowedSourceRoots)
         definitions <- resolveExamples(paths, examples)
-        authored    <- readAndValidate(paths)
+        authored    <- readAndValidate(paths, snapshotVersion)
         parsed      <- parseTree(authored, paths)
         converted   <- convertTree(parsed, authored, paths, apiReference, definitions)
       yield converted
@@ -180,7 +182,8 @@ object ContentPipeline:
     path.getNameCount > 0 && path.getName(0).toString == ".."
 
   private def readAndValidate(
-    paths: ValidatedPaths
+    paths: ValidatedPaths,
+    snapshotVersion: String
   ): Either[PipelineError, Vector[AuthoredDocument]] =
     val markdownFiles = paths.files.filter(_.getFileName.toString.endsWith(".md"))
     val errors        = ArrayBuffer.empty[String]
@@ -201,7 +204,8 @@ object ContentPipeline:
 
       (routeResult, textResult) match
         case (Right(route), Right(text)) =>
-          val validation = validateDocument(sourcePath, text)
+          val resolved   = text.replace(SnapshotVersionToken, snapshotVersion)
+          val validation = validateDocument(sourcePath, resolved)
           errors ++= validation.errors
           validation.result.foreach { case (metadata, headings, normalized) =>
             documents += AuthoredDocument(

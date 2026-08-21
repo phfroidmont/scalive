@@ -8,12 +8,12 @@ section = learn
 ## Before You Begin {#before-you-begin}
 
 Install Java, Mill, and Node.js with npm. This quick start uses Scala `3.8.3`,
-Mill, and the `dev.scalive::scalive:0.0.1-SNAPSHOT` artifact.
+Mill, and the `dev.scalive::scalive:{{scaliveSnapshotVersion}}` artifact.
 
 @:callout(warning)
 
-Snapshots are mutable and retained by Maven Central for a limited time. Expect
-the dependency to change as Scalive evolves during alpha development.
+Snapshots are retained by Maven Central for a limited time. The revision in the
+version identifies the Scalive source used to produce that snapshot.
 
 @:@
 
@@ -54,7 +54,7 @@ object app extends ScalaModule:
   )
 
   def mvnDeps = Seq(
-    mvn"dev.scalive::scalive:0.0.1-SNAPSHOT"
+    mvn"dev.scalive::scalive:{{scaliveSnapshotVersion}}"
   )
 
   def packageJson = Task.Source(moduleDir / "package.json")

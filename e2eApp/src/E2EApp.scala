@@ -1,6 +1,5 @@
 import zio.*
 import zio.http.*
-import zio.http.template.Html
 import zio.logging.ConsoleLoggerConfig
 import zio.logging.LogColor
 import zio.logging.LogFilter
@@ -48,12 +47,10 @@ object E2EApp extends ZIOAppDefault:
       live / "stream" / "limit"                  -> StreamLimitLiveView(),
       live / "stream" / "nested-component-reset" -> StreamNestedComponentResetLiveView(),
       live / "stream" / "inside-for"             -> StreamInsideForLiveView(),
-      E2ERoutes.healthy { (category, _, _) =>
-        HealthyLiveView(category)
-      },
-      E2ERoutes.components                                                 -> ComponentsLiveView(),
-      live / "js"                                                          -> JsLiveView(),
-      live / "colocated"                                                   -> ColocatedLiveView(),
+      E2ERoutes.healthy                          -> HealthyLiveView(),
+      E2ERoutes.components                       -> ComponentsLiveView(),
+      live / "js"                                -> JsLiveView(),
+      live / "colocated"                         -> ColocatedLiveView(),
       (live / "upload").queryOptional[String]("auto_upload")               -> UploadLiveView(),
       E2ERoutes.form                                                       -> FormLiveView(),
       (live / "form" / "nested").paramsDecodeOnly(FormQueryParams.decoder) ->
@@ -133,7 +130,7 @@ object E2EApp extends ZIOAppDefault:
       live / "issues" / "4147" -> Issue4147LiveView()
     )
 
-  private def healthRoutes(rootLayout: E2ERootLayout) =
+  private def healthRoutes(assets: StaticAssets) =
     Routes(
       Method.GET / "health" -> handler(Response.text("OK")),
       Method.POST / "eval"  -> handler { (req: Request) =>
@@ -181,16 +178,20 @@ object E2EApp extends ZIOAppDefault:
       Method.GET / "favicon.ico"         -> handler(Response(status = Status.NoContent)),
       Method.GET / "navigation" / "dead" -> handler {
         Response.html(
-          Html.raw(
-            HtmlBuilder.build(
-              rootLayout(
-                NavigationLayout(
-                  h1("Dead view")
-                )
-              ),
-              isRoot = false
-            )
-          )
+          s"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><script defer type="text/javascript" phx-track-static src="${assets
+              .path("app.js")}"></script><link phx-track-static rel="stylesheet" href="${assets
+              .path(
+                "app.css"
+              )}"><title>Scalive E2E</title></head><body><div><style>html, body { margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", sans-serif; font-size: 1rem; }</style><div style="display: flex; width: 100%; height: 100vh;"><div style="position: fixed; height: 100vh; background-color: #f8fafc; border-right: 1px solid; width: 20rem; display: flex; flex-direction: column; padding: 1rem; gap: 0.5rem;"><h1 style="margin-bottom: 1rem; font-size: 1.125rem; line-height: 1.75rem;">Navigation</h1><a href="${E2ERoutes.navigationA
+              .location(
+                NavigationLiveViews.AParams(None)
+              ).href}" style="background-color: #f1f5f9; padding: 0.5rem;">LiveView A</a><a href="${E2ERoutes.navigationB
+              .location(
+                NavigationLiveViews.BParams(false)
+              ).href}" style="background-color: #f1f5f9; padding: 0.5rem;">LiveView B</a><a href="${E2ERoutes.stream
+              .location(
+                None
+              ).href}" style="background-color: #f1f5f9; padding: 0.5rem;">LiveView (other session)</a><a href="/navigation/dead" style="background-color: #f1f5f9; padding: 0.5rem;">Dead View</a></div><div style="margin-left: 22rem; flex: 1; padding: 2rem;"><h1>Dead view</h1></div></div></div><div id="root-portal"></div></body></html>"""
         )
       }
     )
@@ -200,8 +201,20 @@ object E2EApp extends ZIOAppDefault:
       assets <- StaticAssets.load(
                   StaticAssetConfig.classpath("public", Seq("app.css", "app.js", "daisy.css"))
                 )
-      rootLayout = new E2ERootLayout(assets)
-      routes     = liveRoutes(rootLayout, assets) ++ healthRoutes(rootLayout) ++ assets.routes
+      config <- ZIO
+                  .fromEither(
+                    ZioHttpConfig(
+                      signingSecret = sys.env.getOrElse(
+                        "SCALIVE_SIGNING_SECRET",
+                        "scalive-e2e-development-signing-secret"
+                      ),
+                      sessionMaxAge = java.time.Duration.ofHours(1),
+                      secureCookie = false
+                    )
+                  ).mapError(error => IllegalArgumentException(s"Invalid ZIO HTTP config: $error"))
+      rootLayout  = new E2ERootLayout(assets)
+      application = liveRoutes(rootLayout, assets)
+      routes      = ZioHttp.routes(application, config) ++ healthRoutes(assets) ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
     yield ()
 end E2EApp

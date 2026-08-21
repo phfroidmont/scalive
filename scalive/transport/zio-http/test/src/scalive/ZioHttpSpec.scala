@@ -71,6 +71,46 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("disconnected bootstrap wraps and preserves the rendered root element") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div(idAttr := "rendered-root", span("content"))
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live(View)), config),
+                      Request.get(URL.root)
+                    )
+        body   <- response.body.asString.orDie
+        rootId <- ZIO.fromOption(attribute(body, "id"))
+      yield assertTrue(
+        rootId != "rendered-root",
+        body.contains("data-phx-main"),
+        body.contains("<div id=\"rendered-root\"><span>content</span></div>")
+      )
+    },
+    test("checked POST forms receive the browser-bound CSRF token") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) =
+          scalive.Form.http(FormAction.from(Method.POST / "submit"))(
+            input(nameAttr := "profile[name]")
+          )
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live(View)), config),
+                      Request.get(URL.root)
+                    )
+        body     <- response.body.asString.orDie
+        csrf <- ZIO
+                  .fromOption(attribute(body, "content"))
+                  .orElseFail(new NoSuchElementException("csrf meta content"))
+      yield assertTrue(
+        body.contains(s"name=\"_csrf_token\" value=\"$csrf\""),
+        !body.contains("data-scalive-csrf")
+      )
+    },
     test("disconnected GET recursively mounts nested lifecycles once with signed child containers") {
       val childMounts = AtomicInteger()
       val grandMounts = AtomicInteger()
@@ -461,6 +501,21 @@ object ZioHttpSpec extends ZIOSpecDefault:
         assertTrue(response.status == Status.InternalServerError)
       )
     },
+    test("an ordinary connected mount failure is not classified as stale") {
+      val joinRef = PhoenixRef.Value("1")
+      val ref     = PhoenixRef.Value("2")
+      val error   = ZioHttp.joinFailureEnvelope(joinRef, ref, "lv:root", Exception("broken mount"))
+
+      assertTrue(
+        error == scalive.protocol.phoenix.PhoenixEnvelope(
+          joinRef,
+          ref,
+          "lv:root",
+          "phx_reply",
+          Json.Obj("status" -> Json.Str("error"), "response" -> Json.Obj.empty)
+        )
+      )
+    },
     test("sessions, application layouts, and routed views assemble") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
@@ -580,7 +635,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         factories.get() == 0
       )
     },
-    test("canonical page identity accepts absolute joins and rejects path or query changes") {
+    test("root admission accepts same-route URL changes and rejects a different route") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
@@ -618,16 +673,16 @@ object ZioHttpSpec extends ZIOSpecDefault:
                         s"lv:$rootId",
                         baseJoin
                       ).either
-        wrongQuery <- ZioHttpAdmission
-                        .admit(
-                          directRoutes,
-                          config,
-                          Some(csrfCookie),
-                          Some(csrfToken),
-                          rootExists = false,
-                          s"lv:$rootId",
-                          baseJoin.copy(url = Some("https://example.test/page?tab=two"))
-                        ).either
+        patchedQuery <- ZioHttpAdmission
+                          .admit(
+                            directRoutes,
+                            config,
+                            Some(csrfCookie),
+                            Some(csrfToken),
+                            rootExists = false,
+                            s"lv:$rootId",
+                            baseJoin.copy(url = Some("https://example.test/page?tab=two"))
+                          ).either
         wrongPath <- ZioHttpAdmission
                        .admit(
                          directRoutes,
@@ -642,7 +697,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         ZioHttp.canonicalUrl(pageUrl) == "/page?tab=one",
         sessionClaims.canonicalUrl == "/page?tab=one",
         absolute.exists(admitted => ZioHttp.canonicalUrl(admitted.url) == "/page?tab=one"),
-        wrongQuery.isLeft,
+        patchedQuery.exists(admitted => ZioHttp.canonicalUrl(admitted.url) == "/page?tab=two"),
         wrongPath.isLeft
       )
     },

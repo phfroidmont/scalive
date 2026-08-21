@@ -21,12 +21,12 @@ final class SubscriptionClockExample(instanceId: String)
     case Msg.Start =>
       if model.mode == Mode.Stopped then
         ctx.subscriptions
-          .start(ClockSubscription)(ticks(1.second))
+          .start(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(1.second))
           .as(model.copy(mode = Mode.EverySecond))
       else ZIO.succeed(model)
     case Msg.Replace =>
       ctx.subscriptions
-        .replace(ClockSubscription)(ticks(250.millis))
+        .replace(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(250.millis))
         .as(model.copy(mode = Mode.FourTimesPerSecond))
     case Msg.Cancel =>
       ctx.subscriptions.cancel(ClockSubscription).as(model.copy(mode = Mode.Stopped))

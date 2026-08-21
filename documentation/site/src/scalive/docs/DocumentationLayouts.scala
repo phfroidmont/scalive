@@ -108,7 +108,7 @@ final private[docs] class DocumentationLayout(
         .filter(_.outline.items.nonEmpty).toList.map(_ => route)
     )
     div(
-      dom.hook("PageMetadata", DomRef("docs-page-metadata")),
+      span(dom.hook("PageMetadata", DomRef("docs-page-metadata")), hidden := true),
       dataAttr("page-description") := metadata.map(_.description),
       dataAttr("page-canonical")   := metadata.map(value => origin.absolute(value.canonicalPath)),
       dataAttr("page-indexable")   := metadata.map(_.indexable.toString),

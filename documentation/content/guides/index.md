@@ -65,8 +65,8 @@ you can also enter directly from search or the API reference.
 
 ### Testing And Troubleshooting {#testing-and-troubleshooting}
 
-- [Testing LiveViews](testing.md) separates public disconnected tests from
-  application-owned connected and browser tests.
+- [Testing LiveViews](testing.md) covers public disconnected and connected
+  server-side tests, then identifies behavior that requires a real browser.
 - [Troubleshooting](troubleshooting.md) diagnoses startup, asset, socket, CSRF,
   crash, and reconnect failures.
 

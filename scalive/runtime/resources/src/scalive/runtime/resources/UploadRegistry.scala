@@ -325,7 +325,8 @@ final private[scalive] case class UploadRegistry private (
     selected: Vector[(UploadEntryRef, UploadClientMetadata)],
     prepare: Boolean
   ): Either[UploadRegistryError, UploadPreflight] = current(token).flatMap { allowed =>
-    val duplicate = selected
+    val activeSelection = selected.filterNot { case (ref, _) => allowed.cancelled.contains(ref) }
+    val duplicate       = activeSelection
       .foldLeft((Set.empty[UploadEntryRef], Option.empty[UploadEntryRef])) {
         case ((seen, found @ Some(_)), _)                   => seen         -> found
         case ((seen, None), (ref, _)) if seen.contains(ref) => seen         -> Some(ref)
@@ -335,12 +336,12 @@ final private[scalive] case class UploadRegistry private (
     duplicate match
       case Some(ref) => Left(UploadRegistryError.DuplicateEntry(ref))
       case None      =>
-        selected.collectFirst {
+        activeSelection.collectFirst {
           case (ref, client) if existingByRef.get(ref).exists(e => !sameClient(e.client, client)) =>
             ref
         } match
           case Some(ref) => Left(UploadRegistryError.MetadataMismatch(ref))
-          case None      => Right(reconcile(token, allowed, selected, prepare))
+          case None      => Right(reconcile(token, allowed, activeSelection, prepare))
   }
 
   def preflight(
@@ -533,7 +534,13 @@ final private[scalive] case class UploadRegistry private (
     ) match
       case None        => Left(UploadRegistryError.EntryInactive(snapshot.ref))
       case Some(entry) =>
-        val next = replace(allowed, allowed.copy(entries = allowed.entries.filterNot(_ eq entry)))
+        val next = replace(
+          allowed,
+          allowed.copy(
+            entries = allowed.entries.filterNot(_ eq entry),
+            cancelled = allowed.cancelled + entry.ref
+          )
+        )
         Right(UploadRemoval(next, entry.retirement(LiveUploadAbortReason.Cancelled)))
   }
 
@@ -543,7 +550,13 @@ final private[scalive] case class UploadRegistry private (
     snapshot: LiveUploadEntry[Result]
   ): Either[UploadRegistryError, UploadRemoval] =
     resolveSnapshot(owner, ownerEpoch, snapshot).map { case (allowed, entry) =>
-      val next = replace(allowed, allowed.copy(entries = allowed.entries.filterNot(_ eq entry)))
+      val next = replace(
+        allowed,
+        allowed.copy(
+          entries = allowed.entries.filterNot(_ eq entry),
+          cancelled = allowed.cancelled + entry.ref
+        )
+      )
       UploadRemoval(next, entry.retirement(LiveUploadAbortReason.Cancelled))
     }
 
@@ -633,20 +646,33 @@ final private[scalive] case class UploadRegistry private (
     selected: Vector[(UploadEntryRef, UploadClientMetadata)],
     prepare: Boolean
   ): UploadPreflight =
-    val selectedRefs  = selected.iterator.map(_._1).toSet
-    val existingByRef = allowed.entries.iterator.map(entry => entry.ref -> entry).toMap
-    val omitted       = allowed.entries.filterNot(entry => selectedRefs.contains(entry.ref))
+    val selectedRefs = selected.iterator.map(_._1).toSet
+    val replaceSole  = allowed.definition.maxEntries == 1 &&
+      allowed.entries.size == 1 &&
+      selected.size == 1 &&
+      !selectedRefs.contains(allowed.entries.head.ref)
+    val retained      = if replaceSole then Vector.empty else allowed.entries
+    val replaced      = if replaceSole then allowed.entries else Vector.empty
+    val existingByRef = retained.iterator.map(entry => entry.ref -> entry).toMap
     var validCount    = 0
     var preparations  = Vector.empty[ExternalPreparationPlan]
     var registrations = Vector.empty[UploadEntryToken[?]]
 
-    val entries = selected.map { case (ref, client) =>
+    retained.foreach(entry => if !entry.state.isInvalid then validCount += 1)
+
+    val selectedEntries = selected.map { case (ref, client) =>
       val existing       = existingByRef.get(ref)
       val metadataErrors = validationErrors(allowed.definition, client)
-      val errors = metadataErrors ++ Option.when(validCount >= allowed.definition.maxEntries)(
-        LiveUploadError.TooManyFiles
-      )
-      if errors.isEmpty then validCount += 1
+      val needsAdmission = existing.forall(_.state match
+        case EntryState.Invalid(_, false) => true
+        case _                            => false)
+      val errors =
+        if needsAdmission then
+          metadataErrors ++ Option.when(validCount >= allowed.definition.maxEntries)(
+            LiveUploadError.TooManyFiles
+          )
+        else metadataErrors
+      if needsAdmission && errors.isEmpty then validCount += 1
 
       existing match
         case Some(entry) if entry.state.terminal => entry
@@ -679,11 +705,13 @@ final private[scalive] case class UploadRegistry private (
           else entry.copy(state = EntryState.Selected)
     }
 
-    val updatedByRef     = entries.iterator.map(entry => entry.ref -> entry).toMap
-    val changedToInvalid = allowed.entries.filter { old =>
+    val updatedByRef = selectedEntries.iterator.map(entry => entry.ref -> entry).toMap
+    val entries      = retained.map(entry => updatedByRef.getOrElse(entry.ref, entry)) ++
+      selectedEntries.filterNot(entry => existingByRef.contains(entry.ref))
+    val changedToInvalid = retained.filter { old =>
       updatedByRef.get(old.ref).exists(next => next.state != old.state && next.state.isInvalid)
     }
-    val retirementEntries = (omitted ++ changedToInvalid).distinct
+    val retirementEntries = (replaced ++ changedToInvalid).distinct
     val retirement        = retirementEntries.foldLeft(UploadRetirementPlan.empty) { (all, entry) =>
       all ++ entry.retirement(LiveUploadAbortReason.Cancelled)
     }
@@ -729,7 +757,15 @@ final private[scalive] case class UploadRegistry private (
     val previous = generations.getOrElse(owner -> key.definition.name, 0L)
     if previous == Long.MaxValue then Left(UploadRegistryError.StaleAuthority)
     else
-      val allowed  = Allowed(owner, epoch, key.definition, ref, previous + 1L, Vector.empty)
+      val allowed = Allowed(
+        owner,
+        epoch,
+        key.definition,
+        ref,
+        previous + 1L,
+        Vector.empty,
+        Set.empty
+      )
       val retained = replaced.fold(uploads)(old => uploads.filterNot(_ eq old))
       val next     = copy(
         uploads = retained :+ allowed,
@@ -897,7 +933,8 @@ private[scalive] object UploadRegistry:
     definition: LiveUploadDef[?],
     ref: UploadRef,
     generation: Long,
-    entries: Vector[Entry]):
+    entries: Vector[Entry],
+    cancelled: Set[UploadEntryRef]):
     def token[Result](key: UploadKey[Result]): UploadToken[Result] =
       UploadToken(owner, ownerEpoch, key, ref, generation)
     def matches[Result](token: UploadToken[Result]): Boolean =
@@ -907,11 +944,16 @@ private[scalive] object UploadRegistry:
       owner == token.owner && ownerEpoch == token.ownerEpoch && ref == token.ref &&
         generation == token.generation
     def snapshot[Result](key: UploadKey[Result]): LiveUpload[Result] =
+      val snapshots = entries.map(_.snapshot[Result](definition.name)).toList
+      val errors    = Option
+        .when(snapshots.exists(_.errors.contains(LiveUploadError.TooManyFiles)))(
+          LiveUploadError.TooManyFiles
+        ).toList
       new LiveUpload(
         key.definition,
         ref,
-        entries.map(_.snapshot[Result](definition.name)).toList,
-        Nil
+        snapshots,
+        errors
       )
 
   val empty: UploadRegistry = UploadRegistry(Vector.empty, Map.empty)

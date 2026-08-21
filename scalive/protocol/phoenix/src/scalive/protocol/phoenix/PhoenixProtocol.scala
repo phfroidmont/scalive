@@ -83,9 +83,20 @@ private[scalive] enum PhoenixInbound:
     ref: PhoenixRef,
     topic: String,
     payload: PhoenixUploadProgress)
+  case ComponentsWillDestroy(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    cids: Vector[Int])
+  case ComponentsDestroyed(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    cids: Vector[Int])
   case LivePatch(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, url: String)
   case Leave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String)
   case UploadLeave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String, entryRef: String)
+end PhoenixInbound
 
 final private[scalive] case class RootJoin(
   url: Option[String],
@@ -103,6 +114,16 @@ final private[scalive] case class RootEvent(
   cid: Option[Long],
   uploads: Option[Json.Obj] = None,
   meta: Option[Json.Obj] = None):
+
+  def toLiveEvent: LiveEvent =
+    LiveEvent(
+      kind = eventType,
+      bindingId = event,
+      value = value,
+      params = toBindingPayload.fold(_ => Map.empty, _.params),
+      cid = cid,
+      meta = meta
+    )
 
   /** Converts a non-form root event value to Scalive binding parameters. */
   def rootClickParams: Either[String, BindingPayload.Params] =
@@ -222,6 +243,14 @@ private[scalive] object PhoenixProtocol:
           .map(PhoenixInbound.UploadProgress(joinRef, ref, topic, _))
       case PhoenixEnvelope(joinRef, ref, topic, "event", payload) if topic.startsWith("lv:") =>
         decodeEvent(payload).map(PhoenixInbound.Event(joinRef, ref, topic, _))
+      case PhoenixEnvelope(joinRef, ref, topic, "cids_will_destroy", payload)
+          if topic.startsWith("lv:") =>
+        decodeComponentCids(payload).map(
+          PhoenixInbound.ComponentsWillDestroy(joinRef, ref, topic, _)
+        )
+      case PhoenixEnvelope(joinRef, ref, topic, "cids_destroyed", payload)
+          if topic.startsWith("lv:") =>
+        decodeComponentCids(payload).map(PhoenixInbound.ComponentsDestroyed(joinRef, ref, topic, _))
       case PhoenixEnvelope(joinRef, ref, topic, "live_patch", payload) if topic.startsWith("lv:") =>
         decodeLivePatch(payload).map(PhoenixInbound.LivePatch(joinRef, ref, topic, _))
       case PhoenixEnvelope(joinRef, ref, topic, "phx_leave", Json.Obj(fields))
@@ -283,6 +312,22 @@ private[scalive] object PhoenixProtocol:
       requiredString(rawFields.toMap, "url")
     case Json.Obj(_) => Left("live_patch payload must contain exactly one 'url' field")
     case _           => Left("live_patch payload must be an object")
+
+  private def decodeComponentCids(json: Json): Either[String, Vector[Int]] = json match
+    case Json.Obj(rawFields) if rawFields.size == 1 =>
+      rawFields.toMap.get("cids") match
+        case Some(Json.Arr(values)) =>
+          values.foldLeft[Either[String, Vector[Int]]](Right(Vector.empty)) {
+            case (result, Json.Num(value))
+                if BigDecimal(value).isValidInt && BigDecimal(value).isWhole &&
+                  BigDecimal(value).toInt > 0 =>
+              result.map(_ :+ BigDecimal(value).toInt)
+            case _ => Left("field 'cids' must contain positive integers")
+          }
+        case Some(_) => Left("field 'cids' must be an array")
+        case None    => Left("missing field 'cids'")
+    case Json.Obj(_) => Left("component CID payload must contain exactly one 'cids' field")
+    case _           => Left("component CID payload must be an object")
 
   private def requiredString(fields: Map[String, Json], name: String): Either[String, String] =
     fields.get(name) match

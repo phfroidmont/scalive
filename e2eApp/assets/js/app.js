@@ -45,8 +45,6 @@ const hooks = {
 
       const queueFiles = (event) => {
         event.preventDefault()
-        event.stopPropagation()
-        event.stopImmediatePropagation()
 
         if (!(event.target instanceof HTMLInputElement)) return
         if (!event.target.files) return
@@ -70,8 +68,7 @@ const hooks = {
         })
       }
 
-      this.el.addEventListener("input", queueFiles, true)
-      this.el.addEventListener("change", queueFiles, true)
+      this.el.addEventListener("input", queueFiles)
 
       this.handleEvent("upload_send_next_file", () => {
         const nextFile = filesRemaining.shift()

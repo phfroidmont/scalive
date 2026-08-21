@@ -121,7 +121,7 @@ repeating authorization logic.
 Before adapting this lab for real users:
 
 - set secure cookies whenever the public origin uses HTTPS;
-- load token secrets from validated production configuration;
+- load the signing secret through validated production `ZioHttpConfig`;
 - use a real password verifier and avoid logging submitted credentials;
 - choose distributed session and rate-limit storage for multiple instances;
 - define absolute expiry, renewal, revocation, and account-disable behavior;

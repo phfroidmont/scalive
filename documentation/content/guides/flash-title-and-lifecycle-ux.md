@@ -92,7 +92,9 @@ Declare static hooks once on the @:apiSymbol(trait:scalive.LiveView)`LiveView`@:
 ```scala
 override def hooks: LiveHooks[Msg, Model] =
   LiveHooks.afterRender { (model, ctx) =>
-    ZIO.when(ctx.connected)(recordRenderedTitle(model.currentTitle))
+    ctx.connection match
+      case Connection.Connected(_) => recordRenderedTitle(model.currentTitle)
+      case Connection.Disconnected => ZIO.unit
   }
 ```
 
@@ -102,8 +104,9 @@ a replacement model. Use @:apiSymbol(def:scalive.LiveView.handleMessage)`handleM
 or a subscription message when an effect must produce the next state.
 
 Hooks are installed independently for disconnected and connected lifecycles.
-Guard socket-only work with @:apiSymbol(def:scalive.LifecycleContext.connected)`ctx.connected`@:@, keep effects idempotent where
-practical, and avoid starting unmanaged fibers from a hook.
+Match @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@,
+keep effects idempotent where practical, and avoid starting unmanaged fibers
+from a hook.
 
 ## Exercise The Behavior {#exercise-the-behavior}
 

@@ -1,5 +1,7 @@
 package scalive.docs
 
+import java.time.Duration
+
 import zio.*
 import zio.http.*
 
@@ -34,7 +36,18 @@ object DocumentationSite extends ZIOAppDefault:
                     )
                   )
                 )
-      security = LiveSecurity(TokenConfig.default, CookiePolicy(secure = false))
+      transportConfig <- ZIO
+                           .fromEither(
+                             ZioHttpConfig(
+                               signingSecret = sys.env.getOrElse(
+                                 "SCALIVE_TOKEN_SECRET",
+                                 "local-development-secret-change-me"
+                               ),
+                               sessionMaxAge = Duration.ofDays(7),
+                               secureCookie = false
+                             )
+                           ).mapError(error => new IllegalArgumentException(error.toString))
+      security = LiveSecurity(transportConfig)
       routes   = application.routes(assets, security, config, traceStore) ++ assets.routes
       _ <- Server
              .serve(routes)

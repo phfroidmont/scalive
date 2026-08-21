@@ -672,6 +672,49 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                   }
       yield result
     },
+    test("fragmented binary upload messages are assembled before routing") {
+      for
+        fixture <- fixture()
+        result <- withServer(fixture.application) { port =>
+                    for
+                      page   <- bootstrap(port)
+                      socket <- connect(port, page)
+                      _      <- joinRoot(socket, page)
+                      refs <- (fixture.state.take *> fixture.state.take)
+                                .timeoutFail(Exception("upload refs timed out"))(5.seconds)
+                      rootTopic = s"lv:${page.rootId}"
+                      hosted <- preflight(
+                                  socket,
+                                  rootTopic,
+                                  "2",
+                                  refs.hostedRef,
+                                  Vector(entry("fragmented", "fragmented.txt", 3L))
+                                )
+                      token = hostedToken(hosted, "fragmented")
+                      _     <- uploadJoin(socket, "fragmented-join", "3", "lvu:fragmented", token)
+                      frame = binary(
+                                "fragmented-join",
+                                "4",
+                                "lvu:fragmented",
+                                Chunk[Byte](1, 2, 3)
+                              )
+                      splitAt = frame.length - 2
+                      _ <- socket.channel.send(
+                             ChannelEvent.read(WebSocketFrame.Binary(frame.take(splitAt), false))
+                           )
+                      _ <- socket.channel.send(
+                             ChannelEvent.read(WebSocketFrame.Continuation(frame.drop(splitAt), true))
+                           )
+                      reply  <- socket.receiveReply("4", "lvu:fragmented")
+                      writes <- fixture.writes.get
+                      _      <- socket.close
+                    yield assertTrue(
+                      status(reply) == "ok",
+                      writes == Vector(Chunk[Byte](1, 2, 3))
+                    )
+                  }
+      yield result
+    },
     test("progress and ordinary event metadata require the current owner and synchronize first") {
       for
         fixture <- fixture()
@@ -739,6 +782,57 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                     )
                   }
       yield result
+    },
+    test("component destruction acknowledgements delete only marked retained CIDs") {
+      val hideEvent = BrowserToServerEvent[Json]("hide-component")
+      val definition = new LiveComponent.Eventless[Unit, Unit]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.unit
+        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+          div(idAttr := "destroyed-component")
+      val instance = component(definition, "destroyed-component")
+      val view = new LiveView[Nothing, Boolean]:
+        override val hooks = LiveHooks.empty[Nothing, Boolean]
+          .onBrowserEvent(hideEvent)((_, _, _) => ZIO.succeed(false))
+        def mount(ctx: MountContext) = ZIO.succeed(true)
+        def handleMessage(model: Boolean, ctx: MessageContext): Nothing => LiveIO[Boolean] = identity
+        def view(model: Signal[Boolean]) = mainTag(model.when(div(instance.render(()))))
+
+      withServer(scalive.Live.router(scalive.live(view))) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          topic = s"lv:${page.rootId}"
+          _ <- sendComponentCids(socket, topic, "2", "cids_will_destroy", Vector(1))
+          active <- sendComponentCids(socket, topic, "3", "cids_destroyed", Vector(1))
+          _ <- socket.send(
+                 PhoenixEnvelope(
+                   PhoenixRef.Value("root-join"),
+                   PhoenixRef.Value("4"),
+                   topic,
+                   "event",
+                   Json.Obj(
+                     "type"  -> Json.Str("click"),
+                     "event" -> Json.Str(hideEvent.value),
+                     "value" -> Json.Obj.empty,
+                     "cid"   -> Json.Null
+                   )
+                 )
+               )
+          removed  <- socket.receiveReply("4", topic)
+          marked   <- sendComponentCids(socket, topic, "5", "cids_will_destroy", Vector(1))
+          destroyed <- sendComponentCids(socket, topic, "6", "cids_destroyed", Vector(1))
+          repeated <- sendComponentCids(socket, topic, "7", "cids_destroyed", Vector(1))
+          _        <- socket.close
+        yield assertTrue(
+          status(joined) == "ok",
+          field(response(active), "cids") == Json.Arr(),
+          status(removed) == "ok",
+          status(marked) == "ok",
+          field(response(destroyed), "cids") == Json.Arr(Json.Num(1)),
+          field(response(repeated), "cids") == Json.Arr()
+        )
+      }
     },
     test("socket shutdown retires an admitted hosted writer") {
       for
@@ -814,6 +908,23 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
           ),
           "cid" -> Json.Null
         )
+      )
+    ) *> socket.receiveReply(ref, topic)
+
+  private def sendComponentCids(
+    socket: SocketClient,
+    topic: String,
+    ref: String,
+    event: String,
+    cids: Vector[Int]
+  ): Task[PhoenixEnvelope] =
+    socket.send(
+      PhoenixEnvelope(
+        PhoenixRef.Value("root-join"),
+        PhoenixRef.Value(ref),
+        topic,
+        event,
+        Json.Obj("cids" -> Json.Arr(cids.map(Json.Num(_))*))
       )
     ) *> socket.receiveReply(ref, topic)
 

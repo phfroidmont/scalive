@@ -1,5 +1,16 @@
 package scalive
 
+import zio.json.ast.Json
+
+/** The complete client event envelope visible to raw lifecycle hooks. */
+final case class LiveEvent(
+  kind: String,
+  bindingId: String,
+  value: Json,
+  params: Map[String, String],
+  cid: Option[Long],
+  meta: Option[Json])
+
 /** A named event pushed from the server to the browser with a typed JSON payload.
   *
   * Pass this event and an `A` to `ctx.client.push`; a `zio.json.JsonEncoder[A]` is required and an

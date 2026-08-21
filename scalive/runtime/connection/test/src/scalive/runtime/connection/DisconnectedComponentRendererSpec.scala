@@ -88,6 +88,67 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("resolves alternate components with empty keyed content without duplicating siblings") {
+      def items(values: Signal[Vector[Int]]) =
+        values.splitBy(identity)((_, value) => span(value.map(_.toString)))
+      val directDefinition = new LiveComponent.Eventless[Vector[Int], Vector[Int]]:
+        def mount(props: Vector[Int], ctx: MountContext) = ZIO.succeed(props)
+        override def update(props: Vector[Int], model: Vector[Int], ctx: UpdateContext) =
+          ZIO.succeed(props)
+        def view(
+          props: Signal[Vector[Int]],
+          model: Signal[Vector[Int]],
+          self: ComponentRef[Nothing]
+        ) = div(idAttr := "result", items(model))
+      val asyncDefinition =
+        new LiveComponent.Eventless[AsyncValue[Vector[Int]], AsyncValue[Vector[Int]]]:
+          def mount(props: AsyncValue[Vector[Int]], ctx: MountContext) = ZIO.succeed(props)
+          override def update(
+            props: AsyncValue[Vector[Int]],
+            model: AsyncValue[Vector[Int]],
+            ctx: UpdateContext
+          ) = ZIO.succeed(props)
+          def view(
+            props: Signal[AsyncValue[Vector[Int]]],
+            model: Signal[AsyncValue[Vector[Int]]],
+            self: ComponentRef[Nothing]
+          ) =
+            val current = model.map(AsyncValue.currentValue)
+            div(
+              idAttr := "result",
+              current.map(_.isDefined).chooseMod(
+                items(current.map(_.getOrElse(Vector.empty))),
+                ""
+              )
+            )
+      val direct = component(directDefinition, "direct")
+      val async  = component(asyncDefinition, "async")
+      DisconnectedComponentRenderer
+        .renderWith[(String, AsyncValue[Vector[Int]]), Nothing, String](input =>
+          val caseName = input.map(_._1)
+          val data     = input.map(_._2)
+          val current  = data.map(AsyncValue.currentValue)
+          div(
+            Signal.when(caseName.map(_ == "second"))(div("separator")),
+            caseName
+              .map(_ == "first").chooseMod(
+                current.map(_.isDefined).chooseMod(
+                  direct.render(current.map(_.getOrElse(Vector.empty))),
+                  ""
+                ),
+                async.render(data)
+              ),
+            div(button("load"), button("remove"))
+          ),
+          "second" -> AsyncValue.ok(Vector.empty)
+        )(tree => ZIO.succeed(HtmlRenderer.render(tree)))
+        .map(html =>
+          assertTrue(
+            html ==
+              "<div><div>separator</div><div id=\"result\"></div><div><button>load</button><button>remove</button></div></div>"
+          )
+        )
+    },
     test("tree consumption runs before cleanup and success/failure both release one-shot state") {
       for
         mounts <- Ref.make(0)

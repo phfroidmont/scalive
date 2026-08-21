@@ -2,6 +2,8 @@ package scalive.runtime.connection
 
 import zio.*
 import zio.http.URL
+import zio.json.*
+import zio.json.ast.Json
 
 import scalive.*
 import scalive.render.*
@@ -28,6 +30,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
   bootstrapReady: Promise[ConnectionError, Unit],
   closing: Promise[Nothing, Unit],
   closed: Promise[Nothing, Unit],
+  closeAfterNavigate: Boolean,
   observer: RuntimeObserver):
   import RootConnection.*
 
@@ -36,7 +39,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
     binding: BindingId,
     payload: BindingPayload
   ): IO[ConnectionError, Unit] =
-    enqueueEvent(command, binding, payload).flatMap(_.await)
+    submitRawEvent(command, binding, payload, bindingEvent(binding, payload))
 
   /** Installs one event in the bounded ingress queue without waiting for its eventual reply. */
   def offerEvent(
@@ -44,7 +47,29 @@ final private[scalive] class RootConnection[Msg, Model] private (
     binding: BindingId,
     payload: BindingPayload
   ): IO[ConnectionError, Unit] =
-    enqueueEvent(command, binding, payload).unit
+    offerRawEvent(command, binding, payload, bindingEvent(binding, payload))
+
+  private[connection] def submitRawEvent(
+    command: CommandId,
+    binding: BindingId,
+    payload: BindingPayload,
+    event: LiveEvent
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.Browser(command, binding, payload, event)).flatMap(_.await)
+
+  private[scalive] def offerRawEvent(
+    command: CommandId,
+    binding: BindingId,
+    payload: BindingPayload,
+    event: LiveEvent
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.Browser(command, binding, payload, event)).unit
+
+  private[scalive] def offerMessage(
+    command: CommandId,
+    message: Msg
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.Message(command, message)).unit
 
   private[connection] def submitNamedEvent(
     command: CommandId,
@@ -53,8 +78,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
     eventName: String,
     rawJson: String
   ): IO[ConnectionError, Unit] =
-    enqueue(command, Event.Browser(command, binding, payload, Some(eventName), Some(rawJson)))
-      .flatMap(_.await)
+    submitRawEvent(command, binding, payload, namedEvent(eventName, rawJson, payload, None))
 
   private[scalive] def offerNamedEvent(
     command: CommandId,
@@ -63,7 +87,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
     eventName: String,
     rawJson: String
   ): IO[ConnectionError, Unit] =
-    enqueue(command, Event.Browser(command, binding, payload, Some(eventName), Some(rawJson))).unit
+    offerRawEvent(command, binding, payload, namedEvent(eventName, rawJson, payload, None))
 
   private[connection] def submitComponentNamedEvent(
     command: CommandId,
@@ -73,10 +97,23 @@ final private[scalive] class RootConnection[Msg, Model] private (
     eventName: String,
     rawJson: String
   ): IO[ConnectionError, Unit] =
-    enqueue(
+    submitComponentRawEvent(
       command,
-      Event.ComponentBrowser(command, component, binding, payload, Some(eventName), Some(rawJson))
-    ).flatMap(_.await)
+      component,
+      binding,
+      payload,
+      namedEvent(eventName, rawJson, payload, None)
+    )
+
+  private[connection] def submitComponentRawEvent(
+    command: CommandId,
+    component: ComponentInstanceId,
+    binding: BindingId,
+    payload: BindingPayload,
+    event: LiveEvent
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.ComponentBrowser(command, component, binding, payload, event))
+      .flatMap(_.await)
 
   private[scalive] def offerComponentNamedEvent(
     command: CommandId,
@@ -86,10 +123,22 @@ final private[scalive] class RootConnection[Msg, Model] private (
     eventName: String,
     rawJson: String
   ): IO[ConnectionError, Unit] =
-    enqueue(
+    offerComponentRawEvent(
       command,
-      Event.ComponentBrowser(command, component, binding, payload, Some(eventName), Some(rawJson))
-    ).unit
+      component,
+      binding,
+      payload,
+      namedEvent(eventName, rawJson, payload, None)
+    )
+
+  private[scalive] def offerComponentRawEvent(
+    command: CommandId,
+    component: ComponentInstanceId,
+    binding: BindingId,
+    payload: BindingPayload,
+    event: LiveEvent
+  ): IO[ConnectionError, Unit] =
+    enqueue(command, Event.ComponentBrowser(command, component, binding, payload, event)).unit
 
   private[connection] def submitComponentMessage[M](
     command: CommandId,
@@ -512,12 +561,30 @@ final private[scalive] class RootConnection[Msg, Model] private (
       _ <- submitPatch(command, destination)
     yield ()
 
-  private def enqueueEvent(
-    command: CommandId,
-    binding: BindingId,
-    payload: BindingPayload
-  ): IO[ConnectionError, Promise[ConnectionError, Unit]] =
-    enqueue(command, Event.Browser(command, binding, payload, None, None))
+  private def bindingEvent(binding: BindingId, payload: BindingPayload): LiveEvent =
+    LiveEvent(
+      kind = "event",
+      bindingId = binding.encoded,
+      value = Json.Obj(payload.params.toSeq.map((name, value) => name -> Json.Str(value))*),
+      params = payload.params,
+      cid = None,
+      meta = None
+    )
+
+  private def namedEvent(
+    eventName: String,
+    rawJson: String,
+    payload: BindingPayload,
+    cid: Option[Long]
+  ): LiveEvent =
+    LiveEvent(
+      kind = "hook",
+      bindingId = eventName,
+      value = rawJson.fromJson[Json].getOrElse(Json.Str(rawJson)),
+      params = payload.params,
+      cid = cid,
+      meta = None
+    )
 
   private def enqueuePatch(
     command: CommandId,
@@ -665,17 +732,18 @@ final private[scalive] class RootConnection[Msg, Model] private (
       .flatMap { event =>
         val command                    = event.id
         val input: SessionCommand[Msg] = event match
-          case Event.Browser(_, binding, payload, name, rawJson) =>
-            SessionCommand.ClientEvent(epoch, binding, payload, name, rawJson)
-          case Event.ComponentBrowser(_, component, binding, payload, name, rawJson) =>
+          case Event.Browser(_, binding, payload, rawEvent) =>
+            SessionCommand.ClientEvent(epoch, binding, payload, Some(rawEvent))
+          case Event.ComponentBrowser(_, component, binding, payload, rawEvent) =>
             SessionCommand.ComponentClientEvent(
               epoch,
               component,
               binding,
               payload,
-              name,
-              rawJson
+              Some(rawEvent)
             )
+          case Event.Message(_, message) =>
+            SessionCommand.Message(epoch, message.asInstanceOf[Msg])
           case Event.ComponentMessage(_, component, message) =>
             SessionCommand.ComponentMessage(epoch, component, message)
           case Event.ComponentAsync(_, component, event) =>
@@ -766,15 +834,34 @@ final private[scalive] class RootConnection[Msg, Model] private (
                 else
                   (correlatedCommand, output.navigation) match
                     case (Some(command), Some(navigation)) =>
-                      ConnectionOutput.ReplyNavigation(
-                        command,
-                        output.delta,
-                        navigation,
-                        output.effects
+                      output.reply.fold[ConnectionOutput](
+                        ConnectionOutput.ReplyNavigation(
+                          command,
+                          output.delta,
+                          navigation,
+                          output.effects
+                        )
+                      )(reply =>
+                        ConnectionOutput.ReplyNavigationWithPayload(
+                          command,
+                          output.delta,
+                          navigation,
+                          output.effects,
+                          reply
+                        )
                       )
                     case (Some(command), None) =>
                       uploadReply.fold[ConnectionOutput](
-                        ConnectionOutput.Reply(command, output.delta, output.effects)
+                        output.reply.fold[ConnectionOutput](
+                          ConnectionOutput.Reply(command, output.delta, output.effects)
+                        )(reply =>
+                          ConnectionOutput.ReplyWithPayload(
+                            command,
+                            output.delta,
+                            output.effects,
+                            reply
+                          )
+                        )
                       )(reply =>
                         ConnectionOutput.UploadReply(command, output.delta, output.effects, reply)
                       )
@@ -783,10 +870,14 @@ final private[scalive] class RootConnection[Msg, Model] private (
                     case (None, None) => ConnectionOutput.Diff(output.delta, output.effects)
 
               val ordered = connectionOutput match
-                case ConnectionOutput.Reply(command, _, _)          => awaitEarlierCommands(command)
+                case ConnectionOutput.Reply(command, _, _) => awaitEarlierCommands(command)
+                case ConnectionOutput.ReplyWithPayload(command, _, _, _) =>
+                  awaitEarlierCommands(command)
                 case ConnectionOutput.UploadReply(command, _, _, _) =>
                   awaitEarlierCommands(command)
                 case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
+                  awaitEarlierCommands(command)
+                case ConnectionOutput.ReplyNavigationWithPayload(command, _, _, _, _) =>
                   awaitEarlierCommands(command)
                 case _ => ZIO.unit
 
@@ -800,9 +891,13 @@ final private[scalive] class RootConnection[Msg, Model] private (
                           connectionOutput match
                             case ConnectionOutput.Reply(command, _, _) =>
                               complete(command, Left(ConnectionError.Closed))
+                            case ConnectionOutput.ReplyWithPayload(command, _, _, _) =>
+                              complete(command, Left(ConnectionError.Closed))
                             case ConnectionOutput.UploadReply(command, _, _, _) =>
                               complete(command, Left(ConnectionError.Closed))
                             case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
+                              complete(command, Left(ConnectionError.Closed))
+                            case ConnectionOutput.ReplyNavigationWithPayload(command, _, _, _, _) =>
                               complete(command, Left(ConnectionError.Closed))
                             case ConnectionOutput.Rejected(command, _) =>
                               complete(command, Left(ConnectionError.Closed))
@@ -819,23 +914,30 @@ final private[scalive] class RootConnection[Msg, Model] private (
                           ConnectionOutput.JoinedNavigation(_, _, _) =>
                         bootstrapReady.succeed(()).unit
                       case ConnectionOutput.Reply(command, _, _) => complete(command, Right(()))
+                      case ConnectionOutput.ReplyWithPayload(command, _, _, _) =>
+                        complete(command, Right(()))
                       case ConnectionOutput.UploadReply(command, _, _, _) =>
                         complete(command, Right(()))
                       case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
+                        complete(command, Right(()))
+                      case ConnectionOutput.ReplyNavigationWithPayload(command, _, _, _, _) =>
                         complete(command, Right(()))
                       case ConnectionOutput.Rejected(command, _) => complete(command, Right(()))
                       case ConnectionOutput.Diff(_, _) | ConnectionOutput.DiffNavigation(_, _, _) =>
                         ZIO.unit
                     val finish = connectionOutput match
                       case ConnectionOutput.JoinedNavigation(_, navigation, _)
-                          if !navigation.kind.isPatch =>
-                        close
+                          if closeAfterNavigate && !navigation.kind.isPatch =>
+                        kernel.awaitTermination.unit *> close
                       case ConnectionOutput.ReplyNavigation(_, _, navigation, _)
-                          if !navigation.kind.isPatch =>
-                        close
+                          if closeAfterNavigate && !navigation.kind.isPatch =>
+                        kernel.awaitTermination.unit *> close
+                      case ConnectionOutput.ReplyNavigationWithPayload(_, _, navigation, _, _)
+                          if closeAfterNavigate && !navigation.kind.isPatch =>
+                        kernel.awaitTermination.unit *> close
                       case ConnectionOutput.DiffNavigation(_, navigation, _)
-                          if !navigation.kind.isPatch =>
-                        close
+                          if closeAfterNavigate && !navigation.kind.isPatch =>
+                        kernel.awaitTermination.unit *> close
                       case _ => ZIO.unit
                     (signal *> finish).as(false)
                 )
@@ -917,15 +1019,14 @@ private[scalive] object RootConnection:
       command: CommandId,
       binding: BindingId,
       payload: BindingPayload,
-      eventName: Option[String],
-      rawJson: Option[String])
+      event: LiveEvent)
     case ComponentBrowser(
       command: CommandId,
       component: ComponentInstanceId,
       binding: BindingId,
       payload: BindingPayload,
-      eventName: Option[String],
-      rawJson: Option[String])
+      event: LiveEvent)
+    case Message(command: CommandId, message: Any)
     case ComponentMessage(command: CommandId, component: ComponentInstanceId, message: Any)
     case ComponentAsync(
       command: CommandId,
@@ -936,13 +1037,14 @@ private[scalive] object RootConnection:
     case Patch(command: CommandId, destination: URL)
 
     def id: CommandId = this match
-      case Browser(command, _, _, _, _)             => command
-      case ComponentBrowser(command, _, _, _, _, _) => command
-      case ComponentMessage(command, _, _)          => command
-      case ComponentAsync(command, _, _)            => command
-      case ComponentUpdate(command, _)              => command
-      case Upload(command, _)                       => command
-      case Patch(command, _)                        => command
+      case Browser(command, _, _, _)             => command
+      case ComponentBrowser(command, _, _, _, _) => command
+      case Message(command, _)                   => command
+      case ComponentMessage(command, _, _)       => command
+      case ComponentAsync(command, _, _)         => command
+      case ComponentUpdate(command, _)           => command
+      case Upload(command, _)                    => command
+      case Patch(command, _)                     => command
   end Event
 
   def start[Msg, Model](
@@ -954,7 +1056,8 @@ private[scalive] object RootConnection:
     ownsPageTitle: Boolean = true,
     requestedLifecycle: Option[LifecycleId] = None,
     providedConnection: Option[ConnectionId] = None,
-    observer: RuntimeObserver = RuntimeObserver.noop
+    observer: RuntimeObserver = RuntimeObserver.noop,
+    closeAfterNavigate: Boolean = true
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     startLifecycle(
       config,
@@ -965,7 +1068,8 @@ private[scalive] object RootConnection:
       ownsPageTitle,
       requestedLifecycle,
       providedConnection,
-      observer
+      observer,
+      closeAfterNavigate
     )
 
   def startLifecycle[Msg, Model](
@@ -977,7 +1081,8 @@ private[scalive] object RootConnection:
     ownsPageTitle: Boolean = true,
     requestedLifecycle: Option[LifecycleId] = None,
     providedConnection: Option[ConnectionId] = None,
-    observer: RuntimeObserver = RuntimeObserver.noop
+    observer: RuntimeObserver = RuntimeObserver.noop,
+    closeAfterNavigate: Boolean = true
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
@@ -1135,14 +1240,14 @@ private[scalive] object RootConnection:
                       uploadCommit = uploadCommit,
                       uploadRollback = uploadRollback
                     ),
-                  handleEvent = Some((state, message) =>
-                    runMessageTurn(
-                      state,
+                  handleEvent = Some((draft, message, _) =>
+                    runEventTurn(
+                      draft,
                       metadata,
                       lifecycle,
                       rootOwner,
                       message,
-                      _.event
+                      ownsPageTitle
                     )
                   ),
                   handleInfo = Some((state, message) =>
@@ -1190,60 +1295,14 @@ private[scalive] object RootConnection:
                     }
                   ),
                   interceptClientEvent = (state, event) =>
-                    (event.eventName, event.rawJson) match
-                      case (Some(name), Some(raw)) =>
-                        val matching = state.hooks.browser.filter(_.name == name)
-                        if matching.isEmpty then ZIO.none
-                        else
-                          for
-                            journal <- RootTurnJournal.make(
-                                         rootOwner,
-                                         state.hooks,
-                                         state.flash,
-                                         initialStreams = state.streams,
-                                         ownerEpoch = Epoch.initial,
-                                         initialUploads = state.uploads
-                                       )
-                            context = RootMessageContext[Msg, Model](metadata, state.url, journal)
-                            model            <- runBrowserHooks(matching, state.model, raw, context)
-                            navigation       <- journal.navigationWithFlash
-                            hooks            <- journal.hookRegistry[Msg, Model]
-                            flash            <- journal.flash.get
-                            clientEvents     <- journal.clientEvents.get
-                            componentUpdates <- journal.componentUpdates.get
-                            resourceOperations <- journal.resourceOperationSnapshot
-                            streams            <- journal.streamSnapshot
-                            uploadState        <- journal.uploadSnapshot
-                            (uploads, uploadCommit, uploadRollback) = uploadState
-                            pageTitle                               = lifecycle.pageTitle(model)
-                          yield Some(
-                            TurnDraft(
-                              RootState(
-                                model,
-                                state.url,
-                                hooks,
-                                flash,
-                                pageTitle,
-                                streams,
-                                uploads
-                              ),
-                              url = Some(state.url),
-                              navigation = navigation,
-                              effects = SessionEffects(
-                                Option
-                                  .when(ownsPageTitle)(
-                                    titleChange(state.pageTitle, pageTitle)
-                                  ).flatten,
-                                clientEvents
-                              ),
-                              componentUpdates = componentUpdates,
-                              resourceOperations = resourceOperations,
-                              uploadCommit = uploadCommit,
-                              uploadRollback = uploadRollback
-                            )
-                          )
-                        end if
-                      case _ => ZIO.none,
+                    interceptRootEvent(
+                      state,
+                      event,
+                      metadata,
+                      lifecycle,
+                      rootOwner,
+                      ownsPageTitle
+                    ),
                   handleParams = (state, destination) =>
                     for
                       journal <- RootTurnJournal.make(
@@ -1341,7 +1400,8 @@ private[scalive] object RootConnection:
                       )
                     },
                   retireUploads = uploadRuntime.retire,
-                  closeUploads = state => uploadRuntime.close(state.uploads, lifecycleId)
+                  closeUploads = state => uploadRuntime.close(state.uploads, lifecycleId),
+                  terminateOnNavigate = closeAfterNavigate
                 )
         kernel <- SessionKernel
                     .start(
@@ -1381,6 +1441,7 @@ private[scalive] object RootConnection:
                        bootstrapReady,
                        closing,
                        closed,
+                       closeAfterNavigate,
                        observer
                      )
         _ <- connection.runOutbound(first = true).interruptible.forkScoped
@@ -1399,6 +1460,126 @@ private[scalive] object RootConnection:
     previous: Option[String],
     current: Option[String]
   ): Option[String] = Option.when(previous != current)(current.getOrElse(""))
+
+  private def interceptRootEvent[Msg, Model](
+    state: RootState[Msg, Model],
+    event: LiveEvent,
+    metadata: RootConnectionMetadata,
+    lifecycle: RootLifecycle[Msg, Model],
+    owner: OwnerId,
+    ownsPageTitle: Boolean
+  ): Task[ClientEventInterception[Msg, RootState[Msg, Model]]] =
+    for
+      journal <- rootJournal(owner, state, TurnDraft(state))
+      context = RootMessageContext[Msg, Model](metadata, state.url, journal)
+      rawResult <- runRawHooks(state.hooks.raw, state.model, event, context)
+      result    <- rawResult match
+                  case halt: LiveEventHookResult.Halt[Model] => ZIO.succeed(halt)
+                  case LiveEventHookResult.Continue(model)   =>
+                    val matching =
+                      if event.cid.isEmpty then
+                        state.hooks.browser.filter(_.name == event.bindingId)
+                      else Vector.empty
+                    if matching.isEmpty then ZIO.succeed(LiveEventHookResult.cont(model))
+                    else
+                      runBrowserHooks(matching, model, event.value.toJson, context)
+                        .map(LiveEventHookResult.halt(_))
+      draft <- rootDraft(
+                 state,
+                 lifecycle,
+                 journal,
+                 result match
+                   case LiveEventHookResult.Continue(model) => model
+                   case LiveEventHookResult.Halt(model, _)  => model,
+                 ownsPageTitle,
+                 result match
+                   case LiveEventHookResult.Halt(_, reply) => reply
+                   case _                                  => None
+               )
+    yield result match
+      case _: LiveEventHookResult.Halt[Model] => ClientEventInterception.Halt(draft)
+      case _                                  => ClientEventInterception.Continue(draft)
+
+  private def runEventTurn[Msg, Model](
+    initial: TurnDraft[Msg, RootState[Msg, Model]],
+    metadata: RootConnectionMetadata,
+    lifecycle: RootLifecycle[Msg, Model],
+    owner: OwnerId,
+    message: Msg,
+    ownsPageTitle: Boolean
+  ): Task[TurnDraft[Msg, RootState[Msg, Model]]] =
+    val state = initial.model
+    for
+      journal <- rootJournal(owner, state, initial)
+      context = RootMessageContext[Msg, Model](metadata, state.url, journal)
+      hooked <- runEventHooks(state.hooks.event, state.model, message, context)
+      model  <- hooked match
+                 case Hooked.Halt(value)     => ZIO.succeed(value)
+                 case Hooked.Continue(value) =>
+                   ZIO.suspend(lifecycle.handleMessage(value, context, message))
+      draft <- rootDraft(
+                 state,
+                 lifecycle,
+                 journal,
+                 model,
+                 ownsPageTitle = ownsPageTitle,
+                 reply = initial.reply
+               )
+    yield draft
+
+  private def rootJournal[Msg, Model](
+    owner: OwnerId,
+    state: RootState[Msg, Model],
+    initial: TurnDraft[Msg, RootState[Msg, Model]]
+  ): LiveIO[RootTurnJournal] =
+    RootTurnJournal.make(
+      owner,
+      state.hooks,
+      state.flash,
+      initial.effects.clientEvents,
+      initial.componentUpdates,
+      initial.navigation,
+      initial.resourceOperations,
+      state.streams,
+      ownerEpoch = Epoch.initial,
+      initialUploads = state.uploads,
+      initialUploadCommit = initial.uploadCommit,
+      initialUploadRollback = initial.uploadRollback
+    )
+
+  private def rootDraft[Msg, Model](
+    state: RootState[Msg, Model],
+    lifecycle: RootLifecycle[Msg, Model],
+    journal: RootTurnJournal,
+    model: Model,
+    ownsPageTitle: Boolean,
+    reply: Option[Json]
+  ): UIO[TurnDraft[Msg, RootState[Msg, Model]]] =
+    for
+      navigation         <- journal.navigationWithFlash
+      hooks              <- journal.hookRegistry[Msg, Model]
+      flash              <- journal.flash.get
+      clientEvents       <- journal.clientEvents.get
+      componentUpdates   <- journal.componentUpdates.get
+      resourceOperations <- journal.resourceOperationSnapshot
+      streams            <- journal.streamSnapshot
+      uploadState        <- journal.uploadSnapshot
+      (uploads, uploadCommit, uploadRollback) = uploadState
+      pageTitle                               = lifecycle.pageTitle(model)
+    yield TurnDraft(
+      RootState(model, state.url, hooks, flash, pageTitle, streams, uploads),
+      url = Some(state.url),
+      navigation = navigation,
+      effects = SessionEffects(
+        Option.when(ownsPageTitle)(titleChange(state.pageTitle, pageTitle)).flatten,
+        clientEvents
+      ),
+      componentUpdates = componentUpdates,
+      resourceOperations = resourceOperations,
+      uploadCommit = uploadCommit,
+      uploadRollback = uploadRollback,
+      reply = reply
+    )
 
   private def runMessageTurn[Msg, Model](
     state: RootState[Msg, Model],
@@ -1561,4 +1742,19 @@ private[scalive] object RootConnection:
                   ZIO.succeed(Left(()))
         }
       }.map(_.fold(_ => committedModel, identity))
+
+  private def runRawHooks[Msg, Model](
+    hooks: Vector[RootHookRegistry.Raw[Msg, Model]],
+    initial: Model,
+    event: LiveEvent,
+    context: MessageContext[Msg, Model]
+  ): LiveIO[LiveEventHookResult[Model]] =
+    hooks.foldLeft[LiveIO[LiveEventHookResult[Model]]](
+      ZIO.succeed(LiveEventHookResult.cont(initial))
+    ) { (effect, hook) =>
+      effect.flatMap {
+        case halted: LiveEventHookResult.Halt[Model] => ZIO.succeed(halted)
+        case LiveEventHookResult.Continue(model)     => hook.invoke(model, event, context)
+      }
+    }
 end RootConnection

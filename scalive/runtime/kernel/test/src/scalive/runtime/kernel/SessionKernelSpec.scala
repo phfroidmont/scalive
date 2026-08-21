@@ -111,11 +111,12 @@ object SessionKernelSpec extends ZIOSpecDefault:
       props: P,
       model: A,
       command: SessionCommand.ComponentClientEvent,
+      resolved: Task[M],
       emit: O => Task[Unit],
       state: ComponentEnvironmentState,
       draft: TurnDraft[Int, Int]
     ) =
-      ZIO.none
+      resolved.map(value => ComponentCallbackResult(model, draft, state))
     def afterRender[P, M, A](
       id: ComponentInstanceId,
       component: LiveComponent[P, M, A],

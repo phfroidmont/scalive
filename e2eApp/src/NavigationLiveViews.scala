@@ -26,14 +26,18 @@ class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
       div(
         h1("This is page A"),
         p("Current param: ", model.map(_.paramCurrent.getOrElse(""))),
-        link.pushPatch(
-          nextLocation,
-          cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
+        a(
+          href                       := nextLocation.map(_.href),
+          dataAttr("phx-link")       := "patch",
+          dataAttr("phx-link-state") := "push",
+          cls                        := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch this LiveView"
         ),
-        link.replacePatch(
-          nextLocation,
-          cls := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
+        a(
+          href                       := nextLocation.map(_.href),
+          dataAttr("phx-link")       := "patch",
+          dataAttr("phx-link-state") := "replace",
+          cls                        := "inline-flex rounded bg-slate-200 px-4 py-2 mr-2",
           "Patch (Replace)"
         ),
         link.pushNavigate(
@@ -91,12 +95,15 @@ class NavigationBLiveView() extends LiveView.Routed[Msg, Model, BParams]:
                   li(
                     idAttr    := item.map(current => s"items-${current.id}"),
                     styleAttr := "padding: 0.5rem; border-bottom: 1px solid #e2e8f0;",
-                    link.pushPatch(
-                      item.zip(withContainer).map { case (current, enabled) =>
-                        E2ERoutes.navigationBItemLocation.location(
-                          current.id -> Option.when(enabled)("1")
-                        )
+                    a(
+                      href := item.zip(withContainer).map { case (current, enabled) =>
+                        E2ERoutes.navigationBItemLocation
+                          .location(
+                            current.id -> Option.when(enabled)("1")
+                          ).href
                       },
+                      dataAttr("phx-link")       := "patch",
+                      dataAttr("phx-link-state") := "push",
                       "Item ",
                       item.map(_.name.toString)
                     )

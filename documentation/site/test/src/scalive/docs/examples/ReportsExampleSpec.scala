@@ -1,16 +1,24 @@
 package scalive.docs.examples
 
+import java.time.Duration
+
 import org.jsoup.Jsoup
 import zio.*
 import zio.http.*
 import zio.test.*
 
 import scalive.*
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.{ConnectedRender, ConnectedView}
 import scalive.testing.DisconnectedRender
 
 object ReportsExampleSpec extends ZIOSpecDefault:
-  private def state(harness: SiteLiveViewHarness[?, ?]) =
+  private val transportConfig = ZioHttpConfig(
+    "reports-example-spec-secret-0000000000000000",
+    Duration.ofMinutes(30),
+    secureCookie = false
+  ).toOption.get
+
+  private def state(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
 
   private def reports(values: Vector[Report]): Reports = new Reports:
@@ -20,7 +28,7 @@ object ReportsExampleSpec extends ZIOSpecDefault:
     test("loads reports through a constructor-injected service") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(ReportsExamplePreview())
+          harness <- ConnectedRender.join(ReportsExamplePreview())
           initial <- state(harness)
           _       <- harness.click("[data-report-id='2']")
           selected <- state(harness)
@@ -37,20 +45,20 @@ object ReportsExampleSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("resets selection without querying the service again") {
+    test("resets selection without querying the service after connected mount") {
       ZIO.scoped {
         for
           calls <- Ref.make(0)
           service = new Reports:
                       def recent = calls.updateAndGet(_ + 1).as(Reports.fixtures)
-          harness <- SiteLiveViewHarness.join(new ReportsExample(service))
+          harness <- ConnectedRender.join(new ReportsExample(service))
           _       <- harness.click("[data-report-id='2']")
-          _       <- harness.sendServer(ReportsExample.Msg.ResetSelection)
+          _       <- harness.send(ReportsExample.Msg.ResetSelection)
           current <- state(harness)
           count   <- calls.get
         yield assertTrue(
           current.select("[data-report-selected]").text() == "Daily sales",
-          count == 1
+          count == 2
         )
       }
     },
@@ -60,6 +68,7 @@ object ReportsExampleSpec extends ZIOSpecDefault:
           responses <- Ref.make(
                          List(
                            Reports.fixtures,
+                           Reports.fixtures,
                            Vector(Report(3L, "Release readiness", "All checks passed."))
                          )
                        )
@@ -68,7 +77,7 @@ object ReportsExampleSpec extends ZIOSpecDefault:
                         case next :: rest => next -> rest
                         case Nil          => Vector.empty -> Nil
                       }
-          harness <- SiteLiveViewHarness.join(new ReportsExample(service))
+          harness <- ConnectedRender.join(new ReportsExample(service))
           _       <- harness.clickButton("Refresh reports")
           current <- state(harness)
         yield assertTrue(
@@ -80,9 +89,9 @@ object ReportsExampleSpec extends ZIOSpecDefault:
     test("renders empty and failed service results explicitly") {
       ZIO.scoped {
         for
-          emptyHarness <- SiteLiveViewHarness.join(new ReportsExample(reports(Vector.empty)))
+          emptyHarness <- ConnectedRender.join(new ReportsExample(reports(Vector.empty)))
           empty        <- state(emptyHarness)
-          failedHarness <- SiteLiveViewHarness.join(new ReportsExample(new Reports:
+          failedHarness <- ConnectedRender.join(new ReportsExample(new Reports:
                              def recent = ZIO.fail(new RuntimeException("database password"))
                            ))
           failed <- state(failedHarness)
@@ -102,7 +111,7 @@ object ReportsExampleSpec extends ZIOSpecDefault:
       for
         rendered <- DisconnectedRender
                       .run(
-                        scalive.Live.router(ReportsExample.route),
+                        ZioHttp.routes(scalive.Live.router(ReportsExample.route), transportConfig),
                         Request.get(URL.root / "examples" / "service-injection" / "lab")
                       )
                       .provideLayer(provided)

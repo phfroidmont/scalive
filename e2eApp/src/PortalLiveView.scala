@@ -332,10 +332,8 @@ object PortalLiveView:
       (_: Msg.type) => prependItem(model, ctx.streams)
 
     override def hooks: ComponentLiveHooks[Unit, Msg.type, Model] =
-      ComponentLiveHooks.empty.onRawEvent { (_, model, event, ctx) =>
-        if event.bindingId == "prepend" then
-          prependItem(model, ctx.streams).map(LiveEventHookResult.halt)
-        else LiveEventHookResult.cont(model)
+      ComponentLiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("prepend")) {
+        (_, model, _, ctx) => prependItem(model, ctx.streams)
       }
 
     override def view(

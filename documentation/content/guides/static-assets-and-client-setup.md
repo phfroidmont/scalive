@@ -91,13 +91,19 @@ const params = {
 }
 ```
 
-Lifecycle contexts expose @:apiSymbol(def:scalive.LifecycleContext.connectParams)`connectParams`@:@
-as `Map[String, zio.json.ast.Json]`. Decode and validate the expected shape:
+Connected capabilities implement
+@:apiSymbol(trait:scalive.ConnectedMetadata)`ConnectedMetadata`@:@ and expose
+@:apiSymbol(def:scalive.ConnectedMetadata.connectParams)`connectParams`@:@ as
+`Map[String, zio.json.ast.Json]`. Match the phase, then decode and validate the
+expected shape:
 
 ```scala
-val locale = ctx.connectParams.get("locale").collect {
-  case Json.Str(value) => value
-}
+val locale = ctx.connection match
+  case Connection.Connected(capabilities) =>
+    capabilities.connectParams.get("locale").collect {
+      case Json.Str(value) => value
+    }
+  case Connection.Disconnected => None
 ```
 
 The map is empty during disconnected HTTP rendering and contains the browser's
@@ -192,10 +198,11 @@ add `phx-track-static`. The untracked
 digested URLs but omit that Phoenix marker. Use tracked helpers for the
 application bundles whose change should be visible to the LiveView client.
 
-Lifecycle contexts expose @:apiSymbol(def:scalive.LifecycleContext.staticChanged)`staticChanged`@:@
-for reacting to that tracking result, commonly by replacing stale connected
-state or initiating a full reload. It is `false` during disconnected rendering.
-On a routed root socket join, it becomes `true` when the client's non-empty list
+Connected capabilities expose
+@:apiSymbol(def:scalive.ConnectedMetadata.staticChanged)`staticChanged`@:@ for
+reacting to that tracking result, commonly by replacing stale connected state or
+initiating a full reload. No connected metadata exists during disconnected
+rendering. On a routed root socket join, it is `true` when the client's non-empty list
 of tracked URLs differs from the server-rendered list; query strings, fragments,
 and URL origins are ignored during comparison. Missing, malformed, or empty
 client tracking metadata yields `false`, and the result remains stable for that

@@ -76,9 +76,27 @@ object BindingTableSpec extends ZIOSpecDefault:
         id = candidate.bindings.ids.head
         result = candidate.bindings.resolve(id).get.dispatch(BindingPayload.Params(Map.empty))
       yield assertTrue(
-        id.encoded.endsWith(":1:js:0"),
+        id.encoded == "j1:js:0",
         result == Right(BindingDispatch.Owner("save")),
         HtmlRenderer.render(candidate.tree).contains("$scalive-unresolved-binding") == false
+      )
+    },
+    test("keeps typed JS push attributes stable across equivalent lifecycle programs") {
+      val firstCompiled = RenderProgram.compile[Unit, String] { _ =>
+        form(on.change(JS.push("validate")))
+      }
+      val secondCompiled = RenderProgram.compile[Unit, String] { _ =>
+        form(on.change(JS.push("validate")))
+      }
+
+      for
+        firstProgram  <- ZIO.fromEither(firstCompiled)
+        secondProgram <- ZIO.fromEither(secondCompiled)
+        first         <- firstProgram.evaluate(())
+        second        <- secondProgram.evaluate(())
+      yield assertTrue(
+        first.bindings.ids == second.bindings.ids,
+        HtmlRenderer.render(first.tree) == HtmlRenderer.render(second.tree)
       )
     }
   )

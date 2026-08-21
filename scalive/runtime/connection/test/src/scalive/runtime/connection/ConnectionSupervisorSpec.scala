@@ -41,7 +41,8 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
   private def startRoot[Msg, Model](
     fixture: Fixture,
     view: LiveView[Msg, Model],
-    outputs: Queue[ConnectionOutput]
+    outputs: Queue[ConnectionOutput],
+    requestedLifecycle: Option[LifecycleId] = None
   ): IO[ConnectionSupervisor.StartError, ConnectedLifecycle] =
     fixture.supervisor.startRootLifecycle(
       RootLifecycle.ordinary(view, URL.root),
@@ -49,7 +50,8 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
       "root",
       NestedTopic("root:main"),
       loading = false,
-      outputs.offer(_).unit
+      outputs.offer(_).unit,
+      requestedLifecycle = requestedLifecycle
     )
 
   private def claimsFor(fixture: Fixture): UIO[NestedCredentialClaims] = fixture.claims.take
@@ -263,11 +265,12 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           childBootstrap <- childOutput.take
           childBinding = bindingFrom(childBootstrap)
           linkedResult <- linkedChild
-                            .browserEvent(
-                              CommandId.fresh().toOption.get,
-                              childBinding,
-                              BindingPayload.Params(Map.empty)
-                             ).either
+                             .browserEvent(
+                               CommandId.fresh().toOption.get,
+                               childBinding,
+                               BindingPayload.Params(Map.empty)
+                              ).either
+          _ <- linked.supervisor.awaitRetirement(linkedChild)
           _ <- linkedRoot.awaitClosed
           linkedFailure <- linkedRoot.pollFailure
         yield assertTrue(
@@ -276,6 +279,87 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           linkedResult.isRight,
           linkedFailure.exists(_.isInstanceOf[ConnectionError.LinkedChildFailed])
         )
+      }
+    },
+    test("an unlinked crashed child can remount from its retained registration") {
+      ZIO.scoped {
+        for
+          mounts       <- Ref.make(0)
+          value        <- fixture
+          rootOutput   <- Queue.bounded[ConnectionOutput](4)
+          childOutput  <- Queue.bounded[ConnectionOutput](4)
+          secondOutput <- Queue.bounded[ConnectionOutput](4)
+          child = new LiveView[Unit, Int]:
+                    def mount(ctx: MountContext): LiveIO[Int] = mounts.updateAndGet(_ + 1)
+                    def handleMessage(model: Int, ctx: MessageContext): Unit => LiveIO[Int] =
+                      _ => ZIO.fail(Exception("runtime failed"))
+                    def view(model: Signal[Int]): HtmlElement[Unit] = button(on.click(()))
+          parent = new LiveView.Eventless[Unit]:
+                     def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+                     def view(model: Signal[Unit]): HtmlElement[Nothing] =
+                       div(liveView("child", child))
+          root         <- startRoot(value, parent, rootOutput)
+          _            <- rootOutput.take
+          exactClaims  <- claimsFor(value)
+          firstJoin    <- value.supervisor.reserveNested(exactClaims)
+          first <- value.supervisor.startNested(
+                     firstJoin,
+                     URL.root,
+                     metadata,
+                     "child",
+                     false,
+                     childOutput.offer(_).unit
+                   )
+          firstJoined <- childOutput.take
+          _ <- first.browserEvent(
+                 CommandId.fresh().toOption.get,
+                 bindingFrom(firstJoined),
+                 BindingPayload.Params(Map.empty)
+               )
+          _ <- first.awaitClosed
+          _ <- value.supervisor.retireLifecycle(first)
+          secondJoin <- value.supervisor.reserveNested(exactClaims)
+          second <- value.supervisor.startNested(
+                      secondJoin,
+                      URL.root,
+                      metadata,
+                      "child",
+                      false,
+                      secondOutput.offer(_).unit
+                    )
+          _          <- secondOutput.take
+          mountCount <- mounts.get
+          rootActive <- value.supervisor.lifecycle(root.lifecycle, root.epoch)
+        yield assertTrue(
+          second.lifecycle != first.lifecycle,
+          mountCount == 2,
+          rootActive.contains(root)
+        )
+      }
+    },
+    test("a stale retirement wait ignores a replacement with reused coordinates") {
+      ZIO.scoped {
+        object Root extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] = div("root")
+
+        val lifecycle = LifecycleId(500L)
+        for
+          value        <- fixture
+          firstOutput  <- Queue.bounded[ConnectionOutput](4)
+          secondOutput <- Queue.bounded[ConnectionOutput](4)
+          first        <- startRoot(value, Root, firstOutput, Some(lifecycle))
+          _            <- firstOutput.take
+          _            <- value.supervisor.routeNavigationLeave(first.topic)
+          _            <- first.awaitClosed
+          second       <- startRoot(value, Root, secondOutput, Some(lifecycle))
+          _            <- secondOutput.take
+          staleWait    <- value.supervisor.awaitRetirement(first).fork
+          _            <- ZIO.yieldNow.repeatN(10)
+          completed    <- staleWait.poll
+          _            <- staleWait.interrupt
+          active       <- value.supervisor.lifecycle(second.lifecycle, second.epoch)
+        yield assertTrue(completed.nonEmpty, active.contains(second))
       }
     },
     test("compatible navigation reattaches an exact sticky child without remounting") {

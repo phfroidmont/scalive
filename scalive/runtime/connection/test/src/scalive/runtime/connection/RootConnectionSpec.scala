@@ -267,6 +267,52 @@ object RootConnectionSpec extends ZIOSpecDefault:
         yield assertTrue(afterGood == 7, afterBad == 7, count == 1)
       }
     },
+    test("raw event hooks can halt with a correlated browser reply") {
+      ZIO.scoped {
+        val reply = Json.Obj("result" -> Json.Str("accepted"))
+        val event = LiveEvent(
+          kind = "hook",
+          bindingId = "sandbox:eval",
+          value = Json.Obj("value" -> Json.Str("socket.assigns")),
+          params = Map("value" -> "socket.assigns"),
+          cid = None,
+          meta = None
+        )
+        for
+          seen    <- Ref.make(Option.empty[LiveEvent])
+          handled <- Ref.make(0)
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   override val hooks = LiveHooks.empty[Int, Int].onRawEvent { (model, event, _) =>
+                     seen.set(Some(event)).as(LiveEventHookResult.haltReply(model + 1, reply))
+                   }
+                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(5)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                     amount => handled.update(_ + 1).as(model + amount)
+                   def view(model: Signal[Int]) = div(model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _           <- outputs.take
+          command      = CommandId.fresh().toOption.get
+          _ <- connection.submitRawEvent(
+                 command,
+                 BindingId.fromEncoded(event.bindingId),
+                 BindingPayload.Params(event.params),
+                 event
+               )
+          output    <- outputs.take
+          observed  <- seen.get
+          calls     <- handled.get
+          model     <- connection.inspectModel
+        yield assertTrue(
+          observed.contains(event),
+          calls == 0,
+          model == 6,
+          output match
+            case ConnectionOutput.ReplyWithPayload(`command`, _, _, `reply`) => true
+            case _                                                           => false
+        )
+      }
+    },
     test("params hooks precede the callback and after-render hooks run on empty diffs") {
       ZIO.scoped {
         for

@@ -393,30 +393,29 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         else
           command match
             case client: SessionCommand.ClientEvent =>
-              controlled(
-                phase(SessionStage.Handler)(
-                  logic.interceptClientEvent(state.committed.model, client)
-                )
-              ).exit.flatMap {
-                case Exit.Success(Some(draft)) =>
+              val intercepted = client.event match
+                case Some(event) => logic.interceptClientEvent(state.committed.model, event)
+                case None        =>
+                  ZIO.succeed(ClientEventInterception.Continue(TurnDraft(state.committed.model)))
+              controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {
+                case Exit.Success(ClientEventInterception.Halt(draft)) =>
                   executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
-                case Exit.Success(None) =>
+                case Exit.Success(ClientEventInterception.Continue(draft)) =>
                   resolveClient(state, client) match
                     case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
                     case Right(ResolvedClient.Root(message)) =>
-                      executeTurn(
-                        state,
-                        work,
-                        logic.handleEvent.getOrElse(logic.handle)(state.committed.model, message),
-                        Some(tracked)
-                      )
+                      val handled = (logic.handleEvent, client.event) match
+                        case (Some(handler), Some(event)) => handler(draft, message, event)
+                        case _                            => logic.handle(draft.model, message)
+                      executeTurn(state, work, handled, Some(tracked))
                     case Right(ResolvedClient.Component(component, message)) =>
                       executeComponentTurn(
                         state,
                         work,
                         component,
                         ComponentAction.Message(message),
-                        Some(tracked)
+                        Some(tracked),
+                        initialDraft = Some(draft)
                       )
                 case Exit.Failure(cause) if cause.isInterruptedOnly =>
                   response.fail(SessionRejection.Terminal("closed")).unit
@@ -569,13 +568,31 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 case None =>
                   response.fail(SessionRejection.UploadUnavailable).unit *> loop(state, work)
             case client: SessionCommand.ComponentClientEvent =>
-              executeComponentTurn(
-                state,
-                work,
-                client.component,
-                ComponentAction.Browser(client),
-                Some(tracked)
-              )
+              val intercepted = client.event match
+                case Some(event) => logic.interceptClientEvent(state.committed.model, event)
+                case None        =>
+                  ZIO.succeed(ClientEventInterception.Continue(TurnDraft(state.committed.model)))
+              controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {
+                case Exit.Success(ClientEventInterception.Halt(draft)) =>
+                  executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
+                case Exit.Success(ClientEventInterception.Continue(draft)) =>
+                  executeComponentTurn(
+                    state,
+                    work,
+                    client.component,
+                    ComponentAction.Browser(client),
+                    Some(tracked),
+                    initialDraft = Some(draft)
+                  )
+                case Exit.Failure(cause) if cause.isInterruptedOnly =>
+                  response.fail(SessionRejection.Terminal("closed")).unit
+                case Exit.Failure(cause) =>
+                  failActiveTurn(
+                    state,
+                    Some(tracked),
+                    failureFrom(cause, SessionStage.Handler)
+                  )
+              }
             case SessionCommand.ParamsPatch(_, _) =>
               response.fail(SessionRejection.UnexpectedPatch).unit *> loop(state, work)
     end match
@@ -770,7 +787,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     component: ComponentInstanceId,
     action: ComponentAction,
     response: Option[TrackedCommand],
-    resourceOperations: Vector[ResourceOperation] = Vector.empty
+    resourceOperations: Vector[ResourceOperation] = Vector.empty,
+    initialDraft: Option[TurnDraft[Msg, Model]] = None
   ): UIO[Unit] =
     state.committed.components.get(component) match
       case None =>
@@ -780,7 +798,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         runTurn(
           Some(state.committed),
           ZIO.succeed(
-            TurnDraft(state.committed.model, resourceOperations = resourceOperations)
+            initialDraft.fold(
+              TurnDraft(state.committed.model, resourceOperations = resourceOperations)
+            )(draft =>
+              draft.copy(resourceOperations = draft.resourceOperations ++ resourceOperations)
+            )
           ),
           work,
           response,
@@ -1496,8 +1518,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     type A = requirement.Model
     type O = requirement.Output
 
-    val component = requirement.definition
-    val old       = erasedPrevious.map(
+    val component  = requirement.definition
+    val inputProps = requirement.props
+    val old        = erasedPrevious.map(
       _.asInstanceOf[MountedComponentValue[Msg, P, M, A, O]]
     )
     val output: O => Task[Unit] = value =>
@@ -1514,7 +1537,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         id        <- old.fold(identity(ComponentInstanceId.fresh()))(value => ZIO.succeed(value.id))
         effective <- updates.get.map(_.get(key) match
                        case Some(request) => (request.props.asInstanceOf[P], Some(request))
-                       case None          => (requirement.props, None))
+                       case None          =>
+                         val props = old match
+                           case Some(value) if value.inputProps == requirement.props => value.props
+                           case _ => requirement.props
+                         (props, None))
         (effectiveProps, initialRequest) = effective
         ref                              = old.fold(ComponentRef.runtime[M](new Object()))(_.ref)
         program <- old.fold(
@@ -1556,7 +1583,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                     _ <- stateOwner.set(Some(mounted.state)) *>
                            recordComponentDraft(draft, updates, mounted.draft)
                     needsUpdate =
-                      old.isEmpty || old.exists(_.props != effectiveProps) ||
+                      old.isEmpty || old.exists(_.inputProps != requirement.props) ||
                         initialRequest.nonEmpty || action.contains(id -> ComponentAction.Update)
                     updated <-
                       if needsUpdate then
@@ -1643,26 +1670,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                          effectiveProps,
                                          updated.model,
                                          command,
+                                         componentBindingMessage(old, command).map(
+                                           _.asInstanceOf[M]
+                                         ),
                                          output,
                                          updated.state,
                                          updated.draft
-                                       ).flatMap {
-                                         case Some(value) =>
-                                           ZIO.succeed(value)
-                                         case None =>
-                                           componentBindingMessage(old, command).flatMap(message =>
-                                             componentEnvironment.message[P, M, A, O](
-                                               id,
-                                               component,
-                                               effectiveProps,
-                                               updated.model,
-                                               message,
-                                               output,
-                                               updated.state,
-                                               updated.draft
-                                             )
-                                           )
-                                       }
+                                       )
                                    )
                                  )
                                case _ => ZIO.succeed(updated)
@@ -1712,14 +1726,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                        updates
                                      )
                                    )
-                    postChild <- restore(
+                    childDraft <- draft.get
+                    postChild  <- restore(
                                    stabilizeComponentUpdates[P, M, A](
                                      id,
                                      component,
                                      key,
                                      appliedRequest,
                                      finalProps,
-                                     refreshed,
+                                     refreshed.copy(draft = childDraft),
                                      draft,
                                      updates,
                                      config.navigationRedirectLimit
@@ -1801,7 +1816,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                       (requirement.definition.asInstanceOf[AnyRef] eq
                                         component.asInstanceOf[AnyRef]) &&
                                         requirement.applicationId == key.applicationId &&
-                                        requirement.props == postChildProps
+                                        requirement.props == inputProps
                                     protected def resolutionForCandidate(
                                       requirement: ComponentRequirement[?],
                                       candidate: RenderCandidate[Any]
@@ -1845,6 +1860,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                         id,
                                         key,
                                         component,
+                                        inputProps,
                                         postChildProps,
                                         postChildResult.model,
                                         ref,
@@ -2419,7 +2435,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       _ <- ZIO.when(publish)(
              candidate.reservation.publish(
                OutboundBatch.single(
-                 SessionOutput(command, candidate.delta, None, candidate.draft.effects)
+                 SessionOutput(
+                   command,
+                   candidate.delta,
+                   None,
+                   candidate.draft.effects,
+                   candidate.draft.reply
+                 )
                )
              )
            )
@@ -2544,7 +2566,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand]
   ): UIO[Unit] =
     val request = candidate.draft.navigation.get
-    if request.kind.isPatch then
+    if request.kind.isPatch || !logic.terminateOnNavigate then
       controlled(publishCandidatePatch(state.committed, work, candidate, response)).exit.flatMap {
         case Exit.Success((pending, nextWork, _)) =>
           val complete = response.fold[UIO[Unit]](ZIO.unit) { command =>
@@ -2626,7 +2648,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                  response.map(_.id),
                  RenderDelta.Empty,
                  Some(navigation),
-                 candidate.draft.effects
+                 candidate.draft.effects,
+                 candidate.draft.reply
                )
              )
            )
@@ -2670,7 +2693,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       navigation = NavigationOutput(navigationId, request.destination, request.kind, request.flash)
       _ <- candidate.reservation.publish(
              OutboundBatch.single(
-               SessionOutput(command, RenderDelta.Empty, Some(navigation), candidate.draft.effects)
+               SessionOutput(
+                 command,
+                 RenderDelta.Empty,
+                 Some(navigation),
+                 candidate.draft.effects,
+                 candidate.draft.reply
+               )
              )
            )
       _ <- observer.emit(
@@ -2688,6 +2717,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
            )
       _ <- discardCandidate(candidate)
     yield candidate.id -> navigation
+  end publishCandidateTerminal
 
   private def stageNavigation(
     committed: Committed[Msg, Model],
@@ -2698,7 +2728,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     deferred: Vector[DeferredSessionCommand[Msg, Model]]
   ): UIO[Unit] =
     val request = draft.navigation.get
-    if request.kind.isPatch then
+    if request.kind.isPatch || !logic.terminateOnNavigate then
       stagePatchNavigation(committed, draft, work, response, redirectCount, deferred)
     else stageTerminalNavigation(committed, draft, work, response, deferred)
 
@@ -2756,7 +2786,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                    response.map(_.id),
                                    RenderDelta.Empty,
                                    Some(output),
-                                   draft.effects
+                                   draft.effects,
+                                   draft.reply
                                  )
                                )
                              )
@@ -2874,7 +2905,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                command,
                                RenderDelta.Empty,
                                Some(navigation),
-                               draft.effects
+                               draft.effects,
+                               draft.reply
                              )
                            )
                          )

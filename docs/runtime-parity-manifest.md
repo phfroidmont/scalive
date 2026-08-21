@@ -2,12 +2,16 @@
 
 ## Purpose
 
-This manifest records the behavioral oracle for the greenfield runtime described in
-[`runtime-target-implementation-plan.md`](runtime-target-implementation-plan.md). The legacy source
-is not a compatibility dependency. It is executable evidence for classifying observable behavior
-while the target runtime is built in the final modules and packages.
+This manifest separates two kinds of evidence:
 
-## Baseline
+1. the frozen legacy oracle used to classify normalized observable behavior; and
+2. the current Milestone-11 implementation and tests in the final target modules.
+
+The legacy source is not a compatibility dependency. Its historical results remain useful evidence,
+but they do not report the current runtime's browser status. The complete upstream browser harness
+is the current gate and must be run against the current tree for a current result.
+
+## Frozen Legacy Baseline
 
 | Item | Value |
 | --- | --- |
@@ -21,12 +25,13 @@ while the target runtime is built in the final modules and packages.
 | Platform | Linux `amd64` |
 | Toolchain | Nix 2.34.8, Mill 1.1.2, Scala 3.8.3, Mill JVM 21.0.10, shell OpenJDK 21.0.12, Node 24.14.0, Playwright 1.58.2 |
 
-The upstream revision and source hash come from `flake.lock`. The worktree path is the local
-location used for this baseline; the tag and commit are the portable oracle identity.
+The upstream revision and source hash came from `flake.lock` at freeze time. The worktree path is
+the local location used for this historical baseline; the tag and commit are its portable identity.
 
-## Baseline Results
+## Historical Baseline Results
 
-Run these commands from the detached oracle worktree inside `nix develop`.
+These commands were run from the detached oracle worktree inside `nix develop` on the baseline
+date. They are not results for the current Milestone-11 tree.
 
 | Command | Result |
 | --- | --- |
@@ -34,8 +39,48 @@ Run these commands from the detached oracle worktree inside `nix develop`.
 | `./scripts/e2e-run-upstream.sh --list` | Discovered 172 Chromium tests in 54 files |
 | `./scripts/e2e-run-upstream.sh` | Passed; 172 tests passed in 35.5 seconds with no retries |
 
-The browser baseline produced debug reports of closed WebSocket channels during browser teardown.
+The historical browser baseline produced debug reports of closed WebSocket channels during browser
+teardown.
 They did not fail or retry any scenario and are not classified as oracle defects.
+
+## Current Milestone-11 Target
+
+The active runtime is split across `scalive/api`, `scalive/render`, `scalive/runtime/kernel`,
+`scalive/runtime/connection`, `scalive/protocol/phoenix`, and `scalive/transport/zio-http`, with
+behavioral helpers in `scalive/testing`. This is the current implementation, not an unimplemented
+future runtime.
+
+`scalive/testing` now includes `ConnectedRender` and `ConnectedView`. They execute disconnected
+bootstrap and signed route admission, start production connection supervision, dispatch click and
+form bindings, send typed messages, wait for asynchronous output, join nested views, stream hosted
+uploads, query current semantic HTML, and leave lifecycles. This is native connected-test evidence;
+it is not a substitute for the browser gate.
+
+The artifact boundaries in `build.mill` record the publication cutover to the target modules.
+Maintained JMH fixtures under `benchmarks` cover target render, diff, encoding, and lifecycle paths;
+benchmark results measure performance and are not parity evidence.
+
+### Current Target Verification
+
+The following commands were run against the current Milestone-11 tree on 2026-08-21:
+
+| Command | Result |
+| --- | --- |
+| `mill --ticker false scalive.__.test` | Passed; all discovered Scalive module tests passed |
+| `mill --ticker false __.test` | Passed; all repository tests passed |
+| `mill --ticker false documentation.check` | Passed |
+| `mill --ticker false __.reformat + __.fix` | Passed |
+| `mill --ticker false scalive.__.publishArtifacts` | Passed for every publishable module |
+| `mill --ticker false benchmarks.listJmhBenchmarks` | Passed; discovered all maintained benchmark groups |
+| `mill --ticker false benchmarks.runJmh -wi 0 -i 1 -r 100ms -f 0 -foe true '.*'` | Passed as a non-threshold smoke run |
+| `./scripts/e2e-run-root-slice.sh` | Passed; 9 Chromium scenarios passed |
+| `./scripts/e2e-run-upstream.sh` | Completed; 170 passed without retry and 2 passed on retry in 36.3 seconds |
+
+The two retry-only upstream scenarios are the nested LiveComponent disabled-fieldset recovery case
+and issue 3530's nested-LiveView stream hook observation. Focused repetition completed 22/25 and
+8/10 runs without retry respectively. They remain required behavior and open stability work; they
+are not exclusions or intentional divergences. The cutover requirement for three consecutive CI
+runs without retries is therefore not yet satisfied.
 
 ## Classifications
 
@@ -47,8 +92,9 @@ Every scenario must use exactly one classification:
 - **Known legacy defect:** the oracle has a reproducible mismatch that the target must not inherit.
 
 The locked browser suite below contains 172 required-behavior scenarios. Every scenario passed the
-legacy oracle. API-shape divergences and non-browser feature decisions are recorded separately in
-the compatibility-area evidence table.
+legacy oracle on 2026-08-18. The checkmarks below therefore describe that frozen run only. They do
+not claim a current target run is green. API-shape divergences and non-browser feature decisions are
+recorded separately in the compatibility-area evidence table.
 
 ## Comparison Rules
 
@@ -68,9 +114,10 @@ The following values are never compared textually:
 
 ## Browser Scenario Inventory
 
-Each checked scenario inherits the **Required behavior** classification and a **Passed** oracle
-result. The stable upstream identity is the spec path plus the complete Playwright title. Source line
-numbers are intentionally omitted because they are not stable identifiers.
+Each checked scenario inherits the **Required behavior** classification and a **Passed historical
+oracle** result. The stable upstream identity is the spec path plus the complete Playwright title.
+Source line numbers are intentionally omitted because they are not stable identifiers. Current
+target status comes only from a fresh `./scripts/e2e-run-upstream.sh` run.
 
 ### `colocated.spec.js`
 
@@ -283,41 +330,38 @@ numbers are intentionally omitted because they are not stable identifiers.
 ## Compatibility-Area Evidence
 
 This table maps the broader areas in [`UPSTREAM_COMPATIBILITY.md`](../UPSTREAM_COMPATIBILITY.md) to
-the current native evidence and target treatment. File references identify suites rather than
-private implementation details; they will move to the target modules as scenarios are reimplemented.
-Unqualified runtime suites are under `scalive/test/src/scalive`; compile-time API suites are under
-`scalive/test/src/scaliveapi`; `DisconnectedRenderSpec.scala` is under
-`scaliveTesting/test/src/scalive/testing`.
+current native evidence and target treatment. All paths are repository-relative. File references
+identify representative suites rather than every assertion. The latest browser result is recorded
+above; native evidence alone must not be read as a claim about later current-tree browser status.
 
 | Area | Classification or target treatment | Current evidence |
 | --- | --- | --- |
 | Browser E2E behavior | Required behavior | `scripts/e2e-run-upstream.sh`, `test/playwright.upstream.config.js`, `e2eApp/src/E2EApp.scala`, `e2eApp/src/E2ERoutes.scala` |
-| Wire protocol and diff encoding | Required behavior | `WebSocketMessageSpec.scala`, `TreeDiffSpec.scala`, `RenderSnapshotSpec.scala`, `ViewGraphSocketSpec.scala` |
-| Static HTTP render and connected bootstrap | Required behavior | `SocketSpec.scala`, `LiveRoutesLifecycleSpec.scala`, `DisconnectedRenderSpec.scala` |
-| Live routes, sessions, aspects, and layouts | Required behavior with Scala-first API shape | `LiveRoutesValidationSpec.scala`, `LiveRoutesTypeSafetySpec.scala`, `LiveRoutesLifecycleSpec.scala`, `LiveRoutesLayoutSpec.scala`, `LiveMountAspectSpec.scala` |
-| Connection availability | Required lifecycle distinction with an intentional Scala API divergence: connected-only capabilities become explicitly unavailable instead of legacy no-ops | `LifecycleHookSpec.scala`, `LiveRoutesLifecycleSpec.scala` cover the legacy connected/disconnected distinction; target compile-time rejection remains unimplemented |
-| Connect params and connect info | Required behavior; target API incomplete | Adjacent coverage in `LiveRoutesLifecycleSpec.scala`, `StaticTrackingSpec.scala`, and `CsrfProtectionSpec.scala` |
-| Lifecycle hooks | Required behavior with typed hook results | `LifecycleHookSpec.scala`, `LiveComponentParitySpec.scala` |
-| Stateful components and updates | Required behavior with semantic component targets | `LiveComponentParitySpec.scala`, `ViewGraphSocketSpec.scala`, `ComponentApiSpec.scala` |
-| Nested LiveViews | Required behavior | `LiveRoutesLifecycleSpec.scala`, `ViewGraphSocketSpec.scala` |
-| Navigation and flash | Required behavior with typed locations | `NavigationApiSpec.scala`, `LiveLocationSpec.scala`, `FlashSpec.scala`, `HttpFlashSpec.scala`, `SocketSpec.scala` |
-| Forms | Required behavior with typed codecs | `FormDataSpec.scala`, `FormApiSpec.scala`, `FormActionSpec.scala`, `HttpFormDecoderSpec.scala`, `DisconnectedRenderSpec.scala` |
-| Uploads | Required behavior with typed writers | `LiveUploadSpec.scala`, `SocketUploadSpec.scala`, `RuntimeIdentifierTypesSpec.scala` |
-| Streams | Required behavior with declarative stream state | `StreamApiSpec.scala`, `StreamOpacitySpec.scala`, `TreeDiffSpec.scala`, `RenderSnapshotSpec.scala` |
-| Async tasks | Required behavior with typed completion messages | `AsyncSpec.scala`, `LiveComponentParitySpec.scala`, `LifecycleHookSpec.scala` |
-| Async assigns | Intentional Scala divergence; explicit typed async completion messages replace assign mutation | `AsyncSpec.scala` covers the replacement behavior; no direct `assign_async` helper exists |
-| JS commands and client events | Required behavior with typed payloads | `BindingRegistrySpec.scala`, `ClientEventsSpec.scala`, `HtmlBuilderSpec.scala`, `HtmlMessageTypeSafetySpec.scala` |
-| DOM bindings and static tracking | Required behavior | `HtmlBuilderSpec.scala`, `StaticTrackingSpec.scala`, `StaticAssetsSpec.scala` |
-| Titles, portals, and focus wrap | Required behavior | `SocketSpec.scala`, `LiveRoutesLifecycleSpec.scala`, `HtmlBuilderSpec.scala`, `ViewGraphSocketSpec.scala` |
-| Security, session tokens, and CSRF | Required behavior; opaque values are normalized | `TokenSpec.scala`, `CsrfProtectionSpec.scala`, `CookiePolicySpec.scala`, `SecurityApiSpec.scala`, `HttpFlashSpec.scala` |
-| Error shapes and crash recovery | Required behavior | `SocketSpec.scala`, `ViewGraphSocketSpec.scala`, `LiveMountAspectSpec.scala`, `WebSocketMessageSpec.scala` |
+| Wire protocol and diff encoding | Required behavior | `scalive/render/test/src/scalive/render/{TreeDifferSpec,RenderProgramSpec,NestedRenderingSpec}.scala`; `scalive/protocol/phoenix/test/src/scalive/protocol/phoenix/{PhoenixProtocolSpec,PhoenixRenderedEncoderSpec,PhoenixProtocolFuzzSpec}.scala` |
+| Static HTTP render and connected bootstrap | Required behavior | `scalive/transport/zio-http/test/src/scalive/{ZioHttpSpec,ZioHttpSecuritySpec}.scala`; `scalive/testing/test/src/scalive/testing/{DisconnectedRenderSpec,ConnectedRenderSpec}.scala` |
+| Live routes, sessions, aspects, and layouts | Required behavior with Scala-first API shape | `scalive/api/test/src/scaliveapi/RoutedConstructionSpec.scala`; `scalive/transport/zio-http/test/src/scalive/{ZioHttpApiSpec,ZioHttpSpec}.scala` |
+| Connection availability | Required lifecycle distinction with an intentional Scala API divergence: connected-only capabilities require explicit `Connection.Connected` handling | `scalive/api/test/src/scaliveapi/ConnectionCapabilitiesSpec.scala` includes compile-time rejection and valid connected capability use; `scalive/testing/test/src/scalive/testing/ConnectedRenderSpec.scala` exercises the connected phase |
+| Connect params and static-change metadata | Required behavior with typed metadata/capabilities | `scalive/runtime/connection/test/src/scalive/runtime/connection/RootConnectionSpec.scala`; `scalive/transport/zio-http/test/src/scalive/{StaticAssetsSpec,ZioHttpSpec}.scala`; connected join parameters in `scalive/testing/src/scalive/testing/ConnectedRender.scala` |
+| Lifecycle hooks | Required behavior with typed hook results | `scalive/api/src/scalive/lifecycle/Hooks.scala`; `scalive/runtime/connection/src/scalive/runtime/connection/RootHookRuntime.scala`; `RootConnectionSpec.scala` and `ComponentRuntimeSpec.scala` in that module's test tree |
+| Stateful components and updates | Required behavior with semantic component targets | `scalive/api/test/src/scaliveapi/ComponentApiSpec.scala`; `scalive/runtime/kernel/test/src/scalive/runtime/kernel/ComponentKernelSpec.scala`; `scalive/runtime/connection/test/src/scalive/runtime/connection/{ComponentRuntimeSpec,DisconnectedComponentRendererSpec}.scala` |
+| Nested LiveViews | Required behavior | `scalive/render/test/src/scalive/render/NestedRenderingSpec.scala`; `scalive/runtime/kernel/test/src/scalive/runtime/kernel/NestedTopologyKernelSpec.scala`; `scalive/runtime/connection/test/src/scalive/runtime/connection/NestedTopologyRuntimeSpec.scala`; `ConnectedRenderSpec.scala` |
+| Navigation, flash, and titles | Required behavior with typed locations and lifecycle output | `scalive/runtime/kernel/test/src/scalive/runtime/kernel/SessionKernelSpec.scala`; `scalive/runtime/connection/test/src/scalive/runtime/connection/RootConnectionSpec.scala`; `scalive/transport/zio-http/test/src/scalive/ZioHttpSpec.scala` |
+| Forms | Required behavior with typed definitions/codecs | `scalive/api/test/src/scaliveapi/FormDefinitionApiSpec.scala`; `scalive/transport/zio-http/src/scalive/HttpFormDecoder.scala`; `scalive/testing/test/src/scalive/testing/{DisconnectedRenderSpec,ConnectedRenderSpec}.scala` |
+| Uploads | Required behavior with typed writers | `scalive/api/test/src/scalive/upload/LiveUploadSpec.scala`; `scalive/runtime/connection/test/src/scalive/runtime/connection/{UploadContextSpec,UploadWorkerSpec}.scala`; `scalive/protocol/phoenix/test/src/scalive/protocol/phoenix/PhoenixUploadProtocolSpec.scala`; `scalive/transport/zio-http/test/src/scalive/ZioHttpUploadSpec.scala` |
+| Streams | Required behavior with opaque public state and lifecycle ownership | `scalive/api/test/src/scaliveapi/StreamOpacitySpec.scala`; `scalive/render/test/src/scalive/render/StreamRenderingSpec.scala`; `scalive/runtime/connection/test/src/scalive/runtime/connection/{StreamStoreSpec,ManagedStreamsSpec}.scala` |
+| Async tasks and subscriptions | Required behavior with typed keys, completion messages, and scoped cleanup | `scalive/api/test/src/scaliveapi/{ConnectionCapabilitiesSpec,RuntimeIdentifierTypesSpec}.scala`; `scalive/runtime/connection/test/src/scalive/runtime/connection/{ManagedAsyncSpec,ManagedSubscriptionsSpec}.scala` |
+| Async assigns | Intentional Scala divergence; explicit typed async completion messages replace assign mutation | `ManagedAsyncSpec.scala` and `ConnectionCapabilitiesSpec.scala` cover the replacement behavior; no direct field-mutation helper is claimed |
+| JS commands, client events, and DOM bindings | Required behavior with typed payloads | `scalive/api/src/scalive/{JS,BrowserEvent}.scala`; `scalive/render/test/src/scalive/render/BindingTableSpec.scala`; `PhoenixRenderedEncoderSpec.scala`; connected dispatch in `ConnectedRenderSpec.scala` |
+| Static asset tracking | Required behavior | `scalive/transport/zio-http/test/src/scalive/{StaticAssetsSpec,ZioHttpSpec}.scala` |
+| Security, session credentials, and CSRF | Required behavior; opaque values are normalized | `scalive/transport/zio-http/test/src/scalive/{HttpSecuritySpec,ZioHttpSecuritySpec,ZioHttpSpec}.scala`; validated `ZioHttpConfig` and `LiveSecurity` public configuration |
+| Error shapes, supervision, and observability | Required behavior | `scalive/runtime/kernel/test/src/scalive/runtime/kernel/RuntimeObservabilitySpec.scala`; `scalive/runtime/connection/test/src/scalive/runtime/connection/{ConnectionSupervisorSpec,SerialWriterSpec}.scala`; `PhoenixProtocolFuzzSpec.scala` |
 | Process-style callbacks | Out of scope as direct API parity; ZIO fibers, scopes, and typed capabilities are the replacement | No direct native equivalent |
-| HEEx and function-component macros | Intentional Scala divergence; typed Scala HTML is the replacement | `HtmlBuilderSpec.scala`, `HtmlMessageTypeSafetySpec.scala` |
-| Verified-route macros | Intentional Scala divergence; typed codecs and locations are the replacement | `LiveRoutesTypeSafetySpec.scala`, `LiveLocationSpec.scala` |
-| Long-poll transport fallback | Scope decision still required; no current target milestone implements it | No long-poll evidence; WebSocket coverage exists in `WebSocketMessageSpec.scala` and the browser suite |
-| Phoenix endpoint process options | Out of scope as direct API parity; applicable ZIO HTTP configuration remains transport-owned | Socket path coverage in `LiveRoutesTypeSafetySpec.scala` |
+| HEEx and function-component macros | Intentional Scala divergence; typed Scala HTML is the replacement | Public HTML definitions under `scalive/api/src/scalive`; render evidence in `HtmlRendererSpec.scala` and `RenderProgramSpec.scala` |
+| Verified-route macros | Intentional Scala divergence; typed routing codecs and locations are the replacement | `scalive/api/src/scalive/routing/LiveRouting.scala`; `RoutedConstructionSpec.scala`; `ZioHttpApiSpec.scala` |
+| Long-poll transport fallback | Scope decision still required | No long-poll evidence; websocket protocol and transport coverage exists in the Phoenix protocol and ZIO HTTP module suites |
+| Phoenix endpoint process options | Out of scope as direct API parity; applicable ZIO HTTP configuration remains transport-owned | Route assembly and configurable websocket path coverage in `ZioHttpApiSpec.scala` |
 | Observability | Required target behavior with a Scala/ZIO event model, not Phoenix telemetry API parity | `RuntimeObservabilitySpec.scala` covers correlated, ordered, payload-redacted runtime events and sink-defect isolation |
-| Test harness helpers | Required Scalive-native harness, not Phoenix helper API parity | `DisconnectedRenderSpec.scala`; connected harness remains unimplemented |
+| Test harness helpers | Required Scalive-native harness, not Phoenix helper API parity | `scalive/testing/test/src/scalive/testing/{DisconnectedRenderSpec,ConnectedRenderSpec}.scala`; connected capabilities include production admission/supervision, semantic queries, bindings, forms, typed messages, async waits, nested joins, hosted uploads, and leave |
 
 ## Maintenance Rules
 

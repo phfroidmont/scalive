@@ -7,7 +7,7 @@ import scalive.*
 import scalive.docs.auth.{AuthHttpRoutes, AuthLab, AuthLabRoutes, AuthService}
 import scalive.docs.examples.{ExampleRegistry, Reports, ReportsExample}
 import scalive.docs.model.*
-import scalive.docs.xray.{DocumentationRuntimeTraceFactory, DocumentationTraceStore}
+import scalive.docs.xray.DocumentationTraceStore
 
 final private[docs] case class DocumentationPageEntry(
   page: Page,
@@ -133,24 +133,17 @@ final private[docs] class DocumentationApplication private (
     val searchRoute = DocumentationApplication.SearchRouteBuilder ->
       DocumentationSearchLiveView(this)
     val router = Live.router
-      .withSecurity(security)
       .withRootLayout(DocumentationRootLayout(this, assets, config.publicOrigin))
       .withLayout(DocumentationLayout(this, assets, config.publicOrigin))
-    val tracedRouter = traceStore.fold(router)(store =>
-      router.withRuntimeTrace(DocumentationRuntimeTraceFactory(store))
-    )
-    val supplementalRoutes = Vector[LiveRouteFragment[Reports, Any]](
+    val supplementalRoutes = Vector[LiveRouteFragment[Reports] { type Input = Any }](
       examplesRoute,
       searchRoute,
       ReportsExample.route,
       AuthLab.loginRoute,
       AuthLab.protectedSession(authService)
     ) ++ fragments
-    val liveRoutes = tracedRouter(
-      homeRoute,
-      supplementalRoutes*
-    )
-    liveRoutes ++
+    val application = router((homeRoute +: supplementalRoutes)*)
+    ZioHttp.routes(application, security) ++
       AuthHttpRoutes(authService, security).routes ++
       DocumentationMetadataRoutes.routes(this, config.publicOrigin)
   end routes

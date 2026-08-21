@@ -106,6 +106,11 @@ end ConnectionConfig
 enum ConnectionOutput:
   case Joined(delta: RenderDelta, effects: SessionEffects)
   case Reply(command: CommandId, delta: RenderDelta, effects: SessionEffects)
+  case ReplyWithPayload(
+    command: CommandId,
+    delta: RenderDelta,
+    effects: SessionEffects,
+    reply: Json)
   case UploadReply(
     command: CommandId,
     delta: RenderDelta,
@@ -121,11 +126,18 @@ enum ConnectionOutput:
     delta: RenderDelta,
     navigation: NavigationOutput,
     effects: SessionEffects)
+  case ReplyNavigationWithPayload(
+    command: CommandId,
+    delta: RenderDelta,
+    navigation: NavigationOutput,
+    effects: SessionEffects,
+    reply: Json)
   case DiffNavigation(
     delta: RenderDelta,
     navigation: NavigationOutput,
     effects: SessionEffects)
   case Rejected(command: CommandId, rejection: SessionRejection)
+end ConnectionOutput
 
 sealed abstract class ConnectionError(message: String) extends Exception(message)
 

@@ -51,6 +51,21 @@ private[scalive] object PhoenixOutput:
     diff: Json.Obj
   ): PhoenixEnvelope = event(joinRef, ref, topic, diff)
 
+  def eventReply(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    diff: Json.Obj,
+    reply: Json
+  ): PhoenixEnvelope =
+    PhoenixEnvelope(
+      joinRef,
+      ref,
+      topic,
+      "phx_reply",
+      ok(Json.Obj("diff" -> diff.add("r", reply)))
+    )
+
   def error(
     joinRef: PhoenixRef,
     ref: PhoenixRef,
@@ -79,6 +94,25 @@ private[scalive] object PhoenixOutput:
 
   def leave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String): PhoenixEnvelope =
     PhoenixEnvelope(joinRef, ref, topic, "phx_reply", ok(Json.Obj.empty))
+
+  def componentsWillDestroy(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String
+  ): PhoenixEnvelope = PhoenixEnvelope(joinRef, ref, topic, "phx_reply", ok(Json.Obj.empty))
+
+  def componentsDestroyed(
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    cids: Vector[Int]
+  ): PhoenixEnvelope = PhoenixEnvelope(
+    joinRef,
+    ref,
+    topic,
+    "phx_reply",
+    ok(Json.Obj("cids" -> Json.Arr(cids.map(Json.Num(_))*)))
+  )
 
   def close(joinRef: PhoenixRef, topic: String): PhoenixEnvelope =
     PhoenixEnvelope(joinRef, PhoenixRef.Null, topic, "phx_close", Json.Obj.empty)

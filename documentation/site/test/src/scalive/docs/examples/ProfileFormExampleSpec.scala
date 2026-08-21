@@ -5,7 +5,7 @@ import zio.*
 import zio.test.*
 
 import scalive.*
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.{ConnectedRender, ConnectedView}
 
 object ProfileFormExampleSpec extends ZIOSpecDefault:
   private def formData(name: String, email: String, biography: String): FormData =
@@ -17,7 +17,7 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
       )
     )
 
-  private def document(harness: SiteLiveViewHarness[?, ?]) =
+  private def document(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
 
   private val validFields = Vector(
@@ -53,7 +53,7 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
       ZIO.scoped {
         val profile = ProfileFormExample.Profile
         for
-          harness <- SiteLiveViewHarness.join(new ProfileFormExample)
+          harness <- ConnectedRender.join(new ProfileFormExample)
           initial <- document(harness)
           _ <- harness.changeForm(
                  "[data-profile-form]",
@@ -79,7 +79,7 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
       ZIO.scoped {
         val profile = ProfileFormExample.Profile
         for
-          harness <- SiteLiveViewHarness.join(new ProfileFormExample)
+          harness <- ConnectedRender.join(new ProfileFormExample)
           _ <- harness.submitForm(
                  "[data-profile-form]",
                  Vector(

@@ -4,20 +4,20 @@ import org.jsoup.Jsoup
 import zio.*
 import zio.test.*
 
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.{ConnectedRender, ConnectedView}
 
 object VotingComponentsExampleSpec extends ZIOSpecDefault:
-  private def state(harness: SiteLiveViewHarness[?, ?]) =
+  private def state(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
 
-  private def waitFor(harness: SiteLiveViewHarness[?, ?], text: String) =
+  private def waitFor(harness: ConnectedView[?], text: String) =
     harness.html.repeatUntil(_.contains(text))
 
   override def spec = suite("VotingComponentsExampleSpec")(
     test("isolates component state and reports typed outputs to the parent") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new VotingComponentsExample)
+          harness <- ConnectedRender.join(new VotingComponentsExample)
           _       <- harness.click("[data-vote-component=scala-vote] button:first-of-type")
           _       <- waitFor(harness, "scala-vote reported 1 vote.")
           current <- state(harness)
@@ -31,7 +31,7 @@ object VotingComponentsExampleSpec extends ZIOSpecDefault:
     test("updates props without losing component-local state") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new VotingComponentsExample)
+          harness <- ConnectedRender.join(new VotingComponentsExample)
           _       <- harness.click("[data-vote-component=scala-vote] button:first-of-type")
           _       <- waitFor(harness, "scala-vote reported 1 vote.")
           _       <- harness.clickButton("Parent updates Scala props")
@@ -47,7 +47,7 @@ object VotingComponentsExampleSpec extends ZIOSpecDefault:
     test("shows stable identities and reports local reset to the parent") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new VotingComponentsExample)
+          harness <- ConnectedRender.join(new VotingComponentsExample)
           initial <- state(harness)
           _       <- harness.click("[data-vote-component=zio-vote] button:first-of-type")
           _       <- waitFor(harness, "zio-vote reported 1 vote.")
@@ -66,10 +66,10 @@ object VotingComponentsExampleSpec extends ZIOSpecDefault:
     test("resets parent and component state explicitly") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new VotingComponentsExample)
+          harness <- ConnectedRender.join(new VotingComponentsExample)
           _       <- harness.click("[data-vote-component=zio-vote] button:first-of-type")
           _       <- waitFor(harness, "zio-vote reported 1 vote.")
-          _       <- harness.sendServer(VotingComponentsExample.Msg.Reset)
+          _       <- harness.send(VotingComponentsExample.Msg.Reset)
           _       <- waitFor(harness, "No component has reported a vote.")
           current <- state(harness)
         yield assertTrue(

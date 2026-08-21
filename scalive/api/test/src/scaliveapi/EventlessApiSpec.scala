@@ -103,6 +103,22 @@ object EventlessApiSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("portal content preserves its owner message type") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum Msg:
+          case Clicked
+
+        val content: HtmlElement[Msg] = portal(
+          "portal-source",
+          target = DomSelector.css("#portal-target"),
+          wrapperClass = Some("contents")
+        )(button(on.click(Msg.Clicked), "click"))
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
     test("eventless LiveComponents only require mount and view") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

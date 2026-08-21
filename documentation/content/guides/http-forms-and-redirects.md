@@ -10,8 +10,8 @@ group = "Interfaces and input"
 
 Read [Typed forms and validation](typed-forms-and-validation.md) and
 [Routes and navigation](routes-and-navigation.md) first. This guide assumes one
-`LiveSecurity` instance is shared by the Live router and sibling ZIO HTTP
-handlers.
+validated `ZioHttpConfig` is passed to `ZioHttp.routes` and wrapped by one
+`LiveSecurity` for sibling ZIO HTTP handlers.
 
 ## Choose Ordinary HTTP Deliberately {#choose-ordinary-http-deliberately}
 
@@ -91,26 +91,29 @@ your application.
 
 ## Share Security And Inject CSRF {#share-security-and-inject-csrf}
 
-Create one security value and pass it both to the Live router and HTTP route
-owner:
+Create one validated transport config and share it between Live transport routes
+and the HTTP route owner:
 
 ```scala
-val security = LiveSecurity(
-  TokenConfig(config.signingSecret, 30.minutes),
-  CookiePolicy(secure = config.publicHttps)
-)
+val transportConfig = ZioHttpConfig(
+  signingSecret = config.signingSecret,
+  sessionMaxAge = java.time.Duration.ofMinutes(30),
+  secureCookie = config.publicHttps
+).fold(error => throw IllegalArgumentException(error.toString), identity)
 
-val routes = Live.router.withSecurity(security)(liveRoutes*) ++ httpRoutes(security)
+val security = LiveSecurity(transportConfig)
+val application = Live.router(liveRoutes*)
+val routes = ZioHttp.routes(application, security) ++ httpRoutes(security)
 ```
 
 A checked POST rendered through `Form.http` is marked for Scalive's hidden CSRF
-token injection. Injection occurs only while rendering in a lifecycle configured
-with that security state. The matching browser cookie and submitted token are
-validated later with the same `security.csrf` instance.
+token injection. Injection occurs only while rendering through transport routes
+configured with that validated config. The matching browser cookie and submitted token are
+validated later with `security.csrf`, derived from the same validated config.
 
 Checked GET actions and all unsafe actions are not marked for token injection.
 Do not treat `Form.http` alone as request protection: the HTTP handler must still
-validate CSRF for state-changing requests. Set `CookiePolicy(secure = true)`
+validate CSRF for state-changing requests. Set `secureCookie = true`
 when the browser-facing origin uses HTTPS; Scalive does not infer that from
 forwarding headers.
 

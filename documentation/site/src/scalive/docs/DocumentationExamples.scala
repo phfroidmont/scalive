@@ -143,7 +143,7 @@ final private[docs] class DocumentationExamplesLiveView(
     label: String,
     params: Signal[DocumentationExamplesParams]
   ): HtmlElement[Nothing] =
-    link.pushPatch(
+    dynamicPatch(
       params.map(value =>
         DocumentationApplication.ExamplesCatalogRoute.location(value.copy(topic = topic))
       ),
@@ -236,13 +236,13 @@ final private[docs] class DocumentationExamplesLiveView(
       Option.when(showCategory)(
         p(cls := "docs-example-card-kind", descriptor.map(_.category.label))
       ),
-      h3(link.pushNavigate(location, descriptor.map(_.title), span(aria.hidden := true, " →"))),
+      h3(dynamicNavigate(location, descriptor.map(_.title), span(aria.hidden := true, " →"))),
       p(descriptor.map(_.description)),
       ul(
         cls := "docs-example-card-topics",
         descriptor.map(_.topics.take(2)).splitBy(identity) { (_, topic) =>
           li(
-            link.pushPatch(
+            dynamicPatch(
               topic.map(value =>
                 DocumentationApplication.ExamplesCatalogRoute.location(
                   DocumentationExamplesParams(None, Some(ExampleTopic.key(value)))
@@ -254,7 +254,7 @@ final private[docs] class DocumentationExamplesLiveView(
         }
       ),
       footerTag(
-        link.pushNavigate(location, "Open example"),
+        dynamicNavigate(location, "Open example"),
         div(
           cls := "docs-example-source-links",
           sources.splitBy(_._1) { (_, entry) =>
@@ -282,7 +282,7 @@ final private[docs] class DocumentationExamplesLiveView(
         cls := "docs-example-card-topics",
         lab.map(_.topics.take(2)).splitBy(identity) { (_, topic) =>
           li(
-            link.pushPatch(
+            dynamicPatch(
               topic.map(value =>
                 DocumentationApplication.ExamplesCatalogRoute.location(
                   DocumentationExamplesParams(None, Some(ExampleTopic.key(value)))
@@ -316,6 +316,18 @@ final private[docs] class DocumentationExamplesLiveView(
         "Clear search and filters"
       )
     )
+
+  private def dynamicNavigate[Msg](
+    location: Signal[LiveLocation],
+    mods: Mod[Msg]*
+  ): HtmlElement[Msg] =
+    a(href := location.map(_.href), phx.link := "redirect", phx.linkState := "push", mods)
+
+  private def dynamicPatch[Msg](
+    location: Signal[LiveLocation],
+    mods: Mod[Msg]*
+  ): HtmlElement[Msg] =
+    a(href := location.map(_.href), phx.link := "patch", phx.linkState := "push", mods)
 
   private def matches(
     example: ExampleDefinition,

@@ -73,12 +73,13 @@ object NestedTopologyRuntimeSpec extends ZIOSpecDefault:
         fixture <- fixture
         prepared <- prepare(fixture, Vector(requirement("chat")))
         resolution = prepared.resolutions.head
-        before <- fixture.runtime.registration(resolution.registration)
-        issued <- fixture.issuedClaims.get
-      yield assertTrue(
-        before.isEmpty,
-        prepared.resolutions.map(_.applicationId) == Vector("chat"),
-        issued == Vector(
+         before <- fixture.runtime.registration(resolution.registration)
+         issued <- fixture.issuedClaims.get
+       yield assertTrue(
+         before.isEmpty,
+         resolution.staticCredential.isEmpty,
+         prepared.resolutions.map(_.applicationId) == Vector("chat"),
+         issued == Vector(
           NestedCredentialClaims(
             resolution.registration,
             NestedRegistrationEpoch.initial,

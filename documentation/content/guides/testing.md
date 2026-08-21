@@ -1,6 +1,6 @@
 {%
 title = "Testing LiveViews"
-description = "Test disconnected HTML today, and choose honest strategies for connected and browser behavior."
+description = "Test disconnected HTML, connected server behavior, and the real browser at the appropriate boundary."
 order = 60
 section = guides
 group = "Testing and troubleshooting"
@@ -17,9 +17,10 @@ Scalive applications have three useful test boundaries:
 
 - **Disconnected tests** execute the finalized ZIO HTTP routes and inspect the
   first HTML response. This boundary has public support in `scalive.testing`.
-- **Connected tests** join a @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ channel, send protocol events, and inspect
-  committed HTML or diffs. Scalive does not currently publish a connected test
-  harness.
+- **Connected tests** use
+  @:apiSymbol(object:scalive.testing.ConnectedRender)`ConnectedRender`@:@ to join
+  through production admission and supervision, then interact through a typed
+  @:apiSymbol(class:scalive.testing.ConnectedView)`ConnectedView`@:@.
 - **Browser tests** run the Phoenix LiveView JavaScript client against a real
   server. Scalive does not currently publish a browser fixture or Playwright
   library.
@@ -31,9 +32,10 @@ navigation, transport loss, or reconnect behavior.
 
 @:callout(info)
 
-`scalive.testing` is intentionally smaller than `Phoenix.LiveViewTest`. Connected
-mount, typed event submission, and following an ordinary HTTP form action are
-current testing API gaps, not undocumented helpers.
+`scalive.testing` is intentionally smaller than `Phoenix.LiveViewTest`. It
+supports connected mount, typed server messages, semantic click and form
+bindings, nested joins, and uploads. Following an ordinary HTTP form action is a
+current testing API gap.
 
 @:@
 
@@ -62,8 +64,14 @@ import scalive.*
 import scalive.testing.*
 
 object ProfilePageSpec extends ZIOSpecDefault:
-  private val routes =
-    Live.router.withSecurity(testSecurity)(Routes.profile -> ProfileLiveView())
+  private val config = ZioHttpConfig(
+    signingSecret = "fixed-test-signing-secret-000000000000",
+    sessionMaxAge = java.time.Duration.ofMinutes(30),
+    secureCookie = false
+  ).fold(error => throw IllegalArgumentException(error.toString), identity)
+
+  private val application = Live.router(Routes.profile -> ProfileLiveView())
+  private val routes = ZioHttp.routes(application, config)
 
   def spec = suite("ProfilePageSpec")(
     test("renders the profile form") {
@@ -90,10 +98,10 @@ object ProfilePageSpec extends ZIOSpecDefault:
 end ProfilePageSpec
 ```
 
-The names `testSecurity`, `Routes.profile`, and `ProfileLiveView` represent
-application code. Use a fixed test @:apiSymbol(class:scalive.TokenConfig)`TokenConfig`@:@ when assertions depend on
-signed cookies or tokens; do not compare output produced with independently
-constructed security configurations.
+The names `Routes.profile` and `ProfileLiveView` represent application code. Use
+a fixed, valid test @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@
+when assertions depend on signed cookies or tokens; do not compare output
+produced with independently constructed configurations.
 
 ## Query Forms Semantically {#query-forms-semantically}
 
@@ -125,26 +133,38 @@ groups, are valid.
 
 ## Cover Connected Behavior {#cover-connected-behavior}
 
-There is no public `scalive.testing` API for joining a socket or clicking a
-connected binding. Until one exists, choose between these approaches:
+@:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
+finalizes a single LiveView at `/`, performs disconnected rendering, validates
+its bootstrap credentials, and starts the connected lifecycle through production
+route admission and supervision:
 
-1. Test pure model transitions and codecs directly when no connection capability
-   is involved.
-2. Test the disconnected route for initial mount, route decoding, layout, forms,
-   cookies, and HTML.
-3. Test connected behavior in a browser when protocol or DOM behavior is part of
-   the requirement.
-4. Build an application-owned integration harness only if browser tests are too
-   coarse for an important server-side scenario. Treat it as private code tied
-   to the current protocol, not as a Scalive compatibility promise.
+```scala
+test("increments after a connected click") {
+  ZIO.scoped {
+    for
+      view  <- ConnectedRender.join(CounterLiveView())
+      _     <- view.clickButton("Increment")
+      count <- view.text("#count")
+    yield assertTrue(count == "1")
+  }
+}
+```
 
-This repository's
-`documentation/site/test/src/scalive/docs/SiteLiveViewHarness.scala` is an
-example of the fourth approach. It directly uses internal channel, socket, and
-wire-message types to join, click, and inspect committed HTML. It is
-`private[docs]`, lives under test sources, and is not part of `scalive.testing`.
-Applications cannot rely on its API or copy it with an expectation of source
-compatibility.
+Use `view.send(message)` when a typed server message is the behavior under test.
+Use `click`, `clickButton`, `changeForm`, and `submitForm` to resolve bindings
+from the latest committed HTML and wait for the correlated lifecycle output.
+`awaitDiff` waits for an uncorrelated async or subscription update, and
+`joinNested(instanceId)` enters a nested lifecycle registered by the parent.
+
+For routed applications, use the overload accepting `LiveApplication`, a fixed
+validated `ZioHttpConfig`, a ZIO HTTP `Request`, and optional untrusted connect
+parameters. That overload exercises the actual route, mount aspects, layouts,
+security bootstrap, and request URL rather than mounting a synthetic root.
+
+`ConnectedView.html` is a semantic projection of the latest committed server
+render, not a browser DOM. Connected tests do not execute the Phoenix JavaScript
+client, patch a real document, run hooks, manage focus, or prove browser history
+behavior. Keep those claims at the browser boundary.
 
 ## Test In A Browser {#test-in-a-browser}
 
@@ -175,9 +195,9 @@ and assertions for their product.
 
 ## Know What Each Test Proves {#know-what-each-test-proves}
 
-A passing disconnected test does not prove a socket can connect. A private
-protocol harness does not prove the Phoenix client can patch the browser DOM. A
-browser test proves its scenario but may not isolate the failing lifecycle
+A passing disconnected test does not prove a socket can connect. A passing
+`ConnectedRender` test does not prove the Phoenix client can patch the browser
+DOM. A browser test proves its scenario but may not isolate the failing lifecycle
 stage. Keep at least one assertion at each boundary your application depends on,
 and use [Troubleshooting](troubleshooting.md#separate-the-two-mounts) to locate a
 failure before expanding the test suite.

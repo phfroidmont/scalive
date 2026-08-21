@@ -98,6 +98,38 @@ object StreamRenderingSpec extends ZIOSpecDefault:
           case _ => false
       )
     },
+    test("renders limited insertion operations even when their rows leave the retained snapshot") {
+      val identity = LiveStreamIdentity.fresh()
+      val limited = stream(
+        identity,
+        1L,
+        Vector(Item("b", "two"), Item("c", "three")),
+        inserted = Vector(
+          (Item("a", "one"), StreamAt.Index(1), Some(StreamLimit.KeepLast(2)), false),
+          (Item("b", "two"), StreamAt.Index(1), Some(StreamLimit.KeepLast(2)), false),
+          (Item("c", "three"), StreamAt.Index(1), Some(StreamLimit.KeepLast(2)), false)
+        )
+      )
+      val compiled = RenderProgram.compile[LiveStream[Item], Nothing](model =>
+        div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
+      )
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(limited)
+        node       = streamNode(candidate)
+        openBefore = candidate.newRowScopes.values.forall(!_.isClosed)
+        _          = candidate.commit
+        closedAfter = candidate.newRowScopes.values.count(_.isClosed)
+      yield assertTrue(
+        node.rows.map(_.domId) == Vector("b", "c"),
+        node.operations.inserts.map(_.row.domId) == Vector("a", "b", "c"),
+        HtmlRenderer.render(candidate.tree) ==
+          "<div><span id=\"b\">two</span><span id=\"c\">three</span></div>",
+        openBefore,
+        closedAfter == 1
+      )
+    },
     test("diffs unrelated row signals but emits no stream operation for one generation") {
       val identity = LiveStreamIdentity.fresh()
       val handle = stream(identity, 1L, Vector(Item("a", "one")))

@@ -4,17 +4,17 @@ import org.jsoup.Jsoup
 import zio.*
 import zio.test.*
 
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.{ConnectedRender, ConnectedView}
 
 object LifecycleExampleSpec extends ZIOSpecDefault:
-  private def document(harness: SiteLiveViewHarness[?, ?]) =
+  private def document(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
 
   override def spec = suite("LifecycleExampleSpec")(
     test("shows connected mount state and handles flash, title, and reset messages") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new LifecycleExample)
+          harness <- ConnectedRender.join(new LifecycleExample)
           initial <- document(harness)
           _       <- harness.clickButton("Show notification")
           flashed <- document(harness)
@@ -35,7 +35,7 @@ object LifecycleExampleSpec extends ZIOSpecDefault:
     test("clears one keyed flash message") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new LifecycleExample)
+          harness <- ConnectedRender.join(new LifecycleExample)
           _       <- harness.clickButton("Show notification")
           _       <- harness.clickButton("Clear notification")
           cleared <- document(harness)

@@ -98,7 +98,6 @@ final private[docs] class DocumentationTraceStore private (
     private var values                 = Vector.empty[DocumentationTraceRecord]
     private var bytes                  = 0
     private var lastBrowserSequence    = 0L
-    private val nextServerSequence     = AtomicLong(0L)
     private val accessSequence         = AtomicLong(0L)
     private val interactionOrdinals    = mutable.LinkedHashMap.empty[String, InteractionOrdinal]
     private val serverOrdinals         = mutable.LinkedHashMap.empty[ServerOperation, Long]
@@ -108,51 +107,6 @@ final private[docs] class DocumentationTraceStore private (
     def lastAccess: Long = accessSequence.get()
 
     private def touch(): Unit = accessSequence.set(nextStoreAccess.incrementAndGet())
-
-    def appendServer(record: RuntimeTraceRecord): Boolean = synchronized {
-      touch()
-      val value = DocumentationTraceRecord(
-        producer = TraceProducer.Server,
-        producerSequence = nextServerSequence.incrementAndGet(),
-        traceSession = record.identity.traceSession,
-        connectionEpoch = Some(record.identity.connectionEpoch),
-        socketEpoch = Some(record.identity.socketEpoch),
-        topic = record.identity.topic,
-        joinReference = record.identity.joinReference.map(_.toString),
-        messageReference = record.identity.messageReference.map(_.toString),
-        operationSequence = record.identity.operationSequence,
-        operationKind = record.identity.operationKind.toString,
-        operationRecordSequence = record.recordSequence,
-        stage = record.stage.toString,
-        summary = record.summary,
-        value = record.value.map(value =>
-          DocumentationTraceValue(value.typeName, value.summary, value.fields, value.scalaValue)
-        ),
-        protocol = record.protocol,
-        byteSize = record.byteSize,
-        initiator = record.identity.initiator match
-          case RuntimeTraceInitiator.Browser                 => DocumentationTraceInitiator.Browser
-          case RuntimeTraceInitiator.Runtime                 => DocumentationTraceInitiator.Runtime
-          case RuntimeTraceInitiator.Component(typeName, id) =>
-            DocumentationTraceInitiator.Component(typeName, id),
-        interactionOrdinal = interactionOrdinal(
-          correlationReference(
-            record.identity.joinReference.map(_.toString),
-            record.identity.messageReference.map(_.toString)
-          ),
-          browserStart = false,
-          serverOperation = Some(
-            ServerOperation(
-              record.identity.connectionEpoch,
-              record.identity.socketEpoch,
-              record.identity.operationSequence
-            )
-          ),
-          browserFallbackStart = false
-        )
-      )
-      append(value)
-    }
 
     def appendBrowser(session: String, record: BrowserTraceRecord): Boolean = synchronized {
       if record.sequence <= lastBrowserSequence then false
@@ -337,7 +291,6 @@ final private[docs] class DocumentationTraceStore private (
 
   private val active           = ConcurrentHashMap[TraceKey, RegisteredExample]()
   private val histories        = ConcurrentHashMap[TraceKey, History]()
-  private val connectionEpochs = ConcurrentHashMap[String, AtomicLong]()
   private val owners           = ConcurrentHashMap[TraceKey, java.util.Set[String]]()
   private val leaseGenerations = ConcurrentHashMap[TraceKey, AtomicLong]()
   private val nextStoreAccess  = AtomicLong(0L)
@@ -355,12 +308,6 @@ final private[docs] class DocumentationTraceStore private (
               evicted += entry.getKey
               histories.remove(entry.getKey)
               active.remove(entry.getKey)
-              val sessionStillStored = histories
-                .keySet().asScala.exists(
-                  _.traceSession == entry.getKey.traceSession
-                )
-              if !sessionStillStored then
-                val _ = connectionEpochs.remove(entry.getKey.traceSession)
           }
         val created = History()
         histories.put(key, created)
@@ -373,7 +320,6 @@ final private[docs] class DocumentationTraceStore private (
       evicted <- ZIO.succeed {
                    val (_, removed) = this.synchronized {
                      val result = history(key)
-                     connectionEpochs.putIfAbsent(session, AtomicLong(1L))
                      active.put(key, example)
                      result
                    }
@@ -432,23 +378,6 @@ final private[docs] class DocumentationTraceStore private (
                  }
                }.flatMap(removed => ZIO.when(removed)(updatesHub.publish(key).unit))).forkDaemon
     yield ()
-
-  def registered(session: String, topic: String): Option[RegisteredExample] =
-    Option(active.get(TraceKey(session, topic)))
-
-  def nextConnectionEpoch(session: String): Long =
-    Option(connectionEpochs.get(session)).fold(1L)(_.incrementAndGet())
-
-  def appendServer(record: RuntimeTraceRecord): UIO[Unit] =
-    val key = TraceKey(record.identity.traceSession, record.identity.topic)
-    ZIO
-      .succeed {
-        this.synchronized {
-          Option(active.get(key)).nonEmpty && Option(histories.get(key)).exists(
-            _.appendServer(record)
-          )
-        }
-      }.flatMap(appended => ZIO.when(appended)(updatesHub.publish(key).unit)).unit
 
   def appendBrowser(session: String, topic: String, batch: BrowserTraceBatch): UIO[Unit] =
     val key = TraceKey(session, topic)

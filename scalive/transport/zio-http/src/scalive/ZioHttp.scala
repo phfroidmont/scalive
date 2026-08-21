@@ -104,6 +104,10 @@ object ZioHttp:
     val socketRoute = websocketRoute(application.socketPath, catalog, config)
     Routes.fromIterable(getRoutes :+ socketRoute)
 
+  /** Assembles routes with the security value shared by Live and ordinary HTTP handlers. */
+  def routes[R](application: LiveApplication[R], security: LiveSecurity): Routes[R, Nothing] =
+    routes(application, security.config)
+
   private[scalive] def validate[R](application: LiveApplication[R]): Vector[CompiledRoute[R]] =
     val sessionNames = application.routes.collect { case session: LiveSession[?] => session.name }
     val duplicateSessions = sessionNames.groupBy(identity).collect {
@@ -233,9 +237,11 @@ object ZioHttp:
             erasedContext,
             mountClaims,
             selectedRootLayout
-          ).catchAllCause { _ =>
-            ZIO.logError("Disconnected LiveView GET failed") *>
-              ZIO.succeed(Response.internalServerError)
+          ).catchAllCause { cause =>
+            ZIO.logErrorCause("Disconnected LiveView GET failed", cause) *>
+              ZIO.succeed(
+                Response.text("Internal Server Error").copy(status = Status.InternalServerError)
+              )
           }
       )
 
@@ -328,15 +334,16 @@ object ZioHttp:
         rendered <-
           if selectedRootLayout eq LiveRootLayout.identity then
             renderElement(
-              (input: Signal[(Model, URL)]) => withRootAttrs(lifecycle.view(input), rootAttrs),
+              (input: Signal[(Model, URL)]) => rootContainer(lifecycle.view(input), rootAttrs),
               model -> request.url,
               turn,
-              nestedResolver
+              nestedResolver,
+              csrfToken = issuedCsrf.token
             )
               .map(inner => inner.copy(html = document(issuedCsrf.token, inner.html)))
           else
             val rootView = (input: Signal[(Model, URL)]) =>
-              val content = withRootAttrs(lifecycle.view(input), rootAttrs)
+              val content = rootContainer(lifecycle.view(input), rootAttrs)
               val rooted  =
                 selectedRootLayout.render(content, lifecycle.pageTitle(model), rootContext)
               injectCsrf(rooted, issuedCsrf.token)
@@ -345,6 +352,7 @@ object ZioHttp:
               model -> request.url,
               turn,
               nestedResolver,
+              csrfToken = issuedCsrf.token,
               includeDoctype = true
             )
         _               <- turn.runAfterRender(model)
@@ -794,13 +802,15 @@ object ZioHttp:
     value: A,
     turn: DisconnectedRootTurn[?, ?],
     nestedResolver: DisconnectedNestedResolver = DisconnectedNestedResolver.unavailable,
+    csrfToken: String,
     includeDoctype: Boolean = false
   ): Task[RenderedElement] =
     DisconnectedComponentRenderer.renderTurnWith(view, value, turn, nestedResolver) {
       (tree, finalFlash) =>
         ZIO
           .fromEither(
-            PhoenixRenderedEncoder.fullHtml(tree).left.map(error => Exception(error.toString))
+            PhoenixRenderedEncoder
+              .fullHtml(tree, Some(csrfToken)).left.map(error => Exception(error.toString))
           ).map { case (_, html) =>
             RenderedElement(
               if includeDoctype then s"<!doctype html>$html" else html,
@@ -912,11 +922,11 @@ object ZioHttp:
       )
     else root.prepended(Mod.Content.Tag(csrfMeta))
 
-  private def withRootAttrs[Msg](
+  private def rootContainer[Msg](
     element: HtmlElement[Msg],
     rootAttrs: Vector[Mod.Attr[Nothing]]
   ): HtmlElement[Msg] =
-    val reserved = Set("id", "data-phx-main", "data-phx-session", "data-phx-static")
+    val reserved = Set("data-phx-main", "data-phx-session", "data-phx-static")
     def retained(mod: Mod[Msg]): Boolean = mod match
       case Mod.Attr.Static(name, _)                => !reserved(name)
       case Mod.Attr.StaticValueAsPresence(name, _) => !reserved(name)
@@ -924,7 +934,7 @@ object ZioHttp:
       case Mod.Attr.SignalOptionalValue(name, _)   => !reserved(name)
       case Mod.Attr.SignalValueAsPresence(name, _) => !reserved(name)
       case _                                       => true
-    HtmlElement(element.tag, rootAttrs ++ element.mods.filter(retained))
+    div(rootAttrs, HtmlElement(element.tag, element.mods.filter(retained)))
 
   private def websocketRoute[R](
     socketPath: PathCodec[Unit],
@@ -1056,6 +1066,7 @@ object ZioHttp:
                     )
       joined       <- Ref.make(Map.empty[String, JoinedLifecycle])
       uploads      <- Ref.make(Map.empty[String, JoinedUpload])
+      uploadFrame  <- Ref.make(Option.empty[Chunk[Byte]])
       registration <- Ref.make(Option.empty[ZioHttpSecurity.RootClaims])
       joinGate     <- Semaphore.make(1L)
       receive = channel.receiveAll {
@@ -1114,6 +1125,14 @@ object ZioHttp:
                             offerUploadProgress(joined, writer, joinRef, ref, topic, payload)
                           case Right(PhoenixInbound.Event(joinRef, ref, topic, payload)) =>
                             offerEvent(joined, writer, joinRef, ref, topic, payload)
+                          case Right(
+                                PhoenixInbound.ComponentsWillDestroy(joinRef, ref, topic, cids)
+                              ) =>
+                            offerComponentsWillDestroy(joined, writer, joinRef, ref, topic, cids)
+                          case Right(
+                                PhoenixInbound.ComponentsDestroyed(joinRef, ref, topic, cids)
+                              ) =>
+                            offerComponentsDestroyed(joined, writer, joinRef, ref, topic, cids)
                           case Right(PhoenixInbound.LivePatch(joinRef, ref, topic, url)) =>
                             offerPatch(joined, writer, joinRef, ref, topic, url)
                           case Right(PhoenixInbound.Leave(joinRef, ref, topic)) =>
@@ -1128,8 +1147,15 @@ object ZioHttp:
                           case Right(PhoenixInbound.UploadLeave(joinRef, ref, topic, _)) =>
                             leaveUpload(uploads, writer, joinRef, ref, topic)
                     }
-                  case ChannelEvent.Read(WebSocketFrame.Binary(bytes)) =>
-                    offerUploadChunk(uploads, writer, bytes)
+                  case ChannelEvent.Read(frame: WebSocketFrame.Binary) =>
+                    collectUploadFrame(uploadFrame, frame)
+                      .flatMap(ZIO.foreachDiscard(_)(offerUploadChunk(uploads, writer, _)))
+                  case ChannelEvent.Read(frame: WebSocketFrame.Continuation) =>
+                    collectUploadFrame(uploadFrame, frame)
+                      .flatMap(ZIO.foreachDiscard(_)(offerUploadChunk(uploads, writer, _)))
+                  case ChannelEvent.Read(WebSocketFrame.Ping) =>
+                    channel.send(ChannelEvent.read(WebSocketFrame.pong))
+                  case ChannelEvent.Read(WebSocketFrame.Pong)     => ZIO.unit
                   case ChannelEvent.Read(_: WebSocketFrame.Close) => ZIO.unit
                   case ChannelEvent.Registered | ChannelEvent.Unregistered |
                       ChannelEvent.UserEventTriggered(_) =>
@@ -1141,6 +1167,47 @@ object ZioHttp:
              .raceFirst(writer.awaitFailure.flatMap(ZIO.fail(_)))
              .ensuring(RuntimeCleanup.all(Vector(supervisor.close, writer.close)))
     yield ()
+
+  private def collectUploadFrame(
+    pending: Ref[Option[Chunk[Byte]]],
+    frame: WebSocketFrame
+  ): Task[Option[Chunk[Byte]]] =
+    pending
+      .modify { current =>
+        frame match
+          case binary: WebSocketFrame.Binary if binary.isFinal =>
+            current match
+              case None    => frameResult(binary.bytes)
+              case Some(_) =>
+                Left(Exception("websocket binary message started before continuation completed")) ->
+                  None
+          case binary: WebSocketFrame.Binary =>
+            current match
+              case None    => fragmentResult(binary.bytes, complete = false)
+              case Some(_) =>
+                Left(Exception("websocket binary message started before continuation completed")) ->
+                  None
+          case continuation: WebSocketFrame.Continuation =>
+            current match
+              case None => Left(Exception("websocket continuation has no initial frame")) -> None
+              case Some(bytes) =>
+                fragmentResult(bytes ++ continuation.buffer, continuation.isFinal)
+          case _ => Left(Exception("unsupported websocket data frame")) -> None
+      }.flatMap(ZIO.fromEither(_))
+
+  private def frameResult(
+    bytes: Chunk[Byte]
+  ): (Either[Exception, Option[Chunk[Byte]]], Option[Chunk[Byte]]) =
+    fragmentResult(bytes, complete = true)
+
+  private def fragmentResult(
+    bytes: Chunk[Byte],
+    complete: Boolean
+  ): (Either[Exception, Option[Chunk[Byte]]], Option[Chunk[Byte]]) =
+    if bytes.length > MaxFramePayloadBytes then
+      Left(Exception("websocket message exceeds maximum payload")) -> None
+    else if complete then Right(Some(bytes)) -> None
+    else Right(None)                         -> Some(bytes)
 
   private def joinLifecycle[R](
     routes: Vector[CompiledRoute[R]],
@@ -1166,6 +1233,7 @@ object ZioHttp:
             case Right(_) =>
               joinNested(
                 config,
+                csrfToken,
                 supervisor,
                 joined,
                 registration,
@@ -1231,6 +1299,7 @@ object ZioHttp:
                                  )
                       sink = lifecycleSink(
                                config,
+                               csrfToken,
                                writer,
                                renderedState,
                                projectionGate,
@@ -1268,7 +1337,18 @@ object ZioHttp:
                                       ).mapError(error => Exception(error.toString))
                       _        <- connectionReady.succeed(connection)
                       retained <- joined.get
-                      _ <- ZIO.foreachDiscard(retained.values)(_.currentUrl.set(admitted.url))
+                      _        <- ZIO.foreachDiscard(retained.values)(entry =>
+                             entry.currentUrl.set(admitted.url) *>
+                               ZIO.when(entry.sticky)(
+                                 entry.connection
+                                   .internalPatch(
+                                     URL(
+                                       path = admitted.url.path,
+                                       queryParams = admitted.url.queryParams
+                                     )
+                                   ).ignore
+                               )
+                           )
                       entry = JoinedLifecycle(
                                 NestedTopic(topic),
                                 effectiveRef,
@@ -1283,7 +1363,13 @@ object ZioHttp:
                               )
                       _ <- joined.update(_.updated(topic, entry))
                       _ <- registration.set(Some(admitted.claims))
-                      _ <- monitorLifecycle(joined, registration, writer, entry).forkScoped
+                      _ <- monitorLifecycle(
+                             joined,
+                             registration,
+                             supervisor,
+                             writer,
+                             entry
+                           ).forkScoped
                       _ <- activateInstalledLifecycle(
                              startup.activate,
                              removeJoinedLifecycle(joined, entry),
@@ -1295,7 +1381,7 @@ object ZioHttp:
                         ZIO.when(join.redirect.isEmpty)(registration.set(None))
                       clearInitial *>
                         ZIO.logWarning(
-                          s"Rejecting connected root lifecycle topic=$topic"
+                          s"Rejecting connected root lifecycle topic=$topic: ${error.getMessage}"
                         ) *>
                         writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
                     }
@@ -1306,6 +1392,7 @@ object ZioHttp:
 
   private def joinNested(
     config: ZioHttpConfig,
+    csrfToken: Option[String],
     supervisor: ConnectionSupervisor,
     joined: Ref[Map[String, JoinedLifecycle]],
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
@@ -1348,6 +1435,7 @@ object ZioHttp:
                      )
           sink = lifecycleSink(
                    config,
+                   csrfToken,
                    writer,
                    renderedState,
                    projectionGate,
@@ -1385,15 +1473,17 @@ object ZioHttp:
                     sticky = reservation.registration.sticky
                   )
           _ <- joined.update(_.updated(topic, entry))
-          _ <- monitorLifecycle(joined, registration, writer, entry).forkScoped
+          _ <- monitorLifecycle(joined, registration, supervisor, writer, entry).forkScoped
           _ <- activateInstalledLifecycle(
                  startup.activate,
                  removeJoinedLifecycle(joined, entry),
                  supervisor.retireLifecycle(connection)
                )
-        yield ()).catchAll { _ =>
-          ZIO.logWarning(s"Rejecting connected nested lifecycle topic=$topic") *>
-            writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+        yield ()).catchAll { error =>
+          ZIO.logWarning(
+            s"Rejecting connected nested lifecycle topic=$topic: ${error.getMessage}"
+          ) *>
+            writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
         }
     )
   end joinNested
@@ -1411,7 +1501,7 @@ object ZioHttp:
       else ZIO.succeed(claims.initialFlash)
     values.map(_.view.map((key, value) => FlashKind(key) -> value).toMap)
 
-  private def joinFailureEnvelope(
+  private[scalive] def joinFailureEnvelope(
     joinRef: PhoenixRef,
     ref: PhoenixRef,
     topic: String,
@@ -1425,15 +1515,18 @@ object ZioHttp:
       PhoenixOutput.error(joinRef, ref, topic, unauthorizedReason)
     case ConnectedMountRejected(_: LiveMountFailure.Stale) =>
       PhoenixOutput.error(joinRef, ref, topic, staleReason)
-    case _ => PhoenixOutput.error(joinRef, ref, topic, staleReason)
+    case _ => PhoenixOutput.error(joinRef, ref, topic)
 
   private def monitorLifecycle(
     joined: Ref[Map[String, JoinedLifecycle]],
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
+    supervisor: ConnectionSupervisor,
     writer: SerialWriter[PhoenixEnvelope],
     entry: JoinedLifecycle
   ): UIO[Unit] =
-    entry.connection.awaitClosed *> entry.connection.pollFailure.flatMap { failure =>
+    entry.connection.awaitClosed *> supervisor.awaitRetirement(
+      entry.connection
+    ) *> entry.connection.pollFailure.flatMap { failure =>
       joined
         .modify { current =>
           current.get(entry.topic.value) match
@@ -1475,6 +1568,7 @@ object ZioHttp:
 
   private def lifecycleSink(
     config: ZioHttpConfig,
+    csrfToken: Option[String],
     writer: SerialWriter[PhoenixEnvelope],
     state: Ref[Option[PhoenixRenderedState]],
     projectionGate: Semaphore,
@@ -1491,7 +1585,8 @@ object ZioHttp:
             case None =>
               delta match
                 case RenderDelta.Replace(tree) =>
-                  PhoenixRenderedEncoder.initial(tree).left.map(error => Exception(error.toString))
+                  PhoenixRenderedEncoder
+                    .initial(tree, csrfToken).left.map(error => Exception(error.toString))
                 case _ => Left(Exception("initial root output was not a replacement"))
             case Some(current) =>
               PhoenixRenderedEncoder
@@ -1525,6 +1620,20 @@ object ZioHttp:
               update(delta)
                 .map(addEffects(_, effects)).flatMap(json =>
                   writer.offer(PhoenixOutput.event(eventJoinRef, eventRef, topic, json))
+                )
+            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+          }
+        case ConnectionOutput.ReplyWithPayload(command, delta, effects, reply) =>
+          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((eventJoinRef, PhoenixRef.Null)) =>
+              update(delta)
+                .map(addEffects(_, effects)).flatMap(json =>
+                  writer.offer(PhoenixOutput.diff(eventJoinRef, topic, json))
+                )
+            case Some((eventJoinRef, eventRef)) =>
+              update(delta)
+                .map(addEffects(_, effects)).flatMap(json =>
+                  writer.offer(PhoenixOutput.eventReply(eventJoinRef, eventRef, topic, json, reply))
                 )
             case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
           }
@@ -1594,6 +1703,42 @@ object ZioHttp:
                       navigation,
                       Option.when(json.fields.nonEmpty)(json)
                     ).flatMap(writer.offer)
+                )
+            case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+          }
+        case ConnectionOutput.ReplyNavigationWithPayload(
+              command,
+              delta,
+              navigation,
+              effects,
+              reply
+            ) =>
+          correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+            case Some((eventJoinRef, PhoenixRef.Null)) =>
+              update(delta)
+                .map(addEffects(_, effects)).flatMap { json =>
+                  val diff = ZIO.when(json.fields.nonEmpty)(
+                    writer.offer(PhoenixOutput.diff(eventJoinRef, topic, json))
+                  )
+                  if navigation.kind.isPatch then
+                    diff *> writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                      acknowledgePatch(navigation.destination)
+                  else
+                    diff *> navigationEventEnvelope(config, eventJoinRef, topic, navigation)
+                      .flatMap(writer.offer)
+                }
+            case Some((eventJoinRef, eventRef)) =>
+              update(delta)
+                .map(addEffects(_, effects)).flatMap(json =>
+                  writer.offer(
+                    PhoenixOutput.eventReply(eventJoinRef, eventRef, topic, json, reply)
+                  ) *>
+                    (if navigation.kind.isPatch then
+                       writer.offer(patchEnvelope(eventJoinRef, topic, navigation)) *>
+                         acknowledgePatch(navigation.destination)
+                     else
+                       navigationEventEnvelope(config, eventJoinRef, topic, navigation)
+                         .flatMap(writer.offer))
                 )
             case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
           }
@@ -1874,6 +2019,46 @@ object ZioHttp:
                }
         yield ()
 
+  private def offerComponentsWillDestroy(
+    lifecycles: Ref[Map[String, JoinedLifecycle]],
+    writer: SerialWriter[PhoenixEnvelope],
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    cids: Vector[Int]
+  ): Task[Unit] =
+    lifecycles.get.map(exactTopicGeneration(_, topic, joinRef, _.joinRef)).flatMap {
+      case Some(joined) =>
+        joined.projectionGate.withPermit {
+          joined.renderedState.update(_.map(_.markComponentsForDeletion(cids)))
+        } *> writer.offer(PhoenixOutput.componentsWillDestroy(joinRef, ref, topic))
+      case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+    }
+
+  private def offerComponentsDestroyed(
+    lifecycles: Ref[Map[String, JoinedLifecycle]],
+    writer: SerialWriter[PhoenixEnvelope],
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    cids: Vector[Int]
+  ): Task[Unit] =
+    lifecycles.get.map(exactTopicGeneration(_, topic, joinRef, _.joinRef)).flatMap {
+      case Some(joined) =>
+        joined.projectionGate
+          .withPermit {
+            joined.renderedState.modify {
+              case Some(state) =>
+                val (updated, deleted) = state.destroyComponents(cids)
+                deleted -> Some(updated)
+              case None => Vector.empty[Int] -> None
+            }
+          }.flatMap(deleted =>
+            writer.offer(PhoenixOutput.componentsDestroyed(joinRef, ref, topic, deleted))
+          )
+      case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+    }
+
   private def offerUploadPreflight(
     lifecycles: Ref[Map[String, JoinedLifecycle]],
     writer: SerialWriter[PhoenixEnvelope],
@@ -1964,20 +2149,26 @@ object ZioHttp:
         "progress"  -> progress.progress.toString
       )
       val payload = BindingPayload.Params(values)
-      val raw     = Json
-        .Obj(
-          "ref"       -> Json.Str(progress.uploadRef),
-          "entry_ref" -> Json.Str(progress.entryRef),
-          "progress"  -> Json.Num(progress.progress)
-        ).toJson
+      val raw     = Json.Obj(
+        "ref"       -> Json.Str(progress.uploadRef),
+        "entry_ref" -> Json.Str(progress.entryRef),
+        "progress"  -> Json.Num(progress.progress)
+      )
+      val liveEvent = LiveEvent(
+        kind = "progress",
+        bindingId = event,
+        value = raw,
+        params = values,
+        cid = progress.cid,
+        meta = None
+      )
       component match
         case None =>
           joined.connection.browserEvent(
             command,
             BindingId.fromEncoded(event),
             payload,
-            Some(event),
-            Some(raw)
+            Some(liveEvent)
           )
         case Some(owner) =>
           joined.connection.componentEvent(
@@ -1985,8 +2176,7 @@ object ZioHttp:
             owner,
             BindingId.fromEncoded(event),
             payload,
-            event,
-            raw
+            liveEvent
           )
     }
 
@@ -2224,8 +2414,7 @@ object ZioHttp:
         command,
         BindingId.fromEncoded(event.event),
         payload,
-        Some(event.event),
-        Some(event.value.toJson)
+        Some(event.toLiveEvent)
       )
     }
 
@@ -2251,8 +2440,7 @@ object ZioHttp:
                 component,
                 BindingId.fromEncoded(event.event),
                 payload,
-                event.event,
-                event.value.toJson
+                event.toLiveEvent
               )
             }
           }.as(true)
@@ -2408,7 +2596,7 @@ object ZioHttp:
       retained(entry.connection.lifecycle -> entry.connection.epoch)
     }
 
-  private def connectionConfig: ConnectionConfig =
+  private[scalive] def connectionConfig: ConnectionConfig =
     ConnectionConfig
       .make(
         RootIngressCapacity,
@@ -2596,11 +2784,10 @@ private[scalive] object ZioHttpAdmission:
       static      <- ZioHttpSecurity.verifyStatic(config, staticToken).mapError(_.toString)
       _           <- ZIO.fail("session/static claims differ").unless(session == static)
       _           <- ZIO.fail("root id differs").unless(session.rootId == rootId)
-      _      <- ZIO.fail("URL differs").unless(session.canonicalUrl == ZioHttp.canonicalUrl(url))
-      cookie <- ZIO.fromOption(csrfCookie).orElseFail("missing CSRF cookie")
-      token  <- ZIO.fromOption(csrfToken).orElseFail("missing CSRF token")
-      _      <- ZioHttpSecurity.verifyCsrf(config, token, cookie).mapError(_.toString)
-      route  <-
+      cookie      <- ZIO.fromOption(csrfCookie).orElseFail("missing CSRF cookie")
+      token       <- ZIO.fromOption(csrfToken).orElseFail("missing CSRF token")
+      _           <- ZioHttpSecurity.verifyCsrf(config, token, cookie).mapError(_.toString)
+      route       <-
         ZIO.fromOption(routes.find(_.index == session.routeIndex)).orElseFail("unknown route")
       _ <- ZIO.fail("route identity differs").unless(session.routeIdentity == route.routeIdentity)
       _ <- ZIO.fail("session identity differs").unless(session.sessionIdentity == route.sessionName)

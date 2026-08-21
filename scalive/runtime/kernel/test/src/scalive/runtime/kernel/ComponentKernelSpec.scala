@@ -5,11 +5,13 @@ import scala.jdk.CollectionConverters.*
 
 import zio.*
 import zio.http.URL
+import zio.json.ast.Json
 import zio.test.*
 
 import scalive.*
 import scalive.render.*
 import scalive.runtime.contracts.*
+import scalive.runtime.resources.OwnerId
 
 object ComponentKernelSpec extends ZIOSpecDefault:
   private val config = SessionConfig.make(4, 8).toOption.get
@@ -49,8 +51,8 @@ object ComponentKernelSpec extends ZIOSpecDefault:
     def async[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, event: LiveAsyncEvent[M], emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
       ZIO.succeed(ComponentCallbackResult(model, draft, state))
 
-    def browserEvent[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, command: SessionCommand.ComponentClientEvent, emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
-      ZIO.succeed(None)
+    def browserEvent[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, command: SessionCommand.ComponentClientEvent, resolved: Task[M], emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
+      resolved.flatMap(value => message(id, component, props, model, value, emit, state, draft))
 
     def afterRender[P, M, A](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
       ZIO.succeed {
@@ -127,6 +129,48 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("send-update props survive unrelated parent renders") {
+      ZIO.scoped {
+        val events     = ConcurrentLinkedQueue[String]()
+        val definition = componentDefinition(events)
+        val instance   = component(definition, "send-update-retained")
+        val environment = new FakeEnvironment(events):
+          override def update[P, M, A](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
+            ZIO.succeed {
+              events.add(s"update:$props")
+              ComponentCallbackResult(props.asInstanceOf[A], draft, state)
+            }
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(RenderProgram.compile[Int, Int](_ => div(instance.render(1))))
+          componentLogic = logic(seen).copy(handle = (model, message) =>
+                             ZIO.succeed(
+                               TurnDraft(
+                                 model + 1,
+                                 componentUpdates =
+                                   if message == 1 then
+                                     Vector(ComponentUpdateRequest(instance, 10))
+                                   else Vector.empty
+                               )
+                             )
+                           )
+          kernel <- SessionKernel.start(config, componentLogic, program, Outbound(), environment)
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          updated <- kernel.inspect
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 2))
+          retained <- kernel.inspect
+          updatedComponent  = updated.components.values.head
+          retainedComponent = retained.components.values.head
+          updateEvents       = events.iterator().asScala.filter(_.startsWith("update:")).toVector
+        yield assertTrue(
+          updatedComponent.props == 10,
+          updatedComponent.model == 10,
+          retainedComponent.props == 10,
+          retainedComponent.model == 10,
+          updateEvents == Vector("update:1", "update:10")
+        )
+      }
+    },
     test("component browser events use the component committed binding") {
       ZIO.scoped {
         for
@@ -183,15 +227,13 @@ object ComponentKernelSpec extends ZIOSpecDefault:
       ZIO.scoped {
         val events = ConcurrentLinkedQueue[String]()
         val environment = new FakeEnvironment(events):
-          override def browserEvent[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, command: SessionCommand.ComponentClientEvent, emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
+          override def browserEvent[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, command: SessionCommand.ComponentClientEvent, resolved: Task[M], emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
             ZIO.succeed {
-              events.add(s"raw:${command.eventName}:${command.rawJson}")
-              Some(
-                ComponentCallbackResult(
-                  (model.asInstanceOf[Int] + 10).asInstanceOf[A],
-                  draft,
-                  state
-                )
+              events.add(s"raw:${command.event.map(_.bindingId)}:${command.event.map(_.value)}")
+              ComponentCallbackResult(
+                (model.asInstanceOf[Int] + 10).asInstanceOf[A],
+                draft,
+                state
               )
             }
         for
@@ -209,8 +251,16 @@ object ComponentKernelSpec extends ZIOSpecDefault:
                    mounted.id,
                    binding,
                    BindingPayload.Params(Map.empty),
-                   Some("click"),
-                   Some("{\"value\":1}")
+                   Some(
+                     LiveEvent(
+                       "click",
+                       "click",
+                       Json.Obj("value" -> Json.Num(1)),
+                       Map.empty,
+                       Some(1L),
+                       None
+                     )
+                   )
                  )
                )
           after <- kernel.inspect
@@ -395,6 +445,50 @@ object ComponentKernelSpec extends ZIOSpecDefault:
           after  <- kernel.inspect
           childProps = after.components.values.find(_.key.applicationId == "child").map(_.props)
         yield assertTrue(childProps.contains(42))
+      }
+    },
+    test("nested component resource operations survive parent staging") {
+      ZIO.scoped {
+        val lifecycle       = LifecycleId(91L)
+        val events          = ConcurrentLinkedQueue[String]()
+        val childDefinition = componentDefinition(events)
+        val child           = component(childDefinition, "resource-child")
+        val parentDefinition = new LiveComponent[Int, Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
+            ZIO.succeed(model + message)
+          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+            div(child.render(1))
+        val parent = component(parentDefinition, "resource-parent")
+        val environment = new FakeEnvironment(events):
+          override def update[P, M, A](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
+            if component.asInstanceOf[AnyRef] eq childDefinition.asInstanceOf[AnyRef] then
+              ZIO.succeed(
+                ComponentCallbackResult(
+                  model,
+                  draft.copy(resourceOperations = draft.resourceOperations :+ ResourceOperation.StartAsync(
+                    OwnerId.Component(lifecycle, id),
+                    AsyncKey[Int]("nested-resource"),
+                    ZIO.never,
+                    _ => 0
+                  )),
+                  state
+                )
+              )
+            else super.update(id, component, props, model, state, draft)
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(RenderProgram.compile[Int, Int](_ => div(parent.render(1))))
+          kernel <- SessionKernel.start(
+                      config,
+                      logic(seen),
+                      program,
+                      Outbound(),
+                      environment,
+                      providedLifecycle = Some(lifecycle)
+                    )
+          committed <- kernel.inspect
+        yield assertTrue(committed.managedResources.values.size == 1)
       }
     },
     test("nested child callback update is applied back to its already-staged parent") {

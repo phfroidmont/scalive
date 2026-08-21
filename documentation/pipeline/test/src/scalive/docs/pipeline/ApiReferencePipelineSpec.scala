@@ -144,7 +144,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         ),
         liveView.flatMap(_.signatures.headOption).exists(signature =>
           result.toOption.exists(_.metadata.sourceLink(signature.source).url.contains(
-            "/blob/0123456789abcdef0123456789abcdef01234567/scalive/src/scalive/"
+            "/blob/0123456789abcdef0123456789abcdef01234567/scalive/api/src/scalive/"
           ))
         ),
         liveUpload.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported)),
@@ -156,14 +156,14 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
           symbols.find(_.qualifiedName == name)
             .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))
         ),
-        liveComponent.exists(_.signatures.size == 8),
+        liveComponent.exists(_.signatures.size == 7),
         liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
         hasSignature(symbols, "scalive.dropTarget", ApiSymbolKind.Extension,
           "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"),
         signaturesHideSyntheticParents(symbols),
         hooks.exists(_.signatures.exists(_.signature == "def hooks: LiveHooks[Msg, Model]")),
         routedEventless.exists(_.signatures.exists(_.signature ==
-          "trait Eventless[Model, Params] extends LiveView.Eventless[Model] with LiveView.Routed[Nothing, Model, Params]"
+          "trait Eventless[Model, Params] extends LiveView.Routed[Nothing, Model, Params]"
         )),
         liveViewDocumentation.exists(_.body.count(_.isInstanceOf[Block.Paragraph]) == 2),
         liveViewDocumentation.exists(_.tags.map(_.subject).contains(Some("Msg"))),
@@ -176,7 +176,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
             documentation.tags.map(_.name) == Vector("param", "param", "return")
         )),
         routedMount.exists(symbol =>
-          symbol.signatures.size == 2 && symbol.signatures.forall(_.documentation.nonEmpty)
+          symbol.signatures.size == 1 && symbol.signatures.forall(_.documentation.nonEmpty)
         ),
         symbols.filter(_.qualifiedName == "scalive.LiveView").forall(!_.summary.contains("[[")),
         symbols.forall(_.summary.nonEmpty),

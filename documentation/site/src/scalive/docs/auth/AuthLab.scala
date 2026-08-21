@@ -20,15 +20,19 @@ object AuthMountAspect:
   def authenticated(
     auth: AuthService
   ): LiveMountAspect[Any, Any, Any, AuthClaims, CurrentSession] =
-    LiveMountAspect.authenticated[Any, AuthClaims, CurrentSession](
-      AuthHttpRoutes.SessionCookieName,
-      AuthLabRoutes.login.location
-    )(
-      token =>
+    LiveMountAspect.fromRequest(
+      request =>
+        request.request.cookie(AuthHttpRoutes.SessionCookieName) match
+          case None         => ZIO.fail(Response.seeOther(AuthLabRoutes.login.location.url))
+          case Some(cookie) =>
+            auth
+              .authenticate(SessionCookieToken(cookie.content))
+              .someOrFail(Response.seeOther(AuthLabRoutes.login.location.url))
+              .map(current => AuthClaims(current.publicSessionId) -> current),
+      (claims, _) =>
         auth
-          .authenticate(SessionCookieToken(token))
-          .map(_.map(current => AuthClaims(current.publicSessionId) -> current)),
-      claims => auth.resume(claims.publicSessionId)
+          .resume(claims.publicSessionId)
+          .someOrFail(LiveMountFailure.redirect(AuthLabRoutes.login.location))
     )
 // docs:end authentication-mount-aspect
 
@@ -48,16 +52,24 @@ final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
 
   // docs:start authentication-http-actions
   private def login(request: Request): UIO[Response] =
-    loginDecoder.respond(request, _ => invalidLoginResponse, logMalformedLogin) { credentials =>
-      auth.login(visitor(request), credentials).map {
-        case LoginDecision.Successful(result) =>
-          AuthLabRoutes.profile.location.seeOther.addCookie(
-            security.cookies.make(SessionCookieName, result.cookieToken.value)
-          )
-        case LoginDecision.Invalid     => invalidLoginResponse
-        case LoginDecision.RateLimited => rateLimitedResponse
-      }
-    }
+    loginDecoder
+      .decode(request).foldZIO(
+        error =>
+          logMalformedLogin(error) *> (error match
+            case HttpFormDecoder.Error.Validation(_) => invalidLoginResponse
+            case _ => ZIO.succeed(error.toResponse(_ => Response.badRequest))),
+        credentials =>
+          auth.login(visitor(request), credentials).flatMap {
+            case LoginDecision.Successful(result) =>
+              ZIO.succeed(
+                Response
+                  .seeOther(AuthLabRoutes.profile.location.url)
+                  .addCookie(security.cookies.make(SessionCookieName, result.cookieToken.value))
+              )
+            case LoginDecision.Invalid     => invalidLoginResponse
+            case LoginDecision.RateLimited => rateLimitedResponse
+          }
+      )
 
   private def reset(request: Request): UIO[Response] =
     resetDecoder.respond(request, _ => Response.forbidden) { _ =>
@@ -67,9 +79,9 @@ final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
       auth
         .reset(visitor(request), cookieToken)
         .as(
-          AuthLabRoutes.login.location.seeOther.addCookie(
-            security.cookies.expire(SessionCookieName)
-          )
+          Response
+            .seeOther(AuthLabRoutes.login.location.url)
+            .addCookie(security.cookies.expire(SessionCookieName))
         )
     }
   // docs:end authentication-http-actions
@@ -83,13 +95,13 @@ final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
         ZIO.logWarning(s"Rejected malformed authentication lab form: ${error.code}")
       case _ => ZIO.unit
 
-  private def invalidLoginResponse: Response =
+  private def invalidLoginResponse: UIO[Response] =
     security.flash.seeOther(
       AuthLabRoutes.login.location,
       LoginLiveView.LoginErrorFlash -> LoginLiveView.InvalidLoginMessage
     )
 
-  private def rateLimitedResponse: Response =
+  private def rateLimitedResponse: UIO[Response] =
     security.flash.seeOther(
       AuthLabRoutes.login.location,
       LoginLiveView.LoginErrorFlash -> LoginLiveView.RateLimitedMessage
@@ -203,11 +215,12 @@ final class ProfileLiveView(currentSession: CurrentSession)
     )
 
 object AuthLab:
-  val loginRoute: LiveRouteFragment[Any, Any] = AuthLabRoutes.login(LoginLiveView())
+  val loginRoute: LiveRouteFragment[Any] { type Input = Any } =
+    AuthLabRoutes.login(LoginLiveView())
 
-  def protectedSession(auth: AuthService): LiveRouteFragment[Any, Any] =
+  def protectedSession(auth: AuthService): LiveRouteFragment[Any] { type Input = Any } =
     Live
       .session("documentation-authentication-lab")
       .withMountAspect(AuthMountAspect.authenticated(auth))(
-        AuthLabRoutes.profile.context(ProfileLiveView.apply)
+        AuthLabRoutes.profile((_, _, session: CurrentSession) => ProfileLiveView(session))
       )

@@ -78,9 +78,10 @@ complete response before a live connection exists. The browser then connects,
 and Scalive mounts a new connected lifecycle for events and updates.
 
 Do not treat the disconnected model instance as connected session storage.
-Make @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ safe to run in both phases, and use
-@:apiSymbol(def:scalive.LifecycleContext.connected)`ctx.connected`@:@ when work should
-run only after the live connection exists. [Project anatomy](../learn/project-anatomy.md#understand-both-mounts)
+Make @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ safe to run in both phases,
+match @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@,
+and use capabilities from `Connection.Connected(capabilities)` only after the
+live connection exists. [Project anatomy](../learn/project-anatomy.md#understand-both-mounts)
 traces both phases through a complete application.
 
 ## Translate State And Effects {#translate-state-and-effects}

@@ -445,7 +445,7 @@ final private case class DisconnectedComponentMountContext[P, M, A](
   val connection = Connection.Disconnected
   val flash      = JournaledFlash(lifecycle.root)
   val uploads    = JournaledUploads(lifecycle.root)
-  val streams    = JournaledStreams(lifecycle.streams)
+  val streams    = JournaledStreams(lifecycle.streams, applyLimits = false)
   val hooks      = JournaledComponentHooks[P, M, A](lifecycle)
 
 final private case class DisconnectedComponentUpdateContext[P, M, A](
@@ -454,7 +454,7 @@ final private case class DisconnectedComponentUpdateContext[P, M, A](
   val connection = Connection.Disconnected
   val flash      = JournaledFlash(lifecycle.root)
   val uploads    = JournaledUploads(lifecycle.root)
-  val streams    = JournaledStreams(lifecycle.streams)
+  val streams    = JournaledStreams(lifecycle.streams, applyLimits = false)
   val hooks      = JournaledComponentHooks[P, M, A](lifecycle)
 
 final private case class DisconnectedComponentAfterRenderContext[P, M, A](

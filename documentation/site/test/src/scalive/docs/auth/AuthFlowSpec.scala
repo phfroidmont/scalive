@@ -1,6 +1,6 @@
 package scalive.docs.auth
 
-import scala.concurrent.duration.*
+import java.time.Duration
 
 import zio.*
 import zio.http.*
@@ -11,10 +11,12 @@ import scalive.docs.*
 import scalive.testing.*
 
 object AuthFlowSpec extends ZIOSpecDefault:
-  private val security = LiveSecurity(
-    TokenConfig("documentation-auth-flow-spec-secret", 1.hour),
-    CookiePolicy(secure = true)
-  )
+  private val config = ZioHttpConfig(
+    "documentation-auth-flow-secret-0000000000000000",
+    Duration.ofHours(1),
+    secureCookie = true
+  ).toOption.get
+  private val security = LiveSecurity(config)
 
   private def url(value: String): URL =
     URL.decode(value).fold(throw _, identity)
@@ -27,9 +29,20 @@ object AuthFlowSpec extends ZIOSpecDefault:
 
   private final case class PreparedCsrf(cookie: Cookie.Response, token: String)
 
-  private def prepareCsrf: PreparedCsrf =
-    val prepared = security.csrf.prepare(Request.get(URL.root))
-    PreparedCsrf(prepared.cookie.get, prepared.value)
+  private def prepareCsrf(auth: AuthService): Task[PreparedCsrf] =
+    val sessionAction = FormAction.from(AuthLabRoutes.SessionRoute)
+    for
+      page <- render(auth, Request.get(url(AuthLabRoutes.LoginPath)))
+      cookie <- ZIO
+                  .fromOption(responseCookie(page.response, CsrfProtection.CookieName))
+                  .orElseFail(new AssertionError("missing CSRF cookie"))
+      form <- ZIO
+                .fromEither(page.form(FormQuery(Some(sessionAction.href), Some(Method.POST))))
+                .mapError(error => new AssertionError(error.toString))
+      token <- ZIO
+                 .fromOption(form.values(CsrfProtection.ParamName).headOption)
+                 .orElseFail(new AssertionError("missing CSRF token"))
+    yield PreparedCsrf(cookie, token)
 
   private def postForm(action: FormAction, fields: (String, String)*): Request =
     Request.post(
@@ -49,8 +62,8 @@ object AuthFlowSpec extends ZIOSpecDefault:
     ).addCookie(requestCookie(csrf.cookie))
 
   private def render(auth: AuthService, request: Request) =
-    val routes = scalive.Live.router
-      .withSecurity(security)(AuthLab.loginRoute, AuthLab.protectedSession(auth))
+    val application = scalive.Live.router(AuthLab.loginRoute, AuthLab.protectedSession(auth))
+    val routes      = ZioHttp.routes(application, config)
     DisconnectedRender.run(routes, request)
 
   def spec = suite("AuthFlowSpec")(
@@ -187,37 +200,36 @@ object AuthFlowSpec extends ZIOSpecDefault:
       )
     },
     test("maps rejected login requests through the lab HTTP boundary") {
-      val csrf          = prepareCsrf
       val sessionAction = FormAction.from(AuthLabRoutes.SessionRoute)
-      val malformedBody =
-        s"${CsrfProtection.ParamName}=${csrf.token}&${LoginForm.Email.name}=%ZZ"
-      val malformed = Request
-        .post(
-          url(sessionAction.href),
-          Body.fromString(malformedBody).contentType(
-            MediaType.application.`x-www-form-urlencoded`
-          )
-        ).addCookie(requestCookie(csrf.cookie))
-      val oversized = Request
-        .post(
-          url(sessionAction.href),
-          Body
-            .fromString("x" * 4097)
-            .contentType(MediaType.application.`x-www-form-urlencoded`)
-        ).addCookie(requestCookie(csrf.cookie))
-      val wrongType = Request
-        .post(
-          url(sessionAction.href),
-          Body.fromString("{}").contentType(MediaType.application.json)
-        ).addCookie(requestCookie(csrf.cookie))
-      val missingCsrf = postForm(
-        sessionAction,
-        LoginForm.Email.name    -> AuthService.DemoEmail,
-        LoginForm.Password.name -> AuthService.DemoPassword
-      ).addCookie(requestCookie(csrf.cookie))
 
       for
-        auth              <- ZIO.succeed(AuthService.inMemory())
+        auth <- ZIO.succeed(AuthService.inMemory())
+        csrf <- prepareCsrf(auth)
+        malformedBody = s"${CsrfProtection.ParamName}=${csrf.token}&${LoginForm.Email.name}=%ZZ"
+        malformed = Request
+                      .post(
+                        url(sessionAction.href),
+                        Body.fromString(malformedBody).contentType(
+                          MediaType.application.`x-www-form-urlencoded`
+                        )
+                      ).addCookie(requestCookie(csrf.cookie))
+        oversized = Request
+                      .post(
+                        url(sessionAction.href),
+                        Body
+                          .fromString("x" * 4097)
+                          .contentType(MediaType.application.`x-www-form-urlencoded`)
+                      ).addCookie(requestCookie(csrf.cookie))
+        wrongType = Request
+                      .post(
+                        url(sessionAction.href),
+                        Body.fromString("{}").contentType(MediaType.application.json)
+                      ).addCookie(requestCookie(csrf.cookie))
+        missingCsrf = postForm(
+                        sessionAction,
+                        LoginForm.Email.name    -> AuthService.DemoEmail,
+                        LoginForm.Password.name -> AuthService.DemoPassword
+                      ).addCookie(requestCookie(csrf.cookie))
         malformedResponse <- runHttp(auth, malformed)
         oversizedResponse <- runHttp(auth, oversized)
         wrongTypeResponse <- runHttp(auth, wrongType)
@@ -230,17 +242,16 @@ object AuthFlowSpec extends ZIOSpecDefault:
       )
     },
     test("uses generic flash responses for invalid and rate-limited logins") {
-      val csrf = prepareCsrf
-
       for
         auth <- ZIO.succeed(AuthService.inMemory())
+        csrf <- prepareCsrf(auth)
         invalidResponse <- runHttp(auth, loginRequest(csrf, "incorrect"))
         _ <- ZIO.foreachDiscard(2 to AuthServiceConfig.default.maxAttempts)(_ =>
                runHttp(auth, loginRequest(csrf, "incorrect"))
              )
         rateLimitedResponse <- runHttp(auth, loginRequest(csrf, AuthService.DemoPassword))
         invalidCookie <- ZIO
-                           .fromOption(responseCookie(invalidResponse, FlashToken.CookieName))
+                            .fromOption(responseCookie(invalidResponse, HttpFlash.CookieName))
                            .orDieWith(_ => new AssertionError("missing invalid-login flash cookie"))
         invalidPage <- render(
                          auth,
@@ -248,31 +259,34 @@ object AuthFlowSpec extends ZIOSpecDefault:
                            .get(url(AuthLabRoutes.LoginPath))
                            .addCookie(requestCookie(invalidCookie))
                        )
-        invalidFlash = FlashToken.decode(security.tokenConfig, invalidCookie.content)
-        rateLimitedFlash = responseCookie(rateLimitedResponse, FlashToken.CookieName)
-          .flatMap(cookie => FlashToken.decode(security.tokenConfig, cookie.content))
-        expiredFlash = responseCookie(invalidPage.response, FlashToken.CookieName)
+        rateLimitedCookie <- ZIO
+                               .fromOption(responseCookie(rateLimitedResponse, HttpFlash.CookieName))
+                               .orDieWith(_ => new AssertionError("missing rate-limit flash cookie"))
+        rateLimitedPage <- render(
+                             auth,
+                             Request
+                               .get(url(AuthLabRoutes.LoginPath))
+                               .addCookie(requestCookie(rateLimitedCookie))
+                           )
+        expiredFlash = responseCookie(invalidPage.response, HttpFlash.CookieName)
       yield assertTrue(
         invalidResponse.status == Status.SeeOther,
         invalidResponse.header(Header.Location).exists(_.url.encode == AuthLabRoutes.LoginPath),
         responseCookie(invalidResponse, AuthHttpRoutes.SessionCookieName).isEmpty,
-        invalidFlash.contains(
-          Map(LoginLiveView.LoginErrorFlash.value -> LoginLiveView.InvalidLoginMessage)
-        ),
-        rateLimitedFlash.contains(
-          Map(LoginLiveView.LoginErrorFlash.value -> LoginLiveView.RateLimitedMessage)
-        ),
+        invalidCookie.content.nonEmpty,
+        rateLimitedCookie.content.nonEmpty,
         invalidPage.text.contains(LoginLiveView.InvalidLoginMessage),
+        rateLimitedPage.text.contains(LoginLiveView.RateLimitedMessage),
         expiredFlash.exists(_.content.isEmpty),
         expiredFlash.exists(_.maxAge.contains(zio.Duration.Zero))
       )
     },
     test("invalid reset CSRF preserves the session and revoked claims cannot reconnect") {
-      val csrf        = prepareCsrf
       val resetAction = FormAction.from(AuthLabRoutes.ResetRoute)
 
       for
         auth <- ZIO.succeed(AuthService.inMemory())
+        csrf <- prepareCsrf(auth)
         decision <- auth.login(
                       VisitorToken(csrf.cookie.content),
                       LoginCredentials(AuthService.DemoEmail, AuthService.DemoPassword)

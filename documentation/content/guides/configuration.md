@@ -16,19 +16,19 @@ listen port before constructing routes.
 
 ## Current Configuration Contract {#current-configuration-contract}
 
-Scalive is a library, not a process-wide endpoint configuration system. Only
-`TokenConfig.default` reads environment variables in framework code. Router,
-cookie, and asset settings are explicit Scala values. Ports, bind addresses,
-public origins, TLS, and application services belong to the application or ZIO
-HTTP server layer.
+Scalive is a library, not a process-wide endpoint configuration system. The
+application reads and validates environment values, then explicitly constructs
+a validated @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@. Ports,
+bind addresses, public origins, TLS, and application services belong to the
+application or ZIO HTTP server layer.
 
 | Setting | Owner and API | Current default | Contract |
 | --- | --- | --- | --- |
-| Token signing secret | Framework: `TokenConfig.default` reads `SCALIVE_TOKEN_SECRET` | Random process-local UUID when missing or exactly empty | A non-empty value is used verbatim, including whitespace. Use one stable, high-entropy value on every production replica. |
-| Token maximum age | Framework: `TokenConfig.default` reads `SCALIVE_TOKEN_MAX_AGE_SECONDS` | Seven days | Only a positive whole `Long` in seconds is accepted. Missing, empty, whitespace-padded, non-numeric, overflowing, zero, and negative values use the default. |
-| Explicit token configuration | Framework API: `TokenConfig(secret, maxAge)` or `Live.router.withTokenConfig(config)` | No validation on construction | Use a stable secret and a positive finite Scala duration. `withTokenConfig` preserves the router's cookie policy. |
-| Complete security policy | Framework API: `LiveSecurity(tokenConfig, CookiePolicy(secure = ...))`, installed with `Live.router.withSecurity` | `CookiePolicy(secure = false)` | Controls token, CSRF, flash, and cookie policy together. Scalive never infers `Secure` from TLS or proxy headers. |
-| Framework cookie attributes | Framework API: `CookiePolicy` | Host-only, path `/`, `HttpOnly`, `SameSite=Lax`; `Secure` is `false` through default security | Domain, path, `HttpOnly`, and same-site are fixed by this API. The exposed choice is `secure`; use `true` for browser-facing HTTPS. |
+| Signing secret | Application input to `ZioHttpConfig` | No framework default | Construction rejects secrets shorter than 32 UTF-8 bytes. Require one stable, high-entropy secret on every production replica. |
+| Session maximum age | Application input to `ZioHttpConfig` | No framework default | Construction rejects zero or negative `java.time.Duration` values. Choose and validate an application policy explicitly. |
+| Secure cookies | Application input to `ZioHttpConfig` | No framework default | Set `secureCookie = true` for browser-facing HTTPS. Scalive never infers it from TLS or proxy headers. |
+| Ordinary HTTP security helpers | `LiveSecurity(config)` | Explicit construction | Shares the validated signing, expiry, and cookie policy with CSRF and flash helpers. |
+| Framework cookie attributes | Framework API: `CookiePolicy` through `LiveSecurity` | Host-only, path `/`, `HttpOnly`, `SameSite=Lax` | Domain, path, `HttpOnly`, and same-site are fixed by this API. `Secure` comes from `ZioHttpConfig.secureCookie`. |
 | Live socket mount | Framework API: `Live.router.withSocketPath(PathCodec[Unit])` | `/live` | The Phoenix client uses the mount path and upgrades its `/websocket` child; default upgrade path is `/live/websocket`. |
 | Root and Live layouts | Framework API: `Live.router.withRootLayout` and `.withLayout` | Identity root layout and no ordinary layouts | A real application root must provide complete document structure, including `<head>` for CSRF metadata and client assets. |
 | Static source and paths | Framework API: `StaticAssetConfig.classpath` or `.directory` | Mount `/static`; `serveOriginals = true` | Classpath assets require an explicit list; directory assets may discover files. `StaticAssets.load` builds the manifest and fails for missing configured files. |
@@ -37,28 +37,31 @@ HTTP server layer.
 | Public origin | Application | No Scalive setting | Validate and use it where the application generates absolute URLs. It does not alter request scheme, routes, or cookies. |
 | Logging | Application and ZIO runtime | ZIO runtime behavior selected by the application | Scalive emits selected ZIO logs but has no complete public telemetry or access-log configuration API. |
 
-`TokenConfig.default` is a singleton resolved when it is initialized. Changing
-the process environment afterward does not reload it. Signed values are
-authenticated but readable by clients, and changing either the secret or the
-accepted age can invalidate values already issued.
-
-Prefer constructing one `LiveSecurity` and passing the same value to
-`Live.router.withSecurity` and sibling HTTP handlers that validate forms, issue
-flash redirects, or create application cookies:
+Read deployment settings once at startup and turn validation failures into
+startup failures. Signed values are authenticated but readable by clients, and
+changing either the secret or accepted age can invalidate values already issued.
+Pass the validated config to `ZioHttp.routes`; construct `LiveSecurity(config)`
+from that same value for sibling HTTP handlers that validate forms or issue flash
+redirects:
 
 ```scala
-val tokenConfig = TokenConfig.default
-val security = LiveSecurity(
-  tokenConfig,
-  CookiePolicy(secure = true)
-)
+import java.time.Duration
 
-val liveRoutes = Live.router
-  .withSecurity(security)
+val config = ZioHttpConfig(
+  signingSecret = requiredSecret,
+  sessionMaxAge = Duration.ofDays(7),
+  secureCookie = true
+).fold(error => throw IllegalArgumentException(error.toString), identity)
+
+val security = LiveSecurity(config)
+
+val application = Live.router
   .withSocketPath(PathCodec.empty / "live")
   .withRootLayout(RootLayout(assets))(
     Routes.home -> HomeLiveView()
   )
+
+val liveRoutes = ZioHttp.routes(application, security)
 ```
 
 The JavaScript path must agree with the Scala mount:
@@ -69,8 +72,8 @@ const liveSocket = new LiveSocket("/live", Socket, { params })
 
 ## Application-Owned Environment {#application-owned-environment}
 
-Environment names outside the two token variables are conventions of a
-particular runnable application, not portable Scalive configuration.
+All environment names are conventions of a particular runnable application,
+not portable Scalive configuration.
 
 ### Documentation Application {#documentation-application}
 
@@ -82,10 +85,10 @@ The current `documentation.site` entry point accepts:
 | `SCALIVE_PUBLIC_ORIGIN` | `http://localhost:<server-port>` | Must be an `http` or `https` origin with a host and without user information, path other than `/`, query, or fragment. A trailing `/` is removed. It is used for absolute documentation metadata URLs. |
 | `SCALIVE_DOCS_REVISION` | Current full Git revision | Build-time input to documentation generation. It avoids the generator's `git rev-parse HEAD` lookup; it is not runtime server configuration. |
 
-The documentation site also uses the framework-owned
-`SCALIVE_TOKEN_SECRET` and `SCALIVE_TOKEN_MAX_AGE_SECONDS` through
-`TokenConfig.default`. It hard-codes `CookiePolicy(secure = false)`; neither
-`SCALIVE_PUBLIC_ORIGIN` nor a forwarded scheme changes that setting.
+The documentation site reads application-owned `SCALIVE_TOKEN_SECRET`, uses a
+seven-day session age, and explicitly sets `secureCookie = false` when validating
+its `ZioHttpConfig`. Neither `SCALIVE_PUBLIC_ORIGIN` nor a forwarded scheme
+changes that setting. The local-development fallback is not a production secret.
 
 ### Other Repository Applications {#other-repository-applications}
 
@@ -116,12 +119,12 @@ There is currently no Scalive configuration option for:
 - cluster membership, distributed PubSub, a shared session store, or
   cross-replica LiveView state;
 - complete metrics, tracing, telemetry events, or an access-log policy; or
-- runtime environment reload of `TokenConfig.default`.
+- runtime reload of transport security configuration.
 
 Configure supported ZIO HTTP concerns in the application's server layer and
 edge, and implement application-specific routes and instrumentation as ordinary
 application code. Do not treat proxy headers as a trusted secure-cookie signal:
-select `CookiePolicy(secure = true)` from validated deployment configuration.
+select `secureCookie = true` in validated deployment configuration.
 
 ## Verify Configuration {#verify-configuration}
 

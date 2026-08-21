@@ -212,15 +212,17 @@ rendered model; they return `LiveIO[Unit]`, cannot thread a replacement model,
 cannot halt, and cannot change the tree already rendered. A failure prevents
 later after-render hooks and aborts the render.
 
-Root `AfterRenderContext` exposes lifecycle metadata, `ctx.client`, and dynamic
-root hooks. Client events queued there join the current connected render; client
-operations are no-ops during disconnected rendering, so guard connected-only
-effects when their execution matters:
+Root `AfterRenderContext` exposes a phase-aware connection and dynamic root
+hooks. The connected capabilities expose `client`; obtaining it by matching the
+connection makes disconnected use impossible:
 
 ```scala
 override def hooks: LiveHooks[Msg, Model] =
   LiveHooks.afterRender { (model, ctx) =>
-    ZIO.when(ctx.connected)(ctx.client.push(RenderedEvent, Rendered(model.id)))
+    ctx.connection match
+      case Connection.Connected(capabilities) =>
+        capabilities.client.push(RenderedEvent, Rendered(model.id))
+      case Connection.Disconnected => ZIO.unit
   }
 ```
 

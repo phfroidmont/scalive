@@ -42,6 +42,43 @@ This is a disconnected render through the production route lifecycle. It include
 
 The complete `Request` is accepted so tests can supply typed locations, query parameters, headers, and authentication cookies. The route environment remains in the returned effect and can be provided with normal ZIO layers.
 
+### `ConnectedRender` and `ConnectedView`
+
+`ConnectedRender` performs the disconnected bootstrap and then joins through the production admission and connection lifecycle without starting a network server:
+
+```scala
+object ConnectedRender:
+  def join[Msg, Model](
+    liveView: LiveView[Msg, Model]
+  ): zio.RIO[zio.Scope, ConnectedView[Msg]]
+
+  def join[R](
+    application: LiveApplication[R],
+    config: ZioHttpConfig,
+    request: zio.http.Request,
+    connectParams: Map[String, zio.json.ast.Json] = Map.empty
+  ): zio.ZIO[R & zio.Scope, Throwable, ConnectedView[Nothing]]
+
+final class ConnectedView[-Msg]:
+  val topic: String
+  def html: zio.UIO[String]
+  def text(selector: String): zio.Task[String]
+  def click(selector: String): zio.Task[Unit]
+  def clickButton(label: String): zio.Task[Unit]
+  def changeForm(selector: String, fields: Vector[(String, String)], target: Option[String] = None): zio.Task[Unit]
+  def submitForm(selector: String, fields: Vector[(String, String)]): zio.Task[Unit]
+  def send(message: Msg): zio.Task[Unit]
+  def awaitDiff: zio.Task[Unit]
+  def joinNested(instanceId: String): zio.RIO[zio.Scope, ConnectedView[Nothing]]
+  def upload(uploadRef: String, entryRef: String, fileName: String, mediaType: String, bytes: zio.Chunk[Byte]): zio.Task[Unit]
+  def isJoined: zio.UIO[Boolean]
+  def leave: zio.UIO[Unit]
+```
+
+The direct LiveView overload uses a validated test configuration and retains the view's message type for `send`. The application overload accepts the transport-neutral `LiveApplication`, explicit validated transport configuration, request, and untrusted connect params; heterogeneous route assembly therefore returns `ConnectedView[Nothing]`. A `Scope` owns the connected session.
+
+Actions resolve exactly one binding from the latest committed semantic HTML and wait for its correlated lifecycle reply. `awaitDiff` instead waits for uncorrelated async, subscription, or component output. Nested joins resolve a registered nested LiveView by instance ID. Upload support is for hosted uploads. `topic` is diagnostic text, not a runtime handle.
+
 ### `RenderedPage`
 
 ```scala
@@ -122,7 +159,7 @@ Lifecycle methods:
 - `view` constructs one signal-backed view graph of HTML for each disconnected request or connected socket. Its read-only model signal drives dynamic scalar slots and explicit staged structures without rebuilding the ordinary tree after every update.
 - `pageTitle` derives optional document-title state from the model. Root layouts render it during the disconnected request and connected diffs update `document.title`.
 - `hooks` installs static lifecycle hooks, including typed browser events and low-level raw event interception.
-- Runtime subscriptions are started explicitly from phase contexts with `ctx.subscriptions.start`.
+- Connected-only work is obtained explicitly from `ctx.connection` where a callback can run in either phase, or directly from message contexts which are always connected.
 
 ### `LiveView.Eventless[Model]`
 
@@ -132,7 +169,7 @@ Use `LiveView.Eventless` when a view has no server messages. It fixes the messag
 trait LiveView.Eventless[Model] extends LiveView[Nothing, Model]
 ```
 
-Routes, route factories, and nested `liveView` content accept eventless views directly, including values widened to `LiveView[Nothing, Model]`. These APIs use `LiveMessageTag[Msg]`: its companion supplies the exact `Nothing` tag for eventless views and derives all other tags from `ClassTag[Msg]`, preserving runtime binding validation for message-bearing views.
+Routes, route factories, and nested `liveView` content accept eventless views directly, including values widened to `LiveView[Nothing, Model]`.
 
 ### `LiveView.Routed[Msg, Model, Params]`
 
@@ -222,6 +259,8 @@ The handle keeps the component type, logical ID, props, and message type aligned
 events resolve the mounted component by logical identity and do not require a DOM ID, CSS selector,
 or client-provided component ID.
 
+`ComponentRef[Msg]` is an opaque semantic target supplied to `LiveComponent.view`. It carries no public CID, selector, string value, or constructor; use it only with APIs such as `on.click.to(self)(message)` and `phx.target(self)`. Its type keeps the accepted component message aligned while the runtime resolves the current component identity.
+
 ### `LiveComponent.Eventless[Props, Model]`
 
 Use `LiveComponent.Eventless` when a component receives props and owns state but has no component messages. It fixes the message type and `ComponentRef` type to `Nothing` and supplies the no-op `handleMessage`.
@@ -263,22 +302,40 @@ Lifecycle callbacks receive explicit phase contexts. Contexts expose domain faca
 ### Context Availability
 
 ```scala
-trait LifecycleContext:
-  def connected: Boolean
-  def staticChanged: Boolean
-  def connectParams: Map[String, Json]
+trait LifecycleContext[+Connected]:
+  def connection: Connection[Connected]
 
-trait MountContext[Msg, Model] extends LifecycleContext:
+enum Connection[+Connected]:
+  case Disconnected
+  case Connected(capabilities: Connected)
+
+trait ConnectedMetadata:
+  def staticChanged: Boolean
+  def connectParams: Map[String, zio.json.ast.Json]
+
+trait RootMountConnected[Msg] extends ConnectedMetadata:
+  def async: Async[Msg]
+  def subscriptions: Subscriptions[Msg]
+  def client: Client
+
+trait RootParamsConnected[Msg] extends RootMountConnected[Msg]:
+  def components: ComponentUpdates
+
+trait RootAfterRenderConnected extends ConnectedMetadata:
+  def client: Client
+
+trait ComponentConnected[Msg] extends ConnectedMetadata:
+  def async: Async[Msg]
+  def client: Client
+
+trait MountContext[Msg, Model] extends LifecycleContext[RootMountConnected[Msg]]:
   def nav: MountNavigation
   def flash: Flash
   def uploads: Uploads
   def streams: Streams
-  def async: Async[Msg]
-  def subscriptions: Subscriptions[Msg]
-  def client: Client
   def hooks: RootHooks[Msg, Model]
 
-trait MessageContext[Msg, Model] extends LifecycleContext:
+trait MessageContext[Msg, Model] extends ConnectedMetadata:
   def nav: Navigation
   def flash: Flash
   def uploads: Uploads
@@ -289,40 +346,33 @@ trait MessageContext[Msg, Model] extends LifecycleContext:
   def components: ComponentUpdates
   def hooks: RootHooks[Msg, Model]
 
-trait ParamsContext[Msg, Model] extends LifecycleContext:
+trait ParamsContext[Msg, Model] extends LifecycleContext[RootParamsConnected[Msg]]:
   def nav: Navigation
   def flash: Flash
   def uploads: Uploads
   def streams: Streams
-  def async: Async[Msg]
-  def subscriptions: Subscriptions[Msg]
-  def client: Client
-  def components: ComponentUpdates
   def hooks: RootHooks[Msg, Model]
 
-trait AfterRenderContext[Msg, Model] extends LifecycleContext:
-  def client: Client
+trait AfterRenderContext[Msg, Model] extends LifecycleContext[RootAfterRenderConnected]:
   def hooks: RootHooks[Msg, Model]
 ```
 
 ```scala
-trait ComponentMountContext[Props, Msg, Model] extends LifecycleContext:
+trait ComponentMountContext[Props, Msg, Model]
+    extends LifecycleContext[ComponentConnected[Msg]]:
   def flash: Flash
   def uploads: Uploads
   def streams: Streams
-  def async: Async[Msg]
-  def client: Client
   def hooks: ComponentHooks[Props, Msg, Model]
 
-trait ComponentUpdateContext[Props, Msg, Model] extends LifecycleContext:
+trait ComponentUpdateContext[Props, Msg, Model]
+    extends LifecycleContext[ComponentConnected[Msg]]:
   def flash: Flash
   def uploads: Uploads
   def streams: Streams
-  def async: Async[Msg]
-  def client: Client
   def hooks: ComponentHooks[Props, Msg, Model]
 
-trait ComponentMessageContext[Props, Msg, Model] extends LifecycleContext:
+trait ComponentMessageContext[Props, Msg, Model] extends ConnectedMetadata:
   def nav: Navigation
   def flash: Flash
   def uploads: Uploads
@@ -332,9 +382,12 @@ trait ComponentMessageContext[Props, Msg, Model] extends LifecycleContext:
   def components: ComponentUpdates
   def hooks: ComponentHooks[Props, Msg, Model]
 
-trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext:
+trait ComponentAfterRenderContext[Props, Msg, Model]
+    extends LifecycleContext[ConnectedMetadata]:
   def hooks: ComponentHooks[Props, Msg, Model]
 ```
+
+`Connection` makes phase-dependent capabilities explicit: match `Disconnected` or `Connected(capabilities)` before starting async work, subscriptions, client commands, or component updates. `staticChanged` and `connectParams` exist only in connected metadata; connect params are untrusted. Message contexts are produced only for connected delivery, so they expose connected metadata and capabilities directly rather than wrapping them in another `Connection`.
 
 ### Navigation
 
@@ -421,9 +474,13 @@ trait Async[Msg]:
   def cancel[A](key: AsyncKey[A], reason: Option[String] = None): LiveIO[Unit]
 
 trait Subscriptions[Msg]:
-  def start(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def replace(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def start(key: SubscriptionKey, delivery: SubscriptionDelivery)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
+  def replace(key: SubscriptionKey, delivery: SubscriptionDelivery)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
   def cancel(key: SubscriptionKey): LiveIO[Unit]
+
+enum SubscriptionDelivery:
+  case Lossless
+  case Latest
 ```
 
 `start` converts every task outcome into a typed message. Async hooks run before
@@ -440,6 +497,7 @@ trait Client:
 
 trait ComponentUpdates:
   def sendUpdate[Props, Msg, Model](instance: LiveComponentInstance[Props, Msg, Model], props: Props): LiveIO[Unit]
+  def sendUpdate[Props, Msg, Model, Output](instance: LiveComponentOutputInstance[Props, Msg, Model, Output], props: Props): LiveIO[Unit]
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](id: String, props: LiveComponent.PropsOf[C]): LiveIO[Unit]
 ```
 
@@ -488,7 +546,7 @@ ComponentLiveHooks.empty.onAsync(hook)
 ComponentLiveHooks.empty.afterRender(effect)
 ```
 
-Static hooks are unnamed, immutable, and run in declaration order. `onRawEvent` is the protocol-level escape hatch; it does not filter event names. Raw hooks receive every event in declaration order until one halts. `afterRender` effects return `LiveIO[Unit]`, observe the rendered model, and cannot replace it.
+Static hooks are unnamed, immutable, and run in declaration order. `onRawEvent` is the protocol-level escape hatch; it receives the complete `LiveEvent` envelope and does not filter event names. `bindingId` is an opaque rendered binding identifier and `cid: Option[Long]` is protocol target metadata, not a `ComponentRef`. Raw hooks receive events in declaration order until one halts. `afterRender` effects return `LiveIO[Unit]`, observe the rendered model, and cannot replace it.
 
 ### Dynamic Hooks
 
@@ -704,6 +762,8 @@ portal(id, target: DomSelector, container = "div", wrapperClass = None)(mods*): 
 ```
 
 `liveTitle` renders the root `<title>` with Phoenix-compatible default, prefix, and suffix metadata. Blank or missing page titles use `default`.
+
+`portal` renders a `<template data-phx-portal="...">` containing a stable wrapper. The client moves that wrapper to the required `DomSelector`; `container` must be a valid tag name and `wrapperClass` applies to the moved wrapper.
 
 Implicit conversions:
 
@@ -976,9 +1036,9 @@ Direct `location`, `withFragment`, and no-argument `Unit` variants use `LiveLoca
 
 ```scala
 object Live:
-  val router: LiveRouter[Any]
+  val router: LiveRouter
   def route[A](path: PathCodec[A]): LiveRouteSeed[A]
-  def session(name: String): LiveSessionSeed
+  def session(name: String): LiveSessionBuilder[Any, Any]
 ```
 
 The package-level `live` value is equivalent to an empty route seed.
@@ -1009,16 +1069,12 @@ seed.queryOptional[QueryParam]("name")
 seed.query(codec)
 seed(view)
 seed -> view
-seed(viewLayer)
-seed -> viewLayer
-seed.context(context => view)
-seed((params, request, context) => view)
-seed((params, request) => view)
 seed(request => view)
-seed((params, request, c1, c2) => view)
+seed((path, request, context) => view)
+seed.from((path, request, environment) => view)
 ```
 
-`LiveRouteBuilder[R, A, Need, Ctx]` is produced after modifiers are applied.
+`LiveRouteBuilder[A]` is the common path-only builder. Starting a mount aspect produces `LiveRouteMountAspectBuilder[R, A, Need, Ctx]`, which accepts a view or a `(path, request, context)` factory after the aspect pipeline has produced its typed context.
 
 ```scala
 builder.withMountAspect(aspect)
@@ -1037,61 +1093,41 @@ builder.queryOptional[QueryParam]("name")
 builder.query(codec)
 builder(view)
 builder -> view
-builder(viewLayer)
-builder -> viewLayer
-builder.context(context => view)
-builder((params, request, context) => view)
-builder((params, request, c1, c2) => view)
+builder(request => view)
+builder((path, request, context) => view)
+builder.from((path, request, environment) => view)
 ```
 
-`params` and `query` produce a `LiveRouteParamsBuilder` whose `apply` methods accept a `LiveView.Routed[Msg, Model, Params]`.
+`params` and `query` produce an encodable `LiveEncodableRouteParamsBuilder[A, Params]`, a subtype of `LiveRouteParamsBuilder[A, Params]`. `paramsDecodeOnly` produces the base decode-only builder. Both accept a `LiveView.Routed[Msg, Model, Params]`.
 
-All direct and factory route forms accept `LiveView.Eventless`, `LiveView.Routed.Eventless`, and widened `Nothing`-message values without an explicit tag. Ordinary message-bearing views still require an implicit `ClassTag[Msg]`.
+All direct and factory route forms accept `LiveView.Eventless`, `LiveView.Routed.Eventless`, and widened `Nothing`-message values.
 
 ```scala
-paramsBuilder.mapParams(decode)(encode)
 paramsBuilder.mapParamsDecodeOnly(decode)
-paramsBuilder.location(params)
-paramsBuilder.locationEither(params)
-paramsBuilder.location                 // when Params is Unit
-paramsBuilder.locationEither           // when Params is Unit
-paramsBuilder.withMountAspect(aspect)
-paramsBuilder.withLayout(layout)
-paramsBuilder.withRootLayout(rootLayout)
 paramsBuilder(view)
 paramsBuilder -> view
-paramsBuilder(viewLayer)
-paramsBuilder -> viewLayer
-paramsBuilder.context(context => view)
-paramsBuilder((params, request, context) => view)
+paramsBuilder(request => view)
+paramsBuilder.from((path, request, environment) => view)
+
+encodable.mapParams(decode)(encode)
+encodable.location(params)
+encodable.locationEither(params)
 ```
 
-Use `context` when a mount aspect or LiveSession supplies everything needed to
-construct the view and route parameters and the HTTP request are not needed:
+Parameterized routes created after a mount aspect use `LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params]`:
 
 ```scala
-Live.session("authenticated").withMountAspect(authenticated)(
-  profile.context(ProfileLiveView.apply)
-)
+aspectBuilder.params(codec)
+aspectBuilder.params
+aspectBuilder.query(codec)
+aspectBuilder.query[QueryParams]
+
+aspectParams.location(params)
+aspectParams.locationEither(params)
+aspectParams(view)
+aspectParams((path, request, context) => view)
+aspectParams.from((path, request, context) => view)
 ```
-
-Route seeds and builders also accept an infallible `ZLayer` that constructs the
-LiveView. `ZLayer.fromFunction` infers all constructor dependencies and propagates
-their intersection as the route environment:
-
-```scala
-final class DashboardLiveView(reports: Reports, metrics: Metrics)
-    extends LiveView[DashboardLiveView.Msg, DashboardLiveView.Model]
-
-object DashboardLiveView:
-  val layer = ZLayer.fromFunction(DashboardLiveView.apply)
-
-val route = (live / "dashboard") -> DashboardLiveView.layer
-```
-
-Scalive builds a fresh layer output for disconnected and connected mount. Provide
-the shared input service layers once at the application boundary; do not put a
-prebuilt LiveView instance in the application environment.
 
 Use `query[A]` for schema-derived query objects and named helpers for single query params:
 
@@ -1121,7 +1157,7 @@ ctx.nav.pushNavigate(settings)
 JS.pushPatch(settings)
 ```
 
-`locationEither` returns `Either[LiveLocation.EncodeError, LiveLocation]`. Encodable builders expose both location methods using the final parameter type after `mapParams`. `paramsDecodeOnly` and `mapParamsDecodeOnly` return builders that can still mount a `LiveView.Routed` but do not expose location construction; this is enforced by the builder's `LiveRouteParamsCapability` type.
+`locationEither` returns `Either[LiveLocation.EncodeError, LiveLocation]`. `LiveEncodableRouteParamsBuilder` exposes both location methods using the final parameter type after `mapParams`. `paramsDecodeOnly` and `mapParamsDecodeOnly` return `LiveRouteParamsBuilder` values that can still mount a `LiveView.Routed` but do not expose location construction.
 
 ### Live sessions
 
@@ -1140,26 +1176,30 @@ Live.session(name).withRootLayout(rootLayout)
 Live.router.withLayout(layout)
 Live.router.withRootLayout(rootLayout)
 Live.router.withSocketPath(path)
-Live.router.withTokenConfig(config)
-Live.router.withSecurity(security)
-Live.router(route, routes*)
+val application = Live.router(route, routes*)
+
+ZioHttp.routes(application, config)
+ZioHttp.routes(application, security)
 ```
 
-The resulting value is a `zio.http.Routes` value.
+`Live.router(...)` produces a transport-neutral `LiveApplication[R]`. `ZioHttp.routes` validates and finalizes it as `zio.http.Routes[R, Nothing]` using either a validated `ZioHttpConfig` or a `LiveSecurity` that wraps that configuration.
 
 Use one `LiveSecurity` value for the Live router and sibling ordinary HTTP handlers that validate protected forms or redirect with flash:
 
 ```scala
-val security = LiveSecurity(
-  TokenConfig.default,
-  CookiePolicy(secure = true)
-)
+val config = ZioHttpConfig(
+  signingSecret = secret,
+  sessionMaxAge = java.time.Duration.ofDays(7),
+  secureCookie = true
+).fold(error => throw IllegalArgumentException(error.toString), identity)
+val security = LiveSecurity(config)
 
 val auth       = AuthService.inMemory()
-val liveRoutes = Live.router.withSecurity(security)(
+val application = Live.router(
   AuthLab.loginRoute,
   AuthLab.protectedSession(auth)
 )
+val liveRoutes = ZioHttp.routes(application, security)
 val httpRoutes = AuthHttpRoutes(auth, security).routes
 val routes     = liveRoutes ++ httpRoutes
 
@@ -1175,21 +1215,14 @@ reset, and Live authentication share one session store. See the
 [`AuthService.scala`](../documentation/site/src/scalive/docs/auth/AuthService.scala)
 for the complete composition.
 
-`withTokenConfig` remains the direct configuration path when no ordinary handler needs to share security capabilities.
-
 Supporting route types:
 
 ```scala
-trait LiveRouteFragment[-R, -Need]
-final class LiveRoute[R, A, -Need, Ctx, Msg, Model] private[scalive] (...)
-```
+trait LiveRouteFragment[-R]:
+  type Input
 
-Initial lifecycle outcome:
-
-```scala
-enum LiveRoute.InitialLifecycleOutcome[+Model]:
-  case Render(model: Model)
-  case Redirect(url: zio.http.URL)
+final class LiveRoute[R, A] private[scalive] (...)
+    extends LiveRouteFragment[R]
 ```
 
 ### Layouts
@@ -1555,9 +1588,7 @@ final case class FormEvent[+A](
   submitter: Option[FormSubmitter] = None,
   recovery: Boolean = false,
   submitted: Boolean = false,
-  metadata: Map[String, String] = Map.empty,
-  componentId: Option[Int] = None,
-  uploads: Option[zio.json.ast.Json] = None
+  metadata: Map[String, String] = Map.empty
 ):
   def state: FormState[A]
   def data: FormData
@@ -1687,15 +1718,28 @@ loginForm.http(FormAction.from(createSession))(
 
 ```scala
 final class LiveSecurity:
+  val config: ZioHttpConfig
   val cookies: CookiePolicy
   val csrf: CsrfProtection
   val flash: HttpFlash
 
 object LiveSecurity:
+  def apply(config: ZioHttpConfig): LiveSecurity
+
+final class ZioHttpConfig:
+  val sessionMaxAge: java.time.Duration
+  val secureCookie: Boolean
+
+object ZioHttpConfig:
+  enum Error:
+    case SecretTooShort(actualUtf8Bytes: Int)
+    case NonPositiveSessionMaxAge
+
   def apply(
-    tokenConfig: TokenConfig,
-    cookies: CookiePolicy = CookiePolicy(secure = false)
-  ): LiveSecurity
+    signingSecret: String,
+    sessionMaxAge: java.time.Duration,
+    secureCookie: Boolean
+  ): Either[ZioHttpConfig.Error, ZioHttpConfig]
 ```
 
 ```scala
@@ -1704,14 +1748,14 @@ final case class CookiePolicy(secure: Boolean):
   def expire(name: String): Cookie.Response
 ```
 
-`LiveSecurity` keeps the router, ordinary-form CSRF, HTTP flash, and application cookies on one hardened policy. Pass the same value to `LiveRouter.withSecurity` and sibling ordinary HTTP handlers, and create application cookies through `security.cookies`.
+`ZioHttpConfig` validates a signing secret of at least 32 UTF-8 bytes and a positive session age before transport assembly. `LiveSecurity` keeps Live transport, ordinary-form CSRF, HTTP flash, and application cookies on that one hardened policy. Pass the same value to `ZioHttp.routes` and sibling ordinary HTTP handlers, and create application cookies through `security.cookies`.
 
 ```scala
 final class CsrfProtection:
   def validate(
     request: zio.http.Request,
     data: FormData
-  ): Either[CsrfProtection.ValidationError, Unit]
+  ): zio.IO[CsrfProtection.ValidationError, Unit]
 
 object CsrfProtection:
   val CookieName: String
@@ -1760,7 +1804,7 @@ content type to 415, other body or representation failures to 400, and CSRF to
 403. Application validation is delegated to `onValidation`, allowing a handler to
 redirect, render, or otherwise apply its own validation policy.
 
-The capability uses two purpose-bound signed values containing the same random browser secret: an `HttpOnly` cookie and the submitted token. Validation requires exactly one bounded `_csrf_token` and compares secrets in constant time. Tokens are reusable until `TokenConfig.maxAge`; they are not one-time application tokens.
+The capability uses two purpose-bound signed values containing the same random browser secret: an `HttpOnly` cookie and the submitted token. Validation requires exactly one bounded `_csrf_token` and compares secrets in constant time. Tokens are reusable until `ZioHttpConfig.sessionMaxAge`; they are not one-time application tokens.
 
 Cookies created by `CookiePolicy` are host-only, scoped to `/`, `HttpOnly`, and `SameSite=Lax`. `secure` must be enabled whenever the browser-facing endpoint is HTTPS; Scalive does not infer deployment TLS from forwarding headers. The token check binds a form to the browser cookie but does not add a separate `Origin` or `Referer` policy.
 
@@ -1769,12 +1813,12 @@ final class HttpFlash:
   def seeOther(
     to: LiveLocation,
     values: (FlashKind, String)*
-  ): zio.http.Response
+  ): zio.UIO[zio.http.Response]
 
   def seeOtherUnsafe(
     to: zio.http.URL,
     values: (FlashKind, String)*
-  ): zio.http.Response
+  ): zio.UIO[zio.http.Response]
 ```
 
 `seeOther` returns a 303 response with purpose-bound signed flash values in a short-lived, root-scoped, `HttpOnly`, `SameSite=Lax` cookie. Use `seeOtherUnsafe` only for validated local URLs that do not have a typed Live route. The next successfully rendered Live route embeds valid values in its Live session and expires the browser cookie; redirect chains preserve it until then. This is browser-level consume-once behavior, not server-side replay prevention, and flash values are signed rather than encrypted.
@@ -2113,7 +2157,7 @@ final case class LiveEvent(
   bindingId: String,
   value: zio.json.ast.Json,
   params: Map[String, String],
-  cid: Option[Int],
+  cid: Option[Long],
   meta: Option[zio.json.ast.Json]
 )
 ```
@@ -2209,31 +2253,6 @@ final case class StaticAssetCache(
   digested: zio.http.Header.CacheControl,
   original: zio.http.Header.CacheControl)
 ```
-
-## Token API
-
-```scala
-final case class TokenConfig(secret: String, maxAge: scala.concurrent.duration.Duration)
-```
-
-Default configuration:
-
-```scala
-TokenConfig.default
-```
-
-`TokenConfig.default` is resolved once per process. For `SCALIVE_TOKEN_SECRET`, a
-missing or exactly empty value generates a random process-local secret; every other
-value is used verbatim, including whitespace. `SCALIVE_TOKEN_MAX_AGE_SECONDS` is
-used only when `String.toLongOption` parses it as a positive `Long`; missing, empty,
-whitespace-padded, non-numeric, overflowing, zero, and negative values use seven
-days. Set a stable, high-entropy secret in deployments where signed values must
-remain valid across process restarts or multiple instances.
-
-The secret authenticates but does not encrypt framework values. Changing it
-invalidates existing Live sessions, CSRF values, HTTP flash, and other signed
-framework tokens. `TokenConfig.maxAge` does not configure application-owned
-authentication session records.
 
 ## Attribute Encoding API
 

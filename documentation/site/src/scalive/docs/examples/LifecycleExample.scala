@@ -9,9 +9,9 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
   import LifecycleExample.*
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.afterRender[Msg, Model] { (model, ctx) =>
+    LiveHooks.empty[Msg, Model].afterRender { (model, ctx) =>
       ZIO
-        .when(ctx.connected) {
+        .when(ctx.connection.isInstanceOf[Connection.Connected[?]]) {
           ZIO.logDebug(s"Lifecycle example rendered with title '${model.currentTitle}'")
         }.unit
     }
@@ -19,7 +19,12 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
   override def pageTitle(model: Model): Option[String] = Some(model.currentTitle)
 
   def mount(ctx: MountContext): LiveIO[Model] =
-    ZIO.succeed(Model(connectedMount = ctx.connected, currentTitle = DefaultTitle))
+    ZIO.succeed(
+      Model(
+        connectedMount = ctx.connection.isInstanceOf[Connection.Connected[?]],
+        currentTitle = DefaultTitle
+      )
+    )
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.PutNotification =>

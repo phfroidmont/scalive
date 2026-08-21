@@ -5,6 +5,7 @@ import zio.stream.ZStream
 import zio.test.*
 
 import scalive.*
+import scalive.testing.ConnectedRender
 
 object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
   private enum Msg:
@@ -53,29 +54,27 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
       )
 
   override def spec = suite("SiteLiveViewHarnessSpec")(
-    test("joins, dispatches bindings, collects output, and exposes committed HTML") {
+    test("joins, dispatches bindings, and exposes committed HTML") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(testLiveView)
+          harness <- ConnectedRender.join(testLiveView)
           initial <- harness.text("[data-count]")
           _       <- harness.click("[data-increment]")
           clicked <- harness.text("[data-count]")
-          _       <- harness.sendServer(Msg.Increment)
+          _       <- harness.send(Msg.Increment)
           sent    <- harness.text("[data-count]")
-          outputs <- harness.outputs
           _       <- harness.leave
         yield assertTrue(
           initial == "0",
           clicked == "1",
-          sent == "2",
-          outputs.size >= 3
+          sent == "2"
         )
       }
     },
     test("dispatches typed form change and submit bindings") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(formLiveView)
+          harness <- ConnectedRender.join(formLiveView)
           _ <- harness.changeForm(
                  "[data-profile-form]",
                  Vector(Name.name -> "", "profile[_unused_email]" -> ""),
@@ -99,16 +98,22 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
     },
     test("releases nested LiveView resources when the parent leaves") {
       for
+        acquired <- Promise.make[Nothing, Unit]
         released <- Promise.make[Nothing, Unit]
         result <- ZIO.scoped {
                     val child = new LiveView[ResourceMsg, Unit]:
                       def mount(ctx: MountContext) =
                         val stream = ZStream.fromZIO(
-                          ZIO.acquireReleaseWith(ZIO.unit)(_ => released.succeed(()).unit)(_ => ZIO.never)
+                          ZIO.acquireReleaseWith(acquired.succeed(()).unit)(
+                            _ => released.succeed(()).unit
+                          )(_ => ZIO.never)
                         )
-                        ctx.subscriptions
-                          .start(ResourceSubscription, SubscriptionDelivery.Lossless)(stream)
-                          .as(())
+                        ctx.connection match
+                          case Connection.Disconnected => ZIO.unit
+                          case Connection.Connected(connected) =>
+                            connected.subscriptions
+                              .start(ResourceSubscription, SubscriptionDelivery.Lossless)(stream)
+                              .as(())
 
                       def handleMessage(model: Unit, ctx: MessageContext) =
                         case ResourceMsg.Tick => ZIO.succeed(model)
@@ -121,14 +126,17 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
                         div(liveView("resource-child", child))
 
                     for
-                      harness <- SiteLiveViewHarness.join(parent)
+                      harness <- ConnectedRender.join(parent)
                       child   <- harness.joinNested("resource-child")
-                      joined  <- harness.socketExists(child.topic)
+                      joined  <- child.isJoined
+                      _ <- acquired.await.timeoutFail(
+                             new RuntimeException("Nested resource did not start")
+                           )(3.seconds)
                       _       <- harness.leave
                       _ <- released.await.timeoutFail(
                              new RuntimeException("Nested resource was not released")
                            )(3.seconds)
-                      removed <- harness.socketExists(child.topic)
+                      removed <- child.isJoined
                     yield assertTrue(joined, !removed)
                   }
       yield result

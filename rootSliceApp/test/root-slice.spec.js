@@ -92,17 +92,17 @@ test("sticky nested lifecycle reattaches across compatible navigation", async ({
   await expect(page).toHaveURL(/\/nested\/b$/)
   await expect(page.locator("#sticky-parent-b")).toBeVisible()
   await expect(page.locator("#sticky-nested-counter")).toHaveText("1")
-  await expect(page.locator("#sticky-nested-grandchild-counter")).toHaveText("0")
+  await expect(page.locator("#sticky-nested-grandchild-counter")).toHaveText("1")
   await expect
     .poll(() => sent.filter(frame => frame.includes('"lv:sticky-nested-child"') && frame.includes('"phx_join"')).length)
-    .toBe(2)
+    .toBe(1)
   await expect
     .poll(() => sent.filter(frame => frame.includes('"lv:sticky-nested-grandchild"') && frame.includes('"phx_join"')).length)
-    .toBe(2)
+    .toBe(1)
   await page.getByRole("button", { name: "Increment sticky child" }).click()
   await expect(page.locator("#sticky-nested-counter")).toHaveText("2")
   await page.getByRole("button", { name: "Increment sticky grandchild" }).click()
-  await expect(page.locator("#sticky-nested-grandchild-counter")).toHaveText("1")
+  await expect(page.locator("#sticky-nested-grandchild-counter")).toHaveText("2")
   expect(errors).toEqual([])
 })
 

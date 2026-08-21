@@ -4,6 +4,7 @@ import zio.*
 import zio.http.URL
 
 import scalive.BindingPayload
+import scalive.LiveEvent
 import scalive.render.BindingId
 import scalive.render.EvaluatedTree
 import scalive.render.RenderDelta
@@ -29,8 +30,7 @@ sealed private[scalive] trait ConnectedLifecycle:
     command: CommandId,
     binding: BindingId,
     payload: BindingPayload,
-    eventName: Option[String] = None,
-    rawJson: Option[String] = None
+    event: Option[LiveEvent] = None
   ): IO[ConnectionError, Unit]
 
   def componentEvent(
@@ -38,9 +38,10 @@ sealed private[scalive] trait ConnectedLifecycle:
     component: ComponentInstanceId,
     binding: BindingId,
     payload: BindingPayload,
-    eventName: String,
-    rawJson: String
+    event: LiveEvent
   ): IO[ConnectionError, Unit]
+
+  def message(command: CommandId, value: Any): IO[ConnectionError, Unit]
 
   def preflightUpload(
     command: CommandId,
@@ -101,30 +102,29 @@ private[connection] object ConnectedLifecycle:
         command: CommandId,
         binding: BindingId,
         payload: BindingPayload,
-        eventName: Option[String],
-        rawJson: Option[String]
+        event: Option[LiveEvent]
       ): IO[ConnectionError, Unit] =
-        (eventName, rawJson) match
-          case (Some(name), Some(raw)) =>
-            connection.offerNamedEvent(command, binding, payload, name, raw)
-          case _ => connection.offerEvent(command, binding, payload)
+        event match
+          case Some(value) => connection.offerRawEvent(command, binding, payload, value)
+          case None        => connection.offerEvent(command, binding, payload)
 
       def componentEvent(
         command: CommandId,
         component: ComponentInstanceId,
         binding: BindingId,
         payload: BindingPayload,
-        eventName: String,
-        rawJson: String
+        event: LiveEvent
       ): IO[ConnectionError, Unit] =
-        connection.offerComponentNamedEvent(
+        connection.offerComponentRawEvent(
           command,
           component,
           binding,
           payload,
-          eventName,
-          rawJson
+          event
         )
+
+      def message(command: CommandId, value: Any): IO[ConnectionError, Unit] =
+        connection.offerMessage(command, value.asInstanceOf[Msg])
 
       def preflightUpload(
         command: CommandId,
@@ -194,7 +194,8 @@ final private[scalive] class ConnectionSupervisor private (
   observer: RuntimeObserver):
   import ConnectionSupervisor.*
 
-  private var state: State = State.empty
+  private var state: State                                                 = State.empty
+  private var retirements: Map[ConnectedLifecycle, Promise[Nothing, Unit]] = Map.empty
 
   def startRootLifecycle[Msg, Model](
     lifecycle: RootLifecycle[Msg, Model],
@@ -320,7 +321,8 @@ final private[scalive] class ConnectionSupervisor private (
                                       ownsPageTitle = false,
                                       requestedLifecycle = requestedLifecycle,
                                       providedConnection = Some(connectionId),
-                                      observer = observer
+                                      observer = observer,
+                                      closeAfterNavigate = !reservation.registration.sticky
                                     )
                                   )
                     connected = ConnectedLifecycle(
@@ -447,10 +449,9 @@ final private[scalive] class ConnectionSupervisor private (
     command: CommandId,
     binding: BindingId,
     payload: BindingPayload,
-    eventName: Option[String] = None,
-    rawJson: Option[String] = None
+    event: Option[LiveEvent] = None
   ): IO[ConnectionError, Boolean] =
-    route(topic)(_.browserEvent(command, binding, payload, eventName, rawJson))
+    route(topic)(_.browserEvent(command, binding, payload, event))
 
   def routeComponentEvent(
     topic: NestedTopic,
@@ -458,12 +459,9 @@ final private[scalive] class ConnectionSupervisor private (
     component: ComponentInstanceId,
     binding: BindingId,
     payload: BindingPayload,
-    eventName: String,
-    rawJson: String
+    event: LiveEvent
   ): IO[ConnectionError, Boolean] =
-    route(topic)(
-      _.componentEvent(command, component, binding, payload, eventName, rawJson)
-    )
+    route(topic)(_.componentEvent(command, component, binding, payload, event))
 
   def routePatch(
     topic: NestedTopic,
@@ -511,13 +509,22 @@ final private[scalive] class ConnectionSupervisor private (
     gate
       .withPermit {
         if state.closed then
-          ZIO.succeed((Vector.empty[Entry], Vector.empty[Scope.Closeable], false))
+          ZIO.succeed(
+            (
+              Vector.empty[Entry],
+              Vector.empty[Scope.Closeable],
+              Vector.empty[Promise[Nothing, Unit]],
+              false
+            )
+          )
         else
           val entries = state.entries.values.toVector
           val starts  = state.startingScopes.values.toVector
+          val waiters = retirements.values.toVector
           state = State.empty.copy(closed = true)
-          ZIO.succeed((entries, starts, true))
-      }.flatMap { case (entries, starts, first) =>
+          retirements = Map.empty
+          ZIO.succeed((entries, starts, waiters, true))
+      }.flatMap { case (entries, starts, waiters, first) =>
         if !first then ZIO.unit
         else
           RuntimeCleanup.all(
@@ -527,7 +534,7 @@ final private[scalive] class ConnectionSupervisor private (
               RuntimeCleanup.all(starts.map(_.close(Exit.unit))),
               supervisorScope.close(Exit.unit)
             )
-          )
+          ) *> ZIO.foreachDiscard(waiters)(_.succeed(()))
       }
 
   private def route(
@@ -717,25 +724,26 @@ final private[scalive] class ConnectionSupervisor private (
     val ownership = gate.withPermit(
       ZIO.succeed(
         state.entries
-          .get(handle.lifecycle).filter(_.handle.epoch == handle.epoch).map(_.ownership)
+          .get(handle.lifecycle).filter(entry => entry.handle eq handle).map(_.ownership)
       )
     )
     ownership.flatMap {
       case Some(EntryOwnership.Root) if failure.isEmpty =>
         retireRootForNavigation(handle).unit
       case _ =>
-        removeExact(handle).flatMap {
-          case None        => ZIO.unit
-          case Some(entry) =>
-            detach(entry).flatMap { activeRegistration =>
-              topology.revokeParent(handle.lifecycle, handle.epoch) *>
-                closeEntry(entry) *>
-                ZIO.foreachDiscard(
-                  activeRegistration.filter(_.linkParentOnCrash).zip(failure)
-                ) { case (registration, childFailure) =>
-                  failParent(registration, handle.lifecycle, childFailure)
-                }
-            }
+        claimRetirement(handle).flatMap {
+          case Left(awaitRetirement) => awaitRetirement
+          case Right(claim)          =>
+            detach(claim.entry)
+              .flatMap { activeRegistration =>
+                topology.revokeParent(handle.lifecycle, handle.epoch) *>
+                  closeEntry(claim.entry) *>
+                  ZIO.foreachDiscard(
+                    activeRegistration.filter(_.linkParentOnCrash).zip(failure)
+                  ) { case (registration, childFailure) =>
+                    failParent(registration, handle.lifecycle, childFailure)
+                  }
+              }.ensuring(completeRetirement(claim))
         }
     }
 
@@ -766,25 +774,49 @@ final private[scalive] class ConnectionSupervisor private (
   private def retire(lifecycle: LifecycleId, epoch: Epoch): UIO[Unit] =
     gate
       .withPermit {
-        state.entries.get(lifecycle) match
-          case Some(entry) if entry.handle.epoch == epoch =>
+        ZIO.succeed(
+          state.entries.get(lifecycle).filter(_.handle.epoch == epoch).map(_.handle)
+        )
+      }.flatMap(ZIO.foreachDiscard(_)(retireHandle))
+
+  private def retireHandle(handle: ConnectedLifecycle): UIO[Unit] =
+    claimRetirement(handle).flatMap {
+      case Left(awaitRetirement) => awaitRetirement
+      case Right(claim)          =>
+        (detach(claim.entry).unit *>
+          topology.revokeParent(claim.entry.handle.lifecycle, claim.entry.handle.epoch) *>
+          closeEntry(claim.entry)).ensuring(completeRetirement(claim))
+    }
+
+  private def claimRetirement(
+    handle: ConnectedLifecycle
+  ): UIO[Either[UIO[Unit], RetirementClaim]] =
+    Promise.make[Nothing, Unit].flatMap { completion =>
+      gate.withPermit {
+        state.entries.get(handle.lifecycle) match
+          case Some(entry) if entry.handle eq handle =>
+            val activeCompletion = retirements.getOrElse(handle, completion)
             removeEntry(entry)
-            ZIO.some(entry)
-          case _ => ZIO.none
-      }.flatMap {
-        case None        => ZIO.unit
-        case Some(entry) =>
-          detach(entry).unit *>
-            topology.revokeParent(entry.handle.lifecycle, entry.handle.epoch) *>
-            closeEntry(entry)
+            retirements = retirements.updated(handle, activeCompletion)
+            ZIO.right(RetirementClaim(entry, activeCompletion))
+          case _ =>
+            ZIO.left(retirements.get(handle).fold[UIO[Unit]](ZIO.unit)(_.await))
       }
+    }
+
+  private def completeRetirement(claim: RetirementClaim): UIO[Unit] =
+    claim.completion.succeed(()).unit *> gate.withPermit {
+      val handle = claim.entry.handle
+      if retirements.get(handle).contains(claim.completion) then
+        retirements = retirements.removed(handle)
+      ZIO.unit
+    }
 
   private def retireRootForNavigation(handle: ConnectedLifecycle): UIO[Boolean] =
     gate
       .withPermit {
         state.entries.get(handle.lifecycle) match
-          case Some(entry @ Entry(_, _, EntryOwnership.Root))
-              if entry.handle.epoch == handle.epoch =>
+          case Some(entry @ Entry(_, _, EntryOwnership.Root)) if entry.handle eq handle =>
             removeEntry(entry)
             ZIO.some(entry)
           case _ => ZIO.none
@@ -953,7 +985,20 @@ final private[scalive] class ConnectionSupervisor private (
       }.flatMap(ZIO.foreachDiscard(_)(epoch => retire(lifecycle, epoch)))
 
   private[scalive] def retireLifecycle(handle: ConnectedLifecycle): UIO[Unit] =
-    retire(handle.lifecycle, handle.epoch)
+    retireHandle(handle)
+
+  private[scalive] def awaitRetirement(handle: ConnectedLifecycle): UIO[Unit] =
+    Promise.make[Nothing, Unit].flatMap { candidate =>
+      gate.withPermit {
+        val await = state.entries.get(handle.lifecycle) match
+          case Some(entry) if entry.handle eq handle =>
+            val completion = retirements.getOrElse(handle, candidate)
+            retirements = retirements.updated(handle, completion)
+            completion.await
+          case _ => retirements.get(handle).fold[UIO[Unit]](ZIO.unit)(_.await)
+        ZIO.succeed(await)
+      }.flatten
+    }
 end ConnectionSupervisor
 
 private[scalive] object ConnectionSupervisor:
@@ -995,6 +1040,10 @@ private[scalive] object ConnectionSupervisor:
     entry: Entry,
     registration: NestedRegistration,
     output: RebindableSink)
+
+  final private case class RetirementClaim(
+    entry: Entry,
+    completion: Promise[Nothing, Unit])
 
   final private case class State(
     entries: Map[LifecycleId, Entry],

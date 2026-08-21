@@ -2,6 +2,7 @@ package scalive
 
 import zio.http.URL
 import zio.json.JsonDecoder
+import zio.json.ast.Json
 
 enum LiveHookResult[+Model]:
   case Continue(model: Model)
@@ -11,8 +12,22 @@ object LiveHookResult:
   def cont[Model](model: Model): LiveHookResult[Model] = Continue(model)
   def halt[Model](model: Model): LiveHookResult[Model] = Halt(model)
 
+enum LiveEventHookResult[+Model]:
+  case Continue(model: Model)
+  case Halt(model: Model, reply: Option[Json] = None)
+
+object LiveEventHookResult:
+  def cont[Model](model: Model): LiveEventHookResult[Model]                   = Continue(model)
+  def halt[Model](model: Model): LiveEventHookResult[Model]                   = Halt(model)
+  def haltReply[Model](model: Model, value: Json): LiveEventHookResult[Model] =
+    Halt(model, Some(value))
+
 /** Immutable declarations installed when a root lifecycle starts. */
 sealed trait LiveHooks[Msg, Model]:
+  final def onRawEvent(
+    hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
+  ): LiveHooks[Msg, Model] = LiveHooks.RawEvent(this, hook)
+
   final def onBrowserEvent[A: JsonDecoder](
     event: BrowserToServerEvent[A]
   )(
@@ -41,9 +56,14 @@ sealed trait LiveHooks[Msg, Model]:
   final def afterRender(
     hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
   ): LiveHooks[Msg, Model] = LiveHooks.AfterRender(this, hook)
+end LiveHooks
 
 object LiveHooks:
   final private[scalive] case class Empty[Msg, Model]() extends LiveHooks[Msg, Model]
+  final private[scalive] case class RawEvent[Msg, Model](
+    previous: LiveHooks[Msg, Model],
+    hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]])
+      extends LiveHooks[Msg, Model]
   final private[scalive] case class BrowserEvent[Msg, Model, A](
     previous: LiveHooks[Msg, Model],
     event: BrowserToServerEvent[A],
@@ -78,6 +98,12 @@ end LiveHooks
 
 /** Immutable declarations installed when a component instance starts. */
 sealed trait ComponentLiveHooks[Props, Msg, Model]:
+  final def onRawEvent(
+    hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
+      LiveEventHookResult[Model]
+    ]
+  ): ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.RawEvent(this, hook)
+
   final def onBrowserEvent[A: JsonDecoder](
     event: BrowserToServerEvent[A]
   )(
@@ -104,6 +130,12 @@ sealed trait ComponentLiveHooks[Props, Msg, Model]:
 object ComponentLiveHooks:
   final private[scalive] case class Empty[Props, Msg, Model]()
       extends ComponentLiveHooks[Props, Msg, Model]
+  final private[scalive] case class RawEvent[Props, Msg, Model](
+    previous: ComponentLiveHooks[Props, Msg, Model],
+    hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
+      LiveEventHookResult[Model]
+    ])
+      extends ComponentLiveHooks[Props, Msg, Model]
   final private[scalive] case class BrowserEvent[Props, Msg, Model, A](
     previous: ComponentLiveHooks[Props, Msg, Model],
     event: BrowserToServerEvent[A],
@@ -128,14 +160,24 @@ object ComponentLiveHooks:
       extends ComponentLiveHooks[Props, Msg, Model]
 
   def empty[Props, Msg, Model]: ComponentLiveHooks[Props, Msg, Model] = Empty()
+end ComponentLiveHooks
 
 trait RootHooks[Msg, Model]:
+  def rawEvent: RootRawEventHooks[Msg, Model]
   def browserEvent: RootBrowserEventHooks[Msg, Model]
   def event: RootEventHooks[Msg, Model]
   def params: RootParamsHooks[Msg, Model]
   def info: RootInfoHooks[Msg, Model]
   def async: RootAsyncHooks[Msg, Model]
   def afterRender: RootAfterRenderHooks[Msg, Model]
+
+trait RootRawEventHooks[Msg, Model]:
+  def attach(
+    id: String
+  )(
+    hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
+  ): LiveIO[Unit]
+  def detach(id: String): LiveIO[Unit]
 
 trait RootBrowserEventHooks[Msg, Model]:
   def attach[A: JsonDecoder](
@@ -187,10 +229,21 @@ trait RootAfterRenderHooks[Msg, Model]:
   def detach(id: String): LiveIO[Unit]
 
 trait ComponentHooks[Props, Msg, Model]:
+  def rawEvent: ComponentRawEventHooks[Props, Msg, Model]
   def browserEvent: ComponentBrowserEventHooks[Props, Msg, Model]
   def event: ComponentEventHooks[Props, Msg, Model]
   def async: ComponentAsyncHooks[Props, Msg, Model]
   def afterRender: ComponentAfterRenderHooks[Props, Msg, Model]
+
+trait ComponentRawEventHooks[Props, Msg, Model]:
+  def attach(
+    id: String
+  )(
+    hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => LiveIO[
+      LiveEventHookResult[Model]
+    ]
+  ): LiveIO[Unit]
+  def detach(id: String): LiveIO[Unit]
 
 trait ComponentBrowserEventHooks[Props, Msg, Model]:
   def attach[A: JsonDecoder](

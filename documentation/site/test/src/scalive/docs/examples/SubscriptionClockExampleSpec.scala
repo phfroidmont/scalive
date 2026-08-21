@@ -4,11 +4,11 @@ import zio.*
 import zio.test.*
 
 import scalive.*
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.{ConnectedRender, ConnectedView}
 
 object SubscriptionClockExampleSpec extends ZIOSpecDefault:
   private def eventuallyText(
-    harness: SiteLiveViewHarness[?, ?],
+    harness: ConnectedView[?],
     selector: String,
     expected: String
   ): Task[String] =
@@ -18,7 +18,7 @@ object SubscriptionClockExampleSpec extends ZIOSpecDefault:
     test("starts, replaces, and cancels one managed clock subscription") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new SubscriptionClockExample("clock-primary"))
+          harness <- ConnectedRender.join(new SubscriptionClockExample("clock-primary"))
           _       <- harness.clickButton("Start every second")
           started <- harness.text("[data-clock-mode]")
           _       <- TestClock.adjust(1.second)
@@ -47,11 +47,11 @@ object SubscriptionClockExampleSpec extends ZIOSpecDefault:
     test("reset cancels work and restores initial state") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new SubscriptionClockExample("clock-reset"))
+          harness <- ConnectedRender.join(new SubscriptionClockExample("clock-reset"))
           _       <- harness.clickButton("Start every second")
           _       <- TestClock.adjust(1.second)
           _       <- harness.awaitDiff
-          _       <- harness.sendServer(SubscriptionClockExample.Msg.Reset)
+          _       <- harness.send(SubscriptionClockExample.Msg.Reset)
           mode    <- eventuallyText(harness, "[data-clock-mode]", "Stopped")
           count   <- harness.text("[data-clock-count]")
           _       <- TestClock.adjust(1.second)
@@ -62,8 +62,8 @@ object SubscriptionClockExampleSpec extends ZIOSpecDefault:
     test("isolates subscription state between instances") {
       ZIO.scoped {
         for
-          first  <- SiteLiveViewHarness.join(new SubscriptionClockExample("clock-first"))
-          second <- SiteLiveViewHarness.join(new SubscriptionClockExample("clock-second"))
+          first  <- ConnectedRender.join(new SubscriptionClockExample("clock-first"))
+          second <- ConnectedRender.join(new SubscriptionClockExample("clock-second"))
           _      <- first.clickButton("Start every second")
           firstMode  <- first.text("[data-clock-mode]")
           secondMode <- second.text("[data-clock-mode]")

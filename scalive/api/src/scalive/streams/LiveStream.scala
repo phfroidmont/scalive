@@ -20,7 +20,9 @@ enum StreamAt:
 /** Retention limit applied to the stream snapshot after stream insertions.
   *
   * Counts are validated when a stream operation uses the definition and must be strictly positive.
-  * A definition limit applies to creation, reset, and subsequent insert operations.
+  * A definition limit applies to connected creation, reset, and subsequent insert operations.
+  * Disconnected HTML renders the complete initial stream so it remains useful without client-side
+  * stream patching.
   */
 enum StreamLimit:
   /** Retains at most the first `count` items, pruning items from the end. */

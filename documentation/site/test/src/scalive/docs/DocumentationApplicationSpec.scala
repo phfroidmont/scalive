@@ -1,6 +1,6 @@
 package scalive.docs
 
-import scala.concurrent.duration.*
+import java.time.Duration
 import scala.jdk.CollectionConverters.*
 
 import org.jsoup.Jsoup
@@ -15,8 +15,11 @@ import scalive.testing.DisconnectedRender
 
 object DocumentationApplicationSpec extends ZIOSpecDefault:
   private val security = LiveSecurity(
-    TokenConfig("documentation-site-spec-secret", 1.hour),
-    CookiePolicy(secure = false)
+    ZioHttpConfig(
+      "documentation-site-spec-secret-32-bytes",
+      Duration.ofHours(1),
+      secureCookie = false
+    ).toOption.get
   )
   private val config = DocumentationConfig(
     8080,

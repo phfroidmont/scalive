@@ -8,14 +8,14 @@ section = learn
 ## Two Independent Mounts {#two-independent-mounts}
 
 A routed @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ first mounts during an
-ordinary HTTP request. `MountContext.connected` is `false`, and the resulting
-HTML should already be useful. When `LiveSocket` joins, Scalive mounts a new
-lifecycle with `connected` set to `true`.
+ordinary HTTP request. `ctx.connection` is `Connection.Disconnected`, and the
+resulting HTML should already be useful. When `LiveSocket` joins, Scalive mounts
+a new lifecycle with `Connection.Connected(capabilities)`.
 
 These are two model instances, not two phases mutating shared state. Both mounts
-must rebuild valid state from their inputs. Use
-@:apiSymbol(def:scalive.LifecycleContext.connected)`ctx.connected`@:@ for work
-that requires a live socket, such as a subscription, but do not rely on the
+must rebuild valid state from their inputs. Match
+@:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@ and use
+connected-only tools from the matched `capabilities`; do not rely on the
 disconnected model to carry values into the connected mount.
 
 The lifecycle example records which mount created its model and starts its clock
@@ -82,7 +82,8 @@ released.
 Use this checklist:
 
 - Make `mount` safe to run repeatedly.
-- Guard socket-only work with `ctx.connected`.
+- Match `ctx.connection` and run socket-only work only in the
+  `Connection.Connected(capabilities)` branch.
 - Use lifecycle-managed APIs for async work and subscriptions.
 - Make repeated external mount effects idempotent where necessary.
 - Test the reconnect behavior that matters to the application in a browser.

@@ -119,25 +119,26 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                         )
                       )
                     )
-        encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
-        html    <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
-        expected =
-          "<main><div id=\"child&amp;&quot;\" data-phx-parent-id=\"parent&amp;&quot;\" data-phx-session=\"join&lt;&amp;&quot;\" data-phx-static=\"static&lt;&amp;&quot;\" data-phx-sticky class=\"phx-loading\"><span>disconnected &lt;child&gt;</span></div></main>"
-      yield assertTrue(
-        html._2 == expected,
-        encoded._2 == Json.Obj(
-          "s" -> Json.Arr(
-            Json.Str(
-              "<main><div id=\"child&amp;&quot;\" data-phx-parent-id=\"parent&amp;&quot;\" data-phx-session=\"join&lt;&amp;&quot;\" data-phx-static=\"static&lt;&amp;&quot;\" data-phx-sticky class=\"phx-loading\"><span>"
-            ),
-            Json.Str("</span></div></main>")
-          ),
-          "0" -> Json.Str("disconnected &lt;child&gt;")
-        ),
-        !expected.contains("lv:child")
-      )
+         encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
+         html    <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
+         expected =
+           "<main><div id=\"child&amp;&quot;\" data-phx-session=\"join&lt;&amp;&quot;\" data-phx-static=\"static&lt;&amp;&quot;\" data-phx-sticky class=\"phx-loading\"><span>disconnected &lt;child&gt;</span></div></main>"
+       yield assertTrue(
+         html._2 == expected,
+         encoded._2 == Json.Obj(
+           "s" -> Json.Arr(
+             Json.Str(
+               "<main><div id=\"child&amp;&quot;\" data-phx-session=\"join&lt;&amp;&quot;\" data-phx-static=\"static&lt;&amp;&quot;\" data-phx-sticky class=\"phx-loading\"><span>"
+             ),
+             Json.Str("</span></div></main>")
+           ),
+           "0" -> Json.Str("disconnected &lt;child&gt;")
+         ),
+         !expected.contains("data-phx-parent-id"),
+         !expected.contains("lv:child")
+       )
     },
-    test("projects a connected nested LiveView as an empty container without optional attributes") {
+    test("projects a connected nested LiveView with an empty static token") {
       val compiled = RenderProgram.compile[Unit, Nothing](_ => div(liveView("child", TestView)))
 
       for
@@ -149,15 +150,95 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                         )
                       )
         encoded    <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
-        html       <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
-        expected =
-          "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\"></div></div>"
-      yield assertTrue(
-        html._2 == expected,
-        encoded._2 == Json.Obj("s" -> Json.Arr(Json.Str(expected))),
-        !expected.contains("data-phx-static"),
+         html       <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
+         expected =
+           "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\" data-phx-static=\"\"></div></div>"
+       yield assertTrue(
+         html._2 == expected,
+         encoded._2 == Json.Obj("s" -> Json.Arr(Json.Str(expected))),
+         expected.contains("data-phx-static=\"\""),
         !expected.contains("data-phx-sticky"),
         !expected.contains("phx-loading")
+      )
+    },
+    test("disconnected HTML keeps alternate empty-keyed components isolated from root choices") {
+      def items(values: Signal[Vector[Int]]) =
+        values.splitBy(identity)((_, value) => span(value.map(_.toString)))
+      val directDefinition = new LiveComponent[Vector[Int], String, Vector[Int]]:
+        def mount(props: Vector[Int], ctx: MountContext) = ZIO.succeed(props)
+        def handleMessage(props: Vector[Int], model: Vector[Int], ctx: MessageContext) = _ =>
+          ZIO.succeed(model)
+        def view(props: Signal[Vector[Int]], model: Signal[Vector[Int]], self: ComponentRef[String]) =
+          div(idAttr := "result", items(model))
+      val asyncDefinition =
+        new LiveComponent[AsyncValue[Vector[Int]], String, AsyncValue[Vector[Int]]]:
+          def mount(props: AsyncValue[Vector[Int]], ctx: MountContext) = ZIO.succeed(props)
+          def handleMessage(
+            props: AsyncValue[Vector[Int]],
+            model: AsyncValue[Vector[Int]],
+            ctx: MessageContext
+          ) = _ => ZIO.succeed(model)
+          def view(
+            props: Signal[AsyncValue[Vector[Int]]],
+            model: Signal[AsyncValue[Vector[Int]]],
+            self: ComponentRef[String]
+          ) =
+            val current = model.map(AsyncValue.currentValue)
+            div(
+              idAttr := "result",
+              current.map(_.isDefined).chooseMod(
+                items(current.map(_.getOrElse(Vector.empty))),
+                ""
+              )
+            )
+      val rootCompiled = RenderProgram.compile[(String, AsyncValue[Vector[Int]]), Nothing](input =>
+        val caseName = input.map(_._1)
+        val data     = input.map(_._2)
+        val current  = data.map(AsyncValue.currentValue)
+        div(
+          Signal.when(caseName.map(_ == "second"))(div("separator")),
+          caseName
+            .map(_ == "first").chooseMod(
+              current.map(_.isDefined).chooseMod(
+                liveComponent(
+                  directDefinition,
+                  "direct",
+                  current.map(_.getOrElse(Vector.empty))
+                ),
+                ""
+              ),
+              liveComponent(asyncDefinition, "async", data)
+            ),
+          div(button("load"), button("remove"))
+        )
+      )
+      val componentCompiled = RenderProgram.compile[AsyncValue[Vector[Int]], String](model =>
+        val current = model.map(AsyncValue.currentValue)
+        div(
+          idAttr := "result",
+          current.map(_.isDefined).chooseMod(
+            items(current.map(_.getOrElse(Vector.empty))),
+            ""
+          )
+        )
+      )
+      val token = Object()
+      val ref   = ComponentRef.runtime[String](token)
+
+      for
+        rootProgram      <- ZIO.fromEither(rootCompiled)
+        componentProgram <- ZIO.fromEither(componentCompiled)
+        root             <- rootProgram.evaluate("second" -> AsyncValue.ok(Vector.empty))
+        component        <- componentProgram.evaluate(AsyncValue.ok(Vector.empty))
+        resolved <- ZIO.fromEither(
+                      root.resolveComponents(
+                        Vector(resolve(root.componentRequirements.head, ref, token, component))
+                      )
+                    )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
+      yield assertTrue(
+        html._2 ==
+          "<div><div>separator</div><div id=\"result\" data-phx-component=\"1\"></div><div><button>load</button><button>remove</button></div></div>"
       )
     },
     test("uses normal component and stream projection inside a disconnected nested child") {
@@ -215,9 +296,37 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       yield assertTrue(
         encoded._1.cidForToken(componentToken).contains(1),
         encoded._1.streamRef(identity).contains("0"),
-        field(streamPayload, "stream").asInstanceOf[Json.Arr].elements.head == Json.Str("0"),
-        html._2 ==
-          "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\"><div><span data-phx-component=\"1\">component child</span><span id=\"row\">stream child</span></div></div></div>"
+         field(streamPayload, "stream").asInstanceOf[Json.Arr].elements.head == Json.Str("0"),
+         html._2 ==
+           "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\" data-phx-static=\"\"><div><span data-phx-component=\"1\">component child</span><span id=\"row\">stream child</span></div></div></div>"
+      )
+    },
+    test("uses a sole same-id nested LiveView as the direct stream row container") {
+      val identity = LiveStreamIdentity.fresh()
+      val handle = stream(
+        identity,
+        1L,
+        Vector(StreamItem("item-1", "nested")),
+        Vector((StreamItem("item-1", "nested"), StreamAt.Last, None, false))
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(
+          model.stream((domId, _) => div(idAttr := domId, liveView(domId, TestView)))
+        )
+      )
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(handle)
+        resolved <- ZIO.fromEither(
+                      candidate.resolveNested(
+                        Vector(resolveNested(candidate.nestedRequirements.head, Object()))
+                      )
+                    )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
+       yield assertTrue(
+         html._2 ==
+           "<div><div id=\"item-1\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\" data-phx-static=\"\"></div></div>"
       )
     },
     test("rejects unresolved nested nodes and replaces only changed nested instances") {
@@ -266,10 +375,10 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           Left(PhoenixEncodingError.UnresolvedNested(unresolved.tree.root.children.head.id)),
         retainedUpdate._2 == Json.Obj.empty,
         changedUpdate._2 == Json.Obj(
-          "s" -> Json.Arr(
-            Json.Str(
-              "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\"></div></div>"
-            )
+           "s" -> Json.Arr(
+             Json.Str(
+               "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\" data-phx-static=\"\"></div></div>"
+             )
           )
         )
       )
@@ -356,6 +465,42 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
             "stream" -> Json.Arr(Json.Str("0"), Json.Arr(), Json.Arr())
           )
         )
+      )
+    },
+    test("projects row-local bindings as keyed stream dynamics") {
+      val identity = LiveStreamIdentity.fresh()
+      val initial = stream(
+        identity,
+        1L,
+        Vector(StreamItem("a", "one"), StreamItem("b", "two"))
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], String](model =>
+        div(
+          model.stream((domId, item) =>
+            button(
+              idAttr              := domId,
+              phx.value("row-id") := domId,
+              on.click(item.map(_.id)),
+              item.map(_.label)
+            )
+          )
+        )
+      )
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(initial)
+        encoded   <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
+        html      <- ZIO.fromEither(PhoenixRenderedEncoder.html(encoded._1))
+      yield assertTrue(
+        html.contains("id=\"a\""),
+        html.contains("id=\"b\""),
+        html.contains("phx-value-row-id=\"a\""),
+        html.contains("phx-value-row-id=\"b\""),
+        html.contains("phx-click=\""),
+        field(dynamic(encoded._2), "k") match
+          case Json.Obj(fields) => fields.toMap.get("kc").contains(Json.Num(2))
+          case _                => false
       )
     },
     test("encodes Index and Last positions, signed limits, and retains the bounded order") {
@@ -544,8 +689,8 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         Vector(StreamItem("a", "one")),
         Vector((StreamItem("a", "one"), StreamAt.Last, None, false))
       )
-      val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "stream", "stream"))
+      val rootCompiled = RenderProgram.compile[Boolean, Nothing](selected =>
+        div(selected.when(span(liveComponent(TestComponent, "stream", "stream"))))
       )
       val childCompiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
         div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
@@ -555,21 +700,32 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       for
         rootProgram <- ZIO.fromEither(rootCompiled)
         childProgram <- ZIO.fromEither(childCompiled)
-        root <- rootProgram.evaluate(())
+        root <- rootProgram.evaluate(true)
         child <- childProgram.evaluate(handle)
         resolved <- ZIO.fromEither(
           root.resolveComponents(Vector(resolve(root.componentRequirements.head, ref, token, child)))
         )
         encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
+        absent <- rootProgram.evaluate(false, Some(resolved.commit))
+        removed <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       encoded._1,
+                       TreeDiffer.diff(resolved.tree, absent.tree)
+                     )
+                   )
+        destroyed = removed._1.markComponentsForDeletion(Vector(1)).destroyComponents(Vector(1))
         components = field(encoded._2, "c").asInstanceOf[Json.Obj]
         component = field(components, "1").asInstanceOf[Json.Obj]
       yield assertTrue(
         encoded._1.cidForToken(token).contains(1),
         encoded._1.streamRef(identity).contains("0"),
+        removed._1.streamRef(identity).contains("0"),
+        destroyed._1.streamRef(identity).isEmpty,
         field(component, "s") == Json.Arr(
           Json.Str("<div data-phx-component=\"1\">"),
           Json.Str("</div>")
         ),
+        field(component, "r") == Json.Num(1),
         field(dynamic(component), "stream") == Json.Arr(
           Json.Str("0"),
           Json.Arr(Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))),
@@ -623,8 +779,8 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         initial._1.cidForToken(token).contains(1),
         field(initial._2, "c").asInstanceOf[Json.Obj].fields.map(_._1).toSet == Set("1"),
         field(rowZero, "1") == Json.Num(1),
-        updated._1.cidForToken(token).isEmpty,
-        updated._1.tokenForCid(1).isEmpty,
+        updated._1.cidForToken(token).contains(1),
+        updated._1.tokenForCid(1).contains(token),
         field(dynamic(updated._2), "stream") ==
           Json.Arr(Json.Str("0"), Json.Arr(), Json.Arr(Json.Str("a"))),
         projectedStreamRows(updated._1).isEmpty
@@ -787,14 +943,16 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                 Json.Str("<span data-phx-component=\"1\">"),
                 Json.Str("</span>")
               ),
-              "0" -> Json.Str("left")
+              "0" -> Json.Str("left"),
+              "r" -> Json.Num(1)
             ),
             "2" -> Json.Obj(
               "s" -> Json.Arr(
                 Json.Str("<span data-phx-component=\"2\">"),
                 Json.Str("</span>")
               ),
-              "0" -> Json.Str("right")
+              "0" -> Json.Str("right"),
+              "r" -> Json.Num(1)
             )
           )
         ),
@@ -865,6 +1023,16 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           )
         )
         updated <- ZIO.fromEither(PhoenixRenderedEncoder.update(initial._1, delta))
+        forced <- ZIO.fromEither(
+                    PhoenixRenderedEncoder.update(
+                      initial._1.markComponentsForDeletion(Vector(2)),
+                      delta
+                    )
+                  )
+        forcedComponent = field(
+                            field(forced._2, "c").asInstanceOf[Json.Obj],
+                            "2"
+                          ).asInstanceOf[Json.Obj]
         html    <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolvedRoot.tree))
       yield assertTrue(
         initial._1.cidForToken(outerToken).contains(1),
@@ -872,6 +1040,8 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         updated._2 == Json.Obj(
           "c" -> Json.Obj("2" -> Json.Obj("0" -> Json.Str("after")))
         ),
+        forcedComponent.fields.toMap.contains("s"),
+        field(forcedComponent, "r") == Json.Num(1),
         updated._1.cidForToken(innerToken).contains(2),
         html._2 ==
           "<div><div data-phx-component=\"1\"><span data-phx-component=\"2\">before</span></div></div>",
@@ -905,23 +1075,24 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         fields          = component.fields.toMap
       yield assertTrue(
         fields("s") == Json.Arr(
-          Json.Str("<button phx-target=\"1\" data-phx-component=\"1\">"),
+          Json.Str("<button"),
+          Json.Str(" data-phx-component=\"1\">"),
           Json.Str("</button>")
         ),
+        fields("0") == Json.Str(" phx-target=\"1\""),
+        fields("1") == Json.Str("click"),
         html._2 ==
           "<div><button phx-target=\"1\" data-phx-component=\"1\">click</button></div>",
         html._1.cidForToken(token).contains(1)
       )
     },
-    test("retires removed CIDs and assigns a fresh CID after reintroduction") {
+    test("retains and reuses removed CIDs until the browser confirms destruction") {
       val rootCompiled = RenderProgram.compile[Boolean, Nothing](selected =>
         div(selected.when(span(liveComponent(TestComponent, "child", "child"))))
       )
       val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
       val firstToken    = Object()
-      val secondToken   = Object()
       val firstRef      = ComponentRef.runtime[String](firstToken)
-      val secondRef     = ComponentRef.runtime[String](secondToken)
       for
         rootProgram  <- ZIO.fromEither(rootCompiled)
         childProgram <- ZIO.fromEither(childCompiled)
@@ -952,40 +1123,58 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                            presentAgain.resolveComponents(
                              Vector(
                                resolve(
-                                 presentAgain.componentRequirements.head,
-                                 secondRef,
-                                 secondToken,
-                                 child
+                                  presentAgain.componentRequirements.head,
+                                  firstRef,
+                                  firstToken,
+                                  child
                                )
                              )
                            )
                          )
+        marked = removed._1.markComponentsForDeletion(Vector(1))
         reintroduced <- ZIO.fromEither(
-                          PhoenixRenderedEncoder.update(
-                            removed._1,
-                            TreeDiffer.diff(absent.tree, resolvedAgain.tree)
-                          )
-                        )
+                           PhoenixRenderedEncoder.update(
+                             marked,
+                             TreeDiffer.diff(absent.tree, resolvedAgain.tree)
+                           )
+                         )
+        ignored   = reintroduced._1.destroyComponents(Vector(1))
+        delayed   = reintroduced._1.markComponentsForDeletion(Vector(1))
+        stale     = delayed.destroyComponents(Vector(1))
+        destroyed = marked.destroyComponents(Vector(1))
+        fresh <- ZIO.fromEither(
+                   PhoenixRenderedEncoder.update(
+                     destroyed._1,
+                     TreeDiffer.diff(absent.tree, resolvedAgain.tree)
+                   )
+                 )
       yield assertTrue(
         initial._1.tokenForCid(1).contains(firstToken),
         removed._2 == Json.Obj("s" -> Json.Arr(Json.Str("<div></div>"))),
-        removed._1.tokenForCid(1).isEmpty,
-        removed._1.cidForToken(firstToken).isEmpty,
+        removed._1.tokenForCid(1).contains(firstToken),
+        removed._1.cidForToken(firstToken).contains(1),
         reintroduced._2 == Json.Obj(
           "s" -> Json.Arr(Json.Str("<div><span>"), Json.Str("</span></div>")),
-          "0" -> Json.Num(2),
+          "0" -> Json.Num(1),
           "c" -> Json.Obj(
-            "2" -> Json.Obj(
+            "1" -> Json.Obj(
               "s" -> Json.Arr(
-                Json.Str("<span data-phx-component=\"2\">"),
+                Json.Str("<span data-phx-component=\"1\">"),
                 Json.Str("</span>")
               ),
-              "0" -> Json.Str("child")
+              "0" -> Json.Str("child"),
+              "r" -> Json.Num(1)
             )
           )
         ),
-        reintroduced._1.cidForToken(secondToken).contains(2),
-        reintroduced._1.tokenForCid(1).isEmpty
+        reintroduced._1.cidForToken(firstToken).contains(1),
+        ignored._2.isEmpty,
+        ignored._1.cidForToken(firstToken).contains(1),
+        stale._2.isEmpty,
+        stale._1.cidForToken(firstToken).contains(1),
+        destroyed._2 == Vector(1),
+        destroyed._1.cidForToken(firstToken).isEmpty,
+        fresh._1.cidForToken(firstToken).contains(2)
       )
     },
     test("replaces a component token at the same declaration with a monotonic CID") {
@@ -1044,11 +1233,12 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                 Json.Str("<span data-phx-component=\"2\">"),
                 Json.Str("</span>")
               ),
-              "0" -> Json.Str("child")
+              "0" -> Json.Str("child"),
+              "r" -> Json.Num(1)
             )
           )
         ),
-        replaced._1.cidForToken(firstToken).isEmpty,
+        replaced._1.cidForToken(firstToken).contains(1),
         replaced._1.cidForToken(secondToken).contains(2)
       )
     },
@@ -1144,14 +1334,16 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                 Json.Str("<div data-phx-component=\"1\"><span>"),
                 Json.Str("</span></div>")
               ),
-              "0" -> Json.Num(2)
+              "0" -> Json.Num(2),
+              "r" -> Json.Num(1)
             ),
             "2" -> Json.Obj(
               "s" -> Json.Arr(
                 Json.Str("<span data-phx-component=\"2\">"),
                 Json.Str("</span>")
               ),
-              "0" -> Json.Str("inner")
+              "0" -> Json.Str("inner"),
+              "r" -> Json.Num(1)
             )
           )
         ),
@@ -1159,11 +1351,12 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         removed._2 == Json.Obj(
           "c" -> Json.Obj(
             "1" -> Json.Obj(
-              "s" -> Json.Arr(Json.Str("<div data-phx-component=\"1\"></div>"))
+              "s" -> Json.Arr(Json.Str("<div data-phx-component=\"1\"></div>")),
+              "r" -> Json.Num(1)
             )
           )
         ),
-        removed._1.tokenForCid(2).isEmpty
+        removed._1.tokenForCid(2).contains(innerToken)
       )
     },
     test("rejects stale and ambiguous targets without mutating prior state") {

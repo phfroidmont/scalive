@@ -1,7 +1,8 @@
 package scalive.runtime.connection
 
 import zio.*
-import zio.json.JsonDecoder
+import zio.json.*
+import zio.json.ast.Json
 
 import scalive.*
 import scalive.render.StreamRequirement
@@ -162,31 +163,52 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     props: P,
     model: A,
     command: SessionCommand.ComponentClientEvent,
+    message: Task[M],
     emit: O => Task[Unit],
     state: ComponentEnvironmentState,
     draft: Draft
-  ): Task[Option[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]]] =
-    (command.eventName, command.rawJson) match
-      case (Some(name), Some(raw)) =>
-        for
-          turn <- ComponentTurn.make(
-                    draft,
-                    registry[P, M, A](state),
-                    lifecycle,
-                    id,
-                    ownerEpoch,
-                    streamStore(state)
-                  )
-          hooks <- turn.hookRegistry[P, M, A]
-          matching = hooks.browser.filter(_.name == name)
-          result <-
-            if matching.isEmpty then ZIO.none
-            else
-              val context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
-              runBrowserHooks(matching, props, model, raw, context)
-                .flatMap(turn.result).map(Some(_))
-        yield result
-      case _ => ZIO.none
+  ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
+    for
+      turn <- ComponentTurn.make(
+                draft,
+                registry[P, M, A](state),
+                lifecycle,
+                id,
+                ownerEpoch,
+                streamStore(state)
+              )
+      hooks <- turn.hookRegistry[P, M, A]
+      context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
+      raw <- command.event.fold[LiveIO[LiveEventHookResult[A]]](
+               ZIO.succeed(LiveEventHookResult.cont(model))
+             )(event => runRawHooks(hooks.raw, props, model, event, context))
+      result <- raw match
+                  case LiveEventHookResult.Halt(next, reply) => turn.result(next, reply)
+                  case LiveEventHookResult.Continue(next)    =>
+                    val matching = command.event.fold(Vector.empty)(event =>
+                      hooks.browser.filter(_.name == event.bindingId)
+                    )
+                    if matching.nonEmpty then
+                      runBrowserHooks(
+                        matching,
+                        props,
+                        next,
+                        command.event.get.value.toJson,
+                        context
+                      ).flatMap(turn.result(_))
+                    else
+                      for
+                        value   <- message
+                        hooked  <- runEventHooks(hooks.event, props, next, value, context)
+                        handled <- hooked match
+                                     case LiveHookResult.Halt(current)     => ZIO.succeed(current)
+                                     case LiveHookResult.Continue(current) =>
+                                       ZIO.suspend(
+                                         component.handleMessage(props, current, context)(value)
+                                       )
+                        result <- turn.result(handled)
+                      yield result
+    yield result
 
   def afterRender[P, M, A](
     id: ComponentInstanceId,
@@ -281,6 +303,22 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
                 ZIO.logWarning("component browser event payload was malformed").as(Left(()))
         }
       }.map(_.fold(_ => committed, identity))
+
+  private def runRawHooks[P, M, A](
+    hooks: Vector[ComponentHookRegistry.Raw[P, M, A]],
+    props: P,
+    initial: A,
+    event: LiveEvent,
+    context: ComponentMessageContext[P, M, A]
+  ): LiveIO[LiveEventHookResult[A]] =
+    hooks.foldLeft[LiveIO[LiveEventHookResult[A]]](
+      ZIO.succeed(LiveEventHookResult.cont(initial))
+    ) { (effect, hook) =>
+      effect.flatMap {
+        case halted: LiveEventHookResult.Halt[A] => ZIO.succeed(halted)
+        case LiveEventHookResult.Continue(model) => hook.invoke(props, model, event, context)
+      }
+    }
 end ConnectedComponentEnvironment
 
 private[connection] object ConnectedComponentEnvironment:
@@ -321,8 +359,13 @@ final private class ComponentTurn[RootMsg, RootModel] private (
 
   def currentUrl = initial.model.url
 
-  def result[A](model: A): UIO[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
-    snapshot.map { case (draft, state) => ComponentCallbackResult(model, draft, state) }
+  def result[A](
+    model: A,
+    reply: Option[Json] = None
+  ): UIO[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
+    snapshot.map { case (draft, state) =>
+      ComponentCallbackResult(model, draft.copy(reply = reply.orElse(draft.reply)), state)
+    }
 
   def afterRenderResult: UIO[ComponentAfterRenderResult[RootMsg, RootState[RootMsg, RootModel]]] =
     snapshot.map { case (draft, state) => ComponentAfterRenderResult(draft, state) }
@@ -380,20 +423,31 @@ private object ComponentTurn:
     yield ComponentTurn(draft, root, componentHooks)
 
 final private case class ComponentHookRegistry[P, M, A](
+  staticRaw: Vector[ComponentHookRegistry.Raw[P, M, A]],
   staticBrowser: Vector[ComponentHookRegistry.Browser[P, M, A]],
   staticEvent: Vector[ComponentHookRegistry.Event[P, M, A]],
   staticAsync: Vector[ComponentHookRegistry.Async[P, M, A]],
   staticAfterRender: Vector[ComponentHookRegistry.AfterRender[P, M, A]],
+  dynamicRaw: Vector[(String, ComponentHookRegistry.Raw[P, M, A])] = Vector.empty,
   dynamicBrowser: Vector[(String, ComponentHookRegistry.Browser[P, M, A])] = Vector.empty,
   dynamicEvent: Vector[(String, ComponentHookRegistry.Event[P, M, A])] = Vector.empty,
   dynamicAsync: Vector[(String, ComponentHookRegistry.Async[P, M, A])] = Vector.empty,
   dynamicAfterRender: Vector[(String, ComponentHookRegistry.AfterRender[P, M, A])] = Vector.empty):
+  def raw         = staticRaw ++ dynamicRaw.map(_._2)
   def browser     = staticBrowser ++ dynamicBrowser.map(_._2)
   def event       = staticEvent ++ dynamicEvent.map(_._2)
   def async       = staticAsync ++ dynamicAsync.map(_._2)
   def afterRender = staticAfterRender ++ dynamicAfterRender.map(_._2)
 
 private object ComponentHookRegistry:
+  trait Raw[P, M, A]:
+    def invoke(
+      props: P,
+      model: A,
+      event: LiveEvent,
+      context: ComponentMessageContext[P, M, A]
+    ): LiveIO[LiveEventHookResult[A]]
+
   trait Browser[P, M, A]:
     def name: String
     def invoke(props: P, model: A, raw: String, context: ComponentMessageContext[P, M, A])
@@ -422,7 +476,18 @@ private object ComponentHookRegistry:
 
   def fromStatic[P, M, A](hooks: ComponentLiveHooks[P, M, A]): ComponentHookRegistry[P, M, A] =
     hooks match
-      case _: ComponentLiveHooks.Empty[P, M, A]              => empty
+      case _: ComponentLiveHooks.Empty[P, M, A]       => empty
+      case hook: ComponentLiveHooks.RawEvent[P, M, A] =>
+        val previous = fromStatic(hook.previous)
+        previous.copy(staticRaw =
+          previous.staticRaw :+ new Raw[P, M, A]:
+            def invoke(
+              props: P,
+              model: A,
+              event: LiveEvent,
+              context: ComponentMessageContext[P, M, A]
+            ) = hook.hook(props, model, event, context)
+        )
       case hook: ComponentLiveHooks.BrowserEvent[P, M, A, ?] =>
         val previous = fromStatic(hook.previous)
         previous.copy(staticBrowser =
@@ -463,6 +528,8 @@ private object ComponentHookRegistry:
       Vector.empty,
       Vector.empty,
       Vector.empty,
+      Vector.empty,
+      Vector.empty,
       Vector.empty
     )
 
@@ -476,6 +543,32 @@ end ComponentHookRegistry
 
 final private class JournaledComponentHooks[P, M, A](turn: ComponentHookJournal)
     extends ComponentHooks[P, M, A]:
+  val rawEvent = new ComponentRawEventHooks[P, M, A]:
+    def attach(
+      id: String
+    )(
+      hook: (P, A, LiveEvent, ComponentMessageContext[P, M, A]) => LiveIO[
+        LiveEventHookResult[A]
+      ]
+    ) = turn.updateHooks[P, M, A](registry =>
+      registry.copy(dynamicRaw =
+        ComponentHookRegistry.replace(
+          registry.dynamicRaw,
+          id,
+          new ComponentHookRegistry.Raw[P, M, A]:
+            def invoke(
+              props: P,
+              model: A,
+              event: LiveEvent,
+              context: ComponentMessageContext[P, M, A]
+            ) = hook(props, model, event, context)
+        )
+      )
+    )
+    def detach(id: String) = turn.updateHooks[P, M, A](registry =>
+      registry.copy(dynamicRaw = ComponentHookRegistry.detach(registry.dynamicRaw, id))
+    )
+
   val browserEvent = new ComponentBrowserEventHooks[P, M, A]:
     def attach[B: JsonDecoder](
       id: String,

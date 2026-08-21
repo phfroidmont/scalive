@@ -32,13 +32,13 @@ sealed private[docs] trait RegisteredExample:
   def projectMessage(value: Any): Option[ExampleTraceValue]
   def projectModel(value: Any): Option[ExampleTraceValue]
 
-final private class ExampleEntry[Msg: LiveMessageTag, Model: ClassTag](
+final private class ExampleEntry[Msg: ClassTag, Model: ClassTag](
   val descriptor: ExampleDescriptor,
   factory: String => LiveView[Msg, Model],
   reset: ExampleReset[Msg],
   traces: ExampleTraceProjectors[Msg, Model])
     extends RegisteredExample:
-  private val messageTag = summon[LiveMessageTag[Msg]].classTag
+  private val messageTag = summon[ClassTag[Msg]]
   private val modelTag   = summon[ClassTag[Model]]
 
   val resetControlLabel: String = reset.controlLabel

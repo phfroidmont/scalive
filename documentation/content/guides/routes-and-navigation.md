@@ -35,7 +35,7 @@ query codecs decode query values. A routed view receives the final value through
 
 ## Map Parameters Into Domain Types {#map-parameters-into-domain-types}
 
-Use @:apiSymbol(def:scalive.LiveRouteParamsBuilder.mapParams)`mapParams`@:@ when the codec-facing shape is not the shape the
+Use @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.mapParams)`mapParams`@:@ when the codec-facing shape is not the shape the
 application should use. Supply both directions:
 
 ```scala
@@ -90,7 +90,7 @@ location before issuing a patch.
 
 ## Build Locations From Route Declarations {#build-locations-from-route-declarations}
 
-Call @:apiSymbol(def:scalive.LiveRouteParamsBuilder.location)`location(params)`@:@ to create a
+Call @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.location)`location(params)`@:@ to create a
 @:apiSymbol(class:scalive.LiveLocation)`LiveLocation`@:@:
 
 ```scala

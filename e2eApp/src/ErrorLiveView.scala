@@ -16,8 +16,10 @@ class ErrorLiveView
     Model()
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
-    if !ctx.connected && params.deadMountRaise then ZIO.fail(RuntimeException("boom"))
-    else if ctx.connected && params.connectedMountRaise then ZIO.fail(RuntimeException("boom"))
+    if ctx.connection == Connection.Disconnected && params.deadMountRaise then
+      ZIO.fail(RuntimeException("boom"))
+    else if ctx.connection.isInstanceOf[Connection.Connected[?]] && params.connectedMountRaise then
+      ZIO.fail(RuntimeException("boom"))
     else model.copy(child = childBehavior(params, ctx))
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -110,8 +112,10 @@ object ErrorLiveView:
 
   class ChildLiveView(behavior: ChildBehavior) extends LiveView[ChildMsg, ChildModel]:
     def mount(ctx: MountContext) =
-      if ctx.connected && behavior.failNextConnectedMount then ZIO.fail(RuntimeException("boom"))
-      else ChildModel(connected = ctx.connected)
+      ctx.connection match
+        case Connection.Connected(_) if behavior.failNextConnectedMount =>
+          ZIO.fail(RuntimeException("boom"))
+        case connection => ChildModel(connected = connection != Connection.Disconnected)
 
     def handleMessage(model: ChildModel, ctx: MessageContext) =
       case ChildMsg.CrashChild => ZIO.fail(RuntimeException("boom"))
@@ -142,7 +146,10 @@ object ErrorLiveView:
       case None                 => None
 
   private def connectedRootMountCount(ctx: scalive.ParamsContext[Msg, Model]): Int =
-    ctx.connectParams
+    val connectParams = ctx.connection match
+      case Connection.Disconnected            => Map.empty
+      case Connection.Connected(capabilities) => capabilities.connectParams
+    connectParams
       .get("_mounts")
       .flatMap {
         case Json.Num(value) => Some(value.intValue)

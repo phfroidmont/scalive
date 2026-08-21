@@ -4,10 +4,11 @@ import org.jsoup.Jsoup
 import zio.*
 import zio.test.*
 
-import scalive.docs.{DocumentationApplication, SiteLiveViewHarness}
+import scalive.docs.DocumentationApplication
+import scalive.testing.{ConnectedRender, ConnectedView}
 
 object NavigationExampleSpec extends ZIOSpecDefault:
-  private def state(harness: SiteLiveViewHarness[?, ?]) =
+  private def state(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
 
   override def spec = suite("NavigationExampleSpec")(
@@ -21,7 +22,7 @@ object NavigationExampleSpec extends ZIOSpecDefault:
     test("selects a query and exposes push and replace navigation to the same location") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new NavigationExample)
+          harness <- ConnectedRender.join(new NavigationExample)
           _       <- harness.click("[data-navigation-preset=streams]")
           current <- state(harness)
         yield assertTrue(
@@ -36,7 +37,7 @@ object NavigationExampleSpec extends ZIOSpecDefault:
     test("renders replace navigation from the same typed location") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new NavigationExample)
+          harness <- ConnectedRender.join(new NavigationExample)
           _       <- harness.click("[data-navigation-preset='typed forms']")
           current <- state(harness)
         yield assertTrue(
@@ -49,9 +50,9 @@ object NavigationExampleSpec extends ZIOSpecDefault:
     test("resets the selected destination") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new NavigationExample)
+          harness <- ConnectedRender.join(new NavigationExample)
           _       <- harness.click("[data-navigation-preset=streams]")
-          _       <- harness.sendServer(NavigationExample.Msg.Reset)
+          _       <- harness.send(NavigationExample.Msg.Reset)
           current <- state(harness)
         yield assertTrue(current.select("[data-navigation-query]").text() == "LiveView")
       }

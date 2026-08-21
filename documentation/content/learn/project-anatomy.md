@@ -38,8 +38,9 @@ give navigation code one typed source of URLs.
 `RootLayout.scala` is the document boundary. A
 @:apiSymbol(trait:scalive.LiveRootLayout)`LiveRootLayout`@:@ renders the outer
 `<html>`, `<head>`, and `<body>`. It owns global scripts, stylesheets, metadata,
-and the fallback title. With security enabled, Scalive injects the browser-bound
-CSRF meta token into its `<head>`.
+and the fallback title. When served through `ZioHttp.routes` with validated
+configuration, Scalive injects the browser-bound CSRF meta token into its
+`<head>`.
 
 `CounterLiveView.scala` is the interactive-page boundary.
 @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ creates connection-local
@@ -61,14 +62,15 @@ outputs, renders tracked URLs, and serves them.
 ## Understand Both Mounts {#understand-both-mounts}
 
 The initial page is an ordinary HTTP response. Scalive mounts and renders the
-LiveView with `ctx.connected == false`, the root layout wraps it, and security
-adds the CSRF token and cookie.
+LiveView with `ctx.connection == Connection.Disconnected`, the root layout wraps
+it, and security adds the CSRF token and cookie.
 
 The JavaScript client then opens `/live`. Scalive validates the token and mounts
-a new lifecycle with `ctx.connected == true`. Events affect this connected
-model; they do not continue the model created for the HTTP render. Make
-@:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ repeatable and guard work that
-requires a socket with @:apiSymbol(def:scalive.LifecycleContext.connected)`ctx.connected`@:@.
+a new lifecycle with `Connection.Connected(capabilities)`. Events affect this
+connected model; they do not continue the model created for the HTTP render.
+Make @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ repeatable, match
+@:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@, and take
+socket-only capabilities from the connected branch.
 
 ## Keep Dependencies Pointing Inward {#keep-dependencies-pointing-inward}
 

@@ -132,7 +132,7 @@ final private[scalive] class NestedTopologyRuntime private (
                     parentDomId = parentDomId,
                     topic = registration.topic,
                     joinCredential = active.credentials.join,
-                    staticCredential = active.credentials.static,
+                    staticCredential = None,
                     sticky = registration.sticky,
                     loading = loading
                   )

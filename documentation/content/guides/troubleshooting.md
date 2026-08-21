@@ -31,8 +31,9 @@ deciding which phase failed:
 
 @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ must be repeatable. The disconnected model is not continued by the
 connected socket, and a rejoin creates another connected model. Restrict
-subscriptions and other connection-only effects with
-@:apiSymbol(def:scalive.LifecycleContext.connected)`ctx.connected`@:@; persist
+subscriptions and other connection-only effects to the
+`Connection.Connected(capabilities)` branch of
+@:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@; persist
 state outside the @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ when it must survive reconnects or process restarts.
 
 ## Diagnose Startup Failures {#diagnose-startup-failures}
@@ -41,7 +42,8 @@ Check the startup path in order:
 
 - Build the browser bundle before starting the JVM.
 - Load every declared asset with @:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@.
-- Construct one @:apiSymbol(class:scalive.LiveSecurity)`LiveSecurity`@:@ and apply it to the router.
+- Validate one @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@ and pass
+  it to @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@.
 - Attach a complete root layout containing `<html>`, `<head>`, and `<body>`.
 - Combine the Live routes with @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
 - Provide all ZIO environment requirements before calling `Server.serve`.
@@ -51,25 +53,27 @@ is absent. Route construction also validates invalid or duplicate Live route
 configurations. Preserve those failures rather than replacing them with a
 server that starts partially.
 
-For production, configure a stable, secret `SCALIVE_TOKEN_SECRET`. If it is
-empty or absent, @:apiSymbol(val:scalive.TokenConfig.default)`TokenConfig.default`@:@ generates a process-local secret. A
-restart then invalidates session, flash, mount-claim, and CSRF tokens signed by
-the previous process, and independently started replicas will not accept one
-another's tokens. `SCALIVE_TOKEN_MAX_AGE_SECONDS` accepts a positive number of
-seconds; otherwise the current default is seven days.
+For production, require one stable, high-entropy signing secret on every replica.
+@:apiSymbol(def:scalive.ZioHttpConfig.apply)`ZioHttpConfig.apply`@:@ rejects a
+secret shorter than 32 UTF-8 bytes and a zero or negative session age. Surface
+either result as a startup failure. A random process-local fallback makes
+restarts invalidate session, flash, mount-claim, and CSRF tokens, and prevents
+replicas from accepting one another's tokens.
 
 Use secure cookies behind HTTPS:
 
 ```scala
-val security = LiveSecurity(
-  TokenConfig.default,
-  CookiePolicy(secure = true)
-)
+val config = ZioHttpConfig(
+  signingSecret = requiredSecret,
+  sessionMaxAge = java.time.Duration.ofDays(7),
+  secureCookie = true
+).fold(error => throw IllegalArgumentException(error.toString), identity)
+
+val security = LiveSecurity(config)
 ```
 
-The default @:apiSymbol(class:scalive.LiveSecurity)`LiveSecurity`@:@ cookie policy has
-`secure = false`; that is convenient for local HTTP, not an automatic production
-policy.
+The `secureCookie` value is explicit; local HTTP may use `false`, while
+browser-facing HTTPS should use `true`.
 
 ## Diagnose Missing Assets {#diagnose-missing-assets}
 
@@ -85,11 +89,11 @@ for
   assets <- StaticAssets.load(
               StaticAssetConfig.classpath("public", Seq("app.js", "app.css"))
             )
-  liveRoutes = Live.router
-                 .withSecurity(security)
-                 .withRootLayout(RootLayout(assets))(
-                   Routes.home -> HomeLiveView()
-                 )
+  application = Live.router
+                  .withRootLayout(RootLayout(assets))(
+                    Routes.home -> HomeLiveView()
+                  )
+  liveRoutes = ZioHttp.routes(application, security)
   routes = liveRoutes ++ assets.routes
   _ <- Server.serve(routes).provide(Server.default)
 yield ()
@@ -139,7 +143,7 @@ cannot rely on transport fallback.
 
 ## Diagnose CSRF Rejections {#diagnose-csrf-rejections}
 
-With router security enabled, the disconnected render injects a
+When `ZioHttp.routes` receives its validated config, the disconnected render injects a
 `<meta name="csrf-token">` element into the root layout's `<head>` and issues the
 matching `_scalive_csrf` cookie. The browser must return the meta value as
 `_csrf_token` in LiveSocket params:
@@ -178,7 +182,7 @@ the server to mount a fresh connected lifecycle. Verify that:
 - durable user state is loaded from a shared service rather than only from the
   previous model;
 - repeated mount side effects are idempotent or explicitly guarded;
-- deployed replicas share the token secret; and
+- deployed replicas share the signing secret; and
 - proxy idle timeouts are not repeatedly terminating healthy sockets.
 
 The runtime emits a Phoenix-compatible `phx_error` when a joined root
@@ -189,7 +193,7 @@ protocol error payloads, stale cases, crash logging, and reconnect/remount parit
 still need systematic upstream auditing. Write a browser test for the concrete
 recovery behavior your application promises.
 
-Tracked static assets and `LiveContext.staticChanged` are implemented, but
+Tracked static assets and `ConnectedMetadata.staticChanged` are implemented, but
 explicit typed connect-info support remains partial. Avoid designing recovery
 logic around undocumented raw connect parameters.
 
@@ -198,7 +202,7 @@ logic around undocumented raw connect parameters.
 Current operational and diagnostic limits include:
 
 - no long-poll transport fallback;
-- no public connected LiveView test harness;
+- connected server-side testing does not cross the real browser DOM boundary;
 - no complete telemetry or observability API, although selected runtime branches
   log warnings and errors;
 - partial typed connect-params and connect-info support;

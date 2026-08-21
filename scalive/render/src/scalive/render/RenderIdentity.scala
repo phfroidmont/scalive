@@ -63,6 +63,8 @@ object BindingId:
   private[render] def event(program: RenderProgramId, slot: BindingSlotId): BindingId =
     s"b${RenderProgramId.value(program)}:$slot"
 
+  private[render] def js(slot: BindingSlotId): BindingId = s"j${BindingSlotId.value(slot)}"
+
   def fromEncoded(value: String): BindingId = value
 
   extension (id: BindingId) def encoded: String = id

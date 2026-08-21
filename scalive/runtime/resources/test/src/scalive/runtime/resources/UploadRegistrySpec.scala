@@ -164,28 +164,39 @@ object UploadRegistrySpec extends ZIOSpecDefault:
         preflight.hostedRegistrations.size == 1
       )
     },
-    test("preflight is idempotent, reconciles omissions, and rejects conflicting metadata") {
+    test("preflight is idempotent, retains completed omissions, and rejects conflicting metadata") {
       for
         preflights <- Ref.make(0)
         discards   <- Ref.make(0)
         uploader    = new ExternalUploader(preflights, discards)
         key         = UploadKey(LiveUploadDef.external("files", LiveUploadAccept.Any, uploader, maxEntries = 2))
         allowed     = UploadRegistry.empty.allow(root, epoch, key, ref("u")).toOption.get
-        selected    = Vector(entryRef("a") -> metadata("a"), entryRef("b") -> metadata("b"))
+        selected    = Vector(entryRef("a") -> metadata("a"))
         first       = allowed._1.preflight(allowed._2, selected).toOption.get
         repeated    = first.registry.preflight(allowed._2, selected).toOption.get
         prepared   <- first.externalPreparations.head.operation.run.map(_.toOption.get)
         installed   = repeated.registry.installExternal(prepared)
-        shrunk      = installed.registry.preflight(allowed._2, selected.drop(1)).toOption.get
-        conflict    = shrunk.registry.preflight(allowed._2, Vector(entryRef("b") -> metadata("changed")))
+        completed   = installed.registry.progress(prepared.entry.asInstanceOf[UploadEntryToken[String]], 100).toOption.get
+        appended = completed.preflight(
+          allowed._2,
+          Vector(entryRef("b") -> metadata("b"))
+        ).toOption.get
+        current  = snapshot(appended.registry, root, key)
+        conflict = appended.registry.preflight(
+          allowed._2,
+          Vector(entryRef("b") -> metadata("changed"))
+        )
       yield assertTrue(
         repeated.externalPreparations.isEmpty,
         repeated.hostedRegistrations.isEmpty,
-        shrunk.retirement.instructions.size == 1,
+        appended.externalPreparations.size == 1,
+        appended.retirement.instructions.isEmpty,
+        current.entries.map(_.ref) == List(entryRef("a"), entryRef("b")),
+        current.entries.head.status == LiveUploadEntryStatus.Completed,
         conflict == Left(UploadRegistryError.MetadataMismatch(entryRef("b")))
       )
     },
-    test("too-many-files entry recovers when browser selection shrinks") {
+    test("too-many-files entry recovers only after explicit cancellation frees capacity") {
       for
         preflights <- Ref.make(0)
         discards   <- Ref.make(0)
@@ -197,15 +208,57 @@ object UploadRegistrySpec extends ZIOSpecDefault:
           Vector(entryRef("a") -> metadata("a"), entryRef("b") -> metadata("b"))
         ).toOption.get
         firstSnapshot = snapshot(first.registry, root, key)
-        recovered = first.registry.preflight(
+        retained = first.registry.preflight(
+          allowed._2,
+          Vector(entryRef("b") -> metadata("b"))
+        ).toOption.get
+        retainedSnapshot = snapshot(retained.registry, root, key)
+        cancelled = retained.registry
+                      .cancel(root, epoch, key, retainedSnapshot.entries.head)
+                      .toOption.get
+        recovered = cancelled.registry.preflight(
           allowed._2,
           Vector(entryRef("b") -> metadata("b"))
         ).toOption.get
         recoveredSnapshot = snapshot(recovered.registry, root, key)
       yield assertTrue(
         firstSnapshot.entries(1).errors == List(LiveUploadError.TooManyFiles),
+        firstSnapshot.errors == List(LiveUploadError.TooManyFiles),
+        retainedSnapshot.entries.map(_.ref) == List(entryRef("a"), entryRef("b")),
+        retainedSnapshot.errors == List(LiveUploadError.TooManyFiles),
         recoveredSnapshot.entries.head.status == LiveUploadEntryStatus.Preflighted,
+        recoveredSnapshot.errors.isEmpty,
         recovered.externalPreparations.size == 1
+      )
+    },
+    test("a stale browser selection cannot recreate a cancelled entry") {
+      for
+        fixture <- writerFixture
+        key       = UploadKey(
+                      LiveUploadDef.hosted(
+                        "files",
+                        LiveUploadAccept.Any,
+                        fixture.writer,
+                        maxEntries = 2
+                      )
+                    )
+        allowed   = UploadRegistry.empty.allow(root, epoch, key, ref("u")).toOption.get
+        first = allowed._1
+                  .synchronizeSelection(allowed._2, Vector(entryRef("0") -> metadata("first")))
+                  .toOption.get
+        firstEntry = snapshot(first.registry, root, key).entries.head
+        cancelled  = first.registry.cancel(root, epoch, key, firstEntry).toOption.get
+        staleSelection = Vector(
+                           entryRef("0") -> metadata("first"),
+                           entryRef("1") -> metadata("second")
+                         )
+        synchronized = cancelled.registry
+                         .synchronizeSelection(allowed._2, staleSelection).toOption.get
+        preflight = synchronized.registry.preflight(allowed._2, staleSelection).toOption.get
+        current   = snapshot(preflight.registry, root, key)
+      yield assertTrue(
+        current.entries.map(_.ref) == List(entryRef("1")),
+        preflight.hostedRegistrations.map(_.ref) == Vector(entryRef("1"))
       )
     },
     test("writer failure invalidates entry, blocks progress, and retires joined worker") {

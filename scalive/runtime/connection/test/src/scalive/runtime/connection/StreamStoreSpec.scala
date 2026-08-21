@@ -76,6 +76,8 @@ object StreamStoreSpec extends ZIOSpecDefault:
       assertTrue(
         values(first.stream) == Vector("a" -> 1, "b" -> 2),
         values(last.stream) == Vector("b" -> 2, "c" -> 3),
+        first.stream.inserted.map(_.entry.domId) == Vector("a", "b", "c"),
+        last.stream.inserted.map(_.entry.domId) == Vector("a", "b", "c"),
         first.stream.inserted.last.limit.contains(StreamLimit.KeepFirst(2)),
         last.stream.inserted.last.limit.contains(StreamLimit.KeepLast(2))
       )
@@ -96,6 +98,22 @@ object StreamStoreSpec extends ZIOSpecDefault:
         reset.stream.reset,
         values(deleted.stream).isEmpty,
         byId.stream.deleted == Vector("c", "missing")
+      )
+    },
+    test("delete followed by insert retains both operations so the browser can reorder the id") {
+      val streamDef = definition()
+      val created = StreamStore.empty.create(
+        streamDef,
+        List(Item("a", 1), Item("b", 2), Item("c", 3))
+      )
+      val committed = created.store.prune(streamDef)
+      val deleted  = committed.store.deleteByDomId(streamDef, "b")
+      val inserted = deleted.store.insert(streamDef, Item("b", 4), StreamAt.First)
+
+      assertTrue(
+        values(inserted.stream) == Vector("b" -> 4, "a" -> 1, "c" -> 3),
+        inserted.stream.deleted == Vector("b"),
+        inserted.stream.inserted.map(_.entry.domId) == Vector("b")
       )
     },
     test("updateOnly ignores a missing id but updates one already present") {
@@ -129,17 +147,22 @@ object StreamStoreSpec extends ZIOSpecDefault:
         values(all) == values(changed.stream)
       )
     },
-    test("definitions are reference-coherent and stores reject duplicate or missing targets") {
-      val coherent = definition()
-      val equalButDistinct = definition()
-      val created = StreamStore.empty.create(coherent, Nil)
+    test("definitions are DOM-id coherent and stores reject duplicate or missing targets") {
+      val coherent     = definition()
+      val incompatible = LiveStreamDef[Item]("items", item => s"other-${item.id}")
+      val created      = StreamStore.empty.create(coherent, Nil)
+      val limited = created.store.insert(
+        coherent.keepFirst(1),
+        Item("a", 1)
+      )
 
       assertTrue(
         fails(created.store.create(coherent, Nil)),
-        fails(created.store.insert(equalButDistinct, Item("a", 1))),
+        fails(created.store.insert(incompatible, Item("a", 1))),
         fails(StreamStore.empty.insert(coherent, Item("a", 1))),
         created.store.get(coherent).contains(created.stream),
-        fails(created.store.get(equalButDistinct))
+        fails(created.store.get(incompatible)),
+        values(limited.stream) == Vector("a" -> 1)
       )
     },
     test("validates names, ids, positions, limits, and throwing id functions") {

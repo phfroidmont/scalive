@@ -181,7 +181,7 @@ object FormLiveView:
     query: Signal[FormQueryParams],
     values: Signal[Map[String, String]],
     jsChangeMessage: Msg,
-    target: Option[Mod.Attr[Nothing]] = None
+    target: Option[Mod.Attr[Msg]] = None
   ) =
     val idValue    = query.map(current => Option.unless(current.noId)("test-form"))
     val changeMode = query.map { current =>

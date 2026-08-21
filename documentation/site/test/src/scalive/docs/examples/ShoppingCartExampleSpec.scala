@@ -4,17 +4,17 @@ import org.jsoup.Jsoup
 import zio.*
 import zio.test.*
 
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.{ConnectedRender, ConnectedView}
 
 object ShoppingCartExampleSpec extends ZIOSpecDefault:
-  private def cartState(harness: SiteLiveViewHarness[?, ?]) =
+  private def cartState(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
 
   override def spec = suite("ShoppingCartExampleSpec")(
     test("adds, removes, totals, and clears through connected bindings") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new ShoppingCartExample)
+          harness <- ConnectedRender.join(new ShoppingCartExample)
           initial <- cartState(harness)
           _       <- harness.click("[data-product=coffee]")
           _       <- harness.click("[data-product=coffee]")

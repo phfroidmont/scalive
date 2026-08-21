@@ -6,15 +6,15 @@ import org.jsoup.Jsoup
 import zio.*
 import zio.test.*
 
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.{ConnectedRender, ConnectedView}
 
 object TextUploadExampleSpec extends ZIOSpecDefault:
   private val SecretText = "internal launch phrase alpha beta\nsecond line"
 
-  private def document(harness: SiteLiveViewHarness[?, ?]) =
+  private def document(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
 
-  private def uploadRef(harness: SiteLiveViewHarness[?, ?]): Task[String] =
+  private def uploadRef(harness: ConnectedView[?]): Task[String] =
     document(harness).flatMap { page =>
       ZIO.attempt {
         val input = page.selectFirst("[data-text-upload-input]")
@@ -29,7 +29,7 @@ object TextUploadExampleSpec extends ZIOSpecDefault:
     test("consumes a bounded text upload into aggregate facts without retaining its content") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new TextUploadExample)
+          harness <- ConnectedRender.join(new TextUploadExample)
           ref     <- uploadRef(harness)
           bytes    = Chunk.fromArray(SecretText.getBytes(StandardCharsets.UTF_8))
           _       <- harness.upload(ref, "entry-1", "notes.txt", "text/plain", bytes)
@@ -50,7 +50,7 @@ object TextUploadExampleSpec extends ZIOSpecDefault:
     test("reset clears summaries and replaces active upload state") {
       ZIO.scoped {
         for
-          harness   <- SiteLiveViewHarness.join(new TextUploadExample)
+          harness   <- ConnectedRender.join(new TextUploadExample)
           initialRef <- uploadRef(harness)
           _ <- harness.upload(
                  initialRef,
@@ -60,7 +60,7 @@ object TextUploadExampleSpec extends ZIOSpecDefault:
                  Chunk.fromArray("one two".getBytes(StandardCharsets.UTF_8))
                )
           _        <- harness.submitForm("[data-text-upload-form]", Vector.empty)
-          _        <- harness.sendServer(TextUploadExample.Msg.Reset)
+          _        <- harness.send(TextUploadExample.Msg.Reset)
           resetRef <- uploadRef(harness)
           page     <- document(harness)
         yield assertTrue(
@@ -73,8 +73,8 @@ object TextUploadExampleSpec extends ZIOSpecDefault:
     test("keeps summaries isolated between LiveView instances") {
       ZIO.scoped {
         for
-          first     <- SiteLiveViewHarness.join(new TextUploadExample)
-          second    <- SiteLiveViewHarness.join(new TextUploadExample)
+          first     <- ConnectedRender.join(new TextUploadExample)
+          second    <- ConnectedRender.join(new TextUploadExample)
           firstRef  <- uploadRef(first)
           _ <- first.upload(
                  firstRef,

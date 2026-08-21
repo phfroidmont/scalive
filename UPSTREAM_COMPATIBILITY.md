@@ -1,96 +1,91 @@
 # Upstream Compatibility Matrix
 
-Scalive tracks Phoenix LiveView behavior and feature coverage while keeping the Scala API ergonomic, typed, and robust. Compatibility targets behavior and feature-set parity, not internal implementation parity or direct copying of Elixir APIs.
+Scalive tracks Phoenix LiveView behavior and feature coverage while keeping the Scala API
+ergonomic, typed, and robust. Compatibility means observable behavior and feature-set parity, not
+internal implementation parity or an Elixir-shaped API.
 
-The current upstream target is Phoenix LiveView `v1.1.28`, pinned by `flake.nix` and the websocket protocol version in `WebSocketMessage`.
+The current upstream target is Phoenix LiveView `v1.1.28`, pinned by `flake.lock`. The Milestone-11
+runtime is now the implementation under `scalive/api`, `scalive/render`, `scalive/runtime/*`,
+`scalive/protocol/phoenix`, and `scalive/transport/zio-http`; it is no longer a planned replacement
+for a legacy runtime. The `scalive/testing` module also exercises both disconnected and connected
+lifecycles through production route admission and connection supervision.
 
-The frozen runtime oracle, normalized comparison rules, and scenario-level classifications are
-recorded in [`docs/runtime-parity-manifest.md`](docs/runtime-parity-manifest.md).
-
-The matrix below currently records legacy-oracle behavior. During the greenfield runtime rewrite, a
-row becomes target-runtime coverage only when its evidence has moved to the corresponding final
-module. Milestone 1 establishes the independent public API and does not yet provide executable
-runtime parity.
+The detached legacy baseline in [`docs/runtime-parity-manifest.md`](docs/runtime-parity-manifest.md)
+remains a frozen historical oracle. Its passing results do not establish current target behavior.
+The latest current-tree browser result is recorded below; a fresh browser run remains the release
+gate for subsequent changes.
 
 ## Status Legend
 
 | Status | Meaning |
 | --- | --- |
-| Passing baseline | Covered by the upstream browser E2E harness, but not necessarily by a complete server-side parity suite. |
-| Native parity covered | Scalive has native tests that mirror the relevant upstream runtime behavior. |
-| Native coverage substantial | Core behavior is implemented and tested, but edge-case parity needs a dedicated upstream-suite audit. |
-| Native coverage expanding | Implemented enough to use, with known parity gaps still being closed. |
-| Partial | Some behavior exists, but the upstream feature area is not yet complete or fully mapped. |
-| Intentional divergence | Scalive deliberately exposes a Scala-first typed API instead of copying Phoenix's untyped API shape. |
-| Not implemented | No equivalent feature exists yet. |
-| Not directly applicable | The upstream concept is specific to Phoenix/Elixir and should be replaced by a Scalive-native concept if needed. |
+| Target evidence | Implemented in the Milestone-11 modules and covered by native suites. |
+| Target evidence, audit pending | Core target behavior has native coverage; exact upstream edge-case mapping still needs an audit. |
+| Partial | Some behavior exists, but the upstream feature area is not complete or fully mapped. |
+| Intentional divergence | Scalive deliberately exposes a Scala-first typed contract. |
+| Out of scope | No direct equivalent is planned because the concept is Phoenix/Elixir-specific. |
+| Browser gate | Current status is determined by `./scripts/e2e-run-upstream.sh`; retry-only flakes remain visible and do not satisfy the no-retry cutover criterion. |
+
+Paths below are repository-relative and identify representative evidence rather than every test.
 
 ## Compatibility Matrix
 
-| Area | Upstream Reference | Scalive Status | Scalive Coverage | Remaining Work / Decision | Priority |
-| --- | --- | --- | --- | --- | --- |
-| Browser E2E behavior | `test/e2e/tests/**/*.spec.js` | Passing baseline | Covered by `./scripts/e2e-run-upstream.sh`; keep running as the browser regression gate. | Keep the upstream harness green after protocol/runtime changes. | High |
-| Wire protocol and diff encoding | `Phoenix.LiveView.Socket`, `Phoenix.LiveView.Diff`, JS client protocol | Native coverage substantial | `WebSocketMessage`, `RenderSnapshot`, `TreeDiff`, component diffs, keyed comprehensions, stream payloads, events, redirects, joins, upload messages. | Add protocol matrix rows for exact error payloads, reconnect/stale cases, and any protocol additions beyond `v1.1.28`. | High |
-| Static HTTP render and connected bootstrap | `Phoenix.LiveView` lifecycle docs; `mount/3`, `handle_params/3`, `render/1` | Native coverage substantial | Disconnected render, connected socket mount, initial `handleParams`, bootstrap patch/redirect loops, static tracking, root shell rendering. | Expand error/crash/reconnect assertions against upstream integration behavior. | High |
-| Live routes | `Phoenix.LiveView.Router.live/4` | Native coverage substantial | Typed route algebra with `live`, path codecs, GET-only live routes, duplicate route validation, typed route params, typed environment inference. | Decide whether route action/metadata equivalents are useful in Scala API; document any intentional divergence from `@live_action`, `:metadata`, and `:private`. | Medium |
-| Live sessions | `Phoenix.LiveView.Router.live_session/3` | Native coverage expanding | First-class `Live.session`, duplicate session-name validation, websocket navigation boundaries, session-scoped mount aspects/layouts. | Polish live-session ergonomics and document exact security model for plugs vs typed mount aspects. | High |
-| Route-level `on_mount` | `Phoenix.LiveView.on_mount/1`; `live_session :on_mount` | Intentional divergence | Represented by typed `LiveMountAspect`s that run before disconnected and connected mount, sign claims, reload typed context on join, compose in order, and support redirect/unauthorized/stale halts before connected mount. | Invalid returns and contradictory continue/redirect states are unrepresentable in the typed API; keep websocket halt payloads aligned. | High |
-| Layouts and root layouts | `:layout`, `:root_layout`, mount/layout options | Native coverage substantial | Typed `LiveLayout` and `LiveRootLayout`, router/session/route composition, root-layout precedence, root-layout key mismatch fallback to fresh render. | Decide whether LiveView-returned layout changes are needed or intentionally replaced by route/session layout configuration. | Medium |
-| `connected?/1` equivalent | `Phoenix.LiveView.connected?/1` | Native parity covered | `LiveContext.connected` is `false` for disconnected render and `true` for connected websocket mount. | Consider adding docs/examples after public API settles. | Medium |
-| Connect params and connect info | `get_connect_params/1`, `get_connect_info/2` | Partial | Mount aspects receive the `Request` on disconnected and connected phases; route context can carry typed data. | Add explicit typed APIs for websocket connect params/info if needed: `_mounts`, `_track_static`, `_live_referer`, user-agent, peer/header data. | Medium |
-| LiveView model lifecycle | `mount/3`, `handle_params/3`, `handle_event/3`, `handle_info/2`, `handle_async/3`, `render/1` | Intentional divergence | Routed Scalive views receive decoded parameters in typed `mount`; Scalive also uses `handleMessage`, typed `subscriptions`, `handleParams`, and typed async completion messages instead of socket assigns/callback tuples. | Keep documenting typed equivalents; add parity rows when Phoenix callback behavior maps to Scalive runtime behavior. | High |
-| Process-style callbacks | `handle_call/3`, `handle_cast/2`, `terminate/2`, `transport_pid/1`, `put_private/3` | Not implemented | No direct public equivalent; Scalive uses ZIO fibers, streams, scoped resources, and typed context capabilities. | Decide which process APIs have useful Scala/ZIO equivalents; likely not direct API parity. | Low |
-| Lifecycle hooks, root LiveViews | `test/phoenix_live_view/integrations/hooks_test.exs`; `attach_hook/4`, `detach_hook/3` | Native parity covered | Root event, params, info, async, and after-render hooks; unnamed static declarations; named dynamic attach/detach; halt/continue; event replies; duplicate-id checks. | Invalid hook returns use typed result ADTs. After-render hooks are side-effect-only and cannot create model state that was not represented by the completed render. | High |
-| Lifecycle hooks, LiveComponents | `Phoenix.LiveView.attach_hook/4` component limitations | Native parity covered | Stateful components support unnamed static and named dynamic event, async, and side-effect-only after-render hooks, including detach. | Hook callbacks and results use Scalive's typed component API; post-render model mutation is intentionally excluded. | Medium |
-| Stateful LiveComponents | `test/phoenix_live_view/integrations/live_components_test.exs`; `Phoenix.LiveComponent` | Native parity covered | Stable identity/cids, disconnected/connected render, additions/updates/removals, duplicate-id rejection, component-local events/forms/uploads, selector/multiple targets, nested components, streams, async, flash, navigation, client effects. | Phoenix-only APIs such as `render_component/2`, cid-based external updates, and module/id-less `send_update` are intentionally not copied. | Highest |
-| Component update APIs | `send_update/3`, `send_update_after/4`, `update_many/1` | Partial | Typed `LiveContext.sendUpdate[C](id, props)` updates mounted components and ignores missing targets. | Decide on typed `sendUpdateAfter` and `updateMany` equivalents. | Medium |
-| Nested LiveViews | `test/phoenix_live_view/integrations/nested_test.exs` | Native parity covered | Disconnected/connected render, dynamic children, recursive cleanup, duplicate id rejection, sticky children, nested children inside components, child navigation/redirect behavior. | Keep aligned as component and route/session behavior evolves. | High |
-| Live navigation | `push_patch/2`, `push_navigate/2`, `redirect/2`, `<.link>` | Native coverage substantial | Typed `LiveContext.pushPatch`, `replacePatch`, `pushNavigate`, `replaceNavigate`, `redirect`; live patch URL resolution; navigation payloads; flash carryover; live-session boundary checks. | Audit exact client/server fallback behavior for cross-session navigation, root-layout changes, and route-specific mount claims. | High |
-| Flash lifecycle | `test/phoenix_live_view/integrations/flash_test.exs` | Native parity covered | Keyed/all clear, `lv:clear-flash`, stale flash exclusion, patch redirect carryover, push-navigate/redirect cookies, nested socket isolation, nested child patch flash transfer. | Phoenix ConnTest/LiveViewTest helper assertions intentionally not copied. | High |
-| Forms and form events | Phoenix form bindings, `Phoenix.Component.form/1`, `to_form/2`, recovery behavior | Native coverage substantial | Lossless form payload parsing, typed `FormCodec`, change/submit bindings, used fields, submitter metadata, render-side helpers, form event routing to components. | Complete upstream form recovery/autorecover matrix and decide which `to_form`/Ecto-specific behavior is out of scope. | Medium |
-| Uploads | `Phoenix.LiveView.Upload`, `live_file_input`, upload integration tests | Native coverage substantial | `allowUpload`, cancel/disallow/consume/drop APIs, validation errors, upload preflight/progress/chunks, component upload routing, external uploader and writer abstractions, live file input helper. | Add a full upstream upload edge-case matrix: auto-upload, external failures, postponed consumption, in-progress submit behavior, reallow/disallow, progress callback side effects. | Medium |
-| Streams | `Phoenix.LiveView.stream/4`, `stream_insert`, `stream_delete`, `stream_async`, `stream_configure` | Partial | Typed configured `LiveStreamDef`; explicit create, batch insert, reset, insert/delete/delete-by-dom-id operations; safe `renderIn` and low-level `stream` rendering; component-scoped streams and stream diff payloads. Creation omits Phoenix's ignored placement option, while existing-stream batch and reset placement preserve Phoenix behavior. | Add or intentionally exclude a typed equivalent for `stream_async`; expand upstream stream edge-case coverage. | Medium |
-| Async tasks | `test/phoenix_live_view/integrations/start_async_test.exs` | Native coverage substantial | Typed named async tasks for roots/components; success, failure, and explicit cancellation messages; hooks before message handling; replacement; navigation/flash/client side effects; deterministic cleanup on socket shutdown and component removal. | Phoenix complex task keys use explicit typed string declarations; no task-supervisor option. | Medium |
-| Async assigns | `test/phoenix_live_view/integrations/assign_async_test.exs` | Not implemented | `AsyncValue` models empty, loading, success, failure, cancellation, and preserved previous values, but applications currently update it through typed async completion messages. | Add a typed field-level helper only if it improves on the explicit message flow without hiding model transitions. | Medium |
-| JS commands | `Phoenix.LiveView.JS` | Native coverage substantial | `JS` command builder supports class changes, show/hide/toggle/transition, dispatch, exec, focus, focus stack, attrs, patch/navigate, push, ignore attributes, server-pushed `js:exec`. | Audit command JSON against upstream for any missing command/options in `v1.1.28`. | Medium |
-| Client events and hooks | `push_event/3`, JS hook `handleEvent`, `phx-hook` | Native coverage substantial | Directional `ServerToBrowserEvent` and `BrowserToServerEvent` payload contracts, root/component typed browser handlers, client-event diff payloads, required hook DOM ids, and raw-hook event replies. | JavaScript still subscribes and emits by string; browser-level hook behavior is mostly delegated to the upstream JS client. | Medium |
-| DOM bindings and patch attributes | `phx-click`, `phx-submit`, `phx-target`, `phx-update`, `phx-mounted`, `phx-remove`, `phx-connected`, `phx-disconnected` | Native coverage substantial | Typed event bindings, `DomRef`/`DomSelector` targets, form bindings, JS bindings, upload progress, stream/ignore/update attrs, lifecycle bindings, and declarative connected/disconnected visibility. | Audit all `phx-*` attributes and JS-client behavior against upstream docs. | Medium |
-| Static asset tracking | `phx-track-static`, `_track_static`, static changed behavior | Native coverage substantial | Collects tracked static href/src values and computes `staticChanged`; exposed through `LiveContext.staticChanged`. | Add exact connect-param parity for `_track_static` once connect params are modeled explicitly. | Medium |
-| Title updates | `live_title`, `@page_title`, title diff metadata | Native coverage substantial | `LiveView.pageTitle(model)` drives disconnected HTML, connected title diffs, fallback resets, and sticky rejoins; `liveTitle` provides upstream-compatible default/prefix/suffix metadata. | Add broader browser navigation coverage for title ownership across routed root views. | Low |
-| Portals and focus wrap | `Phoenix.Component.portal/1`, `focus_wrap/1` | Native coverage substantial | `portal` helper and `focusWrap` component helper exist and are covered. | Keep aligned with browser E2E expectations. | Low |
-| HEEx templates and function components | `Phoenix.Component`, `~H`, `attr`, `slot`, `embed_templates` | Intentional divergence | Scalive uses typed Scala HTML builders and typed stateful components instead of HEEx macros and assigns maps. | Do not copy HEEx; document Scala component patterns when docs are written. | Low |
-| Verified routes and path helpers | `Phoenix.VerifiedRoutes`, route helpers | Intentional divergence | Typed route/path/query codecs provide compile-time URL construction for Scalive APIs. | Decide whether to expose more ergonomic typed URL builders from `LiveRouteSeed`/route declarations. | Low |
-| Security and session tokens | LiveView signing salt, session token, flash token, CSRF/connect params | Native coverage expanding | HMAC-signed tokens with max age, signed mount claims, purpose-bound signed flash tokens, hardened HTTP-to-Live flash redirects, root-layout key in session payload, shared ordinary-form and LiveSocket CSRF, automatic checked-POST fields, and stale joins for invalid websocket CSRF. | Token format still has TODOs around salt/messagepack. Claims and flash values are signed but not encrypted. | High |
-| Endpoint/socket configuration | `:live_view` endpoint config, socket path, `hibernate_after`, long-poll options | Partial | `Live.router.withSocketPath(PathCodec[Unit])` configures the socket mount path; `TokenConfig` configures secret/maxAge. | Decide which endpoint options matter in ZIO HTTP; hibernation/long-poll are not implemented. | Low |
-| Transport support | Phoenix Channels websocket and long-poll fallback | Partial | WebSocket transport and upload websocket protocol are implemented. | Long-poll fallback is not implemented; decide if browser/client parity requires it. | Low |
-| Telemetry and observability | Phoenix telemetry events, logger metadata | Not implemented | Some runtime warnings/errors are logged with context. | Add a Scalive/ZIO telemetry story if operational parity is required. | Low |
-| Test harness helpers | `Phoenix.LiveViewTest` | Partial, intentional divergence | `scalive-testing` executes finalized routes through the disconnected lifecycle and provides semantic form, field, value, and binding-mode queries. | Add connected mount, typed event submission, and explicit ordinary HTTP action following without copying Phoenix ConnTest/LiveViewTest helpers. | Low |
-| Error shapes and crash/reconnect behavior | Upstream integration tests and protocol errors | Native coverage expanding | Join unauthorized/stale/redirect responses, invalid route/session failures, duplicate ids, lifecycle hook stage errors, redirect loop errors are covered in slices. | Systematically audit protocol error payloads, crash logging, stale joins, and reconnect remount behavior; keep Scala API errors idiomatic. | High |
+| Area | Status | Current target evidence | Remaining gate / decision |
+| --- | --- | --- | --- |
+| Browser E2E behavior | Browser gate | On 2026-08-21 the pinned suite completed with 170 clean passes and 2 retry-only flakes. `scripts/e2e-run-upstream.sh`, `test/playwright.upstream.config.js`, and `e2eApp/src` are the executable evidence. | Eliminate the two synchronization flakes and obtain three consecutive CI runs with no retries. |
+| Public lifecycle and connection capabilities | Target evidence | `scalive/api/src/scalive/lifecycle`, `scalive/api/test/src/scaliveapi/ConnectionCapabilitiesSpec.scala`, `RoutedConstructionSpec.scala`, and `ComponentApiSpec.scala` cover typed mount/message contexts, explicit `Connection.Disconnected`/`Connection.Connected`, routes, components, and capability gating. | Continue mapping callback edge cases without weakening compile-time capability boundaries. |
+| Rendering and semantic diffs | Target evidence | `scalive/render/src/scalive/render` with `TreeDifferSpec.scala`, `RenderProgramSpec.scala`, `HtmlRendererSpec.scala`, `StreamRenderingSpec.scala`, and `NestedRenderingSpec.scala`. | Audit exact browser merge behavior for every upstream regression scenario. |
+| Phoenix channel and rendered protocol | Target evidence, audit pending | `scalive/protocol/phoenix/src/scalive/protocol/phoenix` with `PhoenixProtocolSpec.scala`, `PhoenixRenderedEncoderSpec.scala`, `PhoenixUploadProtocolSpec.scala`, and `PhoenixProtocolFuzzSpec.scala` covers frames, refs, rendered projections, two-phase CID destruction/reintroduction, uploads, and malformed input. | Keep exact errors, reconnect generations, and protocol additions aligned with `v1.1.28`. |
+| Static HTTP render and connected bootstrap | Target evidence | `scalive/transport/zio-http/test/src/scalive/ZioHttpSpec.scala`, `ZioHttpSecuritySpec.scala`, and `scalive/testing/test/src/scalive/testing/{DisconnectedRenderSpec,ConnectedRenderSpec}.scala` cover disconnected bootstrap, signed admission, connected mount, and semantic HTML projection. | Browser-test crash, reload, reconnect, and stale-page behavior. |
+| Routes, sessions, aspects, and layouts | Target evidence | `scalive/api/src/scalive/routing`, `RoutedConstructionSpec.scala`, `scalive/transport/zio-http/test/src/scalive/ZioHttpApiSpec.scala`, and `ZioHttpSpec.scala` cover typed declarations, validation, session boundaries, mount claims, and layout composition. | Document intentional differences from route actions, metadata, and private assigns. |
+| Lifecycle hooks | Target evidence | `scalive/api/src/scalive/lifecycle/Hooks.scala`, `scalive/runtime/connection/src/scalive/runtime/connection/RootHookRuntime.scala`, `RootConnectionSpec.scala`, and `ComponentRuntimeSpec.scala`. | Audit all upstream hook stages and halt/error payloads. |
+| Stateful components and updates | Target evidence | `ComponentApiSpec.scala`, `scalive/runtime/kernel/test/src/scalive/runtime/kernel/ComponentKernelSpec.scala`, `scalive/runtime/connection/test/src/scalive/runtime/connection/ComponentRuntimeSpec.scala`, and `DisconnectedComponentRendererSpec.scala`. | Decide whether delayed and batched typed update helpers improve the API. |
+| Nested LiveViews | Target evidence | `NestedRenderingSpec.scala`, `NestedTopologyKernelSpec.scala`, `NestedTopologyRuntimeSpec.scala`, and connected harness coverage in `ConnectedRenderSpec.scala`. | Keep sticky/rejoin and browser cleanup behavior aligned. |
+| Navigation, flash, and titles | Target evidence, audit pending | Typed navigation lives in `scalive/api`; lifecycle output is covered by `SessionKernelSpec.scala`, `RootConnectionSpec.scala`, `ZioHttpSpec.scala`, and `ConnectedRenderSpec.scala`. | Audit history, cross-session fallback, scroll, title ownership, and flash carryover in the browser gate. |
+| Forms | Target evidence, audit pending | `scalive/api/src/scalive/forms`, `FormDefinitionApiSpec.scala`, `scalive/transport/zio-http/src/scalive/HttpFormDecoder.scala`, and both testing-module render suites cover typed decoding and connected change/submit dispatch. | Complete browser recovery, auto-recover, locked-state, and ordinary-action coverage. |
+| Uploads | Target evidence, audit pending | `LiveUploadSpec.scala`, `UploadContextSpec.scala`, `UploadWorkerSpec.scala`, `PhoenixUploadProtocolSpec.scala`, `ZioHttpUploadSpec.scala`, and `ConnectedRender.upload`. | Audit auto-upload, external writer failure, cancellation, progress, and submit edge cases. |
+| Streams | Target evidence, audit pending | `StreamOpacitySpec.scala`, `StreamRenderingSpec.scala`, `StreamStoreSpec.scala`, and `ManagedStreamsSpec.scala` cover opaque public state, rendering, mutation, limits, and lifecycle ownership. | Complete the pinned browser stream regression matrix and decide on an async convenience API. |
+| Async tasks and subscriptions | Target evidence | `ManagedAsyncSpec.scala`, `ManagedSubscriptionsSpec.scala`, `SessionKernelSpec.scala`, and `ConnectionCapabilitiesSpec.scala` cover typed keys, replacement, delivery, and scoped cleanup. | A field-level async-assign helper remains an API decision, not missing runtime execution. |
+| JS commands, client events, and DOM bindings | Target evidence, audit pending | `scalive/api/src/scalive/JS.scala`, `BrowserEvent.scala`, generated HTML definitions, `BindingTableSpec.scala`, `PhoenixRenderedEncoderSpec.scala`, and connected binding dispatch in `ConnectedRenderSpec.scala`. | Audit command JSON and all client-maintained DOM states against the pinned browser suite. |
+| Static asset tracking and connect metadata | Target evidence | `StaticAssetsSpec.scala`, `ZioHttpSpec.scala`, `RootConnectionSpec.scala`, and the typed `ConnectedMetadata`/connection capability APIs cover tracked assets, connect params, and static-change metadata. | Expand public documentation and browser assertions for reconnect metadata. |
+| Security, session tokens, and CSRF | Target evidence | `ZioHttpConfig`, `LiveSecurity`, and purpose-bound credentials are covered by `HttpSecuritySpec.scala`, `ZioHttpSecuritySpec.scala`, and `ZioHttpSpec.scala`. | Tokens are authenticated rather than encrypted; continue security review and browser stale-admission testing. |
+| Error shapes, crash recovery, and observability | Target evidence, audit pending | `RuntimeObservabilitySpec.scala`, `ConnectionSupervisorSpec.scala`, `SerialWriterSpec.scala`, `PhoenixProtocolFuzzSpec.scala`, and transport suites cover correlated events, supervision, sink failures, malformed frames, and admission failures. | Verify exact browser reload/rejoin behavior and normalized error payloads. |
+| Transport support | Partial | ZIO HTTP static and websocket routes, channel frames, uploads, security, and backpressure are covered by `scalive/transport/zio-http/test/src/scalive`. | Long-poll fallback is not implemented; decide whether it is required. |
+| Test harness helpers | Target evidence | `scalive/testing/src/scalive/testing` provides disconnected semantic queries plus `ConnectedRender`/`ConnectedView` joins, clicks, forms, typed messages, async waits, nested joins, hosted uploads, leave, and latest-HTML queries; both render suites exercise these paths. | Extend helpers only for recurring user-facing tests; do not clone Phoenix helper internals. |
+| Process-style callbacks and HEEx macros | Out of scope / intentional divergence | ZIO fibers and scopes replace process callbacks; typed Scala HTML, signals, models, codecs, and components replace assigns maps and HEEx macros. | Document equivalents when a concrete user-facing need appears. |
+
+## Milestone-11 Cutover Evidence
+
+- Published-module boundaries are defined in `build.mill` for the public API, renderer, runtime
+  contracts/resources/topology/kernel/connection, Phoenix protocol, ZIO HTTP transport, and testing
+  artifacts. This records the publication cutover; it does not assert that a release was published.
+- Maintained JMH fixtures under `benchmarks` cover render evaluation, diffing, protocol encoding, and
+  lifecycle turns. They are performance diagnostics, not compatibility proof.
+- The frozen oracle's 172 passing Chromium scenarios remain historical comparison evidence. Current
+  browser compatibility is established only by a fresh run of the browser gate.
+- The 2026-08-21 current-tree browser gate completed all 172 scenarios: 170 passed without retry and
+  2 passed on retry. The retry-only scenarios were
+  `forms.spec.js :: /form/nested live-component - form recovery :: respects disabled state of a
+  fieldset` and `issues/3530.spec.js :: hook is initialized properly when using a stream of nested
+  LiveViews`. Focused repetition produced 22/25 and 8/10 clean runs respectively, consistent with
+  client-observation timing rather than a deterministic compatibility exclusion. They remain open
+  release flakes until the no-retry cutover criterion is met.
 
 ## Intentional Divergences
 
-These are not gaps unless a concrete user-facing need appears:
-
-- Socket assigns are replaced by typed models and typed context capabilities.
-- Phoenix callback tuples are replaced by typed `ZIO` effects and explicit result ADTs where needed.
-- Phoenix's conventional `:page_title` assign is replaced by the typed `pageTitle(model)` projection.
-- Static hooks are unnamed; dynamic hooks retain names only where attachment and detachment require identity.
-- `on_mount` is represented by typed `LiveMountAspect`s instead of module/atom callbacks.
-- Route declarations use typed path/query codecs instead of Phoenix macros and atom route actions.
-- HEEx/component macros are replaced by typed Scala HTML builders and component values.
-- Phoenix test helpers should become Scalive-native testing helpers, not direct API clones.
-
-## Immediate Work Queue
-
-1. Keep lifecycle hook behavior aligned with `hooks_test.exs` as the typed API evolves.
-2. Audit uploads and streams against upstream integration behavior and add missing rows/tests for uncovered edge cases.
-3. Decide typed APIs for connect params/info, stream async/configuration, delayed component updates, and component batch updates.
-4. Add protocol/error/reconnect parity tests for stale joins, invalid payloads, transport errors, and recovery behavior.
-5. Keep `./scripts/e2e-run-upstream.sh` green while expanding native server-side parity suites.
+- Socket assigns and callback tuples are replaced by typed models, contexts, effects, and result
+  types.
+- Connection-only operations are exposed through explicit connected capabilities rather than
+  phase-dependent no-ops.
+- Mount aspects, routes, paths, queries, forms, component references, and resource keys are typed.
+- Static hooks need no identity; dynamically attached hooks retain names for detach semantics.
+- HEEx/component macros and Phoenix test-helper internals are not copied.
 
 ## Verification Strategy
 
-- Keep `./scripts/e2e-run-upstream.sh` green.
-- Add Scalive-native tests for upstream integration behaviors that cannot be run directly as Elixir tests.
-- For each matrix row, record the upstream files and the Scalive tests that cover equivalent behavior.
-- Prefer small vertical slices that make one upstream scenario pass end-to-end over broad incomplete abstractions.
+1. Run `./scripts/e2e-run-upstream.sh` as the browser compatibility gate; do not infer current status
+   from the historical oracle.
+2. Keep native suites at the module owning each behavior and record representative paths here.
+3. Compare HTTP, semantic DOM, protocol output, resource cleanup, and observability using the
+   normalization rules in the runtime parity manifest.
+4. Prefer complete vertical scenarios over broad claims based only on isolated units.

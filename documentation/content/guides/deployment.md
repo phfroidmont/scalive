@@ -41,7 +41,7 @@ nix develop
 Then run the documentation application from the repository root:
 
 ```bash
-SCALIVE_TOKEN_SECRET='<stable high-entropy secret>' \
+SCALIVE_TOKEN_SECRET='<replace-with-at-least-32-random-bytes>' \
 SCALIVE_SERVER_PORT=8080 \
 SCALIVE_PUBLIC_ORIGIN='http://localhost:8080' \
 mill documentation.site.run
@@ -65,10 +65,14 @@ balancer. Scalive does not configure TLS and does not infer HTTPS from
 is HTTPS, application construction must explicitly use:
 
 ```scala
-val security = LiveSecurity(
-  TokenConfig.default,
-  CookiePolicy(secure = true)
-)
+val transportConfig = ZioHttpConfig(
+  signingSecret = requiredSecret,
+  sessionMaxAge = java.time.Duration.ofDays(7),
+  secureCookie = true
+).fold(error => throw IllegalArgumentException(error.toString), identity)
+
+val security = LiveSecurity(transportConfig)
+val routes = ZioHttp.routes(application, security)
 ```
 
 Forward ordinary HTTP requests and WebSocket upgrade requests to the same
@@ -87,8 +91,8 @@ If an edge adds a prefix, its routing must still expose the exact application
 page, socket, and static mount paths; changing only generated HTML is not
 sufficient.
 
-The documentation application currently constructs
-`CookiePolicy(secure = false)` unconditionally. `SCALIVE_PUBLIC_ORIGIN=https://...`
+The documentation application currently validates its `ZioHttpConfig` with
+`secureCookie = false` unconditionally. `SCALIVE_PUBLIC_ORIGIN=https://...`
 changes generated absolute metadata URLs but does not change that cookie
 policy, and no documentation-site environment setting enables secure cookies.
 Consequently, the current documentation application is not a complete
@@ -113,12 +117,12 @@ for the lifetime of the process. For the exact source, mount, digest, and
 
 ## Handle Secrets And Cookies {#handle-secrets-and-cookies}
 
-Provide one stable, high-entropy `SCALIVE_TOKEN_SECRET` to every production
-replica. Do not put the value in command history, images, source control, logs,
-or browser-visible configuration; inject it through the deployment platform's
-secret facility. A missing or exactly empty value makes `TokenConfig.default`
-generate a process-local secret, so restarts invalidate existing Live session,
-CSRF, and flash values and replicas cannot verify one another's values.
+Provide one stable, high-entropy signing secret of at least 32 UTF-8 bytes to
+every production replica. Do not put the value in command history, images,
+source control, logs, or browser-visible configuration; inject it through the
+deployment platform's secret facility. Treat a missing secret as a startup
+error. `ZioHttpConfig` also rejects a non-positive session age; do not replace
+either validation failure with a random fallback in production.
 
 Framework tokens are signed, not encrypted. Do not put passwords, access
 tokens, cookie values, or other secrets in Live session claims or flash values.
@@ -135,7 +139,7 @@ that process. On reconnect, the client may reach another replica and receives a
 fresh connected mount; durable state therefore must live in an application-owned
 shared service rather than only in the previous model.
 
-All replicas that can receive the same browser must use the same token secret
+All replicas that can receive the same browser must use the same signing secret
 and compatible token age, route, socket, cookie, and asset configuration.
 Scalive does not currently provide a cluster membership API, distributed
 PubSub, cross-node LiveView migration, shared session store, or load-balancer

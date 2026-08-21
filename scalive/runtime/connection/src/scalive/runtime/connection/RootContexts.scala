@@ -334,29 +334,33 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
     case other => IllegalStateException(s"Upload operation rejected: $other")
 end JournaledUploads
 
-final private class JournaledStreams(streams: Ref[StreamStore]) extends Streams:
+final private class JournaledStreams(streams: Ref[StreamStore], applyLimits: Boolean = true)
+    extends Streams:
   def create[A](definition: LiveStreamDef[A], items: Iterable[A]): LiveIO[LiveStream[A]] =
-    update(_.create(definition, items))
+    update(_.create(effective(definition), items))
   def insertAll[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
     at: StreamAt
-  ): LiveIO[LiveStream[A]] = update(_.insertAll(definition, items, at))
+  ): LiveIO[LiveStream[A]] = update(_.insertAll(effective(definition), items, at))
   def reset[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
     at: StreamAt
-  ): LiveIO[LiveStream[A]] = update(_.reset(definition, items, at))
+  ): LiveIO[LiveStream[A]] = update(_.reset(effective(definition), items, at))
   def insert[A](
     definition: LiveStreamDef[A],
     item: A,
     at: StreamAt,
     updateOnly: Boolean
-  ): LiveIO[LiveStream[A]] = update(_.insert(definition, item, at, updateOnly))
+  ): LiveIO[LiveStream[A]] = update(_.insert(effective(definition), item, at, updateOnly))
   def delete[A](definition: LiveStreamDef[A], item: A): LiveIO[LiveStream[A]] =
-    update(_.delete(definition, item))
+    update(_.delete(effective(definition), item))
   def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]] =
-    update(_.deleteByDomId(definition, domId))
+    update(_.deleteByDomId(effective(definition), domId))
+
+  private def effective[A](definition: LiveStreamDef[A]): LiveStreamDef[A] =
+    if applyLimits then definition else definition.withoutLimit
 
   private def update[A](
     operation: StreamStore => StreamStore.Replacement[A]
@@ -454,6 +458,14 @@ final private class JournaledComponentUpdates(journal: RootTurnJournal) extends 
       }.flatMap(request => journal.componentUpdates.update(_ :+ request))
 
 final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
+  val rawEvent: RootRawEventHooks[Msg, Model] = new RootRawEventHooks[Msg, Model]:
+    def attach(
+      id: String
+    )(
+      hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
+    ): LiveIO[Unit] = Deferred.fail("attach raw event hook")
+    def detach(id: String): LiveIO[Unit] = Deferred.fail("detach raw event hook")
+
   val browserEvent: RootBrowserEventHooks[Msg, Model] = new RootBrowserEventHooks[Msg, Model]:
     def attach[A: JsonDecoder](
       id: String,
@@ -508,6 +520,26 @@ end DeferredRootHooks
 
 final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     extends RootHooks[Msg, Model]:
+  val rawEvent: RootRawEventHooks[Msg, Model] = new RootRawEventHooks[Msg, Model]:
+    def attach(
+      id: String
+    )(
+      hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
+    ) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(
+        dynamicRaw = RootHookRegistry.replace(
+          registry.dynamicRaw,
+          id,
+          new RootHookRegistry.Raw[Msg, Model]:
+            def invoke(model: Model, event: LiveEvent, context: MessageContext[Msg, Model]) =
+              hook(model, event, context)
+        )
+      )
+    )
+    def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
+      registry.copy(dynamicRaw = RootHookRegistry.detach(registry.dynamicRaw, id))
+    )
+
   val browserEvent: RootBrowserEventHooks[Msg, Model] = new RootBrowserEventHooks[Msg, Model]:
     def attach[A: JsonDecoder](
       id: String,
@@ -690,7 +722,7 @@ private[scalive] object RootMountContext:
       JournaledRootHooks(journal),
       JournaledFlash(journal),
       JournaledUploads(journal),
-      JournaledStreams(journal.streams)
+      JournaledStreams(journal.streams, applyLimits = false)
     )
 end RootMountContext
 
@@ -730,7 +762,7 @@ final private[connection] class RootParamsContext[Msg, Model](
   val nav: Navigation              = new RootNavigation(currentUrl, journal, allowPatch = true)
   val flash: Flash                 = JournaledFlash(journal)
   val uploads: Uploads             = JournaledUploads(journal)
-  val streams: Streams             = JournaledStreams(journal.streams)
+  val streams: Streams             = JournaledStreams(journal.streams, applyLimits = connected)
   val hooks: RootHooks[Msg, Model] = JournaledRootHooks(journal)
 
 final private[connection] class RootAfterRenderContext[Msg, Model](

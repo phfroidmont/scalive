@@ -54,13 +54,14 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
       if event.bindingId == "upload_scrub_list" then
         val fileNames = fileNamesFromScrubEvent(event.value).toVector
         val reply     = Json.Obj("deduped_filenames" -> Json.Arr(fileNames.map(Json.Str(_))*))
-        ZIO.succeed(LiveEventHookResult.haltReply(model.copy(fileNames = fileNames), reply))
+        ZIO.succeed(LiveEventHookResult.haltReply(model, reply))
       else ZIO.succeed(LiveEventHookResult.cont(model))
     }
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate => refreshUpload(model, ctx.uploads)
-    case Msg.Progress => refreshUpload(model, ctx.uploads).flatMap(pushNextFileEvents(_, ctx))
+    case Msg.Validate           => refreshUpload(model, ctx.uploads)
+    case Msg.Progress(entryRef) =>
+      refreshUpload(model, ctx.uploads).flatMap(pushNextFileEvent(_, entryRef, ctx))
     case Msg.CancelUpload(entry) =>
       ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
     case Msg.Save => model
@@ -77,7 +78,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
           liveFileInput(
             upload,
             styleAttr := "display: none;",
-            upload.onProgress(_ => Msg.Progress)
+            upload.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", "")))
           ),
           input(
             dom.hook("QueuedUploaderHook", DomRef("fileinput")),
@@ -87,7 +88,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
             disabled                    := upload.map(filePickerDisabled)
           ),
           Signal.when(
-            model.map(current => current.fileNames.nonEmpty || current.upload.entries.nonEmpty)
+            upload.map(_.entries.nonEmpty)
           )(
             h2("Currently uploading files")
           ),
@@ -102,7 +103,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
                 )
               ),
               tbody(
-                uploadRows(model)
+                uploadRows(upload)
               )
             )
           ),
@@ -120,50 +121,33 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
       case None         => model
     }
 
-  private def pushNextFileEvents(model: Model, ctx: MessageContext): LiveIO[Model] =
-    val completedRefs = model.upload.entries
-      .filter(_.status == LiveUploadEntryStatus.Completed)
-      .map(_.ref)
-      .toSet
-    val newRefs = completedRefs -- model.nextFileSentFor
-
-    ZIO
-      .foreachDiscard(newRefs)(_ =>
-        ctx.client.push(UploadSendNextFileEvent, Map.empty[String, String])
-      )
-      .as(
-        model.copy(
-          completedCount = (model.completedCount + newRefs.size).min(model.fileNames.size),
-          nextFileSentFor = model.nextFileSentFor ++ newRefs
-        )
-      )
+  private def pushNextFileEvent(
+    model: Model,
+    entryRef: String,
+    ctx: MessageContext
+  ): LiveIO[Model] =
+    val completedRef = model.upload.entries
+      .find(entry =>
+        entry.ref.value == entryRef && entry.status == LiveUploadEntryStatus.Completed
+      ).map(_.ref)
+    completedRef match
+      case Some(ref) if !model.nextFileSentFor.contains(ref) =>
+        ctx.client
+          .push(UploadSendNextFileEvent, Map.empty[String, String])
+          .as(
+            model.copy(
+              nextFileSentFor = model.nextFileSentFor + ref
+            )
+          )
+      case _ => ZIO.succeed(model)
 
   private def filePickerDisabled(upload: LiveUpload[Unit]): Boolean =
     upload.entries.exists(_.status != LiveUploadEntryStatus.Completed)
 
-  private def uploadRows(model: Signal[Model]): Mod[Msg] =
-    model
-      .map(_.fileNames.nonEmpty).chooseMod(
-        model.map(_.fileNames.zipWithIndex).splitBy { case (fileName, _) => fileName } {
-          case (_, file) => queuedUploadRow(model, file)
-        },
-        model
-          .map(_.upload.entries.filter(_.client.fileName.nonEmpty))
-          .splitBy(_.ref)((_, entry) => uploadEntryRow(model.map(_.upload), entry))
-      )
-
-  private def queuedUploadRow(model: Signal[Model], file: Signal[(String, Int)]) =
-    val progress = model.zip(file).map { case (current, (_, index)) =>
-      if index < current.completedCount then 100 else 0
-    }
-    tr(
-      td(file.map(_._1)),
-      td(
-        progressTag(value := progress.map(_.toString), maxAttr := "100", progress.map(p => s"$p%"))
-      ),
-      td(button(typ := "button", aria.label := "cancel", span("x"))),
-      td()
-    )
+  private def uploadRows(upload: Signal[LiveUpload[Unit]]): Mod[Msg] =
+    upload
+      .map(_.entries.filter(_.client.fileName.nonEmpty))
+      .splitBy(_.ref)((_, entry) => uploadEntryRow(upload, entry))
 
   private def uploadEntryRow(
     upload: Signal[LiveUpload[Unit]],
@@ -201,13 +185,11 @@ end Issue2965LiveView
 object Issue2965LiveView:
   final case class Model(
     upload: LiveUpload[Unit],
-    fileNames: Vector[String] = Vector.empty,
-    completedCount: Int = 0,
     nextFileSentFor: Set[UploadEntryRef] = Set.empty)
 
   enum Msg:
     case Validate
-    case Progress
+    case Progress(entryRef: String)
     case CancelUpload(entry: LiveUploadEntry[Unit])
     case Save
 
@@ -333,15 +315,16 @@ class Issue3047LiveView(pageName: String) extends LiveView[Unit, Unit]:
     span(idAttr := "page", s"Page $pageName")
 
 object Issue3047LiveView:
-  val Layout: LiveLayout[Any, Any] = LiveLayout[Any, Any]((content, _) =>
-    div(
+  val Layout: LiveLayout[Any, Any] = LiveLayout[Any, Any]([Msg] =>
+    (content: HtmlElement[Msg], _: LiveLayoutContext[Any, Any]) =>
       div(
-        link.pushNavigate(E2ERoutes.issue3047A.location, "Page A"),
-        link.pushNavigate(E2ERoutes.issue3047B.location, "Page B")
-      ),
-      content,
-      liveView("test", Issue3047LiveView.Sticky(), sticky = true)
-    )
+        div(
+          link.pushNavigate(E2ERoutes.issue3047A.location, "Page A"),
+          link.pushNavigate(E2ERoutes.issue3047B.location, "Page B")
+        ),
+        content,
+        liveView("test", Issue3047LiveView.Sticky(), sticky = true)
+      )
   )
 
   class Sticky extends LiveView[Reset.type, Model]:
@@ -395,15 +378,20 @@ class Issue3529LiveView extends LiveView.Routed[Unit, Issue3529LiveView.Model, O
   override def view(model: Signal[Model]) =
     div(
       h1(model.map(current => s"Mounted at ${current.mounted}")),
-      link.pushNavigate(
-        model.map(current => E2ERoutes.issue3529.location(Some(current.next))),
+      a(
+        href := model.map(current => E2ERoutes.issue3529.location(Some(current.next)).href),
+        dataAttr("phx-link")       := "redirect",
+        dataAttr("phx-link-state") := "push",
         "Navigate"
       ),
-      link.pushPatch(
-        model.map(current => E2ERoutes.issue3529.location(Some(current.next))),
+      a(
+        href := model.map(current => E2ERoutes.issue3529.location(Some(current.next)).href),
+        dataAttr("phx-link")       := "patch",
+        dataAttr("phx-link-state") := "push",
         "Patch"
       )
     )
+end Issue3529LiveView
 
 object Issue3529LiveView:
   final case class Model(mounted: String, next: String)
@@ -427,17 +415,11 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
       .map(items => model.copy(items = items))
 
   override def hooks: LiveHooks[Unit, Model] =
-    LiveHooks.empty.onRawEvent { (model, event, ctx) =>
-      if event.bindingId == "inc" then
-        val nextCount = model.count + 1
-        ctx.streams
-          .insert(ItemsStream, Item(nextCount))
-          .map(items =>
-            LiveEventHookResult.halt(
-              model.copy(count = nextCount, items = items)
-            )
-          )
-      else LiveEventHookResult.cont(model)
+    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("inc")) { (model, _, ctx) =>
+      val nextCount = model.count + 1
+      ctx.streams
+        .insert(ItemsStream, Item(nextCount))
+        .map(items => model.copy(count = nextCount, items = items))
     }
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -616,10 +598,7 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
     case Msg.Noop(_) => model
 
   override def hooks: LiveHooks[Msg, Boolean] =
-    LiveHooks.empty.onRawEvent { (model, event, _) =>
-      if event.bindingId == "reconnected" then LiveEventHookResult.halt(true)
-      else LiveEventHookResult.cont(model)
-    }
+    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("reconnected"))((_, _, _) => true)
 
   override def view(reconnected: Signal[Boolean]) =
     div(
@@ -952,26 +931,26 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
   import Issue3026LiveView.*
 
   def mount(ctx: MountContext) =
-    if ctx.connected then startLoad(ctx.async).as(Model(status = Status.Loading))
-    else Model(status = Status.Connecting)
+    ctx.connection match
+      case Connection.Connected(capabilities) =>
+        startLoad(capabilities.async).as(Model(status = Status.Loading))
+      case Connection.Disconnected => Model(status = Status.Connecting)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent { (model, event, ctx) =>
-      event.bindingId match
-        case "validate" =>
-          val data = event.value.asString
-            .flatMap(raw => FormData.fromUrlEncoded(raw).toOption)
-            .getOrElse(FormData.fromMap(event.params))
-          LiveEventHookResult.halt(
-            model.copy(
-              name = data.getOrElse("name", model.name),
-              email = data.getOrElse("email", model.email)
-            )
-          )
-        case "submit" =>
-          startLoad(ctx.async).as(LiveEventHookResult.halt(model.copy(status = Status.Loading)))
-        case _ => LiveEventHookResult.cont(model)
-    }
+    LiveHooks
+      .empty[Msg, Model]
+      .onBrowserEvent(BrowserToServerEvent[Json]("validate")) { (model, value, _) =>
+        val data = value.asString
+          .flatMap(raw => FormData.fromUrlEncoded(raw).toOption)
+          .getOrElse(FormData.empty)
+        model.copy(
+          name = data.getOrElse("name", model.name),
+          email = data.getOrElse("email", model.email)
+        )
+      }
+      .onBrowserEvent(BrowserToServerEvent[Json]("submit")) { (model, _, ctx) =>
+        startLoad(ctx.async).as(model.copy(status = Status.Loading))
+      }
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeStatus(data) =>
@@ -1080,7 +1059,12 @@ object Issue3117LiveView:
 
     override def update(props: String, model: Model, ctx: UpdateContext) =
       if model.started then model
-      else ctx.async.start(Load)(ZIO.succeed("bar"))(Msg.Loaded(_)).as(model.copy(started = true))
+      else
+        ctx.connection match
+          case Connection.Connected(capabilities) =>
+            capabilities.async
+              .start(Load)(ZIO.succeed("bar"))(Msg.Loaded(_)).as(model.copy(started = true))
+          case Connection.Disconnected => model
 
     def handleMessage(props: String, model: Model, ctx: MessageContext) =
       case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => model.copy(result = Some(value))
@@ -1154,11 +1138,17 @@ object Issue3169LiveView:
     override def update(props: Option[String], model: Option[Record], ctx: UpdateContext) =
       props match
         case Some(name) =>
-          ctx.async
-            .start(Load)(
-              ZIO.sleep(50.millis).as(Record(scala.util.Random.nextInt(1000000), s"Record $name"))
-            )(Msg.Loaded(_))
-            .as(None)
+          ctx.connection match
+            case Connection.Connected(capabilities) =>
+              capabilities.async
+                .start(Load)(
+                  ZIO
+                    .sleep(50.millis).as(
+                      Record(scala.util.Random.nextInt(1000000), s"Record $name")
+                    )
+                )(Msg.Loaded(_))
+                .as(None)
+            case Connection.Disconnected => model
         case None => model
 
     def handleMessage(props: Option[String], model: Option[Record], ctx: MessageContext) =
@@ -1357,23 +1347,20 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
 
   def mount(ctx: MountContext) =
     val init = Model()
-    if ctx.connected then
-      ctx.async.start(ChangeId)(ZIO.unit)(_ => Msg.ChangeId) *>
-        ctx.client.push(MyEvent, Map.empty[String, String]).as(init)
-    else init
+    ctx.connection match
+      case Connection.Connected(capabilities) =>
+        capabilities.async.start(ChangeId)(ZIO.unit)(_ => Msg.ChangeId) *>
+          capabilities.client.push(MyEvent, Map.empty[String, String]).as(init)
+      case Connection.Disconnected => init
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent { (model, event, ctx) =>
-      event.bindingId match
-        case "lol" =>
-          LiveEventHookResult.halt(model)
-        case "reload" =>
-          val next = model.copy(counter = model.counter + 1)
-          ctx.client
-            .push(MyEvent, Map.empty[String, String]).as(LiveEventHookResult.halt(next))
-        case _ =>
-          LiveEventHookResult.cont(model)
-    }
+    LiveHooks
+      .empty[Msg, Model]
+      .onBrowserEvent(BrowserToServerEvent[Json]("lol"))((model, _, _) => model)
+      .onBrowserEvent(BrowserToServerEvent[Json]("reload")) { (model, _, ctx) =>
+        val next = model.copy(counter = model.counter + 1)
+        ctx.client.push(MyEvent, Map.empty[String, String]).as(next)
+      }
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeId => model.copy(id = 2)
@@ -1568,19 +1555,22 @@ object Issue3684LiveView:
   object BadgeForm extends LiveComponent[Unit, BadgeForm.Msg, String]:
     enum Msg:
       case ChangeType(value: String)
+      case FormChanged
 
     def mount(props: Unit, ctx: MountContext) =
       "huey"
 
     def handleMessage(props: Unit, model: String, ctx: MessageContext) =
       case Msg.ChangeType(value) => value
+      case Msg.FormChanged       => model
 
     override def view(props: Signal[Unit], selected: Signal[String], self: ComponentRef[Msg]) =
       div(
         form(
-          idAttr        := "foo",
-          cls           := "max-w-lg p-8 flex flex-col gap-4",
-          phxChangeAttr := "change",
+          idAttr := "foo",
+          cls    := "max-w-lg p-8 flex flex-col gap-4",
+          on.change(_ => Msg.FormChanged),
+          phx.target(self),
           phxSubmitAttr := "submit",
           radios(selected, self)
         )
@@ -1728,9 +1718,8 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
     Model()
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onRawEvent { (model, event, _) =>
-      if event.bindingId == "page_position_update" then LiveEventHookResult.halt(model)
-      else LiveEventHookResult.cont(model)
+    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("page_position_update")) {
+      (model, _, _) => model
     }
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -1811,7 +1800,10 @@ object Issue3941LiveView:
         item = props,
         asyncAssign = AsyncValue.markLoading(model.asyncAssign, reset = true)
       )
-      ctx.async.start(Load)(ZIO.succeed(props))(Msg.Loaded(_)).as(loading)
+      ctx.connection match
+        case Connection.Connected(capabilities) =>
+          capabilities.async.start(Load)(ZIO.succeed(props))(Msg.Loaded(_)).as(loading)
+        case Connection.Disconnected => loading
 
     def handleMessage(props: String, model: Model, ctx: MessageContext) =
       case Msg.Loaded(result @ LiveAsyncResult.Succeeded(item)) =>
@@ -1971,8 +1963,8 @@ class Issue4027LiveView
     ]:
   import Issue4027LiveView.*
 
-  def mount(_params: QueryParams, ctx: MountContext) =
-    Model()
+  def mount(params: QueryParams, ctx: MountContext) =
+    Model(caseName = params.caseName)
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
     model.copy(caseName = params.caseName)
@@ -2146,9 +2138,8 @@ object Issue4066LiveView:
 
   object DelayedInputComponent extends LiveComponent[Int, Unit, Unit]:
     override def hooks: ComponentLiveHooks[Int, Unit, Unit] =
-      ComponentLiveHooks.empty.onRawEvent { (_, model, event, _) =>
-        if event.bindingId == "do-something" then LiveEventHookResult.halt(model)
-        else LiveEventHookResult.cont(model)
+      ComponentLiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("do-something")) {
+        (_, model, _, _) => model
       }
 
     def mount(props: Int, ctx: MountContext) =
@@ -2240,9 +2231,8 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
     "value"
 
   override def hooks: LiveHooks[Msg, String] =
-    LiveHooks.empty.onRawEvent { (model, event, _) =>
-      if event.bindingId == "my_update" then LiveEventHookResult.halt(System.nanoTime.toString)
-      else LiveEventHookResult.cont(model)
+    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("my_update")) { (_, _, _) =>
+      System.nanoTime.toString
     }
 
   def handleMessage(model: String, ctx: MessageContext) =

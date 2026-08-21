@@ -133,6 +133,25 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
         }
       )
     },
+    test("decodes the two-phase component destruction protocol") {
+      def frame(event: String, payload: Json) = Json.Arr(
+        Json.Str("1"),
+        Json.Str("2"),
+        Json.Str("lv:root"),
+        Json.Str(event),
+        payload
+      )
+
+      val cids = Json.Obj("cids" -> Json.Arr(Json.Num(1), Json.Num(2)))
+
+      assertTrue(
+        PhoenixProtocol.decode(frame("cids_will_destroy", cids)).isRight,
+        PhoenixProtocol.decode(frame("cids_destroyed", cids)).isRight,
+        PhoenixProtocol
+          .decode(frame("cids_will_destroy", Json.Obj("cids" -> Json.Arr(Json.Str("1")))))
+          .isLeft
+      )
+    },
     test("decodes ordered form data and semantic metadata") {
       val event = RootEvent(
         "form",
@@ -283,6 +302,13 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
       val rendered = Json.Obj("s" -> Json.Arr(Json.Str("<main></main>")))
       val join = PhoenixOutput.join(joinRef, ref, "lv:root", rendered)
       val event = PhoenixOutput.event(joinRef, ref, "lv:root", Json.Obj.empty)
+      val intercept = PhoenixOutput.eventReply(
+        joinRef,
+        ref,
+        "lv:root",
+        Json.Obj("0" -> Json.Str("updated")),
+        Json.Obj("result" -> Json.Str("accepted"))
+      )
       val pushed = PhoenixOutput.diff(joinRef, "lv:root", Json.Obj.empty)
       assertTrue(
         join.ref == ref,
@@ -294,6 +320,15 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
           )
         ),
         event.ref == ref,
+        intercept.payload == Json.Obj(
+          "status" -> Json.Str("ok"),
+          "response" -> Json.Obj(
+            "diff" -> Json.Obj(
+              "0" -> Json.Str("updated"),
+              "r" -> Json.Obj("result" -> Json.Str("accepted"))
+            )
+          )
+        ),
         pushed.ref == PhoenixRef.Null,
         pushed.event == "diff"
       )

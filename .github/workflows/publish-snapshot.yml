@@ -22,8 +22,14 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Test published modules
-        run: nix develop --command mill --ticker false scalive.test scaliveTesting.test
+      - name: Test repository
+        run: nix develop --command mill --ticker false __.test
+      - name: Check documentation and public API
+        run: nix develop --command mill --ticker false documentation.check
+      - name: Smoke-test benchmarks
+        run: nix develop --command mill --ticker false benchmarks.runJmh -wi 0 -i 1 -r 100ms -f 0 -foe true '.*'
+      - name: Build published artifacts
+        run: nix develop --command mill --ticker false scalive.__.publishArtifacts
       - name: Publish snapshot
         run: nix develop --command mill --ticker false mill.javalib.SonatypeCentralPublishModule/
         env:

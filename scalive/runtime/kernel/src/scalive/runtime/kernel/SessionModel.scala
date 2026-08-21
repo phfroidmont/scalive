@@ -21,6 +21,7 @@ import scalive.LiveAsyncResult
 import scalive.LiveComponent
 import scalive.LiveComponentInstance
 import scalive.LiveComponentOutputInstance
+import scalive.LiveEvent
 import scalive.SubscriptionDelivery
 import scalive.SubscriptionKey
 import scalive.render.*
@@ -158,15 +159,13 @@ enum SessionCommand[+Msg]:
     epoch: Epoch,
     binding: BindingId,
     payload: BindingPayload,
-    eventName: Option[String] = None,
-    rawJson: Option[String] = None) extends SessionCommand[Nothing]
+    event: Option[LiveEvent] = None) extends SessionCommand[Nothing]
   case ComponentClientEvent(
     epoch: Epoch,
     component: ComponentInstanceId,
     binding: BindingId,
     payload: BindingPayload,
-    eventName: Option[String] = None,
-    rawJson: Option[String] = None)             extends SessionCommand[Nothing]
+    event: Option[LiveEvent] = None)            extends SessionCommand[Nothing]
   case Message[Msg](epoch: Epoch, message: Msg) extends SessionCommand[Msg]
   case AsyncCompletion[Msg](epoch: Epoch, event: LiveAsyncEvent[Msg]) extends SessionCommand[Msg]
   private[kernel] case ManagedAsync(
@@ -196,18 +195,18 @@ enum SessionCommand[+Msg]:
   case ParamsPatch(epoch: Epoch, destination: URL) extends SessionCommand[Nothing]
 
   def expectedEpoch: Epoch = this match
-    case ClientEvent(epoch, _, _, _, _)             => epoch
-    case ComponentClientEvent(epoch, _, _, _, _, _) => epoch
-    case Message(epoch, _)                          => epoch
-    case AsyncCompletion(epoch, _)                  => epoch
-    case ManagedAsync(epoch, _, _)                  => epoch
-    case ManagedSubscription(epoch, _, _)           => epoch
-    case ManagedSubscriptionEnded(epoch, _)         => epoch
-    case ComponentMessage(epoch, _, _)              => epoch
-    case ComponentUpdate(epoch, _)                  => epoch
-    case ComponentAsyncCompletion(epoch, _, _)      => epoch
-    case Upload(epoch, _, _)                        => epoch
-    case ParamsPatch(epoch, _)                      => epoch
+    case ClientEvent(epoch, _, _, _)             => epoch
+    case ComponentClientEvent(epoch, _, _, _, _) => epoch
+    case Message(epoch, _)                       => epoch
+    case AsyncCompletion(epoch, _)               => epoch
+    case ManagedAsync(epoch, _, _)               => epoch
+    case ManagedSubscription(epoch, _, _)        => epoch
+    case ManagedSubscriptionEnded(epoch, _)      => epoch
+    case ComponentMessage(epoch, _, _)           => epoch
+    case ComponentUpdate(epoch, _)               => epoch
+    case ComponentAsyncCompletion(epoch, _, _)   => epoch
+    case Upload(epoch, _, _)                     => epoch
+    case ParamsPatch(epoch, _)                   => epoch
 end SessionCommand
 
 final private[scalive] case class TurnDraft[+Msg, Model](
@@ -219,7 +218,12 @@ final private[scalive] case class TurnDraft[+Msg, Model](
   componentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
   resourceOperations: Vector[ResourceOperation] = Vector.empty,
   uploadCommit: UploadRetirementPlan = UploadRetirementPlan.empty,
-  uploadRollback: UploadRetirementPlan = UploadRetirementPlan.empty)
+  uploadRollback: UploadRetirementPlan = UploadRetirementPlan.empty,
+  reply: Option[Json] = None)
+
+private[scalive] enum ClientEventInterception[+Msg, Model]:
+  case Continue(draft: TurnDraft[Msg, Model])
+  case Halt(draft: TurnDraft[Msg, Model])
 
 /** Typed lifecycle operations interpreted by the protocol-neutral session owner.
   *
@@ -231,9 +235,13 @@ final private[scalive] case class SessionLogic[Msg, Model](
   handle: (Model, Msg) => Task[TurnDraft[Msg, Model]],
   handleParams: (Model, URL) => Task[TurnDraft[Msg, Model]] = (model: Model, url: URL) =>
     ZIO.succeed(TurnDraft(model, url = Some(url))),
-  interceptClientEvent: (Model, SessionCommand.ClientEvent) => Task[Option[TurnDraft[Msg, Model]]] =
-    (_: Model, _: SessionCommand.ClientEvent) => ZIO.succeed(Option.empty[TurnDraft[Msg, Model]]),
-  handleEvent: Option[(Model, Msg) => Task[TurnDraft[Msg, Model]]] = None,
+  interceptClientEvent: (Model, LiveEvent) => Task[ClientEventInterception[Msg, Model]] = (
+    model: Model,
+    _: LiveEvent
+  ) => ZIO.succeed(ClientEventInterception.Continue(TurnDraft(model))),
+  handleEvent: Option[
+    (TurnDraft[Msg, Model], Msg, LiveEvent) => Task[TurnDraft[Msg, Model]]
+  ] = None,
   handleInfo: Option[(Model, Msg) => Task[TurnDraft[Msg, Model]]] = None,
   handleAsync: Option[(Model, LiveAsyncEvent[Msg]) => Task[TurnDraft[Msg, Model]]] = None,
   handleManagedAsync: Option[
@@ -263,7 +271,8 @@ final private[scalive] case class SessionLogic[Msg, Model](
         operation.run.catchAllCause(_ => ZIO.logWarning("upload cleanup failed"))
       case UploadRetirementInstruction.Hosted(_, _) => ZIO.unit
     },
-  closeUploads: Model => UIO[Unit] = (_: Model) => ZIO.unit)
+  closeUploads: Model => UIO[Unit] = (_: Model) => ZIO.unit,
+  terminateOnNavigate: Boolean = true)
 
 /** Reference-identity wrapper: component definitions are not value keys. */
 final private[kernel] class ComponentDefinitionIdentity private (val value: AnyRef):
@@ -289,6 +298,7 @@ sealed private[scalive] trait MountedComponent[OwnerMsg]:
   def id: ComponentInstanceId
   def key: ComponentKey
   def definition: LiveComponent[Props, Message, Model]
+  def inputProps: Props
   def props: Props
   def model: Model
   def ref: ComponentRef[Message]
@@ -303,6 +313,7 @@ final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message
   id: ComponentInstanceId,
   key: ComponentKey,
   definition: LiveComponent[Props0, Message0, Model0],
+  inputProps: Props0,
   props: Props0,
   model: Model0,
   ref: ComponentRef[Message0],
@@ -454,10 +465,11 @@ trait ComponentEnvironment[RootMsg, RootModel]:
     props: P,
     model: A,
     command: SessionCommand.ComponentClientEvent,
+    message: Task[M],
     emit: O => Task[Unit],
     state: ComponentEnvironmentState,
     draft: TurnDraft[RootMsg, RootModel]
-  ): Task[Option[ComponentCallbackResult[A, RootMsg, RootModel]]]
+  ): Task[ComponentCallbackResult[A, RootMsg, RootModel]]
   def afterRender[P, M, A](
     id: ComponentInstanceId,
     component: LiveComponent[P, M, A],
@@ -521,11 +533,11 @@ private[scalive] object ComponentEnvironment:
         props: P,
         model: A,
         command: SessionCommand.ComponentClientEvent,
+        message: Task[M],
         emit: O => Task[Unit],
         state: ComponentEnvironmentState,
         draft: TurnDraft[RootMsg, RootModel]
-      ) =
-        ZIO.succeed(None)
+      ) = missing[ComponentCallbackResult[A, RootMsg, RootModel]]
       def afterRender[P, M, A](
         id: ComponentInstanceId,
         component: LiveComponent[P, M, A],
@@ -552,7 +564,8 @@ final private[scalive] case class SessionOutput(
   command: Option[CommandId],
   delta: RenderDelta,
   navigation: Option[NavigationOutput] = None,
-  effects: SessionEffects = SessionEffects())
+  effects: SessionEffects = SessionEffects(),
+  reply: Option[Json] = None)
 
 final private[scalive] case class DeferredSessionCommand[Msg, Model](
   command: CommandId,

@@ -37,10 +37,13 @@ private[scalive] enum PhoenixEncodingError:
 final private[scalive] class PhoenixRenderedState private[phoenix] (
   private[phoenix] val root: PhoenixRenderedEncoder.ProjectedNode,
   private[phoenix] val components: Map[Int, PhoenixRenderedEncoder.ProjectedComponent],
+  private[phoenix] val activeCids: Set[Int],
   private[phoenix] val tokenCids: Map[PhoenixRenderedEncoder.IdentityKey, Int],
   private[phoenix] val nextCid: Long,
   private[phoenix] val streamRefs: Map[PhoenixRenderedEncoder.IdentityKey, String],
-  private[phoenix] val nextStreamRef: Long):
+  private[phoenix] val nextStreamRef: Long,
+  private[phoenix] val csrfToken: Option[String],
+  private[phoenix] val pendingDeletionCids: Set[Int]):
 
   private[scalive] def cidForToken(token: Object): Option[Int] =
     tokenCids.get(PhoenixRenderedEncoder.IdentityKey(token))
@@ -53,6 +56,45 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
 
   private[scalive] def streamRef(identity: LiveStreamIdentity): Option[String] =
     streamRefs.get(PhoenixRenderedEncoder.IdentityKey(identity))
+
+  private[scalive] def markComponentsForDeletion(cids: Vector[Int]): PhoenixRenderedState =
+    PhoenixRenderedState(
+      root,
+      components,
+      activeCids,
+      tokenCids,
+      nextCid,
+      streamRefs,
+      nextStreamRef,
+      csrfToken,
+      pendingDeletionCids ++ cids.filter(components.contains)
+    )
+
+  private[scalive] def destroyComponents(
+    cids: Vector[Int]
+  ): (PhoenixRenderedState, Vector[Int]) =
+    val acknowledged = cids.distinct.filter(pendingDeletionCids.contains)
+    val deleted = acknowledged.filter(cid => components.contains(cid) && !activeCids.contains(cid))
+    val deletedSet         = deleted.toSet
+    val retained           = components -- deletedSet
+    val retainedTokenCids  = tokenCids.filterNot((_, cid) => deletedSet.contains(cid))
+    val retainedStreamRefs = PhoenixRenderedEncoder.retainStreamRefs(
+      root,
+      retained,
+      streamRefs
+    )
+    PhoenixRenderedState(
+      root,
+      retained,
+      activeCids -- deletedSet,
+      retainedTokenCids,
+      nextCid,
+      retainedStreamRefs,
+      nextStreamRef,
+      csrfToken,
+      pendingDeletionCids -- acknowledged
+    ) -> deleted
+end PhoenixRenderedState
 
 private[scalive] object PhoenixRenderedEncoder:
   final private[phoenix] class IdentityKey(val value: Object):
@@ -109,7 +151,9 @@ private[scalive] object PhoenixRenderedEncoder:
     slots: Set[TemplateSlotId],
     streams: Set[TemplateId])
 
-  final private class ProjectionContext(state: Option[PhoenixRenderedState]):
+  final private class ProjectionContext(
+    state: Option[PhoenixRenderedState],
+    initialCsrfToken: Option[String] = None):
     val components: mutable.Map[Int, ProjectedComponent] = mutable.Map.from(
       state.fold(Map.empty[Int, ProjectedComponent])(_.components)
     )
@@ -122,6 +166,9 @@ private[scalive] object PhoenixRenderedEncoder:
     private val existingStreams       = state.fold(Map.empty[IdentityKey, String])(_.streamRefs)
     private val newlyAllocatedStreams = mutable.Map.empty[IdentityKey, String]
     private var nextStream            = state.fold(0L)(_.nextStreamRef)
+    val pendingDeletionCids: Set[Int] = state.fold(Set.empty[Int])(_.pendingDeletionCids)
+
+    val csrfToken: Option[String] = state.flatMap(_.csrfToken).orElse(initialCsrfToken)
 
     def nextCid: Long       = next
     def nextStreamRef: Long = nextStream
@@ -160,9 +207,10 @@ private[scalive] object PhoenixRenderedEncoder:
     changedStreams: Set[TemplateId] = Set.empty)
 
   def initial(
-    tree: EvaluatedTree
+    tree: EvaluatedTree,
+    csrfToken: Option[String] = None
   ): Either[PhoenixEncodingError, (PhoenixRenderedState, Json.Obj)] =
-    val context = ProjectionContext(None)
+    val context = ProjectionContext(None, csrfToken)
     for
       root  <- project(tree.root, None, context)
       state <- finish(root, context)
@@ -171,9 +219,10 @@ private[scalive] object PhoenixRenderedEncoder:
 
   /** Projects a disconnected render with fresh connection-local CIDs and inlines components. */
   private[scalive] def fullHtml(
-    tree: EvaluatedTree
+    tree: EvaluatedTree,
+    csrfToken: Option[String] = None
   ): Either[PhoenixEncodingError, (PhoenixRenderedState, String)] =
-    val context = ProjectionContext(None)
+    val context = ProjectionContext(None, csrfToken)
     for
       root  <- project(tree.root, None, context)
       state <- finish(root, context)
@@ -192,6 +241,7 @@ private[scalive] object PhoenixRenderedEncoder:
         next <- finish(root, context)
         json <- fullPayload(next)
       yield clearPending(next) -> json
+
     case update: RenderDelta.Update =>
       val context = ProjectionContext(Some(state))
       for
@@ -200,10 +250,16 @@ private[scalive] object PhoenixRenderedEncoder:
         json   <-
           if result.structural then fullPayload(next)
           else
-            val diffs = context.componentDiffs.toMap ++
+            val pendingDiffs = context.componentDiffs.toMap ++
               context.allocatedCids.iterator.map(_ -> Option.empty[SparseChanges])
+            val diffs = pendingDiffs.map { case (cid, changes) =>
+              if state.pendingDeletionCids.contains(cid) then cid -> None else cid -> changes
+            }
             sparsePayload(next, SparseChanges(result.changedSlots, result.changedStreams), diffs)
       yield clearPending(next) -> json
+
+  private[scalive] def html(state: PhoenixRenderedState): Either[PhoenixEncodingError, String] =
+    renderHtml(state.root, activeComponents(state))
 
   private val emptyStreamOperations =
     ProjectedStreamOperations(Vector.empty, Vector.empty, reset = false)
@@ -228,10 +284,13 @@ private[scalive] object PhoenixRenderedEncoder:
     PhoenixRenderedState(
       root,
       components,
+      state.activeCids,
       state.tokenCids,
       state.nextCid,
       state.streamRefs,
-      state.nextStreamRef
+      state.nextStreamRef,
+      state.csrfToken,
+      state.pendingDeletionCids
     )
 
   private def project(
@@ -248,13 +307,24 @@ private[scalive] object PhoenixRenderedEncoder:
     case element: EvaluatedNode.Element =>
       val opening = Vector.newBuilder[ProjectedPart]
       opening += ProjectedPart.Static(s"<${element.tag}")
-      val attributes = traverse(element.attributes)(projectAttribute)
+      val csrfMarker = element.attributes.exists(attribute =>
+        attribute.name == "data-scalive-csrf" &&
+          attribute.value.contains(AttributeValue.Text("true"))
+      )
+      val visibleAttributes = element.attributes.filterNot(_.name == "data-scalive-csrf")
+      val attributes        = traverse(visibleAttributes)(projectAttribute)
       attributes.flatMap { projectedAttributes =>
         opening ++= projectedAttributes
         componentRootCid.foreach(cid =>
           opening += ProjectedPart.Static(s" data-phx-component=\"$cid\"")
         )
         opening += ProjectedPart.Static(">")
+        if csrfMarker then
+          context.csrfToken.foreach(token =>
+            opening += ProjectedPart.Static(
+              s"<input type=\"hidden\" name=\"_csrf_token\" value=\"${Escaping.escape(token)}\">"
+            )
+          )
         traverse(element.children)(child => project(child, None, context)).map { children =>
           children.foreach(child => opening += ProjectedPart.Node(child))
           if !element.void then opening += ProjectedPart.Static(s"</${element.tag}>")
@@ -297,17 +367,16 @@ private[scalive] object PhoenixRenderedEncoder:
             val opening = StringBuilder()
             opening.append("<div id=\"")
             opening.append(Escaping.escape(resolution.applicationId))
-            if !resolution.sticky || resolution.child.nonEmpty then
+            if !resolution.sticky then
               opening.append("\" data-phx-parent-id=\"")
               opening.append(Escaping.escape(resolution.parentDomId))
             opening.append("\" data-phx-session=\"")
             opening.append(Escaping.escape(resolution.joinCredential))
-            opening.append('"')
+            opening.append("\" data-phx-static=\"")
             resolution.staticCredential.foreach { credential =>
-              opening.append(" data-phx-static=\"")
               opening.append(Escaping.escape(credential))
-              opening.append('"')
             }
+            opening.append('"')
             if resolution.sticky then opening.append(" data-phx-sticky")
             if resolution.loading then opening.append(" class=\"phx-loading\"")
             opening.append('>')
@@ -360,19 +429,35 @@ private[scalive] object PhoenixRenderedEncoder:
     row: EvaluatedNode.StreamRow,
     context: ProjectionContext
   ): Either[PhoenixEncodingError, ProjectedStreamRow] =
-    project(row.child, None, context).map { child =>
+    val directNested = row.child match
+      case element
+          if element.tag == "div" && !element.void && element.attributes.size == 1 &&
+            element.attributes.headOption.exists {
+              case EvaluatedAttribute("id", Some(AttributeValue.Text(value)), _, _) =>
+                value == row.domId
+              case _ => false
+            } =>
+        element.children match
+          case Vector(nested: EvaluatedNode.Nested) if nested.applicationId == row.domId =>
+            Some(nested)
+          case _ => None
+      case _ => None
+    val projected = directNested.fold(project(row.child, None, context))(project(_, None, context))
+    projected.map { child =>
       val idAttribute = s" id=\"${Escaping.escape(row.domId)}\""
       val parts       = child.parts.flatMap {
-        case ProjectedPart.Static(`idAttribute`) =>
+        case ProjectedPart.Static(value) if value.contains(idAttribute) =>
+          val index = value.indexOf(idAttribute)
           Vector(
-            ProjectedPart.Static(" id=\""),
+            ProjectedPart.Static(value.substring(0, index) + " id=\""),
             ProjectedPart.StreamDomId(Escaping.escape(row.domId)),
-            ProjectedPart.Static("\"")
+            ProjectedPart.Static("\"" + value.substring(index + idAttribute.length))
           )
         case part => Vector(part)
       }
       ProjectedStreamRow(row.domId, child.copy(parts = parts))
     }
+  end projectStreamRow
 
   private def validateStreamOperation(
     at: StreamAt,
@@ -604,20 +689,23 @@ private[scalive] object PhoenixRenderedEncoder:
   ): Either[PhoenixEncodingError, PhoenixRenderedState] =
     for
       reachable <- validateGraph(root, context.components.toMap)
-      active = context.components.toMap.view.filterKeys(reachable.contains).toMap
-      tokens =
-        active.iterator.map { case (cid, component) => IdentityKey(component.token) -> cid }.toMap
-      streams = collectStreams(root) ++ active.valuesIterator.flatMap(component =>
+      retained = context.components.toMap
+      tokens   =
+        retained.iterator.map { case (cid, component) => IdentityKey(component.token) -> cid }.toMap
+      streams = collectStreams(root) ++ retained.valuesIterator.flatMap(component =>
                   collectStreams(component.root)
                 )
       streamRefs = streams.iterator.map(stream => IdentityKey(stream.identity) -> stream.ref).toMap
     yield PhoenixRenderedState(
       root,
-      active,
+      retained,
+      reachable,
       tokens,
       context.nextCid,
       streamRefs,
-      context.nextStreamRef
+      context.nextStreamRef,
+      context.csrfToken,
+      context.pendingDeletionCids -- reachable
     )
 
   private def validateGraph(
@@ -686,13 +774,26 @@ private[scalive] object PhoenixRenderedEncoder:
         }
     loop(root)
 
+  private def activeComponents(
+    state: PhoenixRenderedState
+  ): Map[Int, ProjectedComponent] =
+    state.components.view.filterKeys(state.activeCids.contains).toMap
+
+  private[phoenix] def retainStreamRefs(
+    root: ProjectedNode,
+    components: Map[Int, ProjectedComponent],
+    streamRefs: Map[IdentityKey, String]
+  ): Map[IdentityKey, String] =
+    val identities = (collectStreams(root) ++ components.valuesIterator.flatMap(component =>
+      collectStreams(component.root)
+    )).iterator.map(stream => IdentityKey(stream.identity)).toSet
+    streamRefs.filter((identity, _) => identities.contains(identity))
+
   private def fullPayload(state: PhoenixRenderedState): Either[PhoenixEncodingError, Json.Obj] =
-    full(state.root, state.components).flatMap { root =>
-      if state.components.isEmpty then Right(root)
-      else
-        componentObject(state.components, state.components.keySet).map(value =>
-          root.add("c", value)
-        )
+    val active = activeComponents(state)
+    full(state.root, active).flatMap { root =>
+      if active.isEmpty then Right(root)
+      else componentObject(active, state.activeCids).map(value => root.add("c", value))
     }
 
   private def sparsePayload(
@@ -700,10 +801,11 @@ private[scalive] object PhoenixRenderedEncoder:
     changed: SparseChanges,
     changedComponents: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
-    sparse(state.root, changed, state.components).flatMap { root =>
-      val activeChanges = changedComponents.view.filterKeys(state.components.contains).toMap
+    val active = activeComponents(state)
+    sparse(state.root, changed, active).flatMap { root =>
+      val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
       if activeChanges.isEmpty then Right(root)
-      else componentDiffs(state.components, activeChanges).map(value => root.add("c", value))
+      else componentDiffs(active, activeChanges).map(value => root.add("c", value))
     }
 
   private def componentObject(
@@ -711,7 +813,9 @@ private[scalive] object PhoenixRenderedEncoder:
     cids: Set[Int]
   ): Either[PhoenixEncodingError, Json.Obj] =
     traverse(cids.toVector.sorted)(cid =>
-      full(components(cid).root, components).map(value => cid.toString -> value)
+      full(components(cid).root, components).map(value =>
+        cid.toString -> value.add("r", Json.Num(1))
+      )
     ).map(fields => Json.Obj(fields*))
 
   private def componentDiffs(
@@ -719,10 +823,13 @@ private[scalive] object PhoenixRenderedEncoder:
     cids: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
     traverse(cids.toVector.sortBy(_._1)) { case (cid, slots) =>
-      slots
-        .fold(full(components(cid).root, components))(changed =>
-          sparse(components(cid).root, changed, components)
-        ).map(value => cid.toString -> value)
+      slots match
+        case None =>
+          full(components(cid).root, components).map(value =>
+            cid.toString -> value.add("r", Json.Num(1))
+          )
+        case Some(changed) =>
+          sparse(components(cid).root, changed, components).map(value => cid.toString -> value)
     }.map(fields => Json.Obj(fields*))
 
   private def full(
@@ -812,13 +919,11 @@ private[scalive] object PhoenixRenderedEncoder:
     else
       val templateRows = selectedRows ++ stream.rows
       val flattened    = traverse(templateRows)(row => flatten(row.child, components, None))
-      flattened.flatMap { rows =>
-        val statics = rows.headOption.map(_._1).getOrElse(Vector(""))
-        if rows.exists(_._1 != statics) then Left(PhoenixEncodingError.InvalidStreamRowTemplate)
-        else
+      flattened
+        .flatMap(normalizeStreamRows).map { case (statics, rows) =>
           val selectedCount    = selectedRows.length
-          val selectedPayloads = rows.take(selectedCount).map { case (_, dynamics) =>
-            Json.Obj(dynamics.zipWithIndex.map { case ((_, value), index) =>
+          val selectedPayloads = rows.take(selectedCount).map { dynamics =>
+            Json.Obj(dynamics.zipWithIndex.map { case (value, index) =>
               index.toString -> value
             }*)
           }
@@ -832,8 +937,41 @@ private[scalive] object PhoenixRenderedEncoder:
              else Vector.empty) ++
               Vector("k" -> Json.Obj(keyedFields*), "stream" -> metadata)
           Right(Json.Obj(fields*))
-      }
+        }.flatten
   end streamJson
+
+  private def normalizeStreamRows(
+    rows: Vector[(Vector[String], Vector[(Option[TemplateSlotId], Json)])]
+  ): Either[PhoenixEncodingError, (Vector[String], Vector[Vector[Json]])] =
+    rows.headOption match
+      case None                                => Right(Vector("") -> Vector.empty)
+      case Some((firstStatics, firstDynamics)) =>
+        val compatible = rows.forall { case (statics, dynamics) =>
+          statics.length == firstStatics.length && dynamics.length == firstDynamics.length
+        }
+        if !compatible then Left(PhoenixEncodingError.InvalidStreamRowTemplate)
+        else
+          val statics  = Vector.newBuilder[String]
+          val dynamics = rows.map(_ => Vector.newBuilder[Json])
+          val current  = StringBuilder()
+
+          firstStatics.indices.foreach { index =>
+            val values = rows.map(_._1(index))
+            if values.forall(_ == values.head) then current.append(values.head)
+            else
+              statics += current.result()
+              current.clear()
+              values.zip(dynamics).foreach { case (value, row) => row += Json.Str(value) }
+
+            if index < firstDynamics.length then
+              statics += current.result()
+              current.clear()
+              rows.zip(dynamics).foreach { case ((_, values), row) => row += values(index)._2 }
+          }
+
+          statics += current.result()
+          Right(statics.result() -> dynamics.map(_.result()))
+  end normalizeStreamRows
 
   private def streamMetadata(stream: ProjectedStream): Json.Arr =
     val inserts = stream.operations.inserts.map { insert =>

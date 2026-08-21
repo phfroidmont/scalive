@@ -3,7 +3,7 @@ package scalive.docs.examples
 import zio.*
 import zio.test.*
 
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.ConnectedRender
 
 object CounterExampleSpec extends ZIOSpecDefault:
   private val Count = "[role=status] strong"
@@ -12,7 +12,7 @@ object CounterExampleSpec extends ZIOSpecDefault:
     test("increments, decrements, and resets through connected bindings") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new CounterExample)
+          harness <- ConnectedRender.join(new CounterExample)
           initial <- harness.text(Count)
           _       <- harness.clickButton("Increase")
           _       <- harness.clickButton("Increase")

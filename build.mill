@@ -1,12 +1,14 @@
 //| mvnDeps:
 //| - com.raquo::domtypes:18.1.0
 //| - com.goyeau::mill-scalafix::0.6.0
+//| - com.lihaoyi::mill-contrib-jmh:1.1.2
 //| mill-jvm-version: system
 
 package build
 
 import mill.*, scalalib.*, publish.*
 import mill.scalalib.scalafmt.ScalafmtModule
+import mill.contrib.jmh.JmhModule
 import com.goyeau.mill.scalafix.ScalafixModule
 
 object Versions:
@@ -30,7 +32,19 @@ trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
 trait PublishCommon extends PublishModule:
   def publishVersion = "0.0.1-SNAPSHOT"
   def pomSettings    = PomSettings(
-    description = artifactName(),
+    description = artifactName() match
+      case "scalive"                    => "Scala 3 server-driven web applications compatible with Phoenix LiveView"
+      case "scalive-api"                => "Public Scalive lifecycle, HTML, routing, forms, streams, and upload APIs"
+      case "scalive-render"             => "Protocol-neutral Scalive rendering and semantic diff engine"
+      case "scalive-runtime-contracts"  => "Protocol-neutral contracts shared by Scalive runtime modules"
+      case "scalive-runtime-resources"  => "Managed async, subscription, stream, and upload resources for Scalive"
+      case "scalive-runtime-topology"   => "Nested lifecycle topology contracts for Scalive"
+      case "scalive-runtime-kernel"     => "Transactional lifecycle kernel for Scalive"
+      case "scalive-runtime-connection" => "Connected lifecycle supervision for Scalive"
+      case "scalive-protocol-phoenix"   => "Phoenix LiveView protocol projection for Scalive"
+      case "scalive-transport-zio-http" => "ZIO HTTP transport integration for Scalive"
+      case "scalive-testing"            => "Disconnected and connected behavioral testing for Scalive applications"
+      case other                         => other,
     organization = "dev.scalive",
     url = "https://github.com/phfroidmont/scalive",
     licenses = Seq(License.MIT),
@@ -44,9 +58,11 @@ trait ScaliveModule extends ScalaCommon with PublishCommon:
     def zioTestVersion = Versions.zioTest
 
 object scalive extends ScaliveModule:
+  override def artifactName = "scalive"
   def moduleDeps = Seq(api, transport.`zio-http`)
 
   object api extends ScaliveModule:
+    override def artifactName = "scalive-api"
     def mvnDeps = Seq(
       mvn"dev.zio::zio-json:${Versions.zioJson}",
       mvn"dev.zio::zio-http:${Versions.zioHttp}"
@@ -58,37 +74,50 @@ object scalive extends ScaliveModule:
     }
 
   object render extends ScaliveModule:
+    override def artifactName = "scalive-render"
     def moduleDeps = Seq(api)
 
   object runtime extends Module:
     object contracts extends ScaliveModule:
+      override def artifactName = "scalive-runtime-contracts"
       def moduleDeps = Seq(api)
 
     object resources extends ScaliveModule:
+      override def artifactName = "scalive-runtime-resources"
       def moduleDeps = Seq(api, contracts)
 
     object topology extends ScaliveModule:
+      override def artifactName = "scalive-runtime-topology"
       def moduleDeps = Seq(api, contracts)
 
     object kernel extends ScaliveModule:
+      override def artifactName = "scalive-runtime-kernel"
       def moduleDeps = Seq(api, render, contracts, runtime.resources)
 
     object connection extends ScaliveModule:
+      override def artifactName = "scalive-runtime-connection"
       def moduleDeps = Seq(contracts, kernel, topology, runtime.resources)
 
   object protocol extends Module:
     object phoenix extends ScaliveModule:
+      override def artifactName = "scalive-protocol-phoenix"
       def moduleDeps = Seq(runtime.contracts, render)
 
   object transport extends Module:
     object `zio-http` extends ScaliveModule:
+      override def artifactName = "scalive-transport-zio-http"
       def moduleDeps = Seq(api, runtime.connection, protocol.phoenix)
 
       def mvnDeps = Seq(mvn"dev.zio::zio-http:${Versions.zioHttp}")
 
   object testing extends ScaliveModule:
+    override def artifactName = "scalive-testing"
     def moduleDeps = Seq(scalive)
     def mvnDeps    = Seq(mvn"org.jsoup:jsoup:1.23.1")
+
+object benchmarks extends ScalaCommon with JmhModule:
+  def moduleDeps    = Seq(scalive)
+  def jmhCoreVersion = "1.37"
 
 object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)

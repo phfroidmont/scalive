@@ -4,21 +4,21 @@ import org.jsoup.Jsoup
 import zio.*
 import zio.test.*
 
-import scalive.docs.SiteLiveViewHarness
+import scalive.testing.{ConnectedRender, ConnectedView}
 
 object BrowserInteropExampleSpec extends ZIOSpecDefault:
-  private def document(harness: SiteLiveViewHarness[?, ?]) =
+  private def document(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
 
   override def spec = suite("BrowserInteropExampleSpec")(
     test("requests clipboard work and resets deterministically") {
       ZIO.scoped {
         for
-          harness <- SiteLiveViewHarness.join(new BrowserInteropExample("first"))
+          harness <- ConnectedRender.join(new BrowserInteropExample("first"))
           initial <- document(harness)
           _       <- harness.clickButton("Copy sample text")
           pending <- document(harness)
-          _       <- harness.sendServer(BrowserInteropExample.Msg.Reset)
+          _       <- harness.send(BrowserInteropExample.Msg.Reset)
           reset   <- document(harness)
         yield assertTrue(
           initial.select("[data-browser-copy-status]").text() == "No browser operation requested yet.",
@@ -53,8 +53,8 @@ object BrowserInteropExampleSpec extends ZIOSpecDefault:
     test("derives hook and command ids from the example instance") {
       ZIO.scoped {
         for
-          first  <- SiteLiveViewHarness.join(new BrowserInteropExample("first"))
-          second <- SiteLiveViewHarness.join(new BrowserInteropExample("second"))
+          first  <- ConnectedRender.join(new BrowserInteropExample("first"))
+          second <- ConnectedRender.join(new BrowserInteropExample("second"))
           firstDocument  <- document(first)
           secondDocument <- document(second)
           firstIds = firstDocument.select("[id]").eachAttr("id")

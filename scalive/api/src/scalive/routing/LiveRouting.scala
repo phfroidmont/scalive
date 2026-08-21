@@ -211,6 +211,19 @@ class LiveRouteBuilder[A] private[scalive] (
   ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
     query(HttpCodec.query[Query](name))
 
+  def queryOptional[Query: Schema](
+    name: String
+  )(using
+    combiner: Combiner[A, Option[Query]]
+  ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
+    query(HttpCodec.query[Query](name).optional)
+
+  def query[Query: Schema](
+    using
+    combiner: Combiner[A, Query]
+  ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
+    query(HttpCodec.query[Query])
+
   def params: LiveEncodableRouteParamsBuilder[A, A] =
     LiveEncodableRouteParamsBuilder(
       pathCodec,
@@ -373,6 +386,19 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
   ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
     query(HttpCodec.query[Query](name))
 
+  def queryOptional[Query: Schema](
+    name: String
+  )(using
+    combiner: Combiner[A, Option[Query]]
+  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+    query(HttpCodec.query[Query](name).optional)
+
+  def query[Query: Schema](
+    using
+    combiner: Combiner[A, Query]
+  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+    query(HttpCodec.query[Query])
+
   def apply[Msg, Model](view: => LiveView[Msg, Model]): LiveRoute[R, A] { type Input = Need } =
     from((_, _, _) => view)
 
@@ -476,6 +502,16 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
   private val layouts: Vector[LiveLayout[A, Any]],
   private val rootLayout: Option[LiveRootLayout[A, Any]]):
 
+  def mapParamsDecodeOnly[Params2](
+    decodeParams: Params => Params2
+  ): LiveRouteParamsBuilder[A, Params2] =
+    LiveRouteParamsBuilder(
+      pathCodec,
+      paramsCodec.mapDecodeOnly(decodeParams),
+      layouts,
+      rootLayout
+    )
+
   def apply[Msg, Model](
     view: => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[Any, A] { type Input = Any } =
@@ -539,6 +575,18 @@ final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
       layouts,
       rootLayout
     ):
+  def mapParams[Params2](
+    decodeParams: Params => Params2
+  )(
+    encodeParams: Params2 => Params
+  ): LiveEncodableRouteParamsBuilder[A, Params2] =
+    LiveEncodableRouteParamsBuilder(
+      pathCodec,
+      codec.imap(decodeParams)(encodeParams),
+      layouts,
+      rootLayout
+    )
+
   def location(params: Params): LiveLocation =
     locationEither(params).fold(error => throw new LiveLocation.EncodingException(error), identity)
 
@@ -647,6 +695,7 @@ object LiveRouter:
 
 object Live:
   val router: LiveRouter = LiveRouter(PathCodec.empty / "live", None, LiveRootLayout.identity)
+  def route[A](pathCodec: PathCodec[A]): LiveRouteSeed[A] = LiveRouteSeed(pathCodec)
   def session(name: String): LiveSessionBuilder[Any, Any] =
     LiveSessionBuilder(name, LiveMountPipeline.Identity[Any, Any](), Vector.empty, None)
 

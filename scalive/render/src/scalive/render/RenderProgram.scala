@@ -365,16 +365,22 @@ object RenderProgram:
         extends AttributeTemplate[Nothing]
     final case class Binding[Msg](
       name: String,
+      valueSlot: TemplateSlotId,
       id: BindingId,
       operation: BindingPayload => Msg)
         extends AttributeTemplate[Msg]
     final case class SignalBinding[A, Msg](
       name: String,
+      valueSlot: TemplateSlotId,
       id: BindingId,
       signal: Signal[A],
       operation: (A, BindingPayload) => Msg)
         extends AttributeTemplate[Msg]
-    final case class JsBinding[Msg](name: String, id: BindingId, command: JSCommand[Msg])
+    final case class JsBinding[Msg](
+      name: String,
+      valueSlot: TemplateSlotId,
+      id: BindingId,
+      command: JSCommand[Msg])
         extends AttributeTemplate[Msg]
     final case class SignalJsBinding[Msg](
       name: String,
@@ -384,16 +390,20 @@ object RenderProgram:
         extends AttributeTemplate[Msg]
     final case class RoutedBinding(
       name: String,
+      valueSlot: TemplateSlotId,
       id: BindingId,
       operation: BindingPayload => scalive.ComponentDispatch)
         extends AttributeTemplate[Nothing]
     final case class TargetedBinding[Message](
       name: String,
+      valueSlot: TemplateSlotId,
       id: BindingId,
       target: scalive.ComponentRef[Message],
       operation: BindingPayload => Message)
         extends AttributeTemplate[Nothing]
-    final case class ComponentTarget[Message](target: scalive.ComponentRef[Message])
+    final case class ComponentTarget[Message](
+      target: scalive.ComponentRef[Message],
+      valueSlot: TemplateSlotId)
         extends AttributeTemplate[Nothing]:
       val name = "phx-target"
     final case class Choice[Msg](
@@ -503,43 +513,57 @@ object RenderProgram:
         case Mod.Attr.SignalValueAsPresence(name, value) =>
           dynamicAttribute(name, value)(AttributeTemplate.DynamicPresence.apply)
         case Mod.Attr.Binding(name, operation) =>
-          allocator
-            .binding().map(slot =>
-              AttributeTemplate.Binding(name, BindingId.event(program, slot), operation)
-            )
+          for
+            valueSlot   <- allocator.slot()
+            bindingSlot <- allocator.binding()
+          yield AttributeTemplate.Binding(
+            name,
+            valueSlot,
+            BindingId.event(program, bindingSlot),
+            operation
+          )
         case Mod.Attr.SignalBinding(name, signal, operation) =>
           for
-            _    <- scope.validate(signal)
-            slot <- allocator.binding()
+            _           <- scope.validate(signal)
+            valueSlot   <- allocator.slot()
+            bindingSlot <- allocator.binding()
           yield AttributeTemplate.SignalBinding(
             name,
-            BindingId.event(program, slot),
+            valueSlot,
+            BindingId.event(program, bindingSlot),
             signal,
             operation
           )
         case Mod.Attr.FormBinding(name, operation) =>
-          allocator
-            .binding().map(slot =>
-              AttributeTemplate.Binding(
-                name,
-                BindingId.event(program, slot),
-                payload => operation(payload.formData)
-              )
-            )
+          for
+            valueSlot   <- allocator.slot()
+            bindingSlot <- allocator.binding()
+          yield AttributeTemplate.Binding(
+            name,
+            valueSlot,
+            BindingId.event(program, bindingSlot),
+            payload => operation(payload.formData)
+          )
         case Mod.Attr.FormEventBinding(name, codec, operation) =>
-          allocator
-            .binding().map(slot =>
-              AttributeTemplate.Binding(
-                name,
-                BindingId.event(program, slot),
-                payload => operation(payload.formEvent(codec, submitted = name == "phx-submit"))
-              )
-            )
+          for
+            valueSlot   <- allocator.slot()
+            bindingSlot <- allocator.binding()
+          yield AttributeTemplate.Binding(
+            name,
+            valueSlot,
+            BindingId.event(program, bindingSlot),
+            payload => operation(payload.formEvent(codec, submitted = name == "phx-submit"))
+          )
         case Mod.Attr.JsBinding(name, command) =>
-          allocator
-            .binding().map(slot =>
-              AttributeTemplate.JsBinding(name, BindingId.event(program, slot), command)
-            )
+          for
+            valueSlot   <- allocator.slot()
+            bindingSlot <- allocator.binding()
+          yield AttributeTemplate.JsBinding(
+            name,
+            valueSlot,
+            BindingId.js(bindingSlot),
+            command
+          )
         case Mod.Attr.SignalJsBinding(name, command) =>
           for
             _           <- scope.validate(command)
@@ -548,30 +572,33 @@ object RenderProgram:
           yield AttributeTemplate.SignalJsBinding(
             name,
             valueSlot,
-            BindingId.event(program, bindingSlot),
+            BindingId.js(bindingSlot),
             command
           )
         case Mod.Attr.RoutedBinding(name, operation) =>
-          allocator
-            .binding().map(slot =>
-              AttributeTemplate.RoutedBinding(
-                name,
-                BindingId.event(program, slot),
-                operation
-              )
-            )
+          for
+            valueSlot   <- allocator.slot()
+            bindingSlot <- allocator.binding()
+          yield AttributeTemplate.RoutedBinding(
+            name,
+            valueSlot,
+            BindingId.event(program, bindingSlot),
+            operation
+          )
         case Mod.Attr.ComponentBinding(name, target, operation) =>
-          allocator
-            .binding().map(slot =>
-              AttributeTemplate.TargetedBinding(
-                name,
-                BindingId.event(program, slot),
-                target,
-                operation
-              )
-            )
-        case Mod.Attr.ComponentTarget(target) => Right(AttributeTemplate.ComponentTarget(target))
-        case Mod.Attr.Group(_)                =>
+          for
+            valueSlot   <- allocator.slot()
+            bindingSlot <- allocator.binding()
+          yield AttributeTemplate.TargetedBinding(
+            name,
+            valueSlot,
+            BindingId.event(program, bindingSlot),
+            target,
+            operation
+          )
+        case Mod.Attr.ComponentTarget(target) =>
+          allocator.slot().map(AttributeTemplate.ComponentTarget(target, _))
+        case Mod.Attr.Group(_) =>
           Left(RenderError.InvalidHtml("attribute groups must be flattened before compilation"))
 
     private def dynamicAttribute[A, Msg](
@@ -947,14 +974,26 @@ object RenderProgram:
               ) =>
             Some(left.copy(slot = right.slot))
           case (left: AttributeTemplate.Binding[?], right: AttributeTemplate.Binding[?]) =>
-            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Msg]])
+            Some(
+              left
+                .copy(valueSlot = right.valueSlot, id = right.id)
+                .asInstanceOf[AttributeTemplate[Msg]]
+            )
           case (
                 left: AttributeTemplate.SignalBinding[?, ?],
                 right: AttributeTemplate.SignalBinding[?, ?]
               ) =>
-            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Msg]])
+            Some(
+              left
+                .copy(valueSlot = right.valueSlot, id = right.id)
+                .asInstanceOf[AttributeTemplate[Msg]]
+            )
           case (left: AttributeTemplate.JsBinding[?], right: AttributeTemplate.JsBinding[?]) =>
-            Some(left.copy(id = right.id).asInstanceOf[AttributeTemplate[Msg]])
+            Some(
+              left
+                .copy(valueSlot = right.valueSlot, id = right.id)
+                .asInstanceOf[AttributeTemplate[Msg]]
+            )
           case (
                 left: AttributeTemplate.SignalJsBinding[?],
                 right: AttributeTemplate.SignalJsBinding[?]
@@ -965,17 +1004,17 @@ object RenderProgram:
                 .asInstanceOf[AttributeTemplate[Msg]]
             )
           case (left: AttributeTemplate.RoutedBinding, right: AttributeTemplate.RoutedBinding) =>
-            Some(left.copy(id = right.id))
+            Some(left.copy(valueSlot = right.valueSlot, id = right.id))
           case (
                 left: AttributeTemplate.TargetedBinding[?],
                 right: AttributeTemplate.TargetedBinding[?]
               ) =>
-            Some(left.copy(id = right.id))
+            Some(left.copy(valueSlot = right.valueSlot, id = right.id))
           case (
                 left: AttributeTemplate.ComponentTarget[?],
-                _: AttributeTemplate.ComponentTarget[?]
+                right: AttributeTemplate.ComponentTarget[?]
               ) =>
-            Some(left)
+            Some(left.copy(valueSlot = right.valueSlot))
           case _ => None
   end Compiler
 
@@ -1324,46 +1363,58 @@ object RenderProgram:
       StreamRowTemplate[A, Msg]
     ]
   ): Either[RenderError, EvaluatedNode.Stream] =
-    val entries = stream.entries
+    val entries          = stream.entries
+    val retainedDomIds   = entries.iterator.map(_.domId).toSet
+    val operationEntries = stream.inserted.iterator
+      .map(_.entry)
+      .filterNot(entry => retainedDomIds.contains(entry.domId))
+      .toVector
+    val renderedEntries = entries ++ operationEntries
     for
-      _ <- validateStreamDomIds(entries)
+      _ <- validateStreamDomIds(renderedEntries)
       retained = state.snapshot(stream.identity)
-      templates <- traverse(entries) { entry =>
+      templates <- traverse(renderedEntries) { entry =>
                      rowCandidate(entry.domId, entry.value, retained.get(entry.domId))
                    }
-      _ <- traverse(templates.zip(entries)) { case (row, entry) =>
+      _ <- traverse(templates.zip(renderedEntries)) { case (row, entry) =>
              transaction.bindSource(row.source, entry.value)
            }
       old     = previous.collect { case value: EvaluatedNode.Stream => value }
       oldRows = old.toVector.flatMap(_.rows).map(row => row.domId -> row.child).toMap
-      rows <- traverse(templates.zip(entries)) { case (row, entry) =>
-                evaluateNode(
-                  row.element,
-                  oldRows.get(entry.domId),
-                  revision,
-                  transaction,
-                  flash,
-                  bindings,
-                  commitActions,
-                  candidateRows,
-                  requirements
-                ).map(child =>
-                  EvaluatedNode.StreamRow(entry.domId, child.asInstanceOf[EvaluatedNode.Element])
-                )
-              }
+      renderedRows <- traverse(templates.zip(renderedEntries)) { case (row, entry) =>
+                        evaluateNode(
+                          row.element,
+                          oldRows.get(entry.domId),
+                          revision,
+                          transaction,
+                          flash,
+                          bindings,
+                          commitActions,
+                          candidateRows,
+                          requirements
+                        ).map(child =>
+                          EvaluatedNode.StreamRow(
+                            entry.domId,
+                            child.asInstanceOf[EvaluatedNode.Element]
+                          )
+                        )
+                      }
     yield
-      val rowsById = rows.map(row => row.domId -> row).toMap
+      val rows     = renderedRows.take(entries.length)
+      val rowsById = renderedRows.map(row => row.domId -> row).toMap
       val inserts  = stream.inserted.map { insert =>
-        val row = rowsById.getOrElse(
-          insert.entry.domId,
-          throw RenderError.InvalidHtml(
-            s"stream insertion '${insert.entry.domId}' is absent from the retained snapshot"
-          )
-        )
+        val row = rowsById(insert.entry.domId)
         EvaluatedNode.StreamInsert(row, insert.at, insert.limit, insert.updateOnly)
       }
-      val operations = EvaluatedNode.StreamOperations(inserts, stream.deleted, stream.reset)
-      val next       = Map.from(entries.map(_.domId).zip(templates))
+      val operations         = EvaluatedNode.StreamOperations(inserts, stream.deleted, stream.reset)
+      val retainedTemplates  = templates.take(entries.length)
+      val transientTemplates = operationEntries
+        .zip(templates.drop(entries.length)).collect {
+          case (entry, template) if !retained.contains(entry.domId) => template
+        }
+      if transientTemplates.nonEmpty then
+        commitActions += (() => transientTemplates.foreach(_.retire()))
+      val next = Map.from(entries.map(_.domId).zip(retainedTemplates))
       commitActions += state.assignment(stream.identity, next)
       old match
         case Some(node)
@@ -1672,41 +1723,43 @@ object RenderProgram:
             .sample(signal).map(sample =>
               Some(slot) -> Option.when(sample.value)(AttributeValue.Presence)
             )
-        case Binding(_, id, operation) =>
+        case Binding(_, valueSlot, id, operation) =>
           bindings
             .add(id, BindingOperation(operation)).map(_ =>
-              None -> Some(AttributeValue.Text(id.encoded))
+              Some(valueSlot) -> Some(AttributeValue.Text(id.encoded))
             )
-        case SignalBinding(_, id, signal, operation) =>
+        case SignalBinding(_, valueSlot, id, signal, operation) =>
           transaction.sample(signal).flatMap { sample =>
             bindings
               .add(id, BindingOperation(payload => operation(sample.value, payload))).map(_ =>
-                None -> Some(AttributeValue.Text(id.encoded))
+                Some(valueSlot) -> Some(AttributeValue.Text(id.encoded))
               )
           }
-        case JsBinding(_, id, command) =>
-          evaluateJs(id, command, bindings).map(value => None -> Some(AttributeValue.Text(value)))
+        case JsBinding(_, valueSlot, id, command) =>
+          evaluateJs(id, command, bindings).map(value =>
+            Some(valueSlot) -> Some(AttributeValue.Text(value))
+          )
         case SignalJsBinding(_, valueSlot, id, command) =>
           transaction
             .sample(command).flatMap(sample =>
               evaluateJs(id, sample.value, bindings)
                 .map(value => Some(valueSlot) -> Some(AttributeValue.Text(value)))
             )
-        case RoutedBinding(_, id, operation) =>
+        case RoutedBinding(_, valueSlot, id, operation) =>
           bindings
             .add(
               id,
               BindingOperation.dispatching(payload => BindingDispatch.Routed(operation(payload)))
-            ).map(_ => None -> Some(AttributeValue.Text(id.encoded)))
-        case TargetedBinding(_, id, target, operation) =>
+            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(id.encoded)))
+        case TargetedBinding(_, valueSlot, id, target, operation) =>
           bindings
             .add(
               id,
               BindingOperation
                 .dispatching(payload => BindingDispatch.Targeted.Value(target, operation(payload)))
-            ).map(_ => None -> Some(AttributeValue.Text(id.encoded)))
-        case ComponentTarget(target) =>
-          Right(None -> Some(AttributeValue.ComponentTarget(target)))
+            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(id.encoded)))
+        case ComponentTarget(target, valueSlot) =>
+          Right(Some(valueSlot) -> Some(AttributeValue.ComponentTarget(target)))
         case Choice(_, signal, branches) =>
           transaction.sample(signal).flatMap { sample =>
             branches.find(_._1 == sample.value) match

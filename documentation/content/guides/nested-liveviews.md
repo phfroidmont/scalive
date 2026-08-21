@@ -67,7 +67,8 @@ side effects performed while constructing the parent's view graph.
 
 During the initial HTTP request, Scalive mounts and renders the nested child so
 its content is present in disconnected HTML. When LiveSocket connects, the
-child joins separately and mounts again with `ctx.connected == true`. The
+child joins separately and mounts again with
+`Connection.Connected(capabilities)`. The
 disconnected model, dynamic hooks, and resource registrations do not transfer
 to the connected child.
 

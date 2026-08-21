@@ -29,7 +29,8 @@ object NestedTopologyKernelSpec extends ZIOSpecDefault:
       ZIO.succeed(ComponentCallbackResult(model, draft, state))
     def async[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, event: LiveAsyncEvent[M], emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
       ZIO.succeed(ComponentCallbackResult(model, draft, state))
-    def browserEvent[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, command: SessionCommand.ComponentClientEvent, emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) = ZIO.none
+    def browserEvent[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, command: SessionCommand.ComponentClientEvent, resolved: Task[M], emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
+      resolved.map(_ => ComponentCallbackResult(model, draft, state))
     def afterRender[P, M, A](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
       ZIO.succeed(ComponentAfterRenderResult(draft, state))
     def discard(id: ComponentInstanceId, state: ComponentEnvironmentState) = ZIO.unit

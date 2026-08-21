@@ -1,5 +1,5 @@
-import java.time.Duration
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*

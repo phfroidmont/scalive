@@ -27,9 +27,11 @@ private val ScalaVote = component(VoteComponent, "scala-vote")
 private val ZioVote   = component(VoteComponent, "zio-vote")
 ```
 
-The ID is application identity within that component class. The runtime's
-numeric @:apiSymbol(class:scalive.ComponentRef)`ComponentRef`@:@ is temporary and
-should not enter domain messages or persisted state.
+The ID is application identity within that component class. An
+@:apiSymbol(opaque-type:scalive.ComponentRef)`ComponentRef`@:@ is an opaque,
+type-safe semantic identity for the exact mounted component. Its representation
+is deliberately hidden: do not treat it as a numeric CID or persist it as domain
+state.
 
 ## Separate Props, Messages, Model, And Output {#separate-component-types}
 
@@ -178,7 +180,7 @@ removes its upload and stream scopes, and interrupts its async tasks. A later
 render of the same class and logical ID is therefore a fresh mount, not a
 revival of the old model.
 
-Do not retain `ComponentRef`, upload snapshots, or other runtime handles after
+Do not retain a `ComponentRef`, upload snapshots, or other runtime handles after
 removal. Put durable data in the parent or an application service before hiding
 the component. A failed component lifecycle fails the active render or message
 lifecycle; model expected failures as component messages when the UI should

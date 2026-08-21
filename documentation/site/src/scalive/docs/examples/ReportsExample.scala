@@ -150,11 +150,9 @@ end ReportsExample
 object ReportsExample:
   val LabRoute = "/examples/service-injection/lab"
 
-  val layer: URLayer[Reports, ReportsExample] =
-    ZLayer.fromFunction(ReportsExample.apply)
-
   val route =
-    (live / "examples" / "service-injection" / "lab") -> layer
+    (live / "examples" / "service-injection" / "lab")
+      .from((_, _, reports: Reports) => ReportsExample(reports))
 
   enum Model:
     case Loaded(reports: Vector[Report], selected: Report)

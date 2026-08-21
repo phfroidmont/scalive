@@ -103,6 +103,36 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     factory: A => LiveView[Msg, Model]
   ): Mod[Nothing] = liveView(id, value, sticky = false, _ => false)(factory)
 
+  private lazy val portalTemplateTag = HtmlTag("template")
+  private lazy val phxPortal         = dataAttr("phx-portal")
+
+  def portal[Msg](
+    id: String,
+    target: DomSelector,
+    container: String = "div",
+    wrapperClass: Option[String] = None
+  )(
+    mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
+  ): HtmlElement[Msg] =
+    require(
+      Escaping.validTag(container),
+      s"portal container must be a valid HTML tag, got '$container'"
+    )
+    val content = mods.toVector.flatMap {
+      case mod: Mod[Msg]                  => Some(mod)
+      case values: IterableOnce[Mod[Msg]] => values
+    }
+    val wrapper = Vector.newBuilder[Mod[Msg]]
+    wrapper += (idAttr := s"_lv_portal_wrap_$id")
+    wrapperClass.foreach(value => wrapper += (cls := value))
+    wrapper ++= content
+
+    portalTemplateTag(
+      idAttr    := id,
+      phxPortal := target.requiredValue,
+      HtmlTag(container)(wrapper.result())
+    )
+
   object flash:
     def apply(kind: FlashKind)(project: String => HtmlElement[Nothing]): Mod[Nothing] =
       Mod.Content.Flash(kind, project)

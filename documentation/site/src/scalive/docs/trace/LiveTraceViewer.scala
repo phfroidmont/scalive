@@ -1,6 +1,7 @@
 package scalive.docs.trace
 
 import zio.*
+import zio.json.ast.Json
 
 import scalive.*
 import scalive.docs.examples.RegisteredExample
@@ -26,25 +27,29 @@ final private[docs] class LiveTraceViewer(
     }
 
   def mount(ctx: MountContext): LiveIO[Model] =
-    ctx.runtimeTraceSession match
-      case Some(session) =>
-        for
-          owner = s"$viewerTopic:${java.util.UUID.randomUUID()}"
-          _ <- ctx.subscriptions.start(
-                 SubscriptionKey(s"live-trace:$viewerTopic"),
-                 SubscriptionDelivery.Latest
-               )(
-                 zio.stream.ZStream
-                   .acquireReleaseWith(store.attach(session, observedTopic, owner))(_ =>
-                     store.detach(session, observedTopic, owner)
-                   ).flatMap(_ => store.updates(session, observedTopic)).map(_ => Msg.Refresh)
-               )
-          snapshot <- store.snapshot(session, observedTopic)
-        yield withSnapshot(
-          Model(Some(session), enabled = false, Vector.empty, None),
-          snapshot
-        )
-      case None => ZIO.succeed(Model(None, enabled = false, Vector.empty, None))
+    ctx.connection match
+      case Connection.Connected(capabilities) =>
+        capabilities.connectParams.get(TraceSessionParameter) match
+          case Some(Json.Str(session)) if ValidSession.matches(session) =>
+            for
+              owner = s"$viewerTopic:${java.util.UUID.randomUUID()}"
+              _ <- capabilities.subscriptions.start(
+                     SubscriptionKey(s"live-trace:$viewerTopic"),
+                     SubscriptionDelivery.Latest
+                   )(
+                     zio.stream.ZStream
+                       .acquireReleaseWith(store.attach(session, observedTopic, owner))(_ =>
+                         store.detach(session, observedTopic, owner)
+                       ).flatMap(_ => store.updates(session, observedTopic)).map(_ => Msg.Refresh)
+                   )
+              snapshot <- store.snapshot(session, observedTopic)
+            yield withSnapshot(
+              Model(Some(session), enabled = false, Vector.empty, None),
+              snapshot
+            )
+          case _ => ZIO.succeed(Model(None, enabled = false, Vector.empty, None))
+      case Connection.Disconnected =>
+        ZIO.succeed(Model(None, enabled = false, Vector.empty, None))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ToggleCapture =>
@@ -370,8 +375,10 @@ final private[docs] class LiveTraceViewer(
 end LiveTraceViewer
 
 private[docs] object LiveTraceViewer:
-  val HookName            = "LiveTraceViewer"
-  val BrowserRecordsEvent = BrowserToServerEvent[BrowserTraceBatch](
+  private val TraceSessionParameter = "_scalive_trace_session"
+  private val ValidSession          = "[A-Za-z0-9_-]{16,64}".r
+  val HookName                      = "LiveTraceViewer"
+  val BrowserRecordsEvent           = BrowserToServerEvent[BrowserTraceBatch](
     "docs:live-trace-browser-records"
   )
 
@@ -397,3 +404,4 @@ private[docs] object LiveTraceViewer:
       LiveTraceViewer(instanceId, observedTopic, viewerTopic, example, store),
       sticky = false
     )
+end LiveTraceViewer

@@ -29,6 +29,43 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("schema queries and parameter mappings retain their intended capabilities") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.http.codec.PathCodec
+        import zio.schema.Schema
+        import zio.schema.derived
+
+        final case class Search(q: Option[String]) derives Schema
+        final case class Page(value: Option[Int])
+
+        object SearchView extends LiveView.Routed.Eventless[String, Search]:
+          def mount(params: Search, ctx: MountContext) = LiveIO.succeed("")
+          def view(model: Signal[String]) = div(model)
+
+        object PageView extends LiveView.Routed.Eventless[String, Page]:
+          def mount(params: Page, ctx: MountContext) = LiveIO.succeed("")
+          def view(model: Signal[String]) = div(model)
+
+        val search = (live / "search").query[Search]
+        val searchRoute = search(SearchView)
+        val searchLocation: LiveLocation = search.location(Search(Some("typed")))
+
+        val page = (live / "page")
+          .queryOptional[Int]("page")
+          .mapParams(Page.apply)(_.value)
+        val pageRoute = page(PageView)
+        val pageLocation: LiveLocation = page.location(Page(Some(2)))
+
+        val decoded = (live / "items" / PathCodec.int("id"))
+          .params
+          .mapParamsDecodeOnly(id => id.toString)
+
+        val explicit = Live.route(PathCodec.empty / "explicit")
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
     test("mount aspects supply typed context to route factories") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

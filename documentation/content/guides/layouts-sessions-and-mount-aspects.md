@@ -154,10 +154,13 @@ use @:apiSymbol(enum:scalive.LiveMountFailure)`LiveMountFailure`@:@:
 - reject as unauthorized when no navigation is appropriate; or
 - report stale state when the browser should reload.
 
-Authentication commonly redirects both phases to the login route. The
-@:apiSymbol(def:scalive.LiveMountAspect.authenticated)`authenticated`@:@ helper
-implements that shape while leaving cookie validation, expiry, revocation, and
-claims resumption to the application service.
+Build authentication with
+@:apiSymbol(def:scalive.LiveMountAspect.fromRequest)`LiveMountAspect.fromRequest`@:@:
+the disconnected callback validates the original request and returns minimal
+signed claims, while the connected callback revalidates those claims and loads
+fresh authorization context. Either callback can redirect to login using its
+phase-specific failure type. Cookie validation, expiry, revocation, and claims
+resumption remain application policy.
 
 Continue with [Authentication](authentication.md#separate-http-login-from-live-authorization)
 for a complete runnable flow.

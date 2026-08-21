@@ -44,8 +44,7 @@ class StreamLiveView()
           case "socket.view.handle_event(\"append-users\", %{}, socket)" =>
             handle(model, Msg.AppendUsers, ctx.streams)
               .map(next => LiveEventHookResult.haltReply(next, Json.Obj("result" -> Json.Null)))
-          case _ =>
-            E2ESandboxEval.handle(model, event.bindingId, event.value)
+          case _ => E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
 
   override def view(model: Signal[Model]) =
@@ -383,12 +382,11 @@ object StreamLiveView:
     LiveStreamDef.byId[User, String]("c_users")(_.id)
 end StreamLiveView
 
-class HealthyLiveView(initialCategory: String)
-    extends LiveView.Routed[HealthyLiveView.Msg, HealthyLiveView.Model, String]:
+class HealthyLiveView extends LiveView.Routed[HealthyLiveView.Msg, HealthyLiveView.Model, String]:
   import HealthyLiveView.*
 
-  def mount(_params: String, ctx: MountContext) =
-    val category = normalizeCategory(initialCategory)
+  def mount(params: String, ctx: MountContext) =
+    val category = normalizeCategory(params)
     ctx.streams
       .create(ItemsStreamDef, itemsFor(category))
       .map(items => Model(category = category, items = items))
@@ -886,7 +884,7 @@ class StreamNestedComponentResetLiveView
         case Some(current) =>
           for
             nested <- streams.reset(
-                        nestedStreamDef(id),
+                        current.nestedDefinition,
                         reorderedNestedItems
                       )
             updatedParent = current.copy(nested = nested)
@@ -920,14 +918,19 @@ class StreamNestedComponentResetLiveView
     name: String,
     streams: Streams
   ): LiveIO[ParentItem] =
+    val definition = nestedStreamDef(id)
     streams
-      .create(nestedStreamDef(id), defaultNestedItems)
-      .map(nested => ParentItem(id = id, name = name, nested = nested))
+      .create(definition, defaultNestedItems)
+      .map(nested => ParentItem(id, name, definition, nested))
 end StreamNestedComponentResetLiveView
 
 object StreamNestedComponentResetLiveView:
   final case class NestedItem(id: String, name: String)
-  final case class ParentItem(id: String, name: String, nested: LiveStream[NestedItem])
+  final case class ParentItem(
+    id: String,
+    name: String,
+    nestedDefinition: LiveStreamDef[NestedItem],
+    nested: LiveStream[NestedItem])
   final case class Model(
     items: LiveStream[ParentItem],
     parentsById: Map[String, ParentItem])

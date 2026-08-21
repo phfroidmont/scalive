@@ -206,9 +206,9 @@ private[scalive] object StreamStore:
     items.iterator.map(item => LiveStreamEntry(evaluateDomId(definition, item), item)).toVector
 
   private def requireCoherent[A](stored: Stored, definition: LiveStreamDef[A]): Unit =
-    if !(stored.definition.asInstanceOf[AnyRef] eq definition.asInstanceOf[AnyRef]) then
+    if !(stored.definition.domId.asInstanceOf[AnyRef] eq definition.domId.asInstanceOf[AnyRef]) then
       throw IllegalArgumentException(
-        s"stream '${definition.name}' must use the exact LiveStreamDef instance used to create it"
+        s"stream '${definition.name}' must use the DOM-id function used to create it"
       )
 
   private def next[A](stream: LiveStream[A]): LiveStream[A] =
@@ -260,7 +260,7 @@ private[scalive] object StreamStore:
       stream.generation,
       bounded,
       stream.inserted.filterNot(_.entry.domId == entry.domId) :+ operation,
-      stream.deleted.filterNot(_ == entry.domId),
+      stream.deleted,
       stream.reset
     )
 

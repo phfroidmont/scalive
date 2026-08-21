@@ -128,7 +128,7 @@ val reportsRoute =
   (live / "reports") -> ReportsLiveView.layer
 ```
 
-The @:apiSymbol(def:scalive.LiveRouteSeed.->)`route operator`@:@ adds `Reports`
+The @:apiSymbol(def:scalive.LiveRouteBuilder.->)`route operator`@:@ adds `Reports`
 to the route environment. If the application does not provide a `Reports` layer,
 the server startup effect cannot compile with a fully provided environment.
 

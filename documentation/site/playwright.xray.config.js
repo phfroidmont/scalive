@@ -17,7 +17,7 @@ export default {
   },
   webServer: {
     command:
-      "SCALIVE_SERVER_PORT=4005 SCALIVE_PUBLIC_ORIGIN=http://127.0.0.1:4005 mill --ticker false documentation.site.run",
+      "SCALIVE_SERVER_PORT=4005 SCALIVE_PUBLIC_ORIGIN=http://127.0.0.1:4005 mill --no-daemon --ticker false documentation.site.run",
     cwd: repositoryRoot,
     url: "http://127.0.0.1:4005/examples",
     reuseExistingServer: !process.env.CI,

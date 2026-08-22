@@ -66,34 +66,32 @@ config)` synchronously validates duplicate session names and rendered paths,
 compiles the heterogeneous typed routes behind one audited boundary, and returns
 ordinary GET routes plus `<socketPath>/websocket`.
 
-A routed LiveView still has two independent mounts. The HTTP request and the
-websocket join create different models and different resource scopes.
+A routed LiveView has two independent executions. The HTTP request renders HTML
+and signed bootstrap claims in a request-owned scope. The admitted WebSocket join
+creates a fresh model and a separate resource scope.
+
+@:diagram(runtime-ownership)
 
 ### Disconnected HTTP Render {#disconnected-http-render}
 
-For a GET, the selected `CompiledRoute`:
+For a GET, the selected `CompiledRoute` decodes typed path and query parameters
+and runs the session and route mount aspects. It constructs a `RootLifecycle`
+and `DisconnectedRootTurn` whose contexts expose `Connection.Disconnected`,
+then runs mount, initial parameter handling, hooks, flash, and redirect handling.
 
-1. decodes typed path and query parameters and runs session then route mount
-   aspects;
-2. constructs a `RootLifecycle` and a `DisconnectedRootTurn`, whose contexts
-   expose `Connection.Disconnected`;
-3. runs mount, initial parameter handling, hooks, flash, and redirect handling;
-4. compiles and evaluates a `RenderProgram`, resolving disconnected components
-   with `DisconnectedComponentRenderer`;
-5. renders the resulting `EvaluatedTree` into the live layout and root layout,
-   adding CSRF and signed session/static bootstrap data; and
-6. closes request-owned render, component, and prepared-resource scopes.
-
-This is a one-turn server render. The browser keeps the HTML and bootstrap data,
-but the server does not carry its model or committed render into the connected
+The retained `RenderProgram` produces an evaluated tree, resolving disconnected
+components in request scope. ZIO HTTP renders that tree through the live and root
+layouts and adds CSRF plus signed session and static bootstrap data. After the
+response, all request-owned render, component, and prepared-resource scopes
+close. Neither the model nor committed render continues into the WebSocket
 lifecycle.
 
 ### ZIO HTTP Admission And Connected Bootstrap {#connected-bootstrap}
 
-The websocket route creates one scoped `SerialWriter`, one
-`ConnectionSupervisor`, and connection-local registries. `PhoenixProtocol`
-decodes text envelopes; upload chunks use bounded binary frames. Root joins are
-serialized by a join gate before `ZioHttpAdmission` accepts them.
+The WebSocket route owns one physical Phoenix writer, one
+`ConnectionSupervisor`, and its connection-local registries. `PhoenixProtocol`
+decodes text envelopes, while bounded workers process upload frames. A join gate
+serializes root admission before `ZioHttpAdmission` validates the request.
 
 Admission verifies the topic/root identity, signed session and static claims,
 canonical URL, route and live-session identity, root-layout and mount-claim
@@ -102,46 +100,27 @@ current root. Nested joins additionally reserve an exact active topology
 registration. Rejected joins receive Phoenix-compatible stale or unauthorized
 replies without constructing application lifecycle state.
 
-After admission, the transport rebuilds the connected `RootLifecycle`, supplies
-`Connection.Connected` metadata, and asks `ConnectionSupervisor` to start a
-`RootConnection`. Connected mount and initial parameter handling therefore
-produce a fresh model. The first connected `RenderDelta` reconciles that fresh
-tree with the browser's disconnected DOM; it is not a continuation of the HTTP
-render transaction.
+Only after admission does the transport rebuild the connected `RootLifecycle`
+and ask the supervisor to start a `RootConnection`. Connected mount and initial
+parameter handling create a fresh model. The first connected `RenderDelta`
+reconciles that model with the disconnected browser DOM; it does not resume the
+HTTP render transaction.
 
 ## Follow One Connected Command {#connected-turn}
 
-`ConnectionSupervisor` owns every connected lifecycle on one physical
-websocket. Each root or nested lifecycle is represented by a `RootConnection`.
-The connection translates browser events, typed messages, patches, async and
+A `RootConnection` turns browser events, typed messages, patches, async and
 subscription completions, component work, and upload mutations into
-epoch-qualified `SessionCommand`s.
+epoch-qualified `SessionCommand`s. Its bounded ingress fiber submits those
+commands to the lifecycle's `SessionKernel`, which processes one transition at a
+time.
 
-`RootConnection` uses a bounded ingress queue and command correlation table.
-Its ingress fiber submits commands to the lifecycle's `SessionKernel`; its
-outbound fiber drains ordered reservations and sends `ConnectionOutput` through
-the transport sink. A normal event follows this path:
+@:diagram(runtime-connected-turn)
 
-```text
-Phoenix frame
-  └─► ZioHttp + PhoenixProtocol
-        └─► ConnectionSupervisor / RootConnection
-              └─► SessionKernel(SessionCommand)
-                    ├─► lifecycle handler and hooks
-                    ├─► RenderProgram candidate
-                    ├─► component/resource/topology preparation
-                    ├─► TreeDiffer(RenderDelta)
-                    └─► atomic commit or candidate discard
-                          └─► ConnectionOutput
-                                └─► PhoenixRenderedEncoder
-                                      └─► SerialWriter
-```
-
-The kernel is the single owner of committed lifecycle state. Its bounded FIFO
-mailbox serializes commands, while a reserved mailbox path prevents a server
-patch acknowledgement from deadlocking behind ordinary work. External
-producers receive explicit saturation or closed errors; runtime-owned producers
-backpressure where dropping would violate lifecycle semantics.
+The bounded ingress and kernel mailboxes serialize lifecycle transitions. A
+reserved mailbox path prevents a browser patch acknowledgement from deadlocking
+behind ordinary work. External producers receive explicit saturation or closed
+errors; runtime-owned producers backpressure where dropping would violate
+lifecycle semantics.
 
 ## Understand The Render Transaction {#render-transaction}
 
@@ -158,39 +137,41 @@ Evaluation produces a `RenderCandidate` containing:
 - component, nested-lifecycle, and stream requirements; and
 - a `CandidateScope` for resources prepared by that evaluation.
 
-`SessionKernel.runTurn` runs the handler, builds and stabilizes this candidate,
-prepares resources and topology changes, runs after-render work, validates the
-result, and computes a `RenderDelta` with `TreeDiffer`. Only then does commit
-replace the model, render, component forest, resource index, and topology plan.
-The old committed scopes are retired after replacement. Any failure discards
-candidate scopes and rollback plans while leaving the previous committed state
-active.
+`SessionKernel.runTurn` evaluates and stabilizes the root and component graph,
+validates stream and upload requirements, and prepares resources and nested
+topology. It then reserves an ordered publication slot, runs after-render work,
+validates continuations, and computes the `RenderDelta` with `TreeDiffer`.
 
-This is an in-memory runtime transaction, not a transaction over arbitrary
-application effects. Database or network effects already completed by a handler
-are not undone, and a later websocket write failure does not roll committed
-model state back.
+All of that work remains provisional. A failure closes candidate scopes and
+rollback plans while revision N remains active. The interruption-masked commit
+tail replaces framework-owned state, marks retired owners stale, activates
+prepared resources and topology, and fills the reserved output slot. Retired owners
+are finalized after replacement.
 
-`PhoenixRenderedEncoder` is downstream of this transaction. It turns the
-protocol-neutral tree and delta into Phoenix statics/dynamics, component CIDs,
-stream references and operations, events, replies, and navigation payloads. Its
-connection-local `PhoenixRenderedState` is projection state, not application
-state.
+The `RootConnection` outbound fiber drains that reservation as
+`ConnectionOutput`. `PhoenixRenderedEncoder` projects the protocol-neutral delta
+into Phoenix statics, dynamics, component CIDs, stream operations, events,
+replies, and navigation payloads before the physical writer sends it. Encoding
+and network I/O occur after N+1 is active; a write failure closes the connection
+but does not restore revision N.
+
+This boundary provides framework-state atomicity, not database transactionality.
+Effects already performed by application handlers are not rolled back when
+later rendering or publication fails.
 
 ## Track Components And Nested Lifecycles {#children}
 
-A stateful component owns typed props, model, hooks, bindings, render program,
-and component-scoped resources. `ComponentRuntime` prepares component candidates,
-but the owning `SessionKernel` stabilizes and commits the complete root/component
-forest in one turn. Component messages therefore share the owning lifecycle's
-serialization and cannot commit independently of their root.
+A stateful component has local props, model, hooks, bindings, render state, and
+component-scoped resources, but it does not own a network mailbox or independent
+commit. `ComponentRuntime` prepares component candidates while the parent
+`SessionKernel` stabilizes and commits the complete root and component forest.
+Phoenix CIDs are projection identifiers, not runtime ownership identities.
 
-A nested LiveView is different: it gets its own `RootConnection`, kernel,
-mailbox, committed render, and resource owners inside the same physical
-connection. `NestedTopologyState` prepares registration changes transactionally;
-`NestedTopologyRuntime` admits exact registration generations and coordinates
-attachment, subtree retirement, sticky detachment/reattachment, and linked
-failure. Parent cleanup recursively closes non-retained descendants.
+A nested LiveView is a separate connected lifecycle on the same physical
+WebSocket. It owns a `RootConnection`, kernel, ingress, committed revision, and
+resource owners. Transactional topology registration protects joins with exact
+parent and generation identities. Parent cleanup retires non-retained
+descendants, while sticky descendants may detach and later reattach.
 
 ## Track Bounds And Scoped Ownership {#ownership-and-serialization}
 
@@ -206,7 +187,7 @@ Ownership follows scopes rather than global registries:
 
 | Owner | Principal resources |
 | --- | --- |
-| Websocket scope | `ConnectionSupervisor`, physical `SerialWriter`, joined topics, upload joins |
+| WebSocket scope | `ConnectionSupervisor`, physical Phoenix writer, joined topics, upload joins |
 | Supervisor child scope | One root or nested `RootConnection` and linked descendants |
 | Root connection scope | Kernel, ingress/outbound fibers, command promises, uploads, render program |
 | Committed render scope | Active component and stream-row scopes plus prepared resources for one revision |

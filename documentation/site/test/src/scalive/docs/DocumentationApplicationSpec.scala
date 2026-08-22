@@ -34,6 +34,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     "fonts.css",
     "instrument-sans-OFL.txt",
     "jetbrains-mono-OFL.txt",
+    "runtime-connected-turn.svg",
+    "runtime-ownership.svg",
     "search-index.json"
   )
 
@@ -205,6 +207,39 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         connectedTrace.text().contains("Initial rendered diff"),
         connectedBlocks.indexOf(connectedHeading) < connectedBlocks.indexOf(connectedTrace),
         connectedBlocks.indexOf(connectedTrace) < connectedBlocks.indexOf(timelineHeading)
+      )
+    },
+    test("renders runtime diagrams in narrative order with accessible fallbacks") {
+      for
+        application <- loadApplication
+        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes       = application.routes(assets, security, config).provide(reportsFixtureService)
+        rendered    <- DisconnectedRender.run(
+                         routes,
+                         Request.get(url("/project/runtime-architecture"))
+                       )
+        document = Jsoup.parse(rendered.html)
+        diagrams = document.select("figure[data-diagram]").asScala.toVector
+      yield assertTrue(
+        diagrams.map(_.attr("data-diagram")) == Vector(
+          "runtime-ownership",
+          "runtime-connected-turn"
+        ),
+        diagrams.forall(diagram =>
+          Option(diagram.selectFirst("figcaption")).exists(caption =>
+            caption.parent() == diagram &&
+              caption.select(".docs-diagram-caption[id]").text().nonEmpty
+          )
+        ),
+        diagrams.forall(_.select("p.docs-visually-hidden[id]").text().nonEmpty),
+        diagrams.forall(_.select(".docs-diagram-viewport[tabindex=0]").size() == 1),
+        diagrams.forall(
+          _.select("object[type='image/svg+xml'][aria-hidden=true][tabindex=-1]").size() == 1
+        ),
+        diagrams.forall(_.select("a").text() == "Open full-size SVG"),
+        diagrams.forall(_.hasClass("docs-diagram-wide")),
+        diagrams.map(_.select("object").attr("data")).forall(_.contains("/static/runtime-")),
+        diagrams.map(_.select("a").attr("href")) == diagrams.map(_.select("object").attr("data"))
       )
     },
     test("renders editorial sections as flat indexes and preserves the API tree") {

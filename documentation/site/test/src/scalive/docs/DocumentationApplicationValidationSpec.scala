@@ -33,6 +33,17 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
       }
       assertTrue(result.left.exists(_.contains("unknown trace 'missing'")))
     },
+    test("rejects generated pages that reference an unknown diagram") {
+      val result = bundle.flatMap { value =>
+        val pages = value.pages.map { page =>
+          if page.route == "/project/runtime-architecture" then
+            page.copy(content = page.content :+ Block.DiagramRef("missing"))
+          else page
+        }
+        DocumentationApplication.from(value.copy(pages = pages))
+      }
+      assertTrue(result.left.exists(_.contains("unknown diagram 'missing'")))
+    },
     test("rejects repeated instances of one example on a page") {
       val result = bundle.flatMap { value =>
         val pages = value.pages.map { page =>

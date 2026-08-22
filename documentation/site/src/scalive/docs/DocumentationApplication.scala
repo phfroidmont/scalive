@@ -109,7 +109,7 @@ final private[docs] class DocumentationApplication private (
     config: DocumentationConfig,
     traceStore: Option[DocumentationTraceStore]
   ): Routes[Reports, Nothing] =
-    val renderer  = DocumentationRenderer(this, traceStore)
+    val renderer  = DocumentationRenderer(this, Some(assets), traceStore)
     val homeEntry = pages.find(_.page.route == "/").getOrElse {
       throw new IllegalStateException("Missing validated homepage route '/'.")
     }
@@ -246,6 +246,7 @@ private[docs] object DocumentationApplication:
     val symbols  = bundle.apiReference.symbols.map(_.id).toSet
     val examples = bundle.examples.map(_.descriptor.id).toSet
     val traces   = TraceCatalog.entries.map(_.id).toSet
+    val diagrams = DiagramCatalog.entries.map(_.id).toSet
     val errors   = bundle.pages.flatMap { page =>
       val references        = collectReferences(page.content)
       val duplicateExamples = references
@@ -266,6 +267,8 @@ private[docs] object DocumentationApplication:
           Vector(s"${page.route}: unknown example '$id'.")
         case ContentReference.Trace(id) if !traces(id) =>
           Vector(s"${page.route}: unknown trace '$id'.")
+        case ContentReference.Diagram(id) if !diagrams(id) =>
+          Vector(s"${page.route}: unknown diagram '$id'.")
         case _ => Vector.empty
       }
     }
@@ -385,6 +388,7 @@ private[docs] object DocumentationApplication:
     case ApiSymbol(id: String)
     case Example(id: String)
     case Trace(id: String)
+    case Diagram(id: String)
 
   private def collectReferences(blocks: Vector[Block]): Vector[ContentReference] =
     blocks.flatMap {
@@ -400,6 +404,7 @@ private[docs] object DocumentationApplication:
       case Block.ExampleRef(id)         => Vector(ContentReference.Example(id))
       case Block.LabRef(_)              => Vector.empty
       case Block.TraceRef(id)           => Vector(ContentReference.Trace(id))
+      case Block.DiagramRef(id)         => Vector(ContentReference.Diagram(id))
       case _                            => Vector.empty
     }
 

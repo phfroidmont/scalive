@@ -408,6 +408,36 @@ object ContentPipelineSpec extends ZIOSpecDefault:
           )
       }
     },
+    test("converts diagram directives and indexes catalog prose") {
+      withDirectiveDocument(
+        "Diagram",
+        "@:diagram(runtime-ownership)\n\n@:diagram(runtime-connected-turn)"
+      ).map {
+        case Left(error) => assertTrue(error.messages.isEmpty)
+        case Right(bundle) =>
+          assertTrue(
+            bundle.pages.head.content == Vector(
+              Block.DiagramRef("runtime-ownership"),
+              Block.DiagramRef("runtime-connected-turn")
+            ),
+            bundle.searchEntries.exists(entry =>
+              entry.id == "page:/" &&
+                entry.text.contains("one physical WebSocket scope") &&
+                entry.text.contains("write failure does not roll back N+1")
+            )
+          )
+      }
+    },
+    test("rejects unknown and malformed diagram directives") {
+      withDirectiveDocument("Diagram", "@:diagram(missing)").zipWith(
+        withDirectiveDocument("Diagram", "@:diagram(runtime-ownership, extra)")
+      ) { case (unknown, malformed) =>
+        assertTrue(
+          unknown.left.exists(_.message.contains("unknown diagram 'missing'")),
+          malformed.left.exists(_.message.contains("invalid @:diagram directive"))
+        )
+      }
+    },
     test("rejects duplicate example registry ids") {
       generate("valid", validApiReference, Vector(counterDescriptor, counterDescriptor)) match
         case Right(_)    => assertTrue(false)
@@ -622,14 +652,20 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     }
 
   private def withTraceDocument(directive: String): Task[Either[PipelineError, DocumentationBundle]] =
+    withDirectiveDocument("Trace", directive)
+
+  private def withDirectiveDocument(
+    title: String,
+    directive: String
+  ): Task[Either[PipelineError, DocumentationBundle]] =
     withTempDirectory("content-pipeline-trace-") { repository =>
       ZIO.attemptBlocking {
         val content = Files.createDirectories(repository.resolve("documentation/content"))
         val _ = Files.writeString(
           content.resolve("index.md"),
           s"""{%
-             |title = "Trace"
-             |description = "Trace directive coverage."
+             |title = "$title"
+             |description = "$title directive coverage."
              |order = 0
              |section = home
              |%}

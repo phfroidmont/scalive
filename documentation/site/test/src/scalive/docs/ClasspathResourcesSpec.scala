@@ -20,6 +20,8 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         favicon     <- resources("public/favicon.svg")
         instrumentLicense <- resources("public/instrument-sans-OFL.txt")
         jetbrainsLicense  <- resources("public/jetbrains-mono-OFL.txt")
+        runtimeTurn       <- resources("public/runtime-connected-turn.svg")
+        runtimeOwnership  <- resources("public/runtime-ownership.svg")
         bundle = GeneratedDocumentation.load(getClass.getClassLoader)
         search = GeneratedDocumentation.loadSearchEntries(getClass.getClassLoader)
         hasPages = bundle.exists(_.pages.nonEmpty)
@@ -50,7 +52,9 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         fonts.size == 1,
         favicon.size == 1,
         instrumentLicense.size == 1,
-        jetbrainsLicense.size == 1
+        jetbrainsLicense.size == 1,
+        runtimeTurn.size == 1,
+        runtimeOwnership.size == 1
       )
     },
     test("keeps pipeline dependencies off the site runtime classpath") {

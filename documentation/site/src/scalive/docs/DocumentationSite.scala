@@ -32,6 +32,8 @@ object DocumentationSite extends ZIOAppDefault:
                       "fonts.css",
                       "instrument-sans-OFL.txt",
                       "jetbrains-mono-OFL.txt",
+                      "runtime-connected-turn.svg",
+                      "runtime-ownership.svg",
                       "search-index.json"
                     )
                   )

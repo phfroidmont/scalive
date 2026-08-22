@@ -47,3 +47,7 @@ const declarations = await Promise.all(fonts.map(async (font) => {
 
 await writeFile(path.join(outputRoot, "fonts.css"), `${declarations.join("\n\n")}\n`)
 await copyFile(path.join(assetsRoot, "brand", "scalive-mark.svg"), path.join(outputRoot, "favicon.svg"))
+await Promise.all([
+  "runtime-connected-turn.svg",
+  "runtime-ownership.svg",
+].map((asset) => copyFile(path.join(assetsRoot, "diagrams", asset), path.join(outputRoot, asset))))

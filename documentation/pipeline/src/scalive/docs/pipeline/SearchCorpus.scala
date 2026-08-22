@@ -266,6 +266,7 @@ private[pipeline] object SearchCorpus:
               Vector(lab.title, lab.description, lab.topics.mkString(" "))
             )
         case Block.TraceRef(id)         => TraceCatalog.get(id).map(TraceCatalog.prose).toVector
+        case Block.DiagramRef(id)       => DiagramCatalog.get(id).map(DiagramCatalog.prose).toVector
         case Block.CompatibilityRef(id) => Vector(id.replace('-', ' '))
         case _                          => Vector.empty
       }.map(_.trim).filter(_.nonEmpty).mkString(" ")

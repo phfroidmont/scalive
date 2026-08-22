@@ -195,7 +195,9 @@ object `package` extends Module:
       "fonts.css",
       "favicon.svg",
       "instrument-sans-OFL.txt",
-      "jetbrains-mono-OFL.txt"
+      "jetbrains-mono-OFL.txt",
+      "runtime-connected-turn.svg",
+      "runtime-ownership.svg"
     )
 
     def resources = Task {

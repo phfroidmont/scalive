@@ -5456,6 +5456,80 @@ details[open] > summary .docs-disclosure-marker,
   }
 }
 
+.docs-diagram {
+  min-width: 0;
+  margin: 2rem 0;
+}
+
+.docs-diagram-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.docs-diagram-caption {
+  color: var(--docs-text);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.docs-diagram-heading a {
+  flex: none;
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.docs-diagram-viewport {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--docs-border);
+  background: var(--docs-bg);
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+.docs-diagram-viewport object {
+  display: block;
+  max-width: none;
+  height: auto;
+  border: 0;
+}
+
+.docs-diagram-wide object {
+  width: max(60rem, 100%);
+}
+
+@media (max-width: 36rem) {
+  .docs-diagram-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media print {
+  .docs-diagram {
+    break-inside: avoid;
+  }
+
+  .docs-diagram-heading a {
+    display: none;
+  }
+
+  .docs-diagram-viewport {
+    overflow: visible;
+  }
+
+  .docs-diagram-viewport object {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 .docs-trace {
   min-width: 0;
   margin: 2rem 0;

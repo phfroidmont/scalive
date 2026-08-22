@@ -3,6 +3,7 @@ import { LiveSocket } from "phoenix_live_view"
 import { nextActiveIndex, search } from "./search.js"
 import { createBrowserInteropHook } from "./browser-interop.js"
 import { createInlineApiReferenceEnhancer } from "./inline-api-reference.js"
+import { createDiagramThemeSynchronizer } from "./diagram-theme.js"
 import {
   assertLiveViewVersion,
   createTraceSession,
@@ -18,6 +19,7 @@ const exampleControlSelector =
 const instantSearchLimit = 8
 const liveTraceAdapter = createLiveTraceAdapter()
 const inlineApiReferences = createInlineApiReferenceEnhancer()
+const diagramThemes = createDiagramThemeSynchronizer(connectionRoot)
 const searchKindLabels = {
   page: "Page",
   heading: "Heading",
@@ -38,6 +40,7 @@ function readTheme() {
 function applyTheme(theme) {
   if (theme === "light" || theme === "dark") connectionRoot.dataset.theme = theme
   else connectionRoot.removeAttribute("data-theme")
+  diagramThemes.sync()
 }
 
 function updateExampleControls(connected) {
@@ -161,9 +164,11 @@ applyTheme(readTheme())
 updateConnectionState(navigator.onLine ? "connecting" : "offline")
 updateExampleControls(false)
 enhanceCodeBlocks()
+diagramThemes.enhance()
 
 window.addEventListener("phx:page-loading-stop", () => {
   enhanceCodeBlocks()
+  diagramThemes.enhance()
   inlineApiReferences.enhance()
   closeNavigationDisclosure()
 })

@@ -11,12 +11,19 @@ import scalive.docs.xray.DocumentationTraceStore
 
 final private[docs] class DocumentationRenderer(
   application: DocumentationApplication,
+  assets: Option[StaticAssets] = None,
   traceStore: Option[DocumentationTraceStore] = None):
-  private val metadata      = application.bundle.apiReference.metadata
-  private val repositoryUrl = metadata.repositoryUrl.stripSuffix("/")
-  private val ariaExpanded  = htmlAttr("aria-expanded", scalive.codecs.StringAsIsEncoder)
-  private val ariaLive      = htmlAttr("aria-live", scalive.codecs.StringAsIsEncoder)
-  private val role          = htmlAttr("role", scalive.codecs.StringAsIsEncoder)
+  private val metadata        = application.bundle.apiReference.metadata
+  private val repositoryUrl   = metadata.repositoryUrl.stripSuffix("/")
+  private val ariaExpanded    = htmlAttr("aria-expanded", scalive.codecs.StringAsIsEncoder)
+  private val ariaLive        = htmlAttr("aria-live", scalive.codecs.StringAsIsEncoder)
+  private val ariaLabelledBy  = htmlAttr("aria-labelledby", scalive.codecs.StringAsIsEncoder)
+  private val ariaDescribedBy = htmlAttr("aria-describedby", scalive.codecs.StringAsIsEncoder)
+  private val objectData      = htmlAttr("data", scalive.codecs.StringAsIsEncoder)
+  private val tabIndex        = htmlAttr("tabindex", scalive.codecs.StringAsIsEncoder)
+  private val widthAttr       = htmlAttr("width", scalive.codecs.IntAsStringEncoder)
+  private val heightAttr      = htmlAttr("height", scalive.codecs.IntAsStringEncoder)
+  private val role            = htmlAttr("role", scalive.codecs.StringAsIsEncoder)
 
   def render(page: Page): HtmlElement[Nothing] =
     page.source match
@@ -205,6 +212,7 @@ final private[docs] class DocumentationRenderer(
         .get(id).map(trace => TraceViewer.render(trace)).getOrElse(
           throw new IllegalArgumentException(s"Unknown documentation trace: $id")
         )
+    case Block.DiagramRef(id)                             => renderDiagram(id)
     case Block.SourceCode(region, language, text, tokens) =>
       codeBlock(language, text, tokens, Some(region))
     case Block.ApiSymbolRef(id) =>
@@ -218,6 +226,45 @@ final private[docs] class DocumentationRenderer(
         h2(id),
         p("This compatibility entry will be expanded with its curated evidence.")
       )
+
+  private def renderDiagram(id: String): HtmlElement[Nothing] =
+    val diagram = DiagramCatalog
+      .get(id).getOrElse(throw new IllegalArgumentException(s"Unknown documentation diagram: $id"))
+    val staticAssets = assets.getOrElse(
+      throw new IllegalStateException("Documentation diagram rendering requires static assets.")
+    )
+    val assetUrl      = staticAssets.path(diagram.assetFilename)
+    val captionId     = s"docs-diagram-$id-caption"
+    val descriptionId = s"docs-diagram-$id-description"
+    val sizeClass     = diagram.displaySize match
+      case DiagramDisplaySize.Wide => "docs-diagram-wide"
+
+    figure(
+      cls                 := s"docs-diagram $sizeClass",
+      dataAttr("diagram") := id,
+      ariaLabelledBy      := captionId,
+      ariaDescribedBy     := descriptionId,
+      HtmlTag("figcaption")(
+        cls := "docs-diagram-heading",
+        span(idAttr := captionId, cls := "docs-diagram-caption", diagram.caption),
+        a(href      := assetUrl, "Open full-size SVG")
+      ),
+      div(
+        cls        := "docs-diagram-viewport",
+        tabIndex   := "0",
+        aria.label := "Scrollable architecture diagram",
+        HtmlTag("object")(
+          typ         := "image/svg+xml",
+          objectData  := assetUrl,
+          widthAttr   := diagram.intrinsicSize.width,
+          heightAttr  := diagram.intrinsicSize.height,
+          tabIndex    := "-1",
+          aria.hidden := true
+        )
+      ),
+      p(idAttr := descriptionId, cls := "docs-visually-hidden", diagram.description)
+    )
+  end renderDiagram
 
   private def renderLab(id: String): HtmlElement[Nothing] =
     val lab = LabCatalog

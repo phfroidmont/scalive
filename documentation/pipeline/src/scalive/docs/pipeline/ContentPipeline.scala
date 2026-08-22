@@ -51,7 +51,7 @@ object ContentPipeline:
     "(?i)<(?!https?://|mailto:)(?:!--|\\?|![a-z\\[]|/?[a-z][a-z0-9:-]*(?=[\\s/>]|$))".r
   private val DirectiveName   = "@:([A-Za-z][A-Za-z0-9]*|@)".r
   private val SingleDirective =
-    "^\\s*@:(example|lab|trace|compatibility)\\(([^\\s,(){}]+)\\)\\s*$".r
+    "^\\s*@:(example|lab|trace|diagram|compatibility)\\(([^\\s,(){}]+)\\)\\s*$".r
   private val StandaloneApiSymbol =
     "^\\s*@:apiSymbol\\(([^\\s,(){}]+)\\)\\s*$".r
   private val InlineApiSymbol =
@@ -80,12 +80,12 @@ object ContentPipeline:
     snapshotVersion: String
   ): Either[PipelineError, DocumentationBundle] =
     try
-      val traceValidation = TraceCatalog.validate()
+      val catalogValidation = TraceCatalog.validate() ++ DiagramCatalog.validate()
       for
         _ <- Either.cond(
-               traceValidation.isEmpty,
+               catalogValidation.isEmpty,
                (),
-               PipelineError(traceValidation)
+               PipelineError(catalogValidation)
              )
         paths       <- validatePaths(repositoryRoot, contentRoot, allowedSourceRoots)
         definitions <- resolveExamples(paths, examples)
@@ -484,14 +484,17 @@ object ContentPipeline:
           errors += s"$sourcePath:$lineNumber: apiSymbol must be embedded in inline content."
           calloutDepth
         case SingleDirective(name, id) =>
-          if Set("example", "lab", "trace", "compatibility").contains(name) && !HeadingId.matches(
-              id
-            )
+          if Set("example", "lab", "trace", "diagram", "compatibility").contains(name) && !HeadingId
+              .matches(
+                id
+              )
           then errors += s"$sourcePath:$lineNumber: invalid $name id '$id'."
           else if name == "lab" && LabCatalog.get(id).isEmpty then
             errors += s"$sourcePath:$lineNumber: unknown lab '$id'."
           else if name == "trace" && TraceCatalog.get(id).isEmpty then
             errors += s"$sourcePath:$lineNumber: unknown trace '$id'."
+          else if name == "diagram" && DiagramCatalog.get(id).isEmpty then
+            errors += s"$sourcePath:$lineNumber: unknown diagram '$id'."
           calloutDepth
         case SourceDirective(path, _) =>
           try
@@ -522,6 +525,7 @@ object ContentPipeline:
                   "example",
                   "lab",
                   "trace",
+                  "diagram",
                   "sourceRegion",
                   "apiSymbol",
                   "compatibility",
@@ -996,6 +1000,7 @@ object ContentPipeline:
     case node: ExampleNode       => Right(Vector(Block.ExampleRef(node.id)))
     case node: LabNode           => Right(Vector(Block.LabRef(node.id)))
     case node: TraceNode         => Right(Vector(Block.TraceRef(node.id)))
+    case node: DiagramNode       => Right(Vector(Block.DiagramRef(node.id)))
     case node: CompatibilityNode => Right(Vector(Block.CompatibilityRef(node.id)))
     case node: SourceRegionNode  => convertSourceRegion(node, paths).map(value => Vector(value))
     case node: CalloutNode       =>
@@ -1435,6 +1440,11 @@ object ContentPipeline:
     type Self = TraceNode
     def withOptions(options: Options): TraceNode = copy(options = options)
 
+  final private case class DiagramNode(id: String, options: Options = Options.empty)
+      extends LaikaBlock:
+    type Self = DiagramNode
+    def withOptions(options: Options): DiagramNode = copy(options = options)
+
   final private case class CalloutNode(
     kind: String,
     content: Seq[LaikaBlock],
@@ -1458,6 +1468,9 @@ object ContentPipeline:
       },
       BlockDirectives.create("trace") {
         block.attribute(0).as[String].map(TraceNode(_))
+      },
+      BlockDirectives.create("diagram") {
+        block.attribute(0).as[String].map(DiagramNode(_))
       },
       BlockDirectives.create("sourceRegion") {
         (

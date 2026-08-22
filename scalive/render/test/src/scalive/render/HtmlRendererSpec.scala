@@ -68,6 +68,12 @@ object HtmlRendererSpec extends ZIOSpecDefault:
           "<!doctype html><html><body>content</body></html>"
       )
     },
+    test("renders slot elements with fallback content") {
+      for
+        program   <- ZIO.fromEither(RenderProgram.compile[Unit, Nothing](_ => slotTag("fallback")))
+        candidate <- program.evaluate(())
+      yield assertTrue(HtmlRenderer.render(candidate.tree) == "<slot>fallback</slot>")
+    },
     test("renders present and absent flash as transparent content") {
       val info = FlashKind("info")
       val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](

@@ -1,7 +1,7 @@
 //| mvnDeps:
-//| - com.raquo::domtypes:18.1.0
-//| - com.goyeau::mill-scalafix::0.6.0
-//| - com.lihaoyi::mill-contrib-jmh:1.1.2
+//| - com.raquo::domtypes:19.0.0
+//| - com.goyeau::mill-scalafix::0.6.2
+//| - com.lihaoyi::mill-contrib-jmh:1.1.8
 //| mill-jvm-version: system
 
 package build
@@ -13,12 +13,12 @@ import mill.contrib.jmh.JmhModule
 import com.goyeau.mill.scalafix.ScalafixModule
 
 object Versions:
-  val zioJson = "0.7.44"
-  val zioHttp = "3.10.1"
-  val zioTest = "2.1.25"
+  val zioJson = "0.10.0"
+  val zioHttp = "3.11.4"
+  val zioTest = "2.1.26"
 
 trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
-  def scalaVersion  = "3.8.3"
+  def scalaVersion  = "3.8.4"
   def scalacOptions = Seq(
     "-Wunused:all",
     "-preview",
@@ -128,7 +128,7 @@ object benchmarks extends ScalaCommon with JmhModule:
 
 object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)
-  def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.1")
+  def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.3")
 
   override def bundleOutputs = Seq("app.js", "app.css", "daisy.css")
 

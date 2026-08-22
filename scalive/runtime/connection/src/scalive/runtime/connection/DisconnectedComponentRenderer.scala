@@ -143,9 +143,9 @@ private[scalive] object DisconnectedComponentRenderer:
         signature = identities -> finalFlash
         nestedResolved <- environment.resolveNested(candidate)
         resolved       <- ZIO.fromEither(nestedResolved.resolveComponents(resolutions))
-        result <- if previous.contains(signature) then ZIO.succeed(resolved.tree -> finalFlash)
-                  else
-                    stabilize(program, input, journal, environment, Some(signature), iteration + 1)
+        result         <-
+          if previous.contains(signature) then ZIO.succeed(resolved.tree -> finalFlash)
+          else stabilize(program, input, journal, environment, Some(signature), iteration + 1)
       yield result
 
   private def renderOwnedProgramWith[Input, Msg, A](

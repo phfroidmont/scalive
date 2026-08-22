@@ -73,11 +73,9 @@ private[connection] object RootHookRegistry:
       case _: LiveHooks.Empty[Msg, Model]        => registry
       case value: LiveHooks.RawEvent[Msg, Model] =>
         val previous = collect(value.previous, registry)
-        previous.copy(staticRaw =
-          previous.staticRaw :+ new Raw[Msg, Model]:
-            def invoke(model: Model, event: LiveEvent, context: MessageContext[Msg, Model]) =
-              value.hook(model, event, context)
-        )
+        previous.copy(staticRaw = previous.staticRaw :+ new Raw[Msg, Model]:
+          def invoke(model: Model, event: LiveEvent, context: MessageContext[Msg, Model]) =
+            value.hook(model, event, context))
       case value: LiveHooks.BrowserEvent[Msg, Model, ?] =>
         val previous = collect(value.previous, registry)
         previous.copy(staticBrowser =
@@ -89,43 +87,33 @@ private[connection] object RootHookRegistry:
         )
       case value: LiveHooks.Event[Msg, Model] =>
         val previous = collect(value.previous, registry)
-        previous.copy(staticEvent =
-          previous.staticEvent :+ new Event[Msg, Model]:
-            def invoke(model: Model, message: Msg, context: MessageContext[Msg, Model]) =
-              value.hook(model, message, context)
-        )
+        previous.copy(staticEvent = previous.staticEvent :+ new Event[Msg, Model]:
+          def invoke(model: Model, message: Msg, context: MessageContext[Msg, Model]) =
+            value.hook(model, message, context))
       case value: LiveHooks.Params[Msg, Model] =>
         val previous = collect(value.previous, registry)
-        previous.copy(staticParams =
-          previous.staticParams :+ new Params[Msg, Model]:
-            def invoke(model: Model, url: URL, context: ParamsContext[Msg, Model]) =
-              value.hook(model, url, context)
-        )
+        previous.copy(staticParams = previous.staticParams :+ new Params[Msg, Model]:
+          def invoke(model: Model, url: URL, context: ParamsContext[Msg, Model]) =
+            value.hook(model, url, context))
       case value: LiveHooks.Info[Msg, Model] =>
         val previous = collect(value.previous, registry)
-        previous.copy(staticInfo =
-          previous.staticInfo :+ new Event[Msg, Model]:
-            def invoke(model: Model, message: Msg, context: MessageContext[Msg, Model]) =
-              value.hook(model, message, context)
-        )
+        previous.copy(staticInfo = previous.staticInfo :+ new Event[Msg, Model]:
+          def invoke(model: Model, message: Msg, context: MessageContext[Msg, Model]) =
+            value.hook(model, message, context))
       case value: LiveHooks.Async[Msg, Model] =>
         val previous = collect(value.previous, registry)
-        previous.copy(staticAsync =
-          previous.staticAsync :+ new Async[Msg, Model]:
-            def invoke(
-              model: Model,
-              event: LiveAsyncEvent[Msg],
-              context: MessageContext[Msg, Model]
-            ) =
-              value.hook(model, event, context)
-        )
+        previous.copy(staticAsync = previous.staticAsync :+ new Async[Msg, Model]:
+          def invoke(
+            model: Model,
+            event: LiveAsyncEvent[Msg],
+            context: MessageContext[Msg, Model]
+          ) =
+            value.hook(model, event, context))
       case value: LiveHooks.AfterRender[Msg, Model] =>
         val previous = collect(value.previous, registry)
-        previous.copy(staticAfterRender =
-          previous.staticAfterRender :+ new AfterRender[Msg, Model]:
-            def invoke(model: Model, context: AfterRenderContext[Msg, Model]) =
-              value.hook(model, context)
-        )
+        previous.copy(staticAfterRender = previous.staticAfterRender :+ new AfterRender[Msg, Model]:
+          def invoke(model: Model, context: AfterRenderContext[Msg, Model]) =
+            value.hook(model, context))
 
     collect(
       hooks,

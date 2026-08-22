@@ -24,17 +24,17 @@ private def validateResourcePaths(roots: Seq[PathRef]): Unit =
 
 object `package` extends Module:
   object model extends build.ScalaCommon:
-    def mvnDeps = Seq(mvn"dev.zio::zio-json:0.9.0")
+    def mvnDeps = Seq(mvn"dev.zio::zio-json:0.10.0")
 
     object test extends ScalaTests with TestModule.ZioTest:
-      def zioTestVersion = "2.1.25"
+      def zioTestVersion = "2.1.26"
 
   object pipeline extends build.ScalaCommon:
     def moduleDeps = Seq(model, build.scalive)
     def mvnDeps = Seq(
       mvn"org.typelevel::laika-io:1.3.2",
       mvn"ch.epfl.scala::tasty-query:1.8.0",
-      mvn"org.scala-lang::scala3-tasty-inspector:3.8.3"
+      mvn"org.scala-lang::scala3-tasty-inspector:3.8.4"
     )
 
     private def repositoryRoot = moduleDir / os.up / os.up
@@ -172,7 +172,7 @@ object `package` extends Module:
 
     object test extends ScalaTests with TestModule.ZioTest:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
-      def zioTestVersion = "2.1.25"
+      def zioTestVersion = "2.1.26"
 
   object quickStartFixture extends build.ScalaCommon with build.NpmAssets:
     def moduleDeps = Seq(build.scalive)
@@ -232,7 +232,7 @@ object `package` extends Module:
 
     object test extends ScalaTests with TestModule.ZioTest:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
-      def zioTestVersion = "2.1.25"
+      def zioTestVersion = "2.1.26"
 
   def check = Task {
     model.test.testCached()

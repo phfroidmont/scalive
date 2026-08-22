@@ -143,6 +143,7 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
 
   private def scaliveTagComments(tag: TagDef): TagDef =
     tag.domName match
+      case "slot" => tag.copy(isVoid = false)
       case "del" => tag.copy(commentLines = List("Represents content removed from the document."))
       case "keygen" =>
         tag.copy(
@@ -246,6 +247,7 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
     override def settersPackagePath: String      = basePackagePath + ".modifiers.KeySetter"
     override def scalaJsElementTypeParam: String = "Ref"
     override def scalaJsDomImport: String        = ""
+    override def codecsImport: String            = "import scalive.codecs._"
     override def tagKeysPackagePath: String      = "scalive"
     override def keysPackagePath: String         = "scalive"
 
@@ -402,7 +404,9 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
 
       val fileContent = generator.generateTagsTrait(
         tagType = HtmlTagType,
-        defGroups = defGroups.htmlTagsDefGroups,
+        defGroups = defGroups.htmlTagsDefGroups ++ defGroups.mathMlTagsDefGroups.map((name, defs) =>
+          name -> defs.filter(_.scalaName == "mathTag")
+        ),
         printDefGroupComments = true,
         traitCommentLines = List(
           "Reusable definitions for HTML tags.",
@@ -440,7 +444,9 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
       val traitName = "HtmlAttrs"
 
       val fileContent = generator.generateAttrsTrait(
-        defGroups = defGroups.htmlAttrDefGroups.appended(
+        defGroups = (defGroups.globalAttrDefGroups.map((name, defs) =>
+          name -> defs.map(_.copy(tagType = HtmlTagType))
+        ) ++ defGroups.htmlAttrDefGroups).appended(
           "Reflected Attributes" -> ReflectedHtmlAttrDefs.defs
             .map(d =>
               d.scalaName match

@@ -7,7 +7,7 @@ section = learn
 
 ## Before You Begin {#before-you-begin}
 
-Install Java, Mill, and Node.js with npm. This quick start uses Scala `3.8.3`,
+Install Java, Mill, and Node.js with npm. This quick start uses Scala `3.8.4`,
 Mill, and the `dev.scalive::scalive:{{scaliveSnapshotVersion}}` artifact.
 
 @:callout(warning)
@@ -46,7 +46,7 @@ package build
 import mill.*, scalalib.*
 
 object app extends ScalaModule:
-  def scalaVersion = "3.8.3"
+  def scalaVersion = "3.8.4"
   def mainClass = Some("quickstart.Main")
 
   def repositories = Seq(

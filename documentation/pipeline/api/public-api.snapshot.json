@@ -12122,6 +12122,18 @@
       ]
     },
     {
+      "id" : "lazy-val:scalive.slotTag",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.slotTag",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.slotTag:0d9550a58c02d681",
+          "signature" : "lazy val slotTag: HtmlTag"
+        }
+      ]
+    },
+    {
       "id" : "lazy-val:scalive.small",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.small",

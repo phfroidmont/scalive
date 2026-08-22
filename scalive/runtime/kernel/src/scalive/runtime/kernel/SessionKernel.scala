@@ -639,12 +639,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     val takeOrTimeout = for
       now <- zio.Clock.instant
       remaining = JavaDuration.between(now, pending.deadline)
-      envelope <- if remaining.isZero || remaining.isNegative then ZIO.succeed(None)
-                  else
-                    takeEnvelope
-                      .map(Some(_)).raceFirst(
-                        zio.Clock.sleep(zio.Duration.fromJava(remaining)).as(None)
-                      )
+      envelope <-
+        if remaining.isZero || remaining.isNegative then ZIO.succeed(None)
+        else
+          takeEnvelope
+            .map(Some(_)).raceFirst(
+              zio.Clock.sleep(zio.Duration.fromJava(remaining)).as(None)
+            )
     yield envelope
 
     takeOrTimeout.flatMap {

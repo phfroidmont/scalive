@@ -1,6 +1,6 @@
 {
   "repositoryUrl": "https://github.com/phfroidmont/scalive",
-  "domTypesVersion": "18.1.0",
+  "domTypesVersion": "19.0.0",
   "domGeneratorPath": "DomDefsGenerator.mill",
   "summaries": {}
 }

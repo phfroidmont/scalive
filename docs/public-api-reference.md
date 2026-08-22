@@ -1517,7 +1517,7 @@ enum FormData.DecodeError:
 
 `fromUrlEncoded` preserves source order, repeated names, empty values, and nested bracket names. `fromUrlEncodedBody` additionally requires an `application/x-www-form-urlencoded` body and reads at most `maxBytes + 1` bytes, so streaming bodies cannot bypass the configured limit. It defaults to UTF-8 unless the body declares a charset.
 
-`fromZioHttpForm` preserves the order of `Simple` and `Text` fields already present in a ZIO HTTP form. It rejects the whole conversion when it encounters `Binary` or `StreamingBinary`; it never drops, materializes, or coerces those fields. For URL-encoded request bodies, prefer `fromUrlEncodedBody` because ZIO HTTP 3.10.1 collapses repeated query-style values while constructing `zio.http.Form`.
+`fromZioHttpForm` preserves the order of `Simple` and `Text` fields already present in a ZIO HTTP form. It rejects the whole conversion when it encounters `Binary` or `StreamingBinary`; it never drops, materializes, or coerces those fields. For URL-encoded request bodies, prefer `fromUrlEncodedBody` because ZIO HTTP 3.11.4 collapses repeated query-style values while constructing `zio.http.Form`.
 
 Pure representation decoders expose only `RepresentationError`; bounded body decoding additionally exposes `BodyError` through `DecodeError`.
 

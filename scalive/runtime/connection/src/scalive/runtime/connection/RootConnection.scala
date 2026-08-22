@@ -392,12 +392,13 @@ final private[scalive] class RootConnection[Msg, Model] private (
                         )
                       )
             active <- uploadRuntime.activate(worker)
-            value  <- if active then ZIO.succeed(Right(worker.id))
-                     else
-                       worker.retire(LiveUploadAbortReason.Failed("stale_join")) *>
-                         failUploadEntry(claim.entry, "stale_join").ignore.as(
-                           Left(UploadAdmissionError.Rejected(UploadRegistryError.StaleAuthority))
-                         )
+            value  <-
+              if active then ZIO.succeed(Right(worker.id))
+              else
+                worker.retire(LiveUploadAbortReason.Failed("stale_join")) *>
+                  failUploadEntry(claim.entry, "stale_join").ignore.as(
+                    Left(UploadAdmissionError.Rejected(UploadRegistryError.StaleAuthority))
+                  )
           yield value
     yield result
 
@@ -1297,20 +1298,21 @@ private[scalive] object RootConnection:
                       Some(message)
                     )
                   ),
-                  handleUpload = Some((state, command, mutation) =>
-                    mutation.execute(state.uploads).flatMap { result =>
-                      ZIO.foreachDiscard(result.reply)(reply =>
-                        uploadReplies.update(_.updated(command, reply))
-                      ) *>
-                        ZIO.succeed(
-                          TurnDraft(
-                            state.copy(uploads = result.registry),
-                            uploadCommit = result.commit,
-                            uploadRollback = result.rollback
+                  handleUpload =
+                    Some((state, command, mutation) =>
+                      mutation.execute(state.uploads).flatMap { result =>
+                        ZIO.foreachDiscard(result.reply)(reply =>
+                          uploadReplies.update(_.updated(command, reply))
+                        ) *>
+                          ZIO.succeed(
+                            TurnDraft(
+                              state.copy(uploads = result.registry),
+                              uploadCommit = result.commit,
+                              uploadRollback = result.rollback
+                            )
                           )
-                        )
-                    }
-                  ),
+                      }
+                    ),
                   interceptClientEvent = (state, event) =>
                     interceptRootEvent(
                       state,

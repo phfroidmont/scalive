@@ -479,15 +479,13 @@ private object ComponentHookRegistry:
       case _: ComponentLiveHooks.Empty[P, M, A]       => empty
       case hook: ComponentLiveHooks.RawEvent[P, M, A] =>
         val previous = fromStatic(hook.previous)
-        previous.copy(staticRaw =
-          previous.staticRaw :+ new Raw[P, M, A]:
-            def invoke(
-              props: P,
-              model: A,
-              event: LiveEvent,
-              context: ComponentMessageContext[P, M, A]
-            ) = hook.hook(props, model, event, context)
-        )
+        previous.copy(staticRaw = previous.staticRaw :+ new Raw[P, M, A]:
+          def invoke(
+            props: P,
+            model: A,
+            event: LiveEvent,
+            context: ComponentMessageContext[P, M, A]
+          ) = hook.hook(props, model, event, context))
       case hook: ComponentLiveHooks.BrowserEvent[P, M, A, ?] =>
         val previous = fromStatic(hook.previous)
         previous.copy(staticBrowser =
@@ -495,29 +493,23 @@ private object ComponentHookRegistry:
         )
       case hook: ComponentLiveHooks.Event[P, M, A] =>
         val previous = fromStatic(hook.previous)
-        previous.copy(staticEvent =
-          previous.staticEvent :+ new Event[P, M, A]:
-            def invoke(props: P, model: A, message: M, context: ComponentMessageContext[P, M, A]) =
-              hook.hook(props, model, message, context)
-        )
+        previous.copy(staticEvent = previous.staticEvent :+ new Event[P, M, A]:
+          def invoke(props: P, model: A, message: M, context: ComponentMessageContext[P, M, A]) =
+            hook.hook(props, model, message, context))
       case hook: ComponentLiveHooks.Async[P, M, A] =>
         val previous = fromStatic(hook.previous)
-        previous.copy(staticAsync =
-          previous.staticAsync :+ new Async[P, M, A]:
-            def invoke(
-              props: P,
-              model: A,
-              event: LiveAsyncEvent[M],
-              context: ComponentMessageContext[P, M, A]
-            ) = hook.hook(props, model, event, context)
-        )
+        previous.copy(staticAsync = previous.staticAsync :+ new Async[P, M, A]:
+          def invoke(
+            props: P,
+            model: A,
+            event: LiveAsyncEvent[M],
+            context: ComponentMessageContext[P, M, A]
+          ) = hook.hook(props, model, event, context))
       case hook: ComponentLiveHooks.AfterRender[P, M, A] =>
         val previous = fromStatic(hook.previous)
-        previous.copy(staticAfterRender =
-          previous.staticAfterRender :+ new AfterRender[P, M, A]:
-            def invoke(props: P, model: A, context: ComponentAfterRenderContext[P, M, A]) =
-              hook.hook(props, model, context)
-        )
+        previous.copy(staticAfterRender = previous.staticAfterRender :+ new AfterRender[P, M, A]:
+          def invoke(props: P, model: A, context: ComponentAfterRenderContext[P, M, A]) =
+            hook.hook(props, model, context))
 
   def empty[P, M, A]: ComponentHookRegistry[P, M, A] =
     ComponentHookRegistry[P, M, A](

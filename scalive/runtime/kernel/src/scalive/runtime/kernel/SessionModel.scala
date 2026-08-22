@@ -722,8 +722,8 @@ private[kernel] trait StagedComponent[OwnerMsg]:
       protected def resolutionForCandidate(
         requirement: ComponentRequirement[?],
         next: RenderCandidate[Any]
-      ) = original.resolutionForCandidate(requirement, next)
-      def renderCandidate                                      = candidate
+      )                   = original.resolutionForCandidate(requirement, next)
+      def renderCandidate = candidate
       protected def commitValueFor(next: RenderCandidate[Any]) =
         original.commitValueFor(next)
       def commitValue    = original.commitValueFor(candidate)

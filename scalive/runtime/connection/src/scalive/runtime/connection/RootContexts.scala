@@ -463,7 +463,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
       id: String
     )(
       hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
-    ): LiveIO[Unit] = Deferred.fail("attach raw event hook")
+    ): LiveIO[Unit]                      = Deferred.fail("attach raw event hook")
     def detach(id: String): LiveIO[Unit] = Deferred.fail("detach raw event hook")
 
   val browserEvent: RootBrowserEventHooks[Msg, Model] = new RootBrowserEventHooks[Msg, Model]:
@@ -472,7 +472,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
       event: BrowserToServerEvent[A]
     )(
       hook: (Model, A, MessageContext[Msg, Model]) => LiveIO[Model]
-    ): LiveIO[Unit] = Deferred.fail("attach browser event hook")
+    ): LiveIO[Unit]                      = Deferred.fail("attach browser event hook")
     def detach(id: String): LiveIO[Unit] = Deferred.fail("detach browser event hook")
 
   val event: RootEventHooks[Msg, Model] = new RootEventHooks[Msg, Model]:
@@ -480,7 +480,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
       id: String
     )(
       hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
-    ): LiveIO[Unit] = Deferred.fail("attach event hook")
+    ): LiveIO[Unit]                      = Deferred.fail("attach event hook")
     def detach(id: String): LiveIO[Unit] = Deferred.fail("detach event hook")
 
   val params: RootParamsHooks[Msg, Model] = new RootParamsHooks[Msg, Model]:
@@ -488,7 +488,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
       id: String
     )(
       hook: (Model, URL, ParamsContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
-    ): LiveIO[Unit] = Deferred.fail("attach params hook")
+    ): LiveIO[Unit]                      = Deferred.fail("attach params hook")
     def detach(id: String): LiveIO[Unit] = Deferred.fail("detach params hook")
 
   val info: RootInfoHooks[Msg, Model] = new RootInfoHooks[Msg, Model]:
@@ -496,7 +496,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
       id: String
     )(
       hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
-    ): LiveIO[Unit] = Deferred.fail("attach info hook")
+    ): LiveIO[Unit]                      = Deferred.fail("attach info hook")
     def detach(id: String): LiveIO[Unit] = Deferred.fail("detach info hook")
 
   val async: RootAsyncHooks[Msg, Model] = new RootAsyncHooks[Msg, Model]:
@@ -506,7 +506,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
       hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => LiveIO[
         LiveHookResult[Model]
       ]
-    ): LiveIO[Unit] = Deferred.fail("attach async hook")
+    ): LiveIO[Unit]                      = Deferred.fail("attach async hook")
     def detach(id: String): LiveIO[Unit] = Deferred.fail("detach async hook")
 
   val afterRender: RootAfterRenderHooks[Msg, Model] = new RootAfterRenderHooks[Msg, Model]:
@@ -514,7 +514,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
       id: String
     )(
       hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
-    ): LiveIO[Unit] = Deferred.fail("attach after-render hook")
+    ): LiveIO[Unit]                      = Deferred.fail("attach after-render hook")
     def detach(id: String): LiveIO[Unit] = Deferred.fail("detach after-render hook")
 end DeferredRootHooks
 

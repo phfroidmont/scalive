@@ -4,8 +4,8 @@ import java.util.concurrent.TimeUnit
 
 import org.openjdk.jmh.annotations.*
 import org.openjdk.jmh.infra.Blackhole
-import zio.ZIO
 import zio.json.*
+import zio.{Task, ZIO}
 
 import scalive.*
 import scalive.protocol.phoenix.{PhoenixRenderedEncoder, PhoenixRenderedState}
@@ -16,7 +16,7 @@ object StreamAndLifecycleBenchmark:
   final case class Row(id: Int, value: String)
 
   object RetainedComponent extends LiveComponent.Eventless[Row, Row]:
-    def mount(props: Row, ctx: MountContext): LiveIO[Row] = ZIO.succeed(props)
+    def mount(props: Row, ctx: MountContext): Task[Row] = ZIO.succeed(props)
     def view(props: Signal[Row], model: Signal[Row], self: ComponentRef[Nothing]) = div(
       props.map(_.value)
     )

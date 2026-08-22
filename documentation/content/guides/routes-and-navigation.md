@@ -66,10 +66,10 @@ final class SearchLiveView
     extends LiveView.Routed.Eventless[Model, Option[String]]:
 
   def mount(params: Option[String], ctx: MountContext) =
-    LiveIO.succeed(search(params))
+    ZIO.succeed(search(params))
 
   override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
-    LiveIO.succeed(search(params))
+    ZIO.succeed(search(params))
 ```
 
 Choose `LiveView.Routed.Eventless` when the view reacts to typed route parameters

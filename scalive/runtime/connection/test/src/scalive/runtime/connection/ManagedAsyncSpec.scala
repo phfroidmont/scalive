@@ -21,7 +21,7 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
     case Mapped(label: String, status: String)
 
   private final class Fixture extends LiveView[Message, Vector[String]]:
-    def mount(ctx: MountContext): LiveIO[Vector[String]] =
+    def mount(ctx: MountContext): Task[Vector[String]] =
       ctx.hooks.async
         .attach("managed-async") { (model, event, hookContext) =>
           val observed = s"hook:${status(event.result)}"
@@ -31,7 +31,7 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
     def handleMessage(
       model: Vector[String],
       ctx: MessageContext
-    ): Message => LiveIO[Vector[String]] =
+    ): Message => Task[Vector[String]] =
       case Message.Start(key, task, label) =>
         val marker = s"start:$label"
         ctx.async
@@ -257,7 +257,7 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
                            props: Unit,
                            model: Unit,
                            ctx: MessageContext
-                         ): String => LiveIO[Unit] = message => deliveries.update(_ :+ message)
+                         ): String => Task[Unit] = message => deliveries.update(_ :+ message)
                          def view(
                            props: Signal[Unit],
                            model: Signal[Unit],
@@ -269,7 +269,7 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
                    def handleMessage(
                      model: Boolean,
                      ctx: MessageContext
-                   ): Boolean => LiveIO[Boolean] = ZIO.succeed(_)
+                   ): Boolean => Task[Boolean] = ZIO.succeed(_)
                    def view(model: Signal[Boolean]) =
                      div(model.when(div(instance.render(()))))
           outputs    <- Queue.bounded[ConnectionOutput](4)

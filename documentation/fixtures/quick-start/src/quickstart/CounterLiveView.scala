@@ -1,14 +1,14 @@
 // docs:start quick-start-live-view
 package quickstart
 
-import zio.ZIO
+import zio.{Task, ZIO}
 
 import scalive.*
 
 final class CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
   import CounterLiveView.Msg
 
-  def mount(ctx: MountContext): LiveIO[Int] =
+  def mount(ctx: MountContext): Task[Int] =
     ZIO.succeed(0)
 
   def handleMessage(model: Int, ctx: MessageContext) =

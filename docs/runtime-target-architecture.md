@@ -950,7 +950,7 @@ trait MountedComponent:
     command: ComponentCommand[Msg],
     state: ComponentState[Props, Model],
     context: ComponentTurnContext[Props, Msg, Model]
-  ): LiveIO[ComponentDraft[Props, Model]]
+  ): Task[ComponentDraft[Props, Model]]
 ```
 
 Erasure is handled when a typed component is packed into or unpacked from this adapter. Internal

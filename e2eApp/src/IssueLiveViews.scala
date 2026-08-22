@@ -1,13 +1,11 @@
 import java.util.UUID
 
-import zio.Chunk
-import zio.ZIO
 import zio.durationInt
 import zio.http.URL
 import zio.json.ast.Json
+import zio.{Chunk, Task, ZIO}
 
 import scalive.*
-import scalive.LiveIO.given
 
 private val phxClickAttr  = htmlAttr("phx-click", scalive.codecs.StringAsIsEncoder)
 private val phxChangeAttr = htmlAttr("phx-change", scalive.codecs.StringAsIsEncoder)
@@ -18,10 +16,10 @@ class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveVie
   import Issue3719LiveView.*
 
   def mount(ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Change(event) => model.copy(target = event.target.map(_.segments))
+    case Msg.Change(event) => ZIO.succeed(model.copy(target = event.target.map(_.segments)))
 
   override def view(model: Signal[Model]) =
     div(
@@ -64,7 +62,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
       refreshUpload(model, ctx.uploads).flatMap(pushNextFileEvent(_, entryRef, ctx))
     case Msg.CancelUpload(entry) =>
       ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
-    case Msg.Save => model
+    case Msg.Save => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     val upload = model.map(_.upload)
@@ -115,7 +113,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
     )
   end view
 
-  private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
+  private def refreshUpload(model: Model, uploads: Uploads): Task[Model] =
     uploads.get(Upload).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
@@ -125,7 +123,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
     model: Model,
     entryRef: String,
     ctx: MessageContext
-  ): LiveIO[Model] =
+  ): Task[Model] =
     val completedRef = model.upload.entries
       .find(entry =>
         entry.ref.value == entryRef && entry.status == LiveUploadEntryStatus.Completed
@@ -237,10 +235,10 @@ class Issue3814LiveView extends LiveView[Issue3814LiveView.Msg, Issue3814LiveVie
   import Issue3814LiveView.*
 
   def mount(ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Submit => model.copy(triggerSubmit = true)
+    case Msg.Submit => ZIO.succeed(model.copy(triggerSubmit = true))
 
   override def view(model: Signal[Model]) =
     form(
@@ -266,12 +264,12 @@ class Issue3040LiveView extends LiveView[Issue3040LiveView.Msg, Issue3040LiveVie
   import Issue3040LiveView.*
 
   def mount(ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Open   => model.copy(open = true, submitted = false)
-    case Msg.Close  => model.copy(open = false)
-    case Msg.Submit => model.copy(submitted = true)
+    case Msg.Open   => ZIO.succeed(model.copy(open = true, submitted = false))
+    case Msg.Close  => ZIO.succeed(model.copy(open = false))
+    case Msg.Submit => ZIO.succeed(model.copy(submitted = true))
 
   override def view(model: Signal[Model]) =
     val open      = model.map(_.open)
@@ -306,10 +304,10 @@ object Issue3040LiveView:
 class Issue3047LiveView(pageName: String) extends LiveView[Unit, Unit]:
 
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     span(idAttr := "page", s"Page $pageName")
@@ -364,16 +362,19 @@ class Issue3529LiveView extends LiveView.Routed[Unit, Issue3529LiveView.Model, O
   import Issue3529LiveView.*
 
   def mount(_params: Option[String], ctx: MountContext) =
-    Model(mounted = UUID.randomUUID().toString, next = UUID.randomUUID().toString)
+    val model = Model(mounted = UUID.randomUUID().toString, next = UUID.randomUUID().toString)
+    ZIO.succeed(model)
 
   override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
-    model.copy(
-      mounted = params.fold(UUID.randomUUID().toString)(_ => model.mounted),
-      next = UUID.randomUUID().toString
-    )
+    val next =
+      model.copy(
+        mounted = params.fold(UUID.randomUUID().toString)(_ => model.mounted),
+        next = UUID.randomUUID().toString
+      )
+    ZIO.succeed(next)
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     div(
@@ -423,7 +424,7 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
     }
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     div(
@@ -455,10 +456,10 @@ object Issue3530LiveView:
 
   class NestedLive(itemId: Int) extends LiveView[Unit, Unit]:
     def mount(ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(model: Signal[Unit]) =
       div(
@@ -475,7 +476,7 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ValidateUser(event) =>
-      model.copy(userName = event.raw.getOrElse("user[name]", ""))
+      ZIO.succeed(model.copy(userName = event.raw.getOrElse("user[name]", "")))
     case Msg.Validate =>
       refreshUpload(model, ctx.uploads)
     case Msg.Progress(entryRef) =>
@@ -551,7 +552,7 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
     )
   end view
 
-  private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
+  private def refreshUpload(model: Model, uploads: Uploads): Task[Model] =
     uploads.get(Upload).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
@@ -561,7 +562,7 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
     model: Model,
     entry: LiveUploadEntry[Chunk[Byte]],
     uploads: Uploads
-  ): LiveIO[Model] =
+  ): Task[Model] =
     uploads
       .consume(entry)(upload => ZIO.succeed(ConsumeDecision.Consume(upload.client.fileName))).map {
         case (fileName, upload) =>
@@ -592,13 +593,15 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
   import Issue3819LiveView.*
 
   def mount(ctx: MountContext) =
-    false
+    ZIO.succeed(false)
 
   def handleMessage(model: Boolean, ctx: MessageContext) =
-    case Msg.Noop(_) => model
+    case Msg.Noop(_) => ZIO.succeed(model)
 
   override def hooks: LiveHooks[Msg, Boolean] =
-    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("reconnected"))((_, _, _) => true)
+    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("reconnected"))((_, _, _) =>
+      ZIO.succeed(true)
+    )
 
   override def view(reconnected: Signal[Boolean]) =
     div(
@@ -617,10 +620,10 @@ object Issue3819LiveView:
 
 class Issue3107LiveView extends LiveView[Issue3107LiveView.Msg.type, Boolean]:
   def mount(ctx: MountContext) =
-    true
+    ZIO.succeed(true)
 
   def handleMessage(model: Boolean, ctx: MessageContext) =
-    (_: Issue3107LiveView.Msg.type) => false
+    (_: Issue3107LiveView.Msg.type) => ZIO.succeed(false)
 
   override def view(disabledButton: Signal[Boolean]) =
     form(
@@ -639,14 +642,14 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
   import Issue3083LiveView.*
 
   def mount(ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Msg.type) => model
+    (_: Msg.type) => ZIO.succeed(model)
 
   override def hooks: LiveHooks[Msg.type, Model] =
     LiveHooks.empty.onRawEvent { (model, event, _) =>
-      if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
+      if event.bindingId != "sandbox:eval" then ZIO.succeed(LiveEventHookResult.cont(model))
       else
         val code = event.value match
           case Json.Obj(fields) =>
@@ -660,9 +663,11 @@ class Issue3083LiveView extends LiveView[Issue3083LiveView.Msg.type, Issue3083Li
 
         selected match
           case Some(values) =>
-            LiveEventHookResult.haltReply(
-              model.copy(selected = values),
-              Json.Obj("result" -> Json.Null)
+            ZIO.succeed(
+              LiveEventHookResult.haltReply(
+                model.copy(selected = values),
+                Json.Obj("result" -> Json.Null)
+              )
             )
           case None => E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
@@ -695,14 +700,14 @@ class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveVie
   import Issue2787LiveView.*
 
   def mount(ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Updated(data) =>
       val select1 = data.get("demo[select1]").filter(_.nonEmpty)
       val select2 = data.get("demo[select2]").filter(_.nonEmpty)
-      model.copy(select1 = select1, select2 = select2)
-    case Msg.Submitted(_) => Model()
+      ZIO.succeed(model.copy(select1 = select1, select2 = select2))
+    case Msg.Submitted(_) => ZIO.succeed(Model())
 
   override def view(model: Signal[Model]) =
     div(
@@ -757,11 +762,11 @@ class Issue3448LiveView extends LiveView[Issue3448LiveView.Msg, Vector[String]]:
   import Issue3448LiveView.*
 
   def mount(ctx: MountContext) =
-    Vector.empty
+    ZIO.succeed(Vector.empty)
 
   def handleMessage(model: Vector[String], ctx: MessageContext) =
-    case Msg.Validate(data) => data.values("a[]")
-    case Msg.Search         => model
+    case Msg.Validate(data) => ZIO.succeed(data.values("a[]"))
+    case Msg.Search         => ZIO.succeed(model)
 
   override def view(selectedValues: Signal[Vector[String]]) =
     form(
@@ -794,10 +799,10 @@ class Issue3194LiveView extends LiveView[Issue3194LiveView.Msg, Unit]:
   import Issue3194LiveView.*
 
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    case Msg.Validate => model
+    case Msg.Validate => ZIO.succeed(model)
     case Msg.Submit   => ctx.nav.pushNavigate(E2ERoutes.issue3194Other.location).as(model)
 
   override def view(model: Signal[Unit]) =
@@ -818,10 +823,10 @@ object Issue3194LiveView:
 
 class Issue3194OtherLiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) = h2("Another LiveView")
 
@@ -830,15 +835,15 @@ class Issue3200LiveView
   import Issue3200LiveView.*
 
   def mount(_params: String, ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   override def handleParams(model: Model, params: String, url: URL, ctx: ParamsContext) =
     val _   = (url, ctx)
     val tab = if params == "messages" then Tab.Messages else Tab.Settings
-    model.copy(tab = tab)
+    ZIO.succeed(model.copy(tab = tab))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Msg) => model
+    (_: Msg) => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     div(
@@ -871,10 +876,10 @@ object Issue3200LiveView:
 
   object SettingsTab extends LiveComponent[Unit, Unit, Unit]:
     def mount(props: Unit, ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
       div("Settings")
@@ -885,11 +890,11 @@ object Issue3200LiveView:
       case Submit
 
     def mount(props: Unit, ctx: MountContext) =
-      ""
+      ZIO.succeed("")
 
     def handleMessage(props: Unit, model: String, ctx: MessageContext) =
-      case Msg.Change(data) => data.getOrElse("new_message", "")
-      case Msg.Submit       => model
+      case Msg.Change(data) => ZIO.succeed(data.getOrElse("new_message", ""))
+      case Msg.Submit       => ZIO.succeed(model)
 
     override def view(props: Signal[Unit], model: Signal[String], self: ComponentRef[Msg]) =
       div(
@@ -911,13 +916,13 @@ object Issue3200LiveView:
 
   object MessageComponent extends LiveComponent[String, Unit, String]:
     def mount(props: String, ctx: MountContext) =
-      props
+      ZIO.succeed(props)
 
     override def update(props: String, model: String, ctx: UpdateContext) =
-      props
+      ZIO.succeed(props)
 
     def handleMessage(props: String, model: String, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(
       props: Signal[String],
@@ -934,7 +939,7 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
     ctx.connection match
       case Connection.Connected(capabilities) =>
         startLoad(capabilities.async).as(Model(status = Status.Loading))
-      case Connection.Disconnected => Model(status = Status.Connecting)
+      case Connection.Disconnected => ZIO.succeed(Model(status = Status.Connecting))
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks
@@ -943,9 +948,11 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
         val data = value.asString
           .flatMap(raw => FormData.fromUrlEncoded(raw).toOption)
           .getOrElse(FormData.empty)
-        model.copy(
-          name = data.getOrElse("name", model.name),
-          email = data.getOrElse("email", model.email)
+        ZIO.succeed(
+          model.copy(
+            name = data.getOrElse("name", model.name),
+            email = data.getOrElse("email", model.email)
+          )
         )
       }
       .onBrowserEvent(BrowserToServerEvent[Json]("submit")) { (model, _, ctx) =>
@@ -954,10 +961,12 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeStatus(data) =>
-      model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
+      ZIO.succeed(
+        model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
+      )
     case Msg.Loaded(LiveAsyncResult.Succeeded(result)) =>
-      model.copy(status = Status.Loaded, name = result.name, email = result.email)
-    case Msg.Loaded(_) => model
+      ZIO.succeed(model.copy(status = Status.Loaded, name = result.name, email = result.email))
+    case Msg.Loaded(_) => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     val status = model.map(_.status)
@@ -1009,10 +1018,10 @@ object Issue3026LiveView:
 
   object Issue3026FormComponent extends LiveComponent[FormProps, Unit, Unit]:
     def mount(props: FormProps, ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(props: FormProps, model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(
       props: Signal[FormProps],
@@ -1033,10 +1042,10 @@ end Issue3026LiveView
 
 class Issue3117LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     div(
@@ -1055,20 +1064,21 @@ object Issue3117LiveView:
     final case class Model(result: Option[String] = None, started: Boolean = false)
 
     def mount(props: String, ctx: MountContext) =
-      Model()
+      ZIO.succeed(Model())
 
     override def update(props: String, model: Model, ctx: UpdateContext) =
-      if model.started then model
+      if model.started then ZIO.succeed(model)
       else
         ctx.connection match
           case Connection.Connected(capabilities) =>
             capabilities.async
               .start(Load)(ZIO.succeed("bar"))(Msg.Loaded(_)).as(model.copy(started = true))
-          case Connection.Disconnected => model
+          case Connection.Disconnected => ZIO.succeed(model)
 
     def handleMessage(props: String, model: Model, ctx: MessageContext) =
-      case Msg.Loaded(LiveAsyncResult.Succeeded(value)) => model.copy(result = Some(value))
-      case Msg.Loaded(_)                                => model
+      case Msg.Loaded(LiveAsyncResult.Succeeded(value)) =>
+        ZIO.succeed(model.copy(result = Some(value)))
+      case Msg.Loaded(_) => ZIO.succeed(model)
 
     override def view(
       props: Signal[String],
@@ -1091,10 +1101,10 @@ class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
   import Issue3169LiveView.*
 
   def mount(ctx: MountContext) =
-    None
+    ZIO.succeed(None)
 
   def handleMessage(model: Option[String], ctx: MessageContext) =
-    case Msg.Select(name) => Some(name)
+    case Msg.Select(name) => ZIO.succeed(Some(name))
 
   override def view(selected: Signal[Option[String]]) =
     div(
@@ -1133,7 +1143,7 @@ object Issue3169LiveView:
       case Loaded(result: LiveAsyncResult[Record])
 
     def mount(props: Option[String], ctx: MountContext) =
-      None
+      ZIO.succeed(None)
 
     override def update(props: Option[String], model: Option[Record], ctx: UpdateContext) =
       props match
@@ -1148,12 +1158,12 @@ object Issue3169LiveView:
                     )
                 )(Msg.Loaded(_))
                 .as(None)
-            case Connection.Disconnected => model
-        case None => model
+            case Connection.Disconnected => ZIO.succeed(model)
+        case None => ZIO.succeed(model)
 
     def handleMessage(props: Option[String], model: Option[Record], ctx: MessageContext) =
-      case Msg.Loaded(LiveAsyncResult.Succeeded(record)) => Some(record)
-      case Msg.Loaded(_)                                 => model
+      case Msg.Loaded(LiveAsyncResult.Succeeded(record)) => ZIO.succeed(Some(record))
+      case Msg.Loaded(_)                                 => ZIO.succeed(model)
 
     override def view(
       props: Signal[Option[String]],
@@ -1171,13 +1181,13 @@ object Issue3169LiveView:
 
   object FormCore extends LiveComponent[Record, Unit, Record]:
     def mount(props: Record, ctx: MountContext) =
-      props
+      ZIO.succeed(props)
 
     override def update(props: Record, model: Record, ctx: UpdateContext) =
-      props
+      ZIO.succeed(props)
 
     def handleMessage(props: Record, model: Record, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(props: Signal[Record], model: Signal[Record], self: ComponentRef[Unit]) =
       div(
@@ -1189,13 +1199,13 @@ object Issue3169LiveView:
 
   object FormColumn extends LiveComponent[Record, Unit, Record]:
     def mount(props: Record, ctx: MountContext) =
-      props
+      ZIO.succeed(props)
 
     override def update(props: Record, model: Record, ctx: UpdateContext) =
-      props
+      ZIO.succeed(props)
 
     def handleMessage(props: Record, model: Record, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(props: Signal[Record], model: Signal[Record], self: ComponentRef[Unit]) =
       div(
@@ -1224,10 +1234,10 @@ end Issue3169LiveView
 
 class Issue3378LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     div(liveView("appbar", Issue3378LiveView.AppBarLive()))
@@ -1240,10 +1250,10 @@ object Issue3378LiveView:
 
   class AppBarLive extends LiveView[Unit, Unit]:
     def mount(ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(model: Signal[Unit]) =
       div(liveView("notifications", NotificationsLive()))
@@ -1253,7 +1263,7 @@ object Issue3378LiveView:
       ctx.streams.create(NotificationsStream, List(Notification(1, "Hello")))
 
     def handleMessage(model: LiveStream[Notification], ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(model: Signal[LiveStream[Notification]]) =
       div(
@@ -1267,10 +1277,10 @@ end Issue3378LiveView
 
 class Issue3496LiveView(pageName: String, includeStickyHook: Boolean) extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     div(
@@ -1287,20 +1297,20 @@ object Issue3496LiveView:
 
   class StickyLive extends LiveView[Unit, Unit]:
     def mount(ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(model: Signal[Unit]) =
       div(myComponent)
 
 class Issue3612LiveView(pageName: String) extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     div(
@@ -1316,7 +1326,7 @@ object Issue3612LiveView:
     import Msg.*
 
     def mount(ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(model: Unit, ctx: MessageContext) =
       case NavigateToA => ctx.nav.pushNavigate(E2ERoutes.issue3612A.location).as(model)
@@ -1330,10 +1340,10 @@ object Issue3612LiveView:
 
 class Issue3636LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     focusWrap("focus-wrap")(
@@ -1351,19 +1361,19 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
       case Connection.Connected(capabilities) =>
         capabilities.async.start(ChangeId)(ZIO.unit)(_ => Msg.ChangeId) *>
           capabilities.client.push(MyEvent, Map.empty[String, String]).as(init)
-      case Connection.Disconnected => init
+      case Connection.Disconnected => ZIO.succeed(init)
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks
       .empty[Msg, Model]
-      .onBrowserEvent(BrowserToServerEvent[Json]("lol"))((model, _, _) => model)
+      .onBrowserEvent(BrowserToServerEvent[Json]("lol"))((model, _, _) => ZIO.succeed(model))
       .onBrowserEvent(BrowserToServerEvent[Json]("reload")) { (model, _, ctx) =>
         val next = model.copy(counter = model.counter + 1)
         ctx.client.push(MyEvent, Map.empty[String, String]).as(next)
       }
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.ChangeId => model.copy(id = 2)
+    case Msg.ChangeId => ZIO.succeed(model.copy(id = 2))
 
   override def view(model: Signal[Model]) =
     div(
@@ -1409,10 +1419,10 @@ object Issue3651LiveView:
 
 class Issue3658LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     div(
@@ -1423,10 +1433,10 @@ class Issue3658LiveView extends LiveView[Unit, Unit]:
 object Issue3658LiveView:
   class Sticky extends LiveView[Unit, Unit]:
     def mount(ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(model: Signal[Unit]) =
       div(
@@ -1435,10 +1445,10 @@ object Issue3658LiveView:
 
 class Issue3656LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     div(
@@ -1461,10 +1471,10 @@ class Issue3656LiveView extends LiveView[Unit, Unit]:
 object Issue3656LiveView:
   class StickyLive extends LiveView[Unit, Unit]:
     def mount(ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(model: Signal[Unit]) =
       navTag(
@@ -1480,10 +1490,10 @@ class Issue3681LiveView(onAway: Boolean) extends LiveView[Unit, Issue3681LiveVie
         _        <- ctx.streams.create(MessagesStream, List.empty[Message])
         messages <- ctx.streams.reset(MessagesStream, List(Message(4, 4)))
       yield Model(Some(messages))
-    else Model(None)
+    else ZIO.succeed(Model(None))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     div(
@@ -1530,7 +1540,7 @@ object Issue3681LiveView:
       ctx.streams.create(MessagesStream, List(Message(1, 1), Message(2, 2), Message(3, 3)))
 
     def handleMessage(model: LiveStream[Message], ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(messages: Signal[LiveStream[Message]]) =
       div(
@@ -1543,10 +1553,10 @@ object Issue3681LiveView:
 
 class Issue3684LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     div(liveComponent(Issue3684LiveView.BadgeForm, id = "badge_form", props = ()))
@@ -1558,11 +1568,11 @@ object Issue3684LiveView:
       case FormChanged
 
     def mount(props: Unit, ctx: MountContext) =
-      "huey"
+      ZIO.succeed("huey")
 
     def handleMessage(props: Unit, model: String, ctx: MessageContext) =
-      case Msg.ChangeType(value) => value
-      case Msg.FormChanged       => model
+      case Msg.ChangeType(value) => ZIO.succeed(value)
+      case Msg.FormChanged       => ZIO.succeed(model)
 
     override def view(props: Signal[Unit], selected: Signal[String], self: ComponentRef[Msg]) =
       div(
@@ -1602,7 +1612,7 @@ class Issue3686LiveView(pageName: String) extends LiveView[Issue3686LiveView.Msg
   import Issue3686LiveView.*
 
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
     (_: Msg.type) =>
@@ -1638,13 +1648,13 @@ class Issue3709LiveView extends LiveView.Routed[Unit, String, Option[String]]:
   import Issue3709LiveView.*
 
   def mount(params: Option[String], ctx: MountContext) =
-    params.getOrElse("")
+    ZIO.succeed(params.getOrElse(""))
 
   override def handleParams(model: String, params: Option[String], url: URL, ctx: ParamsContext) =
-    params.getOrElse("")
+    ZIO.succeed(params.getOrElse(""))
 
   def handleMessage(model: String, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[String]) =
     div(
@@ -1671,10 +1681,10 @@ end Issue3709LiveView
 object Issue3709LiveView:
   object SomeComponent extends LiveComponent[Unit, Unit, Unit]:
     def mount(props: Unit, ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
       div("Hello")
@@ -1683,12 +1693,12 @@ class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Issue3919LiveVie
   import Issue3919LiveView.*
 
   def mount(ctx: MountContext) =
-    Action(text = "No red")
+    ZIO.succeed(Action(text = "No red"))
 
   def handleMessage(model: Action, ctx: MessageContext) =
     case Msg.Toggle =>
-      if model.attrs.nonEmpty then Action(text = "No red")
-      else Action(text = "Red", attrs = Some(ComponentAttrs(special = true)))
+      if model.attrs.nonEmpty then ZIO.succeed(Action(text = "No red"))
+      else ZIO.succeed(Action(text = "Red", attrs = Some(ComponentAttrs(special = true))))
 
   override def view(model: Signal[Action]) =
     div(
@@ -1715,11 +1725,11 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
   import Issue3941LiveView.*
 
   def mount(ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("page_position_update")) {
-      (model, _, _) => model
+      (model, _, _) => ZIO.succeed(model)
     }
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -1728,7 +1738,7 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
         if model.selectedItems.contains(id) then model.selectedItems - id
         else model.selectedItems + id
 
-      model.copy(selectedItems = selectedItems)
+      ZIO.succeed(model.copy(selectedItems = selectedItems))
 
   override def view(model: Signal[Model]) =
     div(
@@ -1766,7 +1776,7 @@ object Issue3941LiveView:
 
   object ItemComponent extends LiveComponent.Eventless[String, Unit]:
     def mount(props: String, ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     override def view(
       props: Signal[String],
@@ -1793,7 +1803,7 @@ object Issue3941LiveView:
     final case class Model(item: String, asyncAssign: AsyncValue[String] = AsyncValue.empty)
 
     def mount(props: String, ctx: MountContext) =
-      Model(props)
+      ZIO.succeed(Model(props))
 
     override def update(props: String, model: Model, ctx: UpdateContext) =
       val loading = model.copy(
@@ -1803,13 +1813,13 @@ object Issue3941LiveView:
       ctx.connection match
         case Connection.Connected(capabilities) =>
           capabilities.async.start(Load)(ZIO.succeed(props))(Msg.Loaded(_)).as(loading)
-        case Connection.Disconnected => loading
+        case Connection.Disconnected => ZIO.succeed(loading)
 
     def handleMessage(props: String, model: Model, ctx: MessageContext) =
       case Msg.Loaded(result @ LiveAsyncResult.Succeeded(item)) =>
-        model.copy(item = item, asyncAssign = model.asyncAssign.updated(result))
+        ZIO.succeed(model.copy(item = item, asyncAssign = model.asyncAssign.updated(result)))
       case Msg.Loaded(result) =>
-        model.copy(asyncAssign = model.asyncAssign.updated(result))
+        ZIO.succeed(model.copy(asyncAssign = model.asyncAssign.updated(result)))
 
     override def view(
       props: Signal[String],
@@ -1842,10 +1852,10 @@ class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
   import Issue3953LiveView.*
 
   def mount(ctx: MountContext) =
-    false
+    ZIO.succeed(false)
 
   def handleMessage(model: Boolean, ctx: MessageContext) =
-    case Msg.Toggle => !model
+    case Msg.Toggle => ZIO.succeed(!model)
 
   override def view(model: Signal[Boolean]) =
     div(
@@ -1860,20 +1870,20 @@ object Issue3953LiveView:
 
   object Component extends LiveComponent[Unit, Unit, Unit]:
     def mount(props: Unit, ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
       div("Component")
 
   class NestedViewLive extends LiveView[Unit, Unit]:
     def mount(ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(model: Signal[Unit]) =
       div(
@@ -1885,7 +1895,9 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
   import Issue3979LiveView.*
 
   def mount(ctx: MountContext) =
-    Model(counter = 1, components = (1 to 10).map(id => ComponentState(id, counter = 0)).toVector)
+    ZIO.succeed(
+      Model(counter = 1, components = (1 to 10).map(id => ComponentState(id, counter = 0)).toVector)
+    )
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Bump =>
@@ -1907,8 +1919,8 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
               s"comp-$id",
               CounterProps(id = id, domCounter = component.counter, counter = 10)
             ).as(model)
-        case None => model
-    case Msg.DelayedUpdate(_) => model
+        case None => ZIO.succeed(model)
+    case Msg.DelayedUpdate(_) => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     div(
@@ -1937,13 +1949,13 @@ object Issue3979LiveView:
 
   object CounterComponent extends LiveComponent[CounterProps, Unit, CounterProps]:
     def mount(props: CounterProps, ctx: MountContext) =
-      props
+      ZIO.succeed(props)
 
     override def update(props: CounterProps, model: CounterProps, ctx: UpdateContext) =
-      props
+      ZIO.succeed(props)
 
     def handleMessage(props: CounterProps, model: CounterProps, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(
       props: Signal[CounterProps],
@@ -1964,10 +1976,10 @@ class Issue4027LiveView
   import Issue4027LiveView.*
 
   def mount(params: QueryParams, ctx: MountContext) =
-    Model(caseName = params.caseName)
+    ZIO.succeed(Model(caseName = params.caseName))
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
-    model.copy(caseName = params.caseName)
+    ZIO.succeed(model.copy(caseName = params.caseName))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Load =>
@@ -1976,7 +1988,7 @@ class Issue4027LiveView
       startLoad(ctx.async, InitialItems.tail).as(
         model.copy(data = AsyncValue.markLoading(model.data))
       )
-    case Msg.Loaded(result) => model.copy(data = model.data.updated(result))
+    case Msg.Loaded(result) => ZIO.succeed(model.copy(data = model.data.updated(result)))
 
   override def view(model: Signal[Model]) =
     val caseName     = model.map(_.caseName)
@@ -2033,13 +2045,13 @@ object Issue4027LiveView:
 
   object ReproLiveComponent extends LiveComponent[Vector[Item], Unit, Vector[Item]]:
     def mount(props: Vector[Item], ctx: MountContext) =
-      props
+      ZIO.succeed(props)
 
     override def update(props: Vector[Item], model: Vector[Item], ctx: UpdateContext) =
-      props
+      ZIO.succeed(props)
 
     def handleMessage(props: Vector[Item], model: Vector[Item], ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(
       props: Signal[Vector[Item]],
@@ -2055,21 +2067,21 @@ object Issue4027LiveView:
         AsyncValue[Vector[Item]]
       ]:
     def mount(props: AsyncValue[Vector[Item]], ctx: MountContext) =
-      props
+      ZIO.succeed(props)
 
     override def update(
       props: AsyncValue[Vector[Item]],
       model: AsyncValue[Vector[Item]],
       ctx: UpdateContext
     ) =
-      props
+      ZIO.succeed(props)
 
     def handleMessage(
       props: AsyncValue[Vector[Item]],
       model: AsyncValue[Vector[Item]],
       ctx: MessageContext
     ) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(
       props: Signal[AsyncValue[Vector[Item]]],
@@ -2109,13 +2121,14 @@ class Issue4066LiveView
   import Issue4066LiveView.*
 
   def mount(_params: QueryParams, ctx: MountContext) =
-    Model(renderTime = java.time.Instant.now.toString)
+    val model = Model(renderTime = java.time.Instant.now.toString)
+    ZIO.succeed(model)
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
-    model.copy(delay = params.delay)
+    ZIO.succeed(model.copy(delay = params.delay))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Toggle => model.copy(renderInput = !model.renderInput)
+    case Msg.Toggle => ZIO.succeed(model.copy(renderInput = !model.renderInput))
 
   override def view(model: Signal[Model]) =
     div(
@@ -2139,14 +2152,14 @@ object Issue4066LiveView:
   object DelayedInputComponent extends LiveComponent[Int, Unit, Unit]:
     override def hooks: ComponentLiveHooks[Int, Unit, Unit] =
       ComponentLiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("do-something")) {
-        (_, model, _, _) => model
+        (_, model, _, _) => ZIO.succeed(model)
       }
 
     def mount(props: Int, ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(props: Int, model: Unit, ctx: MessageContext) =
-      (_: Unit) => model
+      (_: Unit) => ZIO.succeed(model)
 
     override def view(props: Signal[Int], model: Signal[Unit], self: ComponentRef[Unit]) =
       input(
@@ -2163,11 +2176,11 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate       => refreshUpload(model, ctx.uploads)
-    case Msg.ToggleDisabled => model.copy(disabled = !model.disabled)
+    case Msg.ToggleDisabled => ZIO.succeed(model.copy(disabled = !model.disabled))
     case Msg.ToggleClass    =>
       val nextClass =
         if model.customClass == "initial-class" then "updated-class" else "initial-class"
-      model.copy(customClass = nextClass)
+      ZIO.succeed(model.copy(customClass = nextClass))
 
   override def view(model: Signal[Model]) =
     val upload = model.map(_.upload)
@@ -2199,7 +2212,7 @@ class Issue4078LiveView extends LiveView[Issue4078LiveView.Msg, Issue4078LiveVie
       }
     )
 
-  private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
+  private def refreshUpload(model: Model, uploads: Uploads): Task[Model] =
     uploads.get(Upload).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
@@ -2228,15 +2241,16 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
   import Issue4088LiveView.*
 
   def mount(ctx: MountContext) =
-    "value"
+    ZIO.succeed("value")
 
   override def hooks: LiveHooks[Msg, String] =
     LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("my_update")) { (_, _, _) =>
-      System.nanoTime.toString
+      val value = System.nanoTime.toString
+      ZIO.succeed(value)
     }
 
   def handleMessage(model: String, ctx: MessageContext) =
-    (_: Msg) => model
+    (_: Msg) => ZIO.succeed(model)
 
   override def view(value: Signal[String]) =
     div(dom.hook("Issue4088Hook", DomRef("foo")), value)
@@ -2247,15 +2261,15 @@ object Issue4088LiveView:
 
 class Issue4094LiveView extends LiveView.Routed[Unit, Unit, Option[String]]:
   def mount(_params: Option[String], ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   override def handleParams(model: Unit, params: Option[String], url: URL, ctx: ParamsContext) =
     if params.contains("bar") then
       ctx.nav.redirect(E2ERoutes.navigationA.location(NavigationLiveViews.AParams(None))).as(model)
-    else model
+    else ZIO.succeed(model)
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     link.pushPatch(E2ERoutes.issue4094.location(Some("bar")), "Patch")
@@ -2264,10 +2278,10 @@ class Issue4095LiveView extends LiveView[Issue4095LiveView.Msg, String]:
   import Issue4095LiveView.*
 
   def mount(ctx: MountContext) =
-    "true"
+    ZIO.succeed("true")
 
   def handleMessage(model: String, ctx: MessageContext) =
-    case Msg.Validate(data) => data.getOrElse("show?", "")
+    case Msg.Validate(data) => ZIO.succeed(data.getOrElse("show?", ""))
 
   override def view(show: Signal[String]) =
     div(
@@ -2290,11 +2304,11 @@ class Issue4102LiveView extends LiveView[Issue4102LiveView.Msg, String]:
   import Issue4102LiveView.*
 
   def mount(ctx: MountContext) =
-    "Test"
+    ZIO.succeed("Test")
 
   def handleMessage(model: String, ctx: MessageContext) =
-    case Msg.Validate(data) => data.getOrElse("name", model)
-    case Msg.Submit(data)   => data.getOrElse("name", model)
+    case Msg.Validate(data) => ZIO.succeed(data.getOrElse("name", model))
+    case Msg.Submit(data)   => ZIO.succeed(data.getOrElse("name", model))
 
   override def view(name: Signal[String]) =
     div(
@@ -2321,10 +2335,10 @@ object Issue4102LiveView:
 
 class Issue4107LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     div(
@@ -2372,10 +2386,10 @@ object Issue4121LiveView:
 
 class Issue4147LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext) =
-    ()
+    ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
     h1("Inside")

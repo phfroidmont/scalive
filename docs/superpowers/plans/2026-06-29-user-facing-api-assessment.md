@@ -295,7 +295,7 @@ Expected: output includes public docs references and implementation references s
 
 - [ ] **Step 3: Search examples for beginner-facing and advanced-only patterns**
 
-Run: `grep -n "import scalive.LiveIO.given\|handleMessage\|link.navigate\|link.patch\|phx.onSubmit\|phx.onChange\|Form.of\|liveFileInput\|allowUpload\|sendUpdate\|LiveMountAspect\|rawEvent" example/src/*.scala e2eApp/src/*.scala`
+Run: `grep -n "handleMessage\|link.navigate\|link.patch\|phx.onSubmit\|phx.onChange\|Form.of\|liveFileInput\|allowUpload\|sendUpdate\|LiveMountAspect\|rawEvent" example/src/*.scala e2eApp/src/*.scala`
 
 Expected: output shows beginner examples in `example/src` and advanced/parity patterns in `e2eApp/src`.
 
@@ -382,7 +382,7 @@ Confidence: Medium.
 
 Evidence: `example/src/CounterLiveView.scala`, `example/src/Example.scala`, `example/src/RootLayout.scala`.
 
-The examples show typed messages, typed models, `LiveIO`, rendering, event bindings, routing, static assets, and root layout setup.
+The examples show typed messages, typed models, `Task`, rendering, event bindings, routing, static assets, and root layout setup.
 
 Impact: once discovered, the examples provide a useful starting point for the core API.
 

@@ -1,5 +1,7 @@
 package scalive.docs.examples
 
+import zio.Task
+
 import scalive.*
 
 // docs:start activity-stream-example
@@ -7,7 +9,7 @@ final class ActivityStreamExample
     extends LiveView[ActivityStreamExample.Msg, ActivityStreamExample.Model]:
   import ActivityStreamExample.*
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     initialModel(ctx)
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -87,7 +89,7 @@ final class ActivityStreamExample
         }
     )
 
-  private def initialModel(ctx: MountContext): LiveIO[Model] =
+  private def initialModel(ctx: MountContext): Task[Model] =
     ctx.streams.create(ActivityStreamDef, InitialActivities).map { stream =>
       Model(InitialActivities, stream, InitialNextId)
     }

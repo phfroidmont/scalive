@@ -1,6 +1,6 @@
 package scalive
 
-import zio.ZIO
+import zio.{Task, ZIO}
 
 trait LiveComponent[Props, Msg, Model]:
   type MountContext       = scalive.ComponentMountContext[Props, Msg, Model]
@@ -9,9 +9,9 @@ trait LiveComponent[Props, Msg, Model]:
   type AfterRenderContext = scalive.ComponentAfterRenderContext[Props, Msg, Model]
 
   def hooks: ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.empty
-  def mount(props: Props, ctx: MountContext): LiveIO[Model]
-  def update(props: Props, model: Model, ctx: UpdateContext): LiveIO[Model] = ZIO.succeed(model)
-  def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => LiveIO[Model]
+  def mount(props: Props, ctx: MountContext): Task[Model]
+  def update(props: Props, model: Model, ctx: UpdateContext): Task[Model] = ZIO.succeed(model)
+  def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => Task[Model]
   def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]): HtmlElement[Msg]
 
 object LiveComponent:
@@ -20,14 +20,14 @@ object LiveComponent:
       props: Props,
       model: Model,
       ctx: MessageContext
-    ): Nothing => LiveIO[Model] = _ => ZIO.succeed(model)
+    ): Nothing => Task[Model] = _ => ZIO.succeed(model)
 
   trait WithOutput[Props, Msg, Model, Output0] extends LiveComponent[Props, Msg, Model]:
     final private[scalive] val outputChannel: ComponentOutputChannel[Output0] =
       ComponentOutputChannel()
 
     extension (ctx: MessageContext)
-      final def emit(output: Output0): LiveIO[Unit] = ctx.emit(outputChannel, output)
+      final def emit(output: Output0): Task[Unit] = ctx.emit(outputChannel, output)
 
   object WithOutput:
     trait Eventless[Props, Model, Output]
@@ -36,7 +36,7 @@ object LiveComponent:
         props: Props,
         model: Model,
         ctx: MessageContext
-      ): Nothing => LiveIO[Model] = _ => ZIO.succeed(model)
+      ): Nothing => Task[Model] = _ => ZIO.succeed(model)
 
   trait EventlessWithOutput[Props, Model, Output] extends WithOutput.Eventless[Props, Model, Output]
 

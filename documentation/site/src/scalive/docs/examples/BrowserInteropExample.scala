@@ -31,7 +31,7 @@ final class BrowserInteropExample(instanceId: String)
       ZIO.succeed(applyCopyResult(model, result))
     }
 
-  def mount(ctx: MountContext): LiveIO[Model] = ZIO.succeed(Model())
+  def mount(ctx: MountContext): Task[Model] = ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.CopySample =>

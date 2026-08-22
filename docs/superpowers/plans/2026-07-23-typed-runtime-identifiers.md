@@ -249,16 +249,16 @@ Replace the public and runtime facade signatures in `LiveContext.scala`:
 
 ```scala
 trait Async[Msg]:
-  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: A => Msg): LiveIO[Unit]
-  def cancel[A](key: AsyncKey[A]): LiveIO[Unit]
+  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: A => Msg): Task[Unit]
+  def cancel[A](key: AsyncKey[A]): Task[Unit]
 ```
 
 ```scala
 final private class RuntimeAsync[Msg](runtime: LiveContext) extends Async[Msg]:
-  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: A => Msg): LiveIO[Unit] =
+  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: A => Msg): Task[Unit] =
     runtime.async.start(key.value)(task)(toMsg)
 
-  def cancel[A](key: AsyncKey[A]): LiveIO[Unit] =
+  def cancel[A](key: AsyncKey[A]): Task[Unit] =
     runtime.async.cancel(key.value)
 ```
 
@@ -362,9 +362,9 @@ Use these signatures:
 
 ```scala
 trait Subscriptions[Msg]:
-  def start(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def replace(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def cancel(key: SubscriptionKey): LiveIO[Unit]
+  def start(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): Task[Unit]
+  def replace(key: SubscriptionKey)(stream: zio.stream.ZStream[Any, Nothing, Msg]): Task[Unit]
+  def cancel(key: SubscriptionKey): Task[Unit]
 ```
 
 Implement all three facade methods with `key.value`:
@@ -456,8 +456,8 @@ Change the facade to:
 
 ```scala
 trait Client:
-  def push[A: JsonEncoder](event: ClientEvent[A], payload: A): LiveIO[Unit]
-  def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
+  def push[A: JsonEncoder](event: ClientEvent[A], payload: A): Task[Unit]
+  def exec[Msg](js: JSCommands.JSCommand[Msg]): Task[Unit]
 ```
 
 Implement the boundary conversion and internal JS event declaration:
@@ -467,7 +467,7 @@ final private case class PushJsPayload(cmd: String) derives JsonEncoder
 private val PushJsEvent = ClientEvent[PushJsPayload]("js:exec")
 
 final private class RuntimeClient(runtime: LiveContext) extends Client:
-  def push[A: JsonEncoder](event: ClientEvent[A], payload: A): LiveIO[Unit] =
+  def push[A: JsonEncoder](event: ClientEvent[A], payload: A): Task[Unit] =
     payload.toJsonAST match
       case Right(encoded) => runtime.clientEvents.push(event.value, encoded)
       case Left(error)    =>
@@ -477,7 +477,7 @@ final private class RuntimeClient(runtime: LiveContext) extends Client:
           )
         )
 
-  def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit] =
+  def exec[Msg](js: JSCommands.JSCommand[Msg]): Task[Unit] =
     import JSCommands.JSCommand.given
     push(PushJsEvent, PushJsPayload(js.toJson))
 ```
@@ -568,13 +568,13 @@ Change only operations that consume an upload name; entry references remain stri
 
 ```scala
 trait Uploads:
-  def allow(key: UploadKey, options: LiveUploadOptions): LiveIO[LiveUpload]
-  def disallow(key: UploadKey): LiveIO[Unit]
-  def get(key: UploadKey): LiveIO[Option[LiveUpload]]
-  def cancel(key: UploadKey, entryRef: String): LiveIO[Unit]
-  def consumeCompleted(key: UploadKey): LiveIO[List[LiveUploadedEntry]]
-  def consume(entryRef: String): LiveIO[Option[LiveUploadedEntry]]
-  def drop(entryRef: String): LiveIO[Unit]
+  def allow(key: UploadKey, options: LiveUploadOptions): Task[LiveUpload]
+  def disallow(key: UploadKey): Task[Unit]
+  def get(key: UploadKey): Task[Option[LiveUpload]]
+  def cancel(key: UploadKey, entryRef: String): Task[Unit]
+  def consumeCompleted(key: UploadKey): Task[List[LiveUploadedEntry]]
+  def consume(entryRef: String): Task[Option[LiveUploadedEntry]]
+  def drop(entryRef: String): Task[Unit]
 ```
 
 In `RuntimeUploads`, unwrap every key before calling `UploadRuntime`:
@@ -621,7 +621,7 @@ trait LiveUploadWriter:
   ): Task[LiveUploadWriterState]
 
 trait LiveUploadProgress:
-  def onProgress(uploadKey: UploadKey, entry: LiveUploadEntry): LiveIO[Unit]
+  def onProgress(uploadKey: UploadKey, entry: LiveUploadEntry): Task[Unit]
 ```
 
 Update `LiveUploadWriter.InMemory` to the same signature. Do not change file-name fields such as `LiveUploadedEntry.name` or `LiveExternalUploadEntry.name`.
@@ -726,11 +726,11 @@ Use these public signatures:
 
 ```scala
 trait Flash:
-  def put(kind: FlashKind, message: String): LiveIO[Unit]
-  def clear(kind: FlashKind): LiveIO[Unit]
-  def clearAll: LiveIO[Unit]
-  def get(kind: FlashKind): LiveIO[Option[String]]
-  def snapshot: LiveIO[Map[FlashKind, String]]
+  def put(kind: FlashKind, message: String): Task[Unit]
+  def clear(kind: FlashKind): Task[Unit]
+  def clearAll: Task[Unit]
+  def get(kind: FlashKind): Task[Option[String]]
+  def snapshot: Task[Map[FlashKind, String]]
 ```
 
 Unwrap mutation and lookup keys in `RuntimeFlash`, and wrap snapshot keys:

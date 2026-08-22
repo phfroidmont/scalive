@@ -30,10 +30,10 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
 
   private final class RootFixture(definition: LiveStreamDef[Item], initial: Vector[Item])
       extends LiveView[RootMessage, RootModel]:
-    def mount(ctx: MountContext): LiveIO[RootModel] =
+    def mount(ctx: MountContext): Task[RootModel] =
       ctx.streams.create(definition, initial).map(RootModel(_, "mounted"))
 
-    def handleMessage(model: RootModel, ctx: MessageContext): RootMessage => LiveIO[RootModel] =
+    def handleMessage(model: RootModel, ctx: MessageContext): RootMessage => Task[RootModel] =
       case RootMessage.Insert(item, at, updateOnly) =>
         ctx.streams.insert(definition, item, at, updateOnly).map(RootModel(_, "inserted"))
       case RootMessage.Delete(id) =>
@@ -231,7 +231,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) =
             ctx.streams.create(definition, Vector(Item("a", "one")))
           def handleMessage(model: LiveStream[Item], ctx: MessageContext)
-            : Unit => LiveIO[LiveStream[Item]] = _ => ZIO.succeed(model)
+            : Unit => Task[LiveStream[Item]] = _ => ZIO.succeed(model)
           def view(model: Signal[LiveStream[Item]]) = div(instance.render(model))
         for
           result <- RootConnection.start(config, metadata, root, _ => ZIO.unit).either
@@ -249,7 +249,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
             props: Unit,
             model: LiveStream[Item],
             ctx: MessageContext
-          ): Item => LiveIO[LiveStream[Item]] = item => ctx.streams.insert(componentDef, item)
+          ): Item => Task[LiveStream[Item]] = item => ctx.streams.insert(componentDef, item)
           def view(
             props: Signal[Unit],
             model: Signal[LiveStream[Item]],
@@ -259,7 +259,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
         val root = new LiveView[RootMessage, RootModel]:
           def mount(ctx: MountContext) =
             ctx.streams.create(rootDef, Vector(Item("root", "root"))).map(RootModel(_, "mounted"))
-          def handleMessage(model: RootModel, ctx: MessageContext): RootMessage => LiveIO[RootModel] =
+          def handleMessage(model: RootModel, ctx: MessageContext): RootMessage => Task[RootModel] =
             case RootMessage.Insert(item, at, updateOnly) =>
               ctx.streams.insert(rootDef, item, at, updateOnly).map(RootModel(_, "inserted"))
             case _ => ZIO.succeed(model)
@@ -308,7 +308,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
           instance = component(componentDefinition, "replaceable")
           root = new LiveView[Boolean, Boolean]:
                    def mount(ctx: MountContext) = ZIO.succeed(true)
-                   def handleMessage(model: Boolean, ctx: MessageContext): Boolean => LiveIO[Boolean] =
+                   def handleMessage(model: Boolean, ctx: MessageContext): Boolean => Task[Boolean] =
                      ZIO.succeed(_)
                    def view(model: Signal[Boolean]) =
                      div(model.when(div(instance.render(()))))
@@ -359,7 +359,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
                        ctx.streams.create(rootDef, Vector(Item(s"r-$number", s"root $number")))
                      )
                    def handleMessage(model: LiveStream[Item], ctx: MessageContext)
-                     : Unit => LiveIO[LiveStream[Item]] = _ => ZIO.succeed(model)
+                     : Unit => Task[LiveStream[Item]] = _ => ZIO.succeed(model)
                    def view(model: Signal[LiveStream[Item]]) =
                      div(model.renderIn(ul)(item => li(item.map(_.label))), instance.render(()))
           turn <- DisconnectedRootTurn.make[Unit, LiveStream[Item]](

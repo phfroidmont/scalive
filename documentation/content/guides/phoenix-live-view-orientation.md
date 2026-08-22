@@ -33,7 +33,7 @@ it for an application.
 | LiveView | @:apiSymbol(trait:scalive.LiveView)`LiveView[Msg, Model]`@:@ | A server-owned interactive page with a typed model and typed messages. |
 | Socket assigns | `Model` and `Signal[Model]` | Immutable application state passed to lifecycle methods and exposed read-only to the signal-backed view graph. |
 | `mount` | @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ | Creates the initial model for the HTTP render and again for the connected live process. |
-| `handle_event` and other callbacks | @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ | Handles values from the view's `Msg` type and returns the next model in @:apiSymbol(type-alias:scalive.LiveIO)`LiveIO`@:@. |
+| `handle_event` and other callbacks | @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ | Handles values from the view's `Msg` type and returns the next model in `Task`. |
 | HEEx template | @:apiSymbol(def:scalive.LiveView.view)`view`@:@, @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@, and Scala HTML builders | Constructs typed HTML from signals and Scala values. |
 | `phx-*` event binding | Typed bindings such as @:apiSymbol(lazy-val:scalive.on.click)`on.click(message)`@:@ | Connects browser interactions to values accepted by the LiveView's message type. |
 | Diff and DOM patch | Scalive tree diff and the Phoenix LiveView JavaScript client | Sends changed render data to the browser instead of replacing the whole document. |
@@ -58,7 +58,7 @@ A Scalive interaction has four explicit parts:
 2. The Phoenix LiveView JavaScript client sends the interaction over the live
    connection.
 3. @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage(model, ctx)`@:@ receives the message and uses
-   @:apiSymbol(type-alias:scalive.LiveIO)`LiveIO`@:@ to produce
+   `Task` to produce
    the next model.
 4. Scalive evaluates the affected signals, computes a snapshot diff, and sends
    the update for the browser to patch into the existing DOM.
@@ -91,7 +91,7 @@ put those values in an immutable `Model`, represent allowed inputs with a `Msg`
 enum or sealed hierarchy, and return a new model from
 @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@.
 
-Effects use ZIO through @:apiSymbol(type-alias:scalive.LiveIO)`LiveIO`@:@; they are not encoded as Phoenix callback
+Effects use ZIO through `Task`; they are not encoded as Phoenix callback
 tuples. Subscriptions, async work, navigation, flash, uploads, and component
 updates use typed context capabilities or dedicated Scalive values. Consult the
 [API reference](../api/index.md#packages) for the API that exists in the current

@@ -1,6 +1,6 @@
 package scalive.docs.examples
 
-import zio.ZIO
+import zio.{Task, ZIO}
 
 import scalive.*
 
@@ -8,7 +8,7 @@ import scalive.*
 final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileFormExample.Model]:
   import ProfileFormExample.*
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(Model(Profile.Definition.initial()))
 
   def handleMessage(model: Model, ctx: MessageContext) =

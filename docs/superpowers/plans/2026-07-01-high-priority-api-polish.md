@@ -169,7 +169,6 @@ Expected: only the binding helper implementation and focused tests changed.
 Add imports to `scalive/test/src/scalive/upload/LiveUploadSpec.scala`:
 
 ```scala
-import scalive.LiveIO
 import zio.*
 ```
 
@@ -223,8 +222,6 @@ Add this test after the `LiveUploadError.toJson` suite:
       }
     )
 ```
-
-If `scalive.LiveIO` is unused after compiling, remove that import.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -305,7 +302,6 @@ for the best user-facing Scala API.
 
 ```scala
 import scalive.*
-import scalive.LiveIO.given
 
 import zio.*
 
@@ -314,7 +310,7 @@ object CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
     case Increment
     case Decrement
 
-  def mount(ctx: MountContext[Msg, Int]): LiveIO[Int] =
+  def mount(ctx: MountContext[Msg, Int]): Task[Int] =
     ZIO.succeed(0)
 
   def handleMessage(model: Int, ctx: MessageContext[Msg, Int]) =

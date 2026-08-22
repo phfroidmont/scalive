@@ -1,6 +1,6 @@
 package scalive.docs.examples
 
-import zio.ZIO
+import zio.{Task, ZIO}
 
 import scalive.*
 
@@ -9,7 +9,7 @@ final class ShoppingCartExample
     extends LiveView[ShoppingCartExample.Msg, ShoppingCartExample.Model]:
   import ShoppingCartExample.*
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(Model.empty)
 
   def handleMessage(model: Model, ctx: MessageContext) =

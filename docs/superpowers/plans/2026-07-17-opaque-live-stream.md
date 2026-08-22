@@ -233,8 +233,8 @@ private def reorderNested(
   model: Model,
   id: String,
   streams: Streams
-): LiveIO[Model] =
-  if id.isEmpty then model
+): Task[Model] =
+  if id.isEmpty then ZIO.succeed(model)
   else
     for
       nested <- streams.init(
@@ -260,7 +260,7 @@ private def reorderNested(
 Replace `reorderParents` with:
 
 ```scala
-private def reorderParents(model: Model, streams: Streams): LiveIO[Model] =
+private def reorderParents(model: Model, streams: Streams): Task[Model] =
   for
     parentA <- model.parentsById.get("a") match
                  case Some(value) => ZIO.succeed(value)

@@ -179,7 +179,7 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
               )
       hooks <- turn.hookRegistry[P, M, A]
       context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
-      raw <- command.event.fold[LiveIO[LiveEventHookResult[A]]](
+      raw <- command.event.fold[Task[LiveEventHookResult[A]]](
                ZIO.succeed(LiveEventHookResult.cont(model))
              )(event => runRawHooks(hooks.raw, props, model, event, context))
       result <- raw match
@@ -261,8 +261,8 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     initial: A,
     message: M,
     context: ComponentMessageContext[P, M, A]
-  ): LiveIO[LiveHookResult[A]] =
-    hooks.foldLeft[LiveIO[LiveHookResult[A]]](ZIO.succeed(LiveHookResult.cont(initial))) {
+  ): Task[LiveHookResult[A]] =
+    hooks.foldLeft[Task[LiveHookResult[A]]](ZIO.succeed(LiveHookResult.cont(initial))) {
       (effect, hook) =>
         effect.flatMap {
           case halted @ LiveHookResult.Halt(_) => ZIO.succeed(halted)
@@ -276,8 +276,8 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     initial: A,
     event: LiveAsyncEvent[M],
     context: ComponentMessageContext[P, M, A]
-  ): LiveIO[LiveHookResult[A]] =
-    hooks.foldLeft[LiveIO[LiveHookResult[A]]](ZIO.succeed(LiveHookResult.cont(initial))) {
+  ): Task[LiveHookResult[A]] =
+    hooks.foldLeft[Task[LiveHookResult[A]]](ZIO.succeed(LiveHookResult.cont(initial))) {
       (effect, hook) =>
         effect.flatMap {
           case halted @ LiveHookResult.Halt(_) => ZIO.succeed(halted)
@@ -291,9 +291,9 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     committed: A,
     raw: String,
     context: ComponentMessageContext[P, M, A]
-  ): LiveIO[A] =
+  ): Task[A] =
     hooks
-      .foldLeft[LiveIO[Either[Unit, A]]](ZIO.succeed(Right(committed))) { (effect, hook) =>
+      .foldLeft[Task[Either[Unit, A]]](ZIO.succeed(Right(committed))) { (effect, hook) =>
         effect.flatMap {
           case malformed @ Left(_) => ZIO.succeed(malformed)
           case Right(model)        =>
@@ -310,8 +310,8 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     initial: A,
     event: LiveEvent,
     context: ComponentMessageContext[P, M, A]
-  ): LiveIO[LiveEventHookResult[A]] =
-    hooks.foldLeft[LiveIO[LiveEventHookResult[A]]](
+  ): Task[LiveEventHookResult[A]] =
+    hooks.foldLeft[Task[LiveEventHookResult[A]]](
       ZIO.succeed(LiveEventHookResult.cont(initial))
     ) { (effect, hook) =>
       effect.flatMap {
@@ -446,29 +446,29 @@ private object ComponentHookRegistry:
       model: A,
       event: LiveEvent,
       context: ComponentMessageContext[P, M, A]
-    ): LiveIO[LiveEventHookResult[A]]
+    ): Task[LiveEventHookResult[A]]
 
   trait Browser[P, M, A]:
     def name: String
     def invoke(props: P, model: A, raw: String, context: ComponentMessageContext[P, M, A])
-      : Either[String, LiveIO[A]]
+      : Either[String, Task[A]]
   trait Event[P, M, A]:
     def invoke(props: P, model: A, message: M, context: ComponentMessageContext[P, M, A])
-      : LiveIO[LiveHookResult[A]]
+      : Task[LiveHookResult[A]]
   trait Async[P, M, A]:
     def invoke(
       props: P,
       model: A,
       event: LiveAsyncEvent[M],
       context: ComponentMessageContext[P, M, A]
-    ): LiveIO[LiveHookResult[A]]
+    ): Task[LiveHookResult[A]]
   trait AfterRender[P, M, A]:
-    def invoke(props: P, model: A, context: ComponentAfterRenderContext[P, M, A]): LiveIO[Unit]
+    def invoke(props: P, model: A, context: ComponentAfterRenderContext[P, M, A]): Task[Unit]
 
   def browserHook[P, M, A, B](
     event: BrowserToServerEvent[B],
     decoder: JsonDecoder[B],
-    handler: (P, A, B, ComponentMessageContext[P, M, A]) => LiveIO[A]
+    handler: (P, A, B, ComponentMessageContext[P, M, A]) => Task[A]
   ): Browser[P, M, A] = new Browser[P, M, A]:
     val name = event.value
     def invoke(props: P, model: A, raw: String, context: ComponentMessageContext[P, M, A]) =
@@ -539,7 +539,7 @@ final private class JournaledComponentHooks[P, M, A](turn: ComponentHookJournal)
     def attach(
       id: String
     )(
-      hook: (P, A, LiveEvent, ComponentMessageContext[P, M, A]) => LiveIO[
+      hook: (P, A, LiveEvent, ComponentMessageContext[P, M, A]) => Task[
         LiveEventHookResult[A]
       ]
     ) = turn.updateHooks[P, M, A](registry =>
@@ -566,7 +566,7 @@ final private class JournaledComponentHooks[P, M, A](turn: ComponentHookJournal)
       id: String,
       event: BrowserToServerEvent[B]
     )(
-      hook: (P, A, B, ComponentMessageContext[P, M, A]) => LiveIO[A]
+      hook: (P, A, B, ComponentMessageContext[P, M, A]) => Task[A]
     ) = turn.updateHooks[P, M, A](registry =>
       registry.copy(dynamicBrowser =
         ComponentHookRegistry.replace(
@@ -583,7 +583,7 @@ final private class JournaledComponentHooks[P, M, A](turn: ComponentHookJournal)
     def attach(
       id: String
     )(
-      hook: (P, A, M, ComponentMessageContext[P, M, A]) => LiveIO[LiveHookResult[A]]
+      hook: (P, A, M, ComponentMessageContext[P, M, A]) => Task[LiveHookResult[A]]
     ) = turn.updateHooks[P, M, A](registry =>
       registry.copy(dynamicEvent =
         ComponentHookRegistry.replace(
@@ -602,7 +602,7 @@ final private class JournaledComponentHooks[P, M, A](turn: ComponentHookJournal)
     def attach(
       id: String
     )(
-      hook: (P, A, LiveAsyncEvent[M], ComponentMessageContext[P, M, A]) => LiveIO[LiveHookResult[A]]
+      hook: (P, A, LiveAsyncEvent[M], ComponentMessageContext[P, M, A]) => Task[LiveHookResult[A]]
     ) = turn.updateHooks[P, M, A](registry =>
       registry.copy(dynamicAsync =
         ComponentHookRegistry.replace(
@@ -622,7 +622,7 @@ final private class JournaledComponentHooks[P, M, A](turn: ComponentHookJournal)
       registry.copy(dynamicAsync = ComponentHookRegistry.detach(registry.dynamicAsync, id))
     )
   val afterRender = new ComponentAfterRenderHooks[P, M, A]:
-    def attach(id: String)(hook: (P, A, ComponentAfterRenderContext[P, M, A]) => LiveIO[Unit]) =
+    def attach(id: String)(hook: (P, A, ComponentAfterRenderContext[P, M, A]) => Task[Unit]) =
       turn.updateHooks[P, M, A](registry =>
         registry.copy(dynamicAfterRender =
           ComponentHookRegistry.replace(
@@ -687,7 +687,7 @@ final private case class ComponentMessageContextImpl[P, M, A, O](
   val components    = JournaledComponentUpdates(turn.root)
   val hooks         = JournaledComponentHooks[P, M, A](turn)
 
-  private[scalive] def emit[B](channel: ComponentOutputChannel[B], value: B): LiveIO[Unit] =
+  private[scalive] def emit[B](channel: ComponentOutputChannel[B], value: B): Task[Unit] =
     component match
       case withOutput: LiveComponent.WithOutput[P, M, A, ?]
           if withOutput.outputChannel eq channel =>

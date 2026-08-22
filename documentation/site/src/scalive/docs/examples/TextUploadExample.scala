@@ -11,7 +11,7 @@ import scalive.*
 final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUploadExample.Model]:
   import TextUploadExample.*
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ctx.uploads.allow(TextFiles).map(Model(_))
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -117,10 +117,10 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
     )
   end view
 
-  private def refresh(model: Model, uploads: Uploads): LiveIO[Model] =
+  private def refresh(model: Model, uploads: Uploads): Task[Model] =
     uploads.get(TextFiles).map(_.fold(model)(upload => model.copy(upload = upload, notice = None)))
 
-  private def summarizeCompleted(model: Model, uploads: Uploads): LiveIO[Model] =
+  private def summarizeCompleted(model: Model, uploads: Uploads): Task[Model] =
     uploads
       .consumeCompleted(TextFiles) { completed =>
         ZIO.succeed(ConsumeDecision.Consume(summarize(completed)))

@@ -25,7 +25,7 @@ private object Deferred:
   final case class Unsupported(operation: String)
       extends RuntimeException(s"$operation is not available in this root lifecycle")
 
-  def fail[A](operation: String): LiveIO[A] = ZIO.fail(Unsupported(operation))
+  def fail[A](operation: String): Task[A] = ZIO.fail(Unsupported(operation))
 
 final private[scalive] class RootTurnJournal private (
   val owner: OwnerId,
@@ -102,7 +102,7 @@ private[scalive] object RootTurnJournal:
     initialUploads: UploadRegistry = UploadRegistry.empty,
     initialUploadCommit: UploadRetirementPlan = UploadRetirementPlan.empty,
     initialUploadRollback: UploadRetirementPlan = UploadRetirementPlan.empty
-  ): LiveIO[RootTurnJournal] =
+  ): Task[RootTurnJournal] =
     for
       navigation     <- Ref.make(initialNavigation)
       hooks          <- Ref.make(registry.asInstanceOf[RootHookRegistry[Any, Any]])
@@ -135,19 +135,19 @@ final private class RootNavigation(
   journal: RootTurnJournal,
   allowPatch: Boolean)
     extends Navigation:
-  def pushNavigateUnsafe(to: String): LiveIO[Unit] =
+  def pushNavigateUnsafe(to: String): Task[Unit] =
     record(to, NavigationKind.PushNavigate)
-  def replaceNavigateUnsafe(to: String): LiveIO[Unit] =
+  def replaceNavigateUnsafe(to: String): Task[Unit] =
     record(to, NavigationKind.ReplaceNavigate)
-  def redirectUnsafe(to: String): LiveIO[Unit]  = record(to, NavigationKind.Redirect)
-  def pushPatchUnsafe(to: String): LiveIO[Unit] =
+  def redirectUnsafe(to: String): Task[Unit]  = record(to, NavigationKind.Redirect)
+  def pushPatchUnsafe(to: String): Task[Unit] =
     if allowPatch then record(to, NavigationKind.PushPatch)
     else Deferred.fail("push patch")
-  def replacePatchUnsafe(to: String): LiveIO[Unit] =
+  def replacePatchUnsafe(to: String): Task[Unit] =
     if allowPatch then record(to, NavigationKind.ReplacePatch)
     else Deferred.fail("replace patch")
 
-  private def record(to: String, kind: NavigationKind): LiveIO[Unit] =
+  private def record(to: String, kind: NavigationKind): Task[Unit] =
     for
       destination <- ZIO.fromEither(RootNavigation.resolve(currentUrl, to))
       accepted    <- journal.navigation.modify {
@@ -170,45 +170,45 @@ private object RootNavigation:
 final private class RootMountNavigation(currentUrl: URL, journal: RootTurnJournal)
     extends MountNavigation:
   private val navigation = new RootNavigation(currentUrl, journal, allowPatch = false)
-  def pushNavigateUnsafe(to: String): LiveIO[Unit]    = navigation.pushNavigateUnsafe(to)
-  def replaceNavigateUnsafe(to: String): LiveIO[Unit] = navigation.replaceNavigateUnsafe(to)
-  def redirectUnsafe(to: String): LiveIO[Unit]        = navigation.redirectUnsafe(to)
+  def pushNavigateUnsafe(to: String): Task[Unit]    = navigation.pushNavigateUnsafe(to)
+  def replaceNavigateUnsafe(to: String): Task[Unit] = navigation.replaceNavigateUnsafe(to)
+  def redirectUnsafe(to: String): Task[Unit]        = navigation.redirectUnsafe(to)
 
 private object DeferredFlash extends Flash:
-  def put(kind: FlashKind, message: String): LiveIO[Unit] = Deferred.fail("put flash")
-  def clear(kind: FlashKind): LiveIO[Unit]                = Deferred.fail("clear flash")
-  def clearAll: LiveIO[Unit]                              = Deferred.fail("clear all flash")
-  def get(kind: FlashKind): LiveIO[Option[String]]        = Deferred.fail("get flash")
-  def snapshot: LiveIO[Map[FlashKind, String]]            = Deferred.fail("snapshot flash")
+  def put(kind: FlashKind, message: String): Task[Unit] = Deferred.fail("put flash")
+  def clear(kind: FlashKind): Task[Unit]                = Deferred.fail("clear flash")
+  def clearAll: Task[Unit]                              = Deferred.fail("clear all flash")
+  def get(kind: FlashKind): Task[Option[String]]        = Deferred.fail("get flash")
+  def snapshot: Task[Map[FlashKind, String]]            = Deferred.fail("snapshot flash")
 
 final private class JournaledFlash(journal: RootTurnJournal) extends Flash:
-  def put(kind: FlashKind, message: String): LiveIO[Unit] =
+  def put(kind: FlashKind, message: String): Task[Unit] =
     ZIO.fail(NullPointerException("flash message must not be null")).when(message == null) *>
       journal.flash.update(_.updated(kind, message))
-  def clear(kind: FlashKind): LiveIO[Unit]         = journal.flash.update(_ - kind)
-  def clearAll: LiveIO[Unit]                       = journal.flash.set(Map.empty)
-  def get(kind: FlashKind): LiveIO[Option[String]] = journal.flash.get.map(_.get(kind))
-  def snapshot: LiveIO[Map[FlashKind, String]]     = journal.flash.get
+  def clear(kind: FlashKind): Task[Unit]         = journal.flash.update(_ - kind)
+  def clearAll: Task[Unit]                       = journal.flash.set(Map.empty)
+  def get(kind: FlashKind): Task[Option[String]] = journal.flash.get.map(_.get(kind))
+  def snapshot: Task[Map[FlashKind, String]]     = journal.flash.get
 
 private object DeferredUploads extends Uploads:
-  def allow[R](definition: LiveUploadDef[R]): LiveIO[LiveUpload[R]] = Deferred.fail("allow upload")
-  def disallow[R](definition: LiveUploadDef[R]): LiveIO[Unit] = Deferred.fail("disallow upload")
-  def get[R](definition: LiveUploadDef[R]): LiveIO[Option[LiveUpload[R]]] =
+  def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]] = Deferred.fail("allow upload")
+  def disallow[R](definition: LiveUploadDef[R]): Task[Unit]       = Deferred.fail("disallow upload")
+  def get[R](definition: LiveUploadDef[R]): Task[Option[LiveUpload[R]]] =
     Deferred.fail("get upload")
-  def cancel[R](entry: LiveUploadEntry[R]): LiveIO[LiveUpload[R]] = Deferred.fail("cancel upload")
+  def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]] = Deferred.fail("cancel upload")
   def consume[R, A](
     entry: LiveUploadEntry[R]
   )(
-    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
-  ): LiveIO[(A, LiveUpload[R])] = Deferred.fail("consume upload")
+    callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
+  ): Task[(A, LiveUpload[R])] = Deferred.fail("consume upload")
   def consumeCompleted[R, A](
     definition: LiveUploadDef[R]
   )(
-    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
-  ): LiveIO[(List[A], LiveUpload[R])] = Deferred.fail("consume completed uploads")
+    callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
+  ): Task[(List[A], LiveUpload[R])] = Deferred.fail("consume completed uploads")
 
 final private[connection] class JournaledUploads(journal: RootTurnJournal) extends Uploads:
-  def allow[R](definition: LiveUploadDef[R]): LiveIO[LiveUpload[R]] =
+  def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]] =
     for
       ref    <- UploadRuntime.freshRef
       result <- journal.uploads.modify { current =>
@@ -220,7 +220,7 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
       upload <- ZIO.fromEither(result)
     yield upload
 
-  def disallow[R](definition: LiveUploadDef[R]): LiveIO[Unit] = ZIO.uninterruptible {
+  def disallow[R](definition: LiveUploadDef[R]): Task[Unit] = ZIO.uninterruptible {
     journal.uploads
       .modify { current =>
         current.disallow(journal.owner, journal.ownerEpoch, UploadKey(definition)) match
@@ -230,7 +230,7 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
       .flatMap(removal => journal.recordUploadCommit(removal.retirement))
   }
 
-  def get[R](definition: LiveUploadDef[R]): LiveIO[Option[LiveUpload[R]]] =
+  def get[R](definition: LiveUploadDef[R]): Task[Option[LiveUpload[R]]] =
     journal.uploads.get.flatMap { current =>
       current.get(journal.owner, journal.ownerEpoch, UploadKey(definition)) match
         case Right((_, upload))                      => ZIO.some(upload)
@@ -238,7 +238,7 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
         case Left(error)                             => ZIO.fail(operationError(error))
     }
 
-  def cancel[R](entry: LiveUploadEntry[R]): LiveIO[LiveUpload[R]] = ZIO.uninterruptible {
+  def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]] = ZIO.uninterruptible {
     journal.uploads
       .modify { current =>
         current.cancel(journal.owner, journal.ownerEpoch, entry) match
@@ -257,8 +257,8 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
   def consume[R, A](
     entry: LiveUploadEntry[R]
   )(
-    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
-  ): LiveIO[(A, LiveUpload[R])] =
+    callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
+  ): Task[(A, LiveUpload[R])] =
     for
       begin <- journal.uploads.get.flatMap(current =>
                  ZIO.fromEither(
@@ -295,8 +295,8 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
   def consumeCompleted[R, A](
     definition: LiveUploadDef[R]
   )(
-    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
-  ): LiveIO[(List[A], LiveUpload[R])] =
+    callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
+  ): Task[(List[A], LiveUpload[R])] =
     for
       current <- get(definition).someOrFail(LiveUploadOperationError.NotAllowed(definition.name))
       _       <- ZIO
@@ -336,27 +336,27 @@ end JournaledUploads
 
 final private class JournaledStreams(streams: Ref[StreamStore], applyLimits: Boolean = true)
     extends Streams:
-  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): LiveIO[LiveStream[A]] =
+  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): Task[LiveStream[A]] =
     update(_.create(effective(definition), items))
   def insertAll[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
     at: StreamAt
-  ): LiveIO[LiveStream[A]] = update(_.insertAll(effective(definition), items, at))
+  ): Task[LiveStream[A]] = update(_.insertAll(effective(definition), items, at))
   def reset[A](
     definition: LiveStreamDef[A],
     items: Iterable[A],
     at: StreamAt
-  ): LiveIO[LiveStream[A]] = update(_.reset(effective(definition), items, at))
+  ): Task[LiveStream[A]] = update(_.reset(effective(definition), items, at))
   def insert[A](
     definition: LiveStreamDef[A],
     item: A,
     at: StreamAt,
     updateOnly: Boolean
-  ): LiveIO[LiveStream[A]] = update(_.insert(effective(definition), item, at, updateOnly))
-  def delete[A](definition: LiveStreamDef[A], item: A): LiveIO[LiveStream[A]] =
+  ): Task[LiveStream[A]] = update(_.insert(effective(definition), item, at, updateOnly))
+  def delete[A](definition: LiveStreamDef[A], item: A): Task[LiveStream[A]] =
     update(_.delete(effective(definition), item))
-  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]] =
+  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): Task[LiveStream[A]] =
     update(_.deleteByDomId(effective(definition), domId))
 
   private def effective[A](definition: LiveStreamDef[A]): LiveStreamDef[A] =
@@ -364,7 +364,7 @@ final private class JournaledStreams(streams: Ref[StreamStore], applyLimits: Boo
 
   private def update[A](
     operation: StreamStore => StreamStore.Replacement[A]
-  ): LiveIO[LiveStream[A]] =
+  ): Task[LiveStream[A]] =
     streams
       .modify { current =>
         Try(operation(current)).toEither match
@@ -374,7 +374,7 @@ final private class JournaledStreams(streams: Ref[StreamStore], applyLimits: Boo
 end JournaledStreams
 
 private object DeferredStreams extends Streams:
-  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): LiveIO[LiveStream[A]] =
+  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): Task[LiveStream[A]] =
     Deferred.fail("create stream")
   def insertAll[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt) =
     Deferred.fail("insert stream items")
@@ -388,9 +388,9 @@ private object DeferredStreams extends Streams:
     Deferred.fail("delete stream item by DOM id")
 
 final private class JournaledAsync[Msg](journal: RootTurnJournal) extends Async[Msg]:
-  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: LiveAsyncResult[A] => Msg): LiveIO[Unit] =
+  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: LiveAsyncResult[A] => Msg): Task[Unit] =
     journal.record(ResourceOperation.StartAsync(journal.owner, key, task, toMsg))
-  def cancel[A](key: AsyncKey[A], reason: Option[String]): LiveIO[Unit] =
+  def cancel[A](key: AsyncKey[A], reason: Option[String]): Task[Unit] =
     journal.record(
       ResourceOperation.CancelAsync(journal.owner, key.asInstanceOf[AsyncKey[Any]], reason)
     )
@@ -402,7 +402,7 @@ final private class JournaledSubscriptions[Msg](journal: RootTurnJournal)
     delivery: SubscriptionDelivery
   )(
     stream: ZStream[Any, Nothing, Msg]
-  ): LiveIO[Unit] =
+  ): Task[Unit] =
     journal.record(
       ResourceOperation.StartSubscription(journal.owner, key, delivery, stream, replace = false)
     )
@@ -411,15 +411,15 @@ final private class JournaledSubscriptions[Msg](journal: RootTurnJournal)
     delivery: SubscriptionDelivery
   )(
     stream: ZStream[Any, Nothing, Msg]
-  ): LiveIO[Unit] =
+  ): Task[Unit] =
     journal.record(
       ResourceOperation.StartSubscription(journal.owner, key, delivery, stream, replace = true)
     )
-  def cancel(key: SubscriptionKey): LiveIO[Unit] =
+  def cancel(key: SubscriptionKey): Task[Unit] =
     journal.record(ResourceOperation.CancelSubscription(journal.owner, key))
 
 final private class JournaledClient(journal: RootTurnJournal) extends Client:
-  def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit] =
+  def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): Task[Unit] =
     payload.toJsonAST match
       case Right(value) => journal.clientEvents.update(_ :+ ClientEffect(event.value, value))
       case Left(error)  =>
@@ -427,7 +427,7 @@ final private class JournaledClient(journal: RootTurnJournal) extends Client:
           IllegalArgumentException(s"Could not encode client event '${event.value}': $error")
         )
 
-  def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit] =
+  def exec[Msg](js: JSCommands.JSCommand[Msg]): Task[Unit] =
     import JSCommands.JSCommand.given
     journal.clientEvents.update(
       _ :+ ClientEffect("js:exec", Json.Obj("cmd" -> Json.Str(js.toJson)))
@@ -437,15 +437,15 @@ final private class JournaledComponentUpdates(journal: RootTurnJournal) extends 
   def sendUpdate[Props, Msg, Model](
     instance: LiveComponentInstance[Props, Msg, Model],
     props: Props
-  ): LiveIO[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
+  ): Task[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
   def sendUpdate[Props, Msg, Model, Output](
     instance: LiveComponentOutputInstance[Props, Msg, Model, Output],
     props: Props
-  ): LiveIO[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
+  ): Task[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
   def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
     id: String,
     props: LiveComponent.PropsOf[C]
-  ): LiveIO[Unit] =
+  ): Task[Unit] =
     ZIO
       .attempt {
         val component = summon[ClassTag[C]].runtimeClass
@@ -462,60 +462,60 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
     def attach(
       id: String
     )(
-      hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
-    ): LiveIO[Unit]                      = Deferred.fail("attach raw event hook")
-    def detach(id: String): LiveIO[Unit] = Deferred.fail("detach raw event hook")
+      hook: (Model, LiveEvent, MessageContext[Msg, Model]) => Task[LiveEventHookResult[Model]]
+    ): Task[Unit]                      = Deferred.fail("attach raw event hook")
+    def detach(id: String): Task[Unit] = Deferred.fail("detach raw event hook")
 
   val browserEvent: RootBrowserEventHooks[Msg, Model] = new RootBrowserEventHooks[Msg, Model]:
     def attach[A: JsonDecoder](
       id: String,
       event: BrowserToServerEvent[A]
     )(
-      hook: (Model, A, MessageContext[Msg, Model]) => LiveIO[Model]
-    ): LiveIO[Unit]                      = Deferred.fail("attach browser event hook")
-    def detach(id: String): LiveIO[Unit] = Deferred.fail("detach browser event hook")
+      hook: (Model, A, MessageContext[Msg, Model]) => Task[Model]
+    ): Task[Unit]                      = Deferred.fail("attach browser event hook")
+    def detach(id: String): Task[Unit] = Deferred.fail("detach browser event hook")
 
   val event: RootEventHooks[Msg, Model] = new RootEventHooks[Msg, Model]:
     def attach(
       id: String
     )(
-      hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
-    ): LiveIO[Unit]                      = Deferred.fail("attach event hook")
-    def detach(id: String): LiveIO[Unit] = Deferred.fail("detach event hook")
+      hook: (Model, Msg, MessageContext[Msg, Model]) => Task[LiveHookResult[Model]]
+    ): Task[Unit]                      = Deferred.fail("attach event hook")
+    def detach(id: String): Task[Unit] = Deferred.fail("detach event hook")
 
   val params: RootParamsHooks[Msg, Model] = new RootParamsHooks[Msg, Model]:
     def attach(
       id: String
     )(
-      hook: (Model, URL, ParamsContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
-    ): LiveIO[Unit]                      = Deferred.fail("attach params hook")
-    def detach(id: String): LiveIO[Unit] = Deferred.fail("detach params hook")
+      hook: (Model, URL, ParamsContext[Msg, Model]) => Task[LiveHookResult[Model]]
+    ): Task[Unit]                      = Deferred.fail("attach params hook")
+    def detach(id: String): Task[Unit] = Deferred.fail("detach params hook")
 
   val info: RootInfoHooks[Msg, Model] = new RootInfoHooks[Msg, Model]:
     def attach(
       id: String
     )(
-      hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
-    ): LiveIO[Unit]                      = Deferred.fail("attach info hook")
-    def detach(id: String): LiveIO[Unit] = Deferred.fail("detach info hook")
+      hook: (Model, Msg, MessageContext[Msg, Model]) => Task[LiveHookResult[Model]]
+    ): Task[Unit]                      = Deferred.fail("attach info hook")
+    def detach(id: String): Task[Unit] = Deferred.fail("detach info hook")
 
   val async: RootAsyncHooks[Msg, Model] = new RootAsyncHooks[Msg, Model]:
     def attach(
       id: String
     )(
-      hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => LiveIO[
+      hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => Task[
         LiveHookResult[Model]
       ]
-    ): LiveIO[Unit]                      = Deferred.fail("attach async hook")
-    def detach(id: String): LiveIO[Unit] = Deferred.fail("detach async hook")
+    ): Task[Unit]                      = Deferred.fail("attach async hook")
+    def detach(id: String): Task[Unit] = Deferred.fail("detach async hook")
 
   val afterRender: RootAfterRenderHooks[Msg, Model] = new RootAfterRenderHooks[Msg, Model]:
     def attach(
       id: String
     )(
-      hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]
-    ): LiveIO[Unit]                      = Deferred.fail("attach after-render hook")
-    def detach(id: String): LiveIO[Unit] = Deferred.fail("detach after-render hook")
+      hook: (Model, AfterRenderContext[Msg, Model]) => Task[Unit]
+    ): Task[Unit]                      = Deferred.fail("attach after-render hook")
+    def detach(id: String): Task[Unit] = Deferred.fail("detach after-render hook")
 end DeferredRootHooks
 
 final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
@@ -524,7 +524,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     def attach(
       id: String
     )(
-      hook: (Model, LiveEvent, MessageContext[Msg, Model]) => LiveIO[LiveEventHookResult[Model]]
+      hook: (Model, LiveEvent, MessageContext[Msg, Model]) => Task[LiveEventHookResult[Model]]
     ) = journal.updateHooks[Msg, Model](registry =>
       registry.copy(
         dynamicRaw = RootHookRegistry.replace(
@@ -545,7 +545,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
       id: String,
       event: BrowserToServerEvent[A]
     )(
-      hook: (Model, A, MessageContext[Msg, Model]) => LiveIO[Model]
+      hook: (Model, A, MessageContext[Msg, Model]) => Task[Model]
     ) = journal.updateHooks[Msg, Model](registry =>
       registry.copy(
         dynamicBrowser = RootHookRegistry.replace(
@@ -563,7 +563,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     def attach(
       id: String
     )(
-      hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
+      hook: (Model, Msg, MessageContext[Msg, Model]) => Task[LiveHookResult[Model]]
     ) =
       journal.updateHooks[Msg, Model](registry =>
         registry.copy(
@@ -584,7 +584,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     def attach(
       id: String
     )(
-      hook: (Model, URL, ParamsContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
+      hook: (Model, URL, ParamsContext[Msg, Model]) => Task[LiveHookResult[Model]]
     ) =
       journal.updateHooks[Msg, Model](registry =>
         registry.copy(
@@ -605,7 +605,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     def attach(
       id: String
     )(
-      hook: (Model, Msg, MessageContext[Msg, Model]) => LiveIO[LiveHookResult[Model]]
+      hook: (Model, Msg, MessageContext[Msg, Model]) => Task[LiveHookResult[Model]]
     ) =
       journal.updateHooks[Msg, Model](registry =>
         registry.copy(
@@ -626,7 +626,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     def attach(
       id: String
     )(
-      hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => LiveIO[
+      hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => Task[
         LiveHookResult[Model]
       ]
     ) =
@@ -649,7 +649,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     )
 
   val afterRender: RootAfterRenderHooks[Msg, Model] = new RootAfterRenderHooks[Msg, Model]:
-    def attach(id: String)(hook: (Model, AfterRenderContext[Msg, Model]) => LiveIO[Unit]) =
+    def attach(id: String)(hook: (Model, AfterRenderContext[Msg, Model]) => Task[Unit]) =
       journal.updateHooks[Msg, Model](registry =>
         registry.copy(
           dynamicAfterRender = RootHookRegistry.replace(

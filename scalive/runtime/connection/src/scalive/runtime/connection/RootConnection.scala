@@ -1550,7 +1550,7 @@ private[scalive] object RootConnection:
     owner: OwnerId,
     state: RootState[Msg, Model],
     initial: TurnDraft[Msg, RootState[Msg, Model]]
-  ): LiveIO[RootTurnJournal] =
+  ): Task[RootTurnJournal] =
     RootTurnJournal.make(
       owner,
       state.hooks,
@@ -1651,8 +1651,8 @@ private[scalive] object RootConnection:
     initial: Model,
     message: Msg,
     context: MessageContext[Msg, Model]
-  ): LiveIO[Hooked[Model]] =
-    hooks.foldLeft[LiveIO[Hooked[Model]]](ZIO.succeed(Hooked.Continue(initial))) { (effect, hook) =>
+  ): Task[Hooked[Model]] =
+    hooks.foldLeft[Task[Hooked[Model]]](ZIO.succeed(Hooked.Continue(initial))) { (effect, hook) =>
       effect.flatMap {
         case halted: Hooked.Halt[Model] => ZIO.succeed(halted)
         case Hooked.Continue(model)     =>
@@ -1668,8 +1668,8 @@ private[scalive] object RootConnection:
     initial: Model,
     url: URL,
     context: ParamsContext[Msg, Model]
-  ): LiveIO[Hooked[Model]] =
-    registry.params.foldLeft[LiveIO[Hooked[Model]]](ZIO.succeed(Hooked.Continue(initial))) {
+  ): Task[Hooked[Model]] =
+    registry.params.foldLeft[Task[Hooked[Model]]](ZIO.succeed(Hooked.Continue(initial))) {
       (effect, hook) =>
         effect.flatMap {
           case halted: Hooked.Halt[Model] => ZIO.succeed(halted)
@@ -1699,7 +1699,7 @@ private[scalive] object RootConnection:
                    initialUploads = state.uploads
                  )
       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
-      hooked <- state.hooks.async.foldLeft[LiveIO[Hooked[Model]]](
+      hooked <- state.hooks.async.foldLeft[Task[Hooked[Model]]](
                   ZIO.succeed(Hooked.Continue(state.model))
                 ) { (effect, hook) =>
                   effect.flatMap {
@@ -1748,9 +1748,9 @@ private[scalive] object RootConnection:
     committedModel: Model,
     raw: String,
     context: MessageContext[Msg, Model]
-  ): LiveIO[Model] =
+  ): Task[Model] =
     hooks
-      .foldLeft[LiveIO[Either[Unit, Model]]](ZIO.succeed(Right(committedModel))) { (effect, hook) =>
+      .foldLeft[Task[Either[Unit, Model]]](ZIO.succeed(Right(committedModel))) { (effect, hook) =>
         effect.flatMap {
           case malformed @ Left(_) => ZIO.succeed(malformed)
           case Right(model)        =>
@@ -1767,8 +1767,8 @@ private[scalive] object RootConnection:
     initial: Model,
     event: LiveEvent,
     context: MessageContext[Msg, Model]
-  ): LiveIO[LiveEventHookResult[Model]] =
-    hooks.foldLeft[LiveIO[LiveEventHookResult[Model]]](
+  ): Task[LiveEventHookResult[Model]] =
+    hooks.foldLeft[Task[LiveEventHookResult[Model]]](
       ZIO.succeed(LiveEventHookResult.cont(initial))
     ) { (effect, hook) =>
       effect.flatMap {

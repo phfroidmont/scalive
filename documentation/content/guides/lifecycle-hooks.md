@@ -19,8 +19,8 @@ render. Keep normal domain transitions in `handleMessage`, route changes in
 `handleParams`, and one-off browser payloads in typed event bindings or
 `onBrowserEvent`. A hook should not become a second, hidden message handler.
 
-In the examples, `LiveIO[A]` is Scalive's alias for `Task[A]`, and
-`ZIO.succeed(value)` creates an effect that succeeds with `value`. Operators
+In the examples, lifecycle callbacks return `Task[A]`, and `ZIO.succeed(value)`
+creates an effect that succeeds with `value`. Operators
 such as `.as(value)` run an effect and replace its successful result.
 
 Scalive provides these stages:
@@ -133,14 +133,14 @@ order:
 ```scala
 private val AuditHookId = "audit-events"
 
-def mount(ctx: MountContext): LiveIO[Model] =
+def mount(ctx: MountContext): Task[Model] =
   ctx.hooks.event
     .attach(AuditHookId) { (model, msg, event, _) =>
       audit(msg, event).as(LiveEventHookResult.cont(model))
     }
     .as(Model.initial)
 
-def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model] =
+def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model] =
   case Msg.StopAuditing =>
     ctx.hooks.event.detach(AuditHookId).as(model)
   case msg =>
@@ -162,7 +162,7 @@ Inside a component lifecycle context, the same shape operates on only that
 component instance and includes current props:
 
 ```scala
-def mount(props: Props, ctx: MountContext): LiveIO[Model] =
+def mount(props: Props, ctx: MountContext): Task[Model] =
   ctx.hooks.event
     .attach("read-only-policy") { (currentProps, model, msg, _, _) =>
       if currentProps.readOnly && mutatesState(msg) then
@@ -208,7 +208,7 @@ must act before decoding or for protocol-level metadata.
 ## Keep After-Render Hooks Observational {#after-render-limits}
 
 After-render hooks run in registration order, but every hook receives the same
-rendered model; they return `LiveIO[Unit]`, cannot thread a replacement model,
+rendered model; they return `Task[Unit]`, cannot thread a replacement model,
 cannot halt, and cannot change the tree already rendered. A failure prevents
 later after-render hooks and aborts the render.
 

@@ -1,5 +1,6 @@
 package scaliveapi
 
+import zio.ZIO
 import zio.test.*
 
 object RoutedConstructionSpec extends ZIOSpecDefault:
@@ -20,7 +21,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView.Routed.Eventless[String, Int]:
-          def mount(params: Int, ctx: MountContext) = LiveIO.succeed(params.toString)
+          def mount(params: Int, ctx: MountContext) = ZIO.succeed(params.toString)
           def view(model: Signal[String]) = div(model)
 
         val route = (live / "items").query[Int]("id")(View)
@@ -40,11 +41,11 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         final case class Page(value: Option[Int])
 
         object SearchView extends LiveView.Routed.Eventless[String, Search]:
-          def mount(params: Search, ctx: MountContext) = LiveIO.succeed("")
+          def mount(params: Search, ctx: MountContext) = ZIO.succeed("")
           def view(model: Signal[String]) = div(model)
 
         object PageView extends LiveView.Routed.Eventless[String, Page]:
-          def mount(params: Page, ctx: MountContext) = LiveIO.succeed("")
+          def mount(params: Page, ctx: MountContext) = ZIO.succeed("")
           def view(model: Signal[String]) = div(model)
 
         val search = (live / "search").query[Search]
@@ -79,7 +80,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           )
 
         object View extends LiveView.Eventless[String]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(ctx: MountContext) = ZIO.succeed("mounted")
           def view(model: Signal[String]) = div(model)
 
         val route: LiveRoute[Any, Unit] =
@@ -126,7 +127,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         val layout = LiveLayout[Unit, String]([Msg] => (content, _) => content)
 
         object View extends LiveView.Eventless[Combined]:
-          def mount(ctx: MountContext) = LiveIO.succeed(Combined("", 0))
+          def mount(ctx: MountContext) = ZIO.succeed(Combined("", 0))
           def view(model: Signal[Combined]) = div()
 
         val route: LiveRoute[Any, Unit] = live
@@ -150,7 +151,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         )
 
         object View extends LiveView.Eventless[String]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(ctx: MountContext) = ZIO.succeed("mounted")
           def view(model: Signal[String]) = div(model)
 
         val session: LiveSession[Any] = Live.session("main")
@@ -180,7 +181,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         )
 
         object View extends LiveView.Eventless[(String, Int)]:
-          def mount(ctx: MountContext) = LiveIO.succeed("" -> 0)
+          def mount(ctx: MountContext) = ZIO.succeed("" -> 0)
           def view(model: Signal[(String, Int)]) = div()
 
         val route = live
@@ -212,7 +213,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         )
 
         object View extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
         val session: LiveSession[Any] = Live.session("main")
@@ -235,7 +236,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         )
 
         object View extends LiveView.Eventless[Int]:
-          def mount(ctx: MountContext) = LiveIO.succeed(0)
+          def mount(ctx: MountContext) = ZIO.succeed(0)
           def view(model: Signal[Int]) = div()
 
         val route = live.apply((_, _, context: Int) => View)
@@ -249,7 +250,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
         val session: LiveSession[Any] = Live.session("main")(live(View))
@@ -261,7 +262,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import zio.http.Routes
 
         object View extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
         val application: LiveApplication[Any] = Live.router(live(View))

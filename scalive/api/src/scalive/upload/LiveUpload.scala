@@ -548,7 +548,7 @@ trait LiveUploadExternalUploader[Result]:
     * [[LiveExternalUploadResult.Ready]], it must release that resource itself because Scalive has
     * no `Result` to pass to [[discard]].
     */
-  def preflight(client: UploadClientMetadata): LiveIO[LiveExternalUploadResult[Result]]
+  def preflight(client: UploadClientMetadata): Task[LiveExternalUploadResult[Result]]
 
   /** Releases a prepared result abandoned before application code consumes it.
     *
@@ -570,7 +570,7 @@ trait LiveUploadProgress[Result]:
     * The runtime state is updated before this callback runs; a failed effect fails the progress
     * operation but does not roll that update back.
     */
-  def onProgress(entry: LiveUploadEntry[Result]): LiveIO[Unit]
+  def onProgress(entry: LiveUploadEntry[Result]): Task[Unit]
 
 /** Selects where an upload's bytes are written and what completed result it produces.
   *

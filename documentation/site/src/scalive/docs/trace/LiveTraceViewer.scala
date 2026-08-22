@@ -26,7 +26,7 @@ final private[docs] class LiveTraceViewer(
         case None => ZIO.succeed(model)
     }
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ctx.connection match
       case Connection.Connected(capabilities) =>
         capabilities.connectParams.get(TraceSessionParameter) match

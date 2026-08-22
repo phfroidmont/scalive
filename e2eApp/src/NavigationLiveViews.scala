@@ -1,22 +1,22 @@
 import NavigationLiveViews.*
+import zio.ZIO
 import zio.http.URL
 import zio.schema.Schema
 import zio.schema.derived
 
 import scalive.*
-import scalive.LiveIO.given
 import scalive.Signal.*
 
 class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
 
   def mount(_params: AParams, ctx: MountContext) =
-    Model(paramCurrent = None, paramNext = 1)
+    ZIO.succeed(Model(paramCurrent = None, paramNext = 1))
 
   override def handleParams(model: Model, params: AParams, _url: URL, ctx: ParamsContext) =
-    model.copy(paramCurrent = params.param.map(_.toString))
+    ZIO.succeed(model.copy(paramCurrent = params.param.map(_.toString)))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    _ => model
+    _ => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     val nextLocation =
@@ -53,18 +53,22 @@ end NavigationALiveView
 class NavigationBLiveView() extends LiveView.Routed[Msg, Model, BParams]:
 
   def mount(_params: BParams, ctx: MountContext) =
-    Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
+    ZIO.succeed(
+      Model(items = (1 to 100).toList.map(i => Item(s"item-$i", i)), withContainer = false)
+    )
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    _ => model
+    _ => ZIO.succeed(model)
 
   override def handleParams(model: Model, params: BParams, _url: URL, ctx: ParamsContext) =
     val _             = ctx
     val containerFlow = params.withContainerRequested || model.withContainer
     val selectedItem  = if containerFlow then params.itemId else None
-    model.copy(
-      withContainer = params.withContainerRequested,
-      selectedItem = selectedItem
+    ZIO.succeed(
+      model.copy(
+        withContainer = params.withContainerRequested,
+        selectedItem = selectedItem
+      )
     )
 
   override def view(model: Signal[Model]) =
@@ -125,12 +129,12 @@ end NavigationBLiveView
 class RedirectLoopLiveView() extends LiveView.Routed[Msg, Model, RedirectLoopParams]:
 
   def mount(_params: RedirectLoopParams, ctx: MountContext) =
-    Model(shouldLoop = false, message = None)
+    ZIO.succeed(Model(shouldLoop = false, message = None))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.TriggerLoop =>
-      model.copy(message = Some("Too many redirects"), shouldLoop = false)
-    case _ => model
+      ZIO.succeed(model.copy(message = Some("Too many redirects"), shouldLoop = false))
+    case _ => ZIO.succeed(model)
 
   override def handleParams(
     model: Model,
@@ -140,8 +144,8 @@ class RedirectLoopLiveView() extends LiveView.Routed[Msg, Model, RedirectLoopPar
   ) =
     if params.loop.contains(true) then
       if model.shouldLoop then ctx.nav.pushPatchUnsafe("?loop=true").as(model)
-      else model.copy(message = Some("Too many redirects"), shouldLoop = false)
-    else model.copy(message = None, shouldLoop = true)
+      else ZIO.succeed(model.copy(message = Some("Too many redirects"), shouldLoop = false))
+    else ZIO.succeed(model.copy(message = None, shouldLoop = true))
 
   override def view(model: Signal[Model]) =
     NavigationLayout(

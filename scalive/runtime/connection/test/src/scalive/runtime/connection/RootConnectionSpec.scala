@@ -19,8 +19,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
   )
 
   private final class Counter(mounts: Ref[Int]) extends LiveView[Int, Int]:
-    override def mount(ctx: MountContext): LiveIO[Int] = mounts.updateAndGet(_ + 1).as(0)
-    override def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+    override def mount(ctx: MountContext): Task[Int] = mounts.updateAndGet(_ + 1).as(0)
+    override def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
       amount => ZIO.succeed(model + amount)
     override def view(model: Signal[Int]): HtmlElement[Int] =
       button(on.click(1), model.map(_.toString))
@@ -153,8 +153,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
         for
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      _ => ZIO.fail(Exception("handler failed"))
                    def view(model: Signal[Int]) = div(model.map(_.toString))
           connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
@@ -175,12 +175,12 @@ object RootConnectionSpec extends ZIOSpecDefault:
           handled <- Ref.make(Option.empty[(Boolean, Map[String, Json])])
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   def mount(ctx: MountContext): LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] =
                      ctx.connection match
                        case Connection.Connected(connected) =>
                          mounted.set(Some(connected.staticChanged -> connected.connectParams)).as(0)
                        case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      message =>
                        handled.set(Some(ctx.staticChanged -> ctx.connectParams)).as(model + message)
                    def view(model: Signal[Int]): HtmlElement[Int] =
@@ -215,7 +215,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
                    override val hooks = LiveHooks.empty[Int, Int].onEvent { (model, _, _) =>
                      order.update(_ :+ "static").as(LiveHookResult.cont(model + 1))
                    }
-                   def mount(ctx: MountContext): LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] =
                      ctx.hooks.event.attach("a")((model, _, _) =>
                        order.update(_ :+ "old-a").as(LiveHookResult.cont(model + 1000))) *>
                        ctx.hooks.event.attach("b")((model, _, _) =>
@@ -225,7 +225,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
                        ctx.hooks.event.attach("a")((model, _, _) =>
                          order.update(_ :+ "a").as(LiveHookResult.cont(model + 10))) *>
                        ctx.hooks.event.detach("removed").as(0)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      _ => order.update(_ :+ "handler").as(model + 10000)
                    def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString))
           connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
@@ -248,8 +248,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
                    override val hooks = LiveHooks.empty[Int, Int].onBrowserEvent(named) {
                      (model, amount, _) => calls.update(_ + 1).as(model + amount)
                    }
-                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(5)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(5)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      amount => ZIO.succeed(model + amount)
                    def view(model: Signal[Int]) = div(model.map(_.toString))
           connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
@@ -286,8 +286,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
                    override val hooks = LiveHooks.empty[Int, Int].onRawEvent { (model, event, _) =>
                      seen.set(Some(event)).as(LiveEventHookResult.haltReply(model + 1, reply))
                    }
-                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(5)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(5)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      amount => handled.update(_ + 1).as(model + amount)
                    def view(model: Signal[Int]) = div(model.map(_.toString))
           connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
@@ -354,8 +354,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
         for
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      message =>
                        if message == 1 then
                          ctx.hooks.info.attach("persist")((value, amount, _) =>
@@ -387,8 +387,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
         for
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Unit, Unit]:
-                   def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
-                   def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+                   def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+                   def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] =
                      _ => ctx.nav.pushPatchUnsafe("?source=child")
                    def view(model: Signal[Unit]): HtmlElement[Unit] = button(on.click(()))
           connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
@@ -414,8 +414,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
         for
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      message =>
                        message match
                          case 1 => ctx.flash.put(notice, "saved").as(model + 1)
@@ -456,8 +456,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
         for
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      case 1 => ctx.nav.pushNavigateUnsafe("/next").as(model + 1)
                      case n => ZIO.succeed(model + n)
                    def view(model: Signal[Int]) = div(model.map(_.toString))
@@ -497,12 +497,12 @@ object RootConnectionSpec extends ZIOSpecDefault:
                      case 0 => Some("zero")
                      case 1 => Some("one")
                      case _ => None
-                   def mount(ctx: MountContext): LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] =
                      ctx.connection match
                        case Connection.Connected(connected) =>
                          connected.client.push(countEvent, 0).as(0)
                        case Connection.Disconnected => ZIO.succeed(0)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      message =>
                        ctx.client.push(countEvent, message) *>
                          ctx.client.exec(JS) *>
@@ -561,12 +561,12 @@ object RootConnectionSpec extends ZIOSpecDefault:
           handled <- Ref.make(false)
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   def mount(ctx: MountContext): LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] =
                      ctx.hooks.async.attach("async")((model, event, _) => event.result match
                        case LiveAsyncResult.Succeeded(value) =>
                          ZIO.succeed(LiveHookResult.halt(model + value * 10))
                        case _ => ZIO.succeed(LiveHookResult.cont(model))).as(1)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      message => handled.set(true).as(model + message)
                    def view(model: Signal[Int]) = div(model.map(_.toString))
           connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
@@ -606,7 +606,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           laterStarted   <- Promise.make[Nothing, Unit]
           outputs        <- Queue.unbounded[ConnectionOutput]
           view = new LiveView.Eventless[Unit]:
-                   def mount(ctx: MountContext): LiveIO[Unit] =
+                   def mount(ctx: MountContext): Task[Unit] =
                      ctx.connection match
                        case Connection.Connected(connected) =>
                          connected.subscriptions.start(
@@ -641,8 +641,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
           release <- Promise.make[Nothing, Unit]
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      message =>
                        ZIO.uninterruptible(
                          entered.succeed(()).unit *> release.await.as(model + message)
@@ -696,8 +696,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
           release <- Promise.make[Nothing, Unit]
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   def mount(ctx: MountContext): LiveIO[Int] = ZIO.succeed(0)
-                   def handleMessage(model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      message => entered.succeed(()).unit *> release.await.as(model + message)
                    def view(model: Signal[Int]): HtmlElement[Int] =
                      button(on.click(1), model.map(_.toString))

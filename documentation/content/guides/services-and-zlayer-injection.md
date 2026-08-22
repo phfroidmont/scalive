@@ -9,7 +9,7 @@ group = "State, services, and components"
 ## Prerequisites {#prerequisites}
 
 Start with a working Live route whose `mount` and `handleMessage` methods return
-`LiveIO` effects.
+`Task` effects.
 
 ## Inject A Service Into A LiveView {#inject-a-service-into-a-liveview}
 
@@ -77,7 +77,7 @@ final class ReportsLiveView(reports: Reports)
     extends LiveView[ReportsLiveView.Msg, ReportsLiveView.Model]:
   import ReportsLiveView.*
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     reports.recent.map(Model.Loaded.apply)
 
   def handleMessage(model: Model, ctx: MessageContext) =
@@ -97,7 +97,7 @@ final class ReportsLiveView(reports: Reports)
     )
 ```
 
-`LiveIO` is a `Task`, so the constructor-captured service is directly available
+Callbacks return `Task`, so the constructor-captured service is directly available
 to `mount` and `handleMessage`; callback environment types do not need to change.
 
 Define the model and messages as usual:

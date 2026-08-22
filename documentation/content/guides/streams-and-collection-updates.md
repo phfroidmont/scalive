@@ -75,7 +75,7 @@ Call @:apiSymbol(def:scalive.Streams.create)`ctx.streams.create`@:@ once for a s
 name in each lifecycle and retain the returned handle:
 
 ```scala
-def mount(ctx: MountContext): LiveIO[Model] =
+def mount(ctx: MountContext): Task[Model] =
   ctx.streams.create(ActivityStreamDef, InitialActivities).map { stream =>
     Model(InitialActivities, stream, nextId = 5)
   }

@@ -1,5 +1,6 @@
 package scaliveapi
 
+import zio.ZIO
 import zio.test.*
 
 object EventlessApiSpec extends ZIOSpecDefault:
@@ -10,7 +11,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView.Eventless[String]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(ctx: MountContext) = ZIO.succeed("mounted")
           override def view(model: Signal[String]) = div(model)
 
         val view: LiveView[Nothing, String] = View
@@ -25,7 +26,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
 
         object View
             extends LiveView.Routed.Eventless[String, Int]:
-          def mount(params: Int, ctx: MountContext) = LiveIO.succeed(s"mounted:$params")
+          def mount(params: Int, ctx: MountContext) = ZIO.succeed(s"mounted:$params")
           override def view(model: Signal[String]) = div(model)
 
         val view: LiveView.Routed[Nothing, String, Int] = View
@@ -40,7 +41,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import zio.http.Request
 
         object View extends LiveView.Eventless[String]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(ctx: MountContext) = ZIO.succeed("mounted")
           override def view(model: Signal[String]) = div(model)
 
         val requestRoute = live((_: Request) => View)
@@ -56,7 +57,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
 
         object View
             extends LiveView.Routed.Eventless[String, Int]:
-          def mount(params: Int, ctx: MountContext) = LiveIO.succeed(s"mounted:$params")
+          def mount(params: Int, ctx: MountContext) = ZIO.succeed(s"mounted:$params")
           override def view(model: Signal[String]) = div(model)
 
         val requestRoute = live.query[Int]("id")((_: Request) => View)
@@ -72,12 +73,12 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object Plain extends LiveView.Eventless[String]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(ctx: MountContext) = ZIO.succeed("mounted")
           override def view(model: Signal[String]) = div(model)
 
         object Routed
             extends LiveView.Routed.Eventless[String, Int]:
-          def mount(params: Int, ctx: MountContext) = LiveIO.succeed(s"mounted:$params")
+          def mount(params: Int, ctx: MountContext) = ZIO.succeed(s"mounted:$params")
           override def view(model: Signal[String]) = div(model)
 
         val plain: LiveView[Nothing, String] = Plain
@@ -93,11 +94,11 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object Child extends LiveView.Eventless[String]:
-          def mount(ctx: MountContext) = LiveIO.succeed("mounted")
+          def mount(ctx: MountContext) = ZIO.succeed("mounted")
           override def view(model: Signal[String]) = div(model)
 
         object Parent extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           override def view(model: Signal[Unit]) = div(liveView("child", Child))
       """)
 
@@ -125,7 +126,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
 
         object Component
             extends LiveComponent.Eventless[String, Int]:
-          def mount(props: String, ctx: MountContext) = LiveIO.succeed(0)
+          def mount(props: String, ctx: MountContext) = ZIO.succeed(0)
           override def view(
             props: Signal[String],
             model: Signal[Int],
@@ -142,7 +143,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           override def view(model: Signal[Unit]) = button(scalive.on.click(()), "click")
       """)
 
@@ -153,7 +154,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView[String, Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           override def view(model: Signal[Unit]) = div()
       """)
 
@@ -164,7 +165,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView.Routed.Eventless[Unit, Int]:
-          def mount(params: Int, ctx: MountContext) = LiveIO.succeed(())
+          def mount(params: Int, ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
         val route = live(View)
@@ -173,7 +174,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
         val route = live.query[Int]("id")(View)

@@ -1,42 +1,49 @@
 import scala.util.Random
 
 import KeyedComprehensionLiveView.*
+import zio.ZIO
 import zio.http.URL
 import zio.schema.Schema
 import zio.schema.derived
 
 import scalive.*
-import scalive.LiveIO.given
 
 class KeyedComprehensionLiveView(assets: StaticAssets)
     extends LiveView.Routed[Msg, Model, UrlParams]:
 
   def mount(_params: UrlParams, ctx: MountContext) =
-    Model(
-      activeTab = "all_keyed",
-      items = randomItems(10),
-      size = 10,
-      count = 0
-    )
+    val model =
+      Model(
+        activeTab = "all_keyed",
+        items = randomItems(10),
+        size = 10,
+        count = 0
+      )
+    ZIO.succeed(model)
 
   override def handleParams(model: Model, params: UrlParams, _url: URL, ctx: ParamsContext) =
     val _   = ctx
     val tab = params.tab.getOrElse("all_keyed")
-    model.copy(activeTab = normalizeTab(tab))
+    ZIO.succeed(model.copy(activeTab = normalizeTab(tab)))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Randomize => model.copy(items = randomItems(model.size), count = model.count + 1)
+    case Msg.Randomize =>
+      val next = model.copy(items = randomItems(model.size), count = model.count + 1)
+      ZIO.succeed(next)
     case Msg.ChangeSize(size) =>
-      model.copy(items = randomItems(size), size = size, count = model.count + 1)
+      val next = model.copy(items = randomItems(size), size = size, count = model.count + 1)
+      ZIO.succeed(next)
     case Msg.ChangeFirst =>
       val first = Item(2000, Entry(other = "hey", foo = Foo(System.nanoTime.toString)))
-      model.copy(items = first +: model.items.drop(1))
+      ZIO.succeed(model.copy(items = first +: model.items.drop(1)))
     case Msg.ChangeOther =>
-      model.copy(items =
-        model.items.map(item =>
-          item.copy(entry = item.entry.copy(other = s"hey ${System.nanoTime}"))
+      val next =
+        model.copy(items =
+          model.items.map(item =>
+            item.copy(entry = item.entry.copy(other = s"hey ${System.nanoTime}"))
+          )
         )
-      )
+      ZIO.succeed(next)
 
   override def view(model: Signal[Model]) =
     val activeTab = model.map(_.activeTab)

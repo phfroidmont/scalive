@@ -24,7 +24,7 @@
 - Keep one server, one asset pipeline, one root layout, and one categorized catalog.
 - Keep examples focused and independent except for the shared shell and explicitly demonstrated services.
 - Do not add a database, OAuth provider, browser tests, or JavaScript dependencies.
-- Application services used by `LiveIO` callbacks are constructor-injected; authentication uses the route environment and `LiveMountAspect`.
+- Application services used by `Task` callbacks are constructor-injected; authentication uses the route environment and `LiveMountAspect`.
 - Authentication uses application CSRF tokens, a high-entropy opaque `HttpOnly` `SameSite=Lax` cookie, revocable in-memory sessions, and non-secret mount claims.
 - Uploads use small limits and an application-owned temporary store with deletion and shutdown cleanup.
 - Add unit tests only for authentication behavior and typed profile form validation.

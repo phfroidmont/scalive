@@ -39,7 +39,7 @@ object UploadContextSpec extends ZIOSpecDefault:
           def handleMessage(
             model: LiveUpload[Chunk[Byte]],
             ctx: MessageContext
-          ): Unit => LiveIO[LiveUpload[Chunk[Byte]]] =
+          ): Unit => Task[LiveUpload[Chunk[Byte]]] =
             _ => ctx.uploads.get(uploadDef).someOrFail(Exception("upload disappeared"))
           def view(model: Signal[LiveUpload[Chunk[Byte]]]) =
             div(model.map(_.ref.value))
@@ -231,7 +231,7 @@ object UploadContextSpec extends ZIOSpecDefault:
                    def handleMessage(
                      model: (Boolean, LiveUpload[Chunk[Byte]]),
                      ctx: MessageContext
-                   ): Boolean => LiveIO[(Boolean, LiveUpload[Chunk[Byte]])] = shown =>
+                   ): Boolean => Task[(Boolean, LiveUpload[Chunk[Byte]])] = shown =>
                      ctx.uploads
                        .get(uploadDef).someOrFail(Exception("root upload disappeared")).map(
                          shown -> _

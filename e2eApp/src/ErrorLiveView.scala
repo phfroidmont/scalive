@@ -5,7 +5,6 @@ import zio.http.URL
 import zio.json.ast.Json
 
 import scalive.*
-import scalive.LiveIO.given
 import scalive.Signal.*
 
 class ErrorLiveView
@@ -13,14 +12,17 @@ class ErrorLiveView
   import ErrorLiveView.*
 
   def mount(_params: QueryParams, ctx: MountContext) =
-    Model()
+    val model = Model()
+    ZIO.succeed(model)
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
     if ctx.connection == Connection.Disconnected && params.deadMountRaise then
       ZIO.fail(RuntimeException("boom"))
     else if ctx.connection.isInstanceOf[Connection.Connected[?]] && params.connectedMountRaise then
       ZIO.fail(RuntimeException("boom"))
-    else model.copy(child = childBehavior(params, ctx))
+    else
+      val next = model.copy(child = childBehavior(params, ctx))
+      ZIO.succeed(next)
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.CrashMain => ZIO.fail(RuntimeException("boom"))
@@ -115,7 +117,9 @@ object ErrorLiveView:
       ctx.connection match
         case Connection.Connected(_) if behavior.failNextConnectedMount =>
           ZIO.fail(RuntimeException("boom"))
-        case connection => ChildModel(connected = connection != Connection.Disconnected)
+        case connection =>
+          val model = ChildModel(connected = connection != Connection.Disconnected)
+          ZIO.succeed(model)
 
     def handleMessage(model: ChildModel, ctx: MessageContext) =
       case ChildMsg.CrashChild => ZIO.fail(RuntimeException("boom"))

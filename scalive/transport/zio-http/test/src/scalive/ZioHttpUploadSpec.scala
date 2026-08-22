@@ -356,7 +356,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     test("unauthorized joins allocate no lifecycle and malformed frames close the socket") {
       val factories = AtomicInteger(0)
       object View extends LiveView.Eventless[Unit]:
-        def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+        def mount(ctx: MountContext): Task[Unit] = ZIO.unit
         def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
       val application = scalive.Live.router(scalive.live {
         factories.incrementAndGet()
@@ -794,7 +794,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         override val hooks = LiveHooks.empty[Nothing, Boolean]
           .onBrowserEvent(hideEvent)((_, _, _) => ZIO.succeed(false))
         def mount(ctx: MountContext) = ZIO.succeed(true)
-        def handleMessage(model: Boolean, ctx: MessageContext): Nothing => LiveIO[Boolean] = identity
+        def handleMessage(model: Boolean, ctx: MessageContext): Nothing => Task[Boolean] = identity
         def view(model: Signal[Boolean]) = mainTag(model.when(div(instance.render(()))))
 
       withServer(scalive.Live.router(scalive.live(view))) { port =>

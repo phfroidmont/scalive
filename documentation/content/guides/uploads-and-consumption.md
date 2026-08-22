@@ -47,7 +47,7 @@ Keep one stable definition value and retain the returned
 @:apiSymbol(type-alias:scalive.LiveUpload)`LiveUpload[Result]`@:@ snapshot:
 
 ```scala
-def mount(ctx: MountContext): LiveIO[Model] =
+def mount(ctx: MountContext): Task[Model] =
   ctx.uploads.allow(TextFiles).map(Model(_))
 ```
 
@@ -128,7 +128,7 @@ For a server-side progress hook, pass `progress = Some(...)` on the definition:
 
 ```scala
 val progress = new LiveUploadProgress[StoredTempFile]:
-  def onProgress(entry: LiveUploadEntry[StoredTempFile]): LiveIO[Unit] =
+  def onProgress(entry: LiveUploadEntry[StoredTempFile]): Task[Unit] =
     metrics.record(entry.ref, entry.progress)
 ```
 
@@ -203,7 +203,7 @@ returns only browser-safe configuration:
 final case class ReservedObject(key: String, uploadId: String)
 
 val uploader = new LiveUploadExternalUploader[ReservedObject]:
-  def preflight(client: UploadClientMetadata): LiveIO[LiveExternalUploadResult[ReservedObject]] =
+  def preflight(client: UploadClientMetadata): Task[LiveExternalUploadResult[ReservedObject]] =
     authorizeUpload(client) *> objectStore.preparePut(client.sizeBytes).map { prepared =>
       val config = ExternalUploadClientConfig(Json.Obj(
         "uploader" -> Json.Str("object-store"),

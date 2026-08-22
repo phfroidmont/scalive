@@ -11,7 +11,7 @@ object NestedTopologyKernelSpec extends ZIOSpecDefault:
   private val config = SessionConfig.make(4, 8).toOption.get
 
   object Child extends LiveView.Eventless[Unit]:
-    def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+    def mount(ctx: MountContext): Task[Unit] = ZIO.unit
     def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
 
   object NestedComponent extends LiveComponent[Unit, Unit, Unit]:

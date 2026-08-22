@@ -6,7 +6,6 @@ import zio.*
 import zio.http.*
 
 import scalive.*
-import scalive.LiveIO.given
 import scalive.codecs.StringAsIsEncoder
 
 object RootSliceApp extends ZIOAppDefault:
@@ -182,10 +181,12 @@ final class RootSliceLiveView(mountSequence: AtomicInteger)
     extends LiveView[RootSliceLiveView.Msg.type, Int]:
   import RootSliceLiveView.*
 
-  def mount(ctx: MountContext) = mountSequence.incrementAndGet()
+  def mount(ctx: MountContext) =
+    val sequence = mountSequence.incrementAndGet()
+    ZIO.succeed(sequence)
 
   def handleMessage(model: Int, ctx: MessageContext) =
-    case Msg => model + 1
+    case Msg => ZIO.succeed(model + 1)
 
   override def view(model: Signal[Int]) =
     val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
@@ -206,10 +207,10 @@ object RootSliceLiveView:
 final class NestedParentLiveView extends LiveView[NestedParentLiveView.Msg.type, Boolean]:
   import NestedParentLiveView.*
 
-  def mount(ctx: MountContext) = true
+  def mount(ctx: MountContext) = ZIO.succeed(true)
 
   def handleMessage(model: Boolean, ctx: MessageContext) =
-    case Msg => !model
+    case Msg => ZIO.succeed(!model)
 
   def view(model: Signal[Boolean]) =
     mainTag(
@@ -224,10 +225,10 @@ object NestedParentLiveView:
 final class NestedChildLiveView extends LiveView[NestedChildLiveView.Msg.type, Int]:
   import NestedChildLiveView.*
 
-  def mount(ctx: MountContext) = 0
+  def mount(ctx: MountContext) = ZIO.succeed(0)
 
   def handleMessage(model: Int, ctx: MessageContext) =
-    case Msg => model + 1
+    case Msg => ZIO.succeed(model + 1)
 
   def view(model: Signal[Int]) =
     sectionTag(
@@ -241,12 +242,12 @@ object NestedChildLiveView:
   case object Msg
 
 object NestedGrandchildLiveView extends LiveView.Eventless[Unit]:
-  def mount(ctx: MountContext)  = ()
+  def mount(ctx: MountContext)  = ZIO.succeed(())
   def view(model: Signal[Unit]) = asideTag(idAttr := "nested-grandchild-content", "grandchild")
 
 final class StickyNestedParentLiveView(page: String, destination: LiveLocation)
     extends LiveView.Eventless[Unit]:
-  def mount(ctx: MountContext) = ()
+  def mount(ctx: MountContext) = ZIO.succeed(())
 
   def view(model: Signal[Unit]) =
     mainTag(
@@ -258,10 +259,10 @@ final class StickyNestedParentLiveView(page: String, destination: LiveLocation)
 final class StickyNestedChildLiveView extends LiveView[StickyNestedChildLiveView.Msg.type, Int]:
   import StickyNestedChildLiveView.*
 
-  def mount(ctx: MountContext) = 0
+  def mount(ctx: MountContext) = ZIO.succeed(0)
 
   def handleMessage(model: Int, ctx: MessageContext) =
-    case Msg => model + 1
+    case Msg => ZIO.succeed(model + 1)
 
   def view(model: Signal[Int]) =
     sectionTag(
@@ -278,10 +279,10 @@ final class StickyNestedGrandchildLiveView
     extends LiveView[StickyNestedGrandchildLiveView.Msg.type, Int]:
   import StickyNestedGrandchildLiveView.*
 
-  def mount(ctx: MountContext) = 0
+  def mount(ctx: MountContext) = ZIO.succeed(0)
 
   def handleMessage(model: Int, ctx: MessageContext) =
-    case Msg => model + 1
+    case Msg => ZIO.succeed(model + 1)
 
   def view(model: Signal[Int]) =
     sectionTag(
@@ -303,7 +304,9 @@ final class NavigationLiveView(
     extends LiveView[NavigationLiveView.Msg, Int]:
   import NavigationLiveView.*
 
-  def mount(ctx: MountContext) = mountSequence.incrementAndGet()
+  def mount(ctx: MountContext) =
+    val sequence = mountSequence.incrementAndGet()
+    ZIO.succeed(sequence)
 
   def handleMessage(model: Int, ctx: MessageContext) =
     case Msg.ToB =>
@@ -353,7 +356,7 @@ final class UpstreamNavigationLiveView(
   b: LiveLocation,
   stream: LiveLocation)
     extends LiveView.Eventless[Unit]:
-  def mount(ctx: MountContext) = ()
+  def mount(ctx: MountContext) = ZIO.succeed(())
 
   def view(model: Signal[Unit]) =
     mainTag(
@@ -374,7 +377,7 @@ final class Issue3686LiveView(
     extends LiveView[Issue3686LiveView.Msg.type, Unit]:
   import Issue3686LiveView.*
 
-  def mount(ctx: MountContext) = ()
+  def mount(ctx: MountContext) = ZIO.succeed(())
 
   def handleMessage(model: Unit, ctx: MessageContext) =
     case Msg =>
@@ -403,13 +406,13 @@ final class RedirectLoopLiveView
   import RedirectLoopLiveView.*
 
   def mount(loop: Boolean, ctx: MountContext) =
-    if loop then Model(shouldLoop = false, message = "Too many redirects")
-    else Model(shouldLoop = true, message = "")
+    if loop then ZIO.succeed(Model(shouldLoop = false, message = "Too many redirects"))
+    else ZIO.succeed(Model(shouldLoop = true, message = ""))
 
   override def handleParams(model: Model, loop: Boolean, url: URL, ctx: ParamsContext) =
     if loop && model.shouldLoop then ctx.nav.pushPatchUnsafe("?loop=true").as(model)
-    else if loop then model.copy(message = "Too many redirects")
-    else model.copy(shouldLoop = true, message = "")
+    else if loop then ZIO.succeed(model.copy(message = "Too many redirects"))
+    else ZIO.succeed(model.copy(shouldLoop = true, message = ""))
 
   def view(model: Signal[Model]) =
     mainTag(

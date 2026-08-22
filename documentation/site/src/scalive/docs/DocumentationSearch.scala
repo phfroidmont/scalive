@@ -1,6 +1,7 @@
 package scalive.docs
 
 import zio.http.URL
+import zio.{Task, ZIO}
 
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
@@ -17,16 +18,16 @@ final private[docs] class DocumentationSearchLiveView(application: Documentation
   private val ariaLive   = htmlAttr("aria-live", StringAsIsEncoder)
   private val role       = htmlAttr("role", StringAsIsEncoder)
 
-  def mount(params: Option[String], ctx: MountContext): LiveIO[DocumentationSearchModel] =
-    LiveIO.succeed(search(params))
+  def mount(params: Option[String], ctx: MountContext): Task[DocumentationSearchModel] =
+    ZIO.succeed(search(params))
 
   override def handleParams(
     model: DocumentationSearchModel,
     params: Option[String],
     url: URL,
     ctx: ParamsContext
-  ): LiveIO[DocumentationSearchModel] =
-    LiveIO.succeed(search(params))
+  ): Task[DocumentationSearchModel] =
+    ZIO.succeed(search(params))
 
   override def pageTitle(model: DocumentationSearchModel): Option[String] =
     Some("Search | Scalive")

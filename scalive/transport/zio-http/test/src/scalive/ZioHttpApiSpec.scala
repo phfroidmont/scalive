@@ -1,5 +1,6 @@
 package scalive
 
+import zio.ZIO
 import zio.test.*
 
 object ZioHttpApiSpec extends ZIOSpecDefault:
@@ -11,7 +12,7 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
         import zio.http.Routes
 
         object View extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
         val application = Live.router(live(View))
@@ -30,7 +31,7 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object View extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = LiveIO.succeed(())
+          def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
         ZioHttp.routes(Live.router(live(View)))

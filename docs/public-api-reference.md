@@ -147,8 +147,8 @@ trait LiveView[Msg, Model]:
   def hooks: LiveHooks[Msg, Model] = LiveHooks.empty
   def pageTitle(model: Model): Option[String] = None
 
-  def mount(ctx: MountContext): LiveIO[Model]
-  def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
+  def mount(ctx: MountContext): Task[Model]
+  def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model]
   def view(model: Signal[Model]): HtmlElement[Msg]
 ```
 
@@ -179,21 +179,21 @@ Routes, route factories, and nested `liveView` content accept eventless views di
 trait LiveView.Routed[Msg, Model, Params] extends LiveView[Msg, Model]:
   type ParamsContext = scalive.ParamsContext[Msg, Model]
 
-  def mount(params: Params, ctx: MountContext): LiveIO[Model]
+  def mount(params: Params, ctx: MountContext): Task[Model]
 
   def handleParams(
     model: Model,
     params: Params,
     url: zio.http.URL,
     ctx: ParamsContext
-  ): LiveIO[Model]
+  ): Task[Model]
 
   def handleParamsDecodeError(
     model: Model,
     error: LiveParamsCodec.DecodeError,
     url: zio.http.URL,
     ctx: ParamsContext
-  ): LiveIO[Model]
+  ): Task[Model]
 ```
 
 Params lifecycle methods:
@@ -227,9 +227,9 @@ trait LiveComponent[Props, Msg, Model]:
 
   def hooks: ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.empty
 
-  def mount(props: Props, ctx: MountContext): LiveIO[Model]
-  def update(props: Props, model: Model, ctx: UpdateContext): LiveIO[Model]
-  def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => LiveIO[Model]
+  def mount(props: Props, ctx: MountContext): Task[Model]
+  def update(props: Props, model: Model, ctx: UpdateContext): Task[Model]
+  def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => Task[Model]
   def view(
     props: Signal[Props],
     model: Signal[Model],
@@ -270,30 +270,14 @@ trait LiveComponent.Eventless[Props, Model]
     extends LiveComponent[Props, Nothing, Model]
 ```
 
-### `LiveIO[A]`
+### `Task[A]`
 
-`LiveIO` is the effect type used by lifecycle callbacks and context facades.
-
-```scala
-type LiveIO[+A] = zio.Task[A]
-
-object LiveIO:
-  def succeed[A](value: A): LiveIO[A]
-  def fail[A](error: Throwable): LiveIO[A]
-
-  given [A]: Conversion[A, LiveIO[A]]
-```
-
-Direct model returns are opt-in. Import the conversion where you want that style:
+Lifecycle callbacks and context facades use `zio.Task[A]`. Return effects explicitly:
 
 ```scala
-import scalive.LiveIO.given
-
-def mount(ctx: MountContext): LiveIO[Model] =
-  Model.empty
+def mount(ctx: MountContext): Task[Model] =
+  ZIO.succeed(Model.empty)
 ```
-
-`Task` values conform directly because `LiveIO` is a transparent type alias.
 
 ## Phase Context API
 
@@ -393,21 +377,21 @@ trait ComponentAfterRenderContext[Props, Msg, Model]
 
 ```scala
 trait MountNavigation:
-  def pushNavigate(to: LiveLocation): LiveIO[Unit]
-  def pushNavigateUnsafe(to: String): LiveIO[Unit]
+  def pushNavigate(to: LiveLocation): Task[Unit]
+  def pushNavigateUnsafe(to: String): Task[Unit]
 
-  def replaceNavigate(to: LiveLocation): LiveIO[Unit]
-  def replaceNavigateUnsafe(to: String): LiveIO[Unit]
+  def replaceNavigate(to: LiveLocation): Task[Unit]
+  def replaceNavigateUnsafe(to: String): Task[Unit]
 
-  def redirect(to: LiveLocation): LiveIO[Unit]
-  def redirectUnsafe(to: String): LiveIO[Unit]
+  def redirect(to: LiveLocation): Task[Unit]
+  def redirectUnsafe(to: String): Task[Unit]
 
 trait Navigation extends MountNavigation:
-  def pushPatch(to: LiveLocation): LiveIO[Unit]
-  def pushPatchUnsafe(to: String): LiveIO[Unit]
+  def pushPatch(to: LiveLocation): Task[Unit]
+  def pushPatchUnsafe(to: String): Task[Unit]
 
-  def replacePatch(to: LiveLocation): LiveIO[Unit]
-  def replacePatchUnsafe(to: String): LiveIO[Unit]
+  def replacePatch(to: LiveLocation): Task[Unit]
+  def replacePatchUnsafe(to: String): Task[Unit]
 ```
 
 The methods without an `Unsafe` suffix require a full location derived from a Live route declaration. Use the explicit unsafe methods for external or dead routes and raw query-only patches such as `ctx.nav.pushPatchUnsafe("?page=2")`.
@@ -426,39 +410,39 @@ opaque type BrowserToServerEvent[A] = String
 
 ```scala
 trait Flash:
-  def put(kind: FlashKind, message: String): LiveIO[Unit]
-  def clear(kind: FlashKind): LiveIO[Unit]
-  def clearAll: LiveIO[Unit]
-  def get(kind: FlashKind): LiveIO[Option[String]]
-  def snapshot: LiveIO[Map[FlashKind, String]]
+  def put(kind: FlashKind, message: String): Task[Unit]
+  def clear(kind: FlashKind): Task[Unit]
+  def clearAll: Task[Unit]
+  def get(kind: FlashKind): Task[Option[String]]
+  def snapshot: Task[Map[FlashKind, String]]
 ```
 
 ### Uploads
 
 ```scala
 trait Uploads:
-  def allow[R](definition: LiveUploadDef[R]): LiveIO[LiveUpload[R]]
-  def disallow[R](definition: LiveUploadDef[R]): LiveIO[Unit]
-  def get[R](definition: LiveUploadDef[R]): LiveIO[Option[LiveUpload[R]]]
-  def cancel[R](entry: LiveUploadEntry[R]): LiveIO[LiveUpload[R]]
+  def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]]
+  def disallow[R](definition: LiveUploadDef[R]): Task[Unit]
+  def get[R](definition: LiveUploadDef[R]): Task[Option[LiveUpload[R]]]
+  def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]]
   def consume[R, A](entry: LiveUploadEntry[R])(
-    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
-  ): LiveIO[(A, LiveUpload[R])]
+    callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
+  ): Task[(A, LiveUpload[R])]
   def consumeCompleted[R, A](definition: LiveUploadDef[R])(
-    callback: CompletedUpload[R] => LiveIO[ConsumeDecision[A]]
-  ): LiveIO[(List[A], LiveUpload[R])]
+    callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
+  ): Task[(List[A], LiveUpload[R])]
 ```
 
 ### Streams
 
 ```scala
 trait Streams:
-  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): LiveIO[LiveStream[A]]
-  def insertAll[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt = StreamAt.Last): LiveIO[LiveStream[A]]
-  def reset[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt = StreamAt.Last): LiveIO[LiveStream[A]]
-  def insert[A](definition: LiveStreamDef[A], item: A, at: StreamAt = StreamAt.Last, updateOnly: Boolean = false): LiveIO[LiveStream[A]]
-  def delete[A](definition: LiveStreamDef[A], item: A): LiveIO[LiveStream[A]]
-  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): LiveIO[LiveStream[A]]
+  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): Task[LiveStream[A]]
+  def insertAll[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt = StreamAt.Last): Task[LiveStream[A]]
+  def reset[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt = StreamAt.Last): Task[LiveStream[A]]
+  def insert[A](definition: LiveStreamDef[A], item: A, at: StreamAt = StreamAt.Last, updateOnly: Boolean = false): Task[LiveStream[A]]
+  def delete[A](definition: LiveStreamDef[A], item: A): Task[LiveStream[A]]
+  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): Task[LiveStream[A]]
 ```
 
 `create` requires a new stream name. The remaining mutation operations require an existing stream.
@@ -470,13 +454,13 @@ therefore appear in reverse iteration order.
 
 ```scala
 trait Async[Msg]:
-  def start[A](key: AsyncKey[A])(task: zio.Task[A])(toMsg: LiveAsyncResult[A] => Msg): LiveIO[Unit]
-  def cancel[A](key: AsyncKey[A], reason: Option[String] = None): LiveIO[Unit]
+  def start[A](key: AsyncKey[A])(task: zio.Task[A])(toMsg: LiveAsyncResult[A] => Msg): Task[Unit]
+  def cancel[A](key: AsyncKey[A], reason: Option[String] = None): Task[Unit]
 
 trait Subscriptions[Msg]:
-  def start(key: SubscriptionKey, delivery: SubscriptionDelivery)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def replace(key: SubscriptionKey, delivery: SubscriptionDelivery)(stream: zio.stream.ZStream[Any, Nothing, Msg]): LiveIO[Unit]
-  def cancel(key: SubscriptionKey): LiveIO[Unit]
+  def start(key: SubscriptionKey, delivery: SubscriptionDelivery)(stream: zio.stream.ZStream[Any, Nothing, Msg]): Task[Unit]
+  def replace(key: SubscriptionKey, delivery: SubscriptionDelivery)(stream: zio.stream.ZStream[Any, Nothing, Msg]): Task[Unit]
+  def cancel(key: SubscriptionKey): Task[Unit]
 
 enum SubscriptionDelivery:
   case Lossless
@@ -492,13 +476,13 @@ component removal interrupt obsolete work without producing application messages
 
 ```scala
 trait Client:
-  def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): LiveIO[Unit]
-  def exec[Msg](js: JSCommands.JSCommand[Msg]): LiveIO[Unit]
+  def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): Task[Unit]
+  def exec[Msg](js: JSCommands.JSCommand[Msg]): Task[Unit]
 
 trait ComponentUpdates:
-  def sendUpdate[Props, Msg, Model](instance: LiveComponentInstance[Props, Msg, Model], props: Props): LiveIO[Unit]
-  def sendUpdate[Props, Msg, Model, Output](instance: LiveComponentOutputInstance[Props, Msg, Model, Output], props: Props): LiveIO[Unit]
-  def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](id: String, props: LiveComponent.PropsOf[C]): LiveIO[Unit]
+  def sendUpdate[Props, Msg, Model](instance: LiveComponentInstance[Props, Msg, Model], props: Props): Task[Unit]
+  def sendUpdate[Props, Msg, Model, Output](instance: LiveComponentOutputInstance[Props, Msg, Model, Output], props: Props): Task[Unit]
+  def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](id: String, props: LiveComponent.PropsOf[C]): Task[Unit]
 ```
 
 `ServerToBrowserEvent[A]` guarantees that Scala push sites use the declared payload type and have a matching JSON encoder. JavaScript still subscribes by string and interprets the encoded payload dynamically.
@@ -546,7 +530,7 @@ ComponentLiveHooks.empty.onAsync(hook)
 ComponentLiveHooks.empty.afterRender(effect)
 ```
 
-Static hooks are unnamed, immutable, and run in declaration order. `onRawEvent` is the protocol-level escape hatch; it receives the complete `LiveEvent` envelope and does not filter event names. `bindingId` is an opaque rendered binding identifier and `cid: Option[Long]` is protocol target metadata, not a `ComponentRef`. Raw hooks receive events in declaration order until one halts. `afterRender` effects return `LiveIO[Unit]`, observe the rendered model, and cannot replace it.
+Static hooks are unnamed, immutable, and run in declaration order. `onRawEvent` is the protocol-level escape hatch; it receives the complete `LiveEvent` envelope and does not filter event names. `bindingId` is an opaque rendered binding identifier and `cid: Option[Long]` is protocol target metadata, not a `ComponentRef`. Raw hooks receive events in declaration order until one halts. `afterRender` effects return `Task[Unit]`, observe the rendered model, and cannot replace it.
 
 ### Dynamic Hooks
 
@@ -2122,7 +2106,7 @@ non-empty `uploader` identifier before preflight can succeed.
 
 ```scala
 trait LiveUploadExternalUploader[Result]:
-  def preflight(client: UploadClientMetadata): LiveIO[LiveExternalUploadResult[Result]]
+  def preflight(client: UploadClientMetadata): Task[LiveExternalUploadResult[Result]]
   def discard(result: Result): Task[Unit]
 ```
 
@@ -2154,7 +2138,7 @@ runtime ownership ends without application consumption.
 
 ```scala
 trait LiveUploadProgress[Result]:
-  def onProgress(entry: LiveUploadEntry[Result]): LiveIO[Unit]
+  def onProgress(entry: LiveUploadEntry[Result]): Task[Unit]
 ```
 
 ## Lifecycle Hooks API

@@ -30,7 +30,7 @@ final class ReportsExample(reports: Reports)
     extends LiveView[ReportsExample.Msg, ReportsExample.Model]:
   import ReportsExample.*
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     load
 
   def handleMessage(model: Model, ctx: MessageContext) =

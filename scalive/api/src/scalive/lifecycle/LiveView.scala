@@ -1,7 +1,7 @@
 package scalive
 
-import zio.ZIO
 import zio.http.URL
+import zio.{Task, ZIO}
 
 /** Defines a server-rendered view with typed messages and model state.
   *
@@ -21,7 +21,7 @@ trait LiveView[Msg, Model]:
 
   def hooks: LiveHooks[Msg, Model]            = LiveHooks.empty
   def pageTitle(model: Model): Option[String] = None
-  def mount(ctx: MountContext): LiveIO[Model]
+  def mount(ctx: MountContext): Task[Model]
 
   /** Handles a message against the current immutable model.
     *
@@ -35,12 +35,12 @@ trait LiveView[Msg, Model]:
     * @return
     *   a handler for one message
     */
-  def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
+  def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model]
   def view(model: Signal[Model]): HtmlElement[Msg]
 
 object LiveView:
   trait Eventless[Model] extends LiveView[Nothing, Model]:
-    final def handleMessage(model: Model, ctx: MessageContext): Nothing => LiveIO[Model] =
+    final def handleMessage(model: Model, ctx: MessageContext): Nothing => Task[Model] =
       _ => ZIO.succeed(model)
 
   /** A routed definition is deliberately not an unrouted [[LiveView]]. */
@@ -58,24 +58,24 @@ object LiveView:
       * Disconnected HTTP rendering and connected websocket admission invoke this method
       * independently.
       */
-    def mount(params: Params, ctx: MountContext): LiveIO[Model]
-    def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
+    def mount(params: Params, ctx: MountContext): Task[Model]
+    def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model]
     def handleParams(
       model: Model,
       params: Params,
       url: URL,
       ctx: ParamsContext
-    ): LiveIO[Model] = ZIO.succeed(model)
+    ): Task[Model] = ZIO.succeed(model)
     def handleParamsDecodeError(
       model: Model,
       error: LiveParamsCodec.DecodeError,
       url: URL,
       ctx: ParamsContext
-    ): LiveIO[Model] = ZIO.fail(error)
+    ): Task[Model] = ZIO.fail(error)
     def view(model: Signal[Model]): HtmlElement[Msg]
 
   object Routed:
     trait Eventless[Model, Params] extends Routed[Nothing, Model, Params]:
-      final def handleMessage(model: Model, ctx: MessageContext): Nothing => LiveIO[Model] =
+      final def handleMessage(model: Model, ctx: MessageContext): Nothing => Task[Model] =
         _ => ZIO.succeed(model)
 end LiveView

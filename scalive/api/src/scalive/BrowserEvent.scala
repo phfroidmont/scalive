@@ -14,9 +14,9 @@ final case class LiveEvent(
 /** A named event pushed from the server to the browser with a typed JSON payload.
   *
   * Pass this event and an `A` to `ctx.client.push`; a `zio.json.JsonEncoder[A]` is required and an
-  * encoding error fails the returned [[LiveIO]]. Browser JavaScript subscribes to the stored string
-  * name and interprets the encoded payload. The type is invariant in `A`, so an event cannot be
-  * widened to a different payload contract.
+  * encoding error fails the returned [[zio.Task]]. Browser JavaScript subscribes to the stored
+  * string name and interprets the encoded payload. The type is invariant in `A`, so an event cannot
+  * be widened to a different payload contract.
   *
   * @tparam A
   *   the payload pushed to the browser

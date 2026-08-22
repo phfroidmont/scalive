@@ -123,10 +123,10 @@ object UploadWorkerSpec extends ZIOSpecDefault:
     new UploadClientMetadata(name, None, size, "application/octet-stream", None, None)
 
   private def root(definition: LiveUploadDef[Chunk[Byte]]) = new LiveView[Message, Model]:
-    def mount(ctx: MountContext): LiveIO[Model] =
+    def mount(ctx: MountContext): Task[Model] =
       ctx.uploads.allow(definition).map(upload => Model(Some(upload), None, 0))
 
-    def handleMessage(model: Model, ctx: MessageContext): Message => LiveIO[Model] =
+    def handleMessage(model: Model, ctx: MessageContext): Message => Task[Model] =
       case Message.Add(amount) =>
         ctx.uploads.get(definition).map(upload => model.copy(upload = upload, count = model.count + amount))
       case Message.Refresh => ctx.uploads.get(definition).map(upload => model.copy(upload = upload))
@@ -433,7 +433,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
           instance = component(componentDef, "uploader")
           root = new LiveView[Boolean, Boolean]:
                    def mount(ctx: MountContext) = ZIO.succeed(true)
-                   def handleMessage(model: Boolean, ctx: MessageContext): Boolean => LiveIO[Boolean] =
+                   def handleMessage(model: Boolean, ctx: MessageContext): Boolean => Task[Boolean] =
                      shown => ZIO.succeed(shown)
                    def view(model: Signal[Boolean]) = div(model.when(div(instance.render(()))))
           outputs    <- Queue.unbounded[ConnectionOutput]

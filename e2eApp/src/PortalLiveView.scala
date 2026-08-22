@@ -6,7 +6,6 @@ import zio.schema.Schema
 import zio.schema.derived
 
 import scalive.*
-import scalive.LiveIO.given
 import scalive.Signal.*
 
 class PortalLiveView
@@ -14,31 +13,33 @@ class PortalLiveView
   import PortalLiveView.*
 
   def mount(_params: QueryParams, ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
-    model.copy(param = params.param)
+    ZIO.succeed(model.copy(param = params.param))
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks.empty.onRawEvent { (model, event, _) =>
-      if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
+      if event.bindingId != "sandbox:eval" then ZIO.succeed(LiveEventHookResult.cont(model))
       else
         evalCode(event.value) match
           case code if code.contains("send(self(), :tick)") =>
-            LiveEventHookResult.haltReply(
-              model.copy(count = model.count + 1),
-              Json.Obj("result" -> Json.Null)
+            ZIO.succeed(
+              LiveEventHookResult.haltReply(
+                model.copy(count = model.count + 1),
+                Json.Obj("result" -> Json.Null)
+              )
             )
           case _ => E2ESandboxEval.handle(model, event.bindingId, event.value)
     }
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.ToggleModal         => model.copy(renderModal = !model.renderModal)
+    case Msg.ToggleModal         => ZIO.succeed(model.copy(renderModal = !model.renderModal))
     case Msg.ToggleNestedPortals =>
-      model.copy(renderNestedPortals = !model.renderNestedPortals)
+      ZIO.succeed(model.copy(renderNestedPortals = !model.renderNestedPortals))
     case Msg.NestedPortalClick =>
-      model.copy(nestedPortalCount = model.nestedPortalCount + 1)
-    case Msg.Tick => model.copy(count = model.count + 1)
+      ZIO.succeed(model.copy(nestedPortalCount = model.nestedPortalCount + 1))
+    case Msg.Tick => ZIO.succeed(model.copy(count = model.count + 1))
 
   override def view(model: Signal[Model]) =
     val count = model.map(_.count)
@@ -275,10 +276,10 @@ object PortalLiveView:
 
   class NestedLive extends LiveView[NestedLive.Msg.type, Int]:
     def mount(ctx: MountContext) =
-      0
+      ZIO.succeed(0)
 
     def handleMessage(model: Int, ctx: MessageContext) =
-      (_: NestedLive.Msg.type) => model + 1
+      (_: NestedLive.Msg.type) => ZIO.succeed(model + 1)
 
     override def view(count: Signal[Int]) =
       div(
@@ -302,10 +303,10 @@ object PortalLiveView:
 
   class NestedTeleportedLive extends LiveView[NestedTeleportedLive.Msg.type, Unit]:
     def mount(ctx: MountContext) =
-      ()
+      ZIO.succeed(())
 
     def handleMessage(model: Unit, ctx: MessageContext) =
-      (_: NestedTeleportedLive.Msg.type) => model
+      (_: NestedTeleportedLive.Msg.type) => ZIO.succeed(model)
 
     override def view(model: Signal[Unit]) =
       div(

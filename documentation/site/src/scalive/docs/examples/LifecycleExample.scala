@@ -18,7 +18,7 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
 
   override def pageTitle(model: Model): Option[String] = Some(model.currentTitle)
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(
       Model(
         connectedMount = ctx.connection.isInstanceOf[Connection.Connected[?]],

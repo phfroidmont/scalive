@@ -14,7 +14,7 @@ final class SubscriptionClockExample(instanceId: String)
 
   private val ClockSubscription = subscriptionKey(instanceId)
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =

@@ -1,5 +1,7 @@
 package scalive
 
+import zio.Task
+
 trait LifecycleContext[+Connected]:
   def connection: Connection[Connected]
 
@@ -55,7 +57,7 @@ trait ComponentMessageContext[Props, Msg, Model] extends ConnectedMetadata:
   private[scalive] def emit[Output](
     channel: ComponentOutputChannel[Output],
     output: Output
-  ): LiveIO[Unit]
+  ): Task[Unit]
 
 trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext[ConnectedMetadata]:
   def hooks: ComponentHooks[Props, Msg, Model]

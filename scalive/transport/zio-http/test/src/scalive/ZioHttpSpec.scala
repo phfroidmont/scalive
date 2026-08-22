@@ -351,7 +351,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                            props: String,
                            model: String,
                            ctx: MessageContext
-                         ): String => LiveIO[String] = _ => ZIO.succeed(model)
+                         ): String => Task[String] = _ => ZIO.succeed(model)
                          def view(
                            props: Signal[String],
                            model: Signal[String],
@@ -366,7 +366,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                    def handleMessage(
                      model: Boolean,
                      ctx: MessageContext
-                   ): Nothing => LiveIO[Boolean] = identity
+                   ): Nothing => Task[Boolean] = identity
                    def view(model: Signal[Boolean]) =
                      div(first.render("first"), model.when(span(second.render("second"))))
           connectionConfig = ConnectionConfig.make(8, 8, 8, 8, 8).toOption.get

@@ -834,21 +834,21 @@ In `LiveContext.scala`, make safe methods concrete delegates and raw methods exp
 
 ```scala
 trait MountNavigation:
-  def pushNavigate(to: LiveLocation): LiveIO[Unit] = pushNavigateUnsafe(to.href)
-  def pushNavigateUnsafe(to: String): LiveIO[Unit]
+  def pushNavigate(to: LiveLocation): Task[Unit] = pushNavigateUnsafe(to.href)
+  def pushNavigateUnsafe(to: String): Task[Unit]
 
-  def replaceNavigate(to: LiveLocation): LiveIO[Unit] = replaceNavigateUnsafe(to.href)
-  def replaceNavigateUnsafe(to: String): LiveIO[Unit]
+  def replaceNavigate(to: LiveLocation): Task[Unit] = replaceNavigateUnsafe(to.href)
+  def replaceNavigateUnsafe(to: String): Task[Unit]
 
-  def redirect(to: LiveLocation): LiveIO[Unit] = redirectUnsafe(to.href)
-  def redirectUnsafe(to: String): LiveIO[Unit]
+  def redirect(to: LiveLocation): Task[Unit] = redirectUnsafe(to.href)
+  def redirectUnsafe(to: String): Task[Unit]
 
 trait Navigation extends MountNavigation:
-  def pushPatch(to: LiveLocation): LiveIO[Unit] = pushPatchUnsafe(to.href)
-  def pushPatchUnsafe(to: String): LiveIO[Unit]
+  def pushPatch(to: LiveLocation): Task[Unit] = pushPatchUnsafe(to.href)
+  def pushPatchUnsafe(to: String): Task[Unit]
 
-  def replacePatch(to: LiveLocation): LiveIO[Unit] = replacePatchUnsafe(to.href)
-  def replacePatchUnsafe(to: String): LiveIO[Unit]
+  def replacePatch(to: LiveLocation): Task[Unit] = replacePatchUnsafe(to.href)
+  def replacePatchUnsafe(to: String): Task[Unit]
 ```
 
 Rename the five runtime implementation methods to their unsafe names. Keep all `LiveNavigationCommand` cases string-based so socket and HTTP behavior do not change.

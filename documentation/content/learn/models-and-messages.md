@@ -12,8 +12,8 @@ type and accepts one message type:
 
 ```scala
 trait LiveView[Msg, Model]:
-  def mount(ctx: MountContext): LiveIO[Model]
-  def handleMessage(model: Model, ctx: MessageContext): Msg => LiveIO[Model]
+  def mount(ctx: MountContext): Task[Model]
+  def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model]
   def view(model: Signal[Model]): HtmlElement[Msg]
 ```
 
@@ -39,9 +39,9 @@ service, perform I/O, or fail. Learn only requires this small subset:
 
 | Form | Meaning here |
 | --- | --- |
-| `LiveIO[A]` | An effect that may fail with a `Throwable` or succeed with `A`; currently an alias for `Task[A]` |
-| `ZIO.succeed(value)` | Produce an already computed successful value |
-| `ZIO.attempt(expression)` | Evaluate synchronous code that may throw |
+| `Task[A]` | An effect that may fail with a `Throwable` or succeed with `A` |
+| `ZIO.succeed(value)` | Evaluate a non-throwing expression when the effect runs |
+| `ZIO.attempt(expression)` | Evaluate a synchronous expression that may throw |
 | `.map(f)` | Transform an effect's successful value |
 | `.flatMap(f)` or `for` | Sequence effects while using earlier results |
 | `.catchAll(f)` | Recover a failure with another effect |

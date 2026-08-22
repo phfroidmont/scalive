@@ -47,13 +47,13 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
       .onAsync((_, model, _, _) => order.update(_ :+ "async-hook").as(LiveHookResult.halt(model + 10)))
       .afterRender((_, _, _) => order.update(_ :+ "after-render"))
 
-    def mount(props: Int, ctx: MountContext): LiveIO[Int] =
+    def mount(props: Int, ctx: MountContext): Task[Int] =
       order.update(_ :+ "mount").as(0)
 
-    override def update(props: Int, model: Int, ctx: UpdateContext): LiveIO[Int] =
+    override def update(props: Int, model: Int, ctx: UpdateContext): Task[Int] =
       order.update(_ :+ s"update:$props").as(model + props)
 
-    def handleMessage(props: Int, model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+    def handleMessage(props: Int, model: Int, ctx: MessageContext): Int => Task[Int] =
       message => order.update(_ :+ "message") *> ctx.emit(model + message).as(model + message)
 
     def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]): HtmlElement[Int] =
@@ -63,8 +63,8 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
     instances: Vector[LiveComponentOutputInstance[Int, Int, Int, Int]],
     output: Ref[Vector[Int]]
   ): LiveView[RootMsg, Unit] = new LiveView[RootMsg, Unit]:
-    def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
-    def handleMessage(model: Unit, ctx: MessageContext): RootMsg => LiveIO[Unit] =
+    def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+    def handleMessage(model: Unit, ctx: MessageContext): RootMsg => Task[Unit] =
       case RootMsg.Output(value) => output.update(_ :+ value)
     def view(model: Signal[Unit]): HtmlElement[RootMsg] =
       div(instances.map(_.render(1, RootMsg.Output.apply))* )
@@ -169,7 +169,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val absent  = component(definition, "absent")
         val view = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
-          def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] = _ =>
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ =>
             ctx.components.sendUpdate(present, 2) *>
               ctx.components.sendUpdate(absent, 9) *>
               ctx.components.sendUpdate(present, 3)
@@ -197,13 +197,13 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
               ZIO.succeed(LiveHookResult.cont(model + 10))) *>
               ctx.hooks.event.attach("dynamic")((_, model, _, _) =>
                 ZIO.succeed(LiveHookResult.cont(model + 20))).as(0)
-          def handleMessage(props: Int, model: Int, ctx: MessageContext): Int => LiveIO[Int] =
+          def handleMessage(props: Int, model: Int, ctx: MessageContext): Int => Task[Int] =
             value => ZIO.succeed(model + value)
           def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) = div()
         val instance = component(definition, "hooks")
         val view = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
-          def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] = _ => ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
           def view(model: Signal[Unit]) = div(instance.render(1))
         for
           sink       <- Queue.unbounded[ConnectionOutput]
@@ -245,13 +245,13 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val pushed = ServerToBrowserEvent[Int]("component-effect")
         val definition = new LiveComponent[Unit, Unit, Unit]:
           def mount(props: Unit, ctx: MountContext) = ZIO.unit
-          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => Task[Unit] =
             _ => ctx.flash.put(FlashKind("info"), "from-component") *> ctx.client.push(pushed, 7)
           def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) = div()
         val instance = component(definition, "effects")
         val view = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
-          def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] = _ => ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
           def view(model: Signal[Unit]) = div(instance.render(()))
         for
           sink       <- Queue.unbounded[ConnectionOutput]
@@ -276,14 +276,14 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val kind = FlashKind("component-visible")
         val definition = new LiveComponent[Unit, String, Unit]:
           def mount(props: Unit, ctx: MountContext) = ZIO.unit
-          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): String => LiveIO[Unit] =
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): String => Task[Unit] =
             message => ctx.flash.put(kind, message)
           def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[String]) =
             div(scalive.flash(kind)(message => span(message)))
         val instance = component(definition, "flash-visible")
         val view = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
-          def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] = _ => ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
           def view(model: Signal[Unit]) = div(instance.render(()))
         for
           sink       <- Queue.unbounded[ConnectionOutput]
@@ -302,14 +302,14 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val kind = FlashKind("component-rollback")
         val definition = new LiveComponent[Unit, Unit, Unit]:
           def mount(props: Unit, ctx: MountContext) = ZIO.unit
-          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => Task[Unit] =
             _ => ctx.flash.put(kind, "must-not-commit") *> ZIO.fail(Exception("rollback"))
           def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
             div(scalive.flash(kind)(message => span(message)))
         val instance = component(definition, "flash-rollback")
         val view = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
-          def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] = _ => ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
           def view(model: Signal[Unit]) = div(instance.render(()))
         for
           sink       <- Queue.unbounded[ConnectionOutput]
@@ -331,13 +331,13 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val destination = URL.decode("/component-patch").toOption.get
         val definition = new LiveComponent[Unit, Unit, Unit]:
           def mount(props: Unit, ctx: MountContext) = ZIO.unit
-          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => Task[Unit] =
             _ => ctx.nav.pushPatchUnsafe(destination.encode)
           def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) = div()
         val instance = component(definition, "patch")
         val view = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
-          def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] = _ => ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
           def view(model: Signal[Unit]) = div(instance.render(()))
         for
           sink       <- Queue.unbounded[ConnectionOutput]
@@ -364,13 +364,13 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val destination = URL.decode("/component-redirect").toOption.get
         val definition = new LiveComponent[Unit, Unit, Unit]:
           def mount(props: Unit, ctx: MountContext) = ZIO.unit
-          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => Task[Unit] =
             _ => ctx.nav.redirectUnsafe(destination.encode)
           def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) = div()
         val instance = component(definition, "redirect")
         val view = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
-          def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] = _ => ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
           def view(model: Signal[Unit]) = div(instance.render(()))
         for
           sink       <- Queue.unbounded[ConnectionOutput]
@@ -447,7 +447,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
                          props: Unit,
                          model: Int,
                          ctx: MessageContext
-                       ): Int => LiveIO[Int] = message => ZIO.succeed(model + message)
+                       ): Int => Task[Int] = message => ZIO.succeed(model + message)
                        def view(
                          props: Signal[Unit],
                          model: Signal[Int],

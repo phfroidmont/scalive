@@ -5,7 +5,6 @@ import zio.http.URL
 import zio.json.ast.Json
 
 import scalive.*
-import scalive.LiveIO.given
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 
 class StreamLiveView()
@@ -28,14 +27,14 @@ class StreamLiveView()
     )
 
   override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
-    model.copy(extraItemWithId = params.isDefined)
+    ZIO.succeed(model.copy(extraItemWithId = params.isDefined))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     (msg: Msg) => handle(model, msg, ctx.streams)
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks.empty.onRawEvent { (model, event, ctx) =>
-      if event.bindingId != "sandbox:eval" then LiveEventHookResult.cont(model)
+      if event.bindingId != "sandbox:eval" then ZIO.succeed(LiveEventHookResult.cont(model))
       else
         evalCode(event.value) match
           case "socket.view.handle_event(\"reset-users\", %{}, socket)" =>
@@ -181,7 +180,7 @@ class StreamLiveView()
     )
   end view
 
-  private def handle(model: Model, msg: Msg, streams: Streams): LiveIO[Model] =
+  private def handle(model: Model, msg: Msg, streams: Streams): Task[Model] =
     msg match
       case Msg.DeleteUser(domId) =>
         streams.deleteByDomId(UsersStreamDef, domId).map(users => model.copy(users = users))
@@ -290,13 +289,13 @@ class StreamLiveView()
     streams: Streams
   )(
     setStream: LiveStream[User] => Model
-  ): LiveIO[Model] =
+  ): Task[Model] =
     domIdToUserId(prefix, domId) match
       case Some(id) =>
         streams
           .insert(definition, User(id, "updated"))
           .map(setStream)
-      case None => model
+      case None => ZIO.succeed(model)
 
   private def moveUserInStream(
     model: Model,
@@ -307,7 +306,7 @@ class StreamLiveView()
     streams: Streams
   )(
     setStream: LiveStream[User] => Model
-  ): LiveIO[Model] =
+  ): Task[Model] =
     domIdToUserId(prefix, domId) match
       case Some(id) =>
         streams
@@ -319,7 +318,7 @@ class StreamLiveView()
               at = at
             )
             .map(setStream)
-      case None => model
+      case None => ZIO.succeed(model)
 
   private def evalCode(value: Json): String =
     value match
@@ -392,7 +391,7 @@ class HealthyLiveView extends LiveView.Routed[HealthyLiveView.Msg, HealthyLiveVi
       .map(items => Model(category = category, items = items))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Msg) => model
+    (_: Msg) => ZIO.succeed(model)
 
   override def handleParams(model: Model, params: String, url: URL, ctx: ParamsContext) =
     val category = normalizeCategory(params)
@@ -450,7 +449,7 @@ class StreamResetLiveView()
       .map(items => Model(items = items, usePhxRemove = false))
 
   override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
-    model.copy(usePhxRemove = params.isDefined)
+    ZIO.succeed(model.copy(usePhxRemove = params.isDefined))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Filter =>
@@ -876,11 +875,11 @@ class StreamNestedComponentResetLiveView
     model: Model,
     id: String,
     streams: Streams
-  ): LiveIO[Model] =
-    if id.isEmpty then model
+  ): Task[Model] =
+    if id.isEmpty then ZIO.succeed(model)
     else
       model.parentsById.get(id) match
-        case None          => model
+        case None          => ZIO.succeed(model)
         case Some(current) =>
           for
             nested <- streams.reset(
@@ -898,7 +897,7 @@ class StreamNestedComponentResetLiveView
             parentsById = model.parentsById.updated(id, updatedParent)
           )
 
-  private def reorderParents(model: Model, streams: Streams): LiveIO[Model] =
+  private def reorderParents(model: Model, streams: Streams): Task[Model] =
     for
       parentA <- model.parentsById.get("a") match
                    case Some(value) => ZIO.succeed(value)
@@ -917,7 +916,7 @@ class StreamNestedComponentResetLiveView
     id: String,
     name: String,
     streams: Streams
-  ): LiveIO[ParentItem] =
+  ): Task[ParentItem] =
     val definition = nestedStreamDef(id)
     streams
       .create(definition, defaultNestedItems)
@@ -972,7 +971,7 @@ class StreamInsideForLiveView
       .map(items => Model(items = items))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Msg) => model
+    (_: Msg) => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     div(

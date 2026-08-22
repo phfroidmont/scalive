@@ -1,5 +1,7 @@
 package scalive.docs
 
+import zio.{Task, ZIO}
+
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
 import scalive.docs.model.*
@@ -559,7 +561,7 @@ final private[docs] class DocumentationPageLiveView(
   renderer: DocumentationRenderer)
     extends LiveView.Eventless[Unit]:
 
-  def mount(ctx: MountContext): LiveIO[Unit] = LiveIO.succeed(())
+  def mount(ctx: MountContext): Task[Unit] = ZIO.succeed(())
 
   override def pageTitle(model: Unit): Option[String] =
     Some(if page.route == "/" then "Scalive" else s"${page.metadata.title} | Scalive")

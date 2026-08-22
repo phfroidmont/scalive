@@ -71,7 +71,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
           sink <- Queue.unbounded[ConnectionOutput]
           root = new LiveView[Unit, Unit]:
                    def mount(ctx: MountContext) = ZIO.unit
-                   def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+                   def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] =
                      _ => ZIO.unit
                    def view(model: Signal[Unit]) = div(instance.render("connected"))
           connection <- RootConnection.start(config, metadata, root, sink.offer(_).unit)

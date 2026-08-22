@@ -70,11 +70,11 @@ profile definition also limits biography length:
 Create pristine form state during mount and store the
 @:apiSymbol(class:scalive.RootedForm)`RootedForm`@:@ in the model:
 
-`LiveIO[A]` is the effect returned from LiveView lifecycle methods, and
+`Task[A]` is the effect returned from LiveView lifecycle methods, and
 `ZIO.succeed` creates one that cannot fail.
 
 ```scala
-def mount(ctx: MountContext): LiveIO[Model] =
+def mount(ctx: MountContext): Task[Model] =
   ZIO.succeed(Model(Profile.Definition.initial()))
 ```
 

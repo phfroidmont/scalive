@@ -11,7 +11,7 @@ final class AsyncReportExample(instanceId: String)
 
   private val ReportTask = reportKey(instanceId)
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =

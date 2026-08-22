@@ -192,7 +192,7 @@ traits.
 
 Move or rewrite the public boundary in `scalive.api`:
 
-- lifecycle definitions, contexts, hooks, and `LiveIO`;
+- lifecycle definitions, contexts, hooks, and `Task`;
 - `Signal`, typed HTML, bindings, JS commands, and generated DOM definitions;
 - routes, locations, layouts, sessions, and mount aspects;
 - forms and public async, subscription, stream, and upload declarations;

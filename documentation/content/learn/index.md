@@ -46,7 +46,7 @@ A page reaches the DOM and becomes live in three stages:
    to create an independent connected model; it does not continue the
    disconnected model instance.
 3. **Live updates.** Browser interactions resolve to typed `Msg` values.
-   `handleMessage` proposes a model through `LiveIO`, the view graph
+   `handleMessage` proposes a model through `Task`, the view graph
    evaluates affected signals, and Scalive commits the model and sends the
    resulting diff. A rejoin cleans up connection-owned work and repeats the
    connected mount.

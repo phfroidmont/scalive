@@ -68,10 +68,10 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
       ZIO.scoped {
         val constructions = AtomicInteger(0)
         object Child extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
         object Parent extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] =
             div(liveView("child", {
               constructions.incrementAndGet()
@@ -96,10 +96,10 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           rootOutputs  <- Queue.bounded[ConnectionOutput](4)
           childOutputs <- Queue.bounded[ConnectionOutput](4)
           child = new LiveView.Eventless[Unit]:
-                    def mount(ctx: MountContext): LiveIO[Unit] = mounts.update(_ + 1)
+                    def mount(ctx: MountContext): Task[Unit] = mounts.update(_ + 1)
                     def view(model: Signal[Unit]): HtmlElement[Nothing] = div("child")
           parent = new LiveView.Eventless[Unit]:
-                     def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+                     def mount(ctx: MountContext): Task[Unit] = ZIO.unit
                      def view(model: Signal[Unit]): HtmlElement[Nothing] =
                        div(liveView("child", {
                          constructions.incrementAndGet()
@@ -132,11 +132,11 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
       ZIO.scoped {
         val constructions = AtomicInteger(0)
         object Child extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
         val parent = new LiveView[Unit, Boolean]:
-          def mount(ctx: MountContext): LiveIO[Boolean] = ZIO.succeed(true)
-          def handleMessage(model: Boolean, ctx: MessageContext): Unit => LiveIO[Boolean] =
+          def mount(ctx: MountContext): Task[Boolean] = ZIO.succeed(true)
+          def handleMessage(model: Boolean, ctx: MessageContext): Unit => Task[Boolean] =
             _ => ZIO.succeed(false)
           def view(model: Signal[Boolean]): HtmlElement[Unit] =
             button(
@@ -180,10 +180,10 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
       ZIO.scoped {
         val constructions = AtomicInteger(0)
         object Child extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
         object Parent extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] =
             div(liveView("child", {
               constructions.incrementAndGet()
@@ -210,12 +210,12 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
     test("default mount failure is isolated while linked runtime failure closes the exact parent") {
       ZIO.scoped {
         def parent(linked: Boolean, failMount: Boolean) = new LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] =
             val child = new LiveView[Unit, Unit]:
-              def mount(ctx: MountContext): LiveIO[Unit] =
+              def mount(ctx: MountContext): Task[Unit] =
                 if failMount then ZIO.fail(Exception("mount failed")) else ZIO.unit
-              def handleMessage(model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+              def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] =
                 _ => ZIO.fail(Exception("runtime failed"))
               def view(model: Signal[Unit]): HtmlElement[Unit] = button(on.click(()))
             div(
@@ -296,10 +296,10 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
     test("linked mount failure notifies before closing the exact parent") {
       ZIO.scoped {
         object Child extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.fail(Exception("mount failed"))
+          def mount(ctx: MountContext): Task[Unit] = ZIO.fail(Exception("mount failed"))
           def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
         object Parent extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] =
             div(liveView("child", Child, linkParentOnCrash = true))
 
@@ -350,12 +350,12 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           childOutput  <- Queue.bounded[ConnectionOutput](4)
           secondOutput <- Queue.bounded[ConnectionOutput](4)
           child = new LiveView[Unit, Int]:
-                    def mount(ctx: MountContext): LiveIO[Int] = mounts.updateAndGet(_ + 1)
-                    def handleMessage(model: Int, ctx: MessageContext): Unit => LiveIO[Int] =
+                    def mount(ctx: MountContext): Task[Int] = mounts.updateAndGet(_ + 1)
+                    def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
                       _ => ZIO.fail(Exception("runtime failed"))
                     def view(model: Signal[Int]): HtmlElement[Unit] = button(on.click(()))
           parent = new LiveView.Eventless[Unit]:
-                     def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+                     def mount(ctx: MountContext): Task[Unit] = ZIO.unit
                      def view(model: Signal[Unit]): HtmlElement[Nothing] =
                        div(liveView("child", child))
           root         <- startRoot(value, parent, rootOutput)
@@ -400,7 +400,7 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
     test("a stale retirement wait ignores a replacement with reused coordinates") {
       ZIO.scoped {
         object Root extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] = div("root")
 
         val lifecycle = LifecycleId(500L)
@@ -432,20 +432,20 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           secondChildOutput <- Queue.bounded[ConnectionOutput](4)
           thirdChildOutput <- Queue.bounded[ConnectionOutput](4)
           child = new LiveView[Unit, Int]:
-                    def mount(ctx: MountContext): LiveIO[Int] = mounts.updateAndGet(_ + 1).as(0)
-                    def handleMessage(model: Int, ctx: MessageContext): Unit => LiveIO[Int] =
+                    def mount(ctx: MountContext): Task[Int] = mounts.updateAndGet(_ + 1).as(0)
+                    def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
                       _ => ZIO.succeed(model + 1)
                     def view(model: Signal[Int]): HtmlElement[Unit] =
                       button(on.click(()), model.map(_.toString))
           parent = new LiveView.Eventless[Unit]:
-                     def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+                     def mount(ctx: MountContext): Task[Unit] = ZIO.unit
                      def view(model: Signal[Unit]): HtmlElement[Nothing] =
                        div(liveView("sticky-child", {
                          constructions.incrementAndGet()
                          child
                        }, sticky = true))
           nonStickyParent = new LiveView.Eventless[Unit]:
-                               def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+                               def mount(ctx: MountContext): Task[Unit] = ZIO.unit
                                def view(model: Signal[Unit]): HtmlElement[Nothing] =
                                  div(liveView("sticky-child", {
                                    constructions.incrementAndGet()
@@ -529,14 +529,14 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
     test("child leave closes descendants and supervisor close closes every remaining lifecycle") {
       ZIO.scoped {
         object Grandchild extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] = div("grandchild")
         object Child extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] =
             div(liveView("grandchild", Grandchild))
         object Parent extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
           def view(model: Signal[Unit]): HtmlElement[Nothing] = div(liveView("child", Child))
 
         for
@@ -591,7 +591,7 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           rootOutput    <- Queue.bounded[ConnectionOutput](4)
           childOutput   <- Queue.bounded[ConnectionOutput](4)
           child = new LiveView.Eventless[Unit]:
-                    def mount(ctx: MountContext): LiveIO[Unit] =
+                    def mount(ctx: MountContext): Task[Unit] =
                       ctx.connection match
                         case Connection.Connected(connected) =>
                           connected.subscriptions.start(
@@ -604,7 +604,7 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
                         case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
                     def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
           parent = new LiveView.Eventless[Unit]:
-                     def mount(ctx: MountContext): LiveIO[Unit] =
+                     def mount(ctx: MountContext): Task[Unit] =
                        ctx.connection match
                          case Connection.Connected(connected) =>
                            connected.subscriptions.start(

@@ -1,6 +1,6 @@
 package scalive.docs.examples
 
-import zio.ZIO
+import zio.{Task, ZIO}
 
 import scalive.*
 import scalive.codecs.BooleanAsTrueFalseStringEncoder
@@ -12,7 +12,7 @@ final class NavigationExample extends LiveView[NavigationExample.Msg, Navigation
 
   private val ariaPressed = htmlAttr("aria-pressed", BooleanAsTrueFalseStringEncoder)
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(Model.initial)
 
   def handleMessage(model: Model, ctx: MessageContext) =

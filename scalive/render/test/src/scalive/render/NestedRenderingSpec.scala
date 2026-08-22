@@ -1,5 +1,6 @@
 package scalive.render
 
+import zio.Task
 import zio.ZIO
 import zio.test.*
 
@@ -7,7 +8,7 @@ import scalive.*
 
 object NestedRenderingSpec extends ZIOSpecDefault:
   object ChildView extends LiveView.Eventless[Unit]:
-    def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+    def mount(ctx: MountContext): Task[Unit] = ZIO.unit
     def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
 
   private def answer(
@@ -82,8 +83,8 @@ object NestedRenderingSpec extends ZIOSpecDefault:
     },
     test("component children must have nested placeholders finalized") {
       object Component extends LiveComponent[Unit, Unit, Unit]:
-        def mount(props: Unit, ctx: MountContext): LiveIO[Unit] = ZIO.unit
-        def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => LiveIO[Unit] =
+        def mount(props: Unit, ctx: MountContext): Task[Unit] = ZIO.unit
+        def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => Task[Unit] =
           _ => ZIO.unit
         def view(
           props: Signal[Unit],

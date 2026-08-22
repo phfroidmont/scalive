@@ -1,5 +1,6 @@
 package scalive.runtime.connection
 
+import zio.Task
 import zio.UIO
 import zio.ZIO
 import zio.http.URL
@@ -23,7 +24,7 @@ final private[scalive] class DisconnectedRootTurn[Msg, Model] private[connection
     initial: Model,
     destination: URL,
     prepared: RootParamsHandler[Msg, Model]
-  ): LiveIO[Model] =
+  ): Task[Model] =
     val context = RootParamsContext[Msg, Model](
       metadata,
       destination,
@@ -33,7 +34,7 @@ final private[scalive] class DisconnectedRootTurn[Msg, Model] private[connection
     val hooked =
       if prepared.runHooks then
         journal.hookRegistry[Msg, Model].flatMap { registry =>
-          registry.params.foldLeft[LiveIO[LiveHookResult[Model]]](
+          registry.params.foldLeft[Task[LiveHookResult[Model]]](
             ZIO.succeed(LiveHookResult.cont(initial))
           ) { (effect, hook) =>
             effect.flatMap {
@@ -49,7 +50,7 @@ final private[scalive] class DisconnectedRootTurn[Msg, Model] private[connection
       case LiveHookResult.Continue(model) => prepared.run(model, context)
     }
 
-  def runAfterRender(model: Model): LiveIO[Unit] =
+  def runAfterRender(model: Model): Task[Unit] =
     for
       hooks <- journal.hookRegistry[Msg, Model]
       context = RootAfterRenderContext[Msg, Model](metadata, journal, connected = false)
@@ -69,7 +70,7 @@ private[scalive] object DisconnectedRootTurn:
     hooks: LiveHooks[Msg, Model],
     initialUrl: URL,
     initialFlash: Map[FlashKind, String]
-  ): LiveIO[DisconnectedRootTurn[Msg, Model]] =
+  ): Task[DisconnectedRootTurn[Msg, Model]] =
     for
       lifecycle <-
         ZIO

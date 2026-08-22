@@ -1,5 +1,6 @@
 package scaliveapi
 
+import zio.ZIO
 import zio.test.*
 
 object ComponentApiSpec extends ZIOSpecDefault:
@@ -22,10 +23,10 @@ object ComponentApiSpec extends ZIOSpecDefault:
             extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
           object Msg
 
-          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(())
 
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-            (_: Msg.type) => LiveIO.succeed(())
+            (_: Msg.type) => ZIO.succeed(())
 
           override def view(
             props: Signal[Unit],
@@ -46,10 +47,10 @@ object ComponentApiSpec extends ZIOSpecDefault:
             extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
           object Msg
 
-          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(())
 
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-            (_: Msg.type) => LiveIO.succeed(())
+            (_: Msg.type) => ZIO.succeed(())
 
           override def view(
             props: Signal[Unit],
@@ -70,10 +71,10 @@ object ComponentApiSpec extends ZIOSpecDefault:
             extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
           object Msg
 
-          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(())
 
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-            (_: Msg.type) => LiveIO.succeed(())
+            (_: Msg.type) => ZIO.succeed(())
 
           override def view(
             props: Signal[Unit],
@@ -95,10 +96,10 @@ object ComponentApiSpec extends ZIOSpecDefault:
             extends LiveComponent[String, CounterComponent.Msg.type, Int]:
           object Msg
 
-          def mount(props: String, ctx: MountContext) = LiveIO.succeed(0)
+          def mount(props: String, ctx: MountContext) = ZIO.succeed(0)
 
           def handleMessage(props: String, model: Int, ctx: MessageContext) =
-            (_: Msg.type) => LiveIO.succeed(model + 1)
+            (_: Msg.type) => ZIO.succeed(model + 1)
 
           override def view(
             props: Signal[String],
@@ -124,10 +125,10 @@ object ComponentApiSpec extends ZIOSpecDefault:
             extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
           object Msg
 
-          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(())
 
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-            (_: Msg.type) => LiveIO.succeed(())
+            (_: Msg.type) => ZIO.succeed(())
 
           override def view(
             props: Signal[Unit],
@@ -147,10 +148,10 @@ object ComponentApiSpec extends ZIOSpecDefault:
         import scalive.*
 
         object LabelComponent extends LiveComponent[String, Unit, Unit]:
-          def mount(props: String, ctx: MountContext) = LiveIO.succeed(())
+          def mount(props: String, ctx: MountContext) = ZIO.succeed(())
 
           def handleMessage(props: String, model: Unit, ctx: MessageContext) =
-            (_: Unit) => LiveIO.succeed(())
+            (_: Unit) => ZIO.succeed(())
 
           override def view(
             props: Signal[String],
@@ -177,7 +178,7 @@ object ComponentApiSpec extends ZIOSpecDefault:
             extends LiveComponent.WithOutput[Unit, CounterComponent.Msg.type, Int, Int]:
           object Msg
 
-          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(0)
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
 
           def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
             (_: Msg.type) => ctx.emit(model + 1).as(model + 1)
@@ -208,7 +209,7 @@ object ComponentApiSpec extends ZIOSpecDefault:
             extends LiveComponent.WithOutput[Unit, CounterComponent.Msg.type, Int, Int]:
           object Msg
 
-          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(0)
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
 
           def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
             (_: Msg.type) => ctx.emit(model + 1).as(model + 1)
@@ -231,9 +232,9 @@ object ComponentApiSpec extends ZIOSpecDefault:
 
         object CounterComponent
             extends LiveComponent.WithOutput[Unit, Unit, Unit, Int]:
-          def mount(props: Unit, ctx: MountContext) = LiveIO.succeed(())
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(())
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-            (_: Unit) => LiveIO.succeed(())
+            (_: Unit) => ZIO.succeed(())
           override def view(
             props: Signal[Unit],
             model: Signal[Unit],
@@ -254,7 +255,7 @@ object ComponentApiSpec extends ZIOSpecDefault:
             extends LiveComponent.WithOutput[Unit, Unit, Unit, Int]:
           def mount(props: Unit, ctx: MountContext) = ctx.emit(1).as(())
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
-            (_: Unit) => LiveIO.succeed(())
+            (_: Unit) => ZIO.succeed(())
           override def view(
             props: Signal[Unit],
             model: Signal[Unit],

@@ -1,15 +1,15 @@
 import JsLiveView.*
+import zio.ZIO
 
 import scalive.*
-import scalive.LiveIO.given
 
 class JsLiveView extends LiveView[Msg, Model]:
 
   def mount(ctx: MountContext) =
-    Model(count = 0)
+    ZIO.succeed(Model(count = 0))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Increment => model.copy(count = model.count + 1)
+    case Msg.Increment => ZIO.succeed(model.copy(count = model.count + 1))
 
   override def view(model: Signal[Model]) =
     div(

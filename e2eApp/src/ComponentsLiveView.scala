@@ -1,23 +1,23 @@
 import ComponentsLiveView.*
+import zio.ZIO
 import zio.http.URL
 import zio.schema.Schema
 import zio.schema.derived
 
 import scalive.*
-import scalive.LiveIO.given
 
 class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
 
   def mount(_params: UrlParams, ctx: MountContext) =
-    Model(activeTab = "focus_wrap")
+    ZIO.succeed(Model(activeTab = "focus_wrap"))
 
   override def handleParams(model: Model, params: UrlParams, _url: URL, ctx: ParamsContext) =
     val _   = ctx
     val tab = params.tab.getOrElse("focus_wrap")
-    model.copy(activeTab = tab)
+    ZIO.succeed(model.copy(activeTab = tab))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.SetTab(tab) => model.copy(activeTab = tab)
+    case Msg.SetTab(tab) => ZIO.succeed(model.copy(activeTab = tab))
 
   override def view(model: Signal[Model]) =
     val focusWrap = E2ERoutes.components.location(UrlParams(Some("focus_wrap")))

@@ -1,27 +1,30 @@
 import zio.json.ast.Json
+import zio.{Task, ZIO}
 
 import scalive.*
 
 object E2ESandboxEval:
-  def handle[Model](model: Model, event: String, value: Json): LiveEventHookResult[Model] =
-    if event != "sandbox:eval" then LiveEventHookResult.cont(model)
-    else
-      val code =
-        value match
-          case Json.Obj(fields) =>
-            fields.collectFirst { case ("value", Json.Str(v)) => v }.getOrElse("")
-          case _ => ""
+  def handle[Model](model: Model, event: String, value: Json): Task[LiveEventHookResult[Model]] =
+    ZIO.succeed {
+      if event != "sandbox:eval" then LiveEventHookResult.cont(model)
+      else
+        val code =
+          value match
+            case Json.Obj(fields) =>
+              fields.collectFirst { case ("value", Json.Str(v)) => v }.getOrElse("")
+            case _ => ""
 
-      val result =
-        code match
-          case value if value.contains("inspect(self())") =>
-            Json.Obj("lv_pid" -> Json.Arr(Json.Str("0"), Json.Str("0"), Json.Str("0")))
-          case "socket.assigns.items" =>
-            extractProductField(model, "items").map(toJson).getOrElse(Json.Null)
-          case "socket.assigns" => toJson(model)
-          case _                => Json.Null
+        val result =
+          code match
+            case value if value.contains("inspect(self())") =>
+              Json.Obj("lv_pid" -> Json.Arr(Json.Str("0"), Json.Str("0"), Json.Str("0")))
+            case "socket.assigns.items" =>
+              extractProductField(model, "items").map(toJson).getOrElse(Json.Null)
+            case "socket.assigns" => toJson(model)
+            case _                => Json.Null
 
-      LiveEventHookResult.haltReply(model, Json.Obj("result" -> result))
+        LiveEventHookResult.haltReply(model, Json.Obj("result" -> result))
+    }
 
   private def extractProductField(value: Any, name: String): Option[Any] =
     value match

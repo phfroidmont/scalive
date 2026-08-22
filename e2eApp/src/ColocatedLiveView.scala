@@ -1,15 +1,15 @@
 import ColocatedLiveView.*
+import zio.ZIO
 
 import scalive.*
-import scalive.LiveIO.given
 
 class ColocatedLiveView extends LiveView[Msg, Model]:
 
   def mount(ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.SubmitPhone(phone) => model.copy(phone = phone)
+    case Msg.SubmitPhone(phone) => ZIO.succeed(model.copy(phone = phone))
     case Msg.PushJs             =>
       ctx.client.exec(JS.toggle(to = DomSelector.css("#hello"))).as(model)
 

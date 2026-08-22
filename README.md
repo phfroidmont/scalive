@@ -23,7 +23,6 @@ The frozen legacy behavior oracle remains available at tag
 
 ```scala
 import scalive.*
-import scalive.LiveIO.given
 
 import zio.*
 
@@ -32,7 +31,7 @@ object CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
     case Increment
     case Decrement
 
-  def mount(ctx: MountContext): LiveIO[Int] =
+  def mount(ctx: MountContext): Task[Int] =
     ZIO.succeed(0)
 
   def handleMessage(model: Int, ctx: MessageContext) =

@@ -25,12 +25,12 @@ object ManagedSubscriptionsSpec extends ZIOSpecDefault:
     case Value(value: Int)
 
   private final class Fixture extends LiveView[Message, Vector[Int]]:
-    def mount(ctx: MountContext): LiveIO[Vector[Int]] = ZIO.succeed(Vector.empty)
+    def mount(ctx: MountContext): Task[Vector[Int]] = ZIO.succeed(Vector.empty)
 
     def handleMessage(
       model: Vector[Int],
       ctx: MessageContext
-    ): Message => LiveIO[Vector[Int]] =
+    ): Message => Task[Vector[Int]] =
       case Message.Start(key, delivery, stream) =>
         ctx.subscriptions.start(key, delivery)(stream).as(model)
       case Message.Replace(key, delivery, stream) =>

@@ -5,6 +5,7 @@ import java.util.Locale
 import zio.http.URL
 import zio.schema.Schema
 import zio.schema.derived
+import zio.{Task, ZIO}
 
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
@@ -35,16 +36,16 @@ final private[docs] class DocumentationExamplesLiveView(
   def mount(
     params: DocumentationExamplesParams,
     ctx: MountContext
-  ): LiveIO[DocumentationExamplesModel] =
-    LiveIO.succeed(DocumentationExamplesModel(normalize(params)))
+  ): Task[DocumentationExamplesModel] =
+    ZIO.succeed(DocumentationExamplesModel(normalize(params)))
 
   override def handleParams(
     model: DocumentationExamplesModel,
     params: DocumentationExamplesParams,
     url: URL,
     ctx: ParamsContext
-  ): LiveIO[DocumentationExamplesModel] =
-    LiveIO.succeed(DocumentationExamplesModel(normalize(params)))
+  ): Task[DocumentationExamplesModel] =
+    ZIO.succeed(DocumentationExamplesModel(normalize(params)))
 
   override def pageTitle(model: DocumentationExamplesModel): Option[String] =
     Some(s"${page.metadata.title} | Scalive")

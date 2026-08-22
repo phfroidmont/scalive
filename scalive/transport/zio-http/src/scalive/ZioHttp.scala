@@ -578,7 +578,7 @@ object ZioHttp:
             prepareParams = destination =>
               definition.pathCodec.decode(destination.path) match
                 case Left(error) =>
-                  LiveIO.succeed(
+                  ZIO.succeed(
                     RootParamsHandler(
                       runHooks = false,
                       (model, ctx) =>

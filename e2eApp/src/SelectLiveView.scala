@@ -1,16 +1,16 @@
 import SelectLiveView.*
+import zio.ZIO
 
 import scalive.*
-import scalive.LiveIO.given
 
 class SelectLiveView extends LiveView[Msg, Model]:
 
   def mount(ctx: MountContext) =
-    Model(selected = "2", validated = false)
+    ZIO.succeed(Model(selected = "2", validated = false))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeSelected(value) =>
-      model.copy(selected = value, validated = true)
+      ZIO.succeed(model.copy(selected = value, validated = true))
 
   override def view(model: Signal[Model]) =
     val selectedValue = model.map(_.selected)

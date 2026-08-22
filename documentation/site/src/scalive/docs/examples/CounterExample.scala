@@ -1,6 +1,6 @@
 package scalive.docs.examples
 
-import zio.ZIO
+import zio.{Task, ZIO}
 
 import scalive.*
 
@@ -8,7 +8,7 @@ import scalive.*
 final class CounterExample extends LiveView[CounterExample.Msg, CounterExample.Model]:
   import CounterExample.*
 
-  def mount(ctx: MountContext): LiveIO[Model] =
+  def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(Model(count = 0))
 
   def handleMessage(model: Model, ctx: MessageContext) =

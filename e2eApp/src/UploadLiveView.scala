@@ -105,7 +105,7 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
     )
   end view
 
-  private def refreshUpload(model: Model, uploads: Uploads): LiveIO[Model] =
+  private def refreshUpload(model: Model, uploads: Uploads): Task[Model] =
     uploads.get(model.upload.definition).map {
       case Some(upload) => model.copy(upload = upload)
       case None         => model
@@ -120,7 +120,7 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
       autoUpload = autoUpload
     )
 
-  private def saveCompletedEntries(model: Model, uploads: Uploads): LiveIO[Model] =
+  private def saveCompletedEntries(model: Model, uploads: Uploads): Task[Model] =
     uploads
       .consumeCompleted(model.upload.definition) { entry =>
         persistUploadedFile(entry.client.fileName, entry.result)

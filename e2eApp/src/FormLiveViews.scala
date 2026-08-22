@@ -3,7 +3,6 @@ import zio.http.URL
 import zio.json.ast.Json
 
 import scalive.*
-import scalive.LiveIO.given
 import scalive.codecs.{BooleanAsAttrPresenceEncoder, StringAsIsEncoder}
 
 private val fieldset = HtmlTag("fieldset")
@@ -44,10 +43,10 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
   import FormLiveView.*
 
   def mount(_params: FormQueryParams, ctx: MountContext) =
-    Model(query = initialQuery)
+    ZIO.succeed(Model(query = initialQuery))
 
   override def handleParams(model: Model, params: FormQueryParams, _url: URL, ctx: ParamsContext) =
-    model.copy(query = params)
+    ZIO.succeed(model.copy(query = params))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(event) =>
@@ -57,18 +56,19 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
     case Msg.CustomRecovery(_) =>
       model.query.autoRecover match
         case Some("patch-recovery") => ctx.nav.pushPatchUnsafe("/form?patched=true").as(model)
-        case _ => model.copy(values = model.values.updated("b", "custom value from server"))
-    case Msg.ButtonTest => model
+        case _                      =>
+          ZIO.succeed(model.copy(values = model.values.updated("b", "custom value from server")))
+    case Msg.ButtonTest => ZIO.succeed(model)
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks
       .empty[Msg, Model].onRawEvent { (model: Model, event: LiveEvent, _) =>
-        if event.cid.nonEmpty then LiveEventHookResult.cont(model)
+        if event.cid.nonEmpty then ZIO.succeed(LiveEventHookResult.cont(model))
         else if event.bindingId == "sandbox:eval" then
           E2ESandboxEval.handle(model, event.bindingId, event.value)
-        else LiveEventHookResult.cont(applyRawFormValue(model, event.value))
+        else ZIO.succeed(LiveEventHookResult.cont(applyRawFormValue(model, event.value)))
       }.onRawEvent { (model: Model, event: LiveEvent, ctx: MessageContext) =>
-        if event.cid.nonEmpty then LiveEventHookResult.cont(model)
+        if event.cid.nonEmpty then ZIO.succeed(LiveEventHookResult.cont(model))
         else
           event.bindingId match
             case "validate" =>
@@ -81,13 +81,15 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
               maybeAwait(model, "save")
                 .map(_ => LiveEventHookResult.halt(model.copy(submitted = true)))
             case "custom-recovery" =>
-              LiveEventHookResult.halt(
-                model.copy(values = model.values.updated("b", "custom value from server"))
+              ZIO.succeed(
+                LiveEventHookResult.halt(
+                  model.copy(values = model.values.updated("b", "custom value from server"))
+                )
               )
             case "patch-recovery" =>
               ctx.nav.pushPatchUnsafe("/form?patched=true").as(LiveEventHookResult.halt(model))
-            case "button-test" => LiveEventHookResult.halt(model)
-            case _             => LiveEventHookResult.cont(model)
+            case "button-test" => ZIO.succeed(LiveEventHookResult.halt(model))
+            case _             => ZIO.succeed(LiveEventHookResult.cont(model))
       }
 
   override def view(model: Signal[Model]) =
@@ -283,10 +285,10 @@ object FormLiveView:
       case Validate(event: FormEvent[FormData])
 
     def mount(props: Props, ctx: MountContext) =
-      Model(props.query, props.values)
+      ZIO.succeed(Model(props.query, props.values))
 
     override def update(props: Props, model: Model, ctx: UpdateContext) =
-      model.copy(query = props.query)
+      ZIO.succeed(model.copy(query = props.query))
 
     override def hooks: ComponentLiveHooks[Props, Msg, Model] =
       ComponentLiveHooks.empty.onRawEvent { (_, model, event, ctx) =>
@@ -301,19 +303,21 @@ object FormLiveView:
             maybeAwait(model.query, "save")
               .map(_ => LiveEventHookResult.halt(model.copy(submitted = true)))
           case "custom-recovery" =>
-            LiveEventHookResult.halt(
-              model.copy(values = model.values.updated("b", "custom value from server"))
+            ZIO.succeed(
+              LiveEventHookResult.halt(
+                model.copy(values = model.values.updated("b", "custom value from server"))
+              )
             )
           case "patch-recovery" =>
             ctx.nav.pushPatchUnsafe("/form?patched=true").as(LiveEventHookResult.halt(model))
-          case "button-test"             => LiveEventHookResult.halt(model)
+          case "button-test"             => ZIO.succeed(LiveEventHookResult.halt(model))
           case _ if event.kind == "form" =>
             maybeAwait(model.query, "validate").map { _ =>
               LiveEventHookResult.halt(
                 model.copy(values = model.values ++ rawFormData(event).asMap)
               )
             }
-          case _ => LiveEventHookResult.cont(model)
+          case _ => ZIO.succeed(LiveEventHookResult.cont(model))
       }
 
     def handleMessage(props: Props, model: Model, ctx: MessageContext) =
@@ -343,7 +347,7 @@ end FormLiveView
 
 class NestedFormLiveView extends LiveView.Routed[Unit, FormQueryParams, FormQueryParams]:
   def mount(params: FormQueryParams, ctx: MountContext) =
-    params
+    ZIO.succeed(params)
 
   override def handleParams(
     model: FormQueryParams,
@@ -351,10 +355,10 @@ class NestedFormLiveView extends LiveView.Routed[Unit, FormQueryParams, FormQuer
     _url: URL,
     ctx: ParamsContext
   ) =
-    params
+    ZIO.succeed(params)
 
   def handleMessage(model: FormQueryParams, ctx: MessageContext) =
-    (_: Unit) => model
+    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[FormQueryParams]) =
     div(liveView("nested", model)(NestedFormContentLiveView(_)))
@@ -364,7 +368,7 @@ private class NestedFormContentLiveView(initialQuery: FormQueryParams)
   private val delegate = FormLiveView(initialQuery)
 
   def mount(ctx: MountContext) =
-    FormLiveView.Model(query = initialQuery)
+    ZIO.succeed(FormLiveView.Model(query = initialQuery))
 
   override def hooks = delegate.hooks
 
@@ -383,14 +387,14 @@ class FormDynamicInputsLiveView
   import FormDynamicInputsLiveView.*
 
   def mount(_params: FormQueryParams, ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   override def handleParams(model: Model, params: FormQueryParams, _url: URL, ctx: ParamsContext) =
-    model.copy(checkboxes = params.checkboxes)
+    ZIO.succeed(model.copy(checkboxes = params.checkboxes))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate(event) => updateFromEvent(model, event)
-    case Msg.Save(event)     => updateFromEvent(model, event).copy(submitted = true)
+    case Msg.Validate(event) => ZIO.succeed(updateFromEvent(model, event))
+    case Msg.Save(event)     => ZIO.succeed(updateFromEvent(model, event).copy(submitted = true))
 
   override def view(model: Signal[Model]) =
     val name       = model.map(_.name)
@@ -532,7 +536,7 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(_) => E2ELatencyGate.await("validate") *> inc(model, ctx)
     case Msg.Save(_)     => E2ELatencyGate.await("save") *> inc(model, ctx)
-    case Msg.Ping        => model
+    case Msg.Ping        => ZIO.succeed(model)
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks.empty.onRawEvent { (model, event, _) =>
@@ -592,16 +596,16 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
   import FormFeedbackLiveView.*
 
   def mount(ctx: MountContext) =
-    Model()
+    ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate(_) => model.copy(validateCount = model.validateCount + 1)
+    case Msg.Validate(_) => ZIO.succeed(model.copy(validateCount = model.validateCount + 1))
     case Msg.Submit(_)   =>
-      model.copy(submitCount = model.submitCount + 1, feedbackUsed = true)
-    case Msg.Inc            => model.copy(count = model.count + 1)
-    case Msg.Dec            => model.copy(count = model.count - 1)
+      ZIO.succeed(model.copy(submitCount = model.submitCount + 1, feedbackUsed = true))
+    case Msg.Inc            => ZIO.succeed(model.copy(count = model.count + 1))
+    case Msg.Dec            => ZIO.succeed(model.copy(count = model.count - 1))
     case Msg.ToggleFeedback =>
-      model.copy(feedback = !model.feedback, feedbackUsed = false)
+      ZIO.succeed(model.copy(feedback = !model.feedback, feedbackUsed = false))
 
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks.empty.onRawEvent { (model, event, _) =>
@@ -616,7 +620,7 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
               .exists(data => data.contains("myfeedback") && !data.contains("_unused_myfeedback"))
             model.copy(feedbackUsed = usedFeedback)
           case _ => model
-        LiveEventHookResult.cont(nextModel)
+        ZIO.succeed(LiveEventHookResult.cont(nextModel))
     }
 
   override def view(model: Signal[Model]) =

@@ -1,5 +1,7 @@
 package scalive.docs
 
+import zio.{Task, ZIO}
+
 import scalive.*
 import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
@@ -180,7 +182,7 @@ final private[docs] class DocumentationHomeLiveView(
   renderer: DocumentationRenderer)
     extends LiveView.Eventless[Unit]:
 
-  def mount(ctx: MountContext): LiveIO[Unit] = LiveIO.succeed(())
+  def mount(ctx: MountContext): Task[Unit] = ZIO.succeed(())
 
   override def pageTitle(model: Unit): Option[String] = Some("Scalive")
 

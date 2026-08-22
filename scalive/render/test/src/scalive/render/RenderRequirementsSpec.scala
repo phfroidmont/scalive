@@ -1,5 +1,6 @@
 package scalive.render
 
+import zio.Task
 import zio.ZIO
 import zio.test.*
 
@@ -10,8 +11,8 @@ import scalive.streams.LiveStreamIdentity
 
 object RenderRequirementsSpec extends ZIOSpecDefault:
   object PlainComponent extends LiveComponent[String, String, Unit]:
-    def mount(props: String, ctx: MountContext): LiveIO[Unit] = ZIO.unit
-    def handleMessage(props: String, model: Unit, ctx: MessageContext): String => LiveIO[Unit] =
+    def mount(props: String, ctx: MountContext): Task[Unit] = ZIO.unit
+    def handleMessage(props: String, model: Unit, ctx: MessageContext): String => Task[Unit] =
       _ => ZIO.unit
     def view(
       props: Signal[String],
@@ -20,8 +21,8 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
     ): HtmlElement[String] = span(props)
 
   object OutputComponent extends LiveComponent.WithOutput[String, String, Unit, String]:
-    def mount(props: String, ctx: MountContext): LiveIO[Unit] = ZIO.unit
-    def handleMessage(props: String, model: Unit, ctx: MessageContext): String => LiveIO[Unit] =
+    def mount(props: String, ctx: MountContext): Task[Unit] = ZIO.unit
+    def handleMessage(props: String, model: Unit, ctx: MessageContext): String => Task[Unit] =
       _ => ZIO.unit
     def view(
       props: Signal[String],
@@ -30,7 +31,7 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
     ): HtmlElement[String] = span(props)
 
   object ChildView extends LiveView.Eventless[String]:
-    def mount(ctx: MountContext): LiveIO[String] = ZIO.succeed("child")
+    def mount(ctx: MountContext): Task[String] = ZIO.succeed("child")
     def view(model: Signal[String]): HtmlElement[Nothing] = span(model)
 
   override def spec = suite("RenderRequirementsSpec")(

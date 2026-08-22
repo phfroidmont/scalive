@@ -1,5 +1,6 @@
 package scalive.runtime.topology
 
+import zio.Task
 import zio.ZIO
 import zio.test.*
 
@@ -8,11 +9,11 @@ import scalive.runtime.contracts.*
 
 object NestedTopologyStateSpec extends ZIOSpecDefault:
   private object FirstView extends LiveView.Eventless[Unit]:
-    def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+    def mount(ctx: MountContext): Task[Unit] = ZIO.unit
     def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
 
   private object SecondView extends LiveView.Eventless[Unit]:
-    def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+    def mount(ctx: MountContext): Task[Unit] = ZIO.unit
     def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
 
   private val parent = LifecycleId(10L)

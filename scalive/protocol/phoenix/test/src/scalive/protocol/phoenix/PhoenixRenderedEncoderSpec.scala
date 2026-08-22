@@ -1,5 +1,6 @@
 package scalive.protocol.phoenix
 
+import zio.Task
 import zio.ZIO
 import zio.json.ast.Json
 import zio.test.*
@@ -32,8 +33,8 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
   )
 
   object TestComponent extends LiveComponent[String, String, Unit]:
-    def mount(props: String, ctx: MountContext): LiveIO[Unit] = ZIO.unit
-    def handleMessage(props: String, model: Unit, ctx: MessageContext): String => LiveIO[Unit] =
+    def mount(props: String, ctx: MountContext): Task[Unit] = ZIO.unit
+    def handleMessage(props: String, model: Unit, ctx: MessageContext): String => Task[Unit] =
       _ => ZIO.unit
     def view(
       props: Signal[String],
@@ -42,7 +43,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     ): HtmlElement[String] = span(props)
 
   object TestView extends LiveView.Eventless[Unit]:
-    def mount(ctx: MountContext): LiveIO[Unit] = ZIO.unit
+    def mount(ctx: MountContext): Task[Unit] = ZIO.unit
     def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
 
   private def resolve(

@@ -34,32 +34,32 @@ final private[connection] case class RootHookRegistry[Msg, Model](
 private[connection] object RootHookRegistry:
   trait Raw[Msg, Model]:
     def invoke(model: Model, event: LiveEvent, context: MessageContext[Msg, Model])
-      : LiveIO[LiveEventHookResult[Model]]
+      : Task[LiveEventHookResult[Model]]
 
   trait Browser[Msg, Model]:
     def name: String
     def invoke(model: Model, raw: String, context: MessageContext[Msg, Model])
-      : Either[String, LiveIO[Model]]
+      : Either[String, Task[Model]]
 
   trait Event[Msg, Model]:
     def invoke(model: Model, message: Msg, context: MessageContext[Msg, Model])
-      : LiveIO[LiveHookResult[Model]]
+      : Task[LiveHookResult[Model]]
 
   trait Params[Msg, Model]:
     def invoke(model: Model, url: URL, context: ParamsContext[Msg, Model])
-      : LiveIO[LiveHookResult[Model]]
+      : Task[LiveHookResult[Model]]
 
   trait Async[Msg, Model]:
     def invoke(model: Model, event: LiveAsyncEvent[Msg], context: MessageContext[Msg, Model])
-      : LiveIO[LiveHookResult[Model]]
+      : Task[LiveHookResult[Model]]
 
   trait AfterRender[Msg, Model]:
-    def invoke(model: Model, context: AfterRenderContext[Msg, Model]): LiveIO[Unit]
+    def invoke(model: Model, context: AfterRenderContext[Msg, Model]): Task[Unit]
 
   def browserHook[Msg, Model, A](
     event: BrowserToServerEvent[A],
     decoder: JsonDecoder[A],
-    hook: (Model, A, MessageContext[Msg, Model]) => LiveIO[Model]
+    hook: (Model, A, MessageContext[Msg, Model]) => Task[Model]
   ): Browser[Msg, Model] = new Browser[Msg, Model]:
     val name                                                                   = event.value
     def invoke(model: Model, raw: String, context: MessageContext[Msg, Model]) =

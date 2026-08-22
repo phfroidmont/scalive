@@ -1,6 +1,6 @@
 package scalive.docs.examples
 
-import zio.ZIO
+import zio.{Task, ZIO}
 
 import scalive.*
 
@@ -27,10 +27,10 @@ object VoteComponent
   enum Output:
     case VoteChanged(id: String, votes: Int)
 
-  def mount(props: Props, ctx: MountContext): LiveIO[Model] =
+  def mount(props: Props, ctx: MountContext): Task[Model] =
     ZIO.succeed(Model(0, props.resetEpoch))
 
-  override def update(props: Props, model: Model, ctx: UpdateContext): LiveIO[Model] =
+  override def update(props: Props, model: Model, ctx: UpdateContext): Task[Model] =
     ZIO.succeed(if props.resetEpoch == model.resetEpoch then model else Model(0, props.resetEpoch))
 
   def handleMessage(props: Props, model: Model, ctx: MessageContext) =
@@ -88,7 +88,7 @@ final class VotingComponentsExample
     extends LiveView[VotingComponentsExample.Msg, VotingComponentsExample.Model]:
   import VotingComponentsExample.*
 
-  def mount(ctx: MountContext): LiveIO[Model] = ZIO.succeed(Model.initial)
+  def mount(ctx: MountContext): Task[Model] = ZIO.succeed(Model.initial)
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ComponentReported(id, votes) =>

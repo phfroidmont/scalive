@@ -34,8 +34,8 @@ navigation, transport loss, or reconnect behavior.
 
 `scalive.testing` is intentionally smaller than `Phoenix.LiveViewTest`. It
 supports connected mount, typed server messages, semantic click and form
-bindings, nested joins, and uploads. Following an ordinary HTTP form action is a
-current testing API gap.
+bindings, nested joins, uploads, and explicit local ordinary-form requests. It
+does not emulate browser successful-control selection or execute JavaScript.
 
 @:@
 
@@ -125,11 +125,53 @@ The @:apiSymbol(class:scalive.testing.RenderedForm)`RenderedForm`@:@ exposes its
 @:apiSymbol(def:scalive.testing.RenderedForm.triggersAction)`phx-trigger-action`@:@ presence.
 @:apiSymbol(class:scalive.testing.RenderedField)`RenderedField`@:@ exposes tag
 name, id, name, value, input type, and required state. These are HTML queries;
-they do not submit the form or dispatch a @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ event.
+they do not automatically choose submitted controls or dispatch a
+@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ event.
 
 Use @:apiSymbol(class:scalive.FormPath)`FormPath`@:@ for generated nested names when the application uses a
 @:apiSymbol(trait:scalive.FormCodec)`FormCodec`@:@. Values remain a `Vector` because repeated names, such as checkbox
 groups, are valid.
+
+## Submit Ordinary Forms {#submit-ordinary-forms}
+
+Use @:apiSymbol(def:scalive.testing.RenderedForm.submit)`RenderedForm.submit`@:@
+when a rendered GET or POST form should execute an ordinary local HTTP route.
+Supply the complete ordered @:apiSymbol(class:scalive.FormData)`FormData`@:@,
+including the rendered CSRF field for a checked POST:
+
+```scala
+for
+  page <- DisconnectedRender.run(liveRoutes, Request.get(loginUrl))
+  form <- ZIO.fromEither(page.form(FormQuery(method = Some(Method.POST))))
+  csrf <- ZIO.fromOption(form.values(CsrfProtection.ParamName).headOption)
+  redirect <- form.submit(
+                httpRoutes,
+                FormData(
+                  Vector(
+                    CsrfProtection.ParamName -> csrf,
+                    LoginForm.Email.name      -> "ada@example.test"
+                  )
+                ),
+                submitter = Some(FormSubmitter("sign-in", "yes"))
+              )
+  dashboard <- redirect.followSeeOther(liveRoutes)
+yield assertTrue(dashboard.text.contains("Welcome"))
+```
+
+Submission retains duplicate field names and appends the optional submitter.
+GET fields replace the action query. POST fields become an
+`application/x-www-form-urlencoded` body while the action query is retained.
+Other POST encodings fail explicitly. Relative actions honor the document's
+first `base[href]`; same-origin absolute actions are accepted, while
+cross-origin actions fail because the serverless harness executes only the
+supplied routes.
+
+Cookies returned by one response are carried by name into the next request, and
+zero-`Max-Age` cookies are removed. This intentionally supports Scalive's
+root-scoped test flows rather than simulating browser domain, path, Secure, or
+SameSite policy. Redirects remain explicit:
+@:apiSymbol(def:scalive.testing.RenderedPage.followSeeOther)`followSeeOther`@:@
+accepts only a local `303 See Other` with a `Location` header.
 
 ## Cover Connected Behavior {#cover-connected-behavior}
 

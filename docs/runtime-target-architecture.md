@@ -352,7 +352,9 @@ The following invariants define the target architecture.
 3. Render evaluation, component updates, hooks, and child requirements produce candidate state.
 4. Cross-owner topology changes and outbound capacity are prepared but remain externally inactive.
 5. Candidate state and every preparation are validated before the commit tail begins.
-6. A failed candidate leaves the previous committed state active and closes candidate resources.
+6. A failed candidate never replaces the previous committed state, closes candidate resources, and
+   then follows the explicit failure policy. Application handler, render, and candidate-preparation
+   failures terminate the session.
 7. The commit tail is interruption-masked and contains only bounded, infallible state activation.
 8. A partial commit-tail defect is terminal for the connection and cannot publish candidate output.
 9. Retired resources are made stale at commit and finalized after replacement state becomes active.

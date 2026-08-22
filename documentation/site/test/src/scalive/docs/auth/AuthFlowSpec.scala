@@ -53,6 +53,13 @@ object AuthFlowSpec extends ZIOSpecDefault:
   private def runHttp(auth: AuthService, request: Request): UIO[Response] =
     ZIO.scoped(AuthHttpRoutes(auth, security).routes.runZIO(request))
 
+  private def httpRoutes(auth: AuthService): Routes[Any, Nothing] =
+    AuthHttpRoutes(auth, security).routes
+
+  private def liveRoutes(auth: AuthService): Routes[Any, Nothing] =
+    val application = scalive.Live.router(AuthLab.loginRoute, AuthLab.protectedSession(auth))
+    ZioHttp.routes(application, config)
+
   private def loginRequest(csrf: PreparedCsrf, password: String): Request =
     postForm(
       FormAction.from(AuthLabRoutes.SessionRoute),
@@ -62,9 +69,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
     ).addCookie(requestCookie(csrf.cookie))
 
   private def render(auth: AuthService, request: Request) =
-    val application = scalive.Live.router(AuthLab.loginRoute, AuthLab.protectedSession(auth))
-    val routes      = ZioHttp.routes(application, config)
-    DisconnectedRender.run(routes, request)
+    DisconnectedRender.run(liveRoutes(auth), request)
 
   def spec = suite("AuthFlowSpec")(
     test("keeps standalone lab routes out of the public content index") {
@@ -135,44 +140,34 @@ object AuthFlowSpec extends ZIOSpecDefault:
                        .fromEither(
                          loginPage.form(FormQuery(Some(sessionAction.href), Some(Method.POST)))
                        ).orDieWith(error => new AssertionError(error.toString))
-        csrfCookie <- ZIO
-                        .fromOption(responseCookie(loginPage.response, CsrfProtection.CookieName))
-                        .orDieWith(_ => new AssertionError("missing CSRF cookie"))
         csrfToken <- ZIO
                        .fromOption(loginForm.values(CsrfProtection.ParamName).headOption)
                        .orDieWith(_ => new AssertionError("missing CSRF token"))
-        loginResponse <- runHttp(
-                           auth,
-                           postForm(
-                             sessionAction,
-                             CsrfProtection.ParamName -> csrfToken,
-                             LoginForm.Email.name      -> AuthService.DemoEmail,
-                             LoginForm.Password.name   -> AuthService.DemoPassword
-                           ).addCookie(requestCookie(csrfCookie))
+        loginResponse <- loginForm.submit(
+                           httpRoutes(auth),
+                           FormData(
+                             Vector(
+                               CsrfProtection.ParamName -> csrfToken,
+                               LoginForm.Email.name      -> AuthService.DemoEmail,
+                               LoginForm.Password.name   -> AuthService.DemoPassword
+                             )
+                           )
                          )
         sessionCookie <- ZIO
                            .fromOption(
-                             responseCookie(loginResponse, AuthHttpRoutes.SessionCookieName)
+                             responseCookie(loginResponse.response, AuthHttpRoutes.SessionCookieName)
                            ).orDieWith(_ => new AssertionError("missing session cookie"))
-        profilePage <- render(
-                         auth,
-                         Request
-                           .get(url(AuthLabRoutes.ProfilePath))
-                           .addCookie(requestCookie(csrfCookie))
-                           .addCookie(requestCookie(sessionCookie))
-                       )
+        profilePage <- loginResponse.followSeeOther(liveRoutes(auth))
         resetForm <- ZIO
                        .fromEither(
-                         profilePage.form(FormQuery(Some(resetAction.href), Some(Method.POST)))
+                          profilePage.form(FormQuery(Some(resetAction.href), Some(Method.POST)))
                        ).orDieWith(error => new AssertionError(error.toString))
         resetCsrf <- ZIO
                        .fromOption(resetForm.values(CsrfProtection.ParamName).headOption)
                        .orDieWith(_ => new AssertionError("missing reset CSRF token"))
-        resetResponse <- runHttp(
-                           auth,
-                           postForm(resetAction, CsrfProtection.ParamName -> resetCsrf)
-                             .addCookie(requestCookie(csrfCookie))
-                             .addCookie(requestCookie(sessionCookie))
+        resetResponse <- resetForm.submit(
+                           httpRoutes(auth),
+                           FormData(Vector(CsrfProtection.ParamName -> resetCsrf))
                          )
         authenticated <- auth.authenticate(SessionCookieToken(sessionCookie.content))
         stalePage <- render(
@@ -184,15 +179,15 @@ object AuthFlowSpec extends ZIOSpecDefault:
       yield assertTrue(
         loginPage.response.status == Status.Ok,
         loginForm.values(LoginForm.Email.path) == Vector(AuthService.DemoEmail),
-        loginResponse.status == Status.SeeOther,
-        loginResponse.header(Header.Location).exists(_.url.encode == AuthLabRoutes.ProfilePath),
+        loginResponse.response.status == Status.SeeOther,
+        loginResponse.response.header(Header.Location).exists(_.url.encode == AuthLabRoutes.ProfilePath),
         sessionCookie.isHttpOnly,
         sessionCookie.isSecure,
         sessionCookie.sameSite.contains(Cookie.SameSite.Lax),
         profilePage.response.status == Status.Ok,
         profilePage.text.contains("Welcome, Alice"),
-        resetResponse.status == Status.SeeOther,
-        responseCookie(resetResponse, AuthHttpRoutes.SessionCookieName)
+        resetResponse.response.status == Status.SeeOther,
+        responseCookie(resetResponse.response, AuthHttpRoutes.SessionCookieName)
           .exists(_.maxAge.contains(zio.Duration.Zero)),
         authenticated.isEmpty,
         stalePage.response.status == Status.SeeOther,

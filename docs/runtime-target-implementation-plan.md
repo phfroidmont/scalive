@@ -297,7 +297,9 @@ scope. No fallible acquisition or unbounded wait occurs in the commit tail.
 
 Acceptance criteria:
 
-- Handler, render, validation, and preparation failures preserve the previous committed state.
+- Handler, render, validation, and preparation failures publish no candidate state or output, close
+  candidate resources, and terminate the session. The failed candidate never replaces the previous
+  committed state.
 - Interruption before the commit tail activates no candidate state or output.
 - The commit tail is bounded, infallible `UIO` except for defects, and contains no acquisition.
 - A commit-tail defect is terminal for the connection.
@@ -582,6 +584,10 @@ Track latency percentiles, bytes allocated per turn, retained heap per lifecycle
 sample count, and render/diff duration. The historical view-graph benchmark is context, not a release
 threshold.
 
+Enforced performance thresholds are deferred until stable production workloads and measurement
+hosts exist. Maintained benchmark fixtures and smoke execution remain required, but thresholds are
+not a runtime cutover gate.
+
 ## Verification Gates
 
 Run focused module tests while implementing each milestone. Once the first vertical slice exists,
@@ -623,13 +629,11 @@ The greenfield runtime is ready to replace the legacy oracle only when all of th
 4. Every applicable row in `UPSTREAM_COMPATIBILITY.md` links to concrete Scalive evidence.
 5. Every browser-visible feature has deterministic native coverage and browser coverage where
    applicable.
-6. The complete applicable upstream E2E suite passes in three consecutive CI runs with no hidden or
-   selectively disabled tests.
+6. The complete applicable upstream E2E suite passes in three consecutive complete runs with CI
+   behavior, retries disabled, and no hidden or selectively disabled tests.
 7. Success, rollback, interruption, activation defect, stale epoch, saturation, and cleanup behavior
    are covered at each ownership boundary.
 8. No oracle difference remains unclassified.
 9. Tracing covers every target transition boundary and redacts sensitive data by default.
 10. Documentation, examples, API snapshots, published artifacts, and the facade dependency graph are
     consistent with the new architecture.
-11. Dedicated performance benchmarks meet thresholds fixed before cutover for CPU, allocation,
-    retained heap, and output size.

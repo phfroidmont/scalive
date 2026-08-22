@@ -290,11 +290,12 @@ Current state:
 
 - The separate `scalive-testing` artifact can execute finalized routes through the disconnected lifecycle and query rendered forms, ordered named fields, values, and binding modes semantically.
 - `LoginLiveView` has disconnected render coverage for its typed ordinary HTTP action, rooted fields, stable IDs, automatic framework CSRF, and consumed HTTP-to-Live invalid-login flash.
-- Connected events, ordinary HTTP form submission, and following `phx-trigger-action` are not supported yet.
+- `RenderedForm.submit` sends explicit ordered `FormData` to local GET and POST actions, carries test cookies, and appends an optional `FormSubmitter`.
+- `RenderedPage.followSeeOther` explicitly follows local 303 responses, including session and flash cookies.
+- `ConnectedRender` supports typed click, change, and submit events. Following `phx-trigger-action` from a connected projection remains a browser-test boundary.
 
 Ideas:
 
 - Keep disconnected assertions semantic because transport IDs and signed tokens are intentionally opaque.
-- Add connected mount and typed event submission only after the render API is stable.
-- Support ordinary HTTP form submission and triggered HTTP submission as separate, explicit test paths.
+- Consider connected trigger-action handoff only if recurring application tests need it; do not emulate browser successful-control selection.
 - Design a Scala-native API around typed messages and models instead of copying Phoenix `LiveViewTest` function names.

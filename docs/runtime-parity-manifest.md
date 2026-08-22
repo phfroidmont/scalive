@@ -56,6 +56,10 @@ form bindings, send typed messages, wait for asynchronous output, join nested vi
 uploads, query current semantic HTML, and leave lifecycles. This is native connected-test evidence;
 it is not a substitute for the browser gate.
 
+`DisconnectedRender` also submits explicit ordered `FormData` to local GET and POST actions, carries
+test cookies across requests, and follows local `303 See Other` responses explicitly. It does not
+synthesize browser successful controls or execute external actions.
+
 The artifact boundaries in `build.mill` record the publication cutover to the target modules.
 Maintained JMH fixtures under `benchmarks` cover target render, diff, encoding, and lifecycle paths;
 benchmark results measure performance and are not parity evidence.
@@ -75,6 +79,12 @@ The following commands were run against the current Milestone-11 tree on 2026-08
 | `mill --ticker false benchmarks.runJmh -wi 0 -i 1 -r 100ms -f 0 -foe true '.*'` | Passed as a non-threshold smoke run |
 | `./scripts/e2e-run-root-slice.sh --retries=0` | Passed; 9 Chromium scenarios passed |
 | `./scripts/e2e-run-upstream-cutover.sh` | Passed; three consecutive complete runs each passed all 172 scenarios with retries disabled, in 27.2, 26.8, and 26.3 seconds |
+
+The testing-harness expansion was verified on 2026-08-22 with
+`mill --ticker false __.test documentation.check` and
+`mill --ticker false __.reformat + __.fix`. Both passed. It changes only the serverless testing API
+and documentation; the recorded three-run browser cutover result remains the current runtime and
+protocol gate.
 
 Initial no-retry repetition reproduced synchronization boundaries directly. Issue 3530 observed a
 missing asynchronous nested-hook log in 4/10 runs, while the nested LiveComponent disabled-fieldset
@@ -373,10 +383,10 @@ above; native evidence alone must not be read as a claim about later current-tre
 | Process-style callbacks | Out of scope as direct API parity; ZIO fibers, scopes, and typed capabilities are the replacement | No direct native equivalent |
 | HEEx and function-component macros | Intentional Scala divergence; typed Scala HTML is the replacement | Public HTML definitions under `scalive/api/src/scalive`; render evidence in `HtmlRendererSpec.scala` and `RenderProgramSpec.scala` |
 | Verified-route macros | Intentional Scala divergence; typed routing codecs and locations are the replacement | `scalive/api/src/scalive/routing/LiveRouting.scala`; `RoutedConstructionSpec.scala`; `ZioHttpApiSpec.scala` |
-| Long-poll transport fallback | Scope decision still required | No long-poll evidence; websocket protocol and transport coverage exists in the Phoenix protocol and ZIO HTTP module suites |
+| Long-poll transport fallback | Deferred post-cutover; not part of the current runtime cutover gate | No long-poll evidence; websocket protocol and transport coverage exists in the Phoenix protocol and ZIO HTTP module suites |
 | Phoenix endpoint process options | Out of scope as direct API parity; applicable ZIO HTTP configuration remains transport-owned | Route assembly and configurable websocket path coverage in `ZioHttpApiSpec.scala` |
 | Observability | Required target behavior with a Scala/ZIO event model, not Phoenix telemetry API parity | `RuntimeObservabilitySpec.scala` covers correlated, ordered, payload-redacted runtime events and sink-defect isolation |
-| Test harness helpers | Required Scalive-native harness, not Phoenix helper API parity | `scalive/testing/test/src/scalive/testing/{DisconnectedRenderSpec,ConnectedRenderSpec}.scala`; connected capabilities include production admission/supervision, semantic queries, bindings, forms, typed messages, async waits, nested joins, hosted uploads, and leave |
+| Test harness helpers | Required Scalive-native harness, not Phoenix helper API parity | `scalive/testing/test/src/scalive/testing/{DisconnectedRenderSpec,ConnectedRenderSpec}.scala`; capabilities include semantic queries, explicit ordinary HTTP submission and 303 following, production connected admission/supervision, bindings, forms, typed messages, async waits, nested joins, hosted uploads, and leave |
 
 ## Maintenance Rules
 

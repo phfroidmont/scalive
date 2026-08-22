@@ -7718,6 +7718,18 @@
       ]
     },
     {
+      "id" : "def:scalive.testing.RenderedForm.submit",
+      "ownerId" : "class:scalive.testing.RenderedForm",
+      "qualifiedName" : "scalive.testing.RenderedForm.submit",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedForm.submit:381950a2d97d4d56",
+          "signature" : "def submit[R](routes: zio.http.Routes[R, Nothing], data: FormData, submitter: Option[FormSubmitter] = ...): zio.ZIO[R, Throwable, testing.RenderedPage]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.testing.RenderedForm.triggersAction",
       "ownerId" : "class:scalive.testing.RenderedForm",
       "qualifiedName" : "scalive.testing.RenderedForm.triggersAction",
@@ -7742,6 +7754,18 @@
         {
           "id" : "def:scalive.testing.RenderedForm.values:88cf9fe5fe43b876",
           "signature" : "def values(name: String): Vector[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedPage.followSeeOther",
+      "ownerId" : "class:scalive.testing.RenderedPage",
+      "qualifiedName" : "scalive.testing.RenderedPage.followSeeOther",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedPage.followSeeOther:486ce27f65acb7a2",
+          "signature" : "def followSeeOther[R](routes: zio.http.Routes[R, Nothing]): zio.ZIO[R, Throwable, testing.RenderedPage]"
         }
       ]
     },

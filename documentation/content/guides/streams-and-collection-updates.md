@@ -18,12 +18,15 @@ this guide must have stable domain keys.
 Ordinary Scala collections are the default. Render a collection normally when
 the complete value belongs in the model and ordinary tree diffing is sufficient.
 Use @:apiSymbol(extension:scalive.splitBy)`splitBy`@:@ to give repeated entries stable keys.
+Keyed rendering sends sparse entry updates and positional references, then lets
+the client patch the resulting HTML normally.
 
-Use a stream when collection changes should become targeted insert, update,
-delete, or reset operations in the browser. Streams are especially useful for
-feeds, logs, and bounded windows that change frequently. They require more
-explicit ownership than keyed rendering, so they are not a general replacement
-for `Vector`, database state, or another durable source of truth.
+Use a stream when collection changes should instead become explicit
+ID-addressed insert, update, delete, or reset operations in the browser. Streams
+are especially useful for feeds, logs, and bounded windows that change
+frequently. They require more explicit ownership than keyed rendering, so they
+are not a general replacement for `Vector`, database state, or another durable
+source of truth.
 
 ## Separate Domain State From Stream State {#separate-domain-state-from-stream-state}
 

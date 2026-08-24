@@ -147,5 +147,129 @@ object TreeDifferSpec extends ZIOSpecDefault:
           case RenderDelta.Update(_, Vector(_: RenderChange.Replace)) => true
           case _ => false
       )
+    },
+    test("emits no keyed change for unchanged rows") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
+        same    <- program.evaluate(Vector("a" -> "A", "b" -> "B"), Some(first.commit))
+      yield assertTrue(TreeDiffer.diff(first.tree, same.tree) == RenderDelta.Empty)
+    },
+    test("recursively diffs retained keyed rows in the same order") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A"))
+        updated <- program.evaluate(Vector("a" -> "updated"), Some(first.commit))
+        keyed = updated.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, updated.tree) match
+          case RenderDelta.Update(
+                _,
+                Vector(RenderChange.Keyed(id, Vector(KeyedRowChange.Retain(rowId, changes))))
+              ) =>
+            id == keyed.id && rowId == keyed.rows.head.id &&
+              changes.exists(_.isInstanceOf[RenderChange.Text]) &&
+              !changes.exists(_.isInstanceOf[RenderChange.Replace])
+          case _ => false
+      )
+    },
+    test("reports the complete new keyed row order on reorder") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
+        reordered <- program.evaluate(Vector("b" -> "B", "a" -> "A"), Some(first.commit))
+        keyed = reordered.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, reordered.tree) match
+          case RenderDelta.Update(_, Vector(RenderChange.Keyed(id, rows))) =>
+            id == keyed.id && rows == keyed.rows.map(row => KeyedRowChange.Retain(row.id, Vector.empty))
+          case _ => false
+      )
+    },
+    test("represents keyed insertion and removal by the complete new order") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
+        changed <- program.evaluate(Vector("b" -> "B", "c" -> "C"), Some(first.commit))
+        oldKeyed = first.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+        keyed    = changed.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, changed.tree) match
+          case RenderDelta.Update(_, Vector(RenderChange.Keyed(id, rows))) =>
+            id == keyed.id && rows == Vector(
+              KeyedRowChange.Retain(keyed.rows.head.id, Vector.empty),
+              KeyedRowChange.Insert(keyed.rows(1))
+            ) && !rows.exists {
+              case KeyedRowChange.Retain(rowId, _) => rowId == oldKeyed.rows.head.id
+              case KeyedRowChange.Insert(_)        => false
+            }
+          case _ => false
+      )
+    },
+    test("combines a keyed row move with its recursive update") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
+        changed <- program.evaluate(Vector("b" -> "updated", "a" -> "A"), Some(first.commit))
+        keyed = changed.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, changed.tree) match
+          case RenderDelta.Update(_, Vector(RenderChange.Keyed(id, rows))) =>
+            id == keyed.id && rows.map {
+              case KeyedRowChange.Retain(rowId, _) => rowId
+              case KeyedRowChange.Insert(row)      => row.id
+            } == keyed.rows.map(_.id) && rows.headOption.exists {
+              case KeyedRowChange.Retain(_, changes) =>
+                changes.exists(_.isInstanceOf[RenderChange.Text])
+              case KeyedRowChange.Insert(_) => false
+            }
+          case _ => false
+      )
+    },
+    test("preserves nested semantic changes inside retained keyed rows") {
+      val compiled = RenderProgram.compile[Vector[(String, Int)], Nothing] { items =>
+        div(items.splitBy(_._1) { (_, item) =>
+          span(item.map(_._2).choose(1 -> em("one"), 2 -> strong("two")))
+        })
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> 1))
+        changed <- program.evaluate(Vector("a" -> 2), Some(first.commit))
+        keyed = changed.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, changed.tree) match
+          case RenderDelta.Update(
+                _,
+                Vector(RenderChange.Keyed(id, Vector(KeyedRowChange.Retain(_, changes))))
+              ) =>
+            id == keyed.id && changes.exists {
+              case RenderChange.Replace(replacedId, _: EvaluatedNode.Choice) =>
+                replacedId != keyed.id
+              case _ => false
+            }
+          case _ => false
+      )
     }
   )

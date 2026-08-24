@@ -12,6 +12,8 @@ import scalive.streams.*
 object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
   final case class Model(text: String, raw: String, title: Option[String], disabled: Boolean)
   final case class StreamItem(id: String, label: String)
+  final case class NestedStreamItem(id: String, nested: LiveStream[StreamItem])
+  final case class KeyedStreamItem(id: String, values: Vector[(String, String)])
 
   private def stream(
     identity: LiveStreamIdentity,
@@ -600,6 +602,163 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         projectedStreamRows(added._1) == Vector("a", "b", "ghost")
       )
     },
+    test("fully encodes a nested stream reset in an outer updateOnly row") {
+      val outerIdentity  = LiveStreamIdentity.fresh()
+      val nestedIdentity = LiveStreamIdentity.fresh()
+      val firstNested = stream(
+        nestedIdentity,
+        1L,
+        Vector(StreamItem("a", "A"), StreamItem("b", "B"))
+      )
+      val resetNested = stream(
+        nestedIdentity,
+        2L,
+        Vector(StreamItem("b", "B"), StreamItem("a", "A")),
+        Vector(
+          (StreamItem("b", "B"), StreamAt.Last, None, false),
+          (StreamItem("a", "A"), StreamAt.Last, None, false)
+        ),
+        reset = true
+      )
+      def outer(generation: Long, item: NestedStreamItem, update: Boolean) = LiveStream(
+        outerIdentity,
+        "groups",
+        generation,
+        Vector(LiveStreamEntry(item.id, item)),
+        if update then
+          Vector(LiveStreamInsert(LiveStreamEntry(item.id, item), StreamAt.Last, None, true))
+        else Vector.empty,
+        Vector.empty,
+        reset = false
+      )
+      val compiled = RenderProgram.compile[LiveStream[NestedStreamItem], Nothing](model =>
+        div(
+          model.stream((domId, item) =>
+            div(
+              idAttr := domId,
+              item.map(_.nested).stream((nestedId, nestedItem) =>
+                span(idAttr := nestedId, nestedItem.map(_.label))
+              )
+            )
+          )
+        )
+      )
+
+      for
+        program <- ZIO.fromEither(compiled)
+        firstItem = NestedStreamItem("group", firstNested)
+        first <- program.evaluate(outer(1L, firstItem, update = false))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        resetItem = NestedStreamItem("group", resetNested)
+        reset <- program.evaluate(outer(2L, resetItem, update = true), Some(first.commit))
+        updated <- ZIO.fromEither(
+          PhoenixRenderedEncoder.update(initial._1, TreeDiffer.diff(first.tree, reset.tree))
+        )
+        outerRow = field(field(dynamic(updated._2), "k").asInstanceOf[Json.Obj], "0")
+          .asInstanceOf[Json.Obj]
+        nestedPayload = field(outerRow, "1").asInstanceOf[Json.Obj]
+      yield assertTrue(
+        field(nestedPayload, "k") == Json.Obj(
+          "0" -> Json.Obj("0" -> Json.Str("b"), "1" -> Json.Str("B")),
+          "1" -> Json.Obj("0" -> Json.Str("a"), "1" -> Json.Str("A")),
+          "kc" -> Json.Num(2)
+        ),
+        field(nestedPayload, "stream") == Json.Arr(
+          Json.Str("1"),
+          Json.Arr(
+            Json.Arr(Json.Str("b"), Json.Num(-1), Json.Null, Json.Bool(false)),
+            Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))
+          ),
+          Json.Arr(),
+          Json.Bool(true)
+        )
+      )
+    },
+    test("selects a retained outer stream row when only its nested stream changes") {
+      val outerIdentity  = LiveStreamIdentity.fresh()
+      val nestedIdentity = LiveStreamIdentity.fresh()
+      val firstNested = stream(
+        nestedIdentity,
+        1L,
+        Vector(StreamItem("a", "A"), StreamItem("b", "B"))
+      )
+      val changedNested = stream(
+        nestedIdentity,
+        2L,
+        Vector(StreamItem("c", "C"), StreamItem("d", "D")),
+        Vector(
+          (StreamItem("c", "C"), StreamAt.Last, None, false),
+          (StreamItem("d", "D"), StreamAt.Last, None, false)
+        ),
+        deletes = Vector("a"),
+        reset = true
+      )
+      def outer(generation: Long, nested: LiveStream[StreamItem]) = LiveStream(
+        outerIdentity,
+        "groups",
+        generation,
+        Vector(LiveStreamEntry("group", NestedStreamItem("group", nested))),
+        Vector.empty,
+        Vector.empty,
+        reset = false
+      )
+      val compiled = RenderProgram.compile[LiveStream[NestedStreamItem], Nothing](model =>
+        div(
+          model.stream((domId, item) =>
+            div(
+              idAttr := domId,
+              item.map(_.nested).stream((nestedId, nestedItem) =>
+                span(idAttr := nestedId, nestedItem.map(_.label))
+              )
+            )
+          )
+        )
+      )
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(outer(1L, firstNested))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        changed <- program.evaluate(outer(2L, changedNested), Some(first.commit))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, changed.tree)
+                     )
+                   )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.html(updated._1))
+      yield assertTrue(
+        updated._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "0" -> Json.Obj(
+                "0" -> Json.Str("group"),
+                "1" -> Json.Obj(
+                  "k" -> Json.Obj(
+                    "0" -> Json.Obj("0" -> Json.Str("c"), "1" -> Json.Str("C")),
+                    "1" -> Json.Obj("0" -> Json.Str("d"), "1" -> Json.Str("D")),
+                    "kc" -> Json.Num(2)
+                  ),
+                  "stream" -> Json.Arr(
+                    Json.Str("1"),
+                    Json.Arr(
+                      Json.Arr(Json.Str("c"), Json.Num(-1), Json.Null, Json.Bool(false)),
+                      Json.Arr(Json.Str("d"), Json.Num(-1), Json.Null, Json.Bool(false))
+                    ),
+                    Json.Arr(Json.Str("a")),
+                    Json.Bool(true)
+                  )
+                )
+              ),
+              "kc" -> Json.Num(1)
+            ),
+            "stream" -> Json.Arr(Json.Str("0"), Json.Arr(), Json.Arr())
+          )
+        ),
+        html ==
+          "<div><div id=\"group\"><span id=\"c\">C</span><span id=\"d\">D</span></div></div>"
+      )
+    },
     test("encodes delete and reset metadata and applies both to retained rows") {
       val identity = LiveStreamIdentity.fresh()
       val firstHandle = stream(identity, 1L, Vector(StreamItem("a", "one"), StreamItem("b", "two")))
@@ -785,6 +944,397 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         field(dynamic(updated._2), "stream") ==
           Json.Arr(Json.Str("0"), Json.Arr(), Json.Arr(Json.Str("a"))),
         projectedStreamRows(updated._1).isEmpty
+      )
+    },
+    test("encodes ordinary keyed comprehensions with Phoenix k, kc, and km") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      )
+      val child = (tag: String, value: String) => Json.Obj(
+        "0" -> Json.Obj(
+          "s" -> Json.Arr(Json.Str(s"<$tag>"), Json.Str(s"</$tag>")),
+          "0" -> Json.Str(value)
+        )
+      )
+      def keyed(fields: (String, Json)*): Json.Obj =
+        val rows = fields.filterNot(_._1 == "km") :+ ("kc" -> Json.Num(2))
+        val move = fields.filter(_._1 == "km")
+        Json.Obj("0" -> Json.Obj("k" -> Json.Obj((rows ++ move)*)))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        reordered <- program.evaluate(Vector("b" -> "B", "a" -> "A"), Some(first.commit))
+        afterReorder <- ZIO.fromEither(
+                          PhoenixRenderedEncoder.update(
+                            initial._1,
+                            TreeDiffer.diff(first.tree, reordered.tree)
+                          )
+                        )
+        updated <- program.evaluate(Vector("b" -> "B2", "a" -> "A"), Some(reordered.commit))
+        afterUpdate <- ZIO.fromEither(
+                         PhoenixRenderedEncoder.update(
+                           afterReorder._1,
+                           TreeDiffer.diff(reordered.tree, updated.tree)
+                         )
+                       )
+        moved <- program.evaluate(Vector("a" -> "A", "b" -> "B3"), Some(updated.commit))
+        afterMoveUpdate <- ZIO.fromEither(
+                             PhoenixRenderedEncoder.update(
+                               afterUpdate._1,
+                               TreeDiffer.diff(updated.tree, moved.tree)
+                             )
+                           )
+        inserted <- program.evaluate(Vector("a" -> "A", "c" -> "C"), Some(moved.commit))
+        afterInsertDelete <- ZIO.fromEither(
+                               PhoenixRenderedEncoder.update(
+                                 afterMoveUpdate._1,
+                                 TreeDiffer.diff(moved.tree, inserted.tree)
+                               )
+                             )
+        empty <- program.evaluate(Vector.empty, Some(inserted.commit))
+        afterEmpty <- ZIO.fromEither(
+                        PhoenixRenderedEncoder.update(
+                          afterInsertDelete._1,
+                          TreeDiffer.diff(inserted.tree, empty.tree)
+                        )
+                      )
+        nonempty <- program.evaluate(Vector("d" -> "D"), Some(empty.commit))
+        afterNonempty <- ZIO.fromEither(
+                           PhoenixRenderedEncoder.update(
+                             afterEmpty._1,
+                             TreeDiffer.diff(empty.tree, nonempty.tree)
+                           )
+                         )
+        initiallyEmpty <- program.evaluate(Vector.empty)
+        emptyInitial    <- ZIO.fromEither(PhoenixRenderedEncoder.initial(initiallyEmpty.tree))
+        html            <- ZIO.fromEither(PhoenixRenderedEncoder.html(afterInsertDelete._1))
+      yield assertTrue(
+        initial._2 == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
+          "0" -> Json.Obj(
+            "s" -> Json.Arr(Json.Str(""), Json.Str("")),
+            "k" -> Json.Obj(
+              "0" -> child("span", "A"),
+              "1" -> child("span", "B"),
+              "kc" -> Json.Num(2)
+            )
+          )
+        ),
+        afterReorder._2 == keyed(
+          "0" -> Json.Num(1),
+          "1" -> Json.Num(0),
+          "km" -> Json.Bool(true)
+        ),
+        afterUpdate._2 == keyed("0" -> Json.Obj("0" -> Json.Obj("0" -> Json.Str("B2")))),
+        afterMoveUpdate._2 == keyed(
+          "0" -> Json.Num(1),
+          "1" -> Json.Arr(
+            Json.Num(0),
+            Json.Obj("0" -> Json.Obj("0" -> Json.Str("B3")))
+          ),
+          "km" -> Json.Bool(true)
+        ),
+        afterInsertDelete._2 == keyed("1" -> child("span", "C")),
+        afterEmpty._2 == Json.Obj("0" -> Json.Obj("k" -> Json.Obj("kc" -> Json.Num(0)))),
+        afterNonempty._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj("0" -> child("span", "D"), "kc" -> Json.Num(1))
+          )
+        ),
+        emptyInitial._2 == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
+          "0" -> Json.Obj(
+            "s" -> Json.Arr(Json.Str(""), Json.Str("")),
+            "k" -> Json.Obj("kc" -> Json.Num(0))
+          )
+        ),
+        html == "<div><span>A</span><span>C</span></div>"
+      )
+    },
+    test("boxes heterogeneous ordinary keyed row templates as dynamic zero") {
+      val compiled = RenderProgram.compile[Vector[(String, String, String)], Nothing](items =>
+        div(
+          items.splitBy(_._1) { (_, item) =>
+            div(
+              item.map(_._2).choose(
+                "span" -> span(item.map(_._3)),
+                "button" -> button(item.map(_._3))
+              )
+            )
+          }
+        )
+      )
+      for
+        program <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(
+                       Vector(("span", "span", "one"), ("button", "button", "two"))
+                     )
+        encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
+        html    <- ZIO.fromEither(PhoenixRenderedEncoder.html(encoded._1))
+        rows = field(dynamic(encoded._2), "k").asInstanceOf[Json.Obj]
+      yield assertTrue(
+        field(field(rows, "0").asInstanceOf[Json.Obj], "0") == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div><span>"), Json.Str("</span></div>")),
+          "0" -> Json.Str("one")
+        ),
+        field(field(rows, "1").asInstanceOf[Json.Obj], "0") == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div><button>"), Json.Str("</button></div>")),
+          "0" -> Json.Str("two")
+        ),
+        field(rows, "kc") == Json.Num(2),
+        html == "<div><div><span>one</span></div><div><button>two</button></div></div>"
+      )
+    },
+    test("emits a nested keyed reorder through its retained outer keyed row") {
+      val compiled = RenderProgram.compile[Vector[(String, Vector[(String, String)])], Nothing](
+        groups =>
+          div(
+            groups.splitBy(_._1) { (_, group) =>
+              div(group.map(_._2).splitBy(_._1)((_, item) => span(item.map(_._2))))
+            }
+          )
+      )
+      val firstValue = Vector("group" -> Vector("a" -> "A", "b" -> "B"))
+      val nextValue  = Vector("group" -> Vector("b" -> "B", "a" -> "A"))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(firstValue)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        next    <- program.evaluate(nextValue, Some(first.commit))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, next.tree)
+                     )
+                   )
+      yield assertTrue(
+        updated._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "0" -> Json.Obj(
+                "0" -> Json.Obj(
+                  "0" -> Json.Obj(
+                    "k" -> Json.Obj(
+                      "0"  -> Json.Num(1),
+                      "1"  -> Json.Num(0),
+                      "kc" -> Json.Num(2),
+                      "km" -> Json.Bool(true)
+                    )
+                  )
+                )
+              ),
+              "kc" -> Json.Num(1)
+            )
+          )
+        )
+      )
+    },
+    test("emits a keyed reorder as a sparse component diff") {
+      val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
+        div(liveComponent(TestComponent, "keyed", "keyed"))
+      )
+      val componentCompiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      )
+      val token = Object()
+      val ref   = ComponentRef.runtime[String](token)
+
+      for
+        rootProgram      <- ZIO.fromEither(rootCompiled)
+        componentProgram <- ZIO.fromEither(componentCompiled)
+        root             <- rootProgram.evaluate(())
+        first            <- componentProgram.evaluate(Vector("a" -> "A", "b" -> "B"))
+        resolvedFirst <- ZIO.fromEither(
+                           root.resolveComponents(
+                             Vector(resolve(root.componentRequirements.head, ref, token, first))
+                           )
+                         )
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolvedFirst.tree))
+        nextComponent <- componentProgram.evaluate(
+                           Vector("b" -> "B", "a" -> "A"),
+                           Some(first.commit)
+                         )
+        nextRoot <- rootProgram.evaluate((), Some(resolvedFirst.commit))
+        resolvedNext <- ZIO.fromEither(
+                          nextRoot.resolveComponents(
+                            Vector(
+                              resolve(
+                                nextRoot.componentRequirements.head,
+                                ref,
+                                token,
+                                nextComponent
+                              )
+                            )
+                          )
+                        )
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(resolvedFirst.tree, resolvedNext.tree)
+                     )
+                   )
+      yield assertTrue(
+        updated._2 == Json.Obj(
+          "c" -> Json.Obj(
+            "1" -> Json.Obj(
+              "0" -> Json.Obj(
+                "k" -> Json.Obj(
+                  "0"  -> Json.Num(1),
+                  "1"  -> Json.Num(0),
+                  "kc" -> Json.Num(2),
+                  "km" -> Json.Bool(true)
+                )
+              )
+            )
+          )
+        )
+      )
+    },
+    test("selects a stream row whose keyed descendant changed") {
+      val identity = LiveStreamIdentity.fresh()
+      def handle(values: Vector[(String, String)]) = LiveStream(
+        identity,
+        "items",
+        1L,
+        Vector(LiveStreamEntry("row", KeyedStreamItem("row", values))),
+        Vector.empty,
+        Vector.empty,
+        reset = false
+      )
+      val compiled = RenderProgram.compile[LiveStream[KeyedStreamItem], Nothing](model =>
+        div(
+          model.stream((domId, item) =>
+            div(
+              idAttr := domId,
+              item.map(_.values).splitBy(_._1)((_, value) => span(value.map(_._2)))
+            )
+          )
+        )
+      )
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(handle(Vector("a" -> "A", "b" -> "B")))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        next <- program.evaluate(
+                  handle(Vector("b" -> "B", "a" -> "A")),
+                  Some(first.commit)
+                )
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, next.tree)
+                     )
+                   )
+        streamDiff = dynamic(updated._2)
+        streamRows = field(streamDiff, "k").asInstanceOf[Json.Obj]
+        row        = field(streamRows, "0").asInstanceOf[Json.Obj]
+      yield assertTrue(
+        !streamDiff.fields.toMap.contains("s"),
+        field(row, "1") == Json.Obj(
+          "k" -> Json.Obj(
+            "0"  -> Json.Num(1),
+            "1"  -> Json.Num(0),
+            "kc" -> Json.Num(2),
+            "km" -> Json.Bool(true)
+          )
+        )
+      )
+    },
+    test("rejects invalid keyed row deltas before changing reusable state") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      )
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        reordered <- program.evaluate(
+                       Vector("b" -> "B", "a" -> "A"),
+                       Some(first.commit)
+                     )
+        reorderDelta = TreeDiffer.diff(first.tree, reordered.tree)
+        reorderedBase = reordered.commit
+        (revision, keyedId, retainedRows) = reorderDelta match
+          case RenderDelta.Update(revision, Vector(RenderChange.Keyed(id, rows))) =>
+            (revision, id, rows)
+          case _ => throw AssertionError("expected one keyed reorder")
+        duplicateRetain = PhoenixRenderedEncoder.update(
+                            initial._1,
+                            RenderDelta.Update(
+                              revision,
+                              Vector(RenderChange.Keyed(keyedId, Vector.fill(2)(retainedRows.head)))
+                            )
+                          )
+        recovered <- ZIO.fromEither(PhoenixRenderedEncoder.update(initial._1, reorderDelta))
+        inserted <- program.evaluate(
+                      Vector("b" -> "B", "a" -> "A", "c" -> "C"),
+                      Some(reorderedBase)
+                    )
+        insertDelta = TreeDiffer.diff(reordered.tree, inserted.tree)
+        (insertRevision, insertId, insertRows) = insertDelta match
+          case RenderDelta.Update(revision, Vector(RenderChange.Keyed(id, rows))) =>
+            (revision, id, rows)
+          case _ => throw AssertionError("expected one keyed insertion")
+        insertedState <- ZIO.fromEither(
+                           PhoenixRenderedEncoder.update(recovered._1, insertDelta)
+                         )
+        existingInsert = PhoenixRenderedEncoder.update(insertedState._1, insertDelta)
+        insertedRow = insertRows.collectFirst { case KeyedRowChange.Insert(row) => row }
+          .getOrElse(throw AssertionError("expected an inserted row"))
+        unknownRetain = PhoenixRenderedEncoder.update(
+                          recovered._1,
+                          RenderDelta.Update(
+                            insertRevision,
+                            Vector(
+                              RenderChange.Keyed(
+                                insertId,
+                                retainedRows :+ KeyedRowChange.Retain(
+                                  insertedRow.id,
+                                  Vector.empty
+                                )
+                              )
+                            )
+                          )
+                        )
+        duplicateInsert = PhoenixRenderedEncoder.update(
+                            recovered._1,
+                            RenderDelta.Update(
+                              insertRevision,
+                              Vector(
+                                RenderChange.Keyed(
+                                  insertId,
+                                  insertRows :+ KeyedRowChange.Insert(insertedRow)
+                                )
+                              )
+                            )
+                          )
+        duplicateSemanticTarget = PhoenixRenderedEncoder.update(
+                                    initial._1,
+                                    RenderDelta.Update(
+                                      revision,
+                                      Vector(
+                                        RenderChange.Replace(
+                                          keyedId,
+                                          first.tree.root.children.head
+                                        ),
+                                        RenderChange.Keyed(keyedId, retainedRows)
+                                      )
+                                    )
+                                  )
+        stillUsable <- ZIO.fromEither(PhoenixRenderedEncoder.update(initial._1, reorderDelta))
+      yield assertTrue(
+        duplicateRetain == Left(PhoenixEncodingError.InvalidKeyedRowChange),
+        unknownRetain == Left(PhoenixEncodingError.InvalidKeyedRowChange),
+        existingInsert == Left(PhoenixEncodingError.InvalidKeyedRowChange),
+        duplicateInsert == Left(PhoenixEncodingError.InvalidKeyedRowChange),
+        duplicateSemanticTarget == Left(PhoenixEncodingError.DuplicateTarget(keyedId)),
+        recovered._2.fields.nonEmpty,
+        stillUsable._2 == recovered._2
       )
     },
     test("initial rendered maps reconstruct exactly to HtmlRenderer") {
@@ -1176,6 +1726,85 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         destroyed._2 == Vector(1),
         destroyed._1.cidForToken(firstToken).isEmpty,
         fresh._1.cidForToken(firstToken).contains(2)
+      )
+    },
+    test("fully re-encodes a retained component when its keyed row is reinserted") {
+      val rootCompiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
+        div(
+          items.splitBy(_._1)((_, item) =>
+            span(liveComponent(TestComponent, "child", item.map(_._2)))
+          )
+        )
+      )
+      val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
+      val token         = Object()
+      val ref           = ComponentRef.runtime[String](token)
+
+      for
+        rootProgram  <- ZIO.fromEither(rootCompiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        first        <- rootProgram.evaluate(Vector("row" -> "before"))
+        firstChild   <- childProgram.evaluate("before")
+        resolvedFirst <- ZIO.fromEither(
+                           first.resolveComponents(
+                             Vector(
+                               resolve(
+                                 first.componentRequirements.head,
+                                 ref,
+                                 token,
+                                 firstChild
+                               )
+                             )
+                           )
+                         )
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolvedFirst.tree))
+        absent  <- rootProgram.evaluate(Vector.empty, Some(resolvedFirst.commit))
+        removed <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(resolvedFirst.tree, absent.tree)
+                     )
+                   )
+        next      <- rootProgram.evaluate(Vector("row" -> "after"), Some(absent.commit))
+        nextChild <- childProgram.evaluate("after", Some(firstChild.commit))
+        resolvedNext <- ZIO.fromEither(
+                          next.resolveComponents(
+                            Vector(
+                              resolve(
+                                next.componentRequirements.head,
+                                ref,
+                                token,
+                                nextChild
+                              )
+                            )
+                          )
+                        )
+        reinserted <- ZIO.fromEither(
+                        PhoenixRenderedEncoder.update(
+                          removed._1.markComponentsForDeletion(Vector(1)),
+                          TreeDiffer.diff(absent.tree, resolvedNext.tree)
+                        )
+                      )
+        row = field(field(dynamic(reinserted._2), "k").asInstanceOf[Json.Obj], "0")
+          .asInstanceOf[Json.Obj]
+        component = field(field(reinserted._2, "c").asInstanceOf[Json.Obj], "1")
+          .asInstanceOf[Json.Obj]
+        staleDestruction = reinserted._1.destroyComponents(Vector(1))
+        html             <- ZIO.fromEither(PhoenixRenderedEncoder.html(reinserted._1))
+      yield assertTrue(
+        field(field(row, "0").asInstanceOf[Json.Obj], "0") == Json.Num(1),
+        component == Json.Obj(
+          "s" -> Json.Arr(
+            Json.Str("<span data-phx-component=\"1\">"),
+            Json.Str("</span>")
+          ),
+          "0" -> Json.Str("after"),
+          "r" -> Json.Num(1)
+        ),
+        reinserted._1.cidForToken(token).contains(1),
+        staleDestruction._2.isEmpty,
+        staleDestruction._1.cidForToken(token).contains(1),
+        html == "<div><span><span data-phx-component=\"1\">after</span></span></div>"
       )
     },
     test("replaces a component token at the same declaration with a monotonic CID") {

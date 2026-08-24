@@ -5,6 +5,7 @@ enum RenderChange:
   case Text(slot: TemplateSlotId, value: String, raw: Boolean)
   case Attribute(slot: TemplateSlotId, name: String, value: Option[AttributeValue])
   case Replace(id: TemplateId, node: EvaluatedNode)
+  case Keyed(id: TemplateId, rows: Vector[KeyedRowChange])
   case Stream(
     id: TemplateId,
     identity: scalive.streams.LiveStreamIdentity,
@@ -13,6 +14,11 @@ enum RenderChange:
 
   /** A child-program delta scoped by the exact semantic component instance that owns its ids. */
   case Component(instanceToken: Object, delta: RenderDelta)
+
+/** One row in the complete new order of a keyed-container change. */
+enum KeyedRowChange:
+  case Insert(row: EvaluatedNode.KeyedRow)
+  case Retain(id: RowId, changes: Vector[RenderChange])
 
 /** Exact semantic difference between committed and candidate render trees. */
 enum RenderDelta:
@@ -73,11 +79,20 @@ object TreeDiffer:
             diffNode(oldChild, newChild)
           case _ => Vector(RenderChange.Replace(left.id, right))
       case (left: EvaluatedNode.Keyed, right: EvaluatedNode.Keyed) if left.id == right.id =>
-        if left.rows.map(_.id) != right.rows.map(_.id) then
-          Vector(RenderChange.Replace(left.id, right))
-        else
-          left.rows
-            .zip(right.rows).flatMap((oldRow, newRow) => diffNode(oldRow.child, newRow.child))
+        val oldRows = left.rows.map(row => row.id -> row).toMap
+        val rows    = right.rows.map { newRow =>
+          oldRows.get(newRow.id) match
+            case Some(oldRow) =>
+              KeyedRowChange.Retain(newRow.id, diffNode(oldRow.child, newRow.child))
+            case None => KeyedRowChange.Insert(newRow)
+        }
+        val sameOrder     = left.rows.map(_.id) == right.rows.map(_.id)
+        val unchangedRows = rows.forall {
+          case KeyedRowChange.Retain(_, changes) => changes.isEmpty
+          case KeyedRowChange.Insert(_)          => false
+        }
+        if sameOrder && unchangedRows then Vector.empty
+        else Vector(RenderChange.Keyed(right.id, rows))
       case (left: EvaluatedNode.Component, right: EvaluatedNode.Component)
           if left.id == right.id && left.applicationId == right.applicationId =>
         (left.resolution, right.resolution) match

@@ -102,9 +102,19 @@ model.map(_.lines).splitBy(_.product.sku) { (_, line) =>
 ```
 
 Stable keys let the diff distinguish insertion, removal, movement, and an update
-to an existing entry. Keys must be unique within that collection and stable
-across updates. Prefer a domain identifier such as `sku`; use an index only when
+to an existing entry. The rendered protocol sends new entries, changed entry
+dynamics, and positional references to retained entries instead of resending the
+whole keyed region. Keys must be unique within that collection and stable across
+updates. Prefer a domain identifier such as `sku`; use an index only when
 position really is the entry's identity.
+
+The collection key is server-side render identity, not an HTML `id`. The browser
+merges the rendered diff and then patches the resulting HTML. Give each repeated
+root a stable HTML `id` as well when preserving or moving that exact DOM node
+matters, for example when it owns focus or other browser-local state. Use a
+[stream](../guides/streams-and-collection-updates.md#choose-streams-deliberately)
+when the collection should instead produce explicit ID-addressed browser
+operations.
 
 The [HTML and event bindings guide](../guides/html-dsl-and-event-bindings.md)
 covers the DSL and input bindings in depth. Continue with

@@ -191,6 +191,12 @@ SKU, database identifier, or another domain key. Use
 @:apiSymbol(extension:scalive.splitByIndex)`splitByIndex`@:@ only when
 position is the identity and reordering is not meaningful.
 
+The `splitBy` key remains server-side and is not rendered as an HTML `id`.
+Phoenix's client merges the compact keyed payload before patching the resulting
+HTML. Add a stable HTML `id` to each repeated root when the corresponding browser
+node itself must survive a move, such as a row containing focused input or
+browser-managed state.
+
 The shopping cart example combines typed attributes, product-specific event
 messages, staged conditional content, and SKU-keyed rows in one view graph:
 
@@ -200,7 +206,7 @@ For the model and handler behind this tree, read
 [Models, messages, and effects](../learn/models-and-messages.md#one-model-one-message-type).
 For the diffing model, read
 [Rendering, bindings, and diffs](../learn/rendering-and-dom-updates.md#from-tree-changes-to-dom-changes).
-For targeted inserts and deletes in frequently changing collections, read
+For explicit ID-addressed inserts and deletes in frequently changing collections, read
 [Streams and collection updates](streams-and-collection-updates.md#choose-streams-deliberately).
 
 ## Related Tasks {#related-tasks}

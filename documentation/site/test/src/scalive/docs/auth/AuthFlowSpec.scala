@@ -8,6 +8,7 @@ import zio.test.*
 
 import scalive.*
 import scalive.docs.*
+import scalive.docs.examples.{Reports, reportsFixtureService}
 import scalive.testing.*
 
 object AuthFlowSpec extends ZIOSpecDefault:
@@ -17,6 +18,19 @@ object AuthFlowSpec extends ZIOSpecDefault:
     secureCookie = true
   ).toOption.get
   private val security = LiveSecurity(config)
+  private val liveConnections = Unsafe.unsafe { implicit unsafe =>
+    Runtime.default.unsafe.run(LiveConnections.make[PublicSessionId](_ => ZIO.unit)).getOrThrow()
+  }
+
+  private def authEnvironment(
+    auth: AuthService,
+    connections: LiveConnections[PublicSessionId] = liveConnections
+  ) =
+    ZEnvironment[AuthService](auth)
+      .add[LiveConnections[PublicSessionId]](connections)
+
+  private val documentationEnvironment =
+    authEnvironment(AuthService.inMemory()).add[Reports](reportsFixtureService)
 
   private def url(value: String): URL =
     URL.decode(value).fold(throw _, identity)
@@ -51,14 +65,17 @@ object AuthFlowSpec extends ZIOSpecDefault:
     )
 
   private def runHttp(auth: AuthService, request: Request): UIO[Response] =
-    ZIO.scoped(AuthHttpRoutes(auth, security).routes.runZIO(request))
+    ZIO.scoped(
+      AuthHttpRoutes(security).routes
+        .provideEnvironment(authEnvironment(auth)).runZIO(request)
+    )
 
   private def httpRoutes(auth: AuthService): Routes[Any, Nothing] =
-    AuthHttpRoutes(auth, security).routes
+    AuthHttpRoutes(security).routes.provideEnvironment(authEnvironment(auth))
 
   private def liveRoutes(auth: AuthService): Routes[Any, Nothing] =
-    val application = scalive.Live.router(AuthLab.loginRoute, AuthLab.protectedSession(auth))
-    ZioHttp.routes(application, config)
+    val application = scalive.Live.router(AuthLab.loginRoute, AuthLab.protectedSession)
+    ZioHttp.routes(application, config).provideEnvironment(authEnvironment(auth))
 
   private def loginRequest(csrf: PreparedCsrf, password: String): Request =
     postForm(
@@ -120,7 +137,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
                         assets,
                         security,
                         DocumentationConfig(8080, origin)
-                      ).provide(scalive.docs.examples.reportsFixtureService),
+                       ).provideEnvironment(documentationEnvironment),
                       Request.get(url("/guides/authentication"))
                     )
       yield assertTrue(
@@ -307,12 +324,12 @@ object AuthFlowSpec extends ZIOSpecDefault:
                Some(loggedIn.cookieToken)
              )
         reconnect <- AuthMountAspect
-                       .authenticated(auth)
+                       .authenticated
                        .connected(
                          AuthClaims(loggedIn.currentSession.publicSessionId),
                          LiveMountRequest((), Request.get(url(AuthLabRoutes.ProfilePath))),
                          ()
-                       ).either
+                       ).provideEnvironment(ZEnvironment(auth)).either
       yield assertTrue(
         invalidReset.status == Status.Forbidden,
         preserved.contains(loggedIn.currentSession),
@@ -321,6 +338,42 @@ object AuthFlowSpec extends ZIOSpecDefault:
             location.href == AuthLabRoutes.LoginPath
           case _ => false
         }
+      )
+    },
+    test("reset revokes and expires the cookie when disconnect publication fails") {
+      val resetAction = FormAction.from(AuthLabRoutes.ResetRoute)
+      for
+        auth <- ZIO.succeed(AuthService.inMemory())
+        csrf <- prepareCsrf(auth)
+        decision <- auth.login(
+                      VisitorToken(csrf.cookie.content),
+                      LoginCredentials(AuthService.DemoEmail, AuthService.DemoPassword)
+                    )
+        loggedIn <- ZIO
+                      .fromOption(decision.toOption)
+                      .orDieWith(_ => new AssertionError("demo login failed"))
+        connections <- LiveConnections.make[PublicSessionId](_ =>
+                         ZIO.fail(new Exception("fanout unavailable"))
+                       )
+        request = postForm(
+                    resetAction,
+                    CsrfProtection.ParamName -> csrf.token
+                  ).addCookie(requestCookie(csrf.cookie)).addCookie(
+                    Cookie.Request(
+                      AuthHttpRoutes.SessionCookieName,
+                      loggedIn.cookieToken.value
+                    )
+                  )
+        response <- ZIO.scoped(
+                      AuthHttpRoutes(security).routes
+                        .provideEnvironment(authEnvironment(auth, connections)).runZIO(request)
+                    )
+        revoked <- auth.authenticate(loggedIn.cookieToken)
+        expired = responseCookie(response, AuthHttpRoutes.SessionCookieName)
+      yield assertTrue(
+        response.status == Status.InternalServerError,
+        expired.exists(_.maxAge.contains(zio.Duration.Zero)),
+        revoked.isEmpty
       )
     }
   )

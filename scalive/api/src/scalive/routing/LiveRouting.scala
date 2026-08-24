@@ -19,6 +19,14 @@ sealed private[scalive] trait LiveMountPipeline[R, A, In, Ctx]:
   ): LiveMountPipeline[R & R1, A, In, Result] =
     LiveMountPipeline.Then(this, next, append)
 
+  def admitThen[R1, Claims, Out, Result, Id](
+    next: LiveMountAspect[R1, A, Ctx, Claims, Out],
+    connectionId: Claims => Id,
+    connections: Tag[LiveConnections[Id]]
+  )(using append: ContextAppend.Aux[Ctx, Out, Result]
+  ): LiveMountPipeline[R & R1 & LiveConnections[Id], A, In, Result] =
+    LiveMountPipeline.Controlled(this, next, connectionId, connections, append)
+
 object LiveMountPipeline:
   final case class Identity[A, Ctx]() extends LiveMountPipeline[Any, A, Ctx, Ctx]
 
@@ -27,6 +35,14 @@ object LiveMountPipeline:
     aspect: LiveMountAspect[R1, A, Ctx, Claims, Out],
     append: ContextAppend.Aux[Ctx, Out, Result])
       extends LiveMountPipeline[R & R1, A, In, Result]
+
+  final case class Controlled[R, R1, A, In, Ctx, Claims, Out, Result, Id](
+    previous: LiveMountPipeline[R, A, In, Ctx],
+    aspect: LiveMountAspect[R1, A, Ctx, Claims, Out],
+    connectionId: Claims => Id,
+    connections: Tag[LiveConnections[Id]],
+    append: ContextAppend.Aux[Ctx, Out, Result])
+      extends LiveMountPipeline[R & R1 & LiveConnections[Id], A, In, Result]
 
 /** Selects how a completed route obtains the context passed to its lifecycle factory and layouts.
   */
@@ -38,6 +54,12 @@ object LiveRouteContext:
   final case class Required[A, Ctx]()             extends LiveRouteContext[Any, A, Ctx, Ctx]
   final case class Mounted[R, A, In, Ctx](pipeline: LiveMountPipeline[R, A, In, Ctx])
       extends LiveRouteContext[R, A, In, Ctx]
+
+  /** Resolves an existing route context before adding one application-environment service. */
+  final case class WithEnvironment[R0, R1, A, In, Ctx](
+    previous: LiveRouteContext[R0, A, In, Ctx],
+    service: Tag[R1])
+      extends LiveRouteContext[R0 & R1, A, In, (Ctx, R1)]
 
   /** Retains the lifecycle order and the proof that session context supplies route input. */
   final case class SessionMounted[RS, RR, A, SessionCtx, RouteIn, RouteCtx](
@@ -290,6 +312,36 @@ class LiveRouteBuilder[A] private[scalive] (
       )
     )
 
+  def context[Ctx, Msg, Model](
+    factory: Ctx => LiveView[Msg, Model]
+  ): LiveRoute[Any, A] { type Input = Ctx } =
+    context((_, _, context) => factory(context))
+
+  def context[Ctx, R: Tag, Msg, Model](
+    factory: (Ctx, R) => LiveView[Msg, Model]
+  ): LiveRoute[R, A] { type Input = Ctx } =
+    context((_, _, context, service) => factory(context, service))
+
+  def context[Ctx, Msg, Model](
+    factory: (A, Request, Ctx) => LiveView[Msg, Model]
+  ): LiveRoute[Any, A] { type Input = Ctx } =
+    apply(factory)
+
+  def context[Ctx, R: Tag, Msg, Model](
+    factory: (A, Request, Ctx, R) => LiveView[Msg, Model]
+  ): LiveRoute[R, A] { type Input = Ctx } =
+    val requiredLayouts    = layouts.map(LiveLayout.contramapContext(_, (_: Ctx) => ()))
+    val requiredRootLayout = rootLayout.map(LiveRootLayout.contramapContext(_, (_: Ctx) => ()))
+    LiveRoute(
+      LiveRouteDefinition.Ordinary(
+        pathCodec,
+        LiveRouteContext.WithEnvironment(LiveRouteContext.Required(), summon[Tag[R]]),
+        (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
+        requiredLayouts.map(LiveLayout.contramapContext(_, (_: (Ctx, R))._1)),
+        requiredRootLayout.map(LiveRootLayout.contramapContext(_, (_: (Ctx, R))._1))
+      )
+    )
+
   infix def ->[Msg, Model](
     view: => LiveView[Msg, Model]
   ): LiveRoute[Any, A] { type Input = Any } = apply(view)
@@ -406,6 +458,36 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
     factory: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Need } = from(factory)
 
+  def context[Msg, Model](
+    factory: Ctx => LiveView[Msg, Model]
+  ): LiveRoute[R, A] { type Input = Need } =
+    context((_, _, context) => factory(context))
+
+  def context[R1: Tag, Msg, Model](
+    factory: (Ctx, R1) => LiveView[Msg, Model]
+  ): LiveRoute[R & R1, A] { type Input = Need } =
+    context[R1, Msg, Model]((_: A, _: Request, context: Ctx, service: R1) =>
+      factory(context, service)
+    )
+
+  def context[Msg, Model](
+    factory: (A, Request, Ctx) => LiveView[Msg, Model]
+  ): LiveRoute[R, A] { type Input = Need } =
+    from(factory)
+
+  def context[R1: Tag, Msg, Model](
+    factory: (A, Request, Ctx, R1) => LiveView[Msg, Model]
+  ): LiveRoute[R & R1, A] { type Input = Need } =
+    LiveRoute(
+      LiveRouteDefinition.Ordinary(
+        pathCodec,
+        LiveRouteContext.WithEnvironment(LiveRouteContext.Mounted(pipeline), summon[Tag[R1]]),
+        (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
+        layouts.map(LiveLayout.contramapContext(_, (_: (Ctx, R1))._1)),
+        rootLayout.map(LiveRootLayout.contramapContext(_, (_: (Ctx, R1))._1))
+      )
+    )
+
   def from[Msg, Model](
     factory: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Need } =
@@ -451,6 +533,37 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
   def apply[Msg, Model](
     factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Need } = from(factory)
+
+  def context[Msg, Model](
+    factory: Ctx => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[R, A] { type Input = Need } =
+    context((_, _, context) => factory(context))
+
+  def context[R1: Tag, Msg, Model](
+    factory: (Ctx, R1) => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[R & R1, A] { type Input = Need } =
+    context[R1, Msg, Model]((_: A, _: Request, context: Ctx, service: R1) =>
+      factory(context, service)
+    )
+
+  def context[Msg, Model](
+    factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[R, A] { type Input = Need } =
+    from(factory)
+
+  def context[R1: Tag, Msg, Model](
+    factory: (A, Request, Ctx, R1) => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[R & R1, A] { type Input = Need } =
+    LiveRoute(
+      LiveRouteDefinition.Routed(
+        pathCodec,
+        LiveRouteContext.WithEnvironment(LiveRouteContext.Mounted(pipeline), summon[Tag[R1]]),
+        (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
+        paramsCodec,
+        layouts.map(LiveLayout.contramapContext(_, (_: (Ctx, R1))._1)),
+        rootLayout.map(LiveRootLayout.contramapContext(_, (_: (Ctx, R1))._1))
+      )
+    )
 
   def from[Msg, Model](
     factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
@@ -520,6 +633,46 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
   def apply[Msg, Model](
     factory: Request => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[Any, A] { type Input = Any } = routed((_, request) => factory(request))
+
+  def context[Ctx, Msg, Model](
+    factory: Ctx => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[Any, A] { type Input = Ctx } =
+    context((_, _, context) => factory(context))
+
+  def context[Ctx, R: Tag, Msg, Model](
+    factory: (Ctx, R) => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[R, A] { type Input = Ctx } =
+    context((_, _, context, service) => factory(context, service))
+
+  def context[Ctx, Msg, Model](
+    factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[Any, A] { type Input = Ctx } =
+    LiveRoute(
+      LiveRouteDefinition.Routed(
+        pathCodec,
+        LiveRouteContext.Required(),
+        factory,
+        paramsCodec,
+        layouts.map(LiveLayout.contramapContext(_, (_: Ctx) => ())),
+        rootLayout.map(LiveRootLayout.contramapContext(_, (_: Ctx) => ()))
+      )
+    )
+
+  def context[Ctx, R: Tag, Msg, Model](
+    factory: (A, Request, Ctx, R) => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[R, A] { type Input = Ctx } =
+    val requiredLayouts    = layouts.map(LiveLayout.contramapContext(_, (_: Ctx) => ()))
+    val requiredRootLayout = rootLayout.map(LiveRootLayout.contramapContext(_, (_: Ctx) => ()))
+    LiveRoute(
+      LiveRouteDefinition.Routed(
+        pathCodec,
+        LiveRouteContext.WithEnvironment(LiveRouteContext.Required(), summon[Tag[R]]),
+        (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
+        paramsCodec,
+        requiredLayouts.map(LiveLayout.contramapContext(_, (_: (Ctx, R))._1)),
+        requiredRootLayout.map(LiveRootLayout.contramapContext(_, (_: (Ctx, R))._1))
+      )
+    )
 
   infix def ->[Msg, Model](
     view: => LiveView.Routed[Msg, Model, Params]
@@ -638,18 +791,38 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       rootLayout.map(LiveRootLayout.contramapContext(_, append.left))
     )
 
+  /** Adds the session's single active-connection admission boundary.
+    *
+    * The signed aspect claim supplies the application-owned connection identifier. Connected mount
+    * registers the physical transport before invoking the aspect's authoritative callback.
+    */
+  def withAdmission[R1, Claims, Out, Result, Id](
+    aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out]
+  )(
+    connectionId: Claims => Id
+  )(using
+    append: ContextAppend.Aux[Ctx, Out, Result],
+    connections: Tag[LiveConnections[Id]]
+  ): LiveSessionBuilder.Admitted[R & R1 & LiveConnections[Id], Result] =
+    LiveSessionBuilder.Admitted(
+      name,
+      pipeline.admitThen(aspect, connectionId, connections),
+      layouts.map(LiveLayout.contramapContext(_, append.left)),
+      rootLayout.map(LiveRootLayout.contramapContext(_, append.left))
+    )
+
   def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(name, pipeline, layouts :+ value, rootLayout)
 
   def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(name, pipeline, layouts, Some(value))
 
-  def apply[R1, Need](routes: (LiveRouteFragment[R1] { type Input = Need })*)(using Ctx <:< Need)
-    : LiveSession[R & R1] =
-    val attached = routes.toVector.flatMap(
-      _.attachSession(pipeline, layouts, rootLayout, summon[Ctx <:< Need])
-    )
+  def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[R & R1] =
+    val attached = routes.toVector.flatMap { route =>
+      route.attachSession(pipeline, layouts, rootLayout, summon[Ctx <:< route.Input])
+    }
     LiveSession(name, attached)
+end LiveSessionBuilder
 
 object LiveSessionBuilder:
   private[scalive] def apply[R, Ctx](
@@ -658,6 +831,44 @@ object LiveSessionBuilder:
     layouts: Vector[LiveLayout[Any, Ctx]],
     rootLayout: Option[LiveRootLayout[Any, Ctx]]
   ): LiveSessionBuilder[R, Ctx] = new LiveSessionBuilder(name, pipeline, layouts, rootLayout)
+
+  /** Session construction after its one admission boundary has been declared. */
+  final class Admitted[R, Ctx] private[scalive] (
+    val name: String,
+    private val pipeline: LiveMountPipeline[R, Any, Any, Ctx],
+    private val layouts: Vector[LiveLayout[Any, Ctx]],
+    private val rootLayout: Option[LiveRootLayout[Any, Ctx]]):
+    def withMountAspect[R1, Claims, Out, Result](
+      aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out]
+    )(using append: ContextAppend.Aux[Ctx, Out, Result]
+    ): Admitted[R & R1, Result] =
+      Admitted(
+        name,
+        pipeline.andThen(aspect),
+        layouts.map(LiveLayout.contramapContext(_, append.left)),
+        rootLayout.map(LiveRootLayout.contramapContext(_, append.left))
+      )
+
+    def withLayout(value: LiveLayout[Any, Ctx]): Admitted[R, Ctx] =
+      Admitted(name, pipeline, layouts :+ value, rootLayout)
+
+    def withRootLayout(value: LiveRootLayout[Any, Ctx]): Admitted[R, Ctx] =
+      Admitted(name, pipeline, layouts, Some(value))
+
+    def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[R & R1] =
+      val attached = routes.toVector.flatMap { route =>
+        route.attachSession(pipeline, layouts, rootLayout, summon[Ctx <:< route.Input])
+      }
+      LiveSession(name, attached)
+
+  private[scalive] object Admitted:
+    def apply[R, Ctx](
+      name: String,
+      pipeline: LiveMountPipeline[R, Any, Any, Ctx],
+      layouts: Vector[LiveLayout[Any, Ctx]],
+      rootLayout: Option[LiveRootLayout[Any, Ctx]]
+    ): Admitted[R, Ctx] = new Admitted(name, pipeline, layouts, rootLayout)
+end LiveSessionBuilder
 
 /** A complete declarative application; transport and runtime interpretation live elsewhere. */
 final class LiveApplication[-R] private[scalive] (

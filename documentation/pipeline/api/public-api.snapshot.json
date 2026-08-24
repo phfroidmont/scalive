@@ -470,6 +470,18 @@
       ]
     },
     {
+      "id" : "class:scalive.LiveConnections",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveConnections",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveConnections:3892e7d52b41afa6",
+          "signature" : "class LiveConnections[Id]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.LiveEncodableRouteParamsBuilder",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveEncodableRouteParamsBuilder",
@@ -538,6 +550,18 @@
         {
           "id" : "class:scalive.LiveMountAspect:72877f288e8ed1e9",
           "signature" : "class LiveMountAspect[R, A, -In, Claims, Ctx]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveMountPipeline.Controlled",
+      "ownerId" : "object:scalive.LiveMountPipeline",
+      "qualifiedName" : "scalive.LiveMountPipeline.Controlled",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveMountPipeline.Controlled:de39ccc9dcd9a0ed",
+          "signature" : "class Controlled[R, R1, A, In, Ctx, Claims, Out, Result, Id](previous: LiveMountPipeline[R, A, In, Ctx], aspect: LiveMountAspect[R1, A, Ctx, Claims, Out], connectionId: Claims => Id, connections: zio.package.Tag[LiveConnections[Id]], append: ContextAppend.Aux[Ctx, Out, Result]) extends LiveMountPipeline[&[&[R, R1], LiveConnections[Id]], A, In, Result]"
         }
       ]
     },
@@ -698,6 +722,18 @@
       ]
     },
     {
+      "id" : "class:scalive.LiveRouteContext.WithEnvironment",
+      "ownerId" : "object:scalive.LiveRouteContext",
+      "qualifiedName" : "scalive.LiveRouteContext.WithEnvironment",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveRouteContext.WithEnvironment:06394ace9d158c46",
+          "signature" : "class WithEnvironment[R0, R1, A, In, Ctx](previous: LiveRouteContext[R0, A, In, Ctx], service: zio.package.Tag[R1]) extends LiveRouteContext[&[R0, R1], A, In, (Ctx, R1)]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.LiveRouteDefinition.Ordinary",
       "ownerId" : "object:scalive.LiveRouteDefinition",
       "qualifiedName" : "scalive.LiveRouteDefinition.Ordinary",
@@ -814,6 +850,18 @@
         {
           "id" : "class:scalive.LiveSessionBuilder:c7ed2cb6270e7f04",
           "signature" : "class LiveSessionBuilder[R, Ctx]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveSessionBuilder.Admitted",
+      "ownerId" : "object:scalive.LiveSessionBuilder",
+      "qualifiedName" : "scalive.LiveSessionBuilder.Admitted",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveSessionBuilder.Admitted:e73abed7eee8e78f",
+          "signature" : "class Admitted[R, Ctx]"
         }
       ]
     },
@@ -4166,6 +4214,70 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveConnections.disconnect",
+      "ownerId" : "class:scalive.LiveConnections",
+      "qualifiedName" : "scalive.LiveConnections.disconnect",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveConnections.disconnect:30496b7980574a16",
+          "signature" : "def disconnect[Id](id: Id)(using evidence$1: zio.package.Tag[Id]): zio.ZIO[LiveConnections[Id], Throwable, Unit]"
+        },
+        {
+          "id" : "def:scalive.LiveConnections.disconnect:8153d369b6ac498d",
+          "signature" : "def disconnect(id: Id): zio.package.Task[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveConnections.distributed",
+      "ownerId" : "object:scalive.LiveConnections",
+      "qualifiedName" : "scalive.LiveConnections.distributed",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveConnections.distributed:859060f162e92c9a",
+          "signature" : "def distributed[Id](using evidence$1: zio.package.Tag[Id]): zio.ZLayer[LiveDisconnectBus[Id], Throwable, LiveConnections[Id]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveConnections.local",
+      "ownerId" : "object:scalive.LiveConnections",
+      "qualifiedName" : "scalive.LiveConnections.local",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveConnections.local:7b747c5b39fb8dc8",
+          "signature" : "def local[Id](using evidence$1: zio.package.Tag[Id]): zio.package.ULayer[LiveConnections[Id]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveDisconnectBus.publish",
+      "ownerId" : "trait:scalive.LiveDisconnectBus",
+      "qualifiedName" : "scalive.LiveDisconnectBus.publish",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveDisconnectBus.publish:3c9b33f381be3752",
+          "signature" : "def publish(id: Id): zio.package.Task[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveDisconnectBus.subscribe",
+      "ownerId" : "trait:scalive.LiveDisconnectBus",
+      "qualifiedName" : "scalive.LiveDisconnectBus.subscribe",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveDisconnectBus.subscribe:aae9bdb0a0dbe651",
+          "signature" : "def subscribe(onDisconnect: Id => zio.package.UIO[Unit]): zio.ZIO[zio.Scope, Throwable, Unit]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveEncodableRouteParamsBuilder.location",
       "ownerId" : "class:scalive.LiveEncodableRouteParamsBuilder",
       "qualifiedName" : "scalive.LiveEncodableRouteParamsBuilder.location",
@@ -4782,6 +4894,30 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouteBuilder.context",
+      "ownerId" : "class:scalive.LiveRouteBuilder",
+      "qualifiedName" : "scalive.LiveRouteBuilder.context",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteBuilder.context:620f6e8698beea2c",
+          "signature" : "def context: [Ctx, R, Msg, Model](factory: (Ctx, R) => LiveView[Msg, Model])(using evidence$1: zio.package.Tag[R])(LiveRoute[R, A] { type Input = Ctx })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteBuilder.context:9d4d7065c66c55f0",
+          "signature" : "def context: [Ctx, R, Msg, Model](factory: (A, zio.http.Request, Ctx, R) => LiveView[Msg, Model])(using evidence$1: zio.package.Tag[R])(LiveRoute[R, A] { type Input = Ctx })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteBuilder.context:b0a4c3beea01e583",
+          "signature" : "def context: [Ctx, Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView[Msg, Model])(LiveRoute[Any, A] { type Input = Ctx })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteBuilder.context:d43923f362bead34",
+          "signature" : "def context: [Ctx, Msg, Model](factory: Ctx => LiveView[Msg, Model])(LiveRoute[Any, A] { type Input = Ctx })"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouteBuilder.from",
       "ownerId" : "class:scalive.LiveRouteBuilder",
       "qualifiedName" : "scalive.LiveRouteBuilder.from",
@@ -4962,6 +5098,30 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouteMountAspectBuilder.context",
+      "ownerId" : "class:scalive.LiveRouteMountAspectBuilder",
+      "qualifiedName" : "scalive.LiveRouteMountAspectBuilder.context",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteMountAspectBuilder.context:27ce1bfb3fb686bf",
+          "signature" : "def context: [Msg, Model](factory: Ctx => LiveView[Msg, Model])(LiveRoute[R, A] { type Input = Need })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteMountAspectBuilder.context:d0cedabc23fe0f31",
+          "signature" : "def context: [R1, Msg, Model](factory: (A, zio.http.Request, Ctx, R1) => LiveView[Msg, Model])(using evidence$1: zio.package.Tag[R1])(LiveRoute[&[R, R1], A] { type Input = Need })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteMountAspectBuilder.context:f2175bcf47268cae",
+          "signature" : "def context: [R1, Msg, Model](factory: (Ctx, R1) => LiveView[Msg, Model])(using evidence$1: zio.package.Tag[R1])(LiveRoute[&[R, R1], A] { type Input = Need })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteMountAspectBuilder.context:f5aede2a296cb09d",
+          "signature" : "def context: [Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView[Msg, Model])(LiveRoute[R, A] { type Input = Need })"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouteMountAspectBuilder.from",
       "ownerId" : "class:scalive.LiveRouteMountAspectBuilder",
       "qualifiedName" : "scalive.LiveRouteMountAspectBuilder.from",
@@ -5074,6 +5234,30 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.context",
+      "ownerId" : "class:scalive.LiveRouteMountAspectParamsBuilder",
+      "qualifiedName" : "scalive.LiveRouteMountAspectParamsBuilder.context",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.context:14fbf8060f1ada8b",
+          "signature" : "def context: [R1, Msg, Model](factory: (A, zio.http.Request, Ctx, R1) => LiveView.Routed[Msg, Model, Params])(using evidence$1: zio.package.Tag[R1])(LiveRoute[&[R, R1], A] { type Input = Need })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.context:2bbf1211c53e86dc",
+          "signature" : "def context: [R1, Msg, Model](factory: (Ctx, R1) => LiveView.Routed[Msg, Model, Params])(using evidence$1: zio.package.Tag[R1])(LiveRoute[&[R, R1], A] { type Input = Need })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.context:c680aec228267259",
+          "signature" : "def context: [Msg, Model](factory: Ctx => LiveView.Routed[Msg, Model, Params])(LiveRoute[R, A] { type Input = Need })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.context:da7111770353bf2c",
+          "signature" : "def context: [Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView.Routed[Msg, Model, Params])(LiveRoute[R, A] { type Input = Need })"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.from",
       "ownerId" : "class:scalive.LiveRouteMountAspectParamsBuilder",
       "qualifiedName" : "scalive.LiveRouteMountAspectParamsBuilder.from",
@@ -5134,6 +5318,30 @@
         {
           "id" : "def:scalive.LiveRouteParamsBuilder.apply:78e6ea96f1bfffa0",
           "signature" : "def apply: [Msg, Model](factory: zio.http.Request => LiveView.Routed[Msg, Model, Params])(LiveRoute[Any, A] { type Input = Any })"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveRouteParamsBuilder.context",
+      "ownerId" : "class:scalive.LiveRouteParamsBuilder",
+      "qualifiedName" : "scalive.LiveRouteParamsBuilder.context",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteParamsBuilder.context:2b17c8e2ecffdf6a",
+          "signature" : "def context: [Ctx, Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView.Routed[Msg, Model, Params])(LiveRoute[Any, A] { type Input = Ctx })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteParamsBuilder.context:32e1821838a9e86f",
+          "signature" : "def context: [Ctx, R, Msg, Model](factory: (Ctx, R) => LiveView.Routed[Msg, Model, Params])(using evidence$1: zio.package.Tag[R])(LiveRoute[R, A] { type Input = Ctx })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteParamsBuilder.context:62541d2b948cca2c",
+          "signature" : "def context: [Ctx, Msg, Model](factory: Ctx => LiveView.Routed[Msg, Model, Params])(LiveRoute[Any, A] { type Input = Ctx })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteParamsBuilder.context:88521f28063fbfbc",
+          "signature" : "def context: [Ctx, R, Msg, Model](factory: (A, zio.http.Request, Ctx, R) => LiveView.Routed[Msg, Model, Params])(using evidence$1: zio.package.Tag[R])(LiveRoute[R, A] { type Input = Ctx })"
         }
       ]
     },
@@ -5222,14 +5430,74 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveSessionBuilder.Admitted.apply",
+      "ownerId" : "class:scalive.LiveSessionBuilder.Admitted",
+      "qualifiedName" : "scalive.LiveSessionBuilder.Admitted.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.apply:c6b1114a68a3ba64",
+          "signature" : "def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[&[R, R1]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveSessionBuilder.Admitted.withLayout",
+      "ownerId" : "class:scalive.LiveSessionBuilder.Admitted",
+      "qualifiedName" : "scalive.LiveSessionBuilder.Admitted.withLayout",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.withLayout:2f22ec941e7512a3",
+          "signature" : "def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder.Admitted[R, Ctx]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveSessionBuilder.Admitted.withMountAspect",
+      "ownerId" : "class:scalive.LiveSessionBuilder.Admitted",
+      "qualifiedName" : "scalive.LiveSessionBuilder.Admitted.withMountAspect",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.withMountAspect:9045588b7d2ea279",
+          "signature" : "def withMountAspect[R1, Claims, Out, Result](aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out])(using append: ContextAppend.Aux[Ctx, Out, Result]): LiveSessionBuilder.Admitted[&[R, R1], Result]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveSessionBuilder.Admitted.withRootLayout",
+      "ownerId" : "class:scalive.LiveSessionBuilder.Admitted",
+      "qualifiedName" : "scalive.LiveSessionBuilder.Admitted.withRootLayout",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.withRootLayout:5d09a86ea47436fa",
+          "signature" : "def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder.Admitted[R, Ctx]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveSessionBuilder.apply",
       "ownerId" : "class:scalive.LiveSessionBuilder",
       "qualifiedName" : "scalive.LiveSessionBuilder.apply",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveSessionBuilder.apply:24d0c4de6e066ace",
-          "signature" : "def apply[R1, Need](routes: (LiveRouteFragment[R1] { type Input = Need })*)(using x$2: <:<[Ctx, Need]): LiveSession[&[R, R1]]"
+          "id" : "def:scalive.LiveSessionBuilder.apply:4cb2a4d587618ee7",
+          "signature" : "def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[&[R, R1]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveSessionBuilder.withAdmission",
+      "ownerId" : "class:scalive.LiveSessionBuilder",
+      "qualifiedName" : "scalive.LiveSessionBuilder.withAdmission",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveSessionBuilder.withAdmission:4c92e0a5ab286c8d",
+          "signature" : "def withAdmission[R1, Claims, Out, Result, Id](aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out])(connectionId: Claims => Id)(using append: ContextAppend.Aux[Ctx, Out, Result], connections: zio.package.Tag[LiveConnections[Id]]): LiveSessionBuilder.Admitted[&[&[R, R1], LiveConnections[Id]], Result]"
         }
       ]
     },
@@ -13046,6 +13314,18 @@
       ]
     },
     {
+      "id" : "object:scalive.LiveConnections",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveConnections",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveConnections:2be4c4e78a31a5b2",
+          "signature" : "object LiveConnections"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.LiveEncodableRouteParamsBuilder",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveEncodableRouteParamsBuilder",
@@ -14169,6 +14449,18 @@
         {
           "id" : "trait:scalive.LiveComponent.WithOutput.Eventless:e115a1d5814df785",
           "signature" : "trait Eventless[Props, Model, Output] extends LiveComponent.WithOutput[Props, Nothing, Model, Output]"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.LiveDisconnectBus",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveDisconnectBus",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LiveDisconnectBus:35cb91799132641d",
+          "signature" : "trait LiveDisconnectBus[Id]"
         }
       ]
     },
@@ -16777,6 +17069,66 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveMountPipeline.Controlled.append",
+      "ownerId" : "class:scalive.LiveMountPipeline.Controlled",
+      "qualifiedName" : "scalive.LiveMountPipeline.Controlled.append",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveMountPipeline.Controlled.append:569305362c25f0e2",
+          "signature" : "val append: ContextAppend.Aux[Ctx, Out, Result]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveMountPipeline.Controlled.aspect",
+      "ownerId" : "class:scalive.LiveMountPipeline.Controlled",
+      "qualifiedName" : "scalive.LiveMountPipeline.Controlled.aspect",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveMountPipeline.Controlled.aspect:a7cb00d8c9b7bed4",
+          "signature" : "val aspect: LiveMountAspect[R1, A, Ctx, Claims, Out]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveMountPipeline.Controlled.connectionId",
+      "ownerId" : "class:scalive.LiveMountPipeline.Controlled",
+      "qualifiedName" : "scalive.LiveMountPipeline.Controlled.connectionId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveMountPipeline.Controlled.connectionId:34a039e99d35880f",
+          "signature" : "val connectionId: Claims => Id"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveMountPipeline.Controlled.connections",
+      "ownerId" : "class:scalive.LiveMountPipeline.Controlled",
+      "qualifiedName" : "scalive.LiveMountPipeline.Controlled.connections",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveMountPipeline.Controlled.connections:6ed3e3f1f298d89e",
+          "signature" : "val connections: zio.package.Tag[LiveConnections[Id]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveMountPipeline.Controlled.previous",
+      "ownerId" : "class:scalive.LiveMountPipeline.Controlled",
+      "qualifiedName" : "scalive.LiveMountPipeline.Controlled.previous",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveMountPipeline.Controlled.previous:26241ddb6e26deb4",
+          "signature" : "val previous: LiveMountPipeline[R, A, In, Ctx]"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveMountPipeline.Then.append",
       "ownerId" : "class:scalive.LiveMountPipeline.Then",
       "qualifiedName" : "scalive.LiveMountPipeline.Then.append",
@@ -17017,6 +17369,30 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveRouteContext.WithEnvironment.previous",
+      "ownerId" : "class:scalive.LiveRouteContext.WithEnvironment",
+      "qualifiedName" : "scalive.LiveRouteContext.WithEnvironment.previous",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveRouteContext.WithEnvironment.previous:e40b76db29181b1e",
+          "signature" : "val previous: LiveRouteContext[R0, A, In, Ctx]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveRouteContext.WithEnvironment.service",
+      "ownerId" : "class:scalive.LiveRouteContext.WithEnvironment",
+      "qualifiedName" : "scalive.LiveRouteContext.WithEnvironment.service",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveRouteContext.WithEnvironment.service:18d2605d35fbfbd0",
+          "signature" : "val service: zio.package.Tag[R1]"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveRouteDefinition.Ordinary.context",
       "ownerId" : "class:scalive.LiveRouteDefinition.Ordinary",
       "qualifiedName" : "scalive.LiveRouteDefinition.Ordinary.context",
@@ -17204,6 +17580,18 @@
       "signatures" : [
         {
           "id" : "val:scalive.LiveSession.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveSessionBuilder.Admitted.name",
+      "ownerId" : "class:scalive.LiveSessionBuilder.Admitted",
+      "qualifiedName" : "scalive.LiveSessionBuilder.Admitted.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveSessionBuilder.Admitted.name:81da2bb6fc574443",
           "signature" : "val name: String"
         }
       ]

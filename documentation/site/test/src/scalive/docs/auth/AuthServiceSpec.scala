@@ -37,15 +37,21 @@ object AuthServiceSpec extends ZIOSpecDefault:
         loggedIn <- ZIO
                       .fromOption(result.toOption)
                       .orDieWith(_ => new AssertionError("demo login failed"))
-        _        <- auth.reset(visitor, Some(loggedIn.cookieToken))
+        resetId  <- auth.reset(visitor, Some(loggedIn.cookieToken))
         reset    <- auth.authenticate(loggedIn.cookieToken)
         next     <- login(auth)
         active <- ZIO
                     .fromOption(next.toOption)
                     .orDieWith(_ => new AssertionError("login after reset failed"))
         _        <- TestClock.adjust(config.sessionTtl)
+        expiredId <- auth.reset(visitor, Some(active.cookieToken))
         expired  <- auth.authenticate(active.cookieToken)
-      yield assertTrue(reset.isEmpty, expired.isEmpty)
+      yield assertTrue(
+        resetId.contains(loggedIn.currentSession.publicSessionId),
+        expiredId.contains(active.currentSession.publicSessionId),
+        reset.isEmpty,
+        expired.isEmpty
+      )
     },
     test("bounds attempts independently by visitor") {
       val config = AuthServiceConfig.default.copy(maxAttempts = 2, attemptWindow = 1.minute)

@@ -17,29 +17,33 @@ object AuthLabRoutes:
 
 // docs:start authentication-mount-aspect
 object AuthMountAspect:
-  def authenticated(
-    auth: AuthService
-  ): LiveMountAspect[Any, Any, Any, AuthClaims, CurrentSession] =
+  val authenticated: LiveMountAspect[AuthService, Any, Any, AuthClaims, CurrentUser] =
     LiveMountAspect.fromRequest(
       request =>
         request.request.cookie(AuthHttpRoutes.SessionCookieName) match
           case None         => ZIO.fail(AuthLabRoutes.login.location.seeOther)
           case Some(cookie) =>
-            auth
-              .authenticate(SessionCookieToken(cookie.content))
-              .someOrFail(AuthLabRoutes.login.location.seeOther)
-              .map(current => AuthClaims(current.publicSessionId) -> current),
+            ZIO
+              .serviceWithZIO[AuthService](
+                _.authenticate(SessionCookieToken(cookie.content))
+              ).someOrFail(AuthLabRoutes.login.location.seeOther)
+              .map(current =>
+                AuthClaims(current.publicSessionId) ->
+                  CurrentUser(current.user.email, current.user.name)
+              ),
       (claims, _) =>
-        auth
-          .resume(claims.publicSessionId)
-          .someOrFail(LiveMountFailure.redirect(AuthLabRoutes.login.location))
+        ZIO
+          .serviceWithZIO[AuthService](
+            _.resume(claims.publicSessionId)
+          ).someOrFail(LiveMountFailure.redirect(AuthLabRoutes.login.location))
+          .map(current => CurrentUser(current.user.email, current.user.name))
     )
 // docs:end authentication-mount-aspect
 
-final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
+final class AuthHttpRoutes(security: LiveSecurity):
   import AuthHttpRoutes.*
 
-  val routes: Routes[Any, Nothing] = Routes(
+  val routes: Routes[AuthService & LiveConnections[PublicSessionId], Nothing] = Routes(
     AuthLabRoutes.SessionRoute -> handler((request: Request) => login(request)),
     AuthLabRoutes.ResetRoute   -> handler((request: Request) => reset(request))
   )
@@ -51,7 +55,7 @@ final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
     HttpFormDecoder.urlEncoded(FormCodec.formData, FormMaxBytes, security.csrf)
 
   // docs:start authentication-http-actions
-  private def login(request: Request): UIO[Response] =
+  private def login(request: Request): URIO[AuthService, Response] =
     loginDecoder
       .decode(request).foldZIO(
         error =>
@@ -59,7 +63,7 @@ final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
             case HttpFormDecoder.Error.Validation(_) => invalidLoginResponse
             case _ => ZIO.succeed(error.toResponse(_ => Response.badRequest))),
         credentials =>
-          auth.login(visitor(request), credentials).flatMap {
+          ZIO.serviceWithZIO[AuthService](_.login(visitor(request), credentials)).flatMap {
             case LoginDecision.Successful(result) =>
               ZIO.succeed(
                 AuthLabRoutes.profile.location.seeOther
@@ -70,17 +74,28 @@ final class AuthHttpRoutes(auth: AuthService, security: LiveSecurity):
           }
       )
 
-  private def reset(request: Request): UIO[Response] =
+  private def reset(
+    request: Request
+  ): URIO[AuthService & LiveConnections[PublicSessionId], Response] =
     resetDecoder.respond(request, _ => Response.forbidden) { _ =>
       val cookieToken = request
         .cookie(SessionCookieName)
         .map(cookie => SessionCookieToken(cookie.content))
-      auth
-        .reset(visitor(request), cookieToken)
-        .as(
-          AuthLabRoutes.login.location.seeOther
-            .addCookie(security.cookies.expire(SessionCookieName))
-        )
+      val revokeAndDisconnect = for
+        publicSessionId <- ZIO.serviceWithZIO[AuthService](
+                             _.reset(visitor(request), cookieToken)
+                           )
+        _ <- ZIO.foreachDiscard(publicSessionId)(LiveConnections.disconnect(_))
+      yield AuthLabRoutes.login.location.seeOther
+        .addCookie(security.cookies.expire(SessionCookieName))
+
+      revokeAndDisconnect.catchAll(error =>
+        ZIO.logErrorCause("Authentication reset fanout failed", Cause.fail(error)) *>
+          ZIO.succeed(
+            Response.internalServerError
+              .addCookie(security.cookies.expire(SessionCookieName))
+          )
+      )
     }
   // docs:end authentication-http-actions
 
@@ -183,29 +198,23 @@ object LoginLiveView:
   val InvalidLoginMessage = "The sign-in request was invalid. Please try again."
   val RateLimitedMessage  = "Too many attempts. Wait one minute or reset the lab."
 
-final class ProfileLiveView(currentSession: CurrentSession)
-    extends LiveView.Eventless[CurrentSession]:
-  def mount(ctx: MountContext) = ZIO.succeed(currentSession)
+final class ProfileLiveView(currentUser: CurrentUser) extends LiveView.Eventless[Unit]:
+  def mount(ctx: MountContext) = ZIO.unit
 
-  override def view(model: Signal[CurrentSession]): HtmlElement[Nothing] =
+  override def view(model: Signal[Unit]): HtmlElement[Nothing] =
     articleTag(
       cls := "docs-auth-lab",
       headerTag(
         cls := "docs-auth-header",
         p(cls := "docs-auth-kicker", "Authenticated session"),
-        h1(model.map(session => s"Welcome, ${session.user.name}")),
+        h1(s"Welcome, ${currentUser.name}"),
         p(
           "The connected mount resumed this session from a signed, non-secret public identifier and checked the server record again."
         )
       ),
       sectionTag(
         cls := "docs-auth-card docs-auth-profile",
-        dl(
-          dt("Current user"),
-          dd(model.map(_.user.email)),
-          dt("Public session ID"),
-          dd(code(model.map(_.publicSessionId.value)))
-        ),
+        dl(dt("Current user"), dd(currentUser.email)),
         scalive.Form.http(FormAction.from(AuthLabRoutes.ResetRoute))(
           button(typ := "submit", "Sign out and reset lab")
         )
@@ -216,9 +225,10 @@ object AuthLab:
   val loginRoute: LiveRouteFragment[Any] { type Input = Any } =
     AuthLabRoutes.login(LoginLiveView())
 
-  def protectedSession(auth: AuthService): LiveRouteFragment[Any] { type Input = Any } =
+  val protectedSession
+    : LiveRouteFragment[AuthService & LiveConnections[PublicSessionId]] { type Input = Any } =
     Live
       .session("documentation-authentication-lab")
-      .withMountAspect(AuthMountAspect.authenticated(auth))(
-        AuthLabRoutes.profile((_, _, session: CurrentSession) => ProfileLiveView(session))
+      .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)(
+        AuthLabRoutes.profile.context(ProfileLiveView.apply)
       )

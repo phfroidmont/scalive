@@ -13,6 +13,7 @@ final case class VisitorToken(value: String)
 final case class PublicSessionId(value: String) derives JsonCodec
 
 final case class AuthUser(email: String, name: String)
+final case class CurrentUser(email: String, name: String)
 final case class CurrentSession(user: AuthUser, publicSessionId: PublicSessionId)
 final case class AuthClaims(publicSessionId: PublicSessionId) derives JsonCodec
 final case class LoginResult(cookieToken: SessionCookieToken, currentSession: CurrentSession)
@@ -52,7 +53,10 @@ trait AuthService:
   def login(visitor: VisitorToken, credentials: LoginCredentials): UIO[LoginDecision]
   def authenticate(cookieToken: SessionCookieToken): UIO[Option[CurrentSession]]
   def resume(publicSessionId: PublicSessionId): UIO[Option[CurrentSession]]
-  def reset(visitor: VisitorToken, cookieToken: Option[SessionCookieToken]): UIO[Unit]
+  def reset(
+    visitor: VisitorToken,
+    cookieToken: Option[SessionCookieToken]
+  ): UIO[Option[PublicSessionId]]
   private[auth] def recordCounts: UIO[AuthRecordCounts]
 
 object AuthService:
@@ -148,11 +152,15 @@ object AuthService:
           def reset(
             visitor: VisitorToken,
             cookieToken: Option[SessionCookieToken]
-          ): UIO[Unit] =
+          ): UIO[Option[PublicSessionId]] =
             Clock.instant.flatMap { now =>
-              stateRef.update { state =>
+              stateRef.modify { state =>
+                val publicSessionId = cookieToken.flatMap(token =>
+                  state.sessionsByCookieHash
+                    .get(hash(token.value)).map(_.currentSession.publicSessionId)
+                )
                 val pruned = prune(state, now)
-                pruned.copy(
+                publicSessionId -> pruned.copy(
                   sessionsByCookieHash = cookieToken.fold(pruned.sessionsByCookieHash)(token =>
                     pruned.sessionsByCookieHash - hash(token.value)
                   ),

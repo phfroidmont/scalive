@@ -791,6 +791,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       val two = PhoenixRef.Value("2")
 
       assertTrue(
+        ZioHttp.DisconnectCloseCode == 1001,
         ZioHttp.effectiveJoinRef(PhoenixRef.Null, one).contains(one),
         ZioHttp.effectiveJoinRef(two, one).contains(two),
         ZioHttp.effectiveJoinRef(PhoenixRef.Null, PhoenixRef.Null).isEmpty
@@ -1024,6 +1025,49 @@ object ZioHttpSpec extends ZIOSpecDefault:
                     )
         body <- response.body.asString.orDie
       yield assertTrue(body.contains("hello"))
+    },
+    test("context environment services are resolved in both phases without entering mount claims") {
+      final case class Greeting(value: String)
+      val aspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+        _ => ZIO.succeed("session-claim" -> "disconnected-user"),
+        (_, _) => ZIO.succeed("connected-user")
+      )
+      final class View(user: String, greeting: Greeting) extends LiveView.Eventless[String]:
+        def mount(ctx: MountContext) = ZIO.succeed(s"$user:${greeting.value}")
+        def view(model: Signal[String]) = div(model)
+
+      val application = scalive.Live.router(
+        scalive.Live
+          .session("context-service")
+          .withMountAspect(aspect)(
+            scalive.live.context((user: String, greeting: Greeting) => View(user, greeting))
+          )
+      )
+      val environment = ZEnvironment(Greeting("hello"))
+      val route       = ZioHttp.validate(application).head.asInstanceOf[
+        ZioHttp.CompiledRoute[Greeting] { type Msg = Nothing; type Model = String }
+      ]
+
+      for
+        response <- run(
+                      ZioHttp.routes(application, config).provideEnvironment(environment),
+                      Request.get(URL.root)
+                    )
+        body   <- response.body.asString.orDie
+        claims <- ZioHttpSecurity.verifySession(
+                    config,
+                    attribute(body, "data-phx-session").get
+                  )
+        lifecycle <- route
+                       .prepareConnected(URL.root, Request.get(URL.root), claims)
+                       .provideEnvironment(environment)
+        model <- lifecycle.mount(scalive.runtime.connection.RootMountContext.disconnected).orDie
+      yield assertTrue(
+        body.contains("disconnected-user:hello"),
+        model == "connected-user:hello",
+        claims.sessionMountClaims.size == 1,
+        claims.routeMountClaims.isEmpty
+      )
     },
     test("duplicate route patterns and separately declared session names fail synchronously") {
       object View extends LiveView.Eventless[Unit]:

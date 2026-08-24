@@ -24,17 +24,18 @@ object ZioHttp:
   final private case class ConnectedMountRejected(failure: LiveMountFailure)
       extends Exception("connected mount rejected")
 
-  private val CsrfCookieName       = "_scalive_csrf"
-  private val FlashCookieName      = "__phoenix_flash__"
-  private val RootIngressCapacity  = 64
-  private val OutboundCapacity     = 64
-  private val KernelCapacity       = 64
-  private val ContinuationCapacity = 64
-  private val PhysicalWriterSize   = 64
-  private val UploadChunkCapacity  = 8
-  private val MaxUploadChunkBytes  = 1_000_000
-  private val MaxFramePayloadBytes = MaxUploadChunkBytes + 1024
-  private val secureRandom         = SecureRandom()
+  private val CsrfCookieName               = "_scalive_csrf"
+  private val FlashCookieName              = "__phoenix_flash__"
+  private val RootIngressCapacity          = 64
+  private val OutboundCapacity             = 64
+  private val KernelCapacity               = 64
+  private val ContinuationCapacity         = 64
+  private val PhysicalWriterSize           = 64
+  private val UploadChunkCapacity          = 8
+  private val MaxUploadChunkBytes          = 1_000_000
+  private val MaxFramePayloadBytes         = MaxUploadChunkBytes + 1024
+  private[scalive] val DisconnectCloseCode = 1001
+  private val secureRandom                 = SecureRandom()
 
   private[scalive] trait RuntimeObserverFactory:
     def connect(request: Request): RuntimeObserver
@@ -172,6 +173,33 @@ object ZioHttp:
     def ++(that: MountClaims): MountClaims =
       MountClaims(session ++ that.session, route ++ that.route)
 
+  final private[scalive] case class TransportAdmission(
+    key: LiveConnections.ConnectionKey,
+    disconnect: UIO[Unit],
+    isDisconnecting: UIO[Boolean])
+
+  final private[scalive] class PreparedAdmission(
+    val bindingAlreadyExisted: Boolean,
+    val commit: UIO[Unit],
+    val rollback: UIO[Unit],
+    val remove: UIO[Unit],
+    disconnect: UIO[Unit]):
+    def reject: UIO[Unit] =
+      if bindingAlreadyExisted then disconnect else rollback
+
+  final private case class ConnectedPipelineResult[Ctx](
+    context: Ctx,
+    remainingClaims: Vector[String],
+    admission: Option[PreparedAdmission])
+
+  final private case class ConnectedContext[Ctx](
+    context: Ctx,
+    admission: Option[PreparedAdmission])
+
+  final private[scalive] case class PreparedConnected[Msg, Model](
+    lifecycle: RootLifecycle[Msg, Model],
+    admission: Option[PreparedAdmission])
+
   private enum ClaimGroup:
     case Session, Route
 
@@ -210,8 +238,8 @@ object ZioHttp:
     ): ZIO[R & Scope, Throwable, RootConnection[Msg, Model]] =
       for
         path       <- ZIO.fromEither(pathCodec.decode(url.path).left.map(Exception(_)))
-        lifecycle  <- connectedLifecycle(path, request, url, claims)
-        connection <- startPrepared(lifecycle, metadata, sink)
+        prepared   <- connectedLifecycle(path, request, url, claims, None)
+        connection <- startPrepared(prepared.lifecycle, metadata, sink)
       yield connection
 
     final def startPrepared(
@@ -234,18 +262,36 @@ object ZioHttp:
       path: PathParams,
       request: Request,
       url: URL,
-      claims: ZioHttpSecurity.RootClaims
-    ): ZIO[R, Throwable, RootLifecycle[Msg, Model]]
+      claims: ZioHttpSecurity.RootClaims,
+      admission: Option[TransportAdmission]
+    ): ZIO[R, Throwable, PreparedConnected[Msg, Model]]
 
     final private[scalive] def prepareConnected(
       url: URL,
       request: Request,
       claims: ZioHttpSecurity.RootClaims
     ): ZIO[R, Throwable, RootLifecycle[Msg, Model]] =
+      prepareConnected(path = url, request = request, claims = claims, admission = None)
+        .map(_.lifecycle)
+
+    final private def prepareConnected(
+      path: URL,
+      request: Request,
+      claims: ZioHttpSecurity.RootClaims,
+      admission: Option[TransportAdmission]
+    ): ZIO[R, Throwable, PreparedConnected[Msg, Model]] =
       ZIO
-        .fromEither(pathCodec.decode(url.path).left.map(Exception(_))).flatMap(path =>
-          connectedLifecycle(path, request, url, claims)
+        .fromEither(pathCodec.decode(path.path).left.map(Exception(_))).flatMap(decoded =>
+          connectedLifecycle(decoded, request, path, claims, admission)
         )
+
+    final private[scalive] def prepareConnectedForTransport(
+      url: URL,
+      request: Request,
+      claims: ZioHttpSecurity.RootClaims,
+      admission: TransportAdmission
+    ): ZIO[R, Throwable, PreparedConnected[Msg, Model]] =
+      prepareConnected(url, request, claims, Some(admission))
 
     private def disconnected(path: PathParams, request: Request, config: ZioHttpConfig)
       : ZIO[R, Nothing, Response] =
@@ -501,7 +547,8 @@ object ZioHttp:
         path: A,
         request: Request,
         url: URL,
-        claims: ZioHttpSecurity.RootClaims
+        claims: ZioHttpSecurity.RootClaims,
+        admission: Option[TransportAdmission]
       ) =
         val supplied = MountClaims(claims.sessionMountClaims, claims.routeMountClaims)
         runConnectedContext(
@@ -509,23 +556,29 @@ object ZioHttp:
           path,
           request,
           ().asInstanceOf[In],
-          supplied
-        ).mapError(ConnectedMountRejected.apply).flatMap { context =>
+          supplied,
+          admission
+        ).mapError(ConnectedMountRejected.apply).flatMap { connected =>
+          val context     = connected.context
           val rootContext = LiveRootLayoutContext(path, request, url, context)
           ZIO
             .fail(ConnectedMountRejected(LiveMountFailure.unauthorized("root layout key differs")))
             .unless(selectedRoot.key(rootContext) == claims.rootLayoutKey) *>
-            make(path, request, context, url).map { lifecycle =>
-              composeLayouts(
-                lifecycle,
-                request,
-                context,
-                layouts,
-                applicationLayout,
-                destination =>
-                  codec.decode(destination.path).fold(error => throw Exception(error), identity)
-              )
-            }
+            make(path, request, context, url)
+              .map { lifecycle =>
+                PreparedConnected(
+                  composeLayouts(
+                    lifecycle,
+                    request,
+                    context,
+                    layouts,
+                    applicationLayout,
+                    destination =>
+                      codec.decode(destination.path).fold(error => throw Exception(error), identity)
+                  ),
+                  connected.admission
+                )
+              }.onError(_ => ZIO.foreachDiscard(connected.admission)(_.reject))
         }
       end connectedLifecycle
 
@@ -654,11 +707,35 @@ object ZioHttp:
             thenNode.append.append(previousContext, output) -> (previousClaims ++ nextClaims)
           }
       }
+    case controlled: LiveMountPipeline.Controlled[
+          r,
+          r1,
+          A,
+          In,
+          previous,
+          claims,
+          out,
+          Ctx,
+          id
+        ] =>
+      runDisconnectedPipeline(controlled.previous, group, mountRequest, input).flatMap {
+        case (previousContext, previousClaims) =>
+          controlled.aspect.disconnected(mountRequest, previousContext).map {
+            case (claim, output) =>
+              val encoded    = controlled.aspect.claimsCodec.encodeJson(claim, None).toString
+              val nextClaims = group match
+                case ClaimGroup.Session => MountClaims(Vector(encoded), Vector.empty)
+                case ClaimGroup.Route   => MountClaims(Vector.empty, Vector(encoded))
+              controlled.append.append(previousContext, output) -> (previousClaims ++ nextClaims)
+          }
+      }
 
   private def routeContextHasMountAspect[R, A, In, Ctx](
     context: LiveRouteContext[R, A, In, Ctx]
   ): Boolean = context match
-    case _: LiveRouteContext.Mounted[?, ?, ?, ?]                    => true
+    case _: LiveRouteContext.Mounted[?, ?, ?, ?]                      => true
+    case environment: LiveRouteContext.WithEnvironment[?, ?, ?, ?, ?] =>
+      routeContextHasMountAspect(environment.previous)
     case session: LiveRouteContext.SessionMounted[?, ?, ?, ?, ?, ?] =>
       routeContextHasMountAspect(session.route)
     case _ => false
@@ -668,26 +745,102 @@ object ZioHttp:
     group: ClaimGroup,
     mountRequest: LiveMountRequest[A],
     input: In,
-    claims: Vector[String]
-  ): ZIO[R, LiveMountFailure, (Ctx, Vector[String])] = pipeline match
-    case _: LiveMountPipeline.Identity[A, In] => ZIO.succeed(input -> claims)
+    claims: Vector[String],
+    transport: Option[TransportAdmission]
+  ): ZIO[R, LiveMountFailure, ConnectedPipelineResult[Ctx]] = pipeline match
+    case _: LiveMountPipeline.Identity[A, In] =>
+      ZIO.succeed(ConnectedPipelineResult(input, claims, None))
     case thenNode: LiveMountPipeline.Then[r, r1, A, In, previous, claim, out, Ctx] =>
-      runConnectedPipeline(thenNode.previous, group, mountRequest, input, claims).flatMap {
-        case (previousContext, remaining) =>
-          remaining.headOption match
-            case None          => ZIO.fail(LiveMountFailure.unauthorized("missing mount claims"))
-            case Some(encoded) =>
-              ZIO
-                .fromEither(
-                  thenNode.aspect.claimsCodec
-                    .decodeJson(encoded).left.map(_ =>
-                      LiveMountFailure.unauthorized("malformed mount claims")
-                    )
-                ).flatMap(claim =>
-                  thenNode.aspect.connected(claim, mountRequest, previousContext).map { output =>
-                    thenNode.append.append(previousContext, output) -> remaining.tail
-                  }
-                )
+      runConnectedPipeline(
+        thenNode.previous,
+        group,
+        mountRequest,
+        input,
+        claims,
+        transport
+      ).flatMap { previous =>
+        previous.remainingClaims.headOption match
+          case None          => ZIO.fail(LiveMountFailure.unauthorized("missing mount claims"))
+          case Some(encoded) =>
+            ZIO
+              .fromEither(
+                thenNode.aspect.claimsCodec
+                  .decodeJson(encoded).left.map(_ =>
+                    LiveMountFailure.unauthorized("malformed mount claims")
+                  )
+              ).flatMap(claim =>
+                thenNode.aspect.connected(claim, mountRequest, previous.context).map { output =>
+                  ConnectedPipelineResult(
+                    thenNode.append.append(previous.context, output),
+                    previous.remainingClaims.tail,
+                    previous.admission
+                  )
+                }
+              ).onError(_ => ZIO.foreachDiscard(previous.admission)(_.reject))
+      }
+    case controlled: LiveMountPipeline.Controlled[
+          r,
+          r1,
+          A,
+          In,
+          previous,
+          claim,
+          out,
+          Ctx,
+          id
+        ] =>
+      runConnectedPipeline(
+        controlled.previous,
+        group,
+        mountRequest,
+        input,
+        claims,
+        transport
+      ).flatMap { previous =>
+        previous.remainingClaims.headOption match
+          case None          => ZIO.fail(LiveMountFailure.unauthorized("missing mount claims"))
+          case Some(encoded) =>
+            val admitted = for
+              physical <- ZIO
+                            .fromOption(transport).orElseFail(
+                              LiveMountFailure.unauthorized("physical admission is unavailable")
+                            )
+              claim <- ZIO.fromEither(
+                         controlled.aspect.claimsCodec
+                           .decodeJson(encoded).left.map(_ =>
+                             LiveMountFailure.unauthorized("malformed mount claims")
+                           )
+                       )
+              connections <- ZIO.environmentWith[LiveConnections[id]](
+                               _.get(using controlled.connections)
+                             )
+              binding <- connections
+                           .begin(
+                             controlled.connectionId(claim),
+                             physical.key,
+                             physical.disconnect
+                           ).tapError(_ => physical.disconnect)
+                           .mapError(_ =>
+                             LiveMountFailure.unauthorized(
+                               "physical connection is already bound to another session"
+                             )
+                           )
+              prepared = PreparedAdmission(
+                           binding.bindingAlreadyExisted,
+                           connections.commit(binding.token),
+                           connections.rollback(binding.token),
+                           connections.remove(binding.token),
+                           physical.disconnect
+                         )
+              output <- controlled.aspect
+                          .connected(claim, mountRequest, previous.context)
+                          .onError(_ => prepared.reject)
+            yield ConnectedPipelineResult(
+              controlled.append.append(previous.context, output),
+              previous.remainingClaims.tail,
+              Some(prepared)
+            )
+            admitted.onError(_ => ZIO.foreachDiscard(previous.admission)(_.reject))
       }
 
   private def runDisconnectedContext[R, A, In, Ctx](
@@ -699,11 +852,19 @@ object ZioHttp:
     case _: LiveRouteContext.Direct[A] => ZIO.succeed(((), MountClaims(Vector.empty, Vector.empty)))
     case environment: LiveRouteContext.Environment[r, A] =>
       ZIO
-        .environmentWith[r](_.get(environment.tag)).map(
+        .environmentWith[r](_.get(using environment.tag)).map(
           _ -> MountClaims(Vector.empty, Vector.empty)
         )
     case _: LiveRouteContext.Required[A, Ctx] =>
       ZIO.succeed(input -> MountClaims(Vector.empty, Vector.empty))
+    case environment: LiveRouteContext.WithEnvironment[r0, r1, A, In, previous] =>
+      runDisconnectedContext(environment.previous, path, request, input).flatMap {
+        case (context, claims) =>
+          ZIO
+            .environmentWith[r1](_.get(using environment.service)).map(service =>
+              (context -> service) -> claims
+            )
+      }
     case mounted: LiveRouteContext.Mounted[r, A, In, Ctx] =>
       runDisconnectedPipeline(
         mounted.pipeline,
@@ -733,14 +894,24 @@ object ZioHttp:
     path: A,
     request: Request,
     input: In,
-    claims: MountClaims
-  ): ZIO[R, LiveMountFailure, Ctx] = context match
+    claims: MountClaims,
+    transport: Option[TransportAdmission]
+  ): ZIO[R, LiveMountFailure, ConnectedContext[Ctx]] = context match
     case _: LiveRouteContext.Direct[A] =>
-      rejectExtraClaims(claims).as(())
+      rejectExtraClaims(claims).as(ConnectedContext((), None))
     case environment: LiveRouteContext.Environment[r, A] =>
-      rejectExtraClaims(claims) *> ZIO.environmentWith[r](_.get(environment.tag))
+      rejectExtraClaims(claims) *>
+        ZIO.environmentWith[r](_.get(using environment.tag)).map(ConnectedContext(_, None))
     case _: LiveRouteContext.Required[A, Ctx] =>
-      rejectExtraClaims(claims).as(input)
+      rejectExtraClaims(claims).as(ConnectedContext(input, None))
+    case environment: LiveRouteContext.WithEnvironment[r0, r1, A, In, previous] =>
+      runConnectedContext(environment.previous, path, request, input, claims, transport).flatMap {
+        previous =>
+          ZIO
+            .environmentWith[r1](_.get(using environment.service)).map(service =>
+              ConnectedContext(previous.context -> service, previous.admission)
+            ).onError(_ => ZIO.foreachDiscard(previous.admission)(_.reject))
+      }
     case mounted: LiveRouteContext.Mounted[r, A, In, Ctx] =>
       for
         result <- runConnectedPipeline(
@@ -748,14 +919,14 @@ object ZioHttp:
                     ClaimGroup.Route,
                     LiveMountRequest(path, request),
                     input,
-                    claims.route
+                    claims.route,
+                    transport
                   )
-        (mountedContext, remaining) = result
         _ <- ZIO
                .fail(LiveMountFailure.unauthorized("unexpected route mount claims")).when(
-                 remaining.nonEmpty || claims.session.nonEmpty
-               )
-      yield mountedContext
+                 result.remainingClaims.nonEmpty || claims.session.nonEmpty
+               ).onError(_ => ZIO.foreachDiscard(result.admission)(_.reject))
+      yield ConnectedContext(result.context, result.admission)
     case session: LiveRouteContext.SessionMounted[rs, rr, A, sessionCtx, routeIn, routeCtx] =>
       for
         sessionResult <- runConnectedPipeline(
@@ -763,20 +934,31 @@ object ZioHttp:
                            ClaimGroup.Session,
                            LiveMountRequest(path, request),
                            (),
-                           claims.session
+                           claims.session,
+                           transport
                          )
-        (sessionContext, remainingSession) = sessionResult
         _ <- ZIO
                .fail(LiveMountFailure.unauthorized("unexpected session mount claims"))
-               .when(remainingSession.nonEmpty)
+               .when(sessionResult.remainingClaims.nonEmpty)
+               .onError(_ => ZIO.foreachDiscard(sessionResult.admission)(_.reject))
         routeContext <- runConnectedContext(
                           session.route,
                           path,
                           request,
-                          session.routeInput(sessionContext),
-                          MountClaims(Vector.empty, claims.route)
-                        )
-      yield sessionContext -> routeContext
+                          session.routeInput(sessionResult.context),
+                          MountClaims(Vector.empty, claims.route),
+                          transport
+                        ).onError(_ => ZIO.foreachDiscard(sessionResult.admission)(_.reject))
+        _ <- ZIO
+               .fail(LiveMountFailure.unauthorized("multiple connection admissions"))
+               .when(sessionResult.admission.nonEmpty && routeContext.admission.nonEmpty)
+               .onError(_ =>
+                 ZIO.foreachDiscard(sessionResult.admission ++ routeContext.admission)(_.reject)
+               )
+      yield ConnectedContext(
+        sessionResult.context -> routeContext.context,
+        sessionResult.admission.orElse(routeContext.admission)
+      )
 
   private def rejectExtraClaims(claims: MountClaims): IO[LiveMountFailure, Unit] =
     ZIO
@@ -1045,6 +1227,42 @@ object ZioHttp:
     ): UIO[LifecycleStartupSink] =
       Semaphore.make(1L).map(new LifecycleStartupSink(capacity, destination, _))
 
+  final private class TransportTermination private (
+    disconnecting: Ref[Boolean],
+    stopped: Promise[Nothing, Unit],
+    closeSocket: UIO[Unit]):
+    def route[R](effect: => ZIO[R, Throwable, Unit]): ZIO[R, Throwable, Unit] =
+      disconnecting.modify(current => !current -> current).flatMap {
+        case true  => effect
+        case false => ZIO.unit
+      }
+
+    def disconnect: UIO[Unit] = stop(closeSocket)
+
+    def remoteClosed: UIO[Unit] = stop(ZIO.unit)
+
+    def await: UIO[Unit] = stopped.await
+
+    def isDisconnecting: UIO[Boolean] = disconnecting.get
+
+    private def stop(close: UIO[Unit]): UIO[Unit] =
+      ZIO.uninterruptible {
+        disconnecting.modify(current => !current -> true).flatMap {
+          case false => ZIO.unit
+          case true  =>
+            ZIO
+              .uninterruptible(close.ensuring(stopped.succeed(()).unit))
+              .forkDaemon.unit
+        }
+      }
+
+  private object TransportTermination:
+    def make(closeSocket: UIO[Unit]): UIO[TransportTermination] =
+      for
+        disconnecting <- Ref.make(false)
+        stopped       <- Promise.make[Nothing, Unit]
+      yield new TransportTermination(disconnecting, stopped, closeSocket)
+
   private[scalive] def nestedJoinUrl(value: Option[String], inherited: URL): Either[String, URL] =
     value match
       case None          => Right(URL(path = inherited.path, queryParams = inherited.queryParams))
@@ -1085,10 +1303,13 @@ object ZioHttp:
     observer: RuntimeObserver
   ): ZIO[R & Scope, Throwable, Unit] =
     for
-      writer <-
+      channelGate <- Semaphore.make(1L)
+      writer      <-
         SerialWriter.make[PhoenixEnvelope](PhysicalWriterSize) { envelope =>
           val encoded = PhoenixEnvelope.encode(envelope)
-          val send    = channel.send(ChannelEvent.read(WebSocketFrame.text(encoded)))
+          val send    = channelGate.withPermit(
+            channel.send(ChannelEvent.read(WebSocketFrame.text(encoded)))
+          )
           observer.takeOutput(envelope) match
             case None        => send
             case Some(trace) =>
@@ -1103,6 +1324,15 @@ object ZioHttp:
                     )
                 )
         }
+      termination <- TransportTermination.make(
+                       writer.close *>
+                         channelGate
+                           .withPermit(
+                             channel.send(
+                               ChannelEvent.read(WebSocketFrame.close(DisconnectCloseCode, None))
+                             )
+                           ).ignore
+                     )
       supervisor <- ConnectionSupervisor.make(
                       connectionConfig,
                       new NestedCredentialIssuer:
@@ -1112,111 +1342,139 @@ object ZioHttp:
                       applicationId => NestedTopic(s"lv:$applicationId"),
                       observer
                     )
-      joined       <- Ref.make(Map.empty[String, JoinedLifecycle])
-      uploads      <- Ref.make(Map.empty[String, JoinedUpload])
-      uploadFrame  <- Ref.make(Option.empty[Chunk[Byte]])
-      registration <- Ref.make(Option.empty[ZioHttpSecurity.RootClaims])
-      joinGate     <- Semaphore.make(1L)
+      joined          <- Ref.make(Map.empty[String, JoinedLifecycle])
+      uploads         <- Ref.make(Map.empty[String, JoinedUpload])
+      uploadFrame     <- Ref.make(Option.empty[Chunk[Byte]])
+      registration    <- Ref.make(Option.empty[ZioHttpSecurity.RootClaims])
+      activeAdmission <- Ref.make(Option.empty[PreparedAdmission])
+      transportAdmission = TransportAdmission(
+                             new LiveConnections.ConnectionKey,
+                             termination.disconnect,
+                             termination.isDisconnecting
+                           )
+      joinGate <- Semaphore.make(1L)
       receive = channel.receiveAll {
                   case ChannelEvent.Read(WebSocketFrame.Text(text))
                       if text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <=
                         MaxFramePayloadBytes =>
-                    ZIO.fromEither(PhoenixEnvelope.decode(text).left.map(Exception(_))).flatMap {
-                      envelope =>
-                        PhoenixProtocol.decodeEnvelope(envelope) match
-                          case Left(error) => ZIO.fail(Exception(error))
-                          case Right(PhoenixInbound.Heartbeat(joinRef, ref)) =>
-                            writer.offer(PhoenixOutput.heartbeat(joinRef, ref))
-                          case Right(PhoenixInbound.Join(joinRef, ref, topic, payload)) =>
-                            joinLifecycle(
-                              routes,
-                              config,
-                              csrfCookie,
-                              csrfToken,
-                              socketRequest,
-                              supervisor,
-                              joined,
-                              registration,
-                              joinGate,
-                              observer,
-                              writer,
-                              joinRef,
-                              ref,
-                              topic,
-                              payload
-                            )
-                          case Right(
-                                PhoenixInbound.UploadJoin(
-                                  joinRef,
-                                  ref,
-                                  topic,
-                                  entryRef,
-                                  token
-                                )
-                              ) =>
-                            joinUpload(
-                              config,
-                              joined,
-                              uploads,
-                              joinGate,
-                              writer,
-                              joinRef,
-                              ref,
-                              topic,
-                              entryRef,
-                              token
-                            )
-                          case Right(PhoenixInbound.AllowUpload(joinRef, ref, topic, payload)) =>
-                            offerUploadPreflight(joined, writer, joinRef, ref, topic, payload)
-                          case Right(
-                                PhoenixInbound.UploadProgress(joinRef, ref, topic, payload)
-                              ) =>
-                            offerUploadProgress(joined, writer, joinRef, ref, topic, payload)
-                          case Right(PhoenixInbound.Event(joinRef, ref, topic, payload)) =>
-                            offerEvent(joined, writer, joinRef, ref, topic, payload)
-                          case Right(
-                                PhoenixInbound.ComponentsWillDestroy(joinRef, ref, topic, cids)
-                              ) =>
-                            offerComponentsWillDestroy(joined, writer, joinRef, ref, topic, cids)
-                          case Right(
-                                PhoenixInbound.ComponentsDestroyed(joinRef, ref, topic, cids)
-                              ) =>
-                            offerComponentsDestroyed(joined, writer, joinRef, ref, topic, cids)
-                          case Right(PhoenixInbound.LivePatch(joinRef, ref, topic, url)) =>
-                            offerPatch(joined, writer, joinRef, ref, topic, url)
-                          case Right(PhoenixInbound.Leave(joinRef, ref, topic)) =>
-                            leaveLifecycle(
-                              supervisor,
-                              joined,
-                              writer,
-                              joinRef,
-                              ref,
-                              topic
-                            )
-                          case Right(PhoenixInbound.UploadLeave(joinRef, ref, topic, _)) =>
-                            leaveUpload(uploads, writer, joinRef, ref, topic)
+                    termination.route {
+                      ZIO.fromEither(PhoenixEnvelope.decode(text).left.map(Exception(_))).flatMap {
+                        envelope =>
+                          PhoenixProtocol.decodeEnvelope(envelope) match
+                            case Left(error) => ZIO.fail(Exception(error))
+                            case Right(PhoenixInbound.Heartbeat(joinRef, ref)) =>
+                              writer.offer(PhoenixOutput.heartbeat(joinRef, ref))
+                            case Right(PhoenixInbound.Join(joinRef, ref, topic, payload)) =>
+                              joinLifecycle(
+                                routes,
+                                config,
+                                csrfCookie,
+                                csrfToken,
+                                socketRequest,
+                                supervisor,
+                                joined,
+                                registration,
+                                activeAdmission,
+                                transportAdmission,
+                                joinGate,
+                                observer,
+                                writer,
+                                joinRef,
+                                ref,
+                                topic,
+                                payload
+                              )
+                            case Right(
+                                  PhoenixInbound.UploadJoin(
+                                    joinRef,
+                                    ref,
+                                    topic,
+                                    entryRef,
+                                    token
+                                  )
+                                ) =>
+                              joinUpload(
+                                config,
+                                joined,
+                                uploads,
+                                joinGate,
+                                writer,
+                                joinRef,
+                                ref,
+                                topic,
+                                entryRef,
+                                token
+                              )
+                            case Right(PhoenixInbound.AllowUpload(joinRef, ref, topic, payload)) =>
+                              offerUploadPreflight(joined, writer, joinRef, ref, topic, payload)
+                            case Right(
+                                  PhoenixInbound.UploadProgress(joinRef, ref, topic, payload)
+                                ) =>
+                              offerUploadProgress(joined, writer, joinRef, ref, topic, payload)
+                            case Right(PhoenixInbound.Event(joinRef, ref, topic, payload)) =>
+                              offerEvent(joined, writer, joinRef, ref, topic, payload)
+                            case Right(
+                                  PhoenixInbound.ComponentsWillDestroy(joinRef, ref, topic, cids)
+                                ) =>
+                              offerComponentsWillDestroy(joined, writer, joinRef, ref, topic, cids)
+                            case Right(
+                                  PhoenixInbound.ComponentsDestroyed(joinRef, ref, topic, cids)
+                                ) =>
+                              offerComponentsDestroyed(joined, writer, joinRef, ref, topic, cids)
+                            case Right(PhoenixInbound.LivePatch(joinRef, ref, topic, url)) =>
+                              offerPatch(joined, writer, joinRef, ref, topic, url)
+                            case Right(PhoenixInbound.Leave(joinRef, ref, topic)) =>
+                              leaveLifecycle(
+                                supervisor,
+                                joined,
+                                writer,
+                                joinRef,
+                                ref,
+                                topic
+                              )
+                            case Right(PhoenixInbound.UploadLeave(joinRef, ref, topic, _)) =>
+                              leaveUpload(uploads, writer, joinRef, ref, topic)
+                      }
                     }
                   case ChannelEvent.Read(frame: WebSocketFrame.Binary) =>
-                    collectUploadFrame(uploadFrame, frame)
-                      .flatMap(ZIO.foreachDiscard(_)(offerUploadChunk(uploads, writer, _)))
+                    termination.route(
+                      collectUploadFrame(uploadFrame, frame)
+                        .flatMap(ZIO.foreachDiscard(_)(offerUploadChunk(uploads, writer, _)))
+                    )
                   case ChannelEvent.Read(frame: WebSocketFrame.Continuation) =>
-                    collectUploadFrame(uploadFrame, frame)
-                      .flatMap(ZIO.foreachDiscard(_)(offerUploadChunk(uploads, writer, _)))
+                    termination.route(
+                      collectUploadFrame(uploadFrame, frame)
+                        .flatMap(ZIO.foreachDiscard(_)(offerUploadChunk(uploads, writer, _)))
+                    )
                   case ChannelEvent.Read(WebSocketFrame.Ping) =>
-                    channel.send(ChannelEvent.read(WebSocketFrame.pong))
+                    termination.route(
+                      channelGate.withPermit(channel.send(ChannelEvent.read(WebSocketFrame.pong)))
+                    )
                   case ChannelEvent.Read(WebSocketFrame.Pong)     => ZIO.unit
-                  case ChannelEvent.Read(_: WebSocketFrame.Close) => ZIO.unit
-                  case ChannelEvent.Registered | ChannelEvent.Unregistered |
-                      ChannelEvent.UserEventTriggered(_) =>
-                    ZIO.unit
+                  case ChannelEvent.Read(_: WebSocketFrame.Close) => termination.remoteClosed
+                  case ChannelEvent.Unregistered                  => termination.remoteClosed
+                  case ChannelEvent.Registered | ChannelEvent.UserEventTriggered(_) => ZIO.unit
                   case ChannelEvent.ExceptionCaught(cause) => ZIO.fail(cause)
                   case _ => ZIO.fail(Exception("unsupported websocket frame"))
                 }
       _ <-
         receive
-          .raceFirst(writer.awaitFailure.flatMap(ZIO.fail(_)))
+          .raceFirst(
+            writer.awaitFailure.flatMap {
+              case SerialWriter.Error.Shutdown => termination.await
+              case error                       => ZIO.fail(error)
+            }
+          )
+          .raceFirst(termination.await)
           .ensuring(
-            RuntimeCleanup.all(Vector(supervisor.close, writer.close, observer.failTransportFrames))
+            RuntimeCleanup.all(
+              Vector(
+                activeAdmission.get.flatMap(ZIO.foreachDiscard(_)(_.remove)),
+                supervisor.close,
+                writer.close,
+                observer.failTransportFrames
+              )
+            )
           )
     yield ()
 
@@ -1270,6 +1528,8 @@ object ZioHttp:
     supervisor: ConnectionSupervisor,
     joined: Ref[Map[String, JoinedLifecycle]],
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
+    activeAdmission: Ref[Option[PreparedAdmission]],
+    transportAdmission: TransportAdmission,
     joinGate: Semaphore,
     observer: RuntimeObserver,
     writer: SerialWriter[PhoenixEnvelope],
@@ -1331,11 +1591,18 @@ object ZioHttp:
                   admitted =>
                     val install = for
                       request = connectedRequest(socketRequest, admitted.url)
-                      lifecycle <- admitted.route.prepareConnected(
-                                     admitted.url,
-                                     request,
-                                     admitted.claims
-                                   )
+                      prepared <-
+                        ZIO.uninterruptibleMask { restore =>
+                          restore(
+                            admitted.route.prepareConnectedForTransport(
+                              admitted.url,
+                              request,
+                              admitted.claims,
+                              transportAdmission
+                            )
+                          ).flatMap(value => activeAdmission.set(value.admission) as value)
+                        }
+                      lifecycle = prepared.lifecycle
                       flash           <- joinedFlash(config, join, admitted.claims)
                       renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
                       projectionGate  <- Semaphore.make(1L)
@@ -1431,15 +1698,21 @@ object ZioHttp:
                              removeJoinedLifecycle(joined, entry),
                              supervisor.retireLifecycle(connection)
                            )
+                      _ <- ZIO.foreachDiscard(prepared.admission)(_.commit)
                     yield ()
                     install.catchAll { error =>
                       val clearInitial =
                         ZIO.when(join.redirect.isEmpty)(registration.set(None))
-                      clearInitial *>
+                      activeAdmission.get.flatMap(ZIO.foreachDiscard(_)(_.reject)) *>
+                        clearInitial *>
                         ZIO.logWarning(
                           s"Rejecting connected root lifecycle topic=$topic: ${error.getMessage}"
                         ) *>
-                        writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+                        transportAdmission.isDisconnecting.flatMap {
+                          case true  => ZIO.unit
+                          case false =>
+                            writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+                        }
                     }
                 )
               }

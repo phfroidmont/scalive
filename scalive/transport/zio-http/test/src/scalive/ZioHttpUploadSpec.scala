@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*
 import zio.http.*
+import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
 
@@ -20,6 +21,89 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
   ).toOption.get
 
   private val uploadEvent = BrowserToServerEvent[Json]("inspect-upload")
+
+  private final case class TestSessionId(value: String) derives JsonCodec
+  private final case class TestAuthClaims(sessionId: TestSessionId) derives JsonCodec
+  private final case class TestCurrentUser(name: String)
+  private final case class TestAuthState(
+    active: Ref[Set[TestSessionId]],
+    revalidations: Ref[Int],
+    interrupted: Ref[Int],
+    revalidationGate: Option[(Promise[Nothing, Unit], Promise[Nothing, Unit])] = None)
+
+  private enum AdmissionMessage:
+    case Completed
+
+  private val admissionTask = AsyncKey[Unit]("admission-cleanup")
+
+  private val authentication =
+    LiveMountAspect.fromRequest[TestAuthState, Any, TestAuthClaims, TestCurrentUser](
+      request =>
+        for
+          state <- ZIO.service[TestAuthState]
+          id = TestSessionId(request.url.queryParam("session").getOrElse("missing"))
+          valid <- state.active.get.map(_.contains(id))
+          result <-
+            if valid then ZIO.succeed(TestAuthClaims(id) -> TestCurrentUser(id.value))
+            else ZIO.fail(Response.unauthorized)
+        yield result,
+      (claims, _) =>
+        for
+          state <- ZIO.service[TestAuthState]
+          _     <- state.revalidations.update(_ + 1)
+          _ <- ZIO.foreachDiscard(state.revalidationGate) { case (entered, release) =>
+                 entered.succeed(()).unit *> release.await
+               }
+          valid <- state.active.get.map(_.contains(claims.sessionId))
+          user <-
+            if valid then ZIO.succeed(TestCurrentUser(claims.sessionId.value))
+            else ZIO.fail(LiveMountFailure.unauthorized("revoked test session"))
+        yield user
+    )
+
+  private final class AdmissionView(user: TestCurrentUser, state: TestAuthState)
+      extends LiveView[AdmissionMessage, String]:
+    def mount(ctx: MountContext) =
+      ctx.connection match
+        case Connection.Disconnected => ZIO.succeed(user.name)
+        case Connection.Connected(connected) =>
+          connected.async
+            .start(admissionTask)(
+              ZIO.never.ensuring(state.interrupted.update(_ + 1))
+            )(_ => AdmissionMessage.Completed)
+            .as(user.name)
+
+    def handleMessage(model: String, ctx: MessageContext) = _ => ZIO.succeed(model)
+
+    def view(model: Signal[String]) = div(idAttr := "authenticated", model)
+
+  private val admittedApplication
+    : LiveApplication[TestAuthState & LiveConnections[TestSessionId]] = scalive.Live.router(
+    scalive.Live
+      .session("authenticated")
+      .withAdmission(authentication)(_.sessionId)(
+        scalive.live.context((user: TestCurrentUser, state: TestAuthState) =>
+          new AdmissionView(user, state)
+        ),
+        (scalive.live / "next").context((user: TestCurrentUser, state: TestAuthState) =>
+          new AdmissionView(user, state)
+        )
+      )
+  )
+
+  private object FailingAdmissionView extends LiveView.Eventless[Unit]:
+    def mount(ctx: MountContext) = ctx.connection match
+      case Connection.Disconnected => ZIO.unit
+      case Connection.Connected(_)  => ZIO.fail(new Exception("connected startup failed"))
+
+    def view(model: Signal[Unit]) = div()
+
+  private val failingAdmittedApplication
+    : LiveApplication[TestAuthState & LiveConnections[TestSessionId]] = scalive.Live.router(
+    scalive.Live
+      .session("failing-authenticated")
+      .withAdmission(authentication)(_.sessionId)(scalive.live(FailingAdmissionView))
+  )
 
   private final case class WriterState(name: String, bytes: Chunk[Byte])
 
@@ -166,12 +250,14 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     session: String,
     static: String,
     csrf: String,
-    cookie: Cookie.Request)
+    cookie: Cookie.Request,
+    url: String)
 
   private final case class SocketClient(
     channel: WebSocketChannel,
     incoming: Queue[PhoenixEnvelope],
-    closed: Promise[Nothing, Unit]):
+    closed: Promise[Nothing, Unit],
+    closeCode: Promise[Nothing, Int]):
     def send(envelope: PhoenixEnvelope): Task[Unit] =
       channel.send(ChannelEvent.read(WebSocketFrame.text(PhoenixEnvelope.encode(envelope))))
 
@@ -190,16 +276,16 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     def close: UIO[Unit] =
       channel.send(ChannelEvent.read(WebSocketFrame.close(1000, None))).ignore
 
-  private def withServer[A](
-    application: LiveApplication[Any]
-  )(run: Int => ZIO[Client & Scope, Throwable, A]): Task[A] =
+  private def withServer[R: EnvironmentTag: HasNoScope, A](
+    application: LiveApplication[R]
+  )(run: Int => ZIO[Client & Scope, Throwable, A]): ZIO[R, Throwable, A] =
     for
       started <- Promise.make[Nothing, Int]
       _ <- (Server
              .install(ZioHttp.routes(application, transportConfig))
              .tap(started.succeed)
              .zipRight(ZIO.never)
-             .provideLayer(Server.defaultWith(_.onAnyOpenPort)))
+              .provideSomeLayer[R](Server.defaultWith(_.onAnyOpenPort)))
              .forkDaemon
       port <- started.await
       completed <- Promise.make[Nothing, Exit[Throwable, A]]
@@ -209,9 +295,9 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       result <- completed.await.flatMap(ZIO.suspendSucceed(_))
     yield result
 
-  private def bootstrap(port: Int): ZIO[Client, Throwable, Bootstrap] =
+  private def bootstrap(port: Int, path: String = "/"): ZIO[Client, Throwable, Bootstrap] =
     for
-      response <- Client.batched(Request.get(URL.decode(s"http://127.0.0.1:$port/").toOption.get))
+      response <- Client.batched(Request.get(URL.decode(s"http://127.0.0.1:$port$path").toOption.get))
       body     <- response.body.asString
       rootId   <- requiredAttribute(body, "id")
       session  <- requiredAttribute(body, "data-phx-session")
@@ -222,13 +308,14 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                     response.headers(Header.SetCookie).map(_.value)
                       .find(_.name == "_scalive_csrf")
                   ).orElseFail(AssertionError("missing CSRF cookie"))
-    yield Bootstrap(rootId, session, static, csrf, Cookie.Request(cookie.name, cookie.content))
+    yield Bootstrap(rootId, session, static, csrf, Cookie.Request(cookie.name, cookie.content), path)
 
   private def connect(port: Int, bootstrap: Bootstrap): ZIO[Client & Scope, Throwable, SocketClient] =
     for
       incoming   <- Queue.unbounded[PhoenixEnvelope]
       registered <- Promise.make[Nothing, WebSocketChannel]
       closed     <- Promise.make[Nothing, Unit]
+      closeCode  <- Promise.make[Nothing, Int]
       app = Handler.webSocket { channel =>
               channel.receiveAll {
                 case ChannelEvent.UserEventTriggered(ChannelEvent.UserEvent.HandshakeComplete) =>
@@ -237,7 +324,9 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                   ZIO.fromEither(PhoenixEnvelope.decode(text).left.map(Exception(_))).flatMap(
                     incoming.offer
                   ).unit
-                case ChannelEvent.Unregistered | ChannelEvent.Read(_: WebSocketFrame.Close) =>
+                case ChannelEvent.Read(frame: WebSocketFrame.Close) =>
+                  closeCode.succeed(frame.status).unit *> closed.succeed(()).unit
+                case ChannelEvent.Unregistered =>
                   closed.succeed(()).unit
                 case ChannelEvent.ExceptionCaught(cause) => ZIO.fail(cause)
                 case _                                   => ZIO.unit
@@ -255,7 +344,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                  .socket(WebSocketApp(app.handler))
              ).forkScoped
       channel <- registered.await
-    yield SocketClient(channel, incoming, closed)
+    yield SocketClient(channel, incoming, closed, closeCode)
 
   private def joinRoot(socket: SocketClient, bootstrap: Bootstrap): Task[PhoenixEnvelope] =
     val topic   = s"lv:${bootstrap.rootId}"
@@ -267,7 +356,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         topic,
         "phx_join",
         Json.Obj(
-          "url"      -> Json.Str("/"),
+          "url"      -> Json.Str(bootstrap.url),
           "redirect" -> Json.Null,
           "flash"    -> Json.Null,
           "session"  -> Json.Str(bootstrap.session),
@@ -277,6 +366,31 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         )
       )
     ) *> socket.receiveReply("1", topic)
+
+  private def redirectRoot(
+    socket: SocketClient,
+    bootstrap: Bootstrap,
+    destination: String,
+    ref: String
+  ): Task[PhoenixEnvelope] =
+    val topic = s"lv:${bootstrap.rootId}"
+    socket.send(
+      PhoenixEnvelope(
+        PhoenixRef.Value(s"redirect-$ref"),
+        PhoenixRef.Value(ref),
+        topic,
+        "phx_join",
+        Json.Obj(
+          "url"      -> Json.Null,
+          "redirect" -> Json.Str(destination),
+          "flash"    -> Json.Null,
+          "session"  -> Json.Str(bootstrap.session),
+          "static"   -> Json.Str(bootstrap.static),
+          "params"   -> Json.Obj("_mounts" -> Json.Num(1)),
+          "sticky"   -> Json.Bool(false)
+        )
+      )
+    ) *> socket.receiveReply(ref, topic)
 
   private def preflight(
     socket: SocketClient,
@@ -404,6 +518,199 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
           afterMalformed == 1
         )
       }
+    },
+    test("revocation closes every matching transport and reconnect revalidates durable state") {
+      val firstId = TestSessionId("first")
+      val otherId = TestSessionId("other")
+      for
+        active        <- Ref.make(Set(firstId, otherId))
+        revalidations <- Ref.make(0)
+        interrupted   <- Ref.make(0)
+        state          = TestAuthState(active, revalidations, interrupted)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        stateLayer      = ZLayer.succeed[TestAuthState](state)
+        connectionsLayer = ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+        result <- withServer(admittedApplication) { port =>
+                    for
+                      firstPage <- bootstrap(port, "/?session=first")
+                      otherPage <- bootstrap(port, "/?session=other")
+                      firstTab  <- connect(port, firstPage)
+                      secondTab <- connect(port, firstPage)
+                      otherTab  <- connect(port, otherPage)
+                      firstJoin <- joinRoot(firstTab, firstPage)
+                      secondJoin <- joinRoot(secondTab, firstPage)
+                      otherJoin <- joinRoot(otherTab, otherPage)
+                      _ <- active.update(_ - firstId)
+                      _ <- connections.disconnect(firstId)
+                      _ <- firstTab.closed.await.timeoutFail(
+                             Exception("first tab did not close")
+                           )(5.seconds)
+                      _ <- secondTab.closed.await.timeoutFail(
+                             Exception("second tab did not close")
+                           )(5.seconds)
+                      firstCode  <- firstTab.closeCode.await.timeout(100.millis)
+                      secondCode <- secondTab.closeCode.await.timeout(100.millis)
+                      cleaned <- interrupted.get.repeatUntil(_ >= 2)
+                      heartbeat = PhoenixEnvelope(
+                                    PhoenixRef.Null,
+                                    PhoenixRef.Value("other-heartbeat"),
+                                    "phoenix",
+                                    "heartbeat",
+                                    Json.Obj.empty
+                                  )
+                      _          <- otherTab.send(heartbeat)
+                      otherAlive <- otherTab.receiveReply("other-heartbeat", "phoenix")
+                      staleTab   <- connect(port, firstPage)
+                      staleJoin  <- joinRoot(staleTab, firstPage)
+                      _          <- connections.disconnect(firstId)
+                      _ <- staleTab.send(
+                             PhoenixEnvelope(
+                               PhoenixRef.Null,
+                               PhoenixRef.Value("stale-heartbeat"),
+                               "phoenix",
+                               "heartbeat",
+                               Json.Obj.empty
+                             )
+                           )
+                      staleHeartbeat <- staleTab.receiveReply("stale-heartbeat", "phoenix")
+                      rejectedPage <- Client.batched(
+                                        Request.get(
+                                          URL.decode(
+                                            s"http://127.0.0.1:$port/?session=first"
+                                          ).toOption.get
+                                        )
+                                      )
+                      checks <- revalidations.get
+                      _      <- staleTab.close
+                      _      <- otherTab.close
+                    yield assertTrue(
+                      status(firstJoin) == "ok",
+                      status(secondJoin) == "ok",
+                      status(otherJoin) == "ok",
+                      firstCode.forall(_ == 1001),
+                      secondCode.forall(_ == 1001),
+                      cleaned >= 2,
+                      status(otherAlive) == "ok",
+                      status(staleJoin) == "error",
+                      reason(staleJoin) == "unauthorized",
+                      status(staleHeartbeat) == "ok",
+                      rejectedPage.status == Status.Unauthorized,
+                      checks == 4
+                    )
+                  }.provideLayer(stateLayer ++ connectionsLayer)
+      yield result
+    },
+    test("same-session navigation reuses its binding and failed revalidation closes the transport") {
+      val sessionId = TestSessionId("navigation")
+      for
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        interrupted   <- Ref.make(0)
+        state          = TestAuthState(active, revalidations, interrupted)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        stateLayer      = ZLayer.succeed[TestAuthState](state)
+        connectionsLayer = ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+        result <- withServer(admittedApplication) { port =>
+                    for
+                      page     <- bootstrap(port, "/?session=navigation")
+                      socket   <- connect(port, page)
+                      initial  <- joinRoot(socket, page)
+                      navigated <- redirectRoot(socket, page, "/next", "2")
+                      _        <- active.set(Set.empty)
+                      _ <- socket.send(
+                             PhoenixEnvelope(
+                               PhoenixRef.Value("failed-navigation"),
+                               PhoenixRef.Value("3"),
+                               s"lv:${page.rootId}",
+                               "phx_join",
+                               Json.Obj(
+                                 "url"      -> Json.Null,
+                                 "redirect" -> Json.Str("/"),
+                                 "flash"    -> Json.Null,
+                                 "session"  -> Json.Str(page.session),
+                                 "static"   -> Json.Str(page.static),
+                                 "params"   -> Json.Obj("_mounts" -> Json.Num(2)),
+                                 "sticky"   -> Json.Bool(false)
+                               )
+                             )
+                           )
+                      _ <- socket.closed.await.timeoutFail(
+                             Exception("failed navigation did not close the transport")
+                           )(5.seconds)
+                      code <- socket.closeCode.await.timeout(100.millis)
+                      checks <- revalidations.get
+                      cleaned <- interrupted.get.repeatUntil(_ >= 2)
+                    yield assertTrue(
+                      status(initial) == "ok",
+                      status(navigated) == "ok",
+                      code.forall(_ == 1001),
+                      checks == 3,
+                      cleaned >= 2
+                    )
+                  }.provideLayer(stateLayer ++ connectionsLayer)
+      yield result
+    },
+    test("disconnect during connected revalidation closes the pending transport") {
+      val sessionId = TestSessionId("pending")
+      for
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        interrupted   <- Ref.make(0)
+        entered       <- Promise.make[Nothing, Unit]
+        release       <- Promise.make[Nothing, Unit]
+        state          = TestAuthState(active, revalidations, interrupted, Some(entered -> release))
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        stateLayer      = ZLayer.succeed[TestAuthState](state)
+        connectionsLayer = ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+        result <- withServer(admittedApplication) { port =>
+                    for
+                      page   <- bootstrap(port, "/?session=pending")
+                      socket <- connect(port, page)
+                      joining <- joinRoot(socket, page).fork
+                      _       <- entered.await
+                      _       <- active.set(Set.empty)
+                      _       <- connections.disconnect(sessionId)
+                      _ <- socket.closed.await.timeoutFail(
+                             Exception("pending transport did not close")
+                           )(5.seconds)
+                      code   <- socket.closeCode.await.timeout(100.millis)
+                      _      <- release.succeed(())
+                      _      <- joining.interrupt
+                      checks <- revalidations.get
+                    yield assertTrue(code.forall(_ == 1001), checks == 1)
+                  }.provideLayer(stateLayer ++ connectionsLayer)
+      yield result
+    },
+    test("connected startup failure rolls back pending admission") {
+      val sessionId = TestSessionId("startup-failure")
+      for
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        interrupted   <- Ref.make(0)
+        state          = TestAuthState(active, revalidations, interrupted)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        stateLayer      = ZLayer.succeed[TestAuthState](state)
+        connectionsLayer = ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+        result <- withServer(failingAdmittedApplication) { port =>
+                    for
+                      page     <- bootstrap(port, "/?session=startup-failure")
+                      socket   <- connect(port, page)
+                      rejected <- joinRoot(socket, page)
+                      _        <- connections.disconnect(sessionId)
+                      _ <- socket.send(
+                             PhoenixEnvelope(
+                               PhoenixRef.Null,
+                               PhoenixRef.Value("after-failure"),
+                               "phoenix",
+                               "heartbeat",
+                               Json.Obj.empty
+                             )
+                           )
+                      heartbeat <- socket.receiveReply("after-failure", "phoenix")
+                      _         <- socket.close
+                    yield assertTrue(status(rejected) == "error", status(heartbeat) == "ok")
+                  }.provideLayer(stateLayer ++ connectionsLayer)
+      yield result
     },
     test("root preflight projects canonical hosted and external responses with exact claims") {
       for

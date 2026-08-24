@@ -29,8 +29,9 @@ The documentation authentication lab demonstrates this complete flow:
 4. The protected route authenticates that cookie during disconnected mount.
 5. Connected mount receives only a public session ID in signed claims and checks
    the server-side session record again.
-6. Reset revokes only the current visitor's session, clears that visitor's login
-   attempts, expires the cookie, and redirects to the login page.
+6. Reset revokes only the current visitor's session, disconnects every active tab
+   using that session, clears that visitor's login attempts, expires the cookie,
+   and redirects to the login page.
 
 @:lab(authentication)
 
@@ -84,9 +85,28 @@ The protected session installs this executable mount aspect:
 @:sourceRegion(documentation/site/src/scalive/docs/auth/AuthLab.scala, authentication-mount-aspect)
 
 During disconnected mount, `authenticate` validates the opaque cookie and
-returns minimal `AuthClaims` plus `CurrentSession`. During connected mount,
-`resume` loads `CurrentSession` again from the public claim ID. Revocation or
-expiry between those phases therefore prevents the socket from mounting.
+returns minimal `AuthClaims` plus a separate `CurrentUser`. During connected
+mount, `resume` loads the session record again from the public claim ID and
+rebuilds `CurrentUser`. Revocation or expiry between those phases therefore
+prevents the socket from mounting. The public session ID remains in the signed
+claim instead of becoming part of every route's context.
+
+Install the aspect once as the named session's admission boundary and inject the
+small context into only the LiveViews that use it:
+
+```scala
+val protectedRoutes = Live
+  .session("authenticated")
+  .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)(
+    profile.context(ProfileLiveView.apply),
+    status(StatusLiveView())
+  )
+```
+
+`ProfileLiveView` receives immutable `CurrentUser` construction data. The status
+view remains authentication-agnostic even though the same admission protects it.
+Route-specific authorization and sensitive mutations must still enforce their
+own domain rules.
 
 Do not transfer the cookie token in claims. Signed claims are authenticated but
 not encrypted. Read [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently)
@@ -101,20 +121,74 @@ application:
 @:sourceRegion(documentation/site/src/scalive/docs/auth/AuthLab.scala, authentication-http-actions)
 
 Reset is idempotent: a missing, stale, or already-revoked session still clears
-the browser cookie and returns to the login page. It affects only the opaque
-session and attempt record associated with that visitor.
+the browser cookie. When invalidation succeeds, it returns to the login page. It
+affects only the opaque session and attempt record associated with that visitor.
+The handler first revokes the durable session record and then calls
+`LiveConnections.disconnect(publicSessionId)`. Reversing this order could let a
+reconnecting socket resume the session before revocation becomes authoritative.
+
+`disconnect` promptly closes every local tab registered to that application
+session. The browser reconnects and reruns connected admission, which rejects
+the now-revoked claim. A stale signed bootstrap token therefore cannot restore
+the session.
 
 ## Provide One Shared Authentication Service {#provide-one-shared-authentication-service}
 
 The HTTP handlers and protected Live routes must use the same `AuthService`
-instance. In a normal application, combine both route sets and provide the layer
-once at `Server.serve`, as described in [Services and dependency injection](services-and-zlayer-injection.md#provide-services-at-startup).
+instance. The admitted session also makes `LiveConnections[PublicSessionId]` a
+visible application environment requirement. For one backend instance, provide
+both layers once at `Server.serve`:
+
+```scala
+Server.serve(routes).provide(
+  Server.default,
+  AuthService.live,
+  LiveConnections.local[PublicSessionId]
+)
+```
+
+The same `.context` API can infer one application service from a typed
+constructor without an explicit service type argument:
+
+```scala
+final class ProfileLiveView(currentUser: CurrentUser, accounts: Accounts)
+
+val profile = routes.profile.context(ProfileLiveView.apply)
+```
+
+Only `CurrentUser` is supplied by admission. `Accounts` is resolved from the ZIO
+environment independently and is never serialized into mount claims or passed to
+layouts.
 
 Keep the service responsible for credentials, session authenticity, expiry,
 revocation, capacity, and rate limits. Keep the mount aspect responsible for
 translating that service decision into typed mount context or a redirect. The
-protected LiveView then receives `CurrentSession` without reading cookies or
+protected LiveView then receives `CurrentUser` without reading cookies or
 repeating authorization logic.
+
+## Fan Out Disconnects Across Nodes {#fan-out-disconnects-across-nodes}
+
+Multiple backend instances need a `LiveDisconnectBus[PublicSessionId]` adapter
+whose subscription broadcasts every ID to every node. Wire the adapter into the
+distributed layer:
+
+```scala
+val liveConnections =
+  RedisDisconnectBus.layer[PublicSessionId] >>>
+    LiveConnections.distributed[PublicSessionId]
+```
+
+Received events signal local transports without being republished. Duplicate or
+out-of-order delivery is harmless. Publication failure is reported after local
+connections have been signaled. The lab expires the browser cookie and returns
+an error in that case; production logout code should retry from retained server
+state or use an outbox.
+
+The bus accelerates invalidation; it is not authentication truth. During a
+network partition, an already-connected remote node may receive the notification
+late. Shared durable revocation still rejects new mounts. Stricter guarantees
+require an outbox or replay, leases, periodic revalidation, or authorization on
+each sensitive operation.
 
 ## Production Checklist {#production-checklist}
 
@@ -125,9 +199,11 @@ Before adapting this lab for real users:
 - use a real password verifier and avoid logging submitted credentials;
 - choose distributed session and rate-limit storage for multiple instances;
 - define absolute expiry, renewal, revocation, and account-disable behavior;
+- configure all nodes with compatible route/session identities and signing keys;
+- choose a broadcast fanout adapter plus retry or outbox policy;
 - preserve generic login failures and bounded request bodies; and
-- test login, protected HTTP render, connected resumption, logout, expiry,
-  throttling, and visitor isolation.
+- test login, protected HTTP render, connected resumption, multi-tab logout,
+  reconnect denial, expiry, throttling, and visitor isolation.
 
 The lab is teaching code, not a production identity system.
 

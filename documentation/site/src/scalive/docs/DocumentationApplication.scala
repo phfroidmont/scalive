@@ -4,7 +4,7 @@ import zio.http.Routes
 import zio.http.codec.PathCodec
 
 import scalive.*
-import scalive.docs.auth.{AuthHttpRoutes, AuthLab, AuthLabRoutes, AuthService}
+import scalive.docs.auth.{AuthHttpRoutes, AuthLab, AuthLabRoutes, AuthService, PublicSessionId}
 import scalive.docs.examples.{ExampleRegistry, Reports, ReportsExample}
 import scalive.docs.model.*
 import scalive.docs.xray.{DocumentationRuntimeObserverFactory, DocumentationTraceStore}
@@ -27,8 +27,7 @@ final private[docs] class DocumentationApplication private (
   private val pagesByRoute: Map[String, Page],
   private val locationsByRoute: Map[String, LiveLocation],
   private val examplesById: Map[String, ExampleDefinition],
-  private val apiSymbolsById: Map[String, ApiSymbol],
-  private val authService: AuthService):
+  private val apiSymbolsById: Map[String, ApiSymbol]):
 
   def page(route: String): Option[Page] = pagesByRoute.get(route)
 
@@ -94,21 +93,23 @@ final private[docs] class DocumentationApplication private (
     assets: StaticAssets,
     security: LiveSecurity,
     config: DocumentationConfig
-  ): Routes[Reports, Nothing] = routes(assets, security, config, None)
+  ): Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing] =
+    routes(assets, security, config, None)
 
   def routes(
     assets: StaticAssets,
     security: LiveSecurity,
     config: DocumentationConfig,
     traceStore: DocumentationTraceStore
-  ): Routes[Reports, Nothing] = routes(assets, security, config, Some(traceStore))
+  ): Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing] =
+    routes(assets, security, config, Some(traceStore))
 
   private def routes(
     assets: StaticAssets,
     security: LiveSecurity,
     config: DocumentationConfig,
     traceStore: Option[DocumentationTraceStore]
-  ): Routes[Reports, Nothing] =
+  ): Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing] =
     val renderer  = DocumentationRenderer(this, Some(assets), traceStore)
     val homeEntry = pages.find(_.page.route == "/").getOrElse {
       throw new IllegalStateException("Missing validated homepage route '/'.")
@@ -135,19 +136,23 @@ final private[docs] class DocumentationApplication private (
     val router = Live.router
       .withRootLayout(DocumentationRootLayout(this, assets, config.publicOrigin))
       .withLayout(DocumentationLayout(this, assets, config.publicOrigin))
-    val supplementalRoutes = Vector[LiveRouteFragment[Reports] { type Input = Any }](
+    val supplementalRoutes = Vector[
+      LiveRouteFragment[Reports & AuthService & LiveConnections[PublicSessionId]] {
+        type Input = Any
+      }
+    ](
       examplesRoute,
       searchRoute,
       ReportsExample.route,
       AuthLab.loginRoute,
-      AuthLab.protectedSession(authService)
+      AuthLab.protectedSession
     ) ++ fragments
     val application = router((homeRoute +: supplementalRoutes)*)
     val liveRoutes  = traceStore.fold(ZioHttp.routes(application, security))(store =>
       ZioHttp.routes(application, security, DocumentationRuntimeObserverFactory(store))
     )
     liveRoutes ++
-      AuthHttpRoutes(authService, security).routes ++
+      AuthHttpRoutes(security).routes ++
       DocumentationMetadataRoutes.routes(this, config.publicOrigin)
   end routes
 end DocumentationApplication
@@ -186,8 +191,7 @@ private[docs] object DocumentationApplication:
       bundle.pages.map(page => page.route -> page).toMap,
       entries.map(entry => entry.page.route -> entry.location).toMap,
       bundle.examples.map(example => example.descriptor.id -> example).toMap,
-      bundle.apiReference.symbols.map(symbol => symbol.id -> symbol).toMap,
-      AuthService.inMemory()
+      bundle.apiReference.symbols.map(symbol => symbol.id -> symbol).toMap
     )
 
   private def validateHomepage(pages: Vector[Page]): Either[String, HomePageContent] =

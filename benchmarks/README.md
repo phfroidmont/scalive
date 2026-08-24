@@ -1,6 +1,6 @@
 # Scalive JMH benchmarks
 
-Maintained Scala 3/JMH fixtures cover the Milestone 11 render pipeline:
+Maintained Scala 3/JMH fixtures cover the Scalive render pipeline:
 
 - `KeyedRowsBenchmark`: 100, 1,000, and 10,000 retained keyed rows; one-row update,
   reorder, removal, and reintroduction. It measures semantic diff alone, Phoenix encoding alone, and
@@ -23,22 +23,22 @@ diagnostics, not stable performance scores; use JMH's primary latency score and
 ## Runbook
 
 ```sh
-mill --ticker false benchmarks.compile
-mill --ticker false benchmarks.listJmhBenchmarks
-mill --ticker false benchmarks.runJmh -prof gc
+mill benchmarks.compile
+mill benchmarks.listJmhBenchmarks
+mill benchmarks.runJmh -prof gc
 ```
 
 Fast CI/local smoke run (no fork, no warmup):
 
 ```sh
-mill --ticker false benchmarks.runJmh -wi 0 -i 1 -r 100ms -f 0 -foe true '.*'
+mill benchmarks.runJmh -wi 0 -i 1 -r 100ms -f 0 -foe true '.*'
 ```
 
 To isolate a scenario or avoid the 10,000-row parameter during iteration, use a JMH regex and `-p`,
 for example:
 
 ```sh
-mill --ticker false benchmarks.runJmh -prof gc -p rowCount=1000 -p operation=update \
+mill benchmarks.runJmh -prof gc -p rowCount=1000 -p operation=update \
   'scalive.benchmarks.KeyedRowsBenchmark.renderDiffAndEncode'
 ```
 
@@ -52,6 +52,6 @@ mill --ticker false benchmarks.runJmh -prof gc -p rowCount=1000 -p operation=upd
   are fixture cardinality estimates; use a heap profiler for object-retention attribution.
 - The component fixture resolves real semantic component nodes but deliberately excludes runtime
   mailbox supervision. Runtime lifecycle benchmarks should be added separately if supervision
-  overhead becomes a Milestone threshold.
+  overhead needs a stable threshold.
 - End-to-end timing includes ZIO execution and candidate discard, while the auxiliary render/diff
   durations use `System.nanoTime`; rely on the JMH score for total latency.

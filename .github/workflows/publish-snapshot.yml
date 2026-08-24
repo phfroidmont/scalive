@@ -24,6 +24,10 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check formatting and Scalafix
+        run: |
+          nix develop --command mill --ticker false __.reformat + __.fix
+          git diff --exit-code
       - name: Test repository
         run: nix develop --command mill --ticker false __.test
       - name: Check documentation and public API

@@ -211,8 +211,8 @@ Current operational and diagnostic limits include:
 
 These limits do not mean the corresponding core behavior is absent. They define
 where Scalive does not yet promise a complete public API or audited upstream
-matrix. Consult `UPSTREAM_COMPATIBILITY.md` in the repository before relying on
-an edge case, and use the boundary guidance in
+matrix. Consult the [compatibility matrix](../project/compatibility.md#status-matrix) before relying
+on an edge case, and use the boundary guidance in
 [Testing LiveViews](testing.md#choose-the-test-boundary) to add evidence for your
 application's requirements.
 

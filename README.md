@@ -7,17 +7,13 @@ typed models, typed route params, ZIO effects, and a Scala HTML DSL.
 Scalive is currently alpha software. APIs may change while the project optimizes
 for the best user-facing Scala API.
 
-## Runtime Rewrite Status
+## Runtime Architecture
 
-The runtime is being rebuilt against the target architecture in
-[`docs/runtime-target-implementation-plan.md`](docs/runtime-target-implementation-plan.md). The
-independent `scalive-api` boundary and final Mill module graph are available; executable HTTP,
-WebSocket, rendering, and lifecycle runtime behavior will return through the subsequent runtime
-milestones.
-
-The frozen legacy behavior oracle remains available at tag
-`runtime-legacy-baseline-2026-08-18`. Its native and browser results are recorded in
-[`docs/runtime-parity-manifest.md`](docs/runtime-parity-manifest.md).
+Scalive separates its public API, retained renderer, lifecycle state machines, Phoenix protocol,
+ZIO HTTP transport, and testing support into explicit modules. The
+[runtime architecture](documentation/content/project/runtime-architecture.md) explains how HTTP
+rendering, connected lifecycles, transactional turns, bounded work, protocol projection, and cleanup
+fit together.
 
 ## What A LiveView Looks Like
 
@@ -62,21 +58,24 @@ for the expected socket path, root layout, and browser asset setup.
 ## Running The Project
 
 ```bash
-mill --ticker false scalive.api.test
-mill --ticker false scalive.transport.zio-http.test
+mill scalive.api.test
+mill scalive.transport.zio-http.test
 ```
 
-The project runs inside `nix develop`; `mill` is available there. Repository-wide runtime,
-documentation-site, and upstream browser gates resume as their corresponding greenfield modules are
-implemented.
+The project runs inside `nix develop`; `mill` is available there. Repository-wide verification uses
+`mill __.test`, `mill documentation.check`, and the upstream browser
+suite in `scripts/e2e-run-upstream.sh`. Use `scripts/e2e-run-upstream-strict.sh` when a change needs
+three consecutive complete browser runs with retries disabled.
 
 ## Documentation
 
-- Documentation content: `documentation/content`
+- Documentation home: `documentation/content/index.md`
+- Learn Scalive: `documentation/content/learn/index.md`
+- Guides: `documentation/content/guides/index.md`
 - Interactive examples: `documentation/content/examples`
-- Public API reference: `docs/public-api-reference.md`
-- API improvement backlog: `docs/api-improvement-ideas.md`
-- Phoenix LiveView compatibility notes: `UPSTREAM_COMPATIBILITY.md`
+- Public API reference: `documentation/content/api/index.md`
+- Runtime architecture: `documentation/content/project/runtime-architecture.md`
+- Phoenix LiveView compatibility: `documentation/content/project/compatibility.md`
 - Upstream parity fixtures: `e2eApp/src`
 
 The parity fixtures are useful compatibility evidence, but they are not always
@@ -89,5 +88,5 @@ Scalive aims to match Phoenix LiveView behavior and feature set where that makes
 sense for Scala. It intentionally diverges when Scala-first APIs improve type
 safety, robustness, or ergonomics.
 
-Do not assume complete Phoenix LiveView parity without checking
-`UPSTREAM_COMPATIBILITY.md` and the upstream parity fixtures in `e2eApp/src`.
+Check the [compatibility matrix](documentation/content/project/compatibility.md) and the upstream
+parity fixtures in `e2eApp/src` before relying on a Phoenix LiveView edge case.

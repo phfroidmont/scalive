@@ -25,7 +25,7 @@ prove that every server-side edge case in the same feature area is covered.
 
 | Status | Meaning |
 | --- | --- |
-| Passing baseline | Covered by the upstream browser E2E harness, but not necessarily by a complete server-side parity suite. |
+| Browser coverage | The complete pinned browser suite passes with retries disabled. |
 | Native parity covered | Scalive has native tests that mirror the relevant upstream runtime behavior. |
 | Native coverage substantial | Core behavior is implemented and tested, but edge-case parity needs a dedicated upstream-suite audit. |
 | Native coverage expanding | Implemented enough to use, with known parity gaps still being closed. |
@@ -40,7 +40,7 @@ prove that every server-side edge case in the same feature area is covered.
 
 | Area and upstream reference | Status | Current evidence | Known gap or decision |
 | --- | --- | --- | --- |
-| Browser E2E behavior (`test/e2e/tests/**/*.spec.js`) | Partial | `./scripts/e2e-run-upstream.sh` runs browser scenarios from the pinned upstream source against Scalive. A complete green run has not been verified for this source revision. | Run and record the full pinned suite before upgrading this row to a passing baseline. |
+| Browser E2E behavior (`test/e2e/tests/**/*.spec.js`) | Browser coverage | All 172 pinned scenarios pass with retries disabled. `scripts/e2e-run-upstream.sh`, the revision-specific synchronization patch under `test/upstream-patches`, and `e2eApp/src` are the executable evidence; snapshot CI runs the complete suite. | Keep the complete suite green and update the synchronization patch when advancing the upstream pin. |
 | Wire protocol and diff encoding (`Phoenix.LiveView.Socket`, `Phoenix.LiveView.Diff`, JS client protocol) | Native coverage substantial | `PhoenixProtocolSpec`, `PhoenixRenderedEncoderSpec`, `PhoenixUploadProtocolSpec`, and `TreeDifferSpec` cover envelopes, component and stream projection, rendered deltas, events, redirects, joins, and uploads. | Audit exact error payloads, reconnect and stale cases, and protocol additions after `v1.1.28`. |
 | Static HTTP render and connected bootstrap (`mount/3`, `handle_params/3`, `render/1`) | Native coverage substantial | Disconnected render, connected mount, initial parameter handling, bootstrap patch and redirect loops, static tracking, and root shell rendering are covered. | Expand upstream-aligned error, crash, and reconnect assertions. |
 | Live routes (`Phoenix.LiveView.Router.live/4`) | Native coverage substantial | Typed route algebra covers `live`, path codecs, GET-only routes, duplicate validation, typed route parameters, and typed environment inference. | Decide whether route action and metadata equivalents are useful; document divergence from `@live_action`, `:metadata`, and `:private`. |
@@ -90,7 +90,7 @@ prove that every server-side edge case in the same feature area is covered.
 | Security and session tokens (signing, session, flash, CSRF, connect params) | Native coverage expanding | HMAC tokens with max age, signed mount claims and flash tokens, hardened redirects, root-layout session data, shared form/socket CSRF, checked POST fields, and stale invalid-CSRF joins are covered. | Token salt and MessagePack details remain open. Claims and flash values are signed, not encrypted. |
 | Endpoint/socket configuration (`:live_view` config, socket path, hibernation) | Partial | `Live.router.withSocketPath(PathCodec[Unit])` configures the socket path; validated `ZioHttpConfig` configures signing, maximum age, and secure cookies for `ZioHttp.routes`. | Decide which remaining endpoint options matter on ZIO HTTP; hibernation is not implemented. |
 | WebSocket transport support | Native coverage substantial | WebSocket transport and the upload WebSocket protocol are implemented. | Preserve the verified transport behavior while support evolves. |
-| Long-poll transport fallback | Deferred follow-up | Long-poll is not implemented. | Implement after the current runtime cutover. |
+| Long-poll transport fallback | Not implemented | Long-poll is not implemented. | Implement when long-poll becomes a supported transport. |
 | Telemetry and observability (Phoenix telemetry and logger metadata) | Native coverage substantial | The runtime emits correlated, ordered events for command acceptance, lifecycle turns, rendering, commits, publication, resources, failures, and termination; `RuntimeObservabilitySpec` covers ordering, redaction, correlation, and sink-defect isolation. | The event model is runtime-internal. Decide which stable Scalive/ZIO telemetry integration should become public rather than copying Phoenix telemetry names. |
 | Test harness helpers (`Phoenix.LiveViewTest`) | Native coverage substantial, intentional divergence | `scalive-testing` supports disconnected semantic HTML queries, explicit ordinary GET/POST submission and 303 following, plus `ConnectedRender`/`ConnectedView` for production-admitted joins, typed messages, bindings, forms, nested views, and uploads. | Retain browser tests for real DOM patching and JavaScript behavior rather than cloning ConnTest or LiveViewTest. |
 
@@ -119,11 +119,13 @@ ergonomics, Scalive prefers the better Scala API. For a conceptual mapping, read
 Compatibility claims should be backed by the narrowest relevant evidence:
 
 1. Run `./scripts/e2e-run-upstream.sh` as the browser regression gate.
-2. Add Scalive-native tests for upstream integration behavior that cannot run
+2. Run `./scripts/e2e-run-upstream-strict.sh` when runtime, protocol, transport, or fixture changes
+   need three consecutive complete runs with retries disabled.
+3. Add Scalive-native tests for upstream integration behavior that cannot run
    directly as Elixir tests.
-3. Record the upstream file or documented behavior and the Scalive test that
+4. Record the upstream file or documented behavior and the Scalive test that
    demonstrates its equivalent for each audited scenario.
-4. Prefer a small vertical slice that passes end to end over a broad but
+5. Prefer a small vertical slice that passes end to end over a broad but
    incomplete abstraction.
 
 The repository evidence behind the broadest claims includes:
@@ -136,9 +138,7 @@ The repository evidence behind the broadest claims includes:
   [stream-row binding tests](https://github.com/phfroidmont/scalive/blob/master/scalive/render/test/src/scalive/render/StreamRenderingSpec.scala),
   and [Phoenix projection tests](https://github.com/phfroidmont/scalive/blob/master/scalive/protocol/phoenix/test/src/scalive/protocol/phoenix/PhoenixRenderedEncoderSpec.scala);
 - transport [ZIO HTTP tests](https://github.com/phfroidmont/scalive/blob/master/scalive/transport/zio-http/test/src/scalive/ZioHttpSpec.scala)
-  and the production-admitted [connected test harness suite](https://github.com/phfroidmont/scalive/blob/master/scalive/testing/test/src/scalive/testing/ConnectedRenderSpec.scala); and
-- the repository [compatibility source matrix](https://github.com/phfroidmont/scalive/blob/master/UPSTREAM_COMPATIBILITY.md),
-  which maintainers update alongside implementation evidence.
+  and the production-admitted [connected test harness suite](https://github.com/phfroidmont/scalive/blob/master/scalive/testing/test/src/scalive/testing/ConnectedRenderSpec.scala).
 
 When evaluating a feature, check its row's status, evidence, and known gap rather
 than relying on the existence of a similarly named API. For a compatibility bug,

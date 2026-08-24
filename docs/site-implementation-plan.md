@@ -219,7 +219,7 @@ mill --ticker false documentation.check
 
 ```bash
 mill --ticker false scalive.compile
-mill --ticker false scaliveTesting.compile
+mill --ticker false scalive.testing.compile
 mill --ticker false documentation.pipeline.test
 mill --ticker false documentation.pipeline.checkApi
 ```
@@ -519,9 +519,9 @@ mill --ticker false documentation.check
 - [x] Link curated pages to generated owners and members.
 - [x] Publish the personal and technical journey that led to Scalive.
 - [x] Migrate project status and alpha expectations.
-- [ ] Migrate the compatibility matrix.
-- [ ] Pin the compatibility matrix to the current upstream LiveView revision.
-- [ ] Add links from compatibility entries to Scalive or upstream test evidence.
+- [x] Migrate the compatibility matrix.
+- [x] Pin the compatibility matrix to the current upstream LiveView revision.
+- [x] Add links from compatibility entries to Scalive or upstream test evidence.
 - [ ] Add coverage validation mapping every generated API group to curated
   guidance or an intentional reference-only classification.
 - [x] Add source-edit and issue-report links to every authored page.
@@ -642,7 +642,7 @@ java -jar <documentation-artifact>
   guide, example, and API page.
 - [ ] Review Core Web Vitals results before considering the site complete.
 - [ ] Run manual accessibility review; do not claim formal conformance.
-- [ ] Run the upstream LiveView E2E suite after runtime tracing changes.
+- [x] Run the upstream LiveView E2E suite after runtime tracing changes.
 
 **Verification:**
 
@@ -670,7 +670,7 @@ and removal slice may proceed after Phase 7.
 - [x] Remove the process-shared guestbook and upload store.
 - [x] Remove the obsolete examples npm package and repository ignore rule.
 - [ ] Move the public API reference into canonical site content.
-- [ ] Move the compatibility matrix into canonical site content.
+- [x] Move the compatibility matrix into canonical site content.
 - [ ] Leave short repository pointers at old public-document locations if they
   remain useful to GitHub readers.
 - [x] Update the root README to use the documentation-site commands and content
@@ -684,7 +684,7 @@ and removal slice may proceed after Phase 7.
 - [ ] Run documentation generation and validation from a clean build.
 - [x] Build both documentation and E2E assets.
 - [ ] Run documentation Playwright tests.
-- [ ] Run upstream parity tests.
+- [x] Run upstream parity tests.
 - [ ] Run Lighthouse verification.
 - [x] Run `git diff --check`.
 - [x] Inspect the final worktree and confirm only intended changes remain.
@@ -714,5 +714,5 @@ git status --short
 - [ ] Analytics
 - [ ] Offline or PWA support
 - [ ] General public Scalive devtools API
-- [ ] Promotion of the site-local connected test harness into `scalive-testing`
+- [x] Promotion of the site-local connected test harness into `scalive-testing`
 - [ ] Horizontally scaled deployment recipe

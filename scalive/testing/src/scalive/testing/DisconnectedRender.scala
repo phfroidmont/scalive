@@ -195,7 +195,8 @@ final class RenderedForm private[testing] (
     ZIO.fromEither(flow.resolveFormAction(action, baseHref)).flatMap { target =>
       val request = method match
         case Method.POST =>
-          val encoding = attribute("enctype").filter(_.nonEmpty)
+          val encoding = attribute("enctype")
+            .filter(_.nonEmpty)
             .getOrElse("application/x-www-form-urlencoded")
           encoding.toLowerCase(java.util.Locale.ROOT) match
             case "multipart/form-data" | "text/plain" =>
@@ -214,6 +215,7 @@ final class RenderedForm private[testing] (
 
       request.flatMap(DisconnectedRender.execute(routes, _, flow.cookies))
     }
+  end submit
 
   private def attribute(name: String): Option[String] =
     Option.when(element.hasAttr(name))(element.attr(name))
@@ -290,20 +292,20 @@ final private[testing] case class TestHttpFlow(url: URL, cookies: TestCookieJar)
     value: String,
     description: String
   ): Either[Throwable, URI] =
-    Try(URI.create(value)).toEither
-      .left.map(error => IllegalArgumentException(s"Invalid $description: ${error.getMessage}"))
+    Try(URI.create(value)).toEither.left
+      .map(error => IllegalArgumentException(s"Invalid $description: ${error.getMessage}"))
       .map(base.resolve)
 
   private def sameOrigin(source: URI, target: URI): Boolean =
     (Option(source.getRawAuthority), Option(target.getRawAuthority)) match
-      case (None, None) => true
+      case (None, None)       => true
       case (Some(_), Some(_)) =>
         Option(source.getScheme).exists(scheme =>
           Option(target.getScheme).exists(_.equalsIgnoreCase(scheme))
         ) &&
-          Option(source.getHost).exists(host =>
-            Option(target.getHost).exists(_.equalsIgnoreCase(host))
-          ) && effectivePort(source) == effectivePort(target)
+        Option(source.getHost).exists(host =>
+          Option(target.getHost).exists(_.equalsIgnoreCase(host))
+        ) && effectivePort(source) == effectivePort(target)
       case _ => false
 
   private def effectivePort(value: URI): Int =
@@ -318,6 +320,7 @@ final private[testing] case class TestHttpFlow(url: URL, cookies: TestCookieJar)
     val base  = target.copy(queryParams = QueryParams.empty, fragment = None).encode
     val value = if encoded.isEmpty then base else s"$base?$encoded"
     URL.decode(value).left.map(error => IllegalArgumentException(error.getMessage))
+end TestHttpFlow
 
 final private[testing] case class TestCookieJar(values: Map[String, Cookie.Request]):
   def addTo(request: Request): Request =

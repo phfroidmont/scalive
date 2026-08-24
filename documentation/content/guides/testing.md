@@ -41,11 +41,20 @@ does not emulate browser successful-control selection or execute JavaScript.
 
 ## Test Disconnected Rendering {#test-disconnected-rendering}
 
-Add the `scalive-testing` module to the test module that already depends on your
+Add the `scalive-testing` artifact to the test module that already depends on your
 application. Inside this repository, Mill modules use `moduleDeps = Seq(...,
-scaliveTesting)`. There is not yet a verified public dependency coordinate, so a
-consumer outside this checkout must use the dependency arrangement appropriate
-to its Scalive build.
+scalive.testing)`. External snapshot consumers use the same snapshot repository
+and revision as the application artifact:
+
+```scala
+def repositories = Seq(
+  "https://central.sonatype.com/repository/maven-snapshots"
+)
+
+def mvnDeps = Seq(
+  mvn"dev.scalive::scalive-testing:{{scaliveSnapshotVersion}}"
+)
+```
 
 The @:apiSymbol(object:scalive.testing.DisconnectedRender)`DisconnectedRender.run`@:@ method accepts
 finalized `Routes` and a ZIO HTTP `Request`. It runs the route, consumes the
@@ -229,7 +238,11 @@ suite against `e2eApp` with:
 ./scripts/e2e-run-upstream.sh
 ```
 
-That script, its `test/playwright.upstream.config.js`, and the repository's site
+Changes to the runtime, protocol, transport, or synchronized fixtures can use
+`./scripts/e2e-run-upstream-strict.sh` to require three complete consecutive
+runs with retries disabled.
+
+These scripts, their `test/playwright.upstream.config.js`, and the repository's site
 Playwright suites are project regression infrastructure. They are evidence for
 the compatibility matrix, not a distributed browser-testing API for Scalive
 applications. Application teams should own selectors, fixtures, server startup,

@@ -38,6 +38,12 @@ diff --git a/test/e2e/tests/errors.spec.js b/test/e2e/tests/errors.spec.js
 index ae28e26..b4caa21 100644
 --- a/test/e2e/tests/errors.spec.js
 +++ b/test/e2e/tests/errors.spec.js
+@@ -103,4 +103,4 @@ test.describe("exception handling", () => {
+-      expect(consoleMessages).toEqual(
++      await expect.poll(() => consoleMessages).toEqual(
+         expect.arrayContaining([
+           expect.stringMatching(/consecutive reloads. Entering failsafe mode/),
+         ]),
 @@ -271,6 +271,6 @@ test.describe("exception handling", () => {
        // child crashed on mount, linked to parent -> parent crashed too
        // second mounts are successful

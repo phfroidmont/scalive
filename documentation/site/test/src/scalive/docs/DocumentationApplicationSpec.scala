@@ -34,8 +34,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     "fonts.css",
     "instrument-sans-OFL.txt",
     "jetbrains-mono-OFL.txt",
+    "runtime-connected-lifetime.svg",
     "runtime-connected-turn.svg",
-    "runtime-ownership.svg",
+    "runtime-disconnected-lifetime.svg",
     "search-index.json"
   )
 
@@ -220,6 +221,11 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                        )
         document = Jsoup.parse(rendered.html)
         diagrams = document.select("figure[data-diagram]").asScala.toVector
+        ownership = diagrams.head
+        connectedTurn = diagrams(1)
+        diagramObjects = diagrams.flatMap(_.select("object[type='image/svg+xml']").asScala)
+        diagramLinks = document
+          .select(".docs-diagram-heading a, .docs-diagram-panel-heading a").asScala.toVector
       yield assertTrue(
         diagrams.map(_.attr("data-diagram")) == Vector(
           "runtime-ownership",
@@ -232,14 +238,25 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
           )
         ),
         diagrams.forall(_.select("p.docs-visually-hidden[id]").text().nonEmpty),
-        diagrams.forall(_.select(".docs-diagram-viewport[tabindex=0]").size() == 1),
-        diagrams.forall(
-          _.select("object[type='image/svg+xml'][aria-hidden=true][tabindex=-1]").size() == 1
+        ownership.hasClass("docs-diagram-comparison"),
+        ownership.select(".docs-diagram-panels").size() == 1,
+        ownership.select(".docs-diagram-panel").size() == 2,
+        ownership.select(".docs-diagram-panel-title").eachText().asScala.toVector == Vector(
+          "Disconnected HTTP",
+          "Connected WebSocket"
         ),
-        diagrams.forall(_.select("a").text() == "Open full-size SVG"),
-        diagrams.forall(_.hasClass("docs-diagram-wide")),
-        diagrams.map(_.select("object").attr("data")).forall(_.contains("/static/runtime-")),
-        diagrams.map(_.select("a").attr("href")) == diagrams.map(_.select("object").attr("data"))
+        diagrams.forall(_.select(".docs-diagram-viewport").isEmpty),
+        connectedTurn.hasClass("docs-diagram-single"),
+        connectedTurn.select(".docs-diagram-single-canvas").size() == 1,
+        connectedTurn.select("[tabindex=0]").isEmpty,
+        connectedTurn.select(".docs-diagram-heading a").text() == "Open full-size SVG",
+        diagramObjects.size == 3,
+        diagramObjects.forall(objectElement =>
+          objectElement.attr("aria-hidden") == "true" &&
+            objectElement.attr("tabindex") == "-1" &&
+            objectElement.attr("data").contains("/static/runtime-")
+        ),
+        diagramLinks.map(_.attr("href")) == diagramObjects.map(_.attr("data"))
       )
     },
     test("renders editorial sections as flat indexes and preserves the API tree") {

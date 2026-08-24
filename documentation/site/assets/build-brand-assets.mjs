@@ -49,5 +49,6 @@ await writeFile(path.join(outputRoot, "fonts.css"), `${declarations.join("\n\n")
 await copyFile(path.join(assetsRoot, "brand", "scalive-mark.svg"), path.join(outputRoot, "favicon.svg"))
 await Promise.all([
   "runtime-connected-turn.svg",
-  "runtime-ownership.svg",
+  "runtime-connected-lifetime.svg",
+  "runtime-disconnected-lifetime.svg",
 ].map((asset) => copyFile(path.join(assetsRoot, "diagrams", asset), path.join(outputRoot, asset))))

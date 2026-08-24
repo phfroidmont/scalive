@@ -197,7 +197,8 @@ object `package` extends Module:
       "instrument-sans-OFL.txt",
       "jetbrains-mono-OFL.txt",
       "runtime-connected-turn.svg",
-      "runtime-ownership.svg"
+      "runtime-connected-lifetime.svg",
+      "runtime-disconnected-lifetime.svg"
     )
 
     def resources = Task {

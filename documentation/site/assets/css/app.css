@@ -5483,29 +5483,87 @@ details[open] > summary .docs-disclosure-marker,
   text-transform: uppercase;
 }
 
-.docs-diagram-viewport {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
+.docs-diagram-single-canvas {
+  width: min(100%, 32.5rem);
+  margin-inline: auto;
   border: 1px solid var(--docs-border);
   background: var(--docs-bg);
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
 }
 
-.docs-diagram-viewport object {
+.docs-diagram-single object {
   display: block;
-  max-width: none;
+  width: 100%;
   height: auto;
   border: 0;
 }
 
-.docs-diagram-wide object {
-  width: max(60rem, 100%);
+.docs-diagram-comparison {
+  container-name: docs-diagram-comparison;
+  container-type: inline-size;
+}
+
+.docs-diagram-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.docs-diagram-panel {
+  min-width: 0;
+}
+
+.docs-diagram-panel-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.docs-diagram-panel-title {
+  color: var(--docs-text);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.docs-diagram-panel-heading a {
+  flex: none;
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.docs-diagram-panel-canvas {
+  border: 1px solid var(--docs-border);
+  background: var(--docs-bg);
+}
+
+.docs-diagram-panel object {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 0;
+}
+
+@container docs-diagram-comparison (max-width: 44rem) {
+  .docs-diagram-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .docs-diagram-panel {
+    width: min(100%, 30rem);
+    margin-inline: auto;
+  }
 }
 
 @media (max-width: 36rem) {
   .docs-diagram-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .docs-diagram-panel-heading {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -5516,17 +5574,17 @@ details[open] > summary .docs-disclosure-marker,
     break-inside: avoid;
   }
 
-  .docs-diagram-heading a {
+  .docs-diagram-heading a,
+  .docs-diagram-panel-heading a {
     display: none;
   }
 
-  .docs-diagram-viewport {
-    overflow: visible;
+  .docs-diagram-single-canvas {
+    width: min(100%, 24rem);
   }
 
-  .docs-diagram-viewport object {
-    width: 100%;
-    max-width: 100%;
+  .docs-diagram-panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

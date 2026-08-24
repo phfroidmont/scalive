@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1510" height="638" viewBox="55 1207 1510 638" role="img" aria-labelledby="turn-title turn-desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="1250" viewBox="0 0 520 1250" role="img" aria-labelledby="turn-title turn-desc">
   <title id="turn-title">One connected turn</title>
   <desc id="turn-desc">A Phoenix event is decoded and queued as a SessionCommand for a SessionKernel. Revision N remains committed while six provisional steps resolve the target, run hooks and the handler, evaluate rendering, validate and prepare resources and topology, reserve an ordered publication slot, then run after-render work, validate continuations, and compute a diff. Failure discards the candidate. A successful interruption-masked commit replaces state, marks retired owners stale, activates resources and child topology, and fills the reserved output slot before revision N+1 becomes active. Only then does RootConnection output drain the reservation through PhoenixRenderedEncoder and the bounded SerialWriter; write failure does not roll back N+1.</desc>
   <defs>
-    <marker id="turn-arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" class="marker-blue"/></marker>
-    <marker id="turn-arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" class="marker-green"/></marker>
-    <marker id="turn-arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" class="marker-red"/></marker>
-    <marker id="turn-arrow-error" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" class="marker-error"/></marker>
+    <marker id="turn-arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-blue"/></marker>
+    <marker id="turn-arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-amber"/></marker>
+    <marker id="turn-arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-green"/></marker>
+    <marker id="turn-arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-red"/></marker>
+    <marker id="turn-arrow-error" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-error"/></marker>
     <style>
       @import url("fonts.css");
       svg { color-scheme:light; --bg:#f4f1eb; --surface:#fff; --subtle:#ece8e0; --text:#171719; --muted:#67645f; --border:#d8d2c7; --border-strong:#aca69c; --red:#ee2946; --error:#a33c32; --blue:#2a63d4; --green:#17755c; --amber:#9b630d; }
@@ -14,73 +15,129 @@
       svg[data-theme="light"] { color-scheme:light; --bg:#f4f1eb; --surface:#fff; --subtle:#ece8e0; --text:#171719; --muted:#67645f; --border:#d8d2c7; --border-strong:#aca69c; --red:#ee2946; --error:#a33c32; --blue:#2a63d4; --green:#17755c; --amber:#9b630d; }
       @media (prefers-color-scheme:dark) { svg:not([data-theme]) { color-scheme:dark; --bg:#111114; --surface:#19191d; --subtle:#202025; --text:#f1efe9; --muted:#aaa7a1; --border:#34343a; --border-strong:#55555d; --red:#ff3a55; --error:#ef8c82; --blue:#79a8ff; --green:#65c7a6; --amber:#e0b05c; } }
       text { font-family:"Instrument Sans Variable","Arial Nova","Segoe UI",ui-sans-serif,system-ui,sans-serif; fill:var(--text); }
-      rect { rx:4px; }
+      rect { rx:5px; }
       .canvas { fill:var(--bg); }
+      .section { fill:var(--subtle); stroke:var(--border); stroke-width:1; }
       .label { font-size:18px; font-weight:700; }
-      .small-label { font-size:15px; font-weight:700; }
+      .small-label { font-size:16px; font-weight:700; }
       .body { font-size:16px; fill:var(--muted); }
-      .small { font-size:14px; fill:var(--muted); }
-      .mono { font-family:"JetBrains Mono Variable","SFMono-Regular",Consolas,monospace; font-size:14px; }
-      .owner,.blue,.amber,.green,.red-box,.protocol { fill:var(--surface); stroke-width:1.5; }
+      .mono { font-family:"JetBrains Mono Variable","SFMono-Regular",Consolas,monospace; font-size:16px; }
+      .owner,.blue,.amber,.green,.red-box,.protocol,.step-box { fill:var(--surface); stroke-width:1.5; }
       .owner { stroke:var(--border-strong); }
       .blue { stroke:var(--blue); }
-      .amber { fill:color-mix(in srgb,var(--amber) 7%,var(--surface)); stroke:var(--amber); stroke-dasharray:9 7; }
+      .amber { fill:color-mix(in srgb,var(--amber) 7%,var(--surface)); stroke:var(--amber); stroke-dasharray:8 6; }
       .green { fill:color-mix(in srgb,var(--green) 7%,var(--surface)); stroke:var(--green); }
       .red-box { fill:color-mix(in srgb,var(--error) 7%,var(--surface)); stroke:var(--error); }
       .protocol { fill:color-mix(in srgb,var(--red) 6%,var(--surface)); stroke:var(--red); }
+      .step-box { fill:color-mix(in srgb,var(--amber) 10%,var(--surface)); stroke:var(--amber); }
       .divider { stroke:var(--border); stroke-width:1; }
-      .marker-blue { fill:var(--blue); }.marker-green { fill:var(--green); }.marker-red { fill:var(--red); }.marker-error { fill:var(--error); }
-      .arrow-blue,.arrow-green,.arrow-red,.arrow-error { fill:none; stroke-width:2; }
+      .marker-blue { fill:var(--blue); }.marker-amber { fill:var(--amber); }.marker-green { fill:var(--green); }.marker-red { fill:var(--red); }.marker-error { fill:var(--error); }
+      .arrow-blue,.arrow-amber,.arrow-green,.arrow-red,.arrow-error { fill:none; stroke-width:2; }
       .arrow-blue { stroke:var(--blue); marker-end:url(#turn-arrow-blue); }
+      .arrow-amber { stroke:var(--amber); marker-end:url(#turn-arrow-amber); }
       .arrow-green { stroke:var(--green); marker-end:url(#turn-arrow-green); }
       .arrow-red { stroke:var(--red); marker-end:url(#turn-arrow-red); }
-      .arrow-error { stroke:var(--error); stroke-dasharray:8 7; marker-end:url(#turn-arrow-error); }
-      .step { fill:color-mix(in srgb,var(--amber) 10%,var(--surface)); stroke:var(--amber); stroke-width:2; }
+      .arrow-error { stroke:var(--error); stroke-dasharray:7 6; marker-end:url(#turn-arrow-error); }
+      .number { fill:var(--surface); stroke:var(--amber); stroke-width:1.5; }
+      .commit-number { fill:var(--surface); stroke:var(--green); stroke-width:1.5; }
       .commit-bar { fill:var(--green); }
     </style>
   </defs>
-  <rect class="canvas" x="55" y="1207" width="1510" height="638"/>
 
-  <rect x="70" y="1222" width="200" height="76" class="blue"/><text x="170" y="1254" text-anchor="middle" class="small-label">Phoenix frame</text><text x="170" y="1277" text-anchor="middle" class="mono">phx_event</text>
-  <path d="M270 1260H300" class="arrow-blue"/>
-  <rect x="310" y="1222" width="200" height="76" class="blue"/><text x="410" y="1254" text-anchor="middle" class="small-label">PhoenixProtocol</text><text x="410" y="1277" text-anchor="middle" class="mono">PhoenixInbound</text>
-  <path d="M510 1260H540" class="arrow-blue"/>
-  <rect x="550" y="1222" width="200" height="76" class="blue"/><text x="650" y="1254" text-anchor="middle" class="small-label">RootConnection ingress</text><text x="650" y="1277" text-anchor="middle" class="mono">SessionCommand</text>
-  <path d="M750 1260H780" class="arrow-blue"/>
-  <rect x="790" y="1222" width="200" height="76" class="owner"/><text x="890" y="1254" text-anchor="middle" class="small-label">SessionKernel</text><text x="890" y="1277" text-anchor="middle" class="small">dequeues one command</text>
+  <rect class="canvas" width="520" height="1250"/>
 
-  <rect x="70" y="1442" width="180" height="90" class="green"/><text x="160" y="1478" text-anchor="middle" class="small-label">Committed revision N</text><text x="160" y="1502" text-anchor="middle" class="small">model + render + owners</text>
-  <path d="M250 1491H280" class="arrow-green"/>
-  <path d="M890 1298V1332" class="arrow-blue"/>
-  <rect x="290" y="1342" width="700" height="298" class="amber"/>
-  <text x="320" y="1379" class="small-label">PROVISIONAL TURN</text>
-  <text x="320" y="1406" class="body">Journaled operations and candidate-owned resources remain invisible until commit.</text>
-  <g transform="translate(320 1440)"><circle cx="22" cy="22" r="22" class="step"/><text x="22" y="28" text-anchor="middle" class="small-label">1</text><text x="54" y="19" class="small-label">Resolve typed target</text><text x="54" y="42" class="small">binding + epoch</text></g>
-  <g transform="translate(545 1440)"><circle cx="22" cy="22" r="22" class="step"/><text x="22" y="28" text-anchor="middle" class="small-label">2</text><text x="54" y="19" class="small-label">Run hooks + handler</text><text x="54" y="42" class="small">proposed model</text></g>
-  <g transform="translate(770 1440)"><circle cx="22" cy="22" r="22" class="step"/><text x="22" y="28" text-anchor="middle" class="small-label">3</text><text x="54" y="19" class="small-label">Evaluate render</text><text x="54" y="42" class="small">tree, bindings, scopes</text></g>
-  <g transform="translate(320 1532)"><circle cx="22" cy="22" r="22" class="step"/><text x="22" y="28" text-anchor="middle" class="small-label">4</text><text x="54" y="19" class="small-label">Validate + prepare</text><text x="54" y="42" class="small">resources + topology</text></g>
-  <g transform="translate(545 1532)"><circle cx="22" cy="22" r="22" class="step"/><text x="22" y="28" text-anchor="middle" class="small-label">5</text><text x="54" y="19" class="small-label">Reserve output</text><text x="54" y="42" class="small">ordered publication slot</text></g>
-  <g transform="translate(770 1532)"><circle cx="22" cy="22" r="22" class="step"/><text x="22" y="28" text-anchor="middle" class="small-label">6</text><text x="54" y="19" class="small-label">After-render + diff</text><text x="54" y="42" class="small">validate continuations<tspan x="54" dy="19"> + TreeDiffer</tspan></text></g>
+  <rect x="12" y="18" width="496" height="210" class="section"/>
+  <text x="28" y="45" class="small-label">COMMAND ADMISSION</text>
+  <rect x="24" y="60" width="212" height="64" class="blue"/>
+  <text x="130" y="87" text-anchor="middle" class="small-label">Phoenix frame</text>
+  <text x="130" y="109" text-anchor="middle" class="mono">phx_event</text>
+  <path d="M236 92H280" class="arrow-blue"/>
+  <rect x="280" y="60" width="216" height="64" class="blue"/>
+  <text x="388" y="87" text-anchor="middle" class="small-label">PhoenixProtocol</text>
+  <text x="388" y="109" text-anchor="middle" class="body">decode</text>
+  <path d="M388 124V137H130V150" class="arrow-blue"/>
+  <rect x="24" y="150" width="212" height="64" class="blue"/>
+  <text x="130" y="176" text-anchor="middle" class="small-label">RootConnection ingress</text>
+  <text x="130" y="199" text-anchor="middle" class="mono">SessionCommand</text>
+  <path d="M236 182H280" class="arrow-blue"/>
+  <rect x="280" y="150" width="216" height="64" class="owner"/>
+  <text x="388" y="176" text-anchor="middle" class="small-label">SessionKernel</text>
+  <text x="388" y="199" text-anchor="middle" class="body">dequeue one command</text>
 
-  <path d="M990 1491H1020" class="arrow-green"/>
-  <rect x="1030" y="1342" width="280" height="298" class="green"/><rect x="1030" y="1342" width="14" height="298" class="commit-bar"/>
-  <text x="1065" y="1380" class="small-label">COMMIT BARRIER</text><text x="1065" y="1411" class="label">Interruption-masked tail</text><line x1="1065" y1="1430" x2="1280" y2="1430" class="divider"/>
-  <circle cx="1068" cy="1458" r="12" class="green"/><text x="1068" y="1463" text-anchor="middle" class="small-label">1</text><text x="1090" y="1463" class="small-label">Replace framework state</text>
-  <circle cx="1068" cy="1493" r="12" class="green"/><text x="1068" y="1498" text-anchor="middle" class="small-label">2</text><text x="1090" y="1498" class="small-label">Mark retired owners stale</text>
-  <circle cx="1068" cy="1528" r="12" class="green"/><text x="1068" y="1533" text-anchor="middle" class="small-label">3</text><text x="1090" y="1533" class="small-label">Activate gated resources</text>
-  <circle cx="1068" cy="1563" r="12" class="green"/><text x="1068" y="1568" text-anchor="middle" class="small-label">4</text><text x="1090" y="1568" class="small-label">Activate child topology</text>
-  <circle cx="1068" cy="1598" r="12" class="green"/><text x="1068" y="1603" text-anchor="middle" class="small-label">5</text><text x="1090" y="1603" class="small-label">Fill reserved output slot</text><text x="1090" y="1626" class="small">final commit-tail operation</text>
+  <path d="M388 214V232" class="arrow-blue"/>
+  <rect x="110" y="232" width="300" height="62" class="green"/>
+  <text x="260" y="258" text-anchor="middle" class="small-label">Committed revision N</text>
+  <text x="260" y="280" text-anchor="middle" class="body">model + render + owners remain active</text>
+  <path d="M260 294V315" class="arrow-amber"/>
 
-  <path d="M1310 1491H1340" class="arrow-green"/>
-  <rect x="1350" y="1442" width="200" height="90" class="green"/><text x="1450" y="1478" text-anchor="middle" class="small-label">Committed revision N+1</text><text x="1450" y="1502" text-anchor="middle" class="small">active before network I/O</text>
-  <path d="M640 1640V1680" class="arrow-error"/>
-  <rect x="470" y="1690" width="340" height="82" class="red-box"/><text x="640" y="1722" text-anchor="middle" class="small-label">Candidate failure</text><text x="640" y="1746" text-anchor="middle" class="small">discard candidate; revision N stays active</text>
-  <text x="1170" y="1668" text-anchor="middle" class="small">stale owners finalize after commit</text>
-  <path d="M1450 1532V1552" class="arrow-red"/>
-  <rect x="1350" y="1562" width="200" height="60" class="owner"/><text x="1450" y="1587" text-anchor="middle" class="small-label">RootConnection output</text><text x="1450" y="1608" text-anchor="middle" class="small">drains ordered reservation</text>
-  <path d="M1450 1622V1642" class="arrow-red"/>
-  <rect x="1350" y="1652" width="200" height="60" class="protocol"/><text x="1450" y="1677" text-anchor="middle" class="small-label mono">PhoenixRenderedEncoder</text><text x="1450" y="1698" text-anchor="middle" class="mono">receives RenderDelta</text>
-  <path d="M1450 1712V1732" class="arrow-red"/>
-  <rect x="1350" y="1742" width="200" height="60" class="protocol"/><text x="1450" y="1767" text-anchor="middle" class="small-label">SerialWriter</text><text x="1450" y="1788" text-anchor="middle" class="small">bounded FIFO</text>
-  <text x="1450" y="1830" text-anchor="middle" class="small">N+1 is not rolled back on write failure</text>
+  <rect x="16" y="315" width="488" height="301" class="amber"/>
+  <text x="30" y="343" class="small-label">PROVISIONAL TURN</text>
+  <text x="30" y="367" class="body">Candidate state and owned resources stay invisible</text>
+  <text x="30" y="386" class="body">until commit.</text>
+
+  <rect x="30" y="400" width="225" height="59" class="step-box"/>
+  <circle cx="52" cy="429" r="15" class="number"/><text x="52" y="435" text-anchor="middle" class="small-label">1</text>
+  <text x="73" y="424" class="small-label">Resolve typed target</text><text x="73" y="446" class="body">binding + epoch</text>
+  <rect x="265" y="400" width="225" height="59" class="step-box"/>
+  <circle cx="287" cy="429" r="15" class="number"/><text x="287" y="435" text-anchor="middle" class="small-label">2</text>
+  <text x="308" y="424" class="small-label">Run hooks + handler</text><text x="308" y="446" class="body">proposed model</text>
+
+  <rect x="30" y="469" width="225" height="59" class="step-box"/>
+  <circle cx="52" cy="498" r="15" class="number"/><text x="52" y="504" text-anchor="middle" class="small-label">3</text>
+  <text x="73" y="493" class="small-label">Evaluate render</text><text x="73" y="515" class="body">tree, bindings, scopes</text>
+  <rect x="265" y="469" width="225" height="59" class="step-box"/>
+  <circle cx="287" cy="498" r="15" class="number"/><text x="287" y="504" text-anchor="middle" class="small-label">4</text>
+  <text x="308" y="493" class="small-label">Validate + prepare</text><text x="308" y="515" class="body">resources + topology</text>
+
+  <rect x="30" y="538" width="225" height="59" class="step-box"/>
+  <circle cx="52" cy="567" r="15" class="number"/><text x="52" y="573" text-anchor="middle" class="small-label">5</text>
+  <text x="73" y="562" class="small-label">Reserve output</text><text x="73" y="584" class="body">ordered publication slot</text>
+  <rect x="265" y="538" width="225" height="59" class="step-box"/>
+  <circle cx="287" cy="567" r="15" class="number"/><text x="287" y="573" text-anchor="middle" class="small-label">6</text>
+  <text x="308" y="562" class="small-label">After-render + diff</text><text x="308" y="584" class="body">validate continuations</text>
+
+  <path d="M130 616V638" class="arrow-error"/>
+  <rect x="16" y="638" width="235" height="72" class="red-box"/>
+  <text x="133" y="663" text-anchor="middle" class="small-label">Candidate discarded</text>
+  <text x="133" y="685" text-anchor="middle" class="body">N+1 not committed</text>
+  <text x="133" y="703" text-anchor="middle" class="body">Lifecycle terminates</text>
+
+  <text x="416" y="644" class="small-label" style="fill:var(--green)">success</text>
+  <path d="M405 616V730" class="arrow-green"/>
+  <rect x="16" y="730" width="488" height="228" class="green"/>
+  <rect x="16" y="730" width="9" height="228" class="commit-bar"/>
+  <text x="42" y="759" class="small-label">COMMIT BARRIER</text>
+  <text x="42" y="784" class="label">Interruption-masked, ordered commit tail</text>
+  <line x1="42" y1="795" x2="486" y2="795" class="divider"/>
+  <circle cx="53" cy="816" r="11" class="commit-number"/><text x="53" y="821" text-anchor="middle" class="body">1</text><text x="75" y="821" class="small-label">Replace framework state</text>
+  <circle cx="53" cy="843" r="11" class="commit-number"/><text x="53" y="848" text-anchor="middle" class="body">2</text><text x="75" y="848" class="small-label">Mark retired owners stale</text>
+  <circle cx="53" cy="870" r="11" class="commit-number"/><text x="53" y="875" text-anchor="middle" class="body">3</text><text x="75" y="875" class="small-label">Activate gated resources</text>
+  <circle cx="53" cy="897" r="11" class="commit-number"/><text x="53" y="902" text-anchor="middle" class="body">4</text><text x="75" y="902" class="small-label">Activate child topology</text>
+  <circle cx="53" cy="924" r="11" class="commit-number"/><text x="53" y="929" text-anchor="middle" class="body">5</text><text x="75" y="929" class="small-label">Fill reserved output slot</text>
+  <text x="42" y="949" class="body">Retired owners finalize after commit.</text>
+
+  <path d="M260 958V980" class="arrow-green"/>
+  <rect x="95" y="980" width="330" height="62" class="green"/>
+  <text x="260" y="1006" text-anchor="middle" class="small-label">Committed revision N+1 active</text>
+  <text x="260" y="1028" text-anchor="middle" class="body">before any network I/O</text>
+
+  <path d="M260 1042V1056H88V1088" class="arrow-red"/>
+  <text x="180" y="1073" class="small-label">POST-COMMIT PUBLICATION</text>
+  <rect x="16" y="1088" width="138" height="80" class="protocol"/>
+  <text x="85" y="1116" text-anchor="middle" class="small-label">RootConnection</text>
+  <text x="85" y="1138" text-anchor="middle" class="small-label">output</text>
+  <text x="85" y="1159" text-anchor="middle" class="body">drain reservation</text>
+  <path d="M154 1128H169" class="arrow-red"/>
+  <rect x="169" y="1088" width="182" height="80" class="protocol"/>
+  <text x="260" y="1115" text-anchor="middle" class="small-label mono">PhoenixRendered</text>
+  <text x="260" y="1136" text-anchor="middle" class="small-label mono">Encoder</text>
+  <text x="260" y="1159" text-anchor="middle" class="body">encode RenderDelta</text>
+  <path d="M351 1128H366" class="arrow-red"/>
+  <rect x="366" y="1088" width="138" height="80" class="protocol"/>
+  <text x="435" y="1118" text-anchor="middle" class="small-label">SerialWriter</text>
+  <text x="435" y="1143" text-anchor="middle" class="body">bounded FIFO</text>
+
+  <path d="M435 1168V1188" class="arrow-error"/>
+  <rect x="55" y="1188" width="410" height="55" class="red-box"/>
+  <text x="260" y="1221" text-anchor="middle" class="small-label">Write failure does not roll back N+1</text>
 </svg>

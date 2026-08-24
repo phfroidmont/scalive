@@ -14,11 +14,12 @@ and technical journey behind the project.
 
 ## Understand The Runtime {#understand-the-runtime}
 
-Contributors can use the [runtime architecture](runtime-architecture.md#implementation-map)
-tour to follow disconnected rendering, socket bootstrap, serialized lifecycle
-turns, signal evaluation, tree diffs, resource ownership, and cleanup through the
-current implementation. Internal names on that page are source landmarks rather
-than supported application APIs.
+The [runtime architecture](runtime-architecture.md#runtime-at-a-glance) explains
+how Scalive moves from disconnected rendering to socket bootstrap, serialized
+lifecycle turns, retained rendering, tree diffs, resource ownership, protocol
+projection, and cleanup. It introduces the concrete implementation only after
+establishing the runtime concepts; internal names are not additional supported
+application APIs.
 
 ## Project Status {#project-status}
 

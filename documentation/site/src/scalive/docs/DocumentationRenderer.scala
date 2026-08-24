@@ -233,38 +233,74 @@ final private[docs] class DocumentationRenderer(
     val staticAssets = assets.getOrElse(
       throw new IllegalStateException("Documentation diagram rendering requires static assets.")
     )
-    val assetUrl      = staticAssets.path(diagram.assetFilename)
     val captionId     = s"docs-diagram-$id-caption"
     val descriptionId = s"docs-diagram-$id-description"
-    val sizeClass     = diagram.displaySize match
-      case DiagramDisplaySize.Wide => "docs-diagram-wide"
+    diagram.layout match
+      case DiagramLayout.Single(asset) =>
+        val assetUrl = staticAssets.path(asset.filename)
+        figure(
+          cls                 := "docs-diagram docs-diagram-single",
+          dataAttr("diagram") := id,
+          ariaLabelledBy      := captionId,
+          ariaDescribedBy     := descriptionId,
+          HtmlTag("figcaption")(
+            cls := "docs-diagram-heading",
+            span(idAttr := captionId, cls := "docs-diagram-caption", diagram.caption),
+            a(href      := assetUrl, "Open full-size SVG")
+          ),
+          div(
+            cls := "docs-diagram-single-canvas",
+            renderDiagramObject(asset, assetUrl)
+          ),
+          p(idAttr := descriptionId, cls := "docs-visually-hidden", diagram.description)
+        )
+      case DiagramLayout.Comparison(left, right) =>
+        figure(
+          cls                 := "docs-diagram docs-diagram-comparison",
+          dataAttr("diagram") := id,
+          ariaLabelledBy      := captionId,
+          ariaDescribedBy     := descriptionId,
+          HtmlTag("figcaption")(
+            cls := "docs-diagram-heading",
+            span(idAttr := captionId, cls := "docs-diagram-caption", diagram.caption)
+          ),
+          div(
+            cls := "docs-diagram-panels",
+            renderDiagramPanel(left, staticAssets),
+            renderDiagramPanel(right, staticAssets)
+          ),
+          p(idAttr := descriptionId, cls := "docs-visually-hidden", diagram.description)
+        )
+    end match
+  end renderDiagram
 
-    figure(
-      cls                 := s"docs-diagram $sizeClass",
-      dataAttr("diagram") := id,
-      ariaLabelledBy      := captionId,
-      ariaDescribedBy     := descriptionId,
-      HtmlTag("figcaption")(
-        cls := "docs-diagram-heading",
-        span(idAttr := captionId, cls := "docs-diagram-caption", diagram.caption),
-        a(href      := assetUrl, "Open full-size SVG")
+  private def renderDiagramPanel(
+    asset: DiagramAsset,
+    staticAssets: StaticAssets
+  ): HtmlElement[Nothing] =
+    val assetUrl = staticAssets.path(asset.filename)
+    div(
+      cls := "docs-diagram-panel",
+      div(
+        cls := "docs-diagram-panel-heading",
+        span(cls := "docs-diagram-panel-title", asset.label),
+        a(href   := assetUrl, s"Open ${asset.label} SVG")
       ),
       div(
-        cls        := "docs-diagram-viewport",
-        tabIndex   := "0",
-        aria.label := "Scrollable architecture diagram",
-        HtmlTag("object")(
-          typ         := "image/svg+xml",
-          objectData  := assetUrl,
-          widthAttr   := diagram.intrinsicSize.width,
-          heightAttr  := diagram.intrinsicSize.height,
-          tabIndex    := "-1",
-          aria.hidden := true
-        )
-      ),
-      p(idAttr := descriptionId, cls := "docs-visually-hidden", diagram.description)
+        cls := "docs-diagram-panel-canvas",
+        renderDiagramObject(asset, assetUrl)
+      )
     )
-  end renderDiagram
+
+  private def renderDiagramObject(asset: DiagramAsset, assetUrl: String): HtmlElement[Nothing] =
+    HtmlTag("object")(
+      typ         := "image/svg+xml",
+      objectData  := assetUrl,
+      widthAttr   := asset.intrinsicSize.width,
+      heightAttr  := asset.intrinsicSize.height,
+      tabIndex    := "-1",
+      aria.hidden := true
+    )
 
   private def renderLab(id: String): HtmlElement[Nothing] =
     val lab = LabCatalog

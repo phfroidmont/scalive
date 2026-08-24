@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="760" viewBox="0 0 480 760" role="img" aria-labelledby="disconnected-title disconnected-desc">
+  <title id="disconnected-title">Disconnected runtime ownership</title>
+  <desc id="disconnected-desc">A browser requests an HTTP document. The request scope selects a route, runs mount aspects, and owns one DisconnectedRootTurn. That turn renders a candidate and returns full HTML with CSRF and bootstrap data. The response closes the request scope without retaining a server model.</desc>
+  <defs>
+    <marker id="disconnected-arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-blue"/></marker>
+    <marker id="disconnected-arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-red"/></marker>
+    <style>
+      @import url("fonts.css");
+      svg { color-scheme:light; --bg:#f4f1eb; --surface:#fff; --subtle:#ece8e0; --text:#171719; --muted:#67645f; --border:#d8d2c7; --border-strong:#aca69c; --red:#ee2946; --blue:#2a63d4; --green:#17755c; --amber:#9b630d; }
+      svg[data-theme="dark"] { color-scheme:dark; --bg:#111114; --surface:#19191d; --subtle:#202025; --text:#f1efe9; --muted:#aaa7a1; --border:#34343a; --border-strong:#55555d; --red:#ff3a55; --blue:#79a8ff; --green:#65c7a6; --amber:#e0b05c; }
+      svg[data-theme="light"] { color-scheme:light; --bg:#f4f1eb; --surface:#fff; --subtle:#ece8e0; --text:#171719; --muted:#67645f; --border:#d8d2c7; --border-strong:#aca69c; --red:#ee2946; --blue:#2a63d4; --green:#17755c; --amber:#9b630d; }
+      @media (prefers-color-scheme:dark) { svg:not([data-theme]) { color-scheme:dark; --bg:#111114; --surface:#19191d; --subtle:#202025; --text:#f1efe9; --muted:#aaa7a1; --border:#34343a; --border-strong:#55555d; --red:#ff3a55; --blue:#79a8ff; --green:#65c7a6; --amber:#e0b05c; } }
+      text { font-family:"Instrument Sans Variable","Arial Nova","Segoe UI",ui-sans-serif,system-ui,sans-serif; fill:var(--text); }
+      rect { rx:4px; }
+      .canvas { fill:var(--bg); }
+      .scope,.owner,.interface { fill:var(--surface); stroke-width:1.5; }
+      .scope,.owner { stroke:var(--border-strong); }
+      .interface { stroke:var(--border); }
+      .scope-head { fill:var(--subtle); }
+      .divider { stroke:var(--border); stroke-width:1; }
+      .amber { fill:color-mix(in srgb,var(--amber) 7%,var(--surface)); stroke:var(--amber); stroke-width:1.5; stroke-dasharray:9 7; }
+      .red-box { fill:color-mix(in srgb,var(--red) 6%,var(--surface)); stroke:var(--red); stroke-width:1.5; }
+      .label { font-size:20px; font-weight:700; }
+      .small-label { font-size:15px; font-weight:700; }
+      .small { font-size:14px; fill:var(--muted); }
+      .mono { font-family:"JetBrains Mono Variable","SFMono-Regular",Consolas,monospace; font-size:14px; }
+      .eyebrow { font-family:"JetBrains Mono Variable","SFMono-Regular",Consolas,monospace; font-size:14px; font-weight:700; letter-spacing:1.2px; fill:var(--red); }
+      .marker-blue { fill:var(--blue); }
+      .marker-red { fill:var(--red); }
+      .arrow-blue,.arrow-red { fill:none; stroke-width:2; }
+      .arrow-blue { stroke:var(--blue); marker-end:url(#disconnected-arrow-blue); }
+      .arrow-red { stroke:var(--red); marker-end:url(#disconnected-arrow-red); }
+      .blue-text { fill:var(--blue); }
+      .red-text { fill:var(--red); }
+      .muted-text { fill:var(--muted); }
+    </style>
+  </defs>
+  <rect class="canvas" width="480" height="760"/>
+
+  <text x="18" y="27" class="eyebrow">OWNERSHIP - 1 OF 2</text>
+  <text x="18" y="56" class="label">Disconnected HTTP lifetime</text>
+
+  <rect x="18" y="76" width="444" height="82" class="interface"/>
+  <rect x="18" y="76" width="9" height="82" fill="var(--blue)"/>
+  <text x="44" y="104" class="eyebrow blue-text">BROWSER</text>
+  <text x="44" y="137" class="small-label">HTTP document</text>
+  <text x="248" y="137" class="small-label blue-text">GET</text>
+  <text x="440" y="137" text-anchor="end" class="small-label red-text">Full HTML</text>
+
+  <path d="M240 158V190" class="arrow-blue"/>
+  <text x="254" y="181" class="mono blue-text">request</text>
+
+  <rect x="18" y="200" width="444" height="542" class="scope"/>
+  <rect x="18" y="200" width="444" height="66" class="scope-head"/>
+  <path d="M18 266H462" class="divider"/>
+  <text x="40" y="227" class="small-label">REQUEST SCOPE</text>
+  <text x="40" y="252" class="label">ZIO HTTP transport</text>
+
+  <rect x="40" y="290" width="400" height="72" class="interface"/>
+  <text x="60" y="319" class="small-label">Route selection + mount aspects</text>
+  <text x="60" y="344" class="small">typed route / params / session context</text>
+  <path d="M240 362V390" class="arrow-blue"/>
+
+  <rect x="40" y="400" width="400" height="164" class="owner"/>
+  <text x="60" y="429" class="eyebrow">REQUEST-OWNED TURN</text>
+  <text x="60" y="457" class="small-label">DisconnectedRootTurn</text>
+  <text x="60" y="480" class="small">mount / params / hooks</text>
+  <rect x="60" y="498" width="360" height="46" class="amber"/>
+  <text x="80" y="527" class="small-label">Render candidate - request-local only</text>
+
+  <path d="M240 564V592" class="arrow-red"/>
+  <rect x="40" y="602" width="400" height="70" class="red-box"/>
+  <text x="60" y="630" class="small-label">Full HTML + CSRF / bootstrap data</text>
+  <text x="60" y="654" class="small">one response to the browser</text>
+
+  <text x="40" y="716" class="mono muted-text">scope closes / no retained model</text>
+  <path d="M440 637H452V176H408V158" class="arrow-red"/>
+</svg>

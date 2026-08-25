@@ -29,6 +29,7 @@
             pkgs.playwright-test
             pkgs.playwright-driver
             pkgs.rsync
+            pkgs.curl
           ];
           shellHook = ''
             export JAVA_HOME="${pkgs.jdk}";

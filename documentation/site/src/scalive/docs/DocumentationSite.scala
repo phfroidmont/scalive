@@ -11,6 +11,13 @@ import scalive.docs.examples.Reports
 import scalive.docs.xray.DocumentationTraceStore
 
 object DocumentationSite extends ZIOAppDefault:
+  private[docs] def healthRoutes(revision: String): Routes[Any, Nothing] =
+    Routes(
+      Method.GET / "health" -> handler(
+        Response.text(revision).addHeader(Header.CacheControl.NoStore)
+      )
+    )
+
   override val run =
     for
       config <- ZIO
@@ -43,20 +50,21 @@ object DocumentationSite extends ZIOAppDefault:
       transportConfig <- ZIO
                            .fromEither(
                              ZioHttpConfig(
-                               signingSecret = sys.env.getOrElse(
-                                 "SCALIVE_TOKEN_SECRET",
-                                 "local-development-secret-change-me"
-                               ),
+                               signingSecret = config.signingSecret,
                                sessionMaxAge = Duration.ofDays(7),
-                               secureCookie = false
+                               secureCookie = config.secureCookie
                              )
                            ).mapError(error => new IllegalArgumentException(error.toString))
       security = LiveSecurity(transportConfig)
-      routes   = application.routes(assets, security, config, traceStore) ++ assets.routes
+      revision = bundle.apiReference.metadata.revision
+      routes   =
+        application.routes(assets, security, config, traceStore) ++ healthRoutes(
+          revision
+        ) ++ assets.routes
       _ <- Server
              .serve(routes)
              .provide(
-               Server.defaultWithPort(config.serverPort),
+               Server.defaultWith(_.binding("127.0.0.1", config.serverPort)),
                Reports.inMemory,
                AuthService.live,
                LiveConnections.local[PublicSessionId]

@@ -81,14 +81,15 @@ The current `documentation.site` entry point accepts:
 
 | Variable | Default | Validation and effect |
 | --- | --- | --- |
-| `SCALIVE_SERVER_PORT` | `8080` | Must trim and parse as an integer from 1 through 65535. It is passed to `Server.defaultWithPort`. |
+| `SCALIVE_SERVER_PORT` | `8080` | Must trim and parse as an integer from 1 through 65535. The documentation server binds that port on `127.0.0.1`. |
 | `SCALIVE_PUBLIC_ORIGIN` | `http://localhost:<server-port>` | Must be an `http` or `https` origin with a host and without user information, path other than `/`, query, or fragment. A trailing `/` is removed. It is used for absolute documentation metadata URLs. |
+| `SCALIVE_TOKEN_SECRET` | Development value for loopback origins only | Must contain at least 32 UTF-8 bytes when set. It is required for every non-loopback public origin. |
 | `SCALIVE_DOCS_REVISION` | Current full Git revision | Build-time input to documentation generation. It avoids the generator's `git rev-parse HEAD` lookup; it is not runtime server configuration. |
 
-The documentation site reads application-owned `SCALIVE_TOKEN_SECRET`, uses a
-seven-day session age, and explicitly sets `secureCookie = false` when validating
-its `ZioHttpConfig`. Neither `SCALIVE_PUBLIC_ORIGIN` nor a forwarded scheme
-changes that setting. The local-development fallback is not a production secret.
+The documentation site uses a seven-day session age and derives the cookie
+policy from the validated public origin: HTTPS origins set `secureCookie = true`.
+It does not infer that policy from forwarded headers. The loopback-only fallback
+secret exists for local development and cannot start a public deployment.
 
 ### Other Repository Applications {#other-repository-applications}
 

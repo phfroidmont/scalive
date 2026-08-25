@@ -134,10 +134,10 @@ object AuthFlowSpec extends ZIOSpecDefault:
                     .orDieWith(error => new IllegalArgumentException(error))
         rendered <- DisconnectedRender.run(
                       application.routes(
-                        assets,
-                        security,
-                        DocumentationConfig(8080, origin)
-                       ).provideEnvironment(documentationEnvironment),
+                         assets,
+                         security,
+                         DocumentationConfig(8080, origin, "documentation-auth-flow-secret-0000000000000000")
+                        ).provideEnvironment(documentationEnvironment),
                       Request.get(url("/guides/authentication"))
                     )
       yield assertTrue(

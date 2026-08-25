@@ -8,12 +8,13 @@ group = "Assets and operations"
 
 ## Prerequisites {#prerequisites}
 
-A deployment host or build job needs a JDK and Mill. Applications using the
-repository's `NpmAssets` build also need Node.js and npm because Mill runs
+A build job needs a JDK and Mill. Applications using the repository's
+`NpmAssets` build also need Node.js and npm because Mill runs
 `npm ci` and the package's build script before adding the declared outputs to
 classpath resources. From this repository, `nix develop` supplies those tools.
 The documentation generator also needs a Git checkout unless
-`SCALIVE_DOCS_REVISION` is supplied.
+`SCALIVE_DOCS_REVISION` is supplied. The assembled documentation application
+needs only a compatible JRE at runtime.
 
 Before deploying an application, complete these related tasks:
 
@@ -26,36 +27,38 @@ Before deploying an application, complete these related tasks:
 
 ## Build And Run The Current Application {#build-and-run-the-current-application}
 
-This repository does not declare an assembly, fat-JAR, executable-JAR,
-container-image, or native-image workflow. Do not treat Mill's compile output as
-a self-contained runnable artifact or invent an `assembly` target. The verified
-current execution path is the Mill runner, which assembles the runtime
-classpath and runs the module's `ZIOAppDefault` entry point.
-
 Enter the repository development shell:
 
 ```bash
 nix develop
 ```
 
-Then run the documentation application from the repository root:
+Build the self-contained executable JAR with an explicit source revision:
+
+```bash
+SCALIVE_DOCS_REVISION="$(git rev-parse HEAD)" \
+mill --ticker false documentation.site.assembly
+```
+
+Run the result with only a JRE and explicit production configuration:
 
 ```bash
 SCALIVE_TOKEN_SECRET='<replace-with-at-least-32-random-bytes>' \
 SCALIVE_SERVER_PORT=8080 \
-SCALIVE_PUBLIC_ORIGIN='http://localhost:8080' \
-mill documentation.site.run
+SCALIVE_PUBLIC_ORIGIN='https://docs.example.com' \
+java -jar out/documentation/site/assembly.dest/out.jar
 ```
 
-For an application following the source-backed quick start, the equivalent
-verified shape is `mill app.run`. In both cases, Mill builds the configured
-browser bundle through the module's resources before the application serves it.
+The assembly embeds generated documentation and browser assets. Node, npm,
+Mill, and the source checkout are build-time dependencies only. For an
+application following the source-backed quick start, the verified development
+shape remains `mill app.run`.
 
 `SCALIVE_SERVER_PORT` and `SCALIVE_PUBLIC_ORIGIN` above belong to the
-documentation application, not to Scalive or ZIO HTTP. Other applications must
-parse their own listen address, port, and public origin and pass an appropriate
-ZIO HTTP `Server` layer. The quick-start fixture instead fixes port `8080` in
-`Server.defaultWithPort(8080)`.
+documentation application, not to Scalive or ZIO HTTP. The documentation entry
+point always binds to `127.0.0.1`; other applications must define their own
+listen address, port, and public origin. The quick-start fixture instead fixes
+port `8080` in `Server.defaultWithPort(8080)`.
 
 ## Put An HTTP Edge In Front {#put-an-http-edge-in-front}
 
@@ -91,13 +94,10 @@ If an edge adds a prefix, its routing must still expose the exact application
 page, socket, and static mount paths; changing only generated HTML is not
 sufficient.
 
-The documentation application currently validates its `ZioHttpConfig` with
-`secureCookie = false` unconditionally. `SCALIVE_PUBLIC_ORIGIN=https://...`
-changes generated absolute metadata URLs but does not change that cookie
-policy, and no documentation-site environment setting enables secure cookies.
-Consequently, the current documentation application is not a complete
-production HTTPS reference configuration; changing that limitation requires an
-application code change outside this guide.
+The documentation application derives `secureCookie` from its validated public
+origin. An HTTPS origin therefore emits secure cookies and requires an explicit
+`SCALIVE_TOKEN_SECRET` containing at least 32 UTF-8 bytes. Forwarded headers do
+not override either decision.
 
 ## Cache Static Assets {#cache-static-assets}
 
@@ -157,10 +157,12 @@ application-owned concerns. Verify the behavior under the actual process signal
 and proxy rather than assuming active WebSockets migrate; clients reconnect and
 mount fresh state elsewhere.
 
-Scalive also supplies no built-in liveness or readiness endpoint. Add ordinary
-ZIO HTTP routes in the application if probes are required, and define readiness
-against the dependencies that application actually needs. Do not use a LiveView
-page or successful static response as an undocumented readiness contract.
+Scalive supplies no framework-level liveness or readiness endpoint. The
+documentation application owns `GET /health`, which becomes available only
+after its generated content and static assets load and returns the exact full
+Git revision embedded during the build. Other applications should add ordinary
+ZIO HTTP routes and define readiness against the dependencies they actually
+need.
 
 Runtime code logs selected warnings, errors, crashes, and some debug lifecycle
 events through ZIO logging. There is no complete public telemetry, metrics,

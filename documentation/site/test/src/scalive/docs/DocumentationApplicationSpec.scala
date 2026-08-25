@@ -26,7 +26,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     8080,
     PublicOrigin
       .from("https://docs.example.test")
-      .fold(error => throw new IllegalArgumentException(error), identity)
+      .fold(error => throw new IllegalArgumentException(error), identity),
+    "documentation-application-spec-secret"
   )
   private val assetNames = Seq(
     "app.css",

@@ -35,8 +35,60 @@ final private[docs] class DocumentationRenderer(
       cls := "docs-content docs-prose",
       h1(page.metadata.title),
       page.content.map(renderBlock(page.route)),
+      learnProgressNavigation(page),
       pageLinks(page)
     )
+
+  private def learnProgressNavigation(page: Page): Vector[Mod[Nothing]] =
+    if page.metadata.section != Section.Learn || !page.source.isInstanceOf[PageSource.Authored] then
+      Vector.empty
+    else
+      val root = application.bundle.navigation.items
+        .find(_.section == Section.Learn).getOrElse(
+          throw new IllegalArgumentException("Missing navigation for section Learn.")
+        )
+      val pages        = root +: root.children
+      val currentIndex = pages.indexWhere(_.route == page.route)
+      if currentIndex < 0 then
+        throw new IllegalArgumentException(s"Missing Learn navigation route: ${page.route}")
+
+      def progressLink(item: NavigationItem, direction: String, cssClass: String) =
+        val location = application
+          .location(item.route).getOrElse(
+            throw new IllegalArgumentException(s"Unknown navigation route: ${item.route}")
+          )
+        link.pushNavigate(
+          location,
+          cls        := s"docs-learn-progress-link $cssClass",
+          aria.label := s"$direction: ${item.title}",
+          span(cls := "docs-learn-progress-direction", s"$direction "),
+          strong(item.title)
+        )
+
+      val previous = pages
+        .lift(currentIndex - 1).map { item =>
+          Mod.Content.Tag(progressLink(item, "Previous", "docs-learn-progress-previous"))
+        }.toVector
+      val next = pages
+        .lift(currentIndex + 1).map { item =>
+          Mod.Content.Tag(progressLink(item, "Next", "docs-learn-progress-next"))
+        }.toVector
+      val separator = Option
+        .when(previous.nonEmpty && next.nonEmpty)(
+          Mod.Content.Tag(
+            span(cls := "docs-learn-progress-separator", aria.hidden := true, " ")
+          )
+        ).toVector
+      Vector(
+        Mod.Content.Tag(
+          navTag(
+            cls        := "docs-learn-progress",
+            aria.label := "Learn progress",
+            p(cls   := "docs-learn-progress-count", s"${currentIndex + 1} of ${pages.size}"),
+            div(cls := "docs-learn-progress-links", previous, separator, next)
+          )
+        )
+      )
 
   private def renderGeneratedApiPage(page: Page): HtmlElement[Nothing] =
     val symbols = page.content.collect { case Block.ApiSymbolRef(id) =>

@@ -7,13 +7,24 @@ section = learn
 
 ## Before You Begin {#before-you-begin}
 
-Install Java, Mill, and Node.js with npm. This quick start uses Scala `3.8.4`,
-Mill, and the `dev.scalive::scalive:{{scaliveSnapshotVersion}}` artifact.
+Install a JDK, Mill, and Node.js `18` or newer with npm. This quick start uses
+Scala `3.8.4` and the `dev.scalive::scalive:{{scaliveSnapshotVersion}}`
+artifact. Verify that the tools are available before creating the project:
+
+```bash
+java -version
+mill --version
+node --version
+npm --version
+```
+
+Each command should print a version; `node --version` must report `v18` or
+newer.
 
 @:callout(warning)
 
-Snapshots are retained by Maven Central for a limited time. The revision in the
-version identifies the Scalive source used to produce that snapshot.
+The revision in the version identifies the exact Scalive source for this page.
+Maven Central retains snapshots for a limited time.
 
 @:@
 
@@ -136,7 +147,7 @@ Create `app/src/quickstart/CounterLiveView.scala`:
 
 The `Int` is all state needed to render this interface. `Msg` lists every input
 the view accepts. `mount` creates the state, `handleMessage` performs an
-effectful transition, and `render` projects the state into typed HTML.
+effectful transition, and `view` projects the state into typed HTML.
 
 ## Add Routes And Layout {#add-routes-and-layout}
 
@@ -158,9 +169,13 @@ Create `app/src/quickstart/Main.scala`:
 @:sourceRegion(documentation/fixtures/quick-start/src/quickstart/Main.scala, quick-start-main)
 
 The server loads the browser bundle, builds CSRF-protected Live routes, adds the
-static asset routes, and listens on port `8080`. Deployed instances must set a
-stable, secret `SCALIVE_TOKEN_SECRET`; the default generates a new secret when
-the process starts.
+static asset routes, and listens on port `8080`. For local HTTP, this fixture
+uses a fixed development-only signing-secret fallback and sets
+`secureCookie = false`. Do not deploy those settings unchanged: production must
+require a stable, high-entropy `SCALIVE_TOKEN_SECRET` and set
+`secureCookie = true` behind HTTPS. See
+[Configuration](../guides/configuration.md#current-configuration-contract)
+and [Deployment](../guides/deployment.md#put-an-http-edge-in-front).
 
 ## Run It {#run-it}
 
@@ -174,5 +189,15 @@ Open `http://localhost:8080/`. The HTTP request first produces disconnected
 HTML. The client then connects to `/live`, Scalive mounts an independent
 connected model, and button events travel over the socket as typed messages.
 
-Next, read [Project anatomy](project-anatomy.md) to assign each file and runtime
-step a clear owner.
+You are done when Mill completes the npm build, the server listens on port
+`8080`, and the browser shows a counter starting at `0`. Both buttons should
+update it without reloading the page.
+
+## If Something Fails {#if-something-fails}
+
+- If Mill cannot resolve the Scalive dependency, confirm the snapshot version
+  and repository above, then check [startup troubleshooting](../guides/troubleshooting.md#diagnose-startup-failures).
+- If `npm ci`, bundling, or `app.js` fails, check [missing assets](../guides/troubleshooting.md#diagnose-missing-assets).
+- If port `8080` is already in use, stop the other process or change the port in
+  `Main.scala`. If the page loads but its buttons do not connect, check
+  [socket connections](../guides/troubleshooting.md#diagnose-socket-connections).

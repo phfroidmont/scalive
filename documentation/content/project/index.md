@@ -34,13 +34,6 @@ the [compatibility status](compatibility.md#compatibility-target) for the curren
 feature matrix, known gaps, intentional Scala-first divergences, and verification
 guidance.
 
-The current documentation follows the current source revision. The standalone
-[Quick start](../learn/quick-start.md#before-you-begin) uses the forthcoming
-snapshot coordinate and clearly marks it as unavailable until publication.
-Evaluate the framework against your application's requirements, especially
-security, failure recovery, operations, and any Phoenix feature on which you
-depend.
-
 ## Expect Breaking Changes {#expect-breaking-changes}
 
 Scalive does not provide source or binary compatibility guarantees during the

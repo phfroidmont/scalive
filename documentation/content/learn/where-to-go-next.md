@@ -1,37 +1,54 @@
 {%
 title = "Where to go next"
 description = "Choose the Scalive guide, example, or API reference that matches the next part of your application."
-order = 6
+order = 7
 section = learn
 %}
 
-## Choose A Guide {#choose-a-guide}
+## Continue By Task {#continue-by-task}
 
 The Learn path established the programming model and architecture. Continue by
 the task your application needs:
 
-| Need | Continue with |
-| --- | --- |
-| Rich HTML and browser input | [HTML and event bindings](../guides/html-dsl-and-event-bindings.md) |
-| Typed path and query state | [Routes, parameters, and navigation](../guides/routes-and-navigation.md) |
-| Shared document structure and mount policy | [Layouts, live sessions, and mount aspects](../guides/layouts-sessions-and-mount-aspects.md) |
-| Databases and application services | [Services and dependency injection](../guides/services-and-zlayer-injection.md) |
-| Forms and validation | [Typed forms and validation](../guides/typed-forms-and-validation.md) |
-| Reusable stateful UI | [Stateful components and communication](../guides/components-and-communication.md) |
-| Background work and live data | [Asynchronous work and subscriptions](../guides/async-work-and-subscriptions.md) |
-| Large changing collections | [Streams and collection updates](../guides/streams-and-collection-updates.md) |
-| Browser APIs or third-party widgets | [Browser commands, events, and hooks](../guides/browser-integration.md) |
-| Tests and failure diagnosis | [Testing LiveViews](../guides/testing.md) and [Troubleshooting](../guides/troubleshooting.md) |
+- **Build application behavior:** [HTML and event bindings](../guides/html-dsl-and-event-bindings.md),
+  [typed forms and validation](../guides/typed-forms-and-validation.md),
+  [services and dependency injection](../guides/services-and-zlayer-injection.md),
+  [stateful components](../guides/components-and-communication.md), and
+  [asynchronous work and subscriptions](../guides/async-work-and-subscriptions.md).
+- **Structure and protect pages:** [routes and navigation](../guides/routes-and-navigation.md),
+  [layouts and live sessions](../guides/layouts-sessions-and-mount-aspects.md),
+  and [authentication and sessions](../guides/authentication.md).
+- **Integrate the browser:** [client setup and static assets](../guides/static-assets-and-client-setup.md)
+  and [browser commands, events, and hooks](../guides/browser-integration.md).
+- **Ship and maintain an application:** [testing](../guides/testing.md),
+  [troubleshooting](../guides/troubleshooting.md),
+  [configuration](../guides/configuration.md), and
+  [deployment](../guides/deployment.md).
 
-The [Guides index](../guides/index.md#solve-a-task) lists authentication,
-uploads, lifecycle UX, and the remaining task-oriented material.
+The [Guides index](../guides/index.md#solve-a-task) includes uploads, streams,
+lifecycle UX, ordinary HTTP forms, and the remaining focused tasks.
 
 ## Explore Working Examples {#explore-working-examples}
 
-Use the [Examples catalog](../examples/index.md) for small, executable feature
-slices. Start with the counter and shopping cart for the model-message-render
-loop, then use lifecycle, service injection, navigation, forms, components,
-streams, async work, subscriptions, uploads, and browser integration as needed.
+Start with the [typed counter](../examples/counter.md) and
+[shopping cart](../examples/shopping-cart.md) for the model-message-render loop.
+Then choose a focused executable slice:
+
+- [Lifecycle and connection phases](../examples/lifecycle.md) for disconnected
+  render, connected mount, and reconnect behavior.
+- [Typed documentation navigation](../examples/navigation.md) for checked route
+  destinations and browser history.
+- [Validated profile form](../examples/profile-form.md) and
+  [bounded text upload](../examples/text-upload.md) for typed input, field
+  errors, and upload ownership.
+- [Service injection](../examples/service-injection.md),
+  [async report](../examples/async-report.md), and
+  [subscription clock](../examples/subscription-clock.md) for finite work and
+  connection-owned live data backed by application services.
+- [Activity stream](../examples/activity-stream.md),
+  [voting components](../examples/voting-components.md), and
+  [browser integration](../examples/browser-integration.md) for larger changing
+  collections, local component state, and browser-only APIs.
 
 Examples demonstrate one behavior at a time. They are evidence for an API, not
 a required application architecture.

@@ -797,6 +797,70 @@ details[open] > summary .docs-disclosure-marker,
   font-size: 0.75rem;
 }
 
+.docs-learn-progress {
+  min-width: 0;
+  margin-top: 3rem;
+  padding: 1rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface-subtle);
+}
+
+.docs-learn-progress + .docs-page-links {
+  margin-top: 1.5rem;
+}
+
+.docs-content .docs-learn-progress-count {
+  margin: 0 0 0.65rem;
+  color: var(--docs-muted);
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.docs-learn-progress-links {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.docs-learn-progress-link {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.docs-learn-progress-next {
+  grid-column: 2;
+  text-align: right;
+}
+
+.docs-learn-progress-separator {
+  display: none;
+}
+
+.docs-learn-progress-direction {
+  color: var(--docs-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 30rem) {
+  .docs-learn-progress-links {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .docs-learn-progress-next {
+    grid-column: 1;
+    text-align: left;
+  }
+}
+
 .docs-api-symbol {
   min-width: 0;
   padding-block: 1.35rem;

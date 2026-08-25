@@ -109,7 +109,7 @@ The authored homepage contains, in order:
 
 1. The rendered heading `Live interfaces. Typed end to end.` and a factual
    description of Scalive as a Scala 3 re-implementation of Phoenix LiveView.
-2. Ordinary internal links to Learn and API.
+2. Ordinary internal links to the Quick start and counter example.
 3. One compact, verified Scala code block.
 4. One `counter` example reference rendered as a compact nested LiveView.
 5. Three principles covering typed state, Scala HTML rendering, and live
@@ -131,38 +131,43 @@ non-sticky instance rather than introducing homepage-specific behavior.
 Learn is a short ordered path that establishes one coherent mental model:
 
 1. **Start here** defines Scalive as a server-owned state machine, separates
-   server and browser responsibilities, and follows one page from its initial
-   HTTP request through socket mount, typed messages, tree diffs, DOM patches,
-   cleanup, and reconnect.
+   server and browser responsibilities, introduces the message-to-DOM loop, and
+   directs readers to either build the counter or study lifecycle details.
 2. **Quick start** builds and runs a complete standalone counter.
 3. **Project anatomy** assigns startup, routing, layout, LiveView, service,
    asset, and browser responsibilities.
 4. **Models, messages, and effects** introduces immutable state, typed intent,
+   the boundary between server-owned messages and untrusted browser input,
    effectful transitions, and only the ZIO vocabulary required to understand
    Scalive callbacks.
-5. **Rendering, bindings, and diffs** explains typed HTML, event bindings,
+5. **URL state and navigation** introduces typed route parameters, routed
+   LiveViews, checked destinations, browser history, and the distinction between
+   patching, navigating, and redirecting.
+6. **Rendering, bindings, and diffs** explains typed HTML, event bindings,
    render purity, tree diffs, DOM patches, and stable collection identity.
-6. **Lifecycle, state ownership, and reconnects** explains disconnected and
-   connected mounts, commit and failure boundaries, state lifetime, cleanup,
-   and remounting from durable inputs.
-7. **Where to go next** maps common application needs to task-oriented guides,
+7. **Lifecycle, state ownership, and reconnects** explains disconnected and
+   connected mounts through paired HTTP and LiveSocket sequence diagrams, then
+   covers commit and failure boundaries, state lifetime, cleanup, and remounting
+   from durable inputs.
+8. **Where to go next** maps common application needs to task-oriented guides,
    executable examples, the API reference, and project compatibility material.
 
-Start here is the canonical user-facing architecture overview. Later Learn pages
-may remind readers of the part relevant to their topic, but do not independently
-redefine the request, connection, event, render, or reconnect sequence. The
-Project runtime architecture page explains the current implementation of that
-sequence for readers who want to understand how the runtime is structured and
-works, without treating internal types as supported application APIs.
+Start here is the concise application-facing ownership and event-loop overview.
+The lifecycle page owns the complete HTTP request, socket mount, event, cleanup,
+and reconnect sequence. Its paired authored diagrams make the Model A to Model B
+handoff explicit before the compact lifecycle table; other Learn pages only
+remind readers of the portion relevant to their topic. The Project runtime
+architecture page explains the current implementation for readers who need
+concurrency, commit, protocol, and cleanup details, without treating internal
+types as supported application APIs.
 
 The quick start uses Mill as its primary build tool, provides a complete minimal
-standalone project, and documents the Node/npm client asset setup. It consumes a
-published Scala artifact rather than requiring changes inside a Scalive source
-checkout. Before the first snapshot is available, the page may identify the
-forthcoming coordinate with a prominent availability warning while a
-source-backed repository fixture compiles the same application code. Concise
-dependency equivalents for other common Scala build tools may be included where
-useful.
+standalone project, and documents the Node/npm client asset setup. It names the
+exact revision-specific Scala snapshot rather than requiring changes inside a
+Scalive source checkout. The site is published only after that snapshot is
+available. The page warns that snapshots later expire, while a source-backed
+repository fixture compiles the same application code. Concise dependency
+equivalents for other common Scala build tools may be included where useful.
 
 The conceptual pages evolve the same small application where practical. When a
 richer example replaces a quick-start type or behavior, the transition is
@@ -173,6 +178,10 @@ By the end of Learn, a reader can explain:
 
 - the complete HTTP-to-socket lifecycle and repeated event-to-DOM loop;
 - which responsibilities belong to the JVM server and browser client;
+- how typed URL state enters a routed LiveView and when to patch, navigate, or
+  redirect;
+- why browser-supplied URL and event values still require decoding, validation,
+  and authorization;
 - where render-derived, connection-local, shared, browser-local, and durable
   state belong;
 - why lifecycle callbacks return effects and how successful proposals become
@@ -373,6 +382,10 @@ On desktop, pages use section navigation on the left, primary content in the
 center, and an in-page outline on the right. Navigation collapses appropriately
 on smaller screens, and examples and inspectors stack without horizontal page
 overflow.
+
+Every Learn page also ends with generated previous/next navigation and its
+position in the ordered path. This progression remains visible when the desktop
+section navigation is hidden.
 
 The homepage and search results are deliberate wide-shell exceptions. Generated
 Learn, Guide, Example, API, and Project pages retain the three-column desktop

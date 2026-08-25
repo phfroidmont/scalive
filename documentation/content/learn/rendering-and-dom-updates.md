@@ -1,7 +1,7 @@
 {%
 title = "Rendering, bindings, and diffs"
 description = "Project models into typed HTML, bind messages, and understand how server tree changes become browser DOM patches."
-order = 4
+order = 5
 section = learn
 %}
 
@@ -9,46 +9,35 @@ section = learn
 
 @:apiSymbol(def:scalive.LiveView.view)`view(model)`@:@ receives a
 `Signal[Model]` and returns an
-@:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Scalive invokes it
-once to construct the signal-backed view graph for a disconnected request or
-connected socket lifetime. Use the model signal directly for dynamic content,
-or derive smaller signals with pure `.map` transformations. Leave effects and
-state transitions in lifecycle methods.
+@:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Write it as a
+description of what the page should contain:
+
+```scala
+override def view(model: Signal[Int]): HtmlElement[Msg] =
+  mainTag(
+    button(typ := "button", on.click(Msg.Decrement), "Decrease"),
+    outputTag(aria.live := "polite", model.map(_.toString)),
+    button(typ := "button", on.click(Msg.Increment), "Increase")
+  )
+```
+
+Static values such as the button labels are ordinary Scala values. Put a signal
+in a text or attribute position when that value should follow the model. Leave
+effects and state transitions in lifecycle methods rather than running them
+from `view`.
+
+## Derive Display Values With Pure Functions {#derive-display-values}
 
 The counter places its mapped count signal directly in a text position. The cart
 derives disabled states, quantities, subtotals, and totals from the same model
-signal. Staged operators such as `choose`, `option`, and signal `splitBy`
-construct dynamic branches and keyed rows once, then update their content as the
-model changes.
+signal. Use `.map` for one input and `.zip` when a display value depends on
+multiple signals. Operators such as `choose`, `option`, and signal `splitBy`
+describe conditional or repeated content.
 
-## Evaluation And Graph Lifetime {#evaluation-and-graph-lifetime}
-
-Each successful lifecycle turn evaluates one signal transaction at one new
-revision. A derived `map` or `zip` is sampled at most once in that transaction.
-If Scala equality says its value and dependency revisions are unchanged, Scalive
-reuses the committed sample; the final tree diff independently suppresses
-unchanged encoded scalar values. All sinks observe the same proposed model, and
-the model, signal evaluation, bindings, and rendered snapshot commit together.
-
-Signals belong to the disconnected request, connected socket, component, or
-staged row scope that created them. A signal is visible in its own scope and
-descendants, but cannot escape from a child or sibling scope. Scalive disposes
-the graph when that owner ends. Removed keyed and stream rows are disposed after
-the enclosing transaction commits; a failed transaction keeps the previously
-committed rows and disposes candidate-only rows.
-
-The finite branches declared by `choose` are constructed once and retained even
-while inactive, preserving their binding and component identity when selected
-again. They are released with the owning graph. Keyed and stream collections use
-explicit identity instead: rows are retained while their key is present and are
-released when it is removed. This trades bounded retained memory for stable
-branch identity and avoids reconstructing ordinary tree structure on updates.
-
-Pure graph construction gives Scalive a deterministic description it can
-evaluate after every successful model transition without rebuilding the whole
-HTML tree. Application code describes the resulting HTML; it does not issue
-imperative DOM mutations. Signal transformations must also remain pure because
-Scalive may skip them when their dependencies have not changed.
+Keep every signal transformation pure: the same input should produce the same
+output without changing state, performing I/O, or starting work. This lets
+Scalive evaluate only what the rendered result needs. Application code describes
+HTML; it does not issue imperative DOM mutations.
 
 ## Bind Events To Typed Messages {#bind-events-to-typed-messages}
 
@@ -66,7 +55,7 @@ untrusted input and must still be decoded and validated at their boundaries.
 
 One connected interaction follows this sequence:
 
-1. The view graph contains an event binding associated with a typed message.
+1. The rendered tree contains an event binding associated with a typed message.
 2. The browser captures the DOM event and sends its binding data.
 3. Scalive resolves the binding to the corresponding `Msg`.
 4. `handleMessage` receives the committed model and proposes the next model.
@@ -75,7 +64,7 @@ One connected interaction follows this sequence:
 7. After a successful evaluation, Scalive commits the new model and snapshot.
 8. The browser receives the diff and patches its existing DOM.
 
-## From Tree Changes To DOM Changes {#from-tree-changes-to-dom-changes}
+## Let Scalive Patch The DOM {#from-tree-changes-to-dom-changes}
 
 An evaluation whose dynamic slots are unchanged may produce no diff. Changed
 dynamic text, attributes, or staged subtrees produce updates for those positions
@@ -84,7 +73,10 @@ DOM nodes and their browser state.
 
 The diff encoding and generated binding identifiers are framework details.
 Application code should depend on models, messages, and rendered structure, not
-on a particular wire payload.
+on a particular wire payload. See
+[Runtime architecture](../project/runtime-architecture.md#runtime-at-a-glance)
+for implementation-level signal revisions, scopes, candidate rendering, commit,
+and protocol details.
 
 ## Preserve Collection Identity {#preserve-collection-identity}
 
@@ -117,6 +109,4 @@ when the collection should instead produce explicit ID-addressed browser
 operations.
 
 The [HTML and event bindings guide](../guides/html-dsl-and-event-bindings.md)
-covers the DSL and input bindings in depth. Continue with
-[Lifecycle, state ownership, and reconnects](lifecycle-and-connection-behavior.md#two-independent-mounts)
-to place this loop inside a connection lifetime.
+covers the DSL and input bindings in depth.

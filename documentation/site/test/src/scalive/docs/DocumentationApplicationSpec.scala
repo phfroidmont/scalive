@@ -181,7 +181,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         !home.html.contains("&quot;scalive.docs.theme")
       )
     },
-    test("renders authored traces in their lifecycle guides") {
+    test("keeps the Learn overview concise and lifecycle details ordered") {
       for
         application <- loadApplication
         assets <- StaticAssets.load(
@@ -190,33 +190,44 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         routes = application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
         rendered <- DisconnectedRender.run(routes, Request.get(url("/learn")))
         document = Jsoup.parse(rendered.html)
-        trace = document.selectFirst("figure[data-trace-viewer=http-get]")
-        connectedRendered <- DisconnectedRender.run(
+        lifecycleRendered <- DisconnectedRender.run(
                                routes,
                                Request.get(url("/learn/lifecycle-and-connection-behavior"))
                              )
-        connectedDocument = Jsoup.parse(connectedRendered.html)
-        connectedTrace = connectedDocument.selectFirst("figure[data-trace-viewer=live-socket-join]")
-        lifecycle = document.getElementById("follow-one-page-from-http-to-dom")
-        ownership = document.getElementById("know-which-side-owns-what")
-        blocks = document.select("article.docs-content > *").asScala.toVector
-        connectedHeading = connectedDocument.getElementById("follow-the-connected-mount")
-        timelineHeading = connectedDocument.getElementById("follow-the-lifecycle-timeline")
-        connectedBlocks = connectedDocument.select("article.docs-content > *").asScala.toVector
+        lifecycleDocument = Jsoup.parse(lifecycleRendered.html)
+        learnRoot = application.bundle.navigation.items.find(_.section == Section.Learn).get
+        learnPages = learnRoot +: learnRoot.children
+        independentMounts = lifecycleDocument.getElementById("two-independent-mounts")
+        handoff = lifecycleDocument.getElementById("follow-the-connected-mount")
+        httpTrace = lifecycleDocument.selectFirst("figure[data-trace-viewer=http-get]")
+        connectedTrace = lifecycleDocument.selectFirst(
+                           "figure[data-trace-viewer=live-socket-join]"
+                         )
+        timeline = lifecycleDocument.getElementById("follow-the-lifecycle-timeline")
+        stateOwnership = lifecycleDocument.getElementById("put-state-in-the-right-lifetime")
+        reconnect = lifecycleDocument.getElementById("treat-reconnect-as-a-new-lifecycle")
+        testing = lifecycleDocument.getElementById("test-at-the-lifecycle-boundary")
+        lifecycleBlocks = lifecycleDocument.select("article.docs-content > *").asScala.toVector
       yield assertTrue(
-        trace != null,
-        trace.select("[data-trace-participant=browser]").text().contains("Browser"),
-        trace.select("[data-trace-participant=runtime]").text().contains("Scalive runtime"),
-        trace.select("[data-trace-participant=live-view]").text().contains("Your LiveView"),
-        trace.select("[data-trace-step-kind=boundary]").text().contains("End request lifecycle"),
-        blocks.indexOf(lifecycle) < blocks.indexOf(trace),
-        blocks.indexOf(trace) < blocks.indexOf(ownership),
-        connectedTrace != null,
-        connectedTrace.select("[data-trace-step]").size() == 11,
+        document.select("figure[data-trace-viewer]").isEmpty,
+        document.getElementById("start-here") != null,
+        document.getElementById("know-which-side-owns-what") != null,
+        document.select("nav.docs-learn-progress .docs-learn-progress-count").text() ==
+          s"1 of ${learnPages.size}",
+        lifecycleDocument.select("figure[data-trace-viewer]").size() == 2,
+        httpTrace.text().contains("Model A"),
+        httpTrace.text().contains("End request lifecycle"),
         connectedTrace.text().contains("Model B"),
         connectedTrace.text().contains("Initial rendered diff"),
-        connectedBlocks.indexOf(connectedHeading) < connectedBlocks.indexOf(connectedTrace),
-        connectedBlocks.indexOf(connectedTrace) < connectedBlocks.indexOf(timelineHeading)
+        lifecycleBlocks.indexOf(independentMounts) < lifecycleBlocks.indexOf(handoff),
+        lifecycleBlocks.indexOf(handoff) < lifecycleBlocks.indexOf(httpTrace),
+        lifecycleBlocks.indexOf(httpTrace) < lifecycleBlocks.indexOf(connectedTrace),
+        lifecycleBlocks.indexOf(connectedTrace) < lifecycleBlocks.indexOf(timeline),
+        lifecycleBlocks.indexOf(timeline) < lifecycleBlocks.indexOf(stateOwnership),
+        lifecycleBlocks.indexOf(stateOwnership) < lifecycleBlocks.indexOf(reconnect),
+        lifecycleBlocks.indexOf(reconnect) < lifecycleBlocks.indexOf(testing),
+        lifecycleDocument.select("nav.docs-learn-progress .docs-learn-progress-count").text() ==
+          s"${learnPages.indexWhere(_.route == "/learn/lifecycle-and-connection-behavior") + 1} of ${learnPages.size}"
       )
     },
     test("renders runtime diagrams in narrative order with accessible fallbacks") {

@@ -149,10 +149,10 @@ private[docs] object HomePageContent:
     require(
       page,
       targets == Vector(
-        LinkTarget.Internal("/learn", Some("start-here")),
+        LinkTarget.Internal("/learn/quick-start", None),
         LinkTarget.Internal("/examples/counter", None)
       ),
-      "homepage block 2 must link to /learn#start-here and /examples/counter, in that order."
+      "homepage block 2 must link to /learn/quick-start and /examples/counter, in that order."
     )
 
   private def block[A](

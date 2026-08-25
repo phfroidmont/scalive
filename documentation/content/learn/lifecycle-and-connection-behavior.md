@@ -1,41 +1,62 @@
 {%
 title = "Lifecycle, state ownership, and reconnects"
 description = "Understand disconnected and connected mounts, state lifetime, commit behavior, cleanup, failures, and reconnects."
-order = 5
+order = 6
 section = learn
 %}
 
-## Two Independent Mounts {#two-independent-mounts}
+## Treat Each Mount As Independent {#two-independent-mounts}
 
-A routed @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ first mounts during an
-ordinary HTTP request. `ctx.connection` is `Connection.Disconnected`, and the
-resulting HTML should already be useful. When `LiveSocket` joins, Scalive mounts
-a new lifecycle with `Connection.Connected(capabilities)`.
+The [project anatomy](project-anatomy.md#understand-both-mounts) introduced the
+disconnected HTTP mount and the separate connected socket mount. Both must build
+a valid model from their inputs; the connected mount cannot recover the model
+created for the HTTP response.
 
-These are two model instances, not two phases mutating shared state. Both mounts
-must rebuild valid state from their inputs. Match
-@:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@ and use
-connected-only tools from the matched `capabilities`; do not rely on the
-disconnected model to carry values into the connected mount.
+Match @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@
+when initial state or work depends on the lifecycle. The lifecycle example only
+records which kind of mount created the model:
 
-The lifecycle example records which mount created its model and starts its clock
-only for the connected lifecycle:
+```scala
+def mount(ctx: MountContext): Task[Model] =
+  val connectedMount = ctx.connection match
+    case Connection.Disconnected => false
+    case Connection.Connected(_) => true
 
-@:sourceRegion(documentation/site/src/scalive/docs/examples/LifecycleExample.scala, lifecycle-example)
+  ZIO.succeed(Model(connectedMount, currentTitle = DefaultTitle))
+```
 
-## Follow The Connected Mount {#follow-the-connected-mount}
+Start connection-owned work only from a matched
+`Connection.Connected(capabilities)` branch. This example starts no clock or
+other background task.
 
-The disconnected response leaves the browser with useful DOM, a signed session,
-and CSRF metadata, not the temporary model. A `LiveSocket` join uses that
-bootstrap data to establish a fresh connected lifecycle:
+## Follow The Handoff From HTTP To Live {#follow-the-connected-mount}
+
+The browser keeps one document while server ownership crosses two independent
+lifecycles. Read the following sequences as one handoff: the HTTP request creates
+Model A and useful DOM, then `LiveSocket` uses the retained bootstrap data to
+join and create Model B.
+
+**Disconnected HTTP render.** The initial request owns Model A only long enough
+to produce the complete response:
+
+@:trace(http-get)
+
+When that request ends, the browser retains the rendered DOM, signed session,
+and CSRF metadata. Model A and its request-owned resources are gone.
+
+**Connected LiveSocket mount.** The browser presents that bootstrap data while
+joining the live endpoint. A successful join starts a fresh lifecycle:
 
 @:trace(live-socket-join)
 
-The successful join returns an initial rendered diff inside its reply. The
-browser reconciles that tree with the existing disconnected DOM rather than
-replacing it with a second HTML document.
+The join reply contains an initial rendered diff for Model B. The browser
+reconciles it with the existing disconnected DOM rather than loading a second
+HTML document. This preserves a useful initial page while keeping the two server
+models and their resources independent.
 
 ## Follow The Lifecycle Timeline {#follow-the-lifecycle-timeline}
+
+The complete lifecycle can now be summarized as:
 
 | Stage | Connection | Model and work |
 | --- | --- | --- |
@@ -116,5 +137,10 @@ The server does not receive a normal application message merely because the
 transport drops. Design recovery around remounting rather than an assumed
 disconnect message.
 
-Continue with [Where to go next](where-to-go-next.md) to choose the next topic
-for the application you want to build.
+## Test At The Lifecycle Boundary {#test-at-the-lifecycle-boundary}
+
+Use a disconnected test for initial HTTP state and a connected test for typed
+server interactions. Use a real browser when the behavior depends on transport
+loss, reconnects, JavaScript, or DOM patching. The
+[testing guide](../guides/testing.md#choose-the-test-boundary) explains these
+boundaries and their available support.

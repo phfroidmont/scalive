@@ -17,20 +17,39 @@ trait LiveView[Msg, Model]:
   def view(model: Signal[Model]): HtmlElement[Msg]
 ```
 
-`Model` contains the state needed to display this LiveView. `view` constructs a
-signal-backed view graph from a read-only signal carrying that state. `Msg`
-lists the inputs that may change the state. Context values provide capabilities
-valid at the current lifecycle stage; they are not additional application state.
+`Model` contains the state needed to display this LiveView. `view` reads that
+state through a `Signal` whose value follows committed model changes. `Msg` lists
+the inputs that may change the state. Context values provide capabilities valid
+at the current lifecycle stage; they are not additional application state.
 
 The quick start deliberately used an `Int` and two messages. A more
 representative counter makes the model extensible and adds another intent:
 
-@:sourceRegion(documentation/site/src/scalive/docs/examples/CounterExample.scala, counter-example)
+```scala
+final case class Model(count: Int)
+
+enum Msg:
+  case Decrement, Increment, Reset
+```
 
 `Model` is an immutable case class. `Msg` is an enum, so pattern matching checks
 the complete input set. Message cases may carry typed domain values: the
 shopping cart uses `Add(product)` and `Remove(product)` rather than passing
 unstructured event names through application code.
+
+## Keep The Browser At A Decoding Boundary {#keep-the-browser-at-a-decoding-boundary}
+
+A binding such as `on.click(Msg.Reset)` attaches a constant, server-constructed
+intent. The browser reports that the binding fired; it does not construct the
+`Msg.Reset` value. The same applies when the server constructs a message with a
+typed domain value it already owns.
+
+Values supplied by the browser remain untrusted even when a message case can
+carry them. Decode and validate those values at the binding boundary before
+domain logic uses them. For structured input, use
+@:apiSymbol(class:scalive.FormDefinition)`FormDefinition`@:@ and carry its
+@:apiSymbol(class:scalive.FormEvent)`FormEvent`@:@ in the message; the
+[typed forms guide](../guides/typed-forms-and-validation.md) covers that path.
 
 ## Read The Minimum ZIO Vocabulary {#read-the-minimum-zio-vocabulary}
 
@@ -60,12 +79,52 @@ last committed model and returns an effect producing a proposed next model.
 Scalive evaluates the view graph and commits that model only when the
 transition and graph evaluation succeed.
 
-The cart keeps repeated transitions beside `Model`: `add` increments an existing
-line or appends one, `remove` decrements or deletes one, and `Clear` returns
-`Model.empty`. Item counts, subtotals, and totals are derived from `lines`
-instead of being stored as independently mutable values.
+For example, a small cart can keep its source state and transitions together:
 
-@:sourceRegion(documentation/site/src/scalive/docs/examples/ShoppingCartExample.scala, shopping-cart-example)
+```scala
+enum Product(val sku: String, val name: String):
+  case Coffee extends Product("coffee", "Coffee beans")
+  case Notebook extends Product("notebook", "Notebook")
+  case Sticker extends Product("sticker", "Scalive sticker")
+
+final case class Line(product: Product, quantity: Int)
+
+final case class Model(lines: Vector[Line]):
+  def add(product: Product): Model =
+    lines.indexWhere(_.product == product) match
+      case -1 => copy(lines = lines :+ Line(product, quantity = 1))
+      case index =>
+        val line = lines(index)
+        copy(lines = lines.updated(index, line.copy(quantity = line.quantity + 1)))
+
+  def remove(product: Product): Model =
+    copy(lines = lines.flatMap { line =>
+      if line.product != product then Some(line)
+      else if line.quantity > 1 then Some(line.copy(quantity = line.quantity - 1))
+      else None
+    })
+
+  def itemCount: Int = lines.map(_.quantity).sum
+
+object Model:
+  val empty = Model(Vector.empty)
+
+enum Msg:
+  case Add(product: Product)
+  case Remove(product: Product)
+  case Clear
+```
+
+`lines` is the source state. `itemCount` is derived rather than stored as a
+second value that could become inconsistent. The message handler is then an
+exhaustive description of the allowed transitions:
+
+```scala
+def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model] =
+  case Msg.Add(product)    => ZIO.succeed(model.add(product))
+  case Msg.Remove(product) => ZIO.succeed(model.remove(product))
+  case Msg.Clear           => ZIO.succeed(Model.empty)
+```
 
 For service-backed transitions, perform the service effect and return the model
 that should be rendered next. If a failure is actionable by the user, recover it
@@ -82,6 +141,3 @@ Keep source state in the model and derive presentation values with pure signal
 transformations in `view`.
 Keep durable records behind a service or database. Keep lifecycle capabilities,
 fibers, and subscription handles out of the model.
-
-Next, follow the resulting model through
-[Rendering, bindings, and diffs](rendering-and-dom-updates.md#render-from-the-model).

@@ -314,11 +314,8 @@ final private[scalive] case class RuntimeFrameTrace(
   operation: RuntimeTraceOperation.Active,
   command: Option[CommandId])
 
-private[scalive] trait RuntimeEventSink:
-  def emit(event: RuntimeEvent): UIO[Unit]
-
 final private[scalive] class RuntimeObserver private (
-  sink: RuntimeEventSink,
+  sink: RuntimeEvent => UIO[Unit],
   diagnostic: RuntimeDiagnostic):
 
   final private case class LifecycleTrace(
@@ -350,7 +347,7 @@ final private[scalive] class RuntimeObserver private (
   private lazy val pendingFrames = java.util.IdentityHashMap[AnyRef, PendingFrame]()
 
   def emit(event: RuntimeEvent): UIO[Unit] =
-    sink.emit(event).catchAllCause(_ => ZIO.unit) *>
+    sink(event).catchAllCause(_ => ZIO.unit) *>
       (if diagnosticsEnabled then traceEvent(event) else ZIO.unit)
 
   def registerLifecycle(
@@ -748,9 +745,4 @@ private[scalive] object RuntimeObserver:
     emitEvent: RuntimeEvent => UIO[Unit],
     diagnostic: RuntimeDiagnostic
   ): RuntimeObserver =
-    new RuntimeObserver(
-      new RuntimeEventSink:
-        def emit(event: RuntimeEvent): UIO[Unit] = emitEvent(event)
-      ,
-      diagnostic
-    )
+    new RuntimeObserver(emitEvent, diagnostic)

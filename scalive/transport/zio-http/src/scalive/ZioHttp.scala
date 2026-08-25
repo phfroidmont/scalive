@@ -1197,36 +1197,6 @@ object ZioHttp:
     worker: HostedWorkerId,
     claims: UploadCredentialClaims)
 
-  final private class LifecycleStartupSink private (
-    capacity: Int,
-    destination: ConnectionOutput => Task[Unit],
-    gate: Semaphore):
-    private var outputs: Vector[ConnectionOutput] = Vector.empty
-    private var active: Boolean                   = false
-
-    def offer(output: ConnectionOutput): Task[Unit] = gate.withPermit {
-      if active then destination(output)
-      else if outputs.size >= capacity then
-        ZIO.fail(IllegalStateException(s"lifecycle startup output exceeded capacity $capacity"))
-      else
-        outputs = outputs :+ output
-        ZIO.unit
-    }
-
-    def activate: Task[Unit] = gate.withPermit {
-      ZIO.foreachDiscard(outputs)(destination) *> ZIO.succeed {
-        outputs = Vector.empty
-        active = true
-      }
-    }
-
-  private object LifecycleStartupSink:
-    def make(
-      capacity: Int,
-      destination: ConnectionOutput => Task[Unit]
-    ): UIO[LifecycleStartupSink] =
-      Semaphore.make(1L).map(new LifecycleStartupSink(capacity, destination, _))
-
   final private class TransportTermination private (
     disconnecting: Ref[Boolean],
     stopped: Promise[Nothing, Unit],
@@ -1633,7 +1603,14 @@ object ZioHttp:
                                  currentUrl.set(destination) *>
                                    connectionReady.await.flatMap(_.internalPatch(destination))
                              )
-                      startup  <- LifecycleStartupSink.make(OutboundCapacity, sink)
+                      startup <- BufferedActivationSink.make(
+                                   OutboundCapacity,
+                                   sink,
+                                   capacity =>
+                                     IllegalStateException(
+                                       s"lifecycle startup output exceeded capacity $capacity"
+                                     )
+                                 )
                       previous <- joined.modify { current =>
                                     val roots = current.values.filter(_.isRoot).toVector
                                     roots -> retainProtocolStickySubtrees(current)
@@ -1793,7 +1770,14 @@ object ZioHttp:
                      currentUrl.set(destination) *>
                        connectionReady.await.flatMap(_.internalPatch(destination))
                  )
-          startup    <- LifecycleStartupSink.make(OutboundCapacity, sink)
+          startup <- BufferedActivationSink.make(
+                       OutboundCapacity,
+                       sink,
+                       capacity =>
+                         IllegalStateException(
+                           s"lifecycle startup output exceeded capacity $capacity"
+                         )
+                     )
           connection <- supervisor
                           .startNested(
                             reservation,

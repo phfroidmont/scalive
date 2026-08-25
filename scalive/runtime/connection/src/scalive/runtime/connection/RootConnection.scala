@@ -1225,39 +1225,11 @@ private[scalive] object RootConnection:
                     ),
                   handle = (state, message) =>
                     for
-                      journal <- RootTurnJournal.make(
-                                   rootOwner,
-                                   state.hooks,
-                                   state.flash,
-                                   initialStreams = state.streams,
-                                   ownerEpoch = Epoch.initial,
-                                   initialUploads = state.uploads
-                                 )
+                      journal <- rootJournal(rootOwner, state, TurnDraft(state))
                       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
                       model <- ZIO.suspend(lifecycle.handleMessage(state.model, context, message))
-                      navigation         <- journal.navigationWithFlash
-                      hooks              <- journal.hookRegistry[Msg, Model]
-                      flash              <- journal.flash.get
-                      clientEvents       <- journal.clientEvents.get
-                      componentUpdates   <- journal.componentUpdates.get
-                      resourceOperations <- journal.resourceOperationSnapshot
-                      streams            <- journal.streamSnapshot
-                      uploadState        <- journal.uploadSnapshot
-                      (uploads, uploadCommit, uploadRollback) = uploadState
-                      pageTitle                               = lifecycle.pageTitle(model)
-                    yield TurnDraft(
-                      RootState(model, state.url, hooks, flash, pageTitle, streams, uploads),
-                      url = Some(state.url),
-                      navigation = navigation,
-                      effects = SessionEffects(
-                        Option.when(ownsPageTitle)(titleChange(state.pageTitle, pageTitle)).flatten,
-                        clientEvents
-                      ),
-                      componentUpdates = componentUpdates,
-                      resourceOperations = resourceOperations,
-                      uploadCommit = uploadCommit,
-                      uploadRollback = uploadRollback
-                    ),
+                      draft <- rootDraft(state, lifecycle, journal, model, state.url, ownsPageTitle)
+                    yield draft,
                   handleEvent = Some((draft, message, _) =>
                     runEventTurn(
                       draft,
@@ -1324,14 +1296,7 @@ private[scalive] object RootConnection:
                     ),
                   handleParams = (state, destination) =>
                     for
-                      journal <- RootTurnJournal.make(
-                                   rootOwner,
-                                   state.hooks,
-                                   state.flash,
-                                   initialStreams = state.streams,
-                                   ownerEpoch = Epoch.initial,
-                                   initialUploads = state.uploads
-                                 )
+                      journal <- rootJournal(rootOwner, state, TurnDraft(state))
                       context = RootParamsContext[Msg, Model](
                                   metadata,
                                   destination,
@@ -1347,29 +1312,15 @@ private[scalive] object RootConnection:
                                  case Hooked.Halt(value)     => ZIO.succeed(value)
                                  case Hooked.Continue(value) =>
                                    ZIO.suspend(prepared.run(value, context))
-                      navigation         <- journal.navigationWithFlash
-                      hooks              <- journal.hookRegistry[Msg, Model]
-                      flash              <- journal.flash.get
-                      clientEvents       <- journal.clientEvents.get
-                      componentUpdates   <- journal.componentUpdates.get
-                      resourceOperations <- journal.resourceOperationSnapshot
-                      streams            <- journal.streamSnapshot
-                      uploadState        <- journal.uploadSnapshot
-                      (uploads, uploadCommit, uploadRollback) = uploadState
-                      pageTitle                               = lifecycle.pageTitle(model)
-                    yield TurnDraft(
-                      RootState(model, destination, hooks, flash, pageTitle, streams, uploads),
-                      url = Some(destination),
-                      navigation = navigation,
-                      effects = SessionEffects(
-                        Option.when(ownsPageTitle)(titleChange(state.pageTitle, pageTitle)).flatten,
-                        clientEvents
-                      ),
-                      componentUpdates = componentUpdates,
-                      resourceOperations = resourceOperations,
-                      uploadCommit = uploadCommit,
-                      uploadRollback = uploadRollback
-                    ),
+                      draft <- rootDraft(
+                                 state,
+                                 lifecycle,
+                                 journal,
+                                 model,
+                                 destination,
+                                 ownsPageTitle
+                               )
+                    yield draft,
                   afterRender = draft =>
                     for
                       journal <- RootTurnJournal.make(
@@ -1510,6 +1461,7 @@ private[scalive] object RootConnection:
                  result match
                    case LiveEventHookResult.Continue(model) => model
                    case LiveEventHookResult.Halt(model, _)  => model,
+                 state.url,
                  ownsPageTitle,
                  result match
                    case LiveEventHookResult.Halt(_, reply) => reply
@@ -1541,6 +1493,7 @@ private[scalive] object RootConnection:
                  lifecycle,
                  journal,
                  model,
+                 state.url,
                  ownsPageTitle = ownsPageTitle,
                  reply = initial.reply
                )
@@ -1571,8 +1524,9 @@ private[scalive] object RootConnection:
     lifecycle: RootLifecycle[Msg, Model],
     journal: RootTurnJournal,
     model: Model,
+    url: URL,
     ownsPageTitle: Boolean,
-    reply: Option[Json]
+    reply: Option[Json] = None
   ): UIO[TurnDraft[Msg, RootState[Msg, Model]]] =
     for
       navigation         <- journal.navigationWithFlash
@@ -1586,8 +1540,8 @@ private[scalive] object RootConnection:
       (uploads, uploadCommit, uploadRollback) = uploadState
       pageTitle                               = lifecycle.pageTitle(model)
     yield TurnDraft(
-      RootState(model, state.url, hooks, flash, pageTitle, streams, uploads),
-      url = Some(state.url),
+      RootState(model, url, hooks, flash, pageTitle, streams, uploads),
+      url = Some(url),
       navigation = navigation,
       effects = SessionEffects(
         Option.when(ownsPageTitle)(titleChange(state.pageTitle, pageTitle)).flatten,
@@ -1609,14 +1563,7 @@ private[scalive] object RootConnection:
     select: RootHookRegistry[Msg, Model] => Vector[RootHookRegistry.Event[Msg, Model]]
   ): Task[TurnDraft[Msg, RootState[Msg, Model]]] =
     for
-      journal <- RootTurnJournal.make(
-                   owner,
-                   state.hooks,
-                   state.flash,
-                   initialStreams = state.streams,
-                   ownerEpoch = Epoch.initial,
-                   initialUploads = state.uploads
-                 )
+      journal <- rootJournal(owner, state, TurnDraft(state))
       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
       hooked <- runEventHooks(select(state.hooks), state.model, message, context)
       model  <- hooked match
@@ -1625,26 +1572,8 @@ private[scalive] object RootConnection:
                    ZIO.suspend(
                      lifecycle.handleMessage(value, context, message)
                    )
-      navigation         <- journal.navigationWithFlash
-      hooks              <- journal.hookRegistry[Msg, Model]
-      flash              <- journal.flash.get
-      clientEvents       <- journal.clientEvents.get
-      componentUpdates   <- journal.componentUpdates.get
-      resourceOperations <- journal.resourceOperationSnapshot
-      streams            <- journal.streamSnapshot
-      uploadState        <- journal.uploadSnapshot
-      (uploads, uploadCommit, uploadRollback) = uploadState
-      pageTitle                               = lifecycle.pageTitle(model)
-    yield TurnDraft(
-      RootState(model, state.url, hooks, flash, pageTitle, streams, uploads),
-      url = Some(state.url),
-      navigation = navigation,
-      effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
-      componentUpdates = componentUpdates,
-      resourceOperations = resourceOperations,
-      uploadCommit = uploadCommit,
-      uploadRollback = uploadRollback
-    )
+      draft <- rootDraft(state, lifecycle, journal, model, state.url, ownsPageTitle = true)
+    yield draft
 
   private def runEventHooks[Msg, Model](
     hooks: Vector[RootHookRegistry.Event[Msg, Model]],
@@ -1690,14 +1619,7 @@ private[scalive] object RootConnection:
     mappedMessage: Option[Msg]
   ): Task[TurnDraft[Msg, RootState[Msg, Model]]] =
     for
-      journal <- RootTurnJournal.make(
-                   owner,
-                   state.hooks,
-                   state.flash,
-                   initialStreams = state.streams,
-                   ownerEpoch = Epoch.initial,
-                   initialUploads = state.uploads
-                 )
+      journal <- rootJournal(owner, state, TurnDraft(state))
       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
       hooked <- state.hooks.async.foldLeft[Task[Hooked[Model]]](
                   ZIO.succeed(Hooked.Continue(state.model))
@@ -1722,26 +1644,8 @@ private[scalive] object RootConnection:
                      case Some(message) =>
                        ZIO.suspend(lifecycle.handleMessage(value, context, message))
                      case None => ZIO.succeed(value)
-      navigation         <- journal.navigationWithFlash
-      hooks              <- journal.hookRegistry[Msg, Model]
-      flash              <- journal.flash.get
-      clientEvents       <- journal.clientEvents.get
-      componentUpdates   <- journal.componentUpdates.get
-      resourceOperations <- journal.resourceOperationSnapshot
-      streams            <- journal.streamSnapshot
-      uploadState        <- journal.uploadSnapshot
-      (uploads, uploadCommit, uploadRollback) = uploadState
-      pageTitle                               = lifecycle.pageTitle(model)
-    yield TurnDraft(
-      RootState(model, state.url, hooks, flash, pageTitle, streams, uploads),
-      url = Some(state.url),
-      navigation = navigation,
-      effects = SessionEffects(titleChange(state.pageTitle, pageTitle), clientEvents),
-      componentUpdates = componentUpdates,
-      resourceOperations = resourceOperations,
-      uploadCommit = uploadCommit,
-      uploadRollback = uploadRollback
-    )
+      draft <- rootDraft(state, lifecycle, journal, model, state.url, ownsPageTitle = true)
+    yield draft
 
   private def runBrowserHooks[Msg, Model](
     hooks: Vector[RootHookRegistry.Browser[Msg, Model]],

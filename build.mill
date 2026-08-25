@@ -45,7 +45,6 @@ trait PublishCommon extends PublishModule:
       case "scalive-render"             => "Protocol-neutral Scalive rendering and semantic diff engine"
       case "scalive-runtime-contracts"  => "Protocol-neutral contracts shared by Scalive runtime modules"
       case "scalive-runtime-resources"  => "Managed async, subscription, stream, and upload resources for Scalive"
-      case "scalive-runtime-topology"   => "Nested lifecycle topology contracts for Scalive"
       case "scalive-runtime-kernel"     => "Transactional lifecycle kernel for Scalive"
       case "scalive-runtime-connection" => "Connected lifecycle supervision for Scalive"
       case "scalive-protocol-phoenix"   => "Phoenix LiveView protocol projection for Scalive"
@@ -93,22 +92,18 @@ object scalive extends ScaliveModule:
       override def artifactName = "scalive-runtime-resources"
       def moduleDeps = Seq(api, contracts)
 
-    object topology extends ScaliveModule:
-      override def artifactName = "scalive-runtime-topology"
-      def moduleDeps = Seq(api, contracts)
-
     object kernel extends ScaliveModule:
       override def artifactName = "scalive-runtime-kernel"
       def moduleDeps = Seq(api, render, contracts, runtime.resources)
 
     object connection extends ScaliveModule:
       override def artifactName = "scalive-runtime-connection"
-      def moduleDeps = Seq(contracts, kernel, topology, runtime.resources)
+      def moduleDeps = Seq(contracts, kernel, runtime.resources)
 
   object protocol extends Module:
     object phoenix extends ScaliveModule:
       override def artifactName = "scalive-protocol-phoenix"
-      def moduleDeps = Seq(runtime.contracts, render)
+      def moduleDeps = Seq(render)
 
   object transport extends Module:
     object `zio-http` extends ScaliveModule:

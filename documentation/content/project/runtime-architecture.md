@@ -53,7 +53,7 @@ details from leaking into model transitions and tree evaluation.
 | Application model | `scalive.api` | `LiveView`, `LiveComponent`, routing, lifecycle contexts, typed HTML, forms, streams, and uploads |
 | Retained rendering | `scalive.render` | Compiled render programs, signal evaluation, semantic trees, bindings, and exact deltas |
 | Shared runtime contracts | `scalive.runtime.contracts` | Typed identities, cleanup contracts, topology coordinates, and ordered outbound reservations |
-| Candidate-owned state | `scalive.runtime.resources` and `scalive.runtime.topology` | Prepared resources, upload state, nested registrations, and commit-time activation plans |
+| Candidate-owned state | `scalive.runtime.resources` and connection-owned topology support | Prepared resources, upload state, nested registrations, and commit-time activation plans |
 | Lifecycle state machine | `scalive.runtime.kernel` | Serialized commands, provisional turns, committed revisions, rendering, and lifecycle state |
 | Connection ownership | `scalive.runtime.connection` | Physical connection supervision, root and nested lifecycles, ingress, output, components, and upload workers |
 | Client protocol | `scalive.protocol.phoenix` | Phoenix envelope parsing and projection of semantic trees and deltas into Phoenix payloads |

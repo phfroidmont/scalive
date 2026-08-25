@@ -339,7 +339,14 @@ final private[scalive] class ConnectionSupervisor private (
               )
       handle <- startInSlot(slot) { childScope =>
                   for
-                    buffer <- StartupBuffer.make(config.writerCapacity, sink)
+                    buffer <- BufferedActivationSink.make(
+                                config.writerCapacity,
+                                sink,
+                                capacity =>
+                                  IllegalStateException(
+                                    s"nested startup output exceeded capacity $capacity"
+                                  )
+                              )
                     output <- RebindableSink.make(buffer.offer)
                     view   <-
                       ZIO
@@ -1132,7 +1139,7 @@ private[scalive] object ConnectionSupervisor:
 
   final private case class PendingNested(
     handle: ConnectedLifecycle,
-    buffer: StartupBuffer,
+    buffer: BufferedActivationSink[ConnectionOutput],
     output: RebindableSink,
     failureNotifier: NestedFailureNotifier)
 
@@ -1156,36 +1163,6 @@ private[scalive] object ConnectionSupervisor:
 
   private object State:
     val empty: State = State(Map.empty, Map.empty, None, Set.empty, false, Map.empty, false)
-
-  final private class StartupBuffer(
-    capacity: Int,
-    destination: ConnectionOutput => Task[Unit],
-    gate: Semaphore):
-    private var outputs: Vector[ConnectionOutput] = Vector.empty
-    private var active: Boolean                   = false
-
-    def offer(output: ConnectionOutput): Task[Unit] = gate.withPermit {
-      if active then destination(output)
-      else if outputs.size >= capacity then
-        ZIO.fail(IllegalStateException(s"nested startup output exceeded capacity $capacity"))
-      else
-        outputs = outputs :+ output
-        ZIO.unit
-    }
-
-    def activate: Task[Unit] = gate.withPermit {
-      ZIO.foreachDiscard(outputs)(destination) *> ZIO.succeed {
-        outputs = Vector.empty
-        active = true
-      }
-    }
-
-  private object StartupBuffer:
-    def make(
-      capacity: Int,
-      destination: ConnectionOutput => Task[Unit]
-    ): UIO[StartupBuffer] =
-      Semaphore.make(1L).map(new StartupBuffer(capacity, destination, _))
 
   final private class RebindableSink private (
     gate: Semaphore,

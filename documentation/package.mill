@@ -58,19 +58,15 @@ object `package` extends Module:
     def apiSnapshot = Task.Source(moduleDir / "api" / "public-api.snapshot.json")
 
     def apiTargetRoots = Task {
-      Seq(
-        build.scalive.api.compile().classes,
+      build.scalive.bundledClasses() ++ Seq(
         build.scalive.compile().classes,
-        build.scalive.transport.`zio-http`.compile().classes,
         build.scalive.testing.compile().classes
       )
     }
 
     def apiDependencyClasspath = Task {
       (
-        build.scalive.api.compileClasspath() ++
-          build.scalive.compileClasspath() ++
-          build.scalive.transport.`zio-http`.compileClasspath() ++
+        build.scalive.compileClasspath() ++
           build.scalive.testing.compileClasspath()
       ).distinct
     }

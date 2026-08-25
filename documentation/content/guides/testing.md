@@ -41,7 +41,10 @@ does not emulate browser successful-control selection or execute JavaScript.
 
 ## Test Disconnected Rendering {#test-disconnected-rendering}
 
-Add the `scalive-testing` artifact to the test module that already depends on your
+Scalive publishes and supports exactly two Scala coordinates:
+`dev.scalive::scalive`, containing all production API, render, runtime, protocol,
+and transport classes, and `dev.scalive::scalive-testing` for optional test
+support. Add the latter to the test module that already depends on your
 application. Inside this repository, Mill modules use `moduleDeps = Seq(...,
 scalive.testing)`. External snapshot consumers use the same snapshot repository
 and revision as the application artifact:

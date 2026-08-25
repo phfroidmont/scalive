@@ -48,6 +48,12 @@ The runtime separates application semantics, lifecycle ownership, rendering,
 wire protocol, and transport. That prevents Phoenix frame shapes or ZIO HTTP
 details from leaking into model transitions and tree evaluation.
 
+These modules are internal compile and test boundaries, not separately published
+coordinates. Scalive publishes and supports exactly two Scala coordinates:
+`dev.scalive::scalive`, containing all production API, render, runtime, protocol,
+and transport classes, and the optional test-support coordinate
+`dev.scalive::scalive-testing`.
+
 | Layer | Concrete module | Responsibility |
 | --- | --- | --- |
 | Application model | `scalive.api` | `LiveView`, `LiveComponent`, routing, lifecycle contexts, typed HTML, forms, streams, and uploads |

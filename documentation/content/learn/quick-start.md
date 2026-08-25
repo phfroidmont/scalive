@@ -97,8 +97,11 @@ object app extends ScalaModule:
 end app
 ```
 
-The `::` in the dependency selects the Scala 3 artifact. Scalive's ZIO and ZIO
-HTTP dependencies are supplied transitively.
+The `::` in the dependency selects the Scala 3 artifact. Scalive publishes and
+supports exactly two Scala coordinates: `dev.scalive::scalive`, which contains
+all production API, render, runtime, protocol, and transport classes, and the
+optional test-support coordinate `dev.scalive::scalive-testing`. Scalive's ZIO
+and ZIO HTTP dependencies are supplied transitively.
 
 Create `app/package.json`:
 

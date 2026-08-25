@@ -10,10 +10,15 @@ for the best user-facing Scala API.
 ## Runtime Architecture
 
 Scalive separates its public API, retained renderer, lifecycle state machines, Phoenix protocol,
-ZIO HTTP transport, and testing support into explicit modules. The
+ZIO HTTP transport, and testing support into internal compile and test modules. These are not
+separately published coordinates. The
 [runtime architecture](documentation/content/project/runtime-architecture.md) explains how HTTP
 rendering, connected lifecycles, transactional turns, bounded work, protocol projection, and cleanup
 fit together.
+
+Scalive publishes and supports exactly two Scala coordinates:
+`dev.scalive::scalive`, containing all production API, render, runtime, protocol, and transport
+classes, and `dev.scalive::scalive-testing` for optional test support.
 
 ## What A LiveView Looks Like
 

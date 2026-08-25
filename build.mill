@@ -10,6 +10,7 @@ import mill.*, scalalib.*, publish.*
 import mill.api.BuildCtx
 import mill.scalalib.scalafmt.ScalafmtModule
 import mill.contrib.jmh.JmhModule
+import mill.util.Jvm
 import com.goyeau.mill.scalafix.ScalafixModule
 
 object Versions:
@@ -31,6 +32,8 @@ trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
   )
 
 trait PublishCommon extends PublishModule:
+  def artifactDescription: String
+
   def publishVersion = Task.Input {
     val revision = Task.env.getOrElse(
       "SCALIVE_REVISION",
@@ -39,18 +42,7 @@ trait PublishCommon extends PublishModule:
     s"0.0.1-${revision.take(12)}-SNAPSHOT"
   }
   def pomSettings    = PomSettings(
-    description = artifactName() match
-      case "scalive"                    => "Scala 3 server-driven web applications compatible with Phoenix LiveView"
-      case "scalive-api"                => "Public Scalive lifecycle, HTML, routing, forms, streams, and upload APIs"
-      case "scalive-render"             => "Protocol-neutral Scalive rendering and semantic diff engine"
-      case "scalive-runtime-contracts"  => "Protocol-neutral contracts shared by Scalive runtime modules"
-      case "scalive-runtime-resources"  => "Managed async, subscription, stream, and upload resources for Scalive"
-      case "scalive-runtime-kernel"     => "Transactional lifecycle kernel for Scalive"
-      case "scalive-runtime-connection" => "Connected lifecycle supervision for Scalive"
-      case "scalive-protocol-phoenix"   => "Phoenix LiveView protocol projection for Scalive"
-      case "scalive-transport-zio-http" => "ZIO HTTP transport integration for Scalive"
-      case "scalive-testing"            => "Disconnected and connected behavioral testing for Scalive applications"
-      case other                         => other,
+    description = artifactDescription,
     organization = "dev.scalive",
     url = "https://github.com/phfroidmont/scalive",
     licenses = Seq(License.MIT),
@@ -59,16 +51,101 @@ trait PublishCommon extends PublishModule:
       Seq(Developer("phfroidmont", "Paul-Henri Froidmont", "https://github.com/phfroidmont"))
   )
 
-trait ScaliveModule extends ScalaCommon with PublishCommon:
+trait ScaliveModule extends ScalaCommon:
   object test extends ScalaTests with scalalib.TestModule.ZioTest:
     def zioTestVersion = Versions.zioTest
 
-object scalive extends ScaliveModule:
-  override def artifactName = "scalive"
-  def moduleDeps = Seq(api, transport.`zio-http`)
+trait PublishedScaliveModule extends ScaliveModule with PublishCommon
+
+trait PublishedScaliveBundle extends PublishedScaliveModule:
+  protected def bundledModules: Seq[ScaliveModule]
+
+  private def bundledCompilations = Task.traverse(bundledModules)(_.compile)
+  private def bundledResources = Task.traverse(bundledModules)(_.resources)
+  private def bundledCompileResources = Task.traverse(bundledModules)(_.compileResources)
+  private def bundledSources = Task.traverse(bundledModules) { module =>
+    Task.Anon {
+      module.allSources() ++ module.resources() ++ module.compileResources()
+    }
+  }
+  private def bundledDocSources  = Task.traverse(bundledModules)(_.docSources)
+  private def bundledMvnDeps     = Task.traverse(bundledModules)(_.mvnDeps)
+  private def bundledCompileDeps = Task.traverse(bundledModules)(_.compileMvnDeps)
+  private def bundledRunDeps     = Task.traverse(bundledModules)(_.runMvnDeps)
+  private def bundledBomDeps     = Task.traverse(bundledModules)(_.bomMvnDeps)
+  private def bundledDepMgmt     = Task.traverse(bundledModules)(_.depManagement)
+
+  def bundledClasses = Task {
+    bundledCompilations().map(_.classes)
+  }
+
+  override def unmanagedClasspath = Task {
+    super.unmanagedClasspath() ++ bundledClasses()
+  }
+
+  override def resources = Task {
+    super.resources() ++ bundledResources().flatten
+  }
+
+  override def compileResources = Task {
+    super.compileResources() ++ bundledCompileResources().flatten
+  }
+
+  override def mvnDeps = Task {
+    (super.mvnDeps() ++ bundledMvnDeps().flatten).distinct
+  }
+
+  override def compileMvnDeps = Task {
+    (super.compileMvnDeps() ++ bundledCompileDeps().flatten).distinct
+  }
+
+  override def runMvnDeps = Task {
+    (super.runMvnDeps() ++ bundledRunDeps().flatten).distinct
+  }
+
+  override def bomMvnDeps = Task {
+    (super.bomMvnDeps() ++ bundledBomDeps().flatten).distinct
+  }
+
+  override def depManagement = Task {
+    (super.depManagement() ++ bundledDepMgmt().flatten).distinct
+  }
+
+  override def docSources = Task {
+    super.docSources() ++ bundledDocSources().flatten
+  }
+
+  override def sourceJar = Task {
+    val inputs =
+      super.allSources() ++
+        super.resources() ++
+        super.compileResources() ++
+        bundledSources().flatten
+    PathRef(
+      Jvm.createJar(
+        Task.dest / "out.jar",
+        inputs.map(_.path).filter(os.exists),
+        manifest()
+      )
+    )
+  }
+
+object scalive extends PublishedScaliveBundle:
+  def artifactDescription   =
+    "Scala 3 server-driven web applications compatible with Phoenix LiveView"
+
+  protected def bundledModules = Seq(
+    api,
+    render,
+    runtime.contracts,
+    runtime.resources,
+    runtime.kernel,
+    runtime.connection,
+    protocol.phoenix,
+    transport.`zio-http`
+  )
 
   object api extends ScaliveModule:
-    override def artifactName = "scalive-api"
     def mvnDeps = Seq(
       mvn"dev.zio::zio-json:${Versions.zioJson}",
       mvn"dev.zio::zio-http:${Versions.zioHttp}"
@@ -76,44 +153,38 @@ object scalive extends ScaliveModule:
 
     def generatedSources = Task {
       new DomDefsGenerator((Task.dest / "src/scalive").toString).generate()
-      super.generatedSources() ++ Seq(PathRef(Task.dest))
+      super.generatedSources() ++ Seq(PathRef(Task.dest / "src"))
     }
 
   object render extends ScaliveModule:
-    override def artifactName = "scalive-render"
     def moduleDeps = Seq(api)
 
   object runtime extends Module:
     object contracts extends ScaliveModule:
-      override def artifactName = "scalive-runtime-contracts"
       def moduleDeps = Seq(api)
 
     object resources extends ScaliveModule:
-      override def artifactName = "scalive-runtime-resources"
       def moduleDeps = Seq(api, contracts)
 
     object kernel extends ScaliveModule:
-      override def artifactName = "scalive-runtime-kernel"
       def moduleDeps = Seq(api, render, contracts, runtime.resources)
 
     object connection extends ScaliveModule:
-      override def artifactName = "scalive-runtime-connection"
       def moduleDeps = Seq(contracts, kernel, runtime.resources)
 
   object protocol extends Module:
     object phoenix extends ScaliveModule:
-      override def artifactName = "scalive-protocol-phoenix"
       def moduleDeps = Seq(render)
 
   object transport extends Module:
     object `zio-http` extends ScaliveModule:
-      override def artifactName = "scalive-transport-zio-http"
       def moduleDeps = Seq(api, runtime.connection, protocol.phoenix)
 
       def mvnDeps = Seq(mvn"dev.zio::zio-http:${Versions.zioHttp}")
 
-  object testing extends ScaliveModule:
-    override def artifactName = "scalive-testing"
+  object testing extends PublishedScaliveModule:
+    def artifactDescription   =
+      "Disconnected and connected behavioral testing for Scalive applications"
     def moduleDeps = Seq(scalive)
     def mvnDeps    = Seq(mvn"org.jsoup:jsoup:1.23.1")
 

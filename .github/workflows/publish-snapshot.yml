@@ -37,7 +37,7 @@ jobs:
       - name: Run upstream browser gate
         run: nix develop --command ./scripts/e2e-run-upstream.sh --retries=0
       - name: Build published artifacts
-        run: nix develop --command mill --ticker false scalive.__.publishArtifacts
+        run: nix develop --command mill --ticker false scalive.publishArtifacts + scalive.testing.publishArtifacts
       - name: Publish snapshot
         run: nix develop --command mill --ticker false mill.javalib.SonatypeCentralPublishModule/
         env:

@@ -6936,8 +6936,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.create:aa67450eac1f845d",
-          "signature" : "def create[A](definition: streams.LiveStreamDef[A], items: Iterable[A]): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.create:76124cea4b35d565",
+          "signature" : "def create[A, Id](definition: streams.LiveStreamDef[A, Id], items: Iterable[A]): zio.package.Task[streams.LiveStream[A]]"
         }
       ]
     },
@@ -6948,8 +6948,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.delete:6671ea2aead28ffa",
-          "signature" : "def delete[A](definition: streams.LiveStreamDef[A], item: A): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.delete:96e03620b8943eca",
+          "signature" : "def delete[A, Id](definition: streams.LiveStreamDef[A, Id], id: Id): zio.package.Task[streams.LiveStream[A]]"
         }
       ]
     },
@@ -6960,8 +6960,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.deleteByDomId:aa89816ec628e3d5",
-          "signature" : "def deleteByDomId[A](definition: streams.LiveStreamDef[A], domId: String): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.deleteByDomId:0e370a976c075ddc",
+          "signature" : "def deleteByDomId[A, Id](definition: streams.LiveStreamDef[A, Id], domId: String): zio.package.Task[streams.LiveStream[A]]"
         }
       ]
     },
@@ -6972,8 +6972,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.insert:7e006bf2441f6bc0",
-          "signature" : "def insert[A](definition: streams.LiveStreamDef[A], item: A, at: streams.StreamAt = ..., updateOnly: Boolean = ...): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.insert:8b92d7159e7c3d8a",
+          "signature" : "def insert[A, Id](definition: streams.LiveStreamDef[A, Id], item: A, at: streams.StreamAt = ..., updateOnly: Boolean = ...): zio.package.Task[streams.LiveStream[A]]"
         }
       ]
     },
@@ -6984,8 +6984,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.insertAll:9182edcc5fcf81b6",
-          "signature" : "def insertAll[A](definition: streams.LiveStreamDef[A], items: Iterable[A], at: streams.StreamAt = ...): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.insertAll:791a77dc23a96bef",
+          "signature" : "def insertAll[A, Id](definition: streams.LiveStreamDef[A, Id], items: Iterable[A], at: streams.StreamAt = ...): zio.package.Task[streams.LiveStream[A]]"
         }
       ]
     },
@@ -6996,8 +6996,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.reset:288486a0d1cd6d91",
-          "signature" : "def reset[A](definition: streams.LiveStreamDef[A], items: Iterable[A], at: streams.StreamAt = ...): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.reset:1825c511dc499ff3",
+          "signature" : "def reset[A, Id](definition: streams.LiveStreamDef[A, Id], items: Iterable[A], at: streams.StreamAt = ...): zio.package.Task[streams.LiveStream[A]]"
         }
       ]
     },
@@ -15275,8 +15275,8 @@
       "kind" : "typeAlias",
       "signatures" : [
         {
-          "id" : "type-alias:scalive.LiveStreamDef:1a38a37a2c1f155f",
-          "signature" : "type LiveStreamDef = ([A] =>> streams.LiveStreamDef[A])"
+          "id" : "type-alias:scalive.LiveStreamDef:bb602d2770a27eac",
+          "signature" : "type LiveStreamDef = ([A, Id] =>> streams.LiveStreamDef[A, Id])"
         }
       ]
     },

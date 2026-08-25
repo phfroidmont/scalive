@@ -43,7 +43,7 @@ object ActivityStreamExampleSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new ActivityStreamExample)
-          _       <- harness.click("#activity-1 [data-delete-activity]")
+          _       <- harness.send(ActivityStreamExample.Msg.Delete(1))
           _       <- harness.send(ActivityStreamExample.Msg.Reset)
           current <- state(harness)
         yield assertTrue(

@@ -59,7 +59,7 @@ class StreamLiveView()
             dataAttr("count") := count,
             user.map(_.name),
             button(
-              on.click(user.map(value => Msg.DeleteUser(s"$UsersPrefix${value.id}"))),
+              on.click(user.map(value => Msg.DeleteUser(value.id))),
               phx.value("id") := domId,
               "delete"
             ),
@@ -101,7 +101,7 @@ class StreamLiveView()
             dataAttr("count") := count,
             user.map(_.name),
             button(
-              on.click(user.map(value => Msg.DeleteAdmin(s"$AdminsPrefix${value.id}"))),
+              on.click(user.map(value => Msg.DeleteAdmin(value.id))),
               phx.value("id") := domId,
               "delete"
             ),
@@ -132,7 +132,7 @@ class StreamLiveView()
             user.map(_.name),
             button(
               on.click(
-                user.map(value => Msg.DeleteComponentUser(s"$ComponentUsersPrefix${value.id}"))
+                user.map(value => Msg.DeleteComponentUser(value.id))
               ),
               phx.value("id") := domId,
               "delete"
@@ -182,8 +182,8 @@ class StreamLiveView()
 
   private def handle(model: Model, msg: Msg, streams: Streams): Task[Model] =
     msg match
-      case Msg.DeleteUser(domId) =>
-        streams.deleteByDomId(UsersStreamDef, domId).map(users => model.copy(users = users))
+      case Msg.DeleteUser(id) =>
+        streams.delete(UsersStreamDef, id).map(users => model.copy(users = users))
       case Msg.UpdateUser(domId) =>
         updateUserInStream(model, domId, UsersPrefix, UsersStreamDef, streams)(users =>
           model.copy(users = users)
@@ -206,8 +206,8 @@ class StreamLiveView()
           StreamAt.Last,
           streams
         )(users => model.copy(users = users))
-      case Msg.DeleteAdmin(domId) =>
-        streams.deleteByDomId(AdminsStreamDef, domId).map(admins => model.copy(admins = admins))
+      case Msg.DeleteAdmin(id) =>
+        streams.delete(AdminsStreamDef, id).map(admins => model.copy(admins = admins))
       case Msg.UpdateAdmin(domId) =>
         updateUserInStream(model, domId, AdminsPrefix, AdminsStreamDef, streams)(admins =>
           model.copy(admins = admins)
@@ -230,9 +230,9 @@ class StreamLiveView()
           StreamAt.Last,
           streams
         )(admins => model.copy(admins = admins))
-      case Msg.DeleteComponentUser(domId) =>
+      case Msg.DeleteComponentUser(id) =>
         streams
-          .deleteByDomId(ComponentUsersStreamDef, domId).map(componentUsers =>
+          .delete(ComponentUsersStreamDef, id).map(componentUsers =>
             model.copy(componentUsers = componentUsers)
           )
       case Msg.UpdateComponentUser(domId) =>
@@ -285,7 +285,7 @@ class StreamLiveView()
     model: Model,
     domId: String,
     prefix: String,
-    definition: LiveStreamDef[User],
+    definition: LiveStreamDef[User, String],
     streams: Streams
   )(
     setStream: LiveStream[User] => Model
@@ -301,7 +301,7 @@ class StreamLiveView()
     model: Model,
     domId: String,
     prefix: String,
-    definition: LiveStreamDef[User],
+    definition: LiveStreamDef[User, String],
     at: StreamAt,
     streams: Streams
   )(
@@ -310,7 +310,7 @@ class StreamLiveView()
     domIdToUserId(prefix, domId) match
       case Some(id) =>
         streams
-          .deleteByDomId(definition, domId) *>
+          .delete(definition, id) *>
           streams
             .insert(
               definition,
@@ -341,15 +341,15 @@ object StreamLiveView:
     extraItemWithId: Boolean)
 
   enum Msg:
-    case DeleteUser(domId: String)
+    case DeleteUser(id: String)
     case UpdateUser(domId: String)
     case MoveUserToFirst(domId: String)
     case MoveUserToLast(domId: String)
-    case DeleteAdmin(domId: String)
+    case DeleteAdmin(id: String)
     case UpdateAdmin(domId: String)
     case MoveAdminToFirst(domId: String)
     case MoveAdminToLast(domId: String)
-    case DeleteComponentUser(domId: String)
+    case DeleteComponentUser(id: String)
     case UpdateComponentUser(domId: String)
     case MoveComponentUserToFirst(domId: String)
     case MoveComponentUserToLast(domId: String)
@@ -510,7 +510,7 @@ class StreamResetLiveView()
         .map(items => model.copy(items = items))
     case Msg.DeleteInsertExistingAtOne =>
       (ctx.streams
-        .deleteByDomId(ItemsStreamDef, "items-c") *>
+        .delete(ItemsStreamDef, "c") *>
         ctx.streams.insert(
           ItemsStreamDef,
           Item("c", "C"),
@@ -928,7 +928,7 @@ object StreamNestedComponentResetLiveView:
   final case class ParentItem(
     id: String,
     name: String,
-    nestedDefinition: LiveStreamDef[NestedItem],
+    nestedDefinition: LiveStreamDef[NestedItem, String],
     nested: LiveStream[NestedItem])
   final case class Model(
     items: LiveStream[ParentItem],
@@ -954,10 +954,11 @@ object StreamNestedComponentResetLiveView:
     NestedItem("g", "N-G")
   )
 
-  private def nestedStreamDef(parentId: String): LiveStreamDef[NestedItem] =
-    LiveStreamDef[NestedItem](
+  private def nestedStreamDef(parentId: String): LiveStreamDef[NestedItem, String] =
+    LiveStreamDef[NestedItem, String](
       s"nested-items-$parentId",
-      item => s"nested-items-$parentId-${item.id}"
+      _.id,
+      id => s"nested-items-$parentId-$id"
     )
 end StreamNestedComponentResetLiveView
 

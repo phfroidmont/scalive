@@ -590,7 +590,7 @@ object FormStreamLiveView:
   final case class Model(items: LiveStream[Item], count: Int = 0, streamCount: Int = 3)
 
   val InitialItems = Vector(Item(1), Item(2), Item(3))
-  val ItemsStream  = LiveStreamDef[Item]("items", item => s"items-${item.id}")
+  val ItemsStream  = LiveStreamDef.byId[Item, Int]("items")(_.id)
 
 class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedbackLiveView.Model]:
   import FormFeedbackLiveView.*

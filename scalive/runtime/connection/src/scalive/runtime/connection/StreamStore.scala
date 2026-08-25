@@ -8,14 +8,14 @@ final private[scalive] case class StreamStore private (
   private val streams: Map[String, StreamStore.Stored]):
   import StreamStore.*
 
-  def get[A](definition: LiveStreamDef[A]): Option[LiveStream[A]] =
+  def get[A, Id](definition: LiveStreamDef[A, Id]): Option[LiveStream[A]] =
     validateDefinition(definition)
     streams.get(definition.name).map { stored =>
       requireCoherent(stored, definition)
       stored.stream.asInstanceOf[LiveStream[A]]
     }
 
-  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): Replacement[A] =
+  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Replacement[A] =
     validateDefinition(definition)
     if streams.contains(definition.name) then
       throw IllegalArgumentException(s"stream '${definition.name}' already exists")
@@ -35,8 +35,8 @@ final private[scalive] case class StreamStore private (
       applyInsertions(initial, prepared, StreamAt.Last, definition.limit, updateOnly = false)
     )
 
-  def insertAll[A](
-    definition: LiveStreamDef[A],
+  def insertAll[A, Id](
+    definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt = StreamAt.Last
   ): Replacement[A] =
@@ -48,8 +48,8 @@ final private[scalive] case class StreamStore private (
       applyInsertions(next(current), prepared, at, definition.limit, updateOnly = false)
     )
 
-  def reset[A](
-    definition: LiveStreamDef[A],
+  def reset[A, Id](
+    definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt = StreamAt.Last
   ): Replacement[A] =
@@ -70,8 +70,8 @@ final private[scalive] case class StreamStore private (
       applyInsertions(cleared, prepared, at, definition.limit, updateOnly = false)
     )
 
-  def insert[A](
-    definition: LiveStreamDef[A],
+  def insert[A, Id](
+    definition: LiveStreamDef[A, Id],
     item: A,
     at: StreamAt = StreamAt.Last,
     updateOnly: Boolean = false
@@ -85,12 +85,12 @@ final private[scalive] case class StreamStore private (
       else applyInsertion(base, entry, at, definition.limit, updateOnly)
     install(definition, updated)
 
-  def delete[A](definition: LiveStreamDef[A], item: A): Replacement[A] =
+  def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Replacement[A] =
     validateDefinition(definition)
-    val domId = evaluateDomId(definition, item)
+    val domId = evaluateIdDomId(definition, id)
     deletePrepared(definition, domId)
 
-  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): Replacement[A] =
+  def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): Replacement[A] =
     validateDefinition(definition)
     validateDomId(domId)
     deletePrepared(definition, domId)
@@ -103,7 +103,7 @@ final private[scalive] case class StreamStore private (
     StreamStore(pruned)
 
   /** Clears one stream's journal and returns its replacement rendering handle. */
-  def prune[A](definition: LiveStreamDef[A]): Replacement[A] =
+  def prune[A, Id](definition: LiveStreamDef[A, Id]): Replacement[A] =
     validateDefinition(definition)
     val current = requireCurrent(definition)
     install(definition, pruneHandle(current))
@@ -129,7 +129,10 @@ final private[scalive] case class StreamStore private (
             )
     }
 
-  private def deletePrepared[A](definition: LiveStreamDef[A], domId: String): Replacement[A] =
+  private def deletePrepared[A, Id](
+    definition: LiveStreamDef[A, Id],
+    domId: String
+  ): Replacement[A] =
     val current = requireCurrent(definition)
     val updated = LiveStream(
       current.identity,
@@ -142,7 +145,7 @@ final private[scalive] case class StreamStore private (
     )
     install(definition, updated)
 
-  private def requireCurrent[A](definition: LiveStreamDef[A]): LiveStream[A] =
+  private def requireCurrent[A, Id](definition: LiveStreamDef[A, Id]): LiveStream[A] =
     streams.get(definition.name) match
       case None =>
         throw new java.util.NoSuchElementException(
@@ -152,7 +155,10 @@ final private[scalive] case class StreamStore private (
         requireCoherent(stored, definition)
         stored.stream.asInstanceOf[LiveStream[A]]
 
-  private def install[A](definition: LiveStreamDef[A], stream: LiveStream[A]): Replacement[A] =
+  private def install[A, Id](
+    definition: LiveStreamDef[A, Id],
+    stream: LiveStream[A]
+  ): Replacement[A] =
     val updated = StreamStore(streams.updated(definition.name, Stored(definition, stream)))
     Replacement(updated, stream)
 end StreamStore
@@ -160,17 +166,17 @@ end StreamStore
 private[scalive] object StreamStore:
   final case class Replacement[A](store: StreamStore, stream: LiveStream[A])
 
-  final private case class Stored(definition: LiveStreamDef[?], stream: LiveStream[?])
+  final private case class Stored(definition: LiveStreamDef[?, ?], stream: LiveStream[?])
 
   val empty: StreamStore = StreamStore(Map.empty)
 
-  private def validateDefinition[A](definition: LiveStreamDef[A]): Unit =
+  private def validateDefinition[A, Id](definition: LiveStreamDef[A, Id]): Unit =
     if definition == null then throw NullPointerException("stream definition must not be null")
     if definition.name == null || definition.name.isEmpty then
       throw IllegalArgumentException("stream name must be non-empty")
     validateLimit(definition.limit)
 
-  private def validateOperation[A](definition: LiveStreamDef[A], at: StreamAt): Unit =
+  private def validateOperation[A, Id](definition: LiveStreamDef[A, Id], at: StreamAt): Unit =
     validateDefinition(definition)
     at match
       case null => throw NullPointerException("stream position must not be null")
@@ -193,22 +199,25 @@ private[scalive] object StreamStore:
     if domId == null || domId.isEmpty then
       throw IllegalArgumentException("stream DOM id must be non-empty")
 
-  private def evaluateDomId[A](definition: LiveStreamDef[A], item: A): String =
-    val domId = definition.domId(item)
+  private def evaluateItemDomId[A, Id](definition: LiveStreamDef[A, Id], item: A): String =
+    evaluateIdDomId(definition, definition.id(item))
+
+  private def evaluateIdDomId[A, Id](definition: LiveStreamDef[A, Id], id: Id): String =
+    val domId = definition.domId(id)
     validateDomId(domId)
     domId
 
-  private def prepare[A](
-    definition: LiveStreamDef[A],
+  private def prepare[A, Id](
+    definition: LiveStreamDef[A, Id],
     items: Iterable[A]
   ): Vector[LiveStreamEntry[A]] =
     if items == null then throw NullPointerException("stream items must not be null")
-    items.iterator.map(item => LiveStreamEntry(evaluateDomId(definition, item), item)).toVector
+    items.iterator.map(item => LiveStreamEntry(evaluateItemDomId(definition, item), item)).toVector
 
-  private def requireCoherent[A](stored: Stored, definition: LiveStreamDef[A]): Unit =
-    if !(stored.definition.domId.asInstanceOf[AnyRef] eq definition.domId.asInstanceOf[AnyRef]) then
+  private def requireCoherent[A, Id](stored: Stored, definition: LiveStreamDef[A, Id]): Unit =
+    if !(stored.definition.identity eq definition.identity) then
       throw IllegalArgumentException(
-        s"stream '${definition.name}' must use the DOM-id function used to create it"
+        s"stream '${definition.name}' must use the definition used to create it"
       )
 
   private def next[A](stream: LiveStream[A]): LiveStream[A] =

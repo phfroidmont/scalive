@@ -28,7 +28,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
       entered: Promise[Nothing, Unit],
       release: Promise[Nothing, Unit])
 
-  private final class RootFixture(definition: LiveStreamDef[Item], initial: Vector[Item])
+  private final class RootFixture(definition: LiveStreamDef[Item, String], initial: Vector[Item])
       extends LiveView[RootMessage, RootModel]:
     def mount(ctx: MountContext): Task[RootModel] =
       ctx.streams.create(definition, initial).map(RootModel(_, "mounted"))
@@ -37,7 +37,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
       case RootMessage.Insert(item, at, updateOnly) =>
         ctx.streams.insert(definition, item, at, updateOnly).map(RootModel(_, "inserted"))
       case RootMessage.Delete(id) =>
-        ctx.streams.deleteByDomId(definition, id).map(RootModel(_, "deleted"))
+        ctx.streams.delete(definition, id).map(RootModel(_, "deleted"))
       case RootMessage.Reset(items, at) =>
         ctx.streams.reset(definition, items, at).map(RootModel(_, "reset"))
       case RootMessage.InsertButKeepOld(item) =>
@@ -71,7 +71,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
           joined <- outputs.take
           _      <- connection.submitInfo(RootMessage.Insert(Item("c", "three"), StreamAt.First))
           inserted <- outputs.take
-          _         <- connection.submitInfo(RootMessage.Delete("items-b"))
+          _         <- connection.submitInfo(RootMessage.Delete("b"))
           deleted   <- outputs.take
           _         <- connection.submitInfo(RootMessage.Reset(Vector(Item("d", "four"))))
           reset     <- outputs.take

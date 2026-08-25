@@ -66,6 +66,11 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         activityStream.resetControlLabel == "Reset activity stream",
         activityStream.projectMessage(ActivityStreamExample.Msg.Add)
           .exists(_.summary == "Insert one activity"),
+        activityStream.projectMessage(ActivityStreamExample.Msg.Delete(2))
+          .exists(trace =>
+            trace.scalaValue.contains("Msg.Delete(2)") &&
+              trace.fields.contains("activityId" -> "2")
+          ),
         activityStream.projectMessage("add").isEmpty
       )
     },

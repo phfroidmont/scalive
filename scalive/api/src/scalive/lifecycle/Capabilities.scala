@@ -47,25 +47,25 @@ trait Uploads:
   ): Task[(List[A], LiveUpload[R])]
 
 trait Streams:
-  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): Task[LiveStream[A]]
-  def insertAll[A](
-    definition: LiveStreamDef[A],
+  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[LiveStream[A]]
+  def insertAll[A, Id](
+    definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt = StreamAt.Last
   ): Task[LiveStream[A]]
-  def reset[A](
-    definition: LiveStreamDef[A],
+  def reset[A, Id](
+    definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt = StreamAt.Last
   ): Task[LiveStream[A]]
-  def insert[A](
-    definition: LiveStreamDef[A],
+  def insert[A, Id](
+    definition: LiveStreamDef[A, Id],
     item: A,
     at: StreamAt = StreamAt.Last,
     updateOnly: Boolean = false
   ): Task[LiveStream[A]]
-  def delete[A](definition: LiveStreamDef[A], item: A): Task[LiveStream[A]]
-  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): Task[LiveStream[A]]
+  def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Task[LiveStream[A]]
+  def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): Task[LiveStream[A]]
 
 trait Async[Msg]:
   def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: LiveAsyncResult[A] => Msg): Task[Unit]

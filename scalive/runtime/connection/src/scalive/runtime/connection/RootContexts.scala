@@ -336,30 +336,30 @@ end JournaledUploads
 
 final private class JournaledStreams(streams: Ref[StreamStore], applyLimits: Boolean = true)
     extends Streams:
-  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): Task[LiveStream[A]] =
+  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[LiveStream[A]] =
     update(_.create(effective(definition), items))
-  def insertAll[A](
-    definition: LiveStreamDef[A],
+  def insertAll[A, Id](
+    definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt
   ): Task[LiveStream[A]] = update(_.insertAll(effective(definition), items, at))
-  def reset[A](
-    definition: LiveStreamDef[A],
+  def reset[A, Id](
+    definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt
   ): Task[LiveStream[A]] = update(_.reset(effective(definition), items, at))
-  def insert[A](
-    definition: LiveStreamDef[A],
+  def insert[A, Id](
+    definition: LiveStreamDef[A, Id],
     item: A,
     at: StreamAt,
     updateOnly: Boolean
   ): Task[LiveStream[A]] = update(_.insert(effective(definition), item, at, updateOnly))
-  def delete[A](definition: LiveStreamDef[A], item: A): Task[LiveStream[A]] =
-    update(_.delete(effective(definition), item))
-  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String): Task[LiveStream[A]] =
+  def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Task[LiveStream[A]] =
+    update(_.delete(effective(definition), id))
+  def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): Task[LiveStream[A]] =
     update(_.deleteByDomId(effective(definition), domId))
 
-  private def effective[A](definition: LiveStreamDef[A]): LiveStreamDef[A] =
+  private def effective[A, Id](definition: LiveStreamDef[A, Id]): LiveStreamDef[A, Id] =
     if applyLimits then definition else definition.withoutLimit
 
   private def update[A](
@@ -374,17 +374,22 @@ final private class JournaledStreams(streams: Ref[StreamStore], applyLimits: Boo
 end JournaledStreams
 
 private object DeferredStreams extends Streams:
-  def create[A](definition: LiveStreamDef[A], items: Iterable[A]): Task[LiveStream[A]] =
+  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[LiveStream[A]] =
     Deferred.fail("create stream")
-  def insertAll[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt) =
+  def insertAll[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt) =
     Deferred.fail("insert stream items")
-  def reset[A](definition: LiveStreamDef[A], items: Iterable[A], at: StreamAt) =
+  def reset[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt) =
     Deferred.fail("reset stream")
-  def insert[A](definition: LiveStreamDef[A], item: A, at: StreamAt, updateOnly: Boolean) =
+  def insert[A, Id](
+    definition: LiveStreamDef[A, Id],
+    item: A,
+    at: StreamAt,
+    updateOnly: Boolean
+  ) =
     Deferred.fail("insert stream item")
-  def delete[A](definition: LiveStreamDef[A], item: A) =
-    Deferred.fail("delete stream item")
-  def deleteByDomId[A](definition: LiveStreamDef[A], domId: String) =
+  def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id) =
+    Deferred.fail("delete stream item by id")
+  def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String) =
     Deferred.fail("delete stream item by DOM id")
 
 final private class JournaledAsync[Msg](journal: RootTurnJournal) extends Async[Msg]:

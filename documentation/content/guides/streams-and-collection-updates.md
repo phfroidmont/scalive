@@ -54,7 +54,7 @@ five rendered rows.
 
 ## Define Stable Identity And Retention {#define-stable-identity-and-retention}
 
-Create one @:apiSymbol(type-alias:scalive.LiveStreamDef)`LiveStreamDef[A]`@:@ for each
+Create one @:apiSymbol(type-alias:scalive.LiveStreamDef)`LiveStreamDef[A, Id]`@:@ for each
 logical stream. Its name identifies the stream within the owning LiveView or
 component, and its DOM-ID function identifies rows:
 
@@ -114,22 +114,24 @@ order.
 
 ## Delete And Reset Coherently {#delete-and-reset-coherently}
 
-Apply the same domain operation to durable data and the stream. Deletion uses
-the definition's identity function:
+Apply the same domain operation to durable data and the stream. The definition
+retains the domain ID type and maps that ID to the row's DOM ID, so deletion does
+not need the complete item:
 
 ```scala
-case Msg.Delete(activity) =>
-  ctx.streams.delete(ActivityStreamDef, activity).map { stream =>
+case Msg.Delete(activityId) =>
+  ctx.streams.delete(ActivityStreamDef, activityId).map { stream =>
     model.copy(
-      activities = model.activities.filterNot(_.id == activity.id),
+      activities = model.activities.filterNot(_.id == activityId),
       activityStream = stream
     )
   }
 ```
 
 @:apiSymbol(def:scalive.Streams.deleteByDomId)`deleteByDomId`@:@ is a lower-level
-alternative for a trusted ID belonging to that stream. Do not pass untrusted
-browser input to it.
+alternative for a trusted rendered DOM ID belonging to that stream. Prefer
+`delete` with a typed domain ID, and do not pass untrusted browser input to the
+DOM-ID operation.
 
 @:apiSymbol(def:scalive.Streams.reset)`reset`@:@ replaces the stream snapshot and
 instructs the browser to rebuild the container. Reset durable state in the same
@@ -152,7 +154,7 @@ DOM ID:
 model.activityStream.renderIn(ol, aria.label := "Recent activity") { activity =>
   li(
     p(activity.summary),
-    button(on.click(Msg.Delete(activity)), "Delete")
+    button(on.click(Msg.Delete(activity.id)), "Delete")
   )
 }
 ```

@@ -63,6 +63,24 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("stream deletion requires the definition's domain ID type") {
+      val validErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        final case class Row(id: Int)
+        val definition = LiveStreamDef.byId[Row, Int]("rows")(_.id)
+        def delete(streams: Streams) = streams.delete(definition, 1)
+      """)
+      val invalidErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        final case class Row(id: Int)
+        val definition = LiveStreamDef.byId[Row, Int]("rows")(_.id)
+        def delete(streams: Streams) = streams.delete(definition, "rows-1")
+      """)
+
+      assertTrue(validErrors.isEmpty, invalidErrors.nonEmpty)
+    },
     test("subscription delivery policy is required") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

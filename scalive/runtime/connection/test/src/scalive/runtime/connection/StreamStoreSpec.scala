@@ -11,8 +11,8 @@ object StreamStoreSpec extends ZIOSpecDefault:
   private def definition(
     name: String = "items",
     limit: Option[StreamLimit] = None
-  ): LiveStreamDef[Item] =
-    LiveStreamDef(name, _.id, limit)
+  ): LiveStreamDef[Item, String] =
+    LiveStreamDef(name, _.id, identity, limit)
 
   private def values(stream: LiveStream[Item]): Vector[(String, Int)] =
     stream.entries.map(entry => entry.domId -> entry.value.value)
@@ -86,18 +86,18 @@ object StreamStoreSpec extends ZIOSpecDefault:
       val streamDef = definition()
       val created = StreamStore.empty.create(streamDef, List(Item("a", 1), Item("b", 2)))
       val reset   = created.store.reset(streamDef, List(Item("c", 3)), StreamAt.First)
-      val deleted = reset.store.delete(streamDef, Item("c", 0))
-      val byId    = deleted.store.deleteByDomId(streamDef, "missing")
+      val deleted = reset.store.delete(streamDef, "c")
+      val byDomId = deleted.store.deleteByDomId(streamDef, "missing")
 
       assertTrue(
         created.stream.generation == 1L,
         reset.stream.generation == 2L,
         deleted.stream.generation == 3L,
-        byId.stream.generation == 4L,
-        created.stream.identity.eq(byId.stream.identity),
+        byDomId.stream.generation == 4L,
+        created.stream.identity.eq(byDomId.stream.identity),
         reset.stream.reset,
         values(deleted.stream).isEmpty,
-        byId.stream.deleted == Vector("c", "missing")
+        byDomId.stream.deleted == Vector("c", "missing")
       )
     },
     test("delete followed by insert retains both operations so the browser can reorder the id") {
@@ -149,7 +149,7 @@ object StreamStoreSpec extends ZIOSpecDefault:
     },
     test("definitions are DOM-id coherent and stores reject duplicate or missing targets") {
       val coherent     = definition()
-      val incompatible = LiveStreamDef[Item]("items", item => s"other-${item.id}")
+      val incompatible = LiveStreamDef[Item, String]("items", _.id, id => s"other-$id")
       val created      = StreamStore.empty.create(coherent, Nil)
       val limited = created.store.insert(
         coherent.keepFirst(1),
@@ -165,19 +165,44 @@ object StreamStoreSpec extends ZIOSpecDefault:
         values(limited.stream) == Vector("a" -> 1)
       )
     },
+    test("separately constructed definitions cannot widen a stream's identity type") {
+      val itemId: Item => Int     = _.value
+      val domId: AnyVal => String = value => s"items-$value"
+      val exact                        = LiveStreamDef[Item, Int]("items", itemId, domId)
+      val widened                      = LiveStreamDef[Item, AnyVal]("items", itemId, domId)
+      val created                      = StreamStore.empty.create(exact, List(Item("a", 1)))
+      val deleted                      = created.store.delete(exact, 1)
+
+      assertTrue(
+        fails(created.store.delete(widened, 1.5)),
+        values(created.stream) == Vector("items-1" -> 1),
+        values(deleted.stream).isEmpty,
+        deleted.stream.deleted == Vector("items-1")
+      )
+    },
     test("validates names, ids, positions, limits, and throwing id functions") {
       val emptyName   = definition("")
-      val emptyId     = LiveStreamDef[Item]("items", _ => "")
-      val throwingId  = LiveStreamDef[Item]("items", _ => throw RuntimeException("boom"))
-      val badFirst    = definition(limit = Some(StreamLimit.KeepFirst(0)))
-      val badLast     = definition(limit = Some(StreamLimit.KeepLast(Int.MinValue)))
-      val streamDef   = definition()
-      val created     = StreamStore.empty.create(streamDef, Nil)
+      val emptyId = LiveStreamDef[Item, String]("items", _.id, _ => "")
+      val throwingId = LiveStreamDef[Item, String](
+        "items",
+        _ => throw RuntimeException("boom"),
+        identity
+      )
+      val throwingDomId = LiveStreamDef[Item, String](
+        "items",
+        _.id,
+        _ => throw RuntimeException("boom")
+      )
+      val badFirst  = definition(limit = Some(StreamLimit.KeepFirst(0)))
+      val badLast   = definition(limit = Some(StreamLimit.KeepLast(Int.MinValue)))
+      val streamDef = definition()
+      val created   = StreamStore.empty.create(streamDef, Nil)
 
       assertTrue(
         fails(StreamStore.empty.create(emptyName, Nil)),
         fails(StreamStore.empty.create(emptyId, List(Item("", 1)))),
         fails(StreamStore.empty.create(throwingId, List(Item("a", 1)))),
+        fails(StreamStore.empty.create(throwingDomId, List(Item("a", 1)))),
         fails(StreamStore.empty.create(badFirst, Nil)),
         fails(StreamStore.empty.create(badLast, Nil)),
         fails(created.store.insert(streamDef, Item("a", 1), StreamAt.Index(-1))),

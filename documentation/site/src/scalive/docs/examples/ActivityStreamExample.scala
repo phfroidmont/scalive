@@ -23,10 +23,10 @@ final class ActivityStreamExample
           nextId = model.nextId + 1
         )
       }
-    case Msg.Delete(activity) =>
-      ctx.streams.delete(ActivityStreamDef, activity).map { stream =>
+    case Msg.Delete(activityId) =>
+      ctx.streams.delete(ActivityStreamDef, activityId).map { stream =>
         model.copy(
-          activities = model.activities.filterNot(_.id == activity.id),
+          activities = model.activities.filterNot(_.id == activityId),
           activityStream = stream
         )
       }
@@ -82,7 +82,7 @@ final class ActivityStreamExample
               typ                         := "button",
               dataAttr("delete-activity") := activity.map(_.id.toString),
               aria.label                  := activity.map(value => s"Delete activity ${value.id}"),
-              on.click(activity.map(Msg.Delete(_))),
+              on.click(activity.map(value => Msg.Delete(value.id))),
               "Delete"
             )
           )
@@ -105,7 +105,7 @@ object ActivityStreamExample:
 
   enum Msg:
     case Add
-    case Delete(activity: Activity)
+    case Delete(activityId: Int)
     case Reset
 
   private val ActivityStreamDef =

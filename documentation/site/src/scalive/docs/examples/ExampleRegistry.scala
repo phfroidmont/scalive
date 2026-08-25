@@ -127,20 +127,12 @@ private[docs] object ExampleRegistry:
                 "Insert one activity",
                 "ActivityStreamExample.Msg.Add"
               )
-            case ActivityStreamExample.Msg.Delete(activity) =>
+            case ActivityStreamExample.Msg.Delete(activityId) =>
               projected(
                 "ActivityStreamExample.Msg.Delete",
                 "Delete one activity",
-                constructor(
-                  "Msg.Delete",
-                  constructor(
-                    "Activity",
-                    field("id", number(activity.id)),
-                    field("category", wildcard),
-                    field("summary", wildcard)
-                  )
-                ),
-                Vector("activityId" -> activity.id.toString)
+                constructor("Msg.Delete", number(activityId)),
+                Vector("activityId" -> activityId.toString)
               )
             case ActivityStreamExample.Msg.Reset =>
               traced(

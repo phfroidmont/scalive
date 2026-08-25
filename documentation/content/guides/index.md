@@ -75,7 +75,7 @@ you can also enter directly from search or the API reference.
 - [Client setup and static assets](static-assets-and-client-setup.md) bundles
   the Phoenix client, serves tracked digested assets, and reacts to static
   changes and connection parameters.
-- [Configuration](configuration.md) defines the current framework and
-  application-owned configuration contract.
-- [Deployment](deployment.md) runs the current application behind TLS and a
-  WebSocket-capable edge without inventing unsupported packaging or clustering.
+- [Configuration](configuration.md) configures transport security and separates
+  Scalive settings from application and ZIO HTTP settings.
+- [Deployment](deployment.md) packages and operates a Scalive JVM application
+  behind HTTPS and a WebSocket-capable edge.

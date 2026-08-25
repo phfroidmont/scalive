@@ -1,6 +1,6 @@
 {%
 title = "Deployment"
-description = "Run Scalive behind a provider-neutral HTTP and WebSocket edge while accounting for current packaging and operational limits."
+description = "Build and operate a Scalive JVM application behind HTTPS and a WebSocket-capable edge."
 order = 72
 section = guides
 group = "Assets and operations"
@@ -8,167 +8,159 @@ group = "Assets and operations"
 
 ## Prerequisites {#prerequisites}
 
-A build job needs a JDK and Mill. Applications using the repository's
-`NpmAssets` build also need Node.js and npm because Mill runs
-`npm ci` and the package's build script before adding the declared outputs to
-classpath resources. From this repository, `nix develop` supplies those tools.
-The documentation generator also needs a Git checkout unless
-`SCALIVE_DOCS_REVISION` is supplied. The assembled documentation application
-needs only a compatible JRE at runtime.
+This guide starts from the `app` module created in the
+[quick start](../learn/quick-start.md). Complete the
+[configuration](configuration.md#current-configuration-contract) and
+[client setup](static-assets-and-client-setup.md#build-the-client-bundle) first.
 
-Before deploying an application, complete these related tasks:
+@:callout(warning)
 
-- [configure signing, cookies, socket paths, and application settings](configuration.md#current-configuration-contract);
-- [bundle and serve the Phoenix client and static assets](static-assets-and-client-setup.md#build-the-client-bundle);
-- test disconnected HTML, a real WebSocket connection, reconnects, and the
-  application's authentication boundary; and
-- decide which application-owned route, if any, represents liveness and
-  readiness.
+Scalive is alpha software without source, binary, or complete Phoenix LiveView
+compatibility guarantees. Review the current [project status](../project/index.md#project-status),
+pin the exact version you test, and validate deployment behavior for that
+version.
 
-## Build And Run The Current Application {#build-and-run-the-current-application}
+@:@
 
-Enter the repository development shell:
+## Prepare Production Settings {#prepare-production-settings}
+
+The Quick Start deliberately uses a development signing-secret fallback, fixed
+port `8080`, and `secureCookie = false`. Do not deploy those settings unchanged.
+Before packaging, require a stable high-entropy secret, use
+`secureCookie = true` for browser-facing HTTPS, and validate application-owned
+server and service settings at startup. Make the Phoenix client, Live router,
+static mount, and edge use matching paths.
+
+Environment-variable names are conventions of the application, not Scalive.
+The Quick Start already reads `SCALIVE_TOKEN_SECRET`; applications may retain
+that name or define their own validated configuration contract. Inject real
+secret values through the deployment platform's secret facility, not source
+control, an image, logs, or shell history.
+
+## Build And Run The Application {#build-and-run-the-current-application}
+
+A build job needs a JDK and Mill. The Quick Start asset task also needs Node.js
+and npm because the application resources depend on its browser bundle. Build an
+executable JAR from the project root:
 
 ```bash
-nix develop
+mill --ticker false app.assembly
 ```
 
-Build the self-contained executable JAR with an explicit source revision:
+The resulting artifact is:
+
+```text
+out/app/assembly.dest/out.jar
+```
+
+Have the runtime environment provide the application's required settings, then
+start it with a compatible JRE:
 
 ```bash
-SCALIVE_DOCS_REVISION="$(git rev-parse HEAD)" \
-mill --ticker false documentation.site.assembly
+java -jar out/app/assembly.dest/out.jar
 ```
 
-Run the result with only a JRE and explicit production configuration:
+The assembly includes the application's JVM dependencies and the browser bundle
+added by its Mill `resources` task. Mill, Node.js, npm, and the source tree are
+build-time requirements, not runtime requirements. If the application uses a
+different Mill module name, substitute that name in the task and output path.
 
-```bash
-SCALIVE_TOKEN_SECRET='<replace-with-at-least-32-random-bytes>' \
-SCALIVE_SERVER_PORT=8080 \
-SCALIVE_PUBLIC_ORIGIN='https://docs.example.com' \
-java -jar out/documentation/site/assembly.dest/out.jar
-```
-
-The assembly embeds generated documentation and browser assets. Node, npm,
-Mill, and the source checkout are build-time dependencies only. For an
-application following the source-backed quick start, the verified development
-shape remains `mill app.run`.
-
-`SCALIVE_SERVER_PORT` and `SCALIVE_PUBLIC_ORIGIN` above belong to the
-documentation application, not to Scalive or ZIO HTTP. The documentation entry
-point always binds to `127.0.0.1`; other applications must define their own
-listen address, port, and public origin. The quick-start fixture instead fixes
-port `8080` in `Server.defaultWithPort(8080)`.
+Scalive does not prescribe a container image, service manager, database
+migration command, or publication workflow. Package and launch the JAR according
+to the application's infrastructure while keeping configuration and secrets
+outside the artifact.
 
 ## Put An HTTP Edge In Front {#put-an-http-edge-in-front}
 
-Terminate browser-facing TLS at the application or at a reverse proxy/load
-balancer. Scalive does not configure TLS and does not infer HTTPS from
-`Forwarded`, `X-Forwarded-Proto`, or other proxy headers. When the public origin
-is HTTPS, application construction must explicitly use:
+Terminate browser-facing TLS at a reverse proxy or load balancer, or configure
+TLS directly through ZIO HTTP. In either case, set `secureCookie = true` when the
+browser uses HTTPS. Scalive does not infer HTTPS from `Forwarded`,
+`X-Forwarded-Proto`, or similar headers.
 
-```scala
-val transportConfig = ZioHttpConfig(
-  signingSecret = requiredSecret,
-  sessionMaxAge = java.time.Duration.ofDays(7),
-  secureCookie = true
-).fold(error => throw IllegalArgumentException(error.toString), identity)
+The edge must route all of the following to the application:
 
-val security = LiveSecurity(transportConfig)
-val routes = ZioHttp.routes(application, security)
-```
+- ordinary page and form requests;
+- static requests below the configured asset mount; and
+- WebSocket upgrade requests below the configured Live socket mount.
 
-Forward ordinary HTTP requests and WebSocket upgrade requests to the same
-application routes. With the default `Live.router`, the browser configures
-`new LiveSocket("/live", Socket, ...)` and upgrades `/live/websocket`. If the
-router uses `.withSocketPath(PathCodec.empty / "socket")`, configure the client
-with `/socket` and forward `/socket/websocket`. Preserve the query string and
-cookie header on the upgrade request because the CSRF join uses both. Configure
-the proxy's idle and request timeouts for long-lived WebSockets.
+With the default router and `new LiveSocket("/live", Socket, ...)`, the upgrade
+endpoint is `/live/websocket`. If the router uses
+`.withSocketPath(PathCodec.empty / "socket")`, configure the client with
+`/socket` and forward `/socket/websocket` instead. Preserve the upgrade request's
+query string and cookie header because LiveView join admission uses both. Allow
+long-lived WebSocket connections and choose edge and server idle timeouts that
+do not terminate healthy sockets.
 
-Scalive currently has WebSocket transport only. There is no long-poll fallback,
-so an edge or network that blocks WebSocket upgrades leaves the page in its
-disconnected state. Scalive exposes no framework option for trusted proxies,
-forwarded-header processing, an external path prefix, or transport fallback.
-If an edge adds a prefix, its routing must still expose the exact application
-page, socket, and static mount paths; changing only generated HTML is not
-sufficient.
-
-The documentation application derives `secureCookie` from its validated public
-origin. An HTTPS origin therefore emits secure cookies and requires an explicit
-`SCALIVE_TOKEN_SECRET` containing at least 32 UTF-8 bytes. Forwarded headers do
-not override either decision.
+Scalive currently supports WebSocket transport only. There is no long-poll
+fallback, so a network or edge that blocks WebSocket upgrades leaves the page in
+its disconnected state. Scalive also has no external-path-prefix setting; an
+edge that adds a prefix must still expose page, socket, and static paths exactly
+as the application renders them.
 
 ## Cache Static Assets {#cache-static-assets}
 
-Render asset URLs through the same loaded `StaticAssets` value whose routes are
-served. Digested responses default to `Cache-Control: public`, a one-year
-`max-age`, and `immutable`; original paths default to `no-cache`. Both receive a
-strong digest `ETag`. A CDN or reverse proxy may preserve those response
-headers. Do not assign immutable caching to undigested application HTML or
-asset paths.
+Render asset URLs and serve asset routes from the same loaded `StaticAssets`
+value. Digested responses default to public immutable caching for one year;
+original paths default to `no-cache`. A CDN or edge may preserve those response
+headers, but must not apply immutable caching to application HTML or undigested
+asset paths. See
+[Client setup and static assets](static-assets-and-client-setup.md#serve-digested-paths)
+for directory sources, digests, and route behavior.
 
-The built-in asset routes do not implement conditional or range request
-handling. Classpath and directory sources are reopened for requests, and the
-manifest digest is calculated at startup, so keep the source bytes unchanged
-for the lifetime of the process. For the exact source, mount, digest, and
-`serveOriginals` contract, see
-[Client setup and static assets](static-assets-and-client-setup.md#serve-digested-paths).
+## Scale And Roll Out {#scale-horizontally}
 
-## Handle Secrets And Cookies {#handle-secrets-and-cookies}
+Each connected LiveView model, along with its tasks, subscriptions, and upload
+state, lives in the serving process. An established WebSocket remains attached
+to that process. After a disconnect, restart, or rollout, the client may reach
+another replica and performs a fresh connected mount.
 
-Provide one stable, high-entropy signing secret of at least 32 UTF-8 bytes to
-every production replica. Do not put the value in command history, images,
-source control, logs, or browser-visible configuration; inject it through the
-deployment platform's secret facility. Treat a missing secret as a startup
-error. `ZioHttpConfig` also rejects a non-positive session age; do not replace
-either validation failure with a random fallback in production.
+Persist state that must survive reconnects or process loss in an
+application-owned shared service. Make mount effects repeatable, and keep route,
+socket, cookie, asset, token-age, and signing configuration compatible across
+replicas. A random process-local signing secret prevents replicas from accepting
+one another's values. Sticky routing can reduce replica changes but does not
+replace durable state or idempotent mount behavior.
 
-Framework tokens are signed, not encrypted. Do not put passwords, access
-tokens, cookie values, or other secrets in Live session claims or flash values.
-The framework cookie policy is host-only, root-scoped, `HttpOnly`, and
-`SameSite=Lax`; its `Secure` flag is exactly the application's configured
-boolean. Authentication session storage, revocation, retention, and cookie
-contents remain application responsibilities.
-
-## Scale Horizontally {#scale-horizontally}
-
-Each connected LiveView model, its tasks, subscriptions, and upload state live
-in the serving process. An established WebSocket naturally remains attached to
-that process. On reconnect, the client may reach another replica and receives a
-fresh connected mount; durable state therefore must live in an application-owned
-shared service rather than only in the previous model.
-
-All replicas that can receive the same browser must use the same signing secret
-and compatible token age, route, socket, cookie, and asset configuration.
-Scalive does not currently provide a cluster membership API, distributed
-PubSub, cross-node LiveView migration, shared session store, or load-balancer
-configuration. Sticky routing can reduce replica changes but does not replace
-shared durable state or idempotent mount effects.
+Scalive supplies no cluster membership, general distributed PubSub, shared
+LiveView model store, or cross-node socket migration. Applications that need
+cross-node authentication disconnects can provide a `LiveDisconnectBus` adapter
+as described in [Authentication and sessions](authentication.md#fan-out-disconnects-across-nodes);
+that adapter does not distribute LiveView state. Run the same tested Scalive
+version across replicas unless a mixed-version rollout has been verified.
 
 ## Operate And Stop Instances {#operate-and-stop-instances}
 
-The current applications run `Server.serve` inside `ZIOAppDefault`. Scalive
-cleans up framework-owned socket tasks, subscriptions, and upload resources when
-a socket shuts down, but it exposes no application-level graceful-drain API,
-shutdown timeout, or readiness transition. Treat termination grace periods,
-stopping new traffic, and load-balancer deregistration as deployment- and
-application-owned concerns. Verify the behavior under the actual process signal
-and proxy rather than assuming active WebSockets migrate; clients reconnect and
-mount fresh state elsewhere.
+Scalive does not add liveness or readiness endpoints. Implement them as ordinary
+ZIO HTTP routes with application-specific semantics. Liveness should report
+local process health without checking external dependencies. Readiness should
+become true only after required configuration, assets, and services are
+available, and should become false before an instance stops accepting traffic
+when the deployment platform supports that transition.
 
-Scalive supplies no framework-level liveness or readiness endpoint. The
-documentation application owns `GET /health`, which becomes available only
-after its generated content and static assets load and returns the exact full
-Git revision embedded during the build. Other applications should add ordinary
-ZIO HTTP routes and define readiness against the dependencies they actually
-need.
+ZIO HTTP's `Server.Config` owns the graceful-shutdown timeout and other server
+limits. Coordinate that timeout with edge deregistration and the platform's
+termination grace period. Scalive releases socket-owned tasks, subscriptions,
+and upload resources when a connection closes, but active WebSockets do not
+migrate to another process; clients reconnect and mount fresh state.
 
-Runtime code logs selected warnings, errors, crashes, and some debug lifecycle
-events through ZIO logging. There is no complete public telemetry, metrics,
-tracing, access-log, or observability API. Configure loggers and request
-instrumentation in the application and edge, avoid logging credentials and
-signed values, and add application metrics around dependencies and domain work.
+Runtime code emits selected lifecycle failures and diagnostics through ZIO
+logging. Scalive does not currently expose a complete metrics, tracing,
+telemetry, or access-log API. Configure request logging and instrumentation in
+the application and edge, avoid recording credentials or signed values, and add
+domain and dependency metrics where they are actionable.
+
+## Verify The Deployment {#verify-the-deployment}
+
+Before promoting an instance, verify its public URL end to end:
+
+- the WebSocket upgrade reaches `<socket-path>/websocket` with query parameters
+  and cookies intact;
+- HTTPS responses set framework and authentication cookies with `Secure`;
+- disconnected HTML loads its digested assets with the intended cache policy;
+- liveness, readiness, termination, and reconnect behavior work under the
+  platform's actual proxy and process signals; and
+- a browser can reconnect through another replica without losing state the
+  application promises to preserve.
 
 ## Related Tasks {#related-tasks}
 
@@ -178,5 +170,5 @@ signed values, and add application metrics around dependencies and domain work.
   bundle, digest, and cache behavior.
 - Use [Testing LiveViews](testing.md#test-in-a-browser) to exercise the deployed
   browser and transport boundary.
-- Use [Troubleshooting](troubleshooting.md#account-for-current-limits) for
-  current diagnostic limits and reconnect checks.
+- Use [Troubleshooting](troubleshooting.md#diagnose-socket-connections) for asset,
+  CSRF, WebSocket, and reconnect failures.

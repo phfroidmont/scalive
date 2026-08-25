@@ -17,6 +17,7 @@ const themeStorageKey = "scalive.docs.theme"
 const exampleControlSelector =
   "[data-example-controls], [data-example-controls] button, [data-example-controls] input, [data-example-controls] select, [data-example-controls] textarea"
 const instantSearchLimit = 8
+const instantSearchDelay = 200
 const liveTraceAdapter = createLiveTraceAdapter()
 const inlineApiReferences = createInlineApiReferenceEnhancer()
 const diagramThemes = createDiagramThemeSynchronizer(connectionRoot)
@@ -192,8 +193,16 @@ const Hooks = {
       this.options = []
       this.activeIndex = -1
       this.requestSequence = 0
+      this.searchTimeout = undefined
+
+      this.cancelScheduledSearch = () => {
+        if (this.searchTimeout === undefined) return
+        window.clearTimeout(this.searchTimeout)
+        this.searchTimeout = undefined
+      }
 
       this.closeResults = () => {
+        this.cancelScheduledSearch()
         this.requestSequence += 1
         this.results = []
         this.options = []
@@ -275,14 +284,7 @@ const Hooks = {
         this.input.setAttribute("aria-expanded", "true")
       }
 
-      this.updateResults = async () => {
-        const query = this.input.value.trim()
-        const sequence = ++this.requestSequence
-        if (!query) {
-          this.closeResults()
-          return
-        }
-
+      this.updateResults = async (query, sequence) => {
         try {
           const entries = await this.loadEntries()
           if (sequence !== this.requestSequence) return
@@ -293,6 +295,18 @@ const Hooks = {
           this.closeResults()
           this.statusElement.textContent = "Instant search unavailable; submit the form to search"
         }
+      }
+
+      this.scheduleResults = () => {
+        const query = this.input.value.trim()
+        this.closeResults()
+        if (!query) return
+
+        const sequence = this.requestSequence
+        this.searchTimeout = window.setTimeout(() => {
+          this.searchTimeout = undefined
+          this.updateResults(query, sequence)
+        }, instantSearchDelay)
       }
 
       this.handleKeyDown = (event) => {
@@ -324,17 +338,18 @@ const Hooks = {
         this.input.focus()
       }
 
-      this.input.addEventListener("input", this.updateResults)
-      this.input.addEventListener("focus", this.updateResults)
+      this.input.addEventListener("input", this.scheduleResults)
+      this.input.addEventListener("focus", this.scheduleResults)
       this.input.addEventListener("keydown", this.handleKeyDown)
       document.addEventListener("pointerdown", this.handleDocumentPointerDown)
       document.addEventListener("keydown", this.handleDocumentKeyDown)
     },
 
     destroyed() {
+      this.cancelScheduledSearch()
       this.requestSequence += 1
-      this.input.removeEventListener("input", this.updateResults)
-      this.input.removeEventListener("focus", this.updateResults)
+      this.input.removeEventListener("input", this.scheduleResults)
+      this.input.removeEventListener("focus", this.scheduleResults)
       this.input.removeEventListener("keydown", this.handleKeyDown)
       document.removeEventListener("pointerdown", this.handleDocumentPointerDown)
       document.removeEventListener("keydown", this.handleDocumentKeyDown)

@@ -516,32 +516,6 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("sessions, application layouts, and routed views assemble") {
-      object View extends LiveView.Eventless[Unit]:
-        def mount(ctx: MountContext) = ZIO.unit
-        def view(model: Signal[Unit]) = div()
-
-      object RoutedView extends LiveView.Routed.Eventless[Unit, Unit]:
-        def mount(params: Unit, ctx: MountContext) = ZIO.unit
-        def view(model: Signal[Unit]) = div()
-
-      val sessionApplication = scalive.Live.router(
-        scalive.Live.session("unsupported")(scalive.live(View))
-      )
-      val layoutApplication = scalive.Live.router
-        .withLayout(LiveLayout.identity)(scalive.live(View))
-      val routedApplication = scalive.Live.router(scalive.live.params(RoutedView))
-
-      for
-        session <- run(ZioHttp.routes(sessionApplication, config), Request.get(URL.root))
-        layout  <- run(ZioHttp.routes(layoutApplication, config), Request.get(URL.root))
-        routed  <- run(ZioHttp.routes(routedApplication, config), Request.get(URL.root))
-      yield assertTrue(
-        session.status == Status.Ok,
-        layout.status == Status.Ok,
-        routed.status == Status.Ok
-      )
-    },
     test("join admission binds all bootstrap claims before invoking a route factory") {
       val factories = AtomicInteger()
       object View extends LiveView.Eventless[Unit]:

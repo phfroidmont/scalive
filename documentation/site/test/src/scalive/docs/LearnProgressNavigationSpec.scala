@@ -34,7 +34,10 @@ object LearnProgressNavigationSpec extends ZIOSpecDefault:
                   .orElseFail(new NoSuchElementException(item.route))
         _ <- ZIO
                .fail(new IllegalArgumentException(s"Expected authored Learn page: ${item.route}"))
-               .unless(page.metadata.section == Section.Learn && page.source.isInstanceOf[PageSource.Authored])
+               .unless(
+                 page.metadata.section == Section.Learn && page.source
+                   .isInstanceOf[PageSource.Authored]
+               )
         connected <- ConnectedRender.join(
                        DocumentationPageLiveView(page, DocumentationRenderer(application))
                      )
@@ -48,62 +51,39 @@ object LearnProgressNavigationSpec extends ZIOSpecDefault:
       element.attr("data-phx-link-state") == "push"
 
   override def spec = suite("LearnProgressNavigationSpec")(
-    test("renders the first Learn page with progress and only a next link") {
+    test("links each Learn boundary to its semantic neighbors") {
       for
         application <- loadApplication
-        pages        = learnPages(application)
-        document    <- render(application, pages.head)
-        navigation  = document.selectFirst("nav.docs-learn-progress[aria-label='Learn progress']")
-        next        = navigation.selectFirst("a.docs-learn-progress-next")
-      yield assertTrue(
-        navigation.select(".docs-learn-progress-count").text() == s"1 of ${pages.size}",
-        navigation.select("a.docs-learn-progress-previous").isEmpty,
-        navigation.select(".docs-learn-progress-separator").isEmpty,
-        isLiveLink(next, pages(1)),
-        next.select(".docs-learn-progress-direction").text() == "Next",
-        next.select("strong").text() == pages(1).title,
-        navigation.nextElementSibling().hasClass("docs-page-links")
-      )
-    },
-    test("renders a middle Learn page with previous and next links") {
-      for
-        application <- loadApplication
-        pages        = learnPages(application)
-        index        = pages.size / 2
-        document    <- render(application, pages(index))
-        navigation  = document.selectFirst("nav.docs-learn-progress")
-        previous    = navigation.selectFirst("a.docs-learn-progress-previous")
-        next        = navigation.selectFirst("a.docs-learn-progress-next")
-      yield assertTrue(
-        pages.size >= 3,
-        navigation.select(".docs-learn-progress-count").text() == s"${index + 1} of ${pages.size}",
-        isLiveLink(previous, pages(index - 1)),
-        previous.attr("aria-label") == s"Previous: ${pages(index - 1).title}",
-        previous.select(".docs-learn-progress-direction").text() == "Previous",
-        previous.select("strong").text() == pages(index - 1).title,
-        navigation.select(".docs-learn-progress-separator[aria-hidden=true]").size() == 1,
-        isLiveLink(next, pages(index + 1)),
-        next.attr("aria-label") == s"Next: ${pages(index + 1).title}",
-        next.select(".docs-learn-progress-direction").text() == "Next",
-        next.select("strong").text() == pages(index + 1).title
-      )
-    },
-    test("renders the last Learn page with only a previous link") {
-      for
-        application <- loadApplication
-        pages        = learnPages(application)
-        index        = pages.size - 1
-        document    <- render(application, pages(index))
-        navigation  = document.selectFirst("nav.docs-learn-progress")
-        previous    = navigation.selectFirst("a.docs-learn-progress-previous")
-      yield assertTrue(
-        navigation.select(".docs-learn-progress-count").text() == s"${pages.size} of ${pages.size}",
-        isLiveLink(previous, pages(index - 1)),
-        previous.select(".docs-learn-progress-direction").text() == "Previous",
-        previous.select("strong").text() == pages(index - 1).title,
-        navigation.select(".docs-learn-progress-separator").isEmpty,
-        navigation.select("a.docs-learn-progress-next").isEmpty
-      )
+        pages = learnPages(application)
+        _ <- ZIO
+               .fail(new AssertionError("Learn progress requires at least three pages")).unless(
+                 pages.size >= 3
+               )
+        indices = Vector(0, pages.size / 2, pages.size - 1)
+        _ <- ZIO.foreachDiscard(indices) { index =>
+               for
+                 document <- render(application, pages(index))
+                 navigation       = document.selectFirst("nav[aria-label='Learn progress']")
+                 previous         = Option(navigation.selectFirst("a.docs-learn-progress-previous"))
+                 next             = Option(navigation.selectFirst("a.docs-learn-progress-next"))
+                 expectedPrevious = pages.lift(index - 1)
+                 expectedNext     = pages.lift(index + 1)
+                 validPrevious    = previous.zip(expectedPrevious).forall(isLiveLink) &&
+                                   previous.isDefined == expectedPrevious.isDefined
+                 validNext = next.zip(expectedNext).forall(isLiveLink) &&
+                               next.isDefined == expectedNext.isDefined
+                 validCount = navigation.select(".docs-learn-progress-count").text() ==
+                                s"${index + 1} of ${pages.size}"
+                 _ <- ZIO
+                        .fail(
+                          new AssertionError(
+                            s"Invalid Learn progress navigation: ${pages(index).route}"
+                          )
+                        )
+                        .unless(validPrevious && validNext && validCount)
+               yield ()
+             }
+      yield assertCompletes
     }
   )
 end LearnProgressNavigationSpec

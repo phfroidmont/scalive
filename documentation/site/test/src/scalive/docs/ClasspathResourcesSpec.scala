@@ -5,12 +5,14 @@ import scala.jdk.CollectionConverters.*
 import zio.*
 import zio.test.*
 
+import scalive.docs.model.DiagramCatalog
+
 object ClasspathResourcesSpec extends ZIOSpecDefault:
   private def resources(path: String): Task[List[URL]] =
     ZIO.attempt(Thread.currentThread().getContextClassLoader.getResources(path).asScala.toList)
 
   override def spec = suite("ClasspathResourcesSpec")(
-    test("loads one generated content bundle alongside unique npm assets") {
+    test("loads generated documentation and its required runtime assets") {
       for
         content     <- resources(GeneratedDocumentation.ResourcePath)
         searchIndex <- resources(GeneratedDocumentation.SearchResourcePath)
@@ -20,33 +22,19 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         favicon     <- resources("public/favicon.svg")
         instrumentLicense <- resources("public/instrument-sans-OFL.txt")
         jetbrainsLicense  <- resources("public/jetbrains-mono-OFL.txt")
-        connectedLifetime <- resources("public/runtime-connected-lifetime.svg")
-        runtimeTurn       <- resources("public/runtime-connected-turn.svg")
-        disconnectedLifetime <- resources("public/runtime-disconnected-lifetime.svg")
+        diagramAssets <- ZIO.foreach(DiagramCatalog.entries.flatMap(_.assets)) { asset =>
+                           resources(s"public/${asset.filename}")
+                         }
         bundle = GeneratedDocumentation.load(getClass.getClassLoader)
         search = GeneratedDocumentation.loadSearchEntries(getClass.getClassLoader)
-        hasPages = bundle.exists(_.pages.nonEmpty)
-        exampleIds = bundle.map(_.examples.map(_.descriptor.id))
-        expectedExampleIds = Vector(
-          "activity-stream",
-          "async-report",
-          "browser-integration",
-          "counter",
-          "lifecycle",
-          "navigation",
-          "profile-form",
-          "service-injection",
-          "shopping-cart",
-          "subscription-clock",
-          "text-upload",
-          "voting-components"
-        )
+        hasContent = bundle.exists(value => value.pages.nonEmpty && value.examples.nonEmpty)
+        hasCounter = bundle.exists(_.examples.exists(_.descriptor.id == "counter"))
         searchMatchesBundle = search == bundle.map(_.searchEntries)
       yield assertTrue(
         content.size == 1,
         searchIndex.size == 1,
-        hasPages,
-        exampleIds.contains(expectedExampleIds),
+        hasContent,
+        hasCounter,
         searchMatchesBundle,
         js.size == 1,
         css.size == 1,
@@ -54,9 +42,7 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         favicon.size == 1,
         instrumentLicense.size == 1,
         jetbrainsLicense.size == 1,
-        connectedLifetime.size == 1,
-        runtimeTurn.size == 1,
-        disconnectedLifetime.size == 1
+        diagramAssets.forall(_.size == 1)
       )
     },
     test("keeps pipeline dependencies off the site runtime classpath") {

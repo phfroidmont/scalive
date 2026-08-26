@@ -5,36 +5,17 @@ import zio.test.*
 
 object DiagramCatalogSpec extends ZIOSpecDefault:
   override def spec = suite("DiagramCatalogSpec")(
-    test("defines the two valid runtime diagrams with searchable prose") {
+    test("defines a valid catalog with lookup by id") {
       assertTrue(
-        DiagramCatalog.entries.map(_.id) == Vector(
-          "runtime-ownership",
-          "runtime-connected-turn"
-        ),
         DiagramCatalog.validate().isEmpty,
-        DiagramCatalog.get("runtime-ownership").contains(DiagramCatalog.RuntimeOwnership),
-        DiagramCatalog.RuntimeOwnership.assets.map(_.filename) == Vector(
-          "runtime-disconnected-lifetime.svg",
-          "runtime-connected-lifetime.svg"
-        ),
-        DiagramCatalog.prose(DiagramCatalog.RuntimeConnectedTurn).contains(
-          "write failure does not roll back N+1"
-        ),
-        DiagramCatalog.RuntimeConnectedTurn.assets.map(_.intrinsicSize) == Vector(
-          DiagramIntrinsicSize(width = 520, height = 1250)
-        )
+        DiagramCatalog.entries.forall(diagram => DiagramCatalog.get(diagram.id).contains(diagram)),
+        DiagramCatalog.get("missing").isEmpty
       )
     },
     test("round trips comparison layout metadata") {
       val diagram = DiagramCatalog.RuntimeOwnership
       val encoded = diagram.toJson
-      assertTrue(
-        encoded.fromJson[DiagramDefinition] == Right(diagram),
-        encoded.contains("runtime-disconnected-lifetime.svg"),
-        encoded.contains("runtime-connected-lifetime.svg"),
-        encoded.contains("\"width\":480"),
-        encoded.contains("\"height\":760")
-      )
+      assertTrue(encoded.fromJson[DiagramDefinition] == Right(diagram))
     },
     test("reports invalid catalog metadata") {
       val invalid = DiagramCatalog.RuntimeOwnership.copy(

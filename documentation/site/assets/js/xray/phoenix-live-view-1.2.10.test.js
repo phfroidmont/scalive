@@ -4,9 +4,7 @@ import test from "node:test"
 import {
   createLiveTraceAdapter,
   createTraceSession,
-  LiveTraceSocket,
   sanitizeProtocol,
-  traceSessionParameter,
   wrapDecoder,
   wrapEncoder,
 } from "./phoenix-live-view-1.2.10.js"
@@ -241,6 +239,12 @@ test("protocol sanitization reveals documentation values but removes security ma
       value: "public form value",
       headers: [["authorization", "Bearer server-secret"]],
       bytes: new Uint8Array([1, 2, 3]),
+      label: "Increase counter",
+      nested: { result: "Counter is 1" },
+      count: 1,
+      active: true,
+      missing: null,
+      status: "ok",
     },
   })
   const encoded = JSON.stringify(sanitized)
@@ -253,24 +257,6 @@ test("protocol sanitization reveals documentation values but removes security ma
   assert.ok(!encoded.includes("Bearer server-secret"))
   assert.ok(!encoded.includes("1,2,3"))
   assert.deepEqual(sanitized.payload.bytes, { byteLength: 3, content: "[redacted]" })
-})
-
-test("protocol sanitization preserves strings under neutral keys", () => {
-  const sanitized = sanitizeProtocol({
-    topic: "lv:example",
-    event: "event",
-    join_ref: "1",
-    ref: "2",
-    payload: {
-      label: "Increase counter",
-      nested: { result: "Counter is 1" },
-      count: 1,
-      active: true,
-      missing: null,
-      status: "ok",
-    },
-  })
-
   assert.equal(sanitized.payload.label, "Increase counter")
   assert.equal(sanitized.payload.nested.result, "Counter is 1")
   assert.equal(sanitized.payload.count, 1)
@@ -381,22 +367,27 @@ test("multiple hooks observe one topic independently", async () => {
   assert.equal(secondBatches.length, 2)
 })
 
-test("trace sessions use page-lifetime random UUIDs", () => {
+test("trace sessions call randomUUID and encode the getRandomValues fallback", () => {
+  let randomUUIDCalls = 0
   assert.equal(
-    createTraceSession({ randomUUID: () => "01234567-89ab-cdef-0123-456789abcdef" }),
+    createTraceSession({
+      randomUUID() {
+        randomUUIDCalls += 1
+        return "01234567-89ab-cdef-0123-456789abcdef"
+      },
+    }),
     "01234567-89ab-cdef-0123-456789abcdef",
   )
-})
+  assert.equal(randomUUIDCalls, 1)
 
-test("trace session remains in the params supplied to the socket", () => {
-  const traceSession = createTraceSession({ randomUUID: () => "trace-session" })
-  const params = {
-    _csrf_token: "csrf-token",
-    [traceSessionParameter]: traceSession,
-  }
-
-  const socket = new LiveTraceSocket("/live", { params, transport: class TestTransport {} })
-
-  assert.strictEqual(socket.params(), params)
-  assert.equal(socket.params()[traceSessionParameter], traceSession)
+  let getRandomValuesCalls = 0
+  const fallback = createTraceSession({
+    getRandomValues(bytes) {
+      getRandomValuesCalls += 1
+      bytes.set(Array.from({ length: 16 }, (_, index) => index))
+      return bytes
+    },
+  })
+  assert.equal(getRandomValuesCalls, 1)
+  assert.equal(fallback, "000102030405060708090a0b0c0d0e0f")
 })

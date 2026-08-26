@@ -1,6 +1,7 @@
 package scalive.docs.examples
 
 import org.jsoup.Jsoup
+import scala.jdk.CollectionConverters.*
 import zio.*
 import zio.test.*
 
@@ -57,7 +58,7 @@ object VotingComponentsExampleSpec extends ZIOSpecDefault:
         yield assertTrue(
           initial.select("[data-component-id=scala-vote]").text() == "scala-vote",
           initial.select("[data-component-id=zio-vote]").text() == "zio-vote",
-          initial.select("[data-vote-label]").eachText().toString == "[Votes, Votes]",
+          initial.select("[data-vote-label]").eachText().asScala.toVector == Vector("Votes", "Votes"),
           current.select("[data-vote-component=zio-vote] [data-vote-count]").text() == "0",
           current.select("[data-vote-status]").text() == "zio-vote reported 0 votes."
         )
@@ -73,7 +74,7 @@ object VotingComponentsExampleSpec extends ZIOSpecDefault:
           _       <- waitFor(harness, "No component has reported a vote.")
           current <- state(harness)
         yield assertTrue(
-          current.select("[data-vote-count]").eachText().toString == "[0, 0]",
+          current.select("[data-vote-count]").eachText().asScala.toVector == Vector("0", "0"),
           current.select("[data-vote-status]").text() == "No component has reported a vote."
         )
       }

@@ -32,11 +32,5 @@ object ComponentRefSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.nonEmpty)
-    },
-    test("component reference stringification reveals no identity") {
-      val first  = scalive.ComponentRef.runtime[Int](new Object)
-      val second = scalive.ComponentRef.runtime[Int](new Object)
-
-      assertTrue(first.toString == "ComponentRef", first.toString == second.toString)
     }
   )

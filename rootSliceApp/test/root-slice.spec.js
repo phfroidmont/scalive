@@ -1,13 +1,18 @@
 import { expect, test } from "@playwright/test"
 
-test("direct root mounts independently and handles an event", async ({ page }) => {
+function monitorPageErrors(page) {
   const errors = []
-  let websocketOpened = false
-
   page.on("pageerror", error => errors.push(error.message))
   page.on("console", message => {
     if (message.type() === "error") errors.push(message.text())
   })
+  return errors
+}
+
+test("direct root mounts independently and handles an event", async ({ page }) => {
+  const errors = monitorPageErrors(page)
+  let websocketOpened = false
+
   page.on("websocket", () => {
     websocketOpened = true
   })
@@ -29,13 +34,9 @@ test("direct root mounts independently and handles an event", async ({ page }) =
 })
 
 test("nested lifecycles join independently, handle events, and retire as a subtree", async ({ page }) => {
-  const errors = []
+  const errors = monitorPageErrors(page)
   const sent = []
 
-  page.on("pageerror", error => errors.push(error.message))
-  page.on("console", message => {
-    if (message.type() === "error") errors.push(message.text())
-  })
   page.on("websocket", socket => {
     socket.on("framesent", event => sent.push(event.payload))
   })
@@ -62,13 +63,9 @@ test("nested lifecycles join independently, handle events, and retire as a subtr
 })
 
 test("sticky nested lifecycle reattaches across compatible navigation", async ({ page }) => {
-  const errors = []
+  const errors = monitorPageErrors(page)
   const sent = []
 
-  page.on("pageerror", error => errors.push(error.message))
-  page.on("console", message => {
-    if (message.type() === "error") errors.push(message.text())
-  })
   page.on("websocket", socket => {
     socket.on("framesent", event => sent.push(event.payload))
   })
@@ -130,9 +127,9 @@ test("same-session navigation replaces the root over the existing websocket", as
   await expect(page.locator("#flash")).toContainText("Flash from A")
   await expect(page.locator("body#root-one")).toBeVisible()
   expect(documents).toEqual([])
-  expect(frames.some(frame => frame.includes("live_redirect"))).toBe(true)
-  expect(frames.some(frame => frame.includes("phx_leave"))).toBe(true)
-  expect(frames.some(frame => frame.includes("phx_join"))).toBe(true)
+  await expect.poll(() => frames.some(frame => frame.includes("live_redirect"))).toBe(true)
+  await expect.poll(() => frames.some(frame => frame.includes("phx_leave"))).toBe(true)
+  await expect.poll(() => frames.some(frame => frame.includes("phx_join"))).toBe(true)
 })
 
 test("incompatible navigation falls back to HTTP and preserves flash", async ({ page }) => {
@@ -203,12 +200,7 @@ test("full redirect performs HTTP navigation and transfers flash", async ({ page
 })
 
 test("hosted upload transfers and consumes file bytes", async ({ page }) => {
-  const errors = []
-
-  page.on("pageerror", error => errors.push(error.message))
-  page.on("console", message => {
-    if (message.type() === "error") errors.push(message.text())
-  })
+  const errors = monitorPageErrors(page)
 
   await page.goto("/upload")
   await expect(page.locator("#upload-connected")).toHaveText("true", { timeout: 15_000 })
@@ -228,12 +220,7 @@ test("hosted upload transfers and consumes file bytes", async ({ page }) => {
 })
 
 test("hosted upload rejects an unacceptable file without consuming it", async ({ page }) => {
-  const errors = []
-
-  page.on("pageerror", error => errors.push(error.message))
-  page.on("console", message => {
-    if (message.type() === "error") errors.push(message.text())
-  })
+  const errors = monitorPageErrors(page)
 
   await page.goto("/upload")
   await expect(page.locator("#upload-connected")).toHaveText("true", { timeout: 15_000 })

@@ -12,48 +12,36 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
       val result = bundle.flatMap(value => DocumentationApplication.from(value.copy(examples = Vector.empty)))
       assertTrue(result.left.exists(_.contains("missing example 'counter'")))
     },
-    test("rejects generated pages that reference an unknown example") {
-      val result = bundle.flatMap { value =>
-        val pages = value.pages.map { page =>
-          if page.route == "/examples/counter" then
-            page.copy(content = page.content :+ Block.ExampleRef("missing"))
-          else page
+    test("rejects unknown references and repeated examples") {
+      val cases: Vector[(String, String, Block, String)] = Vector(
+        ("unknown example", "/examples/counter", Block.ExampleRef("missing"), "unknown example 'missing'"),
+        ("unknown trace", "/learn", Block.TraceRef("missing"), "unknown trace 'missing'"),
+        (
+          "unknown diagram",
+          "/project/runtime-architecture",
+          Block.DiagramRef("missing"),
+          "unknown diagram 'missing'"
+        ),
+        (
+          "repeated example",
+          "/examples/counter",
+          Block.ExampleRef("counter"),
+          "example 'counter' appears more than once"
+        )
+      )
+
+      val failures = cases.flatMap { case (name, route, block, expected) =>
+        val result = bundle.flatMap { value =>
+          val pages = value.pages.map { page =>
+            if page.route == route then page.copy(content = page.content :+ block)
+            else page
+          }
+          DocumentationApplication.from(value.copy(pages = pages))
         }
-        DocumentationApplication.from(value.copy(pages = pages))
+        Option.unless(result.left.exists(_.contains(expected)))(s"$name: $result")
       }
-      assertTrue(result.left.exists(_.contains("unknown example 'missing'")))
-    },
-    test("rejects generated pages that reference an unknown trace") {
-      val result = bundle.flatMap { value =>
-        val pages = value.pages.map { page =>
-          if page.route == "/learn" then page.copy(content = page.content :+ Block.TraceRef("missing"))
-          else page
-        }
-        DocumentationApplication.from(value.copy(pages = pages))
-      }
-      assertTrue(result.left.exists(_.contains("unknown trace 'missing'")))
-    },
-    test("rejects generated pages that reference an unknown diagram") {
-      val result = bundle.flatMap { value =>
-        val pages = value.pages.map { page =>
-          if page.route == "/project/runtime-architecture" then
-            page.copy(content = page.content :+ Block.DiagramRef("missing"))
-          else page
-        }
-        DocumentationApplication.from(value.copy(pages = pages))
-      }
-      assertTrue(result.left.exists(_.contains("unknown diagram 'missing'")))
-    },
-    test("rejects repeated instances of one example on a page") {
-      val result = bundle.flatMap { value =>
-        val pages = value.pages.map { page =>
-          if page.route == "/examples/counter" then
-            page.copy(content = page.content :+ Block.ExampleRef("counter"))
-          else page
-        }
-        DocumentationApplication.from(value.copy(pages = pages))
-      }
-      assertTrue(result.left.exists(_.contains("example 'counter' appears more than once")))
+
+      assertTrue(failures.isEmpty)
     },
     test("rejects internal links to unknown fragments") {
       val result = bundle.flatMap { value =>

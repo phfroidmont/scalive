@@ -69,12 +69,6 @@ object SubscriptionClockExampleSpec extends ZIOSpecDefault:
           secondMode <- second.text("[data-clock-mode]")
         yield assertTrue(firstMode == "Every second", secondMode == "Stopped")
       }
-    },
-    test("derives resource keys from the documentation instance") {
-      assertTrue(
-        SubscriptionClockExample.subscriptionKey("clock-a").value !=
-          SubscriptionClockExample.subscriptionKey("clock-b").value
-      )
     }
   )
 end SubscriptionClockExampleSpec

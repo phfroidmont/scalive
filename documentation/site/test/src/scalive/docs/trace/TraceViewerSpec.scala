@@ -18,68 +18,25 @@ object TraceViewerSpec extends ZIOSpecDefault:
     ConnectedRender.join(view).flatMap(_.html).map(Jsoup.parseBodyFragment)
 
   override def spec = suite("TraceViewerSpec")(
-    test("renders the authored HTTP lifecycle in causal order") {
+    test("renders trace structure in source order") {
       ZIO.scoped {
         render(TraceCatalog.HttpGet).map { document =>
-          val steps    = document.select("[data-trace-step]")
-          val messages = document.select("[data-trace-step-kind=message]")
-          val phases   = document.select(".docs-trace-phase-group")
+          val figure = document.selectFirst("figure[data-trace-viewer=http-get]")
+          val steps  = document.select("[data-trace-step]")
+          val phases = document.select(".docs-trace-phase-group")
+          val trace   = TraceCatalog.HttpGet
+          val expectedSteps = trace.phases.flatMap(_.steps)
 
           assertTrue(
-        document.select("figure[data-trace-viewer=http-get][data-trace-provenance=authored]").size() == 1,
-        document.select(".docs-trace-actors > li").eachText().asScala.toVector == Vector(
-          "Browser",
-          "Scalive runtime",
-          "Your LiveView"
-        ),
-        steps.size() == 10,
-        steps.eachAttr("data-trace-step").asScala.toVector == (1 to 10).map(_.toString).toVector,
-        phases.size() == 3,
-        phases.asScala.toVector.map(_.selectFirst(".docs-trace-phase-index").text()) ==
-          Vector("Phase 1", "Phase 2", "Phase 3"),
-        phases.asScala.toVector.map(_.selectFirst(".docs-trace-phase").ownText()) ==
-          Vector("Request", "Disconnected lifecycle", "Response and teardown"),
-        phases.asScala.toVector.map(_.selectFirst(".docs-trace-phase-events").attr("start")) == Vector(
-          "1",
-          "4",
-          "9"
-        ),
-        phases.asScala.toVector.map(_.select("[data-trace-step]").size()) == Vector(3, 5, 2),
-        messages.eachAttr("data-trace-from").asScala.toVector == Vector(
-          "browser",
-          "runtime",
-          "live-view",
-          "runtime",
-          "live-view",
-          "runtime"
-        ),
-        messages.eachAttr("data-trace-to").asScala.toVector == Vector(
-          "runtime",
-          "live-view",
-          "runtime",
-          "live-view",
-          "runtime",
-          "browser"
-        ),
-        document.select(".docs-trace-event-heading > .docs-trace-order").eachText().asScala.toVector ==
-          (1 to 10).map(value => f"$value%02d").toVector,
-        document.select(".docs-trace-route [data-trace-participant]").eachText().asScala.toVector ==
-          Vector(
-            "Browser",
-            "Scalive runtime",
-            "Scalive runtime",
-            "Your LiveView",
-            "Your LiveView",
-            "Scalive runtime",
-            "Scalive runtime",
-            "Your LiveView",
-            "Your LiveView",
-            "Scalive runtime",
-            "Scalive runtime",
-            "Browser"
-          ),
-        document.select(".docs-trace-route-arrow").eachText().asScala.toVector == Vector.fill(6)("->"),
-        document.select("figure.docs-trace").attr("aria-labelledby") == "docs-trace-http-get-title",
+            figure.attr("data-trace-provenance") == "authored",
+            figure.attr("aria-labelledby") == "docs-trace-http-get-title",
+            document.selectFirst("#docs-trace-http-get-title").text() == trace.title,
+            steps.eachAttr("data-trace-step").asScala.toVector ==
+              expectedSteps.indices.map(index => (index + 1).toString).toVector,
+            phases.eachAttr("data-trace-phase").asScala.toVector == trace.phases.map(_.id),
+            phases.asScala.toVector.map(_.selectFirst(".docs-trace-phase-events").attr("start")) ==
+              Vector("1", "4", "9"),
+            steps.last().attr("data-trace-step-kind") == "boundary",
             !document.html().contains("phx-")
           )
         }

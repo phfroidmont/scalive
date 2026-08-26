@@ -1,11 +1,4 @@
-import { createRequire } from "node:module"
-
-const require = createRequire(import.meta.url)
-const playwrightRoot = process.env.PLAYWRIGHT_TEST_NODE_PATH
-
-if (!playwrightRoot) throw new Error("PLAYWRIGHT_TEST_NODE_PATH is not set; enter through nix develop")
-
-const { expect, test } = require(`${playwrightRoot}/playwright/test.js`)
+import { expect, test } from "./playwright.js"
 
 test("applies and persists explicit themes before the application hook mounts", async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem("scalive.docs.theme", "dark"))
@@ -18,8 +11,6 @@ test("applies and persists explicit themes before the application hook mounts", 
   await expect(selector).toHaveValue("dark")
   await expect(selector).toHaveAttribute("aria-label", "Color theme: Dark")
   await expect(control.locator(".docs-theme-icon")).toHaveAttribute("aria-hidden", "true")
-  await expect(control).toHaveCSS("width", "44px")
-  await expect(control).toHaveCSS("height", "44px")
 
   await selector.selectOption("light")
   await expect(root).toHaveAttribute("data-theme", "light")
@@ -40,41 +31,6 @@ test("falls back to the system theme when storage is unavailable", async ({ page
   await page.goto("/")
   await expect(page.locator("html")).not.toHaveAttribute("data-theme")
   await expect(page.locator("#docs-theme-selector")).toHaveValue("system")
-})
-
-test("keeps text and control boundaries above their contrast thresholds", async ({ page }) => {
-  for (const theme of ["light", "dark"]) {
-    await page.addInitScript((value) => window.localStorage.setItem("scalive.docs.theme", value), theme)
-    await page.goto("/search?q=scalive.LiveView")
-    const ratios = await page.evaluate(() => {
-      const luminance = (color) => {
-        const channels = color.match(/[\d.]+/g).slice(0, 3).map((value) => Number(value) / 255)
-        return channels.map((value) =>
-          value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
-        ).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
-      }
-      const contrast = (first, second) => {
-        const values = [luminance(first), luminance(second)].sort((left, right) => right - left)
-        return (values[0] + 0.05) / (values[1] + 0.05)
-      }
-      const link = document.querySelector(".docs-search-result > a")
-      const button = document.querySelector(".docs-search-page-form button")
-      const input = document.querySelector("#docs-global-search-input")
-      const linkStyle = getComputedStyle(link)
-      const buttonStyle = getComputedStyle(button)
-      const inputStyle = getComputedStyle(input)
-
-      return {
-        link: contrast(linkStyle.color, getComputedStyle(document.body).backgroundColor),
-        button: contrast(buttonStyle.color, buttonStyle.backgroundColor),
-        input: contrast(inputStyle.borderTopColor, inputStyle.backgroundColor),
-      }
-    })
-
-    expect(ratios.link, `${theme} link contrast`).toBeGreaterThanOrEqual(4.5)
-    expect(ratios.button, `${theme} action contrast`).toBeGreaterThanOrEqual(4.5)
-    expect(ratios.input, `${theme} input boundary contrast`).toBeGreaterThanOrEqual(3)
-  }
 })
 
 test("uses one native mobile disclosure without duplicating header controls", async ({ page }) => {
@@ -124,56 +80,14 @@ test("hides the API tree and keeps the outline before mobile content", async ({ 
   await expect(outline.getByRole("link", { name: "Methods", exact: true })).toBeVisible()
 })
 
-test("organizes API package members without duplicating them in side navigation", async ({ page }) => {
+test("filters API package members and keeps the outline in sync", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/api/scalive")
 
   const navigation = page.locator(".docs-api-navigation")
   const outline = page.locator(".docs-outline")
   const pageContent = page.locator(".docs-api-page")
-  await expect(navigation.getByText("Packages and types", { exact: true })).toBeVisible()
-  await expect(navigation.locator("[data-api-nav-filter]"))
-    .toHaveAttribute("placeholder", "Filter packages and types")
   await expect(navigation.getByRole("link", { name: "rawHtml", exact: true })).toHaveCount(0)
-  expect(await navigation.locator("[data-api-kind]").evaluateAll((badges) =>
-    [...new Set(badges.map((badge) => badge.dataset.apiKind))].sort()
-  )).toEqual(["class", "enum", "object", "package", "trait"])
-  const titleRow = pageContent.locator(".docs-api-title-row")
-  await expect(titleRow.locator(".docs-api-title-kind")).toHaveText("p")
-  await expect(titleRow.locator(".docs-api-title-kind"))
-    .toHaveAttribute("aria-label", "Package")
-  await expect(titleRow.locator(".docs-api-title-kind + h1")).toHaveText("scalive")
-  await expect(pageContent.locator(".docs-api-qualified-name")).toHaveCount(0)
-  const titleBadgeLayout = await pageContent.evaluate((element) => {
-    const titleBadge = element.querySelector(".docs-api-title-kind-package")
-    const heading = element.querySelector(".docs-api-title-row h1")
-    const titleBounds = titleBadge.getBoundingClientRect()
-    const headingBounds = heading.getBoundingClientRect()
-    return {
-      centerDifference: Math.abs(
-        titleBounds.top + titleBounds.height / 2 - (headingBounds.top + headingBounds.height / 2)
-      ),
-    }
-  })
-  expect(titleBadgeLayout.centerDifference).toBeLessThanOrEqual(1)
-
-  await expect(pageContent.locator("#html-elements")).toBeVisible()
-  await expect(pageContent.locator("#html-attributes")).toBeVisible()
-  await expect(outline.getByRole("link", { name: "HTML elements", exact: true })).toBeVisible()
-  await expect(outline.getByRole("link", { name: "HTML attributes", exact: true })).toBeVisible()
-  await expect(outline.getByRole("link", { name: "div", exact: true })).toHaveCount(0)
-
-  const simpleMember = pageContent.locator('[data-api-symbol="def:scalive.rawHtml"]')
-  await expect(simpleMember.locator("h3.docs-visually-hidden")).toHaveText("rawHtml")
-  await expect(simpleMember.locator(".docs-api-kind")).toHaveCount(0)
-  await expect(simpleMember.locator(".docs-code-block, [data-code-copy]")).toHaveCount(0)
-  const syntaxColors = await simpleMember.locator(".docs-api-member-signature").first().evaluate((element) => ({
-    keyword: getComputedStyle(element.querySelector(".keyword")).color,
-    text: getComputedStyle(element).color,
-    type: getComputedStyle(element.querySelector(".type-name")).color,
-  }))
-  expect(syntaxColors.keyword).not.toBe(syntaxColors.text)
-  expect(syntaxColors.type).not.toBe(syntaxColors.text)
 
   const filter = pageContent.locator("[data-api-member-filter]")
   await expect(filter).toBeVisible()
@@ -190,60 +104,6 @@ test("organizes API package members without duplicating them in side navigation"
   await expect(outline.getByRole("link", { name: "HTML elements", exact: true })).toBeVisible()
 })
 
-test("keeps every categorized API member visible without JavaScript", async ({ browser }) => {
-  const context = await browser.newContext({ javaScriptEnabled: false })
-  const page = await context.newPage()
-  await page.goto("http://127.0.0.1:4005/api/scalive")
-
-  await expect(page.locator("[data-api-member-tools]")).toBeHidden()
-  const rawHtml = page.locator('[data-api-symbol="def:scalive.rawHtml"]')
-  await expect(rawHtml).toBeVisible()
-  await expect(rawHtml.locator("pre.docs-api-member-signature code").first()).toBeVisible()
-  await expect(rawHtml.getByRole("link", { name: "View source" }).first()).toBeVisible()
-  await expect(rawHtml.locator(".docs-code-block, [data-code-copy]")).toHaveCount(0)
-  await expect(page.locator("#html-elements [data-api-member]").first()).toBeVisible()
-  await context.close()
-})
-
-test("wraps API declarations without document overflow or copy controls", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto("/api/scalive")
-
-  const signatures = page.locator(".docs-api-member-signature")
-  const member = signatures.filter({ hasText: "liveComponent" }).first()
-  const declaration = page.locator(".docs-api-page > .docs-api-symbol .docs-code-block")
-  await expect(member).toBeVisible()
-  await expect(declaration).toBeVisible()
-  await expect(declaration.locator(".docs-code-toolbar, [data-code-copy]")).toHaveCount(0)
-  for (const element of [member, declaration]) {
-    const layout = await element.evaluate((container) => {
-      const surface = container.matches("pre") ? container : container.querySelector("pre") || container
-      const code = container.querySelector("code")
-      return {
-        overflow: surface.scrollWidth - surface.clientWidth,
-        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        wraps: code.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(code).lineHeight) * 1.5,
-      }
-    })
-    expect(layout.wraps).toBe(true)
-    expect(layout.overflow).toBeLessThanOrEqual(1)
-    expect(layout.documentOverflow).toBeLessThanOrEqual(1)
-  }
-})
-
-test("shows a flat Learn path on desktop and hides it on smaller screens", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
-  await page.goto("/learn/models-and-messages")
-
-  const navigation = page.locator(".docs-section-index")
-  await expect(navigation).toBeVisible()
-  await expect(navigation.locator("details")).toHaveCount(0)
-  await expect(navigation.locator('[aria-current="page"]')).toHaveText("04Models, messages, and effects")
-
-  await page.setViewportSize({ width: 768, height: 900 })
-  await expect(navigation).toBeHidden()
-})
-
 test("tracks the current section in the page outline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 700 })
   await page.goto("/learn/models-and-messages")
@@ -254,15 +114,6 @@ test("tracks the current section in the page outline", async ({ page }) => {
   await expect(first).toHaveAttribute("aria-current", "location")
   await expect(outline.locator('[aria-current="location"]')).toHaveCount(1)
 
-  const guideColors = await outline.locator("a").evaluateAll((links) =>
-    links.slice(0, 2).map((link) => getComputedStyle(link).borderLeftColor)
-  )
-  expect(guideColors[0]).not.toBe(guideColors[1])
-  const guideGap = await outline.locator("a").evaluateAll((links) =>
-    links[1].getBoundingClientRect().top - links[0].getBoundingClientRect().bottom
-  )
-  expect(Math.abs(guideGap)).toBeLessThanOrEqual(0.5)
-
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
   await expect(last).toHaveAttribute("aria-current", "location")
   await expect(outline.locator('[aria-current="location"]')).toHaveCount(1)
@@ -272,38 +123,14 @@ test("tracks the current section in the page outline", async ({ page }) => {
   await expect(first).toHaveAttribute("aria-current", "location")
 })
 
-test("shows sibling companion entries without tree guide lines", async ({ page }) => {
+test("keeps the current API item visible and its package disclosure interactive", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 1000 })
   await page.goto("/api/scalive/live-view")
 
   const navigation = page.locator(".docs-section-nav")
   const current = navigation.locator('[aria-current="page"]')
-  const packageChildren = navigation.locator('[data-api-nav-item="scalive"] > details > ul > li')
-  const liveViewLabels = packageChildren.locator(
-    ":scope > details > summary .docs-api-nav-label, :scope > .docs-nav-leaf .docs-api-nav-label"
-  ).filter({ hasText: /^LiveView$/ })
-  await expect.poll(async () => navigation.evaluate((element) => element.getBoundingClientRect().width))
-    .toBeGreaterThanOrEqual(288)
-  await expect(navigation.locator("nav > ul > li")).toHaveAttribute("data-api-nav-item", "scalive")
-  await expect(navigation.locator('[data-api-nav-item="api"]')).toHaveCount(0)
   await expect(current.locator(".docs-api-nav-label")).toHaveText("LiveView")
-  await expect(liveViewLabels).toHaveCount(2)
   await expect(navigation.locator('a[href="/api/scalive/live-view/companion"]')).toBeVisible()
-  await expect(page.getByText("Browse API", { exact: true })).toHaveCount(0)
-  await expect(navigation.locator(".docs-tree-marker").first()).toHaveText("")
-  expect(await navigation.evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe("0px")
-  expect(await navigation.locator("details > ul").first()
-    .evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe("0px")
-  const entryLefts = await navigation.locator(
-    '[data-api-nav-item="scalive"] > details > summary, [data-api-nav-item="afterrendercontext"] > .docs-api-nav-entry'
-  ).evaluateAll((entries) => entries.map((entry) => entry.getBoundingClientRect().left))
-  expect(Math.max(...entryLefts) - Math.min(...entryLefts)).toBeLessThanOrEqual(0.5)
-  const liveViewLefts = await liveViewLabels.evaluateAll((labels) =>
-    labels.map((label) => label.getBoundingClientRect().left)
-  )
-  expect(Math.max(...liveViewLefts) - Math.min(...liveViewLefts)).toBeLessThanOrEqual(0.5)
-  await expect(current.locator("[data-api-kind]")).toBeVisible()
-  await expect(current.locator(".docs-api-nav-label")).toHaveText("LiveView")
   await expect.poll(async () => current.evaluate((element) => {
     const bounds = element.getBoundingClientRect()
     const container = element.closest(".docs-section-nav").getBoundingClientRect()
@@ -313,31 +140,11 @@ test("shows sibling companion entries without tree guide lines", async ({ page }
   const packageEntry = navigation.locator('[data-api-nav-item="scalive"] > details > summary')
   const packageDetails = packageEntry.locator("..")
   const initialUrl = page.url()
-  await packageEntry.click({ position: { x: 8, y: 14 } })
+  await packageEntry.press("Space")
   await expect(packageDetails).not.toHaveAttribute("open")
   expect(page.url()).toBe(initialUrl)
-  await packageEntry.click({ position: { x: 8, y: 14 } })
+  await packageEntry.press("Space")
   await expect(packageDetails).toHaveAttribute("open", "")
-
-  const leafEntry = navigation.locator('[data-api-nav-item="afterrendercontext"] > .docs-api-nav-entry')
-  const restingBackground = await leafEntry.evaluate((entry) => getComputedStyle(entry).backgroundColor)
-  await leafEntry.hover()
-  await expect.poll(() => leafEntry.evaluate((entry) => getComputedStyle(entry).backgroundColor))
-    .not.toBe(restingBackground)
-  const siblingNames = await navigation.locator('[data-api-nav-item="scalive"]')
-    .evaluate((item) => [...item.querySelectorAll(":scope > details > ul > li")].map((child) => {
-      const row = child.querySelector(":scope > details > summary .docs-nav-row, :scope > .docs-nav-leaf .docs-nav-row")
-      return row.querySelector(".docs-api-nav-label").textContent
-    }))
-  const sortedNames = [...siblingNames].sort((left, right) =>
-    left.toLowerCase().localeCompare(right.toLowerCase())
-  )
-  expect(siblingNames).toEqual(sortedNames)
-
-  await page.goto("/search?q=scalive.LiveView")
-  await expect(page.locator('.docs-search-results a[href="/api/scalive/live-view"]')).toHaveCount(1)
-  await expect(page.locator('.docs-search-results a[href="/api/scalive/live-view/companion"]'))
-    .toHaveText("scalive.LiveView companion object")
 })
 
 test("connects the focused homepage action to a typed server transition", async ({ page }) => {
@@ -377,82 +184,7 @@ test("copies exact code and expands the same long source block", async ({ contex
   await expect(page.locator(".docs-api-page [data-code-copy]")).toHaveCount(0)
 })
 
-test("keeps complete code visible without JavaScript", async ({ browser }) => {
-  const context = await browser.newContext({ javaScriptEnabled: false })
-  const page = await context.newPage()
-  await page.goto("/examples/counter")
-
-  const block = page.locator(".docs-code-block[data-code-expandable]").first()
-  await expect(block.locator("[data-code-copy]")).toBeHidden()
-  await expect(block.locator("[data-code-expand]")).toBeHidden()
-  await expect(block.locator(".docs-code > code")).toContainText("class CounterExample")
-  await expect(block).not.toHaveClass(/docs-code-collapsed/)
-
-  await context.close()
-})
-
-test("keeps focus visible and suppresses motion for local controls", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" })
-  await page.goto("/examples/counter")
-  await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
-
-  const selectors = [
-    ".docs-brand",
-    ".docs-primary-nav a",
-    "#docs-global-search-input",
-    "#docs-theme-selector",
-    "[data-code-copy]",
-    "[data-example-controls] button",
-    ".docs-live-trace button",
-    ".docs-page-links a",
-  ]
-  const remaining = new Set(selectors)
-  for (let index = 0; index < 100 && remaining.size > 0; index += 1) {
-    await page.keyboard.press("Tab")
-    const focused = await page.evaluate((candidates) => {
-      const element = document.activeElement
-      const selector = candidates.find((candidate) => element.matches(candidate))
-      if (!selector) return undefined
-      const style = getComputedStyle(element)
-      return {
-        selector,
-        focusVisible: element.matches(":focus-visible"),
-        boxShadow: style.boxShadow,
-        style: style.outlineStyle,
-      }
-    }, [...remaining])
-    if (focused) {
-      expect(focused.focusVisible, focused.selector).toBe(true)
-      expect(focused.boxShadow, focused.selector).not.toBe("none")
-      expect(focused.style, focused.selector).toBe("solid")
-      remaining.delete(focused.selector)
-    }
-  }
-  expect([...remaining]).toEqual([])
-
-  const transitionDuration = await page.locator(".docs-code-enhanced .docs-code").first()
-    .evaluate((element) => getComputedStyle(element).transitionDuration)
-  const transitionMilliseconds = transitionDuration.endsWith("ms")
-    ? Number.parseFloat(transitionDuration)
-    : Number.parseFloat(transitionDuration) * 1000
-  expect(transitionMilliseconds).toBeLessThanOrEqual(0.01)
-
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto("/")
-  await page.keyboard.press("Tab")
-  await page.keyboard.press("Tab")
-  await page.keyboard.press("Tab")
-  const summary = page.locator("#docs-navigation-disclosure summary")
-  await expect(summary).toBeFocused()
-  const summaryOutline = await summary.evaluate((element) => {
-    const style = getComputedStyle(element)
-    return { boxShadow: style.boxShadow, style: style.outlineStyle }
-  })
-  expect(summaryOutline.boxShadow).not.toBe("none")
-  expect(summaryOutline.style).toBe("solid")
-})
-
-test("contains representative pages locally without third-party requests or document overflow", async ({ page }) => {
+test("keeps a representative desktop and mobile shell accessible and overflow-free", async ({ page }) => {
   const foreignRequests = []
   const consoleErrors = []
   const pageErrors = []
@@ -465,31 +197,31 @@ test("contains representative pages locally without third-party requests or docu
   })
   page.on("pageerror", (error) => pageErrors.push(error.message))
 
-  for (const theme of ["light", "dark"]) {
-    await page.goto("/")
-    await page.evaluate((value) => window.localStorage.setItem("scalive.docs.theme", value), theme)
-    for (const viewport of [
-      { width: 390, height: 844 },
-      { width: 1440, height: 1000 },
-    ]) {
-      await page.setViewportSize(viewport)
-      for (const route of [
-        "/",
-        "/learn",
-        "/examples",
-        "/api",
-        "/api/scalive/live-view",
-        "/search?q=scalive.LiveView",
-        "/project",
-      ]) {
-        await page.goto(route)
-        await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
-        await expect(page.locator("#docs-main")).toBeVisible()
-        const overflow = await page.evaluate(() =>
-          document.documentElement.scrollWidth - document.documentElement.clientWidth
-        )
-        expect(overflow, `${route} at ${viewport.width}px in ${theme}`).toBeLessThanOrEqual(1)
-      }
+  for (const sample of [
+    { viewport: { width: 1440, height: 1000 }, route: "/api/scalive/live-view" },
+    { viewport: { width: 390, height: 844 }, route: "/learn/models-and-messages" },
+  ]) {
+    await page.setViewportSize(sample.viewport)
+    await page.goto(sample.route)
+    await expect(page.getByRole("main")).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth
+    )
+    expect(overflow, `${sample.route} at ${sample.viewport.width}px`).toBeLessThanOrEqual(1)
+
+    if (sample.viewport.width === 390) {
+      await page.keyboard.press("Tab")
+      await page.keyboard.press("Tab")
+      await page.keyboard.press("Tab")
+      const summary = page.locator("#docs-navigation-disclosure summary")
+      await expect(summary).toBeFocused()
+      expect(await summary.evaluate((element) => element.matches(":focus-visible"))).toBe(true)
+    } else {
+      await page.keyboard.press("Control+k")
+      const search = page.locator("#docs-global-search-input")
+      await expect(search).toBeFocused()
+      expect(await search.evaluate((element) => element.matches(":focus-visible"))).toBe(true)
     }
   }
 

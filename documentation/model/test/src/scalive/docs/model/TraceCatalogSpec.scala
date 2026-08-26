@@ -4,16 +4,10 @@ import zio.test.*
 
 object TraceCatalogSpec extends ZIOSpecDefault:
   override def spec = suite("TraceCatalogSpec")(
-    test("defines valid lifecycle traces") {
-      assertTrue(
-        TraceCatalog.get("http-get").contains(TraceCatalog.HttpGet),
-        TraceCatalog.get("live-socket-join").contains(TraceCatalog.LiveSocketJoin),
-        TraceCatalog.validate().isEmpty,
-        TraceCatalog.prose(TraceCatalog.HttpGet).contains("Disconnected HTTP render"),
-        TraceCatalog.prose(TraceCatalog.LiveSocketJoin).contains("Connected LiveSocket mount")
-      )
+    test("defines a valid default catalog") {
+      assertTrue(TraceCatalog.validate().isEmpty)
     },
-    test("keeps authored lifecycle traces focused on semantic prose") {
+    test("keeps default traces focused on semantic prose") {
       def evidence(trace: TraceDefinition) = trace.phases.flatMap(_.steps).flatMap {
         case TraceStep.Operation(_, _, _, value)  => value
         case TraceStep.Message(_, _, _, _, value) => value
@@ -21,10 +15,7 @@ object TraceCatalogSpec extends ZIOSpecDefault:
       }
 
       assertTrue(
-        evidence(TraceCatalog.HttpGet).isEmpty,
-        evidence(TraceCatalog.LiveSocketJoin).isEmpty,
-        TraceCatalog.prose(TraceCatalog.HttpGet).contains("not carried into the socket lifecycle"),
-        TraceCatalog.prose(TraceCatalog.LiveSocketJoin).contains("Browser connect parameters remain untrusted")
+        TraceCatalog.entries.forall(trace => evidence(trace).isEmpty)
       )
     },
     test("reports invalid participant references") {

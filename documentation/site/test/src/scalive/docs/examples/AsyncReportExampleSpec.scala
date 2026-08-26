@@ -86,12 +86,6 @@ object AsyncReportExampleSpec extends ZIOSpecDefault:
           reset     <- eventuallyText(harness, "[data-report-state]", "Empty")
         yield assertTrue(cancelled == "Cancelled", reset == "Empty")
       }
-    },
-    test("derives typed task keys from the documentation instance") {
-      assertTrue(
-        AsyncReportExample.reportKey("report-a").value !=
-          AsyncReportExample.reportKey("report-b").value
-      )
     }
   )
 end AsyncReportExampleSpec

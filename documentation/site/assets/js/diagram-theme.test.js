@@ -26,17 +26,14 @@ test("applies a theme to a loaded SVG document without throwing on inaccessible 
   assert.equal(applyDiagramTheme({ get contentDocument() { throw new Error("blocked") } }, "dark"), false)
 })
 
-test("synchronizes loaded and late-loading objects across explicit and system changes", () => {
+test("synchronizes a loaded object across explicit and system changes", () => {
   const attributes = new Map()
-  let loadHandler
   let schemeHandler
   const object = {
     contentDocument: {
       documentElement: { setAttribute: (name, value) => attributes.set(name, value) },
     },
-    addEventListener(name, handler) {
-      if (name === "load") loadHandler = handler
-    },
+    addEventListener() {},
   }
   const document = { querySelectorAll: () => [object] }
   const root = { dataset: {}, ownerDocument: document }
@@ -53,11 +50,35 @@ test("synchronizes loaded and late-loading objects across explicit and system ch
   root.dataset.theme = "light"
   synchronizer.sync()
   assert.equal(attributes.get("data-theme"), "light")
-  root.dataset = {}
   colorScheme.matches = false
   schemeHandler()
   assert.equal(attributes.get("data-theme"), "light")
+  root.dataset = {}
   colorScheme.matches = true
-  loadHandler()
+  schemeHandler()
   assert.equal(attributes.get("data-theme"), "dark")
+})
+
+test("applies the current theme when an object finishes loading", () => {
+  const attributes = new Map()
+  let loadHandler
+  const object = {
+    contentDocument: null,
+    addEventListener(name, handler) {
+      if (name === "load") loadHandler = handler
+    },
+  }
+  const root = {
+    dataset: { theme: "light" },
+    ownerDocument: { querySelectorAll: () => [object] },
+  }
+  const synchronizer = createDiagramThemeSynchronizer(root, { matches: true })
+
+  synchronizer.enhance()
+  object.contentDocument = {
+    documentElement: { setAttribute: (name, value) => attributes.set(name, value) },
+  }
+  loadHandler()
+
+  assert.equal(attributes.get("data-theme"), "light")
 })

@@ -1,11 +1,4 @@
-import { createRequire } from "node:module"
-
-const require = createRequire(import.meta.url)
-const playwrightRoot = process.env.PLAYWRIGHT_TEST_NODE_PATH
-
-if (!playwrightRoot) throw new Error("PLAYWRIGHT_TEST_NODE_PATH is not set; enter through nix develop")
-
-const { expect, test } = require(`${playwrightRoot}/playwright/test.js`)
+import { expect, test } from "./playwright.js"
 
 test("traces a shopping cart message, derived model, and keyed row", async ({ page }) => {
   await page.goto("/examples/shopping-cart")

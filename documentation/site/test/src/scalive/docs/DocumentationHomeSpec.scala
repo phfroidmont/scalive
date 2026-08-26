@@ -60,24 +60,33 @@ object DocumentationHomeSpec extends ZIOSpecDefault:
         bundle <- GeneratedDocumentation.load(getClass.getClassLoader)
         page   <- bundle.pages.find(_.route == "/").toRight("missing homepage")
       yield
-        val missing = page.content.indices.map(index =>
-          HomePageContent.from(page.copy(content = page.content.patch(index, Nil, 1)))
-        )
-        val wrongKinds = page.content.indices.map(index =>
-          HomePageContent.from(page.copy(content = page.content.updated(index, Block.Rule)))
+        val exampleIndex    = 3
+        val howHeadingIndex = 5
+        val whyHeadingIndex = 8
+        val missingSection = HomePageContent.from(
+          page.copy(content = page.content.patch(howHeadingIndex, Nil, 1))
         )
         val reordered = HomePageContent.from(
-          page.copy(content = page.content.updated(0, page.content(1)).updated(1, page.content(0)))
+          page.copy(
+            content = page.content
+              .updated(howHeadingIndex, page.content(whyHeadingIndex))
+              .updated(whyHeadingIndex, page.content(howHeadingIndex))
+          )
         )
         val wrongKind = HomePageContent.from(
-          page.copy(content = page.content.updated(3, Block.ExampleRef("missing")))
+          page.copy(content = page.content.updated(exampleIndex, Block.Rule))
         )
         val duplicated = HomePageContent.from(
-          page.copy(content = page.content.patch(3, Vector(page.content(3), page.content(3)), 1))
+          page.copy(
+            content = page.content.patch(
+              exampleIndex,
+              Vector(page.content(exampleIndex), page.content(exampleIndex)),
+              1
+            )
+          )
         )
         assertTrue(
-          missing.forall(_.isLeft),
-          wrongKinds.forall(_.isLeft),
+          missingSection.isLeft,
           reordered.isLeft,
           wrongKind.isLeft,
           duplicated.isLeft

@@ -2,6 +2,7 @@ package scalive.testing
 
 import java.time.Duration
 
+import org.jsoup.Jsoup
 import zio.*
 import zio.http.*
 import zio.test.*
@@ -335,12 +336,14 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
 
       val routes = ZioHttp.routes(scalive.Live.router(scalive.live(view)), config)
 
-      for page <- DisconnectedRender.run(routes, Request.get(URL.root))
+      for
+        page     <- DisconnectedRender.run(routes, Request.get(URL.root))
+        document = Jsoup.parse(page.html)
       yield assertTrue(
         page.response.status == Status.Ok,
-        page.html.contains("id=\"items-1\""),
-        page.html.contains("id=\"items-2\""),
-        page.html.contains("id=\"items-3\"")
+        Option(document.getElementById("items-1")).nonEmpty,
+        Option(document.getElementById("items-2")).nonEmpty,
+        Option(document.getElementById("items-3")).nonEmpty
       )
     }
   )

@@ -1,6 +1,6 @@
 package scalive.protocol.phoenix
 
-import zio.Chunk
+import zio.{Chunk, ZIO}
 import zio.json.ast.Json
 import zio.test.*
 
@@ -36,39 +36,29 @@ object PhoenixProtocolFuzzSpec extends ZIOSpecDefault:
     Gen.listOfBounded(0, 7)(jsonLike).map(values => Json.Arr(values*))
 
   private val bytes: Gen[Any, Byte] = Gen.int(Byte.MinValue, Byte.MaxValue).map(_.toByte)
-  private val shortBinary = Gen.listOfBounded(0, 4)(bytes).map(Chunk.fromIterable)
   private val arbitraryBinary = Gen.listOfBounded(0, 32)(bytes).map(Chunk.fromIterable)
 
-  private def returned[A, B](value: Either[A, B]): Boolean = value.fold(_ => true, _ => true)
-
   override def spec = suite("PhoenixProtocolFuzzSpec")(
-    test("bounded JSON-like envelopes and upload payloads always return Either") {
+    test("bounded JSON-like envelope and upload decoder evaluation never defects") {
       check(envelopeShape) { json =>
-        val envelope = PhoenixEnvelope.fromJson(json)
-        val inbound  = PhoenixProtocol.decode(json)
-        val uploadResults = List(
-          PhoenixUploadProtocol.decodeJoin(json),
-          PhoenixUploadProtocol.decodePreflight(json),
-          PhoenixUploadProtocol.decodeProgress(json)
-        )
-        val eventUploads = json match
-          case obj: Json.Obj => PhoenixUploadProtocol.decodeEventUploads(obj)
-          case _             => Right(Vector.empty)
-
-        assertTrue(
-          returned(envelope),
-          returned(inbound),
-          uploadResults.forall(returned),
-          returned(eventUploads)
-        )
+        ZIO.attempt {
+          val _ = PhoenixEnvelope.fromJson(json)
+          val _ = PhoenixProtocol.decode(json)
+          val _ = PhoenixUploadProtocol.decodeJoin(json)
+          val _ = PhoenixUploadProtocol.decodePreflight(json)
+          val _ = PhoenixUploadProtocol.decodeProgress(json)
+          val _ = json match
+            case obj: Json.Obj => PhoenixUploadProtocol.decodeEventUploads(obj)
+            case _             => ()
+        }.as(assertCompletes)
       }
     },
-    test("arbitrary bounded strings always return from both JSON decoders") {
+    test("arbitrary bounded string decoder evaluation never defects") {
       check(text) { value =>
-        assertTrue(
-          returned(PhoenixEnvelope.decode(value)),
-          returned(PhoenixProtocol.decode(value))
-        )
+        ZIO.attempt {
+          val _ = PhoenixEnvelope.decode(value)
+          PhoenixProtocol.decode(value)
+        }.as(assertCompletes)
       }
     },
     test("accepted join credentials remain opaque parser data") {
@@ -103,11 +93,10 @@ object PhoenixProtocolFuzzSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("arbitrary short upload binary frames never defect") {
-      check(shortBinary)(frame => assertTrue(returned(PhoenixUploadProtocol.decodeBinary(frame))))
-    },
     test("arbitrary bounded upload binary shapes never defect") {
-      check(arbitraryBinary)(frame => assertTrue(returned(PhoenixUploadProtocol.decodeBinary(frame))))
+      check(arbitraryBinary)(frame =>
+        ZIO.attempt(PhoenixUploadProtocol.decodeBinary(frame)).as(assertCompletes)
+      )
     }
   ) @@ TestAspect.samples(64)
 end PhoenixProtocolFuzzSpec

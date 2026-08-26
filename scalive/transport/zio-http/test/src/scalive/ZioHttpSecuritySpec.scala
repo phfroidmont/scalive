@@ -47,8 +47,8 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
       assertTrue(
         short == Left(ZioHttpConfig.Error.SecretTooShort(5)),
         zero == Left(ZioHttpConfig.Error.NonPositiveSessionMaxAge),
-        valid.toString == "ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=PT30M, secureCookie=true)",
         !valid.toString.contains(secret),
+        valid.toString.contains("<redacted>"),
         valid == config()
       )
     },

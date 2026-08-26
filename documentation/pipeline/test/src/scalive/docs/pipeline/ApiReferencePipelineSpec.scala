@@ -88,40 +88,15 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       "DomDefsGenerator.mill"
     )
   )
+  private lazy val result  = ApiReferencePipeline.generate(config)
+  private lazy val symbols = result.toOption.toVector.flatMap(_.symbols)
 
   override def spec = suite("ApiReferencePipelineSpec")(
-    test("extracts the package-convention boundary and import scalive exposures") {
-      val result = ApiReferencePipeline.generate(config)
-      val symbols = result.toOption.toVector.flatMap(_.symbols)
-
-      val div = symbols.find(_.qualifiedName == "scalive.div")
-      val liveUpload = symbols.find(_.qualifiedName == "scalive.LiveUpload")
-      val liveView = symbols.find(_.qualifiedName == "scalive.LiveView")
-      val liveViewTrait = symbols.find(symbol =>
-        symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Trait
-      )
-      val liveViewObject = symbols.find(symbol =>
-        symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Object
-      )
-      val handleMessage = symbols.find(_.qualifiedName == "scalive.LiveView.handleMessage")
-      val hooks         = symbols.find(_.qualifiedName == "scalive.LiveView.hooks")
-      val routedMount   = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.mount")
-      val routedEventless = symbols.find(
-        _.qualifiedName == "scalive.LiveView.Routed.Eventless"
-      )
-      val liveViewDocumentation = liveViewTrait.toVector.flatMap(_.signatures)
-        .flatMap(_.documentation)
-      val liveViewLinks = liveViewDocumentation.flatMap(_.body).flatMap {
-        case Block.Paragraph(content) => content.collect { case link: Inline.Link => link }
-        case _                        => Vector.empty
-      }
-      val exportedNames = Set("scalive.LiveStream", "scalive.LiveUpload")
-      val liveComponent = symbols.find(symbol =>
-        symbol.qualifiedName == "scalive.liveComponent" && symbol.kind == ApiSymbolKind.Def
-      )
+    test("extracts only the public API boundary") {
       val packages = symbols.filter(_.kind == ApiSymbolKind.Package).map(symbol =>
         symbol.qualifiedName -> symbol.ownerId
       ).toMap
+
       assertTrue(
         result.isRight,
         symbols.exists(_.qualifiedName == "scalive.LiveView"),
@@ -135,51 +110,6 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         packages.get("scalive.codecs").contains(Some("package:scalive")),
         packages.get("scalive.testing").contains(Some("package:scalive")),
         packageSignaturesHideSyntheticNames(symbols),
-        div.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Inherited)),
-        div.exists(_.signatures.forall(_.source == ApiSource.GeneratedDom)),
-        div.exists(_.summary.nonEmpty),
-        div.flatMap(_.signatures.headOption).exists(signature =>
-          result.toOption.exists(_.metadata.sourceLink(signature.source).label ==
-            "Generated from Scala DOM Types 18.1.0")
-        ),
-        liveView.flatMap(_.signatures.headOption).exists(signature =>
-          result.toOption.exists(_.metadata.sourceLink(signature.source).url.contains(
-            "/blob/0123456789abcdef0123456789abcdef01234567/scalive/api/src/scalive/"
-          ))
-        ),
-        liveUpload.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported)),
-        liveUpload.exists(symbol => symbol.route == "/api/scalive" && symbol.fragment.nonEmpty),
-        liveViewTrait.exists(_.route == "/api/scalive/live-view"),
-        liveViewObject.exists(_.route == "/api/scalive/live-view/companion"),
-        handleMessage.exists(_.route == "/api/scalive/live-view"),
-        exportedNames.forall(name =>
-          symbols.find(_.qualifiedName == name)
-            .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))
-        ),
-        liveComponent.exists(_.signatures.size == 7),
-        liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
-        hasSignature(symbols, "scalive.dropTarget", ApiSymbolKind.Extension,
-          "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"),
-        signaturesHideSyntheticParents(symbols),
-        hooks.exists(_.signatures.exists(_.signature == "def hooks: LiveHooks[Msg, Model]")),
-        routedEventless.exists(_.signatures.exists(_.signature ==
-          "trait Eventless[Model, Params] extends LiveView.Routed[Nothing, Model, Params]"
-        )),
-        liveViewDocumentation.exists(_.body.count(_.isInstanceOf[Block.Paragraph]) == 2),
-        liveViewDocumentation.exists(_.tags.map(_.subject).contains(Some("Msg"))),
-        liveViewLinks.exists(_.target == LinkTarget.Internal(
-          "/api/scalive/html-element",
-          None
-        )),
-        handleMessage.exists(_.signatures.flatMap(_.documentation).exists(documentation =>
-          documentation.body.count(_.isInstanceOf[Block.Paragraph]) == 2 &&
-            documentation.tags.map(_.name) == Vector("param", "param", "return")
-        )),
-        routedMount.exists(symbol =>
-          symbol.signatures.size == 1 && symbol.signatures.forall(_.documentation.nonEmpty)
-        ),
-        symbols.filter(_.qualifiedName == "scalive.LiveView").forall(!_.summary.contains("[[")),
-        symbols.forall(_.summary.nonEmpty),
         !symbols.exists(_.qualifiedName.startsWith("scalive.upload.")),
         !symbols.exists(_.qualifiedName.startsWith("scalive.streams.")),
         !symbols.exists(_.qualifiedName.startsWith("scalive.socket.")),
@@ -188,12 +118,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
             symbol.qualifiedName == "scalive.codecs" ||
             symbol.qualifiedName == "scalive.testing" ||
             symbol.qualifiedName.startsWith("scalive.")
-        )
-      )
-    },
-    test("filters protected, private, and synthetic implementation members") {
-      val symbols = ApiReferencePipeline.generate(config).toOption.toVector.flatMap(_.symbols)
-      assertTrue(
+        ),
         !symbols.exists(_.qualifiedName.contains("boolAsPresenceHtmlAttr")),
         !symbols.exists(_.qualifiedName.contains("scopedPrivateMember")),
         !symbols.exists(_.name.contains("$default$")),
@@ -204,13 +129,82 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         !symbols.exists(_.qualifiedName == "scalive.PhxUpdate.value")
       )
     },
-    test("emits deterministic IDs, source ranges, routes, and signatures") {
-      val first = ApiReferencePipeline.generate(config)
-      val second = ApiReferencePipeline.generate(config)
-      val symbols = first.toOption.toVector.flatMap(_.symbols)
+    test("transforms documentation, signatures, and exposures") {
+      val div        = symbols.find(_.qualifiedName == "scalive.div")
+      val liveUpload = symbols.find(_.qualifiedName == "scalive.LiveUpload")
+      val liveViewTrait = symbols.find(symbol =>
+        symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Trait
+      )
+      val handleMessage = symbols.find(_.qualifiedName == "scalive.LiveView.handleMessage")
+      val hooks         = symbols.find(_.qualifiedName == "scalive.LiveView.hooks")
+      val routedMount   = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.mount")
+      val routedEventless = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.Eventless")
+      val documentation = liveViewTrait.toVector.flatMap(_.signatures).flatMap(_.documentation)
+      val links = documentation.flatMap(_.body).flatMap {
+        case Block.Paragraph(content) => content.collect { case link: Inline.Link => link }
+        case _                        => Vector.empty
+      }
 
       assertTrue(
-        first == second,
+        div.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Inherited)),
+        div.exists(_.signatures.forall(_.source == ApiSource.GeneratedDom)),
+        Set("scalive.LiveStream", "scalive.LiveUpload").forall(name =>
+          symbols.find(_.qualifiedName == name)
+            .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))
+        ),
+        liveUpload.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported)),
+        symbols.find(symbol =>
+          symbol.qualifiedName == "scalive.liveComponent" && symbol.kind == ApiSymbolKind.Def
+        ).exists(_.signatures.size == 7),
+        liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
+        hasSignature(symbols, "scalive.dropTarget", ApiSymbolKind.Extension,
+          "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"),
+        signaturesHideSyntheticParents(symbols),
+        hooks.exists(_.signatures.exists(_.signature == "def hooks: LiveHooks[Msg, Model]")),
+        routedEventless.exists(_.signatures.exists(_.signature ==
+          "trait Eventless[Model, Params] extends LiveView.Routed[Nothing, Model, Params]"
+        )),
+        documentation.exists(_.body.count(_.isInstanceOf[Block.Paragraph]) == 2),
+        documentation.exists(_.tags.map(_.subject).contains(Some("Msg"))),
+        links.exists(_.target == LinkTarget.Internal("/api/scalive/html-element", None)),
+        handleMessage.exists(_.signatures.flatMap(_.documentation).exists(documentation =>
+          documentation.body.count(_.isInstanceOf[Block.Paragraph]) == 2 &&
+            documentation.tags.map(_.name) == Vector("param", "param", "return")
+        )),
+        routedMount.exists(symbol =>
+          symbol.signatures.size == 1 && symbol.signatures.forall(_.documentation.nonEmpty)
+        ),
+        symbols.filter(_.qualifiedName == "scalive.LiveView").forall(!_.summary.contains("[[")),
+        symbols.forall(_.summary.nonEmpty)
+      )
+    },
+    test("emits valid IDs, routes, sources, and highlighted signatures") {
+      val div = symbols.find(_.qualifiedName == "scalive.div")
+      val liveView = symbols.find(_.qualifiedName == "scalive.LiveView")
+      val liveViewTrait = symbols.find(symbol =>
+        symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Trait
+      )
+      val liveViewObject = symbols.find(symbol =>
+        symbol.qualifiedName == "scalive.LiveView" && symbol.kind == ApiSymbolKind.Object
+      )
+      val liveUpload    = symbols.find(_.qualifiedName == "scalive.LiveUpload")
+      val handleMessage = symbols.find(_.qualifiedName == "scalive.LiveView.handleMessage")
+
+      assertTrue(
+        div.exists(_.summary.nonEmpty),
+        div.flatMap(_.signatures.headOption).exists(signature =>
+          result.toOption.exists(_.metadata.sourceLink(signature.source).label ==
+            "Generated from Scala DOM Types 18.1.0")
+        ),
+        liveView.flatMap(_.signatures.headOption).exists(signature =>
+          result.toOption.exists(_.metadata.sourceLink(signature.source).url.contains(
+            "/blob/0123456789abcdef0123456789abcdef01234567/scalive/api/src/scalive/"
+          ))
+        ),
+        liveUpload.exists(symbol => symbol.route == "/api/scalive" && symbol.fragment.nonEmpty),
+        liveViewTrait.exists(_.route == "/api/scalive/live-view"),
+        liveViewObject.exists(_.route == "/api/scalive/live-view/companion"),
+        handleMessage.exists(_.route == "/api/scalive/live-view"),
         symbolIdsAreUnique(symbols),
         signatureIdsAreUnique(symbols),
         signaturesAreHighlighted(symbols),
@@ -218,6 +212,9 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         routesAreValid(symbols),
         repositorySourcesAreValid(symbols)
       )
+    },
+    test("generates the public API deterministically") {
+      assertTrue(result == ApiReferencePipeline.generate(config))
     }
   ) @@ TestAspect.sequential
 end ApiReferencePipelineSpec

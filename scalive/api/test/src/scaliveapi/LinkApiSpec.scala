@@ -27,36 +27,48 @@ object LinkApiSpec extends ZIOSpecDefault:
       assertTrue(errors.isEmpty)
     },
     test("keeps typed and unsafe signal-backed destinations distinct") {
-      val safeErrors = scala.compiletime.testing.typeCheckErrors("""
+      val pushNavigateAcceptsRaw = scala.compiletime.testing.typeChecks("""
         import scalive.*
-
-        def invalid(raw: Signal[String]) = (
-          link.pushNavigate(raw),
-          link.replaceNavigate(raw),
-          link.pushPatch(raw),
-          link.replacePatch(raw)
-        )
+        def invalid(raw: Signal[String]) = link.pushNavigate(raw)
       """)
-      val unsafeErrors = scala.compiletime.testing.typeCheckErrors("""
+      val replaceNavigateAcceptsRaw = scala.compiletime.testing.typeChecks("""
         import scalive.*
-
-        def invalid(location: Signal[LiveLocation]) = (
-          link.pushNavigateUnsafe(location),
-          link.replaceNavigateUnsafe(location),
-          link.pushPatchUnsafe(location),
-          link.replacePatchUnsafe(location)
-        )
+        def invalid(raw: Signal[String]) = link.replaceNavigate(raw)
+      """)
+      val pushPatchAcceptsRaw = scala.compiletime.testing.typeChecks("""
+        import scalive.*
+        def invalid(raw: Signal[String]) = link.pushPatch(raw)
+      """)
+      val replacePatchAcceptsRaw = scala.compiletime.testing.typeChecks("""
+        import scalive.*
+        def invalid(raw: Signal[String]) = link.replacePatch(raw)
+      """)
+      val pushNavigateUnsafeAcceptsLocation = scala.compiletime.testing.typeChecks("""
+        import scalive.*
+        def invalid(location: Signal[LiveLocation]) = link.pushNavigateUnsafe(location)
+      """)
+      val replaceNavigateUnsafeAcceptsLocation = scala.compiletime.testing.typeChecks("""
+        import scalive.*
+        def invalid(location: Signal[LiveLocation]) = link.replaceNavigateUnsafe(location)
+      """)
+      val pushPatchUnsafeAcceptsLocation = scala.compiletime.testing.typeChecks("""
+        import scalive.*
+        def invalid(location: Signal[LiveLocation]) = link.pushPatchUnsafe(location)
+      """)
+      val replacePatchUnsafeAcceptsLocation = scala.compiletime.testing.typeChecks("""
+        import scalive.*
+        def invalid(location: Signal[LiveLocation]) = link.replacePatchUnsafe(location)
       """)
 
       assertTrue(
-        safeErrors.exists(_.lineContent.contains("link.pushNavigate(raw)")),
-        safeErrors.exists(_.lineContent.contains("link.replaceNavigate(raw)")),
-        safeErrors.exists(_.lineContent.contains("link.pushPatch(raw)")),
-        safeErrors.exists(_.lineContent.contains("link.replacePatch(raw)")),
-        unsafeErrors.exists(_.lineContent.contains("link.pushNavigateUnsafe(location)")),
-        unsafeErrors.exists(_.lineContent.contains("link.replaceNavigateUnsafe(location)")),
-        unsafeErrors.exists(_.lineContent.contains("link.pushPatchUnsafe(location)")),
-        unsafeErrors.exists(_.lineContent.contains("link.replacePatchUnsafe(location)"))
+        !pushNavigateAcceptsRaw,
+        !replaceNavigateAcceptsRaw,
+        !pushPatchAcceptsRaw,
+        !replacePatchAcceptsRaw,
+        !pushNavigateUnsafeAcceptsLocation,
+        !replaceNavigateUnsafeAcceptsLocation,
+        !pushPatchUnsafeAcceptsLocation,
+        !replacePatchUnsafeAcceptsLocation
       )
     }
   )

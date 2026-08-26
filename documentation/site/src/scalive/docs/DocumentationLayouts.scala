@@ -69,7 +69,25 @@ final private[docs] class DocumentationLayout(
   private val ariaAutocomplete = htmlAttr("aria-autocomplete", StringAsIsEncoder)
   private val role             = htmlAttr("role", StringAsIsEncoder)
   private val disclosureOpen   = htmlAttr("open", scalive.codecs.BooleanAsAttrPresenceEncoder)
-  private val apiOwnerKinds    = application.bundle.apiReference.symbols
+  private val svgTag           = HtmlTag("svg")
+  private val pathTag          = HtmlTag("path")
+  private val viewBox          = htmlAttr("viewBox", StringAsIsEncoder)
+  private val pathData         = htmlAttr("d", StringAsIsEncoder)
+  private val focusable        = htmlAttr("focusable", StringAsIsEncoder)
+  private val repositoryUrl    =
+    application.bundle.apiReference.metadata.repositoryUrl.stripSuffix("/")
+  private val revision       = application.bundle.apiReference.metadata.revision
+  private val githubMarkPath =
+    "M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504" +
+      ".5.101.682-.217.682-.483 0-.237-.009-1.027-.014-1.865-2.782.605-3.369-1.343-3.369-1.343" +
+      "-.454-1.157-1.11-1.465-1.11-1.465-.908-.62.069-.608.069-.608 1.003.071 1.531 1.03 1.531 1.03" +
+      ".892 1.53 2.341 1.088 2.91.832.091-.647.35-1.088.636-1.338-2.221-.253-4.555-1.111-4.555-4.943" +
+      " 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.269.098-2.644 0 0 .84-.269 2.75 1.025" +
+      "A9.578 9.578 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025" +
+      ".546 1.375.203 2.391.1 2.644.64.699 1.028 1.592 1.028 2.683 0 3.842-2.337 4.687-4.566 4.935" +
+      ".359.309.678.919.678 1.852 0 1.337-.012 2.415-.012 2.744 0 .268.18.589.688.489" +
+      "A10.02 10.02 0 0 0 22 12.017C22 6.484 17.523 2 12 2Z"
+  private val apiOwnerKinds = application.bundle.apiReference.symbols
     .filter(_.fragment.isEmpty)
     .groupBy(_.route)
     .view.mapValues(_.map(_.kind).distinct.sortBy(apiKindRank)).toMap
@@ -155,7 +173,11 @@ final private[docs] class DocumentationLayout(
       footerTag(
         cls := "docs-footer",
         "Scalive documentation for revision ",
-        code(application.bundle.apiReference.metadata.revision.take(12)),
+        a(
+          href       := s"$repositoryUrl/commit/$revision",
+          aria.label := s"View revision ${revision.take(12)} on GitHub",
+          code(revision.take(12))
+        ),
         "."
       )
     )
@@ -213,6 +235,7 @@ final private[docs] class DocumentationLayout(
               cls := "docs-header-actions",
               searchForm,
               connectionIndicator,
+              repositoryLink,
               themeSelector
             )
           )
@@ -538,6 +561,22 @@ final private[docs] class DocumentationLayout(
       span(dataAttr("connection-label") := "connected", "Live"),
       span(dataAttr("connection-label") := "reconnecting", "Reconnecting"),
       span(dataAttr("connection-label") := "offline", "Offline")
+    )
+
+  private def repositoryLink[Msg]: HtmlElement[Msg] =
+    a(
+      cls        := "docs-repository-link",
+      href       := repositoryUrl,
+      title      := "Scalive on GitHub",
+      aria.label := "Scalive on GitHub",
+      svgTag(
+        cls         := "docs-repository-icon",
+        viewBox     := "0 0 24 24",
+        aria.hidden := true,
+        focusable   := "false",
+        pathTag(pathData := githubMarkPath)
+      ),
+      span(cls := "docs-repository-label", "GitHub")
     )
 
   private def themeSelector[Msg]: HtmlElement[Msg] =

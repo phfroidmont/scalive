@@ -1296,6 +1296,7 @@ details[open] > summary .docs-disclosure-marker,
   font-size: 0.9rem;
   font-weight: 700;
   text-decoration: none;
+  transition: filter 140ms ease, transform 140ms ease;
 }
 
 .docs-home-actions a::after {
@@ -1308,6 +1309,12 @@ details[open] > summary .docs-disclosure-marker,
   border-color: var(--docs-action-bg);
   background: var(--docs-action-bg);
   color: var(--docs-action-text);
+}
+
+.docs-home-actions a:first-of-type:hover {
+  color: var(--docs-action-text);
+  filter: brightness(1.08);
+  transform: translateY(-0.1rem);
 }
 
 .docs-home-actions a:hover {
@@ -2023,6 +2030,32 @@ details[open] > summary .docs-disclosure-marker,
   border-radius: var(--docs-radius);
   background: var(--docs-surface);
   color: var(--docs-text);
+}
+
+.docs-repository-link {
+  width: 2.75rem;
+  height: 2.75rem;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--docs-muted);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+
+.docs-repository-link:hover {
+  color: var(--docs-text);
+}
+
+.docs-repository-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: currentColor;
+}
+
+.docs-repository-label {
+  display: none;
 }
 
 .docs-theme-control:hover {
@@ -6302,6 +6335,14 @@ details[open] > summary .docs-disclosure-marker,
   font-size: 0.9rem;
 }
 
+.docs-footer a {
+  color: inherit;
+}
+
+.docs-footer a:hover {
+  color: var(--docs-text);
+}
+
 @media (min-width: 48rem) and (max-width: 71.999rem) {
   .docs-shell-api {
     grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
@@ -6481,6 +6522,25 @@ details[open] > summary .docs-disclosure-marker,
   .docs-header-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .docs-repository-link {
+    width: 100%;
+    height: auto;
+    min-height: 2.75rem;
+    padding: 0.55rem 0.7rem;
+    justify-content: flex-start;
+    gap: 0.55rem;
+    border: 1px solid var(--docs-control-border);
+    border-radius: var(--docs-radius);
+    background: var(--docs-surface);
+    color: var(--docs-text);
+  }
+
+  .docs-repository-label {
+    display: inline;
+    font-size: 0.82rem;
+    font-weight: 700;
   }
 
   .docs-global-search,

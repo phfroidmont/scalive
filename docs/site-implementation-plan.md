@@ -11,7 +11,7 @@ model, a build-time pipeline, and the Scalive site application.
 
 **Core stack:** Scala 3.8.3, Mill, Scalive, ZIO, Laika 1.3.2, TASTy Query 1.8.0,
 TASTy Inspector 3.8.3, ZIO JSON, Tailwind 4, minimal JavaScript hooks, Phoenix
-LiveView client 1.1.28, and Playwright.
+LiveView client 1.2.10, and Playwright.
 
 **Development commands:**
 

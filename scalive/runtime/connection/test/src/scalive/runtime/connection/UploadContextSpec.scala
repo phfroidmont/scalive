@@ -203,7 +203,7 @@ object UploadContextSpec extends ZIOSpecDefault:
       }
     },
     test(
-      "root and component uploads with the same name are isolated and component removal retires its owner"
+      "root and component uploads with the same name are isolated and component dormancy retains its upload"
     ) {
       ZIO.scoped {
         val uploadDef = definition("shared")
@@ -251,9 +251,8 @@ object UploadContextSpec extends ZIOSpecDefault:
           current    <- connection.inspectModel
         yield assertTrue(
           roots.size == 1,
-          components.size == 2,
+          components.size == 1,
           roots.head != components.head,
-          components.head != components(1),
           current._2.ref == roots.head
         )
         end for

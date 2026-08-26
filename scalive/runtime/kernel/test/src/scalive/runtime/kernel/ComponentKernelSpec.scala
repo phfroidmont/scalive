@@ -596,6 +596,42 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("components remain dormant until destruction and revive with their state") {
+      ZIO.scoped {
+        for
+          events <- ZIO.succeed(ConcurrentLinkedQueue[String]())
+          seen   <- Ref.make(Vector.empty[Int])
+          definition = componentDefinition(events)
+          instance   = component(definition, "revived")
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map(_ % 2 == 0).when(div(instance.render(1))))
+                       )
+                     )
+          kernel  <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before  <- kernel.inspect
+          mounted  = before.components.values.head
+          token    = mounted.ref.asInstanceOf[Object]
+          _       <- kernel.submitComponent(mounted.id, 1)
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          dormant <- kernel.inspect
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          revived <- kernel.inspect
+          _       <- kernel.destroyComponents(Vector(token))
+          retained <- kernel.inspect
+          _        <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          _        <- kernel.destroyComponents(Vector(token))
+          destroyed <- kernel.inspect
+        yield assertTrue(
+          dormant.components.values.isEmpty,
+          dormant.components.allValues.map(_.id) == Vector(mounted.id),
+          revived.components.values.head.id == mounted.id,
+          revived.components.values.head.model == 2,
+          retained.components.values.head.id == mounted.id,
+          destroyed.components.allValues.isEmpty
+        )
+      }
+    },
     test("non-stabilizing component update journals fail validation") {
       ZIO.scoped {
         val events     = ConcurrentLinkedQueue[String]()
@@ -830,7 +866,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         }
       }.map(results => assertTrue(results.forall(_.isSuccess)))
     },
-    test("retirement attempts every later component cleanup after first and middle defects") {
+    test("acknowledged retirement attempts every cleanup after first and middle defects") {
       ZIO.scoped {
         val events     = ConcurrentLinkedQueue[String]()
         val definition = componentDefinition(events)
@@ -860,22 +896,23 @@ object ComponentKernelSpec extends ZIOSpecDefault:
           kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), environment)
           before <- kernel.inspect
           ids = before.components.values.map(component =>
-                  component.key.applicationId -> component.id
-                ).toMap
+                   component.key.applicationId -> component.id
+                 ).toMap
+          tokens = before.components.values.map(_.ref.asInstanceOf[Object])
           _      <- failing.set(Set(ids("retire-first"), ids("retire-middle")))
-          failed <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          _      <- kernel.destroyComponents(tokens)
           state  <- kernel.awaitTermination
           closed <- attempts.get
         yield assertTrue(
-          failed.left.exists {
-            case SessionRejection.SessionFailed(
+          state match
+            case SessionState.Crashed(
+                  _,
                   SessionFailure.StageFailed(SessionStage.Retirement, details)
                 ) =>
               details.contains(ids("retire-first").value.toString) &&
                 details.contains(ids("retire-middle").value.toString)
-            case _ => false
-          },
-          state.isInstanceOf[SessionState.Crashed[?, ?]],
+            case _ => false,
           closed == Vector(ids("retire-first"), ids("retire-middle"), ids("retire-last"))
         )
       }

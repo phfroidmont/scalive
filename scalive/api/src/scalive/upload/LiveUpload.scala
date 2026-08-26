@@ -111,6 +111,14 @@ object LiveUploadAccept:
       value.count(_ == '/') == 1 && !value.startsWith("/") && !value.endsWith("/")
 end LiveUploadAccept
 
+/** Determines which entries count toward an upload's maximum entry capacity. */
+enum LiveUploadMaxEntriesMode:
+  /** Only currently selected entries count. Consumed entries free capacity. */
+  case Selected
+
+  /** Consumed entries continue to count until the upload is allowed again. */
+  case Total
+
 /** A validation or destination failure associated with an upload or one of its entries.
   *
   * Errors derived from browser metadata or external uploader payloads may contain untrusted data.
@@ -134,6 +142,9 @@ enum LiveUploadError:
 
   /** Structured metadata returned for an external upload failure. */
   case External(meta: Json.Obj)
+
+  /** An application-defined metadata validation error code. */
+  case Custom(reason: String)
 
   /** An error code not recognized by this Scalive version. */
   case Unknown(code: String)
@@ -175,6 +186,7 @@ object LiveUploadError:
       case LiveUploadError.ExternalClientFailure => Json.Str("external_client_failure")
       case LiveUploadError.WriterFailure(reason) => Json.Str(reason)
       case LiveUploadError.External(meta)        => meta
+      case LiveUploadError.Custom(reason)        => Json.Str(reason)
       case LiveUploadError.Unknown(code)         => Json.Str(code)
 end LiveUploadError
 
@@ -304,6 +316,9 @@ final class LiveUpload[Result] private[scalive] (
   /** Returns the configured accepted-entry limit from [[definition]]. */
   def maxEntries: Int = definition.maxEntries
 
+  /** Returns how consumed entries affect the configured limit. */
+  def maxEntriesMode: LiveUploadMaxEntriesMode = definition.maxEntriesMode
+
   /** Returns the per-entry byte limit from [[definition]]. */
   def maxFileSize: Long = definition.maxFileSize
 
@@ -318,6 +333,7 @@ final class LiveUpload[Result] private[scalive] (
 
   /** Returns whether bytes are sent directly from the browser to an external destination. */
   def external: Boolean = definition.destination.external
+end LiveUpload
 
 /** A completed destination result supplied to a consume callback.
   *
@@ -414,6 +430,13 @@ object LiveUploadOperationError:
   /** Batch consumption was requested while at least one valid entry had not completed. */
   final case class EntriesInProgress(name: String)
       extends LiveUploadOperationError(s"Upload $name has entries in progress")
+
+/** A controlled, protocol-facing failure from a hosted upload writer.
+  *
+  * Use a stable, non-sensitive `reason`. Other writer failures are reported as `writer_error` so
+  * exception details are never exposed to the browser.
+  */
+final case class LiveUploadWriterError(reason: String) extends Exception(reason)
 
 /** Stores chunks received by the Scalive server and produces a typed completed result.
   *
@@ -665,6 +688,11 @@ end LiveUploadDestination
   *   whether valid entries start uploading without a form submit, defaulting to `false`
   * @param progress
   *   optional callback for accepted browser progress reports, defaulting to none
+  * @param maxEntriesMode
+  *   whether only selected entries or all entries seen during this allowed lifecycle count toward
+  *   `maxEntries`, defaulting to [[LiveUploadMaxEntriesMode.Selected]]
+  * @param validator
+  *   optional validation of untrusted browser metadata; returning a reason rejects the entry
   */
 final class LiveUploadDef[Result] private (
   val name: String,
@@ -675,6 +703,8 @@ final class LiveUploadDef[Result] private (
   val chunkTimeout: Duration,
   val autoUpload: Boolean,
   val progress: Option[LiveUploadProgress[Result]],
+  val maxEntriesMode: LiveUploadMaxEntriesMode,
+  val validator: Option[UploadClientMetadata => Option[String]],
   private[scalive] val destination: LiveUploadDestination[Result]):
   private[scalive] def withName(value: String): LiveUploadDef[Result] =
     new LiveUploadDef(
@@ -686,6 +716,8 @@ final class LiveUploadDef[Result] private (
       chunkTimeout,
       autoUpload,
       progress,
+      maxEntriesMode,
+      validator,
       destination
     )
 
@@ -708,7 +740,9 @@ object LiveUploadDef:
     chunkSize: Int = 64_000,
     chunkTimeout: Duration = 10.seconds,
     autoUpload: Boolean = false,
-    progress: Option[LiveUploadProgress[Chunk[Byte]]] = None
+    progress: Option[LiveUploadProgress[Chunk[Byte]]] = None,
+    maxEntriesMode: LiveUploadMaxEntriesMode = LiveUploadMaxEntriesMode.Selected,
+    validator: Option[UploadClientMetadata => Option[String]] = None
   ): LiveUploadDef[Chunk[Byte]] =
     validated(
       name,
@@ -719,7 +753,9 @@ object LiveUploadDef:
       chunkSize,
       chunkTimeout,
       autoUpload,
-      progress
+      progress,
+      maxEntriesMode,
+      validator
     ).fold(throw _, identity)
 
   /** Defines an upload whose bytes pass through the Scalive server to `writer`.
@@ -739,7 +775,9 @@ object LiveUploadDef:
     chunkSize: Int = 64_000,
     chunkTimeout: Duration = 10.seconds,
     autoUpload: Boolean = false,
-    progress: Option[LiveUploadProgress[Result]] = None
+    progress: Option[LiveUploadProgress[Result]] = None,
+    maxEntriesMode: LiveUploadMaxEntriesMode = LiveUploadMaxEntriesMode.Selected,
+    validator: Option[UploadClientMetadata => Option[String]] = None
   ): LiveUploadDef[Result] =
     validated(
       name,
@@ -750,7 +788,9 @@ object LiveUploadDef:
       chunkSize,
       chunkTimeout,
       autoUpload,
-      progress
+      progress,
+      maxEntriesMode,
+      validator
     ).fold(throw _, identity)
 
   /** Defines an upload transferred directly from the browser through `uploader`.
@@ -772,7 +812,9 @@ object LiveUploadDef:
     chunkSize: Int = 64_000,
     chunkTimeout: Duration = 10.seconds,
     autoUpload: Boolean = false,
-    progress: Option[LiveUploadProgress[Result]] = None
+    progress: Option[LiveUploadProgress[Result]] = None,
+    maxEntriesMode: LiveUploadMaxEntriesMode = LiveUploadMaxEntriesMode.Selected,
+    validator: Option[UploadClientMetadata => Option[String]] = None
   ): LiveUploadDef[Result] =
     validated(
       name,
@@ -783,7 +825,9 @@ object LiveUploadDef:
       chunkSize,
       chunkTimeout,
       autoUpload,
-      progress
+      progress,
+      maxEntriesMode,
+      validator
     ).fold(throw _, identity)
 
   /** Validates and creates a definition for an already selected destination.
@@ -802,7 +846,9 @@ object LiveUploadDef:
     chunkSize: Int = 64_000,
     chunkTimeout: Duration = 10.seconds,
     autoUpload: Boolean = false,
-    progress: Option[LiveUploadProgress[Result]] = None
+    progress: Option[LiveUploadProgress[Result]] = None,
+    maxEntriesMode: LiveUploadMaxEntriesMode = LiveUploadMaxEntriesMode.Selected,
+    validator: Option[UploadClientMetadata => Option[String]] = None
   ): Either[IllegalArgumentException, LiveUploadDef[Result]] =
     val error =
       if name.isEmpty then Some("Upload name must not be empty")
@@ -827,6 +873,8 @@ object LiveUploadDef:
             chunkTimeout,
             autoUpload,
             progress,
+            maxEntriesMode,
+            validator,
             destination
           )
         )
@@ -850,9 +898,11 @@ object api:
     LiveUploadEntryStatus,
     LiveUploadError,
     LiveUploadExternalUploader,
+    LiveUploadMaxEntriesMode,
     LiveUploadOperationError,
     LiveUploadProgress,
     LiveUploadWriter,
+    LiveUploadWriterError,
     UploadClientMetadata,
     UploadEntryRef,
     UploadRef

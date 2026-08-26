@@ -1,7 +1,7 @@
 import { Serializer, Socket } from "phoenix"
 
 export const traceSessionParameter = "_scalive_trace_session"
-export const expectedLiveViewVersion = "1.1.28"
+export const expectedLiveViewVersion = "1.2.10"
 
 const redacted = "[redacted]"
 const sensitiveFragments = [
@@ -140,7 +140,7 @@ export function createLiveTraceAdapter() {
   const sequences = new Map()
   const pending = new Map()
   const observers = new Map()
-  let inboundMessage = null
+  const inboundMessages = []
   let flushScheduled = false
 
   function nextSequence(topic) {
@@ -250,7 +250,8 @@ export function createLiveTraceAdapter() {
   }
 
   function beginInbound(message, raw) {
-    inboundMessage = registrations.has(message.topic) ? message : null
+    const inboundMessage = registrations.has(message.topic) ? message : null
+    inboundMessages.push(inboundMessage)
     if (inboundMessage) {
       enqueue(
         message.topic,
@@ -264,17 +265,14 @@ export function createLiveTraceAdapter() {
   }
 
   function endInbound(_message, _raw, succeeded) {
-    try {
-      if (succeeded && inboundMessage) {
-        enqueue(
-          inboundMessage.topic,
-          "InboundProcessed",
-          "Inbound protocol frame processed",
-          inboundMessage,
-        )
-      }
-    } finally {
-      inboundMessage = null
+    const inboundMessage = inboundMessages.pop()
+    if (succeeded && inboundMessage) {
+      enqueue(
+        inboundMessage.topic,
+        "InboundProcessed",
+        "Inbound protocol frame processed",
+        inboundMessage,
+      )
     }
   }
 
@@ -296,6 +294,7 @@ export function createLiveTraceAdapter() {
         attributes: true,
         attributeOldValue: true,
       })
+      const inboundMessage = inboundMessages.at(-1) ?? null
       observers.set(container, { observer, topic, message: inboundMessage })
       enqueue(topic, "DomPatch", "DOM patch started", inboundMessage)
     },

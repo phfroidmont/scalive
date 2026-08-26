@@ -224,45 +224,42 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("removing a component interrupts its task without delivery and reintroduction is fresh") {
+    test("a dormant component retires its task but retains its identity") {
       ZIO.scoped {
         for
-          firstEntered     <- Promise.make[Nothing, Unit]
-          secondEntered    <- Promise.make[Nothing, Unit]
-          firstInterrupted <- Promise.make[Nothing, Unit]
-          secondInterrupted <- Promise.make[Nothing, Unit]
+          entered          <- Promise.make[Nothing, Unit]
+          interrupted      <- Promise.make[Nothing, Unit]
           mounts           <- Ref.make(0)
           interruptions    <- Ref.make(0)
           deliveries       <- Ref.make(Vector.empty[String])
-          entered           = Vector(firstEntered, secondEntered)
-          interrupted       = Vector(firstInterrupted, secondInterrupted)
           definition = new LiveComponent[Unit, String, Unit]:
-                         def mount(props: Unit, ctx: MountContext) =
-                           mounts.getAndUpdate(_ + 1).flatMap { mountIndex =>
-                             val task =
-                               (entered(mountIndex).succeed(()).unit *> ZIO.never)
-                                 .onInterrupt(
-                                   interruptions.update(_ + 1) *>
-                                     interrupted(mountIndex).succeed(()).unit
-                                 ).as(1)
-                             ctx.connection match
-                               case Connection.Connected(connected) =>
-                                 connected.async
-                                   .start(AsyncKey[Int]("component-work"))(task)(result =>
-                                     s"completion:${status(result)}"
-                                   ).as(())
-                               case Connection.Disconnected => ZIO.unit
-                           }
-                         def handleMessage(
-                           props: Unit,
-                           model: Unit,
-                           ctx: MessageContext
-                         ): String => Task[Unit] = message => deliveries.update(_ :+ message)
-                         def view(
-                           props: Signal[Unit],
-                           model: Signal[Unit],
-                           self: ComponentRef[String]
-                         ) = div()
+                          def mount(props: Unit, ctx: MountContext) =
+                            mounts.update(_ + 1) *>
+                              ZIO.suspendSucceed {
+                                val task =
+                                  (entered.succeed(()).unit *> ZIO.never)
+                                    .onInterrupt(
+                                      interruptions.update(_ + 1) *>
+                                        interrupted.succeed(()).unit
+                                    ).as(1)
+                                ctx.connection match
+                                  case Connection.Connected(connected) =>
+                                    connected.async
+                                      .start(AsyncKey[Int]("component-work"))(task)(result =>
+                                        s"completion:${status(result)}"
+                                      ).as(())
+                                  case Connection.Disconnected => ZIO.unit
+                              }
+                          def handleMessage(
+                            props: Unit,
+                            model: Unit,
+                            ctx: MessageContext
+                          ): String => Task[Unit] = message => deliveries.update(_ :+ message)
+                          def view(
+                            props: Signal[Unit],
+                            model: Signal[Unit],
+                            self: ComponentRef[String]
+                          ) = div()
           instance = component(definition, "replaceable-async-owner")
           root = new LiveView[Boolean, Boolean]:
                    def mount(ctx: MountContext) = ZIO.succeed(true)
@@ -276,28 +273,28 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
           connection <- RootConnection.start(config, metadata, root, outputs.offer(_).unit)
           _          <- outputs.take
           firstId    <- connection.inspectComponentIds.map(_.head)
-          _          <- firstEntered.await
+          _          <- entered.await
           before     <- interruptions.get
           _          <- connection.submitInfo(false)
           _          <- outputs.take
-          _          <- firstInterrupted.await
           afterRemoval <- interruptions.get
           removalDelivery <- deliveries.get
           removalOutput   <- outputs.poll
           _               <- connection.submitInfo(true)
           _               <- outputs.take
           secondId        <- connection.inspectComponentIds.map(_.head)
-          _               <- secondEntered.await
           mountCount      <- mounts.get
           finalDeliveries <- deliveries.get
+          _               <- connection.close
+          _               <- interrupted.await
           finalInterruptions <- interruptions.get
         yield assertTrue(
           before == 0,
           afterRemoval == 1,
           removalDelivery.isEmpty,
           removalOutput.isEmpty,
-          firstId != secondId,
-          mountCount == 2,
+          firstId == secondId,
+          mountCount == 1,
           finalDeliveries.isEmpty,
           finalInterruptions == 1
         )

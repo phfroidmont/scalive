@@ -159,8 +159,12 @@ private[scalive] object PhoenixUploadProtocol:
     joinRef: PhoenixRef,
     ref: PhoenixRef,
     topic: String,
-    response: PhoenixUploadPreflightResponse
-  ): PhoenixEnvelope = acknowledgement(joinRef, ref, topic, encodePreflight(response))
+    response: PhoenixUploadPreflightResponse,
+    diff: Option[Json.Obj]
+  ): PhoenixEnvelope =
+    val payload =
+      diff.fold(encodePreflight(response))(value => encodePreflight(response).add("diff", value))
+    acknowledgement(joinRef, ref, topic, payload)
 
   def uploadJoinAcknowledgement(
     joinRef: PhoenixRef,

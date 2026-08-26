@@ -48,6 +48,24 @@ object LiveUploadSpec extends ZIOSpecDefault:
         )
         assertTrue(valid.isRight, invalid.isLeft)
       },
+      test("entry limit and metadata validator are typed factory options") {
+        val validator: UploadClientMetadata => Option[String] = metadata =>
+          Option.when(metadata.fileName.startsWith("private-"))("private_name")
+        val default = LiveUploadDef.inMemory("default", LiveUploadAccept.Any)
+        val configured = LiveUploadDef.inMemory(
+          "limited",
+          LiveUploadAccept.Any,
+          maxEntriesMode = LiveUploadMaxEntriesMode.Total,
+          validator = Some(validator)
+        )
+
+        assertTrue(
+          default.maxEntriesMode == LiveUploadMaxEntriesMode.Selected,
+          default.validator.isEmpty,
+          configured.maxEntriesMode == LiveUploadMaxEntriesMode.Total,
+          configured.validator.contains(validator)
+        )
+      },
       test("hosted writers retain typed state and result") {
         final case class WriterState(bytes: Int)
         val writer = new LiveUploadWriter[WriterState, Int]:
@@ -95,6 +113,9 @@ object LiveUploadSpec extends ZIOSpecDefault:
           LiveUploadError.fromJson(external) == LiveUploadError.External(external),
           LiveUploadError.toJson(LiveUploadError.WriterFailure("writer_error")) == Json.Str(
             "writer_error"
+          ),
+          LiveUploadError.toJson(LiveUploadError.Custom("private_name")) == Json.Str(
+            "private_name"
           )
         )
       }

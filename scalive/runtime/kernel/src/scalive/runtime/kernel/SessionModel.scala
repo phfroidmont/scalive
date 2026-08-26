@@ -191,7 +191,8 @@ enum SessionCommand[+Msg]:
   private[scalive] case Upload(
     epoch: Epoch,
     command: CommandId,
-    mutation: UploadMutation[?])                   extends SessionCommand[Nothing]
+    mutation: UploadMutation[?],
+    publish: Boolean = true)                       extends SessionCommand[Nothing]
   case ParamsPatch(epoch: Epoch, destination: URL) extends SessionCommand[Nothing]
 
   def expectedEpoch: Epoch = this match
@@ -205,7 +206,7 @@ enum SessionCommand[+Msg]:
     case ComponentMessage(epoch, _, _)           => epoch
     case ComponentUpdate(epoch, _)               => epoch
     case ComponentAsyncCompletion(epoch, _, _)   => epoch
-    case Upload(epoch, _, _)                     => epoch
+    case Upload(epoch, _, _, _)                  => epoch
     case ParamsPatch(epoch, _)                   => epoch
 end SessionCommand
 
@@ -336,15 +337,34 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
   private val refs: Map[AnyRef, ComponentInstanceId]):
   def get(id: ComponentInstanceId): Option[MountedComponent[OwnerMsg]]  = entries.get(id)
   def byRef(ref: ComponentRef[Any]): Option[MountedComponent[OwnerMsg]] =
-    entries.get(refs.getOrElse(ref.asInstanceOf[AnyRef], ComponentInstanceId(0L)))
+    val active = values.iterator.map(_.id).toSet
+    refs.get(ref.asInstanceOf[AnyRef]).filter(active.contains).flatMap(entries.get)
   def values: Vector[MountedComponent[OwnerMsg]] =
     def descendants(ids: Vector[ComponentInstanceId]): Vector[MountedComponent[OwnerMsg]] =
       ids.flatMap(id =>
         entries.get(id).toVector.flatMap(value => value +: descendants(value.children))
       )
     descendants(roots)
+  private[kernel] def allValues: Vector[MountedComponent[OwnerMsg]] =
+    entries.values.toVector.sortBy(_.id.value)
+  private[kernel] def removeDormant(
+    tokens: Set[AnyRef]
+  ): (ComponentForest[OwnerMsg], Vector[MountedComponent[OwnerMsg]]) =
+    val activeIds  = values.iterator.map(_.id).toSet
+    var removedIds = tokens.flatMap(refs.get).filterNot(activeIds.contains)
+    var changed    = true
+    while changed do
+      val next = removedIds ++ entries.valuesIterator.collect {
+        case component if component.parent.exists(removedIds.contains) => component.id
+      }
+      changed = next.size != removedIds.size
+      removedIds = next
+    val removed  = removedIds.toVector.flatMap(entries.get).sortBy(_.id.value)
+    val retained = allValues.filterNot(component => removedIds.contains(component.id))
+    ComponentForest(roots, retained) -> removed
   private[kernel] def byKey: Map[ComponentKey, MountedComponent[OwnerMsg]] =
     entries.valuesIterator.map(component => component.key -> component).toMap
+end ComponentForest
 
 private[scalive] object ComponentForest:
   val empty: ComponentForest[Nothing] = ComponentForest(Vector.empty, Map.empty, Map.empty)

@@ -231,6 +231,137 @@ object UploadRegistrySpec extends ZIOSpecDefault:
         recovered.externalPreparations.size == 1
       )
     },
+    test("a new single-entry selection replaces a rejected batch") {
+      for
+        preflights <- Ref.make(0)
+        discards   <- Ref.make(0)
+        uploader    = new ExternalUploader(preflights, discards)
+        key         = UploadKey(LiveUploadDef.external("files", LiveUploadAccept.Any, uploader))
+        allowed     = UploadRegistry.empty.allow(root, epoch, key, ref("u")).toOption.get
+        rejected = allowed._1.preflight(
+                     allowed._2,
+                     Vector(entryRef("a") -> metadata("a"), entryRef("b") -> metadata("b"))
+                   ).toOption.get
+        replacement = rejected.registry.preflight(
+                        allowed._2,
+                        Vector(entryRef("c") -> metadata("c"))
+                      ).toOption.get
+        current = snapshot(replacement.registry, root, key)
+      yield assertTrue(
+        current.entries.map(_.ref) == List(entryRef("c")),
+        current.errors.isEmpty,
+        replacement.externalPreparations.size == 1
+      )
+    },
+    test("selected mode reuses capacity after consumption") {
+      for
+        preflights <- Ref.make(0)
+        discards   <- Ref.make(0)
+        uploader    = new ExternalUploader(preflights, discards)
+        key         = UploadKey(LiveUploadDef.external("files", LiveUploadAccept.Any, uploader))
+        allowed     = UploadRegistry.empty.allow(root, epoch, key, ref("u")).toOption.get
+        first       = allowed._1.preflight(allowed._2, Vector(entryRef("a") -> metadata("a"))).toOption.get
+        prepared   <- first.externalPreparations.head.operation.run.map(_.toOption.get)
+        installed   = first.registry.installExternal(prepared).registry
+        completed   = installed.progress(prepared.entry.asInstanceOf[UploadEntryToken[String]], 100).toOption.get
+        entry       = snapshot(completed, root, key).entries.head
+        consume     = completed.beginConsume(root, epoch, key, entry)(_ => ZIO.succeed(ConsumeDecision.Consume(()))).toOption.get
+        decision   <- consume.operation.run
+        consumed    = completed.finishConsume(consume, decision).toOption.get.registry
+        next        = consumed.preflight(allowed._2, Vector(entryRef("b") -> metadata("b"))).toOption.get
+      yield assertTrue(next.externalPreparations.size == 1, snapshot(next.registry, root, key).entries.head.errors.isEmpty)
+    },
+    test("total mode counts consumed entries but not cancellations") {
+      for
+        preflights <- Ref.make(0)
+        discards   <- Ref.make(0)
+        uploader    = new ExternalUploader(preflights, discards)
+        key         = UploadKey(LiveUploadDef.external(
+                        "files",
+                        LiveUploadAccept.Any,
+                        uploader,
+                        maxEntriesMode = LiveUploadMaxEntriesMode.Total
+                      ))
+        allowed     = UploadRegistry.empty.allow(root, epoch, key, ref("u")).toOption.get
+        cancelledPreflight = allowed._1.preflight(allowed._2, Vector(entryRef("cancel") -> metadata("cancel"))).toOption.get
+        cancelledEntry = snapshot(cancelledPreflight.registry, root, key).entries.head
+        cancelled = cancelledPreflight.registry.cancel(root, epoch, key, cancelledEntry).toOption.get.registry
+        first = cancelled.preflight(allowed._2, Vector(entryRef("a") -> metadata("a"))).toOption.get
+        prepared <- first.externalPreparations.head.operation.run.map(_.toOption.get)
+        installed = first.registry.installExternal(prepared).registry
+        completed = installed.progress(prepared.entry.asInstanceOf[UploadEntryToken[String]], 100).toOption.get
+        entry = snapshot(completed, root, key).entries.head
+        consume = completed.beginConsume(root, epoch, key, entry)(_ => ZIO.succeed(ConsumeDecision.Consume(()))).toOption.get
+        decision <- consume.operation.run
+        consumed = completed.finishConsume(consume, decision).toOption.get.registry
+        rejected = consumed.preflight(allowed._2, Vector(entryRef("b") -> metadata("b"))).toOption.get
+        rejectedEntry = snapshot(rejected.registry, root, key).entries.head
+        reallowedKey = UploadKey(LiveUploadDef.external(
+                         "files",
+                         LiveUploadAccept.Any,
+                         uploader,
+                         maxEntriesMode = LiveUploadMaxEntriesMode.Total
+                       ))
+        reallowed = consumed.allow(root, epoch, reallowedKey, ref("u2")).toOption.get
+        reset = reallowed._1
+                  .preflight(reallowed._2, Vector(entryRef("b") -> metadata("b")))
+                  .toOption.get
+      yield assertTrue(
+        first.externalPreparations.size == 1,
+        rejected.externalPreparations.isEmpty,
+        rejectedEntry.errors == List(LiveUploadError.TooManyFiles),
+        reset.externalPreparations.size == 1
+      )
+    },
+    test("custom metadata validation rejects without destination preparation") {
+      for
+        preflights <- Ref.make(0)
+        discards   <- Ref.make(0)
+        uploader    = new ExternalUploader(preflights, discards)
+        validator = (client: UploadClientMetadata) =>
+                      Option.when(client.fileName == "forbidden")("forbidden_name")
+        key = UploadKey(LiveUploadDef.external(
+                "files",
+                LiveUploadAccept.Any,
+                uploader,
+                validator = Some(validator)
+              ))
+        allowed = UploadRegistry.empty.allow(root, epoch, key, ref("u")).toOption.get
+        rejected = allowed._1.preflight(
+                     allowed._2,
+                     Vector(entryRef("e") -> metadata("forbidden"))
+                   ).toOption.get
+        entry = snapshot(rejected.registry, root, key).entries.head
+        count <- preflights.get
+      yield assertTrue(
+        entry.errors == List(LiveUploadError.Custom("forbidden_name")),
+        rejected.externalPreparations.isEmpty,
+        count == 0
+      )
+    },
+    test("limit mode and validator identity participate in definition matching") {
+      val destination = LiveUploadDestination.inMemory
+      val validator: UploadClientMetadata => Option[String] = _ => None
+      val selected = UploadKey(LiveUploadDef.validated(
+        "files", LiveUploadAccept.Any, destination, validator = Some(validator)
+      ).toOption.get)
+      val total = UploadKey(LiveUploadDef.validated(
+        "files", LiveUploadAccept.Any, destination, maxEntriesMode = LiveUploadMaxEntriesMode.Total,
+        validator = Some(validator)
+      ).toOption.get)
+      val otherValidator = UploadKey(LiveUploadDef.validated(
+        "files",
+        LiveUploadAccept.Any,
+        destination,
+        validator = Some((_: UploadClientMetadata) => None)
+      ).toOption.get)
+      val allowed = UploadRegistry.empty.allow(root, epoch, selected, ref("u")).toOption.get._1
+
+      assertTrue(
+        allowed.get(root, epoch, total) == Left(UploadRegistryError.DefinitionMismatch("files")),
+        allowed.get(root, epoch, otherValidator) == Left(UploadRegistryError.DefinitionMismatch("files"))
+      )
+    },
     test("a stale browser selection cannot recreate a cancelled entry") {
       for
         fixture <- writerFixture

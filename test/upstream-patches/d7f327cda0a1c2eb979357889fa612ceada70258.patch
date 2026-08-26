@@ -1,0 +1,136 @@
+diff --git a/test/e2e/tests/errors.spec.js b/test/e2e/tests/errors.spec.js
+--- a/test/e2e/tests/errors.spec.js
++++ b/test/e2e/tests/errors.spec.js
+@@ -100,7 +100,8 @@ test.describe("exception handling", () => {
+         ]),
+       );
+ 
++      await expect.poll(() => consoleMessages.join("\n")).toContain("failsafe mode");
+       expect(consoleMessages).toEqual(
+         expect.arrayContaining([
+           expect.stringMatching(/consecutive reloads. Entering failsafe mode/),
+         ]),
+@@ -271,6 +272,7 @@ test.describe("exception handling", () => {
+       // child crashed on mount, linked to parent -> parent crashed too
+       // second mounts are successful
++      await expect.poll(() => consoleMessages.at(-1)).toMatch(/child mount/);
+       expect(consoleMessages).toEqual(
+         expect.arrayContaining([
+           expect.stringMatching(/mount/),
+           expect.stringMatching(/child error: unable to join/),
+@@ -295,7 +297,8 @@ test.describe("exception handling", () => {
+       const newParentTiem = page.locator("#render-time");
+       await expect(newParentTiem).not.toHaveText(parentTime);
+ 
++      await expect.poll(() => consoleMessages.at(-1)).toMatch(/child mount/);
+       expect(consoleMessages).toEqual([
+         expect.stringMatching(/child error: view crashed/),
+         expect.stringMatching(/child destroyed/),
+         expect.stringMatching(/error: view crashed/),
+diff --git a/test/e2e/tests/issues/3047.spec.js b/test/e2e/tests/issues/3047.spec.js
+--- a/test/e2e/tests/issues/3047.spec.js
++++ b/test/e2e/tests/issues/3047.spec.js
+@@ -27,5 +27,5 @@ test("streams are not cleared in sticky live views", async ({ page }) => {
+   await page.getByRole("button", { name: "Reset" }).click();
+   await syncLV(page);
+-  expect(await listItems(page)).toEqual([
++  await expect.poll(() => listItems(page)).toEqual([
+     "items-5",
+     "items-6",
+diff --git a/test/e2e/tests/issues/4368.spec.js b/test/e2e/tests/issues/4368.spec.js
+--- a/test/e2e/tests/issues/4368.spec.js
++++ b/test/e2e/tests/issues/4368.spec.js
+@@ -59,7 +59,9 @@ test("a custom writer failure cancels a submit scheduled during upload", async ({
+   await input.setInputFiles({
+     name: "bad.pdf",
+     mimeType: "application/pdf",
+-    buffer: Buffer.from("delayerror"),
++    buffer: Buffer.from("delaydelayerror"),
+   });
++  await expect(input).toHaveAttribute("data-phx-preflighted-refs", /.+/);
++
+   await submit.click();
+   await expect(submit).toBeDisabled();
+diff --git a/test/e2e/tests/issues/3530.spec.js b/test/e2e/tests/issues/3530.spec.js
+--- a/test/e2e/tests/issues/3530.spec.js
++++ b/test/e2e/tests/issues/3530.spec.js
+@@ -8,5 +8,10 @@ test("hook is initialized properly when using a stream of nested LiveViews", async ({
+   let logs = [];
+-  page.on("console", (e) => logs.push(e.text()));
++  const allLogs = [];
++  page.on("console", (e) => {
++    const text = e.text();
++    logs.push(text);
++    allLogs.push(text);
++  });
+   const errors = [];
+   page.on("pageerror", (err) => errors.push(err));
+ 
+@@ -14,33 +19,59 @@ test("hook is initialized properly when using a stream of nested LiveViews", async ({
+   await syncLV(page);
+ 
+   expect(errors).toEqual([]);
+-  expect(logs.filter((e) => e.includes("item-1 mounted"))).toHaveLength(1);
+-  expect(logs.filter((e) => e.includes("item-2 mounted"))).toHaveLength(1);
+-  expect(logs.filter((e) => e.includes("item-3 mounted"))).toHaveLength(1);
++  await expect
++    .poll(() => logs.filter((e) => e.includes("item-1 mounted")).length)
++    .toBe(1);
++  await expect
++    .poll(() => logs.filter((e) => e.includes("item-2 mounted")).length)
++    .toBe(1);
++  await expect
++    .poll(() => logs.filter((e) => e.includes("item-3 mounted")).length)
++    .toBe(1);
+   logs = [];
+ 
+   await page.getByRole("link", { name: "patch a" }).click();
+   await syncLV(page);
+ 
+   expect(errors).toEqual([]);
+-  expect(logs.filter((e) => e.includes("item-2 destroyed"))).toHaveLength(1);
++  await expect
++    .poll(() => logs.filter((e) => e.includes("item-2 destroyed")).length)
++    .toBe(1);
+   expect(logs.filter((e) => e.includes("item-1 destroyed"))).toHaveLength(0);
+   expect(logs.filter((e) => e.includes("item-3 destroyed"))).toHaveLength(0);
+   logs = [];
+ 
+   await page.getByRole("link", { name: "patch b" }).click();
+   await syncLV(page);
+ 
+   expect(errors).toEqual([]);
+-  expect(logs.filter((e) => e.includes("item-1 destroyed"))).toHaveLength(1);
++  await expect
++    .poll(() => logs.filter((e) => e.includes("item-1 destroyed")).length)
++    .toBe(1);
+   expect(logs.filter((e) => e.includes("item-2 destroyed"))).toHaveLength(0);
+   expect(logs.filter((e) => e.includes("item-3 destroyed"))).toHaveLength(0);
+-  expect(logs.filter((e) => e.includes("item-2 mounted"))).toHaveLength(1);
++  await expect
++    .poll(() => logs.filter((e) => e.includes("item-2 mounted")).length)
++    .toBe(1);
+   logs = [];
+ 
+   await page.locator("div[phx-click=inc]").click();
+   await syncLV(page);
+-  expect(logs.filter((e) => e.includes("item-4 mounted"))).toHaveLength(1);
++  await expect
++    .poll(() => logs.filter((e) => e.includes("item-4 mounted")).length)
++    .toBe(1);
+ 
++  expect(
++    [
++      "item-1 mounted",
++      "item-2 mounted",
++      "item-3 mounted",
++      "item-4 mounted",
++      "item-1 destroyed",
++      "item-2 destroyed",
++      "item-3 destroyed",
++    ].map((message) => allLogs.filter((e) => e.includes(message)).length),
++  ).toEqual([1, 2, 1, 1, 1, 1, 0]);
++
+-  expect(logs).not.toEqual(
++  expect(allLogs).not.toEqual(
+     expect.arrayContaining([

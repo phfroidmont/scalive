@@ -117,6 +117,16 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       result   <- if accepted then awaitResponse(response) else rejectOffer
     yield result
 
+  private[scalive] def destroyComponents(
+    tokens: Vector[Object]
+  ): ZIO[Any, SessionRejection, Unit] =
+    ZIO.uninterruptible {
+      for
+        accepted <- offerRegular(Envelope.DestroyComponents(tokens))
+        _        <- if accepted then ZIO.unit else rejectOffer
+      yield ()
+    }
+
   def awaitTermination: UIO[SessionState[Msg, Model]] = terminal.await
 
   def close: UIO[Unit] =
@@ -188,7 +198,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           observeAccepted(id, SessionCommand.ParamsPatch(actualEpoch, destination))
       case Envelope.Execute(id, command, _) =>
         regularSlots.offer(()).unit *> observeAccepted(id, command)
-      case Envelope.Inspect(_) => regularSlots.offer(()).unit
+      case Envelope.Inspect(_) | Envelope.DestroyComponents(_) => regularSlots.offer(()).unit
     }
 
   private def controlled[E, A](effect: ZIO[Any, E, A]): ZIO[Any, E, A] =
@@ -389,6 +399,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             executeEnvelope(state, work, commandId, command, response)
           case Envelope.PatchAcknowledgement(_, _, _, response) =>
             response.fail(SessionRejection.UnexpectedPatch).unit *> loop(state, work)
+          case Envelope.DestroyComponents(tokens) =>
+            destroyDormantComponents(state, work, tokens)
         }
 
   private def executeEnvelope(
@@ -586,14 +598,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 ComponentAction.Update,
                 Some(tracked)
               )
-            case SessionCommand.Upload(_, uploadCommand, mutation) =>
+            case SessionCommand.Upload(_, uploadCommand, mutation, publish) =>
               logic.handleUpload match
                 case Some(handler) =>
                   executeTurn(
                     state,
                     work,
                     handler(state.committed.model, uploadCommand, mutation),
-                    Some(tracked)
+                    Some(tracked),
+                    publish = publish
                   )
                 case None =>
                   response.fail(SessionRejection.UploadUnavailable).unit *> loop(state, work)
@@ -674,6 +687,14 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             .fail(SessionRejection.MismatchedPatch(pending.destination, destination)).unit *>
             loop(state, work)
         else acknowledgePatch(state, work, commandId, response)
+      case Some(Envelope.DestroyComponents(tokens)) =>
+        val (committed, removed) = removeDormantComponents(pending.committed, tokens)
+        val next                 = SessionState.Navigating(
+          state.epoch,
+          pending.copy(committed = committed)
+        )
+        if removed.isEmpty then loop(state, work)
+        else finishComponentDestruction(next, committed, removed, work)
     }
   end navigatingLoop
 
@@ -800,13 +821,14 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     state: SessionState.Active[Msg, Model],
     work: ImmutableQueue[Work[Msg, Model]],
     draft: Task[TurnDraft[Msg, Model]],
-    response: Option[TrackedCommand]
+    response: Option[TrackedCommand],
+    publish: Boolean = true
   ): UIO[Unit] =
     controlled(phase(SessionStage.Handler)(draft)).exit.flatMap {
       case Exit.Success(nextDraft) if nextDraft.navigation.nonEmpty =>
         stageNavigation(state.committed, nextDraft, work, response, 0, Vector.empty)
       case Exit.Success(nextDraft) =>
-        executePreparedTurn(state, work, ZIO.succeed(nextDraft), response)
+        executePreparedTurn(state, work, ZIO.succeed(nextDraft), response, publish = publish)
       case Exit.Failure(cause) if cause.isInterruptedOnly =>
         response.fold[UIO[Unit]](ZIO.unit)(
           _.response.fail(SessionRejection.Terminal("closed")).unit
@@ -881,14 +903,16 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     draft: ZIO[Any, SessionFailure, TurnDraft[Msg, Model]],
     response: Option[TrackedCommand],
-    diffBaseline: Option[CommittedRender[Msg]] = None
+    diffBaseline: Option[CommittedRender[Msg]] = None,
+    publish: Boolean = true
   ): UIO[Unit] =
     runTurn(
       Some(state.committed),
       draft,
       work,
       response,
-      diffBaseline = diffBaseline
+      diffBaseline = diffBaseline,
+      publish = publish
     ).exit.flatMap {
       case Exit.Success(result) =>
         finishStagedTurn(state, work, result, response)
@@ -945,7 +969,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     command: Option[TrackedCommand],
     componentAction: Option[(ComponentInstanceId, ComponentAction)] = None,
-    diffBaseline: Option[CommittedRender[Msg]] = None
+    diffBaseline: Option[CommittedRender[Msg]] = None,
+    publish: Boolean = true
   ): ZIO[Any, SessionFailure, StagedTurn[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
@@ -991,7 +1016,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         result <-
           if candidate.draft.navigation.nonEmpty then ZIO.succeed(StagedTurn.Navigation(candidate))
           else
-            commit(previous, candidate, work, commandId)
+            commit(previous, candidate, work, commandId, publish = publish)
               .map(committed =>
                 StagedTurn.Committed(
                   TurnOutcome(turnId, committed.value, committed.work, candidate.delta)
@@ -2389,6 +2414,48 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       }
     }
 
+  private def destroyDormantComponents(
+    state: SessionState.Active[Msg, Model],
+    work: ImmutableQueue[Work[Msg, Model]],
+    tokens: Vector[Object]
+  ): UIO[Unit] =
+    val (committed, removed) = removeDormantComponents(state.committed, tokens)
+    val next                 = SessionState.Active(state.epoch, committed)
+    if removed.isEmpty then loop(state, work)
+    else finishComponentDestruction(next, committed, removed, work)
+
+  private def removeDormantComponents(
+    committed: Committed[Msg, Model],
+    tokens: Vector[Object]
+  ): (Committed[Msg, Model], Vector[MountedComponent[Msg]]) =
+    val (forest, removed) = committed.components.removeDormant(
+      tokens.iterator.map(_.asInstanceOf[AnyRef]).toSet
+    )
+    committed.copy(components = forest) -> removed
+
+  private def finishComponentDestruction(
+    next: SessionState[Msg, Model],
+    committed: Committed[Msg, Model],
+    removed: Vector[MountedComponent[Msg]],
+    work: ImmutableQueue[Work[Msg, Model]]
+  ): UIO[Unit] =
+    val cleanup = RuntimeCleanup.all(removed.map { component =>
+      RuntimeCleanup.all(
+        Vector(
+          component.render.scope.closeFromOwner,
+          component.program.close,
+          componentEnvironment.close(component.id, component.environmentState)
+        )
+      )
+    })
+    activeOwner.activate(closeCommitted(committed)) *>
+      cleanup.exit.flatMap {
+        case Exit.Success(_)     => loop(next, work)
+        case Exit.Failure(cause) =>
+          val failure = SessionFailure.StageFailed(SessionStage.Retirement, cause.prettyPrint)
+          crash(next, failure)
+      }
+
   private def discardCandidate(candidate: TurnCandidate[Msg, Model]): UIO[Unit] =
     RuntimeCleanup.all(
       Vector(
@@ -2409,7 +2476,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     val commitTail = for
       components <- ZIO.succeed(candidate.components.components.map(_.commitValue))
       render     <- ZIO.succeed(candidate.render.commit)
-      forest = ComponentForest(candidate.components.roots, components)
+      activeIds = components.iterator.map(_.id).toSet
+      dormant   = previous.toVector
+                  .flatMap(_.components.allValues)
+                  .filterNot(component => activeIds.contains(component.id))
+      forest = ComponentForest(candidate.components.roots, components ++ dormant)
       next   = Committed(
                candidate.draft.model,
                candidate.draft.url.orElse(previous.map(_.url)).getOrElse(URL.root),
@@ -2556,8 +2627,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         committed.render.close,
         committed.auxiliaryScope.closeFromOwner
       )
-      val componentEffects = committed.components.values.flatMap { component =>
-        val retained         = next.components.get(component.id)
+      val componentEffects = committed.components.allValues.flatMap { component =>
+        val retained      = next.components.get(component.id)
+        val renderEffects = retained match
+          case Some(value) if value.asInstanceOf[AnyRef] eq component.asInstanceOf[AnyRef] =>
+            Vector.empty
+          case _ => Vector(component.render.close)
         val ownershipEffects = retained match
           case Some(value) if value.environmentState.value eq component.environmentState.value =>
             Vector.empty
@@ -2568,7 +2643,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               component.program.close,
               componentEnvironment.close(component.id, component.environmentState)
             )
-        component.render.close +: ownershipEffects
+        renderEffects ++ ownershipEffects
       }
       ZIO.foreach(rootEffects ++ componentEffects)(_.exit).flatMap { exits =>
         val failures = exits.collect { case Exit.Failure(cause) => cause }
@@ -3083,7 +3158,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     )
 
   private def closeCommitted(committed: Committed[Msg, Model]): UIO[Unit] =
-    val componentCleanup = committed.components.values.map { component =>
+    val componentCleanup = committed.components.allValues.map { component =>
       RuntimeCleanup.all(
         Vector(
           component.render.scope.closeFromOwner,
@@ -3159,6 +3234,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
              case Envelope.Inspect(response)                       => response.fail(rejection).unit
              case Envelope.PatchAcknowledgement(_, _, _, response) =>
                response.fail(rejection).unit
+             case Envelope.DestroyComponents(_) => ZIO.unit
            }
       _ <- mailbox.shutdown
       _ <- regularSlots.shutdown
@@ -3183,6 +3259,7 @@ private[scalive] object SessionKernel:
       destination: URL,
       response: Promise[SessionRejection, TurnResult])
     case Inspect(response: Promise[SessionRejection, Committed[Msg, Model]])
+    case DestroyComponents(tokens: Vector[Object])
 
   private enum Work[Msg, Model]:
     case Continuation(message: Msg, initiator: RuntimeTraceInitiator)

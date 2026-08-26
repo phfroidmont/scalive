@@ -605,8 +605,17 @@ final private[scalive] case class UploadRegistry private (
           decision match
             case ConsumeDecision.Postpone(_) => Right(UploadConsumeResult(this, None))
             case ConsumeDecision.Consume(_)  =>
+              val consumed = allowed.definition.maxEntriesMode match
+                case LiveUploadMaxEntriesMode.Selected => allowed.consumedEntries
+                case LiveUploadMaxEntriesMode.Total    => allowed.consumedEntries + 1
               val next =
-                replace(allowed, allowed.copy(entries = allowed.entries.filterNot(_ eq entry)))
+                replace(
+                  allowed,
+                  allowed.copy(
+                    entries = allowed.entries.filterNot(_ eq entry),
+                    consumedEntries = consumed
+                  )
+                )
               Right(UploadConsumeResult(next, Some(result.transferOwnership)))
         case _ => Left(UploadRegistryError.InvalidEntryState(consume.entry.ref))
     }
@@ -648,13 +657,12 @@ final private[scalive] case class UploadRegistry private (
   ): UploadPreflight =
     val selectedRefs = selected.iterator.map(_._1).toSet
     val replaceSole  = allowed.definition.maxEntries == 1 &&
-      allowed.entries.size == 1 &&
       selected.size == 1 &&
-      !selectedRefs.contains(allowed.entries.head.ref)
+      allowed.entries.forall(entry => !selectedRefs.contains(entry.ref))
     val retained      = if replaceSole then Vector.empty else allowed.entries
     val replaced      = if replaceSole then allowed.entries else Vector.empty
     val existingByRef = retained.iterator.map(entry => entry.ref -> entry).toMap
-    var validCount    = 0
+    var validCount    = allowed.consumedEntries
     var preparations  = Vector.empty[ExternalPreparationPlan]
     var registrations = Vector.empty[UploadEntryToken[?]]
 
@@ -764,7 +772,8 @@ final private[scalive] case class UploadRegistry private (
         ref,
         previous + 1L,
         Vector.empty,
-        Set.empty
+        Set.empty,
+        0
       )
       val retained = replaced.fold(uploads)(old => uploads.filterNot(_ eq old))
       val next     = copy(
@@ -934,7 +943,8 @@ private[scalive] object UploadRegistry:
     ref: UploadRef,
     generation: Long,
     entries: Vector[Entry],
-    cancelled: Set[UploadEntryRef]):
+    cancelled: Set[UploadEntryRef],
+    consumedEntries: Int):
     def token[Result](key: UploadKey[Result]): UploadToken[Result] =
       UploadToken(owner, ownerEpoch, key, ref, generation)
     def matches[Result](token: UploadToken[Result]): Boolean =
@@ -960,9 +970,11 @@ private[scalive] object UploadRegistry:
 
   private def equivalent(left: LiveUploadDef[?], right: LiveUploadDef[?]): Boolean =
     left.name == right.name && left.accept == right.accept && left.maxEntries == right.maxEntries &&
+      left.maxEntriesMode == right.maxEntriesMode &&
       left.maxFileSize == right.maxFileSize && left.chunkSize == right.chunkSize &&
       left.chunkTimeout == right.chunkTimeout && left.autoUpload == right.autoUpload &&
       sameReference(left.progress, right.progress) &&
+      sameReference(left.validator, right.validator) &&
       (left.destination.asInstanceOf[AnyRef] eq right.destination.asInstanceOf[AnyRef])
 
   private def sameReference(left: Option[?], right: Option[?]): Boolean = (left, right) match
@@ -990,12 +1002,14 @@ private[scalive] object UploadRegistry:
           else if filter.endsWith("/*") then media.startsWith(filter.dropRight(1))
           else media == filter
         })
-    List(
+    val builtIn = List(
       Option.when(!accepted)(LiveUploadError.NotAccepted),
       Option.when(client.sizeBytes < 0L || client.sizeBytes > definition.maxFileSize)(
         LiveUploadError.TooLarge
       )
     ).flatten
+    if builtIn.nonEmpty then builtIn
+    else definition.validator.flatMap(_(client)).map(LiveUploadError.Custom.apply).toList
 
   private def workerId(token: UploadEntryToken[?]): HostedWorkerId =
     HostedWorkerId(

@@ -158,6 +158,9 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     entered: Queue[Unit],
     release: Promise[Nothing, Unit],
     observedEventEntries: Ref[Vector[String]],
+    observedEventEntryCounts: Ref[Vector[Int]],
+    observedBrowserProgress: Ref[Vector[Int]],
+    observedEventProgress: Ref[Vector[Int]],
     componentProgress: Ref[Vector[Int]])
 
   private def fixture(blockWrites: Boolean = false): UIO[Fixture] =
@@ -169,6 +172,9 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       entered              <- Queue.unbounded[Unit]
       release              <- Promise.make[Nothing, Unit]
       observedEventEntries <- Ref.make(Vector.empty[String])
+      observedEventEntryCounts <- Ref.make(Vector.empty[Int])
+      observedBrowserProgress <- Ref.make(Vector.empty[Int])
+      observedEventProgress <- Ref.make(Vector.empty[Int])
       componentProgress    <- Ref.make(Vector.empty[Int])
       rootRefs             <- Ref.make(Option.empty[(UploadRef, UploadRef)])
       writer = RecordingWriter(initialized, writes, aborts, entered, release, blockWrites)
@@ -217,13 +223,29 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       view = new LiveView.Eventless[(LiveUpload[Chunk[Byte]], LiveUpload[String])]:
                override val hooks = LiveHooks
                  .empty[Nothing, (LiveUpload[Chunk[Byte]], LiveUpload[String])]
-                 .onBrowserEvent(uploadEvent) { (model, _, ctx) =>
-                   ctx.uploads.get(hosted).flatMap { current =>
-                     observedEventEntries
-                       .set(current.toVector.flatMap(_.entries.map(_.client.fileName)))
-                       .as(model)
-                   }
-                 }
+                  .onBrowserEvent(uploadEvent) { (model, event, ctx) =>
+                    for
+                      currentHosted   <- ctx.uploads.get(hosted)
+                      currentExternal <- ctx.uploads.get(external)
+                      currentEntries = currentHosted.toVector.flatMap(
+                                         _.entries.map(_.client.fileName)
+                                       )
+                      browserProgress = event match
+                                          case Json.Obj(fields) =>
+                                            fields.toMap.get("progress").collect {
+                                              case Json.Num(value) => value.intValue()
+                                            }
+                                          case _ => None
+                      _ <- observedEventEntries.set(currentEntries)
+                      _ <- observedEventEntryCounts.update(_ :+ currentEntries.size)
+                      _ <- ZIO.foreachDiscard(browserProgress)(progress =>
+                             observedBrowserProgress.update(_ :+ progress)
+                           )
+                      _ <- observedEventProgress.set(
+                             currentExternal.toVector.flatMap(_.entries.map(_.progress))
+                           )
+                    yield model
+                  }
                def mount(ctx: MountContext) =
                  for
                    hostedUpload   <- ctx.uploads.allow(hosted)
@@ -242,6 +264,9 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       entered,
       release,
       observedEventEntries,
+      observedEventEntryCounts,
+      observedBrowserProgress,
+      observedEventProgress,
       componentProgress
     )
 
@@ -467,6 +492,55 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       .encodeBinary(PhoenixUploadBinaryFrame(joinRef, ref, topic, "chunk", bytes)).toOption.get
 
   def spec = suite("ZIO HTTP upload transport")(
+    test("connected mount events are delivered before a redirect reply") {
+      val mounted = ServerToBrowserEvent[Int]("mounted")
+      object RedirectingView extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext): Task[Unit] = ctx.connection match
+          case Connection.Disconnected => ZIO.unit
+          case Connection.Connected(connected) =>
+            connected.client.push(mounted, 7) *> ctx.nav.redirectUnsafe("/next")
+
+        def view(model: Signal[Unit]): HtmlElement[Nothing] = div("redirecting")
+
+      val application = scalive.Live.router(scalive.live(RedirectingView))
+
+      withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          topic   = s"lv:${page.rootId}"
+          _ <- socket.send(
+                 PhoenixEnvelope(
+                   PhoenixRef.Value("root-join"),
+                   PhoenixRef.Value("1"),
+                   topic,
+                   "phx_join",
+                   Json.Obj(
+                     "url"      -> Json.Str(page.url),
+                     "redirect" -> Json.Null,
+                     "flash"    -> Json.Null,
+                     "session"  -> Json.Str(page.session),
+                     "static"   -> Json.Str(page.static),
+                     "params"   -> Json.Obj.empty,
+                     "sticky"   -> Json.Bool(false)
+                   )
+                 )
+               )
+          redirect <- socket.receive
+        yield assertTrue(
+          redirect.ref == PhoenixRef.Value("1"),
+          redirect.topic == topic,
+          redirect.event == "phx_reply",
+          status(redirect) == "error",
+          field(response(redirect), "events") == Json.Arr(
+            Json.Arr(Json.Str("mounted"), Json.Num(7))
+          ),
+          field(response(redirect), "redirect") == Json.Obj(
+            "to" -> Json.Str("/next")
+          )
+        )
+      }
+    },
     test("unauthorized joins allocate no lifecycle and malformed frames close the socket") {
       val factories = AtomicInteger(0)
       object View extends LiveView.Eventless[Unit]:
@@ -979,6 +1053,128 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                   }
       yield result
     },
+    test("late upload chunks cannot close a replacement root lifecycle") {
+      for
+        fixture <- fixture()
+        result <- withServer(fixture.application) { port =>
+                    for
+                      page   <- bootstrap(port)
+                      socket <- connect(port, page)
+                      _      <- joinRoot(socket, page)
+                      refs <- (fixture.state.take *> fixture.state.take)
+                                .timeoutFail(Exception("upload refs timed out"))(5.seconds)
+                      topic = s"lv:${page.rootId}"
+                      hosted <- preflight(
+                                  socket,
+                                  topic,
+                                  "2",
+                                  refs.hostedRef,
+                                  Vector(entry("late", "late.txt", 5L))
+                                )
+                      token = hostedToken(hosted, "late")
+                      _     <- uploadJoin(socket, "late-join", "3", "lvu:late", token)
+                      progress <- sendProgress(
+                                    socket,
+                                    topic,
+                                    "4",
+                                    refs.hostedRef.value,
+                                    "late",
+                                    50,
+                                    None,
+                                    Some(uploadEvent.value)
+                                  )
+                      navigated <- redirectRoot(socket, page, "/", "5")
+                      _ <- socket.sendBinary(
+                             binary(
+                               "late-join",
+                               "6",
+                               "lvu:late",
+                               Chunk.single(1.toByte)
+                             )
+                           )
+                      lateChunk <- socket.receiveReply("6", "lvu:late")
+                      heartbeat = PhoenixEnvelope(
+                                    PhoenixRef.Null,
+                                    PhoenixRef.Value("7"),
+                                    "phoenix",
+                                    "heartbeat",
+                                    Json.Obj.empty
+                                  )
+                      _              <- socket.send(heartbeat)
+                      heartbeatReply <- socket.receiveReply("7", "phoenix")
+                      _              <- socket.close
+                    yield assertTrue(
+                      status(progress) == "ok",
+                      status(navigated) == "ok",
+                      status(lateChunk) == "error",
+                      reason(lateChunk) == "disallowed",
+                      status(heartbeatReply) == "ok"
+                    )
+                  }
+      yield result
+    },
+    test("failed uploads replay only accepted progress events") {
+      for
+        fixture <- fixture()
+        result <- withServer(fixture.application) { port =>
+                    for
+                      page   <- bootstrap(port)
+                      socket <- connect(port, page)
+                      _      <- joinRoot(socket, page)
+                      refs <- (fixture.state.take *> fixture.state.take)
+                                .timeoutFail(Exception("upload refs timed out"))(5.seconds)
+                      topic = s"lv:${page.rootId}"
+                      hosted <- preflight(
+                                  socket,
+                                  topic,
+                                  "2",
+                                  refs.hostedRef,
+                                  Vector(entry("failed", "failed.txt", 5L))
+                                )
+                      token = hostedToken(hosted, "failed")
+                      _     <- uploadJoin(socket, "failed-join", "3", "lvu:failed", token)
+                      accepted <- sendProgress(
+                                    socket,
+                                    topic,
+                                    "4",
+                                    refs.hostedRef.value,
+                                    "failed",
+                                    60,
+                                    None,
+                                    Some(uploadEvent.value)
+                                  )
+                      rejected <- sendProgress(
+                                    socket,
+                                    topic,
+                                    "5",
+                                    refs.hostedRef.value,
+                                    "failed",
+                                    50,
+                                    None,
+                                    Some(uploadEvent.value)
+                                  )
+                      _ <- socket.sendBinary(
+                             binary(
+                               "failed-join",
+                               "6",
+                               "lvu:failed",
+                               Chunk.fromArray(Array.fill(1_000_001)(1.toByte))
+                             )
+                           )
+                      failedChunk <- socket.receiveReply("6", "lvu:failed")
+                      progress <- fixture.observedBrowserProgress.get
+                                    .repeatUntil(_.size >= 2)
+                                    .timeoutFail(Exception("progress replay timed out"))(5.seconds)
+                      _ <- socket.close
+                    yield assertTrue(
+                      status(accepted) == "ok",
+                      status(rejected) == "error",
+                      status(failedChunk) == "error",
+                      progress == Vector(60, 60)
+                    )
+                  }
+      yield result
+    },
     test("fragmented binary upload messages are assembled before routing") {
       for
         fixture <- fixture()
@@ -1041,52 +1237,113 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                                     Vector(entry("component-entry", "component.bin", 8L)),
                                     cid = Some(1L)
                                   )
-                      exact <- sendProgress(
-                                socket,
-                                topic,
+                       exact <- sendProgress(
+                                 socket,
+                                 topic,
                                 "3",
                                 refs.componentRef.value,
                                 "component-entry",
                                 60,
-                                Some(1L)
-                              )
-                      eventReply <- sendEventWithUploads(
+                                 Some(1L)
+                               )
+                       external <- preflight(
                                      socket,
                                      topic,
                                      "4",
-                                     refs.hostedRef,
-                                     Vector(entry("event-entry", "event.txt", 2L))
+                                     refs.externalRef,
+                                     Vector(entry("external-entry", "external.bin", 8L))
                                    )
-                      staleRef <- sendProgress(
-                                   socket,
-                                   topic,
-                                   "5",
+                       correlatedProgress <- sendProgress(
+                                               socket,
+                                               topic,
+                                               "5",
+                                               refs.externalRef.value,
+                                               "external-entry",
+                                               60,
+                                               None,
+                                               Some(uploadEvent.value)
+                                             )
+                       eventReply <- sendEventWithUploads(
+                                      socket,
+                                      topic,
+                                      "6",
+                                      refs.hostedRef,
+                                      Vector(entry("event-entry", "event.txt", 2L))
+                                    )
+                       staleRef <- sendProgress(
+                                    socket,
+                                    topic,
+                                    "7",
                                    refs.hostedRef.value,
                                    "component-entry",
                                    40,
                                    Some(1L)
                                  )
-                      staleOwner <- sendProgress(
-                                      socket,
-                                      topic,
-                                      "6",
+                       staleOwner <- sendProgress(
+                                       socket,
+                                       topic,
+                                       "8",
                                       refs.componentRef.value,
                                       "component-entry",
                                       50,
                                       None
                                     )
-                      progress <- fixture.componentProgress.get
-                      observed <- fixture.observedEventEntries.get
-                      _        <- socket.close
-                    yield assertTrue(
-                      status(component) == "ok",
-                      status(staleRef) == "error",
-                      status(staleOwner) == "error",
-                      status(exact) == "ok",
-                      progress == Vector(60),
-                      status(eventReply) == "ok",
-                      observed == Vector("event.txt")
+                       progress <- fixture.componentProgress.get
+                       observed <- fixture.observedEventEntries.get
+                       observedProgress <- fixture.observedEventProgress.get
+                       _        <- socket.close
+                     yield assertTrue(
+                       status(component) == "ok",
+                       status(external) == "ok",
+                       status(staleRef) == "error",
+                       status(staleOwner) == "error",
+                       status(exact) == "ok",
+                       status(correlatedProgress) == "ok",
+                       progress == Vector(60),
+                       status(eventReply) == "ok",
+                       observed == Vector("event.txt"),
+                       observedProgress == Vector(60)
                     )
+                  }
+      yield result
+    },
+    test("upload-bearing events synchronize their selection in ingress order") {
+      for
+        fixture <- fixture()
+        result <- withServer(fixture.application) { port =>
+                    for
+                      page   <- bootstrap(port)
+                      socket <- connect(port, page)
+                      _      <- joinRoot(socket, page)
+                      refs <- (fixture.state.take *> fixture.state.take)
+                                .timeoutFail(Exception("upload refs timed out"))(5.seconds)
+                      topic = s"lv:${page.rootId}"
+                      _ <- ZIO.foreachDiscard(1 to 20) { index =>
+                             socket.send(
+                               PhoenixEnvelope(
+                                 PhoenixRef.Value("root-join"),
+                                 PhoenixRef.Value(s"event-$index"),
+                                 topic,
+                                 "event",
+                                 Json.Obj(
+                                   "type"  -> Json.Str("click"),
+                                   "event" -> Json.Str(uploadEvent.value),
+                                   "value" -> Json.Obj.empty,
+                                   "uploads" -> Json.Obj(
+                                     refs.hostedRef.value -> Json.Arr(
+                                       entry(s"entry-$index", s"file-$index.txt", 2L)
+                                     )
+                                   ),
+                                   "cid" -> Json.Null
+                                 )
+                               )
+                             )
+                           }
+                      counts <- fixture.observedEventEntryCounts.get
+                                  .repeatUntil(_.size >= 20)
+                                  .timeoutFail(Exception("upload events timed out"))(5.seconds)
+                      _ <- socket.close
+                    yield assertTrue(counts == (1 to 20).toVector)
                   }
       yield result
     },
@@ -1176,7 +1433,8 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     uploadRef: String,
     entryRef: String,
     progress: Int,
-    cid: Option[Long]
+    cid: Option[Long],
+    event: Option[String] = None
   ): Task[PhoenixEnvelope] =
     socket.send(
       PhoenixEnvelope(
@@ -1186,10 +1444,11 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         "progress",
         Json.Obj(
           "ref"       -> Json.Str(uploadRef),
-          "entry_ref" -> Json.Str(entryRef),
-          "progress"  -> Json.Num(BigDecimal(progress)),
-          "cid"       -> cid.fold[Json](Json.Null)(value => Json.Num(BigDecimal(value)))
-        )
+           "entry_ref" -> Json.Str(entryRef),
+           "progress"  -> Json.Num(BigDecimal(progress)),
+           "cid"       -> cid.fold[Json](Json.Null)(value => Json.Num(BigDecimal(value))),
+           "event"     -> event.fold[Json](Json.Null)(Json.Str.apply)
+         )
       )
     ) *> socket.receiveReply(ref, topic)
 

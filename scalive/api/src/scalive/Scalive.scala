@@ -173,38 +173,41 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     liveTitle(pageTitle, default, "", "")
 
   object link:
+    private def liveDestination(value: String): String =
+      NavigationDestination.live(value).fold(throw _, identity)
+
     def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       pushNavigateUnsafe(to.href, mods*)
     def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
       pushNavigateUnsafe(to.map(_.href), mods*)
     def pushNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to, phx.link := "redirect", phx.linkState := "push", mods)
+      a(href := liveDestination(to), phx.link := "redirect", phx.linkState := "push", mods)
     def pushNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to, phx.link := "redirect", phx.linkState := "push", mods)
+      a(href := to.map(liveDestination), phx.link := "redirect", phx.linkState := "push", mods)
     def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       replaceNavigateUnsafe(to.href, mods*)
     def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
       replaceNavigateUnsafe(to.map(_.href), mods*)
     def replaceNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to, phx.link := "redirect", phx.linkState := "replace", mods)
+      a(href := liveDestination(to), phx.link := "redirect", phx.linkState := "replace", mods)
     def replaceNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to, phx.link := "redirect", phx.linkState := "replace", mods)
+      a(href := to.map(liveDestination), phx.link := "redirect", phx.linkState := "replace", mods)
     def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       pushPatchUnsafe(to.href, mods*)
     def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
       pushPatchUnsafe(to.map(_.href), mods*)
     def pushPatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to, phx.link := "patch", phx.linkState := "push", mods)
+      a(href := liveDestination(to), phx.link := "patch", phx.linkState := "push", mods)
     def pushPatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to, phx.link := "patch", phx.linkState := "push", mods)
+      a(href := to.map(liveDestination), phx.link := "patch", phx.linkState := "push", mods)
     def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       replacePatchUnsafe(to.href, mods*)
     def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
       replacePatchUnsafe(to.map(_.href), mods*)
     def replacePatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to, phx.link := "patch", phx.linkState := "replace", mods)
+      a(href := liveDestination(to), phx.link := "patch", phx.linkState := "replace", mods)
     def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to, phx.link := "patch", phx.linkState := "replace", mods)
+      a(href := to.map(liveDestination), phx.link := "patch", phx.linkState := "replace", mods)
   end link
 
   object phx:
@@ -231,6 +234,8 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val autoRecover   = attr("auto-recover")
     lazy val feedbackFor   = attr("feedback-for")
     lazy val triggerAction = boolAttr("trigger-action")
+    lazy val noUnusedField = boolAttr("no-unused-field")
+    lazy val patchFocused  = boolAttr("patch-focused")
     lazy val disableWith   = attr("disable-with")
     lazy val connected     = attr("connected")
     lazy val disconnected  = attr("disconnected")

@@ -287,7 +287,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("a removed and reintroduced component receives fresh stream state and identity") {
+    test("a dormant component retains its stream state and identity when reintroduced") {
       ZIO.scoped {
         val definition = LiveStreamDef.byId[Item, String]("component-items")(_.id)
         for
@@ -325,10 +325,10 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
           secondStream   = streamNodes(reintroduced).head
           mountCount    <- mounts.get
         yield assertTrue(
-          firstId != secondId,
-          !(firstIdentity eq secondStream.identity),
-          secondStream.rows.map(_.domId) == Vector("component-items-mount-2"),
-          mountCount == 2
+          firstId == secondId,
+          firstIdentity eq secondStream.identity,
+          secondStream.rows.map(_.domId) == Vector("component-items-mount-1"),
+          mountCount == 1
         )
       }
     },

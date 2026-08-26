@@ -10,20 +10,24 @@ final private[scalive] class BufferedActivationSink[A] private (
   private var values: Vector[A] = Vector.empty
   private var active: Boolean   = false
 
-  def offer(value: A): Task[Unit] = gate.withPermit {
-    if active then destination(value)
-    else if values.size >= capacity then ZIO.fail(overflow(capacity))
-    else
-      values = values :+ value
-      ZIO.unit
-  }
-
-  def activate: Task[Unit] = gate.withPermit {
-    ZIO.foreachDiscard(values)(destination) *> ZIO.succeed {
-      values = Vector.empty
-      active = true
+  def offer(value: A): Task[Unit] = gate.withPermit(
+    ZIO.suspendSucceed {
+      if active then destination(value)
+      else if values.size >= capacity then ZIO.fail(overflow(capacity))
+      else
+        values = values :+ value
+        ZIO.unit
     }
-  }
+  )
+
+  def activate: Task[Unit] = gate.withPermit(
+    ZIO.suspendSucceed {
+      ZIO.foreachDiscard(values)(destination) *> ZIO.succeed {
+        values = Vector.empty
+        active = true
+      }
+    }
+  )
 
 private[scalive] object BufferedActivationSink:
   def make[A](

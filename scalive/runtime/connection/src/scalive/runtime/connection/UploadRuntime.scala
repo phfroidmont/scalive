@@ -103,13 +103,15 @@ final private[connection] class UploadEntryWorker private (
       else
         handle
           .write(request.data).foldCauseZIO(
-            _ =>
+            cause =>
+              val reason = writerFailureReason(cause)
               logFailure("write") *>
                 fail(
-                  "writer_error",
-                  UploadChunkError.WriterFailed("writer_error"),
+                  reason,
+                  UploadChunkError.WriterFailed(reason),
                   Some(request.response)
-                ).ignore,
+                ).ignore
+            ,
             _ =>
               received.set(next) *>
                 (if next == expectedBytes then finish(request.response)
@@ -119,13 +121,15 @@ final private[connection] class UploadEntryWorker private (
 
   private def finish(response: Promise[UploadChunkError, Int]): UIO[Unit] =
     handle.complete.foldCauseZIO(
-      _ =>
+      cause =>
+        val reason = writerFailureReason(cause)
         logFailure("complete") *>
           fail(
-            "writer_error",
-            UploadChunkError.WriterFailed("writer_error"),
+            reason,
+            UploadChunkError.WriterFailed(reason),
             Some(response)
-          ).ignore,
+          ).ignore
+      ,
       completion =>
         callbacks
           .complete(completion).foldCauseZIO(
@@ -155,9 +159,9 @@ final private[connection] class UploadEntryWorker private (
         if claimed then
           handle
             .abort(LiveUploadAbortReason.Failed(reason)).catchAllCause(_ => logFailure("abort")) *>
+            callbacks.fail(reason).catchAllCause(_ => logFailure("failure callback")) *>
             failQueued(error) *>
             queue.shutdown *>
-            callbacks.fail(reason).catchAllCause(_ => logFailure("failure callback")) *>
             completeResponse
         else completeResponse
       }
@@ -165,6 +169,11 @@ final private[connection] class UploadEntryWorker private (
   private def progress(bytes: Long): Int =
     if expectedBytes <= 0L then 100
     else math.min(99, ((bytes * 100L) / expectedBytes).toInt)
+
+  private def writerFailureReason(cause: Cause[Throwable]): String =
+    cause.failureOption
+      .collect { case error: LiveUploadWriterError => error.reason }
+      .getOrElse("writer_error")
 
   private def failQueued(error: UploadChunkError): UIO[Unit] =
     queue.takeAll.flatMap(ZIO.foreachDiscard(_)(_.response.fail(error).unit))

@@ -6,3 +6,27 @@ body {
     "Helvetica Neue", sans-serif;
   font-size: 1rem;
 }
+
+.test-global-css {
+  background-color: rgb(255, 0, 0);
+}
+
+[data-colocated-scope="blue"] [data-colocated-member="blue"] {
+  background-color: rgb(0, 0, 255);
+}
+
+[data-colocated-scope="yellow"] [data-colocated-member="yellow"] {
+  background-color: rgb(255, 255, 0);
+}
+
+[data-colocated-scope="green"] [data-colocated-member="green"] {
+  background-color: rgb(0, 255, 0);
+}
+
+[data-colocated-lower-bound] {
+  display: flex;
+}
+
+[data-colocated-lower-bound="inclusive"] > * {
+  flex: 1;
+}

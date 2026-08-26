@@ -8,23 +8,31 @@ import java.util.UUID
 import UploadLiveView.*
 import zio.*
 import zio.http.URL
+import zio.json.ast.Json
+import zio.schema.Schema
+import zio.schema.derived
 
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
 
-class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
+class UploadLiveView() extends LiveView.Routed[Msg, Model, QueryParams]:
 
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 
-  def mount(_params: Option[String], ctx: MountContext) =
-    ctx.uploads.allow(uploadDefinition(autoUpload = false)).map(upload => Model(upload = upload))
+  def mount(_params: QueryParams, ctx: MountContext) =
+    ctx.uploads.allow(uploadDefinition(UploadMode.Manual)).map(upload => Model(upload = upload))
 
-  override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
-    val autoUpload = params.contains("1")
-    if model.upload.autoUpload == autoUpload then ZIO.succeed(model)
+  override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
+    val mode =
+      if params.external_upload.isDefined then UploadMode.External
+      else if params.auto_upload.isDefined then UploadMode.Auto
+      else UploadMode.Manual
+
+    if model.mode == mode then ZIO.succeed(model)
     else
       ctx.uploads.disallow(model.upload.definition) *>
-        ctx.uploads.allow(uploadDefinition(autoUpload)).map(upload => model.copy(upload = upload))
+        ctx.uploads
+          .allow(uploadDefinition(mode)).map(upload => model.copy(upload = upload, mode = mode))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate =>
@@ -41,7 +49,42 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
 
     div(
       styleAttr := "padding: 1rem;",
+      styleTag(
+        """
+          |#drop-target {
+          |  box-sizing: border-box;
+          |  min-height: 260px;
+          |  margin: 1rem 0;
+          |  padding: 2rem;
+          |  border: 4px dashed #475569;
+          |  background: #e2e8f0;
+          |  transition: background 150ms ease, border-color 150ms ease;
+          |}
+          |
+          |#drop-target.phx-drop-target-active {
+          |  border-color: #15803d;
+          |  background: #bbf7d0;
+          |}
+          |
+          |#drop-target-inner {
+          |  min-height: 140px;
+          |  display: flex;
+          |  flex-direction: column;
+          |  align-items: center;
+          |  justify-content: center;
+          |  gap: 0.5rem;
+          |  border: 2px solid #94a3b8;
+          |  background: white;
+          |}
+          |
+          |#drop-target.phx-drop-target-active #drop-target-inner {
+          |  border-color: #16a34a;
+          |  background: #f0fdf4;
+          |}
+          |""".stripMargin
+      ),
       h1("Uploads"),
+      link.pushNavigateUnsafe("/upload?replaced=1", "Replace view"),
       form(
         idAttr := "upload-form",
         on.submit(Msg.Save),
@@ -55,7 +98,13 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
           "Upload"
         ),
         sectionTag(
+          idAttr := "drop-target",
           upload.dropTarget,
+          div(
+            idAttr := "drop-target-inner",
+            span("Inner drop target child"),
+            span("Drag a file across the outer padding and this inner element.")
+          ),
           upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
             articleTag(
               cls := "upload-entry",
@@ -111,14 +160,25 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, Option[String]]:
       case None         => model
     }
 
-  private def uploadDefinition(autoUpload: Boolean): LiveUploadDef[Chunk[Byte]] =
-    LiveUploadDef.inMemory(
-      name = "avatar",
-      accept = LiveUploadAccept.only(AcceptedExtensions.head, AcceptedExtensions.tail*),
-      maxEntries = MaxEntries,
-      maxFileSize = MaxFileSize,
-      autoUpload = autoUpload
-    )
+  private def uploadDefinition(mode: UploadMode): LiveUploadDef[Chunk[Byte]] =
+    mode match
+      case UploadMode.External =>
+        LiveUploadDef.external(
+          name = "avatar",
+          accept = LiveUploadAccept.only(AcceptedExtensions.head, AcceptedExtensions.tail*),
+          uploader = TestExternalUploader,
+          maxEntries = MaxEntries,
+          maxFileSize = MaxFileSize,
+          autoUpload = true
+        )
+      case _ =>
+        LiveUploadDef.inMemory(
+          name = "avatar",
+          accept = LiveUploadAccept.only(AcceptedExtensions.head, AcceptedExtensions.tail*),
+          maxEntries = MaxEntries,
+          maxFileSize = MaxFileSize,
+          autoUpload = mode == UploadMode.Auto
+        )
 
   private def saveCompletedEntries(model: Model, uploads: Uploads): Task[Model] =
     uploads
@@ -137,6 +197,23 @@ object UploadLiveView:
   private val AcceptedExtensions: List[String] = List(".txt", ".md")
   private val UploadDir: Path                  = Paths.get(sys.props("java.io.tmpdir"), "lvupload")
 
+  private val TestExternalUploader = new LiveUploadExternalUploader[Chunk[Byte]]:
+    def preflight(_client: UploadClientMetadata) =
+      ZIO.succeed(
+        LiveExternalUploadResult.Ready(
+          ExternalUploadClientConfig(Json.Obj("uploader" -> Json.Str("TestExternal"))),
+          Chunk.empty
+        )
+      )
+
+  final case class QueryParams(
+    auto_upload: Option[String] = None,
+    external_upload: Option[String] = None)
+      derives Schema
+
+  enum UploadMode:
+    case Manual, Auto, External
+
   enum Msg:
     case Validate
     case Progress
@@ -147,6 +224,7 @@ object UploadLiveView:
 
   final case class Model(
     upload: LiveUpload[Chunk[Byte]],
+    mode: UploadMode = UploadMode.Manual,
     uploadedFiles: List[UploadedFile] = Nil)
 
   def errorToString(error: LiveUploadError): String =

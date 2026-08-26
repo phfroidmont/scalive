@@ -196,7 +196,8 @@ final private[scalive] class RootConnection[Msg, Model] private (
       .onError(_ => uploadReplies.update(_ - command))
 
   private[connection] def mutateUpload[A](
-    mutation: UploadMutation[A]
+    mutation: UploadMutation[A],
+    publish: Boolean = true
   ): IO[ConnectionError, A] =
     for
       command <- ZIO
@@ -204,7 +205,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
                      ConnectionError.KernelRejected(SessionRejection.IdentityUnavailable(error))
                    )
       _ <- kernel
-             .submit(command, SessionCommand.Upload(epoch, command, mutation))
+             .submit(command, SessionCommand.Upload(epoch, command, mutation, publish))
              .mapError(connectionError)
       result <- mutation.await.mapError(ConnectionError.UploadFailed.apply)
     yield result
@@ -239,7 +240,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
                           commit = selection.retirement
                         )
                   }
-      result <- mutateUpload(mutation)
+      result <- mutateUpload(mutation, publish = false)
     yield result
 
   private def runPreflight(
@@ -441,54 +442,74 @@ final private[scalive] class RootConnection[Msg, Model] private (
     entryRef: scalive.upload.UploadEntryRef,
     progress: Int
   ): IO[ConnectionError, Either[UploadRegistryError, Unit]] =
-    val owner = component.fold[OwnerId](OwnerId.Root(lifecycle))(OwnerId.Component(lifecycle, _))
     for
-      mutation <- UploadMutation.make { registry =>
-                    registry.resolveEntry(owner, epoch, uploadRef, entryRef) match
-                      case Left(error) =>
-                        ZIO.succeed(
-                          UploadMutationResult(
-                            registry,
-                            Left(error): Either[UploadRegistryError, Task[Unit]],
-                            reply = Some(UploadControlError(error.toString))
-                          )
-                        )
-                      case Right(token) =>
-                        registry.progress(token.asInstanceOf[UploadEntryToken[Any]], progress) match
-                          case Left(error) =>
-                            ZIO.succeed(
-                              UploadMutationResult(
-                                registry,
-                                Left(error): Either[UploadRegistryError, Task[Unit]],
-                                reply = Some(UploadControlError(error.toString))
-                              )
-                            )
-                          case Right(next) =>
-                            val definition =
-                              token.upload.key.definition.asInstanceOf[LiveUploadDef[Any]]
-                            val callback = next
-                              .snapshotForToken(token.upload.asInstanceOf[UploadToken[Any]])
-                              .toOption
-                              .flatMap(_.entries.find(_.ref == entryRef))
-                              .flatMap(entry => definition.progress.map(_.onProgress(entry)))
-                              .getOrElse(ZIO.unit)
-                            ZIO.succeed(
-                              UploadMutationResult(
-                                next,
-                                Right(callback): Either[UploadRegistryError, Task[Unit]]
-                              )
-                            )
-                  }
-      result <- submitUpload(command, mutation)
-      value  <- result match
-                 case Left(error)     => ZIO.succeed(Left(error))
-                 case Right(callback) =>
-                   callback
-                     .mapError(ConnectionError.UploadFailed.apply)
-                     .as(Right(()))
+      mutation <- uploadProgressMutation(component, uploadRef, entryRef, progress)
+      result   <- submitUpload(command, mutation)
+      value    <- runUploadProgressCallback(result)
     yield value
-    end for
-  end progressUpload
+
+  private[connection] def syncUploadProgress(
+    component: Option[ComponentInstanceId],
+    uploadRef: scalive.upload.UploadRef,
+    entryRef: scalive.upload.UploadEntryRef,
+    progress: Int
+  ): IO[ConnectionError, Either[UploadRegistryError, Unit]] =
+    for
+      mutation <- uploadProgressMutation(component, uploadRef, entryRef, progress)
+      result   <- mutateUpload(mutation, publish = false)
+      value    <- runUploadProgressCallback(result)
+    yield value
+
+  private def uploadProgressMutation(
+    component: Option[ComponentInstanceId],
+    uploadRef: scalive.upload.UploadRef,
+    entryRef: scalive.upload.UploadEntryRef,
+    progress: Int
+  ): UIO[UploadMutation[Either[UploadRegistryError, Task[Unit]]]] =
+    val owner = component.fold[OwnerId](OwnerId.Root(lifecycle))(OwnerId.Component(lifecycle, _))
+    UploadMutation.make { registry =>
+      registry.resolveEntry(owner, epoch, uploadRef, entryRef) match
+        case Left(error) =>
+          ZIO.succeed(
+            UploadMutationResult(
+              registry,
+              Left(error): Either[UploadRegistryError, Task[Unit]],
+              reply = Some(UploadControlError(error.toString))
+            )
+          )
+        case Right(token) =>
+          registry.progress(token.asInstanceOf[UploadEntryToken[Any]], progress) match
+            case Left(error) =>
+              ZIO.succeed(
+                UploadMutationResult(
+                  registry,
+                  Left(error): Either[UploadRegistryError, Task[Unit]],
+                  reply = Some(UploadControlError(error.toString))
+                )
+              )
+            case Right(next) =>
+              val definition = token.upload.key.definition.asInstanceOf[LiveUploadDef[Any]]
+              val callback   = next
+                .snapshotForToken(token.upload.asInstanceOf[UploadToken[Any]])
+                .toOption
+                .flatMap(_.entries.find(_.ref == entryRef))
+                .flatMap(entry => definition.progress.map(_.onProgress(entry)))
+                .getOrElse(ZIO.unit)
+              ZIO.succeed(
+                UploadMutationResult(
+                  next,
+                  Right(callback): Either[UploadRegistryError, Task[Unit]]
+                )
+              )
+    }
+  end uploadProgressMutation
+
+  private def runUploadProgressCallback(
+    result: Either[UploadRegistryError, Task[Unit]]
+  ): IO[ConnectionError, Either[UploadRegistryError, Unit]] = result match
+    case Left(error)     => ZIO.succeed(Left(error))
+    case Right(callback) =>
+      callback.mapError(ConnectionError.UploadFailed.apply).as(Right(()))
 
   private def completeUploadEntry(
     entry: UploadEntryToken[?],
@@ -533,7 +554,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
                         )
                       case Left(_) => UploadMutationResult(registry, ())
                   }
-      _ <- mutateUpload(mutation)
+      _ <- mutateUpload(mutation, publish = false)
       _ <- observer.emit(
              RuntimeEvent.TurnFailed(
                RuntimeCorrelation(connectionId, lifecycle, epoch),
@@ -675,6 +696,9 @@ final private[scalive] class RootConnection[Msg, Model] private (
       .map(
         _.components.values.find(component => component.ref.asInstanceOf[AnyRef] eq token).map(_.id)
       ).mapError(connectionError)
+
+  private[connection] def destroyComponents(tokens: Vector[Object]): IO[ConnectionError, Unit] =
+    kernel.destroyComponents(tokens).mapError(connectionError)
 
   private[connection] def componentWasClosed(component: ComponentInstanceId): UIO[Boolean] =
     componentEnvironment.wasClosed(component)

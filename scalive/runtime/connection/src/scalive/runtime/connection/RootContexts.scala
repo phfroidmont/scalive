@@ -149,7 +149,7 @@ final private class RootNavigation(
 
   private def record(to: String, kind: NavigationKind): Task[Unit] =
     for
-      destination <- ZIO.fromEither(RootNavigation.resolve(currentUrl, to))
+      destination <- ZIO.fromEither(RootNavigation.resolve(currentUrl, to, kind))
       accepted    <- journal.navigation.modify {
                     case None           => true  -> Some(NavigationRequest(destination, kind))
                     case some @ Some(_) => false -> some
@@ -160,12 +160,23 @@ final private class RootNavigation(
     yield ()
 
 private object RootNavigation:
-  def resolve(current: URL, destination: String): Either[Throwable, URL] =
-    val value =
-      if destination.startsWith("?") || destination.startsWith("#") then
-        s"${current.path.encode}$destination"
-      else destination
-    URL.decode(value).left.map(error => IllegalArgumentException(error.getMessage))
+  def resolve(
+    current: URL,
+    destination: String,
+    kind: NavigationKind
+  ): Either[Throwable, URL] =
+    val validated = kind match
+      case NavigationKind.PushPatch | NavigationKind.ReplacePatch | NavigationKind.PushNavigate |
+          NavigationKind.ReplaceNavigate =>
+        NavigationDestination.live(destination)
+      case NavigationKind.Redirect => NavigationDestination.redirect(destination)
+    validated.flatMap { safeDestination =>
+      val value =
+        if safeDestination.startsWith("?") || safeDestination.startsWith("#") then
+          s"${current.path.encode}$safeDestination"
+        else safeDestination
+      URL.decode(value).left.map(error => IllegalArgumentException(error.getMessage))
+    }
 
 final private class RootMountNavigation(currentUrl: URL, journal: RootTurnJournal)
     extends MountNavigation:

@@ -52,6 +52,22 @@ object HtmlRendererSpec extends ZIOSpecDefault:
         HtmlRenderer.render(candidate.tree) == "<div data-first=\"1\" data-second=\"2\"></div>"
       )
     },
+    test("renders v1.2 form serialization and focused-patching opt-ins") {
+      for
+        program <- ZIO.fromEither(
+                     RenderProgram.compile[Unit, Nothing](_ =>
+                       form(
+                         phx.noUnusedField := true,
+                         input(phx.patchFocused := true)
+                       )
+                     )
+                   )
+        candidate <- program.evaluate(())
+      yield assertTrue(
+        HtmlRenderer.render(candidate.tree) ==
+          "<form phx-no-unused-field><input phx-patch-focused></form>"
+      )
+    },
     test("renders HTML5 void elements and optional doctype") {
       for
         inputProgram <- ZIO.fromEither(

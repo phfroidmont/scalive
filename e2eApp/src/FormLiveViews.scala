@@ -17,7 +17,9 @@ final case class FormQueryParams(
   disabledFieldset: Boolean = false,
   checkboxes: Boolean = false,
   portal: Boolean = false,
-  latencyMode: Boolean = false)
+  latencyMode: Boolean = false,
+  noUnusedFieldForm: Boolean = false,
+  noUnusedFieldInput: Boolean = false)
 
 object FormQueryParams:
   val decoder: LiveParamsDecoder[Unit, FormQueryParams] =
@@ -33,7 +35,9 @@ object FormQueryParams:
             disabledFieldset = url.queryParam("disabled-fieldset").contains("true"),
             checkboxes = url.queryParam("checkboxes").contains("1"),
             portal = url.queryParam("portal").isDefined,
-            latencyMode = url.queryParam("phx-change").contains("validate")
+            latencyMode = url.queryParam("phx-change").contains("validate"),
+            noUnusedFieldForm = url.queryParam("phx-no-unused-field-form").isDefined,
+            noUnusedFieldInput = url.queryParam("phx-no-unused-field-input").isDefined
           )
         )
     )
@@ -167,7 +171,7 @@ object FormLiveView:
       "a" -> "foo",
       "b" -> "bar",
       "c" -> "baz",
-      "d" -> "bar"
+      "d" -> "foo"
     ),
     submitted: Boolean = false)
 
@@ -193,6 +197,8 @@ object FormLiveView:
     }
     val autoRecover   = query.map(_.autoRecover)
     val disabledValue = query.map(_.disabledFieldset)
+    val noUnusedForm  = query.map(_.noUnusedFieldForm)
+    val noUnusedInput = query.map(_.noUnusedFieldInput)
     val hasId         = query.map(current => !current.noId)
     val valueA        = values.map(_.getOrElse("a", ""))
     val valueB        = values.map(_.getOrElse("b", ""))
@@ -212,6 +218,7 @@ object FormLiveView:
           2 -> (phxChangeAttr := "validate")
         ),
         phxAutoRecoverAttr.optional(autoRecover),
+        phx.noUnusedField := noUnusedForm,
         target,
         cls := "myformclass",
         fieldset(
@@ -224,7 +231,12 @@ object FormLiveView:
           ),
           input(typ := "text", nameAttr := "b", value := valueB)
         ),
-        input(typ := "text", nameAttr := "c", value := valueC),
+        input(
+          typ               := "text",
+          nameAttr          := "c",
+          value             := valueC,
+          phx.noUnusedField := noUnusedInput
+        ),
         select(
           nameAttr := "d",
           option(value := "foo", selected := selectedFoo, "foo"),

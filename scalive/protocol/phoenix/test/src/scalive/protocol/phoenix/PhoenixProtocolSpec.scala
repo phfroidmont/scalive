@@ -316,7 +316,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
           "status" -> Json.Str("ok"),
           "response" -> Json.Obj(
             "rendered"         -> rendered,
-            "liveview_version" -> Json.Str("1.1.28")
+            "liveview_version" -> Json.Str("1.2.10")
           )
         ),
         event.ref == ref,

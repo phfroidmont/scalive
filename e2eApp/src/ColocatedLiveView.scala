@@ -48,7 +48,8 @@ class ColocatedLiveView extends LiveView[Msg, Model]:
                         |    \"\"\"
                         |  end
                         |end
-                        |""".stripMargin)
+                        |""".stripMargin),
+      colocatedCssFixtures
     )
 end ColocatedLiveView
 
@@ -59,6 +60,71 @@ object ColocatedLiveView:
 
   final case class Model(phone: String = "")
 
+  private def colocatedCssFixtures =
+    div(
+      p(
+        dataAttr("test") := "global",
+        cls              := "test-global-css",
+        "Should have red background"
+      ),
+      scopedCssFixture,
+      p(
+        dataAttr("test") := "scoped",
+        cls              := "test-scoped-css",
+        "Should have no background (out of scope)"
+      ),
+      lowerBoundFixture(inclusive = true),
+      lowerBoundFixture(inclusive = false)
+    )
+
+  private def scopedCssFixture =
+    div(
+      dataAttr("colocated-scope") := "blue",
+      scopedColor("blue", "Should have blue background"),
+      scopedBoundary,
+      scopedBoundary,
+      div(
+        dataAttr("colocated-scope") := "yellow",
+        scopedColor("yellow", "Should have yellow background"),
+        scopedBoundary
+      ),
+      scopedBoundary,
+      div(
+        dataAttr("colocated-scope") := "green",
+        scopedColor("green", "Should have green background"),
+        scopedBoundary
+      )
+    )
+
+  private def scopedBoundary =
+    span(
+      dataAttr("colocated-scope-boundary") := "",
+      dataAttr("test-scoped")              := "none",
+      cls                                  := "test-scoped-css",
+      "Should have no background (scope root)",
+      scopedColor("blue", "Should have blue background")
+    )
+
+  private def scopedColor(color: String, text: String) =
+    span(
+      dataAttr("colocated-member") := color,
+      dataAttr("test-scoped")      := color,
+      cls                          := "test-scoped-css",
+      text
+    )
+
+  private def lowerBoundFixture(inclusive: Boolean) =
+    val bound = if inclusive then "inclusive" else "exclusive"
+    val flex  = if inclusive then "yes" else "no"
+    val text  = if inclusive then "Should" else "Shouldn't"
+
+    div(
+      dataAttr("test-lower-bound-container") := "",
+      dataAttr("colocated-lower-bound")      := bound,
+      cls                                    := "container",
+      (1 to 3).map(index => p(dataAttr("test-inclusive") := flex, s"$text Flex $index"))
+    )
+
   private def syntaxHighlight(code: String) =
     val highlighted = code.trim
       .replace("<button", "&lt;<span class=\"nt\">button</span>")
@@ -68,3 +134,4 @@ object ColocatedLiveView:
     rawHtml(
       s"""<pre class="highlight"><style>.highlight { padding: 8px; border-radius: 4px; }</style>$highlighted</pre>"""
     )
+end ColocatedLiveView

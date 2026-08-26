@@ -234,7 +234,7 @@ should prove at least:
 - a deliberately interrupted WebSocket exercises the application's reconnect
   expectations.
 
-The Scalive repository runs the upstream Phoenix LiveView `v1.1.28` Playwright
+The Scalive repository runs the upstream Phoenix LiveView `v1.2.10` Playwright
 suite against `e2eApp` with:
 
 ```bash

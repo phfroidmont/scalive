@@ -114,6 +114,20 @@ div(popover := "manual", "Details")
 Avoid @:apiSymbol(def:scalive.rawHtml)`rawHtml`@:@ for ordinary content. It bypasses escaping and should be limited
 to HTML that the application already trusts.
 
+Two uncommon client-side switches use the typed `phx` attribute namespace directly.
+Scalive does not wrap them in form or DOM helpers because they carry no application
+message or server-side value and apply across raw and typed controls.
+
+Put @:apiSymbol(lazy-val:scalive.phx.noUnusedField)`phx.noUnusedField := true`@:@ on a
+form or individual form-associated control to omit Phoenix's `_unused_*` markers for
+that scope. Without those markers, received fields are treated as used when deriving
+validation visibility.
+
+Put @:apiSymbol(lazy-val:scalive.phx.patchFocused)`phx.patchFocused := true`@:@ on an
+editable form-associated control, including a form-associated custom element, when
+normal DOM patching should continue while it is focused. Focused controls otherwise
+preserve browser-managed state during a patch.
+
 ## Bind Events To Messages {#bind-events-to-messages}
 
 Use the @:apiSymbol(object:scalive.on)`on`@:@ bindings to produce the view's message

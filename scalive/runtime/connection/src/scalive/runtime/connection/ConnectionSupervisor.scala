@@ -32,7 +32,22 @@ sealed private[scalive] trait ConnectedLifecycle:
     event: Option[LiveEvent] = None
   ): IO[ConnectionError, Unit]
 
+  def submitBrowserEvent(
+    command: CommandId,
+    binding: BindingId,
+    payload: BindingPayload,
+    event: Option[LiveEvent] = None
+  ): IO[ConnectionError, Unit]
+
   def componentEvent(
+    command: CommandId,
+    component: ComponentInstanceId,
+    binding: BindingId,
+    payload: BindingPayload,
+    event: LiveEvent
+  ): IO[ConnectionError, Unit]
+
+  def submitComponentEvent(
     command: CommandId,
     component: ComponentInstanceId,
     binding: BindingId,
@@ -73,10 +88,18 @@ sealed private[scalive] trait ConnectedLifecycle:
     progress: Int
   ): IO[ConnectionError, Either[UploadRegistryError, Unit]]
 
+  def syncUploadProgress(
+    component: Option[ComponentInstanceId],
+    uploadRef: UploadRef,
+    entryRef: UploadEntryRef,
+    progress: Int
+  ): IO[ConnectionError, Either[UploadRegistryError, Unit]]
+
   def patch(command: CommandId, destination: URL): IO[ConnectionError, Unit]
   def internalPatch(destination: URL): IO[ConnectionError, Unit]
   def synchronizeUrl(destination: URL): IO[ConnectionError, Unit]
   def componentForToken(token: Object): IO[ConnectionError, Option[ComponentInstanceId]]
+  def destroyComponents(tokens: Vector[Object]): IO[ConnectionError, Unit]
   def tree: IO[ConnectionError, EvaluatedTree]
   def awaitFailure: UIO[ConnectionError]
   def pollFailure: UIO[Option[ConnectionError]]
@@ -129,6 +152,16 @@ private[connection] object ConnectedLifecycle:
           case Some(value) => connection.offerRawEvent(command, binding, payload, value)
           case None        => connection.offerEvent(command, binding, payload)
 
+      def submitBrowserEvent(
+        command: CommandId,
+        binding: BindingId,
+        payload: BindingPayload,
+        event: Option[LiveEvent]
+      ): IO[ConnectionError, Unit] =
+        event match
+          case Some(value) => connection.submitRawEvent(command, binding, payload, value)
+          case None        => connection.submitEvent(command, binding, payload)
+
       def componentEvent(
         command: CommandId,
         component: ComponentInstanceId,
@@ -137,6 +170,21 @@ private[connection] object ConnectedLifecycle:
         event: LiveEvent
       ): IO[ConnectionError, Unit] =
         connection.offerComponentRawEvent(
+          command,
+          component,
+          binding,
+          payload,
+          event
+        )
+
+      def submitComponentEvent(
+        command: CommandId,
+        component: ComponentInstanceId,
+        binding: BindingId,
+        payload: BindingPayload,
+        event: LiveEvent
+      ): IO[ConnectionError, Unit] =
+        connection.submitComponentRawEvent(
           command,
           component,
           binding,
@@ -184,6 +232,14 @@ private[connection] object ConnectedLifecycle:
       ): IO[ConnectionError, Either[UploadRegistryError, Unit]] =
         connection.progressUpload(command, component, uploadRef, entryRef, progress)
 
+      def syncUploadProgress(
+        component: Option[ComponentInstanceId],
+        uploadRef: UploadRef,
+        entryRef: UploadEntryRef,
+        progress: Int
+      ): IO[ConnectionError, Either[UploadRegistryError, Unit]] =
+        connection.syncUploadProgress(component, uploadRef, entryRef, progress)
+
       def patch(command: CommandId, destination: URL): IO[ConnectionError, Unit] =
         connection.offerPatch(command, destination)
 
@@ -196,6 +252,9 @@ private[connection] object ConnectedLifecycle:
       def componentForToken(
         token: Object
       ): IO[ConnectionError, Option[ComponentInstanceId]] = connection.componentForToken(token)
+
+      def destroyComponents(tokens: Vector[Object]): IO[ConnectionError, Unit] =
+        connection.destroyComponents(tokens)
 
       def tree: IO[ConnectionError, EvaluatedTree]  = connection.inspectTree
       def awaitFailure: UIO[ConnectionError]        = connection.awaitFailure

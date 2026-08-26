@@ -23,5 +23,41 @@ object BufferedActivationSinkSpec extends ZIOSpecDefault:
         _    <- sink.offer(1)
         full <- sink.offer(2).either
       yield assertTrue(full == Left(Overflow(1)))
+    },
+    test("activation observes values offered after its effect is constructed") {
+      for
+        observed <- Ref.make(Vector.empty[Int])
+        sink     <- BufferedActivationSink.make[Int](2, value => observed.update(_ :+ value), Overflow(_))
+        _         <- sink.offer(1)
+        activation = sink.activate
+        _         <- sink.offer(2)
+        _         <- activation
+        actual    <- observed.get
+      yield assertTrue(actual == Vector(1, 2))
+    },
+    test("an offer waiting behind activation observes the active state") {
+      for
+        observed         <- Ref.make(Vector.empty[Int])
+        activationEntered <- Promise.make[Nothing, Unit]
+        releaseActivation <- Promise.make[Nothing, Unit]
+        sink <- BufferedActivationSink.make[Int](
+                  2,
+                  value =>
+                    observed.update(_ :+ value) *>
+                      ZIO
+                        .when(value == 1)(
+                          activationEntered.succeed(()).unit *> releaseActivation.await
+                        ).unit,
+                  Overflow(_)
+                )
+        _         <- sink.offer(1)
+        activation <- sink.activate.fork
+        _          <- activationEntered.await
+        pending    <- sink.offer(2).fork
+        _          <- ZIO.yieldNow
+        _          <- releaseActivation.succeed(())
+        _          <- activation.join *> pending.join
+        actual    <- observed.get
+      yield assertTrue(actual == Vector(1, 2))
     }
   )

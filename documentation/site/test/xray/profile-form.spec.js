@@ -29,8 +29,10 @@ test("validates, saves, resets, and traces a typed profile form", async ({ page 
   await form.getByLabel("Email").fill("ada@example.com")
   await form.getByRole("button", { name: "Save profile" }).click()
   await expect(example.locator("[data-profile-saved]")).toHaveText("Saved Ada Lovelace's profile.")
-  const jumpToLatest = inspector.getByRole("button", { name: "Jump to latest" })
-  if (await jumpToLatest.isVisible()) await jumpToLatest.click()
+  const saveInteractions = inspector.locator("[data-trace-interaction]").filter({ hasText: "Save" })
+  await expect(saveInteractions).toHaveCount(1)
+  await saveInteractions.click()
+  await expect(saveInteractions).toHaveAttribute("aria-pressed", "true")
   const capturedTrace = inspector.locator('[data-trace-provenance="captured"]')
   await expect(capturedTrace.locator('[data-trace-evidence="Updated model"] code')).toHaveText(
     "Model(form = _, saved = _)",

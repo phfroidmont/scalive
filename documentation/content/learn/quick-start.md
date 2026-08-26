@@ -114,7 +114,7 @@ Create `app/package.json`:
   },
   "dependencies": {
     "phoenix": "1.7.21",
-    "phoenix_live_view": "1.1.28"
+    "phoenix_live_view": "1.2.10"
   },
   "devDependencies": {
     "esbuild": "0.28.1"

@@ -42,12 +42,13 @@ trait Components:
     *
     * The helper derives the input `id`, `name`, `accept`, and `multiple` state from the current
     * [[LiveUpload]] snapshot. It also owns the `Phoenix.LiveFileUpload` hook and the
-    * `data-phx-upload-ref`, `data-phx-active-refs`, `data-phx-done-refs`, and
-    * `data-phx-preflighted-refs` protocol attributes. `data-phx-auto-upload` is present only for
-    * automatic uploads. These attributes allow the browser client to correlate selections and
-    * progress with server-side entries; do not remove or hand-edit them. Refresh the upload
-    * snapshot after upload events before rendering it again. Supply only attributes and bindings in
-    * `mods`; an `input` is a void element and cannot contain child content.
+    * `data-phx-upload-ref`, `data-phx-active-refs`, `data-phx-done-refs`,
+    * `data-phx-preflighted-refs`, and `data-phx-error-refs` protocol attributes.
+    * `data-phx-auto-upload` is present only for automatic uploads. These attributes allow the
+    * browser client to correlate selections and progress with server-side entries; do not remove or
+    * hand-edit them. Refresh the upload snapshot after upload events before rendering it again.
+    * Supply only attributes and bindings in `mods`; an `input` is a void element and cannot contain
+    * child content.
     *
     * Validation and transfer failures are not rendered by the input. Read them with
     * [[uploadErrors]] and present them explicitly.
@@ -65,13 +66,7 @@ trait Components:
       .map(_.ref.value)
       .mkString(",")
     val preflightedRefs = upload.entries
-      .filter(entry =>
-        entry.status match
-          case LiveUploadEntryStatus.Preflighted | LiveUploadEntryStatus.Uploading(_) |
-              LiveUploadEntryStatus.Completed =>
-            true
-          case _ => false
-      )
+      .filter(isPreflighted)
       .map(_.ref.value)
       .mkString(",")
 
@@ -85,11 +80,11 @@ trait Components:
       dataAttr("phx-active-refs")      := activeRefs,
       dataAttr("phx-done-refs")        := doneRefs,
       dataAttr("phx-preflighted-refs") := preflightedRefs,
+      dataAttr("phx-error-refs")       := errorRefs(upload),
       dataPhxAutoUpload                := upload.autoUpload,
       multiple                         := upload.maxEntries > 1,
       mods
     )
-  end liveFileInput
 
   /** Renders a signal-backed upload input from the committed upload snapshot. */
   def liveFileInput[Msg, R](
@@ -114,18 +109,13 @@ trait Components:
       ),
       dataAttr("phx-preflighted-refs") := upload.map(
         _.entries
-          .filter(entry =>
-            entry.status match
-              case LiveUploadEntryStatus.Preflighted | LiveUploadEntryStatus.Uploading(_) |
-                  LiveUploadEntryStatus.Completed =>
-                true
-              case _ => false
-          )
+          .filter(isPreflighted)
           .map(_.ref.value)
           .mkString(",")
       ),
-      dataPhxAutoUpload := upload.map(_.autoUpload),
-      multiple          := upload.map(_.maxEntries > 1),
+      dataAttr("phx-error-refs") := upload.map(errorRefs),
+      dataPhxAutoUpload          := upload.map(_.autoUpload),
+      multiple                   := upload.map(_.maxEntries > 1),
       mods
     )
 
@@ -138,6 +128,22 @@ trait Components:
   /** Returns upload-wide errors from a signal-backed upload value. */
   def uploadErrors[R](upload: Signal[LiveUpload[R]]): Signal[List[LiveUploadError]] =
     upload.map(_.errors)
+
+  private def isPreflighted[R](entry: LiveUploadEntry[R]): Boolean = entry.status match
+    case LiveUploadEntryStatus.Preflighted | LiveUploadEntryStatus.Uploading(_) |
+        LiveUploadEntryStatus.Completed =>
+      true
+    case LiveUploadEntryStatus.Invalid(errors) =>
+      errors.exists {
+        case LiveUploadError.WriterFailure(_) => true
+        case _                                => false
+      }
+    case LiveUploadEntryStatus.Selected => false
+
+  private def errorRefs[R](upload: LiveUpload[R]): String =
+    val uploadRef = Option.when(upload.errors.nonEmpty)(upload.ref.value).toList
+    val entryRefs = upload.entries.filter(_.errors.nonEmpty).map(_.ref.value)
+    (uploadRef ++ entryRefs).distinct.mkString(",")
 
   /** Returns current errors for `entry` as recorded in `upload`.
     *

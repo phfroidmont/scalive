@@ -9,7 +9,7 @@ import {
   traceSessionParameter,
   wrapDecoder,
   wrapEncoder,
-} from "./phoenix-live-view-1.1.28.js"
+} from "./phoenix-live-view-1.2.10.js"
 
 test("encoder forwards the exact serialized value before observing it", async () => {
   const encoded = new ArrayBuffer(4)
@@ -103,6 +103,44 @@ test("adapter emits a correlated terminal record after successful inbound proces
   assert.equal(terminal.joinReference, decoded.join_ref)
   assert.equal(terminal.messageReference, decoded.ref)
   assert.equal(terminal.operationSequence, Number(decoded.ref))
+})
+
+test("adapter preserves nested inbound correlations", async () => {
+  const batches = []
+  const adapter = createLiveTraceAdapter()
+  adapter.hook.mounted.call({
+    el: {
+      dataset: {
+        liveTraceObservedTopic: "lv:example",
+        liveTraceEnabled: "true",
+        liveTraceBrowserEvent: "trace-records",
+      },
+    },
+    pushEvent(_event, payload) {
+      batches.push(payload.records)
+    },
+  })
+  const outer = { topic: "lv:example", event: "phx_reply", payload: {}, ref: "2", join_ref: "1" }
+  const inner = { topic: "lv:example", event: "phx_reply", payload: {}, ref: "3", join_ref: "1" }
+
+  adapter.beginInbound(outer, "outer-frame")
+  adapter.beginInbound(inner, "inner-frame")
+  adapter.endInbound(inner, "inner-frame", true)
+  adapter.endInbound(outer, "outer-frame", true)
+  await Promise.resolve()
+
+  const records = batches.flat()
+  assert.deepEqual(records.map((record) => record.stage), [
+    "InboundFrame",
+    "InboundFrame",
+    "InboundProcessed",
+    "InboundProcessed",
+  ])
+  assert.deepEqual(
+    records.filter((record) => record.stage === "InboundProcessed")
+      .map((record) => record.messageReference),
+    [inner.ref, outer.ref],
+  )
 })
 
 test("adapter reveals a newly selected trace interaction", () => {

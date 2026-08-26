@@ -203,8 +203,8 @@ final private[scalive] case class RootEvent(
 end RootEvent
 
 private[scalive] object PhoenixProtocol:
-  val PhoenixVersion  = "1.7.21"
-  val LiveViewVersion = "1.1.28"
+  val PhoenixVersion  = "1.8.9"
+  val LiveViewVersion = "1.2.10"
 
   def decode(json: Json): Either[String, PhoenixInbound] =
     PhoenixEnvelope.fromJson(json).flatMap(decodeEnvelope)

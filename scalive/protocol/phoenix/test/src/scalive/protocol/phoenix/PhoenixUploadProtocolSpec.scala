@@ -229,13 +229,20 @@ object PhoenixUploadProtocolSpec extends ZIOSpecDefault:
       )
       val canonicalResponse =
         """{"ref":"upload-ref","config":{"max_file_size":8000000,"max_entries":2,"chunk_size":64000,"chunk_timeout":10000},"entries":{"0":"opaque-token","1":{"uploader":"S3","url":"https://upload.test"}},"errors":{"2":["too_large"]}}"""
-      val reply = PhoenixUploadProtocol.preflightReply(joinRef, ref, "lv:root", response)
+      val diff  = Json.Obj("0" -> Json.Str("rendered"))
+      val reply = PhoenixUploadProtocol.preflightReply(joinRef, ref, "lv:root", response, None)
+      val replyWithDiff =
+        PhoenixUploadProtocol.preflightReply(joinRef, ref, "lv:root", response, Some(diff))
 
       assertTrue(
         PhoenixUploadProtocol.encodePreflight(response).toJson == canonicalResponse,
-        reply.payload == Json.Obj(
-          "status"   -> Json.Str("ok"),
-          "response" -> PhoenixUploadProtocol.encodePreflight(response)
+         reply.payload == Json.Obj(
+           "status"   -> Json.Str("ok"),
+           "response" -> PhoenixUploadProtocol.encodePreflight(response)
+         ),
+        replyWithDiff.payload == Json.Obj(
+          "status" -> Json.Str("ok"),
+          "response" -> PhoenixUploadProtocol.encodePreflight(response).add("diff", diff)
         ),
         PhoenixUploadProtocol.chunkAcknowledgement(joinRef, ref, "lvu:0").payload ==
           Json.Obj("status" -> Json.Str("ok"), "response" -> Json.Obj.empty),

@@ -366,12 +366,7 @@ class Issue3529LiveView extends LiveView.Routed[Unit, Issue3529LiveView.Model, O
     ZIO.succeed(model)
 
   override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
-    val next =
-      model.copy(
-        mounted = params.fold(UUID.randomUUID().toString)(_ => model.mounted),
-        next = UUID.randomUUID().toString
-      )
-    ZIO.succeed(next)
+    ZIO.succeed(model.copy(next = UUID.randomUUID().toString))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Unit) => ZIO.succeed(model)
@@ -392,7 +387,6 @@ class Issue3529LiveView extends LiveView.Routed[Unit, Issue3529LiveView.Model, O
         "Patch"
       )
     )
-end Issue3529LiveView
 
 object Issue3529LiveView:
   final case class Model(mounted: String, next: String)
@@ -428,6 +422,8 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
 
   override def view(model: Signal[Model]) =
     div(
+      idAttr   := "issue-3530",
+      phx.hook := "Issue3530Sync",
       ul(
         idAttr     := "stream-list",
         phx.update := PhxUpdate.Stream,

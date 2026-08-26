@@ -16,7 +16,9 @@ class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
     ZIO.succeed(model.copy(paramCurrent = params.param.map(_.toString)))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    _ => ZIO.succeed(model)
+    case Msg.ServerNavigate =>
+      ctx.nav.pushNavigate(E2ERoutes.navigationB.location(BParams(false))).as(model)
+    case _ => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     val nextLocation =
@@ -44,9 +46,11 @@ class NavigationALiveView() extends LiveView.Routed[Msg, Model, AParams]:
           E2ERoutes.navigationB.location(BParams(false)).withFragment("items-item-42"),
           cls := "inline-flex rounded bg-slate-200 px-4 py-2",
           "Navigate to 42"
-        )
+        ),
+        button(on.click(Msg.ServerNavigate), "Server Navigate")
       )
     )
+  end view
 
 end NavigationALiveView
 
@@ -170,6 +174,7 @@ object NavigationLiveViews:
 
   enum Msg:
     case TriggerLoop
+    case ServerNavigate
     case Noop
 
   final case class AParams(param: Option[Int]) derives Schema

@@ -16,6 +16,77 @@ console.log = (...args) => {
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 const liveSocketParams = csrfToken ? { _csrf_token: csrfToken } : {}
 
+if (window.location.pathname === "/issues/4212") window.__lvCustomElLog = []
+
+if (!customElements.get("lv-custom-el")) {
+  customElements.define("lv-custom-el", class extends HTMLElement {
+    connectedCallback() {
+      window.__lvCustomElLog?.push({ type: "connected", id: this.id })
+    }
+
+    disconnectedCallback() {
+      window.__lvCustomElLog?.push({ type: "disconnected", id: this.id })
+    }
+
+    connectedMoveCallback() {
+      window.__lvCustomElLog?.push({ type: "moved", id: this.id })
+    }
+  })
+}
+
+if (!customElements.get("issue-4323-face")) {
+  customElements.define("issue-4323-face", class extends HTMLElement {
+    static formAssociated = true
+
+    constructor() {
+      super()
+      this.attachInternals()
+    }
+  })
+}
+
+if (!customElements.get("issue-4323-delegates-face")) {
+  customElements.define("issue-4323-delegates-face", class extends HTMLElement {
+    static formAssociated = true
+
+    constructor() {
+      super()
+      this.attachInternals()
+      this.attachShadow({ mode: "open", delegatesFocus: true })
+      this.shadowRoot.innerHTML = '<input type="text"><slot></slot>'
+    }
+  })
+}
+
+if (!window.unsavedFormListenersInstalled) {
+  window.unsavedFormListenersInstalled = true
+  window.unsavedEvents = window.unsavedEvents || []
+
+  const hasUnsavedChanges = () =>
+    document.querySelector("#unsaved-form[data-dirty='true']") !== null
+
+  window.addEventListener("phx:before-navigate", (event) => {
+    if (!hasUnsavedChanges()) return
+
+    window.unsavedEvents.push({ type: "phx", detail: event.detail })
+    if (!window.confirm("You have unsaved changes. Leave without saving?")) {
+      event.preventDefault()
+    }
+  })
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!hasUnsavedChanges()) return
+
+    window.unsavedEvents.push({ type: "beforeunload" })
+    event.preventDefault()
+    event.returnValue = ""
+  })
+}
+
+if (window.location.pathname === "/issues/4325") {
+  window.issue4325Lifecycle = { mounted: 0, updated: 0, destroyed: 0 }
+}
+
 const hooks = {
   ...colocatedHooks,
   FormHook: {
@@ -99,6 +170,68 @@ const hooks = {
       input.dispatchEvent(new Event("input", { bubbles: true }))
     }
   },
+  Issue2835UploadSync: {
+    mounted() {
+      this.onUploadChange = (event) => {
+        if (!(event.target instanceof HTMLInputElement) || event.target.type !== "file") return
+        if (document.querySelectorAll("#uploaded-files li").length > 0) return
+
+        this.finishUploadSync()
+        this.uploadInput = event.target
+        this.maxActiveRefs = 0
+        this.uploadProgressObserved = false
+        this.uploadSyncMarker = document.createElement("span")
+        this.uploadSyncMarker.hidden = true
+        this.uploadSyncMarker.className = "phx-change-loading"
+        document.body.append(this.uploadSyncMarker)
+        this.uploadSyncObserver = new MutationObserver(() => this.checkUploadSync())
+        this.uploadSyncObserver.observe(this.el, {
+          attributes: true,
+          childList: true,
+          subtree: true
+        })
+        this.uploadSyncTimeout = window.setTimeout(() => this.finishUploadSync(), 10000)
+        this.checkUploadSync()
+      }
+      this.el.addEventListener("change", this.onUploadChange)
+    },
+    updated() {
+      this.checkUploadSync()
+    },
+    destroyed() {
+      this.el.removeEventListener("change", this.onUploadChange)
+      this.finishUploadSync()
+    },
+    checkUploadSync() {
+      if (!this.uploadSyncMarker || !this.uploadInput) return
+
+      const refs = (name) =>
+        (this.uploadInput.getAttribute(name) || "").split(",").filter(Boolean)
+      const activeCount = refs("data-phx-active-refs").length
+      this.maxActiveRefs = Math.max(this.maxActiveRefs, activeCount)
+      if (
+        this.maxActiveRefs > 0 &&
+        (activeCount < this.maxActiveRefs ||
+          refs("data-phx-done-refs").length > 0 ||
+          refs("data-phx-preflighted-refs").length > 0)
+      ) {
+        this.uploadProgressObserved = true
+      }
+      if (!this.uploadProgressObserved) return
+
+      window.clearTimeout(this.uploadSettleTimeout)
+      this.uploadSettleTimeout = window.setTimeout(() => this.finishUploadSync(), 40)
+    },
+    finishUploadSync() {
+      this.uploadSyncObserver?.disconnect()
+      this.uploadSyncMarker?.remove()
+      window.clearTimeout(this.uploadSyncTimeout)
+      window.clearTimeout(this.uploadSettleTimeout)
+      this.uploadSyncObserver = null
+      this.uploadSyncMarker = null
+      this.uploadInput = null
+    }
+  },
   OuterHook: {
     mounted() {
       this.pushEvent("lol")
@@ -171,6 +304,20 @@ const hooks = {
   test: {
     mounted() {
       console.log(`${this.__view().id} mounted hook!`)
+      document.querySelector("#issue-3530-sync")?.remove()
+    }
+  },
+  Issue3530Sync: {
+    mounted() {
+      this.el.querySelector("div[phx-click=inc]").addEventListener("click", () => {
+        document.querySelector("#issue-3530-sync")?.remove()
+        const marker = document.createElement("span")
+        marker.id = "issue-3530-sync"
+        marker.hidden = true
+        marker.className = "phx-click-loading"
+        document.body.append(marker)
+        window.setTimeout(() => marker.remove(), 10000)
+      })
     }
   },
   Issue4066Hook: {
@@ -194,6 +341,50 @@ const hooks = {
     mounted() {
       console.log("HookOutside mounted")
     }
+  },
+  ".LockedPanel": {
+    mounted() {
+      this.el.querySelector("#start-locked-update").addEventListener("click", () => {
+        this.pushEventTo("#slow-target-child", "hold-lock", {})
+        document.querySelector("#outside-count").textContent = "1"
+      })
+    }
+  },
+  IdPassthrough: {
+    mounted() {
+      window.issue4325Lifecycle.mounted++
+      this.js().setAttribute(this.el, "id", this.el.id)
+    },
+    updated() {
+      window.issue4325Lifecycle.updated++
+    },
+    destroyed() {
+      window.issue4325Lifecycle.destroyed++
+    }
+  },
+  RootChange: {
+    mounted() {
+      console.log("MyHook mounted")
+    },
+    updated() {
+      console.log("MyHook updated")
+    }
+  }
+}
+
+const uploaders = {
+  TestExternal(entries) {
+    entries.forEach((entry) => {
+      document.documentElement.dataset.externalUploadStarted = entry.ref
+
+      const upload = {
+        abort() {
+          document.documentElement.dataset.externalUploadAborted = entry.ref
+        }
+      }
+
+      entry.onCancel(() => upload.abort())
+    })
   }
 }
 
@@ -204,15 +395,113 @@ let liveSocket = new LiveSocket("/live", Socket, {
   failsafeJitter: 1000,
   rejoinAfterMs: () => 50,
   params: liveSocketParams,
-  hooks
+  hooks,
+  uploaders,
+  cascadePhxRemoveOnNavigation:
+    new URLSearchParams(window.location.search).get("cascadePhxRemoveOnNavigation") !== "false"
 })
 
 liveSocket.connect()
 window.liveSocket = liveSocket
 colocated.js_exec(liveSocket)
 
+let formRecoveryMarker = null
+let formRecoveryTimeout = null
+const finishFormRecovery = () => {
+  window.clearTimeout(formRecoveryTimeout)
+  formRecoveryMarker?.remove()
+  formRecoveryMarker = null
+}
+const originalDisconnect = liveSocket.disconnect.bind(liveSocket)
+liveSocket.disconnect = (...args) => {
+  if (
+    window.location.pathname.startsWith("/form") &&
+    new URLSearchParams(window.location.search).has("disabled-fieldset")
+  ) {
+    finishFormRecovery()
+    formRecoveryMarker = document.createElement("span")
+    formRecoveryMarker.hidden = true
+    formRecoveryMarker.className = "phx-change-loading"
+    document.body.append(formRecoveryMarker)
+    formRecoveryTimeout = window.setTimeout(finishFormRecovery, 5000)
+  }
+  return originalDisconnect(...args)
+}
+const originalSocketPush = liveSocket.socket.push.bind(liveSocket.socket)
+liveSocket.socket.push = (data) => {
+  const result = originalSocketPush(data)
+  if (formRecoveryMarker && data.event === "event" && data.payload?.event === "validate") {
+    window.setTimeout(finishFormRecovery, 0)
+  }
+  return result
+}
+
+if (window.location.pathname === "/issues/3199") {
+  const root = document.querySelector("[data-phx-main]")
+  const transition = document.querySelector("#root-remove-transition")?.getAttribute("phx-remove")
+  if (root && transition) root.setAttribute("phx-remove", transition)
+}
+
+const finishPendingNavigation = () => {
+  document.querySelector("#scalive-navigation-pending")?.remove()
+}
+
+const waitForRootJoin = (previousMain) => {
+  const marker = document.createElement("span")
+  marker.id = "scalive-navigation-pending"
+  marker.hidden = true
+  marker.className = "phx-change-loading"
+  document.body.append(marker)
+
+  const wait = () => {
+    const main = liveSocket.main
+    if (main && main !== previousMain && main.isConnected() && !main.isJoinPending()) {
+      finishPendingNavigation()
+    } else {
+      window.setTimeout(wait, 0)
+    }
+  }
+  wait()
+}
+
+const queuePatchAfterRootJoin = (main, targetHref) => {
+  if (main.scalivePendingPatch) return
+
+  const isConnected = main.isConnected
+  const pushWithReply = main.pushWithReply
+  const targetState = window.history.state
+  window.history.replaceState(targetState, "", main.href)
+  main.scalivePendingPatch = true
+  main.isConnected = () => true
+  main.pushWithReply = function (refGenerator, event, payload) {
+    if (event !== "live_patch") return pushWithReply.call(this, refGenerator, event, payload)
+
+    return new Promise((resolve) => {
+      const push = () => {
+        if (main.isJoinPending()) {
+          window.setTimeout(push, 0)
+        } else {
+          main.isConnected = isConnected
+          main.pushWithReply = pushWithReply
+          main.scalivePendingPatch = false
+          window.history.replaceState(targetState, "", targetHref)
+          pushWithReply.call(main, refGenerator, event, payload).then(resolve)
+        }
+      }
+      push()
+    })
+  }
+}
+
 window.addEventListener("phx:navigate", (event) => {
   console.log("navigate event", JSON.stringify(event.detail))
+
+  if (!event.detail.pop) return
+  if (!window.location.pathname.startsWith("/issues/3529") && !window.location.pathname.startsWith("/navigation/")) return
+
+  const main = liveSocket.main
+  if (!event.detail.patch) waitForRootJoin(main)
+  else if (main?.isJoinPending() && !main.isConnected()) queuePatchAfterRootJoin(main, event.detail.href)
 })
 
 window.addEventListener("reset", () => {

@@ -148,6 +148,10 @@ authorization, canonical HTTP responses, and completed ordinary HTTP actions.
 Safe APIs accept `LiveLocation`. Explicit `Unsafe` methods accept raw strings for
 external URLs, dead routes, or deliberately query-only patches. Keep those calls
 at a narrow boundary: raw strings give up route refactoring and encoding checks.
+They do not disable navigation safety checks: Scalive rejects literal or
+percent-encoded control characters and schemes other than HTTP or HTTPS before a
+navigation or redirect reaches the browser. Never build an unsafe destination by
+concatenating untrusted input; parse it into an application allowlist first.
 
 ## Related Tasks {#related-tasks}
 

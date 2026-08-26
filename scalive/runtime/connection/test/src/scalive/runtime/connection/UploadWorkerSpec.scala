@@ -283,6 +283,53 @@ object UploadWorkerSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a controlled writer failure preserves its protocol reason") {
+      ZIO.scoped {
+        for
+          failedReason <- Promise.make[Nothing, String]
+          release      <- Promise.make[Nothing, Unit]
+          scope        <- ZIO.service[Scope]
+          writer = new LiveUploadWriter[Unit, Unit]:
+                     def init(client: UploadClientMetadata) = ZIO.unit
+                     def writeChunk(data: Chunk[Byte], state: Unit) =
+                       ZIO.fail(LiveUploadWriterError("invalid_pdf"))
+                     def complete(state: Unit) = ZIO.unit
+                     def abort(state: Unit, reason: LiveUploadAbortReason) = ZIO.unit
+                     def discard(result: Unit) = ZIO.unit
+          handle <- HostedUploadWorker.initialize(
+                      HostedWorkerId(
+                        OwnerId.Root(LifecycleId(1L)),
+                        Epoch.initial,
+                        UploadRef("upload"),
+                        UploadEntryRef("entry"),
+                        1L
+                      ),
+                      writer,
+                      client("invalid.pdf", 1L)
+                    )
+          worker <- UploadEntryWorker.start(
+                      handle,
+                      expectedBytes = 1L,
+                      maxChunkBytes = 4,
+                      capacity = 1,
+                       callbacks = UploadWorkerCallbacks(
+                         complete = _ => ZIO.unit,
+                         fail = reason => failedReason.succeed(reason) *> release.await
+                       ),
+                       scope = scope
+                     )
+          result       <- worker.offer(Chunk.single(1.toByte)).either.fork
+          reason       <- failedReason.await
+          beforeCommit <- zio.test.Live.live(result.join.timeout(100.millis))
+          _            <- release.succeed(())
+          afterCommit  <- result.join
+        yield assertTrue(
+          beforeCommit.isEmpty,
+          afterCommit == Left(UploadChunkError.WriterFailed("invalid_pdf")),
+          reason == "invalid_pdf"
+        )
+      }
+    },
     test("queue overflow invalidates only its entry, aborts once, and leaves the root usable") {
       ZIO.scoped {
         for

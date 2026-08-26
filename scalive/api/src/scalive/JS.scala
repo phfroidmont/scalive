@@ -260,7 +260,7 @@ object JSCommands:
       * client navigation mechanism.
       */
     def pushNavigateUnsafe(href: String) =
-      ops.addOp("navigate", Args.Href(href, None))
+      ops.addOp("navigate", Args.Href(liveDestination(href), None))
 
     /** Builds a signal-backed command for a raw navigation destination. */
     def pushNavigateUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
@@ -283,7 +283,7 @@ object JSCommands:
       * The string is passed through without route typing, validation, or normalization.
       */
     def replaceNavigateUnsafe(href: String) =
-      ops.addOp("navigate", Args.Href(href, Some(true)))
+      ops.addOp("navigate", Args.Href(liveDestination(href), Some(true)))
 
     /** Builds a signal-backed command for raw replacement navigation. */
     def replaceNavigateUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
@@ -308,7 +308,7 @@ object JSCommands:
       * explicit escape hatch for destinations such as `"?page=2"`.
       */
     def pushPatchUnsafe(href: String) =
-      ops.addOp("patch", Args.Href(href, None))
+      ops.addOp("patch", Args.Href(liveDestination(href), None))
 
     /** Builds a signal-backed command for a raw patch destination. */
     def pushPatchUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
@@ -327,11 +327,14 @@ object JSCommands:
       * The string is passed through without route typing, validation, or normalization.
       */
     def replacePatchUnsafe(href: String) =
-      ops.addOp("patch", Args.Href(href, Some(true)))
+      ops.addOp("patch", Args.Href(liveDestination(href), Some(true)))
 
     /** Builds a signal-backed command for raw replacement patching. */
     def replacePatchUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
       href.map(value => ops.replacePatchUnsafe(value))
+
+    private def liveDestination(value: String): String =
+      NavigationDestination.live(value).fold(throw _, identity)
 
     /** Appends a command which focuses the most recently pushed focus target, if one exists. */
     def popFocus() =

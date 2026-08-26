@@ -29,7 +29,7 @@ edge-case behavior are still being expanded and audited. Do not assume complete
 Phoenix LiveView parity or production maturity from the presence of a related
 API.
 
-Compatibility is currently assessed against Phoenix LiveView `v1.1.28`. Read
+Compatibility is currently assessed against Phoenix LiveView `v1.2.10`. Read
 the [compatibility status](compatibility.md#compatibility-target) for the current
 feature matrix, known gaps, intentional Scala-first divergences, and verification
 guidance.

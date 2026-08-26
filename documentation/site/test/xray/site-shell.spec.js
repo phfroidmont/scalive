@@ -167,7 +167,7 @@ test("organizes API package members without duplicating them in side navigation"
   await expect(simpleMember.locator("h3.docs-visually-hidden")).toHaveText("rawHtml")
   await expect(simpleMember.locator(".docs-api-kind")).toHaveCount(0)
   await expect(simpleMember.locator(".docs-code-block, [data-code-copy]")).toHaveCount(0)
-  const syntaxColors = await simpleMember.locator(".docs-api-member-signature").evaluate((element) => ({
+  const syntaxColors = await simpleMember.locator(".docs-api-member-signature").first().evaluate((element) => ({
     keyword: getComputedStyle(element.querySelector(".keyword")).color,
     text: getComputedStyle(element).color,
     type: getComputedStyle(element.querySelector(".type-name")).color,
@@ -198,8 +198,8 @@ test("keeps every categorized API member visible without JavaScript", async ({ b
   await expect(page.locator("[data-api-member-tools]")).toBeHidden()
   const rawHtml = page.locator('[data-api-symbol="def:scalive.rawHtml"]')
   await expect(rawHtml).toBeVisible()
-  await expect(rawHtml.locator("pre.docs-api-member-signature code")).toBeVisible()
-  await expect(rawHtml.getByRole("link", { name: "View source" })).toBeVisible()
+  await expect(rawHtml.locator("pre.docs-api-member-signature code").first()).toBeVisible()
+  await expect(rawHtml.getByRole("link", { name: "View source" }).first()).toBeVisible()
   await expect(rawHtml.locator(".docs-code-block, [data-code-copy]")).toHaveCount(0)
   await expect(page.locator("#html-elements [data-api-member]").first()).toBeVisible()
   await context.close()

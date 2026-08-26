@@ -41,6 +41,14 @@ time, and progress. Treat all of them as untrusted. `LiveUploadAccept` improves
 selection and performs early preflight checks; it does not prove the file's
 type, contents, destination size, or integrity.
 
+`maxEntriesMode = LiveUploadMaxEntriesMode.Selected` is the default: consuming or
+cancelling an entry frees capacity for a later selection. Use
+`LiveUploadMaxEntriesMode.Total` when `maxEntries` is a lifecycle-wide cap and
+consumed entries must continue to count until the upload is allowed again. Pass
+`validator = Some(metadata => ...)` to reject browser-reported metadata during
+preflight with an application-defined reason. The validator is an early usability
+check, not authorization or content validation.
+
 ## Allow The Upload During Every Mount {#allow-the-upload-during-every-mount}
 
 Keep one stable definition value and retain the returned
@@ -193,6 +201,11 @@ by the runtime. If a failed `init`, `writeChunk`, or `complete` call creates a
 side effect not represented by the last successful state, that call must clean
 it itself. Framework cleanup is best-effort and cannot run after process death,
 so also sweep abandoned temporary resources by age.
+
+Fail a writer method with `LiveUploadWriterError(reason)` when the browser should
+receive a stable, non-sensitive reason. Other failures are reported as the generic
+`writer_error`; exception messages and stack traces are never exposed through the
+upload protocol.
 
 ## Upload Directly To An External Service {#upload-directly-to-an-external-service}
 

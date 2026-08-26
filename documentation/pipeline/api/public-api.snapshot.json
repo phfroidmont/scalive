@@ -5634,6 +5634,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveUploadMaxEntriesMode",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadMaxEntriesMode",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadMaxEntriesMode:ea9b55ddf2aa0c0c",
+          "signature" : "def LiveUploadMaxEntriesMode: upload.api.LiveUploadMaxEntriesMode.type"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveUploadOperationError",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveUploadOperationError",
@@ -5642,6 +5654,18 @@
         {
           "id" : "def:scalive.LiveUploadOperationError:9a149380c8503291",
           "signature" : "def LiveUploadOperationError: upload.api.LiveUploadOperationError.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadWriterError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadWriterError",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadWriterError:72c0e4981d4cf857",
+          "signature" : "def LiveUploadWriterError: upload.api.LiveUploadWriterError.type"
         }
       ]
     },
@@ -11994,6 +12018,30 @@
       ]
     },
     {
+      "id" : "lazy-val:scalive.phx.noUnusedField",
+      "ownerId" : "object:scalive.phx",
+      "qualifiedName" : "scalive.phx.noUnusedField",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.phx.noUnusedField:fd20ab160ac14fbb",
+          "signature" : "lazy val noUnusedField: HtmlAttr[Boolean]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.phx.patchFocused",
+      "ownerId" : "object:scalive.phx",
+      "qualifiedName" : "scalive.phx.patchFocused",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.phx.patchFocused:033a01d23ec4d0f6",
+          "signature" : "lazy val patchFocused: HtmlAttr[Boolean]"
+        }
+      ]
+    },
+    {
       "id" : "lazy-val:scalive.phx.remove",
       "ownerId" : "object:scalive.phx",
       "qualifiedName" : "scalive.phx.remove",
@@ -15389,6 +15437,18 @@
       ]
     },
     {
+      "id" : "type-alias:scalive.LiveUploadMaxEntriesMode",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadMaxEntriesMode",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.LiveUploadMaxEntriesMode:722d48167f2018fe",
+          "signature" : "type LiveUploadMaxEntriesMode = upload.api.LiveUploadMaxEntriesMode"
+        }
+      ]
+    },
+    {
       "id" : "type-alias:scalive.LiveUploadOperationError",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveUploadOperationError",
@@ -15421,6 +15481,18 @@
         {
           "id" : "type-alias:scalive.LiveUploadWriter:8b79b88d18687931",
           "signature" : "type LiveUploadWriter = ([State, Result] =>> upload.LiveUploadWriter[State, Result])"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.LiveUploadWriterError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadWriterError",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.LiveUploadWriterError:e44fd1a941e50e15",
+          "signature" : "type LiveUploadWriterError = upload.api.LiveUploadWriterError"
         }
       ]
     },

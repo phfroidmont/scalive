@@ -93,7 +93,9 @@ The harder design question was how HTML templates should identify their dynamic
 parts so that Scalive could produce efficient LiveView diffs. I ended up using
 an abstraction similar to Laminar's `Signal` to stage those parts. That supported
 the protocol's distinction between static and dynamic content without forcing
-an awkward or unidiomatic API on users.
+an awkward or unidiomatic API on users. The
+[Designing Dynamic HTML](dynamic-html-identity.md#the-question) essay explores
+the API iterations and tradeoffs behind that choice.
 
 Many iterations followed. I eventually settled on an API that builds on the
 strengths of Scala 3 rather than reproducing Elixir APIs literally. Typed models,

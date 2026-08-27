@@ -378,6 +378,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         projectLinks.map(_.text()) == Vector(
           "Overview",
           "Why I Built Scalive",
+          "Designing Dynamic HTML",
           "Runtime architecture",
           "Phoenix LiveView compatibility"
         ),

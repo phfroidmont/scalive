@@ -1,7 +1,7 @@
 {%
 title = "Runtime architecture"
 description = "How Scalive moves from an HTTP render to connected, serialized state transitions, retained rendering, protocol diffs, and scoped cleanup."
-order = 2
+order = 3
 section = project
 %}
 

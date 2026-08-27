@@ -12,6 +12,14 @@ then searching for a simpler boundary between browser and server. Read
 [why I built Scalive](why-i-built-scalive.md#choosing-a-stack) for the personal
 and technical journey behind the project.
 
+## Follow The Render Design {#follow-the-render-design}
+
+Deciding how typed HTML should identify dynamic values was Scalive's central API
+design problem. [Designing Dynamic HTML](dynamic-html-identity.md#the-question)
+explores the competing approaches, what each one made easy or difficult, and why
+Scalive ultimately returned to explicit staging with a deliberately restricted
+`Signal` type.
+
 ## Understand The Runtime {#understand-the-runtime}
 
 The [runtime architecture](runtime-architecture.md#runtime-at-a-glance) explains

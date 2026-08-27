@@ -252,6 +252,7 @@ per-symbol alpha or compatibility badges.
 The Project section contains:
 
 - the personal and technical journey that led to Scalive;
+- curated design essays that explain consequential user-facing API decisions;
 - a technical explanation of runtime subsystems, lifecycle flow, rendering,
   concurrency, commit boundaries, resource ownership, protocol projection, and
   cleanup;
@@ -265,10 +266,12 @@ available. Its status legend distinguishes baseline browser evidence, native
 parity, substantial or expanding coverage, partial support, intentional
 divergence, and absent behavior. The public matrix is updated with feature work;
 the existence of a similarly named API is never presented as parity evidence.
-Changelogs, roadmaps, contributor setup instructions, detailed internal design
-specifications, and implementation plans are not part of the public site. The
-runtime architecture page explains the current implementation rather than
-defining a stable internal API contract or serving as a design specification.
+Changelogs, roadmaps, contributor setup instructions, exhaustive internal design
+records, and implementation plans are not part of the public site. A curated
+design essay may explain how tradeoffs shaped the current user-facing API, but
+does not define a stable internal contract. The runtime architecture page
+likewise explains the current implementation rather than serving as a design
+specification.
 
 ## Content Model
 
@@ -304,9 +307,10 @@ must update affected generated or curated documentation in the same change.
 Existing public material, including the public API reference and compatibility
 matrix, moves into the documentation content tree and becomes canonical there.
 The public origin story explains the motivation and experiences that led to
-Scalive. Detailed internal design history remains repository-only. Content is
-English-only, and the initial architecture includes no localization
-abstraction.
+Scalive. Curated essays about consequential user-facing design decisions may
+also be public; exhaustive design records and implementation plans remain
+repository-only. Content is English-only, and the initial architecture includes
+no localization abstraction.
 
 The site documents the latest Scalive revision only. It does not preserve
 versioned documentation during alpha. Page paths are generated from the content

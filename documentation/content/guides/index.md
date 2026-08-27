@@ -9,11 +9,19 @@ section = guides
 
 Guides provide focused, task-oriented steps for common Scalive development and
 operations work. For an ordered introduction to the framework, start with
-[Learn](../learn/index.md#start-here). Each guide declares its prerequisites so
-you can also enter directly from search or the API reference.
+[Learn](../learn/index.md#start-here). Each guide describes the starting state it
+expects so you can also enter directly from search or the API reference.
+
+### Orientation {#orientation}
 
 - [Phoenix LiveView concepts in Scalive](phoenix-live-view-orientation.md) maps
   Phoenix concepts to Scalive's Scala-first API without assuming complete parity.
+
+### Setup And Foundations {#setup-and-foundations}
+
+- [Client setup and static assets](static-assets-and-client-setup.md) bundles
+  the Phoenix client, serves tracked digested assets, and reacts to static
+  changes and connection parameters.
 
 ### Interfaces And Input {#interfaces-and-input}
 
@@ -34,18 +42,18 @@ you can also enter directly from search or the API reference.
   URL state and chooses checked patch, navigation, replace, and redirect behavior.
 - [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md)
   composes document shells, route groups, and typed pre-mount policy.
-- [Authentication and sessions](authentication.md) combines ordinary HTTP login
-  and reset with opaque sessions and protected LiveView mounts.
-- [Nested LiveViews](nested-liveviews.md) embeds an independently mounted child
-  with explicit socket, navigation, crash, and sticky-lifecycle ownership.
-
-### State, Services, And Components {#state-services-and-components}
-
 - [Services and dependency injection](services-and-zlayer-injection.md)
   constructor-injects application capabilities while keeping socket state
   connection-local.
+- [Authentication and sessions](authentication.md) combines ordinary HTTP login
+  and reset with opaque sessions and protected LiveView mounts.
+
+### State And Components {#state-and-components}
+
 - [Stateful components and communication](components-and-communication.md)
   isolates local state, maps typed outputs, and owns component-local features.
+- [Nested LiveViews](nested-liveviews.md) embeds an independently mounted child
+  with explicit socket, navigation, crash, and sticky-lifecycle ownership.
 - [Streams and collection updates](streams-and-collection-updates.md) separates
   durable collection state from targeted, bounded DOM operations.
 
@@ -72,9 +80,6 @@ you can also enter directly from search or the API reference.
 
 ### Assets And Operations {#assets-and-operations}
 
-- [Client setup and static assets](static-assets-and-client-setup.md) bundles
-  the Phoenix client, serves tracked digested assets, and reacts to static
-  changes and connection parameters.
 - [Configuration](configuration.md) configures transport security and separates
   Scalive settings from application and ZIO HTTP settings.
 - [Deployment](deployment.md) packages and operates a Scalive JVM application

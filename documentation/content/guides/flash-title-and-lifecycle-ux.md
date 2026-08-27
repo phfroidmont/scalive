@@ -6,10 +6,10 @@ section = guides
 group = "Async and lifecycle"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with a LiveView and a root layout that renders `liveTitle`. Review
-[Lifecycle and connection behavior](../learn/lifecycle-and-connection-behavior.md)
+You need a `LiveView` with rendered state. The title section also requires a
+root layout that renders `liveTitle`. Review [Lifecycle and connection behavior](../learn/lifecycle-and-connection-behavior.md)
 before attaching effects to lifecycle hooks.
 
 ## Render Keyed Flash {#render-keyed-flash}

@@ -6,11 +6,11 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with the `LiveView` model and messages introduced in
-[Models and messages](../learn/models-and-messages.md). The DSL uses ordinary
-Scala expressions and collections rather than introducing a template language.
+Start with a `LiveView` model, a message type, and a `view` method ready to
+return HTML. The DSL uses ordinary Scala expressions and collections rather
+than introducing a template language.
 
 ## Build An HTML Tree {#build-an-html-tree}
 
@@ -46,41 +46,6 @@ for example, @:apiSymbol(lazy-val:scalive.sectionTag)`sectionTag`@:@,
 Use @:apiSymbol(def:scalive.htmlTag)`htmlTag(name)`@:@ only when the framework does not
 provide the element you need.
 
-## Move Content And Wrap Focus {#move-content-and-wrap-focus}
-
-Use @:apiSymbol(def:scalive.portal)`portal`@:@ when content must remain owned by its
-LiveView but appear elsewhere in the document, such as below a root-level modal
-container:
-
-```scala
-portal("cart-dialog", target = DomSelector.css("#modal-root"))(
-  sectionTag(aria.label := "Cart", "...")
-)
-```
-
-The helper renders a source `<template>` and moves one generated wrapper to the
-explicit CSS target in the browser. Keep `id` stable and unique, ensure the target
-exists, and use `container` and `wrapperClass` only to customize that wrapper.
-`DomSelector.current` and invalid container tag names are rejected, but selector
-syntax and target existence are not checked server-side. A portal preserves event,
-hook, component, and nested LiveView ownership; it is not a security boundary and
-does not make untrusted HTML safe.
-
-Use @:apiSymbol(def:scalive.focusWrap)`focusWrap`@:@ for content whose keyboard focus
-should cycle at its boundaries:
-
-```scala
-focusWrap("cart-dialog-focus", cls := "dialog-body")(
-  button(on.click(Msg.Close), "Close")
-)
-```
-
-Keep its `id` stable and unique. Pass only wrapper attributes and bindings in
-`mods`; do not override `id` or `phx-hook`, and put all child content in the second
-argument list so the generated focus sentinels remain first and last. The helper
-depends on the Phoenix client hook. It does not add dialog roles, labels, background
-inertness, authorization, or a no-JavaScript focus trap; provide those separately.
-
 ## Set Typed Attributes {#set-typed-attributes}
 
 Assign attributes with @:apiSymbol(def:scalive.HtmlAttr.:=)`:=`@:@. Each @:apiSymbol(class:scalive.HtmlAttr)`HtmlAttr[V]`@:@
@@ -113,20 +78,6 @@ div(popover := "manual", "Details")
 
 Avoid @:apiSymbol(def:scalive.rawHtml)`rawHtml`@:@ for ordinary content. It bypasses escaping and should be limited
 to HTML that the application already trusts.
-
-Two uncommon client-side switches use the typed `phx` attribute namespace directly.
-Scalive does not wrap them in form or DOM helpers because they carry no application
-message or server-side value and apply across raw and typed controls.
-
-Put @:apiSymbol(lazy-val:scalive.phx.noUnusedField)`phx.noUnusedField := true`@:@ on a
-form or individual form-associated control to omit Phoenix's `_unused_*` markers for
-that scope. Without those markers, received fields are treated as used when deriving
-validation visibility.
-
-Put @:apiSymbol(lazy-val:scalive.phx.patchFocused)`phx.patchFocused := true`@:@ on an
-editable form-associated control, including a form-associated custom element, when
-normal DOM patching should continue while it is focused. Focused controls otherwise
-preserve browser-managed state during a patch.
 
 ## Bind Events To Messages {#bind-events-to-messages}
 
@@ -177,6 +128,68 @@ import scala.concurrent.duration.*
 
 input(on.blur.debounce(300.millis).withValue(Msg.SearchChanged.apply))
 ```
+
+## Advanced Client-Side Switches {#advanced-client-side-switches}
+
+Two uncommon client-side switches use the typed `phx` attribute namespace directly.
+Scalive does not wrap them in form or DOM helpers because they carry no application
+message or server-side value and apply across raw and typed controls.
+
+Put @:apiSymbol(lazy-val:scalive.phx.noUnusedField)`phx.noUnusedField := true`@:@ on a
+form or individual form-associated control to omit Phoenix's `_unused_*` markers for
+that scope. Without those markers, received fields are treated as used when deriving
+validation visibility.
+
+Put @:apiSymbol(lazy-val:scalive.phx.patchFocused)`phx.patchFocused := true`@:@ on an
+editable form-associated control, including a form-associated custom element, when
+normal DOM patching should continue while it is focused. Focused controls otherwise
+preserve browser-managed state during a patch.
+
+## Move Content And Wrap Focus {#move-content-and-wrap-focus}
+
+Use @:apiSymbol(def:scalive.portal)`portal`@:@ when content must remain owned by its
+LiveView but appear elsewhere in the document, such as below a root-level modal
+container:
+
+```scala
+portal("cart-dialog", target = DomSelector.css("#modal-root"))(
+  sectionTag(aria.label := "Cart", "...")
+)
+```
+
+The helper renders a source `<template>` and moves one generated wrapper to the
+explicit CSS target in the browser. Keep `id` stable and unique, ensure the target
+exists, and use `container` and `wrapperClass` only to customize that wrapper.
+`DomSelector.current` and invalid container tag names are rejected, but selector
+syntax and target existence are not checked server-side. A portal preserves event,
+hook, component, and nested LiveView ownership; it is not a security boundary and
+does not make untrusted HTML safe.
+
+Use @:apiSymbol(def:scalive.focusWrap)`focusWrap`@:@ for content whose keyboard focus
+should cycle at its boundaries:
+
+```scala
+focusWrap("cart-dialog-focus", cls := "dialog-body")(
+  button(on.click(Msg.Close), "Close")
+)
+```
+
+Keep its `id` stable and unique. Pass only wrapper attributes and bindings in
+`mods`; do not override `id` or `phx-hook`, and put all child content in the second
+argument list so the generated focus sentinels remain first and last. The helper
+depends on the Phoenix client hook. It does not add dialog roles, labels, background
+inertness, authorization, or a no-JavaScript focus trap; provide those separately.
+
+## Check Accessibility In The Browser {#check-accessibility-in-the-browser}
+
+Typed attributes and focus helpers do not make a UI accessible automatically.
+For each interactive flow:
+
+- prefer the semantic element for the action or content;
+- give controls visible labels and accessible names;
+- complete the flow by keyboard and verify focus order, visibility, and restoration;
+- expose validation, progress, and other live feedback without unexpectedly moving focus; and
+- test the patched UI with browser accessibility tooling and representative assistive technology.
 
 ## Key Repeated Content {#key-repeated-content}
 

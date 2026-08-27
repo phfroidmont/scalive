@@ -6,10 +6,10 @@ section = guides
 group = "Async and lifecycle"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with a `LiveView` or `LiveComponent` that handles messages through
-`handleMessage`.
+Start with a `LiveView` or `LiveComponent` whose ordinary messages already
+reach `handleMessage` and update the rendered model.
 
 ## Use Hooks For Cross-Cutting Lifecycle Policy {#choose-hooks}
 
@@ -28,12 +28,14 @@ Scalive provides these stages:
 | Owner | Stage | Runs before or after |
 | --- | --- | --- |
 | Root | `rawEvent` | Before binding lookup and component routing |
+| Root | `browserEvent` | After raw interception; consumes a matching named browser event |
 | Root | `event` | After a root binding resolves to `Msg`, before `handleMessage` |
 | Root | `params` | After URL decoding, before routed `handleParams` |
 | Root | `info` | Before non-browser server-message handling, including subscriptions |
 | Root | `async` | Before handling a root-owned managed task completion |
 | Root | `afterRender` | After the complete root tree renders, before a connected diff is emitted |
 | Component | `rawEvent` | After component routing, before typed component event handling |
+| Component | `browserEvent` | After component raw interception; consumes a matching named browser event |
 | Component | `event` | After a component binding resolves to `Msg`, before `handleMessage` |
 | Component | `async` | Before handling that instance's managed task completion |
 | Component | `afterRender` | After that component subtree renders |
@@ -51,9 +53,9 @@ continued model becomes the next hook's input:
 override def hooks: LiveHooks[Msg, Model] =
   LiveHooks
     .empty[Msg, Model]
-    .onEvent { (model, msg, event, _) =>
-      ZIO.logDebug(s"event=${event.kind} message=$msg")
-        .as(LiveEventHookResult.cont(model))
+    .onEvent { (model, msg, _) =>
+      ZIO.logDebug(s"message=$msg")
+        .as(LiveHookResult.cont(model))
     }
     .onInfo { (model, msg, _) =>
       ZIO.logDebug(s"server message=$msg")
@@ -76,9 +78,9 @@ class, logical id)` instance:
 override def hooks: ComponentLiveHooks[Props, Msg, Model] =
   ComponentLiveHooks
     .empty[Props, Msg, Model]
-    .onEvent { (props, model, msg, _, _) =>
+    .onEvent { (props, model, msg, _) =>
       authorize(props.user, msg)
-        .as(LiveEventHookResult.cont(model))
+        .as(LiveHookResult.cont(model))
     }
     .afterRender { (props, model, _) =>
       recordComponentRender(props.id, model)
@@ -92,37 +94,32 @@ creates a new instance and a new registry.
 
 ## Continue, Halt, And Reply {#continue-halt-reply}
 
-Event stages use `LiveEventHookResult`; all model-threading non-event stages use
-`LiveHookResult`:
+Typed `event`, `params`, `info`, and `async` hooks use `LiveHookResult`:
 
 - `cont(model)` passes that model to the next hook and then the normal callback.
 - `halt(model)` stops later hooks, skips the normal callback, and renders that model.
-- `LiveEventHookResult.haltReply(model, json)` also returns JSON in the browser event acknowledgement.
+- Typed event hooks cannot reply. Raw event hooks instead use
+  `LiveEventHookResult`, whose `haltReply(model, json)` can return JSON in the
+  browser event acknowledgement.
 
-For example, a root event hook can consume a forbidden action before the normal
-handler and reply to a JavaScript `pushEvent` caller:
+For example, a typed root event hook can consume a forbidden action before the
+normal handler, but cannot reply to a JavaScript caller:
 
 ```scala
-import zio.json.ast.Json
-
 override def hooks: LiveHooks[Msg, Model] =
-  LiveHooks.empty[Msg, Model].onEvent { (model, msg, _, _) =>
+  LiveHooks.empty[Msg, Model].onEvent { (model, msg, _) =>
     if allowed(model.user, msg) then
-      ZIO.succeed(LiveEventHookResult.cont(model))
+      ZIO.succeed(LiveHookResult.cont(model))
     else
-      ZIO.succeed(
-        LiveEventHookResult.haltReply(
-          model,
-          Json.Obj("error" -> Json.Str("forbidden"))
-        )
-      )
+      ZIO.succeed(LiveHookResult.halt(model))
   }
 ```
 
-Replies exist only for raw and typed event hooks. `params`, `info`, and `async`
-hooks use `LiveHookResult` and cannot reply. A failed hook effect is different
-from `Halt`: failure aborts the active lifecycle, prevents later hooks and the
-normal callback, and does not provide a controlled model transition.
+Named `browserEvent` handlers are a distinct stage: they return `Task[Model]`
+and consume a matching, successfully decoded browser event without a
+continue/halt result. A failed hook effect is different from `Halt`: failure
+aborts the active lifecycle, prevents later hooks and the normal callback, and
+does not provide a controlled model transition.
 
 ## Attach And Detach Dynamic Hooks {#dynamic-hooks}
 
@@ -135,8 +132,8 @@ private val AuditHookId = "audit-events"
 
 def mount(ctx: MountContext): Task[Model] =
   ctx.hooks.event
-    .attach(AuditHookId) { (model, msg, event, _) =>
-      audit(msg, event).as(LiveEventHookResult.cont(model))
+    .attach(AuditHookId) { (model, msg, _) =>
+      audit(msg).as(LiveHookResult.cont(model))
     }
     .as(Model.initial)
 
@@ -164,11 +161,11 @@ component instance and includes current props:
 ```scala
 def mount(props: Props, ctx: MountContext): Task[Model] =
   ctx.hooks.event
-    .attach("read-only-policy") { (currentProps, model, msg, _, _) =>
+    .attach("read-only-policy") { (currentProps, model, msg, _) =>
       if currentProps.readOnly && mutatesState(msg) then
-        ZIO.succeed(LiveEventHookResult.halt(model))
+        ZIO.succeed(LiveHookResult.halt(model))
       else
-        ZIO.succeed(LiveEventHookResult.cont(model))
+        ZIO.succeed(LiveHookResult.cont(model))
     }
     .as(Model.initial(props))
 ```
@@ -176,7 +173,7 @@ def mount(props: Props, ctx: MountContext): Task[Model] =
 Detach it through `ctx.hooks.event.detach("read-only-policy")` from a component
 update, message, or after-render context when the policy no longer applies.
 
-## Intercept Raw Events Sparingly {#raw-event-interception}
+## Advanced: Intercept Raw Events Sparingly {#raw-event-interception}
 
 `onRawEvent` and `ctx.hooks.rawEvent.attach` receive `LiveEvent` before ordinary
 typed handling. Its `kind`, `bindingId`, unmodified JSON `value`, normalized
@@ -184,10 +181,17 @@ string `params`, optional component `cid`, and optional JSON `meta` expose the
 wire envelope:
 
 ```scala
+import zio.json.ast.Json
+
 override def hooks: LiveHooks[Msg, Model] =
   LiveHooks.empty[Msg, Model].onRawEvent { (model, event, _) =>
     if blockedBindingIds.contains(event.bindingId) then
-      ZIO.succeed(LiveEventHookResult.halt(model))
+      ZIO.succeed(
+        LiveEventHookResult.haltReply(
+          model,
+          Json.Obj("error" -> Json.Str("forbidden"))
+        )
+      )
     else
       ZIO.succeed(LiveEventHookResult.cont(model))
   }
@@ -199,11 +203,12 @@ binding lookup and routes a component target; the component's raw hooks then run
 before its typed event hooks. Halting at the root prevents all later root and
 component event processing.
 
-Prefer `onEvent` once a rendered binding has produced a typed `Msg`. Prefer
-`onBrowserEvent(BrowserToServerEvent[A])` for a named JavaScript event because it
-matches the event name, decodes with `JsonDecoder[A]`, consumes matching payloads,
-and rejects malformed matching payloads. Raw interception is for policy that
-must act before decoding or for protocol-level metadata.
+Prefer `onEvent` once a rendered binding has produced a typed `Msg`. Prefer the
+distinct `onBrowserEvent(BrowserToServerEvent[A])` stage for a named JavaScript
+event because it matches the event name, decodes with `JsonDecoder[A]`, consumes
+matching payloads, and rejects malformed matching payloads. Both roots and
+components provide this stage. Raw interception is for policy that must act
+before decoding or for protocol-level metadata.
 
 ## Keep After-Render Hooks Observational {#after-render-limits}
 

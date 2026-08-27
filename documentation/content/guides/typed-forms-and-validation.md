@@ -6,10 +6,12 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Read [Models and messages](../learn/models-and-messages.md) and
-[HTML and event bindings](html-dsl-and-event-bindings.md) first.
+You need a `LiveView` with a typed model and messages, and you should be able to
+render controls and bind browser events. Review [Models and messages](../learn/models-and-messages.md)
+or [HTML and event bindings](html-dsl-and-event-bindings.md) if either part is
+not yet familiar.
 
 ## Define A Rooted Form {#define-a-rooted-form}
 

@@ -1,17 +1,19 @@
 {%
-title = "Embed independent nested LiveViews"
+title = "Nested LiveViews"
 description = "Choose a nested LiveView when a child needs its own socket lifecycle, resources, crash policy, or sticky navigation identity."
-order = 23
+order = 31
 section = guides
-group = "Routing and application structure"
+group = "State and components"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with the root lifecycle described in
-[Lifecycle and connection behavior](../learn/lifecycle-and-connection-behavior.md),
-then read
-[Stateful components and communication](components-and-communication.md).
+Start with a root LiveView that renders in both disconnected and connected
+phases, as described in
+[Lifecycle and connection behavior](../learn/lifecycle-and-connection-behavior.md).
+If the child only needs isolated state, compare
+[stateful components](components-and-communication.md) before choosing a nested
+view.
 
 ## Choose A Component Or A Nested LiveView {#choose-component-or-nested-liveview}
 
@@ -39,10 +41,10 @@ Embed the child with @:apiSymbol(def:scalive.liveView)`liveView`@:@:
 
 ```scala
 def view(model: Signal[Model]) =
-  section(
+  sectionTag(
     liveView(
       id = "support-chat",
-      liveView = SupportChatLiveView(conversationId),
+      value = SupportChatLiveView(conversationId),
       sticky = true
     )
   )
@@ -123,7 +125,7 @@ Set `linkParentOnCrash = true` when the parent is invalid without that child:
 ```scala
 liveView(
   id = "required-editor",
-  liveView = RequiredEditorLiveView(documentId),
+  value = RequiredEditorLiveView(documentId),
   linkParentOnCrash = true
 )
 ```

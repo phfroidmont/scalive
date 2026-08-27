@@ -6,9 +6,10 @@ section = guides
 group = "Routing and application structure"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with a `LiveView` that mounts and renders. The
+Start with a URL whose routed `LiveView` mounts and renders, and a named route
+declaration that decodes it. The
 [Quick start](../learn/quick-start.md#add-routes-and-layout) shows the minimal
 router and layout wiring assumed here.
 
@@ -103,6 +104,20 @@ val destination = Routes.search.location(Some("LiveView"))
 recover. `LiveLocation` is nominal and cannot be created from an arbitrary
 string, so changing the route declaration forces callers back through its
 encoder.
+
+Add an in-page fragment after building the typed path and query:
+
+```scala
+val heading = Routes.search.location(Some("LiveView")).withFragment("results")
+// heading.href == "/search?q=LiveView#results"
+```
+
+Pass percent-encoded URI-fragment syntax without the leading `#`; the method
+validates but does not encode decoded text, so a space must already be `%20`.
+Use `withFragment` when an invalid application-owned fragment is a programming
+error. Use `withFragmentEither` when a fragment comes from a recoverable
+boundary; it returns `Left(LiveLocation.EncodeError.Fragment(...))` for invalid
+syntax rather than throwing `LiveLocation.EncodingException`.
 
 The [typed documentation navigation example](../examples/navigation.md) uses
 the site's actual search route declaration. Its complete executable source is:

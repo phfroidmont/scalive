@@ -6,9 +6,9 @@ section = guides
 group = "Routing and application structure"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Have at least two named Live route declarations and understand that Scalive
+You need at least two named Live route declarations and should understand that Scalive
 mounts once for HTTP rendering and again for the live connection. Review
 [Routes, parameters, and navigation](routes-and-navigation.md#name-route-declarations)
 if your routes are still assembled from ad hoc strings.

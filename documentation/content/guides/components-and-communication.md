@@ -1,16 +1,16 @@
 {%
 title = "Stateful components and communication"
 description = "Isolate state in typed LiveComponents and communicate explicitly with their immediate owner."
-order = 31
+order = 30
 section = guides
-group = "State, services, and components"
+group = "State and components"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with a `LiveView` that binds typed events and keeps rendered state in its
-model. Read [Typed forms and validation](typed-forms-and-validation.md) before
-moving a form into a component.
+Start with a `LiveView` whose rendered model changes in response to a typed
+message. If the component will own a form, first make that form work with
+[typed validation](typed-forms-and-validation.md).
 
 ## Choose A Stateful Component {#choose-a-stateful-component}
 
@@ -35,40 +35,68 @@ state.
 
 ## Separate Props, Messages, Model, And Output {#separate-component-types}
 
-A component has four independent roles:
+The component APIs separate four independent roles:
 
 - `Props` are values supplied by the owner.
 - `Msg` values are inputs handled by the component.
 - `Model` is state isolated to one component instance.
-- `Output` values report domain events to the immediate owner.
+- `Output` values, when declared, report domain events to the immediate owner.
 
-Declare an output-producing component with
-@:apiSymbol(trait:scalive.LiveComponent.WithOutput)`LiveComponent.WithOutput`@:@:
+Only an output-producing component declares `Output`, through
+@:apiSymbol(trait:scalive.LiveComponent.WithOutput)`LiveComponent.WithOutput`@:@.
+An ordinary `LiveComponent[Props, Msg, Model]` has no output type parameter and
+uses the simpler `render(props)` placement API.
+
+This compact path shows a local message becoming an output and then a parent
+message:
 
 ```scala
 object VoteComponent
-    extends LiveComponent.WithOutput[Props, Msg, Model, Output]:
+    extends LiveComponent.WithOutput[
+      VoteComponent.Props,
+      VoteComponent.Msg,
+      VoteComponent.Model,
+      VoteComponent.Output
+    ]:
+  final case class Props(id: String)
+  final case class Model(votes: Int)
+
   enum Msg:
     case Vote
-    case Reset
 
   enum Output:
     case VoteChanged(id: String, votes: Int)
-```
 
-Use the ordinary three-parameter `LiveComponent` when the component has no
-outputs. Its output type is `Nothing`, so it retains the simpler `render(props)`
-placement API.
+  def mount(props: Props, ctx: MountContext) = ZIO.succeed(Model(0))
+
+  def handleMessage(props: Props, model: Model, ctx: MessageContext) =
+    case Msg.Vote =>
+      val updated = model.copy(votes = model.votes + 1)
+      ctx.emit(Output.VoteChanged(props.id, updated.votes)).as(updated)
+
+  def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
+    button(on.click.to(self)(Msg.Vote), model.map(_.votes.toString))
+
+object VotingLiveView:
+  enum Msg:
+    case ComponentReported(id: String, votes: Int)
+
+  private val ScalaVote = component(VoteComponent, "scala-vote")
+
+  def renderVote(props: Signal[VoteComponent.Props]) =
+    ScalaVote.render(
+      props,
+      output => output match
+        case VoteComponent.Output.VoteChanged(id, votes) =>
+          Msg.ComponentReported(id, votes)
+    )
+```
 
 ## Keep Local Events Local {#keep-local-events-local}
 
 Bindings rendered by a component deliver its `Msg` values to that exact
-component. Target `self` explicitly when a binding needs the current runtime
-component reference:
-
-```scala
-button(on.click.to(self)(Msg.Vote), "Vote")
-```
+component. As above, target `self` explicitly when a binding needs the current
+runtime component reference.
 
 Each stable instance owns a separate model. Voting in `scala-vote` therefore
 does not modify `zio-vote`.
@@ -76,24 +104,8 @@ does not modify `zio-vote`.
 ## Map Component Outputs {#map-component-outputs}
 
 Emit only from `handleMessage`; mount, update, view construction, and after-render contexts
-do not expose this capability:
-
-```scala
-case Msg.Vote =>
-  val updated = model.copy(votes = model.votes + 1)
-  ctx.emit(Output.VoteChanged(props.id, updated.votes)).as(updated)
-```
-
-The placement maps every output into a message accepted by its immediate owner:
-
-```scala
-ScalaVote.render(
-  scalaProps(model),
-  output => output match
-    case VoteComponent.Output.VoteChanged(id, votes) =>
-      Msg.ComponentReported(id, votes)
-)
-```
+do not expose this capability. The placement maps every output into a message
+accepted by its immediate owner, as in the compact example above.
 
 Scala rejects a mapper that returns another owner's message type, and an
 output-producing component cannot be rendered without a mapper. A child nested

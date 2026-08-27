@@ -6,7 +6,7 @@ section = guides
 group = "Orientation"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
 No Elixir or Phoenix experience is required. If Scalive is also new to you, the
 [Quick start](../learn/quick-start.md) provides a runnable application shape.

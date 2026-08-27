@@ -6,12 +6,11 @@ section = guides
 group = "Testing and troubleshooting"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with a reproducible URL, server logs, and access to the browser console
-and Network panel. Identify whether the expected result belongs to the initial
-HTTP render or the connected LiveView; the checks below diagnose those phases
-separately.
+Start with a reproducible URL whose initial HTTP status and HTML you can inspect,
+plus server logs and the browser console and Network panel. Record whether the
+failure appears before or after the LiveView socket connects.
 
 ## Separate The Two Mounts {#separate-the-two-mounts}
 
@@ -53,51 +52,21 @@ is absent. Route construction also validates invalid or duplicate Live route
 configurations. Preserve those failures rather than replacing them with a
 server that starts partially.
 
-For production, require one stable, high-entropy signing secret on every replica.
-@:apiSymbol(def:scalive.ZioHttpConfig.apply)`ZioHttpConfig.apply`@:@ rejects a
-secret shorter than 32 UTF-8 bytes and a zero or negative session age. Surface
-either result as a startup failure. A random process-local fallback makes
-restarts invalidate session, flash, mount-claim, and CSRF tokens, and prevents
-replicas from accepting one another's tokens.
-
-Use secure cookies behind HTTPS:
-
-```scala
-val config = ZioHttpConfig(
-  signingSecret = requiredSecret,
-  sessionMaxAge = java.time.Duration.ofDays(7),
-  secureCookie = true
-).fold(error => throw IllegalArgumentException(error.toString), identity)
-
-val security = LiveSecurity(config)
-```
-
-The `secureCookie` value is explicit; local HTTP may use `false`, while
-browser-facing HTTPS should use `true`.
+Compare startup values with the canonical
+[configuration contract](configuration.md#current-configuration-contract).
+Diagnostic deltas are usually a signing secret shorter than 32 UTF-8 bytes, a
+non-positive session age, `secureCookie = true` on local HTTP, or different
+secrets across replicas. Surface validation as startup failure; never hide it
+with a random process-local fallback.
 
 ## Diagnose Missing Assets {#diagnose-missing-assets}
 
 If the HTML renders but remains disconnected, first verify that the browser
-client bundle loaded successfully. Inspect the rendered digested URL and request
-it directly. A working setup uses the same @:apiSymbol(object:scalive.StaticAssets)`StaticAssets`@:@
-value both to render the URL and to serve its routes:
-
-```scala
-import zio.http.Server
-
-for
-  assets <- StaticAssets.load(
-              StaticAssetConfig.classpath("public", Seq("app.js", "app.css"))
-            )
-  application = Live.router
-                  .withRootLayout(RootLayout(assets))(
-                    Routes.home -> HomeLiveView()
-                  )
-  liveRoutes = ZioHttp.routes(application, security)
-  routes = liveRoutes ++ assets.routes
-  _ <- Server.serve(routes).provide(Server.default)
-yield ()
-```
+client bundle loaded successfully. Compare the response with the canonical
+[asset serving](static-assets-and-client-setup.md#serve-digested-paths) and
+[tracked tag](static-assets-and-client-setup.md#render-tracked-tags) setup, then
+request the rendered digested URL directly. The same
+@:apiSymbol(object:scalive.StaticAssets)`StaticAssets`@:@ value must render the URL and serve its routes.
 
 @:apiSymbol(def:scalive.StaticAssets.trackedScript)`trackedScript`@:@ and
 @:apiSymbol(def:scalive.StaticAssets.trackedStylesheet)`trackedStylesheet`@:@ emit fingerprinted paths and
@@ -145,16 +114,9 @@ cannot rely on transport fallback.
 
 When `ZioHttp.routes` receives its validated config, the disconnected render injects a
 `<meta name="csrf-token">` element into the root layout's `<head>` and issues the
-matching `_scalive_csrf` cookie. The browser must return the meta value as
-`_csrf_token` in LiveSocket params:
-
-```js
-const csrfToken = document
-  .querySelector("meta[name='csrf-token']")
-  ?.getAttribute("content")
-const params = csrfToken ? { _csrf_token: csrfToken } : {}
-const liveSocket = new LiveSocket("/live", Socket, { params })
-```
+matching `_scalive_csrf` cookie. First compare the page with the canonical
+[CSRF and LiveSocket bootstrap](static-assets-and-client-setup.md#connect-live-socket),
+then inspect the failing token/cookie pair rather than creating another token.
 
 Check all parts of the pair:
 
@@ -193,9 +155,11 @@ protocol error payloads, stale cases, crash logging, and reconnect/remount parit
 still need systematic upstream auditing. Write a browser test for the concrete
 recovery behavior your application promises.
 
-Tracked static assets and `ConnectedMetadata.staticChanged` are implemented, but
-explicit typed connect-info support remains partial. Avoid designing recovery
-logic around undocumented raw connect parameters.
+Tracked static assets and `ConnectedMetadata.staticChanged` are implemented.
+`ConnectedMetadata.connectParams` exposes all browser join parameters as
+untrusted JSON, while typed server-derived connect info remains partial. Decode
+application-owned parameters when needed, but never base recovery on
+Phoenix-owned protocol keys.
 
 ## Account For Current Limits {#account-for-current-limits}
 
@@ -205,7 +169,8 @@ Current operational and diagnostic limits include:
 - connected server-side testing does not cross the real browser DOM boundary;
 - no complete telemetry or observability API, although selected runtime branches
   log warnings and errors;
-- partial typed connect-params and connect-info support;
+- untrusted JSON connect params, with only partial typed server-derived connect
+  info;
 - expanding rather than exhaustive protocol error and reconnect parity; and
 - signed but not encrypted session claims and flash values.
 

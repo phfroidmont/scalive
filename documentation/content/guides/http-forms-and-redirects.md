@@ -6,12 +6,11 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Read [Typed forms and validation](typed-forms-and-validation.md) and
-[Routes and navigation](routes-and-navigation.md) first. This guide assumes one
-validated `ZioHttpConfig` is passed to `ZioHttp.routes` and wrapped by one
-`LiveSecurity` for sibling ZIO HTTP handlers.
+Start with a typed form or ordinary HTML controls, a GET or POST `RoutePattern`
+that can receive them, and one validated `ZioHttpConfig` shared by the Live and
+sibling ZIO HTTP routes.
 
 ## Choose Ordinary HTTP Deliberately {#choose-ordinary-http-deliberately}
 
@@ -19,11 +18,6 @@ Use an ordinary browser form when submission should have normal HTTP semantics:
 changing cookies, crossing an authentication boundary, downloading a response,
 leaving LiveView, or applying Post/Redirect/Get. Keep purely interactive
 validation and in-page updates as Live events.
-
-ZIO HTTP handlers commonly return `UIO[Response]`, an effect with no typed
-failure, or a wider `ZIO[R, E, Response]` when services and failures remain in
-the environment and error channels. `HttpFormDecoder.respond` lets the success
-callback keep that wider effect while mapping form rejection to responses.
 
 Define the target as a ZIO HTTP `RoutePattern` and derive a checked
 @:apiSymbol(class:scalive.FormAction)`FormAction`@:@:
@@ -145,6 +139,11 @@ string sizes or downstream work.
 
 ## Map Decoder Errors To Responses {#map-decoder-errors-to-responses}
 
+ZIO HTTP handlers commonly return `UIO[Response]`, an effect with no typed
+failure, or a wider `ZIO[R, E, Response]` when services and failures remain in
+the environment and error channels. `HttpFormDecoder.respond` lets the success
+callback keep that wider effect while mapping form rejection to responses.
+
 Call `decode(request)` when the handler needs to pattern match the typed error
 channel directly. For the common case, `respond` runs an effect only after every
 stage succeeds:
@@ -263,5 +262,5 @@ low-level decoder details.
 
 - Use [Authentication and sessions](authentication.md) for a complete login, cookie, protected mount, and logout workflow.
 - Use [Typed forms and validation](typed-forms-and-validation.md) to define reusable codecs and Live feedback.
-- Use [Flash, title, and lifecycle UX](flash-title-and-lifecycle-ux.md) for flash behavior during Live navigation.
+- Use [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md) for flash behavior during Live navigation.
 - Use [Testing](testing.md) to cover CSRF, body bounds, validation mapping, trigger-action, cookies, and redirects.

@@ -6,13 +6,11 @@ section = guides
 group = "Assets and operations"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start from an application that renders disconnected HTML, serves its browser
-bundle, and connects the Phoenix client as described in the
-[quick start](../learn/quick-start.md#start-the-server). Decide whether browsers
-will use HTTP or HTTPS and which socket and static paths the application will
-expose.
+You need to know whether browsers will use HTTP or HTTPS and which socket and
+static paths the application will expose. The [quick start](../learn/quick-start.md#start-the-server)
+provides a complete baseline if you do not yet have an assembled application.
 
 ## Current Configuration Contract {#current-configuration-contract}
 

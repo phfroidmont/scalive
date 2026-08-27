@@ -3,15 +3,14 @@ title = "Streams and collection updates"
 description = "Render large or frequently changing collections with stable stream identities while retaining durable domain state separately."
 order = 32
 section = guides
-group = "State, services, and components"
+group = "State and components"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Read
-[HTML and event bindings](html-dsl-and-event-bindings.md#key-repeated-content)
-before choosing a stream over ordinary keyed rendering. The entries rendered by
-this guide must have stable domain keys.
+Start with a collection that renders correctly and whose entries have stable
+domain keys. If keyed rendering is not yet in place, see
+[HTML and event bindings](html-dsl-and-event-bindings.md#key-repeated-content).
 
 ## Choose Streams Deliberately {#choose-streams-deliberately}
 
@@ -68,9 +67,12 @@ document. Inserting an item with an existing ID updates that row in place.
 Changing an item's ID does not remove the row with its old ID; delete the old
 identity explicitly when a domain operation changes identity.
 
-`keepFirst(count)` and `keepLast(count)` apply a retention policy during create,
-reset, and insertion operations. Counts must be positive. Retention limits the
-stream snapshot and rendered DOM, not separately retained domain state.
+`keepFirst(count)` and `keepLast(count)` apply a retention policy during
+connected creation, reset, and insertion operations. Counts must be positive.
+Disconnected initial rendering keeps the complete initial stream, so the
+initial HTML remains useful when JavaScript never connects; the connected DOM
+is pruned to the configured limit. Retention limits stream state, not separately
+retained domain state.
 
 ## Create The Stream During Mount {#create-the-stream-during-mount}
 

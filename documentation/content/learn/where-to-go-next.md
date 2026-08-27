@@ -10,23 +10,29 @@ section = learn
 The Learn path established the programming model and architecture. Continue by
 the task your application needs:
 
-- **Build application behavior:** [HTML and event bindings](../guides/html-dsl-and-event-bindings.md),
+- **Set up the browser:** [client setup and static assets](../guides/static-assets-and-client-setup.md).
+- **Build interfaces and input:** [HTML and event bindings](../guides/html-dsl-and-event-bindings.md),
   [typed forms and validation](../guides/typed-forms-and-validation.md),
-  [services and dependency injection](../guides/services-and-zlayer-injection.md),
-  [stateful components](../guides/components-and-communication.md), and
-  [asynchronous work and subscriptions](../guides/async-work-and-subscriptions.md).
+  [ordinary HTTP forms and redirects](../guides/http-forms-and-redirects.md), and
+  [file uploads](../guides/uploads-and-consumption.md).
 - **Structure and protect pages:** [routes and navigation](../guides/routes-and-navigation.md),
   [layouts and live sessions](../guides/layouts-sessions-and-mount-aspects.md),
+  [services and dependency injection](../guides/services-and-zlayer-injection.md),
   and [authentication and sessions](../guides/authentication.md).
-- **Integrate the browser:** [client setup and static assets](../guides/static-assets-and-client-setup.md)
-  and [browser commands, events, and hooks](../guides/browser-integration.md).
-- **Ship and maintain an application:** [testing](../guides/testing.md),
+- **Own local and collection state:** [stateful components](../guides/components-and-communication.md),
+  [nested LiveViews](../guides/nested-liveviews.md), and
+  [streams](../guides/streams-and-collection-updates.md).
+- **Manage lifecycle behavior:** [asynchronous work and subscriptions](../guides/async-work-and-subscriptions.md),
+  [lifecycle hooks](../guides/lifecycle-hooks.md), and
+  [lifecycle feedback and page state](../guides/flash-title-and-lifecycle-ux.md).
+- **Integrate browser APIs:** [browser commands, events, and hooks](../guides/browser-integration.md).
+- **Verify and operate:** [testing](../guides/testing.md),
   [troubleshooting](../guides/troubleshooting.md),
   [configuration](../guides/configuration.md), and
   [deployment](../guides/deployment.md).
 
-The [Guides index](../guides/index.md#solve-a-task) includes uploads, streams,
-lifecycle UX, ordinary HTTP forms, and the remaining focused tasks.
+The [Guides index](../guides/index.md#solve-a-task) provides the same complete
+task map with a summary of each guide.
 
 ## Explore Working Examples {#explore-working-examples}
 

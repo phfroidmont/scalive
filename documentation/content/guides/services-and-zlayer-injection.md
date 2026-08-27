@@ -1,15 +1,15 @@
 {%
 title = "Services and dependency injection"
 description = "Inject application services into LiveViews, derive route layers from constructors, and provide shared dependencies at startup."
-order = 30
+order = 22
 section = guides
-group = "State, services, and components"
+group = "Routing and application structure"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with a working Live route whose `mount` and `handleMessage` methods return
-`Task` effects.
+Start with a working Live route whose `mount` and `handleMessage` callbacks can
+call application operations through `Task` effects.
 
 ## Inject A Service Into A LiveView {#inject-a-service-into-a-liveview}
 
@@ -118,7 +118,7 @@ Derive an infallible LiveView layer from its constructor:
 ```scala
 object ReportsLiveView:
   val layer: URLayer[Reports, ReportsLiveView] =
-    ZLayer.fromFunction(ReportsLiveView.apply)
+    ZLayer.fromFunction(reports => new ReportsLiveView(reports))
 ```
 
 Register that layer instead of constructing the LiveView manually:

@@ -6,10 +6,11 @@ section = guides
 group = "Testing and troubleshooting"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Assemble the application routes under test and identify whether the expected
-behavior belongs to the initial HTTP render or the connected socket.
+Start with one observable behavior or incident to reproduce, the application
+routes that expose it, and a decision about whether it belongs to initial HTTP
+rendering, the connected socket, or the browser.
 
 ## Choose The Test Boundary {#choose-the-test-boundary}
 
@@ -39,7 +40,7 @@ does not emulate browser successful-control selection or execute JavaScript.
 
 @:@
 
-## Test Disconnected Rendering {#test-disconnected-rendering}
+## Add Testing Support {#add-testing-support}
 
 Scalive publishes and supports exactly two Scala coordinates:
 `dev.scalive::scalive`, containing all production API, render, runtime, protocol,
@@ -58,6 +59,8 @@ def mvnDeps = Seq(
   mvn"dev.scalive::scalive-testing:{{scaliveSnapshotVersion}}"
 )
 ```
+
+## Test Disconnected Rendering {#test-disconnected-rendering}
 
 The @:apiSymbol(object:scalive.testing.DisconnectedRender)`DisconnectedRender.run`@:@ method accepts
 finalized `Routes` and a ZIO HTTP `Request`. It runs the route, consumes the
@@ -230,7 +233,11 @@ should prove at least:
 - the LiveSocket reaches the connected state;
 - one event updates the existing DOM;
 - live patch or navigation preserves the expected URL and title;
-- hooks and uploads work in a real browser when the application uses them; and
+- hooks and uploads work in a real browser when the application uses them;
+- controls expose semantic elements, visible labels, and accessible names;
+- keyboard-only interaction follows the intended focus order and visibly shows focus;
+- validation, status, and other live feedback is announced when appropriate,
+  with only intentional focus moves such as focusing an error summary; and
 - a deliberately interrupted WebSocket exercises the application's reconnect
   expectations.
 

@@ -6,12 +6,13 @@ section = guides
 group = "Assets and operations"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-This guide starts from the `app` module created in the
-[quick start](../learn/quick-start.md). Complete the
-[configuration](configuration.md#current-configuration-contract) and
-[client setup](static-assets-and-client-setup.md#build-the-client-bundle) first.
+You need a runnable Scalive application with validated production
+[configuration](configuration.md#current-configuration-contract) and a built
+[browser bundle](static-assets-and-client-setup.md#build-the-client-bundle).
+The commands use the `app` module from the [quick start](../learn/quick-start.md)
+as an example; substitute your application's module name.
 
 @:callout(warning)
 

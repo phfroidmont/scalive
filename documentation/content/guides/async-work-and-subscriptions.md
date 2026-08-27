@@ -6,10 +6,10 @@ section = guides
 group = "Async and lifecycle"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Start with Scalive's
-[model and message lifecycle](../learn/models-and-messages.md#produce-explicit-state-transitions).
+Start with a connected `LiveView` whose messages already produce explicit model
+transitions and rendered UI states.
 
 ## Choose The Resource By Shape {#choose-the-resource-by-shape}
 
@@ -92,8 +92,8 @@ state, not a reason for the LiveView process to crash.
 
 Do not expose arbitrary exception messages to visitors. Convert expected
 failures into stable, actionable copy and log diagnostic context separately.
-The report example displays a fixed failure explanation while its X-ray
-projector records only the state label.
+The report example displays a fixed failure explanation while the documentation
+site's diagnostic state viewer records only the state label.
 
 ## Cancel Explicitly When It Is User-Visible {#cancel-explicitly-when-it-is-user-visible}
 
@@ -131,12 +131,29 @@ private def ticks(every: Duration): ZStream[Any, Nothing, Msg] =
 
 @:apiSymbol(def:scalive.Subscriptions.start)`start`@:@ rejects a duplicate active
 key. Use it when starting twice indicates a state-machine mistake. The clock
-guards `start` with its model so the button and server transition agree.
+guards `start` with its model so the button and server transition agree:
+
+```scala
+ctx.subscriptions
+  .start(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(1.second))
+```
 
 @:apiSymbol(def:scalive.Subscriptions.replace)`replace`@:@ starts or swaps the
 stream under a key. Replacing the registration interrupts the old stream and
 resubscribes the runtime's current set. Use replacement when changing polling
-frequency, topic, or another stream parameter is valid application behavior.
+frequency, topic, or another stream parameter is valid application behavior:
+
+```scala
+ctx.subscriptions
+  .replace(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(250.millis))
+```
+
+The required `SubscriptionDelivery` argument controls backpressure at the
+LiveView mailbox. `Lossless` delivers every emitted message in order; use it
+when every transition matters. `Latest` coalesces pending delivery so newer
+messages supersede older ones; use it for high-frequency state snapshots where
+only the newest value matters. The compiled clock example below deliberately
+uses `Lossless` for both start and replacement so every tick is counted.
 
 @:apiSymbol(def:scalive.Subscriptions.cancel)`cancel`@:@ removes the registration
 and succeeds when it is already absent. Update the model in the same handler so
@@ -181,8 +198,9 @@ failure, stale-completion suppression, explicit cancellation, retry, and reset:
 @:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-example)
 
 Run the [managed clock subscription](../examples/subscription-clock.md) and
-[managed async report](../examples/async-report.md) alongside their X-ray views
-to correlate messages, model transitions, and final DOM changes.
+[managed async report](../examples/async-report.md) alongside the documentation
+site's diagnostic views to correlate messages, model transitions, and final DOM
+changes.
 
 ## Related Tasks {#related-tasks}
 

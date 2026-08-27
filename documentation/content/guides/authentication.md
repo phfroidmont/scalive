@@ -1,16 +1,20 @@
 {%
 title = "Authentication and sessions"
 description = "Combine ordinary HTTP login and logout with opaque sessions and protected LiveView mounts."
-order = 22
+order = 23
 section = guides
 group = "Routing and application structure"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-This guide builds on [Ordinary HTTP forms and redirects](http-forms-and-redirects.md),
-[named live sessions and mount aspects](layouts-sessions-and-mount-aspects.md),
-and [service layers provided at startup](services-and-zlayer-injection.md#provide-services-at-startup).
+Start with an [ordinary HTTP route](http-forms-and-redirects.md) that can validate
+a form, set a cookie, and redirect, plus a
+[named Live session](layouts-sessions-and-mount-aspects.md) that can run a mount
+aspect. The HTTP and Live routes must also be able to receive one shared
+authentication service;
+[service layers](services-and-zlayer-injection.md#provide-services-at-startup)
+are one way to provide that capability.
 
 ## Separate HTTP Login From Live Authorization {#separate-http-login-from-live-authorization}
 
@@ -98,15 +102,17 @@ small context into only the LiveViews that use it:
 val protectedRoutes = Live
   .session("authenticated")
   .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)(
-    profile.context(ProfileLiveView.apply),
+    profile.context((currentUser: CurrentUser, accounts: Accounts) =>
+      new ProfileLiveView(currentUser, accounts)
+    ),
     status(StatusLiveView())
   )
 ```
 
-`ProfileLiveView` receives immutable `CurrentUser` construction data. The status
-view remains authentication-agnostic even though the same admission protects it.
-Route-specific authorization and sensitive mutations must still enforce their
-own domain rules.
+`ProfileLiveView` receives immutable `CurrentUser` construction data while
+`Accounts` comes from the application environment. The status view remains
+authentication-agnostic even though the same admission protects it. Route-specific
+authorization and sensitive mutations must still enforce their own domain rules.
 
 Do not transfer the cookie token in claims. Signed claims are authenticated but
 not encrypted. Read [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently)
@@ -153,7 +159,9 @@ constructor without an explicit service type argument:
 ```scala
 final class ProfileLiveView(currentUser: CurrentUser, accounts: Accounts)
 
-val profile = routes.profile.context(ProfileLiveView.apply)
+val profile = routes.profile.context((currentUser: CurrentUser, accounts: Accounts) =>
+  new ProfileLiveView(currentUser, accounts)
+)
 ```
 
 Only `CurrentUser` is supplied by admission. `Accounts` is resolved from the ZIO

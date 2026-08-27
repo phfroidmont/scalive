@@ -6,12 +6,12 @@ section = guides
 group = "Browser integration"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Complete [Client setup and static assets](static-assets-and-client-setup.md), so
-the application bundles JavaScript, renders a CSRF token, and connects a
-Phoenix `LiveSocket`. This guide assumes the usual `assets/js/app.js` entry
-point and the `phoenix` and `phoenix_live_view` packages.
+Start with a `LiveView` that renders an interactive element. You can understand
+and compose `JS` command values independently; running browser hooks or exchanging
+browser events additionally requires the working bundle, CSRF, and `LiveSocket`
+connection from [Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
 
 ## Choose The Boundary {#choose-the-boundary}
 
@@ -26,22 +26,43 @@ boundaries:
 Use an ordinary typed LiveView message when the action changes server state.
 JavaScript should not become a second application model.
 
-## Compose Client-Only Commands {#compose-client-only-commands}
+## Compose Browser Tasks {#compose-client-only-commands}
 
 Commands are immutable values executed in composition order:
 
 ```scala
-private val revealDetails =
-  JS.show(to = panelRef.selector)
-    .hide(to = placeholderRef.selector)
-    .toggle(to = detailRef.selector)
+private val openDialog =
+  JS.pushFocus()
+    .show(to = dialogRef.selector)
+    .addClass("is-open", to = dialogRef.selector)
+    .setAttribute("data-state" -> "open", to = dialogRef.selector)
+    .transition(("ease-out", "opacity-0", "opacity-100"), to = dialogRef.selector)
+    .focusFirst(to = dialogRef.selector)
+    .dispatch("dialog:opened", to = dialogRef.selector)
 
-button(on.click(revealDetails), "Run composed command")
+private val confirm =
+  JS.push(ConfirmDialog).toggleClass("is-pending", to = dialogRef.selector)
+
+private val closeDialog =
+  JS.hide(to = dialogRef.selector)
+    .removeClass("is-open", to = dialogRef.selector)
+    .removeAttribute("data-state", to = dialogRef.selector)
+    .popFocus()
+
+button(on.click(openDialog), "Open")
+button(on.click(confirm), "Confirm")
+button(on.click(closeDialog), "Close")
 ```
 
-This click performs no server transition. Phoenix applies the show, hide, and
-toggle operations in the browser while preserving them across compatible DOM
-patches. Prefer typed @:apiSymbol(opaque-type:scalive.DomRef)`DomRef`@:@ selectors over handwritten CSS strings.
+This task uses the stable command families without making JavaScript a second
+state model: `focus` and `focusFirst` move focus, while `pushFocus`/`popFocus`
+restore it; class and attribute commands retain client mutations across
+compatible patches; `transition`, `show`, `hide`, and `toggle` provide visual
+effects; and `dispatch` notifies browser-owned code. `JS.push(ConfirmDialog)` is
+a typed Scala message push and must remain on a rendered event binding. Prefer
+typed @:apiSymbol(opaque-type:scalive.DomRef)`DomRef`@:@ selectors over handwritten CSS strings; consult the `JS` API for each
+command's timing and targeting options rather than treating this overview as an
+exhaustive reference.
 
 Use @:apiSymbol(def:scalive.Client.exec)`ctx.client.exec`@:@ when a server callback must execute a client-only command after
 work completes. A command containing a typed message push belongs on a rendered
@@ -64,7 +85,7 @@ ctx.client.push(CopyRequestEvent, CopyRequest(requestId, SampleText))
 still fail, so keep payloads small and model failure in the surrounding effect.
 Do not put secrets in browser events or traces.
 
-## Return Typed Hook Results {#return-typed-hook-results}
+## Handle Typed Browser Results {#return-typed-hook-results}
 
 Declare the reverse direction and install it once on the LiveView:
 
@@ -84,6 +105,23 @@ override def hooks: LiveHooks[Msg, Model] =
 malformed matching payload is rejected without changing the model. The Scala
 codec does not make JavaScript trustworthy: validate shape, length, permissions,
 and browser failures before calling `this.pushEvent`.
+
+For an event targeted at a stateful component, declare the same boundary on the
+component instead. The static handler also receives current props:
+
+```scala
+override def hooks: ComponentLiveHooks[Props, Msg, Model] =
+  ComponentLiveHooks.empty.onBrowserEvent(CopyResultEvent) {
+    (props, model, result, _) => ZIO.succeed(applyCopyResult(props, model, result))
+  }
+```
+
+Dynamic component hooks use
+`ctx.hooks.browserEvent.attach(id, CopyResultEvent) { (props, model, result, ctx) => ... }`
+and the corresponding `detach(id)`. Root dynamic handlers use the same pattern
+without `props`. Use `this.pushEvent` for a root event and `this.pushEventTo`
+when the component should own the event; targeting determines which
+handler runs, while `BrowserToServerEvent` determines how its payload is decoded.
 
 ## Implement The Browser Hook {#implement-the-browser-hook}
 
@@ -176,10 +214,9 @@ liveSocket.connect()
 window.liveSocket = liveSocket
 ```
 
-The documentation site's `app.js` has additional X-ray integration, but uses
-this same `hooks: Hooks` registration and calls `connect()` only after creating
-the socket. Do not create a second `LiveSocket` just for hooks; add them to the
-application's existing options object.
+Do not create a second `LiveSocket` just for hooks; add them to the application's
+existing options object. The canonical bootstrap and CSRF explanation is in
+[Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
 
 ## Give Every Hook Stable Identity {#give-every-hook-stable-identity}
 

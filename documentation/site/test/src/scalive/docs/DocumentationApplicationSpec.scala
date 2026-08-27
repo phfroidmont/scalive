@@ -334,7 +334,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         guideLinks.headOption.exists(_.text() == "Overview"),
         guideLinks.exists(_.text() == "Testing LiveViews"),
         guideGroups == Vector(
-          "Orientation"          -> Vector("/guides/phoenix-live-view-orientation"),
+          "Orientation" -> Vector("/guides/phoenix-live-view-orientation"),
+          "Setup and foundations" -> Vector(
+            "/guides/static-assets-and-client-setup"
+          ),
           "Interfaces and input" -> Vector(
             "/guides/html-dsl-and-event-bindings",
             "/guides/typed-forms-and-validation",
@@ -344,12 +347,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
           "Routing and application structure" -> Vector(
             "/guides/routes-and-navigation",
             "/guides/layouts-sessions-and-mount-aspects",
-            "/guides/authentication",
-            "/guides/nested-liveviews"
-          ),
-          "State, services, and components" -> Vector(
             "/guides/services-and-zlayer-injection",
+            "/guides/authentication"
+          ),
+          "State and components" -> Vector(
             "/guides/components-and-communication",
+            "/guides/nested-liveviews",
             "/guides/streams-and-collection-updates"
           ),
           "Async and lifecycle" -> Vector(
@@ -363,7 +366,6 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             "/guides/troubleshooting"
           ),
           "Assets and operations" -> Vector(
-            "/guides/static-assets-and-client-setup",
             "/guides/configuration",
             "/guides/deployment"
           )

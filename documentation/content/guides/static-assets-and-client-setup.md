@@ -1,16 +1,16 @@
 {%
 title = "Client setup and static assets"
 description = "Load classpath or directory assets, render digested links, and connect the Phoenix LiveView client."
-order = 70
+order = 2
 section = guides
-group = "Assets and operations"
+group = "Setup and foundations"
 %}
 
-## Prerequisites {#prerequisites}
+## Before You Start {#prerequisites}
 
-Have a Scalive application that can start from Mill, plus Node.js and npm for
-the browser bundle. Complete the [Quick start](../learn/quick-start.md) first if
-you do not yet have routes and a root layout.
+Start with a Scalive application whose routed page renders a complete root
+layout, and with Node.js and npm available to build its browser bundle. The
+[Quick start](../learn/quick-start.md) provides that observable baseline.
 
 ## Build The Client Bundle {#build-the-client-bundle}
 
@@ -55,7 +55,8 @@ This repository-local build setup is shown in full in the
 
 ## Connect LiveSocket {#connect-live-socket}
 
-Create the browser entry point imported by the bundle:
+This section is the canonical browser bootstrap and CSRF setup. Create the
+browser entry point imported by the bundle:
 
 ```js
 import { Socket } from "phoenix"
@@ -76,8 +77,8 @@ with the CSRF cookie. Return that value as `_csrf_token`; do not create or
 hard-code a token in JavaScript.
 
 Pass Phoenix options such as `hooks` in the final `LiveSocket` options object
-when the application needs them. The documentation application uses the same
-CSRF setup, registers its hooks, calls `connect()`, and exposes the socket for
+when the application needs them. Register every option before calling
+`connect()`; exposing the socket on `window` is optional and useful only for
 browser-console debugging.
 
 ## Read Connect Metadata {#read-connect-metadata}
@@ -106,12 +107,14 @@ val locale = ctx.connection match
   case Connection.Disconnected => None
 ```
 
-The map is empty during disconnected HTTP rendering and contains the browser's
-join parameters during the connected lifecycle. Treat every value as untrusted
-client input: use the signed session or server-side state for identity,
-authorization, and other security decisions. Do not set or depend on Phoenix's
-internal keys such as `_mounts` and `_track_static`; their exact values and
-reconnect behavior are protocol metadata, not application state.
+The map is empty during disconnected HTTP rendering and contains all browser
+join parameters as untrusted JSON during the connected lifecycle. Decode only
+application-owned keys and use the signed session or server-side state for
+identity, authorization, and other security decisions. Typed server-derived
+connect info such as peer, headers, or user agent remains partial. Do not set or
+depend on Phoenix's internal keys such as `_mounts` and `_track_static`; their
+exact values and reconnect behavior are protocol metadata, not an application
+recovery contract.
 
 ## Load Classpath Assets {#load-classpath-assets}
 

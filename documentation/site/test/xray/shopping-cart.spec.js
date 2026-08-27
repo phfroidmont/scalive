@@ -8,7 +8,7 @@ test("traces a shopping cart message, derived model, and keyed row", async ({ pa
   const inspector = example.locator('[data-live-trace-viewer="shopping-cart"]')
 
   await expect(example.locator("[data-cart-item-count]")).toHaveText("0 items")
-  await inspector.getByRole("button", { name: "Start capture" }).click()
+  await inspector.getByRole("button", { name: "Inspect live interactions" }).click()
   await example.locator("[data-product=coffee]").click()
 
   const coffee = example.locator("[data-cart-line=coffee]")

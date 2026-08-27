@@ -12,24 +12,32 @@ test("captures counter interactions in the integrated live trace viewer", async 
   const tracePanel = viewer.locator(".docs-live-trace-panel")
 
   await expect(viewer).toHaveRole("region")
-  await expect(viewer).toHaveAccessibleName("Live Typed counter trace")
-  await expect(viewer.locator(".docs-live-trace-capture-status")).toHaveRole("status")
-  await expect(viewer.locator(".docs-live-trace-capture-status")).toHaveAttribute("aria-live", "polite")
+  await expect(viewer).toHaveAccessibleName("Typed counter interaction inspector")
+  await expect(example.getByRole("heading", { level: 3, name: "Live result", exact: true })).toBeVisible()
+  await expect(
+    viewer.getByRole("heading", { level: 3, name: "Interaction inspector", exact: true }),
+  ).toBeVisible()
+  await expect(viewer).toContainText(
+    "See how actions in the live result above travel through typed messages, server state, protocol frames, and DOM updates.",
+  )
   await expect(count).toHaveText("0")
   await expect(viewer.locator('[data-trace-provenance="authored"]')).toHaveCount(0)
   await expect(viewer.locator(".docs-live-trace-catalog")).toHaveCount(0)
   await expect(viewer.getByText("Raw trace", { exact: true })).toHaveCount(0)
 
-  await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText("No interactions yet")
   await expect(inspectionStatus).toHaveCount(0)
   await expect(tracePanel).toHaveCount(0)
-  const startCapture = viewer.getByRole("button", { name: "Start capture" })
+  const inspectInteractions = viewer.getByRole("button", { name: "Inspect live interactions" })
   await expect(viewer).toBeVisible()
-  await expect(startCapture).toBeEnabled()
-  await startCapture.click()
+  await expect(inspectInteractions).toBeEnabled()
+  await inspectInteractions.click()
   await expect(viewer).toHaveAttribute("data-live-trace-enabled", "true")
-  await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
-    "Use the example controls",
+  const traceSwitch = viewer.getByRole("switch", { name: "Trace new interactions" })
+  await expect(traceSwitch).toBeFocused()
+  await expect(traceSwitch).toHaveAttribute("aria-checked", "true")
+  await expect(viewer.getByRole("heading", { level: 4, name: "Try the live result above" })).toBeVisible()
+  await expect(viewer).toContainText(
+    "Click a button, type in a field, or perform any action. Its trace will appear here immediately.",
   )
 
   await example.getByRole("button", { name: "Increase", exact: true }).click()
@@ -38,9 +46,7 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await expect(interactions.first()).toHaveAttribute("aria-pressed", "true")
   await expect(inspectionStatus).toHaveRole("status")
   await expect(tracePanel).toHaveRole("region")
-  await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
-    "1 interaction retained",
-  )
+  await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText("1 interaction")
   await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#1")
   await expect(inspectionStatus).toContainText(
     /Inspecting #1 Increment Triggered by Browser Status Complete Latest/,
@@ -120,11 +126,11 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await expect(count).toHaveText("0")
   await expect(interactions).toHaveCount(2)
   await expect(interactions.first()).toHaveAttribute("data-trace-state", "complete")
-  await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
-    "2 interactions retained",
-  )
+  await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText("2 interactions")
   await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#2")
   await expect(interactions.last().locator(".docs-live-trace-event-reference")).toHaveText("#1")
+  await expect(interactions.first()).toHaveAttribute("aria-pressed", "true")
+  await expect(interactions.last()).toHaveAttribute("aria-pressed", "false")
 
   const olderInteraction = interactions.last()
   const olderId = await olderInteraction.getAttribute("data-trace-interaction")
@@ -170,6 +176,11 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await viewer.locator(".docs-live-trace-event-window").evaluate((element) => {
     element.style.removeProperty("max-height")
   })
+  await viewer.locator(`[data-trace-interaction="${olderId}"]`).click()
+  await expect(viewer.locator(`[data-trace-interaction="${olderId}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
 
   await page.evaluate(() => window.liveSocket.disconnect())
   await page.evaluate(() => window.liveSocket.connect())
@@ -177,27 +188,35 @@ test("captures counter interactions in the integrated live trace viewer", async 
   await expect(viewer).toHaveAttribute("data-live-trace-enabled", "true")
   await expect(interactions).toHaveCount(5)
   await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#5")
+  await expect(viewer.locator(`[data-trace-interaction="${olderId}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
+  await viewer.getByRole("button", { name: "Jump to latest" }).click()
 
-  await viewer.getByRole("button", { name: "Pause capture" }).click()
+  await traceSwitch.click()
+  await expect(traceSwitch).toHaveAttribute("aria-checked", "false")
   await expect(viewer).toHaveAttribute("data-live-trace-enabled", "false")
+  await expect(viewer).toContainText(
+    "The live result still works, but new actions will not be added here.",
+  )
   const countBeforePausedClick = Number(await count.textContent())
   await example.getByRole("button", { name: "Increase", exact: true }).click()
   await expect(count).toHaveText(String(countBeforePausedClick + 1))
   await expect(interactions).toHaveCount(5)
-  await viewer.getByRole("button", { name: "Resume capture" }).click()
+  await traceSwitch.click()
+  await expect(traceSwitch).toHaveAttribute("aria-checked", "true")
   await expect(viewer).toHaveAttribute("data-live-trace-enabled", "true")
 
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(viewer).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false)
 
-  await viewer.getByRole("button", { name: "Clear", exact: true }).click()
+  await viewer.getByRole("button", { name: "Clear history", exact: true }).click()
   await expect(interactions).toHaveCount(0)
   await expect(viewer.locator('[data-trace-provenance="captured"]')).toHaveCount(0)
   await expect(tracePanel).toHaveCount(0)
-  await expect(viewer.locator(".docs-live-trace-capture-summary")).toHaveText(
-    "Use the example controls",
-  )
+  await expect(viewer.getByRole("heading", { level: 4, name: "Try the live result above" })).toBeVisible()
 })
 
 test("completes a no-op counter interaction without waiting for DOM mutations", async ({ page }) => {
@@ -208,7 +227,7 @@ test("completes a no-op counter interaction without waiting for DOM mutations", 
   const viewer = example.locator('[data-live-trace-viewer="counter"]')
   const interactions = viewer.locator("[data-trace-interaction]")
 
-  await viewer.getByRole("button", { name: "Start capture" }).click()
+  await viewer.getByRole("button", { name: "Inspect live interactions" }).click()
   await example.getByRole("button", { name: "Reset", exact: true }).click()
 
   await expect(example.locator(".docs-counter [role=status] strong")).toHaveText("0")
@@ -232,7 +251,7 @@ test("keeps interaction numbers monotonic after older records are evicted", asyn
   const count = example.locator(".docs-counter [role=status] strong")
   const interactions = viewer.locator("[data-trace-interaction]")
 
-  await viewer.getByRole("button", { name: "Start capture" }).click()
+  await viewer.getByRole("button", { name: "Inspect live interactions" }).click()
   for (let ordinal = 1; ordinal <= 12; ordinal += 1) {
     await example.getByRole("button", { name: "Increase", exact: true }).click()
     await expect(count).toHaveText(String(ordinal))
@@ -248,7 +267,7 @@ test("keeps interaction numbers monotonic after older records are evicted", asyn
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
   await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#14")
 
-  await viewer.getByRole("button", { name: "Clear", exact: true }).click()
+  await viewer.getByRole("button", { name: "Clear history", exact: true }).click()
   await expect(interactions).toHaveCount(0)
   await example.getByRole("button", { name: "Increase", exact: true }).click()
   await expect(interactions.first().locator(".docs-live-trace-event-reference")).toHaveText("#1")

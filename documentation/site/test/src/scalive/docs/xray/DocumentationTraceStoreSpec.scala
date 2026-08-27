@@ -96,6 +96,27 @@ object DocumentationTraceStoreSpec extends ZIOSpecDefault:
         value.fields.isEmpty,
         value.scalaValue.isEmpty
       )
+    },
+    test("preserves a pinned inspector selection until trace history is reset") {
+      for
+        store   <- DocumentationTraceStore.make()
+        counter <- ZIO.fromOption(ExampleRegistry.get("counter"))
+        _       <- store.activate(Session, Topic, counter)
+        _ <- store.selectInteraction(
+               Session,
+               Topic,
+               Some("captured-operation-1"),
+               followLatest = false
+             )
+        pinned <- store.snapshot(Session, Topic)
+        _      <- store.reset(Session, Topic)
+        reset  <- store.snapshot(Session, Topic)
+      yield assertTrue(
+        pinned.selectedInteraction.contains("captured-operation-1"),
+        !pinned.followLatest,
+        reset.selectedInteraction.isEmpty,
+        reset.followLatest
+      )
     }
   )
 end DocumentationTraceStoreSpec

@@ -8,7 +8,7 @@ test("validates, saves, resets, and traces a typed profile form", async ({ page 
   const inspector = example.locator('[data-live-trace-viewer="profile-form"]')
   const form = example.locator("[data-profile-form]")
 
-  await inspector.getByRole("button", { name: "Start capture" }).click()
+  await inspector.getByRole("button", { name: "Inspect live interactions" }).click()
   await form.getByLabel("Name").fill("Ada Lovelace")
   await form.getByLabel("Email").fill("not-an-email")
   await form.getByLabel("Biography").fill("Analytical engine pioneer.")

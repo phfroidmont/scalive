@@ -8,7 +8,7 @@ test("identifies browser and runtime initiators for managed async work", async (
   const viewer = example.locator('[data-live-trace-viewer="async-report"]')
   const interactions = viewer.locator("[data-trace-interaction]")
 
-  await viewer.getByRole("button", { name: "Start capture" }).click()
+  await viewer.getByRole("button", { name: "Inspect live interactions" }).click()
   await example.getByRole("button", { name: "Run successful report" }).click()
 
   await expect(example.locator("[data-report-status]")).toHaveText("Loading")
@@ -38,7 +38,7 @@ test("identifies the component instance that emitted an output", async ({ page }
   const viewer = example.locator('[data-live-trace-viewer="voting-components"]')
   const interactions = viewer.locator("[data-trace-interaction]")
 
-  await viewer.getByRole("button", { name: "Start capture" }).click()
+  await viewer.getByRole("button", { name: "Inspect live interactions" }).click()
   await example.locator('[data-vote-component="scala-vote"]').getByRole("button", { name: "Vote" }).click()
 
   await expect(interactions).toHaveCount(2)

@@ -78,7 +78,9 @@ final private[docs] case class TraceKey(traceSession: String, topic: String)
 
 final private[docs] case class DocumentationTraceSnapshot(
   active: Boolean,
-  records: Vector[DocumentationTraceRecord])
+  records: Vector[DocumentationTraceRecord],
+  selectedInteraction: Option[String],
+  followLatest: Boolean)
 
 final private[docs] class DocumentationTraceStore private (
   limits: TraceLimits,
@@ -106,6 +108,8 @@ final private[docs] class DocumentationTraceStore private (
     private val serverOrdinals         = mutable.LinkedHashMap.empty[ServerOperation, Long]
     private val discardedInteractions  = mutable.LinkedHashSet.empty[Long]
     private var nextInteractionOrdinal = 0L
+    private var selectedInteraction    = Option.empty[String]
+    private var followLatest           = true
 
     def lastAccess: Long = accessSequence.get()
 
@@ -301,6 +305,16 @@ final private[docs] class DocumentationTraceStore private (
       values
     }
 
+    def inspectionSelection: (Option[String], Boolean) = synchronized {
+      selectedInteraction -> followLatest
+    }
+
+    def selectInteraction(id: Option[String], follow: Boolean): Unit = synchronized {
+      touch()
+      selectedInteraction = id
+      followLatest = follow
+    }
+
     def clear(): Unit = synchronized {
       touch()
       values = Vector.empty
@@ -309,6 +323,8 @@ final private[docs] class DocumentationTraceStore private (
       serverOrdinals.clear()
       discardedInteractions.clear()
       nextInteractionOrdinal = 0L
+      selectedInteraction = None
+      followLatest = true
     }
 
     def discardIncomplete(): Unit = synchronized {
@@ -470,10 +486,29 @@ final private[docs] class DocumentationTraceStore private (
   def snapshot(session: String, topic: String): UIO[DocumentationTraceSnapshot] =
     ZIO.succeed {
       this.synchronized {
-        val key = TraceKey(session, topic)
+        val key                                 = TraceKey(session, topic)
+        val history                             = Option(histories.get(key))
+        val (selectedInteraction, followLatest) = history
+          .map(_.inspectionSelection).getOrElse(None -> true)
         DocumentationTraceSnapshot(
           active.containsKey(key),
-          Option(histories.get(key)).fold(Vector.empty)(_.snapshot)
+          history.fold(Vector.empty)(_.snapshot),
+          selectedInteraction,
+          followLatest
+        )
+      }
+    }
+
+  def selectInteraction(
+    session: String,
+    topic: String,
+    id: Option[String],
+    followLatest: Boolean
+  ): UIO[Unit] =
+    ZIO.succeed {
+      this.synchronized {
+        Option(histories.get(TraceKey(session, topic))).foreach(
+          _.selectInteraction(id, followLatest)
         )
       }
     }

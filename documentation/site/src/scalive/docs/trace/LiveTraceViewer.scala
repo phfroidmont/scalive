@@ -44,12 +44,13 @@ final private[docs] class LiveTraceViewer(
                    )
               snapshot <- store.snapshot(session, observedTopic)
             yield withSnapshot(
-              Model(Some(session), enabled = false, Vector.empty, None),
+              Model(Some(session), enabled = false, Vector.empty, None, followLatest = true),
               snapshot
             )
-          case _ => ZIO.succeed(Model(None, enabled = false, Vector.empty, None))
+          case _ =>
+            ZIO.succeed(Model(None, enabled = false, Vector.empty, None, followLatest = true))
       case Connection.Disconnected =>
-        ZIO.succeed(Model(None, enabled = false, Vector.empty, None))
+        ZIO.succeed(Model(None, enabled = false, Vector.empty, None, followLatest = true))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ToggleCapture =>
@@ -64,7 +65,11 @@ final private[docs] class LiveTraceViewer(
         case Some(session) =>
           store
             .reset(session, observedTopic).as(
-              model.copy(records = Vector.empty, selectedInteraction = None)
+              model.copy(
+                records = Vector.empty,
+                selectedInteraction = None,
+                followLatest = true
+              )
             )
         case None => ZIO.succeed(model)
     case Msg.Refresh =>
@@ -73,17 +78,30 @@ final private[docs] class LiveTraceViewer(
           store.snapshot(session, observedTopic).map(snapshot => withSnapshot(model, snapshot))
         case None => ZIO.succeed(model)
     case Msg.SelectInteraction(id) =>
-      ZIO.succeed(model.copy(selectedInteraction = Some(id)))
+      val latest       = CapturedInteractionGrouper.group(model.records).headOption.map(_.id)
+      val followLatest = latest.contains(id)
+      val updated      = model.copy(
+        selectedInteraction = Some(id),
+        followLatest = followLatest
+      )
+      model.session.fold(ZIO.succeed(updated))(session =>
+        store
+          .selectInteraction(session, observedTopic, Some(id), followLatest).as(updated)
+      )
     case Msg.JumpToLatest =>
-      val latest = CapturedInteractionGrouper.group(model.records).headOption.map(_.id)
-      ZIO.succeed(model.copy(selectedInteraction = latest))
+      val latest  = CapturedInteractionGrouper.group(model.records).headOption.map(_.id)
+      val updated = model.copy(selectedInteraction = latest, followLatest = true)
+      model.session.fold(ZIO.succeed(updated))(session =>
+        store.selectInteraction(session, observedTopic, None, followLatest = true).as(updated)
+      )
+  end handleMessage
 
   override def view(model: Signal[Model]): HtmlElement[Msg] =
     val interactions = model.map(value => CapturedInteractionGrouper.group(value.records))
     val selectedId   = model.map(_.selectedInteraction)
     sectionTag(
       cls                                   := "docs-live-trace",
-      aria.label                            := s"Live ${example.descriptor.title} trace",
+      aria.label                            := s"${example.descriptor.title} interaction inspector",
       dataAttr("live-trace-viewer")         := example.descriptor.id,
       dataAttr("live-trace-observed-topic") := observedTopic,
       dataAttr("live-trace-topic")          := viewerTopic,
@@ -109,21 +127,122 @@ final private[docs] class LiveTraceViewer(
     }
     val interactionOrdinals = interactions.map(_.map(value => value.id -> value.ordinal).toMap)
     val panelId             = s"$instanceId-trace-panel"
-    val newerCount          = selected.zip(interactions).map { case (value, values) =>
-      value.fold(0)(interaction => values.indexWhere(_.id == interaction.id))
+    val newerCount          = selected.zip(selectedId).zip(interactions).map {
+      case ((Some(interaction), _), values) => values.indexWhere(_.id == interaction.id)
+      case ((None, Some(_)), values)        => values.size
+      case ((None, None), _)                => 0
     }
     val showDetails = interactions.zip(selectedId).map { case (values, id) =>
       values.nonEmpty || id.nonEmpty
     }
+    val count = interactions.map(_.size)
     div(
-      cls := "docs-live-trace-live",
-      renderCaptureControls(model, interactions.map(_.size)),
+      cls := model.map(value =>
+        s"docs-live-trace-live${
+            if value.session.isEmpty then " is-unavailable"
+            else if value.enabled then " is-tracing"
+            else " is-idle"
+          }"
+      ),
+      renderInspectorHeader(model, count),
+      renderEmptyState(model, count),
+      showDetails.when(renderCaptureControls(model, count)),
       showDetails.when(renderInspection(selectedId, selected, interactionOrdinals, newerCount)),
       showDetails.when(
         renderInteractionList(interactions, interactionOrdinals, selectedId, panelId)
       ),
       showDetails.when(renderSelectedPanel(selected, panelId))
     )
+  end renderLive
+
+  private def renderInspectorHeader(
+    model: Signal[Model],
+    count: Signal[Int]
+  ): HtmlElement[Msg] =
+    val isSwitch = model.zip(count).map { case (value, retained) =>
+      value.session.nonEmpty && (value.enabled || retained > 0)
+    }
+    headerTag(
+      cls := "docs-live-trace-header",
+      div(
+        cls := "docs-live-trace-heading",
+        span(cls := "docs-live-trace-kicker", "LiveView observability"),
+        h3("Interaction inspector"),
+        p(
+          "See how actions in the live result above travel through typed messages, server state, protocol frames, and DOM updates."
+        )
+      ),
+      button(
+        typ    := "button",
+        idAttr := s"$instanceId-trace-toggle",
+        cls    := isSwitch.map(value =>
+          s"docs-live-trace-switch${if value then "" else " is-activation"}"
+        ),
+        role := isSwitch.map(value => if value then "switch" else "button"),
+        aria.checked.optional(
+          isSwitch.zip(model).map { case (switch, value) =>
+            Option.when(switch)(value.enabled.toString)
+          }
+        ),
+        disabled := model.map(_.session.isEmpty),
+        on.click(Msg.ToggleCapture),
+        span(cls := "docs-live-trace-switch-track", aria.hidden := true),
+        span(
+          isSwitch.map(value =>
+            if value then "Trace new interactions" else "Inspect live interactions"
+          )
+        )
+      )
+    )
+  end renderInspectorHeader
+
+  private def renderEmptyState(
+    model: Signal[Model],
+    count: Signal[Int]
+  ): HtmlElement[Msg] =
+    val unavailable  = model.map(_.session.isEmpty)
+    val introduction = model.zip(count).map { case (value, retained) =>
+      value.session.nonEmpty && !value.enabled && retained == 0
+    }
+    val waiting = model.zip(count).map { case (value, retained) =>
+      value.enabled && retained == 0
+    }
+    div(
+      cls := "docs-live-trace-empty-states",
+      unavailable.when(
+        div(
+          cls         := "docs-live-trace-prompt is-unavailable",
+          role        := "status",
+          aria.live   := "polite",
+          aria.atomic := true,
+          strong("Reconnect to inspect live interactions"),
+          p("The live result and its inspector resume when the connection returns.")
+        )
+      ),
+      introduction.when(
+        div(
+          cls := "docs-live-trace-prompt is-introduction",
+          strong("Inspect the result as you use it"),
+          p("Choose Inspect live interactions, then perform an action in the live result above.")
+        )
+      ),
+      waiting.when(
+        div(
+          cls         := "docs-live-trace-prompt is-waiting",
+          role        := "status",
+          aria.live   := "polite",
+          aria.atomic := true,
+          span(cls := "docs-live-trace-direction", aria.hidden := true, "↑"),
+          div(
+            h4("Try the live result above"),
+            p(
+              "Click a button, type in a field, or perform any action. Its trace will appear here immediately."
+            )
+          )
+        )
+      )
+    )
+  end renderEmptyState
 
   private def renderCaptureControls(
     model: Signal[Model],
@@ -131,7 +250,7 @@ final private[docs] class LiveTraceViewer(
   ): HtmlElement[Msg] =
     div(
       cls := model.map(value =>
-        s"docs-live-trace-toolbar${if value.enabled then " is-capturing" else " is-paused"}"
+        s"docs-live-trace-toolbar${if value.enabled then " is-tracing" else " is-idle"}"
       ),
       span(
         cls         := "docs-live-trace-capture-status",
@@ -140,41 +259,28 @@ final private[docs] class LiveTraceViewer(
         aria.atomic := true,
         model.zip(count).map { case (value, retained) =>
           if value.session.isEmpty then "Unavailable"
-          else if value.enabled then "Capturing"
-          else if retained == 0 then "Ready"
-          else "Paused"
+          else if value.enabled then "Tracing new interactions"
+          else if retained > 0 then
+            "Tracing is off. The live result still works, but new actions will not be added here."
+          else "Inspector ready"
         }
       ),
       span(
         cls         := "docs-live-trace-capture-summary",
-        role        := "status",
-        aria.live   := "polite",
-        aria.atomic := true,
+        aria.hidden := true,
         model.zip(count).map { case (value, retained) =>
-          if value.session.isEmpty then "Connect to capture interactions"
-          else if retained == 0 && value.enabled then "Use the example controls"
-          else if retained == 0 then "No interactions yet"
-          else if retained == 1 then "1 interaction retained"
-          else s"$retained interactions retained"
+          if value.session.isEmpty then "Inspector unavailable"
+          else if retained == 1 then "1 interaction"
+          else s"$retained interactions"
         }
       ),
       div(
         cls := "docs-live-trace-actions",
         button(
           typ      := "button",
-          disabled := model.map(_.session.isEmpty),
-          on.click(Msg.ToggleCapture),
-          model.zip(count).map { case (value, retained) =>
-            if value.enabled then "Pause capture"
-            else if retained == 0 then "Start capture"
-            else "Resume capture"
-          }
-        ),
-        button(
-          typ      := "button",
           disabled := count.map(_ == 0),
           on.click(Msg.Clear),
-          "Clear"
+          "Clear history"
         )
       )
     )
@@ -342,13 +448,15 @@ final private[docs] class LiveTraceViewer(
     model: Model,
     snapshot: DocumentationTraceSnapshot
   ): Model =
-    val selected = model.selectedInteraction.orElse(
-      CapturedInteractionGrouper.group(snapshot.records).headOption.map(_.id)
-    )
+    val latest   = CapturedInteractionGrouper.group(snapshot.records).headOption.map(_.id)
+    val selected =
+      if snapshot.followLatest then latest
+      else snapshot.selectedInteraction.orElse(latest)
     model.copy(
       enabled = snapshot.active,
       records = snapshot.records,
-      selectedInteraction = selected
+      selectedInteraction = selected,
+      followLatest = snapshot.followLatest
     )
 
   private def stateKey(state: CapturedInteractionState): String = state match
@@ -390,7 +498,8 @@ private[docs] object LiveTraceViewer:
     session: Option[String],
     enabled: Boolean,
     records: Vector[DocumentationTraceRecord],
-    selectedInteraction: Option[String])
+    selectedInteraction: Option[String],
+    followLatest: Boolean)
 
   def nested(
     instanceId: String,

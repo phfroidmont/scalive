@@ -679,7 +679,7 @@ final private[docs] class DocumentationRenderer(
       div(
         cls := "docs-example-rendered",
         headerTag(
-          h3("Result"),
+          h3("Live result"),
           span(
             cls         := "docs-example-connection",
             aria.live   := "polite",

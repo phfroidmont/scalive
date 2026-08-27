@@ -29,7 +29,7 @@ test("runs client commands and exposes public typed browser events", async ({ pa
   await expect(placeholder).toBeHidden()
   await expect(detail).toBeVisible()
 
-  await inspector.getByRole("button", { name: "Start capture" }).click()
+  await inspector.getByRole("button", { name: "Inspect live interactions" }).click()
   await example.getByRole("button", { name: "Copy sample text" }).click()
   await expect(status).toHaveText("Browser operation completed.")
   expect(await page.evaluate(() => window.__copiedText)).toBe(
@@ -37,7 +37,10 @@ test("runs client commands and exposes public typed browser events", async ({ pa
   )
 
   await expect(inspector.locator("[data-trace-interaction]")).toHaveCount(2)
-  await inspector.getByRole("button", { name: "Jump to latest" }).click()
+  await expect(inspector.locator("[data-trace-interaction]").first()).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
   const modelValue = inspector.locator('[data-trace-evidence="Updated model"] code')
   await expect(modelValue).toContainText("Model(")
   await expect(modelValue).toContainText("requestNumber = 1")

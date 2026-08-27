@@ -6226,7 +6226,7 @@ details[open] > summary .docs-disclosure-marker,
   border: 1px solid var(--docs-border);
   border-radius: 0.25rem;
   background: var(--docs-code-bg);
-  color: var(--docs-text);
+  color: var(--docs-code-text);
   font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
   font-size: 0.75rem;
   line-height: 1.4;

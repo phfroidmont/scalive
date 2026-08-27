@@ -19,7 +19,7 @@ final class NavigationExample extends LiveView[NavigationExample.Msg, Navigation
     case Msg.Select(query) => ZIO.succeed(Model(query))
     case Msg.Reset         => ZIO.succeed(Model.initial)
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     val destination = model.map(model => searchLocation(model.query))
     div(
       cls := "docs-navigation-example",

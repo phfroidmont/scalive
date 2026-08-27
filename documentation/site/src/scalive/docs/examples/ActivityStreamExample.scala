@@ -35,7 +35,7 @@ final class ActivityStreamExample
         Model(InitialActivities, stream, InitialNextId)
       }
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-activity-stream",
       sectionTag(

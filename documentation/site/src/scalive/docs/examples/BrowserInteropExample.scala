@@ -42,7 +42,7 @@ final class BrowserInteropExample(instanceId: String)
         .as(model.copy(requestNumber = requestNumber, operation = CopyOperation.Pending(requestId)))
     case Msg.Reset => ZIO.succeed(Model())
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       dom.hook(HookName, hookRef),
       cls := "docs-browser-integration",

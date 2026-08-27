@@ -24,7 +24,7 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
     case Msg.Reset =>
       ZIO.succeed(Model(Profile.Definition.initial()))
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     val profileForm    = model.map(_.form)
     val nameField      = profileForm.field(Profile.Name)
     val emailField     = profileForm.field(Profile.Email)

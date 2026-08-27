@@ -35,7 +35,7 @@ final class SubscriptionClockExample(instanceId: String)
     case Msg.Tick(at) =>
       ZIO.succeed(model.copy(lastTick = Some(at), tickCount = model.tickCount + 1))
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-managed-work",
       sectionTag(

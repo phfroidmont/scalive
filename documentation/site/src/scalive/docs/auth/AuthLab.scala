@@ -131,7 +131,7 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
 
   def mount(ctx: MountContext) = ZIO.unit
 
-  override def view(model: Signal[Unit]): HtmlElement[Nothing] =
+  def view(model: Signal[Unit]): HtmlElement[Nothing] =
     val loginForm     = Definition.initial(Email.initial(AuthService.DemoEmail))
     val emailField    = loginForm.field(Email)
     val passwordField = loginForm.field(Password)
@@ -201,7 +201,7 @@ object LoginLiveView:
 final class ProfileLiveView(currentUser: CurrentUser) extends LiveView.Eventless[Unit]:
   def mount(ctx: MountContext) = ZIO.unit
 
-  override def view(model: Signal[Unit]): HtmlElement[Nothing] =
+  def view(model: Signal[Unit]): HtmlElement[Nothing] =
     articleTag(
       cls := "docs-auth-lab",
       headerTag(

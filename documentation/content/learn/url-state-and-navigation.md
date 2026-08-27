@@ -43,7 +43,7 @@ final class SearchLiveView
     case Msg.ClearQuery =>
       ctx.nav.replacePatch(Routes.search.location(None)).as(model)
 
-  override def view(model: Signal[Model]) =
+  def view(model: Signal[Model]) =
     div(
       p("Search: ", model.map(_.query)),
       link.pushPatch(Routes.search.location(Some("scala")), "Search for Scala"),

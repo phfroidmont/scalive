@@ -40,7 +40,7 @@ object VoteComponent
     case Msg.Reset =>
       ctx.emit(Output.VoteChanged(props.id, 0)).as(model.copy(votes = 0))
 
-  override def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
+  def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
     articleTag(
       cls                        := "docs-vote-card",
       dataAttr("vote-component") := props.map(_.id),
@@ -105,7 +105,7 @@ final class VotingComponentsExample
     case Msg.Reset =>
       ZIO.succeed(Model.initial.copy(resetEpoch = model.resetEpoch + 1))
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-voting-components",
       sectionTag(

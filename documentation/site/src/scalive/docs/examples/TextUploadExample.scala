@@ -23,7 +23,7 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
       ctx.uploads.disallow(TextFiles) *>
         ctx.uploads.allow(TextFiles).map(Model(_))
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     val upload = model.map(_.upload)
     div(
       cls := "docs-text-upload",

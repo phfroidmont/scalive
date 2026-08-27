@@ -17,7 +17,7 @@ final class ShoppingCartExample
     case Msg.Remove(product) => ZIO.succeed(model.remove(product))
     case Msg.Clear           => ZIO.succeed(Model.empty)
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-cart",
       fieldSet(

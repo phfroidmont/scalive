@@ -36,7 +36,7 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
     case Msg.Reset =>
       ctx.flash.clear(NotificationFlash).as(model.copy(currentTitle = DefaultTitle))
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
       cls := "docs-lifecycle",
       div(

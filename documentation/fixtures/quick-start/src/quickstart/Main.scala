@@ -9,7 +9,7 @@ import zio.http.Server
 import scalive.*
 
 object Main extends ZIOAppDefault:
-  override val run =
+  val run =
     for
       assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
       config <- ZIO

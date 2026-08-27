@@ -30,7 +30,7 @@ final class AsyncReportExample(instanceId: String)
     case Msg.ReportCompleted(result) =>
       ZIO.succeed(model.copy(report = model.report.updated(result)))
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     val report = model.map(_.report)
     div(
       cls := "docs-managed-work",

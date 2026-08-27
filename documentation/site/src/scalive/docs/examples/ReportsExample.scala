@@ -40,7 +40,7 @@ final class ReportsExample(reports: Reports)
     case Msg.ResetSelection => ZIO.succeed(model.resetSelection)
     case Msg.Refresh        => load
 
-  override def view(model: Signal[Model]): HtmlElement[Msg] =
+  def view(model: Signal[Model]): HtmlElement[Msg] =
     val loaded = model.map {
       case Model.Loaded(reports, selected) => Some((reports, selected))
       case _                               => None

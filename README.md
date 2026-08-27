@@ -1,97 +1,82 @@
 # Scalive
 
-Scalive is a Scala 3 implementation of the Phoenix LiveView programming model.
-It keeps the LiveView mental model while using Scala features for typed messages,
-typed models, typed route params, ZIO effects, and a Scala HTML DSL.
+[![Publish snapshot](https://github.com/phfroidmont/scalive/actions/workflows/publish-snapshot.yml/badge.svg)](https://github.com/phfroidmont/scalive/actions/workflows/publish-snapshot.yml)
+[![Documentation](https://img.shields.io/badge/docs-scalive.dev-ff334f)](https://scalive.dev)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Scalive is currently alpha software. APIs may change while the project optimizes
-for the best user-facing Scala API.
+**Live interfaces. Typed end to end.**
 
-## Runtime Architecture
+Scalive is a Scala 3 reimplementation of the Phoenix LiveView programming model.
+It keeps application state, rendering, and effects on the server, handles browser
+interactions as typed messages, and sends efficient HTML updates through the
+Phoenix LiveView client.
 
-Scalive separates its public API, retained renderer, lifecycle state machines, Phoenix protocol,
-ZIO HTTP transport, and testing support into internal compile and test modules. These are not
-separately published coordinates. The
-[runtime architecture](documentation/content/project/runtime-architecture.md) explains how HTTP
-rendering, connected lifecycles, transactional turns, bounded work, protocol projection, and cleanup
-fit together.
+Scalive provides Scala-first APIs for typed models, messages, routes, forms,
+components, and HTML, with ZIO for effects. It targets observable LiveView
+behavior and feature coverage rather than Phoenix source or API compatibility.
 
-Scalive publishes and supports exactly two Scala coordinates:
-`dev.scalive::scalive`, containing all production API, render, runtime, protocol, and transport
-classes, and `dev.scalive::scalive-testing` for optional test support.
+> [!WARNING]
+> Scalive is alpha software. APIs may change without compatibility shims, and
+> feature coverage and production maturity are still evolving. Review the
+> [project status](https://scalive.dev/project) and
+> [compatibility matrix](https://scalive.dev/project/compatibility) before use.
 
-## What A LiveView Looks Like
+## A LiveView In Scala
 
 ```scala
 import scalive.*
+import zio.{Task, ZIO}
 
-import zio.*
-
-object CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
-  enum Msg:
-    case Increment
-    case Decrement
+final class CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
+  import CounterLiveView.Msg
 
   def mount(ctx: MountContext): Task[Int] =
     ZIO.succeed(0)
 
   def handleMessage(model: Int, ctx: MessageContext) =
-    case Msg.Increment => ZIO.succeed(model + 1)
     case Msg.Decrement => ZIO.succeed(model - 1)
+    case Msg.Increment => ZIO.succeed(model + 1)
 
   def view(model: Signal[Int]): HtmlElement[Msg] =
-    div(
-      button(on.click(Msg.Decrement), "-"),
-      span(model.map(count => s"Count: $count")),
-      button(on.click(Msg.Increment), "+")
+    mainTag(
+      h1("Scalive counter"),
+      button(typ := "button", on.click(Msg.Decrement), "Decrease"),
+      outputTag(aria.live := "polite", model.map(_.toString)),
+      button(typ := "button", on.click(Msg.Increment), "Increase")
     )
+
+object CounterLiveView:
+  enum Msg:
+    case Decrement, Increment
 ```
 
-## Routing And Server Setup
+[Run the counter](https://scalive.dev/examples/counter) or
+[build it from scratch](https://scalive.dev/learn/quick-start).
 
-Routes start from `scalive.live` and are assembled with `Live.router`.
-The [quick start](documentation/content/learn/quick-start.md) contains a complete
-runnable setup, including static assets, routes, socket configuration, and root
-layout wiring.
+## Start Here
 
-## Client Setup
+- [Learn the programming model](https://scalive.dev/learn)
+- [Explore runnable examples](https://scalive.dev/examples)
+- [Browse the API reference](https://scalive.dev/api)
+- [Check Phoenix LiveView compatibility](https://scalive.dev/project/compatibility)
 
-Scalive uses a LiveView-compatible JavaScript client connection. See the
-[static assets and client setup guide](documentation/content/guides/static-assets-and-client-setup.md)
-for the expected socket path, root layout, and browser asset setup.
+## Development
 
-## Running The Project
+Enter the repository development environment and run the common checks:
 
 ```bash
-mill scalive.api.test
-mill scalive.transport.zio-http.test
+nix develop
+mill __.reformat + __.fix
+mill __.test
+mill documentation.check
 ```
 
-The project runs inside `nix develop`; `mill` is available there. Repository-wide verification uses
-`mill __.test`, `mill documentation.check`, and the upstream browser
-suite in `scripts/e2e-run-upstream.sh`. Use `scripts/e2e-run-upstream-strict.sh` when a change needs
-three consecutive complete browser runs with retries disabled.
+The [snapshot workflow](.github/workflows/publish-snapshot.yml) also runs the
+root-slice and upstream Phoenix LiveView browser suites.
 
-## Documentation
+Report bugs, missing behavior, and focused feature requests through
+[GitHub issues](https://github.com/phfroidmont/scalive/issues).
 
-- Documentation home: `documentation/content/index.md`
-- Learn Scalive: `documentation/content/learn/index.md`
-- Guides: `documentation/content/guides/index.md`
-- Interactive examples: `documentation/content/examples`
-- Public API reference: `documentation/content/api/index.md`
-- Runtime architecture: `documentation/content/project/runtime-architecture.md`
-- Phoenix LiveView compatibility: `documentation/content/project/compatibility.md`
-- Upstream parity fixtures: `e2eApp/src`
+## License
 
-The parity fixtures are useful compatibility evidence, but they are not always
-recommended application style. Prefer the documentation site and its embedded
-examples for learning the normal Scalive API.
-
-## Compatibility
-
-Scalive aims to match Phoenix LiveView behavior and feature set where that makes
-sense for Scala. It intentionally diverges when Scala-first APIs improve type
-safety, robustness, or ergonomics.
-
-Check the [compatibility matrix](documentation/content/project/compatibility.md) and the upstream
-parity fixtures in `e2eApp/src` before relying on a Phoenix LiveView edge case.
+Scalive is available under the [MIT License](LICENSE).

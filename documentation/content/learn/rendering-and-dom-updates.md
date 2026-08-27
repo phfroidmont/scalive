@@ -13,7 +13,7 @@ section = learn
 description of what the page should contain:
 
 ```scala
-override def view(model: Signal[Int]): HtmlElement[Msg] =
+def view(model: Signal[Int]): HtmlElement[Msg] =
   mainTag(
     button(typ := "button", on.click(Msg.Decrement), "Decrease"),
     outputTag(aria.live := "polite", model.map(_.toString)),

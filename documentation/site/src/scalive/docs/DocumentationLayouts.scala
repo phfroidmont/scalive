@@ -580,17 +580,29 @@ final private[docs] class DocumentationLayout(
     )
 
   private def themeSelector[Msg]: HtmlElement[Msg] =
-    div(
-      cls := "docs-theme-control",
-      span(cls := "docs-theme-icon", aria.hidden := true),
-      HtmlTag("select")(
-        dom.hook("ThemeSelector", DomRef("docs-theme-selector")),
-        cls        := "docs-theme-selector",
-        title      := "Color theme: System",
-        aria.label := "Color theme: System",
-        HtmlTag("option")(value := "system", "System"),
-        HtmlTag("option")(value := "light", "Light"),
-        HtmlTag("option")(value := "dark", "Dark")
+    button(
+      dom.hook("ThemeSelector", DomRef("docs-theme-selector")),
+      typ        := "button",
+      cls        := "docs-theme-control",
+      title      := "Toggle color theme",
+      aria.label := "Toggle color theme",
+      svgTag(
+        cls         := "docs-theme-icon docs-theme-icon-light",
+        viewBox     := "0 0 24 24",
+        aria.hidden := true,
+        focusable   := "false",
+        pathTag(
+          pathData := "M12 4V2m0 20v-2m8-8h2M2 12h2m13.66-5.66 1.42-1.42M4.93 19.07l1.41-1.41m0-11.32L4.93 4.93m14.14 14.14-1.41-1.41M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"
+        )
+      ),
+      svgTag(
+        cls         := "docs-theme-icon docs-theme-icon-dark",
+        viewBox     := "0 0 24 24",
+        aria.hidden := true,
+        focusable   := "false",
+        pathTag(
+          pathData := "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"
+        )
       )
     )
 end DocumentationLayout

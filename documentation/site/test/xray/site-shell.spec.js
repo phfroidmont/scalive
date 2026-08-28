@@ -5,24 +5,24 @@ test("applies and persists explicit themes before the application hook mounts", 
   await page.goto("/")
 
   const root = page.locator("html")
-  const selector = page.locator("#docs-theme-selector")
-  const control = page.locator(".docs-theme-control")
+  const toggle = page.locator("#docs-theme-selector")
   await expect(root).toHaveAttribute("data-theme", "dark")
-  await expect(selector).toHaveValue("dark")
-  await expect(selector).toHaveAttribute("aria-label", "Color theme: Dark")
-  await expect(control.locator(".docs-theme-icon")).toHaveAttribute("aria-hidden", "true")
+  await expect(toggle).toHaveAttribute("data-theme-effective", "dark")
+  await expect(toggle).toHaveAttribute("aria-label", "Switch to light theme")
+  await expect(toggle.locator(".docs-theme-icon-dark")).toHaveAttribute("aria-hidden", "true")
 
-  await selector.selectOption("light")
+  await toggle.click()
   await expect(root).toHaveAttribute("data-theme", "light")
-  await expect(selector).toHaveAttribute("title", "Color theme: Light")
+  await expect(toggle).toHaveAttribute("title", "Switch to dark theme")
   expect(await page.evaluate(() => window.localStorage.getItem("scalive.docs.theme"))).toBe("light")
 
-  await selector.selectOption("system")
-  await expect(root).not.toHaveAttribute("data-theme")
-  expect(await page.evaluate(() => window.localStorage.getItem("scalive.docs.theme"))).toBeNull()
+  await toggle.press("Enter")
+  await expect(root).toHaveAttribute("data-theme", "dark")
+  expect(await page.evaluate(() => window.localStorage.getItem("scalive.docs.theme"))).toBe("dark")
 })
 
 test("falls back to the system theme when storage is unavailable", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" })
   await page.addInitScript(() => {
     Storage.prototype.getItem = () => {
       throw new Error("storage unavailable")
@@ -30,7 +30,9 @@ test("falls back to the system theme when storage is unavailable", async ({ page
   })
   await page.goto("/")
   await expect(page.locator("html")).not.toHaveAttribute("data-theme")
-  await expect(page.locator("#docs-theme-selector")).toHaveValue("system")
+  const toggle = page.locator("#docs-theme-selector")
+  await expect(toggle).toHaveAttribute("aria-label", "Toggle color theme")
+  await expect(toggle.locator(".docs-theme-icon-dark")).toBeVisible()
 })
 
 test("uses one native mobile disclosure without duplicating header controls", async ({ page }) => {

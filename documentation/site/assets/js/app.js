@@ -382,38 +382,38 @@ const Hooks = {
   ThemeSelector: {
     mounted() {
       this.colorScheme = window.matchMedia("(prefers-color-scheme: dark)")
+      this.effectiveTheme = () => {
+        if (this.theme === "light" || this.theme === "dark") return this.theme
+        return this.colorScheme.matches ? "dark" : "light"
+      }
       this.applyTheme = (theme) => {
         this.theme = theme === "light" || theme === "dark" ? theme : "system"
         applyTheme(this.theme)
-        if ("value" in this.el) {
-          const label = `Color theme: ${this.theme[0].toUpperCase()}${this.theme.slice(1)}`
-          this.el.value = this.theme
-          this.el.setAttribute("aria-label", label)
-          this.el.title = label
-        }
+        const effectiveTheme = this.effectiveTheme()
+        const nextTheme = effectiveTheme === "dark" ? "light" : "dark"
+        const label = `Switch to ${nextTheme} theme`
+        this.el.dataset.themeEffective = effectiveTheme
+        this.el.setAttribute("aria-label", label)
+        this.el.title = label
       }
       this.storeTheme = (theme) => {
         try {
-          if (theme === "light" || theme === "dark") {
-            window.localStorage.setItem(themeStorageKey, theme)
-          } else {
-            window.localStorage.removeItem(themeStorageKey)
-          }
+          window.localStorage.setItem(themeStorageKey, theme)
         } catch (_error) {
           // Theme selection still applies when storage is unavailable.
         }
       }
-      this.handleThemeChange = (event) => {
-        const theme = event.target.value
-        this.storeTheme(theme)
-        this.applyTheme(theme)
+      this.handleThemeToggle = () => {
+        const nextTheme = this.effectiveTheme() === "dark" ? "light" : "dark"
+        this.storeTheme(nextTheme)
+        this.applyTheme(nextTheme)
       }
       this.handleColorSchemeChange = () => {
         if (this.theme === "system") this.applyTheme("system")
       }
 
       this.applyTheme(readTheme())
-      this.el.addEventListener("change", this.handleThemeChange)
+      this.el.addEventListener("click", this.handleThemeToggle)
       this.colorScheme.addEventListener("change", this.handleColorSchemeChange)
     },
 
@@ -422,7 +422,7 @@ const Hooks = {
     },
 
     destroyed() {
-      this.el.removeEventListener("change", this.handleThemeChange)
+      this.el.removeEventListener("click", this.handleThemeToggle)
       this.colorScheme.removeEventListener("change", this.handleColorSchemeChange)
     },
   },

@@ -11,7 +11,7 @@ test("synchronizes diagram objects with explicit and system themes", async ({ pa
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text())
   })
-  await page.addInitScript(() => window.localStorage.setItem("scalive.docs.theme", "dark"))
+  await page.emulateMedia({ colorScheme: "dark" })
   await page.goto(route)
 
   const objects = page.locator(".docs-diagram object")
@@ -20,19 +20,19 @@ test("synchronizes diagram objects with explicit and system themes", async ({ pa
   await expect.poll(async () => Promise.all(await objects.all().then((values) => values.map(svgTheme))))
     .toEqual(["dark", "dark", "dark"])
 
-  const selector = page.locator("#docs-theme-selector")
-  await selector.selectOption("light")
+  await page.emulateMedia({ colorScheme: "light" })
   await expect.poll(async () => Promise.all(await objects.all().then((values) => values.map(svgTheme))))
     .toEqual(["light", "light", "light"])
 
-  await page.emulateMedia({ colorScheme: "dark" })
-  await selector.selectOption("system")
+  const toggle = page.locator("#docs-theme-selector")
+  await toggle.click()
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
   await expect.poll(async () => Promise.all(await objects.all().then((values) => values.map(svgTheme))))
     .toEqual(["dark", "dark", "dark"])
 
   await page.emulateMedia({ colorScheme: "light" })
   await expect.poll(async () => Promise.all(await objects.all().then((values) => values.map(svgTheme))))
-    .toEqual(["light", "light", "light"])
+    .toEqual(["dark", "dark", "dark"])
   expect(consoleErrors).toEqual([])
 })
 

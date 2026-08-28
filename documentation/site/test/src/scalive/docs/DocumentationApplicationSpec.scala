@@ -124,10 +124,13 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                                Option.when(missingOutlineIds.nonEmpty)("outline anchors"),
                                Option.when(
                                  document.select("#docs-connection-status[phx-hook=ConnectionStatus]").size() != 1
-                               )("connection hook"),
-                               Option.when(
-                                 document.select("#docs-theme-selector[phx-hook=ThemeSelector]").size() != 1
-                               )("theme hook"),
+                                )("connection hook"),
+                                Option.when(
+                                  document
+                                    .select(
+                                      "button#docs-theme-selector[type=button][phx-hook=ThemeSelector]"
+                                    ).size() != 1
+                                )("theme hook"),
                                Option.when(
                                  document.select("#docs-page-metadata[phx-hook=PageMetadata]").size() != 1
                                )("metadata hook"),

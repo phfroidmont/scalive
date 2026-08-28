@@ -2022,14 +2022,21 @@ details[open] > summary .docs-disclosure-marker,
 }
 
 .docs-theme-control {
-  position: relative;
   width: 2.75rem;
   height: 2.75rem;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
   flex: none;
   border: 1px solid var(--docs-control-border);
   border-radius: var(--docs-radius);
   background: var(--docs-surface);
   color: var(--docs-text);
+  cursor: pointer;
+  font: inherit;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
 .docs-repository-link {
@@ -2060,49 +2067,41 @@ details[open] > summary .docs-disclosure-marker,
 
 .docs-theme-control:hover {
   border-color: var(--docs-accent);
+  color: var(--docs-accent-strong);
 }
 
 .docs-theme-icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1rem;
-  height: 1rem;
-  transform: translate(-50%, -50%);
-  border: 0.12rem solid currentColor;
-  border-radius: 50%;
+  width: 1.15rem;
+  height: 1.15rem;
+  display: none;
+  fill: none;
   pointer-events: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
-.docs-theme-icon::after {
-  position: absolute;
-  top: -0.12rem;
-  right: -0.12rem;
-  width: 0.5rem;
-  height: 1rem;
-  border-radius: 0 1rem 1rem 0;
-  background: currentColor;
-  content: "";
+.docs-theme-icon-light {
+  display: block;
 }
 
-.docs-theme-selector {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  appearance: none;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  color: transparent;
-  cursor: pointer;
+.docs-theme-control[data-theme-effective="dark"] .docs-theme-icon-light {
+  display: none;
 }
 
-.docs-theme-selector option {
-  background: var(--docs-surface);
-  color: var(--docs-text);
+.docs-theme-control[data-theme-effective="dark"] .docs-theme-icon-dark {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  .docs-theme-control:not([data-theme-effective]) .docs-theme-icon-light {
+    display: none;
+  }
+
+  .docs-theme-control:not([data-theme-effective]) .docs-theme-icon-dark {
+    display: block;
+  }
 }
 
 .docs-connection-indicator {

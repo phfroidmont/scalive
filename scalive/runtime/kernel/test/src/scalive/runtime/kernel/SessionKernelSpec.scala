@@ -1,9 +1,11 @@
 package scalive.runtime.kernel
 
 import java.time.Duration as JavaDuration
+import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*
 import zio.http.URL
+import zio.stream.ZStream
 import zio.test.*
 
 import scalive.*
@@ -175,6 +177,391 @@ object SessionKernelSpec extends ZIOSpecDefault:
             Vector(SessionOutput(None, bootDelta)),
             Vector(SessionOutput(Some(commandId), expected))
           )
+        )
+      }
+    },
+    test("connected turn guards skip bootstrap and run before application handlers") {
+      ZIO.scoped {
+        val compiled = RenderProgram.compile[Int, Int] { model =>
+          button(on.click((_: Map[String, String]) => 5), model.map(_.toString))
+        }
+        for
+          events              <- Ref.make(Vector.empty[String])
+          program             <- ZIO.fromEither(compiled)
+          (outbound, batches) <- recordingOutbound
+          logic = SessionLogic[Int, Int](
+                    bootstrap = events.update(_ :+ "bootstrap").as(TurnDraft(0)),
+                    handle = (model, message) =>
+                      events.update(_ :+ (if message == 5 then "client" else "message"))
+                        .as(TurnDraft(model + message)),
+                    guardConnectedTurn = events.update(_ :+ "guard").as(Right(())),
+                    handleParams = (model, url) =>
+                      events.update(_ :+ "params").as(TurnDraft(model, url = Some(url)))
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          boot   <- events.get
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          binding <- kernel.inspect.map(_.render.bindings.ids.head)
+          _ <- kernel.submit(
+                 SessionCommand.ClientEvent(
+                   kernel.epoch,
+                   binding,
+                   BindingPayload.Params(Map.empty)
+                 )
+               )
+          _         <- kernel.submit(SessionCommand.ParamsPatch(kernel.epoch, firstUrl))
+          seen      <- events.get
+          published <- batches.get
+        yield assertTrue(
+          boot == Vector("bootstrap"),
+          seen == Vector(
+            "bootstrap",
+            "guard",
+            "message",
+            "guard",
+            "client",
+            "guard",
+            "params"
+          ),
+          published.size == 4
+        )
+      }
+    },
+    test("guard halt preserves committed state and completes with an empty delta") {
+      ZIO.scoped {
+        val renders = AtomicInteger(0)
+        for
+          handlers    <- Ref.make(0)
+          afterRenders <- Ref.make(0)
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map { value =>
+                           renders.incrementAndGet()
+                           value.toString
+                         })
+                       )
+                     )
+          (outbound, batches) <- recordingOutbound
+          logic = SessionLogic[Int, Int](
+                    bootstrap = ZIO.succeed(TurnDraft(7)),
+                    handle = (model, message) =>
+                      handlers.update(_ + 1).as(TurnDraft(model + message)),
+                    guardConnectedTurn = ZIO.succeed(Left(LiveConnectedTurnFailure.Halt)),
+                    afterRender = draft => afterRenders.update(_ + 1).as(draft)
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          before       <- kernel.inspect
+          rendersBefore = renders.get()
+          afterBefore  <- afterRenders.get
+          result       <- kernel.submit(SessionCommand.Message(kernel.epoch, 3))
+          after        <- kernel.inspect
+          handled      <- handlers.get
+          rendered     = renders.get()
+          afterCount   <- afterRenders.get
+          published    <- batches.get
+        yield assertTrue(
+          after.model == before.model,
+          after.render == before.render,
+          after.revision == before.revision,
+          result.revision == before.revision,
+          result.delta == RenderDelta.Empty,
+          handled == 0,
+          rendered == rendersBefore,
+          afterCount == afterBefore,
+          published.last.items == Vector(SessionOutput(Some(result.command), RenderDelta.Empty))
+        )
+      }
+    },
+    test("root continuations are guarded once as separate turns") {
+      ZIO.scoped {
+        for
+          guards              <- Ref.make(0)
+          handled             <- Ref.make(Vector.empty[Int])
+          program             <- textProgram
+          (outbound, batches) <- recordingOutbound
+          logic = SessionLogic[Int, Int](
+                    bootstrap = ZIO.succeed(TurnDraft(0)),
+                    handle = (model, message) =>
+                      handled.update(_ :+ message).as(
+                        TurnDraft(model + message, if message == 1 then Vector(2) else Vector.empty)
+                      ),
+                    guardConnectedTurn = guards.update(_ + 1).as(Right(()))
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          state  <- kernel.inspect
+          count  <- guards.get
+          order  <- handled.get
+          output <- batches.get
+        yield assertTrue(
+          count == 2,
+          order == Vector(1, 2),
+          state.model == 3,
+          output.size == 3
+        )
+      }
+    },
+    test("managed subscription deliveries are guarded but ended cleanup is not") {
+      ZIO.scoped {
+        val lifecycle = LifecycleId(101L)
+        val owner     = OwnerId.Root(lifecycle)
+        val key       = SubscriptionKey("guarded-subscription")
+        for
+          guards              <- Ref.make(0)
+          deliveries          <- Ref.make(0)
+          program             <- textProgram
+          (outbound, _)       <- recordingOutbound
+          logic = SessionLogic[Int, Int](
+                    bootstrap = ZIO.succeed(TurnDraft(0)),
+                    handle = (model, message) =>
+                      if message == 0 then
+                        ZIO.succeed(
+                          TurnDraft(
+                            model,
+                            resourceOperations = Vector(
+                              ResourceOperation.StartSubscription(
+                                owner,
+                                key,
+                                SubscriptionDelivery.Lossless,
+                                ZStream.never,
+                                replace = false
+                              )
+                            )
+                          )
+                        )
+                      else deliveries.update(_ + 1).as(TurnDraft(model + message)),
+                    guardConnectedTurn = guards.update(_ + 1).as(Right(()))
+                  )
+          kernel <- SessionKernel.start(
+                      config,
+                      logic,
+                      program,
+                      outbound,
+                      providedLifecycle = Some(lifecycle)
+                    )
+          _        <- kernel.submit(SessionCommand.Message(kernel.epoch, 0))
+          resource <- kernel.inspect.map(_.managedResources.values.head)
+          _ <- kernel.submit(
+                 SessionCommand.ManagedSubscription(kernel.epoch, resource.token, 4)
+               )
+          _ <- kernel.submit(
+                 SessionCommand.ManagedSubscriptionEnded(kernel.epoch, resource.token)
+               )
+          state         <- kernel.inspect
+          guardCount    <- guards.get
+          deliveryCount <- deliveries.get
+          resourceState <- resource.prepared.state
+        yield assertTrue(
+          guardCount == 2,
+          deliveryCount == 1,
+          state.model == 4,
+          state.managedResources.values.isEmpty,
+          resourceState == PreparedResource.State.Closed
+        )
+      }
+    },
+    test("managed async halt retires completion without mapping or handling it") {
+      ZIO.scoped {
+        val lifecycle = LifecycleId(102L)
+        val owner     = OwnerId.Root(lifecycle)
+        val key       = AsyncKey[Int]("guarded-async")
+        val mapped    = AtomicInteger(0)
+        for
+          halt                <- Ref.make(false)
+          handled             <- Ref.make(0)
+          program             <- textProgram
+          (outbound, batches) <- recordingOutbound
+          logic = SessionLogic[Int, Int](
+                    bootstrap = ZIO.succeed(TurnDraft(0)),
+                    handle = (model, message) =>
+                      if message == 0 then
+                        ZIO.succeed(
+                          TurnDraft(
+                            model,
+                            resourceOperations = Vector(
+                              ResourceOperation.StartAsync(
+                                owner,
+                                key,
+                                ZIO.never,
+                                result =>
+                                  mapped.incrementAndGet()
+                                  result match
+                                    case LiveAsyncResult.Succeeded(value) => value
+                                    case _                                => -1
+                              )
+                            )
+                          )
+                        )
+                      else handled.update(_ + 1).as(TurnDraft(model + message)),
+                    guardConnectedTurn = halt.get.map(value =>
+                      if value then Left(LiveConnectedTurnFailure.Halt) else Right(())
+                    ),
+                    handleManagedAsync = Some((model, _, message) =>
+                      handled.update(_ + 1).as(TurnDraft(model + message))
+                    )
+                  )
+          kernel <- SessionKernel.start(
+                      config,
+                      logic,
+                      program,
+                      outbound,
+                      providedLifecycle = Some(lifecycle)
+                    )
+          _        <- kernel.submit(SessionCommand.Message(kernel.epoch, 0))
+          resource <- kernel.inspect.map(_.managedResources.values.head)
+          _        <- halt.set(true)
+          result <- kernel.submit(
+                      SessionCommand.ManagedAsync(
+                        kernel.epoch,
+                        resource.token,
+                        LiveAsyncResult.Succeeded(5)
+                      )
+                    )
+          state         <- kernel.inspect
+          handledCount  <- handled.get
+          resourceState <- resource.prepared.state
+          published     <- batches.get
+        yield assertTrue(
+          result.delta == RenderDelta.Empty,
+          mapped.get() == 0,
+          handledCount == 0,
+          state.model == 0,
+          state.managedResources.values.isEmpty,
+          resourceState == PreparedResource.State.Closed,
+          published.last.items.head.command.contains(result.command)
+        )
+      }
+    },
+    test("raw upload commands remain unguarded") {
+      ZIO.scoped {
+        for
+          guards              <- Ref.make(0)
+          uploads             <- Ref.make(0)
+          program             <- textProgram
+          mutation <- UploadMutation.succeed(registry => UploadMutationResult(registry, ()))
+          (outbound, _) <- recordingOutbound
+          logic = standardLogic().copy(
+                    guardConnectedTurn = guards.update(_ + 1).as(Right(())),
+                    handleUpload = Some((model, _, _) =>
+                      uploads.update(_ + 1).as(TurnDraft(model + 1))
+                    )
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          _ <- kernel.submit(
+                 SessionCommand.Upload(kernel.epoch, CommandId.fresh().toOption.get, mutation)
+               )
+          state       <- kernel.inspect
+          guardCount  <- guards.get
+          uploadCount <- uploads.get
+        yield assertTrue(guardCount == 0, uploadCount == 1, state.model == 1)
+      }
+    },
+    test("guarded upload halt completes its fallback without running the upload turn") {
+      ZIO.scoped {
+        val renders = AtomicInteger(0)
+        for
+          guards              <- Ref.make(0)
+          handlers            <- Ref.make(0)
+          mutations           <- Ref.make(0)
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map { value =>
+                           renders.incrementAndGet()
+                           value.toString
+                         })
+                       )
+                     )
+          mutation <- UploadMutation.guarded("halted")(registry =>
+                        mutations.update(_ + 1).as(UploadMutationResult(registry, "completed"))
+                      )
+          (outbound, _) <- recordingOutbound
+          logic = standardLogic(4).copy(
+                    guardConnectedTurn = guards.update(_ + 1).as(
+                      Left(LiveConnectedTurnFailure.Halt)
+                    ),
+                    handleUpload = Some((model, _, _) =>
+                      handlers.update(_ + 1).as(TurnDraft(model + 1))
+                    )
+                  )
+          kernel       <- SessionKernel.start(config, logic, program, outbound)
+          renderCount   = renders.get()
+          result <- kernel.submit(
+                      SessionCommand.Upload(
+                        kernel.epoch,
+                        CommandId.fresh().toOption.get,
+                        mutation
+                      )
+                    )
+          fallback      <- mutation.await
+          state         <- kernel.inspect
+          guardCount    <- guards.get
+          handlerCount  <- handlers.get
+          mutationCount <- mutations.get
+        yield assertTrue(
+          fallback == "halted",
+          result.delta == RenderDelta.Empty,
+          state.model == 4,
+          state.revision == result.revision,
+          guardCount == 1,
+          handlerCount == 0,
+          mutationCount == 0,
+          renders.get() == renderCount
+        )
+      }
+    },
+    test("guard redirect publishes terminal navigation without handler state") {
+      ZIO.scoped {
+        for
+          handlers           <- Ref.make(0)
+          program            <- textProgram
+          (outbound, batches) <- recordingOutbound
+          logic = standardLogic(9).copy(
+                    handle = (model, message) =>
+                      handlers.update(_ + 1).as(TurnDraft(model + message)),
+                    guardConnectedTurn = ZIO.succeed(
+                      Left(LiveConnectedTurnFailure.RedirectUnsafe(secondUrl))
+                    )
+                  )
+          kernel   <- SessionKernel.start(config, logic, program, outbound)
+          result   <- kernel.submit(SessionCommand.Message(kernel.epoch, 3))
+          terminal <- kernel.awaitTermination
+          count    <- handlers.get
+          output   <- batches.get.map(_.flatMap(_.items).last)
+        yield assertTrue(
+          result.delta == RenderDelta.Empty,
+          count == 0,
+          output.navigation.exists(navigation =>
+            navigation.kind == NavigationKind.Redirect && navigation.destination == secondUrl
+          ),
+          terminal match
+            case SessionState.Redirected(_, navigation) => output.navigation.contains(navigation)
+            case _                                      => false
+        )
+      }
+    },
+    test("guard disconnect publishes termination and closes the session") {
+      ZIO.scoped {
+        for
+          handlers            <- Ref.make(0)
+          program             <- textProgram
+          (outbound, batches) <- recordingOutbound
+          logic = standardLogic(6).copy(
+                    handle = (model, message) =>
+                      handlers.update(_ + 1).as(TurnDraft(model + message)),
+                    guardConnectedTurn = ZIO.succeed(
+                      Left(LiveConnectedTurnFailure.Disconnect(Some("signed out")))
+                    )
+                  )
+          kernel   <- SessionKernel.start(config, logic, program, outbound)
+          result   <- kernel.submit(SessionCommand.Message(kernel.epoch, 2))
+          terminal <- kernel.awaitTermination
+          count    <- handlers.get
+          output   <- batches.get.map(_.flatMap(_.items).last)
+        yield assertTrue(
+          result.delta == RenderDelta.Empty,
+          count == 0,
+          output.termination.contains(SessionTermination.Disconnect(Some("signed out"))),
+          terminal == SessionState.Closed(kernel.epoch)
         )
       }
     },
@@ -501,6 +888,140 @@ object SessionKernelSpec extends ZIOSpecDefault:
           patched.command == patchId,
           output(1).items.head.navigation.exists(_.destination == firstUrl),
           initiating.delta == RenderDelta.Empty
+        )
+      }
+    },
+    test("guard halt accepts a matching patch and replays deferred work from committed state") {
+      ZIO.scoped {
+        val renders = AtomicInteger(0)
+        for
+          guardCalls   <- Ref.make(0)
+          paramsCalls  <- Ref.make(0)
+          afterRenders <- Ref.make(0)
+          deferredRuns <- Ref.make(0)
+          replayModel  <- Ref.make(Option.empty[Int])
+          outstanding  <- Ref.make(0)
+          batches      <- Ref.make(Vector.empty[OutboundBatch[SessionOutput]])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map { value =>
+                           renders.incrementAndGet()
+                           value.toString
+                         })
+                       )
+                     )
+          outbound = ProbeOutbound(
+                       outstanding.update(_ + 1) *>
+                         Ref.make(false).map { completed =>
+                           val settle = completed
+                             .modify(done => (!done, true))
+                             .flatMap(first => ZIO.when(first)(outstanding.update(_ - 1))).unit
+                           ProbeReservation(batch => batches.update(_ :+ batch) *> settle, settle)
+                         }
+                     )
+          logic = standardLogic().copy(
+                    handle = (model, message) =>
+                      if message == 1 then ZIO.succeed(patchDraft(model + 10))
+                      else
+                        replayModel.set(Some(model)) *>
+                          deferredRuns.update(_ + 1).as(TurnDraft(model + message)),
+                    guardConnectedTurn = guardCalls.getAndUpdate(_ + 1).map { index =>
+                      if index == 1 then Left(LiveConnectedTurnFailure.Halt) else Right(())
+                    },
+                    handleParams = (model, url) =>
+                      paramsCalls.update(_ + 1).as(TurnDraft(model * 10, url = Some(url))),
+                    afterRender = draft => afterRenders.update(_ + 1).as(draft)
+                  )
+          kernel     <- SessionKernel.start(config, logic, program, outbound)
+          initiating <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          renderCount = renders.get()
+          afterCount <- afterRenders.get
+          deferredId = CommandId.fresh().toOption.get
+          deferred <- kernel.submit(deferredId, SessionCommand.Message(kernel.epoch, 2)).fork
+          _        <- kernel.inspect
+          pending  <- deferred.poll
+          patchId = CommandId.fresh().toOption.get
+          patched         <- kernel.submit(
+                       patchId,
+                       SessionCommand.ParamsPatch(kernel.epoch, firstUrl)
+                     )
+          replayed         <- deferred.join
+          finalState       <- kernel.inspect
+          staged           <- replayModel.get
+          guarded          <- guardCalls.get
+          params           <- paramsCalls.get
+          after            <- afterRenders.get
+          replayCount      <- deferredRuns.get
+          finalOutstanding <- outstanding.get
+          output           <- batches.get
+        yield assertTrue(
+          initiating.delta == RenderDelta.Empty,
+          pending.isEmpty,
+          patched.command == patchId,
+          patched.delta == RenderDelta.Empty,
+          staged.contains(0),
+          guarded == 3,
+          params == 0,
+          renders.get() == renderCount + 1,
+          after == afterCount + 1,
+          replayed.command == deferredId,
+          replayCount == 1,
+          finalState.model == 2,
+          finalState.url == firstUrl,
+          finalOutstanding == 0,
+          output.flatMap(_.items).flatMap(_.command).takeRight(2) == Vector(patchId, deferredId)
+        )
+      }
+    },
+    test("guard reload during patch acknowledgement redirects to the pending destination") {
+      ZIO.scoped {
+        for
+          guardCalls  <- Ref.make(0)
+          paramsCalls <- Ref.make(0)
+          outstanding <- Ref.make(0)
+          batches     <- Ref.make(Vector.empty[OutboundBatch[SessionOutput]])
+          program     <- textProgram
+          outbound = ProbeOutbound(
+                       outstanding.update(_ + 1) *>
+                         Ref.make(false).map { completed =>
+                           val settle = completed
+                             .modify(done => (!done, true))
+                             .flatMap(first => ZIO.when(first)(outstanding.update(_ - 1))).unit
+                           ProbeReservation(batch => batches.update(_ :+ batch) *> settle, settle)
+                         }
+                     )
+          logic = standardLogic().copy(
+                    handle = (model, message) => ZIO.succeed(patchDraft(model + message, secondUrl)),
+                    guardConnectedTurn = guardCalls.getAndUpdate(_ + 1).map { index =>
+                      if index == 1 then Left(LiveConnectedTurnFailure.Reload(Some("refresh")))
+                      else Right(())
+                    },
+                    handleParams = (model, url) =>
+                      paramsCalls.update(_ + 1).as(TurnDraft(model, url = Some(url)))
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          deferred <- kernel.submit(SessionCommand.Message(kernel.epoch, 2)).either.fork
+          _        <- kernel.inspect
+          patch    <- kernel.submit(SessionCommand.ParamsPatch(kernel.epoch, secondUrl))
+          deferredResult <- deferred.join
+          terminal       <- kernel.awaitTermination
+          params          <- paramsCalls.get
+          guards          <- guardCalls.get
+          reserved        <- outstanding.get
+          output          <- batches.get.map(_.flatMap(_.items))
+          navigation = output.flatMap(_.navigation).last
+        yield assertTrue(
+          patch.delta == RenderDelta.Empty,
+          guards == 2,
+          params == 0,
+          navigation.kind == NavigationKind.Redirect,
+          navigation.destination == secondUrl,
+          terminal match
+            case SessionState.Redirected(_, value) => value == navigation
+            case _                                 => false,
+          deferredResult == Left(SessionRejection.Terminal("redirected")),
+          reserved == 0
         )
       }
     },

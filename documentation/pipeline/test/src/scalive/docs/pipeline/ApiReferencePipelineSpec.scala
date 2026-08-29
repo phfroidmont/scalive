@@ -121,6 +121,8 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         ),
         !symbols.exists(_.qualifiedName.contains("boolAsPresenceHtmlAttr")),
         !symbols.exists(_.qualifiedName.contains("scopedPrivateMember")),
+        !symbols.exists(_.qualifiedName.startsWith("scalive.LiveConnectedTurnGuard")),
+        !symbols.exists(_.qualifiedName.startsWith("scalive.LiveRouteDefinition")),
         !symbols.exists(_.name.contains("$default$")),
         !symbols.exists(_.name == "<init>"),
         !symbols.exists(_.qualifiedName == "scalive.JSCommands.Binding"),
@@ -139,6 +141,9 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val hooks         = symbols.find(_.qualifiedName == "scalive.LiveView.hooks")
       val routedMount   = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.mount")
       val routedEventless = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.Eventless")
+      val guardConnectedTurns = symbols.find(
+        _.qualifiedName == "scalive.LiveSessionBuilder.Admitted.guardConnectedTurns"
+      )
       val documentation = liveViewTrait.toVector.flatMap(_.signatures).flatMap(_.documentation)
       val links = documentation.flatMap(_.body).flatMap {
         case Block.Paragraph(content) => content.collect { case link: Inline.Link => link }
@@ -174,6 +179,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         routedMount.exists(symbol =>
           symbol.signatures.size == 1 && symbol.signatures.forall(_.documentation.nonEmpty)
         ),
+        guardConnectedTurns.exists(_.signatures.forall(_.documentation.nonEmpty)),
         symbols.filter(_.qualifiedName == "scalive.LiveView").forall(!_.summary.contains("[[")),
         symbols.forall(_.summary.nonEmpty)
       )

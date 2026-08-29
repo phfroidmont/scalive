@@ -91,5 +91,57 @@ object SerialWriterSpec extends ZIOSpecDefault:
           _       <- release.succeed(())
         yield assertTrue(offered.contains(()))
       }
+    },
+    test("drain waits for accepted writes without adding sink output") {
+      ZIO.scoped {
+        for
+          entered  <- Promise.make[Nothing, Unit]
+          release  <- Promise.make[Nothing, Unit]
+          values   <- Ref.make(Vector.empty[Int])
+          writer   <- SerialWriter.make[Int](1)(value =>
+                        entered.succeed(()).unit *> release.await *> values.update(_ :+ value)
+                      )
+          _        <- writer.offer(1)
+          _        <- entered.await
+          draining <- writer.drain.fork
+          before   <- draining.poll
+          _        <- release.succeed(())
+          _        <- draining.join
+          after    <- values.get
+        yield assertTrue(before.isEmpty, after == Vector(1))
+      }
+    },
+    test("a stalled drain remains interruptible") {
+      zio.test.Live.live(ZIO.scoped {
+        for
+          entered <- Promise.make[Nothing, Unit]
+          writer  <- SerialWriter.make[Int](1)(_ => entered.succeed(()).unit *> ZIO.never)
+          _       <- writer.offer(1)
+          _       <- entered.await
+          drained <- writer.drain.timeout(100.millis)
+          _       <- writer.close
+        yield assertTrue(drained.isEmpty)
+      })
+    },
+    test("offerAwait waits for saturated queue capacity") {
+      ZIO.scoped {
+        for
+          entered   <- Promise.make[Nothing, Unit]
+          release   <- Promise.make[Nothing, Unit]
+          values    <- Ref.make(Vector.empty[Int])
+          writer    <- SerialWriter.make[Int](1)(value =>
+                         entered.succeed(()).unit *> release.await *> values.update(_ :+ value)
+                       )
+          _         <- writer.offer(1)
+          _         <- entered.await
+          _         <- writer.offer(2)
+          accepting <- writer.offerAwait(3).fork
+          before    <- accepting.poll
+          _         <- release.succeed(())
+          _         <- accepting.join
+          _         <- writer.drain
+          after     <- values.get
+        yield assertTrue(before.isEmpty, after == Vector(1, 2, 3))
+      }
     }
   )

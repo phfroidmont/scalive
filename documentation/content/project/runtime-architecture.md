@@ -151,19 +151,22 @@ The kernel dequeues and processes one command at a time:
 @:diagram(runtime-connected-turn)
 
 1. The command is checked against the current lifecycle state and resolved to a
-   root, component, navigation, upload, or managed-resource target.
-2. Hooks and the target handler produce a provisional `TurnDraft`: a proposed
+   root, component, navigation, upload, or managed-resource operation.
+2. Connected-turn guards run before application callbacks. Success continues;
+   a controlled halt, redirect, reload, or disconnect leaves the committed
+   revision unchanged and skips hooks, handlers, rendering, and diff generation.
+3. Hooks and the target handler produce a provisional `TurnDraft`: a proposed
    immutable model plus effects and journaled runtime operations.
-3. The retained render program evaluates that model and prepares the root and
+4. The retained render program evaluates that model and prepares the root and
    component candidates.
-4. The kernel stabilizes the component graph, validates stream and upload
+5. The kernel stabilizes the component graph, validates stream and upload
    requirements, and prepares resources and nested topology.
-5. It reserves ordered outbound capacity before state can commit.
-6. After-render work and continuations run, then `TreeDiffer` computes the
+6. It reserves ordered outbound capacity before state can commit.
+7. After-render work and continuations run, then `TreeDiffer` computes the
    protocol-neutral delta from the previous committed tree.
-7. The commit replaces framework-owned state, retires previous owners, activates
+8. The commit replaces framework-owned state, retires previous owners, activates
    prepared resources and topology, and publishes output into the reservation.
-8. The connection's outbound loop drains that output through
+9. The connection's outbound loop drains that output through
    `PhoenixRenderedEncoder` and the serialized physical writer.
 
 This is the same turn model whether the original input came from the browser or

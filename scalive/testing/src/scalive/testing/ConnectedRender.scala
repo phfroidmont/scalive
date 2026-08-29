@@ -16,7 +16,7 @@ import scalive.protocol.phoenix.*
 import scalive.render.{BindingId, RenderDelta}
 import scalive.runtime.connection.*
 import scalive.runtime.contracts.*
-import scalive.runtime.kernel.NavigationOutput
+import scalive.runtime.kernel.{NavigationKind, NavigationOutput}
 
 /** Joins LiveViews through production route admission and connection supervision without starting a
   * network server.
@@ -294,7 +294,8 @@ final private class ConnectedSession(
       state <- ConnectedViewState.make(
                  NestedTopic(s"lv:${admitted.claims.rootId}"),
                  admitted.url,
-                 Some(csrfToken)
+                 Some(csrfToken),
+                 ZIO.suspendSucceed(supervisor.close)
                )
       metadata = RootConnectionMetadata(
                    staticChanged = ZioHttp.staticChanged(
@@ -354,7 +355,12 @@ final private class ConnectedSession(
                   .verifyNestedAdmission(config, topic.value, join).mapError(Exception(_))
       reservation <- supervisor.reserveNested(claims).mapError(error => Exception(error.toString))
       inherited   <- parent.currentUrl.get
-      state       <- ConnectedViewState.make(topic, inherited, csrfToken = None)
+      state       <- ConnectedViewState.make(
+                 topic,
+                 inherited,
+                 csrfToken = None,
+                 ZIO.suspendSucceed(supervisor.close)
+               )
       metadata = RootConnectionMetadata(
                    staticChanged = false,
                    connectParams = Map.empty,
@@ -402,7 +408,8 @@ final private class ConnectedViewState(
   joined: Promise[Throwable, Unit],
   pending: Ref[Map[CommandId, Promise[Throwable, Unit]]],
   diffs: Queue[Unit],
-  csrfToken: Option[String]):
+  csrfToken: Option[String],
+  disconnect: UIO[Unit]):
 
   val sink: ConnectionOutput => Task[Unit] = output =>
     gate.withPermit {
@@ -418,13 +425,16 @@ final private class ConnectedViewState(
         case value: ConnectionOutput.UploadReply =>
           update(value.delta) *> complete(value.command)
         case value: ConnectionOutput.ReplyNavigation =>
-          update(value.delta) *> acknowledge(value.navigation) *> complete(value.command)
+          update(value.delta) *> complete(value.command) *> acknowledge(value.navigation)
         case value: ConnectionOutput.ReplyNavigationWithPayload =>
-          update(value.delta) *> acknowledge(value.navigation) *> complete(value.command)
+          update(value.delta) *> complete(value.command) *> acknowledge(value.navigation)
         case value: ConnectionOutput.Diff =>
           update(value.delta) *> diffs.offer(()).unit
         case value: ConnectionOutput.DiffNavigation =>
           update(value.delta) *> acknowledge(value.navigation) *> diffs.offer(()).unit
+        case value: ConnectionOutput.ReplyDisconnect =>
+          complete(value.command) *> disconnect.forkDaemon.unit
+        case _: ConnectionOutput.Disconnect                => disconnect.forkDaemon.unit
         case ConnectionOutput.Rejected(command, rejection) =>
           fail(command, Exception(rejection.toString))
       process.tapError(failAll)
@@ -560,6 +570,7 @@ final private class ConnectedViewState(
     if navigation.kind.isPatch then
       currentUrl.set(navigation.destination) *>
         connection.await.flatMap(_.internalPatch(navigation.destination))
+    else if navigation.kind == NavigationKind.Redirect then disconnect.forkDaemon.unit
     else ZIO.unit
 
   private def complete(command: CommandId): UIO[Unit] =
@@ -585,7 +596,8 @@ private object ConnectedViewState:
   def make(
     topic: NestedTopic,
     initialUrl: URL,
-    csrfToken: Option[String]
+    csrfToken: Option[String],
+    disconnect: UIO[Unit]
   ): RIO[Scope, ConnectedViewState] =
     for
       currentUrl <- Ref.make(initialUrl)
@@ -605,5 +617,6 @@ private object ConnectedViewState:
       joined,
       pending,
       diffs,
-      csrfToken
+      csrfToken,
+      disconnect
     )

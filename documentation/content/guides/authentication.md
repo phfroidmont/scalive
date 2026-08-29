@@ -89,9 +89,11 @@ The protected session installs this executable mount aspect:
 @:sourceRegion(documentation/site/src/scalive/docs/auth/AuthLab.scala, authentication-mount-aspect)
 
 During disconnected mount, `authenticate` validates the opaque cookie and
-returns minimal `AuthClaims` plus a separate `CurrentUser`. During connected
+returns minimal `AuthClaims` plus a separate `ConnectedAuth`. During connected
 mount, `resume` loads the session record again from the public claim ID and
-rebuilds `CurrentUser`. Revocation or expiry between those phases therefore
+rebuilds `ConnectedAuth`. That capability contains immutable `CurrentUser`
+construction data and an environment-free revalidation effect that captures the
+same `AuthService` instance. Revocation or expiry between those phases therefore
 prevents the socket from mounting. The public session ID remains in the signed
 claim instead of becoming part of every route's context.
 
@@ -102,17 +104,51 @@ small context into only the LiveViews that use it:
 val protectedRoutes = Live
   .session("authenticated")
   .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)(
-    profile.context((currentUser: CurrentUser, accounts: Accounts) =>
-      new ProfileLiveView(currentUser, accounts)
+    profile.context((auth: ConnectedAuth, accounts: Accounts) =>
+      new ProfileLiveView(auth.currentUser, accounts)
     ),
     status(StatusLiveView())
   )
 ```
 
-`ProfileLiveView` receives immutable `CurrentUser` construction data while
-`Accounts` comes from the application environment. The status view remains
-authentication-agnostic even though the same admission protects it. Route-specific
-authorization and sensitive mutations must still enforce their own domain rules.
+`ProfileLiveView` projects immutable `CurrentUser` construction data from the
+admitted capability while `Accounts` comes from the application environment.
+The status view remains authentication-agnostic even though the same admission
+protects it. Route-specific authorization and sensitive mutations must still
+enforce their own domain rules.
+
+## Revalidate Connected Turns {#revalidate-connected-turns}
+
+Mount admission decides whether a lifecycle may start. To recheck a session
+before later connected application work, declare
+@:apiSymbol(def:scalive.LiveSessionBuilder.Admitted.guardConnectedTurns)`guardConnectedTurns`@:@
+after admission. The executable lab installs the guard and projects only the
+immutable user into its view:
+
+@:sourceRegion(documentation/site/src/scalive/docs/auth/AuthLab.scala, authentication-protected-session)
+
+Here `ConnectedAuth.revalidate` returns
+`IO[LiveConnectedTurnFailure, Unit]`: `ZIO.unit` means **Continue**, while
+`ZIO.fail(LiveConnectedTurnFailure.redirect(...))` stops the turn and redirects
+to login. Other controlled failures may **Halt**, perform an unsafe **Redirect**,
+**Reload**, or **Disconnect**. Keep authoritative mutable session or account
+state behind the admission-produced context rather than relying on claims
+captured at mount. See
+@:apiSymbol(enum:scalive.LiveConnectedTurnFailure)`LiveConnectedTurnFailure`@:@
+for every outcome.
+
+A guard runs when an application turn arrives, not while a connection is idle.
+Continue to call `LiveConnections.disconnect` when revocation should promptly
+close existing connections; the next admission then decides whether they may
+reconnect. A turn guard narrows the revocation window, but it does not replace
+domain authorization immediately before sensitive mutations. Recheck the
+relevant record or capability where it is used to avoid time-of-check/time-of-use
+gaps.
+
+Guard checks are on the hot path. Read authoritative mutable data, but bound the
+cost and use caching only when its staleness is acceptable for the policy. A
+failure reason supplied to `reload(reason)` or `disconnect(reason)` is
+server-side diagnostic context, not a message sent to the browser.
 
 Do not transfer the cookie token in claims. Signed claims are authenticated but
 not encrypted. Read [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently)
@@ -159,14 +195,14 @@ constructor without an explicit service type argument:
 ```scala
 final class ProfileLiveView(currentUser: CurrentUser, accounts: Accounts)
 
-val profile = routes.profile.context((currentUser: CurrentUser, accounts: Accounts) =>
-  new ProfileLiveView(currentUser, accounts)
+val profile = routes.profile.context((auth: ConnectedAuth, accounts: Accounts) =>
+  new ProfileLiveView(auth.currentUser, accounts)
 )
 ```
 
-Only `CurrentUser` is supplied by admission. `Accounts` is resolved from the ZIO
-environment independently and is never serialized into mount claims or passed to
-layouts.
+Only `ConnectedAuth` is supplied by admission. The view projects `CurrentUser`
+from it; `Accounts` is resolved from the ZIO environment independently and is
+never serialized into mount claims or passed to layouts.
 
 Keep the service responsible for credentials, session authenticity, expiry,
 revocation, capacity, and rate limits. Keep the mount aspect responsible for
@@ -211,12 +247,13 @@ Before adapting this lab for real users:
 - choose a broadcast fanout adapter plus retry or outbox policy;
 - preserve generic login failures and bounded request bodies; and
 - test login, protected HTTP render, connected resumption, multi-tab logout,
-  reconnect denial, expiry, throttling, and visitor isolation.
+  turn revalidation, reconnect denial, expiry, throttling, and visitor isolation.
 
 The lab is teaching code, not a production identity system.
 
 ## Related Tasks {#related-tasks}
 
 - Review phase-safe claims in [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently).
+- Apply the complete turn boundary from [Lifecycle hooks](lifecycle-hooks.md#connected-turn-guards).
 - Wire the shared session service with [Services and dependency injection](services-and-zlayer-injection.md#provide-services-at-startup).
 - Diagnose rejected joins and forms in [Troubleshooting](troubleshooting.md#diagnose-csrf-rejections).

@@ -299,7 +299,11 @@ final private[scalive] class ConnectionSupervisor private (
               metadata,
               lifecycle,
               sink,
-              topology.preparer(domId, loading),
+              topology.preparer(
+                domId,
+                loading,
+                lifecycle.connectedTurnGuard
+              ),
               ownsPageTitle = true,
               requestedLifecycle = requestedLifecycle,
               providedConnection = Some(connectionId),
@@ -414,9 +418,17 @@ final private[scalive] class ConnectionSupervisor private (
                                     RootConnection.startLifecycle(
                                       config,
                                       metadata,
-                                      RootLifecycle.ordinary(view, inheritedUrl),
+                                      RootLifecycle.ordinary(
+                                        view,
+                                        inheritedUrl,
+                                        reservation.connectedTurnGuard
+                                      ),
                                       output.offer,
-                                      topology.preparer(domId, loading),
+                                      topology.preparer(
+                                        domId,
+                                        loading,
+                                        reservation.connectedTurnGuard
+                                      ),
                                       ownsPageTitle = false,
                                       requestedLifecycle = requestedLifecycle,
                                       providedConnection = Some(connectionId),

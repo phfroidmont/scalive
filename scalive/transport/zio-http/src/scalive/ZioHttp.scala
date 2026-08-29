@@ -31,6 +31,7 @@ object ZioHttp:
   private val KernelCapacity               = 64
   private val ContinuationCapacity         = 64
   private val PhysicalWriterSize           = 64
+  private val DisconnectDrainTimeout       = 1.second
   private val UploadChunkCapacity          = 8
   private val MaxUploadChunkBytes          = 1_000_000
   private val MaxFramePayloadBytes         = MaxUploadChunkBytes + 1024
@@ -599,7 +600,13 @@ object ZioHttp:
         applicationLayout,
         applicationRoot,
         (path, request, context, url) =>
-          ZIO.attempt(RootLifecycle.ordinary(definition.factory(path, request, context), url))
+          ZIO.attempt(
+            RootLifecycle.ordinary(
+              definition.factory(path, request, context),
+              url,
+              definition.connectedTurnGuards.contramap((_: Unit) => context)
+            )
+          )
       )
 
     private def routedRoute[R, A, In, Ctx, Message, State, Params](
@@ -658,7 +665,8 @@ object ZioHttp:
                           (model, ctx) => view.handleParams(model, params, destination, ctx)
                         )
                     ),
-            view = input => view.view(input.map(_._1))
+            view = input => view.view(input.map(_._1)),
+            connectedTurnGuard = definition.connectedTurnGuards.contramap((_: Unit) => context)
           )
       )
   end CompiledRoute
@@ -1212,6 +1220,8 @@ object ZioHttp:
 
     def disconnect: UIO[Unit] = stop(closeSocket)
 
+    def disconnectAfter(beforeClose: UIO[Unit]): UIO[Unit] = stop(beforeClose *> closeSocket)
+
     def remoteClosed: UIO[Unit] = stop(ZIO.unit)
 
     def await: UIO[Unit] = stopped.await
@@ -1223,9 +1233,7 @@ object ZioHttp:
         disconnecting.modify(current => !current -> true).flatMap {
           case false => ZIO.unit
           case true  =>
-            ZIO
-              .uninterruptible(close.ensuring(stopped.succeed(()).unit))
-              .forkDaemon.unit
+            close.interruptible.ensuring(stopped.succeed(()).unit).forkDaemon.unit
         }
       }
 
@@ -1298,7 +1306,17 @@ object ZioHttp:
                 )
         }
       termination <- TransportTermination.make(
-                       writer.close *>
+                       writer.drain
+                         .timeout(DisconnectDrainTimeout)
+                         .foldZIO(
+                           error => ZIO.logWarning(s"WebSocket writer drain failed: $error"),
+                           {
+                             case Some(_) => ZIO.unit
+                             case None    =>
+                               ZIO.logWarning("WebSocket writer drain timed out before disconnect")
+                           }
+                         ) *>
+                         writer.close *>
                          channelGate
                            .withPermit(
                              channel.send(
@@ -1349,6 +1367,7 @@ object ZioHttp:
                                 registration,
                                 activeAdmission,
                                 transportAdmission,
+                                termination.disconnectAfter,
                                 joinGate,
                                 observer,
                                 writer,
@@ -1511,6 +1530,7 @@ object ZioHttp:
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
     activeAdmission: Ref[Option[PreparedAdmission]],
     transportAdmission: TransportAdmission,
+    disconnect: UIO[Unit] => UIO[Unit],
     joinGate: Semaphore,
     observer: RuntimeObserver,
     writer: SerialWriter[PhoenixEnvelope],
@@ -1531,6 +1551,7 @@ object ZioHttp:
                 supervisor,
                 joined,
                 registration,
+                disconnect,
                 observer,
                 writer,
                 effectiveRef,
@@ -1613,7 +1634,8 @@ object ZioHttp:
                                topic,
                                destination =>
                                  currentUrl.set(destination) *>
-                                   connectionReady.await.flatMap(_.internalPatch(destination))
+                                   connectionReady.await.flatMap(_.internalPatch(destination)),
+                               disconnect
                              )
                       startup <- BufferedActivationSink.make(
                                    OutboundCapacity,
@@ -1715,6 +1737,7 @@ object ZioHttp:
     supervisor: ConnectionSupervisor,
     joined: Ref[Map[String, JoinedLifecycle]],
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
+    disconnect: UIO[Unit] => UIO[Unit],
     observer: RuntimeObserver,
     writer: SerialWriter[PhoenixEnvelope],
     effectiveRef: PhoenixRef.Value,
@@ -1782,7 +1805,8 @@ object ZioHttp:
                    topic,
                    destination =>
                      currentUrl.set(destination) *>
-                       connectionReady.await.flatMap(_.internalPatch(destination))
+                       connectionReady.await.flatMap(_.internalPatch(destination)),
+                   disconnect
                  )
           startup <- BufferedActivationSink.make(
                        OutboundCapacity,
@@ -1933,7 +1957,8 @@ object ZioHttp:
     joinRef: PhoenixRef,
     joinReplyRef: PhoenixRef,
     topic: String,
-    acknowledgePatch: URL => Task[Unit]
+    acknowledgePatch: URL => Task[Unit],
+    disconnect: UIO[Unit] => UIO[Unit]
   ): ConnectionOutput => Task[Unit] = output =>
     projectionGate
       .withPermit {
@@ -1964,6 +1989,23 @@ object ZioHttp:
               .offer(envelope).foldCauseZIO(
                 cause => observer.failOutput(envelope) *> ZIO.failCause(cause),
                 _ => ZIO.unit
+              )
+          }
+
+        def offerDisconnectReply(envelope: PhoenixEnvelope): UIO[Unit] =
+          ZIO.suspendSucceed {
+            observer.bindFrame(output, envelope)
+            writer
+              .offerAwait(envelope).timeout(DisconnectDrainTimeout).foldZIO(
+                error =>
+                  observer.failOutput(envelope) *>
+                    ZIO.logWarning(s"WebSocket disconnect reply enqueue failed: $error"),
+                {
+                  case Some(_) => ZIO.unit
+                  case None    =>
+                    observer.failOutput(envelope) *>
+                      ZIO.logWarning("WebSocket disconnect reply enqueue timed out")
+                }
               )
           }
 
@@ -2110,6 +2152,18 @@ object ZioHttp:
                   )
               case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
             }
+          case ConnectionOutput.ReplyDisconnect(command, _) =>
+            correlations.modify(current => current.get(command) -> (current - command)).flatMap {
+              case Some((_, PhoenixRef.Null))     => disconnect(ZIO.unit)
+              case Some((eventJoinRef, eventRef)) =>
+                disconnect(
+                  offerDisconnectReply(
+                    PhoenixOutput.event(eventJoinRef, eventRef, topic, Json.Obj.empty)
+                  )
+                )
+              case None => ZIO.fail(Exception(s"missing event correlation ${command.value}"))
+            }
+          case ConnectionOutput.Disconnect(_)        => disconnect(ZIO.unit)
           case ConnectionOutput.Rejected(command, _) =>
             correlations.modify(current => current.get(command) -> (current - command)).flatMap {
               case Some((_, PhoenixRef.Null))     => ZIO.unit

@@ -61,8 +61,8 @@ expects so you can also enter directly from search or the API reference.
 
 - [Asynchronous work and subscriptions](async-work-and-subscriptions.md) owns finite
   tasks and long-lived message streams with typed keys and lifecycle cleanup.
-- [Lifecycle hooks](lifecycle-hooks.md) applies ordered static or dynamic policy
-  to root and component lifecycle stages.
+- [Lifecycle hooks](lifecycle-hooks.md) guards complete connected turns and
+  applies ordered static or dynamic policy to individual lifecycle stages.
 - [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md) owns flash,
   document titles, connection feedback, and post-render observation.
 

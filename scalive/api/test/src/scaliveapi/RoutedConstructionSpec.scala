@@ -307,6 +307,91 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
       assertTrue(errors.nonEmpty)
     },
+    test("connected-turn guards compose across session admission and route declarations") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        final case class User(name: String)
+
+        val admission = LiveMountAspect.fromRequest[Any, Any, String, User](
+          _ => ZIO.succeed("id" -> User("disconnected")),
+          (_, _) => ZIO.succeed(User("connected"))
+        )
+        val routeUser = LiveMountAspect.fromRequest[Any, Unit, String, User](
+          _ => ZIO.succeed("route" -> User("disconnected")),
+          (_, _) => ZIO.succeed(User("connected"))
+        )
+        val details = LiveMountAspect.make[Any, Unit, User, Int, Int](
+          (_, user) => ZIO.succeed(1 -> user.name.length),
+          (_, _, user) => ZIO.succeed(user.name.length)
+        )
+
+        object View extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+
+        val route = live
+          .guardConnectedTurns(_ => ZIO.unit)
+          .withMountAspect(routeUser)
+          .guardConnectedTurns((user: User) => ZIO.unit)
+          .withMountAspect(details)
+          .guardConnectedTurns((context: (User, Int)) =>
+            if context._2 > 0 then ZIO.unit
+            else ZIO.fail(LiveConnectedTurnFailure.reload("missing details"))
+          )(View)
+
+        val session = Live.session("guarded")
+          .guardConnectedTurns(_ => ZIO.unit)
+          .withAdmission(admission)(identity)
+          .guardConnectedTurns((user: User) => ZIO.unit)(route)
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("connected-turn guards are available on parameter builder forms") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.http.codec.PathCodec
+
+        object View extends LiveView.Routed.Eventless[Unit, Int]:
+          def mount(params: Int, ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+
+        val encodable = (live / "items" / PathCodec.int("id"))
+          .params
+          .guardConnectedTurns(_ => ZIO.unit)
+        val location: LiveLocation = encodable.location(1)
+        val route = encodable(View)
+
+        val decodeOnly = (live / "decoded")
+          .paramsDecodeOnly(LiveParamsCodec.path[Unit].mapDecodeOnly(_ => 1))
+          .guardConnectedTurns(_ => ZIO.unit)(View)
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("connected-turn guards reject effects with environments and invalid results") {
+      val environmentErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        trait Accounts
+        val invalid = live.guardConnectedTurns(_ => ZIO.service[Accounts])
+      """)
+      val resultErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        val invalid = live.guardConnectedTurns(_ => ZIO.succeed(42))
+      """)
+      val callbackErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        val invalid = live.guardConnectedTurns((value: String) => ZIO.unit)
+      """)
+
+      assertTrue(environmentErrors.nonEmpty, resultErrors.nonEmpty, callbackErrors.nonEmpty)
+    },
     test("layouts cannot change the LiveView message type") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

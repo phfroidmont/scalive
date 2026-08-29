@@ -136,6 +136,8 @@ enum ConnectionOutput:
     delta: RenderDelta,
     navigation: NavigationOutput,
     effects: SessionEffects)
+  case ReplyDisconnect(command: CommandId, reason: Option[String])
+  case Disconnect(reason: Option[String])
   case Rejected(command: CommandId, rejection: SessionRejection)
 end ConnectionOutput
 

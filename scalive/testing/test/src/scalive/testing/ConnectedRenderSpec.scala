@@ -1,6 +1,9 @@
 package scalive.testing
 
+import java.time.Duration
+
 import zio.*
+import zio.http.{Request, URL}
 import zio.stream.ZStream
 import zio.test.*
 
@@ -17,7 +20,19 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
   private enum ResourceMsg:
     case Tick
 
+  private enum TerminalMsg:
+    case Trigger
+
+  private enum NavigationMsg:
+    case Patch
+
   private val Name = FormField.requiredString(FormPath("profile", "name"), "Name is required.")
+
+  private val config = ZioHttpConfig(
+    "01234567890123456789012345678901",
+    Duration.ofMinutes(30),
+    secureCookie = false
+  ).toOption.get
 
   def spec = suite("ConnectedRenderSpec")(
     test("joins through production admission and dispatches bindings and typed messages") {
@@ -154,6 +169,89 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
                     yield assertTrue(joined, !removed)
                   }
       yield result
+    },
+    test("disconnect guards from either joined view retire the shared physical session") {
+      ZIO.scoped {
+        ZIO.foreach(Vector(false, true))(triggerNested =>
+          terminalGuardCleanup(LiveConnectedTurnFailure.disconnect("test"), triggerNested)
+        ).map(results => assertTrue(results.forall(identity)))
+      }
+    },
+    test("reload guards retire the shared physical session") {
+      ZIO.scoped {
+        terminalGuardCleanup(LiveConnectedTurnFailure.reload("test"), triggerNested = true)
+          .map(assertTrue(_))
+      }
+    },
+    test("same-session patch navigation keeps root and nested views joined") {
+      val child = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        override def view(model: Signal[Unit]) = div("patch child")
+
+      val parent = new LiveView[NavigationMsg, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          case NavigationMsg.Patch => ctx.nav.pushPatchUnsafe("?patched=true").as(model)
+        override def view(model: Signal[Unit]) =
+          div(
+            button(dataAttr("patch") := "", on.click(NavigationMsg.Patch), "Patch"),
+            liveView("patch-child", child)
+          )
+
+      val application = scalive.Live.router(
+        scalive.live.guardConnectedTurns(_ => ZIO.unit)(parent)
+      )
+
+      ZIO.scoped {
+        for
+          root   <- ConnectedRender.join(application, config, Request.get(URL.root))
+          nested <- root.joinNested("patch-child")
+          _      <- root.click("[data-patch]")
+          rootJoined   <- root.isJoined
+          nestedJoined <- nested.isJoined
+        yield assertTrue(rootJoined, nestedJoined)
+      }
     }
   ) @@ TestAspect.withLiveClock @@ TestAspect.timeout(15.seconds)
+
+  private def terminalGuardCleanup(
+    failure: LiveConnectedTurnFailure,
+    triggerNested: Boolean
+  ): ZIO[Scope, Throwable, Boolean] =
+    val child = new LiveView[TerminalMsg, Unit]:
+      def mount(ctx: MountContext) = ZIO.unit
+      def handleMessage(model: Unit, ctx: MessageContext) =
+        case TerminalMsg.Trigger => ZIO.succeed(model)
+      override def view(model: Signal[Unit]) =
+        button(dataAttr("trigger-nested") := "", on.click(TerminalMsg.Trigger), "Trigger nested")
+
+    val parent = new LiveView[TerminalMsg, Unit]:
+      def mount(ctx: MountContext) = ZIO.unit
+      def handleMessage(model: Unit, ctx: MessageContext) =
+        case TerminalMsg.Trigger => ZIO.succeed(model)
+      override def view(model: Signal[Unit]) =
+        div(
+          button(dataAttr("trigger-root") := "", on.click(TerminalMsg.Trigger), "Trigger root"),
+          liveView("terminal-child", child)
+        )
+
+    val application = scalive.Live.router(
+      scalive.live.guardConnectedTurns(_ => ZIO.fail(failure))(parent)
+    )
+
+    for
+      root   <- ConnectedRender.join(application, config, Request.get(URL.root))
+      nested <- root.joinNested("terminal-child")
+      _ <- if triggerNested then nested.click("[data-trigger-nested]")
+           else root.click("[data-trigger-root]")
+      _ <- awaitUnjoined(root, nested)
+      rootJoined   <- root.isJoined
+      nestedJoined <- nested.isJoined
+    yield !rootJoined && !nestedJoined
+
+  private def awaitUnjoined(root: ConnectedView[?], nested: ConnectedView[?]): Task[Unit] =
+    root.isJoined.zip(nested.isJoined).flatMap {
+      case (false, false) => ZIO.unit
+      case _              => ZIO.sleep(10.millis) *> awaitUnjoined(root, nested)
+    }.timeoutFail(Exception("ConnectedRender session did not retire."))(3.seconds)
 end ConnectedRenderSpec

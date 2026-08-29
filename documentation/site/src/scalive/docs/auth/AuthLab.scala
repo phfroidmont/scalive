@@ -16,28 +16,45 @@ object AuthLabRoutes:
   val ResetRoute   = Method.POST / "examples" / "authentication" / "lab" / "reset"
 
 // docs:start authentication-mount-aspect
+final case class ConnectedAuth(
+  currentUser: CurrentUser,
+  revalidate: IO[LiveConnectedTurnFailure, Unit])
+
 object AuthMountAspect:
-  val authenticated: LiveMountAspect[AuthService, Any, Any, AuthClaims, CurrentUser] =
+  val authenticated: LiveMountAspect[AuthService, Any, Any, AuthClaims, ConnectedAuth] =
     LiveMountAspect.fromRequest(
       request =>
         request.request.cookie(AuthHttpRoutes.SessionCookieName) match
           case None         => ZIO.fail(AuthLabRoutes.login.location.seeOther)
           case Some(cookie) =>
             ZIO
-              .serviceWithZIO[AuthService](
-                _.authenticate(SessionCookieToken(cookie.content))
-              ).someOrFail(AuthLabRoutes.login.location.seeOther)
-              .map(current =>
-                AuthClaims(current.publicSessionId) ->
-                  CurrentUser(current.user.email, current.user.name)
+              .serviceWithZIO[AuthService](auth =>
+                auth
+                  .authenticate(SessionCookieToken(cookie.content))
+                  .someOrFail(AuthLabRoutes.login.location.seeOther)
+                  .map(current =>
+                    AuthClaims(current.publicSessionId) -> connectedAuth(auth, current)
+                  )
               ),
       (claims, _) =>
         ZIO
-          .serviceWithZIO[AuthService](
-            _.resume(claims.publicSessionId)
-          ).someOrFail(LiveMountFailure.redirect(AuthLabRoutes.login.location))
-          .map(current => CurrentUser(current.user.email, current.user.name))
+          .serviceWithZIO[AuthService](auth =>
+            auth
+              .resume(claims.publicSessionId)
+              .someOrFail(LiveMountFailure.redirect(AuthLabRoutes.login.location))
+              .map(connectedAuth(auth, _))
+          )
     )
+
+  private def connectedAuth(auth: AuthService, current: CurrentSession): ConnectedAuth =
+    ConnectedAuth(
+      CurrentUser(current.user.email, current.user.name),
+      auth
+        .resume(current.publicSessionId).someOrFail(
+          LiveConnectedTurnFailure.redirect(AuthLabRoutes.login.location)
+        ).unit
+    )
+end AuthMountAspect
 // docs:end authentication-mount-aspect
 
 final class AuthHttpRoutes(security: LiveSecurity):
@@ -225,10 +242,13 @@ object AuthLab:
   val loginRoute: LiveRouteFragment[Any] { type Input = Any } =
     AuthLabRoutes.login(LoginLiveView())
 
+  // docs:start authentication-protected-session
   val protectedSession
     : LiveRouteFragment[AuthService & LiveConnections[PublicSessionId]] { type Input = Any } =
     Live
       .session("documentation-authentication-lab")
-      .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)(
-        AuthLabRoutes.profile.context(ProfileLiveView.apply)
+      .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)
+      .guardConnectedTurns((auth: ConnectedAuth) => auth.revalidate)(
+        AuthLabRoutes.profile.context((auth: ConnectedAuth) => ProfileLiveView(auth.currentUser))
       )
+  // docs:end authentication-protected-session

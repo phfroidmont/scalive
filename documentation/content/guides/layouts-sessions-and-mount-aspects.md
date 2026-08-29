@@ -27,6 +27,9 @@ Scalive separates three application-structure concerns:
 Use the router for application-wide structure, a named session for one coherent
 area such as authenticated account pages, and a route modifier for one page.
 This keeps policy close to the broadest boundary that actually needs it.
+Mount aspects decide whether a lifecycle may start and produce typed context;
+connected-turn guards reuse that context when policy must run again before later
+application work.
 
 ## Install Root And Ordinary Layouts {#install-root-and-ordinary-layouts}
 
@@ -145,6 +148,16 @@ Never put passwords, cookie values, access tokens, or other secrets in them.
 Transfer the smallest non-secret identifier and revalidate mutable authorization
 state before connected mount.
 
+Mount admission does not rerun while a socket remains connected. Append a route
+@:apiSymbol(def:scalive.LiveRouteMountAspectBuilder.guardConnectedTurns)`guardConnectedTurns`@:@
+or session
+@:apiSymbol(def:scalive.LiveSessionBuilder.Admitted.guardConnectedTurns)`guardConnectedTurns`@:@
+after the aspects or admission that produce its context when policy must be
+checked before every later application turn. Session guards run before route
+guards and are inherited by nested LiveViews. See
+[Lifecycle hooks](lifecycle-hooks.md#connected-turn-guards) for the complete
+scope, ordering, and controlled outcomes.
+
 ## Use Failure Semantics Deliberately {#use-failure-semantics-deliberately}
 
 Disconnected aspect failures are ordinary HTTP responses. Connected failures
@@ -168,5 +181,6 @@ for a complete runnable flow.
 ## Related Tasks {#related-tasks}
 
 - Add protected route context with [Authentication and sessions](authentication.md#prerequisites).
+- Recheck connected policy with [Lifecycle hooks](lifecycle-hooks.md#connected-turn-guards).
 - Construct LiveViews from application dependencies with [Services and dependency injection](services-and-zlayer-injection.md#prerequisites).
 - Check navigation across session boundaries in [Routes, parameters, and navigation](routes-and-navigation.md#respect-route-and-session-boundaries).

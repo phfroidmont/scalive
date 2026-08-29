@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="520" height="1250" viewBox="0 0 520 1250" role="img" aria-labelledby="turn-title turn-desc">
   <title id="turn-title">One connected turn</title>
-  <desc id="turn-desc">A Phoenix event is decoded and queued as a SessionCommand for a SessionKernel. Revision N remains committed while six provisional steps resolve the target, run hooks and the handler, evaluate rendering, validate and prepare resources and topology, reserve an ordered publication slot, then run after-render work, validate continuations, and compute a diff. Failure discards the candidate. A successful interruption-masked commit replaces state, marks retired owners stale, activates resources and child topology, and fills the reserved output slot before revision N+1 becomes active. Only then does RootConnection output drain the reservation through PhoenixRenderedEncoder and the bounded SerialWriter; write failure does not roll back N+1.</desc>
+  <desc id="turn-desc">A Phoenix event is decoded and queued as a SessionCommand for a SessionKernel. Revision N remains committed while the kernel checks lifecycle state and classifies the command, then runs connected-turn guards before binding or typed-target resolution, hooks, and the handler. A continuing turn evaluates rendering, validates and prepares resources and topology, reserves an ordered publication slot, then runs after-render work, validates continuations, and computes a diff. A controlled guard outcome exits directly without committing N+1; an unexpected failure discards any candidate and may terminate the lifecycle. A successful interruption-masked commit replaces state, marks retired owners stale, activates resources and child topology, and fills the reserved output slot before revision N+1 becomes active. Only then does RootConnection output drain the reservation through PhoenixRenderedEncoder and the bounded SerialWriter; write failure does not roll back N+1.</desc>
   <defs>
     <marker id="turn-arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-blue"/></marker>
     <marker id="turn-arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-amber"/></marker>
@@ -77,10 +77,11 @@
 
   <rect x="30" y="400" width="225" height="59" class="step-box"/>
   <circle cx="52" cy="429" r="15" class="number"/><text x="52" y="435" text-anchor="middle" class="small-label">1</text>
-  <text x="73" y="424" class="small-label">Resolve typed target</text><text x="73" y="446" class="body">binding + epoch</text>
+  <text x="73" y="424" class="small-label">Check turn guard</text><text x="73" y="446" class="body">connected policy</text>
   <rect x="265" y="400" width="225" height="59" class="step-box"/>
   <circle cx="287" cy="429" r="15" class="number"/><text x="287" y="435" text-anchor="middle" class="small-label">2</text>
-  <text x="308" y="424" class="small-label">Run hooks + handler</text><text x="308" y="446" class="body">proposed model</text>
+  <text x="308" y="424" class="small-label">Resolve + handle</text><text x="308" y="446" class="body">target, hooks, handler</text>
+  <path d="M30 429H8V624H88V638" class="arrow-error"/>
 
   <rect x="30" y="469" width="225" height="59" class="step-box"/>
   <circle cx="52" cy="498" r="15" class="number"/><text x="52" y="504" text-anchor="middle" class="small-label">3</text>
@@ -98,9 +99,9 @@
 
   <path d="M130 616V638" class="arrow-error"/>
   <rect x="16" y="638" width="235" height="72" class="red-box"/>
-  <text x="133" y="663" text-anchor="middle" class="small-label">Candidate discarded</text>
-  <text x="133" y="685" text-anchor="middle" class="body">N+1 not committed</text>
-  <text x="133" y="703" text-anchor="middle" class="body">Lifecycle terminates</text>
+  <text x="133" y="663" text-anchor="middle" class="small-label">Turn does not commit</text>
+  <text x="133" y="685" text-anchor="middle" class="body">revision N stays unchanged</text>
+  <text x="133" y="703" text-anchor="middle" class="body">controlled outcome or failure</text>
 
   <text x="416" y="644" class="small-label" style="fill:var(--green)">success</text>
   <path d="M405 616V730" class="arrow-green"/>

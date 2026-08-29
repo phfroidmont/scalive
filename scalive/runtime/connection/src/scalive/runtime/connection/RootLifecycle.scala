@@ -14,7 +14,8 @@ final private[scalive] case class RootLifecycle[Msg, Model](
   mount: MountContext[Msg, Model] => Task[Model],
   handleMessage: (Model, MessageContext[Msg, Model], Msg) => Task[Model],
   prepareParams: URL => Task[RootParamsHandler[Msg, Model]],
-  view: Signal[(Model, URL)] => HtmlElement[Msg])
+  view: Signal[(Model, URL)] => HtmlElement[Msg],
+  connectedTurnGuard: LiveConnectedTurnGuard[Unit] = LiveConnectedTurnGuard.empty)
 
 final private[scalive] case class RootParamsHandler[Msg, Model](
   runHooks: Boolean,
@@ -23,7 +24,8 @@ final private[scalive] case class RootParamsHandler[Msg, Model](
 private[scalive] object RootLifecycle:
   def ordinary[Msg, Model](
     liveView: LiveView[Msg, Model],
-    initialUrl: URL = URL.root
+    initialUrl: URL = URL.root,
+    connectedTurnGuard: LiveConnectedTurnGuard[Unit] = LiveConnectedTurnGuard.empty
   ): RootLifecycle[Msg, Model] =
     RootLifecycle(
       initialUrl = initialUrl,
@@ -33,5 +35,6 @@ private[scalive] object RootLifecycle:
       handleMessage = (model, context, message) => liveView.handleMessage(model, context)(message),
       prepareParams =
         _ => ZIO.succeed(RootParamsHandler(runHooks = false, (model, _) => ZIO.succeed(model))),
-      view = input => liveView.view(input.map(_._1))
+      view = input => liveView.view(input.map(_._1)),
+      connectedTurnGuard = connectedTurnGuard
     )

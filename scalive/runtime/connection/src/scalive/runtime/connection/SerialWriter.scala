@@ -12,15 +12,26 @@ final private[scalive] class SerialWriter[A] private (
   import SerialWriter.*
 
   def send(value: A): IO[Error, Unit] =
-    enqueue(value).flatMap(_.await)
+    enqueue(Some(value)).flatMap(_.await)
 
   /** Installs one bounded write without waiting for the network operation to complete. */
   def offer(value: A): IO[Error, Unit] =
-    enqueue(value).unit
+    enqueue(Some(value)).unit
+
+  /** Waits for queue capacity and installs one write without waiting for the sink. */
+  def offerAwait(value: A): IO[Error, Unit] =
+    enqueueEventually(Some(value)).unit
+
+  /** Waits until every write accepted before this call has completed. */
+  def drain: IO[Error, Unit] =
+    enqueueEventually(None).flatMap(_.await)
+
+  private def enqueueEventually(value: Option[A]): IO[Error, Promise[Error, Unit]] =
+    enqueue(value).catchSome { case Error.Saturated(_) => ZIO.yieldNow *> enqueueEventually(value) }
 
   def awaitFailure: UIO[Error] = terminal.await
 
-  private def enqueue(value: A): IO[Error, Promise[Error, Unit]] =
+  private def enqueue(value: Option[A]): IO[Error, Promise[Error, Unit]] =
     for
       result <- Promise.make[Error, Unit]
       _      <- gate.withPermit {
@@ -62,11 +73,11 @@ final private[scalive] class SerialWriter[A] private (
             }.flatMap {
               case false => ZIO.unit
               case true  =>
+                val writeEntry = entry.value match
+                  case Some(value) => ZIO.suspend(write(value)).mapError(Error.WriteFailed.apply)
+                  case None        => ZIO.unit
                 restore(
-                  ZIO
-                    .suspend(write(entry.value))
-                    .mapError(Error.WriteFailed.apply)
-                    .raceFirst(terminal.await.flatMap(ZIO.fail(_)))
+                  writeEntry.raceFirst(terminal.await.flatMap(ZIO.fail(_)))
                 ).exit.flatMap(exit => complete(entry, exit))
             }
         }
@@ -121,7 +132,7 @@ private[scalive] object SerialWriter:
     case Shutdown
     case WriteFailed(cause: Throwable)
 
-  final private case class Entry[A](value: A, result: Promise[Error, Unit])
+  final private case class Entry[A](value: Option[A], result: Promise[Error, Unit])
 
   def make[A](capacity: Int)(write: A => Task[Unit]): ZIO[Scope, Error, SerialWriter[A]] =
     if capacity <= 0 then ZIO.fail(Error.InvalidCapacity(capacity))

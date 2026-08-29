@@ -317,12 +317,20 @@ object AuthFlowSpec extends ZIOSpecDefault:
                               loggedIn.cookieToken.value
                             )
                           )
-                        )
+                         )
         preserved <- auth.authenticate(loggedIn.cookieToken)
+        connectedAuth <- AuthMountAspect
+                           .authenticated
+                           .connected(
+                             AuthClaims(loggedIn.currentSession.publicSessionId),
+                             LiveMountRequest((), Request.get(url(AuthLabRoutes.ProfilePath))),
+                             ()
+                           ).provideEnvironment(ZEnvironment(auth))
         _ <- auth.reset(
                VisitorToken(csrf.cookie.content),
                Some(loggedIn.cookieToken)
              )
+        revalidation <- connectedAuth.revalidate.either
         reconnect <- AuthMountAspect
                        .authenticated
                        .connected(
@@ -333,6 +341,11 @@ object AuthFlowSpec extends ZIOSpecDefault:
       yield assertTrue(
         invalidReset.status == Status.Forbidden,
         preserved.contains(loggedIn.currentSession),
+        revalidation.left.exists {
+          case LiveConnectedTurnFailure.Redirect(location) =>
+            location.href == AuthLabRoutes.LoginPath
+          case _ => false
+        },
         reconnect.left.exists {
           case LiveMountFailure.Redirect(location) =>
             location.href == AuthLabRoutes.LoginPath

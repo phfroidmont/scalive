@@ -348,6 +348,213 @@ object RootConnectionSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("connected-turn guards skip bootstrap and precede every connected handler boundary") {
+      ZIO.scoped {
+        val destination = URL.decode("/params").toOption.get
+        for
+          order   <- Ref.make(Vector.empty[String])
+          outputs <- Queue.unbounded[ConnectionOutput]
+          lifecycle = RootLifecycle[String, Int](
+                        initialUrl = URL.root,
+                        hooks = LiveHooks.empty[String, Int]
+                          .onRawEvent((model, _, _) =>
+                            order.update(_ :+ "raw").as(LiveEventHookResult.cont(model)))
+                          .onEvent((model, message, _) =>
+                            order.update(_ :+ s"event:$message").as(LiveHookResult.cont(model)))
+                          .onInfo((model, message, _) =>
+                            order.update(_ :+ s"info:$message").as(LiveHookResult.cont(model)))
+                          .onParams((model, _, _) =>
+                            order.update(_ :+ "params").as(LiveHookResult.cont(model)))
+                          .onAsync((model, _, _) =>
+                            order.update(_ :+ "async").as(LiveHookResult.cont(model)))
+                          .afterRender((_, _) => order.update(_ :+ "after-render")),
+                        pageTitle = _ => None,
+                        mount = _ => order.update(_ :+ "mount").as(0),
+                        handleMessage = (model, _, message) =>
+                          order.update(_ :+ s"handler:$message").as(model + 1),
+                        prepareParams = _ =>
+                          ZIO.succeed(
+                            RootParamsHandler(
+                              runHooks = true,
+                              (model, _) => order.update(_ :+ "params-handler").as(model + 1)
+                            )
+                          ),
+                        view = state => button(on.click("event"), state.map(_._1.toString)),
+                        connectedTurnGuard = LiveConnectedTurnGuard(_ => order.update(_ :+ "guard"))
+                      )
+          connection <- RootConnection.startLifecycle(config, metadata, lifecycle, outputs.offer(_).unit)
+          joined     <- outputs.take
+          bootstrap  <- order.getAndSet(Vector.empty)
+          eventId     = CommandId.fresh().toOption.get
+          _ <- connection.submitEvent(
+                 eventId,
+                 bindingFrom(joined),
+                 BindingPayload.Params(Map.empty)
+               )
+          _       <- outputs.take
+          _       <- connection.submitInfo("info")
+          _       <- outputs.take
+          patchId  = CommandId.fresh().toOption.get
+          _       <- connection.submitPatch(patchId, destination)
+          _       <- outputs.take
+          async    = LiveAsyncEvent(AsyncKey[Any]("work"), LiveAsyncResult.Succeeded("async"))
+          _       <- connection.submitAsyncCompletion(async)
+          _       <- outputs.take
+          connected <- order.get
+        yield assertTrue(
+          bootstrap == Vector("mount", "params", "params-handler", "after-render"),
+          connected == Vector(
+            "guard",
+            "raw",
+            "event:event",
+            "handler:event",
+            "after-render",
+            "guard",
+            "info:info",
+            "handler:info",
+            "after-render",
+            "guard",
+            "params",
+            "params-handler",
+            "after-render",
+            "guard",
+            "async",
+            "handler:async",
+            "after-render"
+          )
+        )
+      }
+    },
+    test("a guard halt settles a browser command without running application code") {
+      ZIO.scoped {
+        for
+          rawCalls     <- Ref.make(0)
+          handlerCalls <- Ref.make(0)
+          renders      <- Ref.make(0)
+          outputs      <- Queue.unbounded[ConnectionOutput]
+          lifecycle = RootLifecycle.ordinary(
+                        new LiveView[Int, Int]:
+                          override val hooks = LiveHooks.empty[Int, Int]
+                            .onRawEvent((model, _, _) =>
+                              rawCalls.update(_ + 1).as(LiveEventHookResult.cont(model)))
+                            .afterRender((_, _) => renders.update(_ + 1))
+                          def mount(ctx: MountContext): Task[Int] = ZIO.succeed(7)
+                          def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                            amount => handlerCalls.update(_ + 1).as(model + amount)
+                          def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString)),
+                        connectedTurnGuard = LiveConnectedTurnGuard(_ =>
+                          ZIO.fail(LiveConnectedTurnFailure.Halt)
+                        )
+                      )
+          connection <- RootConnection.startLifecycle(config, metadata, lifecycle, outputs.offer(_).unit)
+          joined     <- outputs.take
+          beforeTree <- connection.inspectTree
+          command     = CommandId.fresh().toOption.get
+          _ <- connection.submitEvent(command, bindingFrom(joined), BindingPayload.Params(Map.empty))
+          reply       <- outputs.take
+          model       <- connection.inspectModel
+          afterTree   <- connection.inspectTree
+          rawCount    <- rawCalls.get
+          handled     <- handlerCalls.get
+          renderCount <- renders.get
+          pending     <- connection.pendingCount
+        yield assertTrue(
+          reply match
+            case ConnectionOutput.Reply(`command`, RenderDelta.Empty, _) => true
+            case _                                                        => false,
+          rawCount == 0,
+          handled == 0,
+          renderCount == 1,
+          model == 7,
+          afterTree == beforeTree,
+          pending == 0
+        )
+      }
+    },
+    test("reload and disconnect guards emit terminal correlated replies and close cleanly") {
+      val current = URL.decode("/committed?from=guard").toOption.get
+      def run(
+        failure: LiveConnectedTurnFailure
+      ): ZIO[Scope, Nothing, (ConnectionOutput, CommandId, Boolean, Int)] =
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          lifecycle = RootLifecycle.ordinary(
+                        new LiveView[Int, Int]:
+                          def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                          def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                            amount => ZIO.succeed(model + amount)
+                          def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString)),
+                        initialUrl = current,
+                        connectedTurnGuard = LiveConnectedTurnGuard(_ => ZIO.fail(failure))
+                      )
+          connection <- RootConnection.startLifecycle(config, metadata, lifecycle, outputs.offer(_).unit).orDie
+          joined     <- outputs.take
+          command     = CommandId.fresh().toOption.get
+          _ <- connection
+                 .submitEvent(command, bindingFrom(joined), BindingPayload.Params(Map.empty)).orDie
+          output  <- outputs.take
+          _       <- connection.awaitClosed
+          failed  <- connection.pollFailure
+          pending <- connection.pendingCount
+        yield (output, command, failed.isEmpty, pending)
+
+      ZIO.scoped {
+        for
+          reload     <- run(LiveConnectedTurnFailure.Reload(Some("stale")))
+          disconnect <- run(LiveConnectedTurnFailure.Disconnect(Some("gone")))
+        yield assertTrue(
+          reload._1 match
+            case ConnectionOutput.ReplyNavigation(command, RenderDelta.Empty, navigation, _) =>
+              command == reload._2 &&
+                navigation.kind == scalive.runtime.kernel.NavigationKind.Redirect &&
+                navigation.destination == current
+            case _ => false,
+          reload._3,
+          reload._4 == 0,
+          disconnect._1.isInstanceOf[ConnectionOutput.ReplyDisconnect],
+          disconnect._1 match
+            case ConnectionOutput.ReplyDisconnect(command, reason) =>
+              command == disconnect._2 && reason.contains("gone")
+            case _ => false,
+          disconnect._3,
+          disconnect._4 == 0
+        )
+      }
+    },
+    test("a connected-turn guard defect fails at its own stage without publishing an update") {
+      ZIO.scoped {
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          lifecycle = RootLifecycle.ordinary(
+                        new LiveView[Int, Int]:
+                          def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                          def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                            amount => ZIO.succeed(model + amount)
+                          def view(model: Signal[Int]) = div(model.map(_.toString)),
+                        connectedTurnGuard = LiveConnectedTurnGuard(_ =>
+                          ZIO.dieMessage("guard defect")
+                        )
+                      )
+          connection <- RootConnection.startLifecycle(config, metadata, lifecycle, outputs.offer(_).unit)
+          _          <- outputs.take
+          result     <- connection.submitInfo(1).either
+          _          <- connection.awaitClosed
+          update     <- outputs.poll
+        yield assertTrue(
+          result match
+            case Left(
+                  ConnectionError.SessionFailed(
+                    scalive.runtime.kernel.SessionFailure.StageFailed(
+                      scalive.runtime.kernel.SessionStage.ConnectedTurnGuard,
+                      details
+                    )
+                  )
+                ) => details.contains("guard defect")
+            case _ => false,
+          update.isEmpty
+        )
+      }
+    },
     test("info hook attachment survives patch acknowledgement and deferred replay") {
       ZIO.scoped {
         val destination = URL.decode("/next").toOption.get

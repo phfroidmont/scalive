@@ -42,10 +42,17 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
     fixture: Fixture,
     view: LiveView[Msg, Model],
     outputs: Queue[ConnectionOutput],
-    requestedLifecycle: Option[LifecycleId] = None
+    requestedLifecycle: Option[LifecycleId] = None,
+    connectedTurnGuard: IO[LiveConnectedTurnFailure, Unit] = ZIO.unit,
+    hasConnectedTurnGuard: Boolean = false
   ): IO[ConnectionSupervisor.StartError, ConnectedLifecycle] =
     fixture.supervisor.startRootLifecycle(
-      RootLifecycle.ordinary(view, URL.root),
+      RootLifecycle.ordinary(
+        view,
+        URL.root,
+        if hasConnectedTurnGuard then LiveConnectedTurnGuard(_ => connectedTurnGuard)
+        else LiveConnectedTurnGuard.empty
+      ),
       metadata,
       "root",
       NestedTopic("root:main"),
@@ -417,6 +424,132 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           _            <- value.supervisor.awaitRetirement(first)
           active       <- value.supervisor.lifecycle(second.lifecycle, second.epoch)
         yield assertTrue(active.contains(second))
+      }
+    },
+    test("a parent connected-turn guard is inherited by a nested lifecycle and runs first") {
+      ZIO.scoped {
+        for
+          turns       <- Ref.make(Vector.empty[String])
+          value       <- fixture
+          rootOutput  <- Queue.bounded[ConnectionOutput](4)
+          childOutput <- Queue.bounded[ConnectionOutput](4)
+          child = new LiveView[Unit, Unit]:
+                    def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+                    def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] =
+                      _ => turns.update(_ :+ "handler")
+                    def view(model: Signal[Unit]): HtmlElement[Unit] = button(on.click(()))
+          parent = new LiveView.Eventless[Unit]:
+                     def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+                     def view(model: Signal[Unit]): HtmlElement[Nothing] =
+                       div(liveView("child", child))
+          _ <- startRoot(
+                 value,
+                 parent,
+                 rootOutput,
+                 connectedTurnGuard = turns.update(_ :+ "guard"),
+                 hasConnectedTurnGuard = true
+               )
+          _           <- rootOutput.take
+          claims      <- claimsFor(value)
+          reservation <- value.supervisor.reserveNested(claims)
+          nested <- value.supervisor.startNested(
+                      reservation,
+                      URL.root,
+                      metadata,
+                      "child",
+                      false,
+                      childOutput.offer(_).unit
+                    )
+          joined <- childOutput.take
+          _ <- nested.browserEvent(
+                 CommandId.fresh().toOption.get,
+                 bindingFrom(joined),
+                 BindingPayload.Params(Map.empty)
+               )
+          _        <- childOutput.take
+          observed <- turns.get
+        yield assertTrue(observed == Vector("guard", "handler"))
+      }
+    },
+    test("connected bootstrap of a guarded parent and child does not run the guard") {
+      ZIO.scoped {
+        object Child extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] = div("child")
+        object Parent extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] = div(liveView("child", Child))
+
+        for
+          guardedTurns <- Ref.make(0)
+          value        <- fixture
+          rootOutput   <- Queue.bounded[ConnectionOutput](4)
+          childOutput  <- Queue.bounded[ConnectionOutput](4)
+          _ <- startRoot(
+                 value,
+                 Parent,
+                 rootOutput,
+                 connectedTurnGuard = guardedTurns.update(_ + 1),
+                 hasConnectedTurnGuard = true
+               )
+          _           <- rootOutput.take
+          claims      <- claimsFor(value)
+          reservation <- value.supervisor.reserveNested(claims)
+          _ <- value.supervisor.startNested(
+                 reservation,
+                 URL.root,
+                 metadata,
+                 "child",
+                 false,
+                 childOutput.offer(_).unit
+               )
+          _     <- childOutput.take
+          turns <- guardedTurns.get
+        yield assertTrue(turns == 0)
+      }
+    },
+    test("a guarded parent resolves a requested sticky child as non-sticky") {
+      ZIO.scoped {
+        object Child extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] = div("child")
+        object Parent extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] =
+            div(liveView("child", Child, sticky = true))
+
+        for
+          value       <- fixture
+          rootOutput  <- Queue.bounded[ConnectionOutput](4)
+          childOutput <- Queue.bounded[ConnectionOutput](4)
+          root <- startRoot(
+                    value,
+                    Parent,
+                    rootOutput,
+                    connectedTurnGuard = ZIO.unit,
+                    hasConnectedTurnGuard = true
+                  )
+          _           <- rootOutput.take
+          claims      <- claimsFor(value)
+          reservation <- value.supervisor.reserveNested(claims)
+          child <- value.supervisor.startNested(
+                     reservation,
+                     URL.root,
+                     metadata,
+                     "child",
+                     false,
+                     childOutput.offer(_).unit
+                   )
+          _      <- childOutput.take
+          leave  <- value.supervisor.routeNavigationLeave(root.topic)
+          _      <- root.awaitClosed
+          _      <- child.awaitClosed
+          active <- value.supervisor.lifecycle(child.lifecycle, child.epoch)
+        yield assertTrue(
+          !reservation.registration.sticky,
+          leave == ConnectionSupervisor.LeaveResult.Left,
+          active.isEmpty
+        )
       }
     },
     test("compatible navigation reattaches an exact sticky child without remounting") {

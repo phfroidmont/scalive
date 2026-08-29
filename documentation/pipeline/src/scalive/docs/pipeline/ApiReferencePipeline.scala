@@ -368,8 +368,12 @@ object ApiReferencePipeline:
     end materialize
 
     private def eligible(symbol: TermOrTypeSymbol): Boolean =
-      val record = documentationRecord(symbol)
-      symbol.isPublic && (!symbol.isSynthetic || record.exists(_.exported))
+      val record          = documentationRecord(symbol)
+      val companionPublic = symbol match
+        case owner: ClassSymbol if owner.isModuleClass =>
+          owner.companionClass.forall(_.isPublic)
+        case _ => true
+      symbol.isPublic && companionPublic && (!symbol.isSynthetic || record.exists(_.exported))
 
     private def eligibleTerm(term: TermSymbol): Boolean =
       eligible(term) &&

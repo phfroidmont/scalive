@@ -61,6 +61,131 @@ object UploadContextSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("only accepted upload progress runs the connected-turn guard before its callback") {
+      ZIO.scoped {
+        val uploader = new LiveUploadExternalUploader[String]:
+          def preflight(client: UploadClientMetadata) =
+            ZIO.succeed(
+              LiveExternalUploadResult.Ready(
+                ExternalUploadClientConfig(Json.Obj("uploader" -> Json.Str("test"))),
+                client.fileName
+              )
+            )
+
+        for
+          order       <- Ref.make(Vector.empty[String])
+          haltGuard   <- Ref.make(true)
+          callbackAt  <- Ref.make(Option.empty[Int])
+          callbackIn  <- Promise.make[Nothing, Unit]
+          callbackOut <- Promise.make[Nothing, Unit]
+          uploadDef = LiveUploadDef.external(
+                        "files",
+                        LiveUploadAccept.Any,
+                        uploader,
+                        progress = Some(new LiveUploadProgress[String]:
+                          def onProgress(entry: LiveUploadEntry[String]) =
+                            callbackIn.succeed(()).unit *> callbackOut.await *>
+                              order.update(_ :+ "onProgress") *>
+                              callbackAt.set(Some(entry.progress)))
+                      )
+          view = new LiveView.Eventless[LiveUpload[String]]:
+                   def mount(ctx: MountContext)                = ctx.uploads.allow(uploadDef)
+                   def view(model: Signal[LiveUpload[String]]) = div(model.map(_.ref.value))
+          lifecycle = RootLifecycle.ordinary(
+                        view,
+                        connectedTurnGuard = LiveConnectedTurnGuard(_ =>
+                          order.update(_ :+ "guard") *>
+                            haltGuard.get.flatMap(halt =>
+                              if halt then ZIO.fail(LiveConnectedTurnFailure.Halt)
+                              else ZIO.unit
+                            )
+                        )
+                      )
+          outputs    <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.startLifecycle(
+                          config,
+                          metadata,
+                          lifecycle,
+                          outputs.offer(_).unit
+                        )
+          _              <- outputs.take
+          mounted        <- connection.inspectModel
+          bootstrapOrder <- order.get
+          client = new UploadClientMetadata("a.txt", None, 1L, "text/plain", None, None)
+          preflightCommand <- ZIO.fromEither(CommandId.fresh())
+          preflight <- connection.preflightUpload(
+                         preflightCommand,
+                         None,
+                         mounted.ref,
+                         Vector((UploadEntryRef("entry"), client))
+                       )
+          _          <- outputs.take
+          setupOrder <- order.get
+          beforeTree <- connection.inspectTree
+          haltCommand <- ZIO.fromEither(CommandId.fresh())
+          halted <- connection.progressUpload(
+                      haltCommand,
+                      None,
+                      mounted.ref,
+                      UploadEntryRef("entry"),
+                      50
+                    )
+          haltReply    <- outputs.take
+          haltedOrder  <- order.getAndSet(Vector.empty)
+          haltedModel  <- connection.inspectModel
+          haltedTree   <- connection.inspectTree
+          haltedAt     <- callbackAt.get
+          _            <- haltGuard.set(false)
+          continueCommand <- ZIO.fromEither(CommandId.fresh())
+          continuing <- connection
+                          .progressUpload(
+                            continueCommand,
+                            None,
+                            mounted.ref,
+                            UploadEntryRef("entry"),
+                            50
+                          ).fork
+          _              <- callbackIn.await
+          inspecting     <- connection.inspectModel.fork
+          _              <- ZIO.yieldNow
+          blocked        <- inspecting.poll
+          _              <- callbackOut.succeed(())
+          continued      <- continuing.join
+          _              <- outputs.take
+          _              <- inspecting.join
+          continuedOrder <- order.getAndSet(Vector.empty)
+          continuedAt    <- callbackAt.get
+          regressingCommand <- ZIO.fromEither(CommandId.fresh())
+          regressing <- connection.progressUpload(
+                          regressingCommand,
+                          None,
+                          mounted.ref,
+                          UploadEntryRef("entry"),
+                          40
+                        )
+          _               <- outputs.take
+          regressingOrder <- order.get
+        yield assertTrue(
+          bootstrapOrder.isEmpty,
+          preflight.isRight,
+          setupOrder.isEmpty,
+          halted == Right(()),
+          haltReply match
+            case ConnectionOutput.Reply(`haltCommand`, RenderDelta.Empty, _) => true
+            case _                                                            => false,
+          haltedOrder == Vector("guard"),
+          haltedAt.isEmpty,
+          haltedModel eq mounted,
+          haltedTree == beforeTree,
+          continued == Right(()),
+          blocked.isEmpty,
+          continuedOrder == Vector("guard", "onProgress"),
+          continuedAt.contains(50),
+          regressing == Left(UploadRegistryError.InvalidProgress(UploadEntryRef("entry"), 50, 40)),
+          regressingOrder.isEmpty
+        )
+      }
+    },
     test("progress callback failure is reported after the updated state commits") {
       ZIO.scoped {
         val callbackFailure = Exception("progress callback failed")

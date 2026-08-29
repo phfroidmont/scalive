@@ -445,8 +445,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
     for
       mutation <- uploadProgressMutation(component, uploadRef, entryRef, progress)
       result   <- submitUpload(command, mutation)
-      value    <- runUploadProgressCallback(result)
-    yield value
+    yield result
 
   private[connection] def syncUploadProgress(
     component: Option[ComponentInstanceId],
@@ -457,23 +456,28 @@ final private[scalive] class RootConnection[Msg, Model] private (
     for
       mutation <- uploadProgressMutation(component, uploadRef, entryRef, progress)
       result   <- mutateUpload(mutation, publish = false)
-      value    <- runUploadProgressCallback(result)
-    yield value
+    yield result
 
   private def uploadProgressMutation(
     component: Option[ComponentInstanceId],
     uploadRef: scalive.upload.UploadRef,
     entryRef: scalive.upload.UploadEntryRef,
     progress: Int
-  ): UIO[UploadMutation[Either[UploadRegistryError, Task[Unit]]]] =
+  ): UIO[UploadMutation[Either[UploadRegistryError, Unit]]] =
     val owner = component.fold[OwnerId](OwnerId.Root(lifecycle))(OwnerId.Component(lifecycle, _))
-    UploadMutation.make { registry =>
+    def accepted(registry: UploadRegistry): Boolean =
+      registry.resolveEntry(owner, epoch, uploadRef, entryRef) match
+        case Left(_)      => false
+        case Right(token) =>
+          registry.progress(token.asInstanceOf[UploadEntryToken[Any]], progress).isRight
+
+    UploadMutation.guardedWhen(Right(()): Either[UploadRegistryError, Unit])(accepted) { registry =>
       registry.resolveEntry(owner, epoch, uploadRef, entryRef) match
         case Left(error) =>
           ZIO.succeed(
             UploadMutationResult(
               registry,
-              Left(error): Either[UploadRegistryError, Task[Unit]],
+              Left(error): Either[UploadRegistryError, Unit],
               reply = Some(UploadControlError(error.toString))
             )
           )
@@ -483,7 +487,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
               ZIO.succeed(
                 UploadMutationResult(
                   registry,
-                  Left(error): Either[UploadRegistryError, Task[Unit]],
+                  Left(error): Either[UploadRegistryError, Unit],
                   reply = Some(UploadControlError(error.toString))
                 )
               )
@@ -498,18 +502,12 @@ final private[scalive] class RootConnection[Msg, Model] private (
               ZIO.succeed(
                 UploadMutationResult(
                   next,
-                  Right(callback): Either[UploadRegistryError, Task[Unit]]
+                  Right(()): Either[UploadRegistryError, Unit],
+                  afterCommit = callback
                 )
               )
     }
   end uploadProgressMutation
-
-  private def runUploadProgressCallback(
-    result: Either[UploadRegistryError, Task[Unit]]
-  ): IO[ConnectionError, Either[UploadRegistryError, Unit]] = result match
-    case Left(error)     => ZIO.succeed(Left(error))
-    case Right(callback) =>
-      callback.mapError(ConnectionError.UploadFailed.apply).as(Right(()))
 
   private def completeUploadEntry(
     entry: UploadEntryToken[?],
@@ -852,50 +850,55 @@ final private[scalive] class RootConnection[Msg, Model] private (
               reply -> output.command.fold(current)(current - _)
             }.flatMap { uploadReply =>
               val correlatedCommand = output.command.filter(pendingCommands.contains)
-              val connectionOutput  =
-                if isFirst then
-                  output.navigation.fold[ConnectionOutput](
-                    ConnectionOutput.Joined(output.delta, output.effects)
-                  )(
-                    ConnectionOutput.JoinedNavigation(output.delta, _, output.effects)
+              val connectionOutput  = output.termination match
+                case Some(SessionTermination.Disconnect(reason)) =>
+                  correlatedCommand.fold[ConnectionOutput](ConnectionOutput.Disconnect(reason))(
+                    ConnectionOutput.ReplyDisconnect(_, reason)
                   )
-                else
-                  (correlatedCommand, output.navigation) match
-                    case (Some(command), Some(navigation)) =>
-                      output.reply.fold[ConnectionOutput](
-                        ConnectionOutput.ReplyNavigation(
-                          command,
-                          output.delta,
-                          navigation,
-                          output.effects
-                        )
-                      )(reply =>
-                        ConnectionOutput.ReplyNavigationWithPayload(
-                          command,
-                          output.delta,
-                          navigation,
-                          output.effects,
-                          reply
-                        )
-                      )
-                    case (Some(command), None) =>
-                      uploadReply.fold[ConnectionOutput](
+                case None =>
+                  if isFirst then
+                    output.navigation.fold[ConnectionOutput](
+                      ConnectionOutput.Joined(output.delta, output.effects)
+                    )(
+                      ConnectionOutput.JoinedNavigation(output.delta, _, output.effects)
+                    )
+                  else
+                    (correlatedCommand, output.navigation) match
+                      case (Some(command), Some(navigation)) =>
                         output.reply.fold[ConnectionOutput](
-                          ConnectionOutput.Reply(command, output.delta, output.effects)
-                        )(reply =>
-                          ConnectionOutput.ReplyWithPayload(
+                          ConnectionOutput.ReplyNavigation(
                             command,
                             output.delta,
+                            navigation,
+                            output.effects
+                          )
+                        )(reply =>
+                          ConnectionOutput.ReplyNavigationWithPayload(
+                            command,
+                            output.delta,
+                            navigation,
                             output.effects,
                             reply
                           )
                         )
-                      )(reply =>
-                        ConnectionOutput.UploadReply(command, output.delta, output.effects, reply)
-                      )
-                    case (None, Some(navigation)) =>
-                      ConnectionOutput.DiffNavigation(output.delta, navigation, output.effects)
-                    case (None, None) => ConnectionOutput.Diff(output.delta, output.effects)
+                      case (Some(command), None) =>
+                        uploadReply.fold[ConnectionOutput](
+                          output.reply.fold[ConnectionOutput](
+                            ConnectionOutput.Reply(command, output.delta, output.effects)
+                          )(reply =>
+                            ConnectionOutput.ReplyWithPayload(
+                              command,
+                              output.delta,
+                              output.effects,
+                              reply
+                            )
+                          )
+                        )(reply =>
+                          ConnectionOutput.UploadReply(command, output.delta, output.effects, reply)
+                        )
+                      case (None, Some(navigation)) =>
+                        ConnectionOutput.DiffNavigation(output.delta, navigation, output.effects)
+                      case (None, None) => ConnectionOutput.Diff(output.delta, output.effects)
 
               val ordered = connectionOutput match
                 case ConnectionOutput.Reply(command, _, _) => awaitEarlierCommands(command)
@@ -907,7 +910,8 @@ final private[scalive] class RootConnection[Msg, Model] private (
                   awaitEarlierCommands(command)
                 case ConnectionOutput.ReplyNavigationWithPayload(command, _, _, _, _) =>
                   awaitEarlierCommands(command)
-                case _ => ZIO.unit
+                case ConnectionOutput.ReplyDisconnect(command, _) => awaitEarlierCommands(command)
+                case _                                            => ZIO.unit
 
               observer.bindOutput(output, connectionOutput)
               ordered *> writer
@@ -928,13 +932,16 @@ final private[scalive] class RootConnection[Msg, Model] private (
                               complete(command, Left(ConnectionError.Closed))
                             case ConnectionOutput.ReplyNavigationWithPayload(command, _, _, _, _) =>
                               complete(command, Left(ConnectionError.Closed))
+                            case ConnectionOutput.ReplyDisconnect(command, _) =>
+                              complete(command, Left(ConnectionError.Closed))
                             case ConnectionOutput.Rejected(command, _) =>
                               complete(command, Left(ConnectionError.Closed))
                             case ConnectionOutput.Joined(_, _) |
                                 ConnectionOutput.JoinedNavigation(_, _, _) =>
                               bootstrapReady.fail(ConnectionError.Closed).unit
                             case ConnectionOutput.Diff(_, _) |
-                                ConnectionOutput.DiffNavigation(_, _, _) =>
+                                ConnectionOutput.DiffNavigation(_, _, _) |
+                                ConnectionOutput.Disconnect(_) =>
                               ZIO.unit
                       }.as(false),
                   _ =>
@@ -951,8 +958,11 @@ final private[scalive] class RootConnection[Msg, Model] private (
                         complete(command, Right(()))
                       case ConnectionOutput.ReplyNavigationWithPayload(command, _, _, _, _) =>
                         complete(command, Right(()))
+                      case ConnectionOutput.ReplyDisconnect(command, _) =>
+                        complete(command, Right(()))
                       case ConnectionOutput.Rejected(command, _) => complete(command, Right(()))
-                      case ConnectionOutput.Diff(_, _) | ConnectionOutput.DiffNavigation(_, _, _) =>
+                      case ConnectionOutput.Diff(_, _) | ConnectionOutput.DiffNavigation(_, _, _) |
+                          ConnectionOutput.Disconnect(_) =>
                         ZIO.unit
                     val finish = connectionOutput match
                       case ConnectionOutput.JoinedNavigation(_, navigation, _)
@@ -966,6 +976,9 @@ final private[scalive] class RootConnection[Msg, Model] private (
                         kernel.awaitTermination.unit *> close
                       case ConnectionOutput.DiffNavigation(_, navigation, _)
                           if closeAfterNavigate && !navigation.kind.isPatch =>
+                        kernel.awaitTermination.unit *> close
+                      case ConnectionOutput.ReplyDisconnect(_, _) |
+                          ConnectionOutput.Disconnect(_) =>
                         kernel.awaitTermination.unit *> close
                       case _ => ZIO.unit
                     (signal *> finish).as(false)
@@ -1254,6 +1267,7 @@ private[scalive] object RootConnection:
                       model <- ZIO.suspend(lifecycle.handleMessage(state.model, context, message))
                       draft <- rootDraft(state, lifecycle, journal, model, state.url, ownsPageTitle)
                     yield draft,
+                  guardConnectedTurn = lifecycle.connectedTurnGuard.run(()).either,
                   handleEvent = Some((draft, message, _) =>
                     runEventTurn(
                       draft,
@@ -1294,21 +1308,23 @@ private[scalive] object RootConnection:
                       Some(message)
                     )
                   ),
-                  handleUpload =
-                    Some((state, command, mutation) =>
-                      mutation.execute(state.uploads).flatMap { result =>
-                        ZIO.foreachDiscard(result.reply)(reply =>
-                          uploadReplies.update(_.updated(command, reply))
-                        ) *>
-                          ZIO.succeed(
-                            TurnDraft(
-                              state.copy(uploads = result.registry),
-                              uploadCommit = result.commit,
-                              uploadRollback = result.rollback
-                            )
+                  handleUpload = Some((state, command, mutation) =>
+                    mutation.execute(state.uploads).flatMap { result =>
+                      ZIO.foreachDiscard(result.reply)(reply =>
+                        uploadReplies.update(_.updated(command, reply))
+                      ) *>
+                        ZIO.succeed(
+                          TurnDraft(
+                            state.copy(uploads = result.registry),
+                            uploadCommit = result.commit,
+                            uploadRollback = result.rollback,
+                            uploadCompletion = mutation.complete(result)
                           )
-                      }
-                    ),
+                        )
+                    }
+                  ),
+                  guardUpload =
+                    (state, mutation) => mutation.requiresConnectedTurnGuard(state.uploads),
                   interceptClientEvent = (state, event) =>
                     interceptRootEvent(
                       state,

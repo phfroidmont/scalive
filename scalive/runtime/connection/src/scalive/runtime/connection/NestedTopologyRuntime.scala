@@ -5,13 +5,13 @@ import zio.Semaphore
 import zio.UIO
 import zio.ZIO
 
-import scalive.LiveView
 import scalive.runtime.contracts.*
 import scalive.runtime.topology.AttachedNestedLifecycle
 import scalive.runtime.topology.NestedRegistrationCandidate
 import scalive.runtime.topology.NestedTopologyNavigation
 import scalive.runtime.topology.NestedTopologyPlan
 import scalive.runtime.topology.NestedTopologyState
+import scalive.{LiveConnectedTurnGuard, LiveView}
 
 private[scalive] enum NestedJoinAdmissionError:
   case RegistrationUnavailable(registration: NestedRegistrationId)
@@ -25,14 +25,23 @@ sealed private[scalive] trait NestedJoinReservation:
 
   def registration: NestedRegistration
   def create(): LiveView[Message, Model]
+  def connectedTurnGuard: LiveConnectedTurnGuard[Unit]
 
 private[connection] object NestedJoinReservation:
-  def apply(registration0: NestedRegistration): NestedJoinReservation =
-    Value(registration0, registration0.factory)
+  def apply(
+    registration0: NestedRegistration,
+    connectedTurnGuard: LiveConnectedTurnGuard[Unit]
+  ): NestedJoinReservation =
+    Value(
+      registration0,
+      registration0.factory,
+      connectedTurnGuard
+    )
 
   final private case class Value[Message0, Model0](
     registration: NestedRegistration,
-    factory: NestedLifecycleFactory { type Message = Message0; type Model = Model0 })
+    factory: NestedLifecycleFactory { type Message = Message0; type Model = Model0 },
+    connectedTurnGuard: LiveConnectedTurnGuard[Unit])
       extends NestedJoinReservation:
     type Message = Message0
     type Model   = Model0
@@ -73,6 +82,13 @@ final private[scalive] class NestedTopologyRuntime private (
     }
 
   def preparer(parentDomId: String, loading: Boolean): NestedTopologyPreparer =
+    preparer(parentDomId, loading, LiveConnectedTurnGuard.empty)
+
+  def preparer(
+    parentDomId: String,
+    loading: Boolean,
+    connectedTurnGuard: LiveConnectedTurnGuard[Unit]
+  ): NestedTopologyPreparer =
     new NestedTopologyPreparer:
       def prepare(
         parentLifecycle: LifecycleId,
@@ -86,7 +102,11 @@ final private[scalive] class NestedTopologyRuntime private (
           parentLifecycle,
           parentEpoch,
           parentRevision,
-          requirements
+          requirements.map(requirement =>
+            if connectedTurnGuard.isEmpty then requirement
+            else requirement.copy(sticky = false)
+          ),
+          connectedTurnGuard
         )
 
   private def prepareTopology(
@@ -95,7 +115,8 @@ final private[scalive] class NestedTopologyRuntime private (
     parentLifecycle: LifecycleId,
     parentEpoch: Epoch,
     parentRevision: TurnRevision,
-    requirements: Vector[NestedLifecycleRequirement]
+    requirements: Vector[NestedLifecycleRequirement],
+    connectedTurnGuard: LiveConnectedTurnGuard[Unit]
   ): IO[NestedTopologyError, PreparedNestedTopology] =
     withGate {
       if closed then ZIO.fail(NestedTopologyError.StaleParent(parentLifecycle, parentEpoch))
@@ -121,8 +142,13 @@ final private[scalive] class NestedTopologyRuntime private (
                       else None
                     val claims = claimsFor(registration, childLifecycle)
                     credentialIssuer
-                      .issue(claims)
-                      .map(credentials => registration -> ActiveMetadata(new Object(), credentials))
+                      .issue(claims).map(credentials =>
+                        registration -> ActiveMetadata(
+                          new Object(),
+                          credentials,
+                          connectedTurnGuard
+                        )
+                      )
               }.map { candidateMetadata =>
                 val resolutions = candidateMetadata.map { case (registration, active) =>
                   NestedRegistrationResolution(
@@ -175,7 +201,11 @@ final private[scalive] class NestedTopologyRuntime private (
         case Some(active) if pending.contains(active.id) =>
           ZIO.fail(NestedJoinAdmissionError.RegistrationAlreadyPending(active.id))
         case Some(active) if metadata.contains(active.id) =>
-          val reservation = NestedJoinReservation(active)
+          val activeMetadata = metadata(active.id)
+          val reservation    = NestedJoinReservation(
+            active,
+            activeMetadata.connectedTurnGuard
+          )
           pending = pending.updated(active.id, reservation)
           ZIO.succeed(reservation)
         case Some(_) =>
@@ -387,7 +417,8 @@ end NestedTopologyRuntime
 private[scalive] object NestedTopologyRuntime:
   final private case class ActiveMetadata(
     instanceToken: Object,
-    credentials: IssuedNestedCredentials)
+    credentials: IssuedNestedCredentials,
+    connectedTurnGuard: LiveConnectedTurnGuard[Unit])
 
   private enum PreparationStatus:
     case Fresh, Activated, Released, Retired

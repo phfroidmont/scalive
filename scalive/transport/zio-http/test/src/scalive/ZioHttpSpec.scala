@@ -9,7 +9,7 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
 
-import scalive.protocol.phoenix.{PhoenixRef, PhoenixRenderedEncoder, RootJoin}
+import scalive.protocol.phoenix.{PhoenixEnvelope, PhoenixRef, PhoenixRenderedEncoder, RootJoin}
 import scalive.render.{BindingId, RenderDelta}
 import scalive.runtime.connection.{ConnectionConfig, ConnectionOutput, ConnectionSupervisor, RootConnection, RootConnectionMetadata}
 import scalive.runtime.contracts.*
@@ -1384,8 +1384,351 @@ object ZioHttpSpec extends ZIOSpecDefault:
         replacement.content != firstCookie.content,
         replacementValid.isRight
       )
+    },
+    test("public session and route guards capture connected context and wrap browser events only") {
+      val event  = BrowserToServerEvent[Json]("guarded-event")
+      val events = scala.collection.mutable.ArrayBuffer.empty[String]
+      val sessionAspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+        _ => ZIO.succeed("session-claim" -> "session-disconnected"),
+        (_, _) => ZIO.succeed("session-connected")
+      )
+      val routeAspect = LiveMountAspect.make[Any, Unit, String, String, String](
+        (_, input) => ZIO.succeed("route-claim" -> s"route-disconnected:$input"),
+        (_, _, input) => ZIO.succeed(s"route-connected:$input")
+      )
+      val route = scalive.live
+        .withMountAspect(routeAspect)
+        .guardConnectedTurns((context: (String, String)) =>
+          ZIO.succeed(events += s"route-guard:${context._2}").unit
+        ) { (_, _, context: (String, String)) =>
+          events += s"factory:${context._1}:${context._2}"
+          new LiveView[Nothing, Unit]:
+            override val hooks = LiveHooks.empty[Nothing, Unit]
+              .onBrowserEvent(event)((model, _, _) =>
+                ZIO.succeed(events += "handler").as(model)
+              )
+            def mount(ctx: MountContext) = ZIO.succeed(events += "mount").unit
+            def handleMessage(model: Unit, ctx: MessageContext): Nothing => Task[Unit] = identity
+            def view(model: Signal[Unit]) = div("guarded")
+        }
+      val application = scalive.Live.router(
+        scalive.Live
+          .session("guard-order")
+          .withMountAspect(sessionAspect)
+          .guardConnectedTurns((context: String) =>
+            ZIO.succeed(events += s"session-guard:$context").unit
+          )(route)
+      )
+
+      withServer(application) { port =>
+        for
+          page <- bootstrap(port)
+          disconnectedEvents = events.toVector
+          _ = events.clear()
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          connectedBootstrapEvents = events.toVector
+          _ = events.clear()
+          reply <- sendEvent(socket, page, "2", event.value)
+          guardedEvents = events.toVector
+          _ <- socket.close
+        yield assertTrue(
+          disconnectedEvents == Vector(
+            "factory:session-disconnected:route-disconnected:session-disconnected",
+            "mount"
+          ),
+          status(joined) == "ok",
+          connectedBootstrapEvents == Vector(
+            "factory:session-connected:route-connected:session-connected",
+            "mount"
+          ),
+          status(reply) == "ok",
+          guardedEvents == Vector(
+            "session-guard:session-connected",
+            "route-guard:route-connected:session-connected",
+            "handler"
+          )
+        )
+      }
+    },
+    test("reload guard returns a full redirect to the current URL without running the event") {
+      val event        = BrowserToServerEvent[Json]("reload-event")
+      val handlerCalls = AtomicInteger()
+      val view = new LiveView[Nothing, Int]:
+        override val hooks = LiveHooks.empty[Nothing, Int]
+          .onBrowserEvent(event)((model, _, _) =>
+            ZIO.succeed(handlerCalls.incrementAndGet()).as(model + 1)
+          )
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext): Nothing => Task[Int] = identity
+        def view(model: Signal[Int]) = div(model.map(_.toString))
+      val application = scalive.Live.router(
+        (scalive.live / "reload")
+          .guardConnectedTurns(_ => ZIO.fail(LiveConnectedTurnFailure.reload("test")))(view)
+      )
+
+      withServer(application) { port =>
+        for
+          page   <- bootstrap(port, "/reload?tab=one")
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          reply  <- sendEvent(socket, page, "2", event.value)
+          body    = response(reply)
+          _      <- socket.close
+        yield assertTrue(
+          status(joined) == "ok",
+          status(reply) == "ok",
+          body == Json.Obj("redirect" -> Json.Obj("to" -> Json.Str("/reload?tab=one"))),
+          handlerCalls.get() == 0
+        )
+      }
+    },
+    test("disconnect guard settles the event, closes the socket, and cleans up the lifecycle") {
+      val event    = BrowserToServerEvent[Json]("disconnect-event")
+      val cleanup  = AtomicInteger()
+      val handlers = AtomicInteger()
+      val task     = AsyncKey[Unit]("disconnect-cleanup")
+      val view = new LiveView[Unit, Int]:
+        override val hooks = LiveHooks.empty[Unit, Int]
+          .onBrowserEvent(event)((model, _, _) =>
+            ZIO.succeed(handlers.incrementAndGet()).as(model + 1)
+          )
+        def mount(ctx: MountContext) = ctx.connection match
+          case Connection.Disconnected => ZIO.succeed(0)
+          case Connection.Connected(connected) =>
+            connected.async
+              .start(task)(ZIO.never.ensuring(ZIO.succeed(cleanup.incrementAndGet()).unit))(_ => ())
+              .as(0)
+        def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] = _ => ZIO.succeed(model)
+        def view(model: Signal[Int]) = div(model.map(_.toString))
+      val application = scalive.Live.router(
+        scalive.live
+          .guardConnectedTurns(_ => ZIO.fail(LiveConnectedTurnFailure.disconnect("test")))(view)
+      )
+
+      zio.test.Live.live(withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          reply <- sendEvent(socket, page, "2", event.value)
+          _ <- socket.closed.await.timeoutFail(Exception("disconnect guard did not close socket"))(
+                 5.seconds
+               )
+          code    <- socket.closeCode.await.timeout(100.millis)
+          cleaned <- ZIO.succeed(cleanup.get()).repeatUntil(_ == 1)
+        yield assertTrue(
+          status(joined) == "ok",
+          status(reply) == "ok",
+          response(reply) == Json.Obj("diff" -> Json.Obj.empty),
+          code.forall(_ == ZioHttp.DisconnectCloseCode),
+          handlers.get() == 0,
+          cleaned == 1
+        )
+      })
+    },
+    test("disconnect from a server turn drains the preceding event reply") {
+      zio.test.Live.live(for
+        completion <- Promise.make[Nothing, Unit]
+        started    <- Promise.make[Nothing, Unit]
+        event       = BrowserToServerEvent[Json]("disconnect-after-event")
+        guardCalls  = AtomicInteger()
+        disconnect  = AtomicInteger()
+        task        = AsyncKey[Unit]("disconnect-after-event")
+        view = new LiveView[Unit, Unit]:
+                 override val hooks = LiveHooks.empty[Unit, Unit]
+                   .onBrowserEvent(event)((model, _, _) =>
+                     started.succeed(()).as(model)
+                   )
+                 def mount(ctx: MountContext) = ctx.connection match
+                   case Connection.Disconnected => ZIO.unit
+                   case Connection.Connected(connected) =>
+                     connected.async.start(task)(completion.await)(_ => ())
+                 def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ =>
+                   ZIO.succeed(model)
+                 def view(model: Signal[Unit]) = div("disconnect-after-event")
+        application = scalive.Live.router(
+                        scalive.live.guardConnectedTurns(_ =>
+                          ZIO.succeed(guardCalls.incrementAndGet()).flatMap(_ =>
+                            if disconnect.get() == 0 then ZIO.unit
+                            else ZIO.fail(LiveConnectedTurnFailure.disconnect("server turn"))
+                          )
+                        )(view)
+                      )
+        result <- withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          replying <- sendEvent(socket, page, "2", event.value).fork
+          _        <- started.await
+          _        <- ZIO.succeed(disconnect.set(1))
+          _        <- completion.succeed(())
+          reply <- replying.join.timeoutFail(Exception("preceding event reply was dropped"))(
+                     5.seconds
+                   )
+          closed <- socket.closed.await.timeout(5.seconds)
+        yield assertTrue(
+          status(joined) == "ok",
+          status(reply) == "ok",
+          response(reply) == Json.Obj("diff" -> Json.Obj.empty),
+          guardCalls.get() == 2,
+          closed.isDefined
+        )
+      }
+      yield result)
     }
   )
+
+  private final case class Bootstrap(
+    rootId: String,
+    session: String,
+    static: String,
+    csrf: String,
+    cookie: Cookie.Request,
+    url: String)
+
+  private final case class SocketClient(
+    channel: WebSocketChannel,
+    incoming: Queue[PhoenixEnvelope],
+    closed: Promise[Nothing, Unit],
+    closeCode: Promise[Nothing, Int]):
+    def send(envelope: PhoenixEnvelope): Task[Unit] =
+      channel.send(ChannelEvent.read(WebSocketFrame.text(PhoenixEnvelope.encode(envelope))))
+
+    def receive: Task[PhoenixEnvelope] =
+      incoming.take.timeoutFail(Exception("websocket reply timed out"))(5.seconds)
+
+    def receiveReply(ref: String, topic: String): Task[PhoenixEnvelope] =
+      receive.flatMap { envelope =>
+        if envelope.ref == PhoenixRef.Value(ref) && envelope.topic == topic then ZIO.succeed(envelope)
+        else receiveReply(ref, topic)
+      }
+
+    def close: UIO[Unit] =
+      channel.send(ChannelEvent.read(WebSocketFrame.close(1000, None))).ignore
+
+  private def withServer[A](application: LiveApplication[Any])(
+    runTest: Int => ZIO[Client & Scope, Throwable, A]
+  ): Task[A] =
+    for
+      started <- Promise.make[Nothing, Int]
+      _ <- (Server
+             .install(ZioHttp.routes(application, config))
+             .tap(started.succeed)
+             .zipRight(ZIO.never)
+             .provideLayer(Server.defaultWith(_.onAnyOpenPort)))
+             .forkDaemon
+      port <- started.await
+      completed <- Promise.make[Nothing, Exit[Throwable, A]]
+      _ <- (runTest(port).exit.flatMap(completed.succeed).zipRight(ZIO.never))
+             .provideLayer(Scope.default ++ Client.default)
+             .forkDaemon
+      result <- completed.await.flatMap(ZIO.suspendSucceed(_))
+    yield result
+
+  private def bootstrap(port: Int, path: String = "/"): ZIO[Client, Throwable, Bootstrap] =
+    for
+      response <- Client.batched(Request.get(URL.decode(s"http://127.0.0.1:$port$path").toOption.get))
+      body     <- response.body.asString
+      rootId   <- requiredAttribute(body, "id")
+      session  <- requiredAttribute(body, "data-phx-session")
+      static   <- requiredAttribute(body, "data-phx-static")
+      csrf     <- requiredAttribute(body, "content")
+      cookie <- ZIO
+                  .fromOption(
+                    response.headers(Header.SetCookie).map(_.value)
+                      .find(_.name == "_scalive_csrf")
+                  ).orElseFail(AssertionError("missing CSRF cookie"))
+    yield Bootstrap(rootId, session, static, csrf, Cookie.Request(cookie.name, cookie.content), path)
+
+  private def connect(port: Int, bootstrap: Bootstrap): ZIO[Client & Scope, Throwable, SocketClient] =
+    for
+      incoming   <- Queue.unbounded[PhoenixEnvelope]
+      registered <- Promise.make[Nothing, WebSocketChannel]
+      closed     <- Promise.make[Nothing, Unit]
+      closeCode  <- Promise.make[Nothing, Int]
+      app = Handler.webSocket { channel =>
+              channel.receiveAll {
+                case ChannelEvent.UserEventTriggered(ChannelEvent.UserEvent.HandshakeComplete) =>
+                  registered.succeed(channel).unit
+                case ChannelEvent.Read(WebSocketFrame.Text(text)) =>
+                  ZIO.fromEither(PhoenixEnvelope.decode(text).left.map(Exception(_))).flatMap(
+                    incoming.offer
+                  ).unit
+                case ChannelEvent.Read(frame: WebSocketFrame.Close) =>
+                  closeCode.succeed(frame.status).unit *> closed.succeed(()).unit
+                case ChannelEvent.Unregistered => closed.succeed(()).unit
+                case ChannelEvent.ExceptionCaught(cause) => ZIO.fail(cause)
+                case _                                   => ZIO.unit
+              }
+            }
+      url = URL.decode(
+              s"ws://127.0.0.1:$port/live/websocket?_csrf_token=${bootstrap.csrf}"
+            ).toOption.get
+      _ <- ZIO
+             .serviceWithZIO[Client](
+               _.url(url)
+                 .addHeader(
+                   Header.Custom("cookie", s"${bootstrap.cookie.name}=${bootstrap.cookie.content}")
+                 )
+                 .socket(WebSocketApp(app.handler))
+             ).forkScoped
+      channel <- registered.await
+    yield SocketClient(channel, incoming, closed, closeCode)
+
+  private def joinRoot(socket: SocketClient, bootstrap: Bootstrap): Task[PhoenixEnvelope] =
+    val topic = s"lv:${bootstrap.rootId}"
+    socket.send(
+      PhoenixEnvelope(
+        PhoenixRef.Value("root-join"),
+        PhoenixRef.Value("1"),
+        topic,
+        "phx_join",
+        Json.Obj(
+          "url"      -> Json.Str(bootstrap.url),
+          "redirect" -> Json.Null,
+          "flash"    -> Json.Null,
+          "session"  -> Json.Str(bootstrap.session),
+          "static"   -> Json.Str(bootstrap.static),
+          "params"   -> Json.Obj.empty,
+          "sticky"   -> Json.Bool(false)
+        )
+      )
+    ) *> socket.receiveReply("1", topic)
+
+  private def sendEvent(
+    socket: SocketClient,
+    bootstrap: Bootstrap,
+    ref: String,
+    event: String
+  ): Task[PhoenixEnvelope] =
+    val topic = s"lv:${bootstrap.rootId}"
+    socket.send(
+      PhoenixEnvelope(
+        PhoenixRef.Value("root-join"),
+        PhoenixRef.Value(ref),
+        topic,
+        "event",
+        Json.Obj(
+          "type"  -> Json.Str("click"),
+          "event" -> Json.Str(event),
+          "value" -> Json.Obj.empty,
+          "cid"   -> Json.Null
+        )
+      )
+    ) *> socket.receiveReply(ref, topic)
+
+  private def response(envelope: PhoenixEnvelope): Json.Obj = envelope.payload match
+    case Json.Obj(fields) => fields.toMap.apply("response").asInstanceOf[Json.Obj]
+    case other            => throw AssertionError(s"expected reply object, got $other")
+
+  private def status(envelope: PhoenixEnvelope): String = envelope.payload match
+    case Json.Obj(fields) => fields.toMap.apply("status").asString.get
+    case other            => throw AssertionError(s"expected status reply, got $other")
+
+  private def requiredAttribute(html: String, name: String): Task[String] =
+    ZIO.fromOption(attribute(html, name)).orElseFail(AssertionError(s"missing $name attribute"))
 
   private def attribute(html: String, name: String): Option[String] =
     val pattern = (java.util.regex.Pattern.quote(name) + "=\"([^\"]+)\"").r

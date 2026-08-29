@@ -332,10 +332,15 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
     val effects = output match
       case ConnectionOutput.Joined(_, effects)                 => effects
       case ConnectionOutput.Reply(_, _, effects)               => effects
+      case ConnectionOutput.ReplyWithPayload(_, _, effects, _) => effects
+      case ConnectionOutput.UploadReply(_, _, effects, _)      => effects
       case ConnectionOutput.Diff(_, effects)                    => effects
       case ConnectionOutput.JoinedNavigation(_, _, effects)    => effects
       case ConnectionOutput.ReplyNavigation(_, _, _, effects)  => effects
+      case ConnectionOutput.ReplyNavigationWithPayload(_, _, _, effects, _) => effects
       case ConnectionOutput.DiffNavigation(_, _, effects)      => effects
+      case ConnectionOutput.ReplyDisconnect(_, _) | ConnectionOutput.Disconnect(_) =>
+        return Vector.empty
       case ConnectionOutput.Rejected(_, _)                     => return Vector.empty
     effects.clientEvents.collect {
       case scalive.runtime.kernel.ClientEffect("managed-async", Json.Str(value)) => value

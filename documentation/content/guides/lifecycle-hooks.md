@@ -1,6 +1,6 @@
 {%
 title = "Lifecycle hooks"
-description = "Intercept root and component lifecycle stages with ordered static or dynamic hooks, explicit continuation, and lifecycle-owned cleanup."
+description = "Guard complete connected turns or intercept individual root and component lifecycle stages with ordered policy and lifecycle-owned cleanup."
 order = 41
 section = guides
 group = "Async and lifecycle"
@@ -42,6 +42,81 @@ Scalive provides these stages:
 
 Components do not have `params` or `info` stages. Root and component hook
 registries are separate even when the stage names match.
+
+## Guard Every Connected Application Turn {#connected-turn-guards}
+
+Use
+@:apiSymbol(def:scalive.LiveRouteMountAspectBuilder.guardConnectedTurns)`guardConnectedTurns`@:@
+at a routing boundary when policy must run before all connected application
+work, rather than at only one hook stage. Declare a route guard after the mount
+aspects that produce its context. Succeed to continue; fail through the typed
+control channel to stop the turn:
+
+```scala
+val accountRoute = (live / "account")
+  .withMountAspect(loadAccountAccess)
+  .guardConnectedTurns((access: AccountAccess) =>
+    access.isActive.flatMap {
+      case true  => ZIO.unit
+      case false =>
+        ZIO.fail(LiveConnectedTurnFailure.reload("account access changed"))
+    }
+  )(
+    AccountLiveView()
+  )
+```
+
+A named session can likewise declare guards after admission:
+
+```scala
+val authenticated = Live
+  .session("authenticated")
+  .withAdmission(authenticatedAdmission)(_.sessionId)
+  .guardConnectedTurns((session: ConnectedSession) => session.revalidate)(
+    accountRoute
+  )
+```
+
+The callback returns `IO[LiveConnectedTurnFailure, Unit]`, using
+@:apiSymbol(enum:scalive.LiveConnectedTurnFailure)`LiveConnectedTurnFailure`@:@
+as its typed control channel. `ZIO.unit` means **Continue** and `ZIO.fail(...)`
+selects one of these controlled outcomes:
+
+- `LiveConnectedTurnFailure.halt`;
+- `redirect(location)` for a typed `LiveLocation`;
+- `redirectUnsafe(url)` for an explicitly unsafe `URL`;
+- `reload` or `reload(reason)`; and
+- `disconnect` or `disconnect(reason)`.
+
+Session guards run before route guards. Within each boundary, guards run in
+declaration order. All run before hooks, handlers, and diff generation. Nested
+views inherit their parent declarations. If a nested view has guards, Scalive
+makes an otherwise sticky nested view non-sticky so reconnect or navigation
+safely remounts it under current policy.
+
+The guarded scope is exactly connected application turns: root and component
+events (including upload-progress events), params, server messages and
+continuations, async and subscription delivery, and component updates. Guards
+also run before an accepted upload progress report can update state and invoke
+`LiveUploadProgress`; the callback remains serialized in that turn after the
+progress state commits. They do not run for bootstrap or connected mount,
+disconnected rendering, upload bookkeeping that cannot invoke application
+callbacks, after-render hooks, or framework cleanup.
+
+**Halt** leaves the last committed model in place and schedules no render or
+after-render work. The transport may still send the protocol acknowledgement
+needed to settle the incoming operation. **Reload** performs a full HTTP
+navigation to the URL governing the turn. During patch acknowledgement that is
+the pending destination; otherwise it is the lifecycle's committed URL.
+**Disconnect** closes the physical socket and therefore every lifecycle sharing
+it; the client then reconnects and mounts again. Reload and disconnect reasons
+stay on the server and are not browser-facing error text.
+
+Phoenix LiveView offers phase-specific hooks that can enforce policy at selected
+callback stages. Connected-turn guards address the related need for one check
+across Scalive's complete connected application-turn boundary. They complement
+Scalive lifecycle hooks; this is a behavioral relationship, not a claim that
+the callback APIs or every phase map one-to-one with upstream.
 
 ## Declare Static Root Hooks {#static-root-hooks}
 
@@ -252,9 +327,7 @@ hook when its policy no longer applies.
 
 ## Related Tasks {#related-tasks}
 
-Use [Browser commands, events, and hooks](browser-integration.md) for JavaScript
-hooks and typed browser payloads. Use
-[Asynchronous work and subscriptions](async-work-and-subscriptions.md) for
-lifecycle-owned tasks and streams, and
-[Stateful components and communication](components-and-communication.md) for
-component identity, updates, and outputs.
+- Apply guards to session revocation with [Authentication and sessions](authentication.md#revalidate-connected-turns).
+- Use [Browser commands, events, and hooks](browser-integration.md) for JavaScript hooks and typed browser payloads.
+- Own tasks and streams with [Asynchronous work and subscriptions](async-work-and-subscriptions.md).
+- Handle component identity, updates, and outputs with [Stateful components and communication](components-and-communication.md).

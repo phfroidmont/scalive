@@ -21,6 +21,7 @@ import scalive.LiveAsyncResult
 import scalive.LiveComponent
 import scalive.LiveComponentInstance
 import scalive.LiveComponentOutputInstance
+import scalive.LiveConnectedTurnFailure
 import scalive.LiveEvent
 import scalive.SubscriptionDelivery
 import scalive.SubscriptionKey
@@ -220,6 +221,7 @@ final private[scalive] case class TurnDraft[+Msg, Model](
   resourceOperations: Vector[ResourceOperation] = Vector.empty,
   uploadCommit: UploadRetirementPlan = UploadRetirementPlan.empty,
   uploadRollback: UploadRetirementPlan = UploadRetirementPlan.empty,
+  uploadCompletion: UIO[Unit] = ZIO.unit,
   reply: Option[Json] = None)
 
 private[scalive] enum ClientEventInterception[+Msg, Model]:
@@ -234,6 +236,7 @@ private[scalive] enum ClientEventInterception[+Msg, Model]:
 final private[scalive] case class SessionLogic[Msg, Model](
   bootstrap: Task[TurnDraft[Msg, Model]],
   handle: (Model, Msg) => Task[TurnDraft[Msg, Model]],
+  guardConnectedTurn: Task[Either[LiveConnectedTurnFailure, Unit]] = ZIO.succeed(Right(())),
   handleParams: (Model, URL) => Task[TurnDraft[Msg, Model]] = (model: Model, url: URL) =>
     ZIO.succeed(TurnDraft(model, url = Some(url))),
   interceptClientEvent: (Model, LiveEvent) => Task[ClientEventInterception[Msg, Model]] = (
@@ -251,6 +254,8 @@ final private[scalive] case class SessionLogic[Msg, Model](
   handleUpload: Option[
     (Model, CommandId, UploadMutation[?]) => Task[TurnDraft[Msg, Model]]
   ] = None,
+  guardUpload: (Model, UploadMutation[?]) => Boolean = (_: Model, mutation: UploadMutation[?]) =>
+    mutation.isGuarded,
   prepare: (TurnDraft[Msg, Model], PreparedResourceRegistry) => Task[Unit] = (
     _: TurnDraft[Msg, Model],
     _: PreparedResourceRegistry
@@ -580,12 +585,16 @@ final private[scalive] case class Committed[Msg, Model](
   auxiliaryScope: CandidateScope,
   revision: TurnRevision)
 
+enum SessionTermination:
+  case Disconnect(reason: Option[String])
+
 final private[scalive] case class SessionOutput(
   command: Option[CommandId],
   delta: RenderDelta,
   navigation: Option[NavigationOutput] = None,
   effects: SessionEffects = SessionEffects(),
-  reply: Option[Json] = None)
+  reply: Option[Json] = None,
+  termination: Option[SessionTermination] = None)
 
 final private[scalive] case class DeferredSessionCommand[Msg, Model](
   command: CommandId,
@@ -639,6 +648,7 @@ final private[kernel] case class ManagedAsyncContinuation(
 
 enum SessionStage:
   case BootstrapHandler
+  case ConnectedTurnGuard
   case Handler
   case ResourcePreparation
   case TopologyPreparation

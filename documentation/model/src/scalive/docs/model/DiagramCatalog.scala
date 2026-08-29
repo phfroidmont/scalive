@@ -48,9 +48,9 @@ object DiagramCatalog:
   val RuntimeConnectedTurn = DiagramDefinition(
     id = "runtime-connected-turn",
     caption =
-      "One connected turn. Revision N remains active while the kernel prepares provisional state. Only a successful commit installs N+1; encoding and network publication happen afterward.",
+      "One connected turn. Guards may stop application work while leaving revision N unchanged. Only a successful provisional turn commits N+1; encoding and network publication happen afterward.",
     description =
-      "A Phoenix event becomes a SessionCommand and is dequeued by the SessionKernel. While revision N remains active, a provisional turn resolves the typed target, runs hooks and the handler, evaluates the render, validates and prepares resources and child topology, reserves ordered output, then runs after-render work, validates continuations, and computes the diff. Failure discards the candidate without committing it and terminates the lifecycle. The interruption-masked commit replaces framework state, marks retired owners stale, activates resources and child topology, and fills the reserved output slot. Only after N+1 is active does RootConnection drain output through PhoenixRenderedEncoder and the bounded SerialWriter; write failure does not roll back N+1.",
+      "A Phoenix event becomes a SessionCommand and is dequeued by the SessionKernel. While revision N remains active, the kernel checks lifecycle state and classifies the command, then runs connected-turn guards before binding or typed-target resolution, hooks, and the handler. A continuing turn evaluates the render, validates and prepares resources and child topology, reserves ordered output, then runs after-render work, validates continuations, and computes the diff. A controlled guard outcome skips application work without committing N+1; an unexpected failure discards any candidate and may terminate the lifecycle. The interruption-masked commit replaces framework state, marks retired owners stale, activates resources and child topology, and fills the reserved output slot. Only after N+1 is active does RootConnection drain output through PhoenixRenderedEncoder and the bounded SerialWriter; write failure does not roll back N+1.",
     layout = DiagramLayout.Single(
       DiagramAsset(
         label = "Connected turn",

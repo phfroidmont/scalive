@@ -20,7 +20,8 @@ Scalive applications have three useful test boundaries:
   first HTML response. This boundary has public support in `scalive.testing`.
 - **Connected tests** use
   @:apiSymbol(object:scalive.testing.ConnectedRender)`ConnectedRender`@:@ to join
-  through production admission and supervision, then interact through a typed
+  through production route, bootstrap, and lifecycle admission and supervision,
+  then interact through a typed
   @:apiSymbol(class:scalive.testing.ConnectedView)`ConnectedView`@:@.
 - **Browser tests** run the Phoenix LiveView JavaScript client against a real
   server. Scalive does not currently publish a browser fixture or Playwright
@@ -82,7 +83,8 @@ object ProfilePageSpec extends ZIOSpecDefault:
   private val config = ZioHttpConfig(
     signingSecret = "fixed-test-signing-secret-000000000000",
     sessionMaxAge = java.time.Duration.ofMinutes(30),
-    secureCookie = false
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.http("localhost"))
   ).fold(error => throw IllegalArgumentException(error.toString), identity)
 
   private val application = Live.router(Routes.profile -> ProfileLiveView())
@@ -116,7 +118,9 @@ end ProfilePageSpec
 The names `Routes.profile` and `ProfileLiveView` represent application code. Use
 a fixed, valid test @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@
 when assertions depend on signed cookies or tokens; do not compare output
-produced with independently constructed configurations.
+produced with independently constructed configurations. Even disconnected tests
+must supply a non-empty origin allowlist because it is part of valid transport
+configuration.
 
 ## Query Forms Semantically {#query-forms-semantically}
 
@@ -193,7 +197,7 @@ accepts only a local `303 See Other` with a `Location` header.
 @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
 finalizes a single LiveView at `/`, performs disconnected rendering, validates
 its bootstrap credentials, and starts the connected lifecycle through production
-route admission and supervision:
+route and join admission and supervision:
 
 ```scala
 test("increments after a connected click") {
@@ -217,11 +221,41 @@ For routed applications, use the overload accepting `LiveApplication`, a fixed
 validated `ZioHttpConfig`, a ZIO HTTP `Request`, and optional untrusted connect
 parameters. That overload exercises the actual route, mount aspects, layouts,
 security bootstrap, and request URL rather than mounting a synthetic root.
+It does not call the WebSocket endpoint or validate the upgrade request's
+`Origin` header.
 
 `ConnectedView.html` is a semantic projection of the latest committed server
 render, not a browser DOM. Connected tests do not execute the Phoenix JavaScript
 client, patch a real document, run hooks, manage focus, or prove browser history
 behavior. Keep those claims at the browser boundary.
+
+## Test WebSocket Origin Admission {#test-websocket-origin-admission}
+
+Exercise the finalized ZIO HTTP routes when the upgrade policy itself is the
+behavior under test. This boundary can prove that one configured origin produces
+an upgrade response and a missing origin receives HTTP 403 without starting a
+server or browser:
+
+```scala
+val socketUrl = URL.decode("/live/websocket").fold(throw _, identity)
+val allowedUpgrade = Request
+  .get(socketUrl)
+  .addHeader(Header.Custom("origin", "http://localhost"))
+
+test("admits only a configured websocket origin") {
+  for
+    admitted <- ZIO.scoped(routes.runZIO(allowedUpgrade))
+    rejected <- ZIO.scoped(routes.runZIO(Request.get(socketUrl)))
+  yield assertTrue(
+    admitted.status == Status.SwitchingProtocols,
+    rejected.status == Status.Forbidden
+  )
+}
+```
+
+The request origin must match the `allowedWebSocketOrigins` used to construct
+`routes`. Use transport or edge integration tests for duplicate physical headers
+and proxy behavior; those shapes are not reliably produced by browser automation.
 
 ## Test In A Browser {#test-in-a-browser}
 
@@ -231,6 +265,7 @@ should prove at least:
 
 - the disconnected document contains meaningful content before the socket joins;
 - the LiveSocket reaches the connected state;
+- the server admits the page's exact configured HTTP or HTTPS `Origin`;
 - one event updates the existing DOM;
 - live patch or navigation preserves the expected URL and title;
 - hooks and uploads work in a real browser when the application uses them;
@@ -240,6 +275,11 @@ should prove at least:
   with only intentional focus moves such as focusing an error summary; and
 - a deliberately interrupted WebSocket exercises the application's reconnect
   expectations.
+
+At the transport request boundary, separately verify that missing, `null`,
+malformed, duplicate, combined, and mismatched `Origin` values receive HTTP 403
+before upgrade. Browser automation cannot normally manufacture all of those
+forbidden header shapes, so keep these as edge or transport integration tests.
 
 The Scalive repository runs the upstream Phoenix LiveView `v1.2.10` Playwright
 suite against `e2eApp` with:
@@ -261,11 +301,12 @@ and assertions for their product.
 ## Know What Each Test Proves {#know-what-each-test-proves}
 
 A passing disconnected test does not prove a socket can connect. A passing
-`ConnectedRender` test does not prove the Phoenix client can patch the browser
-DOM. A browser test proves its scenario but may not isolate the failing lifecycle
-stage. Keep at least one assertion at each boundary your application depends on,
-and use [Troubleshooting](troubleshooting.md#separate-the-two-mounts) to locate a
-failure before expanding the test suite.
+`ConnectedRender` test proves neither WebSocket Origin admission nor that the
+Phoenix client can patch the browser DOM. A browser test proves its scenario but
+may not isolate the failing lifecycle stage. Keep at least one assertion at each
+boundary your application depends on, and use
+[Troubleshooting](troubleshooting.md#separate-the-two-mounts) to locate a failure
+before expanding the test suite.
 
 ## Related Tasks {#related-tasks}
 

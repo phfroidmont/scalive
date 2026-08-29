@@ -1157,28 +1157,35 @@ object ZioHttp:
   ): Route[R, Nothing] =
     val pattern = RoutePattern(Method.GET, socketPath / "websocket")
     pattern -> handler { (request: Request) =>
-      val csrfCookieValue = request.cookie(CsrfCookieName).map(_.content)
-      val csrfToken       = request.queryParam("_csrf_token")
-      val observer        = observerFactory.connect(request)
-      val socketHandler   = Handler.webSocket { channel =>
-        ZIO
-          .scoped(
-            runSocket(channel, routes, config, request, csrfCookieValue, csrfToken, observer)
-          )
-          .catchAllCause(_ =>
-            ZIO.logError("Root websocket failed") *>
-              channel.send(ChannelEvent.read(WebSocketFrame.close(1002, None))).ignore
-          )
-      }
-      val app = WebSocketApp(
-        socketHandler.handler,
-        Some(
-          WebSocketConfig.default.decoderConfig(
-            SocketDecoder.default.maxFramePayloadLength(MaxFramePayloadBytes)
+      val originValues  = request.rawHeaders(Header.Origin.name)
+      val originAllowed =
+        originValues.length == 1 &&
+          WebSocketOrigin.parse(originValues.head).exists(config.allowedWebSocketOrigins.contains)
+
+      if !originAllowed then ZIO.succeed(Response.forbidden)
+      else
+        val csrfCookieValue = request.cookie(CsrfCookieName).map(_.content)
+        val csrfToken       = request.queryParam("_csrf_token")
+        val observer        = observerFactory.connect(request)
+        val socketHandler   = Handler.webSocket { channel =>
+          ZIO
+            .scoped(
+              runSocket(channel, routes, config, request, csrfCookieValue, csrfToken, observer)
+            )
+            .catchAllCause(_ =>
+              ZIO.logError("Root websocket failed") *>
+                channel.send(ChannelEvent.read(WebSocketFrame.close(1002, None))).ignore
+            )
+        }
+        val app = WebSocketApp(
+          socketHandler.handler,
+          Some(
+            WebSocketConfig.default.decoderConfig(
+              SocketDecoder.default.maxFramePayloadLength(MaxFramePayloadBytes)
+            )
           )
         )
-      )
-      app.toResponse
+        app.toResponse
     }
   end websocketRoute
 

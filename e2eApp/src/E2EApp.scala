@@ -220,17 +220,22 @@ object E2EApp extends ZIOAppDefault:
       assets <- StaticAssets.load(
                   StaticAssetConfig.classpath("public", Seq("app.css", "app.js", "daisy.css"))
                 )
-      config <- ZIO
-                  .fromEither(
-                    ZioHttpConfig(
-                      signingSecret = sys.env.getOrElse(
-                        "SCALIVE_SIGNING_SECRET",
-                        "scalive-e2e-development-signing-secret"
-                      ),
-                      sessionMaxAge = java.time.Duration.ofHours(1),
-                      secureCookie = false
-                    )
-                  ).mapError(error => IllegalArgumentException(s"Invalid ZIO HTTP config: $error"))
+      config <-
+        ZIO
+          .fromEither(
+            ZioHttpConfig(
+              signingSecret = sys.env.getOrElse(
+                "SCALIVE_SIGNING_SECRET",
+                "scalive-e2e-development-signing-secret"
+              ),
+              sessionMaxAge = java.time.Duration.ofHours(1),
+              secureCookie = false,
+              allowedWebSocketOrigins = Set(
+                WebSocketOrigin.http("localhost", serverPort),
+                WebSocketOrigin.http("127.0.0.1", serverPort)
+              )
+            )
+          ).mapError(error => IllegalArgumentException(s"Invalid ZIO HTTP config: $error"))
       rootLayout  = new E2ERootLayout(assets)
       application = liveRoutes(rootLayout, assets)
       routes      = ZioHttp.routes(application, config) ++ healthRoutes(assets) ++ assets.routes

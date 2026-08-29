@@ -52,7 +52,8 @@ object DocumentationSite extends ZIOAppDefault:
                              ZioHttpConfig(
                                signingSecret = config.signingSecret,
                                sessionMaxAge = Duration.ofDays(7),
-                               secureCookie = config.secureCookie
+                               secureCookie = config.secureCookie,
+                               allowedWebSocketOrigins = Set(config.publicOrigin.webSocketOrigin)
                              )
                            ).mapError(error => new IllegalArgumentException(error.toString))
       security = LiveSecurity(transportConfig)

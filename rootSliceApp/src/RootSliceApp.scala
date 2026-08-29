@@ -11,17 +11,22 @@ import scalive.codecs.StringAsIsEncoder
 object RootSliceApp extends ZIOAppDefault:
   private val defaultPort   = 8081
   private val mountSequence = AtomicInteger(0)
-  private val config        = ZioHttpConfig(
-    signingSecret = "root-slice-test-only-signing-secret-32-bytes",
-    sessionMaxAge = Duration.ofMinutes(30),
-    secureCookie = false
-  ).fold(error => throw IllegalArgumentException(error.toString), identity)
 
   private val serverPort =
     sys.env
       .get("SCALIVE_SERVER_PORT")
       .flatMap(_.toIntOption)
       .getOrElse(defaultPort)
+
+  private val config = ZioHttpConfig(
+    signingSecret = "root-slice-test-only-signing-secret-32-bytes",
+    sessionMaxAge = Duration.ofMinutes(30),
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(
+      WebSocketOrigin.http("localhost", serverPort),
+      WebSocketOrigin.http("127.0.0.1", serverPort)
+    )
+  ).fold(error => throw IllegalArgumentException(error.toString), identity)
 
   private val navigationA         = live / "nav" / "a"
   private val navigationB         = live / "nav" / "b"

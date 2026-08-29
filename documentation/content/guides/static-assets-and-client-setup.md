@@ -76,6 +76,11 @@ the `csrf-token` meta element into the root layout's `<head>` and associates it
 with the CSRF cookie. Return that value as `_csrf_token`; do not create or
 hard-code a token in JavaScript.
 
+The browser adds the WebSocket `Origin` header automatically from the page's
+HTTP or HTTPS origin. Do not add it to `params` or attempt to set it from
+JavaScript. Instead, list that page origin in the server's
+[WebSocket allowlist](configuration.md#current-configuration-contract).
+
 Pass Phoenix options such as `hooks` in the final `LiveSocket` options object
 when the application needs them. Register every option before calling
 `connect()`; exposing the socket on `window` is optional and useful only for

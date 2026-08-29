@@ -32,38 +32,62 @@ final private[scalive] case class UploadCredentialClaims(
   */
 final class ZioHttpConfig private (
   private[scalive] val signingSecretBytes: Array[Byte],
+  /** Maximum accepted age for framework-issued session and CSRF values. */
   val sessionMaxAge: Duration,
-  val secureCookie: Boolean):
+  /** Whether framework cookies carry the `Secure` attribute. */
+  val secureCookie: Boolean,
+  /** Exact canonical browser origins admitted at the WebSocket upgrade boundary. */
+  val allowedWebSocketOrigins: Set[WebSocketOrigin]):
   override def equals(other: Any): Boolean = other match
     case that: ZioHttpConfig =>
       sessionMaxAge == that.sessionMaxAge &&
       secureCookie == that.secureCookie &&
+      allowedWebSocketOrigins == that.allowedWebSocketOrigins &&
       MessageDigest.isEqual(signingSecretBytes, that.signingSecretBytes)
     case _ => false
 
   override def hashCode(): Int =
     var result = sessionMaxAge.hashCode()
     result = 31 * result + java.util.Arrays.hashCode(signingSecretBytes)
-    31 * result + java.lang.Boolean.hashCode(secureCookie)
+    result = 31 * result + java.lang.Boolean.hashCode(secureCookie)
+    31 * result + allowedWebSocketOrigins.hashCode()
 
   override def toString: String =
-    s"ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=$sessionMaxAge, secureCookie=$secureCookie)"
+    s"ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=$sessionMaxAge, secureCookie=$secureCookie, allowedWebSocketOrigins=$allowedWebSocketOrigins)"
 
 object ZioHttpConfig:
   enum Error:
+    /** The signing secret contains fewer than 32 UTF-8 bytes. */
     case SecretTooShort(actualUtf8Bytes: Int)
+
+    /** Session and CSRF values require a positive maximum age. */
     case NonPositiveSessionMaxAge
+
+    /** The WebSocket policy contains no usable allowed origin. */
+    case NoAllowedWebSocketOrigins
 
   def apply(
     signingSecret: String,
     sessionMaxAge: Duration,
-    secureCookie: Boolean
+    secureCookie: Boolean,
+    allowedWebSocketOrigins: Set[WebSocketOrigin]
   ): Either[Error, ZioHttpConfig] =
     val secretBytes = signingSecret.getBytes(StandardCharsets.UTF_8)
     if secretBytes.length < 32 then Left(Error.SecretTooShort(secretBytes.length))
     else if sessionMaxAge.isZero || sessionMaxAge.isNegative then
       Left(Error.NonPositiveSessionMaxAge)
-    else Right(new ZioHttpConfig(secretBytes.clone(), sessionMaxAge, secureCookie))
+    else if allowedWebSocketOrigins.isEmpty || allowedWebSocketOrigins.exists(_ eq null) then
+      Left(Error.NoAllowedWebSocketOrigins)
+    else
+      Right(
+        new ZioHttpConfig(
+          secretBytes.clone(),
+          sessionMaxAge,
+          secureCookie,
+          allowedWebSocketOrigins
+        )
+      )
+end ZioHttpConfig
 
 private[scalive] object ZioHttpSecurity:
   final case class RootClaims(

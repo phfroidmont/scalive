@@ -15,7 +15,8 @@ object ReportsExampleSpec extends ZIOSpecDefault:
   private val transportConfig = ZioHttpConfig(
     "reports-example-spec-secret-0000000000000000",
     Duration.ofMinutes(30),
-    secureCookie = false
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.https("docs.example.test"))
   ).toOption.get
 
   private def state(harness: ConnectedView[?]) =

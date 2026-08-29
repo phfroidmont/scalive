@@ -3,7 +3,11 @@ package scalive.docs
 import java.net.URI
 import java.nio.charset.StandardCharsets
 
-final private[docs] case class PublicOrigin private (value: String):
+import scalive.WebSocketOrigin
+
+final private[docs] case class PublicOrigin private (
+  value: String,
+  webSocketOrigin: WebSocketOrigin):
   private val uri = URI.create(value)
 
   def absolute(path: String): String =
@@ -30,7 +34,12 @@ private[docs] object PublicOrigin:
         Left("SCALIVE_PUBLIC_ORIGIN must not include user information.")
       else if !validPath || uri.getRawQuery != null || uri.getRawFragment != null then
         Left("SCALIVE_PUBLIC_ORIGIN must be an origin without a path, query, or fragment.")
-      else Right(PublicOrigin(raw.stripSuffix("/")))
+      else
+        val origin = raw.stripSuffix("/")
+        WebSocketOrigin
+          .parse(origin)
+          .left.map(error => s"SCALIVE_PUBLIC_ORIGIN is invalid: ${error.message}.")
+          .map(webSocketOrigin => PublicOrigin(origin, webSocketOrigin))
     catch case _: IllegalArgumentException => Left("SCALIVE_PUBLIC_ORIGIN must be a valid URI.")
 
 final private[docs] case class DocumentationConfig(

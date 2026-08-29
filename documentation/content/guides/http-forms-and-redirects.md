@@ -92,7 +92,8 @@ and the HTTP route owner:
 val transportConfig = ZioHttpConfig(
   signingSecret = config.signingSecret,
   sessionMaxAge = java.time.Duration.ofMinutes(30),
-  secureCookie = config.publicHttps
+  secureCookie = config.publicHttps,
+  allowedWebSocketOrigins = Set(WebSocketOrigin.https("example.com"))
 ).fold(error => throw IllegalArgumentException(error.toString), identity)
 
 val security = LiveSecurity(transportConfig)

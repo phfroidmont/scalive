@@ -9,10 +9,16 @@ import scalive.runtime.contracts.*
 import scalive.upload.*
 
 object ZioHttpSecuritySpec extends ZIOSpecDefault:
-  private val secret = "0123456789abcdef0123456789abcdef"
+  private val secret         = "0123456789abcdef0123456789abcdef"
+  private val allowedOrigins = Set(WebSocketOrigin.https("scalive.test"))
 
   private def config(maxAge: Duration = Duration.ofMinutes(30)) =
-    ZioHttpConfig(secret, maxAge, secureCookie = true).toOption.get
+    ZioHttpConfig(
+      secret,
+      maxAge,
+      secureCookie = true,
+      allowedWebSocketOrigins = allowedOrigins
+    ).toOption.get
 
   private def tamperSignature(token: String): String =
     val signatureStart = token.lastIndexOf('.') + 1
@@ -39,16 +45,93 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
     )
 
   def spec = suite("ZioHttpSecurity")(
-    test("config validates its secret and maximum age and redacts the secret") {
-      val short = ZioHttpConfig("short", Duration.ofMinutes(1), secureCookie = true)
-      val zero  = ZioHttpConfig(secret, Duration.ZERO, secureCookie = true)
+    test("websocket origins normalize exact scheme, host, and effective port") {
+      val expected = WebSocketOrigin.https("example.com")
+      val explicit = WebSocketOrigin.parse("https://example.com:443")
+      val http     = WebSocketOrigin.parse("http://example.com:80")
+      val cased    = WebSocketOrigin.parse("HTTPS://EXAMPLE.COM")
+      val custom   = WebSocketOrigin.parse("https://example.com:8443")
+      val ipv6     = WebSocketOrigin.parse("http://[::1]:8080")
+      val expanded = WebSocketOrigin.http("0:0:0:0:0:0:0:1", 8080)
+      val ipv4     = WebSocketOrigin.parse("http://127.0.0.1")
+      val mapped   = WebSocketOrigin.https("::ffff:192.0.2.128")
+
+      assertTrue(
+        explicit.contains(expected),
+        http.contains(WebSocketOrigin.http("example.com")),
+        cased.contains(expected),
+        expected.toString == "https://example.com",
+        custom.exists(origin => origin.port == 8443 && origin.toString == "https://example.com:8443"),
+        ipv6.contains(expanded),
+        expanded.host == "::1",
+        expanded.toString == "http://[::1]:8080",
+        ipv4.exists(_.host == "127.0.0.1"),
+        mapped.toString == "https://[::ffff:c000:280]"
+      )
+    },
+    test("websocket origins reject values that are not serialized browser origins") {
+      val invalid = Vector(
+        "",
+        "null",
+        "ws://example.com",
+        "https://user@example.com",
+        "https://example.com/",
+        "https://example.com?query",
+        "https://example.com#fragment",
+        "https://example.com:",
+        "https://example.com:99999",
+        "https://%65xample.com",
+        "https://[::1",
+        "http://[0:0:0:0:0:0:0:1]",
+        "http://127.1",
+        "http://0177.0.0.1",
+        "http://2130706433",
+        " https://example.com",
+        "https://bücher.example",
+        "https://example.com, https://other.example"
+      )
+      val accepted = invalid.filter(WebSocketOrigin.parse(_).isRight)
+
+      assertTrue(
+        accepted.isEmpty,
+        WebSocketOrigin.httpsEither("example.com", 0) == Left(WebSocketOrigin.Error.InvalidPort(0))
+      )
+    },
+    test("config validates its secret, maximum age, and websocket origins") {
+      val short = ZioHttpConfig(
+        "short",
+        Duration.ofMinutes(1),
+        secureCookie = true,
+        allowedWebSocketOrigins = allowedOrigins
+      )
+      val zero = ZioHttpConfig(
+        secret,
+        Duration.ZERO,
+        secureCookie = true,
+        allowedWebSocketOrigins = allowedOrigins
+      )
+      val empty = ZioHttpConfig(
+        secret,
+        Duration.ofMinutes(1),
+        secureCookie = true,
+        allowedWebSocketOrigins = Set.empty
+      )
+      val unusable = ZioHttpConfig(
+        secret,
+        Duration.ofMinutes(1),
+        secureCookie = true,
+        allowedWebSocketOrigins = Set(null)
+      )
       val valid = config()
 
       assertTrue(
         short == Left(ZioHttpConfig.Error.SecretTooShort(5)),
         zero == Left(ZioHttpConfig.Error.NonPositiveSessionMaxAge),
+        empty == Left(ZioHttpConfig.Error.NoAllowedWebSocketOrigins),
+        unusable == Left(ZioHttpConfig.Error.NoAllowedWebSocketOrigins),
         !valid.toString.contains(secret),
         valid.toString.contains("<redacted>"),
+        valid.toString.contains("https://scalive.test"),
         valid == config()
       )
     },

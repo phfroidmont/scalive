@@ -13,19 +13,85 @@ import scalive.protocol.phoenix.{PhoenixEnvelope, PhoenixRef, PhoenixRenderedEnc
 import scalive.render.{BindingId, RenderDelta}
 import scalive.runtime.connection.{ConnectionConfig, ConnectionOutput, ConnectionSupervisor, RootConnection, RootConnectionMetadata}
 import scalive.runtime.contracts.*
-import scalive.runtime.kernel.{ClientEffect, SessionEffects}
+import scalive.runtime.kernel.{ClientEffect, RuntimeObserver, SessionEffects}
 
 object ZioHttpSpec extends ZIOSpecDefault:
   private val config = ZioHttpConfig(
     "01234567890123456789012345678901",
     Duration.ofMinutes(30),
-    secureCookie = false
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
   ).toOption.get
 
   private def run(routes: Routes[Any, Nothing], request: Request): UIO[Response] =
     ZIO.scoped(routes.runZIO(request))
 
   def spec = suite("ZioHttp root transport")(
+    test("rejects websocket upgrades with missing or opaque origins") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+
+      val observed = AtomicInteger()
+      val observerFactory = new ZioHttp.RuntimeObserverFactory:
+        def connect(_request: Request): RuntimeObserver =
+          val _ = observed.incrementAndGet()
+          RuntimeObserver.logging
+      val routes = ZioHttp.routes(
+        scalive.Live.router(scalive.live(View)),
+        config,
+        observerFactory
+      )
+      val upgrade = Request.get(URL.decode("/live/websocket").toOption.get)
+
+      for
+        missing <- run(routes, upgrade)
+        opaque  <- run(routes, upgrade.addHeader(Header.Custom("origin", "null")))
+      yield assertTrue(
+        missing.status == Status.Forbidden,
+        opaque.status == Status.Forbidden,
+        observed.get() == 0
+      )
+    },
+    test("admits only one strictly parsed configured websocket origin") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+
+      val routes  = ZioHttp.routes(scalive.Live.router(scalive.live(View)), config)
+      val upgrade = Request.get(URL.decode("/live/websocket").toOption.get)
+      val allowed = upgrade
+        .addHeader(Header.Custom("origin", "HTTPS://SCALIVE.TEST:443"))
+        .addHeader(Header.Custom("host", "internal.invalid"))
+        .addHeader(Header.Custom("forwarded", "host=attacker.invalid;proto=http"))
+        .addHeader(Header.Custom("x-forwarded-host", "attacker.invalid"))
+      val deniedValues = Vector(
+        "http://scalive.test",
+        "https://other.test",
+        "https://scalive.test:444",
+        "https://scalive.test/path",
+        "https://scalive.test, https://other.test",
+        "https://scalive.test https://other.test"
+      )
+      val duplicate = upgrade.setHeaders(
+        Headers(
+          Header.Custom("origin", "https://scalive.test"),
+          Header.Custom("Origin", "https://scalive.test")
+        )
+      )
+
+      for
+        admitted <- run(routes, allowed)
+        denied <- ZIO.foreach(deniedValues)(value =>
+                    run(routes, upgrade.addHeader(Header.Custom("origin", value)))
+                  )
+        duplicated <- run(routes, duplicate)
+      yield assertTrue(
+        admitted.status == Status.SwitchingProtocols,
+        denied.forall(_.status == Status.Forbidden),
+        duplicated.status == Status.Forbidden
+      )
+    },
     test("disconnected GET creates and mounts a fresh view and emits bootstrap metadata") {
       val factories = AtomicInteger()
       val mounts     = AtomicInteger()
@@ -1669,10 +1735,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
       _ <- ZIO
              .serviceWithZIO[Client](
                _.url(url)
-                 .addHeader(
-                   Header.Custom("cookie", s"${bootstrap.cookie.name}=${bootstrap.cookie.content}")
-                 )
-                 .socket(WebSocketApp(app.handler))
+                  .addHeader(
+                    Header.Custom("cookie", s"${bootstrap.cookie.name}=${bootstrap.cookie.content}")
+                  )
+                  .addHeader(Header.Custom("origin", "https://scalive.test"))
+                  .socket(WebSocketApp(app.handler))
              ).forkScoped
       channel <- registered.await
     yield SocketClient(channel, incoming, closed, closeCode)

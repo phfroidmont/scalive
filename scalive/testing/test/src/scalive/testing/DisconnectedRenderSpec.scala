@@ -17,7 +17,8 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
   private val config = ZioHttpConfig(
     "01234567890123456789012345678901",
     Duration.ofMinutes(30),
-    secureCookie = false
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
   ).toOption.get
 
   private def url(value: String): URL =

@@ -878,6 +878,30 @@
       ]
     },
     {
+      "id" : "class:scalive.WebSocketOrigin",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.WebSocketOrigin",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.WebSocketOrigin:44787125fd5cec66",
+          "signature" : "class WebSocketOrigin"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.WebSocketOrigin.ValidationException",
+      "ownerId" : "object:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.ValidationException",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.WebSocketOrigin.ValidationException:27063f660bd50c2c",
+          "signature" : "class ValidationException(error: WebSocketOrigin.Error) extends IllegalArgumentException"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.ZioHttp.AssemblyException",
       "ownerId" : "object:scalive.ZioHttp",
       "qualifiedName" : "scalive.ZioHttp.AssemblyException",
@@ -7166,6 +7190,114 @@
       ]
     },
     {
+      "id" : "def:scalive.WebSocketOrigin.Error.message",
+      "ownerId" : "enum:scalive.WebSocketOrigin.Error",
+      "qualifiedName" : "scalive.WebSocketOrigin.Error.message",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.Error.message:7fa6f8877d98c85e",
+          "signature" : "def message: String"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.WebSocketOrigin.equals",
+      "ownerId" : "class:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.equals",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.equals:4a089e9b88fec6e9",
+          "signature" : "def equals(other: Any): Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.WebSocketOrigin.hashCode",
+      "ownerId" : "class:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.hashCode",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.hashCode:70f3a5bca9d2106f",
+          "signature" : "def hashCode(): Int"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.WebSocketOrigin.http",
+      "ownerId" : "object:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.http",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.http:e8c6c822b1308a6f",
+          "signature" : "def http(host: String, port: Int = ...): WebSocketOrigin"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.WebSocketOrigin.httpEither",
+      "ownerId" : "object:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.httpEither",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.httpEither:a7399c1d9a76b472",
+          "signature" : "def httpEither(host: String, port: Int = ...): Either[WebSocketOrigin.Error, WebSocketOrigin]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.WebSocketOrigin.https",
+      "ownerId" : "object:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.https",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.https:e44ed7bc2bb4f9fa",
+          "signature" : "def https(host: String, port: Int = ...): WebSocketOrigin"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.WebSocketOrigin.httpsEither",
+      "ownerId" : "object:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.httpsEither",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.httpsEither:69be5ede15eb48ce",
+          "signature" : "def httpsEither(host: String, port: Int = ...): Either[WebSocketOrigin.Error, WebSocketOrigin]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.WebSocketOrigin.parse",
+      "ownerId" : "object:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.parse",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.parse:2f408c0985118235",
+          "signature" : "def parse(value: String): Either[WebSocketOrigin.Error, WebSocketOrigin]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.WebSocketOrigin.toString",
+      "ownerId" : "class:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.toString",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.WebSocketOrigin.toString:cb360879ad27265a",
+          "signature" : "def toString: String"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.ZioHttp.routes",
       "ownerId" : "object:scalive.ZioHttp",
       "qualifiedName" : "scalive.ZioHttp.routes",
@@ -7188,8 +7320,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.ZioHttpConfig.apply:ae9ae1c48e599058",
-          "signature" : "def apply(signingSecret: String, sessionMaxAge: java.time.Duration, secureCookie: Boolean): Either[ZioHttpConfig.Error, ZioHttpConfig]"
+          "id" : "def:scalive.ZioHttpConfig.apply:8e3162552e0850fb",
+          "signature" : "def apply(signingSecret: String, sessionMaxAge: java.time.Duration, secureCookie: Boolean, allowedWebSocketOrigins: Set[WebSocketOrigin]): Either[ZioHttpConfig.Error, ZioHttpConfig]"
         }
       ]
     },
@@ -8718,6 +8850,18 @@
         {
           "id" : "enum:scalive.SubscriptionDelivery:2d856533fa0d4ebd",
           "signature" : "enum SubscriptionDelivery"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.WebSocketOrigin.Error",
+      "ownerId" : "object:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.Error",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.WebSocketOrigin.Error:4ed298ed0be3fc65",
+          "signature" : "enum Error"
         }
       ]
     },
@@ -13850,6 +13994,18 @@
       ]
     },
     {
+      "id" : "object:scalive.WebSocketOrigin",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.WebSocketOrigin",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.WebSocketOrigin:7ceac314b0f13d0f",
+          "signature" : "object WebSocketOrigin"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.ZioHttp",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ZioHttp",
@@ -17985,6 +18141,66 @@
         {
           "id" : "val:scalive.StaticAssets.routes:7bc34c646891bbe0",
           "signature" : "val routes: zio.http.Routes[Any, Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.WebSocketOrigin.ValidationException.error",
+      "ownerId" : "class:scalive.WebSocketOrigin.ValidationException",
+      "qualifiedName" : "scalive.WebSocketOrigin.ValidationException.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.WebSocketOrigin.ValidationException.error:58ebbf571d07ed2f",
+          "signature" : "val error: WebSocketOrigin.Error"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.WebSocketOrigin.host",
+      "ownerId" : "class:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.host",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.WebSocketOrigin.host:e7063ae474ba57e5",
+          "signature" : "val host: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.WebSocketOrigin.port",
+      "ownerId" : "class:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.port",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.WebSocketOrigin.port:c7ced9ea6a55b2a7",
+          "signature" : "val port: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.WebSocketOrigin.scheme",
+      "ownerId" : "class:scalive.WebSocketOrigin",
+      "qualifiedName" : "scalive.WebSocketOrigin.scheme",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.WebSocketOrigin.scheme:b978b48fefca3ce1",
+          "signature" : "val scheme: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ZioHttpConfig.allowedWebSocketOrigins",
+      "ownerId" : "class:scalive.ZioHttpConfig",
+      "qualifiedName" : "scalive.ZioHttpConfig.allowedWebSocketOrigins",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ZioHttpConfig.allowedWebSocketOrigins:59a6ec8a7b36b559",
+          "signature" : "val allowedWebSocketOrigins: Set[WebSocketOrigin]"
         }
       ]
     },

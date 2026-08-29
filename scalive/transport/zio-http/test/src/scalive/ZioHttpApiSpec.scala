@@ -19,7 +19,8 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
         val config = ZioHttpConfig(
           "01234567890123456789012345678901",
           Duration.ofMinutes(30),
-          secureCookie = true
+          secureCookie = true,
+          allowedWebSocketOrigins = Set(WebSocketOrigin.https("example.com"))
         ).toOption.get
         val routes: Routes[Any, Nothing] = ZioHttp.routes(application, config)
       """)

@@ -17,7 +17,8 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
   private val transportConfig = ZioHttpConfig(
     "01234567890123456789012345678901",
     Duration.ofMinutes(30),
-    secureCookie = false
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
   ).toOption.get
 
   private val uploadEvent = BrowserToServerEvent[Json]("inspect-upload")
@@ -363,10 +364,11 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       _ <- ZIO
              .serviceWithZIO[Client](
                _.url(url)
-                 .addHeader(
-                   Header.Custom("cookie", s"${bootstrap.cookie.name}=${bootstrap.cookie.content}")
-                 )
-                 .socket(WebSocketApp(app.handler))
+                  .addHeader(
+                    Header.Custom("cookie", s"${bootstrap.cookie.name}=${bootstrap.cookie.content}")
+                  )
+                  .addHeader(Header.Custom("origin", "https://scalive.test"))
+                  .socket(WebSocketApp(app.handler))
              ).forkScoped
       channel <- registered.await
     yield SocketClient(channel, incoming, closed, closeCode)

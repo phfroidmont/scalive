@@ -9,6 +9,8 @@ import zio.http.Server
 import scalive.*
 
 object Main extends ZIOAppDefault:
+  private val port = 8080
+
   val run =
     for
       assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
@@ -20,7 +22,11 @@ object Main extends ZIOAppDefault:
                         "local-development-secret-change-me"
                       ),
                       sessionMaxAge = Duration.ofDays(7),
-                      secureCookie = false
+                      secureCookie = false,
+                      allowedWebSocketOrigins = Set(
+                        WebSocketOrigin.http("localhost", port),
+                        WebSocketOrigin.http("127.0.0.1", port)
+                      )
                     )
                   ).mapError(error => new IllegalArgumentException(error.toString))
       security    = LiveSecurity(config)
@@ -30,6 +36,7 @@ object Main extends ZIOAppDefault:
                       )
       liveRoutes = ZioHttp.routes(application, security)
       routes     = liveRoutes ++ assets.routes
-      _ <- Server.serve(routes).provide(Server.defaultWithPort(8080))
+      _ <- Server.serve(routes).provide(Server.defaultWithPort(port))
     yield ()
+end Main
 // docs:end quick-start-main

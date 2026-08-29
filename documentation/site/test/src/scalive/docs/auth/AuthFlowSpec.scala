@@ -15,7 +15,8 @@ object AuthFlowSpec extends ZIOSpecDefault:
   private val config = ZioHttpConfig(
     "documentation-auth-flow-secret-0000000000000000",
     Duration.ofHours(1),
-    secureCookie = true
+    secureCookie = true,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.https("docs.example.test"))
   ).toOption.get
   private val security = LiveSecurity(config)
   private val liveConnections = Unsafe.unsafe { implicit unsafe =>

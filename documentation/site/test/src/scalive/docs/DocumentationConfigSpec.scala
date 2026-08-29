@@ -56,6 +56,9 @@ object DocumentationConfigSpec extends ZIOSpecDefault:
         "ftp://docs.example.test",
         "https://not_a_host",
         "https://user@docs.example.test",
+        "https://docs.example.test:",
+        "https://docs.example.test:0",
+        "https://docs.example.test:65536",
         "https://docs.example.test/path",
         "https://docs.example.test?query=yes",
         "https://docs.example.test/#fragment"

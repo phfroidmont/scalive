@@ -174,9 +174,12 @@ Create `app/src/quickstart/Main.scala`:
 The server loads the browser bundle, builds CSRF-protected Live routes, adds the
 static asset routes, and listens on port `8080`. For local HTTP, this fixture
 uses a fixed development-only signing-secret fallback and sets
-`secureCookie = false`. Do not deploy those settings unchanged: production must
-require a stable, high-entropy `SCALIVE_TOKEN_SECRET` and set
-`secureCookie = true` behind HTTPS. See
+`secureCookie = false`; its WebSocket allowlist admits the exact local page
+origins `http://localhost:8080` and `http://127.0.0.1:8080`. Do not deploy those
+settings unchanged:
+production must require a stable, high-entropy `SCALIVE_TOKEN_SECRET`, set
+`secureCookie = true` behind HTTPS, and replace the allowlist with every exact
+browser-facing HTTP or HTTPS origin. See
 [Configuration](../guides/configuration.md#current-configuration-contract)
 and [Deployment](../guides/deployment.md#put-an-http-edge-in-front).
 
@@ -188,19 +191,25 @@ From the project root, run:
 mill app.run
 ```
 
-Open `http://localhost:8080/`. The HTTP request first produces disconnected
-HTML. The client then connects to `/live`, Scalive mounts an independent
-connected model, and button events travel over the socket as typed messages.
+Open `http://localhost:8080/`, substituting the configured `port` value if you
+changed it. The HTTP request first produces disconnected HTML. The client then
+connects to `/live`, Scalive mounts an independent connected model, and button
+events travel over the socket as typed messages.
+Although the socket transport becomes WebSocket, its browser `Origin` remains
+the page's HTTP origin, `http://localhost:8080` with the default port, rather
+than becoming a `ws` URL.
 
-You are done when Mill completes the npm build, the server listens on port
-`8080`, and the browser shows a counter starting at `0`. Both buttons should
-update it without reloading the page.
+You are done when Mill completes the npm build, the server listens on the
+configured port, and the browser shows a counter starting at `0`. Both buttons
+should update it without reloading the page.
 
 ## If Something Fails {#if-something-fails}
 
 - If Mill cannot resolve the Scalive dependency, confirm the snapshot version
   and repository above, then check [startup troubleshooting](../guides/troubleshooting.md#diagnose-startup-failures).
 - If `npm ci`, bundling, or `app.js` fails, check [missing assets](../guides/troubleshooting.md#diagnose-missing-assets).
-- If port `8080` is already in use, stop the other process or change the port in
-  `Main.scala`. If the page loads but its buttons do not connect, check
+- If port `8080` is already in use, stop the other process or change the single
+  `port` value in `Main.scala`; the server binding and local WebSocket origins
+  derive from it. Open the replacement port in the browser. If the page loads
+  but its buttons do not connect, check
   [socket connections](../guides/troubleshooting.md#diagnose-socket-connections).

@@ -29,8 +29,9 @@ The Quick Start deliberately uses a development signing-secret fallback, fixed
 port `8080`, and `secureCookie = false`. Do not deploy those settings unchanged.
 Before packaging, require a stable high-entropy secret, use
 `secureCookie = true` for browser-facing HTTPS, and validate application-owned
-server and service settings at startup. Make the Phoenix client, Live router,
-static mount, and edge use matching paths.
+server and service settings at startup. Configure a non-empty
+`allowedWebSocketOrigins` with every exact browser-facing page origin. Make the
+Phoenix client, Live router, static mount, and edge use matching paths.
 
 Environment-variable names are conventions of the application, not Scalive.
 The Quick Start already reads `SCALIVE_TOKEN_SECRET`; applications may retain
@@ -88,9 +89,19 @@ With the default router and `new LiveSocket("/live", Socket, ...)`, the upgrade
 endpoint is `/live/websocket`. If the router uses
 `.withSocketPath(PathCodec.empty / "socket")`, configure the client with
 `/socket` and forward `/socket/websocket` instead. Preserve the upgrade request's
-query string and cookie header because LiveView join admission uses both. Allow
+query string, cookie header, and single browser `Origin` header because transport
+and LiveView join admission use them. The allowed origin uses the page's `http`
+or `https` origin, not the WebSocket's `ws` or `wss` URL. Scalive rejects an
+invalid or unlisted Origin with HTTP 403 according to the
+[configured exact policy](configuration.md#current-configuration-contract).
+Default ports are normalized; configure a non-default public port explicitly. Allow
 long-lived WebSocket connections and choose edge and server idle timeouts that
 do not terminate healthy sockets.
+
+Scalive does not derive origin trust from `Host`, `Forwarded`,
+`X-Forwarded-Host`, `X-Forwarded-Proto`, or similar headers. Configure the
+browser-facing origins directly, and ensure the edge preserves rather than
+synthesizes or combines `Origin`.
 
 Scalive currently supports WebSocket transport only. There is no long-poll
 fallback, so a network or edge that blocks WebSocket upgrades leaves the page in
@@ -155,7 +166,8 @@ domain and dependency metrics where they are actionable.
 Before promoting an instance, verify its public URL end to end:
 
 - the WebSocket upgrade reaches `<socket-path>/websocket` with query parameters
-  and cookies intact;
+  and cookies plus exactly one allowed browser `Origin` intact;
+- invalid and unlisted origins receive HTTP 403 rather than an upgrade;
 - HTTPS responses set framework and authentication cookies with `Secure`;
 - disconnected HTML loads its digested assets with the intended cache policy;
 - liveness, readiness, termination, and reconnect behavior work under the

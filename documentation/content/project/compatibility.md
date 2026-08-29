@@ -88,8 +88,8 @@ prove that every server-side edge case in the same feature area is covered.
 | Area and upstream reference | Status | Current evidence | Known gap or decision |
 | --- | --- | --- | --- |
 | Security and session tokens (signing, session, flash, CSRF, connect params) | Native coverage expanding | HMAC tokens with max age, signed mount claims and flash tokens, hardened redirects, root-layout session data, shared form/socket CSRF, checked POST fields, and stale invalid-CSRF joins are covered. | Token salt and MessagePack details remain open. Claims and flash values are signed, not encrypted. |
-| Endpoint/socket configuration (`:live_view` config, socket path, hibernation) | Partial | `Live.router.withSocketPath(PathCodec[Unit])` configures the socket path; validated `ZioHttpConfig` configures signing, maximum age, and secure cookies for `ZioHttp.routes`. | Decide which remaining endpoint options matter on ZIO HTTP; hibernation is not implemented. |
-| WebSocket transport support | Native coverage substantial | WebSocket transport and the upload WebSocket protocol are implemented. | Preserve the verified transport behavior while support evolves. |
+| Endpoint/socket configuration (`:live_view` config, socket path, hibernation) | Partial | `Live.router.withSocketPath(PathCodec[Unit])` configures the socket path; validated `ZioHttpConfig` configures signing, maximum age, secure cookies, and a non-empty exact WebSocket origin allowlist for `ZioHttp.routes`. | Decide which remaining endpoint options matter on ZIO HTTP; hibernation is not implemented. |
+| WebSocket transport support (`Phoenix.Socket.Transport.check_origin/5`) | Native coverage substantial | WebSocket transport and the upload WebSocket protocol are implemented. Upgrade admission requires exactly one valid configured HTTP or HTTPS `Origin` and never trusts host or forwarding headers. | Scalive is intentionally stricter than Phoenix's host-only default and rejects a missing Origin rather than accepting it. Preserve this security divergence as transport support evolves. |
 | Long-poll transport fallback | Not implemented | Long-poll is not implemented. | Implement when long-poll becomes a supported transport. |
 | Telemetry and observability (Phoenix telemetry and logger metadata) | Native coverage substantial | The runtime emits correlated, ordered events for command acceptance, lifecycle turns, rendering, commits, publication, resources, failures, and termination; `RuntimeObservabilitySpec` covers ordering, redaction, correlation, and sink-defect isolation. | The event model is runtime-internal. Decide which stable Scalive/ZIO telemetry integration should become public rather than copying Phoenix telemetry names. |
 | Test harness helpers (`Phoenix.LiveViewTest`) | Native coverage substantial, intentional divergence | `scalive-testing` supports disconnected semantic HTML queries, explicit ordinary GET/POST submission and 303 following, plus `ConnectedRender`/`ConnectedView` for production-admitted joins, typed messages, bindings, forms, nested views, and uploads. | Retain browser tests for real DOM patching and JavaScript behavior rather than cloning ConnTest or LiveViewTest. |
@@ -109,6 +109,8 @@ The following choices are not compatibility gaps by themselves:
 - Typed path and query codecs replace route macros and atom actions.
 - Scala HTML builders and component values replace HEEx and component macros.
 - Scalive-native testing APIs replace direct copies of Phoenix test helpers.
+- Exact configured WebSocket origins replace Phoenix's host-only default and
+  missing-Origin acceptance.
 
 When strict API similarity conflicts with type safety, robustness, or Scala
 ergonomics, Scalive prefers the better Scala API. For a conceptual mapping, read

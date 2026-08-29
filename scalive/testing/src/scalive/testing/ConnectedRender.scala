@@ -25,7 +25,8 @@ object ConnectedRender:
   private val DefaultConfig = ZioHttpConfig(
     "scalive-testing-signing-secret-0000000000000000",
     Duration.ofMinutes(30),
-    secureCookie = false
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
   ).fold(error => throw IllegalStateException(error.toString), identity)
 
   /** Finalizes and joins one LiveView at the root route.

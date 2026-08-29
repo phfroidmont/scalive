@@ -55,9 +55,10 @@ server that starts partially.
 Compare startup values with the canonical
 [configuration contract](configuration.md#current-configuration-contract).
 Diagnostic deltas are usually a signing secret shorter than 32 UTF-8 bytes, a
-non-positive session age, `secureCookie = true` on local HTTP, or different
-secrets across replicas. Surface validation as startup failure; never hide it
-with a random process-local fallback.
+non-positive session age, an empty WebSocket origin allowlist,
+`secureCookie = true` on local HTTP, or different secrets across replicas.
+Surface validation as startup failure; never hide it with a random process-local
+fallback.
 
 ## Diagnose Missing Assets {#diagnose-missing-assets}
 
@@ -103,7 +104,23 @@ const liveSocket = new LiveSocket("/socket", Socket, { params })
 
 A reverse proxy must forward the WebSocket upgrade on the resulting
 `/socket/websocket` path. Check the actual request URL, upgrade response, proxy
-timeouts, and browser console before debugging event handlers.
+timeouts, and browser console before debugging event handlers. The request must
+carry exactly one valid `Origin` equal to a configured
+`allowedWebSocketOrigins` entry. Browsers send the page's `http` or `https`
+origin, not `ws` or `wss`; effective default ports normalize to `80` and `443`.
+
+An HTTP 403 before upgrade commonly means the origin is missing, `null`,
+malformed, duplicated, combined into one value, or mismatched. Configure exact
+non-default ports with `WebSocketOrigin.http/https(host, port)`. Check the raw
+header at the application boundary: Scalive never trusts `Host`, `Forwarded`,
+`X-Forwarded-Host`, or `X-Forwarded-Proto` as a substitute for `Origin`.
+
+Origin rejection currently has an empty response body and no reason-specific
+Scalive log entry. Compare the browser Network panel's request `Origin` with the
+effective `allowedWebSocketOrigins`, then inspect application access logs and edge
+logs. Test the application endpoint directly when possible: a branded or non-empty
+403 response, or a request absent from application access logs, usually indicates
+that the proxy or edge rejected it first.
 
 Scalive currently implements WebSocket transport. Phoenix Channels long-poll
 fallback is not implemented, and endpoint options such as long-poll and
@@ -169,6 +186,7 @@ Current operational and diagnostic limits include:
 - connected server-side testing does not cross the real browser DOM boundary;
 - no complete telemetry or observability API, although selected runtime branches
   log warnings and errors;
+- no reason-specific log entry for a rejected WebSocket Origin;
 - untrusted JSON connect params, with only partial typed server-derived connect
   info;
 - expanding rather than exhaustive protocol error and reconnect parity; and

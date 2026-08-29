@@ -239,7 +239,8 @@ each sensitive operation.
 Before adapting this lab for real users:
 
 - set secure cookies whenever the public origin uses HTTPS;
-- load the signing secret through validated production `ZioHttpConfig`;
+- load the signing secret through validated production `ZioHttpConfig` and
+  configure its non-empty exact WebSocket origin allowlist;
 - use a real password verifier and avoid logging submitted credentials;
 - choose distributed session and rate-limit storage for multiple instances;
 - define absolute expiry, renewal, revocation, and account-disable behavior;

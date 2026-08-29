@@ -19,7 +19,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     ZioHttpConfig(
       "documentation-site-spec-secret-32-bytes",
       Duration.ofHours(1),
-      secureCookie = false
+      secureCookie = false,
+      allowedWebSocketOrigins = Set(WebSocketOrigin.https("docs.example.test"))
     ).toOption.get
   )
   private val config = DocumentationConfig(

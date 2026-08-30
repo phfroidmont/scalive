@@ -128,10 +128,13 @@ final private[docs] class DocumentationLayout(
         .filter(_.outline.items.nonEmpty).toList.map(_ => route)
     )
     div(
-      span(dom.hook("PageMetadata", DomRef("docs-page-metadata")), hidden := true),
-      dataAttr("page-description") := metadata.map(_.description),
-      dataAttr("page-canonical")   := metadata.map(value => origin.absolute(value.canonicalPath)),
-      dataAttr("page-indexable")   := metadata.map(_.indexable.toString),
+      span(
+        dom.hook("PageMetadata", DomRef("docs-page-metadata")),
+        hidden                       := true,
+        dataAttr("page-description") := metadata.map(_.description),
+        dataAttr("page-canonical")   := metadata.map(value => origin.absolute(value.canonicalPath)),
+        dataAttr("page-indexable")   := metadata.map(_.indexable.toString)
+      ),
       a(cls := "docs-skip-link", href := "#docs-main", "Skip to content"),
       header(page, currentRoute),
       div(

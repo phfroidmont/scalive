@@ -1,5 +1,34 @@
 import { expect, test } from "./playwright.js"
 
+test("keeps public page metadata indexable through live navigation", async ({ page }) => {
+  const connectionState = () => page.evaluate(() => window.liveSocket?.socket?.connectionState?.())
+  const metadata = page.locator("#docs-page-metadata")
+  const robots = page.locator('meta[name="robots"]')
+
+  await page.goto("/")
+  await expect.poll(connectionState).toBe("open")
+  await expect(metadata).toHaveAttribute("data-page-indexable", "true")
+  await expect(robots).toHaveCount(0)
+
+  await page.goto("/search")
+  await expect.poll(connectionState).toBe("open")
+  await expect(metadata).toHaveAttribute("data-page-indexable", "false")
+  await expect(robots).toHaveAttribute("content", "noindex,follow")
+
+  await page.getByRole("link", { name: "Learn", exact: true }).click()
+  await expect(page).toHaveURL(/\/learn$/)
+  await expect(metadata).toHaveAttribute("data-page-indexable", "true")
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    "http://127.0.0.1:4005/learn",
+  )
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    "content",
+    "Understand Scalive's server-owned programming model, then build and reason about a complete LiveView application.",
+  )
+  await expect(robots).toHaveCount(0)
+})
+
 test("applies and persists explicit themes before the application hook mounts", async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem("scalive.docs.theme", "dark"))
   await page.goto("/")

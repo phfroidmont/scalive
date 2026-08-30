@@ -151,9 +151,11 @@ when the deployment platform supports that transition.
 
 ZIO HTTP's `Server.Config` owns the graceful-shutdown timeout and other server
 limits. Coordinate that timeout with edge deregistration and the platform's
-termination grace period. Scalive releases socket-owned tasks, subscriptions,
-and upload resources when a connection closes, but active WebSockets do not
-migrate to another process; clients reconnect and mount fresh state.
+termination grace period. Scalive releases lifecycle-owned tasks, subscriptions,
+connected resources, and uploads when their LiveView lifecycles close, but
+active WebSockets do not migrate to another process; clients reconnect and
+mount fresh state. Keep acquisition and finalization bounded so lifecycle
+cleanup fits within the platform's termination grace period.
 
 Runtime code emits selected lifecycle failures and diagnostics through ZIO
 logging. Scalive does not currently expose a complete metrics, tracing,

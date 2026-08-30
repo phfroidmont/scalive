@@ -15,9 +15,15 @@ trait ConnectedMetadata:
 trait RootMountConnected[Msg] extends ConnectedMetadata:
   def async: Async[Msg]
   def subscriptions: Subscriptions[Msg]
+
+  /** Resources owned by the current connected `LiveView` lifecycle. */
+  def resources: ConnectedResources
   def client: Client
 
-trait RootParamsConnected[Msg] extends RootMountConnected[Msg]:
+trait RootParamsConnected[Msg] extends ConnectedMetadata:
+  def async: Async[Msg]
+  def subscriptions: Subscriptions[Msg]
+  def client: Client
   def components: ComponentUpdates
 
 trait RootAfterRenderConnected extends ConnectedMetadata:

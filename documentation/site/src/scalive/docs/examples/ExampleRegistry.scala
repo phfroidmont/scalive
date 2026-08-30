@@ -183,6 +183,44 @@ private[docs] object ExampleRegistry:
     )
   )
 
+  private val connectedResource =
+    new ExampleEntry[ConnectedResourceExample.Msg, ConnectedResourceExample.Model](
+      descriptor = ExampleCatalog.ConnectedResource,
+      factory = ConnectedResourceExamplePreview.apply,
+      reset = ExampleReset(ConnectedResourceExample.Msg.Reset, "Reset registration checks"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[ConnectedResourceExample.Msg]:
+          def project(value: ConnectedResourceExample.Msg) = value match
+            case ConnectedResourceExample.Msg.Check =>
+              traced(
+                "ConnectedResourceExample.Msg",
+                "Update model state without reacquiring",
+                "ConnectedResourceExample.Msg.Check"
+              )
+            case ConnectedResourceExample.Msg.Reset =>
+              traced(
+                "ConnectedResourceExample.Msg",
+                "Reset model-only checks",
+                "ConnectedResourceExample.Msg.Reset"
+              ),
+        model = new ExampleTraceProjector[ConnectedResourceExample.Model]:
+          def project(value: ConnectedResourceExample.Model) =
+            projected(
+              "ConnectedResourceExample.Model",
+              "Current connected registration state",
+              constructor(
+                "Model",
+                field("registration", wildcard),
+                field("checks", number(value.checks))
+              ),
+              Vector(
+                "status" -> value.registration.fold("disconnected")(_ => "acquired"),
+                "checks" -> value.checks.toString
+              )
+            )
+      )
+    )
+
   private val browserIntegration =
     new ExampleEntry[BrowserInteropExample.Msg, BrowserInteropExample.Model](
       descriptor = ExampleCatalog.BrowserIntegration,
@@ -602,6 +640,7 @@ private[docs] object ExampleRegistry:
       asyncReport,
       browserIntegration,
       counter,
+      connectedResource,
       lifecycle,
       navigation,
       profileForm,

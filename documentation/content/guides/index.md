@@ -59,8 +59,9 @@ expects so you can also enter directly from search or the API reference.
 
 ### Async And Lifecycle {#async-and-lifecycle}
 
-- [Asynchronous work and subscriptions](async-work-and-subscriptions.md) owns finite
-  tasks and long-lived message streams with typed keys and lifecycle cleanup.
+- [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md)
+  owns finite tasks, long-lived message streams, and other acquired resources
+  with lifecycle cleanup.
 - [Lifecycle hooks](lifecycle-hooks.md) guards complete connected turns and
   applies ordered static or dynamic policy to individual lifecycle stages.
 - [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md) owns flash,

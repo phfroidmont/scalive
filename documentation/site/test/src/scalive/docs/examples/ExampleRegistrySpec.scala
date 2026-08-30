@@ -43,6 +43,22 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         counter.projectModel(2).isEmpty
       )
     },
+    test("projects connected resource state without exposing its handle") {
+      val connectedResource = ExampleRegistry.get("connected-resource").get
+      val model = ConnectedResourceExample.Model(
+        registration = Some(LifecycleRegistration("private-registration")),
+        checks = 2
+      )
+      val projected = connectedResource.projectModel(model).get
+      assertTrue(
+        connectedResource.resetMessage == ConnectedResourceExample.Msg.Reset,
+        connectedResource.resetControlLabel == "Reset registration checks",
+        connectedResource.projectMessage(ConnectedResourceExample.Msg.Check)
+          .exists(_.summary == "Update model state without reacquiring"),
+        projected.fields == Vector("status" -> "acquired", "checks" -> "2"),
+        !projected.toString.contains("private-registration")
+      )
+    },
     test("uses explicit shopping cart reset and trace projectors") {
       val cart = ExampleRegistry.get("shopping-cart").get
       val model = ShoppingCartExample.Model.empty

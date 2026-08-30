@@ -33,14 +33,14 @@ final private[docs] class LiveTraceViewer(
           case Some(Json.Str(session)) if ValidSession.matches(session) =>
             for
               owner = s"$viewerTopic:${java.util.UUID.randomUUID()}"
+              _ <- capabilities.resources.acquireRelease(
+                     store.attach(session, observedTopic, owner)
+                   )(_ => store.detach(session, observedTopic, owner))
               _ <- capabilities.subscriptions.start(
                      SubscriptionKey(s"live-trace:$viewerTopic"),
                      SubscriptionDelivery.Latest
                    )(
-                     zio.stream.ZStream
-                       .acquireReleaseWith(store.attach(session, observedTopic, owner))(_ =>
-                         store.detach(session, observedTopic, owner)
-                       ).flatMap(_ => store.updates(session, observedTopic)).map(_ => Msg.Refresh)
+                     store.updates(session, observedTopic).map(_ => Msg.Refresh)
                    )
               snapshot <- store.snapshot(session, observedTopic)
             yield withSnapshot(

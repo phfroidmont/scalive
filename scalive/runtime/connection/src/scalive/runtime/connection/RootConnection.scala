@@ -1188,6 +1188,7 @@ private[scalive] object RootConnection:
                                   lifecycleId,
                                   Epoch.initial
                                 )
+        connectedResources <- ScopedConnectedResources.make
         initialHooks = RootHookRegistry.fromStatic(lifecycle.hooks)
         logic        = SessionLogic[Msg, RootState[Msg, Model]](
                   bootstrap =
@@ -1201,7 +1202,8 @@ private[scalive] object RootConnection:
                       mountContext = RootMountContext.connected[Msg, Model](
                                        metadata,
                                        lifecycle.initialUrl,
-                                       journal
+                                       journal,
+                                       connectedResources
                                      )
                       mounted         <- ZIO.suspend(lifecycle.mount(mountContext))
                       mountNavigation <- journal.navigation.get
@@ -1411,6 +1413,7 @@ private[scalive] object RootConnection:
                     },
                   retireUploads = uploadRuntime.retire,
                   closeUploads = state => uploadRuntime.close(state.uploads, lifecycleId),
+                  closeLifecycle = connectedResources.close,
                   terminateOnNavigate = closeAfterNavigate
                 )
         kernel <- SessionKernel

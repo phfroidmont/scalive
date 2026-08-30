@@ -3,7 +3,10 @@ package scalive.runtime.connection
 import scala.reflect.ClassTag
 import scala.util.Try
 
+import zio.Exit
+import zio.Promise
 import zio.Ref
+import zio.Scope
 import zio.Task
 import zio.UIO
 import zio.ZIO
@@ -434,6 +437,78 @@ final private class JournaledSubscriptions[Msg](journal: RootTurnJournal)
   def cancel(key: SubscriptionKey): Task[Unit] =
     journal.record(ResourceOperation.CancelSubscription(journal.owner, key))
 
+final private[connection] class ScopedConnectedResources private (
+  scope: Scope.Closeable,
+  lifecycle: Ref.Synchronized[ScopedConnectedResources.Lifecycle],
+  drained: Promise[Nothing, Unit],
+  closeResult: Promise[Nothing, Exit[Nothing, Unit]])
+    extends ConnectedResources:
+  import ScopedConnectedResources.*
+
+  def acquireRelease[A](acquire: Task[A])(release: A => UIO[Unit]): Task[A] =
+    ZIO.uninterruptibleMask { restore =>
+      begin *> restore(scope.extend(ZIO.acquireRelease(acquire)(release))).ensuring(end)
+    }
+
+  private def begin: Task[Unit] = lifecycle
+    .modify {
+      case Lifecycle.Open(active) => true  -> Lifecycle.Open(active + 1)
+      case current                => false -> current
+    }.flatMap(accepted =>
+      ZIO
+        .fail(IllegalStateException("connected LiveView lifecycle is closed"))
+        .unless(accepted)
+        .unit
+    )
+
+  private def end: UIO[Unit] = lifecycle
+    .modify {
+      case Lifecycle.Open(active) if active > 0 =>
+        false -> Lifecycle.Open(active - 1)
+      case Lifecycle.Closing(1) =>
+        true -> Lifecycle.Closing(0)
+      case Lifecycle.Closing(active) if active > 1 =>
+        false -> Lifecycle.Closing(active - 1)
+      case current => false -> current
+    }.flatMap(signal => ZIO.when(signal)(drained.succeed(()).unit).unit)
+
+  private[connection] def close: UIO[Unit] = ZIO.uninterruptible {
+    lifecycle
+      .modify {
+        case Lifecycle.Open(active) => Some(active == 0) -> Lifecycle.Closing(active)
+        case current                => None              -> current
+      }.flatMap {
+        case Some(alreadyDrained) =>
+          ZIO.when(alreadyDrained)(drained.succeed(()).unit) *>
+            drained.await *>
+            scope.close(Exit.unit).exit.flatMap { result =>
+              lifecycle.set(Lifecycle.Closed) *>
+                closeResult.succeed(result).unit *>
+                restore(result)
+            }
+        case None => closeResult.await.flatMap(restore)
+      }
+  }
+end ScopedConnectedResources
+
+private[connection] object ScopedConnectedResources:
+  private enum Lifecycle:
+    case Open(active: Int)
+    case Closing(active: Int)
+    case Closed
+
+  def make: UIO[ScopedConnectedResources] =
+    for
+      scope       <- Scope.make
+      lifecycle   <- Ref.Synchronized.make[Lifecycle](Lifecycle.Open(0))
+      drained     <- Promise.make[Nothing, Unit]
+      closeResult <- Promise.make[Nothing, Exit[Nothing, Unit]]
+    yield ScopedConnectedResources(scope, lifecycle, drained, closeResult)
+
+  private def restore(result: Exit[Nothing, Unit]): UIO[Unit] = result match
+    case Exit.Success(())    => ZIO.unit
+    case Exit.Failure(cause) => ZIO.failCause(cause)
+
 final private class JournaledClient(journal: RootTurnJournal) extends Client:
   def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): Task[Unit] =
     payload.toJsonAST match
@@ -682,12 +757,16 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     )
 end JournaledRootHooks
 
-final private class RootConnected[Msg](metadata: RootConnectionMetadata, journal: RootTurnJournal)
+final private class RootConnected[Msg](
+  metadata: RootConnectionMetadata,
+  journal: RootTurnJournal,
+  resourcesCapability: ConnectedResources)
     extends RootMountConnected[Msg]:
   val staticChanged: Boolean            = metadata.staticChanged
   val connectParams: Map[String, Json]  = metadata.connectParams
   val async: Async[Msg]                 = JournaledAsync(journal)
   val subscriptions: Subscriptions[Msg] = JournaledSubscriptions(journal)
+  val resources: ConnectedResources     = resourcesCapability
   val client: Client                    = JournaledClient(journal)
 
 final private[connection] class RootMountContext[Msg, Model] private (
@@ -703,10 +782,11 @@ private[scalive] object RootMountContext:
   def connected[Msg, Model](
     metadata: RootConnectionMetadata,
     currentUrl: URL,
-    journal: RootTurnJournal
+    journal: RootTurnJournal,
+    resources: ConnectedResources
   ): RootMountContext[Msg, Model] =
     RootMountContext(
-      Connection.Connected(RootConnected(metadata, journal)),
+      Connection.Connected(RootConnected(metadata, journal, resources)),
       new RootMountNavigation(currentUrl, journal),
       JournaledRootHooks(journal),
       JournaledFlash(journal),

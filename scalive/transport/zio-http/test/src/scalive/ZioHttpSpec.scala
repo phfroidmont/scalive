@@ -1552,6 +1552,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
     test("disconnect guard settles the event, closes the socket, and cleans up the lifecycle") {
       val event    = BrowserToServerEvent[Json]("disconnect-event")
       val cleanup  = AtomicInteger()
+      val resourceCleanup = AtomicInteger()
       val handlers = AtomicInteger()
       val task     = AsyncKey[Unit]("disconnect-cleanup")
       val view = new LiveView[Unit, Int]:
@@ -1562,9 +1563,13 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ctx.connection match
           case Connection.Disconnected => ZIO.succeed(0)
           case Connection.Connected(connected) =>
-            connected.async
-              .start(task)(ZIO.never.ensuring(ZIO.succeed(cleanup.incrementAndGet()).unit))(_ => ())
-              .as(0)
+            connected.resources
+              .acquireRelease(ZIO.unit)(_ =>
+                ZIO.succeed(resourceCleanup.incrementAndGet()).unit
+              ) *>
+              connected.async
+                .start(task)(ZIO.never.ensuring(ZIO.succeed(cleanup.incrementAndGet()).unit))(_ => ())
+                .as(0)
         def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] = _ => ZIO.succeed(model)
         def view(model: Signal[Int]) = div(model.map(_.toString))
       val application = scalive.Live.router(
@@ -1583,13 +1588,15 @@ object ZioHttpSpec extends ZIOSpecDefault:
                )
           code    <- socket.closeCode.await.timeout(100.millis)
           cleaned <- ZIO.succeed(cleanup.get()).repeatUntil(_ == 1)
+          resourceCleaned <- ZIO.succeed(resourceCleanup.get()).repeatUntil(_ == 1)
         yield assertTrue(
           status(joined) == "ok",
           status(reply) == "ok",
           response(reply) == Json.Obj("diff" -> Json.Obj.empty),
           code.forall(_ == ZioHttp.DisconnectCloseCode),
           handlers.get() == 0,
-          cleaned == 1
+          cleaned == 1,
+          resourceCleaned == 1
         )
       })
     },

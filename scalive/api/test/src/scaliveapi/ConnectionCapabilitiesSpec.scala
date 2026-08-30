@@ -41,6 +41,7 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
               case Connection.Disconnected => ZIO.unit
               case Connection.Connected(connected) =>
                 connected.async.start(AsyncKey[Int]("load"))(ZIO.succeed(1))(_ => ()) *>
+                  connected.resources.acquireRelease(ZIO.unit)(_ => ZIO.unit) *>
                   connected.subscriptions.start(
                     SubscriptionKey("ticks"),
                     SubscriptionDelivery.Lossless
@@ -62,6 +63,37 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("connected resources are available only during root mount") {
+      val paramsErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: ParamsContext[Unit, Unit]) = ctx.connection match
+          case Connection.Disconnected => ()
+          case Connection.Connected(connected) => connected.resources
+      """)
+      val afterRenderErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: AfterRenderContext[Unit, Unit]) = ctx.connection match
+          case Connection.Disconnected => ()
+          case Connection.Connected(connected) => connected.resources
+      """)
+      val messageErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: MessageContext[Unit, Unit]) = ctx.resources
+      """)
+      val componentErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: ComponentMountContext[Unit, Unit, Unit]) = ctx.connection match
+          case Connection.Disconnected => ()
+          case Connection.Connected(connected) => connected.resources
+      """)
+
+      assertTrue(
+        paramsErrors.nonEmpty,
+        afterRenderErrors.nonEmpty,
+        messageErrors.nonEmpty,
+        componentErrors.nonEmpty
+      )
     },
     test("stream deletion requires the definition's domain ID type") {
       val validErrors = scala.compiletime.testing.typeCheckErrors("""

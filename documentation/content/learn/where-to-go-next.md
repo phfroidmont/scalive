@@ -22,7 +22,7 @@ the task your application needs:
 - **Own local and collection state:** [stateful components](../guides/components-and-communication.md),
   [nested LiveViews](../guides/nested-liveviews.md), and
   [streams](../guides/streams-and-collection-updates.md).
-- **Manage lifecycle behavior:** [asynchronous work and subscriptions](../guides/async-work-and-subscriptions.md),
+- **Manage lifecycle behavior:** [asynchronous work, subscriptions, and connected resources](../guides/async-work-and-subscriptions.md),
   [lifecycle hooks](../guides/lifecycle-hooks.md), and
   [lifecycle feedback and page state](../guides/flash-title-and-lifecycle-ux.md).
 - **Integrate browser APIs:** [browser commands, events, and hooks](../guides/browser-integration.md).
@@ -48,9 +48,10 @@ Then choose a focused executable slice:
   [bounded text upload](../examples/text-upload.md) for typed input, field
   errors, and upload ownership.
 - [Service injection](../examples/service-injection.md),
+  [connected lifecycle registration](../examples/connected-resource.md),
   [async report](../examples/async-report.md), and
   [subscription clock](../examples/subscription-clock.md) for finite work and
-  connection-owned live data backed by application services.
+  lifecycle-owned live data backed by application services.
 - [Activity stream](../examples/activity-stream.md),
   [voting components](../examples/voting-components.md), and
   [browser integration](../examples/browser-integration.md) for larger changing

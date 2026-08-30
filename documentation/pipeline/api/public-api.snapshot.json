@@ -1714,6 +1714,18 @@
       ]
     },
     {
+      "id" : "def:scalive.ConnectedResources.acquireRelease",
+      "ownerId" : "trait:scalive.ConnectedResources",
+      "qualifiedName" : "scalive.ConnectedResources.acquireRelease",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ConnectedResources.acquireRelease:0754138cb061a258",
+          "signature" : "def acquireRelease[A](acquire: zio.package.Task[A])(release: A => zio.package.UIO[Unit]): zio.package.Task[A]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.ConsumeDecision",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ConsumeDecision",
@@ -6458,6 +6470,18 @@
       ]
     },
     {
+      "id" : "def:scalive.RootMountConnected.resources",
+      "ownerId" : "trait:scalive.RootMountConnected",
+      "qualifiedName" : "scalive.RootMountConnected.resources",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.RootMountConnected.resources:8bfd35dcbbd3b45f",
+          "signature" : "def resources: ConnectedResources"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.RootMountConnected.subscriptions",
       "ownerId" : "trait:scalive.RootMountConnected",
       "qualifiedName" : "scalive.RootMountConnected.subscriptions",
@@ -6470,6 +6494,30 @@
       ]
     },
     {
+      "id" : "def:scalive.RootParamsConnected.async",
+      "ownerId" : "trait:scalive.RootParamsConnected",
+      "qualifiedName" : "scalive.RootParamsConnected.async",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.RootParamsConnected.async:d579cdfbd013500d",
+          "signature" : "def async: Async[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.RootParamsConnected.client",
+      "ownerId" : "trait:scalive.RootParamsConnected",
+      "qualifiedName" : "scalive.RootParamsConnected.client",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.RootParamsConnected.client:9a81ac8a7877563c",
+          "signature" : "def client: Client"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.RootParamsConnected.components",
       "ownerId" : "trait:scalive.RootParamsConnected",
       "qualifiedName" : "scalive.RootParamsConnected.components",
@@ -6478,6 +6526,18 @@
         {
           "id" : "def:scalive.RootParamsConnected.components:cc6759bb35a4c8d3",
           "signature" : "def components: ComponentUpdates"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.RootParamsConnected.subscriptions",
+      "ownerId" : "trait:scalive.RootParamsConnected",
+      "qualifiedName" : "scalive.RootParamsConnected.subscriptions",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.RootParamsConnected.subscriptions:72693a22be569108",
+          "signature" : "def subscriptions: Subscriptions[Msg]"
         }
       ]
     },
@@ -14581,6 +14641,18 @@
       ]
     },
     {
+      "id" : "trait:scalive.ConnectedResources",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ConnectedResources",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.ConnectedResources:0bda84c738716293",
+          "signature" : "trait ConnectedResources"
+        }
+      ]
+    },
+    {
       "id" : "trait:scalive.ContextAppend",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ContextAppend",
@@ -15007,8 +15079,8 @@
       "kind" : "trait",
       "signatures" : [
         {
-          "id" : "trait:scalive.RootParamsConnected:0b2bc7ab5ebacddf",
-          "signature" : "trait RootParamsConnected[Msg] extends RootMountConnected[Msg]"
+          "id" : "trait:scalive.RootParamsConnected:534734128d408751",
+          "signature" : "trait RootParamsConnected[Msg] extends ConnectedMetadata"
         }
       ]
     },

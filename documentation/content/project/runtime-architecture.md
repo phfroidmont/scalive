@@ -300,7 +300,7 @@ retires uploads and managed resources, closes render programs, and revokes
 topology registrations. `RuntimeCleanup` composes finalizers so one cleanup
 failure does not prevent the remaining owners from being released.
 
-A disconnect therefore ends the connected model and its connection-owned work.
+A disconnect therefore ends the connected model and its lifecycle-owned work.
 A later join mounts a new lifecycle rather than recovering the old model object.
 
 ## Failure And Observation {#failure-and-observation}

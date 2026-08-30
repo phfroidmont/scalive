@@ -42,7 +42,7 @@ is available when you need implementation details.
 | Rendering | Produces typed HTML and updates | Applies patches to the existing DOM |
 | Events | Resolves bindings to typed messages and runs handlers | Captures DOM events and sends binding data |
 | Effects | Runs ZIO effects, async work, and subscriptions | Runs hooks and commands that require browser APIs |
-| Connection | Validates the join and owns connection-scoped resources | Opens, monitors, disconnects, and reconnects `LiveSocket` |
+| Connection | Validates the join and owns connected LiveView lifecycle resources | Opens, monitors, disconnects, and reconnects `LiveSocket` |
 | Security | Treats URLs, connect parameters, and event payloads as untrusted | Is not an authority for identity or authorization |
 
 ## Take The Ordered Path {#take-the-ordered-path}

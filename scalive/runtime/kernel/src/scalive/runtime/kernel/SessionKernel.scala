@@ -3473,10 +3473,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private def cleanupSession: UIO[Unit] =
     for
-      active  <- activeOwner.close.exit
-      program <- renderProgram.close.exit
-      _       <- closeMailbox
-      _       <- restoreCleanup(Vector(active, program))
+      active    <- activeOwner.close.exit
+      lifecycle <- logic.closeLifecycle.exit
+      program   <- renderProgram.close.exit
+      _         <- closeMailbox
+      _         <- restoreCleanup(Vector(active, lifecycle, program))
     yield ()
 
   private def restoreCleanup(exits: Vector[Exit[Nothing, Unit]]): UIO[Unit] =

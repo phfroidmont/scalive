@@ -57,6 +57,25 @@ object ExampleCatalog:
     )
   )
 
+  val ConnectedResource = ExampleDescriptor(
+    id = "connected-resource",
+    title = "Connected lifecycle registration",
+    description =
+      "A connected mount acquires one registration handle and releases that exact handle when its LiveView lifecycle closes.",
+    category = ExampleCategory.AsyncAndEffects,
+    topics = Vector("connected resources", "resource ownership", "lifecycle cleanup"),
+    aliases = Vector("ConnectedResources", "acquireRelease", "registration", "finalizer"),
+    resetDescription = "Clear model-only checks without replacing the lifecycle registration.",
+    sources = Vector(
+      ExampleSource(
+        label = "LiveView and registration boundary",
+        path = "documentation/site/src/scalive/docs/examples/ConnectedResourceExample.scala",
+        region = "connected-resource-example",
+        language = Some("scala")
+      )
+    )
+  )
+
   val BrowserIntegration = ExampleDescriptor(
     id = "browser-integration",
     title = "Browser integration",
@@ -257,6 +276,7 @@ object ExampleCatalog:
       AsyncReport,
       BrowserIntegration,
       Counter,
+      ConnectedResource,
       Lifecycle,
       Navigation,
       ProfileForm,

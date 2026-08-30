@@ -4,7 +4,6 @@ import java.time.Duration
 
 import zio.*
 import zio.http.{Request, URL}
-import zio.stream.ZStream
 import zio.test.*
 
 import scalive.*
@@ -132,20 +131,13 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         result <- ZIO.scoped {
                     val child = new LiveView[ResourceMsg, Unit]:
                       def mount(ctx: MountContext) =
-                        val stream = ZStream.fromZIO(
-                          ZIO.acquireReleaseWith(acquired.succeed(()).unit)(
-                            _ => released.succeed(()).unit
-                          )(_ => ZIO.never)
-                        )
                         ctx.connection match
                           case Connection.Disconnected => ZIO.unit
                           case Connection.Connected(connected) =>
-                            connected.subscriptions
-                              .start(
-                                SubscriptionKey("connected-render-resource"),
-                                SubscriptionDelivery.Lossless
-                              )(stream)
-                              .as(())
+                            connected.resources
+                              .acquireRelease(acquired.succeed(()).unit)(_ =>
+                                released.succeed(()).unit
+                              ).unit
                       def handleMessage(model: Unit, ctx: MessageContext) =
                         case ResourceMsg.Tick => ZIO.succeed(model)
                       override def view(model: Signal[Unit]) = div("resource child")

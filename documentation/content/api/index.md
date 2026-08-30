@@ -28,3 +28,9 @@ examples.
 
 Start with @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@, the typed boundary for mounting
 state, handling messages, and rendering HTML.
+
+Lifecycle capabilities include
+@:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@ for
+non-message acquisition and finalization during connected mount. The
+[lifecycle-owned work guide](../guides/async-work-and-subscriptions.md#choose-the-resource-by-shape)
+compares it with managed async tasks and subscriptions.

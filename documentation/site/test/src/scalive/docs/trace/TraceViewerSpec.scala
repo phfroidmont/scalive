@@ -4,13 +4,24 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import scala.jdk.CollectionConverters.*
 import zio.*
+import zio.http.{Request, URL}
+import zio.json.ast.Json
 import zio.test.*
 
 import scalive.*
+import scalive.docs.examples.ExampleRegistry
 import scalive.docs.model.*
+import scalive.docs.xray.DocumentationTraceStore
 import scalive.testing.ConnectedRender
 
 object TraceViewerSpec extends ZIOSpecDefault:
+  private val transportConfig = ZioHttpConfig(
+    "trace-viewer-spec-secret-000000000000000000",
+    java.time.Duration.ofMinutes(30),
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.https("docs.example.test"))
+  ).toOption.get
+
   private def render(trace: TraceDefinition): RIO[Scope, Document] =
     val view = new LiveView.Eventless[Unit]:
       def mount(ctx: MountContext) = ZIO.unit
@@ -18,6 +29,36 @@ object TraceViewerSpec extends ZIOSpecDefault:
     ConnectedRender.join(view).flatMap(_.html).map(Jsoup.parseBodyFragment)
 
   override def spec = suite("TraceViewerSpec")(
+    test("releases the trace registration when its connected lifecycle leaves") {
+      ZIO.scoped {
+        val session       = "trace-session-1234"
+        val observedTopic = "lv:observed"
+        for
+          store   <- DocumentationTraceStore.make()
+          example <- ZIO
+                       .fromOption(ExampleRegistry.get("counter"))
+                       .orElseFail(Exception("counter example is not registered"))
+          _ <- store.activate(session, observedTopic, example)
+          viewer = LiveTraceViewer(
+                     "trace-viewer-test",
+                     observedTopic,
+                     "lv:viewer",
+                     example,
+                     store
+                   )
+          application = scalive.Live.router(scalive.live(viewer))
+          connected <- ConnectedRender.join(
+                         application,
+                         transportConfig,
+                         Request.get(URL.root),
+                         Map("_scalive_trace_session" -> Json.Str(session))
+                       )
+          _         <- connected.leave
+          _         <- TestClock.adjust(5.seconds)
+          released  <- ZIO.succeed(!store.isActive(session, observedTopic))
+        yield assertTrue(released)
+      }
+    },
     test("renders trace structure in source order") {
       ZIO.scoped {
         render(TraceCatalog.HttpGet).map { document =>

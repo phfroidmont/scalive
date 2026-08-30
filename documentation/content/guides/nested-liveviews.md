@@ -77,8 +77,8 @@ to the connected child.
 Apply the same mount discipline as a root LiveView:
 
 - initialize deterministic render state in both phases;
-- start async tasks, subscriptions, and client effects only for the connected
-  lifecycle;
+- start async tasks, subscriptions, connected resources, and client effects only
+  for the connected lifecycle;
 - configure uploads and streams in each lifecycle that renders their handles;
 - store durable state outside the socket when it must survive reconnects.
 
@@ -90,8 +90,9 @@ belong to the browser's current root route.
 
 Parent graph evaluations and patches do not reset a child whose ID remains stable. The
 child handles its own events serially and owns its component tree and managed
-resources. Equal async, subscription, stream, or upload keys in parent and child
-therefore do not refer to the same registration.
+resources. Parent and child also acquire connected resources independently.
+Equal async, subscription, stream, or upload keys in parent and child therefore
+do not refer to the same registration.
 
 This isolation also defines communication. Parent event bindings cannot target
 components inside the child's socket, and the child has no typed component-style
@@ -157,9 +158,10 @@ domain update through an application boundary when the root title must change.
 
 Stop rendering a non-sticky child when its UI is no longer needed. Once the
 client leaves that child, Scalive shuts down its socket and lifecycle-owned
-async tasks, subscriptions, uploads, streams, components, hooks, and nested
-descendants. Leaving the parent performs the same recursive cleanup for its
-non-sticky children. Sticky children intentionally survive that parent leave.
+connected resources, async tasks, subscriptions, uploads, streams, components,
+hooks, and nested descendants. Leaving the parent performs the same recursive
+cleanup for its non-sticky children. Sticky children intentionally survive that
+parent leave.
 
 Do not retain child runtime IDs or handles in parent state. On a crash, assume
 the failed socket's in-memory model and resources are gone and rebuild them in
@@ -173,7 +175,7 @@ child failure, and rejoin separately; they exercise different ownership paths.
 - Review [Routes, parameters, and navigation](routes-and-navigation.md) before a
   child initiates page navigation.
 - Design managed resources with
-  [Asynchronous work and subscriptions](async-work-and-subscriptions.md) and
+  [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md) and
   [File uploads](uploads-and-consumption.md).
 - Apply root title and flash rules from
   [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md).

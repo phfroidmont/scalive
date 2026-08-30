@@ -3,6 +3,7 @@ package scalive
 import scala.reflect.ClassTag
 
 import zio.Task
+import zio.UIO
 import zio.json.JsonEncoder
 import zio.stream.ZStream
 
@@ -85,6 +86,24 @@ trait Subscriptions[Msg]:
     stream: ZStream[Any, Nothing, Msg]
   ): Task[Unit]
   def cancel(key: SubscriptionKey): Task[Unit]
+
+/** Acquisition and finalization owned by one connected `LiveView` lifecycle.
+  *
+  * This capability is exposed through [[RootMountConnected.resources]]. Applications should use it
+  * during connected mount and must not retain it for later acquisition.
+  */
+trait ConnectedResources:
+  /** Acquires a resource and registers its finalizer with the current connected lifecycle.
+    *
+    * Acquisition and finalization run uninterruptibly. When `acquire` succeeds, `release` is
+    * registered before the acquired value is returned and runs exactly once when the lifecycle
+    * closes. If `acquire` fails, `release` does not run. Calls made after lifecycle closure fail
+    * before acquisition starts.
+    *
+    * Keep both effects short and bounded because either can delay lifecycle shutdown. Recover any
+    * expected cleanup failure inside the `UIO` finalizer.
+    */
+  def acquireRelease[A](acquire: Task[A])(release: A => UIO[Unit]): Task[A]
 
 trait Client:
   def push[A: JsonEncoder](event: ServerToBrowserEvent[A], payload: A): Task[Unit]

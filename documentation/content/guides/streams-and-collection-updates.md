@@ -174,5 +174,5 @@ Try insertion, bounded retention, deletion, and reset in the
 ## Related Tasks {#related-tasks}
 
 - Keep simpler repeated content keyed with [HTML and event bindings](html-dsl-and-event-bindings.md#key-repeated-content).
-- Feed repeated updates from lifecycle-owned work with [Asynchronous work and subscriptions](async-work-and-subscriptions.md#prerequisites).
+- Feed repeated updates from lifecycle-owned work with [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md#prerequisites).
 - Exercise initial collection rendering with [Testing LiveViews](testing.md#test-disconnected-rendering).

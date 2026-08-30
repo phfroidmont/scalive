@@ -68,8 +68,8 @@ service, perform I/O, or fail. Learn only requires this small subset:
 
 Returning an effect describes work for Scalive to run. Do not create another
 ZIO runtime inside a callback. Use lifecycle capabilities such as managed async
-work or subscriptions for connection-owned background work instead of starting
-an unmanaged fiber.
+work, subscriptions, or connected resources for lifecycle-owned work instead of
+starting an unmanaged fiber.
 
 ## Produce Explicit State Transitions {#produce-explicit-state-transitions}
 

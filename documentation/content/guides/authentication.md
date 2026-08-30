@@ -174,6 +174,12 @@ session. The browser reconnects and reruns connected admission, which rejects
 the now-revoked claim. A stale signed bootstrap token therefore cannot restore
 the session.
 
+Connected resources remain per-LiveView even when those tabs share one
+application session ID. Closing every matching transport finalizes each
+lifecycle independently; a resource shared by the logical session instead
+belongs in a service with explicit leases or reference counting. See
+[Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md#connected-resources).
+
 ## Provide One Shared Authentication Service {#provide-one-shared-authentication-service}
 
 The HTTP handlers and protected Live routes must use the same `AuthService`

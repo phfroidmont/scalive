@@ -805,6 +805,195 @@ object RootConnectionSpec extends ZIOSpecDefault:
         yield assertTrue(closed.nonEmpty, result == Left(ConnectionError.Closed))
       }
     },
+    test("connected resources return their value and release exactly once on close") {
+      ZIO.scoped {
+        for
+          acquisitions <- Ref.make(0)
+          releases     <- Ref.make(Vector.empty[Int])
+          outputs      <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView.Eventless[Int]:
+                   def mount(ctx: MountContext): Task[Int] = ctx.connection match
+                     case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                     case Connection.Connected(connected) =>
+                       connected.resources.acquireRelease(acquisitions.updateAndGet(_ + 1))(
+                         value => releases.update(_ :+ value)
+                       )
+                   def view(model: Signal[Int]): HtmlElement[Nothing] = div(model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          model      <- connection.inspectModel
+          before     <- releases.get
+          _          <- connection.close *> connection.close
+          after      <- releases.get
+        yield assertTrue(model == 1, before.isEmpty, after == Vector(1))
+      }
+    },
+    test("connected resource acquisition composes reentrantly") {
+      ZIO.scoped {
+        for
+          releases <- Ref.make(Set.empty[String])
+          outputs  <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView.Eventless[String]:
+                   def mount(ctx: MountContext): Task[String] = ctx.connection match
+                     case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                     case Connection.Connected(connected) =>
+                       connected.resources.acquireRelease(
+                         connected.resources
+                           .acquireRelease(ZIO.succeed("inner"))(_ =>
+                             releases.update(_ + "inner")
+                           ).as("outer")
+                       )(_ => releases.update(_ + "outer"))
+                   def view(model: Signal[String]): HtmlElement[Nothing] = div(model)
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          model      <- connection.inspectModel
+          _          <- connection.close
+          finalized  <- releases.get
+        yield assertTrue(model == "outer", finalized == Set("inner", "outer"))
+      }
+    },
+    test("connected resources are independent across lifecycles sharing application state") {
+      ZIO.scoped {
+        for
+          nextId   <- Ref.make(0)
+          releases <- Ref.make(Vector.empty[Int])
+          firstOut <- Queue.unbounded[ConnectionOutput]
+          secondOut <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView.Eventless[Int]:
+                   def mount(ctx: MountContext): Task[Int] = ctx.connection match
+                     case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                     case Connection.Connected(connected) =>
+                       connected.resources.acquireRelease(nextId.updateAndGet(_ + 1))(
+                         id => releases.update(_ :+ id)
+                       )
+                   def view(model: Signal[Int]): HtmlElement[Nothing] = div(model.map(_.toString))
+          first  <- RootConnection.start(config, metadata, view, firstOut.offer(_).unit)
+          _      <- firstOut.take
+          second <- RootConnection.start(config, metadata, view, secondOut.offer(_).unit)
+          _      <- secondOut.take
+          firstModel  <- first.inspectModel
+          secondModel <- second.inspectModel
+          _            <- first.close
+          afterFirst   <- releases.get
+          _            <- second.close
+          afterSecond  <- releases.get
+        yield assertTrue(
+          firstModel != secondModel,
+          afterFirst == Vector(firstModel),
+          afterSecond.toSet == Set(firstModel, secondModel)
+        )
+      }
+    },
+    test("failed connected resource acquisition does not run release") {
+      ZIO.scoped {
+        for
+          releases <- Ref.make(0)
+          outputs  <- Queue.unbounded[ConnectionOutput]
+          failure = RuntimeException("resource acquisition failed")
+          view = new LiveView.Eventless[Unit]:
+                   def mount(ctx: MountContext): Task[Unit] = ctx.connection match
+                     case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                     case Connection.Connected(connected) =>
+                       connected.resources
+                         .acquireRelease[Unit](ZIO.fail(failure))(_ => releases.update(_ + 1))
+                   def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
+          result   <- RootConnection.start(config, metadata, view, outputs.offer(_).unit).either
+          released <- releases.get
+        yield assertTrue(
+          result.left.exists(_.isInstanceOf[ConnectionError.SessionFailed]),
+          released == 0
+        )
+      }
+    },
+    test("a connected resource capability captured from mount rejects use after close") {
+      ZIO.scoped {
+        for
+          captured    <- Promise.make[Nothing, ConnectedResources]
+          acquisitions <- Ref.make(0)
+          releases     <- Ref.make(0)
+          outputs      <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView.Eventless[Unit]:
+                   def mount(ctx: MountContext): Task[Unit] = ctx.connection match
+                     case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                     case Connection.Connected(connected) =>
+                       captured.succeed(connected.resources).unit
+                   def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          resources  <- captured.await
+          _          <- connection.close
+          result <- resources
+                      .acquireRelease(acquisitions.updateAndGet(_ + 1))(_ =>
+                        releases.update(_ + 1)
+                      ).either
+          acquired <- acquisitions.get
+          released <- releases.get
+        yield assertTrue(result.isLeft, acquired == 0, released == 0)
+      }
+    },
+    test("startup failure after acquisition releases connected resources before returning") {
+      ZIO.scoped {
+        for
+          acquired <- Ref.make(false)
+          released <- Ref.make(false)
+          outputs  <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView.Eventless[Unit]:
+                   def mount(ctx: MountContext): Task[Unit] = ctx.connection match
+                     case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                     case Connection.Connected(connected) =>
+                       connected.resources
+                         .acquireRelease(acquired.set(true))(_ => released.set(true))
+                   def view(model: Signal[Unit]): HtmlElement[Nothing] =
+                     div(model.map(_ => throw RuntimeException("initial render failed")))
+          result       <- RootConnection.start(config, metadata, view, outputs.offer(_).unit).either
+          didAcquire   <- acquired.get
+          didRelease   <- released.get
+        yield assertTrue(
+          result.left.exists(_.isInstanceOf[ConnectionError.SessionFailed]),
+          didAcquire,
+          didRelease
+        )
+      }
+    },
+    test("connected resource cleanup defects do not suppress other finalizers or closure") {
+      ZIO.scoped {
+        for
+          laterFinalized <- Ref.make(false)
+          outputs        <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView.Eventless[Unit]:
+                   def mount(ctx: MountContext): Task[Unit] = ctx.connection match
+                     case Connection.Disconnected => ZIO.dieMessage("expected connected mount")
+                     case Connection.Connected(connected) =>
+                       connected.resources
+                         .acquireRelease(ZIO.unit)(_ => laterFinalized.set(true)) *>
+                         connected.resources
+                           .acquireRelease(ZIO.unit)(_ => ZIO.dieMessage("resource cleanup defect"))
+                           .unit
+                   def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          _          <- connection.close.exit
+          closed     <- connection.awaitClosed.timeout(1.second)
+          laterRan   <- laterFinalized.get
+        yield assertTrue(closed.nonEmpty, laterRan)
+      }
+    },
+    test("concurrent connected resource close callers await the same finalization") {
+      for
+        resources <- ScopedConnectedResources.make
+        entered   <- Promise.make[Nothing, Unit]
+        allow     <- Promise.make[Nothing, Unit]
+        _ <- resources
+               .acquireRelease(ZIO.unit)(_ => entered.succeed(()).unit *> allow.await)
+        first  <- resources.close.fork
+        _      <- entered.await
+        second <- resources.close.fork
+        early  <- second.poll
+        _      <- allow.succeed(())
+        firstExit  <- first.await
+        secondExit <- second.await
+      yield assertTrue(early.isEmpty, firstExit.isSuccess, secondExit.isSuccess)
+    },
     test("cleanup defects cannot suppress connection closure") {
       ZIO.scoped {
         for

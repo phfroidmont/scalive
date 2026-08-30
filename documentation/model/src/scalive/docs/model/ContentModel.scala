@@ -123,7 +123,7 @@ enum ExampleCategory(val label: String, val description: String) derives JsonCod
   case AsyncAndEffects
       extends ExampleCategory(
         "Async and effects",
-        "Managed work, subscriptions, cancellation, and injected services."
+        "Managed work, subscriptions, connected resources, cancellation, and injected services."
       )
   case UserInput
       extends ExampleCategory(

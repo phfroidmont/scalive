@@ -156,8 +156,8 @@ the server to mount a fresh connected lifecycle. Verify that:
 
 - @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ does not assume the disconnected model or an earlier socket still
   exists;
-- connection-scoped streams and fibers are acquired through lifecycle
-  capabilities so old resources can be released;
+- connected resources, streams, and fibers are acquired through lifecycle
+  capabilities so the old lifecycle can release them;
 - durable user state is loaded from a shared service rather than only from the
   previous model;
 - repeated mount side effects are idempotent or explicitly guarded;

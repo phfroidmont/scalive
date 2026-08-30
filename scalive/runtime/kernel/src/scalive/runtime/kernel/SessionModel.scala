@@ -278,6 +278,7 @@ final private[scalive] case class SessionLogic[Msg, Model](
       case UploadRetirementInstruction.Hosted(_, _) => ZIO.unit
     },
   closeUploads: Model => UIO[Unit] = (_: Model) => ZIO.unit,
+  closeLifecycle: UIO[Unit] = ZIO.unit,
   terminateOnNavigate: Boolean = true)
 
 /** Reference-identity wrapper: component definitions are not value keys. */

@@ -319,9 +319,11 @@ exact component instance is removed. There is no separate hook teardown
 callback: lifecycle and component removal discard their registries.
 
 Hook-managed external resources still need an owner. Prefer `ctx.async`,
-`ctx.subscriptions`, uploads, and streams where available because Scalive cleans
-them up with their lifecycle. If a hook acquires some other resource, manage its
-scope explicitly rather than starting an unmanaged fiber. Use stable hook IDs
+`ctx.subscriptions`, connected resources, uploads, and streams where available
+because Scalive cleans them up with their lifecycle. The connected-resource
+capability is exposed during mount and should not be retained for later use; a
+hook that changes ownership later must use a keyed managed API or an explicitly
+scoped service rather than starting an unmanaged fiber. Use stable hook IDs
 derived from the owner when attaching shared behavior, and detach a conditional
 hook when its policy no longer applies.
 
@@ -329,5 +331,5 @@ hook when its policy no longer applies.
 
 - Apply guards to session revocation with [Authentication and sessions](authentication.md#revalidate-connected-turns).
 - Use [Browser commands, events, and hooks](browser-integration.md) for JavaScript hooks and typed browser payloads.
-- Own tasks and streams with [Asynchronous work and subscriptions](async-work-and-subscriptions.md).
+- Own tasks, streams, and other acquired resources with [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md).
 - Handle component identity, updates, and outputs with [Stateful components and communication](components-and-communication.md).

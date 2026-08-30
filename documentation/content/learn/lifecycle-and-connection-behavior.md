@@ -25,7 +25,7 @@ def mount(ctx: MountContext): Task[Model] =
   ZIO.succeed(Model(connectedMount, currentTitle = DefaultTitle))
 ```
 
-Start connection-owned work only from a matched
+Start lifecycle-owned work only from a matched
 `Connection.Connected(capabilities)` branch. This example starts no clock or
 other background task.
 
@@ -62,11 +62,11 @@ The complete lifecycle can now be summarized as:
 | --- | --- | --- |
 | HTTP mount | Disconnected | Build a temporary model for useful initial HTML |
 | HTTP render | Disconnected | Render the response inside layouts; this model ends with the request |
-| Socket mount | Connected | Build a new model and start connection-owned work |
+| Socket mount | Connected | Build a new model and start lifecycle-owned work |
 | Initial live render | Connected | Render and commit the initial connected tree |
 | Message handling | Connected | Produce a proposed model from the last committed model |
 | Render and diff | Connected | Render the proposal, compare trees, then commit after success |
-| Socket termination | Ending | Interrupt and release connection-owned resources |
+| Socket termination | Ending | Interrupt and release lifecycle-owned resources |
 | Rejoin | Connected | Start a new lifecycle and mount again from durable inputs |
 
 Async completions and subscription values enter the same typed message flow as
@@ -79,8 +79,8 @@ and subscriptions belong to the context for the phase in which they are valid.
 | --- | --- | --- |
 | Render-derived value | Recomputed from the model | Labels, totals, disabled state |
 | Disconnected model | One HTTP render | Initial page data and useful no-JavaScript HTML |
-| Connected model | One socket lifecycle | Selection, validation, loaded view data |
-| Lifecycle resource | Current connection | Subscriptions, async tasks, uploads |
+| Connected model | One connected lifecycle | Selection, validation, loaded view data |
+| Lifecycle resource | One connected LiveView | Connected resources, subscriptions, async tasks, uploads |
 | Injected service | Application-defined lifetime | Repositories, caches, shared domain state |
 | Durable storage | Beyond the process or connection | Orders, documents, audit history |
 | Browser-local state | Current document or hook | Focus, scroll, third-party widget state |
@@ -90,22 +90,23 @@ to one lifecycle. An injected service can deliberately outlive that lifecycle,
 but it must define its own concurrency, isolation, and durability semantics.
 
 State that must survive reconnect belongs in a service or durable store. Reload
-it during mount and keep only the connection's rendering and interaction state
-in the model.
+it during mount and keep only the connected lifecycle's rendering and
+interaction state in the model.
 
 ## Treat Reconnect As A New Lifecycle {#treat-reconnect-as-a-new-lifecycle}
 
 When the transport rejoins, the LiveView mounts again. Rebuild its model from
-durable inputs, restart required connection-scoped work, and expect the old
-socket's subscriptions, async tasks, uploads, and nested LiveViews to be
-released.
+durable inputs, restart required lifecycle-owned work, and expect the old
+lifecycle's connected resources, subscriptions, async tasks, uploads, and nested
+LiveViews to be released.
 
 Use this checklist:
 
 - Make `mount` safe to run repeatedly.
 - Match `ctx.connection` and run socket-only work only in the
   `Connection.Connected(capabilities)` branch.
-- Use lifecycle-managed APIs for async work and subscriptions.
+- Use [lifecycle-managed APIs](../guides/async-work-and-subscriptions.md#choose-the-resource-by-shape)
+  for async work, subscriptions, and non-message acquisition and finalization.
 - Make repeated external mount effects idempotent where necessary.
 - Test the reconnect behavior that matters to the application in a browser.
 

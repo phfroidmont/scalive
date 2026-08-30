@@ -1,6 +1,6 @@
 {%
-title = "Asynchronous work and subscriptions"
-description = "Own finite tasks and long-lived message streams with the LiveView lifecycle, typed keys, explicit UI states, and predictable cancellation."
+title = "Asynchronous work, subscriptions, and connected resources"
+description = "Own finite tasks, message streams, and other resources with the connected LiveView lifecycle."
 order = 40
 section = guides
 group = "Async and lifecycle"
@@ -13,11 +13,14 @@ transitions and rendered UI states.
 
 ## Choose The Resource By Shape {#choose-the-resource-by-shape}
 
-Scalive gives a connected LiveView two lifecycle-owned ways to receive work
-later. Use `ctx.async` for one finite `Task[A]`: a database query, service call,
-or report that succeeds, fails, or is cancelled. Use `ctx.subscriptions` for a
+Scalive gives a connected LiveView three lifecycle-owned resource shapes. Use
+`ctx.async` for one finite `Task[A]`: a database query, service call, or report
+that succeeds, fails, or is cancelled. Use `ctx.subscriptions` for a
 `ZStream[Any, Nothing, Msg]` that can emit many messages over time: a clock,
-notification feed, or application event stream.
+notification feed, or application event stream. Use
+@:apiSymbol(def:scalive.RootMountConnected.resources)`connected.resources`@:@
+during mount for a resource that needs deterministic cleanup but does not itself
+deliver messages to the LiveView.
 
 A `Task[A]` is finite work that may fail with a `Throwable`; a fiber is its
 running, interruptible execution. A `ZStream[R, E, A]` emits zero or more `A`
@@ -27,19 +30,81 @@ replacement disappears.
 Use an injected service for durable or shared state. The APIs on this page own
 work only for one connected LiveView lifecycle.
 
-Both APIs attach resources to the socket lifecycle. Scalive interrupts them
-when the socket closes, and starting replacement work cannot leak a stale
-completion into the current model. Prefer these APIs to `fork` inside a message
-handler: a manually forked fiber has no automatic owner, result delivery, or
-cleanup contract with the LiveView runtime.
+These APIs attach resources to one connected LiveView lifecycle. Scalive
+releases them when that lifecycle closes. Managed async tasks and subscriptions
+also prevent replaced work from delivering stale completions. Prefer these APIs
+to `fork` inside a message handler: a manually forked fiber has no automatic
+owner, result delivery, or cleanup contract with the LiveView runtime.
 
 @:callout(info)
 
-Phoenix LiveView uses `start_async` and subscription callbacks for related
-jobs. Scalive exposes ZIO `Task` and `ZStream` directly and delivers their
-outcomes as typed messages.
+Phoenix LiveView uses `start_async` and process-owned subscriptions for related
+jobs, but it has no general acquire/release registry. Cleanup normally follows
+process ownership or a best-effort `terminate/2` callback. Scalive exposes ZIO
+`Task` and `ZStream` directly for message-producing work and adds a deterministic
+connected-lifecycle scope for other resources.
 
 @:@
+
+## Acquire Other Connected Resources {#connected-resources}
+
+The @:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@
+capability is exposed through the connected mount branch. Call
+@:apiSymbol(def:scalive.ConnectedResources.acquireRelease)`acquireRelease`@:@
+there and provide a non-failing finalizer:
+
+```scala
+trait SessionMonitor:
+  def stop: UIO[Unit]
+
+def startSessionMonitor: Task[SessionMonitor]
+
+def mount(ctx: MountContext): Task[Model] =
+  ctx.connection match
+    case Connection.Disconnected =>
+      loadDisconnectedModel
+
+    case Connection.Connected(connected) =>
+      connected.resources
+        .acquireRelease(startSessionMonitor)(_.stop)
+        .flatMap(monitor => loadConnectedModel(monitor))
+```
+
+The capability is intentionally exposed only during connected mount. Do not
+retain it in the model, a service, or a callback for later acquisition; use a
+keyed managed API or an explicitly scoped service when ownership changes after
+mount.
+
+The acquisition `Task[A]` may fail normally. Once it succeeds, Scalive registers
+the finalizer before returning the value. That finalizer runs exactly once when
+the lifecycle closes, including when the remainder of connected mount or the
+initial render fails. An acquisition failure does not run the finalizer, and an
+attempt made after lifecycle closure fails before acquisition starts.
+
+The finalizer is a `UIO[Unit]`: it has no expected typed failure. If an external
+cleanup API returns `Task[Unit]`, make the policy explicit by recovering and
+logging, retrying within a bound, or deliberately converting the failure to a
+defect. Do not leave that decision implicit at shutdown.
+
+ZIO runs acquisition and finalization uninterruptibly so interruption cannot
+strand a partially registered resource. Keep both effects short and bounded;
+a blocked acquisition or finalizer also delays lifecycle shutdown.
+
+The owner is the connected LiveView lifecycle, not an application session ID.
+Two tabs using the same login session acquire independent resources, and closing
+one tab does not release the other tab's resource. Root and nested LiveViews on
+one WebSocket also have independent lifecycles; closing the socket releases all
+of them. Put genuinely session-shared resources in an injected service with
+explicit reference counting or leases.
+
+Use this capability for registrations, observers, external subscriptions, and
+handles whose release is the only lifecycle interaction. Continue to use
+`ctx.subscriptions` when a timer or feed emits `Msg` values, or when work must be
+replaced or cancelled while the LiveView remains mounted.
+
+Cleanup starts after the server observes lifecycle termination. External
+presence and locks still need leases or expiry for node failure and undetected
+network partitions.
 
 ## Run Finite Work With A Typed Key {#run-finite-work-with-a-typed-key}
 
@@ -167,8 +232,8 @@ case Msg.Cancel =>
 ```
 
 Subscription messages pass through info lifecycle hooks before
-`handleMessage`. Registrations exist only for the connected socket and do not
-run during disconnected rendering. Mount therefore starts required streams
+`handleMessage`. Registrations exist only for the connected lifecycle and do
+not run during disconnected rendering. Mount therefore starts required streams
 again for each new connected lifecycle.
 
 ## Keep Ownership Local {#keep-ownership-local}
@@ -181,7 +246,7 @@ a shared owner.
 
 Keep durable results in an application service or database when they must
 survive navigation or reconnect. `AsyncValue`, task registrations, and
-subscription registrations are socket state. On page exit, Scalive releases
+subscription registrations are lifecycle state. On page exit, Scalive releases
 the managed resource; on remount, initialize the model and registrations from
 their real source of truth.
 
@@ -197,7 +262,14 @@ failure, stale-completion suppression, explicit cancellation, retry, and reset:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-example)
 
-Run the [managed clock subscription](../examples/subscription-clock.md) and
+The connected registration example shows the acquired handle in its initial
+model, updates ordinary model state without reacquiring, and releases the exact
+handle when its LiveView closes:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/ConnectedResourceExample.scala, connected-resource-example)
+
+Run the [connected lifecycle registration](../examples/connected-resource.md),
+[managed clock subscription](../examples/subscription-clock.md), and
 [managed async report](../examples/async-report.md) alongside the documentation
 site's diagnostic views to correlate messages, model transitions, and final DOM
 changes.

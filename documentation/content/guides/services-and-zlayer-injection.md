@@ -221,5 +221,5 @@ Try the embedded preview or open the real layer-backed route from the
 ## Related Tasks {#related-tasks}
 
 - Share an authentication store between HTTP and Live routes in [Authentication and sessions](authentication.md#provide-one-shared-authentication-service).
-- Move finite or long-lived work under lifecycle ownership with [Asynchronous work and subscriptions](async-work-and-subscriptions.md#prerequisites).
+- Move finite, streaming, or acquired work under lifecycle ownership with [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md#prerequisites).
 - Replace production layers in [Testing LiveViews](testing.md#prerequisites).

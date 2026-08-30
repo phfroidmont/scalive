@@ -228,6 +228,6 @@ Try both communication directions in the
 - Build component forms with [Typed forms and validation](typed-forms-and-validation.md).
 - Add component-owned files with [File uploads](uploads-and-consumption.md).
 - Manage finite component work with
-  [Asynchronous work and subscriptions](async-work-and-subscriptions.md).
+  [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md).
 - Compose client effects with
   [Browser commands, events, and hooks](browser-integration.md).

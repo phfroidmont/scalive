@@ -3016,8 +3016,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.errorFeedback:4e1c26c911ab472c",
-          "signature" : "def errorFeedback(mods: |[Mod[Nothing], IterableOnce[Mod[Nothing]]]*): HtmlElement[Nothing]"
+          "id" : "def:scalive.FormFieldView.errorFeedback:273b79b12429cb0b",
+          "signature" : "def errorFeedback(render: FormError => Mod[Nothing], mods: |[Mod[Nothing], IterableOnce[Mod[Nothing]]]*): HtmlElement[Nothing]"
         }
       ]
     },
@@ -9040,8 +9040,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.FormFieldView.errorFeedback:5a930ea10c14b20e",
-          "signature" : "extension def errorFeedback[A](field: Signal[FormFieldView[A]])(mods: |[Mod[Nothing], IterableOnce[Mod[Nothing]]]*): HtmlElement[Nothing]"
+          "id" : "extension:scalive.FormFieldView.errorFeedback:9b4f45dc960a65aa",
+          "signature" : "extension def errorFeedback[A](field: Signal[FormFieldView[A]])(render: Signal[FormError] => Mod[Nothing], mods: |[Mod[Nothing], IterableOnce[Mod[Nothing]]]*): HtmlElement[Nothing]"
         }
       ]
     },

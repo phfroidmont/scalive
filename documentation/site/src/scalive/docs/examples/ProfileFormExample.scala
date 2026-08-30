@@ -50,7 +50,10 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
             nameField.validationAttributes,
             placeholder := "Ada Lovelace"
           ),
-          nameField.errorFeedback(dataAttr("field-error") := "name")
+          nameField.errorFeedback(
+            error => error.map(value => messages(value.message)),
+            dataAttr("field-error") := "name"
+          )
         ),
         field(
           label(forId := emailField.id, "Email"),
@@ -58,7 +61,10 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
             emailField.validationAttributes,
             placeholder := "ada@example.com"
           ),
-          emailField.errorFeedback(dataAttr("field-error") := "email")
+          emailField.errorFeedback(
+            error => error.map(value => messages(value.message)),
+            dataAttr("field-error") := "email"
+          )
         ),
         field(
           label(forId := biographyField.id, "Biography"),
@@ -67,7 +73,10 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
             rows        := 5,
             placeholder := s"Up to ${Profile.BiographyMaxLength} characters"
           ),
-          biographyField.errorFeedback(dataAttr("field-error") := "biography")
+          biographyField.errorFeedback(
+            error => error.map(value => messages(value.message)),
+            dataAttr("field-error") := "biography"
+          )
         ),
         div(
           cls := "docs-profile-actions",
@@ -92,25 +101,34 @@ object ProfileFormExample:
     val Name = Root
       .string("name")
       .map(_.trim)
-      .required("Name is required.")
+      .required("validation.name.required")
 
     val Email = Root
       .string("email")
       .map(_.trim)
-      .required("Email is required.")
-      .validate("Enter a valid email address.")(EmailPattern.matches)
+      .required("validation.email.required")
+      .validate("validation.email.invalid")(EmailPattern.matches)
 
     val Biography = Root
       .string("biography")
       .map(_.trim)
-      .required("Biography is required.")
-      .validate(s"Biography must be $BiographyMaxLength characters or fewer.")(
+      .required("validation.biography.required")
+      .validate("validation.biography.too_long")(
         _.length <= BiographyMaxLength
       )
 
     val Definition = Root.form(Profile.apply)(Name, Email, Biography)
 
     private val EmailPattern = """^[^\s@]+@[^\s@]+\.[^\s@]+$""".r
+
+  private val messages = Map(
+    "validation.name.required"      -> "Name is required.",
+    "validation.email.required"     -> "Email is required.",
+    "validation.email.invalid"      -> "Enter a valid email address.",
+    "validation.biography.required" -> "Biography is required.",
+    "validation.biography.too_long" ->
+      s"Biography must be ${Profile.BiographyMaxLength} characters or fewer."
+  )
 
   final case class Model(form: Profile.Definition.Form, saved: Option[Profile] = None)
 

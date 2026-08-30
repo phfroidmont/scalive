@@ -37,11 +37,11 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
         invalid == Left(
           FormErrors(
             Vector(
-              FormError(profile.Name.path, "Name is required."),
-              FormError(profile.Email.path, "Enter a valid email address."),
+              FormError(profile.Name.path, "validation.name.required"),
+              FormError(profile.Email.path, "validation.email.invalid"),
               FormError(
                 profile.Biography.path,
-                "Biography must be 500 characters or fewer."
+                "validation.biography.too_long"
               )
             )
           )

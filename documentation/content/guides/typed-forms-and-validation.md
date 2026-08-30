@@ -27,13 +27,13 @@ object Profile:
   val Name = Root
     .string("name")
     .map(_.trim)
-    .required("Name is required.")
+    .required("validation.name.required")
 
   val Email = Root
     .string("email")
     .map(_.trim)
-    .required("Email is required.")
-    .validate("Enter a valid email address.")(EmailPattern.matches)
+    .required("validation.email.required")
+    .validate("validation.email.invalid")(EmailPattern.matches)
 
   val Definition = Root.form(Profile.apply)(Name, Email)
 ```
@@ -189,10 +189,16 @@ raw value, and validation helpers:
 
 ```scala
 val emailField = profileForm.field(Profile.Email)
+val messages = Map(
+  "validation.email.required" -> "Email is required.",
+  "validation.email.invalid"  -> "Enter a valid email address."
+)
 
 label(forId := emailField.id, "Email")
 emailField.email(emailField.validationAttributes)
-emailField.errorFeedback()
+emailField.errorFeedback { error =>
+  messages(error.message)
+}
 ```
 
 `FormFieldView` currently provides `text`, `email`, `password`, `hidden`,
@@ -225,9 +231,25 @@ helpers preserve raw strings; they do not parse numbers or dates implicitly.
 @:apiSymbol(def:scalive.FormFieldView.validationAttributes)`validationAttributes`@:@
 connects the input to feedback and adds `aria-invalid` when visible errors
 exist. @:apiSymbol(def:scalive.FormFieldView.errorFeedback)`errorFeedback`@:@
-renders a stable live region whose messages remain hidden until that field is
-used or the form is submitted. Use a real `label` with `forId` and keep success
-feedback in a separate status region.
+renders a stable live region whose errors remain hidden until that field is
+used or the form is submitted. Scalive owns the feedback ID, live-region
+attributes, visibility rules, and `form-errors` and `form-error` wrappers. The
+renderer owns only each error's presentation, so `FormError.message` may remain
+a stable localization key instead of pre-rendered text.
+
+The signal-backed field accepts the same pattern and passes a retained error
+signal to the renderer:
+
+```scala
+val emailField = profileFormSignal.field(Profile.Email)
+
+emailField.errorFeedback { error =>
+  error.map(value => messages(value.message))
+}
+```
+
+Use a real `label` with `forId` and keep success feedback in a separate status
+region.
 
 ## Reset Deliberately {#reset-deliberately}
 

@@ -498,15 +498,16 @@ final class FormFieldView[A] private[scalive] (
   /** Renders interaction-visible errors paired with [[validationAttributes]].
     *
     * The wrapper is a `div` with [[errorId]], `phx-feedback-for`, `aria-live="polite"`, and class
-    * `form-errors`. Caller modifiers, including content, are appended before each generated
-    * `span.form-error`. The stable wrapper remains present when no errors are visible, but caller
-    * content is still rendered.
+    * `form-errors`. Each visible error is passed to `render` inside a generated `span.form-error`.
+    * Caller modifiers, including content, are appended before the generated error spans. The stable
+    * wrapper remains present when no errors are visible, but caller content is still rendered.
     */
   def errorFeedback(
+    render: FormError => Mod[Nothing],
     mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
   ): HtmlElement[Nothing] =
     val messages = visibleErrors.map { error =>
-      Mod.Content.Tag(span(cls := "form-error", error.message))
+      Mod.Content.Tag(span(cls := "form-error", render(error)))
     }
     div(
       idAttr           := errorId,
@@ -576,8 +577,12 @@ object FormFieldView:
         field.map(_.fieldValue)
       )
 
-    /** Renders signal-backed interaction-visible errors with stable accessibility relationships. */
+    /** Renders signal-backed interaction-visible errors with stable accessibility relationships.
+      *
+      * Each retained error signal is passed to `render` inside a generated `span.form-error`.
+      */
     def errorFeedback(
+      render: Signal[FormError] => Mod[Nothing],
       mods: (Mod[Nothing] | IterableOnce[Mod[Nothing]])*
     ): HtmlElement[Nothing] =
       div(
@@ -587,7 +592,7 @@ object FormFieldView:
         cls              := "form-errors",
         flattenSignalMods(mods),
         field.map(_.visibleErrors).splitByIndex { (_, error) =>
-          span(cls := "form-error", error.map(_.message))
+          span(cls := "form-error", render(error))
         }
       )
   end extension

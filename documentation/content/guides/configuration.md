@@ -122,7 +122,11 @@ The remaining framework choices are made while assembling the application:
 | --- | --- | --- |
 | Live socket | `Live.router.withSocketPath`; default `/live` | Configure the Phoenix client with the same mount. The WebSocket upgrade is the mount's `/websocket` child, `/live/websocket` by default. |
 | Root and Live layouts | `Live.router.withRootLayout` and `.withLayout`; identity root and no ordinary layouts by default | Supply a complete `<html>`, `<head>`, and `<body>` root with the application assets. Scalive inserts its CSRF metadata into the `<head>`. |
-| Static assets | `StaticAssetConfig.classpath` or `.directory`; default mount `/static` | Load the manifest before startup, add `assets.routes`, and render URLs from the same loaded value. |
+| Static assets | `StaticAssetConfig.classpath`, `.directory`, `.deploymentClasspath`, or `.deploymentDirectory`; default mount `/static` | Load assets before startup, add `assets.routes`, and render versioned or final URLs from the same loaded value. |
+
+Use `classpath` or `directory` when Scalive should version one complete relative
+output tree. Use `deploymentClasspath` or `deploymentDirectory` when an external
+build owns exact final filenames and cache policy through a deployment manifest.
 
 The Scala and JavaScript socket paths must agree:
 
@@ -138,7 +142,8 @@ const liveSocket = new LiveSocket("/socket", Socket, { params })
 ```
 
 Use [Client setup and static assets](static-assets-and-client-setup.md) for asset
-sources, digested paths, cache policy, and complete browser wiring.
+sources, versioned paths, deployment manifests, cache policy, and complete
+browser wiring.
 
 ## Configure The Server Separately {#configure-the-server-separately}
 

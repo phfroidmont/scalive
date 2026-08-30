@@ -290,7 +290,7 @@ canonical and sitemap URLs are absolute; Phase 10 will expand the same model.
 - [x] Implement one shared deterministic ranking algorithm in Scala and
   JavaScript.
 - [x] Add a server-rendered `/search?q=...` route.
-- [x] Add an instant-search JavaScript enhancement using the digested static
+- [x] Add an instant-search JavaScript enhancement using the versioned static
   index.
 - [x] Keep search usable through ordinary form submission without JavaScript.
 - [x] Add keyboard and focus handling for the search interface.
@@ -316,7 +316,7 @@ mill --ticker false documentation.check
   generated corpus.
 
 The pipeline serializes the same sorted `SearchEntry` vector into the server
-bundle and the digested browser index. Scala and JavaScript ranking use integer
+bundle and the versioned browser index. Scala and JavaScript ranking use integer
 scores, ASCII-stable tokenization, identifier aliases, and shared contract
 fixtures. Example and compatibility labels and anchors are derived from their
 validated stable IDs until later phases provide richer registry metadata.
@@ -588,8 +588,8 @@ defined by the production design contract in
 - [ ] Add structured startup and shutdown logs without secrets.
 - [ ] Redact cookies, tokens, CSRF values, and WebSocket query strings.
 - [ ] Add appropriate security response headers.
-- [ ] Verify static asset digests, cache headers, MIME types, `GET`, `HEAD`, and
-  traversal rejection.
+- [ ] Verify asset-set versions and deployment-manifest final paths, cache
+  headers, MIME types, `GET`, `HEAD`, and traversal rejection.
 - [ ] Produce one self-contained runnable JVM artifact.
 - [ ] Verify Node and npm are build-time-only dependencies.
 - [ ] Smoke-test the artifact with only a JRE and explicit environment variables.

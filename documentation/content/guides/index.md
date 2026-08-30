@@ -20,8 +20,8 @@ expects so you can also enter directly from search or the API reference.
 ### Setup And Foundations {#setup-and-foundations}
 
 - [Client setup and static assets](static-assets-and-client-setup.md) bundles
-  the Phoenix client, serves tracked digested assets, and reacts to static
-  changes and connection parameters.
+  the Phoenix client, serves an ordinary versioned tree or manifest-defined
+  final paths, and reacts to static changes and connection parameters.
 
 ### Interfaces And Input {#interfaces-and-input}
 

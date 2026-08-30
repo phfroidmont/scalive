@@ -179,6 +179,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         homeDocument  = Jsoup.parse(home.html)
         learnDocument = Jsoup.parse(learn.html)
         brand         = homeDocument.selectFirst("a.docs-brand[aria-label='Scalive home']")
+        fontsPath     = assets.path("fonts.css")
+        appPath       = assets.path("app.css")
       yield assertTrue(
         brand != null,
         brand.select("svg[viewBox='0 0 96 96'][aria-hidden=true] path").size() == 2,
@@ -190,12 +192,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         learnDocument.select(".docs-outline").size() == 1,
         homeDocument
           .select("link[rel=stylesheet]").asScala.toVector
-          .map(_.attr("href")).exists(_.contains("/fonts-")),
+          .map(_.attr("href")).contains(fontsPath),
         homeDocument
           .select("link[rel=icon][type='image/svg+xml']").attr("href")
-          .contains("/favicon-"),
-        home.html.indexOf("scalive.docs.theme") < home.html.indexOf("/fonts-"),
-        home.html.indexOf("/fonts-") < home.html.indexOf("/app-"),
+          == assets.path("favicon.svg"),
+        home.html.indexOf("scalive.docs.theme") < home.html.indexOf(fontsPath),
+        home.html.indexOf(fontsPath) < home.html.indexOf(appPath),
         !home.html.contains("&quot;scalive.docs.theme")
       )
     },
@@ -293,9 +295,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         connectedTurn.select(".docs-diagram-heading a").text() == "Open full-size SVG",
         diagramObjects.size == 3,
         diagramObjects.forall(objectElement =>
-          objectElement.attr("aria-hidden") == "true" &&
-            objectElement.attr("tabindex") == "-1" &&
-            objectElement.attr("data").contains("/static/runtime-")
+          objectElement.attr("aria-hidden") == "true" && objectElement.attr("tabindex") == "-1"
+        ),
+        diagramObjects.map(_.attr("data")).toSet == Set(
+          assets.path("runtime-disconnected-lifetime.svg"),
+          assets.path("runtime-connected-lifetime.svg"),
+          assets.path("runtime-connected-turn.svg")
         ),
         diagramLinks.map(_.attr("href")) == diagramObjects.map(_.attr("data"))
       )
@@ -637,11 +642,25 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             .asScala.toVector.map(element =>
               Option(element.attr("src")).filter(_.nonEmpty).getOrElse(element.attr("href"))
             )
+        versionedPaths = assetPaths :+ searchAsset
+        versions = versionedPaths.map(
+                     _.stripPrefix("/static/").takeWhile(_ != '/')
+                   ).distinct
+        servedAssets <- ZIO.foreach(versionedPaths)(path =>
+                          ZIO.scoped(routes.runZIO(Request.get(url(path))))
+                        )
       yield assertTrue(
         home.response.status == Status.Ok,
         assetPaths.size == 3,
         assetPaths.forall(_.startsWith("/static/")),
-        searchAsset.startsWith("/static/search-index-"),
+        versions.size == 1,
+        versions.head.matches("[0-9a-f]{64}"),
+        assetPaths.exists(_.endsWith("/fonts.css")),
+        assetPaths.exists(_.endsWith("/app.css")),
+        assetPaths.exists(_.endsWith("/app.js")),
+        searchAsset == assets.path("search-index.json"),
+        searchAsset.endsWith("/search-index.json"),
+        servedAssets.forall(_.status == Status.Ok),
         reportsLab.response.status == Status.Ok,
         reportsDocument.select("[data-report-selected]").text() == "Daily sales",
         missing.status == Status.NotFound,

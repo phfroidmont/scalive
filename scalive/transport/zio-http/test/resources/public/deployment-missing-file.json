@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "assets": {
+    "app.js": { "file": "built/missing.js", "cache": "immutable" }
+  }
+}

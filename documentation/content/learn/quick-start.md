@@ -83,12 +83,9 @@ object app extends ScalaModule:
     )
     os.proc("npm", "ci").call(cwd = workDir)
     os.proc("npm", "run", "build").call(cwd = workDir)
-    os.copy(
-      workDir / "dist" / "app.js",
-      publicDir / "app.js",
-      createFolders = true
-    )
-    PathRef(publicDir)
+    os.copy(workDir / "dist", publicDir)
+    os.remove.all(workDir)
+    PathRef(Task.dest)
   }
 
   def resources = Task {
@@ -113,7 +110,7 @@ Create `app/package.json`:
     "build": "esbuild assets/js/app.js --bundle --platform=browser --format=iife --target=es2020 --outfile=dist/app.js"
   },
   "dependencies": {
-    "phoenix": "1.7.21",
+    "phoenix": "1.8.9",
     "phoenix_live_view": "1.2.10"
   },
   "devDependencies": {
@@ -128,8 +125,11 @@ Generate and commit the lockfile:
 npm install --package-lock-only --prefix app
 ```
 
-Mill uses `npm ci` to reproduce this dependency graph and places the bundled
-`app.js` in the application's classpath resources.
+Mill uses `npm ci` to reproduce this dependency graph and copies the complete
+`dist` tree into the application's classpath resources. This baseline emits only
+`app.js`. When a build emits generated chunks, workers, fonts, or other final
+paths, use the [asset-model guide](../guides/static-assets-and-client-setup.md#choose-an-asset-model)
+to choose an ordinary versioned tree or a deployment manifest.
 
 ## Connect The Browser {#connect-the-browser}
 
@@ -182,6 +182,10 @@ production must require a stable, high-entropy `SCALIVE_TOKEN_SECRET`, set
 browser-facing HTTP or HTTPS origin. See
 [Configuration](../guides/configuration.md#current-configuration-contract)
 and [Deployment](../guides/deployment.md#put-an-http-edge-in-front).
+
+The tracked bundle URL contains Scalive's asset-set version. The unversioned
+`/static/app.js` path returns `404` by default; render asset URLs through the
+loaded `StaticAssets` value rather than hard-coding them.
 
 ## Run It {#run-it}
 

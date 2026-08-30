@@ -196,16 +196,12 @@ object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)
   def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.3")
 
-  override def bundleOutputs = Seq("app.js", "app.css", "daisy.css")
-
   def resources = Task {
     super.resources() :+ bundle()
   }
 
 object rootSliceApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)
-
-  override def bundleOutputs = Seq("app.js")
 
   def resources = Task {
     super.resources() :+ bundle()

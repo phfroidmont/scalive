@@ -64,22 +64,32 @@ fallback.
 
 If the HTML renders but remains disconnected, first verify that the browser
 client bundle loaded successfully. Compare the response with the canonical
-[asset serving](static-assets-and-client-setup.md#serve-digested-paths) and
+[asset serving](static-assets-and-client-setup.md#serve-versioned-paths) and
 [tracked tag](static-assets-and-client-setup.md#render-tracked-tags) setup, then
-request the rendered digested URL directly. The same
+request the rendered versioned or final URL directly. The same
 @:apiSymbol(object:scalive.StaticAssets)`StaticAssets`@:@ value must render the URL and serve its routes.
 
 @:apiSymbol(def:scalive.StaticAssets.trackedScript)`trackedScript`@:@ and
-@:apiSymbol(def:scalive.StaticAssets.trackedStylesheet)`trackedStylesheet`@:@ emit fingerprinted paths and
-`phx-track-static`. By default, digested assets are cached as immutable for one
-year, while configured original paths use `no-cache`. Do not hard-code a digest;
-render it through the loaded manifest. If a reverse proxy adds a URL prefix,
+@:apiSymbol(def:scalive.StaticAssets.trackedStylesheet)`trackedStylesheet`@:@ emit versioned or final paths and
+`phx-track-static`. Ordinary assets use one immutable, one-year asset-set
+namespace; original paths are disabled by default and use `no-cache` only when
+explicitly enabled. Deployment entries use their declared cache policy. Do not
+hard-code a generated path; render it through the loaded assets. If a reverse proxy adds a URL prefix,
 make its routing agree with @:apiSymbol(val:scalive.StaticAssetConfig.mountPath)`StaticAssetConfig.mountPath`@:@ rather than rewriting
 only the HTML.
 
 Common asset failures are a missing Mill `resources` dependency on the bundle,
-an output name omitted from `bundleOutputs`, a classpath prefix that does not
-match the packaged resource, or forgetting @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@. Return to the
+an incomplete output tree or ordinary classpath asset list, a classpath prefix
+that does not match the packaged resource, or forgetting @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
+For deployment manifests, first verify the configured manifest filename and
+location, schema version, and `immutable` or `revalidate` cache values. Then
+check that every output appears as a `file` value, every final file exists, and
+no path traversal or conflicting cache declaration is present.
+
+An immutable file is pinned to the digest read at startup. Replacing it in place
+makes its route return `404` until `StaticAssets` is loaded again; publish a new
+content-addressed filename instead. A revalidating file may change at the same
+path and receives a current `ETag`. Return to the
 [quick-start asset wiring](../learn/quick-start.md#start-the-server) for a minimal
 known shape.
 

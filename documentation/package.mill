@@ -175,8 +175,6 @@ object `package` extends Module:
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "quick-start"
 
-    override def bundleOutputs = Seq("app.js")
-
     def resources = Task {
       super.resources() :+ bundle()
     }
@@ -184,18 +182,6 @@ object `package` extends Module:
   object site extends build.ScalaCommon with build.NpmAssets:
     def moduleDeps = Seq(build.scalive, model)
     override def mvnDeps = Seq(mvn"com.lihaoyi::pprint:0.9.6")
-
-    override def bundleOutputs = Seq(
-      "app.js",
-      "app.css",
-      "fonts.css",
-      "favicon.svg",
-      "instrument-sans-OFL.txt",
-      "jetbrains-mono-OFL.txt",
-      "runtime-connected-turn.svg",
-      "runtime-connected-lifetime.svg",
-      "runtime-disconnected-lifetime.svg"
-    )
 
     def resources = Task {
       val roots = super.resources() ++ Seq(pipeline.generate(), bundle())

@@ -57,8 +57,10 @@ handling stay in Scala.
 
 `package.json` and the Mill asset task are the build boundary. npm resolves and
 bundles browser modules; Mill places outputs on the JVM classpath.
-@:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ fingerprints those
-outputs, renders tracked URLs, and serves them.
+@:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ versions an ordinary
+[output tree or validates a deployment manifest](../guides/static-assets-and-client-setup.md#choose-an-asset-model),
+renders tracked URLs, and serves the declared files. The root layout still
+explicitly selects its top-level scripts and stylesheets.
 
 ## Keep Dependencies Pointing Inward {#keep-dependencies-pointing-inward}
 

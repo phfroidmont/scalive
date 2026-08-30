@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "assets": {
+    "app.js": { "file": "built/app-a1b2.js", "cache": "immutable" },
+    "application.js": { "file": "built/app-a1b2.js", "cache": "revalidate" }
+  }
+}

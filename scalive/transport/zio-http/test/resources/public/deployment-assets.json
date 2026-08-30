@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "assets": {
+    "app.js": { "file": "built/app-a1b2.js", "cache": "immutable" },
+    "built/chunk-c3d4.js": { "file": "built/chunk-c3d4.js", "cache": "immutable" },
+    "built/worker-e5f6.js": { "file": "built/worker-e5f6.js", "cache": "immutable" },
+    "built/font-f7g8.woff2": { "file": "built/font-f7g8.woff2", "cache": "immutable" },
+    "robots.txt": { "file": "robots.txt", "cache": "revalidate" }
+  }
+}

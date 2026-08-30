@@ -469,7 +469,7 @@ Instrument Sans at approximately weight `700` with tight optical tracking.
 Only normal Latin variable WOFF2 files are bundled. Font declarations use
 `font-display: swap`, retain usable system fallbacks, and do not synthesize bold
 or italic faces. Fonts and their licenses are served locally through the
-digested asset pipeline.
+versioned static asset tree.
 
 ### Color Tokens
 

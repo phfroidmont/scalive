@@ -67,10 +67,18 @@ added by its Mill `resources` task. Mill, Node.js, npm, and the source tree are
 build-time requirements, not runtime requirements. If the application uses a
 different Mill module name, substitute that name in the task and output path.
 
+That single-JAR layout applies to ordinary classpath trees and classpath
+deployment manifests. An application using `deploymentDirectory` must ship the
+complete external output tree alongside the JAR, including its deployment
+manifest, and configure `root` to that release path. Publish the JAR, manifest,
+and final files as one release; do not make the instance ready until
+`StaticAssets.load` validates them. Retain prior content-addressed outputs for as
+long as active clients may request them.
+
 Scalive does not prescribe a container image, service manager, database
-migration command, or publication workflow. Package and launch the JAR according
-to the application's infrastructure while keeping configuration and secrets
-outside the artifact.
+migration command, or publication workflow. Package and launch the JAR and any
+external asset tree according to the application's infrastructure while keeping
+configuration and secrets outside the artifact.
 
 ## Put An HTTP Edge In Front {#put-an-http-edge-in-front}
 
@@ -112,12 +120,22 @@ as the application renders them.
 ## Cache Static Assets {#cache-static-assets}
 
 Render asset URLs and serve asset routes from the same loaded `StaticAssets`
-value. Digested responses default to public immutable caching for one year;
-original paths default to `no-cache`. A CDN or edge may preserve those response
-headers, but must not apply immutable caching to application HTML or undigested
-asset paths. See
-[Client setup and static assets](static-assets-and-client-setup.md#serve-digested-paths)
-for directory sources, digests, and route behavior.
+value. Ordinary classpath and directory sources place the unchanged output tree
+beneath one asset-set SHA-256 namespace. Those versioned responses default to
+public immutable caching for one year; originals are disabled by default and
+use `no-cache` when explicitly enabled. Deployment manifests instead serve each
+declared final path with its declared `immutable` or `revalidate` policy.
+
+A CDN or edge may preserve those response headers, but must not apply immutable
+caching to application HTML or mutable asset URLs. Immutable manifest entries
+must have content-addressed or otherwise stable URLs, and deployments must retain
+old outputs while active clients and dynamic imports can still request them. An
+immutable file replaced in place returns `404` until the application reloads its
+asset description; publish a new final path instead. See
+[Client setup and static assets](static-assets-and-client-setup.md#serve-versioned-paths)
+for versioned trees and
+[deployment manifests](static-assets-and-client-setup.md#load-a-deployment-manifest)
+for final-path behavior.
 
 ## Scale And Roll Out {#scale-horizontally}
 
@@ -171,7 +189,10 @@ Before promoting an instance, verify its public URL end to end:
   and cookies plus exactly one allowed browser `Origin` intact;
 - invalid and unlisted origins receive HTTP 403 rather than an upgrade;
 - HTTPS responses set framework and authentication cookies with `Secure`;
-- disconnected HTML loads its digested assets with the intended cache policy;
+- the configured deployment manifest validates before readiness, when used;
+- disconnected HTML loads its ordinary versioned tree or manifest-defined final
+  paths with the intended cache policy;
+- old immutable outputs remain available for active clients and dynamic imports;
 - liveness, readiness, termination, and reconnect behavior work under the
   platform's actual proxy and process signals; and
 - a browser can reconnect through another replica without losing state the
@@ -182,7 +203,7 @@ Before promoting an instance, verify its public URL end to end:
 - Use [Configuration](configuration.md#current-configuration-contract) for the
   exact framework and application-owned settings.
 - Use [Client setup and static assets](static-assets-and-client-setup.md) for
-  bundle, digest, and cache behavior.
+  bundle, versioning, deployment-manifest, and cache behavior.
 - Use [Testing LiveViews](testing.md#test-in-a-browser) to exercise the deployed
   browser and transport boundary.
 - Use [Troubleshooting](troubleshooting.md#diagnose-socket-connections) for asset,

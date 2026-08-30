@@ -288,8 +288,8 @@ class LiveRouteBuilder[A] private[scalive] (
     * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
     * or framework cleanup.
     */
-  def guardConnectedTurns(
-    guard: Any => zio.IO[LiveConnectedTurnFailure, Unit]
+  def guardConnectedTurns[Result <: Unit](
+    guard: Any => zio.IO[LiveConnectedTurnFailure, Result]
   ): LiveRouteBuilder[A] =
     LiveRouteBuilder(
       pathCodec,
@@ -451,8 +451,8 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
     * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
     * or framework cleanup.
     */
-  def guardConnectedTurns(
-    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Unit]
+  def guardConnectedTurns[Result <: Unit](
+    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]
   ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
     LiveRouteMountAspectBuilder(
       pathCodec,
@@ -604,8 +604,8 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
     * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
     * or framework cleanup.
     */
-  def guardConnectedTurns(
-    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Unit]
+  def guardConnectedTurns[Result <: Unit](
+    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]
   ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] =
     LiveRouteMountAspectParamsBuilder(
       pathCodec,
@@ -736,8 +736,8 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
     * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
     * or framework cleanup.
     */
-  def guardConnectedTurns(
-    guard: Any => zio.IO[LiveConnectedTurnFailure, Unit]
+  def guardConnectedTurns[Result <: Unit](
+    guard: Any => zio.IO[LiveConnectedTurnFailure, Result]
   ): LiveRouteParamsBuilder[A, Params] =
     LiveRouteParamsBuilder(
       pathCodec,
@@ -865,8 +865,8 @@ final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
     * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
     * or framework cleanup.
     */
-  override def guardConnectedTurns(
-    guard: Any => zio.IO[LiveConnectedTurnFailure, Unit]
+  override def guardConnectedTurns[Result <: Unit](
+    guard: Any => zio.IO[LiveConnectedTurnFailure, Result]
   ): LiveEncodableRouteParamsBuilder[A, Params] =
     LiveEncodableRouteParamsBuilder(
       pathCodec,
@@ -986,8 +986,8 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
     * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
     * or framework cleanup.
     */
-  def guardConnectedTurns(
-    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Unit]
+  def guardConnectedTurns[Result <: Unit](
+    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]
   ): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(
       name,
@@ -1053,8 +1053,8 @@ object LiveSessionBuilder:
       * disconnect. Guards are inherited by nested LiveViews and do not run during mount,
       * disconnected rendering, or framework cleanup.
       */
-    def guardConnectedTurns(
-      guard: Ctx => zio.IO[LiveConnectedTurnFailure, Unit]
+    def guardConnectedTurns[Result <: Unit](
+      guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]
     ): Admitted[R, Ctx] =
       Admitted(
         name,

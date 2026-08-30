@@ -4256,8 +4256,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveEncodableRouteParamsBuilder.guardConnectedTurns:05995d619dde95eb",
-          "signature" : "def guardConnectedTurns(guard: Any => zio.IO[LiveConnectedTurnFailure, Unit]): LiveEncodableRouteParamsBuilder[A, Params]"
+          "id" : "def:scalive.LiveEncodableRouteParamsBuilder.guardConnectedTurns:24214985ce379557",
+          "signature" : "def guardConnectedTurns[Result <: Unit](guard: Any => zio.IO[LiveConnectedTurnFailure, Result]): LiveEncodableRouteParamsBuilder[A, Params]"
         }
       ]
     },
@@ -4920,8 +4920,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRouteBuilder.guardConnectedTurns:02d8ce7f9b037f4c",
-          "signature" : "def guardConnectedTurns(guard: Any => zio.IO[LiveConnectedTurnFailure, Unit]): LiveRouteBuilder[A]"
+          "id" : "def:scalive.LiveRouteBuilder.guardConnectedTurns:15ea3dca15a17644",
+          "signature" : "def guardConnectedTurns[Result <: Unit](guard: Any => zio.IO[LiveConnectedTurnFailure, Result]): LiveRouteBuilder[A]"
         }
       ]
     },
@@ -5112,8 +5112,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRouteMountAspectBuilder.guardConnectedTurns:5b0677ede643287d",
-          "signature" : "def guardConnectedTurns(guard: Ctx => zio.IO[LiveConnectedTurnFailure, Unit]): LiveRouteMountAspectBuilder[R, A, Need, Ctx]"
+          "id" : "def:scalive.LiveRouteMountAspectBuilder.guardConnectedTurns:75a179e07fd92212",
+          "signature" : "def guardConnectedTurns[Result <: Unit](guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]): LiveRouteMountAspectBuilder[R, A, Need, Ctx]"
         }
       ]
     },
@@ -5260,8 +5260,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.guardConnectedTurns:b186de4ce89b6f6e",
-          "signature" : "def guardConnectedTurns(guard: Ctx => zio.IO[LiveConnectedTurnFailure, Unit]): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params]"
+          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.guardConnectedTurns:b3d75f8a07805984",
+          "signature" : "def guardConnectedTurns[Result <: Unit](guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params]"
         }
       ]
     },
@@ -5360,8 +5360,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRouteParamsBuilder.guardConnectedTurns:93cdba2ab3ff109f",
-          "signature" : "def guardConnectedTurns(guard: Any => zio.IO[LiveConnectedTurnFailure, Unit]): LiveRouteParamsBuilder[A, Params]"
+          "id" : "def:scalive.LiveRouteParamsBuilder.guardConnectedTurns:f21959258cca205f",
+          "signature" : "def guardConnectedTurns[Result <: Unit](guard: Any => zio.IO[LiveConnectedTurnFailure, Result]): LiveRouteParamsBuilder[A, Params]"
         }
       ]
     },
@@ -5456,8 +5456,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveSessionBuilder.Admitted.guardConnectedTurns:67ab3e6d327c60ce",
-          "signature" : "def guardConnectedTurns(guard: Ctx => zio.IO[LiveConnectedTurnFailure, Unit]): LiveSessionBuilder.Admitted[R, Ctx]"
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.guardConnectedTurns:ef9b24cfb05e6953",
+          "signature" : "def guardConnectedTurns[Result <: Unit](guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]): LiveSessionBuilder.Admitted[R, Ctx]"
         }
       ]
     },
@@ -5516,8 +5516,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveSessionBuilder.guardConnectedTurns:c2f7727fd6ae8305",
-          "signature" : "def guardConnectedTurns(guard: Ctx => zio.IO[LiveConnectedTurnFailure, Unit]): LiveSessionBuilder[R, Ctx]"
+          "id" : "def:scalive.LiveSessionBuilder.guardConnectedTurns:497e28b2d395b6df",
+          "signature" : "def guardConnectedTurns[Result <: Unit](guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]): LiveSessionBuilder[R, Ctx]"
         }
       ]
     },

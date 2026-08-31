@@ -108,7 +108,10 @@ Use this checklist:
 - Use [lifecycle-managed APIs](../guides/async-work-and-subscriptions.md#choose-the-resource-by-shape)
   for async work, subscriptions, and non-message acquisition and finalization.
 - Make repeated external mount effects idempotent where necessary.
-- Test the reconnect behavior that matters to the application in a browser.
+- Use the connected harness to prove that a new server transport reruns
+  [`withAdmission`](../guides/testing.md#test-reconnect-admission) and remounts.
+- Use a real browser to prove retry delay, retry count, offline behavior, and
+  other JavaScript-client reconnect timing.
 
 ## Understand Failure And Commit Boundaries {#understand-failure-and-commit-boundaries}
 
@@ -141,7 +144,8 @@ disconnect message.
 ## Test At The Lifecycle Boundary {#test-at-the-lifecycle-boundary}
 
 Use a disconnected test for initial HTTP state and a connected test for typed
-server interactions. Use a real browser when the behavior depends on transport
-loss, reconnects, JavaScript, or DOM patching. The
+server interactions, lifecycle replacement, and server-side reconnect
+admission. Use a real browser when the behavior depends on when the client
+detects transport loss, schedules a reconnect, JavaScript, or DOM patching. The
 [testing guide](../guides/testing.md#choose-the-test-boundary) explains these
 boundaries and their available support.

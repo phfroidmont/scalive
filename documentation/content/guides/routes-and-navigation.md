@@ -168,9 +168,17 @@ percent-encoded control characters and schemes other than HTTP or HTTPS before a
 navigation or redirect reaches the browser. Never build an unsafe destination by
 concatenating untrusted input; parse it into an application allowlist first.
 
+Connected route tests can explicitly follow same-session navigation and verify
+that the destination reruns server-side admission. See
+[Exercise actions and navigation](testing.md#exercise-actions-and-navigation).
+That harness behavior is distinct from browser reconnect timing: only a real
+browser can prove when the JavaScript client retries after transport loss or
+falls back to an ordinary HTTP request at an incompatible boundary.
+
 ## Related Tasks {#related-tasks}
 
 - Group compatible routes with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#prerequisites).
 - Protect route groups with [Authentication and sessions](authentication.md#prerequisites).
 - Confirm before browser-initiated navigation with [Guard unsaved changes](navigation-guards.md#prerequisites).
-- Test parameter decoding and initial routes with [Testing LiveViews](testing.md#test-disconnected-rendering).
+- Test parameter decoding, routed joins, and navigation with
+  [Testing LiveViews](testing.md#cover-connected-behavior).

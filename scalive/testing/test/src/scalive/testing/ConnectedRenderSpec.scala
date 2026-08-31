@@ -6,6 +6,7 @@ import org.jsoup.Jsoup
 import zio.*
 import zio.http.{Request, URL}
 import zio.json.JsonCodec
+import zio.json.ast.Json
 import zio.test.*
 
 import scalive.*
@@ -304,6 +305,77 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
                     ZLayer.succeed[LiveConnections[TestSessionId]](connections)
                   )
       yield result
+    },
+    test("reconnect and navigation progress harness-owned mount parameters") {
+      def connectedParams(ctx: scalive.MountContext[?, ?]): Task[(Long, String)] =
+        ctx.connection match
+        case Connection.Disconnected => ZIO.succeed(-1L -> "disconnected")
+        case Connection.Connected(connected) =>
+          ZIO.attempt {
+            val mounts = connected.connectParams.get("_mounts") match
+              case Some(Json.Num(value)) => value.longValueExact()
+              case value                 => throw Exception(s"Invalid _mounts value: $value")
+            val custom = connected.connectParams.get("custom").flatMap(_.asString).getOrElse {
+              throw Exception("Missing custom connect parameter")
+            }
+            mounts -> custom
+          }
+
+      def content(model: Signal[(Long, String)]) =
+        div(
+          span(dataAttr("mounts") := "", model.map(_._1.toString)),
+          span(dataAttr("custom") := "", model.map(_._2))
+        )
+
+      val source = new LiveView[RoutedNavigationMsg, (Long, String)]:
+        def mount(ctx: MountContext) = connectedParams(ctx)
+        def handleMessage(model: (Long, String), ctx: MessageContext) =
+          case RoutedNavigationMsg.Navigate => ctx.nav.pushNavigateUnsafe("/next").as(model)
+        override def view(model: Signal[(Long, String)]) =
+          div(
+            content(model),
+            button(dataAttr("navigate") := "", on.click(RoutedNavigationMsg.Navigate), "Next")
+          )
+
+      val destination = new LiveView.Eventless[(Long, String)]:
+        def mount(ctx: MountContext) = connectedParams(ctx)
+        override def view(model: Signal[(Long, String)]) = content(model)
+
+      val application = scalive.Live.router(
+        scalive.live(source),
+        (scalive.live / "next")(destination)
+      )
+
+      ZIO.scoped {
+        for
+          client <- ConnectedRender.open(
+                      application,
+                      config,
+                      Request.get(URL.root),
+                      connectParams = Map(
+                        "_mounts" -> Json.Num(99),
+                        "custom"  -> Json.Str("retained")
+                      )
+                    )
+          first      <- client.join
+          firstMount <- first.text("[data-mounts]")
+          second     <- client.reconnect
+          secondMount <- second.text("[data-mounts]")
+          firstJoined <- first.isJoined
+          action      <- second.click("[data-navigate]")
+          third <- action match
+                     case ConnectedAction.LiveNavigation(navigation) => navigation.follow
+                     case other => ZIO.fail(Exception(s"Expected live navigation, got $other."))
+          thirdMount  <- third.text("[data-mounts]")
+          customParam <- third.text("[data-custom]")
+        yield assertTrue(
+          firstMount == "0",
+          secondMount == "1",
+          !firstJoined,
+          thirdMount == "2",
+          customParam == "retained"
+        )
+      }
     },
     test("disconnect waits for an in-flight join and closes its transport") {
       for

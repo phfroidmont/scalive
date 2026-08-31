@@ -8707,7 +8707,7 @@
     },
     {
       "id" : "enum:scalive.AsyncValue.Cancelled",
-      "ownerId" : "object:scalive.AsyncValue",
+      "ownerId" : "enum:scalive.AsyncValue",
       "qualifiedName" : "scalive.AsyncValue.Cancelled",
       "kind" : "enum",
       "signatures" : [
@@ -8719,7 +8719,7 @@
     },
     {
       "id" : "enum:scalive.AsyncValue.Failed",
-      "ownerId" : "object:scalive.AsyncValue",
+      "ownerId" : "enum:scalive.AsyncValue",
       "qualifiedName" : "scalive.AsyncValue.Failed",
       "kind" : "enum",
       "signatures" : [
@@ -8731,7 +8731,7 @@
     },
     {
       "id" : "enum:scalive.AsyncValue.Loading",
-      "ownerId" : "object:scalive.AsyncValue",
+      "ownerId" : "enum:scalive.AsyncValue",
       "qualifiedName" : "scalive.AsyncValue.Loading",
       "kind" : "enum",
       "signatures" : [
@@ -8743,7 +8743,7 @@
     },
     {
       "id" : "enum:scalive.AsyncValue.Ok",
-      "ownerId" : "object:scalive.AsyncValue",
+      "ownerId" : "enum:scalive.AsyncValue",
       "qualifiedName" : "scalive.AsyncValue.Ok",
       "kind" : "enum",
       "signatures" : [
@@ -8762,6 +8762,18 @@
         {
           "id" : "enum:scalive.Connection:244600cb2021ee52",
           "signature" : "enum Connection[+Connected]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Connection.Connected",
+      "ownerId" : "enum:scalive.Connection",
+      "qualifiedName" : "scalive.Connection.Connected",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Connection.Connected:9bfbc874418e49f3",
+          "signature" : "enum Connected[+Connected](capabilities: Connected) extends Connection[Connected]"
         }
       ]
     },
@@ -8790,6 +8802,30 @@
       ]
     },
     {
+      "id" : "enum:scalive.FormAction.EncodeError.Path",
+      "ownerId" : "enum:scalive.FormAction.EncodeError",
+      "qualifiedName" : "scalive.FormAction.EncodeError.Path",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormAction.EncodeError.Path:7c9689172aafb9c0",
+          "signature" : "enum Path(details: String) extends FormAction.EncodeError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormAction.EncodeError.UnsupportedMethod",
+      "ownerId" : "enum:scalive.FormAction.EncodeError",
+      "qualifiedName" : "scalive.FormAction.EncodeError.UnsupportedMethod",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormAction.EncodeError.UnsupportedMethod:8726c293c068fd3a",
+          "signature" : "enum UnsupportedMethod(method: zio.http.Method) extends FormAction.EncodeError"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.FormAction.Method",
       "ownerId" : "object:scalive.FormAction",
       "qualifiedName" : "scalive.FormAction.Method",
@@ -8814,6 +8850,30 @@
       ]
     },
     {
+      "id" : "enum:scalive.FormData.BodyError.Read",
+      "ownerId" : "enum:scalive.FormData.BodyError",
+      "qualifiedName" : "scalive.FormData.BodyError.Read",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormData.BodyError.Read:98b1d19865aeeb58",
+          "signature" : "enum Read(cause: Throwable) extends FormData.BodyError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormData.BodyError.TooLarge",
+      "ownerId" : "enum:scalive.FormData.BodyError",
+      "qualifiedName" : "scalive.FormData.BodyError.TooLarge",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormData.BodyError.TooLarge:2ea7cca0f94012d7",
+          "signature" : "enum TooLarge(maxBytes: Long) extends FormData.BodyError"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.FormData.DecodeError",
       "ownerId" : "object:scalive.FormData",
       "qualifiedName" : "scalive.FormData.DecodeError",
@@ -8826,6 +8886,30 @@
       ]
     },
     {
+      "id" : "enum:scalive.FormData.DecodeError.Body",
+      "ownerId" : "enum:scalive.FormData.DecodeError",
+      "qualifiedName" : "scalive.FormData.DecodeError.Body",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormData.DecodeError.Body:d9c78591d8df9ccd",
+          "signature" : "enum Body(error: FormData.BodyError) extends FormData.DecodeError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormData.DecodeError.Representation",
+      "ownerId" : "enum:scalive.FormData.DecodeError",
+      "qualifiedName" : "scalive.FormData.DecodeError.Representation",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormData.DecodeError.Representation:9b995184192bed70",
+          "signature" : "enum Representation(error: FormData.RepresentationError) extends FormData.DecodeError"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.FormData.RepresentationError",
       "ownerId" : "object:scalive.FormData",
       "qualifiedName" : "scalive.FormData.RepresentationError",
@@ -8834,6 +8918,42 @@
         {
           "id" : "enum:scalive.FormData.RepresentationError:65a388c3aa782d37",
           "signature" : "enum RepresentationError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormData.RepresentationError.InvalidContentType",
+      "ownerId" : "enum:scalive.FormData.RepresentationError",
+      "qualifiedName" : "scalive.FormData.RepresentationError.InvalidContentType",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormData.RepresentationError.InvalidContentType:c4c9278eded22d54",
+          "signature" : "enum InvalidContentType(actual: Option[zio.http.MediaType]) extends FormData.RepresentationError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormData.RepresentationError.InvalidUrlEncoding",
+      "ownerId" : "enum:scalive.FormData.RepresentationError",
+      "qualifiedName" : "scalive.FormData.RepresentationError.InvalidUrlEncoding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormData.RepresentationError.InvalidUrlEncoding:c4f3e13ba2cc667a",
+          "signature" : "enum InvalidUrlEncoding(details: String) extends FormData.RepresentationError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormData.RepresentationError.UnsupportedField",
+      "ownerId" : "enum:scalive.FormData.RepresentationError",
+      "qualifiedName" : "scalive.FormData.RepresentationError.UnsupportedField",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormData.RepresentationError.UnsupportedField:c00e5ccd28def567",
+          "signature" : "enum UnsupportedField(name: String, kind: FormData.UnsupportedFieldKind) extends FormData.RepresentationError"
         }
       ]
     },
@@ -8862,6 +8982,54 @@
       ]
     },
     {
+      "id" : "enum:scalive.HttpFormDecoder.Error.Body",
+      "ownerId" : "enum:scalive.HttpFormDecoder.Error",
+      "qualifiedName" : "scalive.HttpFormDecoder.Error.Body",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.HttpFormDecoder.Error.Body:a7b04032c7a5bcb9",
+          "signature" : "enum Body(error: FormData.BodyError) extends HttpFormDecoder.Error"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.HttpFormDecoder.Error.Csrf",
+      "ownerId" : "enum:scalive.HttpFormDecoder.Error",
+      "qualifiedName" : "scalive.HttpFormDecoder.Error.Csrf",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.HttpFormDecoder.Error.Csrf:91ca093ad103e035",
+          "signature" : "enum Csrf(error: CsrfProtection.ValidationError) extends HttpFormDecoder.Error"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.HttpFormDecoder.Error.Representation",
+      "ownerId" : "enum:scalive.HttpFormDecoder.Error",
+      "qualifiedName" : "scalive.HttpFormDecoder.Error.Representation",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.HttpFormDecoder.Error.Representation:d20dc6f3fd88b662",
+          "signature" : "enum Representation(error: FormData.RepresentationError) extends HttpFormDecoder.Error"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.HttpFormDecoder.Error.Validation",
+      "ownerId" : "enum:scalive.HttpFormDecoder.Error",
+      "qualifiedName" : "scalive.HttpFormDecoder.Error.Validation",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.HttpFormDecoder.Error.Validation:c87dd0ca7c09b68b",
+          "signature" : "enum Validation(errors: FormErrors) extends HttpFormDecoder.Error"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.LifecycleEvent",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LifecycleEvent",
@@ -8874,6 +9042,150 @@
       ]
     },
     {
+      "id" : "enum:scalive.LifecycleEvent.DisconnectedRenderFailed",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.DisconnectedRenderFailed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.DisconnectedRenderFailed:2c0c4bea12dc1c39",
+          "signature" : "enum DisconnectedRenderFailed(lifecycleId: Long, durationNanos: Long, error: LifecycleError) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.DisconnectedRenderSucceeded",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.DisconnectedRenderSucceeded",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.DisconnectedRenderSucceeded:b8dcaf780e9e1d14",
+          "signature" : "enum DisconnectedRenderSucceeded(lifecycleId: Long, durationNanos: Long) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.HandlerFailed",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.HandlerFailed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.HandlerFailed:47853642ba5a72d7",
+          "signature" : "enum HandlerFailed(lifecycle: ConnectedLifecycleContext, commandId: Option[Long], kind: LifecycleTurnKind, durationNanos: Long, error: LifecycleError) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.JoinRejected",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinRejected",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.JoinRejected:da9c56c79da7f975",
+          "signature" : "enum JoinRejected(connectionId: Long, lifecycleId: Option[Long], target: LifecycleJoinTarget, attempt: LifecycleJoinAttempt, durationNanos: Long, error: LifecycleError) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.JoinSucceeded",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinSucceeded",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.JoinSucceeded:c6d180495f32821f",
+          "signature" : "enum JoinSucceeded(lifecycle: ConnectedLifecycleContext, target: LifecycleJoinTarget, attempt: LifecycleJoinAttempt, durationNanos: Long) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.LifecycleTerminated",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.LifecycleTerminated",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.LifecycleTerminated:efe3673a3a9ef86b",
+          "signature" : "enum LifecycleTerminated(lifecycle: ConnectedLifecycleContext, reason: LifecycleTerminationReason) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.MountFailed",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.MountFailed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.MountFailed:161686eb6a50aa39",
+          "signature" : "enum MountFailed(mount: LifecycleMount, durationNanos: Long, error: LifecycleError) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.MountSucceeded",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.MountSucceeded",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.MountSucceeded:0482415e7e25c678",
+          "signature" : "enum MountSucceeded(mount: LifecycleMount, durationNanos: Long) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.QueuePressure",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.QueuePressure",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.QueuePressure:07cdf9f322db31c8",
+          "signature" : "enum QueuePressure(lifecycle: ConnectedLifecycleContext, queue: LifecycleQueue, depth: Int, capacity: Int, status: LifecycleQueueStatus) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.SubscriptionFailed",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.SubscriptionFailed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.SubscriptionFailed:d1fefe22dbbd1545",
+          "signature" : "enum SubscriptionFailed(lifecycle: ConnectedLifecycleContext, resourceId: Long, delivery: SubscriptionDelivery, error: LifecycleError) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.TurnFailed",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnFailed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.TurnFailed:d0d3490c4219ace6",
+          "signature" : "enum TurnFailed(lifecycle: ConnectedLifecycleContext, turnId: Long, commandId: Option[Long], kind: LifecycleTurnKind, durationNanos: Long, error: LifecycleError) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent.TurnSucceeded",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnSucceeded",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent.TurnSucceeded:2d027b313bd79032",
+          "signature" : "enum TurnSucceeded(lifecycle: ConnectedLifecycleContext, turnId: Long, commandId: Option[Long], kind: LifecycleTurnKind, durationNanos: Long) extends LifecycleEvent"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.LifecycleFailure",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LifecycleFailure",
@@ -8882,6 +9194,18 @@
         {
           "id" : "enum:scalive.LifecycleFailure:99f17169328dba7f",
           "signature" : "enum LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleFailure.Stage",
+      "ownerId" : "enum:scalive.LifecycleFailure",
+      "qualifiedName" : "scalive.LifecycleFailure.Stage",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleFailure.Stage:af8329e7b5bd3cc0",
+          "signature" : "enum Stage(stage: LifecycleFailureStage) extends LifecycleFailure"
         }
       ]
     },
@@ -8922,6 +9246,30 @@
       ]
     },
     {
+      "id" : "enum:scalive.LifecycleMount.Connected",
+      "ownerId" : "enum:scalive.LifecycleMount",
+      "qualifiedName" : "scalive.LifecycleMount.Connected",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleMount.Connected:5eccab27eba176e3",
+          "signature" : "enum Connected(lifecycle: ConnectedLifecycleContext) extends LifecycleMount"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleMount.Disconnected",
+      "ownerId" : "enum:scalive.LifecycleMount",
+      "qualifiedName" : "scalive.LifecycleMount.Disconnected",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleMount.Disconnected:ba7cbf758cbddf3a",
+          "signature" : "enum Disconnected(lifecycleId: Long) extends LifecycleMount"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.LifecycleQueue",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LifecycleQueue",
@@ -8958,6 +9306,30 @@
       ]
     },
     {
+      "id" : "enum:scalive.LifecycleTerminationReason.Disconnected",
+      "ownerId" : "enum:scalive.LifecycleTerminationReason",
+      "qualifiedName" : "scalive.LifecycleTerminationReason.Disconnected",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleTerminationReason.Disconnected:6b9500e023a41242",
+          "signature" : "enum Disconnected(reason: Option[String]) extends LifecycleTerminationReason"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleTerminationReason.Failed",
+      "ownerId" : "enum:scalive.LifecycleTerminationReason",
+      "qualifiedName" : "scalive.LifecycleTerminationReason.Failed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleTerminationReason.Failed:c8bbad297a121854",
+          "signature" : "enum Failed(failure: LifecycleFailure) extends LifecycleTerminationReason"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.LifecycleTurnKind",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LifecycleTurnKind",
@@ -8982,6 +9354,42 @@
       ]
     },
     {
+      "id" : "enum:scalive.LiveAsyncResult.Cancelled",
+      "ownerId" : "enum:scalive.LiveAsyncResult",
+      "qualifiedName" : "scalive.LiveAsyncResult.Cancelled",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveAsyncResult.Cancelled:d5d85f5a2dcec9a1",
+          "signature" : "enum Cancelled[+A](reason: Option[String]) extends LiveAsyncResult[A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveAsyncResult.Failed",
+      "ownerId" : "enum:scalive.LiveAsyncResult",
+      "qualifiedName" : "scalive.LiveAsyncResult.Failed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveAsyncResult.Failed:a54acc9df7828225",
+          "signature" : "enum Failed[+A](cause: Throwable) extends LiveAsyncResult[A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveAsyncResult.Succeeded",
+      "ownerId" : "enum:scalive.LiveAsyncResult",
+      "qualifiedName" : "scalive.LiveAsyncResult.Succeeded",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveAsyncResult.Succeeded:82ac27c7b24b409f",
+          "signature" : "enum Succeeded[+A](value: A) extends LiveAsyncResult[A]"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.LiveConnectedTurnFailure",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveConnectedTurnFailure",
@@ -8995,7 +9403,7 @@
     },
     {
       "id" : "enum:scalive.LiveConnectedTurnFailure.Disconnect",
-      "ownerId" : "object:scalive.LiveConnectedTurnFailure",
+      "ownerId" : "enum:scalive.LiveConnectedTurnFailure",
       "qualifiedName" : "scalive.LiveConnectedTurnFailure.Disconnect",
       "kind" : "enum",
       "signatures" : [
@@ -9007,7 +9415,7 @@
     },
     {
       "id" : "enum:scalive.LiveConnectedTurnFailure.Redirect",
-      "ownerId" : "object:scalive.LiveConnectedTurnFailure",
+      "ownerId" : "enum:scalive.LiveConnectedTurnFailure",
       "qualifiedName" : "scalive.LiveConnectedTurnFailure.Redirect",
       "kind" : "enum",
       "signatures" : [
@@ -9019,7 +9427,7 @@
     },
     {
       "id" : "enum:scalive.LiveConnectedTurnFailure.RedirectUnsafe",
-      "ownerId" : "object:scalive.LiveConnectedTurnFailure",
+      "ownerId" : "enum:scalive.LiveConnectedTurnFailure",
       "qualifiedName" : "scalive.LiveConnectedTurnFailure.RedirectUnsafe",
       "kind" : "enum",
       "signatures" : [
@@ -9031,7 +9439,7 @@
     },
     {
       "id" : "enum:scalive.LiveConnectedTurnFailure.Reload",
-      "ownerId" : "object:scalive.LiveConnectedTurnFailure",
+      "ownerId" : "enum:scalive.LiveConnectedTurnFailure",
       "qualifiedName" : "scalive.LiveConnectedTurnFailure.Reload",
       "kind" : "enum",
       "signatures" : [
@@ -9055,7 +9463,7 @@
     },
     {
       "id" : "enum:scalive.LiveEventHookResult.Continue",
-      "ownerId" : "object:scalive.LiveEventHookResult",
+      "ownerId" : "enum:scalive.LiveEventHookResult",
       "qualifiedName" : "scalive.LiveEventHookResult.Continue",
       "kind" : "enum",
       "signatures" : [
@@ -9067,7 +9475,7 @@
     },
     {
       "id" : "enum:scalive.LiveEventHookResult.Halt",
-      "ownerId" : "object:scalive.LiveEventHookResult",
+      "ownerId" : "enum:scalive.LiveEventHookResult",
       "qualifiedName" : "scalive.LiveEventHookResult.Halt",
       "kind" : "enum",
       "signatures" : [
@@ -9091,7 +9499,7 @@
     },
     {
       "id" : "enum:scalive.LiveHookResult.Continue",
-      "ownerId" : "object:scalive.LiveHookResult",
+      "ownerId" : "enum:scalive.LiveHookResult",
       "qualifiedName" : "scalive.LiveHookResult.Continue",
       "kind" : "enum",
       "signatures" : [
@@ -9103,7 +9511,7 @@
     },
     {
       "id" : "enum:scalive.LiveHookResult.Halt",
-      "ownerId" : "object:scalive.LiveHookResult",
+      "ownerId" : "enum:scalive.LiveHookResult",
       "qualifiedName" : "scalive.LiveHookResult.Halt",
       "kind" : "enum",
       "signatures" : [
@@ -9126,6 +9534,42 @@
       ]
     },
     {
+      "id" : "enum:scalive.LiveLocation.EncodeError.Fragment",
+      "ownerId" : "enum:scalive.LiveLocation.EncodeError",
+      "qualifiedName" : "scalive.LiveLocation.EncodeError.Fragment",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveLocation.EncodeError.Fragment:49206e7044b7d5df",
+          "signature" : "enum Fragment(details: String) extends LiveLocation.EncodeError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveLocation.EncodeError.Path",
+      "ownerId" : "enum:scalive.LiveLocation.EncodeError",
+      "qualifiedName" : "scalive.LiveLocation.EncodeError.Path",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveLocation.EncodeError.Path:d6fb8470daa6b674",
+          "signature" : "enum Path(details: String) extends LiveLocation.EncodeError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveLocation.EncodeError.Query",
+      "ownerId" : "enum:scalive.LiveLocation.EncodeError",
+      "qualifiedName" : "scalive.LiveLocation.EncodeError.Query",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveLocation.EncodeError.Query:667350ca2d37b7ad",
+          "signature" : "enum Query(cause: Throwable) extends LiveLocation.EncodeError"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.LiveMountFailure",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveMountFailure",
@@ -9139,7 +9583,7 @@
     },
     {
       "id" : "enum:scalive.LiveMountFailure.Redirect",
-      "ownerId" : "object:scalive.LiveMountFailure",
+      "ownerId" : "enum:scalive.LiveMountFailure",
       "qualifiedName" : "scalive.LiveMountFailure.Redirect",
       "kind" : "enum",
       "signatures" : [
@@ -9151,7 +9595,7 @@
     },
     {
       "id" : "enum:scalive.LiveMountFailure.RedirectUnsafe",
-      "ownerId" : "object:scalive.LiveMountFailure",
+      "ownerId" : "enum:scalive.LiveMountFailure",
       "qualifiedName" : "scalive.LiveMountFailure.RedirectUnsafe",
       "kind" : "enum",
       "signatures" : [
@@ -9163,7 +9607,7 @@
     },
     {
       "id" : "enum:scalive.LiveMountFailure.Stale",
-      "ownerId" : "object:scalive.LiveMountFailure",
+      "ownerId" : "enum:scalive.LiveMountFailure",
       "qualifiedName" : "scalive.LiveMountFailure.Stale",
       "kind" : "enum",
       "signatures" : [
@@ -9175,7 +9619,7 @@
     },
     {
       "id" : "enum:scalive.LiveMountFailure.Unauthorized",
-      "ownerId" : "object:scalive.LiveMountFailure",
+      "ownerId" : "enum:scalive.LiveMountFailure",
       "qualifiedName" : "scalive.LiveMountFailure.Unauthorized",
       "kind" : "enum",
       "signatures" : [
@@ -9198,6 +9642,186 @@
       ]
     },
     {
+      "id" : "enum:scalive.Mod.Attr.Binding",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.Binding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.Binding:4906e5771faec7c7",
+          "signature" : "enum Binding[Msg](name: String, operation: BindingPayload => Msg) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.ComponentBinding",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.ComponentBinding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.ComponentBinding:924d374409b8274c",
+          "signature" : "enum ComponentBinding[Msg](name: String, target: ComponentRef[Msg], operation: BindingPayload => Msg) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.ComponentTarget",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.ComponentTarget",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.ComponentTarget:ca82c3e509332c83",
+          "signature" : "enum ComponentTarget[Msg](target: ComponentRef[Msg]) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.FormBinding",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.FormBinding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.FormBinding:d2253a3610db8621",
+          "signature" : "enum FormBinding[Msg](name: String, operation: FormData => Msg) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.FormEventBinding",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.FormEventBinding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.FormEventBinding:8b99f6a97ea97ac8",
+          "signature" : "enum FormEventBinding[A, Msg](name: String, codec: FormCodec[A], operation: FormEvent[A] => Msg) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.Group",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.Group",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.Group:24d014ddc080704e",
+          "signature" : "enum Group[Msg](attrs: Vector[Mod.Attr[Msg]]) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.JsBinding",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.JsBinding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.JsBinding:b8af4cb21e4f07c5",
+          "signature" : "enum JsBinding[Msg](name: String, command: JSCommands.JSCommand[Msg]) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.RoutedBinding",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.RoutedBinding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.RoutedBinding:d53569d5082baf57",
+          "signature" : "enum RoutedBinding(name: String, operation: BindingPayload => ComponentDispatch) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.SignalBinding",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.SignalBinding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.SignalBinding:70fca70009df31bb",
+          "signature" : "enum SignalBinding[A, Msg](name: String, signal: Signal[A], operation: (A, BindingPayload) => Msg) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.SignalJsBinding",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.SignalJsBinding",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.SignalJsBinding:981b146821363926",
+          "signature" : "enum SignalJsBinding[Msg](name: String, command: Signal[JSCommands.JSCommand[Msg]]) extends Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.SignalOptionalValue",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.SignalOptionalValue",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.SignalOptionalValue:a0e857b4f9c91ca7",
+          "signature" : "enum SignalOptionalValue(name: String, value: Signal[Option[String]]) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.SignalValue",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.SignalValue",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.SignalValue:b843e05afbe54245",
+          "signature" : "enum SignalValue(name: String, value: Signal[String]) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.SignalValueAsPresence",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.SignalValueAsPresence",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.SignalValueAsPresence:8162af033a4d056a",
+          "signature" : "enum SignalValueAsPresence(name: String, value: Signal[Boolean]) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.Static",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.Static",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.Static:5dba13646812a84f",
+          "signature" : "enum Static(name: String, value: String) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.StaticValueAsPresence",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.StaticValueAsPresence",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.StaticValueAsPresence:3cc266168618e46d",
+          "signature" : "enum StaticValueAsPresence(name: String, value: Boolean) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.Mod.Content",
       "ownerId" : "object:scalive.Mod",
       "qualifiedName" : "scalive.Mod.Content",
@@ -9211,7 +9835,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.Component",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.Component",
       "kind" : "enum",
       "signatures" : [
@@ -9223,7 +9847,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.Flash",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.Flash",
       "kind" : "enum",
       "signatures" : [
@@ -9235,7 +9859,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.Keyed",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.Keyed",
       "kind" : "enum",
       "signatures" : [
@@ -9247,7 +9871,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.NestedView",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.NestedView",
       "kind" : "enum",
       "signatures" : [
@@ -9259,7 +9883,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.SignalChoice",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.SignalChoice",
       "kind" : "enum",
       "signatures" : [
@@ -9271,7 +9895,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.SignalKeyed",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.SignalKeyed",
       "kind" : "enum",
       "signatures" : [
@@ -9283,7 +9907,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.SignalKeyedByIndex",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.SignalKeyedByIndex",
       "kind" : "enum",
       "signatures" : [
@@ -9295,7 +9919,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.SignalModChoice",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.SignalModChoice",
       "kind" : "enum",
       "signatures" : [
@@ -9307,7 +9931,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.SignalOption",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.SignalOption",
       "kind" : "enum",
       "signatures" : [
@@ -9319,7 +9943,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.SignalStream",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.SignalStream",
       "kind" : "enum",
       "signatures" : [
@@ -9331,7 +9955,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.SignalText",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.SignalText",
       "kind" : "enum",
       "signatures" : [
@@ -9343,7 +9967,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.Stream",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.Stream",
       "kind" : "enum",
       "signatures" : [
@@ -9355,7 +9979,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.Tag",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.Tag",
       "kind" : "enum",
       "signatures" : [
@@ -9367,7 +9991,7 @@
     },
     {
       "id" : "enum:scalive.Mod.Content.Text",
-      "ownerId" : "object:scalive.Mod.Content",
+      "ownerId" : "enum:scalive.Mod.Content",
       "qualifiedName" : "scalive.Mod.Content.Text",
       "kind" : "enum",
       "signatures" : [
@@ -9426,6 +10050,30 @@
       ]
     },
     {
+      "id" : "enum:scalive.WebSocketOrigin.Error.InvalidPort",
+      "ownerId" : "enum:scalive.WebSocketOrigin.Error",
+      "qualifiedName" : "scalive.WebSocketOrigin.Error.InvalidPort",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.WebSocketOrigin.Error.InvalidPort:b61a85e5c12c87e7",
+          "signature" : "enum InvalidPort(port: Int) extends WebSocketOrigin.Error"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.WebSocketOrigin.Error.UnsupportedScheme",
+      "ownerId" : "enum:scalive.WebSocketOrigin.Error",
+      "qualifiedName" : "scalive.WebSocketOrigin.Error.UnsupportedScheme",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.WebSocketOrigin.Error.UnsupportedScheme:a5cfa3f2efe5eda9",
+          "signature" : "enum UnsupportedScheme(scheme: String) extends WebSocketOrigin.Error"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.ZioHttpConfig.Error",
       "ownerId" : "object:scalive.ZioHttpConfig",
       "qualifiedName" : "scalive.ZioHttpConfig.Error",
@@ -9434,6 +10082,18 @@
         {
           "id" : "enum:scalive.ZioHttpConfig.Error:4ed298ed0be3fc65",
           "signature" : "enum Error"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.ZioHttpConfig.Error.SecretTooShort",
+      "ownerId" : "enum:scalive.ZioHttpConfig.Error",
+      "qualifiedName" : "scalive.ZioHttpConfig.Error.SecretTooShort",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.ZioHttpConfig.Error.SecretTooShort:b53848a7369d5267",
+          "signature" : "enum SecretTooShort(actualUtf8Bytes: Int) extends ZioHttpConfig.Error"
         }
       ]
     },
@@ -9450,6 +10110,30 @@
       ]
     },
     {
+      "id" : "enum:scalive.testing.ConnectedAction.LiveNavigation",
+      "ownerId" : "enum:scalive.testing.ConnectedAction",
+      "qualifiedName" : "scalive.testing.ConnectedAction.LiveNavigation",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.ConnectedAction.LiveNavigation:37c60507c975a6f1",
+          "signature" : "enum LiveNavigation(navigation: testing.ConnectedNavigation) extends testing.ConnectedAction"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.ConnectedAction.Redirect",
+      "ownerId" : "enum:scalive.testing.ConnectedAction",
+      "qualifiedName" : "scalive.testing.ConnectedAction.Redirect",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.ConnectedAction.Redirect:121d7f69c39051af",
+          "signature" : "enum Redirect(to: zio.http.URL) extends testing.ConnectedAction"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.testing.ConnectedJoinFailure",
       "ownerId" : "package:scalive.testing",
       "qualifiedName" : "scalive.testing.ConnectedJoinFailure",
@@ -9462,6 +10146,30 @@
       ]
     },
     {
+      "id" : "enum:scalive.testing.ConnectedJoinFailure.Redirect",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Redirect",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.ConnectedJoinFailure.Redirect:b3d2eff94d298c9c",
+          "signature" : "enum Redirect(to: zio.http.URL) extends testing.ConnectedJoinFailure"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.ConnectedJoinFailure.Transport",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Transport",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.ConnectedJoinFailure.Transport:4180781c35157c5d",
+          "signature" : "enum Transport(error: Throwable) extends testing.ConnectedJoinFailure"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.testing.FormQueryError",
       "ownerId" : "package:scalive.testing",
       "qualifiedName" : "scalive.testing.FormQueryError",
@@ -9470,6 +10178,30 @@
         {
           "id" : "enum:scalive.testing.FormQueryError:ec77918ee974b5d7",
           "signature" : "enum FormQueryError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.FormQueryError.MultipleMatches",
+      "ownerId" : "enum:scalive.testing.FormQueryError",
+      "qualifiedName" : "scalive.testing.FormQueryError.MultipleMatches",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.FormQueryError.MultipleMatches:b282d97ce3c5d385",
+          "signature" : "enum MultipleMatches(query: testing.FormQuery, count: Int) extends testing.FormQueryError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.FormQueryError.NotFound",
+      "ownerId" : "enum:scalive.testing.FormQueryError",
+      "qualifiedName" : "scalive.testing.FormQueryError.NotFound",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.FormQueryError.NotFound:b76bcde1bdb6f28a",
+          "signature" : "enum NotFound(query: testing.FormQuery) extends testing.FormQueryError"
         }
       ]
     },
@@ -16821,6 +17553,30 @@
       ]
     },
     {
+      "id" : "val:scalive.Connection.Connected.capabilities",
+      "ownerId" : "enum:scalive.Connection.Connected",
+      "qualifiedName" : "scalive.Connection.Connected.capabilities",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Connection.Connected.capabilities:8c0660dcbe7c10eb",
+          "signature" : "val capabilities: Connected"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Connection.Disconnected",
+      "ownerId" : "enum:scalive.Connection",
+      "qualifiedName" : "scalive.Connection.Disconnected",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Connection.Disconnected:bfff23990cb1a4b2",
+          "signature" : "val Disconnected: Connection[Nothing]"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.CookiePolicy.secure",
       "ownerId" : "class:scalive.CookiePolicy",
       "qualifiedName" : "scalive.CookiePolicy.secure",
@@ -16865,6 +17621,66 @@
         {
           "id" : "val:scalive.CsrfProtection.ParamName:2b221f10cc28777b",
           "signature" : "val ParamName: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.CsrfProtection.ValidationError.DuplicateToken",
+      "ownerId" : "enum:scalive.CsrfProtection.ValidationError",
+      "qualifiedName" : "scalive.CsrfProtection.ValidationError.DuplicateToken",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CsrfProtection.ValidationError.DuplicateToken:bf84268931936546",
+          "signature" : "val DuplicateToken: CsrfProtection.ValidationError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.CsrfProtection.ValidationError.InvalidCookie",
+      "ownerId" : "enum:scalive.CsrfProtection.ValidationError",
+      "qualifiedName" : "scalive.CsrfProtection.ValidationError.InvalidCookie",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CsrfProtection.ValidationError.InvalidCookie:db4322a1dc14511b",
+          "signature" : "val InvalidCookie: CsrfProtection.ValidationError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.CsrfProtection.ValidationError.InvalidToken",
+      "ownerId" : "enum:scalive.CsrfProtection.ValidationError",
+      "qualifiedName" : "scalive.CsrfProtection.ValidationError.InvalidToken",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CsrfProtection.ValidationError.InvalidToken:c64944f3b605cda8",
+          "signature" : "val InvalidToken: CsrfProtection.ValidationError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.CsrfProtection.ValidationError.MissingCookie",
+      "ownerId" : "enum:scalive.CsrfProtection.ValidationError",
+      "qualifiedName" : "scalive.CsrfProtection.ValidationError.MissingCookie",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CsrfProtection.ValidationError.MissingCookie:bbe0b018ae5fb02f",
+          "signature" : "val MissingCookie: CsrfProtection.ValidationError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.CsrfProtection.ValidationError.MissingToken",
+      "ownerId" : "enum:scalive.CsrfProtection.ValidationError",
+      "qualifiedName" : "scalive.CsrfProtection.ValidationError.MissingToken",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CsrfProtection.ValidationError.MissingToken:6c2de60dfaf732e0",
+          "signature" : "val MissingToken: CsrfProtection.ValidationError"
         }
       ]
     },
@@ -16917,6 +17733,30 @@
       ]
     },
     {
+      "id" : "val:scalive.FormAction.EncodeError.Path.details",
+      "ownerId" : "enum:scalive.FormAction.EncodeError.Path",
+      "qualifiedName" : "scalive.FormAction.EncodeError.Path.details",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormAction.EncodeError.Path.details:b874c740347a3de9",
+          "signature" : "val details: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormAction.EncodeError.UnsupportedMethod.method",
+      "ownerId" : "enum:scalive.FormAction.EncodeError.UnsupportedMethod",
+      "qualifiedName" : "scalive.FormAction.EncodeError.UnsupportedMethod.method",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormAction.EncodeError.UnsupportedMethod.method:15ffd3d1c8dc28f2",
+          "signature" : "val method: zio.http.Method"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.FormAction.EncodingException.error",
       "ownerId" : "class:scalive.FormAction.EncodingException",
       "qualifiedName" : "scalive.FormAction.EncodingException.error",
@@ -16925,6 +17765,30 @@
         {
           "id" : "val:scalive.FormAction.EncodingException.error:27cb8dc3188e8b74",
           "signature" : "val error: FormAction.EncodeError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormAction.Method.Get",
+      "ownerId" : "enum:scalive.FormAction.Method",
+      "qualifiedName" : "scalive.FormAction.Method.Get",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormAction.Method.Get:5b2679e7107523f3",
+          "signature" : "val Get: FormAction.Method"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormAction.Method.Post",
+      "ownerId" : "enum:scalive.FormAction.Method",
+      "qualifiedName" : "scalive.FormAction.Method.Post",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormAction.Method.Post:95920309a5cc3388",
+          "signature" : "val Post: FormAction.Method"
         }
       ]
     },
@@ -16973,6 +17837,126 @@
         {
           "id" : "val:scalive.FormCodec.formData:72663a4acc186a10",
           "signature" : "val formData: FormCodec[FormData]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.BodyError.Read.cause",
+      "ownerId" : "enum:scalive.FormData.BodyError.Read",
+      "qualifiedName" : "scalive.FormData.BodyError.Read.cause",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.BodyError.Read.cause:c49ab2c2f9607baa",
+          "signature" : "val cause: Throwable"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.BodyError.TooLarge.maxBytes",
+      "ownerId" : "enum:scalive.FormData.BodyError.TooLarge",
+      "qualifiedName" : "scalive.FormData.BodyError.TooLarge.maxBytes",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.BodyError.TooLarge.maxBytes:8fe8157fae2e3b6e",
+          "signature" : "val maxBytes: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.DecodeError.Body.error",
+      "ownerId" : "enum:scalive.FormData.DecodeError.Body",
+      "qualifiedName" : "scalive.FormData.DecodeError.Body.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.DecodeError.Body.error:834dec6bbc62597e",
+          "signature" : "val error: FormData.BodyError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.DecodeError.Representation.error",
+      "ownerId" : "enum:scalive.FormData.DecodeError.Representation",
+      "qualifiedName" : "scalive.FormData.DecodeError.Representation.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.DecodeError.Representation.error:b5ad47b4b9278fc3",
+          "signature" : "val error: FormData.RepresentationError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.RepresentationError.InvalidContentType.actual",
+      "ownerId" : "enum:scalive.FormData.RepresentationError.InvalidContentType",
+      "qualifiedName" : "scalive.FormData.RepresentationError.InvalidContentType.actual",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.RepresentationError.InvalidContentType.actual:46a98c26cb0ac61f",
+          "signature" : "val actual: Option[zio.http.MediaType]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.RepresentationError.InvalidUrlEncoding.details",
+      "ownerId" : "enum:scalive.FormData.RepresentationError.InvalidUrlEncoding",
+      "qualifiedName" : "scalive.FormData.RepresentationError.InvalidUrlEncoding.details",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.RepresentationError.InvalidUrlEncoding.details:b874c740347a3de9",
+          "signature" : "val details: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.RepresentationError.UnsupportedField.kind",
+      "ownerId" : "enum:scalive.FormData.RepresentationError.UnsupportedField",
+      "qualifiedName" : "scalive.FormData.RepresentationError.UnsupportedField.kind",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.RepresentationError.UnsupportedField.kind:a67822be1535ca2c",
+          "signature" : "val kind: FormData.UnsupportedFieldKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.RepresentationError.UnsupportedField.name",
+      "ownerId" : "enum:scalive.FormData.RepresentationError.UnsupportedField",
+      "qualifiedName" : "scalive.FormData.RepresentationError.UnsupportedField.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.RepresentationError.UnsupportedField.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.UnsupportedFieldKind.Binary",
+      "ownerId" : "enum:scalive.FormData.UnsupportedFieldKind",
+      "qualifiedName" : "scalive.FormData.UnsupportedFieldKind.Binary",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.UnsupportedFieldKind.Binary:4efd403197892acd",
+          "signature" : "val Binary: FormData.UnsupportedFieldKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormData.UnsupportedFieldKind.StreamingBinary",
+      "ownerId" : "enum:scalive.FormData.UnsupportedFieldKind",
+      "qualifiedName" : "scalive.FormData.UnsupportedFieldKind.StreamingBinary",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormData.UnsupportedFieldKind.StreamingBinary:01a030170ff1fca8",
+          "signature" : "val StreamingBinary: FormData.UnsupportedFieldKind"
         }
       ]
     },
@@ -17409,6 +18393,54 @@
       ]
     },
     {
+      "id" : "val:scalive.HttpFormDecoder.Error.Body.error",
+      "ownerId" : "enum:scalive.HttpFormDecoder.Error.Body",
+      "qualifiedName" : "scalive.HttpFormDecoder.Error.Body.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.HttpFormDecoder.Error.Body.error:04207892429e5ee0",
+          "signature" : "val error: FormData.BodyError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.HttpFormDecoder.Error.Csrf.error",
+      "ownerId" : "enum:scalive.HttpFormDecoder.Error.Csrf",
+      "qualifiedName" : "scalive.HttpFormDecoder.Error.Csrf.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.HttpFormDecoder.Error.Csrf.error:7dc100356e7a45d6",
+          "signature" : "val error: CsrfProtection.ValidationError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.HttpFormDecoder.Error.Representation.error",
+      "ownerId" : "enum:scalive.HttpFormDecoder.Error.Representation",
+      "qualifiedName" : "scalive.HttpFormDecoder.Error.Representation.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.HttpFormDecoder.Error.Representation.error:9bb5d31bee58d187",
+          "signature" : "val error: FormData.RepresentationError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.HttpFormDecoder.Error.Validation.errors",
+      "ownerId" : "enum:scalive.HttpFormDecoder.Error.Validation",
+      "qualifiedName" : "scalive.HttpFormDecoder.Error.Validation.errors",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.HttpFormDecoder.Error.Validation.errors:716331d3b4488f94",
+          "signature" : "val errors: FormErrors"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.JS",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.JS",
@@ -17541,6 +18573,906 @@
       ]
     },
     {
+      "id" : "val:scalive.LifecycleEvent.DisconnectedRenderFailed.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.DisconnectedRenderFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.DisconnectedRenderFailed.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.DisconnectedRenderFailed.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.DisconnectedRenderFailed.error",
+      "ownerId" : "enum:scalive.LifecycleEvent.DisconnectedRenderFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.DisconnectedRenderFailed.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.DisconnectedRenderFailed.error:2b78b4ef6a59ffd7",
+          "signature" : "val error: LifecycleError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.DisconnectedRenderFailed.lifecycleId",
+      "ownerId" : "enum:scalive.LifecycleEvent.DisconnectedRenderFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.DisconnectedRenderFailed.lifecycleId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.DisconnectedRenderFailed.lifecycleId:3f4174a04e063d45",
+          "signature" : "val lifecycleId: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.DisconnectedRenderSucceeded.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.DisconnectedRenderSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.DisconnectedRenderSucceeded.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.DisconnectedRenderSucceeded.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.DisconnectedRenderSucceeded.lifecycleId",
+      "ownerId" : "enum:scalive.LifecycleEvent.DisconnectedRenderSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.DisconnectedRenderSucceeded.lifecycleId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.DisconnectedRenderSucceeded.lifecycleId:3f4174a04e063d45",
+          "signature" : "val lifecycleId: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.HandlerFailed.commandId",
+      "ownerId" : "enum:scalive.LifecycleEvent.HandlerFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.HandlerFailed.commandId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.HandlerFailed.commandId:48d5979f4366e156",
+          "signature" : "val commandId: Option[Long]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.HandlerFailed.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.HandlerFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.HandlerFailed.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.HandlerFailed.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.HandlerFailed.error",
+      "ownerId" : "enum:scalive.LifecycleEvent.HandlerFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.HandlerFailed.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.HandlerFailed.error:2b78b4ef6a59ffd7",
+          "signature" : "val error: LifecycleError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.HandlerFailed.kind",
+      "ownerId" : "enum:scalive.LifecycleEvent.HandlerFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.HandlerFailed.kind",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.HandlerFailed.kind:8fbbd1cb2d3253f8",
+          "signature" : "val kind: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.HandlerFailed.lifecycle",
+      "ownerId" : "enum:scalive.LifecycleEvent.HandlerFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.HandlerFailed.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.HandlerFailed.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinRejected.attempt",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinRejected",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinRejected.attempt",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinRejected.attempt:60157dbcbfac9cbc",
+          "signature" : "val attempt: LifecycleJoinAttempt"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinRejected.connectionId",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinRejected",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinRejected.connectionId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinRejected.connectionId:2d762016ac35bd58",
+          "signature" : "val connectionId: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinRejected.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinRejected",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinRejected.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinRejected.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinRejected.error",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinRejected",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinRejected.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinRejected.error:2b78b4ef6a59ffd7",
+          "signature" : "val error: LifecycleError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinRejected.lifecycleId",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinRejected",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinRejected.lifecycleId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinRejected.lifecycleId:368a4f022d769c15",
+          "signature" : "val lifecycleId: Option[Long]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinRejected.target",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinRejected",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinRejected.target",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinRejected.target:7c011140ea75a268",
+          "signature" : "val target: LifecycleJoinTarget"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinSucceeded.attempt",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinSucceeded.attempt",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinSucceeded.attempt:60157dbcbfac9cbc",
+          "signature" : "val attempt: LifecycleJoinAttempt"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinSucceeded.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinSucceeded.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinSucceeded.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinSucceeded.lifecycle",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinSucceeded.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinSucceeded.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.JoinSucceeded.target",
+      "ownerId" : "enum:scalive.LifecycleEvent.JoinSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.JoinSucceeded.target",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.JoinSucceeded.target:7c011140ea75a268",
+          "signature" : "val target: LifecycleJoinTarget"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.LifecycleTerminated.lifecycle",
+      "ownerId" : "enum:scalive.LifecycleEvent.LifecycleTerminated",
+      "qualifiedName" : "scalive.LifecycleEvent.LifecycleTerminated.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.LifecycleTerminated.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.LifecycleTerminated.reason",
+      "ownerId" : "enum:scalive.LifecycleEvent.LifecycleTerminated",
+      "qualifiedName" : "scalive.LifecycleEvent.LifecycleTerminated.reason",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.LifecycleTerminated.reason:7b0f6227617dabfe",
+          "signature" : "val reason: LifecycleTerminationReason"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.MountFailed.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.MountFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.MountFailed.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.MountFailed.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.MountFailed.error",
+      "ownerId" : "enum:scalive.LifecycleEvent.MountFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.MountFailed.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.MountFailed.error:2b78b4ef6a59ffd7",
+          "signature" : "val error: LifecycleError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.MountFailed.mount",
+      "ownerId" : "enum:scalive.LifecycleEvent.MountFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.MountFailed.mount",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.MountFailed.mount:c1f0ddfaa1354410",
+          "signature" : "val mount: LifecycleMount"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.MountSucceeded.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.MountSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.MountSucceeded.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.MountSucceeded.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.MountSucceeded.mount",
+      "ownerId" : "enum:scalive.LifecycleEvent.MountSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.MountSucceeded.mount",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.MountSucceeded.mount:c1f0ddfaa1354410",
+          "signature" : "val mount: LifecycleMount"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.QueuePressure.capacity",
+      "ownerId" : "enum:scalive.LifecycleEvent.QueuePressure",
+      "qualifiedName" : "scalive.LifecycleEvent.QueuePressure.capacity",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.QueuePressure.capacity:631e575110798c31",
+          "signature" : "val capacity: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.QueuePressure.depth",
+      "ownerId" : "enum:scalive.LifecycleEvent.QueuePressure",
+      "qualifiedName" : "scalive.LifecycleEvent.QueuePressure.depth",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.QueuePressure.depth:5f105c159a05b120",
+          "signature" : "val depth: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.QueuePressure.lifecycle",
+      "ownerId" : "enum:scalive.LifecycleEvent.QueuePressure",
+      "qualifiedName" : "scalive.LifecycleEvent.QueuePressure.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.QueuePressure.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.QueuePressure.queue",
+      "ownerId" : "enum:scalive.LifecycleEvent.QueuePressure",
+      "qualifiedName" : "scalive.LifecycleEvent.QueuePressure.queue",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.QueuePressure.queue:f606b42bf3861aef",
+          "signature" : "val queue: LifecycleQueue"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.QueuePressure.status",
+      "ownerId" : "enum:scalive.LifecycleEvent.QueuePressure",
+      "qualifiedName" : "scalive.LifecycleEvent.QueuePressure.status",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.QueuePressure.status:0f710e6640e83ca4",
+          "signature" : "val status: LifecycleQueueStatus"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.SubscriptionFailed.delivery",
+      "ownerId" : "enum:scalive.LifecycleEvent.SubscriptionFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.SubscriptionFailed.delivery",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.SubscriptionFailed.delivery:d9e2cb17a7322376",
+          "signature" : "val delivery: SubscriptionDelivery"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.SubscriptionFailed.error",
+      "ownerId" : "enum:scalive.LifecycleEvent.SubscriptionFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.SubscriptionFailed.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.SubscriptionFailed.error:2b78b4ef6a59ffd7",
+          "signature" : "val error: LifecycleError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.SubscriptionFailed.lifecycle",
+      "ownerId" : "enum:scalive.LifecycleEvent.SubscriptionFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.SubscriptionFailed.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.SubscriptionFailed.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.SubscriptionFailed.resourceId",
+      "ownerId" : "enum:scalive.LifecycleEvent.SubscriptionFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.SubscriptionFailed.resourceId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.SubscriptionFailed.resourceId:bd02358a3062d2e3",
+          "signature" : "val resourceId: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnFailed.commandId",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnFailed.commandId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnFailed.commandId:48d5979f4366e156",
+          "signature" : "val commandId: Option[Long]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnFailed.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnFailed.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnFailed.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnFailed.error",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnFailed.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnFailed.error:2b78b4ef6a59ffd7",
+          "signature" : "val error: LifecycleError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnFailed.kind",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnFailed.kind",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnFailed.kind:8fbbd1cb2d3253f8",
+          "signature" : "val kind: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnFailed.lifecycle",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnFailed.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnFailed.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnFailed.turnId",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnFailed",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnFailed.turnId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnFailed.turnId:29e8a6572f06aea2",
+          "signature" : "val turnId: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnSucceeded.commandId",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnSucceeded.commandId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnSucceeded.commandId:48d5979f4366e156",
+          "signature" : "val commandId: Option[Long]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnSucceeded.durationNanos",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnSucceeded.durationNanos",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnSucceeded.durationNanos:9b1af3d184341215",
+          "signature" : "val durationNanos: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnSucceeded.kind",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnSucceeded.kind",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnSucceeded.kind:8fbbd1cb2d3253f8",
+          "signature" : "val kind: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnSucceeded.lifecycle",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnSucceeded.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnSucceeded.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleEvent.TurnSucceeded.turnId",
+      "ownerId" : "enum:scalive.LifecycleEvent.TurnSucceeded",
+      "qualifiedName" : "scalive.LifecycleEvent.TurnSucceeded.turnId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleEvent.TurnSucceeded.turnId:29e8a6572f06aea2",
+          "signature" : "val turnId: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailure.IngressSaturated",
+      "ownerId" : "enum:scalive.LifecycleFailure",
+      "qualifiedName" : "scalive.LifecycleFailure.IngressSaturated",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailure.IngressSaturated:bff2c623521acec7",
+          "signature" : "val IngressSaturated: LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailure.Interrupted",
+      "ownerId" : "enum:scalive.LifecycleFailure",
+      "qualifiedName" : "scalive.LifecycleFailure.Interrupted",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailure.Interrupted:9a206137ba3dcc38",
+          "signature" : "val Interrupted: LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailure.JoinRejected",
+      "ownerId" : "enum:scalive.LifecycleFailure",
+      "qualifiedName" : "scalive.LifecycleFailure.JoinRejected",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailure.JoinRejected:7b6c59b05702d83c",
+          "signature" : "val JoinRejected: LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailure.MailboxSaturated",
+      "ownerId" : "enum:scalive.LifecycleFailure",
+      "qualifiedName" : "scalive.LifecycleFailure.MailboxSaturated",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailure.MailboxSaturated:ff22e48a4f3d53cd",
+          "signature" : "val MailboxSaturated: LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailure.Stage.stage",
+      "ownerId" : "enum:scalive.LifecycleFailure.Stage",
+      "qualifiedName" : "scalive.LifecycleFailure.Stage.stage",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailure.Stage.stage:6a3d8f2386b7ce6e",
+          "signature" : "val stage: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailure.SubscriptionDefect",
+      "ownerId" : "enum:scalive.LifecycleFailure",
+      "qualifiedName" : "scalive.LifecycleFailure.SubscriptionDefect",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailure.SubscriptionDefect:2e7667c0fc2f3ee4",
+          "signature" : "val SubscriptionDefect: LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.AfterRender",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.AfterRender",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.AfterRender:af941700ccf501d2",
+          "signature" : "val AfterRender: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Cleanup",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Cleanup",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Cleanup:81f89389a149295e",
+          "signature" : "val Cleanup: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Commit",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Commit",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Commit:eed05a67a15f882d",
+          "signature" : "val Commit: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.ComponentAfterRender",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.ComponentAfterRender",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.ComponentAfterRender:a2a3a788df48dbc4",
+          "signature" : "val ComponentAfterRender: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.ComponentAsync",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.ComponentAsync",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.ComponentAsync:e59cf97c37200f29",
+          "signature" : "val ComponentAsync: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.ComponentMessage",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.ComponentMessage",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.ComponentMessage:c425ac2322d47e52",
+          "signature" : "val ComponentMessage: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.ComponentMount",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.ComponentMount",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.ComponentMount:1aa4b31191bfda51",
+          "signature" : "val ComponentMount: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.ComponentUpdate",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.ComponentUpdate",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.ComponentUpdate:2f23d8ee2eee38a3",
+          "signature" : "val ComponentUpdate: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.ConnectedTurnGuard",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.ConnectedTurnGuard",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.ConnectedTurnGuard:4adb40d8fa612d8a",
+          "signature" : "val ConnectedTurnGuard: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Handler",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Handler",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Handler:7a59335fac745ded",
+          "signature" : "val Handler: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Identity",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Identity",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Identity:47329b19e44495d6",
+          "signature" : "val Identity: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Mount",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Mount",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Mount:c9f7e2016f290695",
+          "signature" : "val Mount: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Navigation",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Navigation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Navigation:a4df207f7e5e2f2d",
+          "signature" : "val Navigation: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.OutputReservation",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.OutputReservation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.OutputReservation:09b4f43d40b36278",
+          "signature" : "val OutputReservation: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Render",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Render",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Render:39dfb5b2f671e496",
+          "signature" : "val Render: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.ResourcePreparation",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.ResourcePreparation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.ResourcePreparation:4623321140996938",
+          "signature" : "val ResourcePreparation: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Retirement",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Retirement",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Retirement:6f74f9882b636d08",
+          "signature" : "val Retirement: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Runtime",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Runtime",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Runtime:1aba61539eee3f2e",
+          "signature" : "val Runtime: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.TopologyPreparation",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.TopologyPreparation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.TopologyPreparation:cf6e889db2595040",
+          "signature" : "val TopologyPreparation: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Upload",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Upload",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Upload:35d62eb90d01ebff",
+          "signature" : "val Upload: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Validation",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Validation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Validation:44887bd5c6c10c2c",
+          "signature" : "val Validation: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleFailureStage.Writer",
+      "ownerId" : "enum:scalive.LifecycleFailureStage",
+      "qualifiedName" : "scalive.LifecycleFailureStage.Writer",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailureStage.Writer:3f3c085b533da09d",
+          "signature" : "val Writer: LifecycleFailureStage"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LifecycleJoinAttempt.attempts",
       "ownerId" : "class:scalive.LifecycleJoinAttempt",
       "qualifiedName" : "scalive.LifecycleJoinAttempt.attempts",
@@ -17565,6 +19497,30 @@
       ]
     },
     {
+      "id" : "val:scalive.LifecycleJoinTarget.Nested",
+      "ownerId" : "enum:scalive.LifecycleJoinTarget",
+      "qualifiedName" : "scalive.LifecycleJoinTarget.Nested",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleJoinTarget.Nested:f3b023ed6f64dde8",
+          "signature" : "val Nested: LifecycleJoinTarget"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleJoinTarget.Root",
+      "ownerId" : "enum:scalive.LifecycleJoinTarget",
+      "qualifiedName" : "scalive.LifecycleJoinTarget.Root",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleJoinTarget.Root:688a8e09dc8cb3be",
+          "signature" : "val Root: LifecycleJoinTarget"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LifecycleMetrics.observer",
       "ownerId" : "object:scalive.LifecycleMetrics",
       "qualifiedName" : "scalive.LifecycleMetrics.observer",
@@ -17577,6 +19533,30 @@
       ]
     },
     {
+      "id" : "val:scalive.LifecycleMount.Connected.lifecycle",
+      "ownerId" : "enum:scalive.LifecycleMount.Connected",
+      "qualifiedName" : "scalive.LifecycleMount.Connected.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleMount.Connected.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleMount.Disconnected.lifecycleId",
+      "ownerId" : "enum:scalive.LifecycleMount.Disconnected",
+      "qualifiedName" : "scalive.LifecycleMount.Disconnected.lifecycleId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleMount.Disconnected.lifecycleId:3f4174a04e063d45",
+          "signature" : "val lifecycleId: Long"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LifecycleObserver.none",
       "ownerId" : "object:scalive.LifecycleObserver",
       "qualifiedName" : "scalive.LifecycleObserver.none",
@@ -17585,6 +19565,258 @@
         {
           "id" : "val:scalive.LifecycleObserver.none:07e50a69be6cd33f",
           "signature" : "val none: LifecycleObserver"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleQueue.ConnectionIngress",
+      "ownerId" : "enum:scalive.LifecycleQueue",
+      "qualifiedName" : "scalive.LifecycleQueue.ConnectionIngress",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleQueue.ConnectionIngress:23670d5275a4f6c6",
+          "signature" : "val ConnectionIngress: LifecycleQueue"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleQueue.ConnectionPendingCommands",
+      "ownerId" : "enum:scalive.LifecycleQueue",
+      "qualifiedName" : "scalive.LifecycleQueue.ConnectionPendingCommands",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleQueue.ConnectionPendingCommands:26a60b8778a54c63",
+          "signature" : "val ConnectionPendingCommands: LifecycleQueue"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleQueue.KernelMailbox",
+      "ownerId" : "enum:scalive.LifecycleQueue",
+      "qualifiedName" : "scalive.LifecycleQueue.KernelMailbox",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleQueue.KernelMailbox:cbc6fb7b3b52f35c",
+          "signature" : "val KernelMailbox: LifecycleQueue"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleQueue.Writer",
+      "ownerId" : "enum:scalive.LifecycleQueue",
+      "qualifiedName" : "scalive.LifecycleQueue.Writer",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleQueue.Writer:c6cea384bd2d66d1",
+          "signature" : "val Writer: LifecycleQueue"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleQueueStatus.Sampled",
+      "ownerId" : "enum:scalive.LifecycleQueueStatus",
+      "qualifiedName" : "scalive.LifecycleQueueStatus.Sampled",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleQueueStatus.Sampled:9fe729054014762f",
+          "signature" : "val Sampled: LifecycleQueueStatus"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleQueueStatus.Saturated",
+      "ownerId" : "enum:scalive.LifecycleQueueStatus",
+      "qualifiedName" : "scalive.LifecycleQueueStatus.Saturated",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleQueueStatus.Saturated:a5d093084d0dfcfc",
+          "signature" : "val Saturated: LifecycleQueueStatus"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTerminationReason.Closed",
+      "ownerId" : "enum:scalive.LifecycleTerminationReason",
+      "qualifiedName" : "scalive.LifecycleTerminationReason.Closed",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTerminationReason.Closed:9108bc6fadc06fa2",
+          "signature" : "val Closed: LifecycleTerminationReason"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTerminationReason.Disconnected.reason",
+      "ownerId" : "enum:scalive.LifecycleTerminationReason.Disconnected",
+      "qualifiedName" : "scalive.LifecycleTerminationReason.Disconnected.reason",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTerminationReason.Disconnected.reason:7bc418691a308030",
+          "signature" : "val reason: Option[String]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTerminationReason.Failed.failure",
+      "ownerId" : "enum:scalive.LifecycleTerminationReason.Failed",
+      "qualifiedName" : "scalive.LifecycleTerminationReason.Failed.failure",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTerminationReason.Failed.failure:c8f233668886ecc0",
+          "signature" : "val failure: LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTerminationReason.Redirected",
+      "ownerId" : "enum:scalive.LifecycleTerminationReason",
+      "qualifiedName" : "scalive.LifecycleTerminationReason.Redirected",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTerminationReason.Redirected:cd1c7f508e296ed5",
+          "signature" : "val Redirected: LifecycleTerminationReason"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.AsyncCompletion",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.AsyncCompletion",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.AsyncCompletion:d0c0fb8aa5980a49",
+          "signature" : "val AsyncCompletion: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.Bootstrap",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.Bootstrap",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.Bootstrap:3d42d34ce93173fa",
+          "signature" : "val Bootstrap: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.BrowserEvent",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.BrowserEvent",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.BrowserEvent:ba5c227dd80b57fd",
+          "signature" : "val BrowserEvent: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.ComponentBrowserEvent",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.ComponentBrowserEvent",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.ComponentBrowserEvent:a0648f7e94a89826",
+          "signature" : "val ComponentBrowserEvent: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.ComponentMessage",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.ComponentMessage",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.ComponentMessage:6335e4bbe5b4e502",
+          "signature" : "val ComponentMessage: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.ComponentUpdate",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.ComponentUpdate",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.ComponentUpdate:7a12b1332bd25c51",
+          "signature" : "val ComponentUpdate: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.Internal",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.Internal",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.Internal:2d0fd2cef55477ff",
+          "signature" : "val Internal: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.Message",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.Message",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.Message:cb80dc2082549310",
+          "signature" : "val Message: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.ParamsPatch",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.ParamsPatch",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.ParamsPatch:de91fff0a6ede39b",
+          "signature" : "val ParamsPatch: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.Subscription",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.Subscription",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.Subscription:e629b5d6ad483d95",
+          "signature" : "val Subscription: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnKind.Upload",
+      "ownerId" : "enum:scalive.LifecycleTurnKind",
+      "qualifiedName" : "scalive.LifecycleTurnKind.Upload",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnKind.Upload:9efdf26375209292",
+          "signature" : "val Upload: LifecycleTurnKind"
         }
       ]
     },
@@ -17669,6 +19901,42 @@
         {
           "id" : "val:scalive.LiveAsyncEvent.result:321319ba84849592",
           "signature" : "val result: LiveAsyncResult[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveAsyncResult.Cancelled.reason",
+      "ownerId" : "enum:scalive.LiveAsyncResult.Cancelled",
+      "qualifiedName" : "scalive.LiveAsyncResult.Cancelled.reason",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveAsyncResult.Cancelled.reason:7bc418691a308030",
+          "signature" : "val reason: Option[String]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveAsyncResult.Failed.cause",
+      "ownerId" : "enum:scalive.LiveAsyncResult.Failed",
+      "qualifiedName" : "scalive.LiveAsyncResult.Failed.cause",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveAsyncResult.Failed.cause:c49ab2c2f9607baa",
+          "signature" : "val cause: Throwable"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveAsyncResult.Succeeded.value",
+      "ownerId" : "enum:scalive.LiveAsyncResult.Succeeded",
+      "qualifiedName" : "scalive.LiveAsyncResult.Succeeded.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveAsyncResult.Succeeded.value:392a7482f34c1120",
+          "signature" : "val value: A"
         }
       ]
     },
@@ -17985,6 +20253,42 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveLocation.EncodeError.Fragment.details",
+      "ownerId" : "enum:scalive.LiveLocation.EncodeError.Fragment",
+      "qualifiedName" : "scalive.LiveLocation.EncodeError.Fragment.details",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveLocation.EncodeError.Fragment.details:b874c740347a3de9",
+          "signature" : "val details: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveLocation.EncodeError.Path.details",
+      "ownerId" : "enum:scalive.LiveLocation.EncodeError.Path",
+      "qualifiedName" : "scalive.LiveLocation.EncodeError.Path.details",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveLocation.EncodeError.Path.details:b874c740347a3de9",
+          "signature" : "val details: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveLocation.EncodeError.Query.cause",
+      "ownerId" : "enum:scalive.LiveLocation.EncodeError.Query",
+      "qualifiedName" : "scalive.LiveLocation.EncodeError.Query.cause",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveLocation.EncodeError.Query.cause:c49ab2c2f9607baa",
+          "signature" : "val cause: Throwable"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveLocation.EncodingException.error",
       "ownerId" : "class:scalive.LiveLocation.EncodingException",
       "qualifiedName" : "scalive.LiveLocation.EncodingException.error",
@@ -18293,6 +20597,378 @@
         {
           "id" : "val:scalive.LiveViewClientAssets.routes:7bc34c646891bbe0",
           "signature" : "val routes: zio.http.Routes[Any, Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.Binding.name",
+      "ownerId" : "enum:scalive.Mod.Attr.Binding",
+      "qualifiedName" : "scalive.Mod.Attr.Binding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.Binding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.Binding.operation",
+      "ownerId" : "enum:scalive.Mod.Attr.Binding",
+      "qualifiedName" : "scalive.Mod.Attr.Binding.operation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.Binding.operation:306824b8527c9293",
+          "signature" : "val operation: BindingPayload => Msg"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.ComponentBinding.name",
+      "ownerId" : "enum:scalive.Mod.Attr.ComponentBinding",
+      "qualifiedName" : "scalive.Mod.Attr.ComponentBinding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.ComponentBinding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.ComponentBinding.operation",
+      "ownerId" : "enum:scalive.Mod.Attr.ComponentBinding",
+      "qualifiedName" : "scalive.Mod.Attr.ComponentBinding.operation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.ComponentBinding.operation:934abce476c75da6",
+          "signature" : "val operation: BindingPayload => Msg"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.ComponentBinding.target",
+      "ownerId" : "enum:scalive.Mod.Attr.ComponentBinding",
+      "qualifiedName" : "scalive.Mod.Attr.ComponentBinding.target",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.ComponentBinding.target:7f302defd781e15f",
+          "signature" : "val target: ComponentRef[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.ComponentTarget.target",
+      "ownerId" : "enum:scalive.Mod.Attr.ComponentTarget",
+      "qualifiedName" : "scalive.Mod.Attr.ComponentTarget.target",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.ComponentTarget.target:e70208b3be045c3e",
+          "signature" : "val target: ComponentRef[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.FormBinding.name",
+      "ownerId" : "enum:scalive.Mod.Attr.FormBinding",
+      "qualifiedName" : "scalive.Mod.Attr.FormBinding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.FormBinding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.FormBinding.operation",
+      "ownerId" : "enum:scalive.Mod.Attr.FormBinding",
+      "qualifiedName" : "scalive.Mod.Attr.FormBinding.operation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.FormBinding.operation:45f0297e67894ade",
+          "signature" : "val operation: FormData => Msg"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.FormEventBinding.codec",
+      "ownerId" : "enum:scalive.Mod.Attr.FormEventBinding",
+      "qualifiedName" : "scalive.Mod.Attr.FormEventBinding.codec",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.FormEventBinding.codec:e99f19130e761567",
+          "signature" : "val codec: FormCodec[A]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.FormEventBinding.name",
+      "ownerId" : "enum:scalive.Mod.Attr.FormEventBinding",
+      "qualifiedName" : "scalive.Mod.Attr.FormEventBinding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.FormEventBinding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.FormEventBinding.operation",
+      "ownerId" : "enum:scalive.Mod.Attr.FormEventBinding",
+      "qualifiedName" : "scalive.Mod.Attr.FormEventBinding.operation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.FormEventBinding.operation:ec29e57b43342885",
+          "signature" : "val operation: FormEvent[A] => Msg"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.Group.attrs",
+      "ownerId" : "enum:scalive.Mod.Attr.Group",
+      "qualifiedName" : "scalive.Mod.Attr.Group.attrs",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.Group.attrs:bcc21e0d0a59a731",
+          "signature" : "val attrs: Vector[Mod.Attr[Msg]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.JsBinding.command",
+      "ownerId" : "enum:scalive.Mod.Attr.JsBinding",
+      "qualifiedName" : "scalive.Mod.Attr.JsBinding.command",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.JsBinding.command:8ab7ed4010998495",
+          "signature" : "val command: JSCommands.JSCommand[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.JsBinding.name",
+      "ownerId" : "enum:scalive.Mod.Attr.JsBinding",
+      "qualifiedName" : "scalive.Mod.Attr.JsBinding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.JsBinding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.RoutedBinding.name",
+      "ownerId" : "enum:scalive.Mod.Attr.RoutedBinding",
+      "qualifiedName" : "scalive.Mod.Attr.RoutedBinding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.RoutedBinding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.RoutedBinding.operation",
+      "ownerId" : "enum:scalive.Mod.Attr.RoutedBinding",
+      "qualifiedName" : "scalive.Mod.Attr.RoutedBinding.operation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.RoutedBinding.operation:167eed92693f5892",
+          "signature" : "val operation: BindingPayload => ComponentDispatch"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalBinding.name",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalBinding",
+      "qualifiedName" : "scalive.Mod.Attr.SignalBinding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalBinding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalBinding.operation",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalBinding",
+      "qualifiedName" : "scalive.Mod.Attr.SignalBinding.operation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalBinding.operation:d08f00d58642ece1",
+          "signature" : "val operation: (A, BindingPayload) => Msg"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalBinding.signal",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalBinding",
+      "qualifiedName" : "scalive.Mod.Attr.SignalBinding.signal",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalBinding.signal:c0c91845d61a9ac7",
+          "signature" : "val signal: Signal[A]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalJsBinding.command",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalJsBinding",
+      "qualifiedName" : "scalive.Mod.Attr.SignalJsBinding.command",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalJsBinding.command:c067a97f1f17b15e",
+          "signature" : "val command: Signal[JSCommands.JSCommand[Msg]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalJsBinding.name",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalJsBinding",
+      "qualifiedName" : "scalive.Mod.Attr.SignalJsBinding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalJsBinding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalOptionalValue.name",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalOptionalValue",
+      "qualifiedName" : "scalive.Mod.Attr.SignalOptionalValue.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalOptionalValue.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalOptionalValue.value",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalOptionalValue",
+      "qualifiedName" : "scalive.Mod.Attr.SignalOptionalValue.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalOptionalValue.value:fa5dec44decf445d",
+          "signature" : "val value: Signal[Option[String]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalValue.name",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalValue",
+      "qualifiedName" : "scalive.Mod.Attr.SignalValue.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalValue.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalValue.value",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalValue",
+      "qualifiedName" : "scalive.Mod.Attr.SignalValue.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalValue.value:a829306237c228ce",
+          "signature" : "val value: Signal[String]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalValueAsPresence.name",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalValueAsPresence",
+      "qualifiedName" : "scalive.Mod.Attr.SignalValueAsPresence.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalValueAsPresence.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.SignalValueAsPresence.value",
+      "ownerId" : "enum:scalive.Mod.Attr.SignalValueAsPresence",
+      "qualifiedName" : "scalive.Mod.Attr.SignalValueAsPresence.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.SignalValueAsPresence.value:db5271eafe9f5faf",
+          "signature" : "val value: Signal[Boolean]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.Static.name",
+      "ownerId" : "enum:scalive.Mod.Attr.Static",
+      "qualifiedName" : "scalive.Mod.Attr.Static.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.Static.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.Static.value",
+      "ownerId" : "enum:scalive.Mod.Attr.Static",
+      "qualifiedName" : "scalive.Mod.Attr.Static.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.Static.value:f0dd26ed1b9f762b",
+          "signature" : "val value: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.StaticValueAsPresence.name",
+      "ownerId" : "enum:scalive.Mod.Attr.StaticValueAsPresence",
+      "qualifiedName" : "scalive.Mod.Attr.StaticValueAsPresence.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.StaticValueAsPresence.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.StaticValueAsPresence.value",
+      "ownerId" : "enum:scalive.Mod.Attr.StaticValueAsPresence",
+      "qualifiedName" : "scalive.Mod.Attr.StaticValueAsPresence.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.StaticValueAsPresence.value:d53d4f053bdd55e6",
+          "signature" : "val value: Boolean"
         }
       ]
     },
@@ -18753,6 +21429,42 @@
       ]
     },
     {
+      "id" : "val:scalive.PhxUpdate.Ignore",
+      "ownerId" : "enum:scalive.PhxUpdate",
+      "qualifiedName" : "scalive.PhxUpdate.Ignore",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.PhxUpdate.Ignore:a55ba225fd57e982",
+          "signature" : "val Ignore: PhxUpdate"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.PhxUpdate.Replace",
+      "ownerId" : "enum:scalive.PhxUpdate",
+      "qualifiedName" : "scalive.PhxUpdate.Replace",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.PhxUpdate.Replace:2a5b7f91e9fe9700",
+          "signature" : "val Replace: PhxUpdate"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.PhxUpdate.Stream",
+      "ownerId" : "enum:scalive.PhxUpdate",
+      "qualifiedName" : "scalive.PhxUpdate.Stream",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.PhxUpdate.Stream:3a2b6f781db237b7",
+          "signature" : "val Stream: PhxUpdate"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.StaticAssetCache.default",
       "ownerId" : "object:scalive.StaticAssetCache",
       "qualifiedName" : "scalive.StaticAssetCache.default",
@@ -18785,6 +21497,30 @@
         {
           "id" : "val:scalive.StaticAssetCache.revalidating:c6393cec2b0db13b",
           "signature" : "val revalidating: zio.http.Header.CacheControl"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticAssetCachePolicy.Immutable",
+      "ownerId" : "enum:scalive.StaticAssetCachePolicy",
+      "qualifiedName" : "scalive.StaticAssetCachePolicy.Immutable",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticAssetCachePolicy.Immutable:93a7804c8dd21a07",
+          "signature" : "val Immutable: StaticAssetCachePolicy"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticAssetCachePolicy.Revalidate",
+      "ownerId" : "enum:scalive.StaticAssetCachePolicy",
+      "qualifiedName" : "scalive.StaticAssetCachePolicy.Revalidate",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticAssetCachePolicy.Revalidate:14aa4f689072ff38",
+          "signature" : "val Revalidate: StaticAssetCachePolicy"
         }
       ]
     },
@@ -19065,6 +21801,78 @@
       ]
     },
     {
+      "id" : "val:scalive.SubscriptionDelivery.Latest",
+      "ownerId" : "enum:scalive.SubscriptionDelivery",
+      "qualifiedName" : "scalive.SubscriptionDelivery.Latest",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.SubscriptionDelivery.Latest:87b4221928ab2bc6",
+          "signature" : "val Latest: SubscriptionDelivery"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.SubscriptionDelivery.Lossless",
+      "ownerId" : "enum:scalive.SubscriptionDelivery",
+      "qualifiedName" : "scalive.SubscriptionDelivery.Lossless",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.SubscriptionDelivery.Lossless:a25cd7e31f1df012",
+          "signature" : "val Lossless: SubscriptionDelivery"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.WebSocketOrigin.Error.InvalidHost",
+      "ownerId" : "enum:scalive.WebSocketOrigin.Error",
+      "qualifiedName" : "scalive.WebSocketOrigin.Error.InvalidHost",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.WebSocketOrigin.Error.InvalidHost:2a7f25d7f07a8a97",
+          "signature" : "val InvalidHost: WebSocketOrigin.Error"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.WebSocketOrigin.Error.InvalidPort.port",
+      "ownerId" : "enum:scalive.WebSocketOrigin.Error.InvalidPort",
+      "qualifiedName" : "scalive.WebSocketOrigin.Error.InvalidPort.port",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.WebSocketOrigin.Error.InvalidPort.port:c7ced9ea6a55b2a7",
+          "signature" : "val port: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.WebSocketOrigin.Error.Malformed",
+      "ownerId" : "enum:scalive.WebSocketOrigin.Error",
+      "qualifiedName" : "scalive.WebSocketOrigin.Error.Malformed",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.WebSocketOrigin.Error.Malformed:146387eb5a3d8351",
+          "signature" : "val Malformed: WebSocketOrigin.Error"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.WebSocketOrigin.Error.UnsupportedScheme.scheme",
+      "ownerId" : "enum:scalive.WebSocketOrigin.Error.UnsupportedScheme",
+      "qualifiedName" : "scalive.WebSocketOrigin.Error.UnsupportedScheme.scheme",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.WebSocketOrigin.Error.UnsupportedScheme.scheme:b978b48fefca3ce1",
+          "signature" : "val scheme: String"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.WebSocketOrigin.ValidationException.error",
       "ownerId" : "class:scalive.WebSocketOrigin.ValidationException",
       "qualifiedName" : "scalive.WebSocketOrigin.ValidationException.error",
@@ -19109,6 +21917,42 @@
         {
           "id" : "val:scalive.WebSocketOrigin.scheme:b978b48fefca3ce1",
           "signature" : "val scheme: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ZioHttpConfig.Error.NoAllowedWebSocketOrigins",
+      "ownerId" : "enum:scalive.ZioHttpConfig.Error",
+      "qualifiedName" : "scalive.ZioHttpConfig.Error.NoAllowedWebSocketOrigins",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ZioHttpConfig.Error.NoAllowedWebSocketOrigins:f0781cd407ece82f",
+          "signature" : "val NoAllowedWebSocketOrigins: ZioHttpConfig.Error"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ZioHttpConfig.Error.NonPositiveSessionMaxAge",
+      "ownerId" : "enum:scalive.ZioHttpConfig.Error",
+      "qualifiedName" : "scalive.ZioHttpConfig.Error.NonPositiveSessionMaxAge",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ZioHttpConfig.Error.NonPositiveSessionMaxAge:89a10c1a64871d8a",
+          "signature" : "val NonPositiveSessionMaxAge: ZioHttpConfig.Error"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ZioHttpConfig.Error.SecretTooShort.actualUtf8Bytes",
+      "ownerId" : "enum:scalive.ZioHttpConfig.Error.SecretTooShort",
+      "qualifiedName" : "scalive.ZioHttpConfig.Error.SecretTooShort.actualUtf8Bytes",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ZioHttpConfig.Error.SecretTooShort.actualUtf8Bytes:bc27d2fab1ff69a8",
+          "signature" : "val actualUtf8Bytes: Int"
         }
       ]
     },
@@ -19233,6 +22077,114 @@
       ]
     },
     {
+      "id" : "val:scalive.testing.ConnectedAction.Disconnected",
+      "ownerId" : "enum:scalive.testing.ConnectedAction",
+      "qualifiedName" : "scalive.testing.ConnectedAction.Disconnected",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedAction.Disconnected:8b4101e36a95eafa",
+          "signature" : "val Disconnected: testing.ConnectedAction"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedAction.LiveNavigation.navigation",
+      "ownerId" : "enum:scalive.testing.ConnectedAction.LiveNavigation",
+      "qualifiedName" : "scalive.testing.ConnectedAction.LiveNavigation.navigation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedAction.LiveNavigation.navigation:9d107217a91c673d",
+          "signature" : "val navigation: testing.ConnectedNavigation"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedAction.Redirect.to",
+      "ownerId" : "enum:scalive.testing.ConnectedAction.Redirect",
+      "qualifiedName" : "scalive.testing.ConnectedAction.Redirect.to",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedAction.Redirect.to:f06d9b56981aaf59",
+          "signature" : "val to: zio.http.URL"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedAction.Rendered",
+      "ownerId" : "enum:scalive.testing.ConnectedAction",
+      "qualifiedName" : "scalive.testing.ConnectedAction.Rendered",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedAction.Rendered:a4df362e13959c97",
+          "signature" : "val Rendered: testing.ConnectedAction"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedJoinFailure.Disconnected",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Disconnected",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedJoinFailure.Disconnected:ec49d4abddb09bac",
+          "signature" : "val Disconnected: testing.ConnectedJoinFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedJoinFailure.Redirect.to",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure.Redirect",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Redirect.to",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedJoinFailure.Redirect.to:f06d9b56981aaf59",
+          "signature" : "val to: zio.http.URL"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedJoinFailure.Stale",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Stale",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedJoinFailure.Stale:fa320f81be542866",
+          "signature" : "val Stale: testing.ConnectedJoinFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedJoinFailure.Transport.error",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure.Transport",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Transport.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedJoinFailure.Transport.error:52ea1b90b61ce86f",
+          "signature" : "val error: Throwable"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedJoinFailure.Unauthorized",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Unauthorized",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedJoinFailure.Unauthorized:1c83c800a046be49",
+          "signature" : "val Unauthorized: testing.ConnectedJoinFailure"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.testing.ConnectedNavigation.destination",
       "ownerId" : "class:scalive.testing.ConnectedNavigation",
       "qualifiedName" : "scalive.testing.ConnectedNavigation.destination",
@@ -19289,6 +22241,42 @@
         {
           "id" : "val:scalive.testing.FormQuery.method:b664a56619ab2ac7",
           "signature" : "val method: Option[zio.http.Method]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.FormQueryError.MultipleMatches.count",
+      "ownerId" : "enum:scalive.testing.FormQueryError.MultipleMatches",
+      "qualifiedName" : "scalive.testing.FormQueryError.MultipleMatches.count",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.FormQueryError.MultipleMatches.count:95230e3d104377d1",
+          "signature" : "val count: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.FormQueryError.MultipleMatches.query",
+      "ownerId" : "enum:scalive.testing.FormQueryError.MultipleMatches",
+      "qualifiedName" : "scalive.testing.FormQueryError.MultipleMatches.query",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.FormQueryError.MultipleMatches.query:6a05236a0d671ce9",
+          "signature" : "val query: testing.FormQuery"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.FormQueryError.NotFound.query",
+      "ownerId" : "enum:scalive.testing.FormQueryError.NotFound",
+      "qualifiedName" : "scalive.testing.FormQueryError.NotFound.query",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.FormQueryError.NotFound.query:6a05236a0d671ce9",
+          "signature" : "val query: testing.FormQuery"
         }
       ]
     },

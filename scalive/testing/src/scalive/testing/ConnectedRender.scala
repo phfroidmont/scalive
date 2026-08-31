@@ -37,7 +37,8 @@ object ConnectedRender:
     ).map(_.asInstanceOf[ConnectedView[Msg]])
 
   /** Executes the disconnected route, validates its bootstrap credentials, and starts its connected
-    * lifecycle through the production Phoenix transport session.
+    * lifecycle through the production Phoenix transport session. Connect parameters are untrusted
+    * client JSON; the harness replaces `_mounts` with its own progressing join counter.
     */
   def join[R](
     application: LiveApplication[R],
@@ -50,7 +51,8 @@ object ConnectedRender:
     )
 
   /** Executes the disconnected route and returns a stateful client that can join and reconnect with
-    * the page's retained bootstrap credentials.
+    * the page's retained bootstrap credentials. Connect parameters are untrusted client JSON; the
+    * harness replaces `_mounts` with its own progressing join counter.
     */
   def open[R](
     application: LiveApplication[R],
@@ -131,7 +133,7 @@ enum ConnectedJoinFailure:
   /** The physical transport closed while the join was pending. */
   case Disconnected
 
-  /** Connected mount requested a full redirect instead of joining. */
+  /** Connected mount requested a redirect instead of installing a view. */
   case Redirect(to: URL)
 
   /** The in-process transport failed outside a protocol-visible join outcome. */

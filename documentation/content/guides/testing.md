@@ -19,10 +19,11 @@ Scalive applications have three useful test boundaries:
 - **Disconnected tests** execute the finalized ZIO HTTP routes and inspect the
   first HTML response. This boundary has public support in `scalive.testing`.
 - **Connected tests** use
-  @:apiSymbol(object:scalive.testing.ConnectedRender)`ConnectedRender`@:@ to join
-  through production route, signed bootstrap, physical admission, Phoenix transport dispatch, and
-  lifecycle supervision, then interact through a typed
-  @:apiSymbol(class:scalive.testing.ConnectedView)`ConnectedView`@:@.
+  @:apiSymbol(object:scalive.testing.ConnectedRender)`ConnectedRender`@:@ to run
+  an isolated root or routed application through signed bootstrap, Phoenix
+  transport dispatch, and lifecycle supervision, then interact through a typed
+  @:apiSymbol(class:scalive.testing.ConnectedView)`ConnectedView`@:@. Routed joins
+  also exercise application routes and transport-owned `withAdmission`.
 - **Browser tests** run the Phoenix LiveView JavaScript client against a real
   server. Scalive does not currently publish a browser fixture or Playwright
   library.
@@ -37,9 +38,9 @@ hooks, focus, browser history, reconnect timing, or network behavior.
 
 `scalive.testing` is intentionally smaller than `Phoenix.LiveViewTest`. It
 supports connected mount, typed server messages, semantic click and form
-bindings, nested joins, uploads, routed reconnects, live navigation, and explicit
-local ordinary-form requests. It does not emulate browser successful-control
-selection or execute JavaScript.
+bindings, nested joins, hosted uploads, routed reconnects, live navigation, and
+explicit local ordinary-form requests. It does not emulate browser
+successful-control selection or execute JavaScript.
 
 @:@
 
@@ -196,10 +197,12 @@ accepts only a local `303 See Other` with a `Location` header.
 
 ## Cover Connected Behavior {#cover-connected-behavior}
 
+### Join An Isolated LiveView {#join-an-isolated-liveview}
+
 @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
 finalizes a single LiveView at `/`, performs disconnected rendering, validates
 its bootstrap credentials, and starts the connected lifecycle through the
-production in-process Phoenix transport, route admission, and supervision:
+production in-process Phoenix transport and supervision:
 
 ```scala
 test("increments after a connected click") {
@@ -213,6 +216,50 @@ test("increments after a connected click") {
 }
 ```
 
+Use this overload when routing and reconnect admission are not part of the
+claim. The name `CounterLiveView` represents application code.
+
+### Open A Routed Application Client {#open-a-routed-application-client}
+
+For routed behavior, use
+@:apiSymbol(def:scalive.testing.ConnectedRender.open)`ConnectedRender.open`@:@
+with a `LiveApplication`, a fixed validated `ZioHttpConfig`, and the request
+that should render the route. It performs the disconnected request and returns a
+@:apiSymbol(class:scalive.testing.ConnectedClient)`ConnectedClient`@:@ whose
+@:apiSymbol(def:scalive.testing.ConnectedClient.join)`join`@:@ and
+@:apiSymbol(def:scalive.testing.ConnectedClient.reconnect)`reconnect`@:@ operations
+each create a distinct in-process transport:
+
+```scala
+ZIO.scoped {
+  for
+    client <- ConnectedRender.open(
+                application,
+                config,
+                Request.get(URL.decode("/accounts/42").fold(throw _, identity))
+              )
+    view   <- client.join
+    title  <- view.text("h1")
+  yield assertTrue(title == "Account 42")
+}
+```
+
+Here `application` and its `/accounts/42` route are application code. This form
+exercises the actual route, mount aspects, layouts, signed bootstrap, request
+URL, Phoenix event dispatcher, and any root admission installed with
+@:apiSymbol(def:scalive.LiveSessionBuilder.withAdmission)`withAdmission`@:@.
+That transport-owned boundary is sometimes called physical admission. It
+revalidates every root join before installing its connected lifecycle, including
+reconnects and followed same-session navigation; reconnect also creates a new
+transport identity.
+
+Optional `connectParams` are untrusted client JSON, not authenticated session or
+request data. The harness owns `_mounts`, overwrites any supplied value, starts
+it at `0`, and advances it for each root reconnect or followed navigation.
+Applications should not treat Phoenix-owned keys as a stable contract.
+
+### Exercise Actions And Navigation {#exercise-actions-and-navigation}
+
 Use `view.send(message)` when a typed server message is the behavior under test.
 Typed messages are an out-of-band test operation because arbitrary Scala values
 have no Phoenix wire representation; their resulting lifecycle output still uses
@@ -220,37 +267,99 @@ the production transport sink.
 Use `click`, `clickButton`, `changeForm`, and `submitForm` to resolve bindings
 from the latest committed HTML and wait for the correlated lifecycle output.
 `awaitDiff` waits for an uncorrelated async or subscription update, and
-`awaitAction` waits for uncorrelated navigation or physical disconnect. The
+`awaitAction` waits for uncorrelated navigation or transport disconnect. The
 `joinNested(instanceId)` method enters a nested lifecycle registered by the parent.
-Actions return a @:apiSymbol(enum:scalive.testing.ConnectedAction)`ConnectedAction`@:@.
-Most return `Rendered`. A live route replacement returns `LiveNavigation`; call
-its `navigation.follow` method to execute the production redirect-join admission
-path. A full redirect closes the in-process transport.
+Actions return a @:apiSymbol(enum:scalive.testing.ConnectedAction)`ConnectedAction`@:@:
 
-For routed applications, use the overload accepting `LiveApplication`, a fixed
-validated `ZioHttpConfig`, a ZIO HTTP `Request`, and optional untrusted connect
-parameters. That overload exercises the actual route, mount aspects, layouts,
-security bootstrap, physical `withAdmission` transaction, Phoenix event
-dispatcher, and request URL rather than mounting a synthetic root.
+| Case | Meaning |
+| --- | --- |
+| @:apiSymbol(val:scalive.testing.ConnectedAction.Rendered)`Rendered`@:@ | The action completed without terminal navigation. |
+| @:apiSymbol(enum:scalive.testing.ConnectedAction.LiveNavigation)`LiveNavigation(navigation)`@:@ | A same-session route replacement is available to follow explicitly. |
+| @:apiSymbol(enum:scalive.testing.ConnectedAction.Redirect)`Redirect(to)`@:@ | A full redirect was emitted and the in-process transport closed. |
+| @:apiSymbol(val:scalive.testing.ConnectedAction.Disconnected)`Disconnected`@:@ | The transport closed before the correlated reply arrived. |
 
-Use @:apiSymbol(def:scalive.testing.ConnectedRender.open)`ConnectedRender.open`@:@
-when the test needs the routed client itself. Its initial `join` and later
-`reconnect` create distinct physical transport identities while retaining the
-page's signed bootstrap credentials. Join failures are typed as
-@:apiSymbol(enum:scalive.testing.ConnectedJoinFailure)`ConnectedJoinFailure`@:@.
-This lets a test revoke durable authorization, call `LiveConnections.disconnect`,
-wait for `view.awaitDisconnected`, and assert that `client.reconnect` is rejected
-without issuing a new disconnected GET.
+A `LiveNavigation` contains a
+@:apiSymbol(class:scalive.testing.ConnectedNavigation)`ConnectedNavigation`@:@.
+Inspect its
+@:apiSymbol(val:scalive.testing.ConnectedNavigation.destination)`destination`@:@
+and @:apiSymbol(val:scalive.testing.ConnectedNavigation.replace)`replace`@:@ values,
+then call
+@:apiSymbol(def:scalive.testing.ConnectedNavigation.follow)`follow`@:@ to execute
+the production redirect-join admission path:
+
+```scala
+for
+  action <- view.click("[data-open-settings]")
+  settings <- action match
+                case ConnectedAction.LiveNavigation(navigation) =>
+                  navigation.follow
+                case other =>
+                  ZIO.fail(new AssertionError(s"Expected live navigation, got $other"))
+  heading <- settings.text("h1")
+yield assertTrue(heading == "Settings")
+```
+
+The selector and destination route in this example belong to the application.
+
+### Test Reconnect Admission {#test-reconnect-admission}
+
+@:apiSymbol(class:scalive.testing.ConnectedClient)`ConnectedClient`@:@ retains
+the page's signed bootstrap credentials, so reconnect tests do not issue another
+disconnected GET. Revoke durable authorization, retire the admitted transport,
+wait until the view observes disconnection, and assert that the next transport
+is rejected:
+
+```scala
+val request = Request.get(
+  URL.decode("/accounts/42?session=test-session").fold(throw _, identity)
+)
+
+ZIO.scoped {
+  for
+    client <- ConnectedRender.open(admittedApplication, config, request)
+    view   <- client.join
+    _      <- authorization.revoke(sessionId)
+    _      <- connections.disconnect(sessionId)
+    _      <- view.awaitDisconnected
+    result <- client.reconnect.either
+  yield assertTrue(result == Left(ConnectedJoinFailure.Unauthorized))
+}
+```
+
+The `/accounts/42` route, `admittedApplication`, `authorization.revoke`,
+`sessionId`, and the `LiveConnections` value named `connections` are application
+test setup. The application installs its admission with `withAdmission`; the
+example does not define an application authorization API. Provide the layers
+required by `admittedApplication` around this scoped effect as described in
+[Services and dependency injection](services-and-zlayer-injection.md#supply-a-test-implementation).
+
+Join and follow failures use
+@:apiSymbol(enum:scalive.testing.ConnectedJoinFailure)`ConnectedJoinFailure`@:@:
+
+| Case | Meaning |
+| --- | --- |
+| @:apiSymbol(val:scalive.testing.ConnectedJoinFailure.Unauthorized)`Unauthorized`@:@ | Signed join authorization or connected mount admission rejected the join. |
+| @:apiSymbol(val:scalive.testing.ConnectedJoinFailure.Stale)`Stale`@:@ | The server requires a fresh disconnected render and bootstrap. |
+| @:apiSymbol(val:scalive.testing.ConnectedJoinFailure.Disconnected)`Disconnected`@:@ | The transport closed while the join was pending. |
+| @:apiSymbol(enum:scalive.testing.ConnectedJoinFailure.Redirect)`Redirect(to)`@:@ | Connected mount requested a redirect instead of installing the view. |
+| @:apiSymbol(enum:scalive.testing.ConnectedJoinFailure.Transport)`Transport(error)`@:@ | The in-process transport failed outside a protocol-visible join result. |
+
+This proves server-side admission is rerun for a fresh transport. It does not
+prove when or how often a browser retries after network loss.
+
+### Keep Connected Harness Boundaries Explicit {#connected-harness-boundaries}
 
 The in-process transport executes the same transport-owned join, admission,
-event, upload, leave, and navigation state as the WebSocket adapter. It does not
-call the WebSocket endpoint, serialize network frames, or validate the upgrade
-request's `Origin` header.
+event, hosted-upload, leave, and navigation state as the WebSocket adapter. The
+upload helper supports hosted uploads only, not external uploaders. The harness
+does not call the WebSocket endpoint, serialize network frames, or validate the
+upgrade request's `Origin` header.
 
 `ConnectedView.html` is a semantic projection of the latest committed server
 render, not a browser DOM. Connected tests do not execute the Phoenix JavaScript
-client, patch a real document, run hooks, manage focus, or prove browser history
-behavior. Keep those claims at the browser boundary.
+client, patch a real document, run hooks, manage focus, schedule browser
+reconnect attempts, or prove browser history behavior. Keep those claims at the
+browser boundary.
 
 ## Test WebSocket Origin Admission {#test-websocket-origin-admission}
 

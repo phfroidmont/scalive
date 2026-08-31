@@ -182,10 +182,16 @@ object ApiReferencePipeline:
 
         owner.declarations.foreach {
           case nested: ClassSymbol if eligible(nested) =>
+            val nestedOwnerId =
+              if owner.isModuleClass && owner.companionClass.exists(enumOwner =>
+                  enumOwner.isEnum && enumOwner.sealedChildren.contains(nested)
+                )
+              then symbolId(ApiSymbolKind.Enum, qualifiedName)
+              else id
             addOwner(
               nested,
               s"$qualifiedName.${sourceName(nested)}",
-              Some(id),
+              Some(nestedOwnerId),
               ownerExposure
             )
           case term: TermSymbol if eligibleTerm(term) =>
@@ -206,6 +212,26 @@ object ApiReferencePipeline:
             )
           case _ => ()
         }
+
+        if owner.isEnum then
+          owner.sealedChildren.foreach {
+            case enumCase: ClassSymbol if enumCase.isPublic =>
+              addOwner(
+                enumCase,
+                s"$qualifiedName.${sourceName(enumCase)}",
+                Some(id),
+                ownerExposure
+              )
+            case enumCase: TermSymbol if enumCase.isPublic && enumCase.isEnumCase =>
+              addTerm(
+                enumCase,
+                s"$qualifiedName.${sourceName(enumCase)}",
+                id,
+                ownerExposure,
+                pageOwner = false
+              )
+            case _ => ()
+          }
       end if
     end addOwner
 

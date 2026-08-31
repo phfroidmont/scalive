@@ -65,6 +65,10 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
     Path.of(classOf[scalive.LiveView[?, ?]].getProtectionDomain.getCodeSource.getLocation.toURI),
     Path.of(
       classOf[scalive.testing.DisconnectedRender.type].getProtectionDomain.getCodeSource.getLocation.toURI
+    ),
+    Path.of(
+      classOf[scalive.testing.TastyQueryEnum]
+        .getProtectionDomain.getCodeSource.getLocation.toURI
     )
   ).distinct
   private val dependencyClasspath =
@@ -182,6 +186,81 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         guardConnectedTurns.exists(_.signatures.forall(_.documentation.nonEmpty)),
         symbols.filter(_.qualifiedName == "scalive.LiveView").forall(!_.summary.contains("[[")),
         symbols.forall(_.summary.nonEmpty)
+      )
+    },
+    test("exposes parameterless and parameterized enum cases") {
+      val parameterless = symbols.find(
+        _.qualifiedName == "scalive.testing.TastyQueryEnum.Parameterless"
+      )
+      val parameterized = symbols.find(
+        _.qualifiedName == "scalive.testing.TastyQueryEnum.Parameterized"
+      )
+      val existingParameterized = symbols.find(
+        _.qualifiedName == "scalive.LiveConnectedTurnFailure.Redirect"
+      )
+      val connectedRendered = symbols.find(
+        _.qualifiedName == "scalive.testing.ConnectedAction.Rendered"
+      )
+      val connectedNavigation = symbols.find(
+        _.qualifiedName == "scalive.testing.ConnectedAction.LiveNavigation"
+      )
+      val joinUnauthorized = symbols.find(
+        _.qualifiedName == "scalive.testing.ConnectedJoinFailure.Unauthorized"
+      )
+      val joinRedirect = symbols.find(
+        _.qualifiedName == "scalive.testing.ConnectedJoinFailure.Redirect"
+      )
+      val syntheticEnumMembers = Set("ordinal", "values", "valueOf", "fromOrdinal")
+      val fixtureSynthetics = symbols.filter(symbol =>
+        symbol.qualifiedName.startsWith("scalive.testing.TastyQueryEnum.") &&
+          syntheticEnumMembers(symbol.name)
+      )
+      val emittedIds = symbols.map(_.id).toSet
+
+      assertTrue(
+        parameterless.exists(symbol =>
+          symbol.ownerId.contains("enum:scalive.testing.TastyQueryEnum") &&
+            symbol.kind == ApiSymbolKind.Val &&
+            symbol.route == "/api/scalive/testing/tasty-query-enum" &&
+            symbol.fragment.nonEmpty &&
+            symbol.signatures.exists(_.signature ==
+              "val Parameterless: testing.TastyQueryEnum"
+            )
+        ),
+        parameterized.exists(symbol =>
+          symbol.ownerId.contains("enum:scalive.testing.TastyQueryEnum") &&
+            symbol.kind == ApiSymbolKind.Enum &&
+            symbol.route == "/api/scalive/testing/tasty-query-enum/parameterized" &&
+            symbol.fragment.isEmpty &&
+            symbol.signatures.exists(_.signature ==
+              "enum Parameterized(value: String) extends testing.TastyQueryEnum"
+            )
+        ),
+        existingParameterized.exists(
+          _.ownerId.contains("enum:scalive.LiveConnectedTurnFailure")
+        ),
+        connectedRendered.exists(symbol =>
+          symbol.ownerId.contains("enum:scalive.testing.ConnectedAction") &&
+            symbol.kind == ApiSymbolKind.Val &&
+            symbol.route == "/api/scalive/testing/connected-action"
+        ),
+        connectedNavigation.exists(symbol =>
+          symbol.ownerId.contains("enum:scalive.testing.ConnectedAction") &&
+            symbol.kind == ApiSymbolKind.Enum &&
+            symbol.route == "/api/scalive/testing/connected-action/live-navigation"
+        ),
+        joinUnauthorized.exists(symbol =>
+          symbol.ownerId.contains("enum:scalive.testing.ConnectedJoinFailure") &&
+            symbol.kind == ApiSymbolKind.Val &&
+            symbol.route == "/api/scalive/testing/connected-join-failure"
+        ),
+        joinRedirect.exists(symbol =>
+          symbol.ownerId.contains("enum:scalive.testing.ConnectedJoinFailure") &&
+            symbol.kind == ApiSymbolKind.Enum &&
+            symbol.route == "/api/scalive/testing/connected-join-failure/redirect"
+        ),
+        fixtureSynthetics.isEmpty,
+        symbols.forall(_.ownerId.forall(emittedIds))
       )
     },
     test("emits valid IDs, routes, sources, and highlighted signatures") {

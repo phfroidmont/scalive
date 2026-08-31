@@ -259,7 +259,7 @@ and proxy behavior; those shapes are not reliably produced by browser automation
 
 ## Test In A Browser {#test-in-a-browser}
 
-Run the same production-shaped server, asset bundle, root layout, security
+Run the same production-shaped server, browser assets, root layout, security
 configuration, and socket path that users will receive. A browser smoke suite
 should prove at least:
 
@@ -310,6 +310,6 @@ before expanding the test suite.
 
 ## Related Tasks {#related-tasks}
 
-- Build the production-shaped browser bundle with [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
+- Prepare the production-shaped browser assets with [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
 - Locate the failing lifecycle stage with [Troubleshooting](troubleshooting.md#prerequisites).
 - Supply deterministic dependencies with [Services and dependency injection](services-and-zlayer-injection.md#supply-a-test-implementation).

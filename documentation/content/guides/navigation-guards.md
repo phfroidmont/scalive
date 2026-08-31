@@ -9,9 +9,9 @@ group = "Browser integration"
 ## Before You Start {#prerequisites}
 
 Start with a form or editor whose model can say whether leaving would discard
-work. Scalive currently targets the pinned Phoenix LiveView `v1.2.10` client.
-The application must also use the complete root-layout and asset-route wiring
-from the [quick start](../learn/quick-start.md#add-routes-and-layout); review
+work. Scalive supplies its pinned Phoenix LiveView `v1.2.10` client. The
+application must also use the complete root-layout and asset-route wiring from
+the [quick start](../learn/quick-start.md#add-routes-and-layout); review
 [Client setup and static assets](static-assets-and-client-setup.md#build-the-client-bundle)
 when the application owns a custom browser bundle or asset tree.
 
@@ -26,12 +26,14 @@ layout, and add its routes alongside the application assets:
 
 ```scala
 for
-  appAssets   <- StaticAssets.load(appAssetConfig)
-  guardAssets <- NavigationGuardAssets.load()
-  rootLayout   = RootLayout(appAssets, guardAssets)
+  clientAssets <- LiveViewClientAssets.load()
+  appAssets    <- StaticAssets.load(appAssetConfig)
+  guardAssets  <- NavigationGuardAssets.load()
+  rootLayout    = RootLayout(clientAssets, appAssets, guardAssets)
   application  = Live.router.withRootLayout(rootLayout)(liveRoutes*)
   routes       =
     ZioHttp.routes(application, security) ++
+      clientAssets.routes ++
       appAssets.routes ++
       guardAssets.routes
   _ <- Server.serve(routes)
@@ -45,12 +47,15 @@ startup and serves it below an immutable asset-set version.
 
 ## Install The Tracked Script {#install-the-script}
 
-Render @:apiSymbol(def:scalive.NavigationGuardAssets.script)`NavigationGuardAssets.script`@:@ before the application bundle. Both scripts are
-deferred, so document order installs the guard listener before `LiveSocket`
+Render
+@:apiSymbol(def:scalive.NavigationGuardAssets.script)`NavigationGuardAssets.script`@:@
+before the packaged clients and application bootstrap. Every script shown below
+is deferred, so document order installs the guard listener before `LiveSocket`
 connects:
 
 ```scala
 final class RootLayout(
+  clientAssets: LiveViewClientAssets,
   appAssets: StaticAssets,
   guardAssets: NavigationGuardAssets
 ) extends LiveRootLayout[Any, Any]:
@@ -64,12 +69,18 @@ final class RootLayout(
     htmlRootTag(
       headTag(
         guardAssets.script,
+        clientAssets.phoenixScript,
+        clientAssets.liveViewScript,
         appAssets.trackedScript("app.js", defer := true),
         liveTitle(pageTitle, default = "Application")
       ),
       bodyTag(content)
     )
 ```
+
+The packaged client scripts may be omitted when `app.js` is a custom bundle
+which already includes Phoenix and Phoenix LiveView. In either setup, keep the
+guard before the script that constructs `LiveSocket`.
 
 The runtime script is marked `phx-track-static`. A runtime URL change therefore
 participates in the same static-change metadata as the application bundle. The

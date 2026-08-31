@@ -43,7 +43,7 @@ object `package` extends Module:
       os.sub / "scalive" / "api" / "src",
       os.sub / "scalive" / "testing" / "src",
       os.sub / "documentation" / "fixtures" / "quick-start" / "src",
-      os.sub / "documentation" / "fixtures" / "quick-start" / "assets" / "js",
+      os.sub / "documentation" / "fixtures" / "quick-start" / "resources",
       os.sub / "documentation" / "site" / "src",
       os.sub / "documentation" / "site" / "assets" / "js"
     )
@@ -170,14 +170,10 @@ object `package` extends Module:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
       def zioTestVersion = "2.1.26"
 
-  object quickStartFixture extends build.ScalaCommon with build.NpmAssets:
+  object quickStartFixture extends build.ScalaCommon:
     def moduleDeps = Seq(build.scalive)
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "quick-start"
-
-    def resources = Task {
-      super.resources() :+ bundle()
-    }
 
   object site extends build.ScalaCommon with build.NpmAssets:
     def moduleDeps = Seq(build.scalive, model)
@@ -225,7 +221,7 @@ object `package` extends Module:
     pipeline.checkApi()
     pipeline.generate()
     quickStartFixture.compile()
-    quickStartFixture.bundle()
+    quickStartFixture.resources()
     site.test.testCached()
     site.testJs()
     site.checkRuntimeClasspath()

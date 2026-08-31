@@ -71,6 +71,10 @@ mill __.test
 mill documentation.check
 ```
 
+The Nix shell also provides the hash-pinned Phoenix client resources required by
+the Mill build. Run maintainer builds inside `nix develop`; published artifacts
+remain self-contained and impose no Nix requirement on application consumers.
+
 The [snapshot workflow](.github/workflows/publish-snapshot.yml) also runs the
 root-slice and upstream Phoenix LiveView browser suites.
 

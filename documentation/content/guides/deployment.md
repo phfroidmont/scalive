@@ -9,8 +9,10 @@ group = "Assets and operations"
 ## Before You Start {#prerequisites}
 
 You need a runnable Scalive application with validated production
-[configuration](configuration.md#current-configuration-contract) and a built
-[browser bundle](static-assets-and-client-setup.md#build-the-client-bundle).
+[configuration](configuration.md#current-configuration-contract) and its
+browser resources. The Quick Start uses Scalive's packaged clients plus a plain
+classpath script; applications with a custom browser build must build its
+[bundle](static-assets-and-client-setup.md#build-the-client-bundle).
 The commands use the `app` module from the [quick start](../learn/quick-start.md)
 as an example; substitute your application's module name.
 
@@ -31,7 +33,7 @@ Before packaging, require a stable high-entropy secret, use
 `secureCookie = true` for browser-facing HTTPS, and validate application-owned
 server and service settings at startup. Configure a non-empty
 `allowedWebSocketOrigins` with every exact browser-facing page origin. Make the
-Phoenix client, Live router, static mount, and edge use matching paths.
+browser bootstrap, Live router, static mounts, and edge use matching paths.
 
 Environment-variable names are conventions of the application, not Scalive.
 The Quick Start already reads `SCALIVE_TOKEN_SECRET`; applications may retain
@@ -41,8 +43,9 @@ control, an image, logs, or shell history.
 
 ## Build And Run The Application {#build-and-run-the-current-application}
 
-A build job needs a JDK and Mill. The Quick Start asset task also needs Node.js
-and npm because the application resources depend on its browser bundle. Build an
+A Quick Start build job needs only a JDK and Mill. A richer custom browser build
+may additionally require Node.js, npm, or other tools described by the
+[custom bundle guide](static-assets-and-client-setup.md#build-the-client-bundle). Build an
 executable JAR from the project root:
 
 ```bash
@@ -62,10 +65,11 @@ start it with a compatible JRE:
 java -jar out/app/assembly.dest/out.jar
 ```
 
-The assembly includes the application's JVM dependencies and the browser bundle
-added by its Mill `resources` task. Mill, Node.js, npm, and the source tree are
-build-time requirements, not runtime requirements. If the application uses a
-different Mill module name, substitute that name in the task and output path.
+The assembly includes the application's JVM dependencies, Scalive's packaged
+Phoenix clients, and `app/resources/public/app.js`. Mill and the source tree are
+build-time requirements, not runtime requirements; custom browser tooling is
+also build-time only when used. If the application uses a different Mill module
+name, substitute that name in the task and output path.
 
 That single-JAR layout applies to ordinary classpath trees and classpath
 deployment manifests. An application using `deploymentDirectory` must ship the
@@ -90,11 +94,14 @@ browser uses HTTPS. Scalive does not infer HTTPS from `Forwarded`,
 The edge must route all of the following to the application:
 
 - ordinary page and form requests;
-- static requests below the configured asset mount; and
+- static requests below every configured asset mount; and
 - WebSocket upgrade requests below the configured Live socket mount.
 
-With the default router and `new LiveSocket("/live", Socket, ...)`, the upgrade
-endpoint is `/live/websocket`. If the router uses
+With the default router and
+`new LiveView.LiveSocket("/live", Phoenix.Socket, ...)`, the upgrade endpoint is
+`/live/websocket`. The packaged client scripts themselves are served below
+`/_scalive/live-view`; that static mount is separate from the socket path. If
+the router uses
 `.withSocketPath(PathCodec.empty / "socket")`, configure the client with
 `/socket` and forward `/socket/websocket` instead. Preserve the upgrade request's
 query string, cookie header, and single browser `Origin` header because transport

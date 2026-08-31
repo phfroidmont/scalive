@@ -39,12 +39,16 @@ state outside the @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ when it must 
 
 Check the startup path in order:
 
-- Build the browser bundle before starting the JVM.
+- Build any custom browser bundle before starting the JVM.
+- Load
+  @:apiSymbol(def:scalive.LiveViewClientAssets.load)`LiveViewClientAssets.load`@:@
+  unless the application bundle includes both clients.
 - Load every declared asset with @:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@.
 - Validate one @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@ and pass
   it to @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@.
 - Attach a complete root layout containing `<html>`, `<head>`, and `<body>`.
-- Combine the Live routes with @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
+- Combine the Live routes with the packaged-client routes when used and with
+  @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
 - Provide all ZIO environment requirements before calling `Server.serve`.
 
 @:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@ fails startup when a configured classpath or directory asset
@@ -62,12 +66,13 @@ fallback.
 
 ## Diagnose Missing Assets {#diagnose-missing-assets}
 
-If the HTML renders but remains disconnected, first verify that the browser
-client bundle loaded successfully. Compare the response with the canonical
+If the HTML renders but remains disconnected, first verify that the packaged
+client scripts or custom client bundle loaded successfully. Compare the response
+with the canonical
 [asset serving](static-assets-and-client-setup.md#serve-versioned-paths) and
 [tracked tag](static-assets-and-client-setup.md#render-tracked-tags) setup, then
 request the rendered versioned or final URL directly. The same
-@:apiSymbol(object:scalive.StaticAssets)`StaticAssets`@:@ value must render the URL and serve its routes.
+loaded asset value must render the script tag and serve its routes.
 
 @:apiSymbol(def:scalive.StaticAssets.trackedScript)`trackedScript`@:@ and
 @:apiSymbol(def:scalive.StaticAssets.trackedStylesheet)`trackedStylesheet`@:@ emit versioned or final paths and
@@ -80,7 +85,8 @@ only the HTML.
 
 Common asset failures are a missing Mill `resources` dependency on the bundle,
 an incomplete output tree or ordinary classpath asset list, a classpath prefix
-that does not match the packaged resource, or forgetting @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
+that does not match the packaged resource, or forgetting either
+`clientAssets.routes` or @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
 For deployment manifests, first verify the configured manifest filename and
 location, schema version, and `immutable` or `revalidate` cache values. Then
 check that every output appears as a `file` value, every final file exists, and
@@ -95,7 +101,8 @@ known shape.
 
 ## Diagnose Socket Connections {#diagnose-socket-connections}
 
-The default browser configuration is `new LiveSocket("/live", Socket, ...)`.
+The default packaged-client configuration is
+`new LiveView.LiveSocket("/live", Phoenix.Socket, ...)`.
 The Phoenix client opens the WebSocket endpoint at `/live/websocket`. If the
 router uses another mount, configure both sides:
 
@@ -109,7 +116,7 @@ val liveRoutes = Live.router
 ```
 
 ```js
-const liveSocket = new LiveSocket("/socket", Socket, { params })
+const liveSocket = new LiveView.LiveSocket("/socket", Phoenix.Socket, { params })
 ```
 
 A reverse proxy must forward the WebSocket upgrade on the resulting

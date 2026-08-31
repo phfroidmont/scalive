@@ -3,7 +3,8 @@ package quickstart
 
 import scalive.*
 
-final class RootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]:
+final class RootLayout(clientAssets: LiveViewClientAssets, assets: StaticAssets)
+    extends LiveRootLayout[Any, Any]:
   def key(ctx: LiveRootLayoutContext[Any, Any]): String = "quick-start-root"
 
   def render[Msg](
@@ -17,6 +18,8 @@ final class RootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]:
         metaTag(charset  := "utf-8"),
         metaTag(nameAttr := "viewport", contentAttr := "width=device-width, initial-scale=1"),
         liveTitle(pageTitle, default = "Scalive quick start"),
+        clientAssets.phoenixScript,
+        clientAssets.liveViewScript,
         assets.trackedScript("app.js", defer := true, typ := "text/javascript")
       ),
       bodyTag(content)

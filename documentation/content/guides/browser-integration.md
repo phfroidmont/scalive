@@ -10,7 +10,7 @@ group = "Browser integration"
 
 Start with a `LiveView` that renders an interactive element. You can understand
 and compose `JS` command values independently; running browser hooks or exchanging
-browser events additionally requires the working bundle, CSRF, and `LiveSocket`
+browser events additionally requires working browser assets, CSRF, and a `LiveSocket`
 connection from [Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
 
 ## Choose The Boundary {#choose-the-boundary}
@@ -125,9 +125,10 @@ handler runs, while `BrowserToServerEvent` determines how its payload is decoded
 
 ## Implement The Browser Hook {#implement-the-browser-hook}
 
-Put the hook in a focused module such as `assets/js/browser-interop.js`. This is
-the implementation used by the documentation application, with bounded input,
-clipboard failure handling, and protection against late asynchronous results:
+For an application with a custom module bundle, put the hook in a focused module
+such as `assets/js/browser-interop.js`. This is the implementation used by the
+documentation application, with bounded input, clipboard failure handling, and
+protection against late asynchronous results:
 
 ```js
 const maxRequestIdLength = 64
@@ -189,8 +190,12 @@ operation instead of waiting forever.
 
 ## Register The Hook With LiveSocket {#register-the-hook-with-live-socket}
 
-Import the factory in `assets/js/app.js`, register the same name rendered by
-`dom.hook`, and pass the registry in the final `LiveSocket` options object:
+This modular example uses the
+[custom bundle path](static-assets-and-client-setup.md#build-the-client-bundle),
+so its bundle imports both clients and the root layout omits the packaged client
+scripts. Import the factory in `assets/js/app.js`, register the same name
+rendered by `dom.hook`, and pass the registry in the final `LiveSocket` options
+object:
 
 ```js
 import { Socket } from "phoenix"
@@ -217,6 +222,9 @@ window.liveSocket = liveSocket
 Do not create a second `LiveSocket` just for hooks; add them to the application's
 existing options object. The canonical bootstrap and CSRF explanation is in
 [Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
+An application using the supplied global clients can instead define the hook in
+its plain `app.js` and pass the registry when constructing `LiveView.LiveSocket`
+with `Phoenix.Socket`, without adding npm dependencies.
 
 ## Give Every Hook Stable Identity {#give-every-hook-stable-identity}
 

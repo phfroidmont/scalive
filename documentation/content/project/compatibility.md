@@ -9,7 +9,10 @@ section = project
 
 Scalive currently tracks Phoenix LiveView `v1.2.10`. This pinned version is the
 reference point for the statuses below; behavior added to later Phoenix
-LiveView releases is not implied to be supported.
+LiveView releases is not implied to be supported. The published Scalive artifact
+includes the corresponding Phoenix LiveView `1.2.10` and Phoenix `1.8.9`
+packaged browser-global clients; applications may instead own a custom npm bundle
+using those supported versions.
 
 Compatibility means equivalent observable application and browser behavior
 where that behavior applies to Scalive. It does not mean source compatibility,
@@ -78,7 +81,7 @@ prove that every server-side edge case in the same feature area is covered.
 | JS commands (`Phoenix.LiveView.JS`) | Native coverage substantial | The command builder covers class, visibility, transition, dispatch, exec, focus, attribute, navigation, push, ignore-attribute, and server-pushed execution commands. | Audit command JSON when advancing beyond `v1.2.10`. |
 | Client events and hooks (`push_event/3`, `handleEvent`, `phx-hook`) | Native coverage substantial | Directional typed payload contracts, root and component handlers, event diff payloads, required hook IDs, and raw-hook replies are covered. | JavaScript subscription and emission remain string-based; browser hook behavior is largely delegated to the upstream JS client. |
 | DOM bindings and patch attributes (`phx-*`) | Native coverage substantial | Typed event/form/JS bindings, targets, upload progress, stream/ignore/update attributes, `phx-patch-focused`, `phx-no-unused-field`, lifecycle bindings, and connected/disconnected visibility are covered. | Audit all `phx-*` attributes and corresponding JS-client behavior when the client target advances. |
-| Static asset tracking (`phx-track-static`, `_track_static`) | Native coverage substantial | Tracked static `href` and `src` values feed `ConnectedMetadata.staticChanged`; raw join parameters are available through connected `connectParams`. | Audit exact `_track_static` metadata and reconnect parity without exposing Phoenix-owned keys as stable application state. |
+| Static asset tracking (`phx-track-static`, `_track_static`) | Native coverage substantial | Tracked static `href` and `src` values feed `ConnectedMetadata.staticChanged`; raw join parameters are available through connected `connectParams`; `LiveViewClientAssetsSpec` covers the pinned immutable client graph and the root-slice browser suite connects through it. | Audit exact `_track_static` metadata and reconnect parity without exposing Phoenix-owned keys as stable application state. |
 | Title updates (`live_title`, `@page_title`) | Native coverage substantial | Typed `pageTitle(model)` drives disconnected HTML, connected diffs, fallback resets, and sticky rejoins; `liveTitle` supplies default, prefix, and suffix metadata. | Broaden navigation coverage for title ownership across routed root views. |
 | Portals and focus wrap (`Phoenix.Component.portal/1`, `focus_wrap/1`) | Native coverage substantial | `portal` and `focusWrap` helpers are covered. | Keep aligned with browser E2E expectations. |
 | HEEx templates and function components (`Phoenix.Component`, `~H`, `attr`, `slot`) | Intentional divergence | Typed Scala HTML builders and typed stateful components replace HEEx macros and assign maps. | HEEx will not be copied; use the [HTML and event bindings guide](../guides/html-dsl-and-event-bindings.md#build-an-html-tree) for Scalive patterns. |

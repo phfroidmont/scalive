@@ -7,19 +7,17 @@ section = learn
 
 ## Before You Begin {#before-you-begin}
 
-Install a JDK, Mill, and Node.js `18` or newer with npm. This quick start uses
-Scala `3.8.4` and the `dev.scalive::scalive:{{scaliveSnapshotVersion}}`
-artifact. Verify that the tools are available before creating the project:
+Install a JDK and Mill. This quick start uses Scala `3.8.4` and the
+`dev.scalive::scalive:{{scaliveSnapshotVersion}}` artifact. Verify that both
+tools are available before creating the project:
 
 ```bash
 java -version
 mill --version
-node --version
-npm --version
 ```
 
-Each command should print a version; `node --version` must report `v18` or
-newer.
+Each command should print a version. Node.js, npm, and a separate browser build
+are not required for this project.
 
 @:callout(warning)
 
@@ -36,8 +34,8 @@ Create this project tree:
 scalive-quick-start/
 ├── build.mill
 └── app/
-    ├── assets/
-    │   └── js/
+    ├── resources/
+    │   └── public/
     │       └── app.js
     ├── src/
     │   └── quickstart/
@@ -45,8 +43,6 @@ scalive-quick-start/
     │       ├── Main.scala
     │       ├── RootLayout.scala
     │       └── Routes.scala
-    ├── package-lock.json
-    └── package.json
 ```
 
 Create `build.mill` at the project root:
@@ -67,30 +63,6 @@ object app extends ScalaModule:
   def mvnDeps = Seq(
     mvn"dev.scalive::scalive:{{scaliveSnapshotVersion}}"
   )
-
-  def packageJson = Task.Source(moduleDir / "package.json")
-  def packageLock = Task.Source(moduleDir / "package-lock.json")
-  def assetSources = Task.Sources(moduleDir / "assets")
-
-  def bundle = Task {
-    val workDir = Task.dest / "work"
-    val publicDir = Task.dest / "public"
-
-    os.copy(packageJson().path, workDir / "package.json", createFolders = true)
-    os.copy(packageLock().path, workDir / "package-lock.json")
-    assetSources().foreach(source =>
-      os.copy(source.path, workDir / source.path.last)
-    )
-    os.proc("npm", "ci").call(cwd = workDir)
-    os.proc("npm", "run", "build").call(cwd = workDir)
-    os.copy(workDir / "dist", publicDir)
-    os.remove.all(workDir)
-    PathRef(Task.dest)
-  }
-
-  def resources = Task {
-    super.resources() :+ bundle()
-  }
 end app
 ```
 
@@ -100,47 +72,24 @@ all production API, render, runtime, protocol, and transport classes, and the
 optional test-support coordinate `dev.scalive::scalive-testing`. Scalive's ZIO
 and ZIO HTTP dependencies are supplied transitively.
 
-Create `app/package.json`:
-
-```json
-{
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "esbuild assets/js/app.js --bundle --platform=browser --format=iife --target=es2020 --outfile=dist/app.js"
-  },
-  "dependencies": {
-    "phoenix": "1.8.9",
-    "phoenix_live_view": "1.2.10"
-  },
-  "devDependencies": {
-    "esbuild": "0.28.1"
-  }
-}
-```
-
-Generate and commit the lockfile:
-
-```bash
-npm install --package-lock-only --prefix app
-```
-
-Mill uses `npm ci` to reproduce this dependency graph and copies the complete
-`dist` tree into the application's classpath resources. This baseline emits only
-`app.js`. When a build emits generated chunks, workers, fonts, or other final
-paths, use the [asset-model guide](../guides/static-assets-and-client-setup.md#choose-an-asset-model)
-to choose an ordinary versioned tree or a deployment manifest.
+Mill automatically places files under `app/resources` on the application's
+classpath. Scalive packages its supported Phoenix and Phoenix LiveView clients,
+so this baseline needs no package manager or bundler. Applications that need
+JavaScript package imports, separate modules, generated chunks, workers, fonts,
+or another custom browser build can follow the
+[custom bundle guide](../guides/static-assets-and-client-setup.md#build-the-client-bundle).
 
 ## Connect The Browser {#connect-the-browser}
 
-Create `app/assets/js/app.js`:
+Create `app/resources/public/app.js`:
 
-@:sourceRegion(documentation/fixtures/quick-start/assets/js/app.js, quick-start-browser)
+@:sourceRegion(documentation/fixtures/quick-start/resources/public/app.js, quick-start-browser)
 
 @:apiSymbol(val:scalive.Live.router)`Live.router`@:@ mounts its socket at `/live`
 by default. The server injects the CSRF meta element into the root layout's
 `<head>` and binds it to a cookie. The client returns the value as `_csrf_token`
 when it opens the socket. Do not create or hard-code this token in JavaScript.
+The packaged client scripts expose the `Phoenix` and `LiveView` globals used here.
 
 ## Define The LiveView {#define-the-liveview}
 
@@ -163,7 +112,9 @@ Create `app/src/quickstart/RootLayout.scala`:
 @:sourceRegion(documentation/fixtures/quick-start/src/quickstart/RootLayout.scala, quick-start-root-layout)
 
 The root layout renders the complete document. Its `<head>` gives Scalive a
-place for the CSRF meta element and loads the tracked browser bundle.
+place for the CSRF meta element and loads Phoenix first, Phoenix LiveView second,
+and the application bootstrap last. Keep this order because `app.js` uses both
+client globals.
 
 ## Start The Server {#start-the-server}
 
@@ -171,8 +122,12 @@ Create `app/src/quickstart/Main.scala`:
 
 @:sourceRegion(documentation/fixtures/quick-start/src/quickstart/Main.scala, quick-start-main)
 
-The server loads the browser bundle, builds CSRF-protected Live routes, adds the
-static asset routes, and listens on port `8080`. For local HTTP, this fixture
+The server loads Scalive's packaged clients through
+@:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@, loads
+`app.js` as an ordinary classpath asset, builds CSRF-protected Live routes, adds
+both asset route sets, and listens on port `8080`. The client files use the
+default `/_scalive/live-view` asset mount; the Live socket remains at `/live`.
+For local HTTP, this fixture
 uses a fixed development-only signing-secret fallback and sets
 `secureCookie = false`; its WebSocket allowlist admits the exact local page
 origins `http://localhost:8080` and `http://127.0.0.1:8080`. Do not deploy those
@@ -183,7 +138,7 @@ browser-facing HTTP or HTTPS origin. See
 [Configuration](../guides/configuration.md#current-configuration-contract)
 and [Deployment](../guides/deployment.md#put-an-http-edge-in-front).
 
-The tracked bundle URL contains Scalive's asset-set version. The unversioned
+The tracked application-script URL contains Scalive's asset-set version. The unversioned
 `/static/app.js` path returns `404` by default; render asset URLs through the
 loaded `StaticAssets` value rather than hard-coding them.
 
@@ -203,7 +158,7 @@ Although the socket transport becomes WebSocket, its browser `Origin` remains
 the page's HTTP origin, `http://localhost:8080` with the default port, rather
 than becoming a `ws` URL.
 
-You are done when Mill completes the npm build, the server listens on the
+You are done when Mill compiles the application, the server listens on the
 configured port, and the browser shows a counter starting at `0`. Both buttons
 should update it without reloading the page.
 
@@ -211,7 +166,8 @@ should update it without reloading the page.
 
 - If Mill cannot resolve the Scalive dependency, confirm the snapshot version
   and repository above, then check [startup troubleshooting](../guides/troubleshooting.md#diagnose-startup-failures).
-- If `npm ci`, bundling, or `app.js` fails, check [missing assets](../guides/troubleshooting.md#diagnose-missing-assets).
+- If `app.js` or either packaged client script fails to load, check
+  [missing assets](../guides/troubleshooting.md#diagnose-missing-assets).
 - If port `8080` is already in use, stop the other process or change the single
   `port` value in `Main.scala`; the server binding and local WebSocket origins
   derive from it. Open the replacement port in the browser. If the page loads

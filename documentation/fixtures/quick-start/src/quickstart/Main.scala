@@ -13,8 +13,9 @@ object Main extends ZIOAppDefault:
 
   val run =
     for
-      assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
-      config <- ZIO
+      clientAssets <- LiveViewClientAssets.load()
+      assets       <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
+      config       <- ZIO
                   .fromEither(
                     ZioHttpConfig(
                       signingSecret = sys.env.getOrElse(
@@ -31,11 +32,11 @@ object Main extends ZIOAppDefault:
                   ).mapError(error => new IllegalArgumentException(error.toString))
       security    = LiveSecurity(config)
       application = Live.router
-                      .withRootLayout(RootLayout(assets))(
+                      .withRootLayout(RootLayout(clientAssets, assets))(
                         Routes.home -> CounterLiveView()
                       )
       liveRoutes = ZioHttp.routes(application, security)
-      routes     = liveRoutes ++ assets.routes
+      routes     = liveRoutes ++ clientAssets.routes ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(port))
     yield ()
 end Main

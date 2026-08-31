@@ -88,16 +88,6 @@ Typed `sendUpdate` exists, but delayed and batch updates are not exposed.
 - Add native tests and examples for every supported public behavior.
 - Add convenience APIs only where the audited behavior exposes repeated application boilerplate.
 
-## Browser Integration
-
-### Simplify Client Setup
-
-Browser setup currently wires Phoenix `Socket` and `LiveSocket` explicitly.
-
-- Consider a minimal generated JavaScript snippet or helper package.
-- Keep socket path, CSRF, hook, and connection options visible and overridable.
-- Avoid hiding the Phoenix client boundary behind an opaque build tool.
-
 ## Testing
 
 ### Evaluate Trigger-Action Handoff Support

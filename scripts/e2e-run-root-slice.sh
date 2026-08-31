@@ -17,11 +17,15 @@ if [[ -z "${playwright_bin}" ]]; then
 	exit 1
 fi
 
-mill --ticker false rootSliceApp.bundle
+mill --ticker false rootSliceApp.compile
 
-mkdir -p "${app_root}/node_modules"
+node_modules="${app_root}/node_modules"
+if [[ -L "${node_modules}" ]]; then
+	rm "${node_modules}"
+fi
+mkdir -p "${node_modules}"
 for package in @playwright playwright playwright-core; do
-	target="${app_root}/node_modules/${package}"
+	target="${node_modules}/${package}"
 	if [[ ! -e "${target}" && ! -L "${target}" ]]; then
 		ln -s "${PLAYWRIGHT_TEST_NODE_PATH}/${package}" "${target}"
 	fi

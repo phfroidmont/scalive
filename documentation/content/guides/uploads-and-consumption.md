@@ -320,7 +320,7 @@ const uploaders = {
   },
 }
 
-const liveSocket = new LiveSocket("/live", Socket, { params, uploaders })
+const liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, { params, uploaders })
 ```
 
 Scalive never receives external bytes. Browser-reported completion merely makes

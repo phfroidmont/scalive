@@ -9,7 +9,7 @@ group = "Assets and operations"
 ## Before You Start {#prerequisites}
 
 You need to know whether browsers will use HTTP or HTTPS and which socket and
-static paths the application will expose. The [quick start](../learn/quick-start.md#start-the-server)
+asset paths the application will expose. The [quick start](../learn/quick-start.md#start-the-server)
 provides a complete baseline if you do not yet have an assembled application.
 
 ## Current Configuration Contract {#current-configuration-contract}
@@ -122,6 +122,7 @@ The remaining framework choices are made while assembling the application:
 | --- | --- | --- |
 | Live socket | `Live.router.withSocketPath`; default `/live` | Configure the Phoenix client with the same mount. The WebSocket upgrade is the mount's `/websocket` child, `/live/websocket` by default. |
 | Root and Live layouts | `Live.router.withRootLayout` and `.withLayout`; identity root and no ordinary layouts by default | Supply a complete `<html>`, `<head>`, and `<body>` root with the application assets. Scalive inserts its CSRF metadata into the `<head>`. |
+| Packaged Phoenix clients | `LiveViewClientAssets.load`; default mount `/_scalive/live-view` | Unless a custom bundle imports both npm clients, load once at startup, add `clientAssets.routes`, and render `phoenixScript` before `liveViewScript` and the application bootstrap. Pass another mount to `load` when the default conflicts with application routing. |
 | Static assets | `StaticAssetConfig.classpath`, `.directory`, `.deploymentClasspath`, or `.deploymentDirectory`; default mount `/static` | Load assets before startup, add `assets.routes`, and render versioned or final URLs from the same loaded value. |
 
 Use `classpath` or `directory` when Scalive should version one complete relative
@@ -138,7 +139,7 @@ val application = Live.router
 ```
 
 ```js
-const liveSocket = new LiveSocket("/socket", Socket, { params })
+const liveSocket = new LiveView.LiveSocket("/socket", Phoenix.Socket, { params })
 ```
 
 Use [Client setup and static assets](static-assets-and-client-setup.md) for asset

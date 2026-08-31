@@ -54,6 +54,8 @@ jobs:
           overwrite: true
       - name: Build published artifacts
         run: nix develop --command mill --ticker false scalive.publishArtifacts + scalive.testing.publishArtifacts
+      - name: Verify packaged client resources
+        run: nix develop --command mill --ticker false scalive.checkLiveViewClientResources
       - name: Publish snapshot
         run: nix develop --command mill --ticker false mill.javalib.SonatypeCentralPublishModule/
         env:

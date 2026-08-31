@@ -10,8 +10,9 @@ section = learn
 The [quick start](quick-start.md) keeps composition explicit. Read it from the
 process toward the browser:
 
-1. Mill compiles Scala and bundles browser assets into JVM resources.
-2. `Main` loads configuration, security, static assets, and application services.
+1. Mill compiles Scala and includes ordinary classpath resources.
+2. `Main` loads configuration, security, supplied LiveView clients, static assets,
+   and application services.
 3. `Main` pairs typed routes with LiveViews and starts ZIO HTTP.
 4. A route selects a LiveView, and its layouts wrap the rendered page.
 5. The browser loads `app.js`, connects, forwards events, and applies updates.
@@ -50,17 +51,23 @@ state, and @:apiSymbol(def:scalive.LiveView.view)`view`@:@ describes typed HTML
 and event bindings. A LiveView does not start the HTTP server or locate its own
 asset files.
 
-`assets/js/app.js` is the browser boundary. It creates `LiveSocket`, passes the
-server-issued CSRF token, and connects to the socket path. Add hooks here only
-for behavior that requires browser APIs. Application state and ordinary event
-handling stay in Scala.
+`resources/public/app.js` is the browser boundary. It creates `LiveSocket`,
+passes the server-issued CSRF token, and connects to the socket path. Add hooks
+here only for behavior that requires browser APIs. Application state and
+ordinary event handling stay in Scala.
 
-`package.json` and the Mill asset task are the build boundary. npm resolves and
-bundles browser modules; Mill places outputs on the JVM classpath.
+The standard Scala `resources` directory is the quick start's build boundary.
+Mill places its files on the JVM classpath without Node.js or npm.
+@:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@ loads
+the packaged Phoenix clients, provides script helpers that the root layout must
+render with `phoenixScript` before `liveViewScript`, and serves both clients from
+its default `/_scalive/live-view` mount.
 @:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ versions an ordinary
 [output tree or validates a deployment manifest](../guides/static-assets-and-client-setup.md#choose-an-asset-model),
 renders tracked URLs, and serves the declared files. The root layout still
-explicitly selects its top-level scripts and stylesheets.
+explicitly selects its top-level scripts and stylesheets. Applications that need
+package imports, separate modules, or richer browser output can add a custom
+build by following the asset guide.
 
 ## Keep Dependencies Pointing Inward {#keep-dependencies-pointing-inward}
 
@@ -69,6 +76,7 @@ LiveViews. A growing application normally follows this direction:
 
 ```text
 Main
+├── LiveViewClientAssets
 ├── StaticAssets
 ├── LiveSecurity
 ├── application services

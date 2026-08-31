@@ -9,12 +9,16 @@ group = "Setup and foundations"
 ## Before You Start {#prerequisites}
 
 Start with a Scalive application whose routed page renders a complete root
-layout, and with Node.js and npm available to build its browser bundle. The
-[Quick start](../learn/quick-start.md) provides that observable baseline.
+layout. The [Quick start](../learn/quick-start.md) uses the browser clients
+packaged in the Scalive artifact and requires no separate JavaScript build.
+Applications that import browser packages or produce a richer output tree can
+instead use the custom bundle path below.
 
 ## Choose An Asset Model {#choose-an-asset-model}
 
-Choose one model before wiring asset loading:
+Choose one model for application-owned assets before wiring their loading. The
+packaged Phoenix clients use their own fixed classpath graph independently of
+this choice:
 
 | Model | Path and cache ownership | Choose it when |
 | --- | --- | --- |
@@ -26,10 +30,84 @@ public paths or per-file cache policies. Generated or chunked output works with
 either model: preserve the complete relative tree for the ordinary model, or
 inventory every output in a deployment manifest.
 
-## Build The Client Bundle {#build-the-client-bundle}
+## Load The Packaged Clients {#load-the-packaged-clients}
 
-Install the Phoenix JavaScript packages and bundle a browser entry point. The
-current Scalive quick-start fixture uses these versions:
+Load @:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@ at
+startup and add its routes alongside the Live and application-asset routes:
+
+```scala
+for
+  clientAssets <- LiveViewClientAssets.load()
+  assets       <- StaticAssets.load(
+                    StaticAssetConfig.classpath("public", Seq("app.js"))
+                  )
+  application   = Live.router.withRootLayout(RootLayout(clientAssets, assets))(
+                    Routes.home -> HomeLiveView()
+                  )
+  liveRoutes    = ZioHttp.routes(application, security)
+  routes        = liveRoutes ++ clientAssets.routes ++ assets.routes
+  _            <- Server.serve(routes)
+yield ()
+```
+
+The fixed graph contains upstream Phoenix `1.8.9` and Phoenix LiveView `1.2.10`
+browser-global builds. It defaults to `/_scalive/live-view`; pass another
+`zio.http.Path` to
+@:apiSymbol(def:scalive.LiveViewClientAssets.load)`LiveViewClientAssets.load`@:@
+when that mount conflicts with application routing. Do not share a mount between
+independently loaded asset graphs because each graph owns its complete route
+prefix.
+
+Render the dependencies before the application bootstrap:
+
+```scala
+headTag(
+  clientAssets.phoenixScript,
+  clientAssets.liveViewScript,
+  assets.trackedScript("app.js", defer := true)
+)
+```
+
+@:apiSymbol(def:scalive.LiveViewClientAssets.phoenixScript)`phoenixScript`@:@ and
+@:apiSymbol(def:scalive.LiveViewClientAssets.liveViewScript)`liveViewScript`@:@
+are deferred, tracked, same-origin scripts. Deferred classic scripts execute in
+document order, so the application can use the `Phoenix` and `LiveView` globals.
+Do not render these packaged client scripts when the application bundle already
+contains the npm clients.
+
+## Connect LiveSocket {#connect-live-socket}
+
+Create the plain application bootstrap loaded after the packaged clients:
+
+```js
+const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
+const params = csrfToken ? { _csrf_token: csrfToken } : {}
+
+const liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, { params })
+liveSocket.connect()
+
+window.liveSocket = liveSocket
+```
+
+@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ uses `/live` as its current default socket path. Scalive injects
+the `csrf-token` meta element into the root layout's `<head>` and associates it
+with the CSRF cookie. Return that value as `_csrf_token`; do not create or
+hard-code a token in JavaScript.
+
+The browser adds the WebSocket `Origin` header automatically from the page's
+HTTP or HTTPS origin. Do not add it to `params` or attempt to set it from
+JavaScript. Instead, list that page origin in the server's
+[WebSocket allowlist](configuration.md#current-configuration-contract).
+
+Pass options such as `hooks`, `uploaders`, or connection tuning in the final
+`LiveSocket` options object before calling `connect()`. Exposing the socket on
+`window` is optional and useful only for browser-console debugging.
+
+## Build A Custom Client Bundle {#build-the-client-bundle}
+
+Use a custom browser build when the application needs package imports,
+TypeScript, source maps, generated chunks, or other build-owned output. Install
+the same supported Phoenix packages and bundle an application entry point:
 
 ```json
 {
@@ -48,32 +126,7 @@ current Scalive quick-start fixture uses these versions:
 }
 ```
 
-Generate and commit `package-lock.json`. This repository's `NpmAssets` Mill
-trait runs `npm ci`, runs the package's `build` script, and copies the complete
-`dist` tree into a `public` resource directory. The Quick Start does not use
-that trait: its bundle is a single-output baseline, and its inline Mill task
-performs the equivalent complete-tree copy. Keeping the whole tree preserves
-chunks, workers, CSS, fonts, source maps, and relative references.
-
-If your repository uses `NpmAssets`, include its output in the Scala module's
-resources:
-
-```scala
-object myApp extends ScalaCommon with NpmAssets:
-  def moduleDeps = Seq(scalive)
-
-  def resources = Task {
-    super.resources() :+ bundle()
-  }
-```
-
-The equivalent standalone setup is shown in full in the
-[quick start](../learn/quick-start.md#create-the-project).
-
-## Connect LiveSocket {#connect-live-socket}
-
-This section is the canonical browser bootstrap and CSRF setup. Create the
-browser entry point imported by the bundle:
+The custom entry point imports and configures the clients explicitly:
 
 ```js
 import { Socket } from "phoenix"
@@ -84,24 +137,49 @@ const params = csrfToken ? { _csrf_token: csrfToken } : {}
 
 const liveSocket = new LiveSocket("/live", Socket, { params })
 liveSocket.connect()
-
-window.liveSocket = liveSocket
 ```
 
-@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ uses `/live` as its current default socket path. Scalive injects
-the `csrf-token` meta element into the root layout's `<head>` and associates it
-with the CSRF cookie. Return that value as `_csrf_token`; do not create or
-hard-code a token in JavaScript.
+Generate and commit `package-lock.json`. Add the following members to the
+application's `ScalaModule` to track the npm inputs, build in Mill's task output,
+and add the complete `dist` tree below the `public` classpath prefix:
 
-The browser adds the WebSocket `Origin` header automatically from the page's
-HTTP or HTTPS origin. Do not add it to `params` or attempt to set it from
-JavaScript. Instead, list that page origin in the server's
-[WebSocket allowlist](configuration.md#current-configuration-contract).
+```scala
+def packageJson = Task.Source(moduleDir / "package.json")
+def packageLock = Task.Source(moduleDir / "package-lock.json")
+def assetSources = Task.Sources(moduleDir / "assets")
 
-Pass Phoenix options such as `hooks` in the final `LiveSocket` options object
-when the application needs them. Register every option before calling
-`connect()`; exposing the socket on `window` is optional and useful only for
-browser-console debugging.
+def bundle = Task {
+  val workDir = Task.dest / "work"
+  val resourceRoot = Task.dest / "resources"
+
+  os.copy(packageJson().path, workDir / "package.json", createFolders = true)
+  os.copy(packageLock().path, workDir / "package-lock.json")
+  assetSources().foreach(source =>
+    os.copy(source.path, workDir / source.path.last)
+  )
+
+  os.proc("npm", "ci").call(cwd = workDir)
+  os.proc("npm", "run", "build").call(cwd = workDir)
+  os.copy(workDir / "dist", resourceRoot / "public", createFolders = true)
+
+  PathRef(resourceRoot)
+}
+
+def resources = Task {
+  super.resources() :+ bundle()
+}
+```
+
+This portable task requires Node.js and npm at build time but not at runtime.
+Keeping the whole output tree preserves chunks, workers, CSS, fonts, source maps,
+and relative references. Adjust the build tool integration when the application
+does not use Mill, while preserving the same complete resource tree.
+
+When this bundle imports `phoenix` and `phoenix_live_view`, load and route only
+the application assets. Do not also load, route, or render
+`LiveViewClientAssets`, which would download and evaluate a second copy of both
+clients. The [quick start](../learn/quick-start.md#create-the-project) shows the
+packaged-client path instead.
 
 ## Load An Ordinary Classpath Tree {#load-classpath-assets}
 

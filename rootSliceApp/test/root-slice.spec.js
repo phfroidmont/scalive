@@ -23,6 +23,12 @@ test("direct root mounts independently and handles an event", async ({ page }) =
 
   await page.goto("/")
 
+  const clientGlobals = await page.evaluate(() => [
+    typeof window.Phoenix?.Socket,
+    typeof window.LiveView?.LiveSocket,
+  ])
+  expect(clientGlobals).toEqual(["function", "function"])
+
   const counter = page.getByLabel("Counter value")
   await expect(counter).toHaveText("2", { timeout: 15_000 })
   await page.getByRole("button", { name: "Increment" }).click()

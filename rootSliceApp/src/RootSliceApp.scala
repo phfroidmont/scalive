@@ -50,33 +50,46 @@ object RootSliceApp extends ZIOAppDefault:
   private val issue3686B = live / "issues" / "3686" / "b"
   private val issue3686C = live / "issues" / "3686" / "c"
 
-  private def rootOne(navigationGuardAssets: NavigationGuardAssets) =
+  private def rootOne(
+    navigationGuardAssets: NavigationGuardAssets,
+    liveViewClientAssets: LiveViewClientAssets
+  ) =
     LiveRootLayout[Any, Any]("root-one")([Msg] =>
       (content, _, _) =>
         htmlRootTag(
           headTag(
             navigationGuardAssets.script,
+            liveViewClientAssets.phoenixScript,
+            liveViewClientAssets.liveViewScript,
             scriptTag(src := "/app.js", defer := true)
           ),
           bodyTag(idAttr := "root-one", content)
         )
     )
 
-  private def rootTwo(navigationGuardAssets: NavigationGuardAssets) =
+  private def rootTwo(
+    navigationGuardAssets: NavigationGuardAssets,
+    liveViewClientAssets: LiveViewClientAssets
+  ) =
     LiveRootLayout[Any, Any]("root-two")([Msg] =>
       (content, _, _) =>
         htmlRootTag(
           headTag(
             navigationGuardAssets.script,
+            liveViewClientAssets.phoenixScript,
+            liveViewClientAssets.liveViewScript,
             scriptTag(src := "/app.js", defer := true)
           ),
           bodyTag(idAttr := "root-two", content)
         )
     )
 
-  private def application(navigationGuardAssets: NavigationGuardAssets) =
-    val firstRoot  = rootOne(navigationGuardAssets)
-    val secondRoot = rootTwo(navigationGuardAssets)
+  private def application(
+    navigationGuardAssets: NavigationGuardAssets,
+    liveViewClientAssets: LiveViewClientAssets
+  ) =
+    val firstRoot  = rootOne(navigationGuardAssets, liveViewClientAssets)
+    val secondRoot = rootTwo(navigationGuardAssets, liveViewClientAssets)
 
     Live.router.withRootLayout(firstRoot)(
       live        -> RootSliceLiveView(mountSequence),
@@ -204,8 +217,11 @@ object RootSliceApp extends ZIOAppDefault:
   override val run =
     for
       navigationGuardAssets <- NavigationGuardAssets.load()
-      routes = ZioHttp.routes(application(navigationGuardAssets), config) ++ supportRoutes ++
-                 navigationGuardAssets.routes
+      liveViewClientAssets  <- LiveViewClientAssets.load()
+      routes = ZioHttp.routes(
+                 application(navigationGuardAssets, liveViewClientAssets),
+                 config
+               ) ++ supportRoutes ++ navigationGuardAssets.routes ++ liveViewClientAssets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
     yield ()
 end RootSliceApp

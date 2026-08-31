@@ -19,9 +19,10 @@ expects so you can also enter directly from search or the API reference.
 
 ### Setup And Foundations {#setup-and-foundations}
 
-- [Client setup and static assets](static-assets-and-client-setup.md) bundles
-  the Phoenix client, serves an ordinary versioned tree or manifest-defined
-  final paths, and reacts to static changes and connection parameters.
+- [Client setup and static assets](static-assets-and-client-setup.md) loads the
+  packaged Phoenix clients or a custom bundle, serves an ordinary versioned tree
+  or manifest-defined final paths, and reacts to static changes and connection
+  parameters.
 
 ### Interfaces And Input {#interfaces-and-input}
 

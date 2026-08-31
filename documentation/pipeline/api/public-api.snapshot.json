@@ -734,6 +734,18 @@
       ]
     },
     {
+      "id" : "class:scalive.LiveViewClientAssets",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveViewClientAssets",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveViewClientAssets:076a48463a1c8d9a",
+          "signature" : "class LiveViewClientAssets"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.Mod.Content.Keyed.Entry",
       "ownerId" : "object:scalive.Mod.Content.Keyed",
       "qualifiedName" : "scalive.Mod.Content.Keyed.Entry",
@@ -5902,6 +5914,42 @@
         {
           "id" : "def:scalive.LiveView.view:aa861cb0b5f3be92",
           "signature" : "def view(model: Signal[Model]): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveViewClientAssets.liveViewScript",
+      "ownerId" : "class:scalive.LiveViewClientAssets",
+      "qualifiedName" : "scalive.LiveViewClientAssets.liveViewScript",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveViewClientAssets.liveViewScript:775c58da74d17459",
+          "signature" : "def liveViewScript: HtmlElement[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveViewClientAssets.load",
+      "ownerId" : "object:scalive.LiveViewClientAssets",
+      "qualifiedName" : "scalive.LiveViewClientAssets.load",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveViewClientAssets.load:31804e3f30bfedf4",
+          "signature" : "def load(mountPath: zio.http.Path = ..., classLoader: ClassLoader = ...): zio.package.Task[LiveViewClientAssets]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveViewClientAssets.phoenixScript",
+      "ownerId" : "class:scalive.LiveViewClientAssets",
+      "qualifiedName" : "scalive.LiveViewClientAssets.phoenixScript",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveViewClientAssets.phoenixScript:46b774e5be65d128",
+          "signature" : "def phoenixScript: HtmlElement[Nothing]"
         }
       ]
     },
@@ -14030,6 +14078,18 @@
       ]
     },
     {
+      "id" : "object:scalive.LiveViewClientAssets",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveViewClientAssets",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveViewClientAssets:553d4c77e0bea467",
+          "signature" : "object LiveViewClientAssets"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.Mod",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.Mod",
@@ -17697,6 +17757,30 @@
         {
           "id" : "val:scalive.LiveSessionBuilder.name:81da2bb6fc574443",
           "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveViewClientAssets.defaultMountPath",
+      "ownerId" : "object:scalive.LiveViewClientAssets",
+      "qualifiedName" : "scalive.LiveViewClientAssets.defaultMountPath",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveViewClientAssets.defaultMountPath:e7e0a46443d37435",
+          "signature" : "val defaultMountPath: zio.http.Path"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveViewClientAssets.routes",
+      "ownerId" : "class:scalive.LiveViewClientAssets",
+      "qualifiedName" : "scalive.LiveViewClientAssets.routes",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveViewClientAssets.routes:7bc34c646891bbe0",
+          "signature" : "val routes: zio.http.Routes[Any, Nothing]"
         }
       ]
     },

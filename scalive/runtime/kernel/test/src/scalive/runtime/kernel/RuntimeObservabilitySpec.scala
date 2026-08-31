@@ -186,7 +186,8 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
                       SessionLogic[String, String](
                         bootstrap = ZIO.succeed(TurnDraft("ready")),
                         handle = (_, message) => ZIO.succeed(TurnDraft(message)),
-                        interceptClientEvent = (_, _) => ZIO.fail(Exception("interceptor failed"))
+                        interceptClientEvent = (_, _, _) =>
+                          ZIO.fail(Exception("interceptor failed"))
                       ),
                       program,
                       outbound,

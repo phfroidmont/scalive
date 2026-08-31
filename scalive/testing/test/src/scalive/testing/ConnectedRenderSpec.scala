@@ -140,6 +140,87 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(count == "1")
       }
     },
+    test("handles keyed and full client flash clearing for root and component targets") {
+      val info    = FlashKind("info")
+      val error   = FlashKind("error")
+      val warning = FlashKind("warning")
+
+      ZIO.scoped {
+        for
+          rootRawCalls      <- Ref.make(0)
+          componentRawCalls <- Ref.make(0)
+          component = new LiveComponent.Eventless[Unit, Unit]:
+                        override val hooks =
+                          ComponentLiveHooks.empty[Unit, Nothing, Unit].onRawEvent {
+                            (_, model, _, _) =>
+                              componentRawCalls
+                                .update(_ + 1).as(LiveEventHookResult.cont(model))
+                          }
+                        def mount(props: Unit, ctx: MountContext) = ZIO.unit
+                        override def view(
+                          props: Signal[Unit],
+                          model: Signal[Unit],
+                          self: ComponentRef[Nothing]
+                        ) =
+                          div(
+                            flash(error)(message =>
+                              button(
+                                dataAttr("clear-all-flash") := "",
+                                flash.clearOnClick,
+                                message
+                              )
+                            ),
+                            flash(warning)(message =>
+                              span(dataAttr("warning-flash") := "", message)
+                            )
+                          )
+          instance = scalive.component(component, "flash")
+          view = new LiveView.Eventless[Unit]:
+                   override val hooks = LiveHooks.empty[Nothing, Unit].onRawEvent {
+                     (model, _, _) =>
+                       rootRawCalls.update(_ + 1).as(LiveEventHookResult.cont(model))
+                   }
+                   def mount(ctx: MountContext) =
+                     ctx.flash.put(info, "Info") *>
+                       ctx.flash.put(error, "Error") *>
+                       ctx.flash.put(warning, "Warning")
+                   override def view(model: Signal[Unit]) =
+                     div(
+                       flash(info)(message =>
+                         button(
+                           dataAttr("clear-info-flash") := "",
+                           flash.clearOnClick(info),
+                           message
+                         )
+                       ),
+                       instance.render(())
+                     )
+          connected <- ConnectedRender.join(view)
+          initialInfo <- connected.text("[data-clear-info-flash]")
+          initialError <- connected.text("[data-clear-all-flash]")
+          initialWarning <- connected.text("[data-warning-flash]")
+          _          <- connected.click("[data-clear-info-flash]")
+          afterKeyed <- connected.html
+          _          <- connected.click("[data-clear-all-flash]")
+          afterAll   <- connected.html
+          rootCalls  <- rootRawCalls.get
+          componentCalls <- componentRawCalls.get
+          joined     <- connected.isJoined
+        yield assertTrue(
+          initialInfo == "Info",
+          initialError == "Error",
+          initialWarning == "Warning",
+          Jsoup.parseBodyFragment(afterKeyed).select("[data-clear-info-flash]").isEmpty,
+          !Jsoup.parseBodyFragment(afterKeyed).select("[data-clear-all-flash]").isEmpty,
+          !Jsoup.parseBodyFragment(afterKeyed).select("[data-warning-flash]").isEmpty,
+          Jsoup.parseBodyFragment(afterAll).select("[data-clear-all-flash]").isEmpty,
+          Jsoup.parseBodyFragment(afterAll).select("[data-warning-flash]").isEmpty,
+          rootCalls == 0,
+          componentCalls == 0,
+          joined
+        )
+      }
+    },
     test("streams hosted uploads using the preflight chunk size") {
       val definition = LiveUploadDef.inMemory(
         "small-chunks",

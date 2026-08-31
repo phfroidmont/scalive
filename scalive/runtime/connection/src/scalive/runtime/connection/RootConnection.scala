@@ -1439,10 +1439,11 @@ private[scalive] object RootConnection:
                   ),
                   guardUpload =
                     (state, mutation) => mutation.requiresConnectedTurnGuard(state.uploads),
-                  interceptClientEvent = (state, event) =>
+                  interceptClientEvent = (state, event, target) =>
                     interceptRootEvent(
                       state,
                       event,
+                      target,
                       metadata,
                       lifecycle,
                       rootOwner,
@@ -1591,6 +1592,7 @@ private[scalive] object RootConnection:
   private def interceptRootEvent[Msg, Model](
     state: RootState[Msg, Model],
     event: LiveEvent,
+    target: Option[ComponentInstanceId],
     metadata: RootConnectionMetadata,
     lifecycle: RootLifecycle[Msg, Model],
     owner: OwnerId,
@@ -1599,18 +1601,26 @@ private[scalive] object RootConnection:
     for
       journal <- rootJournal(owner, state, TurnDraft(state))
       context = RootMessageContext[Msg, Model](metadata, state.url, journal)
-      rawResult <- runRawHooks(state.hooks.raw, state.model, event, context)
-      result    <- rawResult match
-                  case halt: LiveEventHookResult.Halt[Model] => ZIO.succeed(halt)
-                  case LiveEventHookResult.Continue(model)   =>
-                    val matching =
-                      if event.cid.isEmpty then
-                        state.hooks.browser.filter(_.name == event.bindingId)
-                      else Vector.empty
-                    if matching.isEmpty then ZIO.succeed(LiveEventHookResult.cont(model))
-                    else
-                      runBrowserHooks(matching, model, event.value.toJson, context)
-                        .map(LiveEventHookResult.halt(_))
+      result <-
+        if event.bindingId == "lv:clear-flash" then
+          if target.nonEmpty then ZIO.succeed(LiveEventHookResult.cont(state.model))
+          else
+            val clear = event.params.get("key") match
+              case Some(key) => context.flash.clear(FlashKind(key))
+              case None      => context.flash.clearAll
+            clear.as(LiveEventHookResult.halt(state.model))
+        else
+          runRawHooks(state.hooks.raw, state.model, event, context).flatMap {
+            case halt: LiveEventHookResult.Halt[Model] => ZIO.succeed(halt)
+            case LiveEventHookResult.Continue(model)   =>
+              val matching =
+                if target.isEmpty then state.hooks.browser.filter(_.name == event.bindingId)
+                else Vector.empty
+              if matching.isEmpty then ZIO.succeed(LiveEventHookResult.cont(model))
+              else
+                runBrowserHooks(matching, model, event.value.toJson, context)
+                  .map(LiveEventHookResult.halt(_))
+          }
       draft <- rootDraft(
                  state,
                  lifecycle,

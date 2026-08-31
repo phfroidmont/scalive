@@ -179,9 +179,14 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
               )
       hooks <- turn.hookRegistry[P, M, A]
       context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
-      raw <- command.event.fold[Task[LiveEventHookResult[A]]](
-               ZIO.succeed(LiveEventHookResult.cont(model))
-             )(event => runRawHooks(hooks.raw, props, model, event, context))
+      raw <- command.event match
+               case Some(event) if event.bindingId == "lv:clear-flash" =>
+                 val clear = event.params.get("key") match
+                   case Some(key) => context.flash.clear(FlashKind(key))
+                   case None      => context.flash.clearAll
+                 clear.as(LiveEventHookResult.halt(model))
+               case Some(event) => runRawHooks(hooks.raw, props, model, event, context)
+               case None        => ZIO.succeed(LiveEventHookResult.cont(model))
       result <- raw match
                   case LiveEventHookResult.Halt(next, reply) => turn.result(next, reply)
                   case LiveEventHookResult.Continue(next)    =>

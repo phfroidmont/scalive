@@ -523,7 +523,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           def execute: UIO[Unit] = command match
             case client: SessionCommand.ClientEvent =>
               val intercepted = client.event match
-                case Some(event) => logic.interceptClientEvent(state.committed.model, event)
+                case Some(event) => logic.interceptClientEvent(state.committed.model, event, None)
                 case None        =>
                   ZIO.succeed(ClientEventInterception.Continue(TurnDraft(state.committed.model)))
               Clock.nanoTime.flatMap { handlerStarted =>
@@ -718,8 +718,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   response.fail(SessionRejection.UploadUnavailable).unit *> loop(state, work)
             case client: SessionCommand.ComponentClientEvent =>
               val intercepted = client.event match
-                case Some(event) => logic.interceptClientEvent(state.committed.model, event)
-                case None        =>
+                case Some(event) =>
+                  logic.interceptClientEvent(state.committed.model, event, Some(client.component))
+                case None =>
                   ZIO.succeed(ClientEventInterception.Continue(TurnDraft(state.committed.model)))
               Clock.nanoTime.flatMap { handlerStarted =>
                 controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {

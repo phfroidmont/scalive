@@ -240,9 +240,14 @@ final private[scalive] case class SessionLogic[Msg, Model](
   guardConnectedTurn: Task[Either[LiveConnectedTurnFailure, Unit]] = ZIO.succeed(Right(())),
   handleParams: (Model, URL) => Task[TurnDraft[Msg, Model]] = (model: Model, url: URL) =>
     ZIO.succeed(TurnDraft(model, url = Some(url))),
-  interceptClientEvent: (Model, LiveEvent) => Task[ClientEventInterception[Msg, Model]] = (
+  interceptClientEvent: (
+    Model,
+    LiveEvent,
+    Option[ComponentInstanceId]
+  ) => Task[ClientEventInterception[Msg, Model]] = (
     model: Model,
-    _: LiveEvent
+    _: LiveEvent,
+    _: Option[ComponentInstanceId]
   ) => ZIO.succeed(ClientEventInterception.Continue(TurnDraft(model))),
   handleEvent: Option[
     (TurnDraft[Msg, Model], Msg, LiveEvent) => Task[TurnDraft[Msg, Model]]

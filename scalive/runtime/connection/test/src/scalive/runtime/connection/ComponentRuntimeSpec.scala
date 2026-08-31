@@ -271,6 +271,48 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("stale component clear-flash events leave root flash unchanged") {
+      ZIO.scoped {
+        val kind      = FlashKind("info")
+        val component = ComponentInstanceId(Long.MaxValue)
+        val event = LiveEvent(
+          kind = "click",
+          bindingId = "lv:clear-flash",
+          value = Json.Obj.empty,
+          params = Map.empty,
+          cid = None,
+          meta = None
+        )
+        val view = new LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ctx.flash.put(kind, "retained")
+          override def view(model: Signal[Unit]) =
+            div(scalive.flash(kind)(message => span(message)))
+
+        for
+          sink       <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, view, sink.offer(_).unit)
+          _          <- sink.take
+          command     = CommandId.fresh().toOption.get
+          _ <- connection.submitComponentRawEvent(
+                 command,
+                 component,
+                 scalive.render.BindingId.fromEncoded(event.bindingId),
+                 BindingPayload.Params(Map.empty),
+                 event
+               )
+          output <- sink.take
+          flash  <- connection.inspectFlash
+        yield assertTrue(
+          flash == Map(kind -> "retained"),
+          output match
+            case ConnectionOutput.Rejected(
+                  `command`,
+                  SessionRejection.StaleComponent(`component`)
+                ) => true
+            case _ => false
+        )
+      }
+    },
     test("component callback flash is visible in its committed component projection") {
       ZIO.scoped {
         val kind = FlashKind("component-visible")

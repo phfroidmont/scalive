@@ -13,11 +13,18 @@ reach `handleMessage` and update the rendered model.
 
 ## Use Hooks For Cross-Cutting Lifecycle Policy {#choose-hooks}
 
-Use a hook when behavior must wrap a lifecycle stage across several messages:
-authorization, instrumentation, protocol interception, or observing every
-render. Keep normal domain transitions in `handleMessage`, route changes in
-`handleParams`, and one-off browser payloads in typed event bindings or
-`onBrowserEvent`. A hook should not become a second, hidden message handler.
+Use a hook when application behavior must wrap a lifecycle stage across several
+messages: authorization, protocol interception, or observation that requires
+stage-specific application context. Keep normal domain transitions in
+`handleMessage`, route changes in `handleParams`, and one-off browser payloads in
+typed event bindings or `onBrowserEvent`. A hook should not become a second,
+hidden message handler.
+
+Use @:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ instead
+for route-wide operational events and metrics. An observer receives structured
+classifications, cannot alter an operation, and is isolated from lifecycle
+failure. [Lifecycle observability](lifecycle-observability.md#choose-the-observation-boundary)
+defines that boundary.
 
 In the examples, lifecycle callbacks return `Task[A]`, and `ZIO.succeed(value)`
 creates an effect that succeeds with `value`. Operators

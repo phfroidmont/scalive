@@ -379,6 +379,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
           ),
           "Assets and operations" -> Vector(
             "/guides/configuration",
+            "/guides/lifecycle-observability",
             "/guides/deployment"
           )
         ),

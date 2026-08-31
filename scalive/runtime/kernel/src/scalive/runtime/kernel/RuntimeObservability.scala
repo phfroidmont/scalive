@@ -7,6 +7,7 @@ import scala.jdk.CollectionConverters.*
 import zio.*
 import zio.json.ast.Json
 
+import scalive.*
 import scalive.runtime.contracts.*
 
 final private[scalive] case class RuntimeCorrelation(
@@ -52,14 +53,18 @@ private[scalive] enum RuntimeFailure:
   case RuntimeDefect
 
 private[scalive] enum RuntimeTerminal:
-  case Crashed, Closed, Redirected
+  case Crashed(failure: RuntimeFailure)
+  case Closed
+  case Redirected
+  case Disconnected(reason: Option[String])
 
 private[scalive] enum RuntimeEvent:
   case CommandAccepted(
     correlation: RuntimeCorrelation,
     kind: RuntimeCommandKind,
     initiator: RuntimeInitiator,
-    queueDepth: Int)
+    queueDepth: Int,
+    queueCapacity: Int)
   case TurnStarted(
     correlation: RuntimeCorrelation,
     kind: RuntimeCommandKind,
@@ -73,21 +78,23 @@ private[scalive] enum RuntimeEvent:
   case ResourceActivated(correlation: RuntimeCorrelation)
   case ResourceRetired(correlation: RuntimeCorrelation)
   case TurnFailed(correlation: RuntimeCorrelation, failure: RuntimeFailure)
+  case SessionFailed(correlation: RuntimeCorrelation, failure: RuntimeFailure)
   case SessionTerminated(correlation: RuntimeCorrelation, terminal: RuntimeTerminal)
 
   def context: RuntimeCorrelation = this match
-    case CommandAccepted(value, _, _, _) => value
-    case TurnStarted(value, _, _)        => value
-    case HandlerCompleted(value, _)      => value
-    case CandidateRenderStarted(value)   => value
-    case CandidateValidated(value)       => value
-    case DiffCompleted(value)            => value
-    case StateCommitted(value)           => value
-    case OutputPublished(value)          => value
-    case ResourceActivated(value)        => value
-    case ResourceRetired(value)          => value
-    case TurnFailed(value, _)            => value
-    case SessionTerminated(value, _)     => value
+    case CommandAccepted(value, _, _, _, _) => value
+    case TurnStarted(value, _, _)           => value
+    case HandlerCompleted(value, _)         => value
+    case CandidateRenderStarted(value)      => value
+    case CandidateValidated(value)          => value
+    case DiffCompleted(value)               => value
+    case StateCommitted(value)              => value
+    case OutputPublished(value)             => value
+    case ResourceActivated(value)           => value
+    case ResourceRetired(value)             => value
+    case TurnFailed(value, _)               => value
+    case SessionFailed(value, _)            => value
+    case SessionTerminated(value, _)        => value
 
   def name: String = this match
     case _: CommandAccepted        => "command_accepted"
@@ -101,6 +108,7 @@ private[scalive] enum RuntimeEvent:
     case _: ResourceActivated      => "resource_activated"
     case _: ResourceRetired        => "resource_retired"
     case _: TurnFailed             => "turn_failed"
+    case _: SessionFailed          => "session_failed"
     case _: SessionTerminated      => "session_terminated"
 end RuntimeEvent
 
@@ -316,7 +324,8 @@ final private[scalive] case class RuntimeFrameTrace(
 
 final private[scalive] class RuntimeObserver private (
   sink: RuntimeEvent => UIO[Unit],
-  diagnostic: RuntimeDiagnostic):
+  diagnostic: RuntimeDiagnostic,
+  lifecycleObserver: LifecycleObserver):
 
   final private case class LifecycleTrace(
     topic: String,
@@ -334,21 +343,29 @@ final private[scalive] class RuntimeObserver private (
     operation: RuntimeTraceOperation.Active,
     transportBound: Boolean)
 
-  private val diagnosticsEnabled   = diagnostic.session.nonEmpty
-  private lazy val lifecycles      = ConcurrentHashMap[LifecycleId, LifecycleTrace]()
-  private lazy val coordinates     = ConcurrentHashMap[CommandId, TraceCoordinates]()
-  private lazy val commands        = ConcurrentHashMap[CommandId, RuntimeTraceOperation.Active]()
-  private lazy val commandOwners   = ConcurrentHashMap[CommandId, LifecycleId]()
-  private lazy val turns           = ConcurrentHashMap[TurnId, RuntimeTraceOperation.Active]()
-  private lazy val turnOwners      = ConcurrentHashMap[TurnId, LifecycleId]()
-  private lazy val pendingInternal =
+  private val diagnosticsEnabled     = diagnostic.session.nonEmpty
+  private lazy val lifecycles        = ConcurrentHashMap[LifecycleId, LifecycleTrace]()
+  private lazy val coordinates       = ConcurrentHashMap[CommandId, TraceCoordinates]()
+  private lazy val commands          = ConcurrentHashMap[CommandId, RuntimeTraceOperation.Active]()
+  private lazy val commandOwners     = ConcurrentHashMap[CommandId, LifecycleId]()
+  private lazy val turns             = ConcurrentHashMap[TurnId, RuntimeTraceOperation.Active]()
+  private lazy val turnOwners        = ConcurrentHashMap[TurnId, LifecycleId]()
+  private lazy val lifecycleFailures = ConcurrentHashMap[LifecycleId, RuntimeFailure]()
+  private lazy val pendingInternal   =
     ConcurrentHashMap[LifecycleId, RuntimeTraceOperation.Active]()
   private lazy val frameGate     = Object()
   private lazy val pendingFrames = java.util.IdentityHashMap[AnyRef, PendingFrame]()
 
   def emit(event: RuntimeEvent): UIO[Unit] =
     sink(event).catchAllCause(_ => ZIO.unit) *>
-      (if diagnosticsEnabled then traceEvent(event) else ZIO.unit)
+      (if diagnosticsEnabled then traceEvent(event) else ZIO.unit) *>
+      observeLifecycleEvent(event)
+
+  def observeLifecycle(event: LifecycleEvent): UIO[Unit] =
+    lifecycleObserver.safely(event)
+
+  def withLifecycleObserver(observer: LifecycleObserver): RuntimeObserver =
+    new RuntimeObserver(sink, diagnostic, observer)
 
   def registerLifecycle(
     lifecycle: LifecycleId,
@@ -359,6 +376,7 @@ final private[scalive] class RuntimeObserver private (
       val _ = lifecycles.put(lifecycle, LifecycleTrace(topic, modelValue))
 
   def unregisterLifecycle(lifecycle: LifecycleId): Unit =
+    val _ = lifecycleFailures.remove(lifecycle)
     if diagnosticsEnabled then
       val _ = lifecycles.remove(lifecycle)
       val _ = pendingInternal.remove(lifecycle)
@@ -560,7 +578,7 @@ final private[scalive] class RuntimeObserver private (
 
   private def traceEvent(event: RuntimeEvent): UIO[Unit] =
     event match
-      case RuntimeEvent.CommandAccepted(correlation, kind, initiator, _) =>
+      case RuntimeEvent.CommandAccepted(correlation, kind, initiator, _, _) =>
         ensureCommand(correlation, kind, initiator)
       case RuntimeEvent.TurnStarted(correlation, _, _) =>
         bindTurn(correlation) *>
@@ -584,6 +602,10 @@ final private[scalive] class RuntimeObserver private (
       case RuntimeEvent.TurnFailed(correlation, failure) =>
         withOperation(correlation)(
           _.event(RuntimeTraceStage.Crash, s"Runtime operation failed at $failure")
+        ).ensuring(finish(correlation))
+      case RuntimeEvent.SessionFailed(correlation, failure) =>
+        withOperation(correlation)(
+          _.event(RuntimeTraceStage.Crash, s"Runtime session failed at $failure")
         ).ensuring(finish(correlation))
       case RuntimeEvent.SessionTerminated(correlation, terminal) =>
         traceTermination(correlation, terminal)
@@ -638,12 +660,43 @@ final private[scalive] class RuntimeObserver private (
     correlation: RuntimeCorrelation,
     terminal: RuntimeTerminal
   ): UIO[Unit] = terminal match
-    case RuntimeTerminal.Crashed =>
+    case RuntimeTerminal.Crashed(_) =>
       withOperation(correlation)(
         _.event(RuntimeTraceStage.Crash, "Runtime session crashed")
       ).ensuring(finish(correlation))
-    case RuntimeTerminal.Redirected => ZIO.unit
-    case RuntimeTerminal.Closed     => traceLeave(correlation)
+    case RuntimeTerminal.Redirected      => ZIO.unit
+    case RuntimeTerminal.Closed          => traceLeave(correlation)
+    case RuntimeTerminal.Disconnected(_) => traceLeave(correlation)
+
+  private def observeLifecycleEvent(event: RuntimeEvent): UIO[Unit] = event match
+    case RuntimeEvent.CommandAccepted(correlation, _, _, depth, capacity) =>
+      observeLifecycle(
+        LifecycleEvent.QueuePressure(
+          RuntimeObserver.connected(correlation),
+          LifecycleQueue.KernelMailbox,
+          depth,
+          capacity,
+          LifecycleQueueStatus.Sampled
+        )
+      )
+    case RuntimeEvent.SessionFailed(correlation, failure) =>
+      ZIO.succeed(lifecycleFailures.putIfAbsent(correlation.lifecycle, failure)).unit
+    case RuntimeEvent.SessionTerminated(correlation, terminal) =>
+      val reason = terminal match
+        case RuntimeTerminal.Crashed(failure) =>
+          LifecycleTerminationReason.Failed(RuntimeObserver.lifecycleFailure(failure))
+        case RuntimeTerminal.Closed =>
+          Option(lifecycleFailures.remove(correlation.lifecycle))
+            .fold[LifecycleTerminationReason](LifecycleTerminationReason.Closed)(failure =>
+              LifecycleTerminationReason.Failed(RuntimeObserver.lifecycleFailure(failure))
+            )
+        case RuntimeTerminal.Redirected           => LifecycleTerminationReason.Redirected
+        case RuntimeTerminal.Disconnected(reason) =>
+          LifecycleTerminationReason.Disconnected(reason)
+      observeLifecycle(
+        LifecycleEvent.LifecycleTerminated(RuntimeObserver.connected(correlation), reason)
+      )
+    case _ => ZIO.unit
 
   private def traceLeave(correlation: RuntimeCorrelation): UIO[Unit] =
     Option(lifecycles.get(correlation.lifecycle)) match
@@ -741,8 +794,68 @@ private[scalive] object RuntimeObserver:
   def fromFunction(emitEvent: RuntimeEvent => UIO[Unit]): RuntimeObserver =
     withDiagnostic(emitEvent, RuntimeDiagnostic.Disabled)
 
+  def withLifecycleObserver(observer: LifecycleObserver): RuntimeObserver =
+    new RuntimeObserver(logEvent, RuntimeDiagnostic.Disabled, observer)
+
   def withDiagnostic(
     emitEvent: RuntimeEvent => UIO[Unit],
-    diagnostic: RuntimeDiagnostic
+    diagnostic: RuntimeDiagnostic,
+    lifecycleObserver: LifecycleObserver = LifecycleObserver.none
   ): RuntimeObserver =
-    new RuntimeObserver(emitEvent, diagnostic)
+    new RuntimeObserver(emitEvent, diagnostic, lifecycleObserver)
+
+  def connected(correlation: RuntimeCorrelation): ConnectedLifecycleContext =
+    ConnectedLifecycleContext(
+      correlation.connection.value,
+      correlation.lifecycle.value,
+      correlation.epoch.value
+    )
+
+  def lifecycleFailure(failure: RuntimeFailure): LifecycleFailure = failure match
+    case RuntimeFailure.Stage(stage) => LifecycleFailure.Stage(lifecycleStage(stage))
+    case RuntimeFailure.CommitDefect => LifecycleFailure.Stage(LifecycleFailureStage.Commit)
+    case RuntimeFailure.NavigationTimeout | RuntimeFailure.NavigationRedirectOverflow |
+        RuntimeFailure.NavigationDeferredOverflow =>
+      LifecycleFailure.Stage(LifecycleFailureStage.Navigation)
+    case RuntimeFailure.MailboxSaturated => LifecycleFailure.MailboxSaturated
+    case RuntimeFailure.IngressSaturated => LifecycleFailure.IngressSaturated
+    case RuntimeFailure.Writer           => LifecycleFailure.Stage(LifecycleFailureStage.Writer)
+    case RuntimeFailure.UploadEntry      => LifecycleFailure.Stage(LifecycleFailureStage.Upload)
+    case RuntimeFailure.Protocol | RuntimeFailure.RuntimeDefect =>
+      LifecycleFailure.Stage(LifecycleFailureStage.Runtime)
+    case RuntimeFailure.Cleanup => LifecycleFailure.Stage(LifecycleFailureStage.Cleanup)
+
+  def lifecycleStage(stage: SessionStage): LifecycleFailureStage = stage match
+    case SessionStage.BootstrapHandler     => LifecycleFailureStage.Handler
+    case SessionStage.Mount                => LifecycleFailureStage.Mount
+    case SessionStage.ConnectedTurnGuard   => LifecycleFailureStage.ConnectedTurnGuard
+    case SessionStage.Handler              => LifecycleFailureStage.Handler
+    case SessionStage.ResourcePreparation  => LifecycleFailureStage.ResourcePreparation
+    case SessionStage.TopologyPreparation  => LifecycleFailureStage.TopologyPreparation
+    case SessionStage.Render               => LifecycleFailureStage.Render
+    case SessionStage.OutputReservation    => LifecycleFailureStage.OutputReservation
+    case SessionStage.AfterRender          => LifecycleFailureStage.AfterRender
+    case SessionStage.Validation           => LifecycleFailureStage.Validation
+    case SessionStage.Identity             => LifecycleFailureStage.Identity
+    case SessionStage.Retirement           => LifecycleFailureStage.Retirement
+    case SessionStage.ComponentMount       => LifecycleFailureStage.ComponentMount
+    case SessionStage.ComponentUpdate      => LifecycleFailureStage.ComponentUpdate
+    case SessionStage.ComponentMessage     => LifecycleFailureStage.ComponentMessage
+    case SessionStage.ComponentAsync       => LifecycleFailureStage.ComponentAsync
+    case SessionStage.ComponentAfterRender => LifecycleFailureStage.ComponentAfterRender
+
+  def lifecycleTurnKind(kind: RuntimeCommandKind): LifecycleTurnKind = kind match
+    case RuntimeCommandKind.ClientEvent          => LifecycleTurnKind.BrowserEvent
+    case RuntimeCommandKind.ComponentClientEvent => LifecycleTurnKind.ComponentBrowserEvent
+    case RuntimeCommandKind.Message              => LifecycleTurnKind.Message
+    case RuntimeCommandKind.AsyncCompletion | RuntimeCommandKind.ManagedAsync =>
+      LifecycleTurnKind.AsyncCompletion
+    case RuntimeCommandKind.ManagedSubscription | RuntimeCommandKind.ManagedSubscriptionEnded =>
+      LifecycleTurnKind.Subscription
+    case RuntimeCommandKind.ComponentMessage | RuntimeCommandKind.ComponentAsyncCompletion =>
+      LifecycleTurnKind.ComponentMessage
+    case RuntimeCommandKind.ComponentUpdate => LifecycleTurnKind.ComponentUpdate
+    case RuntimeCommandKind.Upload          => LifecycleTurnKind.Upload
+    case RuntimeCommandKind.ParamsPatch     => LifecycleTurnKind.ParamsPatch
+    case RuntimeCommandKind.Internal        => LifecycleTurnKind.Internal
+end RuntimeObserver

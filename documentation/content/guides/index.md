@@ -84,7 +84,9 @@ expects so you can also enter directly from search or the API reference.
 
 ### Assets And Operations {#assets-and-operations}
 
-- [Configuration](configuration.md) configures transport security and separates
-  Scalive settings from application and ZIO HTTP settings.
+- [Configuration](configuration.md) configures transport security, route-level
+  lifecycle observation, and setting ownership.
+- [Lifecycle observability](lifecycle-observability.md) publishes fixed ZIO
+  metrics and defines safe logging, tracing, labels, and coverage boundaries.
 - [Deployment](deployment.md) packages and operates a Scalive JVM application
   behind HTTPS and a WebSocket-capable edge.

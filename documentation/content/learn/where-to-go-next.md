@@ -28,7 +28,8 @@ the task your application needs:
 - **Integrate browser APIs:** [browser commands, events, and hooks](../guides/browser-integration.md).
 - **Verify and operate:** [testing](../guides/testing.md),
   [troubleshooting](../guides/troubleshooting.md),
-  [configuration](../guides/configuration.md), and
+  [configuration](../guides/configuration.md),
+  [lifecycle observability](../guides/lifecycle-observability.md), and
   [deployment](../guides/deployment.md).
 
 The [Guides index](../guides/index.md#solve-a-task) provides the same complete

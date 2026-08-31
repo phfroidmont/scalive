@@ -34,3 +34,9 @@ Lifecycle capabilities include
 non-message acquisition and finalization during connected mount. The
 [lifecycle-owned work guide](../guides/async-work-and-subscriptions.md#choose-the-resource-by-shape)
 compares it with managed async tasks and subscriptions.
+
+Route-wide operational capabilities include
+@:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ and the
+@:apiSymbol(object:scalive.LifecycleMetrics)`LifecycleMetrics`@:@ adapter. The
+[lifecycle observability guide](../guides/lifecycle-observability.md#choose-the-observation-boundary)
+defines their coverage and fixed metric contract.

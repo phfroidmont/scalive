@@ -1,7 +1,7 @@
 {%
 title = "Deployment"
 description = "Build and operate a Scalive JVM application behind HTTPS and a WebSocket-capable edge."
-order = 72
+order = 73
 section = guides
 group = "Assets and operations"
 %}
@@ -182,11 +182,12 @@ active WebSockets do not migrate to another process; clients reconnect and
 mount fresh state. Keep acquisition and finalization bounded so lifecycle
 cleanup fits within the platform's termination grace period.
 
-Runtime code emits selected lifecycle failures and diagnostics through ZIO
-logging. Scalive does not currently expose a complete metrics, tracing,
-telemetry, or access-log API. Configure request logging and instrumentation in
-the application and edge, avoid recording credentials or signed values, and add
-domain and dependency metrics where they are actionable.
+Scalive exposes structured lifecycle events and a fixed, low-cardinality ZIO
+Metrics adapter for LiveView operations. Configure it through
+[Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).
+Lifecycle observation does not replace request metrics, access logs,
+infrastructure telemetry, or application-domain metrics. Configure those at the
+application and edge, and avoid recording credentials or signed values.
 
 ## Verify The Deployment {#verify-the-deployment}
 
@@ -201,7 +202,9 @@ Before promoting an instance, verify its public URL end to end:
   paths with the intended cache policy;
 - old immutable outputs remain available for active clients and dynamic imports;
 - liveness, readiness, termination, and reconnect behavior work under the
-  platform's actual proxy and process signals; and
+  platform's actual proxy and process signals;
+- the configured metrics connector exports a disconnected render, join, and
+  connected mount from a real browser session; and
 - a browser can reconnect through another replica without losing state the
   application promises to preserve.
 
@@ -211,6 +214,8 @@ Before promoting an instance, verify its public URL end to end:
   exact framework and application-owned settings.
 - Use [Client setup and static assets](static-assets-and-client-setup.md) for
   bundle, versioning, deployment-manifest, and cache behavior.
+- Configure and verify operation metrics with
+  [Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).
 - Use [Testing LiveViews](testing.md#test-in-a-browser) to exercise the deployed
   browser and transport boundary.
 - Use [Troubleshooting](troubleshooting.md#diagnose-socket-connections) for asset,

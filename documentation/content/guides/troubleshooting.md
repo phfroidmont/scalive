@@ -35,6 +35,27 @@ subscriptions and other connection-only effects to the
 @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@; persist
 state outside the @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ when it must survive reconnects or process restarts.
 
+## Use Lifecycle Metrics To Narrow The Failure {#use-lifecycle-metrics}
+
+When the application has enabled the built-in adapter from
+[Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics),
+start with the metric matching the boundary that failed:
+
+| Symptom | Metrics to inspect | Interpretation |
+| --- | --- | --- |
+| Initial HTML fails or is slow | `scalive_disconnected_render_total`, `scalive_disconnected_render_duration_seconds`, `scalive_mount_total{phase="disconnected"}` | Separate disconnected mount failures from later render stages. |
+| WebSocket reaches Scalive but does not join | `scalive_join_total{outcome="rejected"}`, `scalive_join_duration_seconds` | Inspect `target`, `failure`, and `stage`. An HTTP 403 Origin rejection happens before lifecycle observation and does not increment this metric. |
+| A joined interaction fails | `scalive_turn_total{outcome="failed"}`, `scalive_handler_failures_total` | Group by `kind`, `failure`, and `stage`; one handler failure appears in both families. |
+| Clients repeatedly reconnect | `scalive_join_total`, `scalive_lifecycle_terminations_total` | Compare positive `reconnect` or `retry` labels with termination reasons. A `false` reconnect label only means no positive valid client counter was observed. |
+| Work is rejected under load | `scalive_queue_saturation_total`, `scalive_queue_depth` | Group by `queue`; use depth distributions to distinguish a sustained backlog from isolated saturation. |
+| A connected lifecycle stops unexpectedly | `scalive_lifecycle_terminations_total` | Inspect `reason`, `failure`, and `stage`, then correlate the time window with application and edge logs. |
+
+These families observe nested boundaries and are not independent incident
+counts. Do not add handler, turn, mount, render, and join failures together.
+Metrics contain stable classifications rather than exception messages or
+runtime IDs, so use redacted application logs or traces for request-specific
+correlation.
+
 ## Diagnose Startup Failures {#diagnose-startup-failures}
 
 Check the startup path in order:
@@ -201,8 +222,7 @@ Current operational and diagnostic limits include:
 
 - no long-poll transport fallback;
 - connected server-side testing does not cross the real browser DOM boundary;
-- no complete telemetry or observability API, although selected runtime branches
-  log warnings and errors;
+- lifecycle observation does not replace endpoint HTTP or infrastructure metrics;
 - no reason-specific log entry for a rejected WebSocket Origin;
 - untrusted JSON connect params, with only partial typed server-derived connect
   info;
@@ -220,4 +240,6 @@ application's requirements.
 
 - Recheck browser and asset wiring in [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
 - Add evidence at the failing boundary with [Testing LiveViews](testing.md#choose-the-test-boundary).
+- Configure and interpret operation metrics with
+  [Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).
 - Resolve missing startup dependencies with [Services and dependency injection](services-and-zlayer-injection.md#provide-services-at-startup).

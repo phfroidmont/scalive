@@ -10,6 +10,7 @@ import zio.test.*
 import scalive.*
 import scalive.render.*
 import scalive.runtime.contracts.CommandId
+import scalive.runtime.kernel.RuntimeObserver
 
 object RootConnectionSpec extends ZIOSpecDefault:
   private val config = ConnectionConfig.make(4, 4, 4, 4, 4).toOption.get
@@ -31,7 +32,17 @@ object RootConnectionSpec extends ZIOSpecDefault:
         for
           mounts  <- Ref.make(0)
           outputs <- Queue.unbounded[ConnectionOutput]
-          connection <- RootConnection.start(config, metadata, Counter(mounts), outputs.offer(_).unit)
+          events  <- Ref.make(Vector.empty[LifecycleEvent])
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          connection <- RootConnection.start(
+                          config,
+                          metadata,
+                          Counter(mounts),
+                          outputs.offer(_).unit,
+                          observer = observer
+                        )
           joined     <- outputs.take
           binding = joined match
                       case ConnectionOutput.Joined(RenderDelta.Replace(tree), _) =>
@@ -43,14 +54,43 @@ object RootConnectionSpec extends ZIOSpecDefault:
           _       <- connection.submitEvent(command, binding, BindingPayload.Params(Map.empty))
           reply   <- outputs.take
           count   <- mounts.get
+          observed <- events.get
+          mountEvents = observed.collect { case event: LifecycleEvent.MountSucceeded => event }
         yield assertTrue(
           count == 1,
+          mountEvents.size == 1,
+          mountEvents.head.durationNanos >= 0L,
+          mountEvents.head.mount.isInstanceOf[LifecycleMount.Connected],
           joined match
             case ConnectionOutput.Joined(_, effects) => effects.pageTitle.isEmpty
             case _                                   => false,
           reply match
             case ConnectionOutput.Reply(`command`, _, _) => true
             case _                                    => false
+        )
+      }
+    },
+    test("connected mount failures retain timing and failure stage") {
+      ZIO.scoped {
+        object Broken extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): Task[Unit] = ZIO.fail(Exception("mount failed"))
+          def view(model: Signal[Unit])             = div()
+
+        for
+          events <- Ref.make(Vector.empty[LifecycleEvent])
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          result <- RootConnection
+                      .start(config, metadata, Broken, _ => ZIO.unit, observer = observer).either
+          observed <- events.get
+          failures = observed.collect { case event: LifecycleEvent.MountFailed => event }
+        yield assertTrue(
+          result.isLeft,
+          failures.size == 1,
+          failures.head.durationNanos >= 0L,
+          failures.head.error.failure ==
+            LifecycleFailure.Stage(LifecycleFailureStage.Mount)
         )
       }
     },
@@ -143,9 +183,77 @@ object RootConnectionSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           mounts <- Ref.make(0)
+          events <- Ref.make(Vector.empty[LifecycleEvent])
           boom = RuntimeException("sink failed")
-          result <- RootConnection.start(config, metadata, Counter(mounts), _ => ZIO.fail(boom)).either
-        yield assertTrue(result == Left(ConnectionError.SinkFailed(boom)))
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          result <- RootConnection
+                      .start(
+                        config,
+                        metadata,
+                        Counter(mounts),
+                        _ => ZIO.fail(boom),
+                        observer = observer
+                      ).either
+          observed <- events.get
+          terminations = observed.collect {
+                           case event: LifecycleEvent.LifecycleTerminated => event.reason
+                         }
+        yield assertTrue(
+          result == Left(ConnectionError.SinkFailed(boom)),
+          terminations == Vector(
+            LifecycleTerminationReason.Failed(
+              LifecycleFailure.Stage(LifecycleFailureStage.Writer)
+            )
+          )
+        )
+      }
+    },
+    test("closing after an in-flight writer failure preserves the failure reason") {
+      ZIO.scoped {
+        for
+          mounts  <- Ref.make(0)
+          writes  <- Ref.make(0)
+          outputs <- Queue.unbounded[ConnectionOutput]
+          events  <- Ref.make(Vector.empty[LifecycleEvent])
+          boom = RuntimeException("sink failed")
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          connection <- RootConnection.start(
+                          config,
+                          metadata,
+                          Counter(mounts),
+                          output =>
+                            writes.updateAndGet(_ + 1).flatMap {
+                              case 1 => outputs.offer(output).unit
+                              case _ => ZIO.fail(boom)
+                            },
+                          observer = observer
+                        )
+          joined    <- outputs.take
+          submitted <- connection
+                         .submitEvent(
+                           CommandId.fresh().toOption.get,
+                           bindingFrom(joined),
+                           BindingPayload.Params(Map.empty)
+                         ).either.fork
+          writerFailure <- connection.awaitWriterFailure
+          _             <- connection.close
+          _             <- submitted.await
+          observed      <- events.get
+          terminations = observed.collect {
+                           case event: LifecycleEvent.LifecycleTerminated => event.reason
+                         }
+        yield assertTrue(
+          writerFailure == SerialWriter.Error.WriteFailed(boom),
+          terminations == Vector(
+            LifecycleTerminationReason.Failed(
+              LifecycleFailure.Stage(LifecycleFailureStage.Writer)
+            )
+          )
+        )
       }
     },
     test("a failure remains observable after the connection has fully closed") {
@@ -1091,13 +1199,23 @@ object RootConnectionSpec extends ZIOSpecDefault:
           entered <- Promise.make[Nothing, Unit]
           release <- Promise.make[Nothing, Unit]
           outputs <- Queue.unbounded[ConnectionOutput]
+          events  <- Ref.make(Vector.empty[LifecycleEvent])
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
           view = new LiveView[Int, Int]:
                    def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
                    def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      message => entered.succeed(()).unit *> release.await.as(model + message)
                    def view(model: Signal[Int]): HtmlElement[Int] =
                      button(on.click(1), model.map(_.toString))
-          connection <- RootConnection.start(smallConfig, metadata, view, outputs.offer(_).unit)
+          connection <- RootConnection.start(
+                          smallConfig,
+                          metadata,
+                          view,
+                          outputs.offer(_).unit,
+                          observer = observer
+                        )
           joined     <- outputs.take
           binding = bindingFrom(joined)
           firstCommand  = CommandId.fresh().toOption.get
@@ -1113,9 +1231,26 @@ object RootConnectionSpec extends ZIOSpecDefault:
                          .submitEvent(thirdCommand, binding, BindingPayload.Params(Map.empty)).either
           terminal <- connection.awaitFailure
           _        <- release.succeed(()) *> first.await *> second.await
+          _        <- connection.awaitClosed
+          observed <- events.get.repeatUntil(
+                        _.exists(_.isInstanceOf[LifecycleEvent.LifecycleTerminated])
+                      )
+          pressure = observed.collect { case event: LifecycleEvent.QueuePressure => event }
+          terminations = observed.collect {
+                           case event: LifecycleEvent.LifecycleTerminated => event.reason
+                         }
         yield assertTrue(
           saturated == Left(ConnectionError.IngressSaturated(1)),
-          terminal == ConnectionError.IngressSaturated(1)
+          terminal == ConnectionError.IngressSaturated(1),
+          pressure.exists(event =>
+            event.queue == LifecycleQueue.ConnectionPendingCommands &&
+              event.status == LifecycleQueueStatus.Saturated &&
+              event.depth == 2 &&
+              event.capacity == 2
+          ),
+          terminations == Vector(
+            LifecycleTerminationReason.Failed(LifecycleFailure.IngressSaturated)
+          )
         )
       }
     },

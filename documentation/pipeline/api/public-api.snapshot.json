@@ -122,6 +122,18 @@
       ]
     },
     {
+      "id" : "class:scalive.ConnectedLifecycleContext",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ConnectedLifecycleContext",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.ConnectedLifecycleContext:34d64ed209898ff7",
+          "signature" : "class ConnectedLifecycleContext(connectionId: Long, lifecycleId: Long, epoch: Long)"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.CookiePolicy",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.CookiePolicy",
@@ -418,6 +430,30 @@
         {
           "id" : "class:scalive.KeyHtmlAttrBinding:098c3d354edcea81",
           "signature" : "class KeyHtmlAttrBinding(name: String, companionAttrs: Vector[Mod.Attr[Nothing]] = ...) extends HtmlAttrBinding"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LifecycleError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleError",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LifecycleError:e3e9279bea093f8b",
+          "signature" : "class LifecycleError(failure: LifecycleFailure, cause: Option[Throwable] = ...)"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LifecycleJoinAttempt",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleJoinAttempt",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LifecycleJoinAttempt:44ffe61497ed67ed",
+          "signature" : "class LifecycleJoinAttempt(mounts: Option[Long], attempts: Option[Long])"
         }
       ]
     },
@@ -4026,6 +4062,78 @@
       ]
     },
     {
+      "id" : "def:scalive.LifecycleEvent.name",
+      "ownerId" : "enum:scalive.LifecycleEvent",
+      "qualifiedName" : "scalive.LifecycleEvent.name",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleEvent.name:c85334720b0c1834",
+          "signature" : "def name: String"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LifecycleJoinAttempt.isReconnect",
+      "ownerId" : "class:scalive.LifecycleJoinAttempt",
+      "qualifiedName" : "scalive.LifecycleJoinAttempt.isReconnect",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleJoinAttempt.isReconnect:524361cc3d2996ab",
+          "signature" : "def isReconnect: Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LifecycleJoinAttempt.isRetry",
+      "ownerId" : "class:scalive.LifecycleJoinAttempt",
+      "qualifiedName" : "scalive.LifecycleJoinAttempt.isRetry",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleJoinAttempt.isRetry:19160f5eb35a3303",
+          "signature" : "def isRetry: Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LifecycleObserver.andThen",
+      "ownerId" : "trait:scalive.LifecycleObserver",
+      "qualifiedName" : "scalive.LifecycleObserver.andThen",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleObserver.andThen:65b042c292d42002",
+          "signature" : "def andThen(that: LifecycleObserver): LifecycleObserver"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LifecycleObserver.fromFunction",
+      "ownerId" : "object:scalive.LifecycleObserver",
+      "qualifiedName" : "scalive.LifecycleObserver.fromFunction",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleObserver.fromFunction:ef79ee4596008faa",
+          "signature" : "def fromFunction(consume: LifecycleEvent => zio.package.UIO[Unit]): LifecycleObserver"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LifecycleObserver.observe",
+      "ownerId" : "trait:scalive.LifecycleObserver",
+      "qualifiedName" : "scalive.LifecycleObserver.observe",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleObserver.observe:c0700960a9b55b5a",
+          "signature" : "def observe(event: LifecycleEvent): zio.package.UIO[Unit]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.Live.route",
       "ownerId" : "object:scalive.Live",
       "qualifiedName" : "scalive.Live.route",
@@ -7500,6 +7608,14 @@
           "signature" : "def routes[R](application: LiveApplication[R], config: ZioHttpConfig): zio.http.Routes[R, Nothing]"
         },
         {
+          "id" : "def:scalive.ZioHttp.routes:194a84756d2e018e",
+          "signature" : "def routes[R](application: LiveApplication[R], config: ZioHttpConfig, observer: LifecycleObserver): zio.http.Routes[R, Nothing]"
+        },
+        {
+          "id" : "def:scalive.ZioHttp.routes:64cae137ee1a0c72",
+          "signature" : "def routes[R](application: LiveApplication[R], security: LiveSecurity, observer: LifecycleObserver): zio.http.Routes[R, Nothing]"
+        },
+        {
           "id" : "def:scalive.ZioHttp.routes:e6d94d06af310e98",
           "signature" : "def routes[R](application: LiveApplication[R], security: LiveSecurity): zio.http.Routes[R, Nothing]"
         }
@@ -8622,6 +8738,114 @@
         {
           "id" : "enum:scalive.HttpFormDecoder.Error:4ed298ed0be3fc65",
           "signature" : "enum Error"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleEvent",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleEvent",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleEvent:bb96b3a172d5b2dc",
+          "signature" : "enum LifecycleEvent"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleFailure",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleFailure",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleFailure:99f17169328dba7f",
+          "signature" : "enum LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleFailureStage",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleFailureStage",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleFailureStage:6aa325e88313df6e",
+          "signature" : "enum LifecycleFailureStage"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleJoinTarget",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleJoinTarget",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleJoinTarget:339a66da8ab9d592",
+          "signature" : "enum LifecycleJoinTarget"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleMount",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleMount",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleMount:04dfe92dc3292cd1",
+          "signature" : "enum LifecycleMount"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleQueue",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleQueue",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleQueue:6df8b953aa3d45b2",
+          "signature" : "enum LifecycleQueue"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleQueueStatus",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleQueueStatus",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleQueueStatus:09ccbf018c398676",
+          "signature" : "enum LifecycleQueueStatus"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleTerminationReason",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleTerminationReason",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleTerminationReason:c485d66a40eabe77",
+          "signature" : "enum LifecycleTerminationReason"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LifecycleTurnKind",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleTurnKind",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LifecycleTurnKind:f4d37642fe206132",
+          "signature" : "enum LifecycleTurnKind"
         }
       ]
     },
@@ -13730,6 +13954,30 @@
       ]
     },
     {
+      "id" : "object:scalive.LifecycleMetrics",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleMetrics",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LifecycleMetrics:6e51b3b064d72b42",
+          "signature" : "object LifecycleMetrics"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.LifecycleObserver",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleObserver",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LifecycleObserver:33840a66e1c7cc19",
+          "signature" : "object LifecycleObserver"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.Live",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.Live",
@@ -14889,6 +15137,18 @@
         {
           "id" : "trait:scalive.LifecycleContext:fe0e60354cc9447e",
           "signature" : "trait LifecycleContext[+Connected]"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.LifecycleObserver",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleObserver",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LifecycleObserver:bcb6eb9d7d126ee6",
+          "signature" : "trait LifecycleObserver"
         }
       ]
     },
@@ -16381,6 +16641,42 @@
       ]
     },
     {
+      "id" : "val:scalive.ConnectedLifecycleContext.connectionId",
+      "ownerId" : "class:scalive.ConnectedLifecycleContext",
+      "qualifiedName" : "scalive.ConnectedLifecycleContext.connectionId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ConnectedLifecycleContext.connectionId:2d762016ac35bd58",
+          "signature" : "val connectionId: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ConnectedLifecycleContext.epoch",
+      "ownerId" : "class:scalive.ConnectedLifecycleContext",
+      "qualifiedName" : "scalive.ConnectedLifecycleContext.epoch",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ConnectedLifecycleContext.epoch:d4790288494fe1b5",
+          "signature" : "val epoch: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ConnectedLifecycleContext.lifecycleId",
+      "ownerId" : "class:scalive.ConnectedLifecycleContext",
+      "qualifiedName" : "scalive.ConnectedLifecycleContext.lifecycleId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ConnectedLifecycleContext.lifecycleId:3f4174a04e063d45",
+          "signature" : "val lifecycleId: Long"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.CookiePolicy.secure",
       "ownerId" : "class:scalive.CookiePolicy",
       "qualifiedName" : "scalive.CookiePolicy.secure",
@@ -17073,6 +17369,78 @@
         {
           "id" : "val:scalive.Key.Tab:e4fcd3913122fce8",
           "signature" : "val Tab: Key$package.Key"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleError.cause",
+      "ownerId" : "class:scalive.LifecycleError",
+      "qualifiedName" : "scalive.LifecycleError.cause",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleError.cause:25fa1e22755044bc",
+          "signature" : "val cause: Option[Throwable]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleError.failure",
+      "ownerId" : "class:scalive.LifecycleError",
+      "qualifiedName" : "scalive.LifecycleError.failure",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleError.failure:c8f233668886ecc0",
+          "signature" : "val failure: LifecycleFailure"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleJoinAttempt.attempts",
+      "ownerId" : "class:scalive.LifecycleJoinAttempt",
+      "qualifiedName" : "scalive.LifecycleJoinAttempt.attempts",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleJoinAttempt.attempts:e2fe97e2ae7c115e",
+          "signature" : "val attempts: Option[Long]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleJoinAttempt.mounts",
+      "ownerId" : "class:scalive.LifecycleJoinAttempt",
+      "qualifiedName" : "scalive.LifecycleJoinAttempt.mounts",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleJoinAttempt.mounts:b03d5a9311132556",
+          "signature" : "val mounts: Option[Long]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleMetrics.observer",
+      "ownerId" : "object:scalive.LifecycleMetrics",
+      "qualifiedName" : "scalive.LifecycleMetrics.observer",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleMetrics.observer:87128e2d73ac6995",
+          "signature" : "val observer: LifecycleObserver"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleObserver.none",
+      "ownerId" : "object:scalive.LifecycleObserver",
+      "qualifiedName" : "scalive.LifecycleObserver.none",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleObserver.none:07e50a69be6cd33f",
+          "signature" : "val none: LifecycleObserver"
         }
       ]
     },

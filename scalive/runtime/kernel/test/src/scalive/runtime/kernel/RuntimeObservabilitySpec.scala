@@ -53,6 +53,176 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
         values == Vector("turn_started", "state_committed", "output_published")
       )
     },
+    test("public observer receives complete turn durations and queue samples") {
+      ZIO.scoped {
+        for
+          events <- Ref.make(Vector.empty[LifecycleEvent])
+          lifecycleObserver = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+          observer          = RuntimeObserver.withLifecycleObserver(lifecycleObserver)
+          program          <- ZIO.fromEither(RenderProgram.compile[String, String](model => div(model)))
+          outbound <- InMemoryOutboundReservations
+                        .make[SessionOutput](8).orDieWith(error =>
+                          IllegalStateException(error.toString)
+                        )
+          kernel <- SessionKernel.start(
+                      SessionConfig.make(4, 4).toOption.get,
+                      SessionLogic[String, String](
+                        bootstrap = ZIO.succeed(TurnDraft("ready")),
+                        handle = (_, message) => ZIO.succeed(TurnDraft(message))
+                      ),
+                      program,
+                      outbound,
+                      observer = observer
+                    )
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, "next"))
+          values <- events.get
+          turns = values.collect { case event: LifecycleEvent.TurnSucceeded => event }
+          queues = values.collect { case event: LifecycleEvent.QueuePressure => event }
+        yield assertTrue(
+          turns.map(_.kind) == Vector(LifecycleTurnKind.Bootstrap, LifecycleTurnKind.Message),
+          turns.forall(_.durationNanos >= 0L),
+          queues.exists(event =>
+            event.queue == LifecycleQueue.KernelMailbox &&
+              event.status == LifecycleQueueStatus.Sampled &&
+              event.capacity == 4
+          )
+        )
+      }
+    },
+    test("public observer reports handler failures and terminal failure reasons once") {
+      ZIO.scoped {
+        for
+          events <- Ref.make(Vector.empty[LifecycleEvent])
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          program <- ZIO.fromEither(RenderProgram.compile[String, String](model => div(model)))
+          outbound <- InMemoryOutboundReservations
+                        .make[SessionOutput](8).orDieWith(error =>
+                          IllegalStateException(error.toString)
+                        )
+          kernel <- SessionKernel.start(
+                      SessionConfig.make(4, 4).toOption.get,
+                      SessionLogic[String, String](
+                        bootstrap = ZIO.succeed(TurnDraft("ready")),
+                        handle = (_, _) => ZIO.fail(Exception("handler failed"))
+                      ),
+                      program,
+                      outbound,
+                      observer = observer
+                    )
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, "next")).either
+          _      <- kernel.awaitTermination
+          values <- events.get.repeatUntil(
+                      _.exists(_.isInstanceOf[LifecycleEvent.LifecycleTerminated])
+                    )
+          handlers = values.collect { case event: LifecycleEvent.HandlerFailed => event }
+          turns = values.collect { case event: LifecycleEvent.TurnFailed => event }
+          terminated = values.collect { case event: LifecycleEvent.LifecycleTerminated => event }
+        yield assertTrue(
+          handlers.size == 1,
+          handlers.head.kind == LifecycleTurnKind.Message,
+          handlers.head.error.failure ==
+            LifecycleFailure.Stage(LifecycleFailureStage.Handler),
+          turns.size == 1,
+          turns.head.kind == LifecycleTurnKind.Message,
+          turns.head.error.failure == LifecycleFailure.Stage(LifecycleFailureStage.Handler),
+          terminated.map(_.reason) == Vector(
+            LifecycleTerminationReason.Failed(
+              LifecycleFailure.Stage(LifecycleFailureStage.Handler)
+            )
+          )
+        )
+      }
+    },
+    test("public observer reports a failed bootstrap turn exactly once") {
+      ZIO.scoped {
+        for
+          events <- Ref.make(Vector.empty[LifecycleEvent])
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          program <- ZIO.fromEither(RenderProgram.compile[String, String](model => div(model)))
+          outbound <- InMemoryOutboundReservations
+                        .make[SessionOutput](8).orDieWith(error =>
+                          IllegalStateException(error.toString)
+                        )
+          started <- SessionKernel
+                       .start(
+                         SessionConfig.make(4, 4).toOption.get,
+                         SessionLogic[String, String](
+                           bootstrap = ZIO.fail(Exception("bootstrap failed")),
+                           handle = (_, message) => ZIO.succeed(TurnDraft(message))
+                         ),
+                         program,
+                         outbound,
+                         observer = observer
+                       ).either
+          values <- events.get
+          turns = values.collect { case event: LifecycleEvent.TurnFailed => event }
+        yield assertTrue(
+          started.isLeft,
+          turns.size == 1,
+          turns.head.kind == LifecycleTurnKind.Bootstrap,
+          turns.head.commandId.isEmpty,
+          turns.head.error.failure == LifecycleFailure.Stage(LifecycleFailureStage.Handler)
+        )
+      }
+    },
+    test("public observer reports interceptor failures as failed turns") {
+      ZIO.scoped {
+        for
+          events <- Ref.make(Vector.empty[LifecycleEvent])
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          program <- ZIO.fromEither(RenderProgram.compile[String, String](model => div(model)))
+          outbound <- InMemoryOutboundReservations
+                        .make[SessionOutput](8).orDieWith(error =>
+                          IllegalStateException(error.toString)
+                        )
+          kernel <- SessionKernel.start(
+                      SessionConfig.make(4, 4).toOption.get,
+                      SessionLogic[String, String](
+                        bootstrap = ZIO.succeed(TurnDraft("ready")),
+                        handle = (_, message) => ZIO.succeed(TurnDraft(message)),
+                        interceptClientEvent = (_, _) => ZIO.fail(Exception("interceptor failed"))
+                      ),
+                      program,
+                      outbound,
+                      observer = observer
+                    )
+          submitted <- kernel
+                         .submit(
+                           SessionCommand.ClientEvent(
+                             kernel.epoch,
+                             BindingId.fromEncoded("missing"),
+                             BindingPayload.Params(Map.empty),
+                             Some(
+                               LiveEvent(
+                                 kind = "click",
+                                 bindingId = "missing",
+                                 value = Json.Obj(),
+                                 params = Map.empty,
+                                 cid = None,
+                                 meta = None
+                               )
+                             )
+                           )
+                         ).either
+          _      <- kernel.awaitTermination
+          values <- events.get
+          handlers = values.collect { case event: LifecycleEvent.HandlerFailed => event }
+          turns    = values.collect { case event: LifecycleEvent.TurnFailed => event }
+        yield assertTrue(
+          submitted.isLeft,
+          handlers.size == 1,
+          turns.size == 1,
+          turns.head.kind == LifecycleTurnKind.BrowserEvent,
+          turns.head.error.failure == LifecycleFailure.Stage(LifecycleFailureStage.Handler)
+        )
+      }
+    },
     test("kernel boundaries are ordered and redact application values") {
       ZIO.scoped {
         for
@@ -81,7 +251,7 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
           commandEvents = values.filter(_.context.command.nonEmpty)
           names         = commandEvents.map(_.name)
           descriptors = commandEvents.collect {
-                          case RuntimeEvent.CommandAccepted(_, kind, initiator, _) =>
+                           case RuntimeEvent.CommandAccepted(_, kind, initiator, _, _) =>
                             kind -> initiator
                           case RuntimeEvent.TurnStarted(_, kind, initiator) => kind -> initiator
                         }
@@ -206,7 +376,8 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
                  correlation,
                  RuntimeCommandKind.ClientEvent,
                  RuntimeInitiator.Browser,
-                 queueDepth = 0
+                 queueDepth = 0,
+                 queueCapacity = 4
                )
              )
         _ <- observer.emit(
@@ -341,9 +512,10 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
         _ <- observer.emit(
                RuntimeEvent.CommandAccepted(
                  correlation,
-                 RuntimeCommandKind.ClientEvent,
-                 RuntimeInitiator.Browser,
-                 queueDepth = 0
+                  RuntimeCommandKind.ClientEvent,
+                  RuntimeInitiator.Browser,
+                  queueDepth = 0,
+                  queueCapacity = 4
                )
              )
         _ <- observer.prepareOutput(correlation, output)
@@ -369,9 +541,10 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
         _ <- observer.emit(
                RuntimeEvent.CommandAccepted(
                  correlation,
-                 RuntimeCommandKind.ClientEvent,
-                 RuntimeInitiator.Browser,
-                 queueDepth = 0
+                  RuntimeCommandKind.ClientEvent,
+                  RuntimeInitiator.Browser,
+                  queueDepth = 0,
+                  queueCapacity = 4
                )
              )
         _ <- observer.prepareOutput(correlation, output)
@@ -406,7 +579,7 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
         _ <- observer.emit(
                RuntimeEvent.SessionTerminated(
                  correlation.copy(command = None, turn = None),
-                 RuntimeTerminal.Crashed
+                  RuntimeTerminal.Crashed(RuntimeFailure.RuntimeDefect)
                )
              )
         values <- records.get
@@ -440,9 +613,10 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
         _ <- observer.emit(
                RuntimeEvent.CommandAccepted(
                  correlation,
-                 RuntimeCommandKind.ClientEvent,
-                 RuntimeInitiator.Browser,
-                 queueDepth = 0
+                  RuntimeCommandKind.ClientEvent,
+                  RuntimeInitiator.Browser,
+                  queueDepth = 0,
+                  queueCapacity = 4
                )
              )
         _ <- observer.message(correlation, "secret")

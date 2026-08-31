@@ -1,6 +1,6 @@
 {%
 title = "Configuration"
-description = "Configure Scalive signing, token lifetime, cookies, WebSocket origins, routes, assets, and application-owned server settings."
+description = "Configure Scalive signing, token lifetime, cookies, WebSocket origins, routes, assets, lifecycle observation, and application-owned server settings."
 order = 71
 section = guides
 group = "Assets and operations"
@@ -146,6 +146,26 @@ Use [Client setup and static assets](static-assets-and-client-setup.md) for asse
 sources, versioned paths, deployment manifests, cache policy, and complete
 browser wiring.
 
+## Observe Lifecycle Operations {#observe-lifecycle-operations}
+
+Pass one @:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ as the
+third route argument. The built-in adapter records fixed, low-cardinality ZIO
+metrics for disconnected renders, joins, mounts, connected turns, failures,
+queue pressure, and lifecycle termination:
+
+```scala
+val liveRoutes = ZioHttp.routes(
+  application,
+  security,
+  LifecycleMetrics.observer
+)
+```
+
+Use [Lifecycle observability](lifecycle-observability.md#choose-the-observation-boundary)
+for safe custom observers, the complete metric and label contract, exporter
+verification, cardinality rules, and the boundary between lifecycle and endpoint
+instrumentation.
+
 ## Configure The Server Separately {#configure-the-server-separately}
 
 The application and ZIO HTTP own environment-variable names, bind address,
@@ -168,10 +188,10 @@ Load and validate all application settings once at startup, before
 ports, and absent configured assets should stop the process rather than leave a
 partially configured instance serving traffic.
 
-Scalive currently supplies no central setting for health routes, telemetry,
-cluster membership, shared LiveView state, or transport fallback. Add health and
-instrumentation as application routes and middleware. Scalive supports WebSocket
-transport only; deployment and scaling consequences are covered in
+Scalive supplies no central setting for health routes, cluster membership,
+shared LiveView state, or transport fallback. Add endpoint-level HTTP
+instrumentation as application middleware and use `LifecycleObserver` for
+LiveView operations. Scalive supports WebSocket transport only; deployment and scaling consequences are covered in
 [Deployment](deployment.md#put-an-http-edge-in-front).
 
 ## Related Tasks {#related-tasks}
@@ -180,5 +200,7 @@ transport only; deployment and scaling consequences are covered in
   to package and operate the application.
 - Use [Client setup and static assets](static-assets-and-client-setup.md) to
   configure browser, socket, and asset paths.
+- Publish and interpret LiveView metrics with
+  [Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).
 - Use [Troubleshooting](troubleshooting.md#diagnose-socket-connections) when the
   HTTP render succeeds but the WebSocket does not join.

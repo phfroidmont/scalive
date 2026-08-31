@@ -5,7 +5,7 @@ import zio.stream.ZStream
 import zio.test.*
 
 import scalive.*
-import scalive.runtime.kernel.SessionRejection
+import scalive.runtime.kernel.{RuntimeObserver, SessionRejection}
 
 object ManagedSubscriptionsSpec extends ZIOSpecDefault:
   private val config = ConnectionConfig.make(4, 4, 1, 4, 4).toOption.get
@@ -190,6 +190,10 @@ object ManagedSubscriptionsSpec extends ZIOSpecDefault:
           stopped    <- Promise.make[Nothing, Unit]
           outputCount <- Ref.make(0)
           retired     <- Promise.make[Nothing, Unit]
+          events      <- Ref.make(Vector.empty[LifecycleEvent])
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
           connection  <- RootConnection.start(
                            config,
                            metadata,
@@ -197,7 +201,8 @@ object ManagedSubscriptionsSpec extends ZIOSpecDefault:
                            _ =>
                              outputCount.updateAndGet(_ + 1).flatMap(count =>
                                retired.succeed(()).unit.when(count == 3).unit
-                             )
+                             ),
+                           observer = observer
                          )
           key         = SubscriptionKey("defect")
           broken      = (ZStream.fromZIO(started.succeed(()).unit) *> ZStream.dieMessage("broken"))
@@ -211,9 +216,17 @@ object ManagedSubscriptionsSpec extends ZIOSpecDefault:
                              SubscriptionDelivery.Lossless,
                              ZStream.succeed(Message.Value(3))
                            )
-                         ).either
-          model <- awaitModel(connection)(_.contains(3))
-        yield assertTrue(restarted.isRight, model == Vector(3))
+                          ).either
+          model  <- awaitModel(connection)(_.contains(3))
+          values <- events.get
+          failures = values.collect { case event: LifecycleEvent.SubscriptionFailed => event }
+        yield assertTrue(
+          restarted.isRight,
+          model == Vector(3),
+          failures.size == 1,
+          failures.head.delivery == SubscriptionDelivery.Lossless,
+          failures.head.error.failure == LifecycleFailure.SubscriptionDefect
+        )
       }
     }
   ) @@ TestAspect.timeout(10.seconds)

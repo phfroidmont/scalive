@@ -38,6 +38,8 @@ object ZioHttp:
   private[scalive] val DisconnectCloseCode = 1001
   private val secureRandom                 = SecureRandom()
 
+  private def monotonicNanos: UIO[Long] = ZIO.succeed(java.lang.System.nanoTime())
+
   private[scalive] trait RuntimeObserverFactory:
     def connect(request: Request): RuntimeObserver
 
@@ -110,28 +112,58 @@ object ZioHttp:
 
   /** Assembles the HTTP and websocket routes after synchronously validating the catalog. */
   def routes[R](application: LiveApplication[R], config: ZioHttpConfig): Routes[R, Nothing] =
-    routes(application, config, RuntimeObserverFactory.logging)
+    routes(application, config, LifecycleObserver.none)
+
+  /** Assembles routes and reports structured lifecycle events to `observer`. */
+  def routes[R](
+    application: LiveApplication[R],
+    config: ZioHttpConfig,
+    observer: LifecycleObserver
+  ): Routes[R, Nothing] =
+    routes(application, config, observer, RuntimeObserverFactory.logging)
 
   private[scalive] def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
     observerFactory: RuntimeObserverFactory
   ): Routes[R, Nothing] =
+    routes(application, config, LifecycleObserver.none, observerFactory)
+
+  private def routes[R](
+    application: LiveApplication[R],
+    config: ZioHttpConfig,
+    lifecycleObserver: LifecycleObserver,
+    observerFactory: RuntimeObserverFactory
+  ): Routes[R, Nothing] =
     val catalog     = validate(application)
-    val getRoutes   = catalog.map(_.getRoute(config))
-    val socketRoute = websocketRoute(application.socketPath, catalog, config, observerFactory)
+    val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver))
+    val socketRoute = websocketRoute(
+      application.socketPath,
+      catalog,
+      config,
+      lifecycleObserver,
+      observerFactory
+    )
     Routes.fromIterable(getRoutes :+ socketRoute)
 
   /** Assembles routes with the security value shared by Live and ordinary HTTP handlers. */
   def routes[R](application: LiveApplication[R], security: LiveSecurity): Routes[R, Nothing] =
     routes(application, security.config)
 
+  /** Assembles routes with shared security and structured lifecycle observation. */
+  def routes[R](
+    application: LiveApplication[R],
+    security: LiveSecurity,
+    observer: LifecycleObserver
+  ): Routes[R, Nothing] =
+    routes(application, security.config, observer)
+
   private[scalive] def routes[R](
     application: LiveApplication[R],
     security: LiveSecurity,
     observerFactory: RuntimeObserverFactory
   ): Routes[R, Nothing] =
-    routes(application, security.config, observerFactory)
+    routes(application, security.config, LifecycleObserver.none, observerFactory)
 
   private[scalive] def validate[R](application: LiveApplication[R]): Vector[CompiledRoute[R]] =
     val sessionNames = application.routes.collect { case session: LiveSession[?] => session.name }
@@ -222,9 +254,12 @@ object ZioHttp:
 
     final def matches(url: URL): Boolean = pathCodec.decode(url.path).isRight
 
-    final def getRoute(config: ZioHttpConfig): Route[R, Nothing] =
+    final def getRoute(
+      config: ZioHttpConfig,
+      observer: LifecycleObserver
+    ): Route[R, Nothing] =
       RoutePattern(Method.GET, pathCodec) -> handler { (path: PathParams, request: Request) =>
-        disconnected(path, request, config).catchAllCause { _ =>
+        disconnected(path, request, config, observer).catchAllCause { _ =>
           ZIO.logError("Disconnected LiveView GET failed") *>
             ZIO.succeed(Response.internalServerError)
         }
@@ -294,8 +329,12 @@ object ZioHttp:
     ): ZIO[R, Throwable, PreparedConnected[Msg, Model]] =
       prepareConnected(url, request, claims, Some(admission))
 
-    private def disconnected(path: PathParams, request: Request, config: ZioHttpConfig)
-      : ZIO[R, Nothing, Response] =
+    private def disconnected(
+      path: PathParams,
+      request: Request,
+      config: ZioHttpConfig,
+      observer: LifecycleObserver
+    ): ZIO[R, Nothing, Response] =
       disconnectedLifecycle(path, request).foldZIO(
         ZIO.succeed(_),
         (lifecycle, erasedContext, mountClaims, selectedRootLayout) =>
@@ -306,7 +345,8 @@ object ZioHttp:
             lifecycle,
             erasedContext,
             mountClaims,
-            selectedRootLayout
+            selectedRootLayout,
+            observer
           ).catchAllCause { cause =>
             ZIO.logErrorCause("Disconnected LiveView GET failed", cause) *>
               ZIO.succeed(
@@ -322,7 +362,8 @@ object ZioHttp:
       lifecycle: RootLifecycle[Msg, Model],
       erasedContext: Any,
       mountClaims: MountClaims,
-      selectedRootLayout: LiveRootLayout[PathParams, Any]
+      selectedRootLayout: LiveRootLayout[PathParams, Any],
+      observer: LifecycleObserver
     ): Task[Response] =
       for
         initialFlash <-
@@ -333,37 +374,81 @@ object ZioHttp:
                   .verifyFlash(config, cookie.content).orElseSucceed(Map.empty)
             )
         typedFlash = initialFlash.view.map((key, value) => FlashKind(key) -> value).toMap
-        turn            <- DisconnectedRootTurn.make(lifecycle.hooks, request.url, typedFlash)
-        mounted         <- lifecycle.mount(turn.mountContext)
-        mountNavigation <- turn.navigation
-        response        <- mountNavigation match
-                      case Some(navigation) =>
-                        disconnectedNavigationResponse(config, request, navigation)
-                      case None =>
-                        for
-                          prepared         <- lifecycle.prepareParams(request.url)
-                          model            <- turn.runParams(mounted, request.url, prepared)
-                          paramsNavigation <- turn.navigation
-                          response         <- paramsNavigation match
-                                        case Some(navigation) =>
-                                          disconnectedNavigationResponse(
-                                            config,
-                                            request,
-                                            navigation
-                                          )
-                                        case None =>
-                                          renderDisconnectedModel(
-                                            path,
-                                            request,
-                                            config,
-                                            lifecycle,
-                                            erasedContext,
-                                            mountClaims,
-                                            selectedRootLayout,
-                                            turn,
-                                            model
-                                          )
-                        yield response
+        turn          <- DisconnectedRootTurn.make(lifecycle.hooks, request.url, typedFlash)
+        renderStarted <- monotonicNanos
+        failureStage  <- Ref.make(LifecycleFailureStage.Mount)
+        outcome       <- (for
+                     mountStarted <- monotonicNanos
+                     mountExit    <- lifecycle.mount(turn.mountContext).exit
+                     mountEnded   <- monotonicNanos
+                     mount = LifecycleMount.Disconnected(turn.lifecycle.value)
+                     _ <- mountExit match
+                            case Exit.Success(_) =>
+                              observer.safely(
+                                LifecycleEvent.MountSucceeded(
+                                  mount,
+                                  math.max(0L, mountEnded - mountStarted)
+                                )
+                              )
+                            case Exit.Failure(cause) =>
+                              observer.safely(
+                                LifecycleEvent.MountFailed(
+                                  mount,
+                                  math.max(0L, mountEnded - mountStarted),
+                                  lifecycleError(LifecycleFailureStage.Mount, cause)
+                                )
+                              )
+                     mounted         <- ZIO.suspendSucceed(mountExit)
+                     _               <- failureStage.set(LifecycleFailureStage.Handler)
+                     mountNavigation <- turn.navigation
+                     response        <- mountNavigation match
+                                   case Some(navigation) =>
+                                     disconnectedNavigationResponse(config, request, navigation)
+                                   case None =>
+                                     for
+                                       prepared <- lifecycle.prepareParams(request.url)
+                                       model    <- turn.runParams(mounted, request.url, prepared)
+                                       paramsNavigation <- turn.navigation
+                                       response         <- paramsNavigation match
+                                                     case Some(navigation) =>
+                                                       disconnectedNavigationResponse(
+                                                         config,
+                                                         request,
+                                                         navigation
+                                                       )
+                                                     case None =>
+                                                       failureStage.set(
+                                                         LifecycleFailureStage.Render
+                                                       ) *> renderDisconnectedModel(
+                                                         path,
+                                                         request,
+                                                         config,
+                                                         lifecycle,
+                                                         erasedContext,
+                                                         mountClaims,
+                                                         selectedRootLayout,
+                                                         turn,
+                                                         model
+                                                       )
+                                     yield response
+                   yield response).exit
+        renderEnded <- monotonicNanos
+        duration = math.max(0L, renderEnded - renderStarted)
+        failedAt <- failureStage.get
+        _        <- outcome match
+               case Exit.Success(_) =>
+                 observer.safely(
+                   LifecycleEvent.DisconnectedRenderSucceeded(turn.lifecycle.value, duration)
+                 )
+               case Exit.Failure(cause) =>
+                 observer.safely(
+                   LifecycleEvent.DisconnectedRenderFailed(
+                     turn.lifecycle.value,
+                     duration,
+                     lifecycleError(failedAt, cause)
+                   )
+                 )
+        response <- ZIO.suspendSucceed(outcome)
       yield response
 
     private def renderDisconnectedModel(
@@ -1153,6 +1238,7 @@ object ZioHttp:
     socketPath: PathCodec[Unit],
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
+    lifecycleObserver: LifecycleObserver,
     observerFactory: RuntimeObserverFactory
   ): Route[R, Nothing] =
     val pattern = RoutePattern(Method.GET, socketPath / "websocket")
@@ -1166,8 +1252,8 @@ object ZioHttp:
       else
         val csrfCookieValue = request.cookie(CsrfCookieName).map(_.content)
         val csrfToken       = request.queryParam("_csrf_token")
-        val observer        = observerFactory.connect(request)
-        val socketHandler   = Handler.webSocket { channel =>
+        val observer = observerFactory.connect(request).withLifecycleObserver(lifecycleObserver)
+        val socketHandler = Handler.webSocket { channel =>
           ZIO
             .scoped(
               runSocket(channel, routes, config, request, csrfCookieValue, csrfToken, observer)
@@ -1363,26 +1449,66 @@ object ZioHttp:
                             case Right(PhoenixInbound.Heartbeat(joinRef, ref)) =>
                               writer.offer(PhoenixOutput.heartbeat(joinRef, ref))
                             case Right(PhoenixInbound.Join(joinRef, ref, topic, payload)) =>
-                              joinLifecycle(
-                                routes,
-                                config,
-                                csrfCookie,
-                                csrfToken,
-                                socketRequest,
-                                supervisor,
-                                joined,
-                                registration,
-                                activeAdmission,
-                                transportAdmission,
-                                termination.disconnectAfter,
-                                joinGate,
-                                observer,
-                                writer,
-                                joinRef,
-                                ref,
-                                topic,
-                                payload
-                              )
+                              ZIO.uninterruptibleMask { restore =>
+                                for
+                                  joinStarted    <- monotonicNanos
+                                  outcomeClaimed <- Ref.make(false)
+                                  nestedClaims   <-
+                                    ZioHttpSecurity
+                                      .verifyNestedJoin(config, payload.session).either
+                                  observedTarget <- Ref.make(
+                                                      nestedClaims.fold(
+                                                        _ => LifecycleJoinTarget.Root,
+                                                        _ => LifecycleJoinTarget.Nested
+                                                      )
+                                                    )
+                                  observedLifecycle <-
+                                    Ref.make(
+                                      nestedClaims.toOption.flatMap(_.childLifecycle)
+                                    )
+                                  _ <- restore(
+                                         joinLifecycle(
+                                           routes,
+                                           config,
+                                           csrfCookie,
+                                           csrfToken,
+                                           socketRequest,
+                                           supervisor,
+                                           joined,
+                                           registration,
+                                           activeAdmission,
+                                           transportAdmission,
+                                           termination.disconnectAfter,
+                                           joinGate,
+                                           observer,
+                                           writer,
+                                           joinStarted,
+                                           outcomeClaimed,
+                                           observedTarget,
+                                           observedLifecycle,
+                                           joinRef,
+                                           ref,
+                                           topic,
+                                           payload
+                                         )
+                                       ).onInterrupt(
+                                         observedTarget.get.zip(observedLifecycle.get).flatMap {
+                                           case (target, lifecycle) =>
+                                             observeJoinRejected(
+                                               observer,
+                                               supervisor,
+                                               lifecycle,
+                                               target,
+                                               lifecycleJoinAttempt(payload),
+                                               joinStarted,
+                                               None,
+                                               outcomeClaimed,
+                                               LifecycleFailure.Interrupted
+                                             )
+                                         }
+                                       )
+                                yield ()
+                              }
                             case Right(
                                   PhoenixInbound.UploadJoin(
                                     joinRef,
@@ -1526,6 +1652,75 @@ object ZioHttp:
     else if complete then Right(Some(bytes)) -> None
     else Right(None)                         -> Some(bytes)
 
+  private[scalive] def lifecycleJoinAttempt(join: RootJoin): LifecycleJoinAttempt =
+    def counter(name: String): Option[Long] =
+      join.params.get(name).flatMap {
+        case Json.Num(value) => scala.util.Try(value.longValueExact()).toOption.filter(_ >= 0L)
+        case _               => None
+      }
+
+    LifecycleJoinAttempt(counter("_mounts"), counter("_mount_attempts"))
+
+  private def observeJoinSucceeded(
+    observer: RuntimeObserver,
+    supervisor: ConnectionSupervisor,
+    connection: ConnectedLifecycle,
+    target: LifecycleJoinTarget,
+    attempt: LifecycleJoinAttempt,
+    started: Long,
+    outcomeClaimed: Ref[Boolean]
+  ): UIO[Unit] =
+    ZIO.uninterruptible {
+      outcomeClaimed.getAndSet(true).flatMap {
+        case true  => ZIO.unit
+        case false =>
+          monotonicNanos.flatMap(ended =>
+            observer.observeLifecycle(
+              LifecycleEvent.JoinSucceeded(
+                ConnectedLifecycleContext(
+                  supervisor.id.value,
+                  connection.lifecycle.value,
+                  connection.epoch.value
+                ),
+                target,
+                attempt,
+                math.max(0L, ended - started)
+              )
+            )
+          )
+      }
+    }
+
+  private def observeJoinRejected(
+    observer: RuntimeObserver,
+    supervisor: ConnectionSupervisor,
+    lifecycle: Option[LifecycleId],
+    target: LifecycleJoinTarget,
+    attempt: LifecycleJoinAttempt,
+    started: Long,
+    cause: Option[Throwable],
+    outcomeClaimed: Ref[Boolean],
+    failure: LifecycleFailure = LifecycleFailure.JoinRejected
+  ): UIO[Unit] =
+    ZIO.uninterruptible {
+      outcomeClaimed.getAndSet(true).flatMap {
+        case true  => ZIO.unit
+        case false =>
+          monotonicNanos.flatMap(ended =>
+            observer.observeLifecycle(
+              LifecycleEvent.JoinRejected(
+                supervisor.id.value,
+                lifecycle.map(_.value),
+                target,
+                attempt,
+                math.max(0L, ended - started),
+                LifecycleError(failure, cause)
+              )
+            )
+          )
+      }
+    }
+
   private def joinLifecycle[R](
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
@@ -1541,32 +1736,53 @@ object ZioHttp:
     joinGate: Semaphore,
     observer: RuntimeObserver,
     writer: SerialWriter[PhoenixEnvelope],
+    joinStarted: Long,
+    outcomeClaimed: Ref[Boolean],
+    observedTarget: Ref[LifecycleJoinTarget],
+    observedLifecycle: Ref[Option[LifecycleId]],
     joinRef: PhoenixRef,
     ref: PhoenixRef,
     topic: String,
     join: RootJoin
   ): ZIO[R & Scope, Throwable, Unit] =
+    val attempt = lifecycleJoinAttempt(join)
     effectiveJoinRef(joinRef, ref) match
-      case None               => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+      case None =>
+        observedTarget.get.zip(observedLifecycle.get).flatMap { case (target, lifecycle) =>
+          observeJoinRejected(
+            observer,
+            supervisor,
+            lifecycle,
+            target,
+            attempt,
+            joinStarted,
+            None,
+            outcomeClaimed
+          )
+        } *> writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
       case Some(effectiveRef) =>
         joinGate.withPermit {
           ZioHttpSecurity.verifyNestedJoin(config, join.session).either.flatMap {
             case Right(_) =>
-              joinNested(
-                config,
-                csrfToken,
-                supervisor,
-                joined,
-                registration,
-                disconnect,
-                observer,
-                writer,
-                effectiveRef,
-                joinRef,
-                ref,
-                topic,
-                join
-              )
+              observedTarget.set(LifecycleJoinTarget.Nested) *>
+                joinNested(
+                  config,
+                  csrfToken,
+                  supervisor,
+                  joined,
+                  registration,
+                  disconnect,
+                  observer,
+                  writer,
+                  joinStarted,
+                  outcomeClaimed,
+                  observedLifecycle,
+                  effectiveRef,
+                  joinRef,
+                  ref,
+                  topic,
+                  join
+                )
             case Left(_) =>
               registration.get.flatMap { registered =>
                 val admission = join.redirect match
@@ -1595,10 +1811,21 @@ object ZioHttp:
                     )
                 admission.foldZIO(
                   error =>
-                    ZIO.logWarning(s"Rejecting root join topic=$topic: $error") *>
+                    observeJoinRejected(
+                      observer,
+                      supervisor,
+                      None,
+                      LifecycleJoinTarget.Root,
+                      attempt,
+                      joinStarted,
+                      None,
+                      outcomeClaimed
+                    ) *>
+                      ZIO.logWarning(s"Rejecting root join topic=$topic: $error") *>
                       writer.offer(PhoenixOutput.error(joinRef, ref, topic, unauthorizedReason)),
                   admitted =>
                     val install = for
+                      _ <- observedLifecycle.set(Some(LifecycleId(admitted.claims.lifecycle)))
                       request = connectedRequest(socketRequest, admitted.url)
                       prepared <-
                         ZIO.uninterruptibleMask { restore =>
@@ -1718,12 +1945,31 @@ object ZioHttp:
                              supervisor.retireLifecycle(connection)
                            )
                       _ <- ZIO.foreachDiscard(prepared.admission)(_.commit)
+                      _ <- observeJoinSucceeded(
+                             observer,
+                             supervisor,
+                             connection,
+                             LifecycleJoinTarget.Root,
+                             attempt,
+                             joinStarted,
+                             outcomeClaimed
+                           )
                     yield ()
                     install.catchAll { error =>
                       val clearInitial =
                         ZIO.when(join.redirect.isEmpty)(registration.set(None))
                       activeAdmission.get.flatMap(ZIO.foreachDiscard(_)(_.reject)) *>
                         clearInitial *>
+                        observeJoinRejected(
+                          observer,
+                          supervisor,
+                          Some(LifecycleId(admitted.claims.lifecycle)),
+                          LifecycleJoinTarget.Root,
+                          attempt,
+                          joinStarted,
+                          Some(error),
+                          outcomeClaimed
+                        ) *>
                         ZIO.logWarning(
                           s"Rejecting connected root lifecycle topic=$topic: ${error.getMessage}"
                         ) *>
@@ -1737,6 +1983,8 @@ object ZioHttp:
               }
           }
         }
+    end match
+  end joinLifecycle
 
   private def joinNested(
     config: ZioHttpConfig,
@@ -1747,12 +1995,16 @@ object ZioHttp:
     disconnect: UIO[Unit] => UIO[Unit],
     observer: RuntimeObserver,
     writer: SerialWriter[PhoenixEnvelope],
+    joinStarted: Long,
+    outcomeClaimed: Ref[Boolean],
+    observedLifecycle: Ref[Option[LifecycleId]],
     effectiveRef: PhoenixRef.Value,
     joinRef: PhoenixRef,
     ref: PhoenixRef,
     topic: String,
     join: RootJoin
   ): ZIO[Scope, Throwable, Unit] =
+    val attempt  = lifecycleJoinAttempt(join)
     val admitted = for
       claims <- verifyNestedAdmission(config, topic, join)
       parent <- joined.get
@@ -1769,10 +2021,21 @@ object ZioHttp:
 
     admitted.foldZIO(
       error =>
-        ZIO.logWarning(s"Rejecting nested join topic=$topic: $error") *>
+        observeJoinRejected(
+          observer,
+          supervisor,
+          None,
+          LifecycleJoinTarget.Nested,
+          attempt,
+          joinStarted,
+          None,
+          outcomeClaimed
+        ) *>
+          ZIO.logWarning(s"Rejecting nested join topic=$topic: $error") *>
           writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason)),
       (claims, url, reservation) =>
         (for
+          _               <- observedLifecycle.set(claims.childLifecycle)
           renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
           projectionGate  <- Semaphore.make(1L)
           eventGate       <- Semaphore.make(1L)
@@ -1861,13 +2124,40 @@ object ZioHttp:
                  removeJoinedLifecycle(joined, entry),
                  supervisor.retireLifecycle(connection)
                )
+          _ <- observeJoinSucceeded(
+                 observer,
+                 supervisor,
+                 connection,
+                 LifecycleJoinTarget.Nested,
+                 attempt,
+                 joinStarted,
+                 outcomeClaimed
+               )
         yield ()).catchAll {
           case error: ReportedNestedJoinFailure =>
-            ZIO.logWarning(
+            observeJoinRejected(
+              observer,
+              supervisor,
+              claims.childLifecycle,
+              LifecycleJoinTarget.Nested,
+              attempt,
+              joinStarted,
+              Some(error),
+              outcomeClaimed
+            ) *> ZIO.logWarning(
               s"Rejecting connected linked nested lifecycle topic=$topic: ${error.getMessage}"
             )
           case error =>
-            ZIO.logWarning(
+            observeJoinRejected(
+              observer,
+              supervisor,
+              claims.childLifecycle,
+              LifecycleJoinTarget.Nested,
+              attempt,
+              joinStarted,
+              Some(error),
+              outcomeClaimed
+            ) *> ZIO.logWarning(
               s"Rejecting connected nested lifecycle topic=$topic: ${error.getMessage}"
             ) *>
               writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
@@ -3313,6 +3603,17 @@ object ZioHttp:
       maxAge = Some(maxAge),
       sameSite = Some(Cookie.SameSite.Lax)
     )
+
+  private def lifecycleError(
+    stage: LifecycleFailureStage,
+    cause: Cause[Throwable]
+  ): LifecycleError =
+    if cause.isInterruptedOnly then LifecycleError(LifecycleFailure.Interrupted)
+    else
+      LifecycleError(
+        LifecycleFailure.Stage(stage),
+        cause.failureOption.orElse(cause.defects.headOption)
+      )
 
   private def staleReason: Json.Obj        = Json.Obj("reason" -> Json.Str("stale"))
   private def unauthorizedReason: Json.Obj = Json.Obj("reason" -> Json.Str("unauthorized"))

@@ -31,6 +31,8 @@ final private[scalive] class SerialWriter[A] private (
 
   def awaitFailure: UIO[Error] = terminal.await
 
+  def pollFailure: UIO[Option[Error]] = terminal.poll.flatMap(ZIO.foreach(_)(identity))
+
   private def enqueue(value: Option[A]): IO[Error, Promise[Error, Unit]] =
     for
       result <- Promise.make[Error, Unit]

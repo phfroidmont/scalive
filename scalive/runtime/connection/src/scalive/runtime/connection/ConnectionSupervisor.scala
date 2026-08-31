@@ -274,6 +274,8 @@ final private[scalive] class ConnectionSupervisor private (
   observer: RuntimeObserver):
   import ConnectionSupervisor.*
 
+  private[scalive] def id: ConnectionId = connectionId
+
   private var state: State                                                 = State.empty
   private var retirements: Map[ConnectedLifecycle, Promise[Nothing, Unit]] = Map.empty
 

@@ -303,12 +303,13 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       channel.send(ChannelEvent.read(WebSocketFrame.close(1000, None))).ignore
 
   private def withServer[R: EnvironmentTag: HasNoScope, A](
-    application: LiveApplication[R]
+    application: LiveApplication[R],
+    observer: LifecycleObserver = LifecycleObserver.none
   )(run: Int => ZIO[Client & Scope, Throwable, A]): ZIO[R, Throwable, A] =
     for
       started <- Promise.make[Nothing, Int]
       _ <- (Server
-             .install(ZioHttp.routes(application, transportConfig))
+             .install(ZioHttp.routes(application, transportConfig, observer))
              .tap(started.succeed)
              .zipRight(ZIO.never)
               .provideSomeLayer[R](Server.defaultWith(_.onAnyOpenPort)))
@@ -373,7 +374,11 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       channel <- registered.await
     yield SocketClient(channel, incoming, closed, closeCode)
 
-  private def joinRoot(socket: SocketClient, bootstrap: Bootstrap): Task[PhoenixEnvelope] =
+  private def joinRoot(
+    socket: SocketClient,
+    bootstrap: Bootstrap,
+    params: Json.Obj = Json.Obj.empty
+  ): Task[PhoenixEnvelope] =
     val topic   = s"lv:${bootstrap.rootId}"
     val joinRef = PhoenixRef.Value("root-join")
     socket.send(
@@ -388,7 +393,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
           "flash"    -> Json.Null,
           "session"  -> Json.Str(bootstrap.session),
           "static"   -> Json.Str(bootstrap.static),
-          "params"   -> Json.Obj.empty,
+          "params"   -> params,
           "sticky"   -> Json.Bool(false)
         )
       )
@@ -494,6 +499,66 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       .encodeBinary(PhoenixUploadBinaryFrame(joinRef, ref, topic, "chunk", bytes)).toOption.get
 
   def spec = suite("ZIO HTTP upload transport")(
+    test("lifecycle observer distinguishes initial, reconnect, and rejected root joins") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div("observed")
+
+      val application = scalive.Live.router(scalive.live(View))
+      for
+        events <- Ref.make(Vector.empty[LifecycleEvent])
+        observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+        result <- withServer(application, observer) { port =>
+                    for
+                      page        <- bootstrap(port)
+                      firstSocket <- connect(port, page)
+                      initial <- joinRoot(
+                                   firstSocket,
+                                   page,
+                                   Json.Obj(
+                                     "_mounts"        -> Json.Num(0),
+                                     "_mount_attempts" -> Json.Num(0)
+                                   )
+                                 )
+                      _            <- firstSocket.close *> firstSocket.closed.await
+                      secondSocket <- connect(port, page)
+                      reconnect <- joinRoot(
+                                     secondSocket,
+                                     page,
+                                     Json.Obj(
+                                       "_mounts"        -> Json.Num(1),
+                                       "_mount_attempts" -> Json.Num(0)
+                                     )
+                                   )
+                      _           <- secondSocket.close *> secondSocket.closed.await
+                      thirdSocket <- connect(port, page.copy(session = "invalid"))
+                      rejected <- joinRoot(
+                                    thirdSocket,
+                                    page.copy(session = "invalid"),
+                                    Json.Obj(
+                                      "_mounts"        -> Json.Num(2),
+                                      "_mount_attempts" -> Json.Num(1)
+                                    )
+                                  )
+                    yield (initial, reconnect, rejected)
+                  }
+        observed <- events.get
+        joined = observed.collect { case event: LifecycleEvent.JoinSucceeded => event }
+        rejected = observed.collect { case event: LifecycleEvent.JoinRejected => event }
+      yield assertTrue(
+        status(result._1) == "ok",
+        status(result._2) == "ok",
+        status(result._3) == "error",
+        joined.size == 2,
+        !joined.head.attempt.isReconnect,
+        joined(1).attempt.isReconnect,
+        joined.map(_.lifecycle.lifecycleId).distinct.size == 1,
+        joined.map(_.lifecycle.connectionId).distinct.size == 2,
+        rejected.size == 1,
+        rejected.head.attempt.isReconnect,
+        rejected.head.attempt.isRetry
+      )
+    },
     test("connected mount events are delivered before a redirect reply") {
       val mounted = ServerToBrowserEvent[Int]("mounted")
       object RedirectingView extends LiveView.Eventless[Unit]:
@@ -732,13 +797,15 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         active        <- Ref.make(Set(sessionId))
         revalidations <- Ref.make(0)
         interrupted   <- Ref.make(0)
+        events        <- Ref.make(Vector.empty[LifecycleEvent])
         entered       <- Promise.make[Nothing, Unit]
         release       <- Promise.make[Nothing, Unit]
         state          = TestAuthState(active, revalidations, interrupted, Some(entered -> release))
         connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
         stateLayer      = ZLayer.succeed[TestAuthState](state)
         connectionsLayer = ZLayer.succeed[LiveConnections[TestSessionId]](connections)
-        result <- withServer(admittedApplication) { port =>
+        observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+        result <- withServer(admittedApplication, observer) { port =>
                     for
                       page   <- bootstrap(port, "/?session=pending")
                       socket <- connect(port, page)
@@ -755,7 +822,15 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                       checks <- revalidations.get
                     yield assertTrue(code.forall(_ == 1001), checks == 1)
                   }.provideLayer(stateLayer ++ connectionsLayer)
-      yield result
+        observed <- events.get
+        joined = observed.collect { case event: LifecycleEvent.JoinSucceeded => event }
+        rejected = observed.collect { case event: LifecycleEvent.JoinRejected => event }
+      yield result && assertTrue(
+        joined.isEmpty,
+        rejected.size == 1,
+        rejected.head.target == LifecycleJoinTarget.Root,
+        rejected.head.error.failure == LifecycleFailure.Interrupted
+      )
     },
     test("connected startup failure rolls back pending admission") {
       val sessionId = TestSessionId("startup-failure")

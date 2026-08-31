@@ -16,6 +16,7 @@ import scalive.AsyncKey
 import scalive.BindingPayload
 import scalive.ComponentRef
 import scalive.FlashKind
+import scalive.LifecycleTurnKind
 import scalive.LiveAsyncEvent
 import scalive.LiveAsyncResult
 import scalive.LiveComponent
@@ -627,6 +628,9 @@ enum SessionState[Msg, Model]:
 final private[scalive] case class TurnCandidate[Msg, Model](
   id: TurnId,
   revision: TurnRevision,
+  startedAtNanos: Long,
+  observedKind: LifecycleTurnKind,
+  observedCommand: Option[CommandId],
   draft: TurnDraft[Msg, Model],
   render: RenderCandidate[Msg],
   components: ComponentForestCandidate[Msg],
@@ -649,6 +653,7 @@ final private[kernel] case class ManagedAsyncContinuation(
 
 enum SessionStage:
   case BootstrapHandler
+  case Mount
   case ConnectedTurnGuard
   case Handler
   case ResourcePreparation

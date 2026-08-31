@@ -513,6 +513,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           handlers           <- Ref.make(0)
+          events             <- Ref.make(Vector.empty[LifecycleEvent])
           program            <- textProgram
           (outbound, batches) <- recordingOutbound
           logic = standardLogic(9).copy(
@@ -522,11 +523,16 @@ object SessionKernelSpec extends ZIOSpecDefault:
                       Left(LiveConnectedTurnFailure.RedirectUnsafe(secondUrl))
                     )
                   )
-          kernel   <- SessionKernel.start(config, logic, program, outbound)
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          kernel   <- SessionKernel.start(config, logic, program, outbound, observer = observer)
           result   <- kernel.submit(SessionCommand.Message(kernel.epoch, 3))
           terminal <- kernel.awaitTermination
           count    <- handlers.get
           output   <- batches.get.map(_.flatMap(_.items).last)
+          observed <- events.get
+          turns = observed.collect { case event: LifecycleEvent.TurnSucceeded => event }
         yield assertTrue(
           result.delta == RenderDelta.Empty,
           count == 0,
@@ -535,7 +541,8 @@ object SessionKernelSpec extends ZIOSpecDefault:
           ),
           terminal match
             case SessionState.Redirected(_, navigation) => output.navigation.contains(navigation)
-            case _                                      => false
+            case _                                      => false,
+          turns.map(_.kind) == Vector(LifecycleTurnKind.Bootstrap, LifecycleTurnKind.Message)
         )
       }
     },
@@ -543,6 +550,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           handlers            <- Ref.make(0)
+          events              <- Ref.make(Vector.empty[LifecycleEvent])
           program             <- textProgram
           (outbound, batches) <- recordingOutbound
           logic = standardLogic(6).copy(
@@ -552,16 +560,30 @@ object SessionKernelSpec extends ZIOSpecDefault:
                       Left(LiveConnectedTurnFailure.Disconnect(Some("signed out")))
                     )
                   )
-          kernel   <- SessionKernel.start(config, logic, program, outbound)
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          kernel   <- SessionKernel.start(config, logic, program, outbound, observer = observer)
           result   <- kernel.submit(SessionCommand.Message(kernel.epoch, 2))
           terminal <- kernel.awaitTermination
           count    <- handlers.get
           output   <- batches.get.map(_.flatMap(_.items).last)
+          observed <- events.get.repeatUntil(
+                        _.exists(_.isInstanceOf[LifecycleEvent.LifecycleTerminated])
+                      )
+          terminations = observed.collect {
+                           case event: LifecycleEvent.LifecycleTerminated => event.reason
+                         }
+          turns = observed.collect { case event: LifecycleEvent.TurnSucceeded => event }
         yield assertTrue(
           result.delta == RenderDelta.Empty,
           count == 0,
           output.termination.contains(SessionTermination.Disconnect(Some("signed out"))),
-          terminal == SessionState.Closed(kernel.epoch)
+          terminal == SessionState.Closed(kernel.epoch),
+          terminations == Vector(
+            LifecycleTerminationReason.Disconnected(Some("signed out"))
+          ),
+          turns.map(_.kind) == Vector(LifecycleTurnKind.Bootstrap, LifecycleTurnKind.Message)
         )
       }
     },
@@ -757,6 +779,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
           ZIO.scoped {
             for
               program             <- textProgram
+              events              <- Ref.make(Vector.empty[LifecycleEvent])
               (outbound, batches) <- recordingOutbound
               logic = SessionLogic[Int, Int](
                         bootstrap = ZIO.succeed(TurnDraft(0)),
@@ -769,7 +792,16 @@ object SessionKernelSpec extends ZIOSpecDefault:
                             ZIO.fail(IllegalStateException("prepare"))
                           else ZIO.unit
                       )
-              kernel <- SessionKernel.start(config, logic, program, outbound)
+              observer = RuntimeObserver.withLifecycleObserver(
+                           LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                         )
+              kernel <- SessionKernel.start(
+                          config,
+                          logic,
+                          program,
+                          outbound,
+                          observer = observer
+                        )
               result <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
               output <- batches.get
             yield assertTrue(
@@ -1030,6 +1062,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
         for
           entered             <- Promise.make[Nothing, Unit]
           release             <- Promise.make[Nothing, Unit]
+          events              <- Ref.make(Vector.empty[LifecycleEvent])
           program             <- textProgram
           (outbound, batches) <- recordingOutbound
           tiny  = SessionConfig.make(1, 4).toOption.get
@@ -1041,7 +1074,10 @@ object SessionKernelSpec extends ZIOSpecDefault:
                     handleParams =
                       (model, url) => ZIO.succeed(TurnDraft(model * 10, url = Some(url)))
                   )
-          kernel <- SessionKernel.start(tiny, logic, program, outbound)
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          kernel <- SessionKernel.start(tiny, logic, program, outbound, observer = observer)
           first  <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).fork
           _      <- entered.await
           queuedId = CommandId.fresh().toOption.get
@@ -1057,13 +1093,20 @@ object SessionKernelSpec extends ZIOSpecDefault:
           replayed  <- queued.join
           committed <- kernel.inspect
           output    <- batches.get
+          observed  <- events.get
+          pressure = observed.collect { case event: LifecycleEvent.QueuePressure => event }
         yield assertTrue(
           saturated == Left(SessionRejection.MailboxSaturated(1)),
           patched.command == patchId,
           replayed.command == queuedId,
           committed.model == 12,
           committed.url == firstUrl,
-          output.flatMap(_.items).flatMap(_.command).takeRight(2) == Vector(patchId, queuedId)
+          output.flatMap(_.items).flatMap(_.command).takeRight(2) == Vector(patchId, queuedId),
+          pressure.exists(event =>
+            event.queue == LifecycleQueue.KernelMailbox &&
+              event.status == LifecycleQueueStatus.Saturated &&
+              event.capacity == 1
+          )
         )
       }
     },
@@ -1249,18 +1292,30 @@ object SessionKernelSpec extends ZIOSpecDefault:
         ) { kind =>
           ZIO.scoped {
             for
+              events              <- Ref.make(Vector.empty[LifecycleEvent])
               program             <- textProgram
               (outbound, batches) <- recordingOutbound
               logic = standardLogic(4).copy(handle =
                         (model, message) => ZIO.succeed(navigationDraft(model + message, kind))
                       )
-              kernel <- SessionKernel.start(config, logic, program, outbound)
+              observer = RuntimeObserver.withLifecycleObserver(
+                           LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                         )
+              kernel <- SessionKernel.start(
+                          config,
+                          logic,
+                          program,
+                          outbound,
+                          observer = observer
+                        )
               command = CommandId.fresh().toOption.get
               result    <- kernel.submit(command, SessionCommand.Message(kernel.epoch, 2))
               terminal  <- kernel.awaitTermination
               rejected  <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
               published <- batches.get
+              observed  <- events.get
               navigations = published.flatMap(_.items).flatMap(_.navigation)
+              turns = observed.collect { case event: LifecycleEvent.TurnSucceeded => event }
             yield assertTrue(
               result.command == command,
               result.delta == RenderDelta.Empty,
@@ -1269,7 +1324,11 @@ object SessionKernelSpec extends ZIOSpecDefault:
               terminal match
                 case SessionState.Redirected(_, output) => output == navigations.head
                 case _                                  => false,
-              rejected == Left(SessionRejection.Terminal("redirected"))
+              rejected == Left(SessionRejection.Terminal("redirected")),
+              turns.map(_.kind) == Vector(
+                LifecycleTurnKind.Bootstrap,
+                LifecycleTurnKind.Message
+              )
             )
           }
         }.map(_.reduce(_ && _))
@@ -1277,6 +1336,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
     test("connected bootstrap navigation publishes no render and terminates") {
       ZIO.scoped {
         for
+          events              <- Ref.make(Vector.empty[LifecycleEvent])
           program             <- textProgram
           (outbound, batches) <- recordingOutbound
           logic = standardLogic().copy(
@@ -1284,10 +1344,15 @@ object SessionKernelSpec extends ZIOSpecDefault:
                       navigationDraft(7, NavigationKind.PushNavigate, secondUrl)
                     )
                   )
-          kernel    <- SessionKernel.start(config, logic, program, outbound)
+          observer = RuntimeObserver.withLifecycleObserver(
+                       LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                     )
+          kernel <- SessionKernel.start(config, logic, program, outbound, observer = observer)
           terminal  <- kernel.awaitTermination
           published <- batches.get
+          observed  <- events.get
           output = published.flatMap(_.items).head
+          turns = observed.collect { case event: LifecycleEvent.TurnSucceeded => event }
         yield assertTrue(
           output.command.isEmpty,
           output.delta == RenderDelta.Empty,
@@ -1297,7 +1362,8 @@ object SessionKernelSpec extends ZIOSpecDefault:
           ),
           terminal match
             case SessionState.Redirected(_, navigation) => output.navigation.contains(navigation)
-            case _                                      => false
+            case _                                      => false,
+          turns.map(_.kind) == Vector(LifecycleTurnKind.Bootstrap)
         )
       }
     },
@@ -1489,18 +1555,31 @@ object SessionKernelSpec extends ZIOSpecDefault:
             for
               entered             <- Promise.make[Nothing, Unit]
               interrupted         <- Promise.make[Nothing, Unit]
+              events              <- Ref.make(Vector.empty[LifecycleEvent])
               program             <- textProgram
               (outbound, batches) <- recordingOutbound
               logic = standardLogic().copy(bootstrap = ZIO.uninterruptibleMask { restore =>
                         entered.succeed(()).unit *>
-                          restore(ZIO.never).onInterrupt(interrupted.succeed(()).unit)
-                      })
-              starting <- SessionKernel.start(config, logic, program, outbound).fork
+                           restore(ZIO.never).onInterrupt(interrupted.succeed(()).unit)
+                       })
+              observer = RuntimeObserver.withLifecycleObserver(
+                           LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+                         )
+              starting <- SessionKernel
+                            .start(config, logic, program, outbound, observer = observer).fork
               _        <- entered.await
               result   <- starting.interrupt
               _        <- interrupted.await
               output   <- batches.get
-            yield assertTrue(result.isInterrupted, output.isEmpty)
+              observed <- events.get
+              turns = observed.collect { case event: LifecycleEvent.TurnFailed => event }
+            yield assertTrue(
+              result.isInterrupted,
+              output.isEmpty,
+              turns.size == 1,
+              turns.head.kind == LifecycleTurnKind.Bootstrap,
+              turns.head.error.failure == LifecycleFailure.Interrupted
+            )
           }
         }.map(results => assertTrue(results.forall(_.isSuccess)))
     },

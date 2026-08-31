@@ -25,6 +25,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
   writer: SerialWriter[ConnectionOutput],
   ingress: Queue[RootConnection.Event],
   ingressGate: Semaphore,
+  terminationGate: Semaphore,
   pending: Ref[Map[CommandId, RootConnection.PendingCommand]],
   failure: Promise[Nothing, ConnectionError],
   bootstrapReady: Promise[ConnectionError, Unit],
@@ -617,6 +618,9 @@ final private[scalive] class RootConnection[Msg, Model] private (
     event: Event
   ): IO[ConnectionError, Promise[ConnectionError, Unit]] =
     ZIO.uninterruptible {
+      val pendingLimit = event match
+        case Event.Patch(_, _) => config.ingressCapacity + 2
+        case _                 => config.ingressCapacity + 1
       for
         response <- Promise.make[ConnectionError, Unit]
         _        <- ingressGate
@@ -624,29 +628,64 @@ final private[scalive] class RootConnection[Msg, Model] private (
                  closing.isDone.flatMap {
                    case true  => ZIO.fail(ConnectionError.Closed)
                    case false =>
-                     pending.modify { current =>
-                       val limit = event match
-                         case Event.Patch(_, _) => config.ingressCapacity + 2
-                         case _                 => config.ingressCapacity + 1
-                       if current.contains(command) then
-                         Left(ConnectionError.DuplicateCommand(command)) -> current
-                       else if current.size >= limit then
-                         Left(ConnectionError.IngressSaturated(config.ingressCapacity)) -> current
-                       else
-                         val sequence =
-                           current.valuesIterator.map(_.sequence).maxOption.fold(0L)(_ + 1L)
-                         Right(()) -> current.updated(command, PendingCommand(sequence, response))
-                     }.absolve *> ingress.offer(event).flatMap {
-                       case true  => ZIO.unit
-                       case false =>
-                         ZIO.fail(ConnectionError.IngressSaturated(config.ingressCapacity))
-                     }
+                     pending
+                       .modify[
+                         Either[(ConnectionError, Option[(Int, Int)]), Unit]
+                       ] { current =>
+                         if current.contains(command) then
+                           Left((ConnectionError.DuplicateCommand(command), None)) -> current
+                         else if current.size >= pendingLimit then
+                           Left(
+                             (
+                               ConnectionError.IngressSaturated(config.ingressCapacity),
+                               Some(current.size -> pendingLimit)
+                             )
+                           ) -> current
+                         else
+                           val sequence =
+                             current.valuesIterator.map(_.sequence).maxOption.fold(0L)(_ + 1L)
+                           Right(()) -> current.updated(
+                             command,
+                             PendingCommand(sequence, response)
+                           )
+                       }.flatMap {
+                         case Left((error, Some((depth, capacity)))) =>
+                           observeQueuePressure(
+                             LifecycleQueue.ConnectionPendingCommands,
+                             depth,
+                             capacity,
+                             LifecycleQueueStatus.Saturated
+                           ) *> ZIO.fail(error)
+                         case Left((error, None)) => ZIO.fail(error)
+                         case Right(_)            =>
+                           ingress.offer(event).flatMap {
+                             case true =>
+                               ingress.size.flatMap(depth =>
+                                 observeQueuePressure(
+                                   LifecycleQueue.ConnectionIngress,
+                                   depth,
+                                   config.ingressCapacity,
+                                   LifecycleQueueStatus.Sampled
+                                 )
+                               )
+                             case false =>
+                               observeQueuePressure(
+                                 LifecycleQueue.ConnectionIngress,
+                                 config.ingressCapacity,
+                                 config.ingressCapacity,
+                                 LifecycleQueueStatus.Saturated
+                               ) *> ZIO.fail(
+                                 ConnectionError.IngressSaturated(config.ingressCapacity)
+                               )
+                           }
+                       }
                  }
                }.tapError {
                  case error: ConnectionError.IngressSaturated => terminate(error)
                  case _                                       => ZIO.unit
                }
       yield response
+      end for
     }
 
   def awaitFailure: UIO[ConnectionError] = failure.await
@@ -715,40 +754,70 @@ final private[scalive] class RootConnection[Msg, Model] private (
 
   private[connection] def pendingCount: UIO[Int] = pending.get.map(_.size)
 
+  private[connection] def awaitWriterFailure: UIO[SerialWriter.Error] = writer.awaitFailure
+
   private[connection] def isClosing: UIO[Boolean] = closing.isDone
 
   /** Control-plane shutdown; it never waits for space in an application queue. */
   def close: UIO[Unit] =
     ZIO.uninterruptibleMask { restore =>
-      closing.succeed(()).flatMap {
-        case false => restore(closed.await)
-        case true  =>
-          for
-            cleanup <- RuntimeCleanup
-                         .all(
-                           Vector(
-                             ingressGate.withPermit {
-                               for
-                                 queued <- ingress.takeAll
-                                 _      <- ZIO.foreachDiscard(queued)(event =>
-                                        complete(event.id, Left(ConnectionError.Closed))
-                                      )
-                                 _ <- ingress.shutdown
-                               yield ()
-                             },
-                             kernel.close,
-                             outbound.shutdown,
-                             writer.close,
-                             failPending(ConnectionError.Closed)
-                           )
-                         ).exit
-            _ <- closed.succeed(())
-            _ <- cleanup match
-                   case Exit.Success(_)     => ZIO.unit
-                   case Exit.Failure(cause) => ZIO.failCause(cause)
-          yield ()
-      }
+      terminationGate
+        .withPermit {
+          writer.pollFailure.flatMap {
+            case Some(error) if error != SerialWriter.Error.Shutdown =>
+              val connectionError = writerFailure(error)
+              claimFailure(connectionError).map(claimed => Left(connectionError -> claimed))
+            case _ => closing.succeed(()).map(Right(_))
+          }
+        }.flatMap {
+          case Left((error, true)) =>
+            bootstrapReady.fail(error).unit *> failPending(error) *> finishClose
+          case Left((_, false)) | Right(false) => restore(closed.await)
+          case Right(true)                     => finishClose
+        }
     }
+
+  private def claimFailure(error: ConnectionError): UIO[Boolean] =
+    closing.isDone.flatMap {
+      case true  => ZIO.succeed(false)
+      case false =>
+        failure.succeed(error).flatMap {
+          case false => ZIO.succeed(false)
+          case true  =>
+            observer.emit(
+              RuntimeEvent.SessionFailed(
+                RuntimeCorrelation(connectionId, lifecycle, epoch),
+                runtimeFailure(error)
+              )
+            ) *> closing.succeed(()).as(true)
+        }
+    }
+
+  private def finishClose: UIO[Unit] =
+    for
+      cleanup <- RuntimeCleanup
+                   .all(
+                     Vector(
+                       ingressGate.withPermit {
+                         for
+                           queued <- ingress.takeAll
+                           _      <- ZIO.foreachDiscard(queued)(event =>
+                                  complete(event.id, Left(ConnectionError.Closed))
+                                )
+                           _ <- ingress.shutdown
+                         yield ()
+                       },
+                       kernel.close,
+                       outbound.shutdown,
+                       writer.close,
+                       failPending(ConnectionError.Closed)
+                     )
+                   ).exit
+      _ <- closed.succeed(())
+      _ <- cleanup match
+             case Exit.Success(_)     => ZIO.unit
+             case Exit.Failure(cause) => ZIO.failCause(cause)
+    yield ()
 
   private def runIngress: URIO[Scope, Unit] =
     ingress.take
@@ -917,33 +986,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
               ordered *> writer
                 .send(connectionOutput).foldZIO(
                   error =>
-                    closing.isDone
-                      .flatMap {
-                        case false => terminate(writerFailure(error))
-                        case true  =>
-                          connectionOutput match
-                            case ConnectionOutput.Reply(command, _, _) =>
-                              complete(command, Left(ConnectionError.Closed))
-                            case ConnectionOutput.ReplyWithPayload(command, _, _, _) =>
-                              complete(command, Left(ConnectionError.Closed))
-                            case ConnectionOutput.UploadReply(command, _, _, _) =>
-                              complete(command, Left(ConnectionError.Closed))
-                            case ConnectionOutput.ReplyNavigation(command, _, _, _) =>
-                              complete(command, Left(ConnectionError.Closed))
-                            case ConnectionOutput.ReplyNavigationWithPayload(command, _, _, _, _) =>
-                              complete(command, Left(ConnectionError.Closed))
-                            case ConnectionOutput.ReplyDisconnect(command, _) =>
-                              complete(command, Left(ConnectionError.Closed))
-                            case ConnectionOutput.Rejected(command, _) =>
-                              complete(command, Left(ConnectionError.Closed))
-                            case ConnectionOutput.Joined(_, _) |
-                                ConnectionOutput.JoinedNavigation(_, _, _) =>
-                              bootstrapReady.fail(ConnectionError.Closed).unit
-                            case ConnectionOutput.Diff(_, _) |
-                                ConnectionOutput.DiffNavigation(_, _, _) |
-                                ConnectionOutput.Disconnect(_) =>
-                              ZIO.unit
-                      }.as(false),
+                    observeWriterPressure(error) *> terminate(writerFailure(error)).as(false),
                   _ =>
                     val signal = connectionOutput match
                       case ConnectionOutput.Joined(_, _) |
@@ -1001,15 +1044,12 @@ final private[scalive] class RootConnection[Msg, Model] private (
     }
 
   private def terminate(error: ConnectionError): UIO[Unit] =
-    observer.emit(
-      RuntimeEvent.TurnFailed(
-        RuntimeCorrelation(connectionId, lifecycle, epoch),
-        runtimeFailure(error)
-      )
-    ) *> failure.succeed(error).flatMap {
-      case true =>
-        bootstrapReady.fail(error).unit *> failPending(error) *> close
-      case false => ZIO.unit
+    ZIO.uninterruptible {
+      terminationGate
+        .withPermit(claimFailure(error)).flatMap {
+          case true  => bootstrapReady.fail(error).unit *> failPending(error) *> finishClose
+          case false => ZIO.unit
+        }
     }
 
   private def complete(command: CommandId, result: Either[ConnectionError, Unit]): UIO[Unit] =
@@ -1033,13 +1073,41 @@ final private[scalive] class RootConnection[Msg, Model] private (
     case SerialWriter.Error.WriteFailed(cause) => ConnectionError.SinkFailed(cause)
     case other                                 => ConnectionError.OutboundFailed(other.toString)
 
+  private def observeWriterPressure(error: SerialWriter.Error): UIO[Unit] = error match
+    case SerialWriter.Error.Saturated(capacity) =>
+      observeQueuePressure(
+        LifecycleQueue.Writer,
+        capacity,
+        capacity,
+        LifecycleQueueStatus.Saturated
+      )
+    case _ => ZIO.unit
+
+  private def observeQueuePressure(
+    queue: LifecycleQueue,
+    depth: Int,
+    capacity: Int,
+    status: LifecycleQueueStatus
+  ): UIO[Unit] =
+    observer.observeLifecycle(
+      LifecycleEvent.QueuePressure(
+        ConnectedLifecycleContext(connectionId.value, lifecycle.value, epoch.value),
+        queue,
+        depth,
+        capacity,
+        status
+      )
+    )
+
   private def runtimeFailure(error: ConnectionError): RuntimeFailure = error match
     case _: ConnectionError.IngressSaturated => RuntimeFailure.IngressSaturated
     case ConnectionError.IngressFailed       => RuntimeFailure.RuntimeDefect
     case _: ConnectionError.SinkFailed       => RuntimeFailure.Writer
     case _: ConnectionError.UploadFailed     => RuntimeFailure.UploadEntry
     case _: ConnectionError.SessionFailed    => RuntimeFailure.RuntimeDefect
-    case _                                   => RuntimeFailure.RuntimeDefect
+    case ConnectionError.KernelRejected(_: SessionRejection.MailboxSaturated) =>
+      RuntimeFailure.MailboxSaturated
+    case _ => RuntimeFailure.RuntimeDefect
 
   private def completeAfterWriterClose(
     command: CommandId,
@@ -1047,7 +1115,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
   ): UIO[Unit] =
     closing.isDone.flatMap {
       case true  => complete(command, Left(ConnectionError.Closed))
-      case false => terminate(writerFailure(error))
+      case false => observeWriterPressure(error) *> terminate(writerFailure(error))
     }
 end RootConnection
 
@@ -1205,7 +1273,51 @@ private[scalive] object RootConnection:
                                        journal,
                                        connectedResources
                                      )
-                      mounted         <- ZIO.suspend(lifecycle.mount(mountContext))
+                      mountStarted <- Clock.nanoTime
+                      mountExit    <- ZIO.suspend(lifecycle.mount(mountContext)).exit
+                      mountEnded   <- Clock.nanoTime
+                      mount = LifecycleMount.Connected(
+                                ConnectedLifecycleContext(
+                                  connectionId.value,
+                                  lifecycleId.value,
+                                  Epoch.initial.value
+                                )
+                              )
+                      _ <- mountExit match
+                             case Exit.Success(_) =>
+                               observer.observeLifecycle(
+                                 LifecycleEvent.MountSucceeded(
+                                   mount,
+                                   math.max(0L, mountEnded - mountStarted)
+                                 )
+                               )
+                             case Exit.Failure(cause) =>
+                               val error =
+                                 if cause.isInterruptedOnly then
+                                   LifecycleError(LifecycleFailure.Interrupted)
+                                 else
+                                   LifecycleError(
+                                     LifecycleFailure.Stage(LifecycleFailureStage.Mount),
+                                     cause.failureOption.orElse(cause.defects.headOption)
+                                   )
+                               observer.observeLifecycle(
+                                 LifecycleEvent.MountFailed(
+                                   mount,
+                                   math.max(0L, mountEnded - mountStarted),
+                                   error
+                                 )
+                               )
+                      mounted <- mountExit match
+                                   case Exit.Success(value) => ZIO.succeed(value)
+                                   case Exit.Failure(cause) if cause.isInterruptedOnly =>
+                                     ZIO.interrupt
+                                   case Exit.Failure(cause) =>
+                                     ZIO.fail(
+                                       SessionFailure.StageFailed(
+                                         SessionStage.Mount,
+                                         cause.prettyPrint
+                                       )
+                                     )
                       mountNavigation <- journal.navigation.get
                       model           <- mountNavigation match
                                  case Some(_) => ZIO.succeed(mounted)
@@ -1429,13 +1541,14 @@ private[scalive] object RootConnection:
                       observer
                     )
                     .mapError(ConnectionError.SessionFailed.apply)
-        ingress        <- Queue.dropping[Event](config.ingressCapacity)
-        ingressGate    <- Semaphore.make(1L)
-        pending        <- Ref.make(Map.empty[CommandId, PendingCommand])
-        failure        <- Promise.make[Nothing, ConnectionError]
-        bootstrapReady <- Promise.make[ConnectionError, Unit]
-        closing        <- Promise.make[Nothing, Unit]
-        closed         <- Promise.make[Nothing, Unit]
+        ingress         <- Queue.dropping[Event](config.ingressCapacity)
+        ingressGate     <- Semaphore.make(1L)
+        terminationGate <- Semaphore.make(1L)
+        pending         <- Ref.make(Map.empty[CommandId, PendingCommand])
+        failure         <- Promise.make[Nothing, ConnectionError]
+        bootstrapReady  <- Promise.make[ConnectionError, Unit]
+        closing         <- Promise.make[Nothing, Unit]
+        closed          <- Promise.make[Nothing, Unit]
         connection = RootConnection(
                        connectionId,
                        kernel.lifecycle,
@@ -1449,6 +1562,7 @@ private[scalive] object RootConnection:
                        writer,
                        ingress,
                        ingressGate,
+                       terminationGate,
                        pending,
                        failure,
                        bootstrapReady,

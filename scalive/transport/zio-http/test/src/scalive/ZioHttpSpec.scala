@@ -106,9 +106,10 @@ object ZioHttpSpec extends ZIOSpecDefault:
       val application = scalive.Live.router(scalive.live {
         View(factories.incrementAndGet())
       })
-      val routes      = ZioHttp.routes(application, config)
-
       for
+        events <- Ref.make(Vector.empty[LifecycleEvent])
+        observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+        routes   = ZioHttp.routes(application, config, observer)
         first       <- run(routes, Request.get(URL.root))
         second      <- run(routes, Request.get(URL.root))
         firstBody   <- first.body.asString.orDie
@@ -119,6 +120,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
         sessionClaim <- ZioHttpSecurity.verifySession(config, session)
         staticClaim  <- ZioHttpSecurity.verifyStatic(config, static)
         cookie        = first.headers(Header.SetCookie).map(_.value).find(_.name == "_scalive_csrf")
+        observed     <- events.get
+        mounted       = observed.collect { case event: LifecycleEvent.MountSucceeded => event }
+        rendered      = observed.collect {
+                          case event: LifecycleEvent.DisconnectedRenderSucceeded => event
+                        }
       yield assertTrue(
         first.status == Status.Ok,
         factories.get() == 2,
@@ -131,6 +137,10 @@ object ZioHttpSpec extends ZIOSpecDefault:
         sessionClaim.rootId == rootId,
         sessionClaim.routeIndex == 0,
         sessionClaim.canonicalUrl == "/",
+        mounted.size == 2,
+        mounted.forall(_.durationNanos >= 0L),
+        rendered.size == 2,
+        rendered.forall(_.durationNanos >= 0L),
         cookie.exists(value =>
           value.isHttpOnly && !value.isSecure && value.path.contains(Path.root) &&
             value.sameSite.contains(Cookie.SameSite.Lax) && value.domain.isEmpty
@@ -560,11 +570,60 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.fail(Exception("broken mount"))
         def view(model: Signal[Unit]) = div()
 
-      run(
-        ZioHttp.routes(scalive.Live.router(scalive.live(Broken)), config),
-        Request.get(URL.root)
-      ).map(response =>
-        assertTrue(response.status == Status.InternalServerError)
+      for
+        events <- Ref.make(Vector.empty[LifecycleEvent])
+        observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+        response <- run(
+                      ZioHttp.routes(
+                        scalive.Live.router(scalive.live(Broken)),
+                        config,
+                        observer
+                      ),
+                      Request.get(URL.root)
+                    )
+        observed <- events.get
+        mountFailures = observed.collect { case event: LifecycleEvent.MountFailed => event }
+        renderFailures = observed.collect {
+                           case event: LifecycleEvent.DisconnectedRenderFailed => event
+                         }
+      yield assertTrue(
+        response.status == Status.InternalServerError,
+        mountFailures.size == 1,
+        mountFailures.head.error.failure ==
+          LifecycleFailure.Stage(LifecycleFailureStage.Mount),
+        renderFailures.size == 1,
+        renderFailures.head.error.failure ==
+          LifecycleFailure.Stage(LifecycleFailureStage.Mount)
+      )
+    },
+    test("join counters classify standard client reconnect metadata") {
+      def join(params: Map[String, Json]) = RootJoin(
+        url = Some("/"),
+        redirect = None,
+        flash = None,
+        session = "session",
+        static = Some("static"),
+        params = params,
+        sticky = false
+      )
+
+      val initial = ZioHttp.lifecycleJoinAttempt(
+        join(Map("_mounts" -> Json.Num(0), "_mount_attempts" -> Json.Num(0)))
+      )
+      val reconnect = ZioHttp.lifecycleJoinAttempt(
+        join(Map("_mounts" -> Json.Num(2), "_mount_attempts" -> Json.Num(1)))
+      )
+      val malformed = ZioHttp.lifecycleJoinAttempt(
+        join(Map("_mounts" -> Json.Str("2"), "_mount_attempts" -> Json.Num(-1)))
+      )
+
+      assertTrue(
+        !initial.isReconnect,
+        !initial.isRetry,
+        reconnect.isReconnect,
+        reconnect.isRetry,
+        malformed.mounts.isEmpty,
+        malformed.attempts.isEmpty
       )
     },
     test("an ordinary connected mount failure is not classified as stale") {

@@ -1,6 +1,7 @@
 import scalive.*
 
-final class E2ERootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]:
+final class E2ERootLayout(assets: StaticAssets, navigationGuardAssets: NavigationGuardAssets)
+    extends LiveRootLayout[Any, Any]:
   def key(ctx: LiveRootLayoutContext[Any, Any]): String = "e2e-root"
 
   def apply[Msg](content: HtmlElement[Msg]): HtmlElement[Msg] =
@@ -20,6 +21,7 @@ final class E2ERootLayout(assets: StaticAssets) extends LiveRootLayout[Any, Any]
       headTag(
         metaTag(charset  := "utf-8"),
         metaTag(nameAttr := "viewport", contentAttr := "width=device-width, initial-scale=1"),
+        navigationGuardAssets.script,
         assets.trackedScript(
           "app.js",
           defer := true,

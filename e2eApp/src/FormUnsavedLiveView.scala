@@ -15,16 +15,16 @@ class FormUnsavedLiveView extends LiveView[FormUnsavedLiveView.Msg, FormUnsavedL
 
   override def view(model: Signal[Model]) =
     val note  = model.map(_.note)
-    val dirty = note.map(value => if value.nonEmpty then "true" else "false")
+    val dirty = note.map(_.nonEmpty)
 
     div(
       h1("Unsaved form"),
       link.pushNavigateUnsafe("/form-unsaved/target", "Leave form"),
       form(
         idAttr := "unsaved-form",
+        navigation.guardWhen(dirty, "You have unsaved changes. Leave without saving?"),
         on.change.form(FormCodec.formData)(Msg.Validate(_)),
-        dataAttr("dirty") := dirty,
-        styleAttr         :=
+        styleAttr :=
           "margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; max-width: 20rem;",
         label(forId := "unsaved-note", "Unsaved note"),
         input(

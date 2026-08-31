@@ -220,7 +220,8 @@ object E2EApp extends ZIOAppDefault:
       assets <- StaticAssets.load(
                   StaticAssetConfig.classpath("public", Seq("app.css", "app.js", "daisy.css"))
                 )
-      config <-
+      navigationGuardAssets <- NavigationGuardAssets.load()
+      config                <-
         ZIO
           .fromEither(
             ZioHttpConfig(
@@ -236,9 +237,11 @@ object E2EApp extends ZIOAppDefault:
               )
             )
           ).mapError(error => IllegalArgumentException(s"Invalid ZIO HTTP config: $error"))
-      rootLayout  = new E2ERootLayout(assets)
+      rootLayout  = new E2ERootLayout(assets, navigationGuardAssets)
       application = liveRoutes(rootLayout, assets)
-      routes      = ZioHttp.routes(application, config) ++ healthRoutes(assets) ++ assets.routes
+      routes      =
+        ZioHttp.routes(application, config) ++ healthRoutes(assets) ++ assets.routes ++
+          navigationGuardAssets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
     yield ()
 end E2EApp

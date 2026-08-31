@@ -9,6 +9,10 @@ function monitorPageErrors(page) {
   return errors
 }
 
+async function waitForGuardConnected(page) {
+  await expect(page.locator("#guard-connected")).toHaveText("true")
+}
+
 test("direct root mounts independently and handles an event", async ({ page }) => {
   const errors = monitorPageErrors(page)
   let websocketOpened = false
@@ -197,6 +201,96 @@ test("full redirect performs HTTP navigation and transfers flash", async ({ page
   await expect(page.locator("#view-c")).toBeVisible()
   await expect(page.locator("#flash")).toContainText("Flash from B")
   expect(documents.some(url => url.endsWith("/nav/c"))).toBe(true)
+})
+
+test("dirty guard rejects live navigation and live patch", async ({ page }) => {
+  await page.goto("/navigation-guard")
+  await expect(page.getByRole("heading", { name: "Navigation guard" })).toBeVisible()
+  await waitForGuardConnected(page)
+  await page.getByLabel("Unsaved note").fill("draft")
+  await expect(page.locator("[data-scalive-navigation-guard]")).toHaveAttribute(
+    "data-scalive-navigation-guard",
+    "Discard unsaved changes?",
+  )
+
+  const navigateDialogPromise = page.waitForEvent("dialog")
+  const navigatePromise = page.getByRole("link", { name: "Guarded navigation" }).click()
+  const navigateDialog = await navigateDialogPromise
+  expect(navigateDialog.type()).toBe("confirm")
+  expect(navigateDialog.message()).toBe("Discard unsaved changes?")
+  await navigateDialog.dismiss()
+  await navigatePromise
+  await expect(page).toHaveURL(/\/navigation-guard$/)
+
+  const patchDialogPromise = page.waitForEvent("dialog")
+  const patchPromise = page.getByRole("link", { name: "Guarded patch" }).click()
+  const patchDialog = await patchDialogPromise
+  expect(patchDialog.type()).toBe("confirm")
+  await patchDialog.dismiss()
+  await patchPromise
+  await expect(page).toHaveURL(/\/navigation-guard$/)
+  await expect(page.getByLabel("Unsaved note")).toHaveValue("draft")
+})
+
+test("dirty guard restores the current history entry when back is rejected", async ({ page }) => {
+  await page.goto("/navigation-guard")
+  await waitForGuardConnected(page)
+  await page.getByRole("link", { name: "Guarded patch" }).click()
+  await expect(page).toHaveURL(/\/navigation-guard\?step=patched$/)
+  await expect(page.locator("#guard-step")).toHaveText("patched")
+  await page.getByLabel("Unsaved note").fill("draft")
+  await expect(page.locator("[data-scalive-navigation-guard]")).toHaveCount(1)
+
+  const dialogPromise = page.waitForEvent("dialog")
+  const backPromise = page.goBack()
+  const dialog = await dialogPromise
+  expect(dialog.type()).toBe("confirm")
+  await dialog.dismiss()
+  await backPromise
+
+  await expect(page).toHaveURL(/\/navigation-guard\?step=patched$/)
+  await expect(page.getByLabel("Unsaved note")).toHaveValue("draft")
+})
+
+test("accepted guard does not prompt again during hard navigation fallback", async ({ page }) => {
+  const dialogs = []
+  page.on("dialog", async dialog => {
+    dialogs.push(dialog.type())
+    await dialog.accept()
+  })
+
+  await page.goto("/navigation-guard")
+  await waitForGuardConnected(page)
+  await page.getByLabel("Unsaved note").fill("draft")
+  await page.getByRole("link", { name: "Guarded navigation" }).click()
+
+  await expect(page).toHaveURL(/\/navigation-guard\/target$/)
+  await expect(page.getByRole("heading", { name: "Navigation guard target" })).toBeVisible()
+  expect(dialogs).toEqual(["confirm"])
+})
+
+test("beforeunload follows dirty state", async ({ page }) => {
+  const dialogs = []
+  page.on("dialog", async dialog => {
+    dialogs.push(dialog.type())
+    await dialog.accept()
+  })
+
+  await page.goto("/navigation-guard")
+  await waitForGuardConnected(page)
+  await page.getByLabel("Unsaved note").fill("draft")
+  await expect(page.locator("[data-scalive-navigation-guard]")).toHaveCount(1)
+  await page.getByLabel("Unsaved note").fill("")
+  await expect(page.locator("[data-scalive-navigation-guard]")).toHaveCount(0)
+
+  await page.reload()
+  expect(dialogs).toEqual([])
+
+  await waitForGuardConnected(page)
+  await page.getByLabel("Unsaved note").fill("draft")
+  await expect(page.locator("[data-scalive-navigation-guard]")).toHaveCount(1)
+  await page.reload()
+  expect(dialogs).toEqual(["beforeunload"])
 })
 
 test("hosted upload transfers and consumes file bytes", async ({ page }) => {

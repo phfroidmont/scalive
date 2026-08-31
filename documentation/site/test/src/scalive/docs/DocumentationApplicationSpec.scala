@@ -369,7 +369,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             "/guides/lifecycle-hooks",
             "/guides/flash-title-and-lifecycle-ux"
           ),
-          "Browser integration"         -> Vector("/guides/browser-integration"),
+          "Browser integration" -> Vector(
+            "/guides/browser-integration",
+            "/guides/navigation-guards"
+          ),
           "Testing and troubleshooting" -> Vector(
             "/guides/testing",
             "/guides/troubleshooting"

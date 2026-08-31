@@ -63,23 +63,18 @@ if (!window.unsavedFormListenersInstalled) {
   window.unsavedEvents = window.unsavedEvents || []
 
   const hasUnsavedChanges = () =>
-    document.querySelector("#unsaved-form[data-dirty='true']") !== null
+    document.querySelector("[data-scalive-navigation-guard]") !== null
 
   window.addEventListener("phx:before-navigate", (event) => {
     if (!hasUnsavedChanges()) return
 
     window.unsavedEvents.push({ type: "phx", detail: event.detail })
-    if (!window.confirm("You have unsaved changes. Leave without saving?")) {
-      event.preventDefault()
-    }
   })
 
   window.addEventListener("beforeunload", (event) => {
     if (!hasUnsavedChanges()) return
 
     window.unsavedEvents.push({ type: "beforeunload" })
-    event.preventDefault()
-    event.returnValue = ""
   })
 }
 

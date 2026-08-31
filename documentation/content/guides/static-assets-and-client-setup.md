@@ -326,5 +326,6 @@ recovery contract.
 ## Related Tasks {#related-tasks}
 
 - Place bundle tags in the document shell with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#prerequisites).
+- Load the optional confirmation runtime with [Guard unsaved changes](navigation-guards.md#prerequisites).
 - Diagnose a page that renders but never connects in [Troubleshooting](troubleshooting.md#diagnose-missing-assets).
 - Verify the real client connection with [Testing LiveViews](testing.md#test-in-a-browser).

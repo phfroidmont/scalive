@@ -258,5 +258,7 @@ derives every DOM ID from the nested instance, resets deterministically, handles
 permission failure, and projects operation metadata without exposing copied text.
 
 Use [Client setup and static assets](static-assets-and-client-setup.md) to build
-and serve the bundle. Use [Lifecycle hooks](lifecycle-hooks.md) for server-side
-interception and lifecycle-wide policy rather than browser API integration.
+and serve the bundle. Use [Guard unsaved changes](navigation-guards.md#prerequisites)
+for the framework-owned confirmation runtime. Use
+[Lifecycle hooks](lifecycle-hooks.md) for server-side interception and
+lifecycle-wide policy rather than browser API integration.

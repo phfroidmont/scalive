@@ -172,6 +172,24 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   def liveTitle(pageTitle: Signal[Option[String]], default: String): HtmlElement[Nothing] =
     liveTitle(pageTitle, default, "", "")
 
+  object navigation:
+    private lazy val guardMessage = dataAttr("scalive-navigation-guard")
+
+    /** Guards browser-initiated navigation while `dirty` is true.
+      *
+      * Add the returned modifier to the element which owns the dirty state and install the
+      * `NavigationGuardAssets` script in the root layout. The browser runtime uses `message` for
+      * live links, live patch links, and LiveView history traversal. Browsers use their own generic
+      * message for cross-document history traversal, reload, and tab-close confirmation.
+      *
+      * The guard reflects the latest value rendered by the server. Server-issued navigation and
+      * navigation encoded in a [[JSCommands.JSCommand]] bypass the configured confirmation, but a
+      * resulting document unload may still request the browser's generic confirmation.
+      */
+    def guardWhen(dirty: Signal[Boolean], message: String): Mod.Attr[Nothing] =
+      require(!message.isBlank, "navigation guard message must not be blank")
+      guardMessage.optional(dirty.map(Option.when(_)(message)))
+
   object link:
     private def liveDestination(value: String): String =
       NavigationDestination.live(value).fold(throw _, identity)

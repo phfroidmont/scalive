@@ -28,18 +28,20 @@ object RootSliceApp extends ZIOAppDefault:
     )
   ).fold(error => throw IllegalArgumentException(error.toString), identity)
 
-  private val navigationA         = live / "nav" / "a"
-  private val navigationB         = live / "nav" / "b"
-  private val navigationC         = live / "nav" / "c"
-  private val navigationD         = live / "nav" / "d"
-  private val upstreamNavigationA = live / "navigation" / "a"
-  private val upstreamNavigationB = live / "navigation" / "b"
-  private val upstreamStream      = live / "stream"
-  private val uploadRoute         = live / "upload"
-  private val nestedRoute         = live / "nested"
-  private val nestedStickyA       = live / "nested" / "a"
-  private val nestedStickyB       = live / "nested" / "b"
-  private val redirectLoop        = (live / "navigation" / "redirectloop").paramsDecodeOnly(
+  private val navigationA           = live / "nav" / "a"
+  private val navigationB           = live / "nav" / "b"
+  private val navigationC           = live / "nav" / "c"
+  private val navigationD           = live / "nav" / "d"
+  private val upstreamNavigationA   = live / "navigation" / "a"
+  private val upstreamNavigationB   = live / "navigation" / "b"
+  private val upstreamStream        = live / "stream"
+  private val uploadRoute           = live / "upload"
+  private val nestedRoute           = live / "nested"
+  private val nestedStickyA         = live / "nested" / "a"
+  private val nestedStickyB         = live / "nested" / "b"
+  private val navigationGuard       = (live / "navigation-guard").queryOptional[String]("step")
+  private val navigationGuardTarget = live / "navigation-guard" / "target"
+  private val redirectLoop          = (live / "navigation" / "redirectloop").paramsDecodeOnly(
     LiveParamsDecoder.custom[Unit, Boolean]((_, url) =>
       Right(url.queryParam("loop").contains("true"))
     )
@@ -48,59 +50,61 @@ object RootSliceApp extends ZIOAppDefault:
   private val issue3686B = live / "issues" / "3686" / "b"
   private val issue3686C = live / "issues" / "3686" / "c"
 
-  private val rootOne = LiveRootLayout[Any, Any]("root-one")([Msg] =>
-    (content, _, _) =>
-      htmlRootTag(
-        headTag(),
-        bodyTag(idAttr := "root-one", content, scriptTag(src := "/app.js"))
-      )
-  )
-  private val rootTwo = LiveRootLayout[Any, Any]("root-two")([Msg] =>
-    (content, _, _) =>
-      htmlRootTag(
-        headTag(),
-        bodyTag(idAttr := "root-two", content, scriptTag(src := "/app.js"))
-      )
-  )
+  private def rootOne(navigationGuardAssets: NavigationGuardAssets) =
+    LiveRootLayout[Any, Any]("root-one")([Msg] =>
+      (content, _, _) =>
+        htmlRootTag(
+          headTag(
+            navigationGuardAssets.script,
+            scriptTag(src := "/app.js", defer := true)
+          ),
+          bodyTag(idAttr := "root-one", content)
+        )
+    )
 
-  private val application = Live.router.withRootLayout(rootOne)(
-    live        -> RootSliceLiveView(mountSequence),
-    uploadRoute -> HostedUploadLiveView(),
-    nestedRoute -> NestedParentLiveView(),
-    Live.session("nested-sticky")(
-      nestedStickyA -> StickyNestedParentLiveView("a", nestedStickyB.location),
-      nestedStickyB -> StickyNestedParentLiveView("b", nestedStickyA.location)
-    ),
-    Live.session("navigation")(
-      navigationA -> NavigationLiveView(
-        "a",
-        mountSequence,
-        navigationA.location,
-        navigationB.location,
-        navigationC.location,
-        navigationD.location
+  private def rootTwo(navigationGuardAssets: NavigationGuardAssets) =
+    LiveRootLayout[Any, Any]("root-two")([Msg] =>
+      (content, _, _) =>
+        htmlRootTag(
+          headTag(
+            navigationGuardAssets.script,
+            scriptTag(src := "/app.js", defer := true)
+          ),
+          bodyTag(idAttr := "root-two", content)
+        )
+    )
+
+  private def application(navigationGuardAssets: NavigationGuardAssets) =
+    val firstRoot  = rootOne(navigationGuardAssets)
+    val secondRoot = rootTwo(navigationGuardAssets)
+
+    Live.router.withRootLayout(firstRoot)(
+      live        -> RootSliceLiveView(mountSequence),
+      uploadRoute -> HostedUploadLiveView(),
+      nestedRoute -> NestedParentLiveView(),
+      Live.session("nested-sticky")(
+        nestedStickyA -> StickyNestedParentLiveView("a", nestedStickyB.location),
+        nestedStickyB -> StickyNestedParentLiveView("b", nestedStickyA.location)
       ),
-      navigationB -> NavigationLiveView(
-        "b",
-        mountSequence,
-        navigationA.location,
-        navigationB.location,
-        navigationC.location,
-        navigationD.location
-      ),
-      navigationD.withRootLayout(rootTwo) -> NavigationLiveView(
-        "d",
-        mountSequence,
-        navigationA.location,
-        navigationB.location,
-        navigationC.location,
-        navigationD.location
-      )
-    ),
-    Live
-      .session("other").withRootLayout(rootTwo)(
-        navigationC -> NavigationLiveView(
-          "c",
+      Live.session("navigation")(
+        navigationA -> NavigationLiveView(
+          "a",
+          mountSequence,
+          navigationA.location,
+          navigationB.location,
+          navigationC.location,
+          navigationD.location
+        ),
+        navigationB -> NavigationLiveView(
+          "b",
+          mountSequence,
+          navigationA.location,
+          navigationB.location,
+          navigationC.location,
+          navigationD.location
+        ),
+        navigationD.withRootLayout(secondRoot) -> NavigationLiveView(
+          "d",
           mountSequence,
           navigationA.location,
           navigationB.location,
@@ -108,52 +112,73 @@ object RootSliceApp extends ZIOAppDefault:
           navigationD.location
         )
       ),
-    Live.session("upstream-navigation")(
-      upstreamNavigationA -> UpstreamNavigationLiveView(
-        "a",
-        upstreamNavigationA.location,
-        upstreamNavigationB.location,
-        upstreamStream.location
+      Live
+        .session("other").withRootLayout(secondRoot)(
+          navigationC -> NavigationLiveView(
+            "c",
+            mountSequence,
+            navigationA.location,
+            navigationB.location,
+            navigationC.location,
+            navigationD.location
+          )
+        ),
+      Live.session("upstream-navigation")(
+        upstreamNavigationA -> UpstreamNavigationLiveView(
+          "a",
+          upstreamNavigationA.location,
+          upstreamNavigationB.location,
+          upstreamStream.location
+        ),
+        upstreamNavigationB -> UpstreamNavigationLiveView(
+          "b",
+          upstreamNavigationA.location,
+          upstreamNavigationB.location,
+          upstreamStream.location
+        ),
+        redirectLoop -> RedirectLoopLiveView()
       ),
-      upstreamNavigationB -> UpstreamNavigationLiveView(
-        "b",
-        upstreamNavigationA.location,
-        upstreamNavigationB.location,
-        upstreamStream.location
+      Live.session("upstream-other")(
+        upstreamStream -> UpstreamNavigationLiveView(
+          "stream",
+          upstreamNavigationA.location,
+          upstreamNavigationB.location,
+          upstreamStream.location
+        )
       ),
-      redirectLoop -> RedirectLoopLiveView()
-    ),
-    Live.session("upstream-other")(
-      upstreamStream -> UpstreamNavigationLiveView(
-        "stream",
-        upstreamNavigationA.location,
-        upstreamNavigationB.location,
-        upstreamStream.location
-      )
-    ),
-    Live.session("issue-3686")(
-      issue3686A -> Issue3686LiveView(
-        "A",
-        issue3686A.location,
-        issue3686B.location,
-        issue3686C.location
+      Live.session("issue-3686")(
+        issue3686A -> Issue3686LiveView(
+          "A",
+          issue3686A.location,
+          issue3686B.location,
+          issue3686C.location
+        ),
+        issue3686B -> Issue3686LiveView(
+          "B",
+          issue3686A.location,
+          issue3686B.location,
+          issue3686C.location
+        )
       ),
-      issue3686B -> Issue3686LiveView(
-        "B",
-        issue3686A.location,
-        issue3686B.location,
-        issue3686C.location
-      )
-    ),
-    Live.session("issue-3686-other")(
-      issue3686C -> Issue3686LiveView(
-        "C",
-        issue3686A.location,
-        issue3686B.location,
-        issue3686C.location
+      Live.session("issue-3686-other")(
+        issue3686C -> Issue3686LiveView(
+          "C",
+          issue3686A.location,
+          issue3686B.location,
+          issue3686C.location
+        )
+      ),
+      Live.session("navigation-guard-source")(
+        navigationGuard -> NavigationGuardLiveView(
+          navigationGuard.location(Some("patched")),
+          navigationGuardTarget.location
+        )
+      ),
+      Live.session("navigation-guard-target")(
+        navigationGuardTarget -> NavigationGuardTargetLiveView
       )
     )
-  )
+  end application
 
   private val supportRoutes = Routes(
     Method.GET / "health"      -> handler(Response.text("OK")),
@@ -177,9 +202,12 @@ object RootSliceApp extends ZIOAppDefault:
   )
 
   override val run =
-    Server
-      .serve(ZioHttp.routes(application, config) ++ supportRoutes)
-      .provide(Server.defaultWithPort(serverPort))
+    for
+      navigationGuardAssets <- NavigationGuardAssets.load()
+      routes = ZioHttp.routes(application(navigationGuardAssets), config) ++ supportRoutes ++
+                 navigationGuardAssets.routes
+      _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
+    yield ()
 end RootSliceApp
 
 final class RootSliceLiveView(mountSequence: AtomicInteger)
@@ -354,6 +382,63 @@ object NavigationLiveView:
 
   enum Msg:
     case ToB, ToC, ToD, RedirectC, ToA
+
+final class NavigationGuardLiveView(patch: LiveLocation, target: LiveLocation)
+    extends LiveView.Routed[NavigationGuardLiveView.Msg, NavigationGuardLiveView.Model, Option[
+      String
+    ]]:
+  import NavigationGuardLiveView.*
+
+  def mount(step: Option[String], ctx: MountContext) =
+    ZIO.succeed(
+      Model(
+        note = "",
+        step,
+        connected = ctx.connection match
+          case Connection.Connected(_) => true
+          case Connection.Disconnected => false
+      )
+    )
+
+  override def handleParams(
+    model: Model,
+    step: Option[String],
+    url: URL,
+    ctx: ParamsContext
+  ) = ZIO.succeed(model.copy(step = step))
+
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.Change(note) => ZIO.succeed(model.copy(note = note))
+
+  def view(model: Signal[Model]) =
+    val note = model.map(_.note)
+
+    mainTag(
+      h1("Navigation guard"),
+      link.pushPatch(patch, "Guarded patch"),
+      link.pushNavigate(target, "Guarded navigation"),
+      p(idAttr := "guard-connected", model.map(_.connected.toString)),
+      p(idAttr := "guard-step", model.map(_.step.getOrElse("base"))),
+      form(
+        idAttr := "navigation-guard-form",
+        navigation.guardWhen(model.map(_.note.nonEmpty), "Discard unsaved changes?"),
+        on.change(params => Msg.Change(params.getOrElse("note", ""))),
+        label(forId  := "guard-note", "Unsaved note"),
+        input(idAttr := "guard-note", nameAttr := "note", value := note)
+      )
+    )
+end NavigationGuardLiveView
+
+object NavigationGuardLiveView:
+  enum Msg:
+    case Change(note: String)
+
+  final case class Model(note: String, step: Option[String], connected: Boolean)
+
+object NavigationGuardTargetLiveView extends LiveView.Eventless[Unit]:
+  def mount(ctx: MountContext) = ZIO.succeed(())
+
+  def view(model: Signal[Unit]) = h1("Navigation guard target")
 
 final class UpstreamNavigationLiveView(
   page: String,

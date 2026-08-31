@@ -746,6 +746,18 @@
       ]
     },
     {
+      "id" : "class:scalive.NavigationGuardAssets",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.NavigationGuardAssets",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.NavigationGuardAssets:45d0978963499221",
+          "signature" : "class NavigationGuardAssets"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.NestedViewSpec.Dynamic",
       "ownerId" : "object:scalive.NestedViewSpec",
       "qualifiedName" : "scalive.NestedViewSpec.Dynamic",
@@ -6194,6 +6206,30 @@
       ]
     },
     {
+      "id" : "def:scalive.NavigationGuardAssets.load",
+      "ownerId" : "object:scalive.NavigationGuardAssets",
+      "qualifiedName" : "scalive.NavigationGuardAssets.load",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.NavigationGuardAssets.load:7a24c7a7fc07fe4f",
+          "signature" : "def load(mountPath: zio.http.Path = ..., classLoader: ClassLoader = ...): zio.package.Task[NavigationGuardAssets]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.NavigationGuardAssets.script",
+      "ownerId" : "class:scalive.NavigationGuardAssets",
+      "qualifiedName" : "scalive.NavigationGuardAssets.script",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.NavigationGuardAssets.script:8d96593f0f5e4f01",
+          "signature" : "def script: HtmlElement[Nothing]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.ParamsContext.flash",
       "ownerId" : "trait:scalive.ParamsContext",
       "qualifiedName" : "scalive.ParamsContext.flash",
@@ -7822,6 +7858,18 @@
         {
           "id" : "def:scalive.liveView:7079f54f47677424",
           "signature" : "def liveView[A, Msg, Model](id: String, value: Signal[A], sticky: Boolean, linkParentOnCrash: A => Boolean)(factory: A => LiveView[Msg, Model]): Mod[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.navigation.guardWhen",
+      "ownerId" : "object:scalive.navigation",
+      "qualifiedName" : "scalive.navigation.guardWhen",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.navigation.guardWhen:4f24e761a4d43d86",
+          "signature" : "def guardWhen(dirty: Signal[Boolean], message: String): Mod.Attr[Nothing]"
         }
       ]
     },
@@ -14018,6 +14066,18 @@
       ]
     },
     {
+      "id" : "object:scalive.NavigationGuardAssets",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.NavigationGuardAssets",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.NavigationGuardAssets:0907a5389d713cc7",
+          "signature" : "object NavigationGuardAssets"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.NestedViewSpec",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.NestedViewSpec",
@@ -14206,6 +14266,18 @@
         {
           "id" : "object:scalive.link:3f0721b49d868a5e",
           "signature" : "object link"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.navigation",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.navigation",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.navigation:4f03dae8c71565e3",
+          "signature" : "object navigation"
         }
       ]
     },
@@ -17949,6 +18021,30 @@
         {
           "id" : "val:scalive.Mod.Content.Text.text:8d44a9660e7aa540",
           "signature" : "val text: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.NavigationGuardAssets.defaultMountPath",
+      "ownerId" : "object:scalive.NavigationGuardAssets",
+      "qualifiedName" : "scalive.NavigationGuardAssets.defaultMountPath",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.NavigationGuardAssets.defaultMountPath:e7e0a46443d37435",
+          "signature" : "val defaultMountPath: zio.http.Path"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.NavigationGuardAssets.routes",
+      "ownerId" : "class:scalive.NavigationGuardAssets",
+      "qualifiedName" : "scalive.NavigationGuardAssets.routes",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.NavigationGuardAssets.routes:7bc34c646891bbe0",
+          "signature" : "val routes: zio.http.Routes[Any, Nothing]"
         }
       ]
     },

@@ -264,6 +264,7 @@ Try change, invalid submit, valid submit, and reset behavior in the
 ## Related Tasks {#related-tasks}
 
 - Use [Ordinary HTTP forms and redirects](http-forms-and-redirects.md) when the browser should perform a normal GET or POST.
+- Use [Guard unsaved changes](navigation-guards.md#prerequisites) when leaving a dirty form should require confirmation.
 - Use [File uploads](uploads-and-consumption.md) for file inputs and resource ownership.
 - Use [Authentication and sessions](authentication.md) for credential forms and protected routes.
 - Use [Testing](testing.md) to exercise duplicate fields, invalid submission, recovery, and reset behavior.

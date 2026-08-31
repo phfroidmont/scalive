@@ -172,4 +172,5 @@ concatenating untrusted input; parse it into an application allowlist first.
 
 - Group compatible routes with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#prerequisites).
 - Protect route groups with [Authentication and sessions](authentication.md#prerequisites).
+- Confirm before browser-initiated navigation with [Guard unsaved changes](navigation-guards.md#prerequisites).
 - Test parameter decoding and initial routes with [Testing LiveViews](testing.md#test-disconnected-rendering).

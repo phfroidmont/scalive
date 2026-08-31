@@ -71,6 +71,8 @@ expects so you can also enter directly from search or the API reference.
 
 - [Browser commands, events, and hooks](browser-integration.md) composes client
   effects and implements validated, registered JavaScript hooks.
+- [Guard unsaved changes](navigation-guards.md) installs the framework browser
+  runtime and confirms browser-initiated navigation while rendered state is dirty.
 
 ### Testing And Troubleshooting {#testing-and-troubleshooting}
 

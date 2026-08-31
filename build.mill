@@ -231,20 +231,27 @@ object scalive extends PublishedScaliveBundle:
 
       def mvnDeps = Seq(mvn"dev.zio::zio-http:${Versions.zioHttp}")
 
-      private def liveViewClientResources = Task.Input {
-        val variable = "SCALIVE_LIVE_VIEW_CLIENT_RESOURCES"
-        val root = Task.env
-          .get(variable)
+      private val liveViewClientResourcesVariable = "SCALIVE_LIVE_VIEW_CLIENT_RESOURCES"
+
+      // Mill BSP assumes input PathRefs are workspace-relative, so keep the Nix path scalar.
+      private def liveViewClientResourceRoot = Task.Input {
+        Task.env.get(liveViewClientResourcesVariable)
+      }
+
+      private def liveViewClientResources = Task {
+        val root = liveViewClientResourceRoot()
           .map(os.Path(_))
           .getOrElse(
-            throw new IllegalStateException(s"$variable is not set. Enter via nix develop.")
+            throw new IllegalStateException(
+              s"$liveViewClientResourcesVariable is not set. Enter via nix develop."
+            )
           )
         val missing = liveViewClientResourceDigests.collect {
           case (resource, _) if !os.isFile(root / os.RelPath(resource)) => resource
         }
         if missing.nonEmpty then
           throw new IllegalStateException(
-            s"$variable does not contain the required resources: ${missing.mkString(", ")}"
+            s"$liveViewClientResourcesVariable does not contain the required resources: ${missing.mkString(", ")}"
           )
         val mismatched = liveViewClientResourceDigests.collect {
           case (resource, expected)
@@ -252,9 +259,13 @@ object scalive extends PublishedScaliveBundle:
         }
         if mismatched.nonEmpty then
           throw new IllegalStateException(
-            s"$variable contains invalid resources: ${mismatched.mkString(", ")}"
+            s"$liveViewClientResourcesVariable contains invalid resources: ${mismatched.mkString(", ")}"
           )
-        PathRef(root)
+        liveViewClientResourceDigests.foreach { case (resource, _) =>
+          val relative = os.RelPath(resource)
+          os.copy(root / relative, Task.dest / relative, createFolders = true)
+        }
+        PathRef(Task.dest)
       }
 
       override def resources = Task {

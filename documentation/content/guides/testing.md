@@ -20,24 +20,26 @@ Scalive applications have three useful test boundaries:
   first HTML response. This boundary has public support in `scalive.testing`.
 - **Connected tests** use
   @:apiSymbol(object:scalive.testing.ConnectedRender)`ConnectedRender`@:@ to join
-  through production route, bootstrap, and lifecycle admission and supervision,
-  then interact through a typed
+  through production route, signed bootstrap, physical admission, Phoenix transport dispatch, and
+  lifecycle supervision, then interact through a typed
   @:apiSymbol(class:scalive.testing.ConnectedView)`ConnectedView`@:@.
 - **Browser tests** run the Phoenix LiveView JavaScript client against a real
   server. Scalive does not currently publish a browser fixture or Playwright
   library.
 
 Use the narrowest boundary that proves the behavior. Keep most rendering,
-routing, form, cookie, and initial lifecycle assertions disconnected. Use a real
-browser when the claim depends on DOM patching, JavaScript hooks, focus, uploads,
-navigation, transport loss, or reconnect behavior.
+routing, form, cookie, and initial lifecycle assertions disconnected. Connected
+tests can cover server-side navigation, transport invalidation, and reconnect
+admission. Use a real browser when the claim depends on DOM patching, JavaScript
+hooks, focus, browser history, reconnect timing, or network behavior.
 
 @:callout(info)
 
 `scalive.testing` is intentionally smaller than `Phoenix.LiveViewTest`. It
 supports connected mount, typed server messages, semantic click and form
-bindings, nested joins, uploads, and explicit local ordinary-form requests. It
-does not emulate browser successful-control selection or execute JavaScript.
+bindings, nested joins, uploads, routed reconnects, live navigation, and explicit
+local ordinary-form requests. It does not emulate browser successful-control
+selection or execute JavaScript.
 
 @:@
 
@@ -196,8 +198,8 @@ accepts only a local `303 See Other` with a `Location` header.
 
 @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
 finalizes a single LiveView at `/`, performs disconnected rendering, validates
-its bootstrap credentials, and starts the connected lifecycle through production
-route and join admission and supervision:
+its bootstrap credentials, and starts the connected lifecycle through the
+production in-process Phoenix transport, route admission, and supervision:
 
 ```scala
 test("increments after a connected click") {
@@ -212,17 +214,38 @@ test("increments after a connected click") {
 ```
 
 Use `view.send(message)` when a typed server message is the behavior under test.
+Typed messages are an out-of-band test operation because arbitrary Scala values
+have no Phoenix wire representation; their resulting lifecycle output still uses
+the production transport sink.
 Use `click`, `clickButton`, `changeForm`, and `submitForm` to resolve bindings
 from the latest committed HTML and wait for the correlated lifecycle output.
 `awaitDiff` waits for an uncorrelated async or subscription update, and
-`joinNested(instanceId)` enters a nested lifecycle registered by the parent.
+`awaitAction` waits for uncorrelated navigation or physical disconnect. The
+`joinNested(instanceId)` method enters a nested lifecycle registered by the parent.
+Actions return a @:apiSymbol(enum:scalive.testing.ConnectedAction)`ConnectedAction`@:@.
+Most return `Rendered`. A live route replacement returns `LiveNavigation`; call
+its `navigation.follow` method to execute the production redirect-join admission
+path. A full redirect closes the in-process transport.
 
 For routed applications, use the overload accepting `LiveApplication`, a fixed
 validated `ZioHttpConfig`, a ZIO HTTP `Request`, and optional untrusted connect
 parameters. That overload exercises the actual route, mount aspects, layouts,
-security bootstrap, and request URL rather than mounting a synthetic root.
-It does not call the WebSocket endpoint or validate the upgrade request's
-`Origin` header.
+security bootstrap, physical `withAdmission` transaction, Phoenix event
+dispatcher, and request URL rather than mounting a synthetic root.
+
+Use @:apiSymbol(def:scalive.testing.ConnectedRender.open)`ConnectedRender.open`@:@
+when the test needs the routed client itself. Its initial `join` and later
+`reconnect` create distinct physical transport identities while retaining the
+page's signed bootstrap credentials. Join failures are typed as
+@:apiSymbol(enum:scalive.testing.ConnectedJoinFailure)`ConnectedJoinFailure`@:@.
+This lets a test revoke durable authorization, call `LiveConnections.disconnect`,
+wait for `view.awaitDisconnected`, and assert that `client.reconnect` is rejected
+without issuing a new disconnected GET.
+
+The in-process transport executes the same transport-owned join, admission,
+event, upload, leave, and navigation state as the WebSocket adapter. It does not
+call the WebSocket endpoint, serialize network frames, or validate the upgrade
+request's `Origin` header.
 
 `ConnectedView.html` is a semantic projection of the latest committed server
 render, not a browser DOM. Connected tests do not execute the Phoenix JavaScript
@@ -300,11 +323,11 @@ and assertions for their product.
 
 ## Know What Each Test Proves {#know-what-each-test-proves}
 
-A passing disconnected test does not prove a socket can connect. A passing
-`ConnectedRender` test proves neither WebSocket Origin admission nor that the
-Phoenix client can patch the browser DOM. A browser test proves its scenario but
-may not isolate the failing lifecycle stage. Keep at least one assertion at each
-boundary your application depends on, and use
+A passing disconnected test does not prove a socket can join. A passing
+`ConnectedRender` test proves the server-side transport session but neither
+WebSocket Origin admission nor that the Phoenix client can patch the browser DOM.
+A browser test proves its scenario but may not isolate the failing lifecycle
+stage. Keep at least one assertion at each boundary your application depends on, and use
 [Troubleshooting](troubleshooting.md#separate-the-two-mounts) to locate a failure
 before expanding the test suite.
 

@@ -1022,6 +1022,30 @@
       ]
     },
     {
+      "id" : "class:scalive.testing.ConnectedClient",
+      "ownerId" : "package:scalive.testing",
+      "qualifiedName" : "scalive.testing.ConnectedClient",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.testing.ConnectedClient:e664628ffd5e0746",
+          "signature" : "class ConnectedClient[-R]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.testing.ConnectedNavigation",
+      "ownerId" : "package:scalive.testing",
+      "qualifiedName" : "scalive.testing.ConnectedNavigation",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.testing.ConnectedNavigation:6697014cb7893eec",
+          "signature" : "class ConnectedNavigation"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.testing.ConnectedView",
       "ownerId" : "package:scalive.testing",
       "qualifiedName" : "scalive.testing.ConnectedView",
@@ -8130,6 +8154,54 @@
       ]
     },
     {
+      "id" : "def:scalive.testing.ConnectedClient.disconnect",
+      "ownerId" : "class:scalive.testing.ConnectedClient",
+      "qualifiedName" : "scalive.testing.ConnectedClient.disconnect",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedClient.disconnect:b91bab8f54c808f1",
+          "signature" : "def disconnect: zio.package.UIO[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedClient.join",
+      "ownerId" : "class:scalive.testing.ConnectedClient",
+      "qualifiedName" : "scalive.testing.ConnectedClient.join",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedClient.join:477a9971e3e849e8",
+          "signature" : "def join: zio.ZIO[&[R, zio.Scope], testing.ConnectedJoinFailure, testing.ConnectedView[Nothing]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedClient.reconnect",
+      "ownerId" : "class:scalive.testing.ConnectedClient",
+      "qualifiedName" : "scalive.testing.ConnectedClient.reconnect",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedClient.reconnect:5bad130169fb30b7",
+          "signature" : "def reconnect: zio.ZIO[&[R, zio.Scope], testing.ConnectedJoinFailure, testing.ConnectedView[Nothing]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedNavigation.follow",
+      "ownerId" : "class:scalive.testing.ConnectedNavigation",
+      "qualifiedName" : "scalive.testing.ConnectedNavigation.follow",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedNavigation.follow:d95ea7910a674dee",
+          "signature" : "def follow: zio.package.IO[testing.ConnectedJoinFailure, testing.ConnectedView[Nothing]]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.testing.ConnectedRender.join",
       "ownerId" : "object:scalive.testing.ConnectedRender",
       "qualifiedName" : "scalive.testing.ConnectedRender.join",
@@ -8146,6 +8218,30 @@
       ]
     },
     {
+      "id" : "def:scalive.testing.ConnectedRender.open",
+      "ownerId" : "object:scalive.testing.ConnectedRender",
+      "qualifiedName" : "scalive.testing.ConnectedRender.open",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedRender.open:eb0c30cb3b3891bc",
+          "signature" : "def open[R](application: LiveApplication[R], config: ZioHttpConfig, request: zio.http.Request, connectParams: Map[String, zio.json.ast.Json] = ...): zio.ZIO[R, Throwable, testing.ConnectedClient[R]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedView.awaitAction",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.awaitAction",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.awaitAction:1e539f69798ca2f1",
+          "signature" : "def awaitAction: zio.package.Task[testing.ConnectedAction]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.testing.ConnectedView.awaitDiff",
       "ownerId" : "class:scalive.testing.ConnectedView",
       "qualifiedName" : "scalive.testing.ConnectedView.awaitDiff",
@@ -8158,14 +8254,26 @@
       ]
     },
     {
+      "id" : "def:scalive.testing.ConnectedView.awaitDisconnected",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.awaitDisconnected",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.awaitDisconnected:af53c0cb9bf9e862",
+          "signature" : "def awaitDisconnected: zio.package.UIO[Unit]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.testing.ConnectedView.changeForm",
       "ownerId" : "class:scalive.testing.ConnectedView",
       "qualifiedName" : "scalive.testing.ConnectedView.changeForm",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.testing.ConnectedView.changeForm:394b3c6c07a22f77",
-          "signature" : "def changeForm(selector: String, fields: Vector[(String, String)], target: Option[String] = ...): zio.package.Task[Unit]"
+          "id" : "def:scalive.testing.ConnectedView.changeForm:5a5d501e97bd8d88",
+          "signature" : "def changeForm(selector: String, fields: Vector[(String, String)], target: Option[String] = ...): zio.package.Task[testing.ConnectedAction]"
         }
       ]
     },
@@ -8176,8 +8284,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.testing.ConnectedView.click:312adb179273c18b",
-          "signature" : "def click(selector: String): zio.package.Task[Unit]"
+          "id" : "def:scalive.testing.ConnectedView.click:dc15ce60d0815790",
+          "signature" : "def click(selector: String): zio.package.Task[testing.ConnectedAction]"
         }
       ]
     },
@@ -8188,8 +8296,20 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.testing.ConnectedView.clickButton:60c06a9d52627c24",
-          "signature" : "def clickButton(label: String): zio.package.Task[Unit]"
+          "id" : "def:scalive.testing.ConnectedView.clickButton:4c78d8fb12a3c2ec",
+          "signature" : "def clickButton(label: String): zio.package.Task[testing.ConnectedAction]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedView.currentUrl",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.currentUrl",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.currentUrl:853114a93c89b7d6",
+          "signature" : "def currentUrl: zio.package.Task[zio.http.URL]"
         }
       ]
     },
@@ -8236,8 +8356,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.testing.ConnectedView.leave:4fa3d12ac34135d4",
-          "signature" : "def leave: zio.package.UIO[Unit]"
+          "id" : "def:scalive.testing.ConnectedView.leave:c63f3d2fde4c03aa",
+          "signature" : "def leave: zio.package.Task[Unit]"
         }
       ]
     },
@@ -8248,8 +8368,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.testing.ConnectedView.send:8a292c85637602bd",
-          "signature" : "def send(message: Msg): zio.package.Task[Unit]"
+          "id" : "def:scalive.testing.ConnectedView.send:7a570c461e85c6ab",
+          "signature" : "def send(message: Msg): zio.package.Task[testing.ConnectedAction]"
         }
       ]
     },
@@ -8260,8 +8380,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.testing.ConnectedView.submitForm:6e3d74219b6a225f",
-          "signature" : "def submitForm(selector: String, fields: Vector[(String, String)]): zio.package.Task[Unit]"
+          "id" : "def:scalive.testing.ConnectedView.submitForm:d514376e39c437c0",
+          "signature" : "def submitForm(selector: String, fields: Vector[(String, String)]): zio.package.Task[testing.ConnectedAction]"
         }
       ]
     },
@@ -9314,6 +9434,30 @@
         {
           "id" : "enum:scalive.ZioHttpConfig.Error:4ed298ed0be3fc65",
           "signature" : "enum Error"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.ConnectedAction",
+      "ownerId" : "package:scalive.testing",
+      "qualifiedName" : "scalive.testing.ConnectedAction",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.ConnectedAction:72489f00e5d4c84c",
+          "signature" : "enum ConnectedAction"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.ConnectedJoinFailure",
+      "ownerId" : "package:scalive.testing",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.ConnectedJoinFailure:54286549c4aaf9a0",
+          "signature" : "enum ConnectedJoinFailure"
         }
       ]
     },
@@ -19085,6 +19229,30 @@
         {
           "id" : "val:scalive.live:8ae0d9d54001ce62",
           "signature" : "val live: LiveRouteSeed[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedNavigation.destination",
+      "ownerId" : "class:scalive.testing.ConnectedNavigation",
+      "qualifiedName" : "scalive.testing.ConnectedNavigation.destination",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedNavigation.destination:e09a890531e91cc7",
+          "signature" : "val destination: zio.http.URL"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedNavigation.replace",
+      "ownerId" : "class:scalive.testing.ConnectedNavigation",
+      "qualifiedName" : "scalive.testing.ConnectedNavigation.replace",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedNavigation.replace:d9a1c5ef8e044d3b",
+          "signature" : "val replace: Boolean"
         }
       ]
     },

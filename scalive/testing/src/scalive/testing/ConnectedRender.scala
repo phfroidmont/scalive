@@ -13,10 +13,6 @@ import zio.json.ast.Json
 
 import scalive.*
 import scalive.protocol.phoenix.*
-import scalive.render.{BindingId, RenderDelta}
-import scalive.runtime.connection.*
-import scalive.runtime.contracts.*
-import scalive.runtime.kernel.{NavigationKind, NavigationOutput}
 
 /** Joins LiveViews through production route admission and connection supervision without starting a
   * network server.
@@ -41,7 +37,7 @@ object ConnectedRender:
     ).map(_.asInstanceOf[ConnectedView[Msg]])
 
   /** Executes the disconnected route, validates its bootstrap credentials, and starts its connected
-    * lifecycle using the production connection supervisor.
+    * lifecycle through the production Phoenix transport session.
     */
   def join[R](
     application: LiveApplication[R],
@@ -49,35 +45,38 @@ object ConnectedRender:
     request: Request,
     connectParams: Map[String, Json] = Map.empty
   ): ZIO[R & Scope, Throwable, ConnectedView[Nothing]] =
+    open(application, config, request, connectParams).flatMap(
+      _.join.mapError(_.toThrowable)
+    )
+
+  /** Executes the disconnected route and returns a stateful client that can join and reconnect with
+    * the page's retained bootstrap credentials.
+    */
+  def open[R](
+    application: LiveApplication[R],
+    config: ZioHttpConfig,
+    request: Request,
+    connectParams: Map[String, Json] = Map.empty
+  ): ZIO[R, Throwable, ConnectedClient[R]] =
     for
-      catalog   <- ZIO.attempt(ZioHttp.validate(application))
       routes    <- ZIO.attempt(ZioHttp.routes(application, config))
       page      <- DisconnectedRender.run(routes, request)
-      bootstrap <- bootstrap(page)
-      join = RootJoin(
-               url = Some(request.url.encode),
-               redirect = None,
-               flash = None,
-               session = bootstrap.session,
-               static = Some(bootstrap.static),
-               params = connectParams,
-               sticky = false
-             )
-      admitted <- ZioHttpAdmission
-                    .admit(
-                      catalog,
-                      config,
-                      Some(bootstrap.csrfCookie),
-                      Some(bootstrap.csrfToken),
-                      rootExists = false,
-                      bootstrap.topic,
-                      join
-                    ).mapError(Exception(_))
-      session <- ConnectedSession.make(config)
-      view    <- session.joinRoot(admitted, request, connectParams, bootstrap.csrfToken)
-    yield view.asInstanceOf[ConnectedView[Nothing]]
+      bootstrap <- bootstrap(page, request.url)
+      active    <- Ref.make(Option.empty[ConnectedSession])
+      mounts    <- Ref.make(0L)
+      gate      <- Semaphore.make(1L)
+    yield new ConnectedClient(
+      application,
+      config,
+      request,
+      connectParams,
+      bootstrap,
+      active,
+      mounts,
+      gate
+    )
 
-  private def bootstrap(page: RenderedPage): Task[Bootstrap] = ZIO.attempt {
+  private def bootstrap(page: RenderedPage, url: URL): Task[Bootstrap] = ZIO.attempt {
     val document = Jsoup.parse(page.html)
     val roots    = document
       .select("[data-phx-main][data-phx-session][data-phx-static]").asScala.toVector
@@ -96,7 +95,8 @@ object ConnectedRender:
       session = requiredAttribute(root, "data-phx-session"),
       static = requiredAttribute(root, "data-phx-static"),
       csrfToken = csrf,
-      csrfCookie = csrfCookie
+      csrfCookie = csrfCookie,
+      url = url
     )
   }
 
@@ -111,13 +111,109 @@ object ConnectedRender:
       case _               =>
         throw IllegalArgumentException(s"Expected one $description, found ${elements.size}.")
 
-  final private case class Bootstrap(
+  final private[testing] case class Bootstrap(
     topic: String,
     session: String,
     static: String,
     csrfToken: String,
-    csrfCookie: String)
+    csrfCookie: String,
+    url: URL)
 end ConnectedRender
+
+/** A protocol-visible reason why a routed connected join did not install a LiveView. */
+enum ConnectedJoinFailure:
+  /** The signed join or connected mount authorization was rejected. */
+  case Unauthorized
+
+  /** The server requires a fresh disconnected render. */
+  case Stale
+
+  /** The physical transport closed while the join was pending. */
+  case Disconnected
+
+  /** Connected mount requested a full redirect instead of joining. */
+  case Redirect(to: URL)
+
+  /** The in-process transport failed outside a protocol-visible join outcome. */
+  case Transport(error: Throwable)
+
+  private[testing] def toThrowable: Throwable = this match
+    case Unauthorized     => Exception("Connected LiveView join was unauthorized.")
+    case Stale            => Exception("Connected LiveView join was stale.")
+    case Disconnected     => Exception("Connected LiveView transport closed during join.")
+    case Redirect(to)     => Exception(s"Connected LiveView join redirected to ${to.encode}.")
+    case Transport(error) => error
+
+/** The semantic result of one connected browser or server-message action. */
+enum ConnectedAction:
+  /** The action completed without terminal navigation. */
+  case Rendered
+
+  /** The action requested a same-session route replacement that may be followed explicitly. */
+  case LiveNavigation(navigation: ConnectedNavigation)
+
+  /** The action requested a full redirect and closed the test transport. */
+  case Redirect(to: URL)
+
+  /** The physical transport closed before the action received a reply. */
+  case Disconnected
+
+/** A same-session route replacement emitted by a connected action. */
+final class ConnectedNavigation private[testing] (
+  val destination: URL,
+  val replace: Boolean,
+  followEffect: IO[ConnectedJoinFailure, ConnectedView[Nothing]]):
+  /** Replaces the root through the production redirect-join admission path. */
+  def follow: IO[ConnectedJoinFailure, ConnectedView[Nothing]] = followEffect
+
+/** A routed page bootstrap that can create fresh physical transports for reconnect tests. */
+final class ConnectedClient[-R] private[testing] (
+  application: LiveApplication[R],
+  config: ZioHttpConfig,
+  request: Request,
+  connectParams: Map[String, Json],
+  bootstrap: ConnectedRender.Bootstrap,
+  active: Ref[Option[ConnectedSession]],
+  mounts: Ref[Long],
+  gate: Semaphore):
+
+  /** Opens the initial physical transport and joins the routed root. */
+  def join: ZIO[R & Scope, ConnectedJoinFailure, ConnectedView[Nothing]] = connect
+
+  /** Closes any previous transport and rejoins with the retained page credentials. */
+  def reconnect: ZIO[R & Scope, ConnectedJoinFailure, ConnectedView[Nothing]] = connect
+
+  /** Closes the currently active physical transport, if any. */
+  def disconnect: UIO[Unit] =
+    gate.withPermit(active.getAndSet(None).flatMap(ZIO.foreachDiscard(_)(_.close)))
+
+  private def connect: ZIO[R & Scope, ConnectedJoinFailure, ConnectedView[Nothing]] =
+    gate.withPermit {
+      for
+        previous  <- active.getAndSet(None)
+        _         <- ZIO.foreachDiscard(previous)(_.close)
+        transport <- ZioHttp
+                       .inProcessTransport(
+                         application,
+                         config,
+                         request,
+                         Some(bootstrap.csrfCookie),
+                         Some(bootstrap.csrfToken)
+                       ).mapError(ConnectedJoinFailure.Transport.apply)
+        session <- ConnectedSession
+                     .make(transport, bootstrap, connectParams, mounts)
+                     .onExit {
+                       case Exit.Success(_) => ZIO.unit
+                       case Exit.Failure(_) => transport.close
+                     }
+                     .mapError(ConnectedJoinFailure.Transport.apply)
+        view <- (session.joinRoot <* active.set(Some(session))).onExit {
+                  case Exit.Success(_) => ZIO.unit
+                  case Exit.Failure(_) => session.close *> active.set(None)
+                }
+      yield view
+    }
+end ConnectedClient
 
 /** A semantic handle to one connected root or nested LiveView.
   *
@@ -129,7 +225,7 @@ final class ConnectedView[-Msg] private[testing] (
   state: ConnectedViewState):
 
   /** Stable protocol topic text for diagnostics. It is not a runtime handle. */
-  val topic: String = state.topic.value
+  val topic: String = state.topic
 
   /** Returns the latest committed semantic HTML projection. */
   def html: UIO[String] = state.html
@@ -139,11 +235,11 @@ final class ConnectedView[-Msg] private[testing] (
     html.flatMap(value => ZIO.attempt(ConnectedDom.selectOne(value, selector).text()))
 
   /** Dispatches the `phx-click` binding on exactly one matching element. */
-  def click(selector: String): Task[Unit] =
+  def click(selector: String): Task[ConnectedAction] =
     dispatchClick(ConnectedDom.selectOne(_, selector))
 
   /** Dispatches the `phx-click` binding on exactly one button with the given text. */
-  def clickButton(label: String): Task[Unit] =
+  def clickButton(label: String): Task[ConnectedAction] =
     dispatchClick(ConnectedDom.buttonByLabel(_, label))
 
   /** Dispatches the selected form's `phx-change` binding. */
@@ -151,18 +247,24 @@ final class ConnectedView[-Msg] private[testing] (
     selector: String,
     fields: Vector[(String, String)],
     target: Option[String] = None
-  ): Task[Unit] =
+  ): Task[ConnectedAction] =
     dispatchForm(selector, "phx-change", fields, target)
 
   /** Dispatches the selected form's `phx-submit` binding. */
-  def submitForm(selector: String, fields: Vector[(String, String)]): Task[Unit] =
+  def submitForm(
+    selector: String,
+    fields: Vector[(String, String)]
+  ): Task[ConnectedAction] =
     dispatchForm(selector, "phx-submit", fields, None)
 
   /** Sends one typed server message and waits for its committed output. */
-  def send(message: Msg): Task[Unit] = state.send(message)
+  def send(message: Msg): Task[ConnectedAction] = session.send(state, message)
 
   /** Waits for the next uncorrelated async, subscription, or component output. */
   def awaitDiff: Task[Unit] = state.awaitDiff
+
+  /** Waits for the next uncorrelated navigation or physical disconnect. */
+  def awaitAction: Task[ConnectedAction] = state.awaitAction
 
   /** Joins a nested LiveView registered in this view's latest committed HTML. */
   def joinNested(instanceId: String): RIO[Scope, ConnectedView[Nothing]] =
@@ -176,15 +278,21 @@ final class ConnectedView[-Msg] private[testing] (
     mediaType: String,
     bytes: Chunk[Byte]
   ): Task[Unit] =
-    state.upload(uploadRef, entryRef, fileName, mediaType, bytes)
+    session.upload(state, uploadRef, entryRef, fileName, mediaType, bytes)
+
+  /** Returns the route URL currently owned by this exact joined generation. */
+  def currentUrl: Task[URL] = state.currentUrl
 
   /** Reports whether this exact topic is still installed in the production supervisor. */
-  def isJoined: UIO[Boolean] = session.isJoined(state.topic)
+  def isJoined: UIO[Boolean] = state.isJoined
+
+  /** Waits until this view's physical transport has closed. */
+  def awaitDisconnected: UIO[Unit] = session.awaitClosed
 
   /** Leaves this lifecycle through the production supervisor. */
-  def leave: UIO[Unit] = session.leave(state.topic)
+  def leave: Task[Unit] = session.leave(state)
 
-  private def dispatchClick(findElement: String => Element): Task[Unit] =
+  private def dispatchClick(findElement: String => Element): Task[ConnectedAction] =
     for
       current <- html
       event   <- ZIO.attempt {
@@ -198,15 +306,15 @@ final class ConnectedView[-Msg] private[testing] (
                    cid = cid
                  )
                }
-      _ <- state.dispatch(event)
-    yield ()
+      result <- session.dispatch(state, event)
+    yield result
 
   private def dispatchForm(
     selector: String,
     attribute: String,
     fields: Vector[(String, String)],
     target: Option[String]
-  ): Task[Unit] =
+  ): Task[ConnectedAction] =
     for
       current <- html
       event   <- ZIO.attempt {
@@ -222,8 +330,8 @@ final class ConnectedView[-Msg] private[testing] (
                    meta = meta
                  )
                }
-      _ <- state.dispatch(event)
-    yield ()
+      result <- session.dispatch(state, event)
+    yield result
 end ConnectedView
 
 private object ConnectedDom:
@@ -277,57 +385,32 @@ private object ConnectedDom:
 end ConnectedDom
 
 final private class ConnectedSession(
-  config: ZioHttpConfig,
-  supervisor: ConnectionSupervisor):
+  transport: ZioHttp.InProcessTransport,
+  bootstrap: ConnectedRender.Bootstrap,
+  baseConnectParams: Map[String, Json],
+  mounts: Ref[Long],
+  nextReference: Ref[Long],
+  pending: Ref[Map[String, Promise[Throwable, PhoenixEnvelope]]],
+  states: Ref[Map[(String, String), ConnectedViewState]]):
 
-  def joinRoot[R](
-    admitted: ZioHttpAdmission.Admitted[R],
-    request: Request,
-    connectParams: Map[String, Json],
-    csrfToken: String
-  ): ZIO[R & Scope, Throwable, ConnectedView[Nothing]] =
+  def joinRoot: IO[ConnectedJoinFailure, ConnectedView[Nothing]] =
     for
-      lifecycle <- admitted.route.prepareConnected(
-                     admitted.url,
-                     ZioHttp.connectedRequest(request, admitted.url),
-                     admitted.claims
-                   )
-      state <- ConnectedViewState.make(
-                 NestedTopic(s"lv:${admitted.claims.rootId}"),
-                 admitted.url,
-                 Some(csrfToken),
-                 ZIO.suspendSucceed(supervisor.close)
-               )
-      metadata = RootConnectionMetadata(
-                   staticChanged = ZioHttp.staticChanged(
-                     ZioHttp.clientTrackedStatics(connectParams),
-                     admitted.claims.trackedStatics,
-                     admitted.url
-                   ),
-                   connectParams = connectParams,
-                   initialFlash = admitted.claims.initialFlash.view
-                     .map((key, value) => FlashKind(key) -> value).toMap
-                 )
-      connection <- supervisor
-                      .startRootLifecycle(
-                        lifecycle,
-                        metadata,
-                        admitted.claims.rootId,
-                        state.topic,
-                        loading = false,
-                        state.sink,
-                        requestedLifecycle = Some(LifecycleId(admitted.claims.lifecycle)),
-                        bootstrapChildLifecycles = admitted.claims.nestedLifecycles.view
-                          .mapValues(LifecycleId(_)).toMap
-                      ).mapError(error => Exception(error.toString))
-      _ <- state.install(connection)
-      _ <- state.awaitJoined
-    yield new ConnectedView(this, state)
+      params <- nextConnectParams
+      joined <- join(
+                  bootstrap.topic,
+                  RootJoin(
+                    url = Some(bootstrap.url.encode),
+                    redirect = None,
+                    flash = None,
+                    session = bootstrap.session,
+                    static = Some(bootstrap.static),
+                    params = params,
+                    sticky = false
+                  )
+                )
+    yield joined
 
-  def joinNested(
-    parent: ConnectedViewState,
-    instanceId: String
-  ): RIO[Scope, ConnectedView[Nothing]] =
+  def joinNested(parent: ConnectedViewState, instanceId: String): Task[ConnectedView[Nothing]] =
     for
       parentHtml <- parent.html
       element    <- ZIO.attempt {
@@ -339,154 +422,52 @@ final private class ConnectedSession(
                    else value
                  }
       sessionToken <- ZIO.attempt(ConnectedDom.requiredBinding(element, "data-phx-session"))
-      topic = NestedTopic(s"lv:$instanceId")
-      join  = RootJoin(
-               url = None,
-               redirect = None,
-               flash = None,
-               session = sessionToken,
-               static = Option
-                 .when(element.hasAttr("data-phx-static"))(
-                   element.attr("data-phx-static")
-                 ).filter(_.nonEmpty),
-               params = Map.empty,
-               sticky = element.hasAttr("data-phx-sticky")
-             )
-      claims <- ZioHttp
-                  .verifyNestedAdmission(config, topic.value, join).mapError(Exception(_))
-      reservation <- supervisor.reserveNested(claims).mapError(error => Exception(error.toString))
-      inherited   <- parent.currentUrl.get
-      state       <- ConnectedViewState.make(
-                 topic,
-                 inherited,
-                 csrfToken = None,
-                 ZIO.suspendSucceed(supervisor.close)
-               )
-      metadata = RootConnectionMetadata(
-                   staticChanged = false,
-                   connectParams = Map.empty,
-                   initialFlash = Map.empty
-                 )
-      connection <- supervisor
-                      .startNested(
-                        reservation,
-                        inherited,
-                        metadata,
-                        reservation.registration.applicationId,
-                        loading = element.hasClass("phx-loading"),
-                        state.sink,
-                        reattach = join.sticky,
-                        requestedLifecycle = claims.childLifecycle
-                      ).mapError(error => Exception(error.toString))
-      _ <- state.install(connection)
-      _ <- state.awaitJoined
-    yield new ConnectedView(this, state)
+      topic = s"lv:$instanceId"
+      joined <- join(
+                  topic,
+                  RootJoin(
+                    url = None,
+                    redirect = None,
+                    flash = None,
+                    session = sessionToken,
+                    static = Option
+                      .when(element.hasAttr("data-phx-static"))(
+                        element.attr("data-phx-static")
+                      ).filter(_.nonEmpty),
+                    params = Map.empty,
+                    sticky = element.hasAttr("data-phx-sticky")
+                  )
+                ).mapError(_.toThrowable)
+    yield joined
 
-  def isJoined(topic: NestedTopic): UIO[Boolean] =
-    supervisor.lifecycleForTopic(topic).map(_.nonEmpty)
-
-  def leave(topic: NestedTopic): UIO[Unit] =
-    supervisor.routeLeave(topic).unit
-end ConnectedSession
-
-private object ConnectedSession:
-  def make(config: ZioHttpConfig): RIO[Scope, ConnectedSession] =
-    ConnectionSupervisor
-      .make(
-        ZioHttp.connectionConfig,
-        new NestedCredentialIssuer:
-          def issue(claims: NestedCredentialClaims) = ZioHttpSecurity.issueNested(config, claims)
-        ,
-        applicationId => NestedTopic(s"lv:$applicationId")
-      ).map(new ConnectedSession(config, _))
-
-final private class ConnectedViewState(
-  val topic: NestedTopic,
-  val currentUrl: Ref[URL],
-  projection: Ref[Option[PhoenixRenderedState]],
-  gate: Semaphore,
-  connection: Promise[Nothing, ConnectedLifecycle],
-  joined: Promise[Throwable, Unit],
-  pending: Ref[Map[CommandId, Promise[Throwable, Unit]]],
-  diffs: Queue[Unit],
-  csrfToken: Option[String],
-  disconnect: UIO[Unit]):
-
-  val sink: ConnectionOutput => Task[Unit] = output =>
-    gate.withPermit {
-      val process = output match
-        case value: ConnectionOutput.Joined =>
-          update(value.delta) *> joined.succeed(()).unit
-        case value: ConnectionOutput.JoinedNavigation =>
-          update(value.delta) *> acknowledge(value.navigation) *> joined.succeed(()).unit
-        case value: ConnectionOutput.Reply =>
-          update(value.delta) *> complete(value.command)
-        case value: ConnectionOutput.ReplyWithPayload =>
-          update(value.delta) *> complete(value.command)
-        case value: ConnectionOutput.UploadReply =>
-          update(value.delta) *> complete(value.command)
-        case value: ConnectionOutput.ReplyNavigation =>
-          update(value.delta) *> complete(value.command) *> acknowledge(value.navigation)
-        case value: ConnectionOutput.ReplyNavigationWithPayload =>
-          update(value.delta) *> complete(value.command) *> acknowledge(value.navigation)
-        case value: ConnectionOutput.Diff =>
-          update(value.delta) *> diffs.offer(()).unit
-        case value: ConnectionOutput.DiffNavigation =>
-          update(value.delta) *> acknowledge(value.navigation) *> diffs.offer(()).unit
-        case value: ConnectionOutput.ReplyDisconnect =>
-          complete(value.command) *> disconnect.forkDaemon.unit
-        case _: ConnectionOutput.Disconnect                => disconnect.forkDaemon.unit
-        case ConnectionOutput.Rejected(command, rejection) =>
-          fail(command, Exception(rejection.toString))
-      process.tapError(failAll)
+  def dispatch(state: ConnectedViewState, event: RootEvent): Task[ConnectedAction] =
+    request(
+      state.joinRef,
+      state.topic,
+      "event",
+      Json.Obj(
+        "type"    -> Json.Str(event.eventType),
+        "event"   -> Json.Str(event.event),
+        "value"   -> event.value,
+        "cid"     -> event.cid.fold[Json](Json.Null)(value => Json.Num(BigDecimal(value))),
+        "uploads" -> event.uploads.fold[Json](Json.Obj.empty)(identity),
+        "meta"    -> event.meta.fold[Json](Json.Obj.empty)(identity)
+      )
+    ).flatMap(action).catchSome { case _: ZioHttp.InProcessTransportClosed =>
+      ZIO.succeed(ConnectedAction.Disconnected)
     }
 
-  def install(value: ConnectedLifecycle): UIO[Unit] = connection.succeed(value).unit
-
-  def awaitJoined: Task[Unit] =
-    joined.await.timeoutFail(Exception("Timed out waiting for connected mount."))(5.seconds)
-
-  def html: UIO[String] = gate.withPermit {
-    projection.get.map(
-      _.flatMap(state => PhoenixRenderedEncoder.html(state).toOption)
-        .getOrElse(throw IllegalStateException("Connected HTML is unavailable."))
-    )
-  }
-
-  def dispatch(event: RootEvent): Task[Unit] =
-    ZIO.fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
-      correlated { (command, lifecycle) =>
-        event.cid match
-          case None =>
-            lifecycle.browserEvent(
-              command,
-              BindingId.fromEncoded(event.event),
-              payload,
-              Some(event.toLiveEvent)
-            )
-          case Some(cid) =>
-            resolveComponent(lifecycle, cid).flatMap {
-              case Some(component) =>
-                lifecycle.componentEvent(
-                  command,
-                  component,
-                  BindingId.fromEncoded(event.event),
-                  payload,
-                  event.toLiveEvent
-                )
-              case None =>
-                ZIO.fail(ConnectionError.SinkFailed(Exception(s"Unknown component target $cid.")))
-            }
-      }
+  def send(state: ConnectedViewState, message: Any): Task[ConnectedAction] =
+    (for
+      ref      <- freshReference
+      response <- awaitReply(ref)(transport.sendMessage(state.topic, state.joinRef, ref, message))
+      result   <- action(response)
+    yield result).catchSome { case _: ZioHttp.InProcessTransportClosed =>
+      ZIO.succeed(ConnectedAction.Disconnected)
     }
-
-  def send(message: Any): Task[Unit] =
-    correlated((command, lifecycle) => lifecycle.message(command, message))
-
-  def awaitDiff: Task[Unit] =
-    diffs.take.timeoutFail(Exception("Timed out waiting for connected output."))(5.seconds)
 
   def upload(
+    state: ConnectedViewState,
     uploadRef: String,
     entryRef: String,
     fileName: String,
@@ -494,130 +475,396 @@ final private class ConnectedViewState(
     bytes: Chunk[Byte]
   ): Task[Unit] =
     for
-      lifecycle <- connection.await
-      metadata = new UploadClientMetadata(
-                   fileName,
-                   relativePath = None,
-                   sizeBytes = bytes.length.toLong,
-                   mediaType = mediaType,
-                   lastModifiedMillis = None,
-                   metadata = None
-                 )
-      selectedRef: UploadEntryRef = UploadEntryRef(entryRef).asInstanceOf[UploadEntryRef]
-      selected                    = Vector(selectedRef -> metadata)
-      result <- correlatedResult((command, current) =>
-                  current.preflightUpload(command, None, UploadRef(uploadRef), selected)
-                )
-      preflight <- ZIO.fromEither(result.left.map(error => Exception(error.toString)))
-      entry     <- ZIO
-                 .fromOption(preflight.entries.find(_.ref.value == entryRef))
-                 .orElseFail(Exception(s"Upload preflight omitted entry '$entryRef'."))
-      token <- ZIO
-                 .fromOption(entry.hosted)
-                 .orElseFail(Exception("The connected test harness supports hosted uploads only."))
-      admitted <- lifecycle.admitUpload(
-                    None,
-                    UploadRef(uploadRef),
-                    UploadEntryRef(entryRef),
-                    token.upload.generation
-                  )
-      worker <- ZIO.fromEither(admitted.left.map(error => Exception(error.toString)))
-      _      <- lifecycle.uploadChunk(worker, bytes).mapError(error => Exception(error.toString))
+      preflight <- request(
+                     state.joinRef,
+                     state.topic,
+                     "allow_upload",
+                     Json.Obj(
+                       "ref"     -> Json.Str(uploadRef),
+                       "entries" -> Json.Arr(
+                         Json.Obj(
+                           "ref"           -> Json.Str(entryRef),
+                           "name"          -> Json.Str(fileName),
+                           "relative_path" -> Json.Null,
+                           "size"          -> Json.Num(BigDecimal(bytes.length)),
+                           "type"          -> Json.Str(mediaType),
+                           "last_modified" -> Json.Null,
+                           "meta"          -> Json.Null
+                         )
+                       ),
+                       "cid" -> Json.Null
+                     )
+                   )
+      preflightResponse <- successfulResponse(preflight)
+      entries           <- requiredObject(preflightResponse, "entries")
+      clientConfig      <- requiredObject(preflightResponse, "config")
+      chunkSize         <- requiredPositiveInt(clientConfig, "chunk_size")
+      token             <- entries.fields.toMap.get(entryRef) match
+                 case Some(Json.Str(value)) => ZIO.succeed(value)
+                 case Some(_)               =>
+                   ZIO.fail(Exception("The connected test harness supports hosted uploads only."))
+                 case None => ZIO.fail(Exception(s"Upload preflight omitted entry '$entryRef'."))
+      uploadJoinRef <- freshReference
+      uploadTopic = s"lvu:$entryRef"
+      left <- Ref.make(false)
+      _    <- (for
+             uploadJoin <- request(
+                             uploadJoinRef,
+                             uploadTopic,
+                             "phx_join",
+                             Json.Obj("token" -> Json.Str(token))
+                           )
+             _ <- successfulResponse(uploadJoin)
+             _ <- ZIO.foreachDiscard(uploadChunks(bytes, chunkSize)) { chunk =>
+                    for
+                      chunkRef <- freshReference
+                      frame    <- ZIO.fromEither(
+                                 PhoenixUploadProtocol
+                                   .encodeBinary(
+                                     PhoenixUploadBinaryFrame(
+                                       uploadJoinRef.value,
+                                       chunkRef.value,
+                                       uploadTopic,
+                                       "chunk",
+                                       chunk
+                                     )
+                                   ).left.map(Exception(_))
+                               )
+                      chunkReply <- awaitReply(chunkRef)(transport.sendBinary(frame))
+                      _          <- successfulResponse(chunkReply)
+                    yield ()
+                  }
+             _ <- request(uploadJoinRef, uploadTopic, "phx_leave", Json.Obj.empty)
+             _ <- left.set(true)
+           yield ()).ensuring(
+             left.get.flatMap(completed =>
+               ZIO.unless(completed)(sendUploadLeave(uploadJoinRef, uploadTopic).forkDaemon.unit)
+             )
+           )
     yield ()
 
-  private def correlated(
-    offer: (CommandId, ConnectedLifecycle) => IO[ConnectionError, Unit]
-  ): Task[Unit] =
-    correlatedResult(offer)
+  def leave(state: ConnectedViewState): Task[Unit] =
+    request(state.joinRef, state.topic, "phx_leave", Json.Obj.empty).unit
+      .ensuring(retire(state) *> retireMissingStates)
 
-  private def correlatedResult[A](
-    offer: (CommandId, ConnectedLifecycle) => IO[ConnectionError, A]
-  ): Task[A] =
+  def awaitClosed: UIO[Unit] = transport.awaitClosed
+
+  def close: UIO[Unit] = transport.close
+
+  private def join(
+    topic: String,
+    payload: RootJoin
+  ): IO[ConnectedJoinFailure, ConnectedView[Nothing]] =
+    (for
+      joinRef <- freshReference
+      state   <- ConnectedViewState.make(transport, topic, joinRef)
+      _       <- states.update(_.updated(state.key, state))
+      reply   <- request(
+                 joinRef,
+                 topic,
+                 "phx_join",
+                 Json.Obj(
+                   "url"      -> payload.url.fold[Json](Json.Null)(Json.Str(_)),
+                   "redirect" -> payload.redirect.fold[Json](Json.Null)(Json.Str(_)),
+                   "flash"    -> payload.flash.fold[Json](Json.Null)(Json.Str(_)),
+                   "session"  -> Json.Str(payload.session),
+                   "static"   -> payload.static.fold[Json](Json.Null)(Json.Str(_)),
+                   "params"   -> Json.Obj(payload.params.toVector*),
+                   "sticky"   -> Json.Bool(payload.sticky)
+                 )
+               ).onError(_ => states.update(_ - state.key) *> state.close)
+      _ <- joinResponse(reply).onError(_ => states.update(_ - state.key) *> state.close)
+      _ <- state.markJoined
+    yield new ConnectedView(this, state)).mapError {
+      case failure: ConnectedJoinFailureException => failure.failure
+      case _: ZioHttp.InProcessTransportClosed    => ConnectedJoinFailure.Disconnected
+      case error                                  => ConnectedJoinFailure.Transport(error)
+    }
+
+  private def followRoot(
+    destination: String,
+    flash: Option[String]
+  ): IO[ConnectedJoinFailure, ConnectedView[Nothing]] =
     for
-      command   <- ZIO.fromEither(CommandId.fresh()).mapError(error => Exception(error.toString))
-      response  <- Promise.make[Throwable, Unit]
-      _         <- pending.update(_.updated(command, response))
-      lifecycle <- connection.await
-      result    <- offer(command, lifecycle).tapError(error =>
-                  pending.update(_ - command) *> response.fail(error)
+      params <- nextConnectParams
+      joined <- join(
+                  bootstrap.topic,
+                  RootJoin(
+                    url = None,
+                    redirect = Some(destination),
+                    flash = flash,
+                    session = bootstrap.session,
+                    static = Some(bootstrap.static),
+                    params = params,
+                    sticky = false
+                  )
                 )
-      _ <- response.await
-             .timeoutFail(Exception("Timed out waiting for connected reply."))(5.seconds)
-             .onInterrupt(pending.update(_ - command))
+      _ <- retireMissingStates
+    yield joined
+
+  private def action(envelope: PhoenixEnvelope): Task[ConnectedAction] =
+    for
+      response <- successfulResponse(envelope)
+      result   <- response.fields.toMap.get("live_redirect") match
+                  case Some(value: Json.Obj) => liveNavigation(value)
+                  case _                     =>
+                    response.fields.toMap.get("redirect") match
+                      case Some(value: Json.Obj) => redirect(value).tap(_ => transport.close)
+                      case _                     => ZIO.succeed(ConnectedAction.Rendered)
     yield result
 
-  private def resolveComponent(
-    lifecycle: ConnectedLifecycle,
-    cid: Long
-  ): IO[ConnectionError, Option[ComponentInstanceId]] =
-    ZioHttp.resolveComponentCid(projection, gate, cid, lifecycle.componentForToken)
+  private def liveNavigation(value: Json.Obj): Task[ConnectedAction] =
+    for
+      destinationText <- requiredString(value, "to")
+      destination     <- decodeUrl(destinationText)
+      kind       = value.fields.toMap.get("kind").flatMap(_.asString)
+      flash      = value.fields.toMap.get("flash").flatMap(_.asString)
+      navigation = new ConnectedNavigation(
+                     destination,
+                     replace = kind.contains("replace"),
+                     followRoot(destinationText, flash)
+                   )
+    yield ConnectedAction.LiveNavigation(navigation)
 
-  private def update(delta: RenderDelta): Task[Unit] =
-    projection.modify { previous =>
-      val result = previous match
-        case None =>
-          delta match
-            case RenderDelta.Replace(tree) => PhoenixRenderedEncoder.initial(tree, csrfToken)
-            case _ => Left(IllegalStateException("Initial connected output was not a replacement."))
-        case Some(current) => PhoenixRenderedEncoder.update(current, delta)
+  private def redirect(value: Json.Obj): Task[ConnectedAction] =
+    requiredString(value, "to")
+      .flatMap(decodeUrl)
+      .map(ConnectedAction.Redirect(_))
 
-      result match
-        case Right((next, _))       => Right(())                       -> Some(next)
-        case Left(error: Throwable) => Left(error)                     -> previous
-        case Left(error)            => Left(Exception(error.toString)) -> previous
-    }.absolve
+  private def request(
+    joinRef: PhoenixRef.Value,
+    topic: String,
+    event: String,
+    payload: Json
+  ): Task[PhoenixEnvelope] =
+    for
+      ref <- freshReference
+      envelope = PhoenixEnvelope(joinRef, ref, topic, event, payload)
+      reply <- awaitReply(ref)(transport.send(envelope))
+    yield reply
 
-  private def acknowledge(navigation: NavigationOutput): Task[Unit] =
-    if navigation.kind.isPatch then
-      currentUrl.set(navigation.destination) *>
-        connection.await.flatMap(_.internalPatch(navigation.destination))
-    else if navigation.kind == NavigationKind.Redirect then disconnect.forkDaemon.unit
-    else ZIO.unit
+  private def sendUploadLeave(joinRef: PhoenixRef.Value, topic: String): UIO[Unit] =
+    freshReference.flatMap(ref =>
+      transport.send(PhoenixEnvelope(joinRef, ref, topic, "phx_leave", Json.Obj.empty)).ignore
+    )
 
-  private def complete(command: CommandId): UIO[Unit] =
-    pending.modify(current => current.get(command) -> (current - command)).flatMap {
-      case Some(response) => response.succeed(()).unit
-      case None           => ZIO.unit
+  private def awaitReply(
+    ref: PhoenixRef.Value
+  )(
+    send: Task[Unit]
+  ): Task[PhoenixEnvelope] =
+    for
+      response <- Promise.make[Throwable, PhoenixEnvelope]
+      _        <- pending.update(_.updated(ref.value, response))
+      _        <- send.onError(error => pending.update(_ - ref.value) *> response.failCause(error))
+      reply    <-
+        response.await
+          .timeoutFail(Exception("Timed out waiting for connected transport reply."))(5.seconds)
+          .ensuring(pending.update(_ - ref.value))
+    yield reply
+
+  private def freshReference: UIO[PhoenixRef.Value] =
+    nextReference.modify(value => PhoenixRef.Value(value.toString) -> (value + 1L))
+
+  private def nextConnectParams: UIO[Map[String, Json]] =
+    mounts
+      .getAndUpdate(_ + 1L).map(value =>
+        baseConnectParams.updated("_mounts", Json.Num(BigDecimal(value)))
+      )
+
+  private def joinResponse(envelope: PhoenixEnvelope): Task[Unit] =
+    reply(envelope).flatMap { case (status, response) =>
+      if status == "ok" then ZIO.unit
+      else
+        val fields  = response.fields.toMap
+        val failure = fields.get("reason").flatMap(_.asString) match
+          case Some("unauthorized") => ConnectedJoinFailure.Unauthorized
+          case Some("stale")        => ConnectedJoinFailure.Stale
+          case _                    =>
+            fields.get("redirect").orElse(fields.get("live_redirect")) match
+              case Some(value: Json.Obj) =>
+                value.fields.toMap
+                  .get("to").flatMap(_.asString).flatMap(URL.decode(_).toOption)
+                  .fold[ConnectedJoinFailure](
+                    ConnectedJoinFailure.Transport(Exception("Invalid connected join redirect."))
+                  )(ConnectedJoinFailure.Redirect.apply)
+              case _ => ConnectedJoinFailure.Transport(Exception("Connected LiveView join failed."))
+        ZIO.fail(ConnectedJoinFailureException(failure))
     }
 
-  private def fail(command: CommandId, error: Throwable): UIO[Unit] =
-    pending.modify(current => current.get(command) -> (current - command)).flatMap {
-      case Some(response) => response.fail(error).unit
-      case None           => ZIO.unit
+  private def successfulResponse(envelope: PhoenixEnvelope): Task[Json.Obj] =
+    reply(envelope).flatMap { case (status, response) =>
+      if status == "ok" then ZIO.succeed(response)
+      else ZIO.fail(Exception(s"Connected transport request failed: $response"))
     }
+
+  private def reply(envelope: PhoenixEnvelope): Task[(String, Json.Obj)] = envelope.payload match
+    case Json.Obj(rawFields) =>
+      val fields = rawFields.toMap
+      (fields.get("status"), fields.get("response")) match
+        case (Some(Json.Str(status)), Some(response: Json.Obj)) => ZIO.succeed(status -> response)
+        case _ => ZIO.fail(Exception("Phoenix reply has an invalid payload."))
+    case _ => ZIO.fail(Exception("Phoenix reply payload is not an object."))
+
+  private def requiredObject(value: Json.Obj, name: String): Task[Json.Obj] =
+    value.fields.toMap.get(name) match
+      case Some(result: Json.Obj) => ZIO.succeed(result)
+      case _                      => ZIO.fail(Exception(s"Missing object field '$name'."))
+
+  private def requiredString(value: Json.Obj, name: String): Task[String] =
+    value.fields.toMap.get(name).flatMap(_.asString) match
+      case Some(result) => ZIO.succeed(result)
+      case None         => ZIO.fail(Exception(s"Missing string field '$name'."))
+
+  private def requiredPositiveInt(value: Json.Obj, name: String): Task[Int] =
+    value.fields.toMap.get(name) match
+      case Some(Json.Num(number)) =>
+        ZIO
+          .attempt(number.intValueExact()).filterOrFail(_ > 0)(
+            Exception(s"Field '$name' must be a positive integer.")
+          )
+      case _ => ZIO.fail(Exception(s"Missing positive integer field '$name'."))
+
+  private def uploadChunks(bytes: Chunk[Byte], chunkSize: Int): Vector[Chunk[Byte]] =
+    if bytes.isEmpty then Vector(Chunk.empty)
+    else
+      Vector.tabulate((bytes.length + chunkSize - 1) / chunkSize) { index =>
+        val start = index * chunkSize
+        bytes.slice(start, math.min(bytes.length, start + chunkSize))
+      }
+
+  private def decodeUrl(value: String): Task[URL] =
+    ZIO.fromEither(URL.decode(value).left.map(error => Exception(error.getMessage)))
+
+  private def handleOutput(envelope: PhoenixEnvelope): UIO[Unit] =
+    envelope.ref match
+      case PhoenixRef.Value(value) =>
+        pending.modify(current => current.get(value) -> (current - value)).flatMap {
+          case Some(response) => response.succeed(envelope).unit
+          case None           => signal(envelope)
+        }
+      case PhoenixRef.Null => signal(envelope)
+
+  private def signal(envelope: PhoenixEnvelope): UIO[Unit] = envelope.joinRef match
+    case value: PhoenixRef.Value =>
+      states.get.flatMap { current =>
+        current.get(envelope.topic -> value.value) match
+          case Some(state) =>
+            envelope.event match
+              case "diff" | "live_patch" => state.signalDiff
+              case "live_redirect"       =>
+                envelope.payload match
+                  case payload: Json.Obj =>
+                    liveNavigation(payload).orDie.flatMap(state.signalAction)
+                  case _ => ZIO.dieMessage("Live navigation payload is not an object.")
+              case "redirect" =>
+                envelope.payload match
+                  case payload: Json.Obj =>
+                    redirect(payload).orDie.flatMap(action =>
+                      state.signalAction(action) *> transport.close
+                    )
+                  case _ => ZIO.dieMessage("Redirect payload is not an object.")
+              case "phx_close" | "phx_error" => retire(state) *> retireMissingStates
+              case _                         => ZIO.unit
+          case None => ZIO.unit
+      }
+    case PhoenixRef.Null => ZIO.unit
 
   private def failAll(error: Throwable): UIO[Unit] =
     pending
       .getAndSet(Map.empty).flatMap(values =>
         ZIO.foreachDiscard(values.values)(_.fail(error).unit)
-      ) *> joined.fail(error).unit
+      ) *> states
+      .getAndSet(Map.empty).flatMap(values =>
+        ZIO.foreachDiscard(values.values)(state =>
+          state.signalAction(ConnectedAction.Disconnected) *> state.close
+        )
+      )
+
+  private def retire(state: ConnectedViewState): UIO[Unit] =
+    states.update(_ - state.key) *> state.close
+
+  private def retireMissingStates: UIO[Unit] =
+    states.get.flatMap(current =>
+      ZIO.foreachDiscard(current.values)(state =>
+        state.isMissing.flatMap(missing => ZIO.when(missing)(retire(state)))
+      )
+    )
+
+  private def runOutput: UIO[Unit] =
+    transport.receive.flatMap(handleOutput).forever.catchAll(failAll)
+end ConnectedSession
+
+private object ConnectedSession:
+  def make(
+    transport: ZioHttp.InProcessTransport,
+    bootstrap: ConnectedRender.Bootstrap,
+    connectParams: Map[String, Json],
+    mounts: Ref[Long]
+  ): RIO[Scope, ConnectedSession] =
+    for
+      nextReference <- Ref.make(1L)
+      pending       <- Ref.make(Map.empty[String, Promise[Throwable, PhoenixEnvelope]])
+      states        <- Ref.make(Map.empty[(String, String), ConnectedViewState])
+      session = new ConnectedSession(
+                  transport,
+                  bootstrap,
+                  connectParams,
+                  mounts,
+                  nextReference,
+                  pending,
+                  states
+                )
+      _ <- session.runOutput.forkScoped
+    yield session
+
+final private case class ConnectedJoinFailureException(failure: ConnectedJoinFailure)
+    extends Exception(failure.toString)
+
+final private class ConnectedViewState(
+  transport: ZioHttp.InProcessTransport,
+  val topic: String,
+  val joinRef: PhoenixRef.Value,
+  diffs: Queue[Unit],
+  actions: Queue[ConnectedAction],
+  joined: Ref[Boolean],
+  closed: Promise[Nothing, Unit]):
+
+  val key: (String, String) = topic -> joinRef.value
+
+  def html: UIO[String] = transport.html(topic, joinRef).orDie
+
+  def currentUrl: Task[URL] = transport.currentUrl(topic, joinRef)
+
+  def isJoined: UIO[Boolean] = transport.isJoined(topic, joinRef)
+
+  def isMissing: UIO[Boolean] =
+    joined.get.flatMap(installed => ZIO.ifZIO(isJoined)(ZIO.succeed(false), ZIO.succeed(installed)))
+
+  def awaitDiff: Task[Unit] =
+    diffs.take.timeoutFail(Exception("Timed out waiting for connected output."))(5.seconds)
+
+  def awaitAction: Task[ConnectedAction] =
+    actions.take.timeoutFail(Exception("Timed out waiting for connected action."))(5.seconds)
+
+  def signalDiff: UIO[Unit] = diffs.offer(()).unit
+
+  def signalAction(action: ConnectedAction): UIO[Unit] = actions.offer(action).unit
+
+  def markJoined: UIO[Unit] = joined.set(true)
+
+  def close: UIO[Unit] = closed.succeed(()).unit
 end ConnectedViewState
 
 private object ConnectedViewState:
   def make(
-    topic: NestedTopic,
-    initialUrl: URL,
-    csrfToken: Option[String],
-    disconnect: UIO[Unit]
-  ): RIO[Scope, ConnectedViewState] =
+    transport: ZioHttp.InProcessTransport,
+    topic: String,
+    joinRef: PhoenixRef.Value
+  ): UIO[ConnectedViewState] =
     for
-      currentUrl <- Ref.make(initialUrl)
-      projection <- Ref.make(Option.empty[PhoenixRenderedState])
-      gate       <- Semaphore.make(1L)
-      connection <- Promise.make[Nothing, ConnectedLifecycle]
-      joined     <- Promise.make[Throwable, Unit]
-      pending    <- Ref.make(Map.empty[CommandId, Promise[Throwable, Unit]])
-      diffs      <- Queue.sliding[Unit](64)
-      _          <- ZIO.addFinalizer(diffs.shutdown)
-    yield new ConnectedViewState(
-      topic,
-      currentUrl,
-      projection,
-      gate,
-      connection,
-      joined,
-      pending,
-      diffs,
-      csrfToken,
-      disconnect
-    )
+      diffs   <- Queue.sliding[Unit](64)
+      actions <- Queue.sliding[ConnectedAction](16)
+      joined  <- Ref.make(false)
+      closed  <- Promise.make[Nothing, Unit]
+    yield new ConnectedViewState(transport, topic, joinRef, diffs, actions, joined, closed)

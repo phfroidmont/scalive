@@ -134,3 +134,40 @@ diff --git a/test/e2e/tests/issues/3530.spec.js b/test/e2e/tests/issues/3530.spe
 -  expect(logs).not.toEqual(
 +  expect(allLogs).not.toEqual(
      expect.arrayContaining([
+diff --git a/test/e2e/tests/form-unsaved.spec.js b/test/e2e/tests/form-unsaved.spec.js
+--- a/test/e2e/tests/form-unsaved.spec.js
++++ b/test/e2e/tests/form-unsaved.spec.js
+@@ -26,3 +26,33 @@ test.beforeEach(async ({ page }) => {
++test("recovers typed phx-change bindings after reconnect", async ({ page }) => {
++  await page.goto("/form-unsaved");
++  await syncLV(page);
++
++  const form = page.locator("#unsaved-form");
++  const binding = await form.getAttribute("phx-change");
++  expect(binding).not.toBeNull();
++
++  await page.locator("#unsaved-note").fill("draft");
++  await syncLV(page);
++  await expect(page.locator("#unsaved-value")).toHaveText(
++    "Unsaved value: draft",
++  );
++  await page.locator("#unsaved-note").blur();
++
++  await page.evaluate(
++    () => new Promise((resolve) => window.liveSocket.disconnect(resolve)),
++  );
++  await expect(page.locator(".phx-loading")).toHaveCount(1);
++
++  await page.evaluate(() => window.liveSocket.connect());
++  await syncLV(page);
++
++  await expect(form).toHaveAttribute("phx-change", binding);
++  await expect(page.locator("#unsaved-note")).toHaveValue("draft");
++  await expect(page.locator("#unsaved-value")).toHaveText(
++    "Unsaved value: draft",
++  );
++});
++
+ test("can prevent live navigation and beforeunload", async ({ page }) => {
+   await page.goto("/form-unsaved");
+   await syncLV(page);

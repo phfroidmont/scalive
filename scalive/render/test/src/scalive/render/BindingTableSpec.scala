@@ -6,6 +6,13 @@ import zio.test.*
 import scalive.*
 
 object BindingTableSpec extends ZIOSpecDefault:
+  private enum FormMsg:
+    case Changed(event: FormEvent[FormData])
+    case Recovered(event: FormEvent[FormData])
+
+  private enum RowFormMsg:
+    case Changed(row: String, event: FormEvent[FormData])
+
   override def spec = suite("BindingTableSpec")(
     test("rejects every duplicate binding insertion") {
       val builder   = BindingTable.Builder[Int]()
@@ -98,5 +105,114 @@ object BindingTableSpec extends ZIOSpecDefault:
         first.bindings.ids == second.bindings.ids,
         HtmlRenderer.render(first.tree) == HtmlRenderer.render(second.tree)
       )
+    },
+    test("keeps typed form change bindings stable across equivalent lifecycle programs") {
+      def compile = RenderProgram.compile[Unit, FormMsg] { _ =>
+        form(
+          idAttr := "profile-form",
+          on.change.form(FormCodec.formData)(FormMsg.Changed(_)),
+          on.recover.form(FormCodec.formData)(FormMsg.Recovered(_))
+        )
+      }
+
+      val recoveredData = FormData.fromMap(Map("note" -> "draft"))
+      val payload       = BindingPayload.Form(recoveredData, FormEvent.Meta(recovery = true))
+
+      for
+        firstProgram  <- ZIO.fromEither(compile)
+        secondProgram <- ZIO.fromEither(compile)
+        first         <- firstProgram.evaluate(())
+        second        <- secondProgram.evaluate(())
+        firstChange  = bindingAttribute(first, "phx-change")
+        secondChange = bindingAttribute(second, "phx-change")
+        firstRecover = bindingAttribute(first, "phx-auto-recover")
+        secondRecover = bindingAttribute(second, "phx-auto-recover")
+        changeResult = second.bindings.resolve(firstChange).map(_.dispatch(payload))
+        recoverResult = second.bindings.resolve(secondRecover).map(_.dispatch(payload))
+        changeRecovered = changeResult.exists {
+                            case Right(BindingDispatch.Owner(FormMsg.Changed(event))) =>
+                              event.raw == recoveredData && event.recovery
+                            case _ => false
+                          }
+        dedicatedRecovered = recoverResult.exists {
+                               case Right(BindingDispatch.Owner(FormMsg.Recovered(event))) =>
+                                 event.raw == recoveredData && event.recovery
+                               case _ => false
+                             }
+      yield assertTrue(
+        firstChange == secondChange,
+        firstRecover != secondRecover,
+        changeRecovered,
+        dedicatedRecovered
+      )
+    },
+    test("derives form change bindings from stable form ids instead of keyed row history") {
+      def compile = RenderProgram.compile[Vector[String], RowFormMsg] { rows =>
+        div(
+          rows.splitBy(identity) { (rowId, _) =>
+            form(
+              idAttr := s"form-$rowId",
+              on.change.form(FormCodec.formData)(RowFormMsg.Changed(rowId, _))
+            )
+          }
+        )
+      }
+
+      val recoveredData = FormData.fromMap(Map("note" -> "draft"))
+      val payload       = BindingPayload.Form(recoveredData, FormEvent.Meta(recovery = true))
+
+      for
+        firstProgram  <- ZIO.fromEither(compile)
+        secondProgram <- ZIO.fromEither(compile)
+        first         <- firstProgram.evaluate(Vector("removed", "kept"))
+        second        <- secondProgram.evaluate(Vector("kept"))
+        firstChange  = keyedFormBinding(first, "form-kept")
+        secondChange = keyedFormBinding(second, "form-kept")
+        changeResult = second.bindings.resolve(firstChange).map(_.dispatch(payload))
+        changeRecovered = changeResult.exists {
+                            case Right(BindingDispatch.Owner(RowFormMsg.Changed("kept", event))) =>
+                              event.raw == recoveredData && event.recovery
+                            case _ => false
+                          }
+      yield assertTrue(firstChange == secondChange, changeRecovered)
+    },
+    test("does not reuse form change bindings across different form ids") {
+      def compile(formId: String) = RenderProgram.compile[Unit, Int] { _ =>
+        form(idAttr := formId, on.change(_ => 1))
+      }
+
+      for
+        firstProgram  <- ZIO.fromEither(compile("first-form"))
+        secondProgram <- ZIO.fromEither(compile("second-form"))
+        first         <- firstProgram.evaluate(())
+        second        <- secondProgram.evaluate(())
+        firstChange  = bindingAttribute(first, "phx-change")
+        secondChange = bindingAttribute(second, "phx-change")
+      yield assertTrue(
+        firstChange != secondChange,
+        second.bindings.resolve(firstChange).isEmpty
+      )
     }
   )
+
+  private def bindingAttribute(candidate: RenderCandidate[?], name: String): BindingId =
+    candidate.tree.root.attributes
+      .collectFirst {
+        case EvaluatedAttribute(`name`, Some(AttributeValue.Text(value)), _, _) =>
+          BindingId.fromEncoded(value)
+      }.getOrElse(throw IllegalStateException(s"Missing $name binding attribute."))
+
+  private def keyedFormBinding(candidate: RenderCandidate[?], formId: String): BindingId =
+    val keyed = candidate.tree.root.children.collectFirst { case value: EvaluatedNode.Keyed => value }
+      .getOrElse(throw IllegalStateException("Missing keyed forms."))
+    val form = keyed.rows.iterator.map(_.child).find { element =>
+      element.attributes.exists {
+        case EvaluatedAttribute("id", Some(AttributeValue.Text(`formId`)), _, _) => true
+        case _                                                                  => false
+      }
+    }.getOrElse(throw IllegalStateException(s"Missing keyed form $formId."))
+
+    form.attributes.collectFirst {
+      case EvaluatedAttribute("phx-change", Some(AttributeValue.Text(value)), _, _) =>
+        BindingId.fromEncoded(value)
+    }.getOrElse(throw IllegalStateException(s"Missing phx-change binding on $formId."))

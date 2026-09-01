@@ -1048,16 +1048,13 @@ object RenderProgram:
     val commitActions = ArrayBuffer.empty[() => Unit]
     val requirements  = Requirements[Msg]()
     for
-      attributes <- traverse(template.attributes.zipWithIndex) { case (attribute, index) =>
-                      val previousAttribute = previous.flatMap(_.attributes.lift(index))
-                      evaluateAttribute(
-                        attribute,
-                        previousAttribute,
-                        revision,
-                        transaction,
-                        bindings
-                      )
-                    }
+      attributes <- evaluateAttributes(
+                      template,
+                      previous,
+                      revision,
+                      transaction,
+                      bindings
+                    )
       children <- traverse(template.children.zipWithIndex) { case (child, index) =>
                     val previousChild = previous.flatMap(_.children.lift(index))
                     evaluateNode(
@@ -1079,8 +1076,54 @@ object RenderProgram:
       requirements,
       CandidateCommit(commitActions.toArray, candidateRows.rollbackActions, candidateRows.scopes)
     )
-    end for
   end evaluateElement
+
+  private def evaluateAttributes[Msg](
+    template: ElementTemplate[Msg],
+    previous: Option[EvaluatedNode.Element],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    bindings: BindingTable.Builder[Msg]
+  ): Either[RenderError, Vector[EvaluatedAttribute]] =
+    val indexed = template.attributes.zipWithIndex
+    // Phoenix gates form recovery on the old and new phx-change values matching exactly.
+    val formIdIndex = Option
+      .when(template.tag.equalsIgnoreCase("form"))(
+        indexed.indexWhere((attribute, _) => attribute.name.equalsIgnoreCase("id"))
+      ).filter(_ >= 0)
+
+    val evaluatedFormId = formIdIndex match
+      case Some(index) =>
+        evaluateAttribute(
+          template.attributes(index),
+          previous.flatMap(_.attributes.lift(index)),
+          revision,
+          transaction,
+          bindings,
+          None
+        ).map(attribute => Some((index, attribute, textValue(attribute).filter(_.nonEmpty))))
+      case None => Right(None)
+
+    evaluatedFormId.flatMap { evaluatedId =>
+      val formId = evaluatedId.flatMap(_._3)
+      traverse(indexed) { case (attribute, index) =>
+        evaluatedId match
+          case Some((idIndex, value, _)) if index == idIndex => Right(value)
+          case _                                             =>
+            evaluateAttribute(
+              attribute,
+              previous.flatMap(_.attributes.lift(index)),
+              revision,
+              transaction,
+              bindings,
+              formId
+            )
+      }
+    }
+  end evaluateAttributes
+
+  private def textValue(attribute: EvaluatedAttribute): Option[String] =
+    attribute.value.collect { case AttributeValue.Text(value) => value }
 
   private def evaluateNode[Msg](
     template: NodeTemplate[Msg],
@@ -1096,18 +1139,14 @@ object RenderProgram:
     template match
       case element: ElementTemplate[Msg] =>
         for
-          attributes <- traverse(element.attributes.zipWithIndex) { case (attribute, index) =>
-                          val previousAttribute = previous
-                            .collect { case node: EvaluatedNode.Element => node }
-                            .flatMap(_.attributes.lift(index))
-                          evaluateAttribute(
-                            attribute,
-                            previousAttribute,
-                            revision,
-                            transaction,
-                            bindings
-                          )
-                        }
+          previousElement = previous.collect { case node: EvaluatedNode.Element => node }
+          attributes <- evaluateAttributes(
+                          element,
+                          previousElement,
+                          revision,
+                          transaction,
+                          bindings
+                        )
           children <- traverse(element.children.zipWithIndex) { case (child, index) =>
                         val previousChild = previous
                           .collect { case node: EvaluatedNode.Element => node }
@@ -1128,7 +1167,7 @@ object RenderProgram:
           element,
           attributes,
           children,
-          previous.collect { case node: EvaluatedNode.Element => node },
+          previousElement,
           revision
         )
       case text: TextTemplate            => evaluateText(text, previous, revision, transaction)
@@ -1697,7 +1736,8 @@ object RenderProgram:
     previous: Option[EvaluatedAttribute],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    bindings: BindingTable.Builder[Msg]
+    bindings: BindingTable.Builder[Msg],
+    formId: Option[String]
   ): Either[RenderError, EvaluatedAttribute] =
     import AttributeTemplate.*
 
@@ -1723,48 +1763,53 @@ object RenderProgram:
             .sample(signal).map(sample =>
               Some(slot) -> Option.when(sample.value)(AttributeValue.Presence)
             )
-        case Binding(_, valueSlot, id, operation) =>
+        case Binding(name, valueSlot, id, operation) =>
+          val resolvedId = resolveBindingId(name, id, formId)
           bindings
-            .add(id, BindingOperation(operation)).map(_ =>
-              Some(valueSlot) -> Some(AttributeValue.Text(id.encoded))
+            .add(resolvedId, BindingOperation(operation)).map(_ =>
+              Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded))
             )
-        case SignalBinding(_, valueSlot, id, signal, operation) =>
+        case SignalBinding(name, valueSlot, id, signal, operation) =>
+          val resolvedId = resolveBindingId(name, id, formId)
           transaction.sample(signal).flatMap { sample =>
             bindings
-              .add(id, BindingOperation(payload => operation(sample.value, payload))).map(_ =>
-                Some(valueSlot) -> Some(AttributeValue.Text(id.encoded))
+              .add(resolvedId, BindingOperation(payload => operation(sample.value, payload))).map(
+                _ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded))
               )
           }
-        case JsBinding(_, valueSlot, id, command) =>
-          evaluateJs(id, command, bindings).map(value =>
+        case JsBinding(name, valueSlot, id, command) =>
+          evaluateJs(resolveBindingId(name, id, formId), command, bindings).map(value =>
             Some(valueSlot) -> Some(AttributeValue.Text(value))
           )
-        case SignalJsBinding(_, valueSlot, id, command) =>
+        case SignalJsBinding(name, valueSlot, id, command) =>
+          val resolvedId = resolveBindingId(name, id, formId)
           transaction
             .sample(command).flatMap(sample =>
-              evaluateJs(id, sample.value, bindings)
+              evaluateJs(resolvedId, sample.value, bindings)
                 .map(value => Some(valueSlot) -> Some(AttributeValue.Text(value)))
             )
-        case RoutedBinding(_, valueSlot, id, operation) =>
+        case RoutedBinding(name, valueSlot, id, operation) =>
+          val resolvedId = resolveBindingId(name, id, formId)
           bindings
             .add(
-              id,
+              resolvedId,
               BindingOperation.dispatching(payload => BindingDispatch.Routed(operation(payload)))
-            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(id.encoded)))
-        case TargetedBinding(_, valueSlot, id, target, operation) =>
+            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded)))
+        case TargetedBinding(name, valueSlot, id, target, operation) =>
+          val resolvedId = resolveBindingId(name, id, formId)
           bindings
             .add(
-              id,
+              resolvedId,
               BindingOperation
                 .dispatching(payload => BindingDispatch.Targeted.Value(target, operation(payload)))
-            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(id.encoded)))
+            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded)))
         case ComponentTarget(target, valueSlot) =>
           Right(Some(valueSlot) -> Some(AttributeValue.ComponentTarget(target)))
         case Choice(_, signal, branches) =>
           transaction.sample(signal).flatMap { sample =>
             branches.find(_._1 == sample.value) match
               case Some((_, branch)) =>
-                evaluateAttribute(branch, previous, revision, transaction, bindings)
+                evaluateAttribute(branch, previous, revision, transaction, bindings, formId)
                   .map(attribute => attribute.slot -> attribute.value)
               case None => Right(None -> None)
           }
@@ -1777,6 +1822,14 @@ object RenderProgram:
         case _ => EvaluatedAttribute(template.name, value, slot, revision)
     }
   end evaluateAttribute
+
+  private def resolveBindingId(
+    name: String,
+    id: BindingId,
+    formId: Option[String]
+  ): BindingId =
+    if name.equalsIgnoreCase("phx-change") then formId.fold(id)(BindingId.formChange)
+    else id
 
   private def evaluateJs[Msg](
     id: BindingId,

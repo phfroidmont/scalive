@@ -54,14 +54,15 @@ object RenderProgramId:
 
   private[render] def value(id: RenderProgramId): Long = id
 
-/** Program-namespaced identity rendered into event attributes and resolved against committed
-  * bindings.
-  */
+/** Identity rendered into event attributes and resolved against committed bindings. */
 opaque type BindingId = String
 
 object BindingId:
   private[render] def event(program: RenderProgramId, slot: BindingSlotId): BindingId =
     s"b${RenderProgramId.value(program)}:$slot"
+
+  /** Phoenix requires this value to survive reconnects for a form with the same DOM identity. */
+  private[render] def formChange(formId: String): BindingId = s"f${formId.length}:$formId"
 
   private[render] def js(slot: BindingSlotId): BindingId = s"j${BindingSlotId.value(slot)}"
 

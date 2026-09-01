@@ -74,11 +74,14 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import zio.*
         import zio.json.*
 
-        val aspect: LiveMountAspect[Any, Unit, Any, String, String] =
-          LiveMountAspect.fromRequest[Any, Unit, String, String](
-          _ => ZIO.succeed("claim" -> "disconnected"),
-          (claim, _) => ZIO.succeed(s"connected:$claim")
-          )
+        def mountRoute(
+          request: LiveRouteMountRequest[Unit]
+        ): IO[LiveRouteMountFailure, String] =
+          if request.params == () then ZIO.succeed("route")
+          else ZIO.fail(LiveRouteMountFailure.notFound)
+
+        val aspect: LiveRouteMountAspect[Any, Unit, Any, String] =
+          LiveRouteMountAspect.fromRequest[Any, Unit, String](mountRoute)
 
         object View extends LiveView.Eventless[String]:
           def mount(ctx: MountContext) = ZIO.succeed("mounted")
@@ -92,6 +95,29 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("session and route mount aspects stay on their respective boundaries") {
+      val sessionOnRoute = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.json.*
+
+        val sessionAspect = LiveSessionMountAspect.fromRequest[Any, String, String](
+          _ => ZIO.succeed("claim" -> "session"),
+          (claim, _) => ZIO.succeed(claim)
+        )
+        val invalid = live.withMountAspect(sessionAspect)
+      """)
+      val routeOnSession = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        val routeAspect: LiveRouteMountAspect[Any, Unit, Any, String] =
+          LiveRouteMountAspect.fromRequest(_ => ZIO.succeed("route"))
+        val invalid = Live.session("main").withMountAspect(routeAspect)
+      """)
+
+      assertTrue(sessionOnRoute.nonEmpty, routeOnSession.nonEmpty)
     },
     test("context factories infer route input and one environment service") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
@@ -157,9 +183,9 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
             accounts: Accounts
           ): LiveView.Routed[Nothing, String, Unit] = RoutedView
 
-        val aspect = LiveMountAspect.fromRequest[Any, Unit, String, String](
-          _ => ZIO.succeed("claim" -> "user"),
-          (claim, _) => ZIO.succeed(claim)
+        val aspect = LiveRouteMountAspect.fromRequest[Any, Unit, String](request =>
+          if request.params == () then ZIO.succeed("user")
+          else ZIO.fail(LiveRouteMountFailure.notFound)
         )
         val layout = LiveLayout[Unit, String]([Msg] => (content, context) =>
           if context.context.nonEmpty then content else content
@@ -201,7 +227,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) = ZIO.unit
           def view(model: Signal[Unit]) = div()
 
-        val aspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+        val aspect = LiveSessionMountAspect.fromRequest[Any, String, String](
           _ => ZIO.succeed("claim" -> "user"),
           (claim, _) => ZIO.succeed(claim)
         )
@@ -226,7 +252,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         object View extends LiveView.Eventless[Unit]:
           def mount(ctx: MountContext) = ZIO.unit
           def view(model: Signal[Unit]) = div()
-        val aspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+        val aspect = LiveSessionMountAspect.fromRequest[Any, String, String](
           _ => ZIO.succeed("claim" -> "user"),
           (claim, _) => ZIO.succeed(claim)
         )
@@ -249,7 +275,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         trait AuthService
         trait Accounts
 
-        val authentication = LiveMountAspect.fromRequest[AuthService, Any, SessionId, CurrentUser](
+        val authentication = LiveSessionMountAspect.fromRequest[AuthService, SessionId, CurrentUser](
           _ => ZIO.succeed(SessionId("session") -> CurrentUser("disconnected")),
           (sessionId, _) => ZIO.succeed(CurrentUser(s"connected:${sessionId.value}"))
         )
@@ -272,7 +298,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           .withLayout(layout)
           .withRootLayout(root)
           .withMountAspect(
-            LiveMountAspect.make[Any, Any, CurrentUser, Int, Unit](
+            LiveSessionMountAspect.make[Any, CurrentUser, Int, Unit](
               (_, _) => ZIO.succeed(1 -> ()),
               (_, _, _) => ZIO.unit
             )
@@ -295,7 +321,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import zio.*
         import zio.json.*
 
-        val aspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+        val aspect = LiveSessionMountAspect.fromRequest[Any, String, String](
           _ => ZIO.succeed("id" -> "user"),
           (_, _) => ZIO.succeed("user")
         )
@@ -314,17 +340,19 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
         final case class User(name: String)
 
-        val admission = LiveMountAspect.fromRequest[Any, Any, String, User](
+        val admission = LiveSessionMountAspect.fromRequest[Any, String, User](
           _ => ZIO.succeed("id" -> User("disconnected")),
           (_, _) => ZIO.succeed(User("connected"))
         )
-        val routeUser = LiveMountAspect.fromRequest[Any, Unit, String, User](
-          _ => ZIO.succeed("route" -> User("disconnected")),
-          (_, _) => ZIO.succeed(User("connected"))
+        val routeUser = LiveRouteMountAspect.fromRequest[Any, Unit, User](
+          request =>
+            if request.params == () then ZIO.succeed(User("route"))
+            else ZIO.fail(LiveRouteMountFailure.notFound)
         )
-        val details = LiveMountAspect.make[Any, Unit, User, Int, Int](
-          (_, user) => ZIO.succeed(1 -> user.name.length),
-          (_, _, user) => ZIO.succeed(user.name.length)
+        val details = LiveRouteMountAspect.make[Any, Unit, User, Int](
+          (request, user) =>
+            if request.params == () then ZIO.succeed(user.name.length)
+            else ZIO.fail(LiveRouteMountFailure.notFound)
         )
 
         object View extends LiveView.Eventless[Unit]:
@@ -416,13 +444,15 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           def append(input: String, output: Int) = Combined(input, output)
           def left(result: Combined) = result.first
 
-        val first = LiveMountAspect.fromRequest[Any, Unit, String, String](
-          _ => ZIO.succeed("claim" -> "first"),
-          (claim, _) => ZIO.succeed(claim)
+        val first = LiveRouteMountAspect.fromRequest[Any, Unit, String](
+          request =>
+            if request.params == () then ZIO.succeed("first")
+            else ZIO.fail(LiveRouteMountFailure.notFound)
         )
-        val second = LiveMountAspect.make[Any, Unit, String, Int, Int](
-          (_, input) => ZIO.succeed(1 -> input.length),
-          (_, _, input) => ZIO.succeed(input.length)
+        val second = LiveRouteMountAspect.make[Any, Unit, String, Int](
+          (request, input) =>
+            if request.params == () then ZIO.succeed(input.length)
+            else ZIO.fail(LiveRouteMountFailure.notFound)
         )
         val layout = LiveLayout[Unit, String]([Msg] => (content, _) => content)
 
@@ -445,7 +475,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import zio.*
         import zio.json.*
 
-        val sessionAspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+        val sessionAspect = LiveSessionMountAspect.fromRequest[Any, String, String](
           _ => ZIO.succeed("claim" -> "session"),
           (claim, _) => ZIO.succeed(claim)
         )
@@ -471,13 +501,14 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         trait SessionEnvironment
         trait RouteEnvironment
 
-        val sessionAspect = LiveMountAspect.fromRequest[SessionEnvironment, Any, String, String](
+        val sessionAspect = LiveSessionMountAspect.fromRequest[SessionEnvironment, String, String](
           _ => ZIO.succeed("session-claim" -> "session"),
           (claim, _) => ZIO.succeed(claim)
         )
-        val routeAspect = LiveMountAspect.make[RouteEnvironment, Unit, String, Int, Int](
-          (_, session) => ZIO.succeed(1 -> session.length),
-          (_, _, session) => ZIO.succeed(session.length)
+        val routeAspect = LiveRouteMountAspect.make[RouteEnvironment, Unit, String, Int](
+          (request, session) =>
+            if request.params == () then ZIO.succeed(session.length)
+            else ZIO.fail(LiveRouteMountFailure.notFound)
         )
 
         object View extends LiveView.Eventless[(String, Int)]:
@@ -500,11 +531,11 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import zio.*
         import zio.json.*
 
-        val first = LiveMountAspect.fromRequest[Any, Any, String, String](
+        val first = LiveSessionMountAspect.fromRequest[Any, String, String](
           _ => ZIO.succeed("first-claim" -> "first"),
           (claim, _) => ZIO.succeed(claim)
         )
-        val second = LiveMountAspect.make[Any, Any, String, Int, Int](
+        val second = LiveSessionMountAspect.make[Any, String, Int, Int](
           (_, first) => ZIO.succeed(1 -> first.length),
           (_, _, first) => ZIO.succeed(first.length)
         )
@@ -530,7 +561,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import zio.*
         import zio.json.*
 
-        val sessionAspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+        val sessionAspect = LiveSessionMountAspect.fromRequest[Any, String, String](
           _ => ZIO.succeed("claim" -> "session"),
           (claim, _) => ZIO.succeed(claim)
         )

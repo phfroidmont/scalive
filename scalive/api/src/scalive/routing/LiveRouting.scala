@@ -7,42 +7,55 @@ import zio.http.Request
 import zio.http.codec.{Combiner, HttpCodec, PathCodec, QueryCodec}
 import zio.schema.Schema
 
-/** A typed mount pipeline whose individual claim types remain hidden until runtime interpretation.
-  *
-  * The tree is deliberately retained rather than collapsed: interpreters can run session trees
-  * before route trees, and every aspect node still owns the codec for its claims.
-  */
-sealed private[scalive] trait LiveMountPipeline[R, A, In, Ctx]:
+/** A typed session pipeline whose individual claim types remain hidden until interpretation. */
+sealed private[scalive] trait LiveSessionMountPipeline[R, In, Ctx]:
   def andThen[R1, Claims, Out, Result](
-    next: LiveMountAspect[R1, A, Ctx, Claims, Out]
+    next: LiveSessionMountAspect[R1, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
-  ): LiveMountPipeline[R & R1, A, In, Result] =
-    LiveMountPipeline.Then(this, next, append)
+  ): LiveSessionMountPipeline[R & R1, In, Result] =
+    LiveSessionMountPipeline.Then(this, next, append)
 
   def admitThen[R1, Claims, Out, Result, Id](
-    next: LiveMountAspect[R1, A, Ctx, Claims, Out],
+    next: LiveSessionMountAspect[R1, Ctx, Claims, Out],
     connectionId: Claims => Id,
     connections: Tag[LiveConnections[Id]]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
-  ): LiveMountPipeline[R & R1 & LiveConnections[Id], A, In, Result] =
-    LiveMountPipeline.Controlled(this, next, connectionId, connections, append)
+  ): LiveSessionMountPipeline[R & R1 & LiveConnections[Id], In, Result] =
+    LiveSessionMountPipeline.Controlled(this, next, connectionId, connections, append)
 
-object LiveMountPipeline:
-  final case class Identity[A, Ctx]() extends LiveMountPipeline[Any, A, Ctx, Ctx]
+object LiveSessionMountPipeline:
+  final case class Identity[Ctx]() extends LiveSessionMountPipeline[Any, Ctx, Ctx]
 
-  final case class Then[R, R1, A, In, Ctx, Claims, Out, Result](
-    previous: LiveMountPipeline[R, A, In, Ctx],
-    aspect: LiveMountAspect[R1, A, Ctx, Claims, Out],
+  final case class Then[R, R1, In, Ctx, Claims, Out, Result](
+    previous: LiveSessionMountPipeline[R, In, Ctx],
+    aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out],
     append: ContextAppend.Aux[Ctx, Out, Result])
-      extends LiveMountPipeline[R & R1, A, In, Result]
+      extends LiveSessionMountPipeline[R & R1, In, Result]
 
-  final case class Controlled[R, R1, A, In, Ctx, Claims, Out, Result, Id](
-    previous: LiveMountPipeline[R, A, In, Ctx],
-    aspect: LiveMountAspect[R1, A, Ctx, Claims, Out],
+  final case class Controlled[R, R1, In, Ctx, Claims, Out, Result, Id](
+    previous: LiveSessionMountPipeline[R, In, Ctx],
+    aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out],
     connectionId: Claims => Id,
     connections: Tag[LiveConnections[Id]],
     append: ContextAppend.Aux[Ctx, Out, Result])
-      extends LiveMountPipeline[R & R1 & LiveConnections[Id], A, In, Result]
+      extends LiveSessionMountPipeline[R & R1 & LiveConnections[Id], In, Result]
+
+/** A typed route pipeline that reruns without serialized claims before every route mount. */
+sealed private[scalive] trait LiveRouteMountPipeline[R, A, In, Ctx]:
+  def andThen[R1, Out, Result](
+    next: LiveRouteMountAspect[R1, A, Ctx, Out]
+  )(using append: ContextAppend.Aux[Ctx, Out, Result]
+  ): LiveRouteMountPipeline[R & R1, A, In, Result] =
+    LiveRouteMountPipeline.Then(this, next, append)
+
+object LiveRouteMountPipeline:
+  final case class Identity[A, Ctx]() extends LiveRouteMountPipeline[Any, A, Ctx, Ctx]
+
+  final case class Then[R, R1, A, In, Ctx, Out, Result](
+    previous: LiveRouteMountPipeline[R, A, In, Ctx],
+    aspect: LiveRouteMountAspect[R1, A, Ctx, Out],
+    append: ContextAppend.Aux[Ctx, Out, Result])
+      extends LiveRouteMountPipeline[R & R1, A, In, Result]
 
 /** Selects how a completed route obtains the context passed to its lifecycle factory and layouts.
   */
@@ -52,7 +65,7 @@ object LiveRouteContext:
   final case class Direct[A]()                    extends LiveRouteContext[Any, A, Any, Any]
   final case class Environment[R, A](tag: Tag[R]) extends LiveRouteContext[R, A, Any, R]
   final case class Required[A, Ctx]()             extends LiveRouteContext[Any, A, Ctx, Ctx]
-  final case class Mounted[R, A, In, Ctx](pipeline: LiveMountPipeline[R, A, In, Ctx])
+  final case class Mounted[R, A, In, Ctx](pipeline: LiveRouteMountPipeline[R, A, In, Ctx])
       extends LiveRouteContext[R, A, In, Ctx]
 
   /** Resolves an existing route context before adding one application-environment service. */
@@ -63,7 +76,7 @@ object LiveRouteContext:
 
   /** Retains the lifecycle order and the proof that session context supplies route input. */
   final case class SessionMounted[RS, RR, A, SessionCtx, RouteIn, RouteCtx](
-    session: LiveMountPipeline[RS, Any, Any, SessionCtx],
+    session: LiveSessionMountPipeline[RS, Any, SessionCtx],
     route: LiveRouteContext[RR, A, RouteIn, RouteCtx],
     routeInput: SessionCtx => RouteIn)
       extends LiveRouteContext[RS & RR, A, Any, (SessionCtx, RouteCtx)]
@@ -77,7 +90,7 @@ sealed private[scalive] trait LiveRouteDefinition[A]:
   type Model
 
   private[scalive] def withSession[R, SessionCtx](
-    pipeline: LiveMountPipeline[R, Any, Any, SessionCtx],
+    pipeline: LiveSessionMountPipeline[R, Any, SessionCtx],
     sessionGuards: LiveConnectedTurnGuard[SessionCtx],
     sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
     sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
@@ -102,7 +115,7 @@ object LiveRouteDefinition:
     type Model       = State
 
     def withSession[R1, SessionCtx](
-      pipeline: LiveMountPipeline[R1, Any, Any, SessionCtx],
+      pipeline: LiveSessionMountPipeline[R1, Any, SessionCtx],
       sessionGuards: LiveConnectedTurnGuard[SessionCtx],
       sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
       sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
@@ -141,7 +154,7 @@ object LiveRouteDefinition:
     type Model       = State
 
     def withSession[R1, SessionCtx](
-      pipeline: LiveMountPipeline[R1, Any, Any, SessionCtx],
+      pipeline: LiveSessionMountPipeline[R1, Any, SessionCtx],
       sessionGuards: LiveConnectedTurnGuard[SessionCtx],
       sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
       sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
@@ -173,7 +186,7 @@ sealed abstract class LiveRoute[R, A] private[scalive] extends LiveRouteFragment
     type Input       = LiveRoute.this.Input
   }
   private[scalive] def attachSession[RS, SessionCtx](
-    pipeline: LiveMountPipeline[RS, Any, Any, SessionCtx],
+    pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
     guards: LiveConnectedTurnGuard[SessionCtx],
     layouts: Vector[LiveLayout[Any, SessionCtx]],
     rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
@@ -198,7 +211,7 @@ sealed trait LiveRouteFragment[-R]:
     case session: LiveSession[?] => session.routes.flatMap(_.declarations)
 
   private[scalive] def attachSession[RS, SessionCtx](
-    pipeline: LiveMountPipeline[RS, Any, Any, SessionCtx],
+    pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
     guards: LiveConnectedTurnGuard[SessionCtx],
     layouts: Vector[LiveLayout[Any, SessionCtx]],
     rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
@@ -315,13 +328,13 @@ class LiveRouteBuilder[A] private[scalive] (
     )
 
   /** Starts a typed route mount pipeline. The resulting context is supplied to route factories. */
-  def withMountAspect[R, In, Claims, Out, Result](
-    aspect: LiveMountAspect[R, A, In, Claims, Out]
+  def withMountAspect[R, In, Out, Result](
+    aspect: LiveRouteMountAspect[R, A, In, Out]
   )(using append: ContextAppend.Aux[In, Out, Result]
   ): LiveRouteMountAspectBuilder[R, A, In, Result] =
     LiveRouteMountAspectBuilder(
       pathCodec,
-      LiveMountPipeline.Identity[A, In]().andThen(aspect),
+      LiveRouteMountPipeline.Identity[A, In]().andThen(aspect),
       layouts.map(LiveLayout.contramapContext(_, (_: Result) => ())),
       rootLayout.map(LiveRootLayout.contramapContext(_, (_: Result) => ())),
       connectedTurnGuards.contramap((_: Result) => ())
@@ -426,13 +439,13 @@ object LiveRouteBuilder:
 /** Route construction after a mount aspect has produced typed lifecycle context. */
 final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
   private val pathCodec: PathCodec[A],
-  private val pipeline: LiveMountPipeline[R, A, Need, Ctx],
+  private val pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
   private val layouts: Vector[LiveLayout[A, Ctx]],
   private val rootLayout: Option[LiveRootLayout[A, Ctx]],
   private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx]):
 
-  def withMountAspect[R1, Claims, Out, Result](
-    aspect: LiveMountAspect[R1, A, Ctx, Claims, Out]
+  def withMountAspect[R1, Out, Result](
+    aspect: LiveRouteMountAspect[R1, A, Ctx, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
   ): LiveRouteMountAspectBuilder[R & R1, A, Need, Result] =
     LiveRouteMountAspectBuilder(
@@ -580,7 +593,7 @@ end LiveRouteMountAspectBuilder
 object LiveRouteMountAspectBuilder:
   private[scalive] def apply[R, A, Need, Ctx](
     pathCodec: PathCodec[A],
-    pipeline: LiveMountPipeline[R, A, Need, Ctx],
+    pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
     layouts: Vector[LiveLayout[A, Ctx]],
     rootLayout: Option[LiveRootLayout[A, Ctx]],
     connectedTurnGuards: LiveConnectedTurnGuard[Ctx]
@@ -591,7 +604,7 @@ object LiveRouteMountAspectBuilder:
 final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[scalive] (
   private val pathCodec: PathCodec[A],
   private val paramsCodec: LiveParamsCodec[A, Params],
-  private val pipeline: LiveMountPipeline[R, A, Need, Ctx],
+  private val pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
   private val layouts: Vector[LiveLayout[A, Ctx]],
   private val rootLayout: Option[LiveRootLayout[A, Ctx]],
   private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx]):
@@ -683,7 +696,7 @@ object LiveRouteMountAspectParamsBuilder:
   private[scalive] def apply[R, A, Need, Ctx, Params](
     pathCodec: PathCodec[A],
     paramsCodec: LiveParamsCodec[A, Params],
-    pipeline: LiveMountPipeline[R, A, Need, Ctx],
+    pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
     layouts: Vector[LiveLayout[A, Ctx]],
     rootLayout: Option[LiveRootLayout[A, Ctx]],
     connectedTurnGuards: LiveConnectedTurnGuard[Ctx]
@@ -919,7 +932,7 @@ final class LiveSession[-R] private[scalive] (
     extends LiveRouteFragment[R]:
   type Input = Any
   private[scalive] def attachSession[RS, SessionCtx](
-    pipeline: LiveMountPipeline[RS, Any, Any, SessionCtx],
+    pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
     guards: LiveConnectedTurnGuard[SessionCtx],
     layouts: Vector[LiveLayout[Any, SessionCtx]],
     rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
@@ -935,12 +948,12 @@ object LiveSession:
 
 final class LiveSessionBuilder[R, Ctx] private[scalive] (
   val name: String,
-  private val pipeline: LiveMountPipeline[R, Any, Any, Ctx],
+  private val pipeline: LiveSessionMountPipeline[R, Any, Ctx],
   private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
   private val layouts: Vector[LiveLayout[Any, Ctx]],
   private val rootLayout: Option[LiveRootLayout[Any, Ctx]]):
   def withMountAspect[R1, Claims, Out, Result](
-    aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out]
+    aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
   ): LiveSessionBuilder[R & R1, Result] =
     LiveSessionBuilder(
@@ -957,7 +970,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
     * registers the physical transport before invoking the aspect's authoritative callback.
     */
   def withAdmission[R1, Claims, Out, Result, Id](
-    aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out]
+    aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
   )(
     connectionId: Claims => Id
   )(using
@@ -1013,7 +1026,7 @@ end LiveSessionBuilder
 object LiveSessionBuilder:
   private[scalive] def apply[R, Ctx](
     name: String,
-    pipeline: LiveMountPipeline[R, Any, Any, Ctx],
+    pipeline: LiveSessionMountPipeline[R, Any, Ctx],
     connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
     layouts: Vector[LiveLayout[Any, Ctx]],
     rootLayout: Option[LiveRootLayout[Any, Ctx]]
@@ -1023,12 +1036,12 @@ object LiveSessionBuilder:
   /** Session construction after its one admission boundary has been declared. */
   final class Admitted[R, Ctx] private[scalive] (
     val name: String,
-    private val pipeline: LiveMountPipeline[R, Any, Any, Ctx],
+    private val pipeline: LiveSessionMountPipeline[R, Any, Ctx],
     private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
     private val layouts: Vector[LiveLayout[Any, Ctx]],
     private val rootLayout: Option[LiveRootLayout[Any, Ctx]]):
     def withMountAspect[R1, Claims, Out, Result](
-      aspect: LiveMountAspect[R1, Any, Ctx, Claims, Out]
+      aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
     )(using append: ContextAppend.Aux[Ctx, Out, Result]
     ): Admitted[R & R1, Result] =
       Admitted(
@@ -1080,7 +1093,7 @@ object LiveSessionBuilder:
   private[scalive] object Admitted:
     def apply[R, Ctx](
       name: String,
-      pipeline: LiveMountPipeline[R, Any, Any, Ctx],
+      pipeline: LiveSessionMountPipeline[R, Any, Ctx],
       connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
       layouts: Vector[LiveLayout[Any, Ctx]],
       rootLayout: Option[LiveRootLayout[Any, Ctx]]
@@ -1128,7 +1141,7 @@ object Live:
   def session(name: String): LiveSessionBuilder[Any, Any] =
     LiveSessionBuilder(
       name,
-      LiveMountPipeline.Identity[Any, Any](),
+      LiveSessionMountPipeline.Identity[Any](),
       LiveConnectedTurnGuard.empty,
       Vector.empty,
       None

@@ -88,8 +88,11 @@ object RootSliceApp extends ZIOAppDefault:
     navigationGuardAssets: NavigationGuardAssets,
     liveViewClientAssets: LiveViewClientAssets
   ) =
-    val firstRoot  = rootOne(navigationGuardAssets, liveViewClientAssets)
-    val secondRoot = rootTwo(navigationGuardAssets, liveViewClientAssets)
+    val firstRoot            = rootOne(navigationGuardAssets, liveViewClientAssets)
+    val secondRoot           = rootTwo(navigationGuardAssets, liveViewClientAssets)
+    val authorizeNavigationB = LiveRouteMountAspect.fromRequest[Any, Unit, String](request =>
+      ZIO.succeed(request.url.path.encode)
+    )
 
     Live.router.withRootLayout(firstRoot)(
       live        -> RootSliceLiveView(mountSequence),
@@ -108,14 +111,19 @@ object RootSliceApp extends ZIOAppDefault:
           navigationC.location,
           navigationD.location
         ),
-        navigationB -> NavigationLiveView(
-          "b",
-          mountSequence,
-          navigationA.location,
-          navigationB.location,
-          navigationC.location,
-          navigationD.location
-        ),
+        navigationB
+          .withMountAspect(authorizeNavigationB)
+          .context(routeAuthorization =>
+            NavigationLiveView(
+              "b",
+              mountSequence,
+              navigationA.location,
+              navigationB.location,
+              navigationC.location,
+              navigationD.location,
+              Some(routeAuthorization)
+            )
+          ),
         navigationD.withRootLayout(secondRoot) -> NavigationLiveView(
           "d",
           mountSequence,
@@ -349,7 +357,8 @@ final class NavigationLiveView(
   a: LiveLocation,
   b: LiveLocation,
   c: LiveLocation,
-  d: LiveLocation)
+  d: LiveLocation,
+  routeAuthorization: Option[String] = None)
     extends LiveView[NavigationLiveView.Msg, Int]:
   import NavigationLiveView.*
 
@@ -379,7 +388,8 @@ final class NavigationLiveView(
       idAttr := s"view-$page",
       h1(s"Navigation ${page.toUpperCase}"),
       span(idAttr := "mount-id", model.map(_.toString)),
-      div(idAttr  := "flash", flash(Notice)(message => span(message))),
+      routeAuthorization.map(value => span(idAttr := "route-authorization", value)),
+      div(idAttr := "flash", flash(Notice)(message => span(message))),
       page match
         case "a" =>
           div(

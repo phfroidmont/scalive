@@ -1,6 +1,7 @@
 package scalive.testing
 
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicInteger
 
 import org.jsoup.Jsoup
 import zio.*
@@ -551,6 +552,193 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(rendered == "destination", !sourceJoined, nextJoined)
       }
     },
+    test("live navigation derives fresh destination route context after session admission") {
+      val routeMounts = AtomicInteger()
+      val source = new LiveView[RoutedNavigationMsg, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          case RoutedNavigationMsg.Navigate => ctx.nav.pushNavigateUnsafe("/next").as(model)
+        override def view(model: Signal[Unit]) =
+          button(dataAttr("navigate") := "", on.click(RoutedNavigationMsg.Navigate), "Next")
+
+      val routeAuthorization = LiveRouteMountAspect.make[Any, Unit, TestUser, String] {
+        (request, user) =>
+          ZIO.succeed {
+            routeMounts.incrementAndGet()
+            s"${user.name}:${request.url.path.encode}"
+          }
+      }
+      val destination = (scalive.live / "next")
+        .withMountAspect(routeAuthorization)
+        .context((context: (TestUser, String)) => new LiveView.Eventless[String]:
+          def mount(ctx: MountContext) = ZIO.succeed(context._2)
+          override def view(model: Signal[String]) =
+            div(dataAttr("authorized-destination") := "", model)
+        )
+      val application = scalive.Live.router(
+        scalive.Live
+          .session("authorized-navigation")
+          .withAdmission(authentication)(_.sessionId)(
+            scalive.live.context((_: TestUser) => source),
+            destination
+          )
+      )
+      val sessionId = TestSessionId("navigation")
+
+      for
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        state           = TestAuthState(active, revalidations)
+        result <- ZIO.scoped {
+                    for
+                      root <- ConnectedRender.join(
+                                application,
+                                config,
+                                Request.get(url("/?session=navigation"))
+                              )
+                      action <- root.click("[data-navigate]")
+                      next <- action match
+                                case ConnectedAction.LiveNavigation(navigation) => navigation.follow
+                                case other =>
+                                  ZIO.fail(Exception(s"Expected live navigation, got $other."))
+                      rendered <- next.text("[data-authorized-destination]")
+                      checks   <- revalidations.get
+                    yield assertTrue(
+                      rendered == "navigation:/next",
+                      routeMounts.get() == 1,
+                      checks == 2
+                    )
+                  }.provide(
+                    ZLayer.succeed[TestAuthState](state),
+                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+                  )
+      yield result
+    },
+    test("destination route denial happens before lifecycle construction") {
+      val factories = AtomicInteger()
+      val source = new LiveView[RoutedNavigationMsg, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          case RoutedNavigationMsg.Navigate => ctx.nav.pushNavigateUnsafe("/denied").as(model)
+        override def view(model: Signal[Unit]) =
+          button(dataAttr("navigate") := "", on.click(RoutedNavigationMsg.Navigate), "Denied")
+
+      val denied = LiveRouteMountAspect.make[Any, Unit, TestUser, Unit]((_, _) =>
+        ZIO.fail(LiveRouteMountFailure.forbidden("destination access revoked"))
+      )
+      val destination = (scalive.live / "denied").withMountAspect(denied) {
+        factories.incrementAndGet()
+        new LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div("denied")
+      }
+      val application = scalive.Live.router(
+        scalive.Live
+          .session("denied-navigation")
+          .withAdmission(authentication)(_.sessionId)(
+            scalive.live.context((_: TestUser) => source),
+            destination
+          )
+      )
+      val sessionId = TestSessionId("navigation")
+
+      for
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        state           = TestAuthState(active, revalidations)
+        result <- ZIO.scoped {
+                    for
+                      root <- ConnectedRender.join(
+                                application,
+                                config,
+                                Request.get(url("/?session=navigation"))
+                              )
+                      action <- root.click("[data-navigate]")
+                      denied <- action match
+                                  case ConnectedAction.LiveNavigation(navigation) =>
+                                    navigation.follow.either
+                                  case other =>
+                                    ZIO.fail(Exception(s"Expected live navigation, got $other."))
+                      checks <- revalidations.get
+                    yield assertTrue(
+                      denied == Left(ConnectedJoinFailure.Unauthorized),
+                      factories.get() == 0,
+                      checks == 2
+                    )
+                  }.provide(
+                    ZLayer.succeed[TestAuthState](state),
+                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+                  )
+      yield result
+    },
+    test("route denial after a successful navigation reports its join failure") {
+      val factories = AtomicInteger()
+      def navigating(to: String, marker: String) = new LiveView[RoutedNavigationMsg, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          case RoutedNavigationMsg.Navigate => ctx.nav.pushNavigateUnsafe(to).as(model)
+        override def view(model: Signal[Unit]) =
+          button(dataAttr(marker) := "", on.click(RoutedNavigationMsg.Navigate), "Navigate")
+
+      val denied = LiveRouteMountAspect.make[Any, Unit, TestUser, Unit]((_, _) =>
+        ZIO.fail(LiveRouteMountFailure.forbidden("destination access revoked"))
+      )
+      val deniedRoute = (scalive.live / "denied").withMountAspect(denied) {
+        factories.incrementAndGet()
+        new LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div("denied")
+      }
+      val application = scalive.Live.router(
+        scalive.Live
+          .session("success-then-denied")
+          .withAdmission(authentication)(_.sessionId)(
+            scalive.live.context((_: TestUser) => navigating("/middle", "to-middle")),
+            (scalive.live / "middle")
+              .context((_: TestUser) => navigating("/denied", "to-denied")),
+            deniedRoute
+          )
+      )
+      val sessionId = TestSessionId("navigation")
+
+      for
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        state           = TestAuthState(active, revalidations)
+        result <- ZIO.scoped {
+                    for
+                      root <- ConnectedRender.join(
+                                application,
+                                config,
+                                Request.get(url("/?session=navigation"))
+                              )
+                      firstAction <- root.click("[data-to-middle]")
+                      middle <- firstAction match
+                                  case ConnectedAction.LiveNavigation(navigation) =>
+                                    navigation.follow
+                                  case other =>
+                                    ZIO.fail(Exception(s"Expected live navigation, got $other."))
+                      secondAction <- middle.click("[data-to-denied]")
+                      denied <- secondAction match
+                                  case ConnectedAction.LiveNavigation(navigation) =>
+                                    navigation.follow.either
+                                  case other =>
+                                    ZIO.fail(Exception(s"Expected live navigation, got $other."))
+                      checks <- revalidations.get
+                    yield assertTrue(
+                      denied == Left(ConnectedJoinFailure.Unauthorized),
+                      factories.get() == 0,
+                      checks == 3
+                    )
+                  }.provide(
+                    ZLayer.succeed[TestAuthState](state),
+                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+                  )
+      yield result
+    },
     test("server-originated live navigation remains observable and followable") {
       for
         release <- Promise.make[Nothing, Unit]
@@ -590,7 +778,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
   ) @@ TestAspect.withLiveClock @@ TestAspect.timeout(15.seconds)
 
   private val authentication =
-    LiveMountAspect.fromRequest[TestAuthState, Any, TestClaims, TestUser](
+    LiveSessionMountAspect.fromRequest[TestAuthState, TestClaims, TestUser](
       request =>
         for
           state <- ZIO.service[TestAuthState]

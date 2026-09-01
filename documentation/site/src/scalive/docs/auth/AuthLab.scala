@@ -21,8 +21,8 @@ final case class ConnectedAuth(
   revalidate: IO[LiveConnectedTurnFailure, Unit])
 
 object AuthMountAspect:
-  val authenticated: LiveMountAspect[AuthService, Any, Any, AuthClaims, ConnectedAuth] =
-    LiveMountAspect.fromRequest(
+  val authenticated: LiveSessionMountAspect[AuthService, Any, AuthClaims, ConnectedAuth] =
+    LiveSessionMountAspect.fromRequest(
       request =>
         request.request.cookie(AuthHttpRoutes.SessionCookieName) match
           case None         => ZIO.fail(AuthLabRoutes.login.location.seeOther)

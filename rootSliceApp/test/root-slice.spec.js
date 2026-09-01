@@ -134,6 +134,7 @@ test("same-session navigation replaces the root over the existing websocket", as
 
   await expect(page).toHaveURL(/\/nav\/b$/)
   await expect(page.locator("#view-b")).toBeVisible()
+  await expect(page.locator("#route-authorization")).toHaveText("/nav/b")
   await expect(page.locator("#flash")).toContainText("Flash from A")
   await expect(page.locator("body#root-one")).toBeVisible()
   expect(documents).toEqual([])

@@ -324,7 +324,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
                            .authenticated
                            .connected(
                              AuthClaims(loggedIn.currentSession.publicSessionId),
-                             LiveMountRequest((), Request.get(url(AuthLabRoutes.ProfilePath))),
+                             LiveSessionMountRequest(Request.get(url(AuthLabRoutes.ProfilePath))),
                              ()
                            ).provideEnvironment(ZEnvironment(auth))
         _ <- auth.reset(
@@ -336,7 +336,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
                        .authenticated
                        .connected(
                          AuthClaims(loggedIn.currentSession.publicSessionId),
-                         LiveMountRequest((), Request.get(url(AuthLabRoutes.ProfilePath))),
+                         LiveSessionMountRequest(Request.get(url(AuthLabRoutes.ProfilePath))),
                          ()
                        ).provideEnvironment(ZEnvironment(auth)).either
       yield assertTrue(

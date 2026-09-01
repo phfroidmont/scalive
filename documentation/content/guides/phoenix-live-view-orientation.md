@@ -41,7 +41,7 @@ it for an application.
 | Router live route | @:apiSymbol(val:scalive.live)`live`@:@ with @:apiSymbol(val:scalive.Live.router)`Live.router`@:@ | Connects a URL pattern to a LiveView through typed route declarations. |
 | Route parameters | @:apiSymbol(trait:scalive.LiveView.Routed)`LiveView.Routed`@:@ and route codecs | Decodes path and query data before application code uses it. |
 | Root and live layouts | @:apiSymbol(trait:scalive.LiveRootLayout)`LiveRootLayout`@:@ and @:apiSymbol(trait:scalive.LiveLayout)`LiveLayout`@:@ | Separates the complete HTML document from shared markup around live content. |
-| `live_session` and `on_mount` | @:apiSymbol(def:scalive.Live.session)`Live.session`@:@ and @:apiSymbol(class:scalive.LiveMountAspect)`LiveMountAspect`@:@ | Groups routes and applies typed setup or authorization at mount boundaries. |
+| `live_session` and `on_mount` | @:apiSymbol(def:scalive.Live.session)`Live.session`@:@, @:apiSymbol(class:scalive.LiveSessionMountAspect)`LiveSessionMountAspect`@:@, and @:apiSymbol(class:scalive.LiveRouteMountAspect)`LiveRouteMountAspect`@:@ | Groups routes; session aspects carry minimal signed claims across the HTTP-to-socket boundary, while claimless route aspects rerun with typed path parameters and URL for every route mount. |
 | Commands and hooks | @:apiSymbol(val:scalive.JS)`JS`@:@ and DOM hooks | Describes client effects and integrates JavaScript when a browser API is required. |
 
 The names do not imply identical APIs or complete behavior coverage. They show
@@ -83,6 +83,13 @@ match @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@,
 and use capabilities from `Connection.Connected(capabilities)` only after the
 live connection exists. [Project anatomy](../learn/project-anatomy.md#understand-both-mounts)
 traces both phases through a complete application.
+
+Original HTTP cookies and headers exist only at HTTP/document and disconnected
+session boundaries. Choose a claim-bearing session aspect or claimless route
+aspect using the canonical [mount-boundary comparison](layouts-sessions-and-mount-aspects.md#choose-the-right-boundary),
+then review the [HTTP-to-connected phase boundary](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently).
+Changing policy still belongs in connected-turn guards and authorization at each
+sensitive operation.
 
 ## Translate State And Effects {#translate-state-and-effects}
 
@@ -126,3 +133,4 @@ described in [Project status](../project/index.md#report-an-issue).
 - Build typed markup and messages in [HTML and event bindings](html-dsl-and-event-bindings.md#prerequisites).
 - Connect the browser client in [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
 - Define application URLs in [Routes, parameters, and navigation](routes-and-navigation.md#prerequisites).
+- Map Phoenix `live_session` and `on_mount` to [Scalive mount boundaries](layouts-sessions-and-mount-aspects.md#choose-the-right-boundary).

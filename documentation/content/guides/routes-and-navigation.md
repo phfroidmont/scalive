@@ -89,6 +89,25 @@ The documentation examples catalog is a real routed view. Its `topic` query
 parameter controls a URL-addressable filter, and every topic link builds a typed
 location before issuing a patch.
 
+## Authorize Route Mounts {#authorize-route-mounts}
+
+Use @:apiSymbol(class:scalive.LiveRouteMountAspect)`LiveRouteMountAspect`@:@ to
+load and authorize a decoded destination before its LiveView is constructed. It
+can consume identity established by the named live session and emits fresh route
+context or a @:apiSymbol(enum:scalive.LiveRouteMountFailure)`LiveRouteMountFailure`@:@.
+Cookies and original HTTP headers instead belong at the document or
+session-aspect boundary.
+
+A live patch keeps the current lifecycle mounted and calls `handleParams`; it
+does not rerun the route aspect. If patched parameters can select another
+protected resource, reauthorize in `handleParams` and at the sensitive operation,
+or use navigation so the destination reruns route admission.
+
+See the canonical [session-versus-route comparison](layouts-sessions-and-mount-aspects.md#choose-the-right-boundary)
+and [route-context pipeline](layouts-sessions-and-mount-aspects.md#derive-route-context).
+The [combined example](layouts-sessions-and-mount-aspects.md#combine-session-and-route-context)
+shows typed destination parameters consuming admitted `CurrentUser` context.
+
 ## Build Locations From Route Declarations {#build-locations-from-route-declarations}
 
 Call @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.location)`location(params)`@:@ to create a
@@ -149,27 +168,34 @@ push when Back should return to the previous state. Use replace for
 canonicalization and transient intermediate URLs that should not remain in
 history.
 
-## Respect Route And Session Boundaries {#respect-route-and-session-boundaries}
+## Respect Route And Named Live-Session Boundaries {#respect-route-and-session-boundaries}
 
 Live navigation is enhanced only when the destination is compatible with the
-current live session and root layout. Crossing an incompatible boundary falls
-back to an ordinary HTTP request. The destination still needs a real route and
-must render correctly before JavaScript connects.
+current named live session and root layout. Crossing an incompatible boundary
+falls back to an ordinary HTTP request. The destination still needs a real route
+and must render correctly before JavaScript connects.
 
 Redirects are also typed destinations, but they end the current lifecycle rather
 than requesting a live patch or navigation. Choose redirects for mount-time
 authorization, canonical HTTP responses, and completed ordinary HTTP actions.
 
-Safe APIs accept `LiveLocation`. Explicit `Unsafe` methods accept raw strings for
-external URLs, dead routes, or deliberately query-only patches. Keep those calls
-at a narrow boundary: raw strings give up route refactoring and encoding checks.
-They do not disable navigation safety checks: Scalive rejects literal or
-percent-encoded control characters and schemes other than HTTP or HTTPS before a
-navigation or redirect reaches the browser. Never build an unsafe destination by
-concatenating untrusted input; parse it into an application allowlist first.
+Prefer APIs that accept `LiveLocation`. Runtime `Navigation` string methods such
+as `ctx.nav.pushNavigateUnsafe` accept raw destinations and give up route typing,
+refactoring, and encoding checks, but the connected runtime still rejects
+literal or percent-encoded control characters and schemes other than HTTP or
+HTTPS before recording the navigation.
 
-Connected route tests can explicitly follow same-session navigation and verify
-that the destination reruns server-side admission. See
+Mount-admission failures are different:
+`LiveRouteMountFailure.redirectUnsafe` and `LiveMountFailure.redirectUnsafe`
+accept an unchecked `URL` and perform no same-origin or local-path validation.
+Use them only for trusted destinations. Never concatenate untrusted input into
+any unsafe destination; parse it and enforce an application allowlist first.
+
+Connected route tests can explicitly follow navigation within a named live
+session and verify that the destination reruns its route mount aspects. This
+protects the mount, but connected-turn guards and authorization immediately
+before sensitive domain operations remain necessary when policy can change
+while the route stays mounted. See
 [Exercise actions and navigation](testing.md#exercise-actions-and-navigation).
 That harness behavior is distinct from browser reconnect timing: only a real
 browser can prove when the JavaScript client retries after transport loss or
@@ -177,8 +203,8 @@ falls back to an ordinary HTTP request at an incompatible boundary.
 
 ## Related Tasks {#related-tasks}
 
-- Group compatible routes with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#prerequisites).
-- Protect route groups with [Authentication and sessions](authentication.md#prerequisites).
+- Group compatible routes with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#choose-the-right-boundary).
+- Protect route groups with [Authentication and sessions](authentication.md#bind-admission-to-physical-connections).
 - Confirm before browser-initiated navigation with [Guard unsaved changes](navigation-guards.md#prerequisites).
 - Test parameter decoding, routed joins, and navigation with
   [Testing LiveViews](testing.md#cover-connected-behavior).

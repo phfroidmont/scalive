@@ -65,6 +65,8 @@ final class LiveConnections[Id] private[scalive] (
         case _ => current
     }
 
+  private[scalive] def bindingCount: UIO[Int] = state.get.map(_.bindings.size)
+
   private[scalive] def disconnectLocal(id: Id): UIO[Unit] =
     state
       .modify { current =>

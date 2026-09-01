@@ -262,41 +262,55 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
         futureResult == Left(ZioHttpSecurity.Error.IssuedInFuture)
       )
     },
-    test("roundtrips root claims exactly") {
+    test("roundtrips the same root claims in purpose-separated session and static tokens") {
       for
-        now    <- Clock.currentTime(java.util.concurrent.TimeUnit.SECONDS)
-        token  <- ZioHttpSecurity.issueStatic(
-                     config(),
-                     "root-42",
-                     LifecycleId(42L),
-                     7,
-                    "https://example.test/a?x=1",
-                    "7:GET /a",
-                    Some("admin"),
-                    "root:v2",
-                    Vector("session-claim"),
-                     Vector("route-claim"),
-                     hasRouteClaims = true,
+        now <- Clock.currentTime(java.util.concurrent.TimeUnit.SECONDS)
+        sessionToken <- ZioHttpSecurity.issueSession(
+                          config(),
+                          rootId = "root-42",
+                          lifecycle = LifecycleId(42L),
+                          routeIndex = 7,
+                          canonicalUrl = "https://example.test/a?x=1",
+                          routeIdentity = "7:GET /a",
+                          sessionIdentity = Some("admin"),
+                          rootLayoutKey = "root:v2",
+                          sessionMountClaims = Vector("session-claim"),
+                          initialFlash = Map("notice" -> "saved"),
+                          nestedLifecycles = Map("sticky-child" -> 43L)
+                        )
+        staticToken <- ZioHttpSecurity.issueStatic(
+                         config(),
+                         rootId = "root-42",
+                         lifecycle = LifecycleId(42L),
+                         routeIndex = 7,
+                         canonicalUrl = "https://example.test/a?x=1",
+                         routeIdentity = "7:GET /a",
+                         sessionIdentity = Some("admin"),
+                         rootLayoutKey = "root:v2",
+                         sessionMountClaims = Vector("session-claim"),
+                         initialFlash = Map("notice" -> "saved"),
+                         nestedLifecycles = Map("sticky-child" -> 43L)
+                       )
+        sessionClaims <- ZioHttpSecurity.verifySession(config(), sessionToken)
+        staticClaims  <- ZioHttpSecurity.verifyStatic(config(), staticToken)
+        expected = ZioHttpSecurity.RootClaims(
+                     rootId = "root-42",
+                     lifecycle = 42L,
+                     routeIndex = 7,
+                     canonicalUrl = "https://example.test/a?x=1",
+                     routeIdentity = "7:GET /a",
+                     sessionIdentity = Some("admin"),
+                     rootLayoutKey = "root:v2",
+                     sessionMountClaims = Vector("session-claim"),
+                     issuedAtEpochSecond = now,
                      initialFlash = Map("notice" -> "saved"),
                      nestedLifecycles = Map("sticky-child" -> 43L)
-                  )
-        claims <- ZioHttpSecurity.verifyStatic(config(), token)
+                   )
       yield assertTrue(
-        claims == ZioHttpSecurity.RootClaims(
-           rootId = "root-42",
-           lifecycle = 42L,
-           routeIndex = 7,
-          canonicalUrl = "https://example.test/a?x=1",
-          routeIdentity = "7:GET /a",
-          sessionIdentity = Some("admin"),
-          rootLayoutKey = "root:v2",
-          sessionMountClaims = Vector("session-claim"),
-          routeMountClaims = Vector("route-claim"),
-          hasRouteClaims = true,
-          issuedAtEpochSecond = now,
-          initialFlash = Map("notice" -> "saved"),
-          nestedLifecycles = Map("sticky-child" -> 43L)
-        )
+        sessionClaims == expected,
+        staticClaims == expected,
+        sessionClaims.sessionMountClaims == Vector("session-claim"),
+        sessionToken != staticToken
       )
     },
     test("flash tokens are purpose-bound, omit empty values, and expire after sixty seconds") {

@@ -38,7 +38,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
   private val admissionTask = AsyncKey[Unit]("admission-cleanup")
 
   private val authentication =
-    LiveMountAspect.fromRequest[TestAuthState, Any, TestAuthClaims, TestCurrentUser](
+    LiveSessionMountAspect.fromRequest[TestAuthState, TestAuthClaims, TestCurrentUser](
       request =>
         for
           state <- ZIO.service[TestAuthState]
@@ -861,6 +861,149 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                       _         <- socket.close
                     yield assertTrue(status(rejected) == "error", status(heartbeat) == "ok")
                   }.provideLayer(stateLayer ++ connectionsLayer)
+      yield result
+    },
+    test("normal socket close removes committed admission") {
+      val sessionId = TestSessionId("normal-close")
+      for
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        interrupted   <- Ref.make(0)
+        state          = TestAuthState(active, revalidations, interrupted)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        result <- withServer(admittedApplication) { port =>
+                    for
+                      page   <- bootstrap(port, "/?session=normal-close")
+                      socket <- connect(port, page)
+                      joined <- joinRoot(socket, page)
+                      bound  <- connections.bindingCount
+                      _      <- socket.close
+                      remaining <- connections.bindingCount
+                                     .repeatUntil(_ == 0)
+                                     .timeoutFail(Exception("admission binding was not removed"))(
+                                       5.seconds
+                                     )
+                    yield assertTrue(status(joined) == "ok", bound == 1, remaining == 0)
+                  }.provide(
+                    ZLayer.succeed[TestAuthState](state),
+                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+                  )
+      yield result
+    },
+    test("interruption cannot split admission commit from active ownership") {
+      for
+        committed <- Promise.make[Nothing, Unit]
+        release   <- Promise.make[Nothing, Unit]
+        removed   <- Ref.make(false)
+        admission = ZioHttp.PreparedAdmission(
+                      bindingAlreadyExisted = false,
+                      commit = committed.succeed(()).unit *> release.await,
+                      rollback = ZIO.unit,
+                      remove = removed.set(true),
+                      disconnect = ZIO.unit
+                    )
+        pending <- Ref.make(Option(admission))
+        active  <- Ref.make(Option.empty[ZioHttp.PreparedAdmission])
+        transfer <- ZioHttp
+                      .transferAdmissionOwnership(Some(admission), pending, active)
+                      .fork
+        _             <- committed.await
+        _             <- transfer.interruptFork
+        _             <- release.succeed(())
+        transferExit  <- transfer.await
+        activeValue   <- active.get
+        pendingValue  <- pending.get
+        _             <- ZIO.foreachDiscard(activeValue)(_.remove)
+        bindingRemoved <- removed.get
+      yield assertTrue(
+        transferExit.isInterrupted,
+        activeValue.contains(admission),
+        pendingValue.isEmpty,
+        bindingRemoved
+      )
+    },
+    test("socket close during lifecycle startup rolls back pending admission") {
+      val sessionId = TestSessionId("startup-close")
+      for
+        entered       <- Promise.make[Nothing, Unit]
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        interrupted   <- Ref.make(0)
+        state          = TestAuthState(active, revalidations, interrupted)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        view = new LiveView.Eventless[Unit]:
+                 def mount(ctx: MountContext) = ctx.connection match
+                   case Connection.Disconnected => ZIO.unit
+                   case Connection.Connected(_) => entered.succeed(()).unit *> ZIO.never
+                 def view(model: Signal[Unit]) = div("startup-close")
+        application = scalive.Live.router(
+                        scalive.Live
+                          .session("startup-close")
+                          .withAdmission(authentication)(_.sessionId)(scalive.live(view))
+                      )
+        result <- withServer(application) { port =>
+                    for
+                      page    <- bootstrap(port, "/?session=startup-close")
+                      socket  <- connect(port, page)
+                      joining <- joinRoot(socket, page).fork
+                      _       <- entered.await
+                      bound   <- connections.bindingCount
+                      _       <- connections.disconnect(sessionId)
+                      _ <- socket.closed.await.timeoutFail(
+                             Exception("startup transport did not close")
+                           )(5.seconds)
+                      _       <- joining.interrupt
+                      remaining <- connections.bindingCount
+                                     .repeatUntil(_ == 0)
+                                     .timeoutFail(Exception("pending admission was not rolled back"))(
+                                       5.seconds
+                                     )
+                    yield assertTrue(bound == 1, remaining == 0)
+                  }.provide(
+                    ZLayer.succeed[TestAuthState](state),
+                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+                  )
+      yield result
+    },
+    test("root layout rejection rolls back pending admission") {
+      val phaseContext = LiveSessionMountAspect.fromRequest[Any, String, String](
+        _ => ZIO.succeed("root-layout" -> "disconnected-root"),
+        (_, _) => ZIO.succeed("connected-root")
+      )
+      val rootLayout = LiveRootLayout.dynamic[Any, String](_.context)([Msg] =>
+        (content, _, _) => htmlRootTag(bodyTag(content))
+      )
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div("root-layout")
+      val application = scalive.Live.router(
+        scalive.Live
+          .session("root-layout-rollback")
+          .withAdmission(phaseContext)(identity)
+          .withRootLayout(rootLayout)(scalive.live(View))
+      )
+
+      for
+        connections <- LiveConnections.make[String](_ => ZIO.unit)
+        result <- withServer(application) { port =>
+                    for
+                      page     <- bootstrap(port)
+                      socket   <- connect(port, page)
+                      rejected <- joinRoot(socket, page)
+                      _        <- connections.disconnect("root-layout")
+                      _ <- socket.send(
+                             PhoenixEnvelope(
+                               PhoenixRef.Null,
+                               PhoenixRef.Value("after-root-layout-rejection"),
+                               "phoenix",
+                               "heartbeat",
+                               Json.Obj.empty
+                             )
+                           )
+                      heartbeat <- socket.receiveReply("after-root-layout-rejection", "phoenix")
+                      _         <- socket.close
+                    yield assertTrue(status(rejected) == "error", status(heartbeat) == "ok")
+                  }.provideLayer(ZLayer.succeed[LiveConnections[String]](connections))
       yield result
     },
     test("root preflight projects canonical hosted and external responses with exact claims") {

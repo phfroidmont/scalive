@@ -641,6 +641,30 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("route mount failures map semantic HTTP statuses to safe join outcomes") {
+      val login        = (scalive.live / "login").location
+      val unauthorized = LiveRouteMountFailure.unauthorized("login required")
+      val forbidden    = LiveRouteMountFailure.forbidden("policy denied")
+      val missing      = LiveRouteMountFailure.notFound("record hidden")
+      val redirect     = LiveRouteMountFailure.redirect(login)
+      val custom = LiveRouteMountFailure.custom(
+        Response.badRequest,
+        LiveMountFailure.stale("refresh policy")
+      )
+
+      assertTrue(
+        unauthorized.disconnectedResponse.status == Status.Unauthorized,
+        unauthorized.connectedFailure == LiveMountFailure.unauthorized("login required"),
+        forbidden.disconnectedResponse.status == Status.Forbidden,
+        forbidden.connectedFailure == LiveMountFailure.unauthorized("policy denied"),
+        missing.disconnectedResponse.status == Status.NotFound,
+        missing.connectedFailure == LiveMountFailure.unauthorized("record hidden"),
+        redirect.disconnectedResponse.status == Status.SeeOther,
+        redirect.connectedFailure == LiveMountFailure.redirect(login),
+        custom.disconnectedResponse.status == Status.BadRequest,
+        custom.connectedFailure == LiveMountFailure.stale("refresh policy")
+      )
+    },
     test("join admission binds all bootstrap claims before invoking a route factory") {
       val factories = AtomicInteger()
       object View extends LiveView.Eventless[Unit]:
@@ -800,14 +824,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
         wrongPath.isLeft
       )
     },
-    test("redirect admission stays in the registered session and rejects route mount claims") {
+    test("redirect admission stays in the registered session and accepts route mount aspects") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
-      val routeAspect = LiveMountAspect.fromRequest[Any, Unit, String, Unit](
-        _ => ZIO.succeed("route-claim" -> ()),
-        (_, _) => ZIO.unit
-      )
+      val routeAspect = LiveRouteMountAspect.fromRequest[Any, Unit, Unit](_ => ZIO.unit)
       val application = scalive.Live.router(
         scalive.live / "a" -> View,
         scalive.live / "b" -> View,
@@ -881,7 +902,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                    ).either
       yield assertTrue(
         valid.exists(_.route.matches(URL.decode("/b").toOption.get)),
-        guarded.left.exists(_.contains("destination route mount claims")),
+        guarded.exists(_.route.matches(URL.decode("/guard").toOption.get)),
         other.left.exists(_.contains("session identity differs"))
       )
     },
@@ -1127,7 +1148,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
     },
     test("context environment services are resolved in both phases without entering mount claims") {
       final case class Greeting(value: String)
-      val aspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+      val aspect = LiveSessionMountAspect.fromRequest[Any, String, String](
         _ => ZIO.succeed("session-claim" -> "disconnected-user"),
         (_, _) => ZIO.succeed("connected-user")
       )
@@ -1164,8 +1185,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       yield assertTrue(
         body.contains("disconnected-user:hello"),
         model == "connected-user:hello",
-        claims.sessionMountClaims.size == 1,
-        claims.routeMountClaims.isEmpty
+        claims.sessionMountClaims.size == 1
       )
     },
     test("duplicate route patterns and separately declared session names fail synchronously") {
@@ -1185,9 +1205,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
           .exists(_.isInstanceOf[ZioHttp.AssemblyException])
       )
     },
-    test("session and route aspects preserve order and independently signed claims") {
+    test("session claims and fresh route aspects preserve mount order") {
       val events = scala.collection.mutable.ArrayBuffer.empty[String]
-      val sessionAspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+      val sessionAspect = LiveSessionMountAspect.fromRequest[Any, String, String](
         _ => ZIO.succeed {
           events += "session-disconnected"
           "session-claim" -> "session-context"
@@ -1197,14 +1217,10 @@ object ZioHttpSpec extends ZIOSpecDefault:
           "session-connected-context"
         }
       )
-      val routeAspect = LiveMountAspect.make[Any, Unit, String, String, String](
-        (_, input) => ZIO.succeed {
-          events += s"route-disconnected:$input"
-          "route-claim" -> "route-context"
-        },
-        (claim, _, input) => ZIO.succeed {
-          events += s"route-connected:$claim:$input"
-          "route-connected-context"
+      val routeAspect = LiveRouteMountAspect.make[Any, Unit, String, String]((_, input) =>
+        ZIO.succeed {
+          events += s"route-mount:$input"
+          "route-context"
         }
       )
       object View extends LiveView.Eventless[Unit]:
@@ -1235,16 +1251,14 @@ object ZioHttpSpec extends ZIOSpecDefault:
         malformed <- catalog.head.prepareConnected(
                        URL.root,
                        Request.get(URL.root),
-                       claims.copy(routeMountClaims = Vector("{"))
+                       claims.copy(sessionMountClaims = Vector("{"))
                      ).either
       yield assertTrue(
         claims.sessionIdentity.contains("main"),
-        claims.sessionMountClaims.nonEmpty,
-        claims.routeMountClaims.nonEmpty,
-        claims.hasRouteClaims,
+        claims.sessionMountClaims.size == 1,
         validEvents == Vector(
           "session-connected:session-claim",
-          "route-connected:route-claim:session-connected-context",
+          "route-mount:session-connected-context",
           "factory",
           "mount"
         ),
@@ -1513,13 +1527,12 @@ object ZioHttpSpec extends ZIOSpecDefault:
     test("public session and route guards capture connected context and wrap browser events only") {
       val event  = BrowserToServerEvent[Json]("guarded-event")
       val events = scala.collection.mutable.ArrayBuffer.empty[String]
-      val sessionAspect = LiveMountAspect.fromRequest[Any, Any, String, String](
+      val sessionAspect = LiveSessionMountAspect.fromRequest[Any, String, String](
         _ => ZIO.succeed("session-claim" -> "session-disconnected"),
         (_, _) => ZIO.succeed("session-connected")
       )
-      val routeAspect = LiveMountAspect.make[Any, Unit, String, String, String](
-        (_, input) => ZIO.succeed("route-claim" -> s"route-disconnected:$input"),
-        (_, _, input) => ZIO.succeed(s"route-connected:$input")
+      val routeAspect = LiveRouteMountAspect.make[Any, Unit, String, String]((_, input) =>
+        ZIO.succeed(s"route-mount:$input")
       )
       val route = scalive.live
         .withMountAspect(routeAspect)
@@ -1559,18 +1572,18 @@ object ZioHttpSpec extends ZIOSpecDefault:
           _ <- socket.close
         yield assertTrue(
           disconnectedEvents == Vector(
-            "factory:session-disconnected:route-disconnected:session-disconnected",
+            "factory:session-disconnected:route-mount:session-disconnected",
             "mount"
           ),
           status(joined) == "ok",
           connectedBootstrapEvents == Vector(
-            "factory:session-connected:route-connected:session-connected",
+            "factory:session-connected:route-mount:session-connected",
             "mount"
           ),
           status(reply) == "ok",
           guardedEvents == Vector(
             "session-guard:session-connected",
-            "route-guard:route-connected:session-connected",
+            "route-guard:route-mount:session-connected",
             "handler"
           )
         )

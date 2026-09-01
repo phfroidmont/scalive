@@ -99,8 +99,6 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String] = None,
     rootLayoutKey: String = "scalive:identity-root",
     sessionMountClaims: Vector[String] = Vector.empty,
-    routeMountClaims: Vector[String] = Vector.empty,
-    hasRouteClaims: Boolean = false,
     issuedAtEpochSecond: Long,
     trackedStatics: Vector[String] = Vector.empty,
     initialFlash: Map[String, String] = Map.empty,
@@ -167,8 +165,6 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String] = None,
     rootLayoutKey: String = "scalive:identity-root",
     sessionMountClaims: Vector[String] = Vector.empty,
-    routeMountClaims: Vector[String] = Vector.empty,
-    hasRouteClaims: Boolean = false,
     trackedStatics: Vector[String] = Vector.empty,
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty
@@ -184,8 +180,6 @@ private[scalive] object ZioHttpSecurity:
       sessionIdentity,
       rootLayoutKey,
       sessionMountClaims,
-      routeMountClaims,
-      hasRouteClaims,
       trackedStatics,
       initialFlash,
       nestedLifecycles
@@ -209,8 +203,6 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String] = None,
     rootLayoutKey: String = "scalive:identity-root",
     sessionMountClaims: Vector[String] = Vector.empty,
-    routeMountClaims: Vector[String] = Vector.empty,
-    hasRouteClaims: Boolean = false,
     trackedStatics: Vector[String] = Vector.empty,
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty
@@ -226,8 +218,6 @@ private[scalive] object ZioHttpSecurity:
       sessionIdentity,
       rootLayoutKey,
       sessionMountClaims,
-      routeMountClaims,
-      hasRouteClaims,
       trackedStatics,
       initialFlash,
       nestedLifecycles
@@ -438,8 +428,6 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String],
     rootLayoutKey: String,
     sessionMountClaims: Vector[String],
-    routeMountClaims: Vector[String],
-    hasRouteClaims: Boolean,
     trackedStatics: Vector[String],
     initialFlash: Map[String, String],
     nestedLifecycles: Map[String, Long]
@@ -457,8 +445,6 @@ private[scalive] object ZioHttpSecurity:
           sessionIdentity,
           rootLayoutKey,
           sessionMountClaims,
-          routeMountClaims,
-          hasRouteClaims,
           issuedAt,
           trackedStatics,
           initialFlash,

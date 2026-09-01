@@ -10,8 +10,8 @@ group = "Routing and application structure"
 
 Start with an [ordinary HTTP route](http-forms-and-redirects.md) that can validate
 a form, set a cookie, and redirect, plus a
-[named Live session](layouts-sessions-and-mount-aspects.md) that can run a mount
-aspect. The HTTP and Live routes must also be able to receive one shared
+[named live session](layouts-sessions-and-mount-aspects.md#group-routes-in-a-named-session)
+that can run a mount aspect. The HTTP and Live routes must also be able to receive one shared
 authentication service;
 [service layers](services-and-zlayer-injection.md#provide-services-at-startup)
 are one way to provide that capability.
@@ -19,9 +19,11 @@ are one way to provide that capability.
 ## Separate HTTP Login From Live Authorization {#separate-http-login-from-live-authorization}
 
 Use ordinary HTTP for credential submission, cookie changes, and redirects.
-Use a mount aspect to authorize the disconnected and connected LiveView
+Use a session mount aspect to authorize the disconnected and connected LiveView
 lifecycles. This division keeps password handling out of socket events and lets
-the browser apply normal cookie and redirect semantics.
+the browser apply normal cookie and redirect semantics. Cookies and original
+HTTP headers belong at ordinary HTTP/document or session boundaries, not in a
+route mount aspect.
 
 The documentation authentication lab demonstrates this complete flow:
 
@@ -33,9 +35,9 @@ The documentation authentication lab demonstrates this complete flow:
 4. The protected route authenticates that cookie during disconnected mount.
 5. Connected mount receives only a public session ID in signed claims and checks
    the server-side session record again.
-6. Reset revokes only the current visitor's session, disconnects every active tab
-   using that session, clears that visitor's login attempts, expires the cookie,
-   and redirects to the login page.
+6. Reset revokes only the current visitor's application session, disconnects
+   every active tab using its ID, clears that visitor's login attempts, expires
+   the cookie, and redirects to the login page.
 
 @:lab(authentication)
 
@@ -82,9 +84,27 @@ single-instance lab. A production service normally persists sessions in a
 bounded shared store when multiple application instances must accept the same
 cookie.
 
+## Bind Admission To Physical Connections {#bind-admission-to-physical-connections}
+
+`withAdmission(aspect)(connectionId)` installs the named live session's one
+connection-admission boundary. The projection extracts an application-owned ID
+from the aspect's signed claims. During connected mount, Scalive registers the
+physical connection under that ID before running the aspect's authoritative
+connected callback. A later `LiveConnections.disconnect(id)` can therefore
+promptly close every registered physical connection, including multiple tabs;
+each reconnect must pass admission again.
+
+Use plain `withMountAspect` when typed mount context is sufficient and the
+application does not need connection lookup, prompt invalidation, or distributed
+disconnect fanout by that claim-derived ID. Admission complements durable
+application-session revocation; `LiveConnections` is not authentication truth.
+See the [canonical combined pipeline](layouts-sessions-and-mount-aspects.md#combine-session-and-route-context)
+for the generic and accumulated context shapes.
+
 ## Authenticate Both Mount Phases {#authenticate-both-mount-phases}
 
-The protected session installs this executable mount aspect:
+The protected named live session installs this executable
+@:apiSymbol(class:scalive.LiveSessionMountAspect)`LiveSessionMountAspect`@:@:
 
 @:sourceRegion(documentation/site/src/scalive/docs/auth/AuthLab.scala, authentication-mount-aspect)
 
@@ -97,8 +117,8 @@ same `AuthService` instance. Revocation or expiry between those phases therefore
 prevents the socket from mounting. The public session ID remains in the signed
 claim instead of becoming part of every route's context.
 
-Install the aspect once as the named session's admission boundary and inject the
-small context into only the LiveViews that use it:
+Install the aspect once as the named live session's admission boundary and
+inject the small context into only the LiveViews that use it:
 
 ```scala
 val protectedRoutes = Live
@@ -117,6 +137,15 @@ The status view remains authentication-agnostic even though the same admission
 protects it. Route-specific authorization and sensitive mutations must still
 enforce their own domain rules.
 
+Use a claimless @:apiSymbol(class:scalive.LiveRouteMountAspect)`LiveRouteMountAspect`@:@
+after admission when access depends on destination parameters. It is the mount
+boundary for loading a workspace membership or hiding an inaccessible record;
+it is not a substitute for authorization immediately before a sensitive domain
+operation. A live patch keeps the current lifecycle mounted and does not rerun
+the route aspect, so reauthorize any patched resource identity in `handleParams`
+or navigate instead. See [Derive fresh context for every route mount](layouts-sessions-and-mount-aspects.md#derive-route-context)
+for the complete timing and failure semantics.
+
 ## Revalidate Connected Turns {#revalidate-connected-turns}
 
 Mount admission decides whether a lifecycle may start. To recheck a session
@@ -130,20 +159,19 @@ immutable user into its view:
 Here `ConnectedAuth.revalidate` returns
 `IO[LiveConnectedTurnFailure, Unit]`: `ZIO.unit` means **Continue**, while
 `ZIO.fail(LiveConnectedTurnFailure.redirect(...))` stops the turn and redirects
-to login. Other controlled failures may **Halt**, perform an unsafe **Redirect**,
-**Reload**, or **Disconnect**. Keep authoritative mutable session or account
-state behind the admission-produced context rather than relying on claims
-captured at mount. See
+to login. Other controlled failures may **Halt**, perform a trusted-destination
+unsafe **Redirect**, **Reload**, or **Disconnect**. Keep authoritative mutable
+application session or account state behind the admission-produced context
+rather than relying on claims captured at mount. See
 @:apiSymbol(enum:scalive.LiveConnectedTurnFailure)`LiveConnectedTurnFailure`@:@
 for every outcome.
 
-A guard runs when an application turn arrives, not while a connection is idle.
-Continue to call `LiveConnections.disconnect` when revocation should promptly
-close existing connections; the next admission then decides whether they may
-reconnect. A turn guard narrows the revocation window, but it does not replace
-domain authorization immediately before sensitive mutations. Recheck the
-relevant record or capability where it is used to avoid time-of-check/time-of-use
-gaps.
+A guard runs when an application turn arrives, not while a physical connection
+is idle. Continue to call `LiveConnections.disconnect` when revocation should
+promptly close existing connections; the next admission then decides whether
+they may reconnect. A turn guard narrows the revocation window, but it does not
+replace domain authorization immediately before sensitive mutations. Recheck
+the relevant record or capability where it is used to avoid time-of-check/time-of-use gaps.
 
 Guard checks are on the hot path. Read authoritative mutable data, but bound the
 cost and use caching only when its staleness is acceptable for the policy. A
@@ -162,20 +190,21 @@ application:
 
 @:sourceRegion(documentation/site/src/scalive/docs/auth/AuthLab.scala, authentication-http-actions)
 
-Reset is idempotent: a missing, stale, or already-revoked session still clears
-the browser cookie. When invalidation succeeds, it returns to the login page. It
-affects only the opaque session and attempt record associated with that visitor.
+Reset is idempotent: a missing, stale, or already-revoked application session
+still clears the browser cookie. When invalidation succeeds, it returns to the
+login page. It affects only the opaque application session and attempt record
+associated with that visitor.
 The handler first revokes the durable session record and then calls
 `LiveConnections.disconnect(publicSessionId)`. Reversing this order could let a
 reconnecting socket resume the session before revocation becomes authoritative.
 
 `disconnect` promptly closes every local tab registered to that application
-session. The browser reconnects and reruns connected admission, which rejects
+session ID. The browser reconnects and reruns connected admission, which rejects
 the now-revoked claim. A stale signed bootstrap token therefore cannot restore
 the session.
 
 Connected resources remain per-LiveView even when those tabs share one
-application session ID. Closing every matching transport finalizes each
+application-session ID. Closing every matching physical connection finalizes each
 lifecycle independently; a resource shared by the logical session instead
 belongs in a service with explicit leases or reference counting. See
 [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md#connected-resources).
@@ -211,21 +240,24 @@ from it; `Accounts` is resolved from the ZIO environment independently and is
 never serialized into mount claims or passed to layouts.
 
 Keep the service responsible for credentials, session authenticity, expiry,
-revocation, capacity, and rate limits. Keep the mount aspect responsible for
-translating that service decision into typed mount context or a redirect. The
+revocation, capacity, and rate limits. Keep the session mount aspect responsible
+for translating that service decision into typed mount context or a redirect. The
 protected LiveView then receives `CurrentUser` without reading cookies or
 repeating authorization logic.
 
 ## Fan Out Disconnects Across Nodes {#fan-out-disconnects-across-nodes}
 
-Multiple backend instances need a `LiveDisconnectBus[PublicSessionId]` adapter
-whose subscription broadcasts every ID to every node. Wire the adapter into the
-distributed layer:
+Multiple backend instances need an application-supplied
+`LiveDisconnectBus[PublicSessionId]` adapter whose subscription broadcasts every
+ID to every node. Scalive provides the interface and distributed connection
+layer, not a Redis, NATS, or other transport adapter. Compose your adapter layer
+like this:
 
 ```scala
-val liveConnections =
-  RedisDisconnectBus.layer[PublicSessionId] >>>
-    LiveConnections.distributed[PublicSessionId]
+def liveConnections(
+  bus: ZLayer[Any, Throwable, LiveDisconnectBus[PublicSessionId]]
+): ZLayer[Any, Throwable, LiveConnections[PublicSessionId]] =
+  bus >>> LiveConnections.distributed[PublicSessionId]
 ```
 
 Received events signal local transports without being republished. Duplicate or
@@ -261,6 +293,7 @@ The lab is teaching code, not a production identity system.
 ## Related Tasks {#related-tasks}
 
 - Review phase-safe claims in [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#treat-mount-phases-independently).
+- Choose admission or a plain session aspect in [Bind admission to physical connections](#bind-admission-to-physical-connections).
 - Apply the complete turn boundary from [Lifecycle hooks](lifecycle-hooks.md#connected-turn-guards).
 - Wire the shared session service with [Services and dependency injection](services-and-zlayer-injection.md#provide-services-at-startup).
 - Diagnose rejected joins and forms in [Troubleshooting](troubleshooting.md#diagnose-csrf-rejections).

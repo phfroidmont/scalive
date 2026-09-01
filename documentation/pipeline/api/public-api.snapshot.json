@@ -2044,20 +2044,20 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.checkbox:0ea302621d9adb00",
-          "signature" : "def checkbox[Msg](path: FormPath, checkedValue: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.checkbox:65cf20ed8a213622",
+          "signature" : "def checkbox[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.checkbox:1f65d16d9aabdef4",
-          "signature" : "def checkbox[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.checkbox:8ea875198e8892b8",
+          "signature" : "def checkbox[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.checkbox:7461437818d5a7ec",
-          "signature" : "def checkbox[Msg](path: String, checkedValue: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.checkbox:a1c4d8f3d1ebf809",
+          "signature" : "def checkbox[Msg](path: String, checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.checkbox:ca2c92488b614aa1",
-          "signature" : "def checkbox[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.checkbox:b7ca060b47b50b3a",
+          "signature" : "def checkbox[Msg](path: FormPath, checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -2080,12 +2080,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.email:1031737ee9d0df1f",
-          "signature" : "def email[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.email:1563aeb49601c517",
+          "signature" : "def email[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.email:b3a0b9ca5e4b797a",
-          "signature" : "def email[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.email:8a02f7f9b84dd9fc",
+          "signature" : "def email[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -2128,12 +2128,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.feedback:187f9ad76f618245",
-          "signature" : "def feedback(path: String, mods: Mod[Nothing]*): HtmlElement[Nothing]"
+          "id" : "def:scalive.Form.feedback:193ecd74558c4185",
+          "signature" : "def feedback(path: FormPath, mods: Mod.Input[Nothing]*): HtmlElement[Nothing]"
         },
         {
-          "id" : "def:scalive.Form.feedback:48a9b6c26f607042",
-          "signature" : "def feedback(path: FormPath, mods: Mod[Nothing]*): HtmlElement[Nothing]"
+          "id" : "def:scalive.Form.feedback:8cc276d12f9f292d",
+          "signature" : "def feedback(path: String, mods: Mod.Input[Nothing]*): HtmlElement[Nothing]"
         }
       ]
     },
@@ -2164,12 +2164,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.hidden:bb8b1328f8eecffa",
-          "signature" : "def hidden[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.hidden:34344ecf19f5a54f",
+          "signature" : "def hidden[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.hidden:f088e92093fa6c35",
-          "signature" : "def hidden[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.hidden:adf18d079ed06cad",
+          "signature" : "def hidden[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -2180,8 +2180,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.http:31fd9ecdd149fba2",
-          "signature" : "def http[Msg](target: FormAction)(mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.http:917488b2aa87a817",
+          "signature" : "def http[Msg](target: FormAction)(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -2292,12 +2292,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.password:c38fea65e70b4f9e",
-          "signature" : "def password[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.password:47b005c99a6a60cf",
+          "signature" : "def password[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.password:c984eea3a3fab25c",
-          "signature" : "def password[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.password:a7b339b47822f1d5",
+          "signature" : "def password[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -2308,12 +2308,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.select:2526fbdd0e306d47",
-          "signature" : "def select[Msg](path: String, options: Iterable[(String, String)], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.select:7e3e77a00005b2ce",
+          "signature" : "def select[Msg](path: FormPath, options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.select:61d4f6eb947f24a4",
-          "signature" : "def select[Msg](path: FormPath, options: Iterable[(String, String)], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.select:c6300169f134623e",
+          "signature" : "def select[Msg](path: String, options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -2324,20 +2324,20 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.text:757964effc91b648",
-          "signature" : "def text[Msg](path: String, explicitId: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.text:0c4fd0e3d968ad4d",
+          "signature" : "def text[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.text:89683f9438fa995e",
-          "signature" : "def text[Msg](path: FormPath, explicitId: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.text:30def4d882544cdb",
+          "signature" : "def text[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.text:8adaef0d08242ad0",
-          "signature" : "def text[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.text:59bc9941472c2ea4",
+          "signature" : "def text[Msg](path: FormPath, explicitId: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.text:c9cb93e1749d9c0b",
-          "signature" : "def text[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.text:7d57730f04f680e6",
+          "signature" : "def text[Msg](path: String, explicitId: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -2348,12 +2348,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Form.textarea:bb3efc6dea7271af",
-          "signature" : "def textarea[Msg](path: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.textarea:2f90be787312fd01",
+          "signature" : "def textarea[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.Form.textarea:d761c2b39697797f",
-          "signature" : "def textarea[Msg](path: FormPath, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.Form.textarea:e451aaaa619f0b40",
+          "signature" : "def textarea[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3120,12 +3120,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.checkbox:4725685cc1dd5571",
-          "signature" : "def checkbox[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.checkbox:4822a2c8d95e5941",
+          "signature" : "def checkbox[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.FormFieldView.checkbox:5daa5ad2073ec8ec",
-          "signature" : "def checkbox[Msg](checkedValue: String, mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.checkbox:82de2c12cce3269d",
+          "signature" : "def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3148,8 +3148,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.email:a9d824cb4f9d919b",
-          "signature" : "def email[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.email:b2f4088fbd8aee44",
+          "signature" : "def email[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3160,8 +3160,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.errorFeedback:273b79b12429cb0b",
-          "signature" : "def errorFeedback(render: FormError => Mod[Nothing], mods: |[Mod[Nothing], IterableOnce[Mod[Nothing]]]*): HtmlElement[Nothing]"
+          "id" : "def:scalive.FormFieldView.errorFeedback:359b7a0c8bc821ff",
+          "signature" : "def errorFeedback(render: FormError => Mod[Nothing], mods: Mod.Input[Nothing]*): HtmlElement[Nothing]"
         }
       ]
     },
@@ -3196,8 +3196,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.feedback:ce0ce169238d226c",
-          "signature" : "def feedback(mods: |[Mod[Nothing], IterableOnce[Mod[Nothing]]]*): HtmlElement[Nothing]"
+          "id" : "def:scalive.FormFieldView.feedback:b9a7a263971ce91d",
+          "signature" : "def feedback(mods: Mod.Input[Nothing]*): HtmlElement[Nothing]"
         }
       ]
     },
@@ -3232,8 +3232,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.hidden:f1776769ca5a57e8",
-          "signature" : "def hidden[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.hidden:2de2a9b4aa2e035f",
+          "signature" : "def hidden[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3280,8 +3280,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.password:93ea53937852073e",
-          "signature" : "def password[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.password:127f45ebe7d42dab",
+          "signature" : "def password[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3316,8 +3316,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.select:f58198c41c62699d",
-          "signature" : "def select[Msg](options: Iterable[(String, String)], mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.select:b5e7693db5d1da63",
+          "signature" : "def select[Msg](options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3328,12 +3328,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.text:5ac539de53570ad1",
-          "signature" : "def text[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.text:24534dba3dd2a0b0",
+          "signature" : "def text[Msg](explicitId: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.FormFieldView.text:8c99e74f4da693b3",
-          "signature" : "def text[Msg](explicitId: String, mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.text:f5c4c75d5998abdf",
+          "signature" : "def text[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3344,8 +3344,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormFieldView.textarea:caccbfc544c5b558",
-          "signature" : "def textarea[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormFieldView.textarea:32de59f60d36ff3f",
+          "signature" : "def textarea[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3948,8 +3948,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.HtmlTag.apply:3dacd5836bb80832",
-          "signature" : "def apply[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.HtmlTag.apply:2d891a3611387e68",
+          "signature" : "def apply[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -6362,6 +6362,18 @@
       ]
     },
     {
+      "id" : "def:scalive.Mod.flatten",
+      "ownerId" : "object:scalive.Mod",
+      "qualifiedName" : "scalive.Mod.flatten",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Mod.flatten:72439140ed4a3675",
+          "signature" : "def flatten[Msg](inputs: IterableOnce[Mod.Input[Msg]]): Vector[Mod[Msg]]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.MountContext.flash",
       "ownerId" : "trait:scalive.MountContext",
       "qualifiedName" : "scalive.MountContext.flash",
@@ -7016,8 +7028,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.RootedForm.http:31fd9ecdd149fba2",
-          "signature" : "def http[Msg](target: FormAction)(mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.RootedForm.http:917488b2aa87a817",
+          "signature" : "def http[Msg](target: FormAction)(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -8252,8 +8264,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.portal:36312410b08525d4",
-          "signature" : "def portal[Msg](id: String, target: DomSelector, container: String = ..., wrapperClass: Option[String] = ...)(mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "def:scalive.portal:6ebbc1fe6aefffb7",
+          "signature" : "def portal[Msg](id: String, target: DomSelector, container: String = ..., wrapperClass: Option[String] = ...)(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -10584,8 +10596,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.FormFieldView.email:578b86da541b794c",
-          "signature" : "extension def email[A](field: Signal[FormFieldView[A]])[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "extension:scalive.FormFieldView.email:7e4d85885bbf7bdf",
+          "signature" : "extension def email[A](field: Signal[FormFieldView[A]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -10596,8 +10608,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.FormFieldView.errorFeedback:9b4f45dc960a65aa",
-          "signature" : "extension def errorFeedback[A](field: Signal[FormFieldView[A]])(render: Signal[FormError] => Mod[Nothing], mods: |[Mod[Nothing], IterableOnce[Mod[Nothing]]]*): HtmlElement[Nothing]"
+          "id" : "extension:scalive.FormFieldView.errorFeedback:de65cb183827aff4",
+          "signature" : "extension def errorFeedback[A](field: Signal[FormFieldView[A]])(render: Signal[FormError] => Mod[Nothing], mods: Mod.Input[Nothing]*): HtmlElement[Nothing]"
         }
       ]
     },
@@ -10620,8 +10632,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.FormFieldView.text:f3b77a07854fbd93",
-          "signature" : "extension def text[A](field: Signal[FormFieldView[A]])[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "extension:scalive.FormFieldView.text:ecf3e2b83e6cc40a",
+          "signature" : "extension def text[A](field: Signal[FormFieldView[A]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -10632,8 +10644,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.FormFieldView.textarea:488e501c0b261011",
-          "signature" : "extension def textarea[A](field: Signal[FormFieldView[A]])[Msg](mods: |[Mod[Msg], IterableOnce[Mod[Msg]]]*): HtmlElement[Msg]"
+          "id" : "extension:scalive.FormFieldView.textarea:495d87f713022876",
+          "signature" : "extension def textarea[A](field: Signal[FormFieldView[A]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -17309,6 +17321,18 @@
         {
           "id" : "type-alias:scalive.LiveView.Routed.ParamsContext:92bb47f1e98965ad",
           "signature" : "type ParamsContext = ParamsContext[Msg, Model]"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.Mod.Input",
+      "ownerId" : "object:scalive.Mod",
+      "qualifiedName" : "scalive.Mod.Input",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.Mod.Input:1db6b659444c20c7",
+          "signature" : "type Input = ([Msg] =>> |[Mod[Msg], IterableOnce[Mod[Msg]]])"
         }
       ]
     },

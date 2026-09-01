@@ -29,14 +29,8 @@ object HtmlElement:
 class HtmlTag(val name: String, val void: Boolean = false):
   require(Escaping.validTag(name), s"invalid HTML tag name '$name'")
 
-  def apply[Msg](mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*): HtmlElement[Msg] =
-    HtmlElement(
-      this,
-      mods.toVector.flatMap {
-        case mod: Mod[Msg]                  => Some(mod)
-        case values: IterableOnce[Mod[Msg]] => values
-      }
-    )
+  def apply[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    HtmlElement(this, Mod.flatten(mods))
 
 /** A typed, validated HTML attribute definition. */
 class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
@@ -226,6 +220,16 @@ final class KeyHtmlAttrBinding(
 sealed trait Mod[+Msg]
 
 object Mod:
+  /** A single modifier or one collection of modifiers accepted by HTML and component factories. */
+  type Input[+Msg] = Mod[Msg] | IterableOnce[Mod[Msg]]
+
+  /** Normalizes modifier inputs while preserving their encounter order. */
+  def flatten[Msg](inputs: IterableOnce[Input[Msg]]): Vector[Mod[Msg]] =
+    inputs.iterator.flatMap {
+      case mod: Mod[Msg]                  => Iterator.single(mod)
+      case values: IterableOnce[Mod[Msg]] => values.iterator
+    }.toVector
+
   enum Attr[+Msg] extends Mod[Msg]:
     case Static(name: String, value: String)                              extends Attr[Nothing]
     case StaticValueAsPresence(name: String, value: Boolean)              extends Attr[Nothing]

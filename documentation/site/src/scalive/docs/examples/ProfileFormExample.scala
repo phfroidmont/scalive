@@ -87,8 +87,8 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
     )
   end view
 
-  private def field(content: Mod[Msg]*): HtmlElement[Msg] =
-    div(cls := "docs-profile-field", content)
+  private def field(content: Mod.Input[Msg]*): HtmlElement[Msg] =
+    div(cls := "docs-profile-field", Mod.flatten(content))
 end ProfileFormExample
 
 object ProfileFormExample:

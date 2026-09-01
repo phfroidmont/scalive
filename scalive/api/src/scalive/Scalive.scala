@@ -112,16 +112,13 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     container: String = "div",
     wrapperClass: Option[String] = None
   )(
-    mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
+    mods: Mod.Input[Msg]*
   ): HtmlElement[Msg] =
     require(
       Escaping.validTag(container),
       s"portal container must be a valid HTML tag, got '$container'"
     )
-    val content = mods.toVector.flatMap {
-      case mod: Mod[Msg]                  => Some(mod)
-      case values: IterableOnce[Mod[Msg]] => values
-    }
+    val content = Mod.flatten(mods)
     val wrapper = Vector.newBuilder[Mod[Msg]]
     wrapper += (idAttr := s"_lv_portal_wrap_$id")
     wrapperClass.foreach(value => wrapper += (cls := value))

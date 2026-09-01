@@ -505,7 +505,7 @@ final class RootedForm[Owner, A] private[scalive] (
   def http[Msg](
     target: FormAction
   )(
-    mods: (Mod[Msg] | IterableOnce[Mod[Msg]])*
+    mods: Mod.Input[Msg]*
   ): HtmlElement[Msg] = underlying.http(target)(mods*)
 
   /** Binds `phx-change` and decodes each event with this form's codec.

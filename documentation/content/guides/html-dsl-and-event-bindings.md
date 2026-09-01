@@ -36,6 +36,20 @@ and attributes with signal `.map`; use staged signal operators such as
 `view` method constructs this signal-backed view graph once per graph lifetime
 rather than rebuilding the tree after every model update.
 
+Keep reusable markup in ordinary functions. Accept @:apiSymbol(type-alias:scalive.Mod.Input)`Mod.Input[Msg]`@:@
+when callers should be able to supply individual modifiers, `Option` values, or
+collections. Use @:apiSymbol(def:scalive.Mod.flatten)`Mod.flatten`@:@ when adding the component's
+own modifiers alongside the caller's inputs:
+
+```scala
+def card[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+  articleTag(cls := "card", Mod.flatten(mods))
+```
+
+When forwarding every input unchanged, `articleTag(mods*)` avoids normalization in
+the component. `Mod.flatten` is also available when the function must inspect,
+reorder, or store the modifiers as a `Vector`.
+
 Use the named tag definitions when they exist. The DSL gives Scala-safe names to
 HTML names that would otherwise conflict with Scala or another exported symbol:
 for example, @:apiSymbol(lazy-val:scalive.sectionTag)`sectionTag`@:@,

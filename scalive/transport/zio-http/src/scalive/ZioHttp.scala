@@ -1229,12 +1229,15 @@ object ZioHttp:
   ): HtmlElement[Msg] =
     val reserved = Set("data-phx-main", "data-phx-session", "data-phx-static")
     def retained(mod: Mod[Msg]): Boolean = mod match
-      case Mod.Attr.Static(name, _)                => !reserved(name)
-      case Mod.Attr.StaticValueAsPresence(name, _) => !reserved(name)
-      case Mod.Attr.SignalValue(name, _)           => !reserved(name)
-      case Mod.Attr.SignalOptionalValue(name, _)   => !reserved(name)
-      case Mod.Attr.SignalValueAsPresence(name, _) => !reserved(name)
-      case _                                       => true
+      case Mod.Attr.Static(name, _)                       => !reserved(name)
+      case Mod.Attr.StaticValueAsPresence(name, _)        => !reserved(name)
+      case Mod.Attr.SignalValue(name, _)                  => !reserved(name)
+      case Mod.Attr.SignalOptionalValue(name, _)          => !reserved(name)
+      case Mod.Attr.SignalValueAsPresence(name, _)        => !reserved(name)
+      case Mod.Attr.CompositeStatic(name, _)              => !reserved(name)
+      case Mod.Attr.CompositeSignalValue(name, _)         => !reserved(name)
+      case Mod.Attr.CompositeSignalOptionalValue(name, _) => !reserved(name)
+      case _                                              => true
     div(rootAttrs, HtmlElement(element.tag, element.mods.filter(retained)))
 
   private def websocketRoute[R](

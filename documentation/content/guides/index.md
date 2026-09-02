@@ -27,8 +27,8 @@ expects so you can also enter directly from search or the API reference.
 ### Interfaces And Input {#interfaces-and-input}
 
 - [HTML and event bindings](html-dsl-and-event-bindings.md) builds typed
-  trees, sets attributes, binds messages, keys repeated content, and composes
-  portal and focus-management helpers.
+  trees, composes token-list attributes, binds messages, keys repeated content,
+  and uses portal and focus-management helpers.
 - [Typed forms and validation](typed-forms-and-validation.md) decodes rooted
   browser input into domain values with recovery and path-specific feedback.
 - [Ordinary HTTP forms and redirects](http-forms-and-redirects.md) combines

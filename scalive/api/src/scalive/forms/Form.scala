@@ -317,22 +317,25 @@ object Form:
 
   private def attributeName(mod: Mod[?]): Option[String] =
     mod match
-      case Mod.Attr.Static(name, _)                => Some(name)
-      case Mod.Attr.StaticValueAsPresence(name, _) => Some(name)
-      case Mod.Attr.SignalValue(name, _)           => Some(name)
-      case Mod.Attr.SignalOptionalValue(name, _)   => Some(name)
-      case Mod.Attr.SignalValueAsPresence(name, _) => Some(name)
-      case Mod.Attr.Binding(name, _)               => Some(name)
-      case Mod.Attr.SignalBinding(name, _, _)      => Some(name)
-      case Mod.Attr.FormBinding(name, _)           => Some(name)
-      case Mod.Attr.FormEventBinding(name, _, _)   => Some(name)
-      case Mod.Attr.JsBinding(name, _)             => Some(name)
-      case Mod.Attr.SignalJsBinding(name, _)       => Some(name)
-      case Mod.Attr.RoutedBinding(name, _)         => Some(name)
-      case Mod.Attr.ComponentBinding(name, _, _)   => Some(name)
-      case Mod.Attr.ComponentTarget(_)             => Some("phx-target")
-      case Mod.Attr.Group(attrs)                   => attrs.flatMap(attributeName).headOption
-      case _: Mod.Content[?]                       => None
+      case Mod.Attr.Static(name, _)                       => Some(name)
+      case Mod.Attr.StaticValueAsPresence(name, _)        => Some(name)
+      case Mod.Attr.SignalValue(name, _)                  => Some(name)
+      case Mod.Attr.SignalOptionalValue(name, _)          => Some(name)
+      case Mod.Attr.SignalValueAsPresence(name, _)        => Some(name)
+      case Mod.Attr.CompositeStatic(name, _)              => Some(name)
+      case Mod.Attr.CompositeSignalValue(name, _)         => Some(name)
+      case Mod.Attr.CompositeSignalOptionalValue(name, _) => Some(name)
+      case Mod.Attr.Binding(name, _)                      => Some(name)
+      case Mod.Attr.SignalBinding(name, _, _)             => Some(name)
+      case Mod.Attr.FormBinding(name, _)                  => Some(name)
+      case Mod.Attr.FormEventBinding(name, _, _)          => Some(name)
+      case Mod.Attr.JsBinding(name, _)                    => Some(name)
+      case Mod.Attr.SignalJsBinding(name, _)              => Some(name)
+      case Mod.Attr.RoutedBinding(name, _)                => Some(name)
+      case Mod.Attr.ComponentBinding(name, _, _)          => Some(name)
+      case Mod.Attr.ComponentTarget(_)                    => Some("phx-target")
+      case Mod.Attr.Group(attrs)                          => attrs.flatMap(attributeName).headOption
+      case _: Mod.Content[?]                              => None
 
   /** Creates a lower-level form from a parsed root name and existing state.
     *

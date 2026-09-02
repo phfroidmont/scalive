@@ -1,6 +1,6 @@
 {%
 title = "HTML and event bindings"
-description = "Build typed HTML, set attributes, bind browser events to messages, and key collection entries."
+description = "Build typed HTML, compose token-list attributes, bind browser events to messages, and key collection entries."
 order = 10
 section = guides
 group = "Interfaces and input"
@@ -44,7 +44,13 @@ own modifiers alongside the caller's inputs:
 ```scala
 def card[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
   articleTag(cls := "card", Mod.flatten(mods))
+
+val featured = card(cls := "featured", "Featured product")
 ```
+
+The helper and caller classes combine into `class="card featured"`. This makes
+component-owned classes composable without requiring the helper to inspect caller
+modifiers.
 
 When forwarding every input unchanged, `articleTag(mods*)` avoids normalization in
 the component. `Mod.flatten` is also available when the function must inspect,
@@ -66,6 +72,45 @@ Assign attributes with @:apiSymbol(def:scalive.HtmlAttr.:=)`:=`@:@. Each @:apiSy
 accepts its declared Scala value type, so `disabled := model.lines.isEmpty` takes
 a `Boolean` while `cls := "cart"` takes a `String`. Boolean presence attributes
 are emitted when true and omitted when false.
+
+### Compose Token-List Attributes {#compose-token-list-attributes}
+
+Some HTML attributes contain a space-separated token list rather than one scalar
+value. Their @:apiSymbol(class:scalive.CompositeHtmlAttr)`CompositeHtmlAttr`@:@
+definitions let independent modifiers contribute to one rendered attribute. The
+built-in @:apiSymbol(val:scalive.className)`className`@:@,
+@:apiSymbol(val:scalive.cls)`cls`@:@, @:apiSymbol(lazy-val:scalive.rel)`rel`@:@, and
+@:apiSymbol(lazy-val:scalive.role)`role`@:@ definitions use this behavior:
+
+```scala
+div(
+  cls := "panel selected",
+  cls := model.map(model => if model.expanded then "expanded" else ""),
+  cls := "selected wide"
+)
+```
+
+Values are split on HTML ASCII whitespace. Empty tokens are ignored, exact
+duplicate tokens keep their first position, and declaration order is preserved. The
+example therefore renders `class="panel selected expanded wide"` while expanded,
+and `class="panel selected wide"` otherwise. An attribute with no remaining tokens
+is omitted.
+
+Static values, signals, optional signals, and directly selected modifiers can be
+mixed. Use @:apiSymbol(def:scalive.CompositeHtmlAttr.optional)`cls.optional(...)`@:@
+for a `Signal[Option[String]]`; a `cls := ...` branch selected by
+@:apiSymbol(extension:scalive.Signal.chooseMod)`chooseMod`@:@ joins the same attribute.
+Scalar attributes do not compose or use last-declaration-wins semantics. Declaring
+the same scalar attribute more than once is an error, as is mixing composite and
+scalar definitions for the same rendered name.
+
+For `role`, order is significant because user agents use the first supported role.
+Scalive does not validate ARIA role names; prefer an element with the required native
+semantics when one exists. Use
+@:apiSymbol(def:scalive.CompositeHtmlAttr.apply)`CompositeHtmlAttr(name)`@:@ for a
+custom attribute only when its grammar is a space-separated token list.
+
+### Use Namespaced And Custom Attributes {#use-namespaced-and-custom-attributes}
 
 Use @:apiSymbol(def:scalive.dataAttr)`dataAttr(name)`@:@ for application `data-*` attributes and
 the @:apiSymbol(object:scalive.aria)`aria`@:@ namespace for ARIA attributes:

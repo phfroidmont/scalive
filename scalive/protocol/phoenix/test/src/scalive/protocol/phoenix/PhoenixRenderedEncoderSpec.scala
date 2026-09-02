@@ -1354,6 +1354,29 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         encoded   <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
       yield assertTrue(reconstruct(encoded._2) == HtmlRenderer.render(candidate.tree))
     },
+    test("projects repeated dynamic composite modifiers through one sparse slot") {
+      val compiled = RenderProgram.compile[String, Nothing] { model =>
+        div(cls := "base", cls := model)
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate("active active")
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        second  <- program.evaluate("wide", Some(first.commit))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, second.tree)
+                     )
+                   )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.html(updated._1))
+      yield assertTrue(
+        reconstruct(initial._2) == "<div class=\"base active\"></div>",
+        updated._2.fields.map(_._1).toSet == Set("0"),
+        html == HtmlRenderer.render(second.tree)
+      )
+    },
     test("uses stable dense slots and sparse updates without s") {
       val compiled = RenderProgram.compile[Model, Nothing] { model =>
         div(

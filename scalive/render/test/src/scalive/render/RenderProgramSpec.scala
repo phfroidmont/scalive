@@ -262,18 +262,114 @@ object RenderProgramSpec extends ZIOSpecDefault:
         againRows(1).id != rows(1).id
       )
     },
-    test("rejects duplicate HTML attributes before binding assembly") {
+    test("combines repeated composite attributes in encounter order") {
+      val compiled = RenderProgram.compile[Unit, Nothing] { _ =>
+        div(
+          dataAttr("first") := "1",
+          cls               := " alpha\tbeta ",
+          title             := "middle",
+          className         := "beta\ngamma",
+          rel               := "next",
+          rel               := "next prev",
+          role              := "button",
+          role              := "switch button"
+        )
+      }
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(())
+      yield assertTrue(
+        HtmlRenderer.render(candidate.tree) ==
+          "<div data-first=\"1\" class=\"alpha beta gamma\" title=\"middle\" rel=\"next prev\" role=\"button switch\"></div>",
+        candidate.tree.root.attributes.map(_.name) ==
+          Vector("data-first", "class", "title", "rel", "role")
+      )
+    },
+    test("combines static, signal, optional, and choice composite contributions") {
+      final case class Classes(dynamic: String, optional: Option[String], selected: Boolean)
+      val compiled = RenderProgram.compile[Classes, Nothing] { model =>
+        div(
+          cls := "base",
+          cls := model.map(_.dynamic),
+          cls.optional(model.map(_.optional)),
+          model.map(_.selected).chooseMod(cls := "selected", cls := "")
+        )
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Classes("active active", Some("wide"), selected = true))
+        second <- program.evaluate(
+                    Classes("\t", None, selected = false),
+                    Some(first.commit)
+                  )
+      yield assertTrue(
+        HtmlRenderer.render(first.tree) ==
+          "<div class=\"base active wide selected\"></div>",
+        HtmlRenderer.render(second.tree) == "<div class=\"base\"></div>",
+        first.tree.root.attributes.size == 1,
+        first.tree.root.attributes.head.slot.nonEmpty,
+        second.tree.root.attributes.head.slot == first.tree.root.attributes.head.slot
+      )
+    },
+    test("rejects scalar collisions and duplicate non-composite attributes") {
+      val mixedClass = RenderProgram.compile[Unit, Nothing] { _ =>
+        div(cls := "first", Mod.Attr.Static("CLASS", "second"))
+      }
       val staticDuplicate = RenderProgram.compile[Unit, Nothing] { _ =>
-        div(cls := "first", cls := "second")
+        div(idAttr := "first", idAttr := "second")
       }
       val bindingDuplicate = RenderProgram.compile[Unit, Int] { _ =>
         button(on.click(1), on.click(2))
       }
 
       assertTrue(
+        mixedClass.left.exists(_.isInstanceOf[RenderError.InvalidHtml]),
         staticDuplicate.left.exists(_.isInstanceOf[RenderError.InvalidHtml]),
         bindingDuplicate.left.exists(_.isInstanceOf[RenderError.InvalidHtml])
       )
+    },
+    test("rejects mixed composite choices and null composite values") {
+      val mixedChoice = RenderProgram.compile[Boolean, Nothing] { selected =>
+        div(selected.chooseMod(cls := "selected", Mod.Attr.Static("class", "plain")))
+      }
+      val staticNull = RenderProgram.compile[Unit, Nothing] { _ =>
+        div(cls := null.asInstanceOf[String])
+      }
+      val dynamicNull = RenderProgram.compile[Unit, Nothing] { model =>
+        div(cls := model.map(_ => null: String))
+      }
+      val optionalNull = RenderProgram.compile[Unit, Nothing] { model =>
+        div(cls.optional(model.map(_ => Some(null: String))))
+      }
+
+      for
+        dynamicProgram  <- ZIO.fromEither(dynamicNull)
+        optionalProgram <- ZIO.fromEither(optionalNull)
+        dynamicFailure  <- dynamicProgram.evaluate(()).exit
+        optionalFailure <- optionalProgram.evaluate(()).exit
+      yield assertTrue(
+        mixedChoice.left.exists(_.isInstanceOf[RenderError.InvalidHtml]),
+        staticNull.left.exists(_.isInstanceOf[RenderError.InvalidHtml]),
+        dynamicFailure.isFailure,
+        optionalFailure.isFailure
+      )
+    },
+    test("samples only the selected composite choice branch") {
+      val compiled = RenderProgram.compile[Boolean, Nothing] { selected =>
+        div(
+          selected.chooseMod(
+            cls := selected.map(_ => "selected"),
+            cls := selected.map(_ => throw IllegalStateException("unselected branch sampled"))
+          )
+        )
+      }
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(true)
+      yield assertTrue(HtmlRenderer.render(candidate.tree) == "<div class=\"selected\"></div>")
     },
     test("validates raw modifier attribute names") {
       val invalid = RenderProgram.compile[Unit, Nothing] { _ =>

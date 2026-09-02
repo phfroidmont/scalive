@@ -122,6 +122,18 @@
       ]
     },
     {
+      "id" : "class:scalive.CompositeHtmlAttr",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.CompositeHtmlAttr",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.CompositeHtmlAttr:a518ff9c2dcc26a3",
+          "signature" : "class CompositeHtmlAttr(name: String) extends HtmlAttr[String]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.ConnectedLifecycleContext",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ConnectedLifecycleContext",
@@ -1818,6 +1830,46 @@
         {
           "id" : "def:scalive.ComponentUpdates.sendUpdate:def820d69e49d678",
           "signature" : "def sendUpdate[C <: LiveComponent[?, ?, ?]](id: String, props: LiveComponent.PropsOf[C])(using evidence$1: reflect.ClassTag[C]): zio.package.Task[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.CompositeHtmlAttr.:=",
+      "ownerId" : "class:scalive.CompositeHtmlAttr",
+      "qualifiedName" : "scalive.CompositeHtmlAttr.:=",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.CompositeHtmlAttr.:=:8589fb7955d85494",
+          "signature" : "def :=(value: Signal[String]): Mod.Attr[Nothing]"
+        },
+        {
+          "id" : "def:scalive.CompositeHtmlAttr.:=:f0c84d8b0887f112",
+          "signature" : "def :=(value: String): Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.CompositeHtmlAttr.apply",
+      "ownerId" : "object:scalive.CompositeHtmlAttr",
+      "qualifiedName" : "scalive.CompositeHtmlAttr.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.CompositeHtmlAttr.apply:f531912a6be487a3",
+          "signature" : "def apply(name: String): CompositeHtmlAttr"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.CompositeHtmlAttr.optional",
+      "ownerId" : "class:scalive.CompositeHtmlAttr",
+      "qualifiedName" : "scalive.CompositeHtmlAttr.optional",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.CompositeHtmlAttr.optional:e8e98e8f6591ddd9",
+          "signature" : "def optional(value: Signal[Option[String]]): Mod.Attr[Nothing]"
         }
       ]
     },
@@ -9930,6 +9982,42 @@
       ]
     },
     {
+      "id" : "enum:scalive.Mod.Attr.CompositeSignalOptionalValue",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeSignalOptionalValue",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.CompositeSignalOptionalValue:d641c7b32e0ea334",
+          "signature" : "enum CompositeSignalOptionalValue(name: String, value: Signal[Option[String]]) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.CompositeSignalValue",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeSignalValue",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.CompositeSignalValue:7b8b72319fcc37b2",
+          "signature" : "enum CompositeSignalValue(name: String, value: Signal[String]) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.Mod.Attr.CompositeStatic",
+      "ownerId" : "enum:scalive.Mod.Attr",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeStatic",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.Mod.Attr.CompositeStatic:8ad156190b61f3fc",
+          "signature" : "enum CompositeStatic(name: String, value: String) extends Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.Mod.Attr.FormBinding",
       "ownerId" : "enum:scalive.Mod.Attr",
       "qualifiedName" : "scalive.Mod.Attr.FormBinding",
@@ -13996,8 +14084,8 @@
       "kind" : "lazyVal",
       "signatures" : [
         {
-          "id" : "lazy-val:scalive.rel:6286719799142b67",
-          "signature" : "lazy val rel: HtmlAttr[String]"
+          "id" : "lazy-val:scalive.rel:1a0ed3e53007e487",
+          "signature" : "lazy val rel: CompositeHtmlAttr"
         }
       ]
     },
@@ -14020,8 +14108,8 @@
       "kind" : "lazyVal",
       "signatures" : [
         {
-          "id" : "lazy-val:scalive.role:cd84a8859c470a25",
-          "signature" : "lazy val role: HtmlAttr[String]"
+          "id" : "lazy-val:scalive.role:a9db51114a30e39f",
+          "signature" : "lazy val role: CompositeHtmlAttr"
         }
       ]
     },
@@ -14802,6 +14890,18 @@
         {
           "id" : "object:scalive.ComponentSpec:8f2ab3aeed3cfc0a",
           "signature" : "object ComponentSpec"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.CompositeHtmlAttr",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.CompositeHtmlAttr",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.CompositeHtmlAttr:eb9e2429b4e662ee",
+          "signature" : "object CompositeHtmlAttr"
         }
       ]
     },
@@ -21057,6 +21157,78 @@
       ]
     },
     {
+      "id" : "val:scalive.Mod.Attr.CompositeSignalOptionalValue.name",
+      "ownerId" : "enum:scalive.Mod.Attr.CompositeSignalOptionalValue",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeSignalOptionalValue.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.CompositeSignalOptionalValue.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.CompositeSignalOptionalValue.value",
+      "ownerId" : "enum:scalive.Mod.Attr.CompositeSignalOptionalValue",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeSignalOptionalValue.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.CompositeSignalOptionalValue.value:fa5dec44decf445d",
+          "signature" : "val value: Signal[Option[String]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.CompositeSignalValue.name",
+      "ownerId" : "enum:scalive.Mod.Attr.CompositeSignalValue",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeSignalValue.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.CompositeSignalValue.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.CompositeSignalValue.value",
+      "ownerId" : "enum:scalive.Mod.Attr.CompositeSignalValue",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeSignalValue.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.CompositeSignalValue.value:a829306237c228ce",
+          "signature" : "val value: Signal[String]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.CompositeStatic.name",
+      "ownerId" : "enum:scalive.Mod.Attr.CompositeStatic",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeStatic.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.CompositeStatic.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.Mod.Attr.CompositeStatic.value",
+      "ownerId" : "enum:scalive.Mod.Attr.CompositeStatic",
+      "qualifiedName" : "scalive.Mod.Attr.CompositeStatic.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.Mod.Attr.CompositeStatic.value:f0dd26ed1b9f762b",
+          "signature" : "val value: String"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.Mod.Attr.FormBinding.name",
       "ownerId" : "enum:scalive.Mod.Attr.FormBinding",
       "qualifiedName" : "scalive.Mod.Attr.FormBinding.name",
@@ -22383,8 +22555,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.className:a4f1fb7d1cb34fa6",
-          "signature" : "val className: HtmlAttr[String]"
+          "id" : "val:scalive.className:eedf03a762801f79",
+          "signature" : "val className: CompositeHtmlAttr"
         }
       ]
     },
@@ -22395,8 +22567,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.cls:daf9ba2c992d07ee",
-          "signature" : "val cls: HtmlAttr[String]"
+          "id" : "val:scalive.cls:64fd21c8261385ef",
+          "signature" : "val cls: CompositeHtmlAttr"
         }
       ]
     },

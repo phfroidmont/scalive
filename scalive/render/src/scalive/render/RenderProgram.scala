@@ -345,6 +345,16 @@ object RenderProgram:
       case Static(value: String, raw: Boolean, slot: Option[TemplateSlotId] = None)
       case Dynamic(slot: TemplateSlotId, signal: Signal[String], raw: Boolean)
 
+  private enum CompositePart:
+    case Static(tokens: Vector[String])
+    case Dynamic(signal: Signal[String])
+    case DynamicOptional(signal: Signal[Option[String]])
+    case Choice(signal: Signal[Any], branches: Vector[(Any, CompositePart)])
+
+    def dynamic: Boolean = this match
+      case Static(_) => false
+      case _         => true
+
   sealed private trait AttributeTemplate[+Msg]:
     def name: String
 
@@ -362,6 +372,8 @@ object RenderProgram:
       signal: Signal[Option[String]])
         extends AttributeTemplate[Nothing]
     final case class DynamicPresence(name: String, slot: TemplateSlotId, signal: Signal[Boolean])
+        extends AttributeTemplate[Nothing]
+    final case class Composite(name: String, slot: TemplateSlotId, parts: Vector[CompositePart])
         extends AttributeTemplate[Nothing]
     final case class Binding[Msg](
       name: String,
@@ -413,6 +425,14 @@ object RenderProgram:
         extends AttributeTemplate[Msg]
   end AttributeTemplate
 
+  private enum AttributeCandidate[+Msg]:
+    case Scalar(template: AttributeTemplate[Msg])
+    case Composite(override val name: String, part: CompositePart)
+
+    def name: String = this match
+      case Scalar(template)   => template.name
+      case Composite(name, _) => name
+
   final private class Compiler(
     allocator: IdentityAllocator,
     scope: SignalScope,
@@ -423,9 +443,11 @@ object RenderProgram:
       for
         id    <- allocator.template()
         parts <- classifyMods(element.mods)
-        (attributes, contents) = parts
-        _ <- validateAttributeNames(attributes)
-        _ <- Either.cond(
+        (attributeCandidates, contents) = parts
+        _          <- validateAttributeCandidateNames(attributeCandidates)
+        attributes <- finalizeAttributes(attributeCandidates)
+        _          <- validateAttributeNames(attributes)
+        _          <- Either.cond(
                !element.tag.void || contents.isEmpty,
                (),
                RenderError.InvalidHtml(
@@ -437,9 +459,9 @@ object RenderProgram:
 
     private def classifyMods[Msg](
       mods: Vector[Mod[Msg]]
-    ): Either[RenderError, (Vector[AttributeTemplate[Msg]], Vector[Mod.Content[Msg]])] =
+    ): Either[RenderError, (Vector[AttributeCandidate[Msg]], Vector[Mod.Content[Msg]])] =
       mods
-        .foldLeft[Either[RenderError, (Vector[AttributeTemplate[Msg]], Vector[Mod.Content[Msg]])]](
+        .foldLeft[Either[RenderError, (Vector[AttributeCandidate[Msg]], Vector[Mod.Content[Msg]])]](
           Right(Vector.empty -> Vector.empty)
         ) { (result, mod) =>
           result.flatMap { case (attributes, contents) =>
@@ -470,7 +492,7 @@ object RenderProgram:
 
     private def compileAttributeChoice[Msg](
       choice: Mod.Content.SignalModChoice[?, Msg]
-    ): Either[RenderError, AttributeTemplate[Msg]] =
+    ): Either[RenderError, AttributeCandidate[Msg]] =
       val signal   = choice.value.asInstanceOf[Signal[Any]]
       val branches = choice.branches.map { case (key, mod) =>
         key.asInstanceOf[Any] -> mod.asInstanceOf[Mod.Attr[Msg]]
@@ -481,6 +503,7 @@ object RenderProgram:
         compiled <- traverse(branches) { case (key, attribute) =>
                       compileAttribute(attribute).map(key -> _)
                     }
+        _    <- traverse(compiled.map(_._2))(candidate => validateAttributeName(candidate.name))
         name <- compiled.headOption
                   .map(_._2.name).toRight(
                     RenderError.InvalidHtml("attribute chooseMod requires at least one branch")
@@ -492,112 +515,183 @@ object RenderProgram:
                  "attribute chooseMod branches must use the same attribute name"
                )
              )
-      yield AttributeTemplate.Choice(name, signal, compiled)
+        candidate <-
+          val compositeBranches = compiled.collect {
+            case (key, AttributeCandidate.Composite(_, part)) => key -> part
+          }
+          val scalarBranches = compiled.collect { case (key, AttributeCandidate.Scalar(template)) =>
+            key -> template
+          }
+          val result: Either[RenderError, AttributeCandidate[Msg]] =
+            if compositeBranches.size == compiled.size then
+              Right(
+                AttributeCandidate.Composite(
+                  name,
+                  CompositePart.Choice(signal, compositeBranches)
+                )
+              )
+            else if scalarBranches.size == compiled.size then
+              Right(
+                AttributeCandidate.Scalar(AttributeTemplate.Choice(name, signal, scalarBranches))
+              )
+            else
+              Left(
+                RenderError.InvalidHtml(
+                  "attribute chooseMod branches cannot mix composite and scalar attributes"
+                )
+              )
+          result
+      yield candidate
+      end for
+    end compileAttributeChoice
 
     private def compileAttribute[Msg](
       attribute: Mod.Attr[Msg]
-    ): Either[RenderError, AttributeTemplate[Msg]] =
+    ): Either[RenderError, AttributeCandidate[Msg]] =
       attribute match
         case Mod.Attr.Static(name, value) =>
           Either.cond(
             value != null,
-            AttributeTemplate.Static(name, Some(AttributeValue.Text(value))),
+            AttributeCandidate.Scalar(
+              AttributeTemplate.Static(name, Some(AttributeValue.Text(value)))
+            ),
             RenderError.InvalidHtml(s"attribute '$name' has a null value")
           )
         case Mod.Attr.StaticValueAsPresence(name, value) =>
-          Right(AttributeTemplate.Static(name, Option.when(value)(AttributeValue.Presence)))
+          Right(
+            AttributeCandidate.Scalar(
+              AttributeTemplate.Static(name, Option.when(value)(AttributeValue.Presence))
+            )
+          )
         case Mod.Attr.SignalValue(name, value) =>
           dynamicAttribute(name, value)(AttributeTemplate.DynamicValue.apply)
+            .map(AttributeCandidate.Scalar.apply)
         case Mod.Attr.SignalOptionalValue(name, value) =>
           dynamicAttribute(name, value)(AttributeTemplate.DynamicOptional.apply)
+            .map(AttributeCandidate.Scalar.apply)
         case Mod.Attr.SignalValueAsPresence(name, value) =>
           dynamicAttribute(name, value)(AttributeTemplate.DynamicPresence.apply)
+            .map(AttributeCandidate.Scalar.apply)
+        case Mod.Attr.CompositeStatic(name, value) =>
+          nonNullString(value, s"attribute '$name'")
+            .map(value =>
+              AttributeCandidate.Composite(name, CompositePart.Static(compositeTokens(value)))
+            )
+        case Mod.Attr.CompositeSignalValue(name, value) =>
+          scope
+            .validate(value).map(_ =>
+              AttributeCandidate.Composite(name, CompositePart.Dynamic(value))
+            )
+        case Mod.Attr.CompositeSignalOptionalValue(name, value) =>
+          scope
+            .validate(value).map(_ =>
+              AttributeCandidate.Composite(name, CompositePart.DynamicOptional(value))
+            )
         case Mod.Attr.Binding(name, operation) =>
           for
             valueSlot   <- allocator.slot()
             bindingSlot <- allocator.binding()
-          yield AttributeTemplate.Binding(
-            name,
-            valueSlot,
-            BindingId.event(program, bindingSlot),
-            operation
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.Binding(
+              name,
+              valueSlot,
+              BindingId.event(program, bindingSlot),
+              operation
+            )
           )
         case Mod.Attr.SignalBinding(name, signal, operation) =>
           for
             _           <- scope.validate(signal)
             valueSlot   <- allocator.slot()
             bindingSlot <- allocator.binding()
-          yield AttributeTemplate.SignalBinding(
-            name,
-            valueSlot,
-            BindingId.event(program, bindingSlot),
-            signal,
-            operation
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.SignalBinding(
+              name,
+              valueSlot,
+              BindingId.event(program, bindingSlot),
+              signal,
+              operation
+            )
           )
         case Mod.Attr.FormBinding(name, operation) =>
           for
             valueSlot   <- allocator.slot()
             bindingSlot <- allocator.binding()
-          yield AttributeTemplate.Binding(
-            name,
-            valueSlot,
-            BindingId.event(program, bindingSlot),
-            payload => operation(payload.formData)
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.Binding(
+              name,
+              valueSlot,
+              BindingId.event(program, bindingSlot),
+              payload => operation(payload.formData)
+            )
           )
         case Mod.Attr.FormEventBinding(name, codec, operation) =>
           for
             valueSlot   <- allocator.slot()
             bindingSlot <- allocator.binding()
-          yield AttributeTemplate.Binding(
-            name,
-            valueSlot,
-            BindingId.event(program, bindingSlot),
-            payload => operation(payload.formEvent(codec, submitted = name == "phx-submit"))
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.Binding(
+              name,
+              valueSlot,
+              BindingId.event(program, bindingSlot),
+              payload => operation(payload.formEvent(codec, submitted = name == "phx-submit"))
+            )
           )
         case Mod.Attr.JsBinding(name, command) =>
           for
             valueSlot   <- allocator.slot()
             bindingSlot <- allocator.binding()
-          yield AttributeTemplate.JsBinding(
-            name,
-            valueSlot,
-            BindingId.js(bindingSlot),
-            command
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.JsBinding(
+              name,
+              valueSlot,
+              BindingId.js(bindingSlot),
+              command
+            )
           )
         case Mod.Attr.SignalJsBinding(name, command) =>
           for
             _           <- scope.validate(command)
             valueSlot   <- allocator.slot()
             bindingSlot <- allocator.binding()
-          yield AttributeTemplate.SignalJsBinding(
-            name,
-            valueSlot,
-            BindingId.js(bindingSlot),
-            command
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.SignalJsBinding(
+              name,
+              valueSlot,
+              BindingId.js(bindingSlot),
+              command
+            )
           )
         case Mod.Attr.RoutedBinding(name, operation) =>
           for
             valueSlot   <- allocator.slot()
             bindingSlot <- allocator.binding()
-          yield AttributeTemplate.RoutedBinding(
-            name,
-            valueSlot,
-            BindingId.event(program, bindingSlot),
-            operation
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.RoutedBinding(
+              name,
+              valueSlot,
+              BindingId.event(program, bindingSlot),
+              operation
+            )
           )
         case Mod.Attr.ComponentBinding(name, target, operation) =>
           for
             valueSlot   <- allocator.slot()
             bindingSlot <- allocator.binding()
-          yield AttributeTemplate.TargetedBinding(
-            name,
-            valueSlot,
-            BindingId.event(program, bindingSlot),
-            target,
-            operation
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.TargetedBinding(
+              name,
+              valueSlot,
+              BindingId.event(program, bindingSlot),
+              target,
+              operation
+            )
           )
         case Mod.Attr.ComponentTarget(target) =>
-          allocator.slot().map(AttributeTemplate.ComponentTarget(target, _))
+          allocator
+            .slot().map(slot =>
+              AttributeCandidate.Scalar(AttributeTemplate.ComponentTarget(target, slot))
+            )
         case Mod.Attr.Group(_) =>
           Left(RenderError.InvalidHtml("attribute groups must be flattened before compilation"))
 
@@ -611,6 +705,45 @@ object RenderProgram:
         _    <- scope.validate(signal)
         slot <- allocator.slot()
       yield build(name, slot, signal)
+
+    private def finalizeAttributes[Msg](
+      candidates: Vector[AttributeCandidate[Msg]]
+    ): Either[RenderError, Vector[AttributeTemplate[Msg]]] =
+      candidates
+        .foldLeft[Either[RenderError, (Vector[AttributeTemplate[Msg]], Set[String])]](
+          Right(Vector.empty -> Set.empty)
+        ) { (result, candidate) =>
+          result.flatMap { case (attributes, emittedCompositeNames) =>
+            candidate match
+              case AttributeCandidate.Scalar(template) =>
+                Right((attributes :+ template) -> emittedCompositeNames)
+              case AttributeCandidate.Composite(name, _) =>
+                val normalizedName = name.toLowerCase(Locale.ROOT)
+                if emittedCompositeNames.contains(normalizedName) then
+                  Right(attributes -> emittedCompositeNames)
+                else
+                  val parts = candidates.collect {
+                    case AttributeCandidate.Composite(candidateName, part)
+                        if candidateName.equalsIgnoreCase(name) =>
+                      part
+                  }
+                  finalizeCompositeAttribute(name, parts).map(template =>
+                    (attributes :+ template) -> (emittedCompositeNames + normalizedName)
+                  )
+          }
+        }.map(_._1)
+
+    private def finalizeCompositeAttribute(
+      name: String,
+      parts: Vector[CompositePart]
+    ): Either[RenderError, AttributeTemplate[Nothing]] =
+      if parts.forall(!_.dynamic) then
+        val tokens = parts.flatMap {
+          case CompositePart.Static(tokens) => tokens
+          case _                            => Vector.empty
+        }
+        Right(AttributeTemplate.Static(name, compositeAttributeValue(tokens)))
+      else allocator.slot().map(slot => AttributeTemplate.Composite(name, slot, parts))
 
     private def compileContent[Msg](
       content: Mod.Content[Msg]
@@ -845,17 +978,30 @@ object RenderProgram:
             Left(error)
       }
 
+    private def validateAttributeCandidateNames[Msg](
+      candidates: Vector[AttributeCandidate[Msg]]
+    ): Either[RenderError, Unit] =
+      traverse(candidates)(candidate => validateAttributeName(candidate.name)).map(_ => ())
+
+    private def validateAttributeName(name: String): Either[RenderError, Unit] =
+      Either.cond(
+        name != null && Escaping.validAttrName(name),
+        (),
+        RenderError.InvalidHtml(s"invalid HTML attribute name '$name'")
+      )
+
     private def validateAttributeNames[Msg](
       attributes: Vector[AttributeTemplate[Msg]]
     ): Either[RenderError, Unit] =
       attributes
         .foldLeft[Either[RenderError, Set[String]]](Right(Set.empty)) { case (result, attribute) =>
           result.flatMap { names =>
-            if attribute.name == null || !Escaping.validAttrName(attribute.name) then
-              Left(RenderError.InvalidHtml(s"invalid HTML attribute name '${attribute.name}'"))
-            else if names.contains(attribute.name.toLowerCase(Locale.ROOT)) then
-              Left(RenderError.InvalidHtml(s"duplicate HTML attribute '${attribute.name}'"))
-            else Right(names + attribute.name.toLowerCase(Locale.ROOT))
+            validateAttributeName(attribute.name).flatMap { _ =>
+              val normalizedName = attribute.name.toLowerCase(Locale.ROOT)
+              if names.contains(normalizedName) then
+                Left(RenderError.InvalidHtml(s"duplicate HTML attribute '${attribute.name}'"))
+              else Right(names + normalizedName)
+            }
           }
         }.map(_ => ())
 
@@ -972,6 +1118,8 @@ object RenderProgram:
                 left: AttributeTemplate.DynamicPresence,
                 right: AttributeTemplate.DynamicPresence
               ) =>
+            Some(left.copy(slot = right.slot))
+          case (left: AttributeTemplate.Composite, right: AttributeTemplate.Composite) =>
             Some(left.copy(slot = right.slot))
           case (left: AttributeTemplate.Binding[?], right: AttributeTemplate.Binding[?]) =>
             Some(
@@ -1763,6 +1911,9 @@ object RenderProgram:
             .sample(signal).map(sample =>
               Some(slot) -> Option.when(sample.value)(AttributeValue.Presence)
             )
+        case Composite(name, slot, parts) =>
+          traverse(parts)(part => evaluateCompositePart(name, part, transaction))
+            .map(tokens => Some(slot) -> compositeAttributeValue(tokens.flatten))
         case Binding(name, valueSlot, id, operation) =>
           val resolvedId = resolveBindingId(name, id, formId)
           bindings
@@ -1823,6 +1974,32 @@ object RenderProgram:
     }
   end evaluateAttribute
 
+  private def evaluateCompositePart(
+    name: String,
+    part: CompositePart,
+    transaction: SignalEvaluation.Transaction
+  ): Either[RenderError, Vector[String]] =
+    part match
+      case CompositePart.Static(tokens)  => Right(tokens)
+      case CompositePart.Dynamic(signal) =>
+        transaction
+          .sample(signal).flatMap(sample =>
+            nonNullString(sample.value, s"signal attribute '$name'").map(compositeTokens)
+          )
+      case CompositePart.DynamicOptional(signal) =>
+        transaction.sample(signal).flatMap { sample =>
+          sample.value match
+            case Some(value) =>
+              nonNullString(value, s"optional signal attribute '$name'").map(compositeTokens)
+            case None => Right(Vector.empty)
+        }
+      case CompositePart.Choice(signal, branches) =>
+        transaction.sample(signal).flatMap { sample =>
+          branches.find(_._1 == sample.value) match
+            case Some((_, selected)) => evaluateCompositePart(name, selected, transaction)
+            case None                => Right(Vector.empty)
+        }
+
   private def resolveBindingId(
     name: String,
     id: BindingId,
@@ -1882,6 +2059,28 @@ object RenderProgram:
         next        <- f(value)
       yield accumulated :+ next
     }
+
+  private def compositeTokens(value: String): Vector[String] =
+    val tokens     = Vector.newBuilder[String]
+    var tokenStart = -1
+    var index      = 0
+    while index < value.length do
+      if htmlAsciiWhitespace(value.charAt(index)) then
+        if tokenStart >= 0 then
+          tokens += value.substring(tokenStart, index)
+          tokenStart = -1
+      else if tokenStart < 0 then tokenStart = index
+      index += 1
+    if tokenStart >= 0 then tokens += value.substring(tokenStart)
+    tokens.result()
+
+  private def htmlAsciiWhitespace(value: Char): Boolean =
+    value == ' ' || value == '\t' || value == '\n' || value == '\f' || value == '\r'
+
+  private def compositeAttributeValue(tokens: Vector[String]): Option[AttributeValue] =
+    val seen     = scala.collection.mutable.HashSet.empty[String]
+    val distinct = tokens.filter(seen.add)
+    Option.when(distinct.nonEmpty)(AttributeValue.Text(distinct.mkString(" ")))
 
   private def nonNullString(value: String, location: String): Either[RenderError, String] =
     Either.cond(value != null, value, RenderError.InvalidHtml(s"$location has a null value"))

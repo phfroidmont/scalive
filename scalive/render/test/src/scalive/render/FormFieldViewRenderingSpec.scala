@@ -31,6 +31,7 @@ object FormFieldViewRenderingSpec extends ZIOSpecDefault:
       val compiled = RenderProgram.compile[Unit, Nothing] { _ =>
         field.errorFeedback(
           error => em(s"${error.path.name}: ${messages(error.message)}"),
+          cls               := "field-feedback",
           dataAttr("scope") := "name"
         )
       }
@@ -40,7 +41,7 @@ object FormFieldViewRenderingSpec extends ZIOSpecDefault:
         candidate <- program.evaluate(())
       yield assertTrue(
         HtmlRenderer.render(candidate.tree) ==
-          "<div id=\"profile_name_errors\" phx-feedback-for=\"profile[name]\" aria-live=\"polite\" class=\"form-errors\" data-scope=\"name\"><span class=\"form-error\"><em>profile[name]: Name is required.</em></span><span class=\"form-error\"><em>profile[name]: Name is too short.</em></span></div>"
+          "<div id=\"profile_name_errors\" phx-feedback-for=\"profile[name]\" aria-live=\"polite\" class=\"form-errors field-feedback\" data-scope=\"name\"><span class=\"form-error\"><em>profile[name]: Name is required.</em></span><span class=\"form-error\"><em>profile[name]: Name is too short.</em></span></div>"
       )
     },
     test("renders signal errors through signals without replacing owned markup") {

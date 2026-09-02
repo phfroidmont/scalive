@@ -81,19 +81,22 @@ extension [A](stream: Signal[streams.LiveStream[A]])
     )
 
 private def isAttr(mod: Mod[?], expectedName: String): Boolean = mod match
-  case Mod.Attr.Static(name, _)                => name == expectedName
-  case Mod.Attr.StaticValueAsPresence(name, _) => name == expectedName
-  case Mod.Attr.SignalValue(name, _)           => name == expectedName
-  case Mod.Attr.SignalOptionalValue(name, _)   => name == expectedName
-  case Mod.Attr.SignalValueAsPresence(name, _) => name == expectedName
-  case Mod.Attr.Binding(name, _)               => name == expectedName
-  case Mod.Attr.SignalBinding(name, _, _)      => name == expectedName
-  case Mod.Attr.FormBinding(name, _)           => name == expectedName
-  case Mod.Attr.FormEventBinding(name, _, _)   => name == expectedName
-  case Mod.Attr.JsBinding(name, _)             => name == expectedName
-  case Mod.Attr.SignalJsBinding(name, _)       => name == expectedName
-  case Mod.Attr.RoutedBinding(name, _)         => name == expectedName
-  case Mod.Attr.ComponentBinding(name, _, _)   => name == expectedName
-  case Mod.Attr.ComponentTarget(_)             => false
-  case Mod.Attr.Group(attrs)                   => attrs.exists(isAttr(_, expectedName))
-  case _: Mod.Content[?]                       => false
+  case Mod.Attr.Static(name, _)                       => name == expectedName
+  case Mod.Attr.StaticValueAsPresence(name, _)        => name == expectedName
+  case Mod.Attr.SignalValue(name, _)                  => name == expectedName
+  case Mod.Attr.SignalOptionalValue(name, _)          => name == expectedName
+  case Mod.Attr.SignalValueAsPresence(name, _)        => name == expectedName
+  case Mod.Attr.CompositeStatic(name, _)              => name == expectedName
+  case Mod.Attr.CompositeSignalValue(name, _)         => name == expectedName
+  case Mod.Attr.CompositeSignalOptionalValue(name, _) => name == expectedName
+  case Mod.Attr.Binding(name, _)                      => name == expectedName
+  case Mod.Attr.SignalBinding(name, _, _)             => name == expectedName
+  case Mod.Attr.FormBinding(name, _)                  => name == expectedName
+  case Mod.Attr.FormEventBinding(name, _, _)          => name == expectedName
+  case Mod.Attr.JsBinding(name, _)                    => name == expectedName
+  case Mod.Attr.SignalJsBinding(name, _)              => name == expectedName
+  case Mod.Attr.RoutedBinding(name, _)                => name == expectedName
+  case Mod.Attr.ComponentBinding(name, _, _)          => name == expectedName
+  case Mod.Attr.ComponentTarget(_)                    => false
+  case Mod.Attr.Group(attrs)                          => attrs.exists(isAttr(_, expectedName))
+  case _: Mod.Content[?]                              => false

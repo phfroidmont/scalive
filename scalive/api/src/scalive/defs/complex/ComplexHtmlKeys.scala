@@ -1,5 +1,6 @@
 package scalive.defs.complex
 
+import scalive.CompositeHtmlAttr
 import scalive.HtmlAttr
 import scalive.codecs.*
 
@@ -10,29 +11,31 @@ trait ComplexHtmlKeys extends NamespacedHtmlKeys:
 
   /** Defines the element's space-separated CSS classes.
     *
-    * The value is emitted as the HTML `class` attribute without parsing or normalization.
+    * Repeated modifiers contribute tokens to one `class` attribute. Values are split on HTML ASCII
+    * whitespace, empty tokens are discarded, and duplicate tokens retain their first position.
     */
-  val className: HtmlAttr[String] = new HtmlAttr("class", StringAsIsEncoder)
+  val className: CompositeHtmlAttr = CompositeHtmlAttr("class")
 
   /** Concise alias for [[className]]. */
-  val cls: HtmlAttr[String] = className
+  val cls: CompositeHtmlAttr = className
 
   /** Defines the space-separated relationship types of a linked resource.
     *
-    * For example, a stylesheet link uses `rel := "stylesheet"`. Values are emitted without parsing
-    * or normalization.
+    * For example, a stylesheet link uses `rel := "stylesheet"`. Repeated modifiers contribute
+    * tokens to one attribute in encounter order.
     */
-  lazy val rel: HtmlAttr[String] = new HtmlAttr("rel", StringAsIsEncoder)
+  lazy val rel: CompositeHtmlAttr = CompositeHtmlAttr("rel")
 
   /** Defines the accessibility role of the current element.
     *
     * Prefer an HTML element with the required native semantics when one exists; use `role` only
     * when additional semantics are necessary. The value is emitted without validating ARIA role
-    * names.
+    * names. Repeated modifiers append fallback role tokens in encounter order; user agents use the
+    * first supported role.
     *
     * See: [[http://www.w3.org/TR/role-attribute/#s_role_module_attributes]]
     */
-  lazy val role: HtmlAttr[String] = new HtmlAttr("role", StringAsIsEncoder)
+  lazy val role: CompositeHtmlAttr = CompositeHtmlAttr("role")
 
   /** Creates a custom `data-*` string attribute from `suffix`.
     *

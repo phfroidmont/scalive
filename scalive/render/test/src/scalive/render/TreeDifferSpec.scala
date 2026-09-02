@@ -53,6 +53,28 @@ object TreeDifferSpec extends ZIOSpecDefault:
         second  <- program.evaluate("two", Some(first.commit))
       yield assertTrue(TreeDiffer.diff(first.tree, second.tree) == RenderDelta.Empty)
     },
+    test("diffs the normalized value of one dynamic composite attribute") {
+      val compiled = RenderProgram.compile[String, Nothing] { model =>
+        div(cls := model)
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        absent  <- program.evaluate(" \t")
+        added   <- program.evaluate("active", Some(absent.commit))
+        equal   <- program.evaluate(" active active ", Some(added.commit))
+        removed <- program.evaluate("", Some(equal.commit))
+      yield assertTrue(
+        HtmlRenderer.render(absent.tree) == "<div></div>",
+        TreeDiffer.diff(absent.tree, added.tree) match
+          case RenderDelta.Update(_, Vector(_: RenderChange.Attribute)) => true
+          case _                                                        => false,
+        TreeDiffer.diff(added.tree, equal.tree) == RenderDelta.Empty,
+        TreeDiffer.diff(equal.tree, removed.tree) match
+          case RenderDelta.Update(_, Vector(RenderChange.Attribute(_, "class", None))) => true
+          case _                                                                        => false
+      )
+    },
     test("targets the previous containing node when a child identity changes") {
       val compiled = RenderProgram.compile[String, Nothing](model => div(span(model)))
 

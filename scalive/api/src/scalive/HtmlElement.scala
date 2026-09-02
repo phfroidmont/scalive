@@ -6,6 +6,7 @@ import scala.concurrent.duration.FiniteDuration
 import scalive.JSCommands.JSCommand
 import scalive.codecs.BooleanAsAttrPresenceEncoder
 import scalive.codecs.Encoder
+import scalive.codecs.StringAsIsEncoder
 
 /** An immutable element in Scalive's typed, protocol-neutral HTML algebra. */
 final class HtmlElement[+Msg](val tag: HtmlTag, val mods: Vector[Mod[Msg]]):
@@ -48,6 +49,27 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
 
   def optional(value: Signal[Option[V]]): Mod.Attr[Nothing] =
     Mod.Attr.SignalOptionalValue(name, value.map(_.map(codec.encode)))
+
+/** A space-separated token attribute whose repeated modifiers contribute to one rendered value.
+  *
+  * Static values, signals, optional signals, and attribute modifiers selected by `chooseMod` are
+  * split on HTML ASCII whitespace. Empty tokens are discarded, exact duplicate tokens retain their
+  * first position, and the attribute is omitted when no tokens remain. Ordinary [[HtmlAttr]]
+  * definitions remain scalar rather than composing.
+  */
+final class CompositeHtmlAttr(name: String) extends HtmlAttr[String](name, StringAsIsEncoder):
+  override def :=(value: String): Mod.Attr[Nothing] =
+    Mod.Attr.CompositeStatic(name, value)
+
+  override def :=(value: Signal[String]): Mod.Attr[Nothing] =
+    Mod.Attr.CompositeSignalValue(name, value)
+
+  override def optional(value: Signal[Option[String]]): Mod.Attr[Nothing] =
+    Mod.Attr.CompositeSignalOptionalValue(name, value)
+
+object CompositeHtmlAttr:
+  /** Creates a reusable composite definition for a space-separated token attribute. */
+  def apply(name: String): CompositeHtmlAttr = new CompositeHtmlAttr(name)
 
 /** A protocol-neutral component dispatch selected by a rendered event binding. */
 sealed trait ComponentDispatch:
@@ -236,7 +258,11 @@ object Mod:
     case SignalValue(name: String, value: Signal[String])                 extends Attr[Nothing]
     case SignalOptionalValue(name: String, value: Signal[Option[String]]) extends Attr[Nothing]
     case SignalValueAsPresence(name: String, value: Signal[Boolean])      extends Attr[Nothing]
-    case Binding[Msg](name: String, operation: BindingPayload => Msg)     extends Attr[Msg]
+    case CompositeStatic(name: String, value: String)                     extends Attr[Nothing]
+    case CompositeSignalValue(name: String, value: Signal[String])        extends Attr[Nothing]
+    case CompositeSignalOptionalValue(name: String, value: Signal[Option[String]])
+        extends Attr[Nothing]
+    case Binding[Msg](name: String, operation: BindingPayload => Msg) extends Attr[Msg]
     case SignalBinding[A, Msg](
       name: String,
       signal: Signal[A],
@@ -258,6 +284,7 @@ object Mod:
     def flattened: Vector[Attr[Msg]] = this match
       case Group(attrs) => attrs.flatMap(_.flattened)
       case attr         => Vector(attr)
+  end Attr
 
   enum Content[+Msg] extends Mod[Msg]:
     case Text(text: String, raw: Boolean = false)                extends Content[Nothing]

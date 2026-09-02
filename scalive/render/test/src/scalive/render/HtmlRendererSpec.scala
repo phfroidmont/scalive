@@ -52,6 +52,27 @@ object HtmlRendererSpec extends ZIOSpecDefault:
         HtmlRenderer.render(candidate.tree) == "<div data-first=\"1\" data-second=\"2\"></div>"
       )
     },
+    test("normalizes composite tokens using HTML ASCII whitespace") {
+      val compiled = RenderProgram.compile[Unit, Nothing] { _ =>
+        div(
+          cls := "\talpha\nbeta\fgamma\r delta ",
+          cls := "beta epsilon\u2003zeta",
+          rel := " \t\n\f\r "
+        )
+      }
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(())
+      yield assertTrue(
+        HtmlRenderer.render(candidate.tree) ==
+          "<div class=\"alpha beta gamma delta epsilon\u2003zeta\"></div>",
+        candidate.tree.root.attributes.map(_.value) == Vector(
+          Some(AttributeValue.Text("alpha beta gamma delta epsilon\u2003zeta")),
+          None
+        )
+      )
+    },
     test("renders v1.2 form serialization and focused-patching opt-ins") {
       for
         program <- ZIO.fromEither(

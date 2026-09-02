@@ -18,10 +18,11 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
       val bindings: Iterator[Mod[Msg]] = Iterator(on.click(Msg.Clicked))
       val rendered: HtmlElement[Msg]   = panel(optionalId, bindings, "Account")
       val modifierKinds: Vector[String] = rendered.mods.map {
-        case Mod.Attr.Static(name, _)  => name
-        case _: Mod.Attr.Binding[?]    => "binding"
-        case Mod.Content.Text(text, _) => text
-        case _                         => "other"
+        case Mod.Attr.CompositeStatic(name, _) => name
+        case Mod.Attr.Static(name, _)          => name
+        case _: Mod.Attr.Binding[?]            => "binding"
+        case Mod.Content.Text(text, _)         => text
+        case _                                 => "other"
       }
 
       assertTrue(
@@ -64,6 +65,23 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("composite attributes preserve their behavior through HtmlAttr references") {
+      val custom                            = CompositeHtmlAttr("data-tags")
+      val asHtmlAttr: HtmlAttr[String]      = custom
+      val static: Mod.Attr[Nothing]         = asHtmlAttr := "one two"
+      val signal: Signal[String]            = null.asInstanceOf[Signal[String]]
+      val optional: Signal[Option[String]]  = null.asInstanceOf[Signal[Option[String]]]
+      val dynamic: Mod.Attr[Nothing]        = asHtmlAttr := signal
+      val dynamicOptional: Mod.Attr[Nothing] = asHtmlAttr.optional(optional)
+      val builtIns: Vector[CompositeHtmlAttr] = Vector(className, cls, rel, role)
+
+      assertTrue(
+        builtIns.size == 4,
+        static == Mod.Attr.CompositeStatic("data-tags", "one two"),
+        dynamic == Mod.Attr.CompositeSignalValue("data-tags", signal),
+        dynamicOptional == Mod.Attr.CompositeSignalOptionalValue("data-tags", optional)
+      )
     }
   )
 end HtmlDslApiSpec

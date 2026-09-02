@@ -57,10 +57,14 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
         enum Msg:
           case Clicked
 
+        def passthrough[Message](mods: Mod.Input[Message]*): HtmlElement[Message] =
+          articleTag(mods*)
+
         def card[Message](mods: Mod.Input[Message]*): HtmlElement[Message] =
           articleTag(cls := "card", Mod.flatten(mods))
 
         val optionalBinding = Option(on.click(Msg.Clicked))
+        val forwarded: HtmlElement[Msg] = passthrough(optionalBinding, "Open")
         val rendered: HtmlElement[Msg] = card(optionalBinding, "Open")
       """)
 

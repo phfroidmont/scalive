@@ -30,7 +30,7 @@ def view(model: Signal[Model]): HtmlElement[Msg] =
 
 A tag call produces an @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Strings
 become escaped text content, nested elements become child content, and an
-`IterableOnce` of static modifiers can be passed directly. Derive dynamic text
+`IterableOnce` of modifiers can be passed directly. Derive dynamic text
 and attributes with signal `.map`; use staged signal operators such as
 `choose`, `option`, and `splitBy` for conditional and repeated content. The
 `view` method constructs this signal-backed view graph once per graph lifetime
@@ -38,8 +38,15 @@ rather than rebuilding the tree after every model update.
 
 Keep reusable markup in ordinary functions. Accept @:apiSymbol(type-alias:scalive.Mod.Input)`Mod.Input[Msg]`@:@
 when callers should be able to supply individual modifiers, `Option` values, or
-collections. Use @:apiSymbol(def:scalive.Mod.flatten)`Mod.flatten`@:@ when adding the component's
-own modifiers alongside the caller's inputs:
+collections. Forward every input unchanged with `mods*`:
+
+```scala
+def passthrough[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+  articleTag(mods*)
+```
+
+When adding the component's own modifiers, normalize the caller inputs with
+@:apiSymbol(def:scalive.Mod.flatten)`Mod.flatten`@:@:
 
 ```scala
 def card[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
@@ -52,9 +59,8 @@ The helper and caller classes combine into `class="card featured"`. This makes
 component-owned classes composable without requiring the helper to inspect caller
 modifiers.
 
-When forwarding every input unchanged, `articleTag(mods*)` avoids normalization in
-the component. `Mod.flatten` is also available when the function must inspect,
-reorder, or store the modifiers as a `Vector`.
+`Mod.flatten` is also available when a function must inspect, reorder, store, or insert caller
+modifiers before generated trailing content.
 
 Use the named tag definitions when they exist. The DSL gives Scala-safe names to
 HTML names that would otherwise conflict with Scala or another exported symbol:

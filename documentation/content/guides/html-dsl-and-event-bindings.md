@@ -1,6 +1,6 @@
 {%
 title = "HTML and event bindings"
-description = "Build typed HTML, compose token-list attributes, bind browser events to messages, and key collection entries."
+description = "Build static or live typed HTML, compose token-list attributes, bind browser events to messages, and key collection entries."
 order = 10
 section = guides
 group = "Interfaces and input"
@@ -8,9 +8,10 @@ group = "Interfaces and input"
 
 ## Before You Start {#prerequisites}
 
-Start with a `LiveView` model, a message type, and a `view` method ready to
-return HTML. The DSL uses ordinary Scala expressions and collections rather
-than introducing a template language.
+Import `scalive.*` wherever you construct HTML. Static pages use ordinary Scala
+values, while LiveViews derive dynamic content from a model `Signal`. The DSL
+uses Scala expressions and collections rather than introducing a template
+language.
 
 ## Build An HTML Tree {#build-an-html-tree}
 
@@ -71,6 +72,40 @@ for example, @:apiSymbol(lazy-val:scalive.sectionTag)`sectionTag`@:@,
 @:apiSymbol(lazy-val:scalive.idAttr)`idAttr`@:@.
 Use @:apiSymbol(def:scalive.htmlTag)`htmlTag(name)`@:@ only when the framework does not
 provide the element you need.
+
+## Render Static HTML {#render-static-html}
+
+Use @:apiSymbol(def:scalive.StaticHtml.render)`StaticHtml.render`@:@ when markup does not need a
+LiveView lifecycle. It evaluates the concrete tree once and returns a ZIO effect containing the
+serialized string:
+
+```scala
+val rendered = StaticHtml.render(
+  htmlRootTag(
+    lang := "en",
+    headTag(titleTag("Status")),
+    bodyTag(mainTag(h1("Ready")))
+  ),
+  includeDoctype = true
+)
+```
+
+This produces `<!doctype html><html lang="en"><head><title>Status</title></head><body><main><h1>Ready</h1></main></body></html>`.
+Static rendering uses the same HTML validation, escaping, raw-content handling, and attribute
+serialization as LiveView rendering. Construct dynamic application content from ordinary Scala
+values before calling `StaticHtml.render`.
+
+The root must be an `HtmlElement[Nothing]`, which excludes event bindings that produce an owner
+message. Ordinary reusable markup functions remain supported. `StaticHtml` can serialize
+client-only `JS` commands into `phx-*` attributes, but those attributes are inert unless the
+Phoenix LiveView client is loaded and a `LiveSocket` is initialized as described in
+[Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket). A standalone
+static page should not rely on those commands unless it deliberately includes that browser runtime.
+
+Server event bindings, flash content, managed streams, stateful LiveComponents, and nested
+LiveViews require lifecycle state and fail with a typed
+@:apiSymbol(type-alias:scalive.StaticHtmlError)`StaticHtmlError`@:@ instead of being silently
+discarded or mounted.
 
 ## Set Typed Attributes {#set-typed-attributes}
 

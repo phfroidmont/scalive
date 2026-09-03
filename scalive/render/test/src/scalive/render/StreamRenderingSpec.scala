@@ -33,6 +33,17 @@ object StreamRenderingSpec extends ZIOSpecDefault:
     candidate.tree.root.children.head.asInstanceOf[EvaluatedNode.Stream]
 
   override def spec = suite("StreamRenderingSpec")(
+    test("static HTML rejects managed stream handles") {
+      val items = stream(
+        LiveStreamIdentity.fresh(),
+        1L,
+        Vector(Item("a", "one"), Item("b", "two"))
+      )
+
+      StaticHtml
+        .render(div(items.stream((domId, item) => span(idAttr := domId, item.label)))).either
+        .map(result => assertTrue(result.left.exists(_.isInstanceOf[RenderError.Unsupported])))
+    },
     test("renders the full ordered snapshot and retains signal-backed row identity") {
       val identity = LiveStreamIdentity.fresh()
       val first = stream(identity, 1L, Vector(Item("a", "one"), Item("b", "two")))

@@ -7494,6 +7494,138 @@
       ]
     },
     {
+      "id" : "def:scalive.StaticHtml.render",
+      "ownerId" : "object:scalive.StaticHtml",
+      "qualifiedName" : "scalive.StaticHtml.render",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtml.render:6ca3cb832f974855",
+          "signature" : "def render(element: => HtmlElement[Nothing], includeDoctype: Boolean = ...): zio.package.IO[StaticHtmlError, String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.DuplicateBinding",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateBinding",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.DuplicateBinding:bab8271aae5dd179",
+          "signature" : "def DuplicateBinding: render.RenderError.DuplicateBinding.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.DuplicateKey",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateKey",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.DuplicateKey:78731b25b062bc99",
+          "signature" : "def DuplicateKey: render.RenderError.DuplicateKey.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.DuplicateStreamDomId",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateStreamDomId",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.DuplicateStreamDomId:e85e09d81c4495ca",
+          "signature" : "def DuplicateStreamDomId: render.RenderError.DuplicateStreamDomId.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.EvaluationFailed",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.EvaluationFailed",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.EvaluationFailed:6ee9fe0d2ea3537e",
+          "signature" : "def EvaluationFailed: render.RenderError.EvaluationFailed.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.IdentityExhausted",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.IdentityExhausted",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.IdentityExhausted:39480f0ad0357368",
+          "signature" : "def IdentityExhausted: render.RenderError.IdentityExhausted.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.InvalidHtml",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.InvalidHtml",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.InvalidHtml:1fdf214f7899d975",
+          "signature" : "def InvalidHtml: render.RenderError.InvalidHtml.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.SignalScopeViolation",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.SignalScopeViolation",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.SignalScopeViolation:fabd265a2e1b3b62",
+          "signature" : "def SignalScopeViolation: render.RenderError.SignalScopeViolation.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.UnresolvedComponents",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedComponents",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.UnresolvedComponents:5315378e6b024cd6",
+          "signature" : "def UnresolvedComponents: render.RenderError.UnresolvedComponents.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.UnresolvedNested",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedNested",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.UnresolvedNested:f8a717969e04e667",
+          "signature" : "def UnresolvedNested: render.RenderError.UnresolvedNested.type"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticHtmlError.Unsupported",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.Unsupported",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticHtmlError.Unsupported:5ed6de351ce5ade6",
+          "signature" : "def Unsupported: render.RenderError.Unsupported.type"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.StreamAt",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.StreamAt",
@@ -15722,6 +15854,30 @@
       ]
     },
     {
+      "id" : "object:scalive.StaticHtml",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.StaticHtml",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.StaticHtml:90b219fd5876d2cf",
+          "signature" : "object StaticHtml"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.StaticHtmlError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.StaticHtmlError",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.StaticHtmlError:5039d103bc593623",
+          "signature" : "object StaticHtmlError"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.SubscriptionKey",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.SubscriptionKey",
@@ -17433,6 +17589,138 @@
         {
           "id" : "type-alias:scalive.Mod.Input:1db6b659444c20c7",
           "signature" : "type Input = ([Msg] =>> |[Mod[Msg], IterableOnce[Mod[Msg]]])"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.StaticHtmlError",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError:3f2c11fc9e460765",
+          "signature" : "type StaticHtmlError = render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.DuplicateBinding",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateBinding",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.DuplicateBinding:7177be2c83e7697f",
+          "signature" : "type DuplicateBinding = render.RenderError.DuplicateBinding"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.DuplicateKey",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateKey",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.DuplicateKey:2b79fe515a65ddda",
+          "signature" : "type DuplicateKey = render.RenderError.DuplicateKey"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.DuplicateStreamDomId",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateStreamDomId",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.DuplicateStreamDomId:a8a451b9352dc2d9",
+          "signature" : "type DuplicateStreamDomId = render.RenderError.DuplicateStreamDomId"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.EvaluationFailed",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.EvaluationFailed",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.EvaluationFailed:518435d3132bf2bf",
+          "signature" : "type EvaluationFailed = render.RenderError.EvaluationFailed"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.IdentityExhausted",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.IdentityExhausted",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.IdentityExhausted:9b9651955ad99d65",
+          "signature" : "type IdentityExhausted = render.RenderError.IdentityExhausted"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.InvalidHtml",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.InvalidHtml",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.InvalidHtml:44cdc4adbbc4488f",
+          "signature" : "type InvalidHtml = render.RenderError.InvalidHtml"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.SignalScopeViolation",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.SignalScopeViolation",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.SignalScopeViolation:fea95943b499758c",
+          "signature" : "type SignalScopeViolation = render.RenderError.SignalScopeViolation"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.UnresolvedComponents",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedComponents",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.UnresolvedComponents:efc7d4033042dbf6",
+          "signature" : "type UnresolvedComponents = render.RenderError.UnresolvedComponents"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.UnresolvedNested",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedNested",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.UnresolvedNested:f0c09762261261d6",
+          "signature" : "type UnresolvedNested = render.RenderError.UnresolvedNested"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.StaticHtmlError.Unsupported",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.Unsupported",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.StaticHtmlError.Unsupported:1cf66524e4ce2cd0",
+          "signature" : "type Unsupported = render.RenderError.Unsupported"
         }
       ]
     },

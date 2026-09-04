@@ -13,6 +13,9 @@ code, tests, and user documentation rather than this backlog.
 
 ## Forms
 
+The target redesign for form values, codecs, products, repeated records, events, and optional save
+state is specified in [Form Architecture](form-architecture.md).
+
 ### Preserve Array Path Segments
 
 `FormPath.parse("users_sort[]")` currently drops the empty array segment even though

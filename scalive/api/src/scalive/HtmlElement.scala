@@ -129,8 +129,11 @@ private[scalive] enum BindingPayload:
       decode(data, effectiveKind, meta)
 end BindingPayload
 
-/** Builder for typed server events and declarative browser commands. */
-class HtmlAttrBinding(
+/** Builder for typed server events and declarative browser commands.
+  *
+  * Obtain bindings from `on`, `connection`, `dom`, or the relevant feature helper.
+  */
+class HtmlAttrBinding private[scalive] (
   val name: String,
   protected val companionAttrs: Vector[Mod.Attr[Nothing]] = Vector.empty):
   require(Escaping.validAttrName(name), s"invalid HTML attribute name '$name'")
@@ -248,7 +251,7 @@ class HtmlAttrBinding(
     withBoolValueOption(value => f(value.getOrElse(false)))
 end HtmlAttrBinding
 
-final class KeyHtmlAttrBinding(
+final class KeyHtmlAttrBinding private[scalive] (
   name: String,
   override protected val companionAttrs: Vector[Mod.Attr[Nothing]] = Vector.empty)
     extends HtmlAttrBinding(name, companionAttrs):
@@ -293,25 +296,29 @@ object Mod:
     case CompositeSignalValue(name: String, value: Signal[String])        extends Attr[Nothing]
     case CompositeSignalOptionalValue(name: String, value: Signal[Option[String]])
         extends Attr[Nothing]
-    case Binding[Msg](name: String, operation: BindingPayload => Msg) extends Attr[Msg]
-    case SignalBinding[A, Msg](
+    private[scalive] case Binding[Msg](name: String, operation: BindingPayload => Msg)
+        extends Attr[Msg]
+    private[scalive] case SignalBinding[A, Msg](
       name: String,
       signal: Signal[A],
-      operation: (A, BindingPayload) => Msg)                        extends Attr[Msg]
-    case FormBinding[Msg](name: String, operation: FormData => Msg) extends Attr[Msg]
-    case FormEventBinding[A, Msg](
+      operation: (A, BindingPayload) => Msg) extends Attr[Msg]
+    private[scalive] case FormBinding[Msg](name: String, operation: FormData => Msg)
+        extends Attr[Msg]
+    private[scalive] case FormEventBinding[A, Msg](
       name: String,
       codec: FormCodec[A],
       operation: RawFormEvent[A] => Msg) extends Attr[Msg]
-    case TypedFormEventBinding[Event, Msg](
+    private[scalive] case TypedFormEventBinding[Event, Msg](
       name: String,
       decode: (FormData, FormEventKind, RawFormEvent.Meta) => Event,
-      operation: Event => Msg)                                               extends Attr[Msg]
-    case JsBinding[Msg](name: String, command: JSCommand[Msg])               extends Attr[Msg]
-    case SignalJsBinding[Msg](name: String, command: Signal[JSCommand[Msg]]) extends Attr[Msg]
-    case RoutedBinding(name: String, operation: BindingPayload => ComponentDispatch)
-        extends Attr[Nothing]
-    case ComponentBinding[Msg](
+      operation: Event => Msg)                                                  extends Attr[Msg]
+    private[scalive] case JsBinding[Msg](name: String, command: JSCommand[Msg]) extends Attr[Msg]
+    private[scalive] case SignalJsBinding[Msg](name: String, command: Signal[JSCommand[Msg]])
+        extends Attr[Msg]
+    private[scalive] case RoutedBinding(
+      name: String,
+      operation: BindingPayload => ComponentDispatch) extends Attr[Nothing]
+    private[scalive] case ComponentBinding[Msg](
       name: String,
       target: ComponentRef[Msg],
       operation: BindingPayload => Msg)                  extends Attr[Msg]

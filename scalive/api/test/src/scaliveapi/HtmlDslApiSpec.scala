@@ -14,19 +14,16 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
       def panel[Message](mods: Mod.Input[Message]*): HtmlElement[Message] =
         sectionTag(cls := "panel", Mod.flatten(mods))
 
-      val optionalId: Option[Mod[Msg]] = Some(idAttr := "account")
-      val bindings: Iterator[Mod[Msg]] = Iterator(on.click(Msg.Clicked))
-      val rendered: HtmlElement[Msg]   = panel(optionalId, bindings, "Account")
-      val modifierKinds: Vector[String] = rendered.mods.map {
-        case Mod.Attr.CompositeStatic(name, _) => name
-        case Mod.Attr.Static(name, _)          => name
-        case _: Mod.Attr.Binding[?]            => "binding"
-        case Mod.Content.Text(text, _)         => text
-        case _                                 => "other"
-      }
+      val accountId: Mod[Nothing]       = idAttr := "account"
+      val clickBinding: Mod[Msg]        = on.click(Msg.Clicked)
+      val optionalId: Option[Mod[Msg]]  = Some(accountId)
+      val bindings: Iterator[Mod[Msg]]  = Iterator(clickBinding)
+      val rendered: HtmlElement[Msg]    = panel(optionalId, bindings, "Account")
+      val expected: Vector[Mod[Msg]]    =
+        Vector(cls := "panel", accountId, clickBinding, Mod.Content.Text("Account"))
 
       assertTrue(
-        modifierKinds == Vector("class", "id", "binding", "Account"),
+        rendered.mods == expected,
         !bindings.hasNext
       )
     },
@@ -69,6 +66,37 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("event binding builders cannot be publicly constructed") {
+      val bindingConstructorErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val binding = HtmlAttrBinding("phx-clik")
+      """)
+      val keyBindingConstructorErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val binding = KeyHtmlAttrBinding("phx-keydon")
+      """)
+      val rawBindingConstructorErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val binding = Mod.Attr.FormBinding("phx-chagne", (_: FormData) => "changed")
+      """)
+      val rawJsBindingConstructorErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val binding = Mod.Attr.JsBinding("phx-clik", JS.push("clicked"))
+      """)
+      val factoryErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val click: HtmlAttrBinding = on.click
+        val keyDown: KeyHtmlAttrBinding = on.keyDown
+      """)
+
+      assertTrue(
+        bindingConstructorErrors.nonEmpty,
+        keyBindingConstructorErrors.nonEmpty,
+        rawBindingConstructorErrors.nonEmpty,
+        rawJsBindingConstructorErrors.nonEmpty,
+        factoryErrors.isEmpty
+      )
     },
     test("composite attributes preserve their behavior through HtmlAttr references") {
       val custom                            = CompositeHtmlAttr("data-tags")

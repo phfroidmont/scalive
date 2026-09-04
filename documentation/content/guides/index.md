@@ -30,7 +30,8 @@ expects so you can also enter directly from search or the API reference.
   trees, composes token-list attributes, binds messages, keys repeated content,
   and uses portal and focus-management helpers.
 - [Typed forms and validation](typed-forms-and-validation.md) decodes rooted
-  browser input into domain values with recovery and path-specific feedback.
+  browser input into domain values with recovery, stable repeated rows,
+  path-specific feedback, and revision-bound save coordination.
 - [Ordinary HTTP forms and redirects](http-forms-and-redirects.md) combines
   checked actions, bounded CSRF-protected decoding, trigger-action handoff, and
   HTTP-to-Live flash.

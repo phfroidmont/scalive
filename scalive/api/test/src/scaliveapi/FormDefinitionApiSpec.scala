@@ -5,201 +5,319 @@ import zio.test.*
 import scalive.*
 
 object FormDefinitionApiSpec extends ZIOSpecDefault:
-  private final case class ProfileData(name: String, email: String, tags: Vector[String])
+  private final case class Profile(name: String, email: Email, tags: Vector[String])
+  private final case class Email(value: String)
 
-  private val Profile = FormRoot("profile")
-  private val Name    = Profile.requiredString("name")
-  private val Email   = Profile.requiredString("email")
-  private val Tags    = Profile.strings("tags")
-  private val Definition = Profile.form(ProfileData.apply)(Name, Email, Tags)
+  private val ProfileRoot = FormRoot("profile")
+  private val Name = ProfileRoot.text("name").map(_.trim).required(FieldIssue("Name is required"))
+  private val EmailField = ProfileRoot.text("email").emap { value =>
+    if value.contains('@') then Right(Email(value))
+    else Left(FieldIssues.one(FieldIssue("Email is invalid", Some("invalid_email"))))
+  }
+  private val Tags = ProfileRoot.texts("tags")
+  private val ProfileDefinition = ProfileRoot.product[Profile]((Name, EmailField, Tags))
+
+  private final case class Qualification(title: String, year: String)
+  private final case class Application(name: String, qualifications: Vector[Qualification])
+  private val ApplicationRoot = FormRoot("application")
+  private val ApplicantName   = ApplicationRoot.text("name")
+  private val Qualifications  = ApplicationRoot.rows("qualifications")
+  private val Title = Qualifications.text("title").required(FieldIssue("Title is required"))
+  private val Year = Qualifications.text("year")
+  private val QualificationRows = Qualifications.product[Qualification]((Title, Year))
+  private val ApplicationDefinition =
+    ApplicationRoot.product[Application]((ApplicantName, QualificationRows))
+  private val RowA = FormRowKey.from[Qualifications.type]("row_a").toOption.get
+  private val RowB = FormRowKey.from[Qualifications.type]("row_b").toOption.get
 
   def spec = suite("FormDefinitionApiSpec")(
-    test("constructs an unsubmitted form with typed initial values") {
-      val form  = Definition.initial(Name.initial("Alice"))
-      val name  = form.field(Name)
-      val email = form.field(Email)
-      val typedForm: Definition.Form = form
-      val typedField: FormFieldView[String] = name
+    test("retains editable input after domain refinement and preserves duplicate raw input") {
+      val initial = ProfileDefinition.initial(
+        Name.initial(" Ada "),
+        EmailField.initial("ada@example.com"),
+        Tags.initial(Vector("scala", "liveview"))
+      )
+      val updated = initial.updated(EmailField, "grace@example.com")
+      val duplicate = updated.updatedRaw(EmailField, Vector("first", "second"))
 
       assertTrue(
-        typedForm eq form,
-        typedField eq name,
-        form.state.raw.string(Name.path).contains("Alice"),
-        form.state.value.isLeft,
-        !form.state.submitted,
-        form.state.used.isEmpty,
-        !name.isUsed,
-        !email.isUsed
+        initial.valueOption.contains(Profile("Ada", Email("ada@example.com"), Vector("scala", "liveview"))),
+        updated.valueOption.exists(_.email == Email("grace@example.com")),
+        duplicate.field(EmailField).rawValues == Vector("first", "second"),
+        duplicate.field(EmailField).fieldValue == "second",
+        duplicate.field(EmailField).input.isLeft,
+        duplicate.errors.all.map(_.code) == Vector(Some("duplicate_value"))
       )
     },
-    test("updates raw field values and revalidates while preserving visibility state") {
-      val raw = FormData(
+    test("projects metadata-free values and retains malformed payload diagnostics") {
+      val ordinary = FormData(
         Vector(
-          Name.name                       -> " Alice ",
-          "profile[_unused_name]"         -> "",
-          Email.name                      -> "alice@example.com",
-          Tags.name                       -> "first"
+          Name.name       -> "Ada",
+          EmailField.name -> "ada@example.com",
+          "profile[unknown]" -> "ignored"
         )
       )
-      val form = Definition.from(
-        FormState(
-          raw = raw,
-          value = Definition.codec.decode(raw),
-          used = Set(Email.path),
-          submitted = false
+      val metadata = FormData(
+        ordinary.raw ++ Vector(
+          "profile[_unused_name]" -> "",
+          "unrelated"             -> "ignored"
         )
       )
-
-      val invalid = form.updated(Name, Vector(""))
-      val valid   = invalid.updated(Name, Vector("Bob"))
+      val first     = ProfileDefinition.event(ordinary, FormEventKind.Changed)
+      val second    = ProfileDefinition.event(metadata, FormEventKind.Changed)
+      val malformed = ProfileDefinition.event(
+        FormData(ordinary.raw :+ ("profile[name" -> "broken")),
+        FormEventKind.Changed
+      )
 
       assertTrue(
-        invalid.state.raw.raw == Vector(
-          Name.name                       -> "",
-          "profile[_unused_name]"         -> "",
-          Email.name                      -> "alice@example.com",
-          Tags.name                       -> "first"
-        ),
-        invalid.state.errorsFor(Name.path).map(_.message) == Vector("can't be blank"),
-        invalid.state.used == Set(Email.path),
-        !invalid.state.submitted,
-        invalid.field(Name).visibleErrors.isEmpty,
-        valid.state.valueOption.contains(
-          ProfileData("Bob", "alice@example.com", Vector("first"))
-        ),
-        valid.state.used == Set(Email.path),
-        !valid.state.submitted,
-        valid.field(Name).rawValues == Vector("Bob")
+        first.form.values == second.form.values,
+        first.form.interaction != second.form.interaction,
+        malformed.data.raw.last == "profile[name" -> "broken",
+        malformed.errors.all.exists(_.code.contains("unterminated_bracket")),
+        malformed.form.values == first.form.values
       )
     },
-    test("replaces, appends, removes, and clears repeated exact-name values") {
-      val raw = FormData(
+    test("decodes, renders, reorders, and updates stable repeated rows") {
+      val form = ApplicationDefinition.initial(
+        ApplicantName.initial("Ada"),
+        QualificationRows.initial(
+          QualificationRows.row(RowA)(Title.initial("Mathematics"), Year.initial("1835")),
+          QualificationRows.row(RowB)(Title.initial("Logic"), Year.initial("1843"))
+        )
+      )
+      val reordered = form.movedBefore(QualificationRows, RowB, RowA)
+      val rowB       = reordered.rows(QualificationRows).head
+      val changed    = reordered.updated(rowB.bind(Title), "Symbolic logic")
+      val boundBeforeMove = form.rows(QualificationRows).head.bind(Title)
+      val changedAfterMove = reordered.updated(boundBeforeMove, "Analysis")
+      val replaced = changed
+        .removed(QualificationRows, RowA)
+        .added(QualificationRows, RowA)(Title.initial("Replacement"), Year.initial("1850"))
+
+      assertTrue(
+        form.valueOption.exists(_.qualifications.map(_.title) == Vector("Mathematics", "Logic")),
+        reordered.rows(QualificationRows).map(_.key.value) == Vector("row_b", "row_a"),
+        rowB.field(Title).name == "application[qualifications][row_b][title]",
+        changed.valueOption.exists(_.qualifications.head.title == "Symbolic logic"),
+        changedAfterMove.valueOption.exists(_.qualifications(1).title == "Analysis"),
+        replaced.values != form.values,
+        rowB.presence().mods.nonEmpty
+      )
+    },
+    test("exposes signal-backed field and row rendering outside the scalive package") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        final case class Row(name: String)
+        final case class Application(rows: Vector[Row])
+
+        val root = FormRoot("application")
+        val group = root.rows("rows")
+        val name = group.text("name")
+        val rowSchema = group.product[Row](Tuple1(name))
+        val definition = root.product[Application](Tuple1(rowSchema))
+
+        def render(form: Signal[definition.Form]): HtmlElement[Nothing] =
+          div(
+            form.rows(rowSchema).splitBy(_.key.value) { (_, row) =>
+              val field = row.map(_.field(name))
+              div(
+                row.presence(),
+                label(forId := field.id, "Name"),
+                dataAttr("field-name") := field.name,
+                dataAttr("field-error-id") := field.errorId,
+                dataAttr("field-invalid") := field.hasVisibleErrors.map(_.toString),
+                field.text(field.validationAttributes),
+                field.email(),
+                field.password(),
+                field.hidden(),
+                field.checkbox(),
+                field.checkbox("yes"),
+                field.textarea(),
+                field.select(Vector("first" -> "First")),
+                field.errorFeedback(error => error.map(_.message))
+              )
+            }
+          )
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("projects core row-presence controls and attaches row errors to stable addresses") {
+      val data = FormData(
         Vector(
-          Tags.name  -> "one",
-          Name.name  -> "Alice",
-          Tags.name  -> "two",
-          Email.name -> "alice@example.com"
+          "application[name]"                                  -> "Ada",
+          "application[qualifications][row_b][_scalive_row]"   -> "1",
+          "application[qualifications][row_b][title]"          -> "",
+          "application[qualifications][row_b][year]"           -> "1843",
+          "application[qualifications][row_a][_scalive_row]"   -> "1",
+          "application[qualifications][row_a][title]"          -> "Mathematics",
+          "application[qualifications][row_a][year]"           -> "1835"
         )
       )
-      val form = Definition.from(
-        FormState(
-          raw = raw,
-          value = Definition.codec.decode(raw),
-          used = Set(Tags.path),
-          submitted = true
-        )
-      )
-
-      val replaced = form.updated(Tags, Vector("three", "four"))
-      val appended = replaced.appended(Tags, "five")
-      val removed  = appended.removedAt(Tags, 1)
-      val cleared  = removed.updated(Tags, Vector.empty)
-      val inserted = cleared.updated(Tags, Iterator.single("six"))
+      val event = ApplicationDefinition.event(data, FormEventKind.Submitted)
+      val rows  = event.form.rows(QualificationRows)
 
       assertTrue(
-        replaced.state.raw.raw == Vector(
-          Tags.name  -> "three",
-          Tags.name  -> "four",
-          Name.name  -> "Alice",
-          Email.name -> "alice@example.com"
-        ),
-        appended.state.raw.raw == Vector(
-          Tags.name  -> "three",
-          Tags.name  -> "four",
-          Name.name  -> "Alice",
-          Email.name -> "alice@example.com",
-          Tags.name  -> "five"
-        ),
-        removed.state.raw.raw == Vector(
-          Tags.name  -> "three",
-          Name.name  -> "Alice",
-          Email.name -> "alice@example.com",
-          Tags.name  -> "five"
-        ),
-        removed.state.valueOption.contains(
-          ProfileData("Alice", "alice@example.com", Vector("three", "five"))
-        ),
-        removed.state.used == Set(Tags.path),
-        removed.state.submitted,
-        cleared.state.raw.raw == Vector(
-          Name.name  -> "Alice",
-          Email.name -> "alice@example.com"
-        ),
-        cleared.state.valueOption.contains(
-          ProfileData("Alice", "alice@example.com", Vector.empty)
-        ),
-        inserted.state.raw.raw == Vector(
-          Name.name  -> "Alice",
-          Email.name -> "alice@example.com",
-          Tags.name  -> "six"
-        ),
-        inserted.state.valueOption.contains(
-          ProfileData("Alice", "alice@example.com", Vector("six"))
-        )
+        rows.map(_.key.value) == Vector("row_b", "row_a"),
+        rows.head.field(Title).rawValues == Vector(""),
+        rows.head.field(Title).visibleErrors.map(_.message) == Vector("Title is required"),
+        rows(1).result.contains(Qualification("Mathematics", "1835")),
+        event.form.valueOption.isEmpty
       )
     },
-    test("rejects missing repeated-value indices") {
-      val form = Definition.initial(Tags.initial("one"))
-      val failures = Vector(
-        scala.util.Try(form.removedAt(Tags, -1)).failed.toOption,
-        scala.util.Try(form.removedAt(Tags, 1)).failed.toOption,
-        scala.util.Try(Definition.initial().removedAt(Tags, 0)).failed.toOption
+    test("rejects invalid row structure, duplicate schema paths, and reserved names") {
+      val invalidRows = ApplicationDefinition.event(
+        FormData(
+          Vector(
+            "application[qualifications][bad key][_scalive_row]" -> "0",
+            "application[qualifications][orphan][title]"          -> "orphan"
+          )
+        ),
+        FormEventKind.Changed
       )
+      val duplicate = scala.util.Try {
+        val root  = FormRoot("duplicate")
+        val first = root.text("name")
+        val again = root.text("name")
+        root.product[Tuple2[String, String]]((first, again))
+      }
+      val reserved = scala.util.Try {
+        val root = FormRoot("reserved")
+        root.product[Tuple1[String]](Tuple1(root.text("_scalive_private")))
+      }
 
       assertTrue(
-        failures.forall(_.exists(_.isInstanceOf[IndexOutOfBoundsException]))
+        invalidRows.errors.all.map(_.code).toSet.contains(Some("invalid_row_key_character")),
+        invalidRows.errors.all.map(_.code).toSet.contains(Some("missing_row_presence")),
+        duplicate.isFailure,
+        reserved.isFailure
       )
     },
-    test("rejects fields and codecs owned by another root") {
-      val codecErrors = scala.compiletime.testing.typeCheckErrors("""
+    test("excludes invalid presence metadata and rejects incompatible declared paths") {
+      val invalidPresence = ApplicationDefinition.event(
+        FormData(
+          Vector(
+            "application[qualifications][row_a][_scalive_row]" -> "0",
+            "application[qualifications][row_a][title]"        -> "Invalid marker",
+            "application[qualifications][row_b][_scalive_row]" -> "1",
+            "application[qualifications][row_b][_scalive_row]" -> "1",
+            "application[qualifications][row_b][title]"        -> "Duplicate marker",
+            "application[name][]"                              -> "array"
+          )
+        ),
+        FormEventKind.Changed
+      )
+      val empty = ApplicationDefinition.initial()
+
+      assertTrue(
+        invalidPresence.form.rows(QualificationRows).isEmpty,
+        invalidPresence.form.values == empty.values,
+        invalidPresence.errors.all.map(_.code).contains(Some("invalid_row_presence")),
+        invalidPresence.errors.all.map(_.code).contains(Some("duplicate_row")),
+        invalidPresence.errors.all.map(_.code).contains(Some("invalid_field_path"))
+      )
+    },
+    test("bounds projected rows, values, and validation errors") {
+      val limited = ApplicationDefinition.withLimits(
+        FormLimits(maxValuesPerField = 1, maxRowsPerGroup = 1, maxErrors = 3)
+      )
+      val event = limited.event(
+        FormData(
+          Vector(
+            "application[name]"                                  -> "first",
+            "application[name]"                                  -> "second",
+            "application[name]"                                  -> "third",
+            "application[qualifications][row_a][_scalive_row]"   -> "1",
+            "application[qualifications][row_a][title]"          -> "",
+            "application[qualifications][row_b][_scalive_row]"   -> "1",
+            "application[qualifications][row_c][_scalive_row]"   -> "1"
+          )
+        ),
+        FormEventKind.Changed
+      )
+
+      assertTrue(
+        event.form.field(ApplicantName).rawValues == Vector("first"),
+        event.form.rows(QualificationRows).map(_.key.value) == Vector("row_a"),
+        event.errors.all.size <= 3,
+        event.errors.all.count(_.code.contains("too_many_values")) == 1,
+        event.errors.all.count(_.code.contains("too_many_rows")) == 1
+      )
+    },
+    test("normalizes product errors that target undeclared addresses") {
+      val root       = FormRoot("product")
+      val declared   = root.text("declared")
+      val undeclared = root.text("undeclared")
+      val base       = root.product[Tuple1[String]](Tuple1(declared))
+      val refined = base.emap { _ =>
+        Left(FormErrors.one(undeclared.address, FieldIssue("wrong address")))
+      }
+      val form = refined.initial(declared.initial("value"))
+
+      assertTrue(
+        form.errors.all.map(_.address) == Vector(refined.address),
+        form.errors.all.map(_.code) == Vector(Some("undeclared_error_address"))
+      )
+    },
+    test("checks arbitrary products and ownership at compile time") {
+      val sixFieldsCompile = scala.compiletime.testing.typeChecks("""
         import scalive.*
-        val profile = FormRoot("profile")
-        val account = FormRoot("account")
-        val name = profile.requiredString("name")
-        val email = account.requiredString("email")
-        profile.form(name.codec.zip(email.codec))
+        final case class Six(a: String, b: String, c: String, d: String, e: String, f: String)
+        val root = FormRoot("six")
+        root.product[Six]((root.text("a"), root.text("b"), root.text("c"), root.text("d"), root.text("e"), root.text("f")))
       """)
-      val constructorErrors = scala.compiletime.testing.typeCheckErrors("""
+      val wrongOrder = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val profile = FormRoot("profile")
-        val account = FormRoot("account")
-        val name = profile.requiredString("name")
-        val email = account.requiredString("email")
-        profile.form((name: String, email: String) => name -> email)(name, email)
+        final case class Wrong(name: String, count: Int)
+        val root = FormRoot("wrong")
+        val name = root.text("name")
+        val count = root.text("count").map(_.toInt)
+        root.product[Wrong]((count, name))
       """)
-      val fieldErrors = scala.compiletime.testing.typeCheckErrors("""
+      val wrongOwner = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val profile = FormRoot("profile")
-        val account = FormRoot("account")
-        val name = profile.requiredString("name")
-        val email = account.requiredString("email")
-        val form = profile.form(name.codec).initial()
-        form.field(email)
+        final case class Pair(left: String, right: String)
+        val left = FormRoot("left")
+        val right = FormRoot("right")
+        left.product[Pair]((left.text("value"), right.text("value")))
       """)
-      val initialErrors = scala.compiletime.testing.typeCheckErrors("""
+      val differentDefinitionValues = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val profile = FormRoot("profile")
-        val account = FormRoot("account")
-        val name = profile.requiredString("name")
-        val email = account.requiredString("email")
-        profile.form(name.codec).initial(email.initial("alice@example.com"))
+        final case class Value(name: String)
+        val root = FormRoot("value")
+        val name = root.text("name")
+        val first = root.product[Value](Tuple1(name))
+        val second = root.product[Value](Tuple1(name))
+        first.fromValues(second.initial(name.initial("Ada")).values)
       """)
-      val updateErrors = scala.compiletime.testing.typeCheckErrors("""
+      val twentyThreeFieldsCompile = scala.compiletime.testing.typeChecks("""
         import scalive.*
-        val profile = FormRoot("profile")
-        val account = FormRoot("account")
-        val name = profile.requiredString("name")
-        val email = account.requiredString("email")
-        val form = profile.form(name.codec).initial()
-        form.updated(email, Vector("alice@example.com"))
+        final case class Large(
+          f01: String, f02: String, f03: String, f04: String, f05: String,
+          f06: String, f07: String, f08: String, f09: String, f10: String,
+          f11: String, f12: String, f13: String, f14: String, f15: String,
+          f16: String, f17: String, f18: String, f19: String, f20: String,
+          f21: String, f22: String, f23: String
+        )
+        val root = FormRoot("large")
+        root.product[Large]((
+          root.text("f01"), root.text("f02"), root.text("f03"), root.text("f04"),
+          root.text("f05"), root.text("f06"), root.text("f07"), root.text("f08"),
+          root.text("f09"), root.text("f10"), root.text("f11"), root.text("f12"),
+          root.text("f13"), root.text("f14"), root.text("f15"), root.text("f16"),
+          root.text("f17"), root.text("f18"), root.text("f19"), root.text("f20"),
+          root.text("f21"), root.text("f22"), root.text("f23")
+        ))
       """)
 
       assertTrue(
-        codecErrors.nonEmpty,
-        constructorErrors.nonEmpty,
-        fieldErrors.nonEmpty,
-        initialErrors.nonEmpty,
-        updateErrors.nonEmpty
+        sixFieldsCompile,
+        twentyThreeFieldsCompile,
+        wrongOrder.nonEmpty,
+        wrongOwner.nonEmpty,
+        differentDefinitionValues.nonEmpty
       )
     }
   )

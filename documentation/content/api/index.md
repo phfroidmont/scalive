@@ -29,6 +29,25 @@ examples.
 Start with @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@, the typed boundary for mounting
 state, handling messages, and rendering HTML.
 
+## Forms {#forms}
+
+Start structured browser input with
+@:apiSymbol(class:scalive.FormRoot)`FormRoot`@:@ and combine fields into a
+@:apiSymbol(class:scalive.FormDefinition)`FormDefinition`@:@. The definition
+owns its @:apiSymbol(class:scalive.Form)`Form`@:@ values and typed
+@:apiSymbol(class:scalive.FormEvent)`FormEvent`@:@ messages. See the
+[typed forms guide](../guides/typed-forms-and-validation.md#define-a-rooted-form) for the
+complete path, then use the [profile](../examples/profile-form.md),
+[repeated rows](../examples/repeated-contacts-form.md), and
+[save workflow](../examples/form-save-workflow.md) examples in order.
+
+Advanced entry points include
+@:apiSymbol(class:scalive.PhoenixNestedParamsAdapter)`PhoenixNestedParamsAdapter`@:@
+for indexed compatibility payloads,
+@:apiSymbol(class:scalive.FormWorkflow)`FormWorkflow`@:@ for coordinated
+persistence, and @:apiSymbol(object:scalive.HttpFormDecoder)`HttpFormDecoder`@:@
+for bounded CSRF-validated POST bodies.
+
 Lifecycle capabilities include
 @:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@ for
 non-message acquisition and finalization during connected mount. The

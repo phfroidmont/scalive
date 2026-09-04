@@ -6,31 +6,29 @@ import zio.test.*
 import scalive.*
 
 object FormFieldViewRenderingSpec extends ZIOSpecDefault:
-  private val Profile    = FormRoot("profile")
-  private val Name       = Profile.requiredString("name", "validation.required")
-  private val Definition = Profile.form((name: String) => name)(Name)
+  private val Profile = FormRoot("profile")
+  private val Name = Profile.text("name").validateAll { value =>
+    Vector(
+      Option.when(value.isEmpty)(FieldIssue("validation.required", Some("required"))),
+      Option.when(value.length < 2)(FieldIssue("validation.too_short", Some("too_short")))
+    ).flatten
+  }
+  private val Definition = Profile.product[Tuple1[String]](Tuple1(Name))
 
   private val messages = Map(
-    "validation.required" -> "Name is required.",
+    "validation.required"  -> "Name is required.",
     "validation.too_short" -> "Name is too short."
   )
 
   override def spec = suite("FormFieldViewRenderingSpec")(
-    test("renders static errors through the application renderer inside owned markup") {
-      val errors = Vector(
-        FormError(Name.path, "validation.required"),
-        FormError(Name.path, "validation.too_short")
-      )
-      val state = FormState[String](
-        raw = FormData.empty,
-        value = Left(FormErrors(errors)),
-        used = Set(Name.path),
-        submitted = false
-      )
-      val field = Definition.from(state).field(Name)
+    test("renders submitted errors through application-owned markup") {
+      val field = Definition
+        .event(FormData(Vector(Name.name -> "")), FormEventKind.Submitted)
+        .form
+        .field(Name)
       val compiled = RenderProgram.compile[Unit, Nothing] { _ =>
         field.errorFeedback(
-          error => em(s"${error.path.name}: ${messages(error.message)}"),
+          error => em(s"${field.name}: ${messages(error.message)}"),
           cls               := "field-feedback",
           dataAttr("scope") := "name"
         )
@@ -41,31 +39,17 @@ object FormFieldViewRenderingSpec extends ZIOSpecDefault:
         candidate <- program.evaluate(())
       yield assertTrue(
         HtmlRenderer.render(candidate.tree) ==
-          "<div id=\"profile_name_errors\" phx-feedback-for=\"profile[name]\" aria-live=\"polite\" class=\"form-errors field-feedback\" data-scope=\"name\"><span class=\"form-error\"><em>profile[name]: Name is required.</em></span><span class=\"form-error\"><em>profile[name]: Name is too short.</em></span></div>"
+          s"<div id=\"${field.errorId}\" phx-feedback-for=\"profile[name]\" aria-live=\"polite\" class=\"form-errors field-feedback\" data-scope=\"name\"><span class=\"form-error\"><em>profile[name]: Name is required.</em></span><span class=\"form-error\"><em>profile[name]: Name is too short.</em></span></div>"
       )
     },
-    test("renders signal errors through signals without replacing owned markup") {
+    test("updates signal errors without replacing owned markup") {
       val initial = Definition.initial()
-      val errors = Vector(
-        FormError(Name.path, "validation.required"),
-        FormError(Name.path, "validation.too_short")
-      )
-      val visible = Definition.from(
-        FormState[String](
-          raw = FormData.empty,
-          value = Left(FormErrors(errors)),
-          used = Set(Name.path),
-          submitted = false
-        )
-      )
-      val updated = Definition.from(
-        FormState[String](
-          raw = FormData.empty,
-          value = Left(FormErrors.one(Name.path, "validation.too_short")),
-          used = Set(Name.path),
-          submitted = false
-        )
-      )
+      val visible = Definition
+        .event(FormData(Vector(Name.name -> "")), FormEventKind.Submitted)
+        .form
+      val updated = Definition
+        .event(FormData(Vector(Name.name -> "A")), FormEventKind.Submitted)
+        .form
       val compiled = RenderProgram.compile[Definition.Form, Nothing] { form =>
         val field = form.field(Name)
         div(
@@ -84,16 +68,13 @@ object FormFieldViewRenderingSpec extends ZIOSpecDefault:
         changed <- program.evaluate(updated, Some(shown.commit))
         revealDelta = TreeDiffer.diff(hidden.tree, shown.tree)
         updateDelta = TreeDiffer.diff(shown.tree, changed.tree)
+        fieldId     = initial.field(Name).id
+        fieldErrorId = initial.field(Name).errorId
       yield assertTrue(
         HtmlRenderer.render(hidden.tree).contains(
-          "<input type=\"text\" id=\"profile_name\" name=\"profile[name]\" value=\"\" aria-describedby=\"profile_name_errors\">"
+          s"<input type=\"text\" id=\"$fieldId\" name=\"profile[name]\" value=\"\" aria-describedby=\"$fieldErrorId\">"
         ),
-        HtmlRenderer.render(hidden.tree).contains(
-          "<div id=\"profile_name_errors\" phx-feedback-for=\"profile[name]\" aria-live=\"polite\" class=\"form-errors\" data-scope=\"name\"></div>"
-        ),
-        HtmlRenderer.render(shown.tree).contains(
-          "<input type=\"text\" id=\"profile_name\" name=\"profile[name]\" value=\"\" aria-describedby=\"profile_name_errors\" aria-invalid=\"true\">"
-        ),
+        HtmlRenderer.render(shown.tree).contains("aria-invalid=\"true\""),
         HtmlRenderer.render(shown.tree).contains(
           "<span class=\"form-error\">Name is required.</span><span class=\"form-error\">Name is too short.</span>"
         ),
@@ -106,12 +87,13 @@ object FormFieldViewRenderingSpec extends ZIOSpecDefault:
               !changes.exists(_.isInstanceOf[RenderChange.Replace])
           case _ => false,
         updateDelta match
-          case RenderDelta.Update(
-                _,
-                Vector(RenderChange.Keyed(_, Vector(KeyedRowChange.Retain(_, changes))))
-              ) =>
-            changes.exists(_.isInstanceOf[RenderChange.Text]) &&
-              !changes.exists(_.isInstanceOf[RenderChange.Replace])
+          case RenderDelta.Update(_, changes) =>
+            changes.exists {
+              case RenderChange.Keyed(_, Vector(KeyedRowChange.Retain(_, nested))) =>
+                nested.exists(_.isInstanceOf[RenderChange.Text]) &&
+                  !nested.exists(_.isInstanceOf[RenderChange.Replace])
+              case _ => false
+            } && !changes.exists(_.isInstanceOf[RenderChange.Replace])
           case _ => false
       )
     }

@@ -40,7 +40,7 @@ end FormUnsavedLiveView
 
 object FormUnsavedLiveView:
   enum Msg:
-    case Validate(event: FormEvent[FormData])
+    case Validate(event: RawFormEvent[FormData])
 
   final case class Model(note: String = "")
 

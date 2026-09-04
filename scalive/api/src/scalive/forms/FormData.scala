@@ -30,8 +30,8 @@ final case class FormData private (raw: Vector[(String, String)]):
     *
     * The map does not provide the cross-name ordering available from [[raw]].
     */
-  lazy val fields: Map[String, FormValues] =
-    raw.groupMap(_._1)(_._2).view.mapValues(values => FormValues(values.toVector)).toMap
+  lazy val fields: Map[String, FormFieldValues] =
+    raw.groupMap(_._1)(_._2).view.mapValues(values => FormFieldValues(values.toVector)).toMap
 
   /** Returns the last value submitted under `name`, including an empty string, if present. */
   def get(name: String): Option[String] =
@@ -129,7 +129,7 @@ end FormData
   * @param values
   *   values in their original encounter order
   */
-final case class FormValues(values: Vector[String]):
+final case class FormFieldValues(values: Vector[String]):
   /** The last value, or the empty string when there are no values. */
   def value: String = values.lastOption.getOrElse("")
 

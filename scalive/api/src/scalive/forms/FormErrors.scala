@@ -1,83 +1,60 @@
 package scalive
 
-/** One validation error associated with a form path.
-  *
-  * @param path
-  *   the exact structured path used when filtering errors
-  * @param message
-  *   human-readable validation feedback
-  * @param code
-  *   optional application-defined machine-readable classification
-  */
-final case class FormError(path: FormPath, message: String, code: Option[String] = None)
+/** One pathless field decoding or validation issue. */
+final case class FieldIssue(message: String, code: Option[String] = None)
 
-/** Name-based constructors for [[FormError]]. */
-object FormError:
-  /** Creates an uncoded error by permissively parsing `name` as a [[FormPath]]. */
-  def apply(name: String, message: String): FormError =
-    FormError(FormPath.parse(name), message)
+/** A non-empty, ordered collection of field issues. */
+final class FieldIssues private (val all: Vector[FieldIssue]) derives CanEqual:
+  require(all.nonEmpty, "field issues must not be empty")
 
-  /** Creates a coded error by permissively parsing `name` as a [[FormPath]]. */
-  def apply(name: String, message: String, code: String): FormError =
-    FormError(FormPath.parse(name), message, Some(code))
+  def ++(other: FieldIssues): FieldIssues = FieldIssues(all ++ other.all)
 
-/** An immutable, ordered collection of validation errors.
-  *
-  * Error order is retained when constructing, appending, concatenating, and filtering. Duplicate
-  * errors are not removed.
-  *
-  * @param all
-  *   all errors in reporting order
-  */
-final case class FormErrors private (all: Vector[FormError]):
-  /** Whether there are no errors. */
-  def isEmpty: Boolean = all.isEmpty
+  override def equals(other: Any): Boolean = other match
+    case that: FieldIssues => all == that.all
+    case _                 => false
 
-  /** Whether there is at least one error. */
+  override def hashCode(): Int = all.hashCode()
+
+object FieldIssues:
+  def apply(issues: IterableOnce[FieldIssue]): FieldIssues =
+    new FieldIssues(issues.iterator.toVector)
+
+  def one(issue: FieldIssue): FieldIssues = new FieldIssues(Vector(issue))
+
+  def one(message: String, code: Option[String] = None): FieldIssues =
+    one(FieldIssue(message, code))
+
+/** One issue attached to its stable logical form address. */
+final case class FormError[Owner](address: FormAddress[Owner], issue: FieldIssue):
+  def message: String      = issue.message
+  def code: Option[String] = issue.code
+
+/** An immutable ordered collection of owner-scoped form errors. */
+final class FormErrors[Owner] private (val all: Vector[FormError[Owner]]) derives CanEqual:
+  def isEmpty: Boolean  = all.isEmpty
   def nonEmpty: Boolean = all.nonEmpty
 
-  /** Appends `error` after all existing errors. */
-  def +(error: FormError): FormErrors =
-    FormErrors(all :+ error)
+  def +(error: FormError[Owner]): FormErrors[Owner] = FormErrors(all :+ error)
 
-  /** Concatenates errors with this collection's errors first. */
-  def ++(other: FormErrors): FormErrors =
-    FormErrors(all ++ other.all)
+  def ++(other: FormErrors[Owner]): FormErrors[Owner] = FormErrors(all ++ other.all)
 
-  /** Returns errors whose path is exactly equal to `path`, preserving order. */
-  def forPath(path: FormPath): Vector[FormError] =
-    all.filter(_.path == path)
+  def forAddress(address: FormAddress[Owner]): Vector[FormError[Owner]] =
+    all.filter(_.address == address)
 
-  /** Permissively parses `name`, then returns exact-path matches in order. */
-  def forName(name: String): Vector[FormError] =
-    forPath(FormPath.parse(name))
+  def below(address: FormAddress[Owner]): Vector[FormError[Owner]] =
+    all.filter(_.address.startsWith(address))
 
-  /** Returns messages for the exact `path`, preserving error order. */
-  def messages(path: FormPath): Vector[String] =
-    forPath(path).map(_.message)
+  override def equals(other: Any): Boolean = other match
+    case that: FormErrors[?] => all == that.all
+    case _                   => false
 
-  /** Permissively parses `name`, then returns matching messages in order. */
-  def messages(name: String): Vector[String] =
-    messages(FormPath.parse(name))
-end FormErrors
+  override def hashCode(): Int = all.hashCode()
 
-/** Constructors for ordered [[FormErrors]] collections. */
 object FormErrors:
-  /** The empty error collection. */
-  val empty: FormErrors = FormErrors(Vector.empty)
+  def empty[Owner]: FormErrors[Owner] = new FormErrors(Vector.empty)
 
-  /** Consumes `errors` once and retains its iteration order and duplicates. */
-  def apply(errors: IterableOnce[FormError]): FormErrors =
+  def apply[Owner](errors: IterableOnce[FormError[Owner]]): FormErrors[Owner] =
     new FormErrors(errors.iterator.toVector)
 
-  /** Creates a collection containing one error at `path`. */
-  def one(path: FormPath, message: String, code: Option[String] = None): FormErrors =
-    FormErrors(Vector(FormError(path, message, code)))
-
-  /** Creates one uncoded error after permissively parsing `name`. */
-  def one(name: String, message: String): FormErrors =
-    one(FormPath.parse(name), message)
-
-  /** Creates one coded error after permissively parsing `name`. */
-  def one(name: String, message: String, code: String): FormErrors =
-    one(FormPath.parse(name), message, Some(code))
+  def one[Owner](address: FormAddress[Owner], issue: FieldIssue): FormErrors[Owner] =
+    new FormErrors(Vector(FormError(address, issue)))

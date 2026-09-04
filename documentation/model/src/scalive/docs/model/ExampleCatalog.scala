@@ -211,7 +211,7 @@ object ExampleCatalog:
     id = "profile-form",
     title = "Typed profile form",
     description =
-      "Rooted fields decode change and submit events with normalization and path-specific validation.",
+      "Schema-owned fields rebuild typed change and submit events with canonical values and logical-address validation.",
     category = ExampleCategory.UserInput,
     topics = Vector("forms", "validation", "typed input", "accessibility"),
     aliases = Vector("FormRoot", "FormEvent", "profile", "errors", "submit"),
@@ -221,6 +221,60 @@ object ExampleCatalog:
         label = "LiveView",
         path = "documentation/site/src/scalive/docs/examples/ProfileFormExample.scala",
         region = "profile-form-example",
+        language = Some("scala")
+      )
+    )
+  )
+
+  val RepeatedContactsForm = ExampleDescriptor(
+    id = "repeated-contacts-form",
+    title = "Stable repeated contact rows",
+    description =
+      "Caller-provided row keys preserve contact identity while typed form operations add, remove, and reorder rows.",
+    category = ExampleCategory.UserInput,
+    topics = Vector("forms", "repeated rows", "validation", "stable identity"),
+    aliases = Vector(
+      "RepeatedRows",
+      "FormRowKey",
+      "FormRowView",
+      "added",
+      "removed",
+      "movedBefore",
+      "movedAfter"
+    ),
+    resetDescription = "Restore the two original contacts and their stable row identities.",
+    sources = Vector(
+      ExampleSource(
+        label = "LiveView",
+        path = "documentation/site/src/scalive/docs/examples/RepeatedContactsFormExample.scala",
+        region = "repeated-contacts-form-example",
+        language = Some("scala")
+      )
+    )
+  )
+
+  val FormSaveWorkflow = ExampleDescriptor(
+    id = "form-save-workflow",
+    title = "Form save workflow",
+    description =
+      "Revision-bound submission tokens coordinate dirty state, persistence responses, stale completions, and reset.",
+    category = ExampleCategory.UserInput,
+    topics = Vector("forms", "saving", "dirty state", "concurrency"),
+    aliases = Vector(
+      "FormWorkflow",
+      "FormSubmissionToken",
+      "FormSaveStart",
+      "saveSucceeded",
+      "saveFailed",
+      "saveCancelled"
+    ),
+    resetDescription =
+      "Return to the last successfully acknowledged baseline when no save is active.",
+    sources = Vector(
+      ExampleSource(
+        label = "LiveView",
+        path = "documentation/site/src/scalive/docs/examples/FormWorkflowExample.scala",
+        region = "form-workflow-example",
         language = Some("scala")
       )
     )
@@ -280,6 +334,8 @@ object ExampleCatalog:
       Lifecycle,
       Navigation,
       ProfileForm,
+      RepeatedContactsForm,
+      FormSaveWorkflow,
       ServiceInjection,
       ShoppingCart,
       SubscriptionClock,

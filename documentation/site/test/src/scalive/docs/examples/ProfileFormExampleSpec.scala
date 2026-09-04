@@ -29,24 +29,24 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
   override def spec = suite("ProfileFormExampleSpec")(
     test("decodes trimmed values and accumulates path-specific validation errors") {
       val profile = ProfileFormExample.Profile
-      val invalid = profile.Definition.codec.decode(formData("", "invalid", "a" * 501))
-      val valid = profile.Definition.codec.decode(
-        formData("  Ada Lovelace  ", "  ada@example.com  ", "  Pioneer.  ")
-      )
+      val invalid = profile.Definition
+        .event(formData("", "invalid", "a" * 501), FormEventKind.Changed)
+        .form
+      val valid = profile.Definition
+        .event(
+          formData("  Ada Lovelace  ", "  ada@example.com  ", "  Pioneer.  "),
+          FormEventKind.Changed
+        )
+        .form
       assertTrue(
-        invalid == Left(
-          FormErrors(
-            Vector(
-              FormError(profile.Name.path, "validation.name.required"),
-              FormError(profile.Email.path, "validation.email.invalid"),
-              FormError(
-                profile.Biography.path,
-                "validation.biography.too_long"
-              )
-            )
-          )
+        invalid.errors.all.map(error => error.address -> error.message) == Vector(
+          profile.Name.address      -> "validation.name.required",
+          profile.Email.address     -> "validation.email.invalid",
+          profile.Biography.address -> "validation.biography.too_long"
         ),
-        valid == Right(ProfileFormExample.Profile("Ada Lovelace", "ada@example.com", "Pioneer."))
+        valid.valueOption.contains(
+          ProfileFormExample.Profile("Ada Lovelace", "ada@example.com", "Pioneer.")
+        )
       )
     },
     test("keeps initial errors hidden and reveals only the changed field") {

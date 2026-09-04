@@ -13,12 +13,12 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(event) =>
-      ZIO.succeed(model.copy(form = Profile.Definition.from(event), saved = None))
+      ZIO.succeed(model.copy(form = event.form, saved = None))
     case Msg.Save(event) =>
       ZIO.succeed(
         model.copy(
-          form = Profile.Definition.from(event),
-          saved = event.value.toOption
+          form = event.form,
+          saved = event.valueOption
         )
       )
     case Msg.Reset =>
@@ -42,6 +42,7 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
       },
       form(
         dataAttr("profile-form") := "",
+        idAttr                   := "profile-form",
         Profile.Definition.onChange(Msg.Validate(_)),
         Profile.Definition.onSubmit(Msg.Save(_)),
         field(
@@ -99,25 +100,25 @@ object ProfileFormExample:
     val Root               = FormRoot("profile")
 
     val Name = Root
-      .string("name")
+      .text("name")
       .map(_.trim)
-      .required("validation.name.required")
+      .required(FieldIssue("validation.name.required", Some("required")))
 
     val Email = Root
-      .string("email")
+      .text("email")
       .map(_.trim)
-      .required("validation.email.required")
-      .validate("validation.email.invalid")(EmailPattern.matches)
+      .required(FieldIssue("validation.email.required", Some("required")))
+      .validate(FieldIssue("validation.email.invalid", Some("invalid_email")))(EmailPattern.matches)
 
     val Biography = Root
-      .string("biography")
+      .text("biography")
       .map(_.trim)
-      .required("validation.biography.required")
-      .validate("validation.biography.too_long")(
+      .required(FieldIssue("validation.biography.required", Some("required")))
+      .validate(FieldIssue("validation.biography.too_long", Some("too_long")))(
         _.length <= BiographyMaxLength
       )
 
-    val Definition = Root.form(Profile.apply)(Name, Email, Biography)
+    val Definition = Root.product[Profile]((Name, Email, Biography))
 
     private val EmailPattern = """^[^\s@]+@[^\s@]+\.[^\s@]+$""".r
 
@@ -133,8 +134,8 @@ object ProfileFormExample:
   final case class Model(form: Profile.Definition.Form, saved: Option[Profile] = None)
 
   enum Msg:
-    case Validate(event: FormEvent[Profile])
-    case Save(event: FormEvent[Profile])
+    case Validate(event: Profile.Definition.Event)
+    case Save(event: Profile.Definition.Event)
     case Reset
 end ProfileFormExample
 // docs:end profile-form-example

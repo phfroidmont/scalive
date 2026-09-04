@@ -13,7 +13,9 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         ExampleRegistry.entries.map(_.descriptor) == ExampleCatalog.entries,
         ExampleRegistry.entries.forall(_.descriptor.sources.nonEmpty),
         ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.path.nonEmpty)),
-        ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.region.nonEmpty))
+        ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.region.nonEmpty)),
+        ExampleCatalog.RepeatedContactsForm.aliases.contains("movedAfter"),
+        ExampleCatalog.FormSaveWorkflow.aliases.contains("saveCancelled")
       )
     },
     test("derives collision-free DOM and topic ids from page and directive identity") {
@@ -190,6 +192,68 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         projected.fields.contains("saved" -> "true"),
         !projected.toString.contains("secret@example.com"),
         !projected.toString.contains("Private biography")
+      )
+    },
+    test("projects repeated row identity without contact values") {
+      val entry = ExampleRegistry.get("repeated-contacts-form").get
+      val initial = RepeatedContactsFormExample.Model.initial
+      val model = initial.copy(
+        saved = Some(
+          RepeatedContactsFormExample.ContactBook(
+            Vector(RepeatedContactsFormExample.Contact("Private name", "secret@example.com"))
+          )
+        )
+      )
+      val projected = entry.projectModel(model).get
+      val event = RepeatedContactsFormExample.Contacts.Definition.event(
+        FormData(
+          Vector(
+            "contact_book[contacts][contact-1][_scalive_row]" -> "1",
+            "contact_book[contacts][contact-1][name]"         -> "Private event name",
+            "contact_book[contacts][contact-1][email]"        -> "event@example.com"
+          )
+        ),
+        FormEventKind.Changed
+      )
+      val eventProjection = entry.projectMessage(
+        RepeatedContactsFormExample.Msg.Validate(event)
+      ).get
+      assertTrue(
+        entry.resetMessage == RepeatedContactsFormExample.Msg.Reset,
+        projected.fields.contains("rowOrder" -> "contact-1, contact-2"),
+        projected.fields.contains("saved" -> "true"),
+        !projected.toString.contains("Private name"),
+        !projected.toString.contains("secret@example.com"),
+        !eventProjection.toString.contains("Private event name"),
+        !eventProjection.toString.contains("event@example.com")
+      )
+    },
+    test("projects workflow coordination without editable values or tokens") {
+      val entry   = ExampleRegistry.get("form-save-workflow").get
+      val initial = FormWorkflowExample.Model.initial
+      val edited = initial.copy(
+        workflow = initial.workflow.updated(
+          initial.workflow.current.updated(FormWorkflowExample.Draft.Title, "Private draft")
+        )
+      )
+      val (saving, token) = edited.workflow.beginSave match
+        case FormSaveStart.Started(next, submission) => next -> submission.token
+        case _ => throw new AssertionError("valid workflow did not begin saving")
+      val model     = edited.copy(workflow = saving)
+      val projected = entry.projectModel(model).get
+      val completion = entry.projectMessage(FormWorkflowExample.Msg.PersistenceSucceeded(token)).get
+      val event = FormWorkflowExample.Draft.Definition.event(
+        FormData(Vector(FormWorkflowExample.Draft.Title.name -> "Private event draft")),
+        FormEventKind.Changed
+      )
+      val eventProjection = entry.projectMessage(FormWorkflowExample.Msg.Validate(event)).get
+      assertTrue(
+        entry.resetMessage == FormWorkflowExample.Msg.Reset,
+        projected.fields.contains("dirty" -> "true"),
+        projected.fields.contains("saveState" -> "saving"),
+        !projected.toString.contains("Private draft"),
+        !eventProjection.toString.contains("Private event draft"),
+        !completion.toString.contains(token.value.toString)
       )
     },
     test("projects navigation presets without raw destination strings") {

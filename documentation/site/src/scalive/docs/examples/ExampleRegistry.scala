@@ -473,9 +473,19 @@ private[docs] object ExampleRegistry:
         message = new ExampleTraceProjector[ProfileFormExample.Msg]:
           def project(value: ProfileFormExample.Msg) = value match
             case ProfileFormExample.Msg.Validate(event) =>
-              formEventTrace("Validate the profile form", "Validate", event)
+              formEventTrace(
+                "ProfileFormExample.Msg",
+                "Validate the profile form",
+                "Validate",
+                event
+              )
             case ProfileFormExample.Msg.Save(event) =>
-              formEventTrace("Submit the profile form", "Save", event)
+              formEventTrace(
+                "ProfileFormExample.Msg",
+                "Submit the profile form",
+                "Save",
+                event
+              )
             case ProfileFormExample.Msg.Reset =>
               traced("ProfileFormExample.Msg", "Reset the form", "ProfileFormExample.Msg.Reset"),
         model = new ExampleTraceProjector[ProfileFormExample.Model]:
@@ -489,10 +499,141 @@ private[docs] object ExampleRegistry:
                 field("saved", wildcard)
               ),
               Vector(
-                "valid"      -> value.form.state.isValid.toString,
-                "submitted"  -> value.form.state.submitted.toString,
-                "usedFields" -> value.form.state.used.size.toString,
+                "valid"      -> value.form.isValid.toString,
+                "submitted"  -> (value.form.interaction.visibility == ErrorVisibility.All).toString,
+                "usedFields" -> value.form.interaction.used.size.toString,
                 "saved"      -> value.saved.nonEmpty.toString
+              )
+            )
+      )
+    )
+
+  private val repeatedContactsForm =
+    new ExampleEntry[RepeatedContactsFormExample.Msg, RepeatedContactsFormExample.Model](
+      descriptor = ExampleCatalog.RepeatedContactsForm,
+      factory = _ => new RepeatedContactsFormExample,
+      reset = ExampleReset(RepeatedContactsFormExample.Msg.Reset, "Reset contacts"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[RepeatedContactsFormExample.Msg]:
+          def project(value: RepeatedContactsFormExample.Msg) = value match
+            case RepeatedContactsFormExample.Msg.Validate(event) =>
+              formEventTrace(
+                "RepeatedContactsFormExample.Msg",
+                "Validate the repeated contacts form",
+                "Validate",
+                event
+              )
+            case RepeatedContactsFormExample.Msg.Save(event) =>
+              formEventTrace(
+                "RepeatedContactsFormExample.Msg",
+                "Submit the repeated contacts form",
+                "Save",
+                event
+              )
+            case RepeatedContactsFormExample.Msg.Add =>
+              traced(
+                "RepeatedContactsFormExample.Msg",
+                "Add one stable contact row",
+                "RepeatedContactsFormExample.Msg.Add"
+              )
+            case RepeatedContactsFormExample.Msg.Remove(key) =>
+              repeatedRowMessage("Remove", "Remove one stable contact row", key)
+            case RepeatedContactsFormExample.Msg.MoveUp(key) =>
+              repeatedRowMessage("MoveUp", "Move one contact row up", key)
+            case RepeatedContactsFormExample.Msg.MoveDown(key) =>
+              repeatedRowMessage("MoveDown", "Move one contact row down", key)
+            case RepeatedContactsFormExample.Msg.Reset =>
+              traced(
+                "RepeatedContactsFormExample.Msg",
+                "Reset the repeated contacts form",
+                "RepeatedContactsFormExample.Msg.Reset"
+              ),
+        model = new ExampleTraceProjector[RepeatedContactsFormExample.Model]:
+          def project(value: RepeatedContactsFormExample.Model) =
+            val rows = value.form.rows(RepeatedContactsFormExample.Contacts.Rows)
+            projected(
+              "RepeatedContactsFormExample.Model",
+              "Current repeated contacts form state",
+              constructor(
+                "Model",
+                field("form", wildcard),
+                field("nextKey", number(value.nextKey)),
+                field("saved", wildcard)
+              ),
+              Vector(
+                "rowCount"  -> rows.size.toString,
+                "valid"     -> value.form.isValid.toString,
+                "submitted" ->
+                  (value.form.interaction.visibility == ErrorVisibility.All).toString,
+                "saved"    -> value.saved.nonEmpty.toString,
+                "rowOrder" -> rows.map(_.key.value).mkString(", ")
+              )
+            )
+      )
+    )
+
+  private val formSaveWorkflow =
+    new ExampleEntry[FormWorkflowExample.Msg, FormWorkflowExample.Model](
+      descriptor = ExampleCatalog.FormSaveWorkflow,
+      factory = _ => new FormWorkflowExample,
+      reset = ExampleReset(FormWorkflowExample.Msg.Reset, "Reset to baseline"),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[FormWorkflowExample.Msg]:
+          def project(value: FormWorkflowExample.Msg) = value match
+            case FormWorkflowExample.Msg.Validate(event) =>
+              formEventTrace(
+                "FormWorkflowExample.Msg",
+                "Update the workflow form",
+                "Validate",
+                event
+              )
+            case FormWorkflowExample.Msg.BeginSave(event) =>
+              formEventTrace(
+                "FormWorkflowExample.Msg",
+                "Begin a revision-bound save",
+                "BeginSave",
+                event
+              )
+            case FormWorkflowExample.Msg.BeginSaveAgain =>
+              traced(
+                "FormWorkflowExample.Msg",
+                "Attempt an overlapping save",
+                "FormWorkflowExample.Msg.BeginSaveAgain"
+              )
+            case FormWorkflowExample.Msg.PersistenceSucceeded(_) =>
+              workflowCompletion("PersistenceSucceeded", "Apply a correlated save success")
+            case FormWorkflowExample.Msg.PersistenceFailed(_) =>
+              workflowCompletion("PersistenceFailed", "Apply a correlated save failure")
+            case FormWorkflowExample.Msg.PersistenceCancelled(_) =>
+              workflowCompletion("PersistenceCancelled", "Apply a correlated save cancellation")
+            case FormWorkflowExample.Msg.Reset =>
+              traced(
+                "FormWorkflowExample.Msg",
+                "Reset to the acknowledged baseline",
+                "FormWorkflowExample.Msg.Reset"
+              ),
+        model = new ExampleTraceProjector[FormWorkflowExample.Model]:
+          def project(value: FormWorkflowExample.Model) =
+            val state = value.workflow.save match
+              case FormSaveState.Idle         => "idle"
+              case FormSaveState.Saving(_)    => "saving"
+              case FormSaveState.Failed(_, _) => "failed"
+            projected(
+              "FormWorkflowExample.Model",
+              "Current form save workflow state",
+              constructor(
+                "Model",
+                field("workflow", wildcard),
+                field("notice", name(s"Notice.${value.notice.toString}")),
+                field("staleToken", wildcard),
+                field("baselineAdvancements", number(value.baselineAdvancements))
+              ),
+              Vector(
+                "dirty"                -> value.workflow.isDirty.toString,
+                "revision"             -> value.workflow.revision.value.toString,
+                "saveState"            -> state,
+                "notice"               -> value.notice.toString,
+                "baselineAdvancements" -> value.baselineAdvancements.toString
               )
             )
       )
@@ -644,6 +785,8 @@ private[docs] object ExampleRegistry:
       lifecycle,
       navigation,
       profileForm,
+      repeatedContactsForm,
+      formSaveWorkflow,
       serviceInjection,
       shoppingCart,
       subscriptionClock,
@@ -675,21 +818,41 @@ private[docs] object ExampleRegistry:
     val remainder = cents % 100
     f"$$$dollars%d.$remainder%02d"
 
-  private def formEventTrace(
+  private def formEventTrace[Owner, Schema, Domain](
+    typeName: String,
     summary: String,
     caseName: String,
-    event: FormEvent[ProfileFormExample.Profile]
+    event: FormEvent[Owner, Schema, Domain]
   ): ExampleTraceValue =
     projected(
-      s"ProfileFormExample.Msg.$caseName",
+      s"$typeName.$caseName",
       summary,
       constructor(s"Msg.$caseName", field("event", wildcard)),
       Vector(
         "valid"      -> event.isValid.toString,
-        "submitted"  -> event.submitted.toString,
-        "target"     -> event.target.fold("none")(_.name),
-        "usedFields" -> event.state.used.size.toString
+        "submitted"  -> (event.kind == FormEventKind.Submitted).toString,
+        "target"     -> event.meta.browserTarget.fold("none")(_.name),
+        "usedFields" -> event.form.interaction.used.size.toString
       )
+    )
+
+  private def repeatedRowMessage(
+    caseName: String,
+    summary: String,
+    key: RepeatedContactsFormExample.Contacts.Group.Key
+  ): ExampleTraceValue =
+    projected(
+      s"RepeatedContactsFormExample.Msg.$caseName",
+      summary,
+      constructor(s"Msg.$caseName", field("key", wildcard)),
+      Vector("rowKey" -> key.value)
+    )
+
+  private def workflowCompletion(caseName: String, summary: String): ExampleTraceValue =
+    projected(
+      s"FormWorkflowExample.Msg.$caseName",
+      summary,
+      constructor(s"Msg.$caseName", field("token", wildcard))
     )
 
   private def traced(typeName: String, summary: String, scalaValue: String): ExampleTraceValue =

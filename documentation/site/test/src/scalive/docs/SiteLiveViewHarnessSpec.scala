@@ -15,30 +15,31 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
     case Tick
 
   private enum FormMsg:
-    case Changed(event: FormEvent[String])
-    case Submitted(event: FormEvent[String])
+    case Changed(event: RawFormEvent[String])
+    case Submitted(event: RawFormEvent[String])
 
   private val ResourceSubscription = SubscriptionKey("docs-test-resource")
 
-  private val Name = FormField.requiredString(FormPath("profile", "name"), "Name is required.")
+  private val NamePath  = FormPath("profile", "name")
+  private val NameCodec = FormCodec.requiredString(NamePath.name, FieldIssue("Name is required."))
 
-  private val formLiveView = new LiveView[FormMsg, FormEvent[String] | Null]:
+  private val formLiveView = new LiveView[FormMsg, RawFormEvent[String] | Null]:
     def mount(ctx: MountContext) = ZIO.succeed(null)
 
-    def handleMessage(model: FormEvent[String] | Null, ctx: MessageContext) =
+    def handleMessage(model: RawFormEvent[String] | Null, ctx: MessageContext) =
       case FormMsg.Changed(event)   => ZIO.succeed(event)
       case FormMsg.Submitted(event) => ZIO.succeed(event)
 
-    override def view(model: Signal[FormEvent[String] | Null]) =
+    override def view(model: Signal[RawFormEvent[String] | Null]) =
       val event = model.map(Option(_))
       form(
         dataAttr("profile-form") := "",
-        Name.onChange(FormMsg.Changed(_)),
-        Name.onSubmit(FormMsg.Submitted(_)),
-        input(nameAttr := Name.name),
+        on.change.form(NameCodec)(FormMsg.Changed(_)),
+        on.submit.form(NameCodec)(FormMsg.Submitted(_)),
+        input(nameAttr := NamePath.name),
         span(dataAttr("target") := "", event.map(_.flatMap(_.target).fold("")(_.name))),
         span(dataAttr("submitted") := "", event.map(_.exists(_.submitted).toString)),
-        span(dataAttr("used") := "", event.map(_.exists(_.state.isUsed(Name.path)).toString))
+        span(dataAttr("used") := "", event.map(_.exists(_.state.isUsed(NamePath)).toString))
       )
 
   private val testLiveView = new LiveView[Msg, Int]:
@@ -77,19 +78,19 @@ object SiteLiveViewHarnessSpec extends ZIOSpecDefault:
           harness <- ConnectedRender.join(formLiveView)
           _ <- harness.changeForm(
                  "[data-profile-form]",
-                 Vector(Name.name -> "", "profile[_unused_email]" -> ""),
-                 target = Some(Name.name)
+                 Vector(NamePath.name -> "", "profile[_unused_email]" -> ""),
+                 target = Some(NamePath.name)
                )
           changedTarget <- harness.text("[data-target]")
           changedUsed   <- harness.text("[data-used]")
           _ <- harness.submitForm(
                  "[data-profile-form]",
-                 Vector(Name.name -> "Ada")
+                 Vector(NamePath.name -> "Ada")
                )
           submitted <- harness.text("[data-submitted]")
           submitUsed <- harness.text("[data-used]")
         yield assertTrue(
-          changedTarget == Name.name,
+          changedTarget == NamePath.name,
           changedUsed == "true",
           submitted == "true",
           submitUsed == "true"

@@ -2,481 +2,435 @@ package scalive
 
 import scalive.codecs.StringAsIsEncoder
 
-/** Lower-level form model with a runtime root, current state, and event codec.
+/** Immutable current semantic values, validation result, and interaction state.
   *
-  * Prefer [[FormRoot]] and [[FormDefinition]] for new forms: their [[RootedForm]] facade enforces
-  * field ownership at compile time. This unowned API accepts relative paths and supports states
-  * containing either rooted browser names or legacy relative names. Path-based value and raw-value
-  * lookup tries the rooted path first, then the relative path; error lookup combines both, and used
-  * state accepts either. A typed [[FormField]] is expected to contain its complete path and is
-  * checked against [[root]] at runtime, unless the root is empty.
-  *
-  * @param root
-  *   the path prepended to relative field paths; an empty path makes the form unrooted
-  * @param state
-  *   the current raw, decoded, used-field, and submission state
-  * @param codec
-  *   the codec used by typed LiveView event bindings
-  * @tparam A
-  *   the decoded whole-form value type
+  * Obtain instances from [[FormDefinition.initial]] or [[FormDefinition.event]]. Raw values are
+  * retained in [[values]] so invalid user input can be rendered without lossy round trips.
   */
-final case class Form[A](root: FormPath, state: FormState[A], codec: FormCodec[A]):
-  /** Renders an ordinary browser form targeting `target`.
-    *
-    * The model's root, state, and codec are not otherwise applied automatically; add controls and
-    * LiveView bindings through `mods` as needed. This delegates to [[Form.http]].
-    */
-  def http[Msg](
-    target: FormAction
-  )(
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] = Form.http(target)(mods*)
+final class Form[Owner, Schema, Domain] private[scalive] (
+  private[scalive] val owningDefinition: FormDefinition[Owner, Domain],
+  val values: FormValues[Owner, Schema],
+  val result: Either[FormErrors[Owner], Domain],
+  val interaction: FormInteraction[Owner]):
 
-  /** Binds `phx-change` and decodes each event with [[codec]].
-    *
-    * The callback runs for successful and failed decodes. It receives a new [[FormEvent]] but this
-    * immutable form is not updated automatically.
-    */
-  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    on.change.form(codec)(f)
+  /** Whether all structural, field, row, and product validation succeeded. */
+  def isValid: Boolean = result.isRight
 
-  /** Binds `phx-submit` and decodes each event with [[codec]].
-    *
-    * The event is marked submitted, making every field used when converted to [[FormState]]. The
-    * callback also runs when decoding fails.
-    */
-  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    on.submit.form(codec)(f)
+  /** The decoded domain value, available only when [[isValid]]. */
+  def valueOption: Option[Domain] = result.toOption
 
-  /** Binds `phx-auto-recover` and decodes recovery events with [[codec]]. */
-  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    on.recover.form(codec)(f)
+  /** All validation errors, including errors currently hidden by interaction state. */
+  def errors: FormErrors[Owner] = result.left.getOrElse(FormErrors.empty)
 
-  /** Disables Phoenix's automatic form recovery by rendering `phx-auto-recover="ignore"`. */
-  def disableRecovery: Mod.Attr[Nothing] =
-    phx.autoRecover := "ignore"
+  /** Renders an ordinary HTTP form; `action` and `method` are owned by `target`. */
+  def http[Msg](target: FormAction)(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    Form.http(target)(mods*)
 
-  /** Renders `phx-trigger-action` when `condition` is true.
-    *
-    * On a form with an ordinary `action` and `method`, Phoenix uses this attribute to hand a Live
-    * submit back to the browser for normal HTTP submission.
-    */
+  /** Handles changes and recovery while preserving this form's schema type. */
+  def onChange[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =
+    owningDefinition.onChange(event => f(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]))
+
+  /** Handles changes and recovery with separate schema-safe callbacks. */
+  def onChange[Msg](
+    changed: FormEvent[Owner, Schema, Domain] => Msg,
+    recovered: FormEvent[Owner, Schema, Domain] => Msg
+  ): Mod.Attr[Msg] =
+    owningDefinition.onChange(
+      event => changed(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]),
+      event => recovered(event.asInstanceOf[FormEvent[Owner, Schema, Domain]])
+    )
+
+  /** Handles a typed submission event. */
+  def onSubmit[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =
+    owningDefinition.onSubmit(event => f(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]))
+
+  /** Handles a typed recovery event. */
+  def onRecover[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =
+    owningDefinition.onRecover(event => f(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]))
+
+  /** Disables Phoenix automatic form recovery for the rendered form. */
+  def disableRecovery: Mod.Attr[Nothing] = phx.autoRecover := "ignore"
+
+  /** Requests a conventional HTTP submission when `condition` becomes true. */
   def triggerHttpSubmitWhen(condition: Boolean): Mod.Attr[Nothing] =
     phx.triggerAction := condition
 
-  /** Returns an untyped view of a relative field path.
-    *
-    * The view reads values from the rooted path first and falls back to the exact relative path.
-    */
-  def field(path: String): FormFieldView[Vector[String]] =
-    field(FormPath.parse(path))
+  /** Returns the renderable view of a static field declared by this form's definition. */
+  def field[Input, Value](
+    definition: FormField[Owner, Input, Value]
+  ): FormFieldView[Owner, Input, Value] =
+    require(owningDefinition.owns(definition), "field is not declared by this form definition")
+    FormFieldView(this, definition, definition.address, definition.path)
 
-  /** Returns an untyped view of a relative field path.
+  /** Returns repeated rows in submitted or programmatically mutated order.
     *
-    * Raw display values use the rooted path first and fall back to the exact relative path. The
-    * view's [[FormFieldView.decoded decoded value]] is always decoded from the rooted field path.
+    * Each view carries its stable [[FormRowView.key]]; vector position is not row identity.
     */
-  def field(path: FormPath): FormFieldView[Vector[String]] =
-    FormFieldView(this, FormField.strings(fullPath(path)), Some(path))
-
-  /** Returns the current view of a typed, fully rooted field definition.
-    *
-    * Unlike the path overloads, this performs no relative fallback.
-    *
-    * @throws IllegalArgumentException
-    *   if this form has a non-empty root and the field path is outside it
-    */
-  def field[B](definition: FormField[B]): FormFieldView[B] =
+  def rows[Group, Row](
+    definition: RepeatedRows[Owner, Group, Row]
+  ): Vector[FormRowView[Owner, Schema, Group, Row]] =
     require(
-      root.isEmpty || definition.path.startsWith(root),
-      s"field ${definition.name} is outside form root ${root.name}"
+      owningDefinition.owns(definition),
+      "repeated group is not declared by this form definition"
     )
-    FormFieldView(this, definition, None)
-
-  /** Returns the rooted browser name for a relative field path. */
-  def name(path: String): String =
-    name(FormPath.parse(path))
-
-  /** Returns the rooted browser name for a relative field path. */
-  def name(path: FormPath): String =
-    fullPath(path).name
-
-  /** Returns the default DOM ID for a relative field path. */
-  def id(path: String): String =
-    id(FormPath.parse(path))
-
-  /** Returns the default DOM ID for a relative field path. */
-  def id(path: FormPath): String =
-    fullPath(path).id
-
-  /** Returns the last raw value for a relative field path, or the empty string.
-    *
-    * The rooted path is tried first, followed by the exact relative path.
-    */
-  def value(path: String): String =
-    value(FormPath.parse(path))
-
-  /** Returns the last raw value for a relative field path, or the empty string.
-    *
-    * The rooted path is tried first, followed by the exact relative path.
-    */
-  def value(path: FormPath): String =
-    state.raw.string(fullPath(path)).orElse(state.raw.string(path)).getOrElse("")
-
-  /** Renders a text input for a relative field path. */
-  def text[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).text(mods*)
-
-  /** Renders a text input for a relative field path. */
-  def text[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).text(mods*)
-
-  /** Renders a text input with an explicit DOM ID for a relative field path. */
-  def text[Msg](path: String, explicitId: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).text(explicitId, mods*)
-
-  /** Renders a text input with an explicit DOM ID for a relative field path. */
-  def text[Msg](path: FormPath, explicitId: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).text(explicitId, mods*)
-
-  /** Renders an email input for a relative field path. */
-  def email[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).email(mods*)
-
-  /** Renders an email input for a relative field path. */
-  def email[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).email(mods*)
-
-  /** Renders a password input for a relative field path. */
-  def password[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).password(mods*)
-
-  /** Renders a password input for a relative field path. */
-  def password[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).password(mods*)
-
-  /** Renders a hidden input for a relative field path. */
-  def hidden[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).hidden(mods*)
-
-  /** Renders a hidden input for a relative field path. */
-  def hidden[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).hidden(mods*)
-
-  /** Renders a checkbox whose submitted value is `"true"`. */
-  def checkbox[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).checkbox(mods*)
-
-  /** Renders a checkbox with `checkedValue` as its submitted value. */
-  def checkbox[Msg](
-    path: String,
-    checkedValue: String,
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
-    field(path).checkbox(checkedValue, mods*)
-
-  /** Renders a checkbox whose submitted value is `"true"`. */
-  def checkbox[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).checkbox(mods*)
-
-  /** Renders a checkbox with `checkedValue` as its submitted value. */
-  def checkbox[Msg](
-    path: FormPath,
-    checkedValue: String,
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
-    field(path).checkbox(checkedValue, mods*)
-
-  /** Renders a textarea for a relative field path. */
-  def textarea[Msg](path: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).textarea(mods*)
-
-  /** Renders a textarea for a relative field path. */
-  def textarea[Msg](path: FormPath, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    field(path).textarea(mods*)
-
-  /** Renders a select whose options are `(submittedValue, label)` pairs. */
-  def select[Msg](
-    path: String,
-    options: Iterable[(String, String)],
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
-    field(path).select(options, mods*)
-
-  /** Renders a select whose options are `(submittedValue, label)` pairs. */
-  def select[Msg](
-    path: FormPath,
-    options: Iterable[(String, String)],
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
-    field(path).select(options, mods*)
-
-  /** Renders the distinct current errors for a relative field path.
-    *
-    * This helper does not apply used-field visibility rules. Prefer [[FormFieldView.errorFeedback]]
-    * when errors should appear only after interaction and be paired with control accessibility
-    * attributes.
-    */
-  def errors(path: String): HtmlElement[Nothing] =
-    errors(FormPath.parse(path))
-
-  /** Renders the distinct current errors for a relative field path.
-    *
-    * Errors stored under the exact relative and rooted paths are combined and deduplicated. The
-    * wrapper has class `form-errors`; each message is a `span.form-error`.
-    */
-  def errors(path: FormPath): HtmlElement[Nothing] =
-    val messages = errorsFor(path).map { error =>
-      Mod.Content.Tag(span(cls := "form-error", error.message))
+    values.groups.getOrElse(definition.address, CanonicalFormGroup(Vector.empty)).rows.map { row =>
+      new FormRowView(this, definition, row)
     }
-    div(cls := "form-errors", messages)
 
-  /** Renders a Phoenix feedback container for a relative field path. */
-  def feedback(path: String, mods: Mod.Input[Nothing]*): HtmlElement[Nothing] =
-    feedback(FormPath.parse(path), mods*)
+  /** Replaces a static field from typed editable input and immediately revalidates the form. */
+  def updated[Input, Value](
+    field: FormField[Owner, Input, Value],
+    input: Input
+  ): Form[Owner, Schema, Domain] =
+    updatedRaw(field, field.inputCodec.encode(input))
 
-  /** Renders a `div` with `phx-feedback-for` set to the rooted field name.
+  /** Replaces a static field with explicit raw values, preserving invalid control input. */
+  def updatedRaw[Input, Value](
+    field: FormField[Owner, Input, Value],
+    raw: Vector[String]
+  ): Form[Owner, Schema, Domain] =
+    require(owningDefinition.owns(field), "field is not declared by this form definition")
+    require(
+      raw.size <= owningDefinition.limits.maxValuesPerField,
+      "raw field update exceeds maxValuesPerField"
+    )
+    val static =
+      if raw.isEmpty then values.static.removed(field.address)
+      else values.static.updated(field.address, raw)
+    rebuild(static = static)
+
+  /** Appends one raw value to a multi-value static field. */
+  def appended[Value](
+    field: FormField[Owner, Vector[String], Value],
+    value: String
+  ): Form[Owner, Schema, Domain] =
+    updatedRaw(field, values.static.getOrElse(field.address, Vector.empty) :+ value)
+
+  /** Removes a raw multi-value entry by position, failing when the index is out of bounds. */
+  def removedAt[Value](
+    field: FormField[Owner, Vector[String], Value],
+    index: Int
+  ): Form[Owner, Schema, Domain] =
+    val raw = values.static.getOrElse(field.address, Vector.empty)
+    if index < 0 || index >= raw.length then
+      throw new IndexOutOfBoundsException(
+        s"field value index $index out of bounds for ${raw.length} values"
+      )
+    updatedRaw(field, raw.patch(index, Nil, 1))
+
+  /** Updates the row identified by a schema-bound field handle from typed editable input. */
+  def updated[Group, Input, Value](
+    field: BoundFormField[Owner, Schema, Group, Input, Value],
+    input: Input
+  ): Form[Owner, Schema, Domain] =
+    updatedRaw(field, field.field.inputCodec.encode(input))
+
+  /** Replaces a bound row field's raw values.
     *
-    * Caller modifiers, including content, are appended to the container.
+    * The handle must come from this exact definition and its keyed row must still exist.
     */
-  def feedback(path: FormPath, mods: Mod.Input[Nothing]*): HtmlElement[Nothing] =
-    div(Form.feedbackFor := name(path), Mod.flatten(mods))
+  def updatedRaw[Group, Input, Value](
+    field: BoundFormField[Owner, Schema, Group, Input, Value],
+    raw: Vector[String]
+  ): Form[Owner, Schema, Domain] =
+    require(
+      field.schemaIdentity eq values.schemaIdentity,
+      "bound field belongs to another form definition"
+    )
+    require(
+      raw.size <= owningDefinition.limits.maxValuesPerField,
+      "raw row field update exceeds maxValuesPerField"
+    )
+    val group = values.groups.getOrElse(field.rows.address, CanonicalFormGroup(Vector.empty))
+    val index = group.rows.indexWhere(_.key == field.key.value)
+    require(index >= 0, s"row '${field.key.value}' no longer exists")
+    val current  = group.rows(index)
+    val relative = FormDefinition.names(field.field.relativePath)
+    val fields   = if raw.isEmpty then current.fields.removed(relative)
+    else current.fields.updated(relative, raw)
+    val next = group.copy(rows = group.rows.updated(index, current.copy(fields = fields)))
+    rebuild(groups = values.groups.updated(field.rows.address, next))
 
-  /** Returns the distinct current errors for a relative field path, regardless of visibility. */
-  def errorsFor(path: String): Vector[FormError] =
-    errorsFor(FormPath.parse(path))
+  /** Appends a new row with a group-scoped stable key and owner-checked assignments. */
+  def added[Group, Row](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group]
+  )(
+    assignments: FormInitial[Group]*
+  ): Form[Owner, Schema, Domain] =
+    require(owningDefinition.owns(rows), "repeated group is not declared by this form definition")
+    val group = values.groups.getOrElse(rows.address, CanonicalFormGroup(Vector.empty))
+    require(!group.rows.exists(_.key == key.value), s"duplicate row key '${key.value}'")
+    require(
+      group.rows.size < owningDefinition.limits.maxRowsPerGroup,
+      "repeated group exceeds maxRowsPerGroup"
+    )
+    val initial = rows.row(key)(assignments*)
+    require(
+      initial.assignments.forall(_.values.size <= owningDefinition.limits.maxValuesPerField),
+      "new row field exceeds maxValuesPerField"
+    )
+    val fields = initial.assignments.iterator
+      .filter(_.values.nonEmpty).map { value =>
+        FormDefinition.names(value.field.relativePath) -> value.values
+      }.toMap
+    val next = group.copy(rows = group.rows :+ CanonicalFormRow(key.value, fields))
+    rebuild(
+      groups = values.groups.updated(rows.address, next),
+      interaction = interaction.without(FormAddress.row(rows.address, key.value))
+    )
 
-  /** Returns the distinct current errors for a relative field path, regardless of visibility.
-    *
-    * Errors stored under the exact relative and rooted paths are combined and deduplicated while
-    * preserving their first occurrence.
-    */
-  def errorsFor(path: FormPath): Vector[FormError] =
-    val relativeErrors = state.errors.forPath(path)
-    val fullErrors     = state.errors.forPath(fullPath(path))
-    (relativeErrors ++ fullErrors).distinct
+  /** Removes the row with `key` and clears interaction state below its address. */
+  def removed[Group, Row](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group]
+  ): Form[Owner, Schema, Domain] =
+    require(owningDefinition.owns(rows), "repeated group is not declared by this form definition")
+    val group = values.groups.getOrElse(rows.address, CanonicalFormGroup(Vector.empty))
+    require(group.rows.exists(_.key == key.value), s"missing row key '${key.value}'")
+    val next           = group.copy(rows = group.rows.filterNot(_.key == key.value))
+    val removedAddress = FormAddress.row(rows.address, key.value)
+    rebuild(
+      groups = values.groups.updated(rows.address, next),
+      interaction = interaction.without(removedAddress)
+    )
 
-  /** Tests whether a relative field is eligible to show errors. */
-  def isUsed(path: String): Boolean =
-    isUsed(FormPath.parse(path))
+  /** Moves a keyed row immediately before another keyed row without changing either identity. */
+  def movedBefore[Group, Row](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    target: FormRowKey[Group]
+  ): Form[Owner, Schema, Domain] =
+    move(rows, key, target, after = false)
 
-  /** Tests whether a relative field is eligible to show errors.
-    *
-    * Either the exact relative or rooted path may mark it used; a submitted form treats every path
-    * as used.
-    */
-  def isUsed(path: FormPath): Boolean =
-    state.isUsed(path) || state.isUsed(fullPath(path))
+  /** Moves a keyed row immediately after another keyed row without changing either identity. */
+  def movedAfter[Group, Row](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    target: FormRowKey[Group]
+  ): Form[Owner, Schema, Domain] =
+    move(rows, key, target, after = true)
 
-  private[scalive] def fullPath(path: FormPath): FormPath =
-    if root.isEmpty then path
-    else FormPath(root.segments ++ path.segments)
+  /** Returns this value state revalidated with every error visible, as on submission. */
+  def withAllErrorsVisible: Form[Owner, Schema, Domain] =
+    owningDefinition
+      .rebuild(
+        values.asInstanceOf[owningDefinition.Values],
+        FormInteraction(interaction.used, ErrorVisibility.All),
+        Vector.empty
+      ).asInstanceOf[Form[Owner, Schema, Domain]]
+
+  /** Returns this value state revalidated with no fields marked as used. */
+  def pristine: Form[Owner, Schema, Domain] =
+    owningDefinition
+      .rebuild(
+        values.asInstanceOf[owningDefinition.Values],
+        FormInteraction.pristine,
+        Vector.empty
+      ).asInstanceOf[Form[Owner, Schema, Domain]]
+
+  /** Captures definition-owned values and domain value only when validation succeeds. */
+  def validSnapshot: Option[ValidFormSnapshot[Owner, Schema, Domain]] =
+    result.toOption.map(value => new ValidFormSnapshot(values, value))
+
+  private def move[Group, Row](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    target: FormRowKey[Group],
+    after: Boolean
+  ): Form[Owner, Schema, Domain] =
+    require(owningDefinition.owns(rows), "repeated group is not declared by this form definition")
+    require(key != target, "a row cannot be moved relative to itself")
+    val group = values.groups.getOrElse(rows.address, CanonicalFormGroup(Vector.empty))
+    val moved = group.rows
+      .find(_.key == key.value).getOrElse(
+        throw new IllegalArgumentException(s"missing row key '${key.value}'")
+      )
+    val without     = group.rows.filterNot(_.key == key.value)
+    val targetIndex = without.indexWhere(_.key == target.value)
+    require(targetIndex >= 0, s"missing target row key '${target.value}'")
+    val insertion = targetIndex + (if after then 1 else 0)
+    val next      = group.copy(rows = without.patch(insertion, Vector(moved), 0))
+    rebuild(groups = values.groups.updated(rows.address, next))
+
+  private def rebuild(
+    static: Map[FormAddress[Owner], Vector[String]] = this.values.static,
+    groups: Map[FormAddress[Owner], CanonicalFormGroup] = this.values.groups,
+    interaction: FormInteraction[Owner] = this.interaction
+  ): Form[Owner, Schema, Domain] =
+    val next = new FormValues[Owner, Schema](values.schemaIdentity, static, groups)
+    owningDefinition
+      .rebuild(
+        next.asInstanceOf[owningDefinition.Values],
+        interaction,
+        Vector.empty
+      ).asInstanceOf[Form[Owner, Schema, Domain]]
 end Form
 
-/** Constructors and rendering helpers for lower-level [[Form]] values. */
+/** Rendering helpers for ordinary HTTP forms. */
 object Form:
   private[scalive] val feedbackFor = htmlAttr("phx-feedback-for", StringAsIsEncoder)
   private[scalive] val textareaTag = HtmlTag("textarea")
   private val httpAttributes       = Set("action", "method")
   private val csrfMarker           = htmlAttr("data-scalive-csrf", StringAsIsEncoder)
 
-  /** Renders an ordinary HTML form with the action and method owned by `target`.
+  /** Renders an ordinary HTTP form with action, method, and CSRF policy from `target`.
     *
-    * `mods` may contain individual modifiers or collections of modifiers. The target owns the
-    * transport attributes; directly supplying an `action` or `method` attribute, with any letter
-    * case, is rejected. LiveView bindings and `phx-trigger-action` are not added automatically.
-    *
-    * A checked POST action is marked for CSRF-token injection during Scalive rendering. Checked GET
-    * actions and all [[FormAction.unsafe unsafe]] actions are not marked. Token injection also
-    * requires rendering in a lifecycle with configured CSRF state; this helper alone does not make
-    * a request secure.
-    *
-    * @throws IllegalArgumentException
-    *   if a directly supplied modifier sets `action` or `method`
+    * Caller-supplied `action` or `method` attributes are rejected to keep routing policy coherent.
     */
-  def http[Msg](
-    target: FormAction
-  )(
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
+  def http[Msg](target: FormAction)(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     val flattened = Mod.flatten(mods)
-    val overrides = flattened
-      .flatMap(Form.attributeName)
-      .filter(name => Form.httpAttributes.exists(_.equalsIgnoreCase(name)))
+    val overrides = flattened.flatMap(attributeName).filter { name =>
+      httpAttributes.exists(_.equalsIgnoreCase(name))
+    }
     require(
       overrides.isEmpty,
       s"ordinary HTTP forms own the ${overrides.distinct.mkString(" and ")} attribute"
     )
-
     _root_.scalive.form(
       _root_.scalive.action := target.href,
       _root_.scalive.method := target.method.attributeValue,
-      Option.when(target.protectFromCsrf)(Form.csrfMarker := "true"),
+      Option.when(target.protectFromCsrf)(csrfMarker := "true"),
       flattened
     )
 
-  private def attributeName(mod: Mod[?]): Option[String] =
-    mod match
-      case Mod.Attr.Static(name, _)                       => Some(name)
-      case Mod.Attr.StaticValueAsPresence(name, _)        => Some(name)
-      case Mod.Attr.SignalValue(name, _)                  => Some(name)
-      case Mod.Attr.SignalOptionalValue(name, _)          => Some(name)
-      case Mod.Attr.SignalValueAsPresence(name, _)        => Some(name)
-      case Mod.Attr.CompositeStatic(name, _)              => Some(name)
-      case Mod.Attr.CompositeSignalValue(name, _)         => Some(name)
-      case Mod.Attr.CompositeSignalOptionalValue(name, _) => Some(name)
-      case Mod.Attr.Binding(name, _)                      => Some(name)
-      case Mod.Attr.SignalBinding(name, _, _)             => Some(name)
-      case Mod.Attr.FormBinding(name, _)                  => Some(name)
-      case Mod.Attr.FormEventBinding(name, _, _)          => Some(name)
-      case Mod.Attr.JsBinding(name, _)                    => Some(name)
-      case Mod.Attr.SignalJsBinding(name, _)              => Some(name)
-      case Mod.Attr.RoutedBinding(name, _)                => Some(name)
-      case Mod.Attr.ComponentBinding(name, _, _)          => Some(name)
-      case Mod.Attr.ComponentTarget(_)                    => Some("phx-target")
-      case Mod.Attr.Group(attrs)                          => attrs.flatMap(attributeName).headOption
-      case _: Mod.Content[?]                              => None
-
-  /** Creates a lower-level form from a parsed root name and existing state.
-    *
-    * No decoding or ownership validation occurs until a relevant operation is requested.
-    */
-  def of[A](name: String, state: FormState[A], codec: FormCodec[A]): Form[A] =
-    Form(FormPath.parse(name), state, codec)
-
-  /** Creates a lower-level form from a typed event.
-    *
-    * The event is converted to state without decoding it again.
-    */
-  def of[A](name: String, event: FormEvent[A], codec: FormCodec[A]): Form[A] =
-    of(name, event.state, codec)
-
+  private def attributeName(mod: Mod[?]): Option[String] = mod match
+    case Mod.Attr.Static(name, _)                       => Some(name)
+    case Mod.Attr.StaticValueAsPresence(name, _)        => Some(name)
+    case Mod.Attr.SignalValue(name, _)                  => Some(name)
+    case Mod.Attr.SignalOptionalValue(name, _)          => Some(name)
+    case Mod.Attr.SignalValueAsPresence(name, _)        => Some(name)
+    case Mod.Attr.CompositeStatic(name, _)              => Some(name)
+    case Mod.Attr.CompositeSignalValue(name, _)         => Some(name)
+    case Mod.Attr.CompositeSignalOptionalValue(name, _) => Some(name)
+    case Mod.Attr.Binding(name, _)                      => Some(name)
+    case Mod.Attr.SignalBinding(name, _, _)             => Some(name)
+    case Mod.Attr.FormBinding(name, _)                  => Some(name)
+    case Mod.Attr.FormEventBinding(name, _, _)          => Some(name)
+    case Mod.Attr.TypedFormEventBinding(name, _, _)     => Some(name)
+    case Mod.Attr.JsBinding(name, _)                    => Some(name)
+    case Mod.Attr.SignalJsBinding(name, _)              => Some(name)
+    case Mod.Attr.RoutedBinding(name, _)                => Some(name)
+    case Mod.Attr.ComponentBinding(name, _, _)          => Some(name)
+    case Mod.Attr.ComponentTarget(_)                    => Some("phx-target")
+    case Mod.Attr.Group(attrs)                          => attrs.flatMap(attributeName).headOption
+    case _: Mod.Content[?]                              => None
 end Form
 
-/** Current raw, decoded, validation, and rendering state for one field.
+/** A row-bound field handle safe for keyed programmatic updates.
   *
-  * Obtain a view from [[RootedForm.field]] or [[Form.field]]. A view does not mutate its form. Its
-  * control helpers render the field's derived name, ID, and current raw value, followed by caller
-  * modifiers. Validation display is split between all [[errors]] and interaction-gated
-  * [[visibleErrors]].
-  *
-  * @tparam A
-  *   the decoded field value type
+  * Create one with [[FormRowView.bind]]. Its hidden schema identity prevents applying it to an
+  * unrelated definition, while [[key]] keeps updates independent of row order.
   */
-final class FormFieldView[A] private[scalive] (
-  private val form: Form[?],
-  private val definition: FormField[A],
-  private val legacyPath: Option[FormPath]):
+final class BoundFormField[Owner, Schema, Group, Input, Value] private[scalive] (
+  private[scalive] val schemaIdentity: AnyRef,
+  private[scalive] val rows: RepeatedRows[Owner, Group, ?],
+  val key: FormRowKey[Group],
+  private[scalive] val field: FormField[Group, Input, Value],
+  val address: FormAddress[Owner],
+  val path: FormPath)
 
-  /** The complete rooted field path. */
-  def path: FormPath = definition.path
+/** Current renderable view of one static or row-bound field.
+  *
+  * Rendering reads [[rawValues]], not the decoded result, so malformed user input remains visible.
+  */
+final class FormFieldView[Owner, Input, Value] private[scalive] (
+  private val form: Form[Owner, ?, ?],
+  private val definition: FormField[?, Input, Value],
+  val address: FormAddress[Owner],
+  val path: FormPath):
 
-  /** The browser field name derived from [[path]]. */
-  def name: String = definition.name
+  /** Browser field name derived from [[path]]. */
+  def name: String = path.name
 
-  /** The default DOM ID derived from [[path]]. */
-  def id: String = definition.id
+  /** Stable logical DOM id derived from [[address]]. */
+  def id: String = address.id
 
-  /** The DOM ID used by [[errorFeedback]] and [[validationAttributes]]. */
+  /** DOM id reserved for this field's error feedback container. */
   def errorId: String = s"${id}_errors"
 
-  /** Returns all raw values for this field in submission order.
-    *
-    * Views created from a relative path try the rooted path first and fall back to the exact
-    * relative path only when no rooted values exist. Typed field views read their exact path.
-    */
-  def rawValues: Vector[String] =
-    legacyPath match
-      case Some(relative) =>
-        val fullValues = form.state.raw.values(form.fullPath(relative))
-        if fullValues.nonEmpty then fullValues else form.state.raw.values(relative)
-      case None => form.state.raw.values(path)
+  /** Complete raw value vector retained for rendering and structural decoding. */
+  def rawValues: Vector[String] = definition.scope match
+    case FormFieldScope.Static(_, _) => form.values.static.getOrElse(address, Vector.empty)
+    case FormFieldScope.Row(_, _, _, relative) =>
+      val (groupAddress, key) = FormFieldView.rowLocation(address)
+      form.values.groups
+        .get(groupAddress).flatMap(_.rows.find(_.key == key)).flatMap { row =>
+          row.fields.get(FormDefinition.names(relative))
+        }.getOrElse(Vector.empty)
 
-  /** Returns the last raw value, or the empty string when the field is absent. */
+  /** Conventional scalar control value: the last submitted value, or empty when absent. */
   def fieldValue: String = rawValues.lastOption.getOrElse("")
 
-  /** Decodes this field afresh from the form's complete raw payload. */
-  def decoded: Either[FormErrors, A] = definition.codec.decode(form.state.raw)
+  /** Structurally decoded editable input before semantic refinement. */
+  def input: Either[FieldIssues, Input] = definition.decodeInput(rawValues)
 
-  /** Returns validation errors for this field, even when it has not been used.
-    *
-    * Typed views preserve every error at their exact path. Relative-path views combine rooted and
-    * relative errors and remove duplicates. Use [[visibleErrors]] for interaction-gated
-    * presentation.
-    */
-  def errors: Vector[FormError] =
-    legacyPath.fold(form.state.errors.forPath(path))(form.errorsFor)
+  /** Fully refined field result. */
+  def result: Either[FieldIssues, Value] = definition.decode(rawValues)
 
-  /** Tests whether this field is eligible to show validation errors.
-    *
-    * A field is used when tracked by the current state; every field is used after submission.
-    */
-  def isUsed: Boolean =
-    legacyPath.fold(form.state.isUsed(path))(form.isUsed)
+  /** All errors exactly at this logical address, regardless of visibility. */
+  def errors: Vector[FormError[Owner]] = form.errors.forAddress(address)
 
-  /** Returns [[errors]] only when [[isUsed]] is true. */
-  def visibleErrors: Vector[FormError] =
-    if isUsed then errors else Vector.empty
+  /** Whether browser interaction marked this field as used. */
+  def isUsed: Boolean = form.interaction.isUsed(address)
 
-  /** Tests whether at least one interaction-visible error exists. */
+  /** Errors suitable for display under the current interaction policy. */
+  def visibleErrors: Vector[FormError[Owner]] = if isUsed then errors else Vector.empty
+
+  /** Whether at least one field error is currently visible. */
   def hasVisibleErrors: Boolean = visibleErrors.nonEmpty
 
-  /** Returns accessibility attributes paired with [[errorFeedback]].
-    *
-    * `aria-describedby` always references [[errorId]], allowing a stable relationship across
-    * patches. `aria-invalid="true"` is included only when [[hasVisibleErrors]] is true. Pass these
-    * modifiers to the corresponding control.
-    */
+  /** ARIA attributes linking the control to feedback and exposing visible invalidity. */
   def validationAttributes: Vector[Mod.Attr[Nothing]] =
     Vector(aria.describedby := errorId) ++
       Option.when(hasVisibleErrors)(aria.invalid := "true").toVector
 
-  /** Renders a text input with the default [[id]], [[name]], and [[fieldValue]]. */
+  /** Renders a text input from the retained raw scalar value. */
   def text[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    input(typ := "text", idAttr := id, nameAttr := name, value := fieldValue, Mod.flatten(mods))
-
-  /** Renders a text input with `explicitId`, [[name]], and [[fieldValue]].
-    *
-    * [[errorId]] remains derived from the field's default [[id]].
-    */
-  def text[Msg](
-    explicitId: String,
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
-    input(
+    _root_.scalive.input(
       typ      := "text",
-      idAttr   := explicitId,
+      idAttr   := id,
       nameAttr := name,
       value    := fieldValue,
       Mod.flatten(mods)
     )
 
-  /** Renders an email input with the default ID, name, and current raw value. */
+  /** Renders an email input from the retained raw scalar value. */
   def email[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    input(typ := "email", idAttr := id, nameAttr := name, value := fieldValue, Mod.flatten(mods))
+    _root_.scalive.input(
+      typ      := "email",
+      idAttr   := id,
+      nameAttr := name,
+      value    := fieldValue,
+      Mod.flatten(mods)
+    )
 
-  /** Renders a password input with the default ID, name, and current raw value. */
+  /** Renders a password input from the retained raw scalar value. */
   def password[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    input(typ := "password", idAttr := id, nameAttr := name, value := fieldValue, Mod.flatten(mods))
+    _root_.scalive.input(
+      typ      := "password",
+      idAttr   := id,
+      nameAttr := name,
+      value    := fieldValue,
+      Mod.flatten(mods)
+    )
 
-  /** Renders a hidden input with the default ID, name, and current raw value. */
+  /** Renders a hidden input from the retained raw scalar value. */
   def hidden[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    input(typ := "hidden", idAttr := id, nameAttr := name, value := fieldValue, Mod.flatten(mods))
+    _root_.scalive.input(
+      typ      := "hidden",
+      idAttr   := id,
+      nameAttr := name,
+      value    := fieldValue,
+      Mod.flatten(mods)
+    )
 
-  /** Renders a checkbox whose submitted value is `"true"`. */
-  def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    checkbox("true", Mod.flatten(mods))
+  /** Renders a checkbox whose checked value defaults to `"true"`. */
+  def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] = checkbox("true", mods*)
 
-  /** Renders a checkbox with `checkedValue` as its submitted value.
-    *
-    * The checkbox is checked when [[rawValues]] contains `checkedValue`. No hidden unchecked value
-    * is generated.
-    */
-  def checkbox[Msg](
-    checkedValue: String,
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
-    input(
+  /** Renders a checkbox checked when raw values contain `checkedValue`. */
+  def checkbox[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    _root_.scalive.input(
       typ      := "checkbox",
       idAttr   := id,
       nameAttr := name,
@@ -485,39 +439,29 @@ final class FormFieldView[A] private[scalive] (
       Mod.flatten(mods)
     )
 
-  /** Renders a textarea whose text content is [[fieldValue]]. */
+  /** Renders a textarea from the retained raw scalar value. */
   def textarea[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     Form.textareaTag(idAttr := id, nameAttr := name, Mod.flatten(mods), fieldValue)
 
-  /** Renders a select from `(submittedValue, label)` options.
-    *
-    * Every option whose submitted value occurs in [[rawValues]] is marked selected. Supply ordinary
-    * select modifiers, such as `multiple`, through `mods` when needed.
-    */
-  def select[Msg](
-    options: Iterable[(String, String)],
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
+  /** Renders options and selects every option represented in the retained raw values. */
+  def select[Msg](options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     val selectedValues = rawValues.toSet
     _root_.scalive.select(
       idAttr   := id,
       nameAttr := name,
       Mod.flatten(mods),
       options.map { case (optionValue, label) =>
-        _root_.scalive
-          .option(value := optionValue, selected := selectedValues.contains(optionValue), label)
+        _root_.scalive.option(
+          value    := optionValue,
+          selected := selectedValues.contains(optionValue),
+          label
+        )
       }
     )
 
-  /** Renders interaction-visible errors paired with [[validationAttributes]].
-    *
-    * The wrapper is a `div` with [[errorId]], `phx-feedback-for`, `aria-live="polite"`, and class
-    * `form-errors`. Each visible error is passed to `render` inside a generated `span.form-error`.
-    * Caller modifiers, including content, are appended before the generated error spans. The stable
-    * wrapper remains present when no errors are visible, but caller content is still rendered.
-    */
+  /** Renders only [[visibleErrors]] in an ARIA live feedback container. */
   def errorFeedback(
-    render: FormError => Mod[Nothing],
+    render: FormError[Owner] => Mod[Nothing],
     mods: Mod.Input[Nothing]*
   ): HtmlElement[Nothing] =
     val messages = visibleErrors.map { error =>
@@ -531,35 +475,47 @@ final class FormFieldView[A] private[scalive] (
       Mod.flatten(mods),
       messages
     )
-
-  /** Renders a Phoenix feedback container for this field.
-    *
-    * This lower-level helper sets only `phx-feedback-for` before appending caller modifiers,
-    * including content. It does not generate errors or the accessibility ID supplied by
-    * [[errorFeedback]].
-    */
-  def feedback(mods: Mod.Input[Nothing]*): HtmlElement[Nothing] =
-    div(Form.feedbackFor := name, Mod.flatten(mods))
 end FormFieldView
 
+/** Signal-backed rendering operations for [[FormFieldView]]. */
 object FormFieldView:
-  extension [A](field: Signal[FormFieldView[A]])
-    /** The signal-backed field's complete rooted browser ID. */
+  private[scalive] def apply[Owner, Input, Value](
+    form: Form[Owner, ?, ?],
+    definition: FormField[?, Input, Value],
+    address: FormAddress[Owner],
+    path: FormPath
+  ): FormFieldView[Owner, Input, Value] = new FormFieldView(form, definition, address, path)
+
+  private def rowLocation[Owner](address: FormAddress[Owner]): (FormAddress[Owner], String) =
+    val rowIndex = address.segments.indexWhere(_.isInstanceOf[FormAddressSegment.Row])
+    val key      = address.segments(rowIndex).asInstanceOf[FormAddressSegment.Row].key
+    new FormAddress(address.segments.take(rowIndex)) -> key
+
+  extension [Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])
+    /** Signal of the current stable logical DOM id. */
     def id: Signal[String] = field.map(_.id)
 
-    /** Attributes pairing a signal-backed control with its dynamic error feedback. */
-    def validationAttributes: Vector[Mod.Attr[Nothing]] =
-      Vector(
-        aria.describedby := field.map(_.errorId),
-        aria.invalid.optional(field.map(value => Option.when(value.hasVisibleErrors)("true")))
-      )
+    /** Signal of the current browser field name. */
+    def name: Signal[String] = field.map(_.name)
+
+    /** Signal of the DOM id reserved for the current field's feedback container. */
+    def errorId: Signal[String] = field.map(_.errorId)
+
+    /** Signal indicating whether at least one field error is currently visible. */
+    def hasVisibleErrors: Signal[Boolean] = field.map(_.hasVisibleErrors)
+
+    /** Signal-backed ARIA attributes for the current error visibility. */
+    def validationAttributes: Vector[Mod.Attr[Nothing]] = Vector(
+      aria.describedby := field.errorId,
+      aria.invalid.optional(field.hasVisibleErrors.map(value => Option.when(value)("true")))
+    )
 
     /** Renders a signal-backed text input. */
     def text[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       input(
         typ      := "text",
-        idAttr   := field.map(_.id),
-        nameAttr := field.map(_.name),
+        idAttr   := field.id,
+        nameAttr := field.name,
         value    := field.map(_.fieldValue),
         Mod.flatten(mods)
       )
@@ -568,32 +524,81 @@ object FormFieldView:
     def email[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       input(
         typ      := "email",
-        idAttr   := field.map(_.id),
-        nameAttr := field.map(_.name),
+        idAttr   := field.id,
+        nameAttr := field.name,
         value    := field.map(_.fieldValue),
+        Mod.flatten(mods)
+      )
+
+    /** Renders a signal-backed password input. */
+    def password[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      input(
+        typ      := "password",
+        idAttr   := field.id,
+        nameAttr := field.name,
+        value    := field.map(_.fieldValue),
+        Mod.flatten(mods)
+      )
+
+    /** Renders a signal-backed hidden input. */
+    def hidden[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      input(
+        typ      := "hidden",
+        idAttr   := field.id,
+        nameAttr := field.name,
+        value    := field.map(_.fieldValue),
+        Mod.flatten(mods)
+      )
+
+    /** Renders a signal-backed checkbox whose checked value defaults to `"true"`. */
+    def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] = checkbox("true", mods*)
+
+    /** Renders a signal-backed checkbox checked when raw values contain `checkedValue`. */
+    def checkbox[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      input(
+        typ      := "checkbox",
+        idAttr   := field.id,
+        nameAttr := field.name,
+        value    := checkedValue,
+        checked  := field.map(_.rawValues.contains(checkedValue)),
         Mod.flatten(mods)
       )
 
     /** Renders a signal-backed textarea. */
     def textarea[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       Form.textareaTag(
-        idAttr   := field.map(_.id),
-        nameAttr := field.map(_.name),
+        idAttr   := field.id,
+        nameAttr := field.name,
         Mod.flatten(mods),
         field.map(_.fieldValue)
       )
 
-    /** Renders signal-backed interaction-visible errors with stable accessibility relationships.
-      *
-      * Each retained error signal is passed to `render` inside a generated `span.form-error`.
-      */
+    /** Renders signal-backed options and selects every current raw value. */
+    def select[Msg](
+      options: Iterable[(String, String)],
+      mods: Mod.Input[Msg]*
+    ): HtmlElement[Msg] =
+      _root_.scalive.select(
+        idAttr   := field.id,
+        nameAttr := field.name,
+        Mod.flatten(mods),
+        options.map { case (optionValue, label) =>
+          _root_.scalive.option(
+            value    := optionValue,
+            selected := field.map(_.rawValues.contains(optionValue)),
+            label
+          )
+        }
+      )
+
+    /** Renders signal-backed visible errors in an ARIA live feedback container. */
     def errorFeedback(
-      render: Signal[FormError] => Mod[Nothing],
+      render: Signal[FormError[Owner]] => Mod[Nothing],
       mods: Mod.Input[Nothing]*
     ): HtmlElement[Nothing] =
       div(
-        idAttr           := field.map(_.errorId),
-        Form.feedbackFor := field.map(_.name),
+        idAttr           := field.errorId,
+        Form.feedbackFor := field.name,
         aria.live        := "polite",
         cls              := "form-errors",
         Mod.flatten(mods),
@@ -602,5 +607,105 @@ object FormFieldView:
         }
       )
   end extension
-
 end FormFieldView
+
+/** Current values and validation state for one stable repeated row.
+  *
+  * [[key]] is stable across reordering and scopes field addresses, DOM ids, and mutations.
+  */
+final class FormRowView[Owner, Schema, Group, Row] private[scalive] (
+  private val form: Form[Owner, Schema, ?],
+  private val rows: RepeatedRows[Owner, Group, Row],
+  private val current: CanonicalFormRow):
+
+  /** Stable group-scoped key retained across reordering. */
+  val key: FormRowKey[Group] = FormRowKey.from[Group](current.key).toOption.get
+
+  /** Stable logical address of this keyed row. */
+  val address: FormAddress[Owner] = FormAddress.row(rows.address, current.key)
+
+  /** Decodes this row independently using the repeated-row schema. */
+  def result: Either[FormErrors[Owner], Row] = form.owningDefinition.decodeRow(rows, current)
+
+  /** All errors at or below this row's logical address. */
+  def errors: Vector[FormError[Owner]] = form.errors.below(address)
+
+  /** Row errors whose individual field addresses are currently visible. */
+  def visibleErrors: Vector[FormError[Owner]] =
+    errors.filter(error => form.interaction.isUsed(error.address))
+
+  /** Whether submission or field interaction has made this row relevant to feedback. */
+  def isUsed: Boolean =
+    form.interaction.visibility == ErrorVisibility.All ||
+      form.interaction.used.exists(_.startsWith(address))
+
+  /** Resolves a row-schema field to this keyed row's renderable path and address. */
+  def field[Input, Value](
+    definition: FormField[Group, Input, Value]
+  ): FormFieldView[Owner, Input, Value] =
+    require(rows.typedFields.exists(_ eq definition), "field is not declared by this row schema")
+    val fieldAddress = FormAddress.append(address, FormDefinition.names(definition.relativePath))
+    val path         = FormPath.fromSegments(
+      rows.path.segments ++ Vector(
+        FormPathSegment.Name(current.key)
+      ) ++ definition.relativePath.segments
+    )
+    FormFieldView(form, definition, fieldAddress, path)
+
+  /** Creates a schema- and key-bound handle for [[Form.updated]] or [[Form.updatedRaw]]. */
+  def bind[Input, Value](
+    definition: FormField[Group, Input, Value]
+  ): BoundFormField[Owner, Schema, Group, Input, Value] =
+    val view = field(definition)
+    new BoundFormField(form.values.schemaIdentity, rows, key, definition, view.address, view.path)
+
+  /** Hidden control that preserves row existence and encounter order in core payloads. */
+  def presence[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    val path = FormPath.fromSegments(
+      rows.path.segments ++ Vector(
+        FormPathSegment.Name(current.key),
+        FormPathSegment.Name(FormDefinition.RowPresenceName)
+      )
+    )
+    input(
+      typ      := "hidden",
+      idAttr   := FormAddress.append(address, Vector(FormDefinition.RowPresenceName)).id,
+      nameAttr := path.name,
+      value    := FormDefinition.RowPresenceValue,
+      Mod.flatten(mods)
+    )
+end FormRowView
+
+/** Signal-backed rendering operations for [[FormRowView]]. */
+object FormRowView:
+  extension [Owner, Schema, Group, Row](row: Signal[FormRowView[Owner, Schema, Group, Row]])
+    /** Signal-backed presence control for rows rendered with [[splitBy]]. */
+    def presence[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      input(
+        typ    := "hidden",
+        idAttr := row.map { value =>
+          FormAddress.append(value.address, Vector(FormDefinition.RowPresenceName)).id
+        },
+        nameAttr := row.map { value =>
+          FormPath
+            .fromSegments(
+              value.rows.path.segments ++ Vector(
+                FormPathSegment.Name(value.key.value),
+                FormPathSegment.Name(FormDefinition.RowPresenceName)
+              )
+            ).name
+        },
+        value := FormDefinition.RowPresenceValue,
+        Mod.flatten(mods)
+      )
+
+extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
+  /** Resolves a declared static field for each current form value. */
+  def field[Input, Value](
+    definition: FormField[Owner, Input, Value]
+  ): Signal[FormFieldView[Owner, Input, Value]] = form.map(_.field(definition))
+
+  /** Resolves stable repeated row views for each current form value. */
+  def rows[Group, Row](
+    definition: RepeatedRows[Owner, Group, Row]
+  ): Signal[Vector[FormRowView[Owner, Schema, Group, Row]]] = form.map(_.rows(definition))

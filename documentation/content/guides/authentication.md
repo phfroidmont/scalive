@@ -51,12 +51,19 @@ Render a normal form with @:apiSymbol(def:scalive.Form.http)`Form.http`@:@ and
 decode it in a ZIO HTTP handler with
 @:apiSymbol(def:scalive.HttpFormDecoder.urlEncoded)`HttpFormDecoder.urlEncoded`@:@.
 The decoder applies a byte limit, validates the framework CSRF token, and then
-decodes the rooted `FormCodec`:
+projects the rooted definition. Login only continues for valid domain output, so
+use `urlEncodedValue`:
 
 ```scala
 private val loginDecoder =
-  HttpFormDecoder.urlEncoded(LoginForm.Definition.codec, 4096L, security.csrf)
+  HttpFormDecoder.urlEncodedValue(LoginForm.Definition, 4096L, security.csrf)
 ```
+
+The `urlEncoded(LoginForm.Definition, ...)` variant instead returns a submitted
+`LoginForm.Definition.Form` even when its `result` contains validation errors;
+use that form when an HTTP response will render submitted values and feedback
+again. Both definition-backed variants preserve typed form semantics after the
+same body and CSRF checks.
 
 Return one generic response for incorrect email and password values. Distinguish
 protocol failures such as malformed encoding, an oversized body, or an

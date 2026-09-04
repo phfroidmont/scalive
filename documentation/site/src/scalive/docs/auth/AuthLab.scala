@@ -66,7 +66,7 @@ final class AuthHttpRoutes(security: LiveSecurity):
   )
 
   private val loginDecoder =
-    HttpFormDecoder.urlEncoded(LoginForm.Definition.codec, FormMaxBytes, security.csrf)
+    HttpFormDecoder.urlEncodedValue(LoginForm.Definition, FormMaxBytes, security.csrf)
 
   private val resetDecoder =
     HttpFormDecoder.urlEncoded(FormCodec.formData, FormMaxBytes, security.csrf)

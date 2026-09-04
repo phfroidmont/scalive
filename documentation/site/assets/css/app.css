@@ -4317,6 +4317,170 @@ details[open] > summary .docs-disclosure-marker,
   }
 }
 
+.docs-repeated-contacts,
+.docs-form-workflow {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.docs-repeated-contacts > form,
+.docs-form-workflow > form {
+  display: grid;
+  gap: 1rem;
+}
+
+.docs-contact-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem 1rem;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--docs-border);
+  border-left: 3px solid var(--docs-accent);
+  border-radius: var(--docs-radius);
+}
+
+.docs-contact-row > legend {
+  padding: 0 0.4rem;
+  color: var(--docs-accent-strong);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.docs-contact-row-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.docs-contact-row-actions > button,
+.docs-form-workflow [data-workflow-controls] button {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.docs-contact-row-actions > button:hover,
+.docs-form-workflow [data-workflow-controls] button:hover {
+  border-color: var(--docs-accent);
+  color: var(--docs-accent-strong);
+}
+
+.docs-contact-order,
+.docs-form-workflow > [data-workflow-status] {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: color-mix(in srgb, var(--docs-accent) 5%, var(--docs-surface));
+}
+
+.docs-contact-order h4,
+.docs-contact-order ol,
+.docs-form-workflow > [data-workflow-status] p {
+  margin: 0;
+}
+
+.docs-contact-order ol {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  padding-left: 1.4rem;
+  font-family: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.docs-form-workflow > form {
+  max-width: 34rem;
+}
+
+.docs-form-workflow > form > label {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.docs-form-workflow > form > input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--docs-border);
+  border-radius: var(--docs-radius);
+  background: var(--docs-surface);
+  color: var(--docs-text);
+  font: inherit;
+}
+
+.docs-form-workflow > form > input[aria-invalid="true"] {
+  border-color: var(--docs-error);
+}
+
+.docs-form-workflow > form > .form-errors {
+  min-height: 1.15rem;
+  color: var(--docs-error);
+  font-size: 0.78rem;
+}
+
+.docs-form-workflow > form > button[type="submit"] {
+  justify-self: start;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--docs-action-bg);
+  border-radius: var(--docs-radius);
+  background: var(--docs-action-bg);
+  color: var(--docs-action-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.docs-form-workflow [data-workflow-controls] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.docs-form-workflow [data-workflow-controls] > div {
+  display: contents;
+}
+
+.docs-form-workflow > [data-workflow-status] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 1rem;
+  font-size: 0.82rem;
+}
+
+.docs-form-workflow [data-workflow-notice] {
+  grid-column: 1 / -1;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--docs-border);
+  color: var(--docs-accent-strong);
+  font-weight: 650;
+}
+
+@media (max-width: 42rem) {
+  .docs-contact-row,
+  .docs-form-workflow > [data-workflow-status] {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-contact-row-actions > button,
+  .docs-repeated-contacts > form > .docs-profile-actions > button,
+  .docs-form-workflow [data-workflow-controls] button,
+  .docs-form-workflow > form > button[type="submit"] {
+    width: 100%;
+  }
+}
+
 .docs-text-upload {
   display: grid;
   gap: 1rem;

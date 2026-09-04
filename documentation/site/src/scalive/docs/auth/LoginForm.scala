@@ -12,13 +12,17 @@ object LoginForm:
   val PasswordMaxLength = 1024
 
   val Email = Root
-    .requiredString("email")
-    .validate(s"must be $EmailMaxLength characters or fewer")(_.length <= EmailMaxLength)
+    .text("email")
+    .required()
+    .validate(FieldIssue(s"must be $EmailMaxLength characters or fewer"))(
+      _.length <= EmailMaxLength
+    )
 
   val Password = Root
-    .requiredString("password")
-    .validate(s"must be $PasswordMaxLength characters or fewer")(
+    .text("password")
+    .required()
+    .validate(FieldIssue(s"must be $PasswordMaxLength characters or fewer"))(
       _.length <= PasswordMaxLength
     )
 
-  val Definition = Root.form(LoginCredentials.apply)(Email, Password)
+  val Definition = Root.product[LoginCredentials]((Email, Password))

@@ -1,6 +1,6 @@
 {%
 title = "Typed profile form"
-description = "Rooted fields decode change and submit events with normalization and path-specific validation."
+description = "Schema-owned fields rebuild typed change and submit events with canonical values and logical-address validation."
 order = 4
 section = examples
 %}

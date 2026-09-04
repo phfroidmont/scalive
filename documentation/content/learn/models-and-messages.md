@@ -50,6 +50,9 @@ domain logic uses them. For structured input, use
 @:apiSymbol(class:scalive.FormDefinition)`FormDefinition`@:@ and carry its
 @:apiSymbol(class:scalive.FormEvent)`FormEvent`@:@ in the message; the
 [typed forms guide](../guides/typed-forms-and-validation.md) covers that path.
+Start with the runnable [typed profile form](../examples/profile-form.md), then
+use the guide's repeated-row and workflow examples only when the model needs
+those capabilities.
 
 ## Read The Minimum ZIO Vocabulary {#read-the-minimum-zio-vocabulary}
 

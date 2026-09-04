@@ -89,26 +89,43 @@ not require inline-script permission.
 
 ## Render A Guard {#render-a-guard}
 
-Derive dirty state from the model and add @:apiSymbol(def:scalive.navigation.guardWhen)`navigation.guardWhen`@:@ to the
+Derive dirty state from canonical typed form values and add
+@:apiSymbol(def:scalive.navigation.guardWhen)`navigation.guardWhen`@:@ to the
 element which owns it:
 
 ```scala
-final case class Model(note: String, savedNote: String):
-  def isDirty: Boolean = note != savedNote
+final case class Note(value: String)
+
+object NoteForm:
+  val Root       = FormRoot("note")
+  val NoteText   = Root.text("value")
+  val Definition = Root.product[Note]((NoteText,))
+
+final case class Model(
+  form: NoteForm.Definition.Form,
+  baseline: NoteForm.Definition.Values
+):
+  def isDirty: Boolean = form.values != baseline
 
 enum Msg:
-  case Validate(event: FormEvent[FormData])
-  case Save
+  case Validate(event: NoteForm.Definition.Event)
+  case Save(event: NoteForm.Definition.Event)
 
 def handleMessage(model: Model, ctx: MessageContext) =
   case Msg.Validate(event) =>
-    val note = event.raw.string("note").getOrElse("")
-    ZIO.succeed(model.copy(note = note))
-  case Msg.Save =>
-    saveNote(model.note).as(model.copy(savedNote = model.note))
+    ZIO.succeed(model.copy(form = event.form))
+  case Msg.Save(event) =>
+    event.form.result match
+      case Right(note) =>
+        saveNote(note.value).as(
+          model.copy(form = event.form, baseline = event.form.values)
+        )
+      case Left(_) =>
+        ZIO.succeed(model.copy(form = event.form))
 
 override def view(model: Signal[Model]) =
-  val note = model.map(_.note)
+  val noteForm  = model.map(_.form)
+  val noteField = noteForm.field(NoteForm.NoteText)
 
   form(
     idAttr := "note-form",
@@ -116,18 +133,22 @@ override def view(model: Signal[Model]) =
       dirty = model.map(_.isDirty),
       message = "Discard unsaved changes?"
     ),
-    on.change.form(FormCodec.formData)(Msg.Validate(_)),
-    on.submit(Msg.Save),
-    label(forId := "note-input", "Note"),
-    input(idAttr := "note-input", nameAttr := "note", value := note),
+    NoteForm.Definition.onChange(Msg.Validate(_)),
+    NoteForm.Definition.onSubmit(Msg.Save(_)),
+    label(forId := noteField.id, "Note"),
+    noteField.text(noteField.validationAttributes),
     button(typ := "submit", "Save")
   )
 ```
 
 Here `saveNote: String => Task[Unit]` is the application's persistence operation.
-Because `as` updates `savedNote` only after that effect succeeds, a failed save
-leaves the guard active. A reset or deliberate discard should likewise update
-the model back to its clean baseline.
+Because `as` advances the `FormValues` baseline only after that effect succeeds,
+a failed save leaves the guard active. Construct the initial baseline from
+`val form = NoteForm.Definition.initial(...)` and `form.values`. A reset or
+deliberate discard should likewise replace the form from that baseline. For
+screens that need reset and stale-save handling together, use
+`NoteForm.Definition.workflow(form)` and derive dirty state from
+`workflow.isDirty`.
 
 The marker is absent while clean and contains the confirmation message while
 dirty. A blank message is rejected. If several guards are active, the first one

@@ -2,5 +2,31 @@
   "repositoryUrl": "https://github.com/phfroidmont/scalive",
   "domTypesVersion": "19.0.0",
   "domGeneratorPath": "DomDefsGenerator.mill",
-  "summaries": {}
+  "summaries": {
+    "class:scalive.FormEventMeta": "Logical target plus the original browser path, submitter, metadata, and diagnostics for a typed form event.",
+    "class:scalive.FormLimits": "Resource bounds applied while projecting untrusted payloads into semantic form values.",
+    "class:scalive.FormSubmitter": "Name and value of the successful control used to submit a form.",
+    "class:scalive.HttpFormDecoder": "Bounded decoder for CSRF-protected, URL-encoded ordinary HTTP forms.",
+    "def:scalive.HttpFormDecoder.Error.code": "Returns a stable low-cardinality rejection code for logs and metrics.",
+    "def:scalive.HttpFormDecoder.Error.toResponse": "Maps transport and security rejection categories to conservative HTTP responses.",
+    "def:scalive.HttpFormDecoder.decode": "Bounds and decodes a URL-encoded body, validates CSRF, then applies form decoding.",
+    "def:scalive.HttpFormDecoder.respond": "Runs decoded handling and centralizes conservative rejection responses.",
+    "def:scalive.HttpFormDecoder.urlEncoded": "Builds a bounded CSRF-protected decoder for a typed definition or low-level codec.",
+    "def:scalive.HttpFormDecoder.urlEncodedValue": "Builds a decoder that requires a valid typed domain value.",
+    "enum:scalive.HttpFormDecoder.Error": "Typed body, representation, CSRF, and validation rejection categories.",
+    "object:scalive.HttpFormDecoder": "Constructors and typed rejection categories for ordinary HTTP form decoders.",
+    "val:scalive.FormData.raw": "Every submitted textual name-value pair in original encounter order, including duplicates.",
+    "val:scalive.FormEventMeta.browserTarget": "Original protocol-level form path, including compatibility-layer spelling.",
+    "val:scalive.FormEventMeta.diagnostics": "Non-fatal target and compatibility translation diagnostics.",
+    "val:scalive.FormEventMeta.metadata": "Additional event metadata supplied by the client protocol.",
+    "val:scalive.FormEventMeta.submitter": "Submit control metadata supplied by the client protocol, when available.",
+    "val:scalive.FormEventMeta.target": "Definition-resolved stable logical address of the changed field, when available.",
+    "val:scalive.FormLimits.maxErrors": "Maximum number of projection and validation errors retained for one event.",
+    "val:scalive.FormLimits.maxPathDepth": "Maximum accepted nesting depth for one submitted form path.",
+    "val:scalive.FormLimits.maxRowsPerGroup": "Maximum number of repeated rows retained in one group.",
+    "val:scalive.FormLimits.maxSegmentLength": "Maximum accepted character length for one form-path segment.",
+    "val:scalive.FormLimits.maxValuesPerField": "Maximum number of raw values retained for one declared field.",
+    "val:scalive.FormSubmitter.name": "Browser name of the successful submit control.",
+    "val:scalive.FormSubmitter.value": "Browser value of the successful submit control."
+  }
 }

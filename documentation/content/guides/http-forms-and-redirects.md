@@ -114,13 +114,19 @@ forwarding headers.
 
 ## Decode A Bounded POST Body {#decode-a-bounded-post-body}
 
-Build one reusable decoder from the same typed codec used by the form:
+Build one reusable decoder from the same typed definition used by the form:
 
 ```scala
 private val FormMaxBytes = 4096L
 
-private val loginDecoder = HttpFormDecoder.urlEncoded(
-  LoginForm.Definition.codec,
+private val loginFormDecoder = HttpFormDecoder.urlEncoded(
+  LoginForm.Definition,
+  maxBytes = FormMaxBytes,
+  csrf = security.csrf
+)
+
+private val loginValueDecoder = HttpFormDecoder.urlEncodedValue(
+  LoginForm.Definition,
   maxBytes = FormMaxBytes,
   csrf = security.csrf
 )
@@ -130,7 +136,16 @@ private val loginDecoder = HttpFormDecoder.urlEncoded(
 `application/x-www-form-urlencoded`, honors its declared charset with UTF-8 as
 the default, and reads at most `maxBytes + 1` bytes to detect overflow. It
 preserves duplicate fields in wire order, validates CSRF, and only then runs the
-application `FormCodec`.
+application form projection. Given a `FormDefinition`, `urlEncoded` always
+returns a submitted `Definition.Form` after transport and CSRF checks, even when
+its `result` contains domain validation errors. This is useful when the HTTP
+handler will render the submitted values and visible feedback again.
+
+`urlEncodedValue` instead requires a valid domain result. It returns the decoded
+domain value on success and maps invalid form output to `Error.Validation`.
+Choose it when the handler should run only for valid input. The separate
+`urlEncoded(FormCodec, ...)` overload remains the explicit low-level escape hatch
+for applications intentionally decoding a raw codec rather than a definition.
 
 The decoder does not check the request method or route, authenticate or
 authorize a user, rate-limit requests, sanitize strings, or make an unsafe
@@ -151,7 +166,7 @@ stage succeeds:
 
 ```scala
 private def createSession(request: Request): UIO[Response] =
-  loginDecoder.respond(
+  loginValueDecoder.respond(
     request,
     onValidation = _ => Status.UnprocessableEntity.toResponse,
     onRejected = error => ZIO.logWarning(s"login form rejected code=${error.code}")
@@ -188,15 +203,15 @@ model:
 final case class Model(form: LoginForm.Definition.Form, submitHttp: Boolean = false)
 
 case Msg.Submit(event) =>
-  event.value match
+  event.form.result match
     case Right(_) =>
       ZIO.succeed(model.copy(
-        form = LoginForm.Definition.from(event),
+        form = event.form,
         submitHttp = true
       ))
     case Left(_) =>
       ZIO.succeed(model.copy(
-        form = LoginForm.Definition.from(event),
+        form = event.form,
         submitHttp = false
       ))
 ```
@@ -262,6 +277,6 @@ low-level decoder details.
 ## Related Tasks {#related-tasks}
 
 - Use [Authentication and sessions](authentication.md) for a complete login, cookie, protected mount, and logout workflow.
-- Use [Typed forms and validation](typed-forms-and-validation.md) to define reusable codecs and Live feedback.
+- Return to [Typed forms and validation](typed-forms-and-validation.md#continue-through-input) to define reusable schemas and Live feedback.
 - Use [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md) for flash behavior during Live navigation.
-- Use [Testing](testing.md) to cover CSRF, body bounds, validation mapping, trigger-action, cookies, and redirects.
+- Continue to [Testing](testing.md#query-forms-semantically) to cover CSRF, body bounds, validation mapping, trigger-action, cookies, and redirects.

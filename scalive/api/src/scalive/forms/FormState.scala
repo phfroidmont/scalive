@@ -1,99 +1,67 @@
 package scalive
 
-/** The successful control used to submit a form, when the client reports one.
-  *
-  * @param name
-  *   the submit control's browser field name
-  * @param value
-  *   the submit control's value, which may be empty
-  */
+/** The successful control used to submit a form, when reported by the client. */
 final case class FormSubmitter(name: String, value: String)
 
-/** Decoded form data together with validation visibility state.
-  *
-  * The four-argument case-class constructor is intentionally low-level: it does not verify that
-  * [[value]] was decoded from [[raw]] or that [[used]] agrees with the payload. The three-argument
-  * The three-argument [[FormState.apply apply]] derives used paths from LiveView's `_unused_`
-  * markers and is the usual constructor for received form data.
-  *
-  * @param raw
-  *   the ordered form payload used for rendering raw field values
-  * @param value
-  *   either ordered validation errors or the decoded value
-  * @param used
-  *   exact paths marked used; inspect through [[isUsed]] when rendering validation feedback
-  * @param submitted
-  *   whether the state came from a typed `phx-submit` binding; when true, [[isUsed]] returns true
-  *   for every path, including paths absent from [[used]]
-  * @tparam A
-  *   the successfully decoded form value
-  */
-final case class FormState[+A](
-  raw: FormData,
-  value: Either[FormErrors, A],
-  used: Set[FormPath],
-  submitted: Boolean):
-  /** Whether decoding and validation succeeded. */
-  def isValid: Boolean = value.isRight
+enum ErrorVisibility derives CanEqual:
+  case UsedOnly
+  case All
 
-  /** The decoding errors, or [[FormErrors.empty]] when valid. */
-  def errors: FormErrors = value.left.getOrElse(FormErrors.empty)
+/** Owner-scoped validation visibility, independent of editable form values. */
+final class FormInteraction[Owner] private[scalive] (
+  val used: Set[FormAddress[Owner]],
+  val visibility: ErrorVisibility)
+    derives CanEqual:
 
-  /** The decoded value when valid. */
-  def valueOption: Option[A] = value.toOption
+  def isUsed(address: FormAddress[Owner]): Boolean =
+    visibility == ErrorVisibility.All || used.contains(address)
 
-  /** Whether validation feedback for `path` should be visible.
-    *
-    * Every path is considered used after submission; otherwise membership in [[used]] is exact.
-    */
-  def isUsed(path: FormPath): Boolean =
-    submitted || used.contains(path)
+  private[scalive] def without(prefix: FormAddress[Owner]): FormInteraction[Owner] =
+    FormInteraction(used.filterNot(_.startsWith(prefix)), visibility)
 
-  /** Permissively parses `name`, then checks whether that path is used. */
-  def isUsed(name: String): Boolean =
-    isUsed(FormPath.parse(name))
+  override def equals(other: Any): Boolean = other match
+    case that: FormInteraction[?] => used == that.used && visibility == that.visibility
+    case _                        => false
 
-  /** Returns validation errors at exactly `path`, preserving order. */
-  def errorsFor(path: FormPath): Vector[FormError] =
-    errors.forPath(path)
+  override def hashCode(): Int = used.hashCode() * 31 + visibility.hashCode()
 
-  /** Permissively parses `name`, then returns matching validation errors in order. */
-  def errorsFor(name: String): Vector[FormError] =
-    errors.forName(name)
-end FormState
+object FormInteraction:
+  def pristine[Owner]: FormInteraction[Owner] =
+    new FormInteraction(Set.empty, ErrorVisibility.UsedOnly)
 
-/** Constructors for [[FormState]]. */
-object FormState:
-  /** Creates state and derives its used-path set from the raw payload.
-    *
-    * When `submitted` is false, a final segment such as `_unused_email` marks sibling `email` as
-    * unused and is itself excluded. Other non-empty parsed names are marked used. When `submitted`
-    * is true, marker paths are excluded but no sibling paths are removed; independently,
-    * [[FormState.isUsed]] treats every path as used. Path parsing inherits [[FormPath.parse]]'s
-    * permissive and lossy rules.
-    */
-  def apply[A](raw: FormData, value: Either[FormErrors, A], submitted: Boolean): FormState[A] =
-    FormState(raw, value, usedPaths(raw, submitted), submitted)
+  private[scalive] def apply[Owner](
+    used: Set[FormAddress[Owner]],
+    visibility: ErrorVisibility
+  ): FormInteraction[Owner] = new FormInteraction(used, visibility)
 
-  private def usedPaths(raw: FormData, submitted: Boolean): Set[FormPath] =
-    val parsedPaths = raw.raw.iterator
-      .map(_._1)
-      .map(FormPath.parse)
-      .filter(_.nonEmpty)
-      .toVector
-    val paths = parsedPaths.iterator
-      .filter(path => unusedPath(path).isEmpty)
-      .toSet
+/** Interaction state for an explicitly low-level codec-backed event. */
+final class RawFormState[+A] private[scalive] (
+  val raw: FormData,
+  val value: Either[FormErrors[Any], A],
+  val used: Set[FormPath],
+  val submitted: Boolean):
 
-    if submitted then paths
-    else paths -- parsedPaths.flatMap(unusedPath)
+  def isValid: Boolean                = value.isRight
+  def errors: FormErrors[Any]         = value.left.getOrElse(FormErrors.empty)
+  def valueOption: Option[A]          = value.toOption
+  def isUsed(path: FormPath): Boolean = submitted || used.contains(path)
+  def isUsed(name: String): Boolean   = FormPath.parse(name).exists(isUsed)
+
+private[scalive] object RawFormState:
+  def apply[A](raw: FormData, value: Either[FormErrors[Any], A], submitted: Boolean)
+    : RawFormState[A] =
+    val parsed   = raw.raw.iterator.flatMap(pair => FormPath.parse(pair._1).toOption).toVector
+    val ordinary = parsed.filter(path => RawFormState.unusedPath(path).isEmpty).toSet
+    val used     =
+      if submitted then ordinary
+      else ordinary -- parsed.flatMap(RawFormState.unusedPath)
+    new RawFormState(raw, value, used, submitted)
 
   private def unusedPath(path: FormPath): Option[FormPath] =
     path.segments.lastOption
-      .filter(_.startsWith(unusedPrefix))
-      .map(_.stripPrefix(unusedPrefix))
-      .filter(_.nonEmpty)
-      .map(field => FormPath(path.segments.init :+ field))
-
-  private val unusedPrefix = "_unused_"
-end FormState
+      .collect {
+        case FormPathSegment.Name(value) if value.startsWith("_unused_") =>
+          value.stripPrefix("_unused_")
+      }.filter(_.nonEmpty).map { field =>
+        FormPath.fromSegments(path.segments.init :+ FormPathSegment.Name(field))
+      }

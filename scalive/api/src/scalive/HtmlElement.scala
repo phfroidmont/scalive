@@ -98,7 +98,7 @@ object ComponentDispatch:
 /** Structured browser input supplied to a typed binding operation. */
 private[scalive] enum BindingPayload:
   case Params(values: Map[String, String])
-  case Form(data: FormData, meta: FormEvent.Meta = FormEvent.Meta.empty)
+  case Form(data: FormData, meta: RawFormEvent.Meta = RawFormEvent.Meta.empty)
 
   def params: Map[String, String] = this match
     case Params(values)   => values
@@ -113,10 +113,21 @@ private[scalive] enum BindingPayload:
     case Params(values) => FormData.fromMap(values)
     case Form(data, _)  => data
 
-  def formEvent[A](codec: FormCodec[A], submitted: Boolean): FormEvent[A] = this match
+  def formEvent[A](codec: FormCodec[A], kind: FormEventKind): RawFormEvent[A] = this match
     case Params(values) =>
-      FormEvent.decode(FormData.fromMap(values), codec, submitted, FormEvent.Meta.empty)
-    case Form(data, meta) => FormEvent.decode(data, codec, submitted, meta)
+      RawFormEvent.decode(FormData.fromMap(values), codec, kind, RawFormEvent.Meta.empty)
+    case Form(data, meta) => RawFormEvent.decode(data, codec, kind, meta)
+
+  def typedFormEvent[Event](
+    decode: (FormData, FormEventKind, RawFormEvent.Meta) => Event,
+    kind: FormEventKind
+  ): Event = this match
+    case Params(values)   => decode(FormData.fromMap(values), kind, RawFormEvent.Meta.empty)
+    case Form(data, meta) =>
+      val effectiveKind =
+        if meta.recovery && kind == FormEventKind.Changed then FormEventKind.Recovered else kind
+      decode(data, effectiveKind, meta)
+end BindingPayload
 
 /** Builder for typed server events and declarative browser commands. */
 class HtmlAttrBinding(
@@ -195,8 +206,28 @@ class HtmlAttrBinding(
   def form[Msg](f: FormData => Msg): Mod.Attr[Msg] =
     configured(Mod.Attr.FormBinding(name, f))
 
-  def form[A, Msg](codec: FormCodec[A])(f: FormEvent[A] => Msg): Mod.Attr[Msg] =
+  def form[A, Msg](codec: FormCodec[A])(f: RawFormEvent[A] => Msg): Mod.Attr[Msg] =
     configured(Mod.Attr.FormEventBinding(name, codec, f))
+
+  def form[Owner, Domain, Msg](
+    definition: FormDefinition[Owner, Domain]
+  )(
+    f: definition.Event => Msg
+  ): Mod.Attr[Msg] =
+    configured(
+      Mod.Attr.TypedFormEventBinding(
+        name,
+        (data, kind, meta) => definition.event(data, kind, meta),
+        f
+      )
+    )
+
+  private[scalive] def formWith[Event, Msg](
+    decode: (FormData, FormEventKind, RawFormEvent.Meta) => Event
+  )(
+    f: Event => Msg
+  ): Mod.Attr[Msg] =
+    configured(Mod.Attr.TypedFormEventBinding(name, decode, f))
 
   def withValueOption[Msg](f: Option[String] => Msg): Mod.Attr[Msg] =
     apply(values => f(values.get("value")))
@@ -268,8 +299,14 @@ object Mod:
       signal: Signal[A],
       operation: (A, BindingPayload) => Msg)                        extends Attr[Msg]
     case FormBinding[Msg](name: String, operation: FormData => Msg) extends Attr[Msg]
-    case FormEventBinding[A, Msg](name: String, codec: FormCodec[A], operation: FormEvent[A] => Msg)
-        extends Attr[Msg]
+    case FormEventBinding[A, Msg](
+      name: String,
+      codec: FormCodec[A],
+      operation: RawFormEvent[A] => Msg) extends Attr[Msg]
+    case TypedFormEventBinding[Event, Msg](
+      name: String,
+      decode: (FormData, FormEventKind, RawFormEvent.Meta) => Event,
+      operation: Event => Msg)                                               extends Attr[Msg]
     case JsBinding[Msg](name: String, command: JSCommand[Msg])               extends Attr[Msg]
     case SignalJsBinding[Msg](name: String, command: Signal[JSCommand[Msg]]) extends Attr[Msg]
     case RoutedBinding(name: String, operation: BindingPayload => ComponentDispatch)

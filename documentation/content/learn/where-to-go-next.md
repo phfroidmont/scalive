@@ -45,9 +45,11 @@ Then choose a focused executable slice:
   render, connected mount, and reconnect behavior.
 - [Typed documentation navigation](../examples/navigation.md) for checked route
   destinations and browser history.
-- [Validated profile form](../examples/profile-form.md) and
+- [Validated profile form](../examples/profile-form.md),
+  [stable repeated contact rows](../examples/repeated-contacts-form.md),
+  [form save workflow](../examples/form-save-workflow.md), and
   [bounded text upload](../examples/text-upload.md) for typed input, field
-  errors, and upload ownership.
+  errors, structural edits, persistence coordination, and upload ownership.
 - [Service injection](../examples/service-injection.md),
   [connected lifecycle registration](../examples/connected-resource.md),
   [async report](../examples/async-report.md), and

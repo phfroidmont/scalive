@@ -19,7 +19,12 @@ class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveVie
     ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Change(event) => ZIO.succeed(model.copy(target = event.target.map(_.segments)))
+    case Msg.Change(event) =>
+      val target = event.target.map(_.segments.map {
+        case FormPathSegment.Name(value) => value
+        case FormPathSegment.Array       => ""
+      })
+      ZIO.succeed(model.copy(target = target))
 
   override def view(model: Signal[Model]) =
     div(
@@ -39,7 +44,7 @@ class Issue3719LiveView extends LiveView[Issue3719LiveView.Msg, Issue3719LiveVie
 object Issue3719LiveView:
   final case class Model(target: Option[Vector[String]] = None)
   enum Msg:
-    case Change(event: FormEvent[FormData])
+    case Change(event: RawFormEvent[FormData])
 
 class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveView.Model]:
   import Issue2965LiveView.*
@@ -568,7 +573,7 @@ end Issue3647LiveView
 
 object Issue3647LiveView:
   enum Msg:
-    case ValidateUser(event: FormEvent[FormData])
+    case ValidateUser(event: RawFormEvent[FormData])
     case Validate
     case Progress(entryRef: String)
     case CancelUpload(entry: LiveUploadEntry[Chunk[Byte]])

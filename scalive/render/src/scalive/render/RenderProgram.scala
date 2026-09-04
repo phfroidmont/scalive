@@ -12,6 +12,7 @@ import scalive.BindingPayload
 import scalive.ComponentSpec
 import scalive.Escaping
 import scalive.FlashKind
+import scalive.FormEventKind
 import scalive.HtmlElement
 import scalive.JSCommands.JSCommand
 import scalive.Mod
@@ -116,6 +117,11 @@ final class RenderProgram[Input, Msg] private (
 end RenderProgram
 
 object RenderProgram:
+  private def formEventKind(name: String): FormEventKind = name match
+    case "phx-submit"       => FormEventKind.Submitted
+    case "phx-auto-recover" => FormEventKind.Recovered
+    case _                  => FormEventKind.Changed
+
   /** Compiles `view` exactly once into a structured immutable template program. */
   def compile[Input, Msg](
     view: Signal[Input] => HtmlElement[Msg]
@@ -634,7 +640,22 @@ object RenderProgram:
               name,
               valueSlot,
               BindingId.event(program, bindingSlot),
-              payload => operation(payload.formEvent(codec, submitted = name == "phx-submit"))
+              payload => operation(payload.formEvent(codec, RenderProgram.formEventKind(name)))
+            )
+          )
+        case Mod.Attr.TypedFormEventBinding(name, decode, operation) =>
+          for
+            valueSlot   <- allocator.slot()
+            bindingSlot <- allocator.binding()
+          yield AttributeCandidate.Scalar(
+            AttributeTemplate.Binding(
+              name,
+              valueSlot,
+              BindingId.event(program, bindingSlot),
+              payload =>
+                operation(
+                  payload.typedFormEvent(decode, RenderProgram.formEventKind(name))
+                )
             )
           )
         case Mod.Attr.JsBinding(name, command) =>

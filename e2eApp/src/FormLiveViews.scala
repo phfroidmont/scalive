@@ -157,13 +157,13 @@ object FormLiveView:
   private val phxSubmitAttr      = htmlAttr("phx-submit", StringAsIsEncoder)
 
   enum Msg:
-    case Validate(event: FormEvent[FormData])
-    case Save(event: FormEvent[FormData])
-    case CustomRecovery(event: FormEvent[FormData])
+    case Validate(event: RawFormEvent[FormData])
+    case Save(event: RawFormEvent[FormData])
+    case CustomRecovery(event: RawFormEvent[FormData])
     case ButtonTest
 
-  val EmptyFormEvent: FormEvent[FormData] =
-    FormEvent(FormData.empty, Right(FormData.empty))
+  val EmptyFormEvent: RawFormEvent[FormData] =
+    RawFormEvent.empty(FormData.empty)
 
   final case class Model(
     query: FormQueryParams = FormQueryParams(),
@@ -294,7 +294,7 @@ object FormLiveView:
       submitted: Boolean = false)
 
     enum Msg:
-      case Validate(event: FormEvent[FormData])
+      case Validate(event: RawFormEvent[FormData])
 
     def mount(props: Props, ctx: MountContext) =
       ZIO.succeed(Model(props.query, props.values))
@@ -405,57 +405,70 @@ class FormDynamicInputsLiveView
     ZIO.succeed(model.copy(checkboxes = params.checkboxes))
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate(event) => ZIO.succeed(updateFromEvent(model, event))
-    case Msg.Save(event)     => ZIO.succeed(updateFromEvent(model, event).copy(submitted = true))
+    case Msg.Validate(event) => ZIO.succeed(model.copy(form = event.form))
+    case Msg.Save(event)     => ZIO.succeed(model.copy(form = event.form, submitted = true))
 
   override def view(model: Signal[Model]) =
-    val name       = model.map(_.name)
-    val users      = model.map(_.users)
+    val formState  = model.map(_.form)
+    val name       = formState.field(DynamicInputsForm.Name)
+    val users      = formState.map(_.rows(DynamicInputsForm.UserRows).zipWithIndex)
     val checkboxes = model.map(_.checkboxes)
     val submitted  = model.map(_.submitted)
-
-    val usersSortName = FormPath("my_form", "users_sort").array.name
-    val usersDropName = FormPath("my_form", "users_drop").array.name
 
     div(
       form(
         idAttr := "my-form",
-        on.change.form(DynamicInputsForm.codec)(Msg.Validate(_)),
-        on.submit.form(DynamicInputsForm.codec)(Msg.Save(_)),
+        DynamicInputsForm.Adapter.onChange(Msg.Validate(_)),
+        DynamicInputsForm.Adapter.onSubmit(Msg.Save(_)),
         styleAttr := "display: flex; flex-direction: column; gap: 4px; max-width: 500px;",
         fieldset(
           input(
             typ         := "text",
             idAttr      := "my-form_name",
-            nameAttr    := "my_form[name]",
-            value       := name,
+            nameAttr    := DynamicInputsForm.Name.name,
+            value       := name.map(_.fieldValue),
             placeholder := "name"
           ),
-          users.splitByIndex { (index, user) =>
-            val userName = user.map(_.name)
+          users.splitBy(value => value._1.key) { (_, entry) =>
+            val row      = entry.map(_._1)
+            val index    = entry.map(_._2)
+            val userName = row.map(_.field(DynamicInputsForm.UserName))
             div(
               styleAttr := "padding: 4px; border: 1px solid gray;",
-              input(typ := "hidden", nameAttr := usersSortName, value := index.toString),
               input(
-                typ         := "text",
-                idAttr      := s"my-form_users_${index}_name",
-                nameAttr    := FormPath("my_form", "users", index.toString, "name").name,
-                value       := userName,
+                typ      := "hidden",
+                nameAttr := index.map(DynamicInputsForm.Adapter.persistentIdName),
+                value    := row.map(_.key.value)
+              ),
+              input(
+                typ      := "hidden",
+                nameAttr := DynamicInputsForm.Adapter.sortName,
+                value    := index.map(_.toString)
+              ),
+              input(
+                typ    := "text",
+                idAttr := index.map(
+                  DynamicInputsForm.Adapter.fieldId("my-form", _, DynamicInputsForm.UserName)
+                ),
+                nameAttr := index.map(
+                  DynamicInputsForm.Adapter.fieldName(_, DynamicInputsForm.UserName)
+                ),
+                value       := userName.map(_.fieldValue),
                 placeholder := "name"
               ),
               checkboxes.choose(
                 label(
                   input(
                     typ      := "checkbox",
-                    nameAttr := usersDropName,
-                    value    := index.toString
+                    nameAttr := DynamicInputsForm.Adapter.dropName,
+                    value    := index.map(_.toString)
                   ),
                   " Remove"
                 ),
                 button(
                   typ      := "button",
-                  nameAttr := usersDropName,
-                  value    := index.toString,
+                  nameAttr := DynamicInputsForm.Adapter.dropName,
+                  value    := index.map(_.toString),
                   on.click(JS.dispatch("change")),
                   "Remove"
                 )
@@ -463,15 +476,19 @@ class FormDynamicInputsLiveView
             )
           }
         ),
-        input(typ := "hidden", nameAttr := usersDropName),
+        input(typ := "hidden", nameAttr := DynamicInputsForm.Adapter.dropName),
         checkboxes.choose(
           label(
-            input(typ := "checkbox", nameAttr := usersSortName),
+            input(
+              typ      := "checkbox",
+              nameAttr := DynamicInputsForm.Adapter.sortName,
+              value    := "new"
+            ),
             " add more"
           ),
           button(
             typ      := "button",
-            nameAttr := usersSortName,
+            nameAttr := DynamicInputsForm.Adapter.sortName,
             value    := "new",
             on.click(JS.dispatch("change")),
             "add more"
@@ -484,60 +501,26 @@ class FormDynamicInputsLiveView
 end FormDynamicInputsLiveView
 
 object FormDynamicInputsLiveView:
-  enum Msg:
-    case Validate(event: FormEvent[DynamicInputsForm])
-    case Save(event: FormEvent[DynamicInputsForm])
-
   final case class UserInput(name: String)
-  final case class DynamicInputsForm(
-    name: String,
-    usersSort: Vector[String],
-    usersDrop: Set[String],
-    userNames: Map[String, String])
+  final case class DynamicInputsForm(name: String, users: Vector[UserInput])
 
   object DynamicInputsForm:
-    val codec: FormCodec[DynamicInputsForm] =
-      FormCodec { data =>
-        Right(
-          DynamicInputsForm(
-            name = data.string("my_form[name]").getOrElse(""),
-            usersSort = data.values("my_form[users_sort][]"),
-            usersDrop = data.values("my_form[users_drop][]").filter(_.nonEmpty).toSet,
-            userNames = userNames(data)
-          )
-        )
-      }
+    val Root       = FormRoot("my_form")
+    val Name       = Root.text("name")
+    val Users      = Root.rows("users")
+    val UserName   = Users.text("name")
+    val UserRows   = Users.product[UserInput](Tuple1(UserName))
+    val Definition = Root.product[DynamicInputsForm]((Name, UserRows))
+    val Adapter    = PhoenixNestedParamsAdapter(Definition, UserRows)
 
-    private def userNames(data: FormData): Map[String, String] =
-      val prefix = "my_form[users]["
-      val suffix = "][name]"
-      data.raw.collect {
-        case (key, value) if key.startsWith(prefix) && key.endsWith(suffix) =>
-          key.stripPrefix(prefix).stripSuffix(suffix) -> value
-      }.toMap
+  enum Msg:
+    case Validate(event: DynamicInputsForm.Adapter.Event)
+    case Save(event: DynamicInputsForm.Adapter.Event)
 
   final case class Model(
-    name: String = "",
-    users: Vector[UserInput] = Vector.empty,
+    form: DynamicInputsForm.Definition.Form = DynamicInputsForm.Definition.initial(),
     checkboxes: Boolean = false,
     submitted: Boolean = false)
-
-  private def updateFromEvent(model: Model, event: FormEvent[DynamicInputsForm]): Model =
-    event.value match
-      case Right(data) => updateFromData(model, data)
-      case Left(_)     => model
-
-  private def updateFromData(model: Model, data: DynamicInputsForm): Model =
-    val users =
-      data.usersSort.filterNot(data.usersDrop).foldLeft(Vector.empty[UserInput]) { (acc, key) =>
-        if key == "new" then acc :+ UserInput("")
-        else
-          val value = data.userNames.getOrElse(key, "")
-          acc :+ UserInput(value)
-      }
-    model.copy(name = data.name, users = users)
-
-end FormDynamicInputsLiveView
 
 class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLiveView.Model]:
   import FormStreamLiveView.*
@@ -594,8 +577,8 @@ end FormStreamLiveView
 
 object FormStreamLiveView:
   enum Msg:
-    case Validate(event: FormEvent[FormData])
-    case Save(event: FormEvent[FormData])
+    case Validate(event: RawFormEvent[FormData])
+    case Save(event: RawFormEvent[FormData])
     case Ping
 
   final case class Item(id: Int)
@@ -691,8 +674,8 @@ end FormFeedbackLiveView
 
 object FormFeedbackLiveView:
   enum Msg:
-    case Validate(event: FormEvent[FormData])
-    case Submit(event: FormEvent[FormData])
+    case Validate(event: RawFormEvent[FormData])
+    case Submit(event: RawFormEvent[FormData])
     case Inc
     case Dec
     case ToggleFeedback

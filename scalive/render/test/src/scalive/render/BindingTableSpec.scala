@@ -7,11 +7,18 @@ import scalive.*
 
 object BindingTableSpec extends ZIOSpecDefault:
   private enum FormMsg:
-    case Changed(event: FormEvent[FormData])
-    case Recovered(event: FormEvent[FormData])
+    case Changed(event: RawFormEvent[FormData])
+    case Recovered(event: RawFormEvent[FormData])
 
   private enum RowFormMsg:
-    case Changed(row: String, event: FormEvent[FormData])
+    case Changed(row: String, event: RawFormEvent[FormData])
+
+  private final case class TypedData(name: String)
+  private val TypedRoot       = FormRoot("typed")
+  private val TypedName       = TypedRoot.text("name")
+  private val TypedDefinition = TypedRoot.product[TypedData](Tuple1(TypedName))
+  private enum TypedFormMsg:
+    case Received(event: TypedDefinition.Event)
 
   override def spec = suite("BindingTableSpec")(
     test("rejects every duplicate binding insertion") {
@@ -116,7 +123,7 @@ object BindingTableSpec extends ZIOSpecDefault:
       }
 
       val recoveredData = FormData.fromMap(Map("note" -> "draft"))
-      val payload       = BindingPayload.Form(recoveredData, FormEvent.Meta(recovery = true))
+      val payload       = BindingPayload.Form(recoveredData, RawFormEvent.Meta(recovery = true))
 
       for
         firstProgram  <- ZIO.fromEither(compile)
@@ -159,7 +166,7 @@ object BindingTableSpec extends ZIOSpecDefault:
       }
 
       val recoveredData = FormData.fromMap(Map("note" -> "draft"))
-      val payload       = BindingPayload.Form(recoveredData, FormEvent.Meta(recovery = true))
+      val payload       = BindingPayload.Form(recoveredData, RawFormEvent.Meta(recovery = true))
 
       for
         firstProgram  <- ZIO.fromEither(compile)
@@ -175,6 +182,36 @@ object BindingTableSpec extends ZIOSpecDefault:
                             case _ => false
                           }
       yield assertTrue(firstChange == secondChange, changeRecovered)
+    },
+    test("classifies definition-backed automatic recovery as a recovered event") {
+      val compiled = RenderProgram.compile[Unit, TypedFormMsg] { _ =>
+        form(idAttr := "typed-form", TypedDefinition.onChange(TypedFormMsg.Received(_)))
+      }
+      val data = FormData(Vector(TypedName.name -> "Ada"))
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(())
+        changeId = bindingAttribute(candidate, "phx-change")
+        recoverId = bindingAttribute(candidate, "phx-auto-recover")
+        changed = candidate.bindings.resolve(changeId).map(
+                    _.dispatch(BindingPayload.Form(data, RawFormEvent.Meta(recovery = true)))
+                  )
+        recovered = candidate.bindings.resolve(recoverId).map(
+                      _.dispatch(BindingPayload.Form(data))
+                    )
+      yield assertTrue(
+        changed.exists {
+          case Right(BindingDispatch.Owner(TypedFormMsg.Received(event))) =>
+            event.kind == FormEventKind.Recovered
+          case _ => false
+        },
+        recovered.exists {
+          case Right(BindingDispatch.Owner(TypedFormMsg.Received(event))) =>
+            event.kind == FormEventKind.Recovered && event.form.valueOption.contains(TypedData("Ada"))
+          case _ => false
+        }
+      )
     },
     test("does not reuse form change bindings across different form ids") {
       def compile(formId: String) = RenderProgram.compile[Unit, Int] { _ =>

@@ -278,6 +278,50 @@ Actions return a @:apiSymbol(enum:scalive.testing.ConnectedAction)`ConnectedActi
 | @:apiSymbol(enum:scalive.testing.ConnectedAction.Redirect)`Redirect(to)`@:@ | A full redirect was emitted and the in-process transport closed. |
 | @:apiSymbol(val:scalive.testing.ConnectedAction.Disconnected)`Disconnected`@:@ | The transport closed before the correlated reply arrived. |
 
+### Test Typed Form Behavior {#test-typed-form-behavior}
+
+Use `changeForm` with a target and `_unused_*` markers to verify field-local
+feedback. Use `submitForm` without unused markers to verify that submission
+reveals all errors and produces a domain value only when valid. Query the
+committed HTML after each action rather than asserting against an independently
+decoded form:
+
+```scala
+for
+  view <- ConnectedRender.join(ProfileLiveView())
+  _ <- view.changeForm(
+         "#profile-form",
+         Vector(
+           Profile.Name.name        -> "",
+           "profile[_unused_email]" -> "",
+           Profile.Email.name       -> ""
+         ),
+         target = Some(Profile.Name.name)
+       )
+  changed <- view.html
+  _ <- view.submitForm(
+         "#profile-form",
+         Vector(Profile.Name.name -> "", Profile.Email.name -> "invalid")
+       )
+  submitted <- view.html
+yield assertTrue(
+  changed.contains("Name is required"),
+  !changed.contains("Enter a valid email"),
+  submitted.contains("Enter a valid email")
+)
+```
+
+Repeated forms must submit every row's presence control along with its fields.
+Exercise add, remove, and reorder controls through the connected view, then
+assert stable row keys rather than display indexes. The
+[repeated contacts example](../examples/repeated-contacts-form.md) demonstrates
+the complete interaction. An isolated `ConnectedView` is enough for ordinary
+change and submit behavior. `ConnectedClient.reconnect` proves server-side
+transport admission and lifecycle behavior, but it does not run Phoenix
+JavaScript or replay browser form values. Verify automatic form recovery in a
+[browser test](#test-in-a-browser), or dispatch an explicit recovery payload at
+a lower protocol boundary when that protocol behavior is the claim.
+
 A `LiveNavigation` contains a
 @:apiSymbol(class:scalive.testing.ConnectedNavigation)`ConnectedNavigation`@:@.
 Inspect its

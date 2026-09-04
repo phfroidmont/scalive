@@ -28,9 +28,9 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
 
   private def signaturesHideSyntheticParents(symbols: Vector[ApiSymbol]): Boolean =
     symbols.iterator.flatMap(_.signatures).forall { signature =>
-      !signature.signature.contains("reflect.Enum") &&
-      !signature.signature.contains("Mirror.Sum") &&
-      !signature.signature.contains("Mirror.Product")
+      !signature.signature.contains("extends reflect.Enum") &&
+      !signature.signature.contains("extends deriving.Mirror.Sum") &&
+      !signature.signature.contains("extends deriving.Mirror.Product")
     }
 
   private def symbolIdsAreUnique(symbols: Vector[ApiSymbol]): Boolean =
@@ -80,17 +80,16 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
     .takeWhile(_ != null)
     .find(path => Files.isRegularFile(path.resolve("build.mill")))
     .getOrElse(throw IllegalStateException("Unable to locate the repository root."))
+  private val apiSettings = ApiReferenceFiles
+    .loadSettings(repositoryRoot.resolve("documentation/pipeline/api/reference.json"))
+    .fold(error => throw IllegalStateException(error.message), identity)
 
   private val config = ApiReferenceConfig(
     repositoryRoot,
     targetRoots,
     dependencyClasspath,
-    ApiReferenceMetadata(
-      "https://github.com/phfroidmont/scalive",
-      "0123456789abcdef0123456789abcdef01234567",
-      "18.1.0",
-      "DomDefsGenerator.mill"
-    )
+    apiSettings.metadata("0123456789abcdef0123456789abcdef01234567"),
+    curatedSummaries = apiSettings.summaries
   )
   private lazy val result  = ApiReferencePipeline.generate(config)
   private lazy val symbols = result.toOption.toVector.flatMap(_.symbols)
@@ -188,6 +187,137 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         symbols.forall(_.summary.nonEmpty)
       )
     },
+    test("keeps the public Forms entry points explicitly documented") {
+      val required = Set(
+        "scalive.FieldInput",
+        "scalive.FieldInput.apply",
+        "scalive.FieldInput.text",
+        "scalive.Form",
+        "scalive.Form.added",
+        "scalive.Form.field",
+        "scalive.Form.movedBefore",
+        "scalive.Form.onChange",
+        "scalive.Form.rows",
+        "scalive.Form.updatedRaw",
+        "scalive.FormAddress",
+        "scalive.FormCodec",
+        "scalive.FormCodec.requiredString",
+        "scalive.FormData",
+        "scalive.FormData.get",
+        "scalive.FormData.raw",
+        "scalive.FormData.values",
+        "scalive.FormDefinition",
+        "scalive.FormDefinition.emap",
+        "scalive.FormDefinition.event",
+        "scalive.FormDefinition.initial",
+        "scalive.FormDefinition.withLimits",
+        "scalive.FormDefinition.workflow",
+        "scalive.FormEvent",
+        "scalive.FormEventMeta",
+        "scalive.FormEventMeta.browserTarget",
+        "scalive.FormEventMeta.diagnostics",
+        "scalive.FormEventMeta.metadata",
+        "scalive.FormEventMeta.submitter",
+        "scalive.FormEventMeta.target",
+        "scalive.FormField",
+        "scalive.FormField.emap",
+        "scalive.FormField.initial",
+        "scalive.FormField.required",
+        "scalive.FormField.validate",
+        "scalive.FormFieldView",
+        "scalive.FormFieldView.checkbox",
+        "scalive.FormFieldView.email",
+        "scalive.FormFieldView.errorFeedback",
+        "scalive.FormFieldView.hasVisibleErrors",
+        "scalive.FormFieldView.hidden",
+        "scalive.FormFieldView.password",
+        "scalive.FormFieldView.select",
+        "scalive.FormFieldView.text",
+        "scalive.FormFieldView.textarea",
+        "scalive.FormFieldView.validationAttributes",
+        "scalive.FormLimits",
+        "scalive.FormPath",
+        "scalive.FormRoot",
+        "scalive.FormRoot.field",
+        "scalive.FormRoot.optionalText",
+        "scalive.FormRoot.product",
+        "scalive.FormRoot.rows",
+        "scalive.FormRoot.text",
+        "scalive.FormRoot.texts",
+        "scalive.FormRowKey",
+        "scalive.FormRowKey.from",
+        "scalive.FormRowView.address",
+        "scalive.FormRowView.bind",
+        "scalive.FormRowView.field",
+        "scalive.FormRowView.isUsed",
+        "scalive.FormRowView.key",
+        "scalive.FormRowView.presence",
+        "scalive.FormSubmitter",
+        "scalive.FormWorkflow",
+        "scalive.FormWorkflow.beginSave",
+        "scalive.FormWorkflow.isDirty",
+        "scalive.FormWorkflow.reset",
+        "scalive.FormWorkflow.saveCancelled",
+        "scalive.FormWorkflow.saveFailed",
+        "scalive.FormWorkflow.saveSucceeded",
+        "scalive.FormWorkflow.updated",
+        "scalive.HttpFormDecoder",
+        "scalive.HttpFormDecoder.Error",
+        "scalive.HttpFormDecoder.decode",
+        "scalive.HttpFormDecoder.respond",
+        "scalive.HttpFormDecoder.urlEncoded",
+        "scalive.HttpFormDecoder.urlEncodedValue",
+        "scalive.PhoenixNestedParamsAdapter",
+        "scalive.PhoenixNestedParamsAdapter.configured",
+        "scalive.PhoenixNestedParamsAdapter.fieldName",
+        "scalive.PhoenixNestedParamsAdapter.persistentId",
+        "scalive.PhoenixNestedParamsAdapter.sortControl",
+        "scalive.RepeatedGroup",
+        "scalive.RepeatedGroup.field",
+        "scalive.RepeatedGroup.optionalText",
+        "scalive.RepeatedGroup.product",
+        "scalive.RepeatedGroup.text",
+        "scalive.RepeatedGroup.texts",
+        "scalive.RepeatedRows",
+        "scalive.RepeatedRows.initial",
+        "scalive.RepeatedRows.row",
+        "scalive.RawFormEvent"
+      )
+      val requiredExtensions = Set(
+        "extension:scalive.FormFieldView.checkbox",
+        "extension:scalive.FormFieldView.email",
+        "extension:scalive.FormFieldView.errorFeedback",
+        "extension:scalive.FormFieldView.errorId",
+        "extension:scalive.FormFieldView.hasVisibleErrors",
+        "extension:scalive.FormFieldView.hidden",
+        "extension:scalive.FormFieldView.id",
+        "extension:scalive.FormFieldView.name",
+        "extension:scalive.FormFieldView.password",
+        "extension:scalive.FormFieldView.select",
+        "extension:scalive.FormFieldView.text",
+        "extension:scalive.FormFieldView.textarea",
+        "extension:scalive.FormFieldView.validationAttributes",
+        "extension:scalive.FormRowView.presence"
+      )
+      val forms      = symbols.filter(symbol => required(symbol.qualifiedName))
+      val extensions = symbols.filter(symbol => requiredExtensions(symbol.id))
+      val curated    = config.curatedSummaries.keySet
+      def deliberatelyCurated(symbol: ApiSymbol): Boolean =
+        val expectedSignatures =
+          if symbol.id == "def:scalive.HttpFormDecoder.urlEncoded" then 2 else 1
+        curated(symbol.id) && symbol.signatures.size == expectedSignatures
+      val undocumented = (forms ++ extensions).distinct.filterNot(symbol =>
+        symbol.signatures.forall(_.documentation.nonEmpty) ||
+          deliberatelyCurated(symbol)
+      )
+
+      assertTrue(
+        result.isRight,
+        forms.map(_.qualifiedName).toSet == required,
+        extensions.map(_.id).toSet == requiredExtensions,
+        undocumented.map(_.qualifiedName).isEmpty
+      )
+    },
     test("exposes parameterless and parameterized enum cases") {
       val parameterless = symbols.find(
         _.qualifiedName == "scalive.testing.TastyQueryEnum.Parameterless"
@@ -279,7 +409,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         div.exists(_.summary.nonEmpty),
         div.flatMap(_.signatures.headOption).exists(signature =>
           result.toOption.exists(_.metadata.sourceLink(signature.source).label ==
-            "Generated from Scala DOM Types 18.1.0")
+            s"Generated from Scala DOM Types ${apiSettings.domTypesVersion}")
         ),
         liveView.flatMap(_.signatures.headOption).exists(signature =>
           result.toOption.exists(_.metadata.sourceLink(signature.source).url.contains(

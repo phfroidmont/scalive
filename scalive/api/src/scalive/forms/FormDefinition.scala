@@ -1,591 +1,689 @@
 package scalive
 
-/** Defines one form root and owns the fields, codecs, initial values, and forms created from it.
+import scala.collection.mutable
+import scala.deriving.Mirror
+
+/** Resource bounds applied while projecting untrusted payloads into semantic values.
   *
-  * Keep a root in a stable `val`, for example `val Profile = FormRoot("profile")`. The aliases on
-  * that value capture its singleton type, so Scala rejects fields, codecs, and initial values from
-  * every other root, including a different [[FormRoot]] with the same runtime path.
-  *
-  * Field paths passed to this root are relative. Their rendered names and IDs include [[path]].
-  *
-  * @param path
-  *   the non-empty path prepended to every field owned by this root
+  * These limits bound accepted structure and accumulated errors; the original [[FormEvent.data]]
+  * remains available for diagnostics.
   */
-final class FormRoot private (val path: FormPath):
-  self =>
+final case class FormLimits(
+  maxPathDepth: Int = 32,
+  maxSegmentLength: Int = 256,
+  maxValuesPerField: Int = 128,
+  maxRowsPerGroup: Int = 256,
+  maxErrors: Int = 256):
+  require(maxPathDepth > 0, "maxPathDepth must be positive")
+  require(maxSegmentLength > 0, "maxSegmentLength must be positive")
+  require(maxValuesPerField > 0, "maxValuesPerField must be positive")
+  require(maxRowsPerGroup > 0, "maxRowsPerGroup must be positive")
+  require(maxErrors > 0, "maxErrors must be positive")
 
-  /** A field whose owner is this exact root value. */
-  type Field[A] = RootedFormField[self.type, A]
+final private[scalive] case class CanonicalFormRow(
+  key: String,
+  fields: Map[Vector[String], Vector[String]])
 
-  /** A codec composed exclusively from fields owned by this exact root value. */
-  type Codec[A] = RootedFormCodec[self.type, A]
+final private[scalive] case class CanonicalFormGroup(rows: Vector[CanonicalFormRow])
 
-  /** An initial field value owned by this exact root value. */
-  type InitialValue = FormInitialValue[self.type]
-
-  /** Defines a field decoded from all submitted values at a relative path.
-    *
-    * `decode` receives an empty vector when the field is absent and preserves duplicate values in
-    * submission order. Validation errors returned by it should normally use the resulting
-    * [[RootedFormField.path field path]].
-    *
-    * @param path
-    *   a non-empty path relative to this root
-    * @param decode
-    *   the field decoder
-    * @throws IllegalArgumentException
-    *   if `path` parses to an empty form path
-    */
-  def field[A](
-    path: String
-  )(
-    decode: Vector[String] => Either[FormErrors, A]
-  ): Field[A] =
-    RootedFormField(FormField(fullPath(path))(decode))
-
-  /** Defines a scalar string field at a relative path.
-    *
-    * An absent field decodes to the empty string. Exactly one submitted value is accepted; two or
-    * more produce `duplicateMessage`.
-    *
-    * @param path
-    *   a non-empty path relative to this root
-    * @param duplicateMessage
-    *   the error message used for duplicate values
-    * @throws IllegalArgumentException
-    *   if `path` parses to an empty form path
-    */
-  def string(
-    path: String,
-    duplicateMessage: String = "must be submitted at most once"
-  ): Field[String] =
-    RootedFormField(FormField.string(fullPath(path), duplicateMessage))
-
-  /** Defines a non-empty scalar string field at a relative path.
-    *
-    * Missing and empty values produce `blankMessage`. Duplicate values produce `duplicateMessage`.
-    *
-    * @param path
-    *   a non-empty path relative to this root
-    * @param blankMessage
-    *   the error message used for a missing or empty value
-    * @param duplicateMessage
-    *   the error message used for duplicate values
-    * @throws IllegalArgumentException
-    *   if `path` parses to an empty form path
-    */
-  def requiredString(
-    path: String,
-    blankMessage: String = "can't be blank",
-    duplicateMessage: String = "must be submitted exactly once"
-  ): Field[String] =
-    RootedFormField(FormField.requiredString(fullPath(path), blankMessage, duplicateMessage))
-
-  /** Defines an optional scalar string field at a relative path.
-    *
-    * Missing and empty values decode to `None`; one non-empty value decodes to `Some(value)`.
-    * Duplicate values produce `duplicateMessage`.
-    *
-    * @param path
-    *   a non-empty path relative to this root
-    * @param duplicateMessage
-    *   the error message used for duplicate values
-    * @throws IllegalArgumentException
-    *   if `path` parses to an empty form path
-    */
-  def optionalString(
-    path: String,
-    duplicateMessage: String = "must be submitted at most once"
-  ): Field[Option[String]] =
-    RootedFormField(FormField.optionalString(fullPath(path), duplicateMessage))
-
-  /** Defines a repeated string field that preserves every value in submission order.
-    *
-    * An absent field decodes to an empty vector.
-    *
-    * @param path
-    *   a non-empty path relative to this root
-    * @throws IllegalArgumentException
-    *   if `path` parses to an empty form path
-    */
-  def strings(path: String): Field[Vector[String]] =
-    RootedFormField(FormField.strings(fullPath(path)))
-
-  /** Builds a form definition from a codec owned by this root.
-    *
-    * The owner type prevents combining this root with a codec from another [[FormRoot]].
-    *
-    * @param codec
-    *   the codec that decodes the complete form value
-    */
-  def form[A](codec: Codec[A]): FormDefinition[self.type, A] =
-    FormDefinition(path, codec.underlying)
-
-  /** Builds a form definition from one owned field and a result constructor.
-    *
-    * @param construct
-    *   creates the form value from the decoded field
-    * @param field1
-    *   the first field, owned by this root
-    */
-  def form[A1, Result](construct: A1 => Result)(field1: Field[A1])
-    : FormDefinition[self.type, Result] =
-    form(field1.codec.map(construct))
-
-  /** Builds a form definition from two owned fields and a result constructor.
-    *
-    * All field decoders run, and errors from both fields are accumulated in field order.
-    *
-    * @param construct
-    *   creates the form value from the decoded fields
-    * @param field1
-    *   the first field, owned by this root
-    * @param field2
-    *   the second field, owned by this root
-    */
-  def form[A1, A2, Result](
-    construct: (A1, A2) => Result
-  )(
-    field1: Field[A1],
-    field2: Field[A2]
-  ): FormDefinition[self.type, Result] =
-    form(field1.codec.zip(field2.codec).map(construct.tupled))
-
-  /** Builds a form definition from three owned fields and a result constructor.
-    *
-    * All field decoders run, and their errors are accumulated in field order.
-    *
-    * @param construct
-    *   creates the form value from the decoded fields
-    * @param field1
-    *   the first field, owned by this root
-    * @param field2
-    *   the second field, owned by this root
-    * @param field3
-    *   the third field, owned by this root
-    */
-  def form[A1, A2, A3, Result](
-    construct: (A1, A2, A3) => Result
-  )(
-    field1: Field[A1],
-    field2: Field[A2],
-    field3: Field[A3]
-  ): FormDefinition[self.type, Result] =
-    form(
-      field1.codec.zip(field2.codec).zip(field3.codec).map { case ((value1, value2), value3) =>
-        construct(value1, value2, value3)
-      }
-    )
-
-  /** Builds a form definition from four owned fields and a result constructor.
-    *
-    * All field decoders run, and their errors are accumulated in field order.
-    *
-    * @param construct
-    *   creates the form value from the decoded fields
-    * @param field1
-    *   the first field, owned by this root
-    * @param field2
-    *   the second field, owned by this root
-    * @param field3
-    *   the third field, owned by this root
-    * @param field4
-    *   the fourth field, owned by this root
-    */
-  def form[A1, A2, A3, A4, Result](
-    construct: (A1, A2, A3, A4) => Result
-  )(
-    field1: Field[A1],
-    field2: Field[A2],
-    field3: Field[A3],
-    field4: Field[A4]
-  ): FormDefinition[self.type, Result] =
-    form(
-      field1.codec.zip(field2.codec).zip(field3.codec).zip(field4.codec).map {
-        case (((value1, value2), value3), value4) => construct(value1, value2, value3, value4)
-      }
-    )
-
-  /** Builds a form definition from five owned fields and a result constructor.
-    *
-    * All field decoders run, and their errors are accumulated in field order.
-    *
-    * @param construct
-    *   creates the form value from the decoded fields
-    * @param field1
-    *   the first field, owned by this root
-    * @param field2
-    *   the second field, owned by this root
-    * @param field3
-    *   the third field, owned by this root
-    * @param field4
-    *   the fourth field, owned by this root
-    * @param field5
-    *   the fifth field, owned by this root
-    */
-  def form[A1, A2, A3, A4, A5, Result](
-    construct: (A1, A2, A3, A4, A5) => Result
-  )(
-    field1: Field[A1],
-    field2: Field[A2],
-    field3: Field[A3],
-    field4: Field[A4],
-    field5: Field[A5]
-  ): FormDefinition[self.type, Result] =
-    form(
-      field1.codec.zip(field2.codec).zip(field3.codec).zip(field4.codec).zip(field5.codec).map {
-        case ((((value1, value2), value3), value4), value5) =>
-          construct(value1, value2, value3, value4, value5)
-      }
-    )
-
-  private def fullPath(relative: String): FormPath =
-    val parsed = FormPath.parse(relative)
-    require(parsed.nonEmpty, "form field path must not be empty")
-    FormPath(path.segments ++ parsed.segments)
-end FormRoot
-
-/** Creates stable form-root values.
+/** Canonical, metadata-free editable values belonging to one exact form definition.
   *
-  * Assign the result to a stable `val` before declaring fields so its singleton type can enforce
-  * ownership throughout the rooted form API.
+  * The `Schema` parameter is the definition's path-dependent singleton type. Values cannot be
+  * safely reused with another definition, even one declaring identical paths.
   */
-object FormRoot:
-  /** Creates a form root from a non-empty browser field name.
-    *
-    * Nested syntax such as `profile[address]` is parsed as a [[FormPath]].
-    *
-    * @param name
-    *   the root browser name
-    * @throws IllegalArgumentException
-    *   if `name` parses to an empty form path
-    */
-  def apply(name: String): FormRoot =
-    val path = FormPath.parse(name)
-    require(path.nonEmpty, "form root must not be empty")
-    new FormRoot(path)
+final class FormValues[Owner, Schema] private[scalive] (
+  private[scalive] val schemaIdentity: AnyRef,
+  private[scalive] val static: Map[FormAddress[Owner], Vector[String]],
+  private[scalive] val groups: Map[FormAddress[Owner], CanonicalFormGroup]):
 
-/** A form codec carrying the phantom type of the [[FormRoot]] that owns it.
+  override def equals(other: Any): Boolean = other match
+    case that: FormValues[?, ?] =>
+      (schemaIdentity eq that.schemaIdentity) && static == that.static && groups == that.groups
+    case _ => false
+
+  override def hashCode(): Int =
+    System.identityHashCode(schemaIdentity) * 31 * 31 + static.hashCode() * 31 + groups.hashCode()
+
+  override def toString: String = "FormValues(<redacted>)"
+
+final private[scalive] case class FormProjection[Owner, Schema](
+  values: FormValues[Owner, Schema],
+  structuralErrors: Vector[FormError[Owner]],
+  used: Set[FormAddress[Owner]])
+
+/** One coherent schema responsible for projection, validation, events, and rebuilding.
   *
-  * `Owner` has no runtime representation. It prevents codecs from different root values from being
-  * combined accidentally while delegating decoding to an underlying [[FormCodec]].
-  *
-  * @tparam Owner
-  *   the singleton type of the owning root
-  * @tparam A
-  *   the decoded value type
+  * Start with [[FormRoot.product]], then use [[initial]] for server values or [[event]] for an
+  * untrusted browser payload. The path-dependent aliases keep forms, events, snapshots, and
+  * workflows tied to this exact definition instance.
   */
-final class RootedFormCodec[Owner, A] private[scalive] (
-  private[scalive] val underlying: FormCodec[A]):
-  self =>
-
-  /** Maps successful decoded values without changing ownership or validation errors. */
-  def map[B](f: A => B): RootedFormCodec[Owner, B] =
-    RootedFormCodec(self.underlying.map(f))
-
-  /** Validates or transforms a successful value while preserving this codec's owner.
-    *
-    * `f` is not run when the underlying decoder fails.
-    */
-  def emap[B](f: A => Either[FormErrors, B]): RootedFormCodec[Owner, B] =
-    RootedFormCodec(self.underlying.emap(f))
-
-  /** Combines this codec with another codec owned by the same root.
-    *
-    * Both decoders run against the same [[FormData]]. When both fail, the left errors precede the
-    * right errors.
-    */
-  def zip[B](that: RootedFormCodec[Owner, B]): RootedFormCodec[Owner, (A, B)] =
-    RootedFormCodec(self.underlying.zip(that.underlying))
-
-private[scalive] object RootedFormCodec:
-  def apply[Owner, A](codec: FormCodec[A]): RootedFormCodec[Owner, A] =
-    new RootedFormCodec(codec)
-
-/** A form field carrying the phantom type of the [[FormRoot]] that owns it.
-  *
-  * Its path is already rooted. The owner type restricts codec composition, initial values, and
-  * [[RootedForm.field]] access to values created by the same stable root.
-  *
-  * @tparam Owner
-  *   the singleton type of the owning root
-  * @tparam A
-  *   the decoded field type
-  */
-final class RootedFormField[Owner, A] private[scalive] (
-  private[scalive] val underlying: FormField[A]):
-
-  /** The complete field path, including its root. */
-  def path: FormPath = underlying.path
-
-  /** The browser field name derived from [[path]]. */
-  def name: String = underlying.name
-
-  /** The default DOM ID derived from [[path]]. */
-  def id: String = underlying.id
-
-  /** Returns this field's decoder with the same root owner. */
-  def codec: RootedFormCodec[Owner, A] = RootedFormCodec(underlying.codec)
-
-  /** Binds a LiveView `phx-change` event decoded with this field's codec.
-    *
-    * The callback receives a [[FormEvent]] for every change event; decoding failures remain in
-    * `event.value`. The binding does not mutate any existing form state.
-    */
-  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    underlying.onChange(f)
-
-  /** Binds a LiveView `phx-submit` event decoded with this field's codec.
-    *
-    * The resulting event is marked submitted, so a form rebuilt from it treats all fields as used.
-    * Decoding failures remain in `event.value` and still invoke the callback.
-    */
-  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    underlying.onSubmit(f)
-
-  /** Binds a LiveView `phx-auto-recover` event decoded with this field's codec.
-    *
-    * Recovery metadata is exposed through [[FormEvent.recovery]]. Decoding failures remain in
-    * `event.value` and still invoke the callback.
-    */
-  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    underlying.onRecover(f)
-
-  /** Maps successful decoded values while preserving this field's path and owner. */
-  def map[B](f: A => B): RootedFormField[Owner, B] =
-    RootedFormField(underlying.map(f))
-
-  /** Adds a validation that runs after this field has decoded successfully.
-    *
-    * A false predicate produces one [[FormError]] at [[path]], with `message` and optional `code`.
-    */
-  def validate(
-    message: String,
-    code: Option[String] = None
-  )(
-    predicate: A => Boolean
-  ): RootedFormField[Owner, A] =
-    RootedFormField(underlying.validate(message, code)(predicate))
-
-  /** Requires the successfully decoded string to be non-empty.
-    *
-    * This can follow [[map]], allowing normalization such as trimming to happen before the required
-    * check. After preceding decoding and mapping succeed, an empty decoded string produces one
-    * error at [[path]]. Missing-field behavior is determined by the preceding decoder.
-    */
-  def required(
-    message: String = "can't be blank",
-    code: Option[String] = None
-  )(using A =:= String
-  ): RootedFormField[Owner, String] =
-    RootedFormField(underlying.required(message, code))
-
-  /** Creates an owner-checked raw initial value for this field.
-    *
-    * Values are retained in argument order, including duplicates. They are decoded when passed to
-    * [[FormDefinition.initial]].
-    */
-  def initial(values: String*): FormInitialValue[Owner] =
-    FormInitialValue(path, values.toVector)
-end RootedFormField
-
-private[scalive] object RootedFormField:
-  def apply[Owner, A](field: FormField[A]): RootedFormField[Owner, A] =
-    new RootedFormField(field)
-
-/** Opaque raw initial field data carrying the phantom type of its owning [[FormRoot]].
-  *
-  * Instances are created with [[RootedFormField.initial]] and accepted only by a [[FormDefinition]]
-  * with the same owner.
-  */
-final case class FormInitialValue[Owner] private[scalive] (
-  private[scalive] val path: FormPath,
-  private[scalive] val values: Vector[String])
-
-/** A reusable, owner-checked definition of a rooted form.
-  *
-  * A definition combines a root and whole-form codec. Its `Owner` parameter prevents forms, fields,
-  * and initial values from different stable [[FormRoot]] values from being mixed.
-  *
-  * @param root
-  *   the path prepended to fields in this definition
-  * @param codec
-  *   the decoder used for initial values and LiveView form events
-  * @tparam Owner
-  *   the singleton type of the owning root
-  * @tparam A
-  *   the decoded form value type
-  */
-final class FormDefinition[Owner, A] private[scalive] (
-  /** The path prepended to fields in this definition. */
+final class FormDefinition[Owner, Domain] private[scalive] (
   val root: FormPath,
-  /** The decoder used for initial values and LiveView form events. */
-  val codec: FormCodec[A]):
+  private[scalive] val owner: FormRoot,
+  private[scalive] val parts: Vector[FormPart[?, ?]],
+  private val construct: Vector[Any] => Either[FormErrors[Owner], Domain],
+  val limits: FormLimits):
+  self =>
 
-  /** Creates a typed change binding using this definition's stable codec. */
-  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    on.change.form(codec)(f)
+  /** Singleton identity used to prevent mixing artifacts from distinct definitions. */
+  type Schema = self.type
 
-  /** Creates a typed submit binding using this definition's stable codec. */
-  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    on.submit.form(codec)(f)
+  /** Editable values owned by this exact definition. */
+  type Values = FormValues[Owner, self.type]
 
-  /** Creates a typed recovery binding using this definition's stable codec. */
-  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    on.recover.form(codec)(f)
+  /** Current form owned by this exact definition. */
+  type Form = scalive.Form[Owner, self.type, Domain]
 
-  /** The rooted form type produced by this definition. */
-  type Form = RootedForm[Owner, A]
+  /** Typed event rebuilt by this exact definition. */
+  type Event = FormEvent[Owner, self.type, Domain]
 
-  /** A field type accepted by forms from this definition. */
-  type Field[B] = RootedFormField[Owner, B]
+  /** Save workflow whose current and baseline values share this definition. */
+  type Workflow[Failure] = FormWorkflow[Owner, self.type, Domain, Failure]
 
-  /** An initial-value type accepted by this definition. */
-  type InitialValue = FormInitialValue[Owner]
+  /** Valid value snapshot owned by this exact definition. */
+  type Snapshot = ValidFormSnapshot[Owner, self.type, Domain]
 
-  /** Creates an unsubmitted form from owner-checked raw initial values.
+  private val rootAddress = FormAddress.fromPath[Owner](root)
+
+  /** Logical root address used for product-level errors. */
+  val address: FormAddress[Owner]                          = rootAddress
+  private val staticFields: Vector[FormField[Owner, ?, ?]] = parts.collect {
+    case field: FormField[?, ?, ?] => field.asInstanceOf[FormField[Owner, ?, ?]]
+  }
+  private val rowGroups: Vector[RepeatedRows[Owner, ?, ?]] = parts.collect {
+    case rows: RepeatedRows[?, ?, ?] => rows.asInstanceOf[RepeatedRows[Owner, ?, ?]]
+  }
+  private val staticByPath: Map[Vector[String], FormField[Owner, ?, ?]] =
+    staticFields.map(field => FormDefinition.names(field.path) -> field).toMap
+
+  FormDefinition.validateSchema(owner, parts)
+
+  /** Creates a pristine form from typed or explicitly raw schema-owned assignments.
     *
-    * Values and duplicates retain call order, and [[codec]] runs immediately. Decode errors are
-    * therefore present in [[RootedForm.state]] and [[FormFieldView.errors]] from the first render.
-    * The new state is not submitted and has no used fields, so [[FormFieldView.visibleErrors]]
-    * stays empty until the corresponding field is used or the form is submitted.
+    * Assignments must originate from fields and repeated groups declared by this definition.
     */
-  def initial(values: InitialValue*): Form =
-    val raw   = FormData(values.flatMap(value => value.values.map(value.path.name -> _)))
-    val state = FormState(
-      raw = raw,
-      value = codec.decode(raw),
-      used = Set.empty,
-      submitted = false
+  def initial(assignments: FormInitial[Owner]*): Form =
+    val (static, groups) = initialValues(assignments.toVector)
+    rebuild(new FormValues(this, static, groups), FormInteraction.pristine, Vector.empty)
+
+  /** Projects an untrusted browser payload and returns a consistent typed event.
+    *
+    * Projection is bounded by [[limits]]. The event retains the original payload while its
+    * [[FormEvent.form]] contains only canonical schema-owned values and structural errors.
+    */
+  def event(data: FormData, kind: FormEventKind): Event =
+    event(data, kind, RawFormEvent.Meta.empty)
+
+  /** Revalidates this definition's values with pristine interaction. */
+  def fromValues(values: Values): Form =
+    rebuild(values, FormInteraction.pristine, Vector.empty)
+
+  /** Revalidates values while preserving an existing interaction state. */
+  def fromValues(values: Values, interaction: FormInteraction[Owner]): Form =
+    rebuild(values, interaction, Vector.empty)
+
+  /** Handles both ordinary changes and recovery as typed definition-owned events. */
+  def onChange[Msg](f: Event => Msg): Mod.Attr[Msg] =
+    Mod.Attr.Group(
+      Vector(
+        on.change.form(this)(f),
+        on.recover.form(this)(f)
+      )
     )
-    from(state)
 
-  /** Wraps an existing decoded state without running [[codec]] again.
-    *
-    * The caller is responsible for ensuring the state's raw data and decoded value belong to this
-    * definition.
-    */
-  def from(state: FormState[A]): Form =
-    RootedForm(Form(root, state, codec))
+  /** Handles ordinary changes and recovery with separate typed callbacks. */
+  def onChange[Msg](
+    changed: Event => Msg,
+    recovered: Event => Msg
+  ): Mod.Attr[Msg] =
+    Mod.Attr.Group(
+      Vector(
+        on.change.form(this)(changed),
+        on.recover.form(this)(recovered)
+      )
+    )
 
-  /** Rebuilds this form from a typed event without running [[codec]] again.
-    *
-    * Raw data, the already decoded value, and submission state are retained. Used-field state is
-    * derived from the event payload according to [[FormEvent.state]].
-    */
-  def from(event: FormEvent[A]): Form =
-    from(event.state)
+  /** Handles submit events; submitted forms expose all validation errors. */
+  def onSubmit[Msg](f: Event => Msg): Mod.Attr[Msg] =
+    on.submit.form(this)(f)
+
+  /** Handles LiveView recovery as a typed event. */
+  def onRecover[Msg](f: Event => Msg): Mod.Attr[Msg] =
+    on.recover.form(this)(f)
+
+  /** Applies dependent whole-product refinement using a fresh definition identity. */
+  def map[B](f: Domain => B): FormDefinition[Owner, B] =
+    new FormDefinition(root, owner, parts, values => construct(values).map(f), limits)
+
+  /** Applies error-producing whole-product refinement using a fresh definition identity. */
+  def emap[B](
+    f: Domain => Either[FormErrors[Owner], B]
+  ): FormDefinition[Owner, B] =
+    new FormDefinition(root, owner, parts, values => construct(values).flatMap(f), limits)
+
+  /** Returns an equivalent definition with new projection limits and a fresh schema identity. */
+  def withLimits(value: FormLimits): FormDefinition[Owner, Domain] =
+    new FormDefinition(root, owner, parts, construct, value)
+
+  /** Creates a product-level error at this definition's root address. */
+  def errors(issue: FieldIssue): FormErrors[Owner] =
+    FormErrors.one(rootAddress, issue)
+
+  /** Creates an error for a static field declared by this definition. */
+  def errors[Input, Value](
+    field: FormField[Owner, Input, Value],
+    issue: FieldIssue
+  ): FormErrors[Owner] =
+    require(owns(field), "error field is not declared by this definition")
+    FormErrors.one(field.address, issue)
+
+  /** Creates an error for a repeated group declared by this definition. */
+  def errors[Group, Row](
+    rows: RepeatedRows[Owner, Group, Row],
+    issue: FieldIssue
+  ): FormErrors[Owner] =
+    require(owns(rows), "error group is not declared by this definition")
+    FormErrors.one(rows.address, issue)
+
+  /** Starts a [[FormWorkflow]] whose baseline is the supplied form's current values. */
+  def workflow[Failure](form: Form): Workflow[Failure] =
+    FormWorkflow.create(this, form)
+
+  private[scalive] def owns(field: FormField[Owner, ?, ?]): Boolean =
+    staticFields.exists(_ eq field)
+
+  private[scalive] def owns[Group, Row](rows: RepeatedRows[Owner, Group, Row]): Boolean =
+    rowGroups.exists(_ eq rows)
+
+  private[scalive] def rebuild(
+    values: Values,
+    interaction: FormInteraction[Owner],
+    structuralErrors: Vector[FormError[Owner]]
+  ): Form =
+    val decoded = decode(values, structuralErrors)
+    new scalive.Form(this, values, decoded, interaction)
+
+  private[scalive] def event(
+    data: FormData,
+    kind: FormEventKind,
+    meta: RawFormEvent.Meta
+  ): Event = event(data, kind, meta, data, Vector.empty)
+
+  private[scalive] def event(
+    data: FormData,
+    kind: FormEventKind,
+    meta: RawFormEvent.Meta,
+    translatedData: FormData,
+    extraErrors: Vector[FormError[Owner]]
+  ): Event =
+    val projection = project(translatedData)
+    val visibility = kind match
+      case FormEventKind.Submitted => ErrorVisibility.All
+      case _                       => ErrorVisibility.UsedOnly
+    val interaction = FormInteraction(projection.used, visibility)
+    val form        = rebuild(
+      projection.values,
+      interaction,
+      projection.structuralErrors ++ extraErrors
+    )
+    val target    = meta.target.flatMap(path => addressForBrowserPath(path, projection.values))
+    val eventMeta = FormEventMeta(
+      target = target,
+      submitter = meta.submitter,
+      metadata = meta.metadata,
+      browserTarget = meta.originalTarget.orElse(meta.target),
+      diagnostics = meta.diagnostics
+    )
+    new FormEvent(form, data, kind, eventMeta)
+
+  private[scalive] def project(data: FormData): FormProjection[Owner, self.type] =
+    val staticValues = mutable.LinkedHashMap.empty[FormAddress[Owner], mutable.ArrayBuffer[String]]
+    val staticOverflow = mutable.Set.empty[FormAddress[Owner]]
+    val groupData      = rowGroups.map(rows => rows.address -> FormDefinition.GroupPayload()).toMap
+    val structural     = mutable.ArrayBuffer.empty[FormError[Owner]]
+    val ordinaryUsed   = mutable.Set.empty[FormAddress[Owner]]
+    val explicitlyUnused = mutable.Set.empty[FormAddress[Owner]]
+    val parseLimits      = FormPath.ParseLimits(limits.maxPathDepth, limits.maxSegmentLength)
+
+    def addStructural(error: FormError[Owner]): Unit =
+      if structural.size < limits.maxErrors then structural += error
+
+    def acceptKey(
+      rows: RepeatedRows[Owner, ?, ?],
+      payload: FormDefinition.GroupPayload,
+      key: String
+    ): Boolean =
+      if payload.discoveredKeys.contains(key) then true
+      else if payload.discoveredKeys.size < limits.maxRowsPerGroup then
+        payload.discoveredKeys += key
+        true
+      else
+        if !payload.rowsOverflow then
+          payload.rowsOverflow = true
+          addStructural(
+            FormError(
+              rows.address,
+              FieldIssue("Too many repeated rows submitted", Some("too_many_rows"))
+            )
+          )
+        false
+
+    def incompatiblePath(path: FormPath): Unit =
+      staticFields.find(field => path.startsWith(field.path)).foreach { field =>
+        addStructural(
+          FormError(
+            field.address,
+            FieldIssue("Invalid scalar field path", Some("invalid_field_path"))
+          )
+        )
+      }
+      rowGroups.find(rows => path.startsWith(rows.path)).foreach { rows =>
+        addStructural(
+          FormError(
+            rows.address,
+            FieldIssue("Invalid repeated-row path", Some("invalid_row_path"))
+          )
+        )
+      }
+
+    data.raw.foreach { case (browserName, value) =>
+      FormPath.parse(browserName, parseLimits) match
+        case Left(error) =>
+          addStructural(
+            FormError(
+              rootAddress,
+              FieldIssue(s"Malformed form field name '$browserName'", Some(error.code))
+            )
+          )
+        case Right(path) =>
+          FormDefinition.namesOption(path) match
+            case None        => incompatiblePath(path)
+            case Some(names) =>
+              staticByPath.get(names) match
+                case Some(field) =>
+                  val buffer =
+                    staticValues.getOrElseUpdate(field.address, mutable.ArrayBuffer.empty)
+                  if buffer.size < limits.maxValuesPerField then buffer += value
+                  else if staticOverflow.add(field.address) then
+                    addStructural(
+                      FormError(
+                        field.address,
+                        FieldIssue("Too many values submitted", Some("too_many_values"))
+                      )
+                    )
+                  ordinaryUsed += field.address
+                case None =>
+                  staticUnusedAddress(names).foreach(explicitlyUnused += _)
+                  staticFields.find(field =>
+                    names.startsWith(FormDefinition.names(field.path))
+                  ) match
+                    case Some(field) =>
+                      addStructural(
+                        FormError(
+                          field.address,
+                          FieldIssue("Invalid scalar field path", Some("invalid_field_path"))
+                        )
+                      )
+                    case None =>
+                      rowGroups
+                        .find(rows => names.startsWith(FormDefinition.names(rows.path))).foreach {
+                          rows =>
+                            val groupNames = FormDefinition.names(rows.path)
+                            val remaining  = names.drop(groupNames.length)
+                            if remaining.length < 2 then
+                              addStructural(
+                                FormError(
+                                  rows.address,
+                                  FieldIssue("Invalid repeated-row path", Some("invalid_row_path"))
+                                )
+                              )
+                            else
+                              val key     = remaining.head
+                              val leaf    = remaining.tail
+                              val payload = groupData(rows.address)
+                              if leaf == Vector(FormDefinition.RowPresenceName) then
+                                if acceptKey(rows, payload, key) then
+                                  if !payload.presenceCounts.contains(key) then
+                                    payload.presence += key -> value
+                                  payload.presenceCounts.update(
+                                    key,
+                                    math.min(2, payload.presenceCounts.getOrElse(key, 0) + 1)
+                                  )
+                                  if value != FormDefinition.RowPresenceValue then
+                                    payload.invalidPresence += key
+                              else
+                                rows.typedFields.find { field =>
+                                  FormDefinition.names(field.relativePath) == leaf
+                                } match
+                                  case Some(field) if acceptKey(rows, payload, key) =>
+                                    val valueKey = key -> leaf
+                                    val buffer   = payload.leaves.getOrElseUpdate(
+                                      valueKey,
+                                      mutable.ArrayBuffer.empty
+                                    )
+                                    if buffer.size < limits.maxValuesPerField then buffer += value
+                                    else if payload.valueOverflow.add(valueKey) then
+                                      addStructural(
+                                        FormError(
+                                          rows.address,
+                                          FieldIssue(
+                                            "Too many row field values submitted",
+                                            Some("too_many_values")
+                                          )
+                                        )
+                                      )
+                                    payload.recognizedKeys += key
+                                    ordinaryUsed += rowFieldAddress(rows, key, field)
+                                  case Some(_) => ()
+                                  case None    =>
+                                    rowUnusedAddress(rows, key, leaf).foreach { address =>
+                                      if acceptKey(rows, payload, key) then
+                                        payload.recognizedKeys += key
+                                        explicitlyUnused += address
+                                    }
+                              end if
+                            end if
+                        }
+                  end match
+    }
+
+    val canonicalGroups = rowGroups.map { rows =>
+      val payload       = groupData(rows.address)
+      val canonicalRows = Vector.newBuilder[CanonicalFormRow]
+
+      payload.presence.foreach { case (key, marker) =>
+        FormRowKey.from[Any](key) match
+          case Left(error) =>
+            addStructural(
+              FormError(rows.address, FieldIssue(s"Invalid row key '$key'", Some(error.code)))
+            )
+          case Right(_) =>
+            if payload.invalidPresence.contains(key) then
+              addStructural(
+                FormError(
+                  rows.address,
+                  FieldIssue("Invalid row-presence marker", Some("invalid_row_presence"))
+                )
+              )
+            if payload.presenceCounts(key) > 1 then
+              addStructural(
+                FormError(
+                  rows.address,
+                  FieldIssue(s"Duplicate row-presence marker for '$key'", Some("duplicate_row"))
+                )
+              )
+            if marker == FormDefinition.RowPresenceValue &&
+              !payload.invalidPresence.contains(key) && payload.presenceCounts(key) == 1
+            then
+              val fields = rows.typedFields.flatMap { field =>
+                val relative = FormDefinition.names(field.relativePath)
+                payload.leaves.get(key -> relative).map(values => relative -> values.toVector)
+              }.toMap
+              canonicalRows += CanonicalFormRow(key, fields)
+      }
+
+      payload.recognizedKeys.filterNot(payload.presenceCounts.contains).foreach { key =>
+        addStructural(
+          FormError(
+            rows.address,
+            FieldIssue(s"Row '$key' has no valid presence control", Some("missing_row_presence"))
+          )
+        )
+      }
+      rows.address -> CanonicalFormGroup(canonicalRows.result())
+    }.toMap
+
+    val values = new FormValues[Owner, self.type](
+      this,
+      staticValues.view.mapValues(_.toVector).toMap,
+      canonicalGroups
+    )
+    val includedAddresses = canonicalGroups.iterator.flatMap { case (groupAddress, group) =>
+      group.rows.iterator.flatMap { row =>
+        val rowAddress = FormAddress.row(groupAddress, row.key)
+        row.fields.keysIterator.map(relative => FormAddress.append(rowAddress, relative))
+      }
+    }.toSet
+    val validUsed = ordinaryUsed.filter { address =>
+      staticValues.contains(address) || includedAddresses.contains(address)
+    }.toSet
+    FormProjection(values, structural.toVector, validUsed -- explicitlyUnused)
+  end project
+
+  private[scalive] def decodeRow[Group, Row](
+    rows: RepeatedRows[Owner, Group, Row],
+    row: CanonicalFormRow
+  ): Either[FormErrors[Owner], Row] =
+    val errors     = mutable.ArrayBuffer.empty[FormError[Owner]]
+    val values     = Vector.newBuilder[Any]
+    val rowAddress = FormAddress.row(rows.address, row.key)
+    rows.typedFields.foreach { field =>
+      val relative = FormDefinition.names(field.relativePath)
+      field.decode(row.fields.getOrElse(relative, Vector.empty)) match
+        case Right(value) => values += value
+        case Left(issues) =>
+          val address = FormAddress.append(rowAddress, relative)
+          errors ++= issues.all.take(limits.maxErrors - errors.size).map(FormError(address, _))
+    }
+    val found = errors.toVector
+    if found.nonEmpty then Left(FormErrors(found))
+    else Right(rows.mirror.fromProduct(Tuple.fromArray(values.result().toArray)))
+
+  private def decode(
+    values: Values,
+    structuralErrors: Vector[FormError[Owner]]
+  ): Either[FormErrors[Owner], Domain] =
+    val errors = mutable.ArrayBuffer.empty[FormError[Owner]]
+    errors ++= structuralErrors.take(limits.maxErrors)
+    val decoded = Vector.newBuilder[Any]
+
+    parts.foreach {
+      case untyped: FormField[?, ?, ?] =>
+        val field = untyped.asInstanceOf[FormField[Owner, Any, Any]]
+        field.decode(values.static.getOrElse(field.address, Vector.empty)) match
+          case Right(value) => decoded += value
+          case Left(issues) =>
+            errors ++= issues.all
+              .take(limits.maxErrors - errors.size).map(FormError(field.address, _))
+      case untyped: RepeatedRows[?, ?, ?] =>
+        val rows      = untyped.asInstanceOf[RepeatedRows[Owner, Any, Any]]
+        val group     = values.groups.getOrElse(rows.address, CanonicalFormGroup(Vector.empty))
+        val rowValues = Vector.newBuilder[Any]
+        var valid     = true
+        group.rows.foreach { row =>
+          decodeRow(rows, row) match
+            case Right(value) => rowValues += value
+            case Left(found)  =>
+              valid = false
+              errors ++= found.all.take(limits.maxErrors - errors.size)
+        }
+        if valid then decoded += rowValues.result()
+    }
+
+    val found = errors.toVector
+    if found.nonEmpty then Left(FormErrors(found))
+    else
+      construct(decoded.result()).left.map { produced =>
+        val allowed = Set(rootAddress) ++ staticFields.map(_.address) ++ rowGroups.map(_.address)
+        if produced.all.forall(error => allowed.contains(error.address)) then
+          FormErrors(produced.all.take(limits.maxErrors))
+        else
+          FormErrors.one(
+            rootAddress,
+            FieldIssue(
+              "Product validation targeted an undeclared form address",
+              Some("undeclared_error_address")
+            )
+          )
+      }
+  end decode
+
+  private def initialValues(
+    assignments: Vector[FormInitial[Owner]]
+  ): (Map[FormAddress[Owner], Vector[String]], Map[FormAddress[Owner], CanonicalFormGroup]) =
+    val fields = assignments.collect { case value: FormFieldAssignment[Owner] => value }
+    val groups = assignments.collect { case value: FormGroupAssignment[Owner, ?] => value }
+    require(fields.forall(value => owns(value.field)), "initial field is not declared by this form")
+    require(
+      groups.forall(value => rowGroups.exists(_ eq value.rows)),
+      "initial group is not declared"
+    )
+    require(fields.groupBy(_.field).forall(_._2.size == 1), "duplicate initial field assignment")
+    require(groups.groupBy(_.rows).forall(_._2.size == 1), "duplicate initial group assignment")
+    require(
+      fields.forall(_.values.size <= limits.maxValuesPerField),
+      "initial field exceeds maxValuesPerField"
+    )
+
+    val static = fields.iterator
+      .filter(_.values.nonEmpty).map(value => value.field.address -> value.values).toMap
+    val grouped = groups.iterator.map { assignment =>
+      val rows   = assignment.rows.asInstanceOf[RepeatedRows[Owner, Any, ?]]
+      val values = assignment.values.asInstanceOf[Vector[FormRowInitial[Any]]]
+      val keys   = values.map(_.key.value)
+      require(values.size <= limits.maxRowsPerGroup, "initial group exceeds maxRowsPerGroup")
+      require(
+        values.forall(_.assignments.forall(_.values.size <= limits.maxValuesPerField)),
+        "initial row field exceeds maxValuesPerField"
+      )
+      require(keys.distinct.size == keys.size, "duplicate initial row key")
+      val canonical = values.map { row =>
+        val fields = row.assignments.iterator
+          .filter(_.values.nonEmpty).map { value =>
+            FormDefinition.names(value.field.relativePath) -> value.values
+          }.toMap
+        CanonicalFormRow(row.key.value, fields)
+      }
+      rows.address -> CanonicalFormGroup(canonical)
+    }.toMap
+    val absentGroups = rowGroups.iterator.map(_.address -> CanonicalFormGroup(Vector.empty)).toMap
+    static -> (absentGroups ++ grouped)
+  end initialValues
+
+  private def staticUnusedAddress(names: Vector[String]): Option[FormAddress[Owner]] =
+    names.lastOption.filter(_.startsWith(FormDefinition.UnusedPrefix)).flatMap { marker =>
+      val actual = marker.stripPrefix(FormDefinition.UnusedPrefix)
+      staticByPath.get(names.init :+ actual).map(_.address)
+    }
+
+  private def rowUnusedAddress(
+    rows: RepeatedRows[Owner, ?, ?],
+    key: String,
+    leaf: Vector[String]
+  ): Option[FormAddress[Owner]] =
+    leaf.lastOption.filter(_.startsWith(FormDefinition.UnusedPrefix)).flatMap { marker =>
+      val actual = leaf.init :+ marker.stripPrefix(FormDefinition.UnusedPrefix)
+      rows.typedFields.find(field => FormDefinition.names(field.relativePath) == actual).map {
+        field =>
+          rowFieldAddress(rows, key, field)
+      }
+    }
+
+  private def rowFieldAddress(
+    rows: RepeatedRows[Owner, ?, ?],
+    key: String,
+    field: FormField[?, ?, ?]
+  ): FormAddress[Owner] =
+    FormAddress.append(
+      FormAddress.row(rows.address, key),
+      FormDefinition.names(field.relativePath)
+    )
+
+  private def addressForBrowserPath(path: FormPath, values: Values): Option[FormAddress[Owner]] =
+    FormDefinition.namesOption(path).flatMap { names =>
+      staticByPath.get(names).map(_.address).orElse {
+        rowGroups.iterator
+          .flatMap { rows =>
+            val prefix = FormDefinition.names(rows.path)
+            val rest   = names.drop(prefix.length)
+            Option
+              .when(names.startsWith(prefix) && rest.length >= 2) {
+                val key      = rest.head
+                val relative = rest.tail
+                values.groups.get(rows.address).flatMap(_.rows.find(_.key == key)).flatMap { _ =>
+                  rows.typedFields
+                    .find(field => FormDefinition.names(field.relativePath) == relative).map {
+                      field => rowFieldAddress(rows, key, field)
+                    }
+                }
+              }.flatten
+          }.nextOption()
+      }
+    }
 end FormDefinition
 
 private[scalive] object FormDefinition:
-  def apply[Owner, A](root: FormPath, codec: FormCodec[A]): FormDefinition[Owner, A] =
-    new FormDefinition(root, codec)
+  val ReservedPrefix   = "_scalive_"
+  val RowPresenceName  = "_scalive_row"
+  val RowPresenceValue = "1"
+  val UnusedPrefix     = "_unused_"
 
-/** A form whose field access is restricted to definitions owned by the same [[FormRoot]].
-  *
-  * This is a type-safe facade over [[scalive.Form]]. Rendering, event bindings, recovery settings,
-  * ordinary HTTP submission, and field views delegate without changing their behavior.
-  *
-  * @tparam Owner
-  *   the singleton type of the owning root
-  * @tparam A
-  *   the decoded whole-form value type
-  */
-final class RootedForm[Owner, A] private[scalive] (
-  private val underlying: Form[A]):
+  final class GroupPayload:
+    val presence        = mutable.ArrayBuffer.empty[(String, String)]
+    val presenceCounts  = mutable.Map.empty[String, Int]
+    val invalidPresence = mutable.Set.empty[String]
+    val leaves = mutable.LinkedHashMap.empty[(String, Vector[String]), mutable.ArrayBuffer[String]]
+    val recognizedKeys = mutable.LinkedHashSet.empty[String]
+    val discoveredKeys = mutable.LinkedHashSet.empty[String]
+    val valueOverflow  = mutable.Set.empty[(String, Vector[String])]
+    var rowsOverflow   = false
 
-  /** The current raw, decoded, used-field, and submission state. */
-  def state: FormState[A] = underlying.state
+  def GroupPayload(): GroupPayload = new GroupPayload
 
-  /** Renders an ordinary browser form targeting `target`.
-    *
-    * This delegates to [[scalive.Form.http]]; it does not add LiveView change or submit bindings
-    * unless they are supplied in `mods`.
-    */
-  def http[Msg](
-    target: FormAction
-  )(
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] = underlying.http(target)(mods*)
+  def create[Owner, Domain](
+    owner: FormRoot,
+    parts: Vector[FormPart[?, ?]],
+    mirror: Mirror.ProductOf[Domain]
+  ): FormDefinition[Owner, Domain] =
+    val construct: Vector[Any] => Either[FormErrors[Owner], Domain] = values =>
+      Right(mirror.fromProduct(Tuple.fromArray(values.toArray)))
+    new FormDefinition(owner.path, owner, parts, construct, FormLimits())
 
-  /** Binds `phx-change` and decodes each event with this form's codec.
-    *
-    * The callback runs for successful and failed decodes. Rebuild state explicitly with the owning
-    * [[FormDefinition.from]] method when handling the resulting message.
-    */
-  def onChange[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    underlying.onChange(f)
+  def names(path: FormPath): Vector[String] =
+    namesOption(path).getOrElse(
+      throw new IllegalArgumentException(s"schema path ${path.name} contains an array segment")
+    )
 
-  /** Binds `phx-submit` and decodes each event with this form's codec.
-    *
-    * The event is marked submitted and the callback runs even when decoding fails.
-    */
-  def onSubmit[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    underlying.onSubmit(f)
+  def namesOption(path: FormPath): Option[Vector[String]] =
+    path.segments.foldLeft(Option(Vector.empty[String])) {
+      case (Some(found), FormPathSegment.Name(value)) => Some(found :+ value)
+      case _                                          => None
+    }
 
-  /** Binds `phx-auto-recover` and decodes recovery events with this form's codec. */
-  def onRecover[Msg](f: FormEvent[A] => Msg): Mod.Attr[Msg] =
-    underlying.onRecover(f)
-
-  /** Disables Phoenix's automatic form recovery by rendering `phx-auto-recover="ignore"`. */
-  def disableRecovery: Mod.Attr[Nothing] =
-    underlying.disableRecovery
-
-  /** Renders `phx-trigger-action` when `condition` is true.
-    *
-    * On a form with an ordinary `action` and `method`, Phoenix uses this attribute to hand a Live
-    * submit back to the browser for normal HTTP submission.
-    */
-  def triggerHttpSubmitWhen(condition: Boolean): Mod.Attr[Nothing] =
-    underlying.triggerHttpSubmitWhen(condition)
-
-  /** Returns the current view of a field owned by this form's root.
-    *
-    * Ownership is checked at compile time; the underlying field is already fully rooted.
-    */
-  def field[B](definition: RootedFormField[Owner, B]): FormFieldView[B] =
-    underlying.field(definition.underlying)
-
-  /** Replaces every raw value for a field owned by this form and revalidates the whole form.
-    *
-    * Values retain their iteration order. Replacements occupy the first previous occurrence of the
-    * field, or the end of the payload when it was absent. Other raw fields, used-field state, and
-    * submission state are preserved.
-    */
-  def updated[B](
-    field: RootedFormField[Owner, B],
-    values: IterableOnce[String]
-  ): RootedForm[Owner, A] =
-    rebuild(underlying.state.raw.updated(field.name, values))
-
-  /** Appends one raw value for a field owned by this form and revalidates the whole form.
-    *
-    * Existing raw values, used-field state, and submission state are preserved.
-    */
-  def appended[B](field: RootedFormField[Owner, B], value: String): RootedForm[Owner, A] =
-    rebuild(underlying.state.raw.appended(field.name, value))
-
-  /** Removes one raw field value by index and revalidates the whole form.
-    *
-    * `index` is relative to the values with this field's exact name, not the complete form payload.
-    * Other raw fields, used-field state, and submission state are preserved.
-    *
-    * @throws IndexOutOfBoundsException
-    *   when `index` does not identify an existing value for `field`
-    */
-  def removedAt[B](field: RootedFormField[Owner, B], index: Int): RootedForm[Owner, A] =
-    rebuild(underlying.state.raw.removedAt(field.name, index))
-
-  private def rebuild(raw: FormData): RootedForm[Owner, A] =
-    val state = underlying.state.copy(raw = raw, value = underlying.codec.decode(raw))
-    RootedForm(underlying.copy(state = state))
-end RootedForm
-
-private[scalive] object RootedForm:
-  def apply[Owner, A](form: Form[A]): RootedForm[Owner, A] =
-    new RootedForm(form)
-
-extension [Owner, A](form: Signal[RootedForm[Owner, A]])
-  /** Returns a signal-backed value for a field owned by this rooted form. */
-  def field[B](definition: RootedFormField[Owner, B]): Signal[FormFieldView[B]] =
-    form.map(_.field(definition))
+  def validateSchema(owner: FormRoot, parts: Vector[FormPart[?, ?]]): Unit =
+    val allPaths = Vector.newBuilder[Vector[String]]
+    parts.foreach {
+      case field: FormField[?, ?, ?] =>
+        field.scope match
+          case FormFieldScope.Static(root, _) =>
+            require(root eq owner, "form field belongs to another root")
+          case _ => throw new IllegalArgumentException("row field cannot be a root form part")
+        val relative = names(field.relativePath)
+        require(!relative.exists(_.startsWith(ReservedPrefix)), "reserved _scalive_ field name")
+        allPaths += names(field.path)
+      case rows: RepeatedRows[?, ?, ?] =>
+        require(rows.group.root eq owner, "repeated group belongs to another root")
+        val groupPath     = names(rows.path)
+        val relativeGroup = groupPath.drop(names(owner.path).length)
+        require(
+          !relativeGroup.exists(_.startsWith(ReservedPrefix)),
+          "reserved _scalive_ group name"
+        )
+        allPaths += groupPath
+        val rowPaths = rows.typedFields.map(field => names(field.relativePath))
+        require(rowPaths.distinct.size == rowPaths.size, "duplicate row field address")
+        require(
+          !rowPaths.flatten.exists(_.startsWith(ReservedPrefix)),
+          "reserved _scalive_ row field name"
+        )
+    }
+    val paths = allPaths.result()
+    require(paths.distinct.size == paths.size, "duplicate form part address")
+    val conflicts = for
+      left  <- paths
+      right <- paths
+      if left != right && (left.startsWith(right) || right.startsWith(left))
+    yield left -> right
+    require(conflicts.isEmpty, "overlapping scalar field and repeated group addresses")
+  end validateSchema
+end FormDefinition

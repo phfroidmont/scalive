@@ -149,29 +149,37 @@ final private[scalive] case class RootEvent(
         case _ => Left("form event value must be a URL-encoded string")
     else rootClickParams
 
-  private def formMeta(data: FormData): FormEvent.Meta =
-    val fields = meta.fold(Map.empty[String, Json])(_.fields.toMap)
-    FormEvent.Meta(
-      target = fields.get("_target").flatMap(decodeTarget),
+  private def formMeta(data: FormData): RawFormEvent.Meta =
+    val fields       = meta.fold(Map.empty[String, Json])(_.fields.toMap)
+    val targetResult = fields.get("_target").map(decodeTarget).getOrElse(Right(None))
+    RawFormEvent.Meta(
+      target = targetResult.toOption.flatten,
       submitter = decodeSubmitter(fields, data),
       recovery = fields
         .get("_recover")
         .orElse(fields.get("_recovery"))
         .orElse(fields.get("recovery"))
         .exists(asBoolean),
-      metadata = fields.view.mapValues(stringify).toMap
+      metadata = fields.view.mapValues(stringify).toMap,
+      diagnostics = targetResult.left.toOption.toVector
     )
 
-  private def decodeTarget(json: Json): Option[FormPath] = json match
-    case Json.Str("undefined") => None
-    case Json.Str(value)       => Some(FormPath.parse(value))
-    case Json.Arr(values)      =>
+  private def decodeTarget(json: Json): Either[String, Option[FormPath]] = json match
+    case Json.Str("undefined") => Right(None)
+    case Json.Str(value)       =>
+      FormPath.parse(value).left.map(error => s"invalid_form_target:${error.code}").map(Some(_))
+    case Json.Arr(values) =>
       val segments = values.collect {
         case Json.Str(segment) if segment.nonEmpty && segment != "undefined" => segment
       }.toVector
-      if segments.isEmpty && values.exists(_.asString.contains("undefined")) then None
-      else Some(FormPath(segments))
-    case _ => None
+      if segments.isEmpty && values.exists(_.asString.contains("undefined")) then Right(None)
+      else if segments.length != values.length || segments.isEmpty then Left("invalid_form_target")
+      else
+        scala.util
+          .Try(FormPath(segments.head, segments.tail*)).toEither
+          .left.map(_ => "invalid_form_target")
+          .map(Some(_))
+    case _ => Left("invalid_form_target")
 
   private def decodeSubmitter(
     fields: Map[String, Json],

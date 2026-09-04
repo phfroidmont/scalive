@@ -93,6 +93,7 @@ private def isAttr(mod: Mod[?], expectedName: String): Boolean = mod match
   case Mod.Attr.SignalBinding(name, _, _)             => name == expectedName
   case Mod.Attr.FormBinding(name, _)                  => name == expectedName
   case Mod.Attr.FormEventBinding(name, _, _)          => name == expectedName
+  case Mod.Attr.TypedFormEventBinding(name, _, _)     => name == expectedName
   case Mod.Attr.JsBinding(name, _)                    => name == expectedName
   case Mod.Attr.SignalJsBinding(name, _)              => name == expectedName
   case Mod.Attr.RoutedBinding(name, _)                => name == expectedName

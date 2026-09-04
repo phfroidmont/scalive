@@ -99,6 +99,31 @@ object HttpSecuritySpec extends ZIOSpecDefault:
           HttpFormDecoder.Error.Csrf(CsrfProtection.ValidationError.MissingCookie)
         )
       )
+    },
+    test("returns submitted definition forms with CSRF excluded from semantic values") {
+      final case class Profile(name: String)
+      val root       = FormRoot("profile")
+      val name       = root.text("name").required(FieldIssue("Name is required"))
+      val definition = root.product[Profile](Tuple1(name))
+      val decoder    = HttpFormDecoder.urlEncoded(definition, 1024, security.csrf)
+
+      for
+        csrf <- ZioHttpSecurity.issueCsrf(config)
+        body = Body
+                 .fromString(
+                   s"${CsrfProtection.ParamName}=${csrf.token}&profile%5Bname%5D=Ada"
+                 )
+                 .contentType(MediaType.application.`x-www-form-urlencoded`)
+        request = Request
+                    .post(URL.root, body)
+                    .addCookie(Cookie.Request(CsrfProtection.CookieName, csrf.cookieToken))
+        decoded <- decoder.decode(request)
+        expected = definition.initial(name.initial("Ada"))
+      yield assertTrue(
+        decoded.valueOption.contains(Profile("Ada")),
+        decoded.values == expected.values,
+        decoded.interaction.visibility == ErrorVisibility.All
+      )
     }
   )
 end HttpSecuritySpec

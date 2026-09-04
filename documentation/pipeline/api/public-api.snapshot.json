@@ -14442,6 +14442,18 @@
       ]
     },
     {
+      "id" : "lazy-val:scalive.inert",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.inert",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.inert:22f4bed5f12bff6d",
+          "signature" : "lazy val inert: HtmlAttr[Boolean]"
+        }
+      ]
+    },
+    {
       "id" : "lazy-val:scalive.input",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.input",

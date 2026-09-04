@@ -86,6 +86,17 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
         dynamic == Mod.Attr.CompositeSignalValue("data-tags", signal),
         dynamicOptional == Mod.Attr.CompositeSignalOptionalValue("data-tags", optional)
       )
+    },
+    test("inert is a typed boolean presence attribute") {
+      val typed: HtmlAttr[Boolean]       = inert
+      val present: Mod.Attr[Nothing]     = inert := true
+      val absent: Mod.Attr[Nothing]      = inert := false
+
+      assertTrue(
+        typed.name == "inert",
+        present == Mod.Attr.StaticValueAsPresence("inert", true),
+        absent == Mod.Attr.StaticValueAsPresence("inert", false)
+      )
     }
   )
 end HtmlDslApiSpec

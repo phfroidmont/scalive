@@ -279,6 +279,10 @@ Keep its `id` stable and unique. Pass only wrapper attributes and bindings in
 argument list so the generated focus sentinels remain first and last. The helper
 depends on the Phoenix client hook. It does not add dialog roles, labels, background
 inertness, authorization, or a no-JavaScript focus trap; provide those separately.
+Apply @:apiSymbol(lazy-val:scalive.inert)`inert := dialogOpen`@:@ to the background
+region, not the dialog, when that region must stop receiving user input and focus.
+Inert content leaves the accessibility tree and receives no default visual treatment,
+so keep the active region perceivable and visually distinguish inactive content.
 
 ## Check Accessibility In The Browser {#check-accessibility-in-the-browser}
 

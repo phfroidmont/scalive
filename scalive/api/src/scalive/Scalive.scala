@@ -14,6 +14,16 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
   lazy val defer = htmlAttr("defer", BooleanAsAttrPresenceEncoder)
 
+  /** Makes this element and its flat-tree descendants inert while assigned `true`.
+    *
+    * Inert content cannot receive user input or focus and is excluded from the accessibility tree.
+    * The attribute does not provide a visual indication, so visually distinguish inactive content.
+    *
+    * See:
+    * [[https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/inert inert @ MDN]]
+    */
+  lazy val inert: HtmlAttr[Boolean] = htmlAttr("inert", BooleanAsAttrPresenceEncoder)
+
   def rawHtml(html: String): Mod[Nothing]         = Mod.Content.Text(html, raw = true)
   def rawHtml(html: Signal[String]): Mod[Nothing] = Mod.Content.SignalText(html, raw = true)
 

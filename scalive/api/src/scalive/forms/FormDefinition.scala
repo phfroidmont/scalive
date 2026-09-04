@@ -545,6 +545,40 @@ final class RootedForm[Owner, A] private[scalive] (
     */
   def field[B](definition: RootedFormField[Owner, B]): FormFieldView[B] =
     underlying.field(definition.underlying)
+
+  /** Replaces every raw value for a field owned by this form and revalidates the whole form.
+    *
+    * Values retain their iteration order. Replacements occupy the first previous occurrence of the
+    * field, or the end of the payload when it was absent. Other raw fields, used-field state, and
+    * submission state are preserved.
+    */
+  def updated[B](
+    field: RootedFormField[Owner, B],
+    values: IterableOnce[String]
+  ): RootedForm[Owner, A] =
+    rebuild(underlying.state.raw.updated(field.name, values))
+
+  /** Appends one raw value for a field owned by this form and revalidates the whole form.
+    *
+    * Existing raw values, used-field state, and submission state are preserved.
+    */
+  def appended[B](field: RootedFormField[Owner, B], value: String): RootedForm[Owner, A] =
+    rebuild(underlying.state.raw.appended(field.name, value))
+
+  /** Removes one raw field value by index and revalidates the whole form.
+    *
+    * `index` is relative to the values with this field's exact name, not the complete form payload.
+    * Other raw fields, used-field state, and submission state are preserved.
+    *
+    * @throws IndexOutOfBoundsException
+    *   when `index` does not identify an existing value for `field`
+    */
+  def removedAt[B](field: RootedFormField[Owner, B], index: Int): RootedForm[Owner, A] =
+    rebuild(underlying.state.raw.removedAt(field.name, index))
+
+  private def rebuild(raw: FormData): RootedForm[Owner, A] =
+    val state = underlying.state.copy(raw = raw, value = underlying.codec.decode(raw))
+    RootedForm(underlying.copy(state = state))
 end RootedForm
 
 private[scalive] object RootedForm:

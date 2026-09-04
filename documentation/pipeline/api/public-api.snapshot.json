@@ -7050,6 +7050,18 @@
       ]
     },
     {
+      "id" : "def:scalive.RootedForm.appended",
+      "ownerId" : "class:scalive.RootedForm",
+      "qualifiedName" : "scalive.RootedForm.appended",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.RootedForm.appended:dc3df8f49e729f91",
+          "signature" : "def appended[B](field: RootedFormField[Owner, B], value: String): RootedForm[Owner, A]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.RootedForm.disableRecovery",
       "ownerId" : "class:scalive.RootedForm",
       "qualifiedName" : "scalive.RootedForm.disableRecovery",
@@ -7122,6 +7134,18 @@
       ]
     },
     {
+      "id" : "def:scalive.RootedForm.removedAt",
+      "ownerId" : "class:scalive.RootedForm",
+      "qualifiedName" : "scalive.RootedForm.removedAt",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.RootedForm.removedAt:4f4bf0f5431a1b8c",
+          "signature" : "def removedAt[B](field: RootedFormField[Owner, B], index: Int): RootedForm[Owner, A]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.RootedForm.state",
       "ownerId" : "class:scalive.RootedForm",
       "qualifiedName" : "scalive.RootedForm.state",
@@ -7142,6 +7166,18 @@
         {
           "id" : "def:scalive.RootedForm.triggerHttpSubmitWhen:fe6d1e56dee3c2cc",
           "signature" : "def triggerHttpSubmitWhen(condition: Boolean): Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.RootedForm.updated",
+      "ownerId" : "class:scalive.RootedForm",
+      "qualifiedName" : "scalive.RootedForm.updated",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.RootedForm.updated:49cb0ade17e49310",
+          "signature" : "def updated[B](field: RootedFormField[Owner, B], values: IterableOnce[String]): RootedForm[Owner, A]"
         }
       ]
     },

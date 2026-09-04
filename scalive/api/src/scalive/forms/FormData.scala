@@ -69,6 +69,40 @@ final case class FormData private (raw: Vector[(String, String)]):
   def asMap: Map[String, String] =
     fields.view.mapValues(_.value).toMap
 
+  /** Replaces every value for one exact field name, inserting replacements at its first position.
+    *
+    * When the field is absent, replacements are appended. Unrelated pairs retain their relative
+    * order.
+    */
+  private[scalive] def updated(name: String, values: IterableOnce[String]): FormData =
+    val replacement = values.iterator.map(name -> _).toVector
+    val first       = raw.indexWhere(_._1 == name)
+
+    if first < 0 then FormData(raw ++ replacement)
+    else
+      FormData(
+        raw.take(first) ++ replacement ++ raw.drop(first).filterNot(_._1 == name)
+      )
+
+  /** Appends one value for an exact field name after the current payload. */
+  private[scalive] def appended(name: String, value: String): FormData =
+    FormData(raw :+ (name -> value))
+
+  /** Removes one value by its position among pairs with the exact field name.
+    *
+    * @throws IndexOutOfBoundsException
+    *   when `index` does not identify an existing value for `name`
+    */
+  private[scalive] def removedAt(name: String, index: Int): FormData =
+    val matchingPositions = raw.indices.filter(position => raw(position)._1 == name)
+    if index < 0 || index >= matchingPositions.length then
+      throw new IndexOutOfBoundsException(
+        s"field value index $index out of bounds for ${matchingPositions.length} values"
+      )
+
+    val position = matchingPositions(index)
+    FormData(raw.take(position) ++ raw.drop(position + 1))
+
   /** Extracts fields textually nested below `name` and removes that outer name.
     *
     * A pair is included when its key starts with `name + "["` and ends with `]`. Encounter order

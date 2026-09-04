@@ -102,6 +102,34 @@ case Msg.Validate(event) =>
   ZIO.succeed(model.copy(form = Profile.Definition.from(event), saved = None))
 ```
 
+## Update Fields Programmatically {#update-fields-programmatically}
+
+Use @:apiSymbol(def:scalive.RootedForm.updated)`RootedForm.updated`@:@ when a server-side action
+needs to replace one field without rebuilding @:apiSymbol(class:scalive.FormData)`FormData`@:@ or
+validation state manually:
+
+```scala
+val updatedForm = profileForm.updated(
+  Profile.Name,
+  Vector("Grace Hopper")
+)
+```
+
+The supplied strings are raw browser values, not decoded domain values. A field can transform its
+decoded value with `map` without providing an inverse transformation, so the form codec remains the
+authority on whether the replacement is valid. The complete form is decoded again after every
+update, while its used fields and submission state are preserved.
+
+For fields submitted repeatedly under one exact name, use
+@:apiSymbol(def:scalive.RootedForm.appended)`appended`@:@ to add one raw value and
+@:apiSymbol(def:scalive.RootedForm.removedAt)`removedAt`@:@ to remove one by its position among that
+field's values. These operations do not add or remove indexed nested rows whose controls use several
+different names.
+
+Phoenix normally preserves browser-managed state for a focused control during DOM patches. Add
+`phx.patchFocused := true` to a control when a programmatic form update must replace its visible
+value while it remains focused.
+
 ## Handle Change And Submit Events {#handle-change-and-submit-events}
 
 Bind both events through the rooted form:

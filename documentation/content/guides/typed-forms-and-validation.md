@@ -179,9 +179,9 @@ Phoenix normally preserves browser-managed state for a focused control during DO
 `phx.patchFocused := true` to a control when a programmatic form update must replace its visible
 value while it remains focused.
 
-## Handle Change And Submit Events {#handle-change-and-submit-events}
+## Handle LiveView Change And Submit Bindings {#handle-change-and-submit-events}
 
-Bind both events through the rooted form:
+Bind both LiveView events through the rooted form:
 
 ```scala
 form(
@@ -191,6 +191,13 @@ form(
   // fields and actions
 )
 ```
+
+`onChange` installs Phoenix's `phx-change` binding, not the native HTML `onchange`
+attribute. The LiveView client observes both browser `input` and `change` events, so
+text fields normally produce change messages while the user edits. Because the binding
+is on the form, each message contains the form's successful controls and identifies the
+changed control. See [HTML and event bindings](html-dsl-and-event-bindings.md#bind-events-to-messages)
+for the distinction between LiveView bindings and native event attributes.
 
 Both messages carry `Profile.Definition.Event`. `event.form.result` is either
 owner-scoped accumulated @:apiSymbol(class:scalive.FormErrors)`FormErrors`@:@ or

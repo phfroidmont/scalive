@@ -26,11 +26,11 @@ final class Form[Owner, Schema, Domain] private[scalive] (
   def http[Msg](target: FormAction)(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     Form.http(target)(mods*)
 
-  /** Handles changes and recovery while preserving this form's schema type. */
+  /** Handles LiveView `phx-change` and recovery while preserving this form's schema type. */
   def onChange[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =
     owningDefinition.onChange(event => f(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]))
 
-  /** Handles changes and recovery with separate schema-safe callbacks. */
+  /** Handles LiveView `phx-change` and recovery with separate schema-safe callbacks. */
   def onChange[Msg](
     changed: FormEvent[Owner, Schema, Domain] => Msg,
     recovered: FormEvent[Owner, Schema, Domain] => Msg

@@ -122,7 +122,7 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   def fromValues(values: Values, interaction: FormInteraction[Owner]): Form =
     rebuild(values, interaction, Vector.empty)
 
-  /** Handles both ordinary changes and recovery as typed definition-owned events. */
+  /** Handles LiveView `phx-change` and recovery as typed definition-owned events. */
   def onChange[Msg](f: Event => Msg): Mod.Attr[Msg] =
     Mod.Attr.Group(
       Vector(
@@ -131,7 +131,7 @@ final class FormDefinition[Owner, Domain] private[scalive] (
       )
     )
 
-  /** Handles ordinary changes and recovery with separate typed callbacks. */
+  /** Handles LiveView `phx-change` and recovery with separate typed callbacks. */
   def onChange[Msg](
     changed: Event => Msg,
     recovered: Event => Msg

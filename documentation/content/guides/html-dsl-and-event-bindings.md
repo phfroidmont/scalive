@@ -182,7 +182,10 @@ to HTML that the application already trusts.
 ## Bind Events To Messages {#bind-events-to-messages}
 
 Use the @:apiSymbol(object:scalive.on)`on`@:@ bindings to produce the view's message
-type. A constant binding is enough when the event carries no application value:
+type. This namespace creates Phoenix LiveView `phx-*` bindings, not native inline
+HTML event attributes: `on.click` renders `phx-click`, and `on.change` renders
+`phx-change` rather than `onchange`. A constant binding is enough when the event
+carries no application value:
 
 ```scala
 enum Msg:
@@ -198,6 +201,21 @@ The message type remains part of the whole tree. If
 `HtmlElement[Msg]`, a binding that produces another message type does not
 compile. The shopping cart uses this directly for product-specific add and
 remove messages.
+
+The distinction matters most for forms. Phoenix drives `phx-change` from both browser
+`input` and `change` events, so a text control normally sends changes while the user
+edits rather than only when the native `change` event commits. On a form, the binding
+sends its successful controls and identifies the changed control. A binding on an
+individual control overrides the form's change binding, sends only that control, and
+still requires the control to belong to a form. Prefer the typed form helpers described
+in [Typed forms and validation](typed-forms-and-validation.md#handle-change-and-submit-events)
+when handling a complete form.
+
+Native inline attributes such as `onchange` are available only through the generic
+@:apiSymbol(def:scalive.htmlAttr)`htmlAttr`@:@ escape hatch. They contain raw client-side
+code and do not dispatch a typed Scalive message. Prefer the explicit boundaries in
+[Browser integration](browser-integration.md#choose-the-boundary) when behavior must run
+in the browser.
 
 Use @:apiSymbol(def:scalive.HtmlAttrBinding.withValue)`withValue`@:@ when an event's `value`
 should construct the message, and use

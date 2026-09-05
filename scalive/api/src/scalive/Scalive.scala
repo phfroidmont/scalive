@@ -235,6 +235,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       a(href := to.map(liveDestination), phx.link := "patch", phx.linkState := "replace", mods)
   end link
 
+  /** Raw Phoenix LiveView attributes and client behavior switches.
+    *
+    * Event attributes in this namespace accept rendered values. Use [[on]] when a browser
+    * interaction should produce a typed view message.
+    */
   object phx:
     private def attr(name: String)     = htmlAttr(s"phx-$name", StringAsIsEncoder)
     private def boolAttr(name: String) = htmlAttr(s"phx-$name", BooleanAsAttrPresenceEncoder)
@@ -287,22 +292,33 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def value(key: String) = attr(s"value-$key")
   end phx
 
+  /** Typed Phoenix LiveView event bindings.
+    *
+    * Members render `phx-*` attributes and dispatch typed messages or JavaScript commands. They are
+    * not native inline HTML event attributes such as `onclick` or `onchange`.
+    */
   object on:
     private def binding(name: String)    = HtmlAttrBinding(s"phx-$name")
     private def keyBinding(name: String) = KeyHtmlAttrBinding(s"phx-$name")
 
-    lazy val click                           = binding("click")
-    lazy val clickAway                       = binding("click-away")
-    lazy val blur                            = binding("blur")
-    lazy val focus                           = binding("focus")
-    lazy val windowBlur                      = binding("window-blur")
-    lazy val windowFocus                     = binding("window-focus")
-    lazy val keyDown                         = keyBinding("keydown")
-    lazy val keyUp                           = keyBinding("keyup")
-    lazy val windowKeyDown                   = keyBinding("window-keydown")
-    lazy val windowKeyUp                     = keyBinding("window-keyup")
-    lazy val viewportTop                     = binding("viewport-top")
-    lazy val viewportBottom                  = binding("viewport-bottom")
+    lazy val click          = binding("click")
+    lazy val clickAway      = binding("click-away")
+    lazy val blur           = binding("blur")
+    lazy val focus          = binding("focus")
+    lazy val windowBlur     = binding("window-blur")
+    lazy val windowFocus    = binding("window-focus")
+    lazy val keyDown        = keyBinding("keydown")
+    lazy val keyUp          = keyBinding("keyup")
+    lazy val windowKeyDown  = keyBinding("window-keydown")
+    lazy val windowKeyUp    = keyBinding("window-keyup")
+    lazy val viewportTop    = binding("viewport-top")
+    lazy val viewportBottom = binding("viewport-bottom")
+
+    /** Creates a `phx-change` LiveView binding.
+      *
+      * Phoenix drives this binding from browser `input` and `change` events; it is not the native
+      * `onchange` attribute.
+      */
     lazy val change                          = binding("change")
     lazy val submit                          = binding("submit")
     private[scalive] lazy val recover        = binding("auto-recover")

@@ -34,7 +34,7 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
   def event(data: FormData, kind: FormEventKind, target: Option[FormPath]): Event =
     decode(data, kind, RawFormEvent.Meta(target = target))
 
-  /** Handles translated changes and recovery with one callback. */
+  /** Handles translated LiveView `phx-change` and recovery with one callback. */
   def onChange[Msg](f: Event => Msg): Mod.Attr[Msg] =
     Mod.Attr.Group(
       Vector(
@@ -43,7 +43,7 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
       )
     )
 
-  /** Handles translated changes and recovery with separate callbacks. */
+  /** Handles translated LiveView `phx-change` and recovery with separate callbacks. */
   def onChange[Msg](changed: Event => Msg, recovered: Event => Msg): Mod.Attr[Msg] =
     Mod.Attr.Group(
       Vector(

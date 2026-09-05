@@ -1092,9 +1092,9 @@ final case class FormSubmission[Owner, Schema, Domain] private (
 )
 ```
 
-The token identifies the save operation. The revision identifies which current edit state was
-submitted. Both are required: revision comparison preserves later edits, while the token rejects an
-out-of-order completion.
+The token identifies the workflow instance and save generation. The revision identifies which
+current edit state was submitted. Both are required: revision comparison preserves later edits,
+while the token rejects an out-of-order or cross-workflow completion.
 
 `FormSubmission` may expose `values` and `value` as convenience accessors delegated to its valid
 snapshot.
@@ -1130,8 +1130,9 @@ workflow.saveCancelled(token)
 `beginSave` succeeds only when the current form is valid. An invalid attempt returns a workflow whose
 current form has all errors visible, but does not create a persistence submission.
 
-The workflow stores a monotonic submission generation. Every attempt receives a new token, including
-a retry at the same edit revision. Token values are never derived only from `FormRevision`.
+The workflow stores a stable identity and monotonic submission generation. Every attempt receives a
+new token, including a retry at the same edit revision. Token equality includes both the workflow
+identity and generation; tokens are never derived only from `FormRevision`.
 
 `beginSave` rejects an attempt while another save is in flight and returns an observable
 `AlreadySaving` result. The utility does not claim to make overlapping persistence operations safe.

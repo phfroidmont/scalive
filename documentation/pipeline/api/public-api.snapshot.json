@@ -536,8 +536,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.HtmlAttrBinding:91da62ce93e959a5",
-          "signature" : "class HtmlAttrBinding(name: String, companionAttrs: Vector[Mod.Attr[Nothing]] = ...)"
+          "id" : "class:scalive.HtmlAttrBinding:e3be23dd315a9159",
+          "signature" : "class HtmlAttrBinding"
         }
       ]
     },
@@ -596,8 +596,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.KeyHtmlAttrBinding:098c3d354edcea81",
-          "signature" : "class KeyHtmlAttrBinding(name: String, companionAttrs: Vector[Mod.Attr[Nothing]] = ...) extends HtmlAttrBinding"
+          "id" : "class:scalive.KeyHtmlAttrBinding:3beef9215dc3db32",
+          "signature" : "class KeyHtmlAttrBinding extends HtmlAttrBinding"
         }
       ]
     },
@@ -11158,30 +11158,6 @@
       ]
     },
     {
-      "id" : "enum:scalive.Mod.Attr.Binding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.Binding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.Binding:4906e5771faec7c7",
-          "signature" : "enum Binding[Msg](name: String, operation: BindingPayload => Msg) extends Mod.Attr[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.Mod.Attr.ComponentBinding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.ComponentBinding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.ComponentBinding:924d374409b8274c",
-          "signature" : "enum ComponentBinding[Msg](name: String, target: ComponentRef[Msg], operation: BindingPayload => Msg) extends Mod.Attr[Msg]"
-        }
-      ]
-    },
-    {
       "id" : "enum:scalive.Mod.Attr.ComponentTarget",
       "ownerId" : "enum:scalive.Mod.Attr",
       "qualifiedName" : "scalive.Mod.Attr.ComponentTarget",
@@ -11230,30 +11206,6 @@
       ]
     },
     {
-      "id" : "enum:scalive.Mod.Attr.FormBinding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.FormBinding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.FormBinding:d2253a3610db8621",
-          "signature" : "enum FormBinding[Msg](name: String, operation: FormData => Msg) extends Mod.Attr[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.Mod.Attr.FormEventBinding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.FormEventBinding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.FormEventBinding:689d953506af4a7c",
-          "signature" : "enum FormEventBinding[A, Msg](name: String, codec: FormCodec[A], operation: RawFormEvent[A] => Msg) extends Mod.Attr[Msg]"
-        }
-      ]
-    },
-    {
       "id" : "enum:scalive.Mod.Attr.Group",
       "ownerId" : "enum:scalive.Mod.Attr",
       "qualifiedName" : "scalive.Mod.Attr.Group",
@@ -11262,54 +11214,6 @@
         {
           "id" : "enum:scalive.Mod.Attr.Group:24d014ddc080704e",
           "signature" : "enum Group[Msg](attrs: Vector[Mod.Attr[Msg]]) extends Mod.Attr[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.Mod.Attr.JsBinding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.JsBinding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.JsBinding:b8af4cb21e4f07c5",
-          "signature" : "enum JsBinding[Msg](name: String, command: JSCommands.JSCommand[Msg]) extends Mod.Attr[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.Mod.Attr.RoutedBinding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.RoutedBinding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.RoutedBinding:d53569d5082baf57",
-          "signature" : "enum RoutedBinding(name: String, operation: BindingPayload => ComponentDispatch) extends Mod.Attr[Nothing]"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.Mod.Attr.SignalBinding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.SignalBinding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.SignalBinding:70fca70009df31bb",
-          "signature" : "enum SignalBinding[A, Msg](name: String, signal: Signal[A], operation: (A, BindingPayload) => Msg) extends Mod.Attr[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.Mod.Attr.SignalJsBinding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.SignalJsBinding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.SignalJsBinding:981b146821363926",
-          "signature" : "enum SignalJsBinding[Msg](name: String, command: Signal[JSCommands.JSCommand[Msg]]) extends Mod.Attr[Msg]"
         }
       ]
     },
@@ -11370,18 +11274,6 @@
         {
           "id" : "enum:scalive.Mod.Attr.StaticValueAsPresence:3cc266168618e46d",
           "signature" : "enum StaticValueAsPresence(name: String, value: Boolean) extends Mod.Attr[Nothing]"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.Mod.Attr.TypedFormEventBinding",
-      "ownerId" : "enum:scalive.Mod.Attr",
-      "qualifiedName" : "scalive.Mod.Attr.TypedFormEventBinding",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.Mod.Attr.TypedFormEventBinding:d4a264e8fd22d22f",
-          "signature" : "enum TypedFormEventBinding[Event, Msg](name: String, decode: (FormData, FormEventKind, RawFormEvent.Meta) => Event, operation: Event => Msg) extends Mod.Attr[Msg]"
         }
       ]
     },
@@ -12094,18 +11986,6 @@
         {
           "id" : "extension:scalive.FormRowView.presence:9247d26c96117342",
           "signature" : "extension def presence[Owner, Schema, Group, Row](row: Signal[FormRowView[Owner, Schema, Group, Row]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormSubmissionToken.value",
-      "ownerId" : "object:scalive.FormSubmissionToken",
-      "qualifiedName" : "scalive.FormSubmissionToken.value",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormSubmissionToken.value:7df76bbd2b7aec41",
-          "signature" : "extension def value(token: FormWorkflow$package.FormSubmissionToken): Long"
         }
       ]
     },
@@ -17592,8 +17472,8 @@
       "kind" : "opaqueType",
       "signatures" : [
         {
-          "id" : "opaque-type:scalive.FormSubmissionToken:ad3fc27d117c6ca5",
-          "signature" : "opaque type FormSubmissionToken = Long"
+          "id" : "opaque-type:scalive.FormSubmissionToken:1183c08ce6ac14f3",
+          "signature" : "opaque type FormSubmissionToken = (AnyRef, Long)"
         }
       ]
     },
@@ -23717,66 +23597,6 @@
       ]
     },
     {
-      "id" : "val:scalive.Mod.Attr.Binding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.Binding",
-      "qualifiedName" : "scalive.Mod.Attr.Binding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.Binding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.Binding.operation",
-      "ownerId" : "enum:scalive.Mod.Attr.Binding",
-      "qualifiedName" : "scalive.Mod.Attr.Binding.operation",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.Binding.operation:306824b8527c9293",
-          "signature" : "val operation: BindingPayload => Msg"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.ComponentBinding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.ComponentBinding",
-      "qualifiedName" : "scalive.Mod.Attr.ComponentBinding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.ComponentBinding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.ComponentBinding.operation",
-      "ownerId" : "enum:scalive.Mod.Attr.ComponentBinding",
-      "qualifiedName" : "scalive.Mod.Attr.ComponentBinding.operation",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.ComponentBinding.operation:934abce476c75da6",
-          "signature" : "val operation: BindingPayload => Msg"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.ComponentBinding.target",
-      "ownerId" : "enum:scalive.Mod.Attr.ComponentBinding",
-      "qualifiedName" : "scalive.Mod.Attr.ComponentBinding.target",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.ComponentBinding.target:7f302defd781e15f",
-          "signature" : "val target: ComponentRef[Msg]"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.Mod.Attr.ComponentTarget.target",
       "ownerId" : "enum:scalive.Mod.Attr.ComponentTarget",
       "qualifiedName" : "scalive.Mod.Attr.ComponentTarget.target",
@@ -23861,66 +23681,6 @@
       ]
     },
     {
-      "id" : "val:scalive.Mod.Attr.FormBinding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.FormBinding",
-      "qualifiedName" : "scalive.Mod.Attr.FormBinding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.FormBinding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.FormBinding.operation",
-      "ownerId" : "enum:scalive.Mod.Attr.FormBinding",
-      "qualifiedName" : "scalive.Mod.Attr.FormBinding.operation",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.FormBinding.operation:45f0297e67894ade",
-          "signature" : "val operation: FormData => Msg"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.FormEventBinding.codec",
-      "ownerId" : "enum:scalive.Mod.Attr.FormEventBinding",
-      "qualifiedName" : "scalive.Mod.Attr.FormEventBinding.codec",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.FormEventBinding.codec:e99f19130e761567",
-          "signature" : "val codec: FormCodec[A]"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.FormEventBinding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.FormEventBinding",
-      "qualifiedName" : "scalive.Mod.Attr.FormEventBinding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.FormEventBinding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.FormEventBinding.operation",
-      "ownerId" : "enum:scalive.Mod.Attr.FormEventBinding",
-      "qualifiedName" : "scalive.Mod.Attr.FormEventBinding.operation",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.FormEventBinding.operation:127afb92fb56c528",
-          "signature" : "val operation: RawFormEvent[A] => Msg"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.Mod.Attr.Group.attrs",
       "ownerId" : "enum:scalive.Mod.Attr.Group",
       "qualifiedName" : "scalive.Mod.Attr.Group.attrs",
@@ -23929,114 +23689,6 @@
         {
           "id" : "val:scalive.Mod.Attr.Group.attrs:bcc21e0d0a59a731",
           "signature" : "val attrs: Vector[Mod.Attr[Msg]]"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.JsBinding.command",
-      "ownerId" : "enum:scalive.Mod.Attr.JsBinding",
-      "qualifiedName" : "scalive.Mod.Attr.JsBinding.command",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.JsBinding.command:8ab7ed4010998495",
-          "signature" : "val command: JSCommands.JSCommand[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.JsBinding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.JsBinding",
-      "qualifiedName" : "scalive.Mod.Attr.JsBinding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.JsBinding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.RoutedBinding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.RoutedBinding",
-      "qualifiedName" : "scalive.Mod.Attr.RoutedBinding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.RoutedBinding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.RoutedBinding.operation",
-      "ownerId" : "enum:scalive.Mod.Attr.RoutedBinding",
-      "qualifiedName" : "scalive.Mod.Attr.RoutedBinding.operation",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.RoutedBinding.operation:167eed92693f5892",
-          "signature" : "val operation: BindingPayload => ComponentDispatch"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.SignalBinding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.SignalBinding",
-      "qualifiedName" : "scalive.Mod.Attr.SignalBinding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.SignalBinding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.SignalBinding.operation",
-      "ownerId" : "enum:scalive.Mod.Attr.SignalBinding",
-      "qualifiedName" : "scalive.Mod.Attr.SignalBinding.operation",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.SignalBinding.operation:d08f00d58642ece1",
-          "signature" : "val operation: (A, BindingPayload) => Msg"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.SignalBinding.signal",
-      "ownerId" : "enum:scalive.Mod.Attr.SignalBinding",
-      "qualifiedName" : "scalive.Mod.Attr.SignalBinding.signal",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.SignalBinding.signal:c0c91845d61a9ac7",
-          "signature" : "val signal: Signal[A]"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.SignalJsBinding.command",
-      "ownerId" : "enum:scalive.Mod.Attr.SignalJsBinding",
-      "qualifiedName" : "scalive.Mod.Attr.SignalJsBinding.command",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.SignalJsBinding.command:c067a97f1f17b15e",
-          "signature" : "val command: Signal[JSCommands.JSCommand[Msg]]"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.SignalJsBinding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.SignalJsBinding",
-      "qualifiedName" : "scalive.Mod.Attr.SignalJsBinding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.SignalJsBinding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
         }
       ]
     },
@@ -24157,42 +23809,6 @@
         {
           "id" : "val:scalive.Mod.Attr.StaticValueAsPresence.value:d53d4f053bdd55e6",
           "signature" : "val value: Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.TypedFormEventBinding.decode",
-      "ownerId" : "enum:scalive.Mod.Attr.TypedFormEventBinding",
-      "qualifiedName" : "scalive.Mod.Attr.TypedFormEventBinding.decode",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.TypedFormEventBinding.decode:07fbea2d46dc34de",
-          "signature" : "val decode: (FormData, FormEventKind, RawFormEvent.Meta) => Event"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.TypedFormEventBinding.name",
-      "ownerId" : "enum:scalive.Mod.Attr.TypedFormEventBinding",
-      "qualifiedName" : "scalive.Mod.Attr.TypedFormEventBinding.name",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.TypedFormEventBinding.name:81da2bb6fc574443",
-          "signature" : "val name: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.Mod.Attr.TypedFormEventBinding.operation",
-      "ownerId" : "enum:scalive.Mod.Attr.TypedFormEventBinding",
-      "qualifiedName" : "scalive.Mod.Attr.TypedFormEventBinding.operation",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.Mod.Attr.TypedFormEventBinding.operation:ef9a6d2acfed63ce",
-          "signature" : "val operation: Event => Msg"
         }
       ]
     },

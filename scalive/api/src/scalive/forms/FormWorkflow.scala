@@ -16,14 +16,11 @@ object FormRevision:
     revision + 1L
 
 /** Opaque correlation token for exactly one save attempt. */
-opaque type FormSubmissionToken = Long
+opaque type FormSubmissionToken = (AnyRef, Long)
 
 object FormSubmissionToken:
-  extension (token: FormSubmissionToken)
-    /** Numeric token for transport correlation. */
-    def value: Long = token
-
-  private[scalive] def apply(value: Long): FormSubmissionToken = value
+  private[scalive] def apply(workflowIdentity: AnyRef, value: Long): FormSubmissionToken =
+    workflowIdentity -> value
 
 /** A definition-owned proof that values decoded successfully.
   *
@@ -75,6 +72,7 @@ enum FormWorkflowReset[+Workflow, +Submission]:
   */
 final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
   private val definition: FormDefinition[Owner, Domain],
+  private val workflowIdentity: AnyRef,
   val current: Form[Owner, Schema, Domain],
   val baseline: FormValues[Owner, Schema],
   val revision: FormRevision,
@@ -127,7 +125,7 @@ final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
             if nextSubmissionGeneration == Long.MaxValue then
               throw new IllegalStateException("form submission generation exhausted")
             val submission = new FormSubmission(
-              FormSubmissionToken(nextSubmissionGeneration),
+              FormSubmissionToken(workflowIdentity, nextSubmissionGeneration),
               revision,
               snapshot
             )
@@ -215,6 +213,7 @@ final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
   ): FormWorkflow[Owner, Schema, Domain, Failure] =
     new FormWorkflow(
       definition,
+      workflowIdentity,
       current,
       baseline,
       revision,
@@ -230,6 +229,7 @@ private[scalive] object FormWorkflow:
   ): definition.Workflow[Failure] =
     new FormWorkflow(
       definition,
+      new Object,
       form,
       form.values,
       FormRevision.initial,

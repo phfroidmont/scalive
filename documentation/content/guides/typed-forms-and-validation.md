@@ -469,6 +469,11 @@ model.workflow.saveSucceeded(token) match
   case FormWorkflowTransition.Stale(_)       => model
 ```
 
+Carry the captured token unchanged through the persistence callback. A
+completion carrying a token from another save attempt is stale. Run the effect with
+[`ctx.async.start`](async-work-and-subscriptions.md#run-finite-work-with-a-typed-key)
+and close over that token in the completion-message mapper.
+
 Use `saveFailed` to retain the failed submission for retry diagnostics and
 `saveCancelled` to return to idle without advancing the baseline. A stale token
 is reported instead of overwriting current state. A successful save advances

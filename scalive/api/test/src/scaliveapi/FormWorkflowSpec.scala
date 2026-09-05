@@ -55,6 +55,33 @@ object FormWorkflowSpec extends ZIOSpecDefault:
           case _ => false
       )
     },
+    test("rejects a token from another workflow") {
+      val first  = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val second = Definition.workflow[String](Definition.initial(Name.initial("Grace")))
+      val (firstSubmission, secondSaving, secondSubmission) =
+        (first.beginSave, second.beginSave) match
+          case (
+                FormSaveStart.Started(_, firstSubmission),
+                FormSaveStart.Started(secondSaving, secondSubmission)
+              ) => (firstSubmission, secondSaving, secondSubmission)
+          case _ => throw new AssertionError("saves did not start")
+      val canonical = Definition.initial(Name.initial("Canonical")).validSnapshot.get
+      val completions = Vector(
+        secondSaving.saveSucceeded(firstSubmission.token),
+        secondSaving.saveSucceeded(firstSubmission.token, canonical),
+        secondSaving.saveFailed(firstSubmission.token, "foreign failure"),
+        secondSaving.saveCancelled(firstSubmission.token)
+      )
+
+      assertTrue(
+        firstSubmission.token != secondSubmission.token,
+        completions.forall {
+          case FormWorkflowTransition.Stale(current) => current eq secondSaving
+          case FormWorkflowTransition.Applied(_)     => false
+        },
+        secondSaving.save == FormSaveState.Saving(secondSubmission)
+      )
+    },
     test("advances the baseline while preserving edits made during save") {
       val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
       val started = workflow.beginSave match
@@ -78,6 +105,59 @@ object FormWorkflowSpec extends ZIOSpecDefault:
         completed.saveFailed(submission.token, "stale").isInstanceOf[
           FormWorkflowTransition.Stale[?]
         ]
+      )
+    },
+    test("advances a canonical baseline while preserving newer edits") {
+      val workflow  = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val canonical = Definition.initial(Name.initial("Ada Lovelace")).validSnapshot.get
+      val (saving, submission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _ => throw new AssertionError("save did not start")
+      val edited = saving.updated(saving.current.updated(Name, "Grace"))
+      val completed = edited.saveSucceeded(submission.token, canonical) match
+        case FormWorkflowTransition.Applied(next) => next
+        case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+
+      assertTrue(
+        completed.current.valueOption.contains(Draft("Grace")),
+        completed.baseline == canonical.values,
+        completed.isDirty,
+        completed.save == FormSaveState.Idle
+      )
+    },
+    test("becomes clean when newer edits equal the canonical baseline") {
+      val workflow  = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val canonical = Definition.initial(Name.initial("Grace")).validSnapshot.get
+      val (saving, submission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _ => throw new AssertionError("save did not start")
+      val edited = saving.updated(saving.current.updated(Name, "Grace"))
+      val completed = edited.saveSucceeded(submission.token, canonical) match
+        case FormWorkflowTransition.Applied(next) => next
+        case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+
+      assertTrue(
+        completed.current eq edited.current,
+        completed.baseline == canonical.values,
+        !completed.isDirty,
+        completed.revision == edited.revision
+      )
+    },
+    test("retains newer edits and the submitted snapshot after save failure") {
+      val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val (saving, submission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _ => throw new AssertionError("save did not start")
+      val edited = saving.updated(saving.current.updated(Name, "Grace"))
+      val failed = edited.saveFailed(submission.token, "offline") match
+        case FormWorkflowTransition.Applied(next) => next
+        case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+
+      assertTrue(
+        failed.current.valueOption.contains(Draft("Grace")),
+        failed.baseline == workflow.baseline,
+        failed.isDirty,
+        failed.save == FormSaveState.Failed(submission, "offline")
       )
     },
     test("applies canonical success to unchanged edits and rejects duplicate completion") {

@@ -1,6 +1,7 @@
 package scalive
 
 import scala.collection.mutable
+import scala.reflect.Enum
 
 /** Bounded Phoenix indexed nested-parameter translation into stable keyed core rows.
   *
@@ -55,6 +56,17 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
   /** Handles a translated Phoenix-compatible submission. */
   def onSubmit[Msg](f: Event => Msg): Mod.Attr[Msg] =
     on.submit.formWith((data, kind, meta) => decode(data, kind, meta))(f)
+
+  /** Handles a translated submission and decodes one definition-owned submit action. */
+  def onSubmit[Action <: Enum, Msg](
+    submitter: FormSubmitter[Owner, Schema, Action]
+  )(
+    f: (Event, Either[FormSubmitter.DecodeError, Action]) => Msg
+  ): Mod.Attr[Msg] =
+    require(submitter.definition eq definition, "form submitter belongs to another definition")
+    on.submit.formWith((data, kind, meta) => decode(data, kind, meta))(event =>
+      f(event, submitter.decode(event.data))
+    )
 
   /** Handles a translated Phoenix-compatible recovery payload. */
   def onRecover[Msg](f: Event => Msg): Mod.Attr[Msg] =

@@ -154,7 +154,7 @@ final private[scalive] case class RootEvent(
     val targetResult = fields.get("_target").map(decodeTarget).getOrElse(Right(None))
     RawFormEvent.Meta(
       target = targetResult.toOption.flatten,
-      submitter = decodeSubmitter(fields, data),
+      rawSubmitter = decodeSubmitter(fields, data),
       recovery = fields
         .get("_recover")
         .orElse(fields.get("_recovery"))
@@ -184,16 +184,16 @@ final private[scalive] case class RootEvent(
   private def decodeSubmitter(
     fields: Map[String, Json],
     data: FormData
-  ): Option[FormSubmitter] =
+  ): Option[RawFormSubmitter] =
     fields.get("submitter").orElse(fields.get("_submitter")).flatMap {
       case Json.Obj(rawSubmitterFields) =>
         val submitterFields = rawSubmitterFields.toMap
         submitterFields.get("name").flatMap(_.asString).filter(_.nonEmpty).map { name =>
           val value = submitterFields.get("value").flatMap(_.asString).getOrElse("")
-          FormSubmitter(name, value)
+          RawFormSubmitter(name, value)
         }
       case Json.Str(name) if name.nonEmpty =>
-        data.get(name).map(value => FormSubmitter(name, value))
+        data.get(name).map(value => RawFormSubmitter(name, value))
       case _ => None
     }
 

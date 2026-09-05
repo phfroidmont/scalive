@@ -18,7 +18,7 @@ enum FormEventKind derives CanEqual:
   */
 final case class FormEventMeta[Owner](
   target: Option[FormAddress[Owner]] = None,
-  submitter: Option[FormSubmitter] = None,
+  rawSubmitter: Option[RawFormSubmitter] = None,
   metadata: Map[String, String] = Map.empty,
   browserTarget: Option[FormPath] = None,
   diagnostics: Vector[String] = Vector.empty)
@@ -46,8 +46,8 @@ final class FormEvent[Owner, Schema, Domain] private[scalive] (
   /** Resolved logical target, absent when the browser target is unknown or malformed. */
   def target: Option[FormAddress[Owner]] = meta.target
 
-  /** Submit control metadata, when supplied by the client protocol. */
-  def submitter: Option[FormSubmitter] = meta.submitter
+  /** Untrusted submit-control metadata, when supplied by the client protocol. */
+  def rawSubmitter: Option[RawFormSubmitter] = meta.rawSubmitter
 
 /** A codec-backed event retained as an explicit low-level escape hatch.
   *
@@ -58,7 +58,7 @@ final class RawFormEvent[+A] private[scalive] (
   val raw: FormData,
   val value: Either[FormErrors[Any], A],
   val target: Option[FormPath],
-  val submitter: Option[FormSubmitter],
+  val rawSubmitter: Option[RawFormSubmitter],
   val recovery: Boolean,
   val submitted: Boolean,
   val metadata: Map[String, String]):
@@ -82,7 +82,7 @@ final class RawFormEvent[+A] private[scalive] (
 object RawFormEvent:
   final private[scalive] case class Meta(
     target: Option[FormPath] = None,
-    submitter: Option[FormSubmitter] = None,
+    rawSubmitter: Option[RawFormSubmitter] = None,
     recovery: Boolean = false,
     metadata: Map[String, String] = Map.empty,
     diagnostics: Vector[String] = Vector.empty,
@@ -109,7 +109,7 @@ object RawFormEvent:
       raw,
       codec.decode(raw),
       meta.target,
-      meta.submitter,
+      meta.rawSubmitter,
       recovery = kind == FormEventKind.Recovered || meta.recovery,
       submitted = kind == FormEventKind.Submitted,
       meta.metadata

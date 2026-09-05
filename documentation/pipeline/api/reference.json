@@ -3,9 +3,10 @@
   "domTypesVersion": "19.0.0",
   "domGeneratorPath": "DomDefsGenerator.mill",
   "summaries": {
-    "class:scalive.FormEventMeta": "Logical target plus the original browser path, submitter, metadata, and diagnostics for a typed form event.",
+    "class:scalive.FormEventMeta": "Logical target plus the original browser path, optional raw submitter evidence, metadata, and diagnostics for a typed form event.",
     "class:scalive.FormLimits": "Resource bounds applied while projecting untrusted payloads into semantic form values.",
-    "class:scalive.FormSubmitter": "Name and value of the successful control used to submit a form.",
+    "class:scalive.FormSubmitter": "Definition-owned finite actions rendered and decoded through native form submit controls.",
+    "class:scalive.RawFormSubmitter": "Untrusted name and value metadata for a successful form submit control.",
     "class:scalive.HttpFormDecoder": "Bounded decoder for CSRF-protected, URL-encoded ordinary HTTP forms.",
     "def:scalive.HttpFormDecoder.Error.code": "Returns a stable low-cardinality rejection code for logs and metrics.",
     "def:scalive.HttpFormDecoder.Error.toResponse": "Maps transport and security rejection categories to conservative HTTP responses.",
@@ -19,14 +20,13 @@
     "val:scalive.FormEventMeta.browserTarget": "Original protocol-level form path, including compatibility-layer spelling.",
     "val:scalive.FormEventMeta.diagnostics": "Non-fatal target and compatibility translation diagnostics.",
     "val:scalive.FormEventMeta.metadata": "Additional event metadata supplied by the client protocol.",
-    "val:scalive.FormEventMeta.submitter": "Submit control metadata supplied by the client protocol, when available.",
+    "val:scalive.FormEventMeta.rawSubmitter": "Untrusted submit control metadata supplied by the client protocol, when available.",
     "val:scalive.FormEventMeta.target": "Definition-resolved stable logical address of the changed field, when available.",
     "val:scalive.FormLimits.maxErrors": "Maximum number of projection and validation errors retained for one event.",
     "val:scalive.FormLimits.maxPathDepth": "Maximum accepted nesting depth for one submitted form path.",
     "val:scalive.FormLimits.maxRowsPerGroup": "Maximum number of repeated rows retained in one group.",
     "val:scalive.FormLimits.maxSegmentLength": "Maximum accepted character length for one form-path segment.",
     "val:scalive.FormLimits.maxValuesPerField": "Maximum number of raw values retained for one declared field.",
-    "val:scalive.FormSubmitter.name": "Browser name of the successful submit control.",
-    "val:scalive.FormSubmitter.value": "Browser value of the successful submit control."
+    "val:scalive.FormSubmitter.name": "Browser field name shared by controls rendered from this typed submitter."
   }
 }

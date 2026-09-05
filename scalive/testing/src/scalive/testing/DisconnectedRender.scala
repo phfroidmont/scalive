@@ -10,7 +10,7 @@ import org.jsoup.nodes.{Document, Element}
 import zio.*
 import zio.http.*
 
-import scalive.{FormData, FormPath, FormSubmitter}
+import scalive.{FormData, FormPath, RawFormSubmitter}
 
 /** Runs serverless tests against the first, disconnected HTTP render.
   *
@@ -188,7 +188,7 @@ final class RenderedForm private[testing] (
   def submit[R](
     routes: Routes[R, Nothing],
     data: FormData,
-    submitter: Option[FormSubmitter] = None
+    submitter: Option[RawFormSubmitter] = None
   ): ZIO[R, Throwable, RenderedPage] =
     val fields = data.raw ++ submitter.map(value => value.name -> value.value)
 

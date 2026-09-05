@@ -174,7 +174,7 @@ for
                     LoginForm.Email.name      -> "ada@example.test"
                   )
                 ),
-                submitter = Some(FormSubmitter("sign-in", "yes"))
+                 submitter = Some(RawFormSubmitter("sign-in", "yes"))
               )
   dashboard <- redirect.followSeeOther(liveRoutes)
 yield assertTrue(dashboard.text.contains("Welcome"))
@@ -307,9 +307,25 @@ for
 yield assertTrue(
   changed.contains("Name is required"),
   !changed.contains("Enter a valid email"),
-  submitted.contains("Enter a valid email")
+submitted.contains("Enter a valid email")
 )
 ```
+
+For a definition-owned typed submitter, pass its raw successful-control pair explicitly. The
+connected harness appends that pair to the ordered payload just as the Phoenix browser serializer
+does; it does not synthesize optional protocol metadata:
+
+```scala
+view.submitForm(
+  "#profile-form",
+  validFields,
+  submitter = Some(Profile.Submitter.raw(Profile.Intent.Preview))
+)
+```
+
+This exercises the same `FormData` decoder as a real button click. Use a browser test when the claim
+also depends on native implicit submission, form association, constraint validation, or JavaScript
+loading behavior.
 
 Repeated forms must submit every row's presence control along with its fields.
 Exercise add, remove, and reorder controls through the connected view, then

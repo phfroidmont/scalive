@@ -202,8 +202,10 @@ for the distinction between LiveView bindings and native event attributes.
 Both messages carry `Profile.Definition.Event`. `event.form.result` is either
 owner-scoped accumulated @:apiSymbol(class:scalive.FormErrors)`FormErrors`@:@ or
 the decoded `Profile`. `event.kind` distinguishes `Changed`, `Submitted`, and
-`Recovered`; `event.meta` contains the logical target, submitter, browser target,
-metadata, and diagnostics. Submitted events rebuild a form with all errors
+`Recovered`; `event.meta` contains the logical target, optional raw submitter metadata, browser
+target, metadata, and diagnostics. The standard Phoenix browser client includes a named submit
+control in `event.data` rather than `event.rawSubmitter`; use a definition-owned typed submitter for
+application action routing. Submitted events rebuild a form with all errors
 visible, while change and recovery events show errors only for used fields.
 Use `RawFormEvent[A]` only for an explicitly low-level
 `on.change.form(formCodec)` or equivalent `FormCodec` binding; definition-backed
@@ -234,6 +236,63 @@ case Msg.Save(event) =>
       saved = None
     ))
 ```
+
+## Route Multiple Submit Actions {#route-multiple-submit-actions}
+
+Use one definition-owned @:apiSymbol(class:scalive.FormSubmitter)`FormSubmitter`@:@ when several
+native submit buttons send the same typed form to different operations. Give each enum case an
+explicit wire value so renaming a Scala case does not silently change the browser contract:
+
+```scala
+enum Intent(val wireValue: String):
+  case Discover extends Intent("discover")
+  case Preview  extends Intent("preview")
+  case Save     extends Intent("save")
+
+val Submitter = Profile.Definition.submitter(Intent.values)(_.wireValue)
+```
+
+The default browser name is generated below the form root in Scalive's reserved namespace. Supply a
+checked custom name only when an existing HTTP or Phoenix boundary requires one:
+
+```scala
+val CompatibleSubmitter =
+  Profile.Definition.submitter(Intent.values, wireName = "action")(_.wireValue)
+```
+
+Bind the descriptor once and render each operation from the same mapping:
+
+```scala
+enum Msg:
+  case Validate(event: Profile.Definition.Event)
+  case Submit(
+    event: Profile.Definition.Event,
+    intent: Either[FormSubmitter.DecodeError, Intent]
+  )
+
+form(
+  Profile.Definition.onChange(Msg.Validate(_)),
+  Profile.Definition.onSubmit(Submitter)(Msg.Submit.apply),
+  Submitter.button(Intent.Discover)("Discover"),
+  Submitter.button(Intent.Preview)("Preview"),
+  Submitter.button(Intent.Save)("Save")
+)
+```
+
+The binding decodes exactly one value from lossless `FormData`. Missing, unknown, and duplicate
+values remain distinct `DecodeError` cases. There is no implicit default for an Enter-triggered or
+programmatic submission without a named submitter. Every decoded action remains untrusted and must
+be authorized before performing state-changing work.
+
+The action result and `event.form.result` are deliberately independent. A discovery operation can
+inspect the rebuilt field state even when the complete domain product is invalid, while Save can
+require `Right(profile)`. All buttons still trigger `FormEventKind.Submitted`, so all validation
+errors become visible. Keep continuous validation on `onChange`; use an ordinary typed click message
+for an operation that does not need the submitted form.
+
+Use `Submitter.attributes(intent)` for a native submit `input`, a form-associated external control,
+or other custom markup. The runnable [typed profile form](../examples/profile-form.md) demonstrates
+Preview and Save buttons through the same descriptor.
 
 ## Recover A Form After Reconnect {#recover-a-form-after-reconnect}
 

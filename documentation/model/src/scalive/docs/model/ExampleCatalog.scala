@@ -211,11 +211,11 @@ object ExampleCatalog:
     id = "profile-form",
     title = "Typed profile form",
     description =
-      "Schema-owned fields rebuild typed change and submit events with canonical values and logical-address validation.",
+      "Schema-owned fields and a typed submitter rebuild validated profile previews and saves from native form events.",
     category = ExampleCategory.UserInput,
-    topics = Vector("forms", "validation", "typed input", "accessibility"),
-    aliases = Vector("FormRoot", "FormEvent", "profile", "errors", "submit"),
-    resetDescription = "Clear every field, validation state, and saved profile.",
+    topics = Vector("forms", "validation", "typed input", "typed submitter", "accessibility"),
+    aliases = Vector("FormRoot", "FormEvent", "FormSubmitter", "profile", "errors", "submit"),
+    resetDescription = "Clear every field, validation state, preview, and saved profile.",
     sources = Vector(
       ExampleSource(
         label = "LiveView",

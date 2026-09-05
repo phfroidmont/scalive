@@ -1,7 +1,7 @@
 package scalive
 
-/** The successful control used to submit a form, when reported by the client. */
-final case class FormSubmitter(name: String, value: String)
+/** Untrusted successful-control metadata reported by a client protocol. */
+final case class RawFormSubmitter(name: String, value: String)
 
 enum ErrorVisibility derives CanEqual:
   case UsedOnly

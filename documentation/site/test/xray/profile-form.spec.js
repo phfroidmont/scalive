@@ -1,6 +1,6 @@
 import { expect, test } from "./playwright.js"
 
-test("validates, saves, resets, and traces a typed profile form", async ({ page }) => {
+test("validates, previews, saves, resets, and traces a typed profile form", async ({ page }) => {
   await page.goto("/examples/profile-form")
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
 
@@ -20,15 +20,21 @@ test("validates, saves, resets, and traces a typed profile form", async ({ page 
   await expect(example.locator("[data-profile-saved]")).toHaveCount(0)
 
   await form.getByLabel("Email").fill("ada@example.com")
+  await form.getByRole("button", { name: "Preview profile" }).click()
+  await expect(example.locator("[data-profile-previewed]")).toHaveText(
+    "Previewing Ada Lovelace's profile.",
+  )
+  await expect(example.locator("[data-profile-saved]")).toHaveCount(0)
   await form.getByRole("button", { name: "Save profile" }).click()
   await expect(example.locator("[data-profile-saved]")).toHaveText("Saved Ada Lovelace's profile.")
+  await expect(example.locator("[data-profile-previewed]")).toHaveCount(0)
   const saveInteractions = inspector.locator("[data-trace-interaction]").filter({ hasText: "Save" })
   await expect(saveInteractions).toHaveCount(1)
   await saveInteractions.click()
   await expect(saveInteractions).toHaveAttribute("aria-pressed", "true")
   const capturedTrace = inspector.locator('[data-trace-provenance="captured"]')
   await expect(capturedTrace.locator('[data-trace-evidence="Updated model"] code')).toHaveText(
-    "Model(form = _, saved = _)",
+    "Model(form = _, previewed = _, saved = _)",
   )
   const projectedTrace = await capturedTrace.textContent()
   expect(projectedTrace).toContain("ada@example.com")

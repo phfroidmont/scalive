@@ -180,6 +180,7 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
       val profile = ExampleRegistry.get("profile-form").get
       val model = ProfileFormExample.Model(
         form = ProfileFormExample.Profile.Definition.initial(),
+        previewed = None,
         saved = Some(
           ProfileFormExample.Profile("Ada Lovelace", "secret@example.com", "Private biography")
         )
@@ -253,7 +254,7 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         projected.fields.contains("saveState" -> "saving"),
         !projected.toString.contains("Private draft"),
         !eventProjection.toString.contains("Private event draft"),
-        !completion.toString.contains(token.value.toString)
+        !completion.toString.contains(token.toString)
       )
     },
     test("projects navigation presets without raw destination strings") {

@@ -176,7 +176,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
           case BindingPayload.Form(data, meta) =>
             data.raw == Vector("tag" -> "first", "tag" -> "second", "save" -> "Publish") &&
               meta.target.contains(FormPath("user", "name")) &&
-              meta.submitter.contains(FormSubmitter("save", "Publish")) && meta.recovery &&
+              meta.rawSubmitter.contains(RawFormSubmitter("save", "Publish")) && meta.recovery &&
               meta.metadata("details") == "{\"count\":2}"
           case _ => false
         }
@@ -200,8 +200,27 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
       assertTrue(
         event.toBindingPayload.exists {
           case BindingPayload.Form(_, meta) =>
-            meta.target.isEmpty && meta.submitter.contains(FormSubmitter("save", "Draft")) &&
+            meta.target.isEmpty && meta.rawSubmitter.contains(RawFormSubmitter("save", "Draft")) &&
               meta.recovery
+          case _ => false
+        }
+      )
+    },
+    test("retains browser submit actions in form data without synthesizing metadata") {
+      val event = RootEvent(
+        "form",
+        "submit",
+        Json.Str("profile%5Bname%5D=Ada&profile%5B_scalive_submitter%5D=preview"),
+        None
+      )
+
+      assertTrue(
+        event.toBindingPayload.exists {
+          case BindingPayload.Form(data, meta) =>
+            data.raw == Vector(
+              "profile[name]"                -> "Ada",
+              "profile[_scalive_submitter]" -> "preview"
+            ) && meta.rawSubmitter.isEmpty
           case _ => false
         }
       )

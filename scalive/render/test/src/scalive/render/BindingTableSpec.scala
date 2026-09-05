@@ -17,8 +17,30 @@ object BindingTableSpec extends ZIOSpecDefault:
   private val TypedRoot       = FormRoot("typed")
   private val TypedName       = TypedRoot.text("name")
   private val TypedDefinition = TypedRoot.product[TypedData](Tuple1(TypedName))
+  private enum TypedIntent(val wireValue: String):
+    case Preview extends TypedIntent("preview")
+    case Save    extends TypedIntent("save")
+  private val TypedSubmitter = TypedDefinition.submitter(TypedIntent.values)(_.wireValue)
   private enum TypedFormMsg:
     case Received(event: TypedDefinition.Event)
+    case Submitted(
+      event: TypedDefinition.Event,
+      intent: Either[FormSubmitter.DecodeError, TypedIntent])
+
+  private final case class NestedItem(name: String)
+  private final case class NestedBasket(items: Vector[NestedItem])
+  private val NestedRoot       = FormRoot("nested")
+  private val NestedItems      = NestedRoot.rows("items")
+  private val NestedName       = NestedItems.text("name")
+  private val NestedItemRows   = NestedItems.product[NestedItem](Tuple1(NestedName))
+  private val NestedDefinition = NestedRoot.product[NestedBasket](Tuple1(NestedItemRows))
+  private val NestedAdapter    = PhoenixNestedParamsAdapter(NestedDefinition, NestedItemRows)
+  private val NestedSubmitter =
+    NestedDefinition.submitter(TypedIntent.values)(_.wireValue)
+  private enum NestedFormMsg:
+    case Submitted(
+      event: NestedAdapter.Event,
+      intent: Either[FormSubmitter.DecodeError, TypedIntent])
 
   override def spec = suite("BindingTableSpec")(
     test("rejects every duplicate binding insertion") {
@@ -209,6 +231,94 @@ object BindingTableSpec extends ZIOSpecDefault:
         recovered.exists {
           case Right(BindingDispatch.Owner(TypedFormMsg.Received(event))) =>
             event.kind == FormEventKind.Recovered && event.form.valueOption.contains(TypedData("Ada"))
+          case _ => false
+        }
+      )
+    },
+    test("decodes a typed submit action from form data without protocol metadata") {
+      val compiled = RenderProgram.compile[Unit, TypedFormMsg] { _ =>
+        form(
+          idAttr := "typed-submit-form",
+          TypedDefinition.onSubmit(TypedSubmitter)(TypedFormMsg.Submitted.apply),
+          TypedSubmitter.button(TypedIntent.Preview)("Preview"),
+          TypedSubmitter.button(TypedIntent.Save)("Save")
+        )
+      }
+      val data = FormData(
+        Vector(TypedName.name -> "Ada", TypedSubmitter.name -> TypedIntent.Preview.wireValue)
+      )
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(())
+        submitId = bindingAttribute(candidate, "phx-submit")
+        submitted = candidate.bindings.resolve(submitId).map(
+                      _.dispatch(BindingPayload.Form(data))
+                    )
+        html = HtmlRenderer.render(candidate.tree)
+      yield assertTrue(
+        submitted.exists {
+          case Right(BindingDispatch.Owner(TypedFormMsg.Submitted(event, intent))) =>
+            event.form.valueOption.contains(TypedData("Ada")) &&
+            event.rawSubmitter.isEmpty && intent == Right(TypedIntent.Preview)
+          case _ => false
+        },
+        html.contains("name=\"typed[_scalive_submitter]\""),
+        html.contains("value=\"preview\"")
+      )
+    },
+    test("decodes typed submit actions through a current form") {
+      val current = TypedDefinition.initial(TypedName.initial("Ada"))
+      val compiled = RenderProgram.compile[Unit, TypedFormMsg] { _ =>
+        form(idAttr := "current-typed-form", current.onSubmit(TypedSubmitter)(TypedFormMsg.Submitted.apply))
+      }
+      val data = FormData(
+        Vector(TypedName.name -> "Ada", TypedSubmitter.name -> TypedIntent.Save.wireValue)
+      )
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(())
+        submitId = bindingAttribute(candidate, "phx-submit")
+        submitted = candidate.bindings.resolve(submitId).map(
+                      _.dispatch(BindingPayload.Form(data))
+                    )
+      yield assertTrue(
+        submitted.exists {
+          case Right(BindingDispatch.Owner(TypedFormMsg.Submitted(event, intent))) =>
+            event.form.valueOption.contains(TypedData("Ada")) && intent == Right(TypedIntent.Save)
+          case _ => false
+        }
+      )
+    },
+    test("decodes typed submit actions after translating Phoenix nested parameters") {
+      val compiled = RenderProgram.compile[Unit, NestedFormMsg] { _ =>
+        form(
+          idAttr := "nested-typed-form",
+          NestedAdapter.onSubmit(NestedSubmitter)(NestedFormMsg.Submitted.apply)
+        )
+      }
+      val data = FormData(
+        Vector(
+          NestedAdapter.persistentIdName(0) -> "stable",
+          NestedAdapter.fieldName(0, NestedName) -> "Ada",
+          NestedAdapter.sortName -> "0",
+          NestedSubmitter.name -> TypedIntent.Preview.wireValue
+        )
+      )
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(())
+        submitId = bindingAttribute(candidate, "phx-submit")
+        submitted = candidate.bindings.resolve(submitId).map(
+                      _.dispatch(BindingPayload.Form(data))
+                    )
+      yield assertTrue(
+        submitted.exists {
+          case Right(BindingDispatch.Owner(NestedFormMsg.Submitted(event, intent))) =>
+            event.form.valueOption.contains(NestedBasket(Vector(NestedItem("Ada")))) &&
+            intent == Right(TypedIntent.Preview)
           case _ => false
         }
       )

@@ -675,8 +675,11 @@ final class FormEvent[Owner, Schema, Domain] private[scalive] (
 )
 ```
 
-`FormEventMeta` contains target, submitter, and protocol-specific diagnostics. Event kind is a closed
-sum rather than independent `submitted` and `recovery` booleans.
+`FormEventMeta` contains the target, optional raw submitter evidence, and protocol-specific
+diagnostics. The standard Phoenix browser client serializes a named submit control into `FormData`
+rather than this metadata. Definition-owned `FormSubmitter` descriptors decode that successful
+control separately from canonical domain values. Event kind is a closed sum rather than independent
+`submitted` and `recovery` booleans.
 
 The definition hides the full event type:
 

@@ -1,13 +1,14 @@
 {%
 title = "Typed profile form"
-description = "Schema-owned fields rebuild typed change and submit events with canonical values and logical-address validation."
+description = "Schema-owned fields and a typed submitter rebuild validated profile previews and saves from native form events."
 order = 4
 section = examples
 %}
 
 Change individual fields to reveal only their relevant validation feedback, or
-submit the form to validate every field. Valid input is decoded into a typed
-`Profile`; reset returns the nested @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ to pristine state.
+preview or save the form to validate every field. The definition-owned submitter decodes the
+selected operation as a typed enum while valid input becomes a `Profile`; reset returns the nested
+@:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ to pristine state.
 
 @:example(profile-form)
 

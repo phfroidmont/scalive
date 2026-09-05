@@ -171,7 +171,7 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
                           "profile[tag]" -> "second"
                         )
                       ),
-                      submitter = Some(FormSubmitter("save", "profile"))
+                      submitter = Some(RawFormSubmitter("save", "profile"))
                     )
         submission <- received.get
         destination <- redirect.followSeeOther(routes)

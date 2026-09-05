@@ -20,6 +20,23 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
     case Changed(event: RawFormEvent[String])
     case Submitted(event: RawFormEvent[String])
 
+  private object TypedSubmitForm:
+    final case class Profile(name: String)
+    val Root       = FormRoot("typed_profile")
+    val Name       = Root.text("name")
+    val Definition = Root.product[Profile](Tuple1(Name))
+
+    enum Intent(val wireValue: String):
+      case Preview extends Intent("preview")
+      case Save    extends Intent("save")
+
+    val Submitter = Definition.submitter(Intent.values)(_.wireValue)
+
+    enum Msg:
+      case Submitted(
+        event: Definition.Event,
+        intent: Either[FormSubmitter.DecodeError, Intent])
+
   private enum ResourceMsg:
     case Tick
 
@@ -114,6 +131,51 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           changedUsed == "true",
           submitted == "true",
           submitUsed == "true"
+        )
+      }
+    },
+    test("dispatches definition-owned submit actions as ordinary form data") {
+      import TypedSubmitForm.{Msg as TypedSubmitMsg, *}
+
+      val view = new LiveView[TypedSubmitMsg, String]:
+        def mount(ctx: MountContext) = ZIO.succeed("")
+        def handleMessage(model: String, ctx: MessageContext) =
+          case TypedSubmitMsg.Submitted(event, intent) =>
+            val decoded = intent match
+              case Right(value)                           => value.wireValue
+              case Left(FormSubmitter.DecodeError.Missing(_)) => "missing"
+              case Left(FormSubmitter.DecodeError.Unknown(_, _)) => "unknown"
+              case Left(FormSubmitter.DecodeError.Duplicate(_, _)) => "duplicate"
+            ZIO.succeed(
+              s"$decoded:${event.rawSubmitter.isDefined}:${event.form.valueOption.map(_.name).getOrElse("")}"
+            )
+        override def view(model: Signal[String]) =
+          form(
+            dataAttr("typed-submit-form") := "",
+            Definition.onSubmit(Submitter)(TypedSubmitMsg.Submitted.apply),
+            input(nameAttr := Name.name),
+            Submitter.button(Intent.Preview)("Preview"),
+            Submitter.button(Intent.Save)("Save"),
+            span(dataAttr("typed-submit-result") := "", model)
+          )
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          _ <- connected.submitForm(
+                 "[data-typed-submit-form]",
+                 Vector(Name.name -> "Ada")
+               )
+          missing <- connected.text("[data-typed-submit-result]")
+          _ <- connected.submitForm(
+                 "[data-typed-submit-form]",
+                 Vector(Name.name -> "Ada"),
+                 submitter = Some(Submitter.raw(Intent.Preview))
+               )
+          preview <- connected.text("[data-typed-submit-result]")
+        yield assertTrue(
+          missing == "missing:false:Ada",
+          preview == "preview:false:Ada"
         )
       }
     },

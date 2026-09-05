@@ -255,9 +255,11 @@ final class ConnectedView[-Msg] private[testing] (
   /** Dispatches the selected form's `phx-submit` binding. */
   def submitForm(
     selector: String,
-    fields: Vector[(String, String)]
+    fields: Vector[(String, String)],
+    submitter: Option[RawFormSubmitter] = None
   ): Task[ConnectedAction] =
-    dispatchForm(selector, "phx-submit", fields, None)
+    val submitted = fields ++ submitter.map(value => value.name -> value.value)
+    dispatchForm(selector, "phx-submit", submitted, None)
 
   /** Sends one typed server message and waits for its committed output. */
   def send(message: Msg): Task[ConnectedAction] = session.send(state, message)

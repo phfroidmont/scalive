@@ -104,8 +104,8 @@ private[scalive] enum BindingPayload:
     case Params(values)   => values
     case Form(data, meta) =>
       val values = data.asMap ++ meta.params
-      meta.submitter match
-        case Some(FormSubmitter(name, value)) if !values.contains(name) =>
+      meta.rawSubmitter match
+        case Some(RawFormSubmitter(name, value)) if !values.contains(name) =>
           values.updated(name, value)
         case _ => values
 

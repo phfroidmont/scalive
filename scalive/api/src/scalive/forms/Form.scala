@@ -1,5 +1,7 @@
 package scalive
 
+import scala.reflect.Enum
+
 import scalive.codecs.StringAsIsEncoder
 
 /** Immutable current semantic values, validation result, and interaction state.
@@ -43,6 +45,24 @@ final class Form[Owner, Schema, Domain] private[scalive] (
   /** Handles a typed submission event. */
   def onSubmit[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =
     owningDefinition.onSubmit(event => f(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]))
+
+  /** Handles a typed submission and decodes one definition-owned submit action. */
+  def onSubmit[Action <: Enum, Msg](
+    submitter: FormSubmitter[Owner, Schema, Action]
+  )(
+    f: (
+      FormEvent[Owner, Schema, Domain],
+      Either[FormSubmitter.DecodeError, Action]
+    ) => Msg
+  ): Mod.Attr[Msg] =
+    require(
+      submitter.definition eq owningDefinition,
+      "form submitter belongs to another definition"
+    )
+    owningDefinition.onSubmit(event =>
+      val typed = event.asInstanceOf[FormEvent[Owner, Schema, Domain]]
+      f(typed, submitter.decode(typed.data))
+    )
 
   /** Handles a typed recovery event. */
   def onRecover[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =

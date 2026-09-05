@@ -16,6 +16,11 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
   }
   private val Tags = ProfileRoot.texts("tags")
   private val ProfileDefinition = ProfileRoot.product[Profile]((Name, EmailField, Tags))
+  private enum ProfileIntent(val wireValue: String):
+    case Preview extends ProfileIntent("preview")
+    case Save    extends ProfileIntent("save")
+  private val ProfileSubmitter =
+    ProfileDefinition.submitter(ProfileIntent.values)(_.wireValue)
 
   private final case class Qualification(title: String, year: String)
   private final case class Application(name: String, qualifications: Vector[Qualification])
@@ -261,6 +266,84 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         form.errors.all.map(_.code) == Vector(Some("undeclared_error_address"))
       )
     },
+    test("renders and strictly decodes definition-owned submit actions") {
+      val validData = FormData(
+        Vector(
+          Name.name             -> "Ada",
+          EmailField.name       -> "ada@example.com",
+          ProfileSubmitter.name -> "preview"
+        )
+      )
+      val event      = ProfileDefinition.event(validData, FormEventKind.Submitted)
+      val attributes = ProfileSubmitter.attributes(ProfileIntent.Save).flattened
+      val saveButton = ProfileSubmitter.button(ProfileIntent.Save)("Save")
+
+      assertTrue(
+        ProfileSubmitter.name == "profile[_scalive_submitter]",
+        ProfileSubmitter.raw(ProfileIntent.Preview) ==
+          RawFormSubmitter("profile[_scalive_submitter]", "preview"),
+        ProfileSubmitter.decode(validData) == Right(ProfileIntent.Preview),
+        ProfileSubmitter.decode(FormData.empty) ==
+          Left(FormSubmitter.DecodeError.Missing(ProfileSubmitter.name)),
+        ProfileSubmitter.decode(FormData(Vector(ProfileSubmitter.name -> "publish"))) ==
+          Left(FormSubmitter.DecodeError.Unknown(ProfileSubmitter.name, "publish")),
+        ProfileSubmitter.decode(
+          FormData(Vector(ProfileSubmitter.name -> "save", ProfileSubmitter.name -> "preview"))
+        ) == Left(
+          FormSubmitter.DecodeError.Duplicate(
+            ProfileSubmitter.name,
+            Vector("save", "preview")
+          )
+        ),
+        attributes == Vector(
+          Mod.Attr.Static("type", "submit"),
+          Mod.Attr.Static("name", ProfileSubmitter.name),
+          Mod.Attr.Static("value", "save")
+        ),
+        saveButton.tag.name == "button",
+        saveButton.attrMods == attributes,
+        event.form.valueOption.contains(Profile("Ada", Email("ada@example.com"), Vector.empty))
+      )
+    },
+    test("validates custom submitter names and finite enum mappings") {
+      val custom = ProfileDefinition.submitter(ProfileIntent.values, "action")(_.wireValue)
+      val overlapping = scala.util.Try(
+        ProfileDefinition.submitter(ProfileIntent.values, Name.name)(_.wireValue)
+      )
+      val invalidName = scala.util.Try(
+        ProfileDefinition.submitter(ProfileIntent.values, "profile[action")(_.wireValue)
+      )
+      val reservedName = scala.util.Try(
+        ProfileDefinition.submitter(ProfileIntent.values, "profile[_scalive_action]")(_.wireValue)
+      )
+      val unusedName = scala.util.Try(
+        ProfileDefinition.submitter(ProfileIntent.values, "profile[_unused_name]")(_.wireValue)
+      )
+      val csrfName = scala.util.Try(
+        ProfileDefinition.submitter(ProfileIntent.values, "_csrf_token")(_.wireValue)
+      )
+      val duplicateWireValue = scala.util.Try(
+        ProfileDefinition.submitter(ProfileIntent.values)(_ => "same")
+      )
+      val emptyWireValue = scala.util.Try(
+        ProfileDefinition.submitter(ProfileIntent.values)(_ => "")
+      )
+      val noActions = scala.util.Try(
+        ProfileDefinition.submitter(Vector.empty[ProfileIntent])(_.wireValue)
+      )
+
+      assertTrue(
+        custom.name == "action",
+        overlapping.isFailure,
+        invalidName.isFailure,
+        reservedName.isFailure,
+        unusedName.isFailure,
+        csrfName.isFailure,
+        duplicateWireValue.isFailure,
+        emptyWireValue.isFailure,
+        noActions.isFailure
+      )
+    },
     test("checks arbitrary products and ownership at compile time") {
       val sixFieldsCompile = scala.compiletime.testing.typeChecks("""
         import scalive.*
@@ -292,6 +375,18 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         val second = root.product[Value](Tuple1(name))
         first.fromValues(second.initial(name.initial("Ada")).values)
       """)
+      val differentDefinitionSubmitter = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Value(name: String)
+        enum Intent(val wireValue: String):
+          case Save extends Intent("save")
+        val root = FormRoot("value")
+        val name = root.text("name")
+        val first = root.product[Value](Tuple1(name))
+        val second = root.product[Value](Tuple1(name))
+        val submitter = first.submitter(Intent.values)(_.wireValue)
+        second.onSubmit(submitter)((_, _) => ())
+      """)
       val twentyThreeFieldsCompile = scala.compiletime.testing.typeChecks("""
         import scalive.*
         final case class Large(
@@ -317,7 +412,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         twentyThreeFieldsCompile,
         wrongOrder.nonEmpty,
         wrongOwner.nonEmpty,
-        differentDefinitionValues.nonEmpty
+        differentDefinitionValues.nonEmpty,
+        differentDefinitionSubmitter.nonEmpty
       )
     }
   )

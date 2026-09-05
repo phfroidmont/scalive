@@ -2,6 +2,7 @@ package scalive
 
 import scala.collection.mutable
 import scala.deriving.Mirror
+import scala.reflect.Enum
 
 /** Resource bounds applied while projecting untrusted payloads into semantic values.
   *
@@ -77,6 +78,9 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   /** Typed event rebuilt by this exact definition. */
   type Event = FormEvent[Owner, self.type, Domain]
 
+  /** Submitter contract owned by this exact definition. */
+  type Submitter[Action <: Enum] = FormSubmitter[Owner, self.type, Action]
+
   /** Save workflow whose current and baseline values share this definition. */
   type Workflow[Failure] = FormWorkflow[Owner, self.type, Domain, Failure]
 
@@ -147,6 +151,32 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   def onSubmit[Msg](f: Event => Msg): Mod.Attr[Msg] =
     on.submit.form(this)(f)
 
+  /** Handles submit events and decodes one action from this definition's submitter contract. */
+  def onSubmit[Action <: Enum, Msg](
+    submitter: Submitter[Action]
+  )(
+    f: (Event, Either[FormSubmitter.DecodeError, Action]) => Msg
+  ): Mod.Attr[Msg] =
+    require(submitter.definition eq this, "form submitter belongs to another definition")
+    on.submit.form(this)(event => f(event, submitter.decode(event.data)))
+
+  /** Declares finite submit actions under a generated, collision-free browser field name. */
+  def submitter[Action <: Enum](
+    actions: IterableOnce[Action]
+  )(
+    wireValue: Action => String
+  ): Submitter[Action] =
+    createSubmitter(actions, FormSubmitter.defaultName(root), wireValue)
+
+  /** Declares finite submit actions under a checked custom browser field name. */
+  def submitter[Action <: Enum](
+    actions: IterableOnce[Action],
+    wireName: String
+  )(
+    wireValue: Action => String
+  ): Submitter[Action] =
+    createSubmitter(actions, wireName, wireValue)
+
   /** Handles LiveView recovery as a typed event. */
   def onRecover[Msg](f: Event => Msg): Mod.Attr[Msg] =
     on.recover.form(this)(f)
@@ -195,6 +225,48 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   private[scalive] def owns[Group, Row](rows: RepeatedRows[Owner, Group, Row]): Boolean =
     rowGroups.exists(_ eq rows)
 
+  private def createSubmitter[Action <: Enum](
+    actions: IterableOnce[Action],
+    wireName: String,
+    wireValue: Action => String
+  ): Submitter[Action] =
+    validateSubmitterName(wireName)
+    FormSubmitter.create[Owner, self.type, Action](this, actions, wireName, wireValue)
+
+  private def validateSubmitterName(name: String): Unit =
+    val parseLimits = FormPath.ParseLimits(limits.maxPathDepth, limits.maxSegmentLength)
+    val path        = FormPath
+      .parse(name, parseLimits).fold(
+        error =>
+          throw new IllegalArgumentException(
+            s"invalid form submitter name '$name': ${error.code}"
+          ),
+        identity
+      )
+    require(
+      FormDefinition.namesOption(path).nonEmpty,
+      "form submitter name must not contain array segments"
+    )
+    val candidate = FormDefinition.names(path)
+    if name != FormSubmitter.defaultName(root) then
+      require(
+        !candidate.exists(_.startsWith(FormDefinition.ReservedPrefix)),
+        "custom form submitter name uses Scalive's reserved namespace"
+      )
+      require(
+        !candidate.exists(_.startsWith(FormDefinition.UnusedPrefix)),
+        "custom form submitter name conflicts with Phoenix unused-field metadata"
+      )
+      require(name != "_csrf_token", "custom form submitter name conflicts with CSRF metadata")
+    val schemaPaths =
+      staticFields.map(field => FormDefinition.names(field.path)) ++
+        rowGroups.map(rows => FormDefinition.names(rows.path))
+    require(
+      !schemaPaths.exists(path => candidate.startsWith(path) || path.startsWith(candidate)),
+      "form submitter name overlaps a schema field or repeated group"
+    )
+  end validateSubmitterName
+
   private[scalive] def rebuild(
     values: Values,
     interaction: FormInteraction[Owner],
@@ -229,7 +301,7 @@ final class FormDefinition[Owner, Domain] private[scalive] (
     val target    = meta.target.flatMap(path => addressForBrowserPath(path, projection.values))
     val eventMeta = FormEventMeta(
       target = target,
-      submitter = meta.submitter,
+      rawSubmitter = meta.rawSubmitter,
       metadata = meta.metadata,
       browserTarget = meta.originalTarget.orElse(meta.target),
       diagnostics = meta.diagnostics

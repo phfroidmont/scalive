@@ -479,13 +479,14 @@ private[docs] object ExampleRegistry:
                 "Validate",
                 event
               )
-            case ProfileFormExample.Msg.Save(event) =>
-              formEventTrace(
-                "ProfileFormExample.Msg",
-                "Submit the profile form",
-                "Save",
-                event
-              )
+            case ProfileFormExample.Msg.Submit(event, intent) =>
+              val (summary, constructorName) = intent match
+                case Right(ProfileFormExample.Profile.Intent.Preview) =>
+                  "Preview the profile form" -> "Preview"
+                case Right(ProfileFormExample.Profile.Intent.Save) =>
+                  "Save the profile form" -> "Save"
+                case Left(_) => "Reject an invalid profile submitter" -> "Invalid submitter"
+              formEventTrace("ProfileFormExample.Msg", summary, constructorName, event)
             case ProfileFormExample.Msg.Reset =>
               traced("ProfileFormExample.Msg", "Reset the form", "ProfileFormExample.Msg.Reset"),
         model = new ExampleTraceProjector[ProfileFormExample.Model]:
@@ -496,12 +497,14 @@ private[docs] object ExampleRegistry:
               constructor(
                 "Model",
                 field("form", wildcard),
+                field("previewed", wildcard),
                 field("saved", wildcard)
               ),
               Vector(
                 "valid"      -> value.form.isValid.toString,
                 "submitted"  -> (value.form.interaction.visibility == ErrorVisibility.All).toString,
                 "usedFields" -> value.form.interaction.used.size.toString,
+                "previewed"  -> value.previewed.nonEmpty.toString,
                 "saved"      -> value.saved.nonEmpty.toString
               )
             )

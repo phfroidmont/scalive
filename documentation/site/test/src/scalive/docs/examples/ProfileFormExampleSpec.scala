@@ -75,30 +75,46 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("reveals invalid submit errors, saves valid input, and resets") {
+    test("reveals invalid submit errors, previews, saves, and resets") {
       ZIO.scoped {
         val profile = ProfileFormExample.Profile
         for
           harness <- ConnectedRender.join(new ProfileFormExample)
           _ <- harness.submitForm(
                  "[data-profile-form]",
-                 Vector(
-                   profile.Name.name      -> "",
-                   profile.Email.name     -> "invalid",
-                   profile.Biography.name -> ""
-                 )
-               )
+                  Vector(
+                    profile.Name.name      -> "",
+                    profile.Email.name     -> "invalid",
+                    profile.Biography.name -> ""
+                  ),
+                  submitter = Some(profile.Submitter.raw(profile.Intent.Save))
+                )
           invalid <- document(harness)
-          _       <- harness.submitForm("[data-profile-form]", validFields)
+          _ <- harness.submitForm(
+                 "[data-profile-form]",
+                 validFields,
+                 submitter = Some(profile.Submitter.raw(profile.Intent.Preview))
+               )
+          previewed <- document(harness)
+          _ <- harness.submitForm(
+                 "[data-profile-form]",
+                 validFields,
+                 submitter = Some(profile.Submitter.raw(profile.Intent.Save))
+               )
           saved   <- document(harness)
           _       <- harness.clickButton("Reset form")
           reset   <- document(harness)
         yield assertTrue(
           invalid.select("[data-field-error] .form-error").size() == 3,
           invalid.select("[data-profile-saved]").isEmpty,
+          previewed.select("[data-profile-previewed]").text() ==
+            "Previewing Ada Lovelace's profile.",
+          previewed.select("[data-profile-saved]").isEmpty,
           saved.select("[data-profile-saved]").text() == "Saved Ada Lovelace's profile.",
+          saved.select("[data-profile-previewed]").isEmpty,
           saved.select("[name='profile[name]']").attr("value") == "  Ada Lovelace  ",
           reset.select("[data-profile-saved]").isEmpty,
+          reset.select("[data-profile-previewed]").isEmpty,
           reset.select("[name='profile[name]']").attr("value").isEmpty,
           reset.select("[data-field-error] .form-error").isEmpty
         )

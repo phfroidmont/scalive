@@ -13,14 +13,15 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(event) =>
-      ZIO.succeed(model.copy(form = event.form, saved = None))
-    case Msg.Save(event) =>
-      ZIO.succeed(
-        model.copy(
-          form = event.form,
-          saved = event.valueOption
-        )
-      )
+      ZIO.succeed(model.copy(form = event.form, previewed = None, saved = None))
+    case Msg.Submit(event, intent) =>
+      intent match
+        case Right(Profile.Intent.Preview) =>
+          ZIO.succeed(model.copy(form = event.form, previewed = event.valueOption, saved = None))
+        case Right(Profile.Intent.Save) =>
+          ZIO.succeed(model.copy(form = event.form, previewed = None, saved = event.valueOption))
+        case Left(_) =>
+          ZIO.succeed(model.copy(form = event.form, previewed = None, saved = None))
     case Msg.Reset =>
       ZIO.succeed(Model(Profile.Definition.initial()))
 
@@ -32,6 +33,14 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
 
     div(
       cls := "docs-profile-form",
+      model.map(_.previewed).option { profile =>
+        p(
+          dataAttr("profile-previewed") := "",
+          cls                           := "docs-profile-saved",
+          role                          := "status",
+          profile.map(profile => s"Previewing ${profile.name}'s profile.")
+        )
+      },
       model.map(_.saved).option { profile =>
         p(
           dataAttr("profile-saved") := "",
@@ -44,7 +53,7 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
         dataAttr("profile-form") := "",
         idAttr                   := "profile-form",
         Profile.Definition.onChange(Msg.Validate(_)),
-        Profile.Definition.onSubmit(Msg.Save(_)),
+        Profile.Definition.onSubmit(Profile.Submitter)(Msg.Submit.apply),
         field(
           label(forId := nameField.id, "Name"),
           nameField.text(
@@ -81,7 +90,11 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
         ),
         div(
           cls := "docs-profile-actions",
-          button(typ := "submit", submission.replaceTextWith("Saving..."), "Save profile"),
+          Profile.Submitter.button(Profile.Intent.Preview)("Preview profile"),
+          Profile.Submitter.button(Profile.Intent.Save)(
+            submission.replaceTextWith("Saving..."),
+            "Save profile"
+          ),
           button(typ := "button", on.click(Msg.Reset), "Reset form")
         )
       )
@@ -120,7 +133,14 @@ object ProfileFormExample:
 
     val Definition = Root.product[Profile]((Name, Email, Biography))
 
+    enum Intent(val wireValue: String):
+      case Preview extends Intent("preview")
+      case Save    extends Intent("save")
+
+    val Submitter = Definition.submitter(Intent.values)(_.wireValue)
+
     private val EmailPattern = """^[^\s@]+@[^\s@]+\.[^\s@]+$""".r
+  end Profile
 
   private val messages = Map(
     "validation.name.required"      -> "Name is required.",
@@ -131,11 +151,16 @@ object ProfileFormExample:
       s"Biography must be ${Profile.BiographyMaxLength} characters or fewer."
   )
 
-  final case class Model(form: Profile.Definition.Form, saved: Option[Profile] = None)
+  final case class Model(
+    form: Profile.Definition.Form,
+    previewed: Option[Profile] = None,
+    saved: Option[Profile] = None)
 
   enum Msg:
     case Validate(event: Profile.Definition.Event)
-    case Save(event: Profile.Definition.Event)
+    case Submit(
+      event: Profile.Definition.Event,
+      intent: Either[FormSubmitter.DecodeError, Profile.Intent])
     case Reset
 end ProfileFormExample
 // docs:end profile-form-example

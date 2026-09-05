@@ -1,10 +1,11 @@
 package scalive
 
-/** A nominal runtime key for one managed LiveView subscription.
+/** A nominal runtime key for one managed LiveView or component subscription.
   *
-  * A subscription key names a stream within its owning LiveView lifecycle. In a connected
-  * lifecycle, starting an already active key fails, replacing a key swaps its stream, and
-  * cancelling an absent key is a no-op. Connected subscription operations reject empty names.
+  * A key names a stream within its exact owner. Starting an already registered key fails, replacing
+  * a key swaps its stream, and cancelling an absent key is a no-op. Suspended component
+  * registrations retain their keys until cancellation, completion, or owner destruction. Connected
+  * subscription operations reject empty names.
   */
 opaque type SubscriptionKey = String
 

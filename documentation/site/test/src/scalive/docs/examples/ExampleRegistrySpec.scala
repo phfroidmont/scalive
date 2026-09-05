@@ -15,7 +15,8 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.path.nonEmpty)),
         ExampleRegistry.entries.forall(_.descriptor.sources.forall(_.region.nonEmpty)),
         ExampleCatalog.RepeatedContactsForm.aliases.contains("movedAfter"),
-        ExampleCatalog.FormSaveWorkflow.aliases.contains("saveCancelled")
+        ExampleCatalog.FormSaveWorkflow.aliases.contains("saveCancelled"),
+        ExampleCatalog.ComponentSubscriptions.aliases.contains("ComponentConnected")
       )
     },
     test("derives collision-free DOM and topic ids from page and directive identity") {
@@ -279,6 +280,20 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
         voting.projectMessage(VotingComponentsExample.Msg.ComponentReported("scala-vote", 2))
           .exists(_.fields == Vector("componentId" -> "scala-vote", "votes" -> "2")),
         voting.projectMessage(VoteComponent.Msg.Vote).isEmpty
+      )
+    },
+    test("projects component subscription parent state without local component messages") {
+      val entry = ExampleRegistry.get("component-subscriptions").get
+      assertTrue(
+        entry.resetMessage == ComponentSubscriptionsExample.Msg.Reset,
+        entry.resetControlLabel == "Reset component subscriptions",
+        entry.projectMessage(ComponentSubscriptionsExample.Msg.ToggleFirst)
+          .exists(_.summary == "Toggle the first component's visibility"),
+        entry.projectModel(ComponentSubscriptionsExample.Model(firstVisible = false, resetEpoch = 3))
+          .exists(
+            _.fields == Vector("firstVisible" -> "false", "resetEpoch" -> "3")
+          ),
+        entry.projectMessage(SubscriptionTickerComponent.Msg.Tick).isEmpty
       )
     },
     test("projects report service state without exposing report content") {

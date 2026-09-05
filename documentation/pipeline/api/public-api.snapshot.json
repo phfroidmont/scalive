@@ -1634,6 +1634,18 @@
       ]
     },
     {
+      "id" : "def:scalive.ComponentConnected.subscriptions",
+      "ownerId" : "trait:scalive.ComponentConnected",
+      "qualifiedName" : "scalive.ComponentConnected.subscriptions",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ComponentConnected.subscriptions:32f028516fb22205",
+          "signature" : "def subscriptions: Subscriptions[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.ComponentDispatch.message",
       "ownerId" : "trait:scalive.ComponentDispatch",
       "qualifiedName" : "scalive.ComponentDispatch.message",
@@ -1882,6 +1894,18 @@
         {
           "id" : "def:scalive.ComponentMessageContext.streams:605c8da5295d067c",
           "signature" : "def streams: Streams"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.ComponentMessageContext.subscriptions",
+      "ownerId" : "trait:scalive.ComponentMessageContext",
+      "qualifiedName" : "scalive.ComponentMessageContext.subscriptions",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ComponentMessageContext.subscriptions:9842e83ce3eff701",
+          "signature" : "def subscriptions: Subscriptions[Msg]"
         }
       ]
     },

@@ -147,14 +147,41 @@ final private[kernel] case class ManagedAsyncCompletion(
   result: LiveAsyncResult[Any],
   message: Any)
 
-private[kernel] enum ManagedResourceKind:
-  case Async(mapResult: LiveAsyncResult[Any] => Any)
-  case Subscription(delivery: SubscriptionDelivery)
+sealed private[kernel] trait ManagedResource:
+  def token: ResourceToken
 
-final private[kernel] case class ManagedResource(
-  token: ResourceToken,
-  prepared: PreparedResource,
-  kind: ManagedResourceKind)
+private[kernel] object ManagedResource:
+  sealed trait Running extends ManagedResource:
+    def prepared: PreparedResource
+
+  final case class Async(
+    token: ResourceToken,
+    prepared: PreparedResource,
+    mapResult: LiveAsyncResult[Any] => Any)
+      extends Running
+
+  final case class SubscriptionDefinition(
+    delivery: SubscriptionDelivery,
+    stream: ZStream[Any, Nothing, Any])
+
+  sealed trait Subscription extends ManagedResource:
+    def definition: SubscriptionDefinition
+    def ended: Ref[Boolean]
+
+  final case class RunningSubscription(
+    token: ResourceToken,
+    prepared: PreparedResource,
+    definition: SubscriptionDefinition,
+    ended: Ref[Boolean])
+      extends Running
+      with Subscription
+
+  final case class SuspendedSubscription(
+    token: ResourceToken,
+    definition: SubscriptionDefinition,
+    ended: Ref[Boolean])
+      extends Subscription
+end ManagedResource
 
 enum SessionCommand[+Msg]:
   case ClientEvent(
@@ -619,7 +646,8 @@ final private[scalive] case class PendingNavigation[Msg, Model](
   deadline: Instant,
   redirectCount: Int,
   deferred: Vector[DeferredSessionCommand[Msg, Model]],
-  componentCandidate: Option[TurnCandidate[Msg, Model]] = None)
+  componentCandidate: Option[TurnCandidate[Msg, Model]] = None,
+  componentDestructions: Vector[Object] = Vector.empty)
 
 enum SessionState[Msg, Model]:
   case Bootstrapping(epoch: Epoch)
@@ -643,8 +671,8 @@ final private[scalive] case class TurnCandidate[Msg, Model](
   topology: PreparedNestedTopology,
   resources: PreparedResources,
   managedResources: ResourceIndex[ManagedResource],
-  managedActivations: Vector[ManagedResource],
-  managedRetirements: Vector[ManagedResource],
+  managedActivations: Vector[ManagedResource.Running],
+  managedRetirements: Vector[ManagedResource.Running],
   managedContinuations: Vector[ManagedAsyncContinuation],
   delta: RenderDelta,
   reservation: OutboundReservation[SessionOutput],

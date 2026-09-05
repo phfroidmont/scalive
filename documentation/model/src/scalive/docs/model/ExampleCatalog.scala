@@ -76,6 +76,26 @@ object ExampleCatalog:
     )
   )
 
+  val ComponentSubscriptions = ExampleDescriptor(
+    id = "component-subscriptions",
+    title = "Component-owned subscriptions",
+    description =
+      "Two component instances reuse one local subscription key while independently starting, replacing, cancelling, and surviving brief removal.",
+    category = ExampleCategory.AsyncAndEffects,
+    topics = Vector("components", "subscriptions", "resource ownership", "dormancy"),
+    aliases = Vector("ComponentConnected", "SubscriptionKey", "start", "replace", "cancel"),
+    resetDescription =
+      "Render both components, clear their counts, and restart local subscriptions.",
+    sources = Vector(
+      ExampleSource(
+        label = "LiveView and LiveComponent",
+        path = "documentation/site/src/scalive/docs/examples/ComponentSubscriptionsExample.scala",
+        region = "component-subscriptions-example",
+        language = Some("scala")
+      )
+    )
+  )
+
   val BrowserIntegration = ExampleDescriptor(
     id = "browser-integration",
     title = "Browser integration",
@@ -331,6 +351,7 @@ object ExampleCatalog:
       BrowserIntegration,
       Counter,
       ConnectedResource,
+      ComponentSubscriptions,
       Lifecycle,
       Navigation,
       ProfileForm,

@@ -75,7 +75,7 @@ object VoteComponent
       ctx.emit(Output.VoteChanged(props.id, updated.votes)).as(updated)
 
   def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
-    button(on.click.to(self)(Msg.Vote), model.map(_.votes.toString))
+    button(phx.target(self), on.click.to(self)(Msg.Vote), model.map(_.votes.toString))
 
 object VotingLiveView:
   enum Msg:
@@ -94,9 +94,9 @@ object VotingLiveView:
 
 ## Keep Local Events Local {#keep-local-events-local}
 
-Bindings rendered by a component deliver its `Msg` values to that exact
-component. As above, target `self` explicitly when a binding needs the current
-runtime component reference.
+Bindings rendered by a component accept its `Msg` values. As above, pair
+`phx.target(self)` with `on.click.to(self)` so the Phoenix client sends the event
+to that exact runtime component rather than the owning LiveView.
 
 Each stable instance owns a separate model. Voting in `scala-vote` therefore
 does not modify `zio-vote`.
@@ -149,16 +149,33 @@ expose the same focused tools needed to implement a self-contained UI unit:
 
 - typed form bindings rendered inside the component deliver component `Msg`
   values;
-- `ctx.uploads`, `ctx.streams`, and `ctx.async` use namespaces scoped to that
-  exact component instance;
+- `ctx.uploads`, `ctx.streams`, `ctx.async`, and `ctx.subscriptions` use
+  namespaces scoped to that exact component instance;
 - `ctx.client.push` and `ctx.client.exec` queue browser events or commands;
 - `ctx.hooks` installs dynamic component hooks, while `hooks` declares static
   hooks for every instance.
 
-Async completions return as component messages. Upload and stream names may be
-reused by another component instance without collision. Client effects and
-async work are connected-only; upload and stream configuration may also be
-created for disconnected rendering.
+Async completions return through the component's typed async hooks and then
+`handleMessage`. Subscription values use the component's typed event hooks and
+then `handleMessage`. Neither is routed through root info hooks. Upload, stream,
+and subscription names may be reused by another component instance without
+collision. Client effects, async work, and subscriptions are connected-only;
+upload and rendered-stream configuration may also be created for disconnected
+rendering.
+
+Start a required component subscription from the `Connection.Connected` branch
+of mount or update via
+@:apiSymbol(def:scalive.ComponentConnected.subscriptions)`connected.subscriptions`@:@.
+Use @:apiSymbol(def:scalive.ComponentMessageContext.subscriptions)`ctx.subscriptions`@:@
+for local start, replacement, and cancellation controls. Do not also start the
+same key unconditionally from an initial update after mount. A dormant
+registration still occupies its key, so `start` rejects it as a duplicate. Use
+`replace` when changed props deliberately change the stream.
+
+A subscription source must acquire per-run handles inside `ZStream.scoped` or
+`ZStream.unwrapScoped`. Do not capture a previously acquired handle: replacement
+and revival run the stored stream again after the previous run's scope has been
+released.
 
 These capabilities remain local only where the runtime owns local state.
 Component flash uses the owning LiveView's `ctx.flash`, and navigation requested
@@ -167,13 +184,13 @@ not create a route or history boundary around the component.
 
 ## Target Deliberately {#target-deliberately}
 
-Ordinary typed bindings in a component subtree are wrapped for the current
-component automatically. Prefer that default. For an event rendered elsewhere:
+For a component-local browser event, specify `phx.target(self)` alongside the
+typed binding. The client target and the Scala message target are distinct:
 
 - `on.click.to(instance)(message)` routes by stable component class and logical
   ID, without depending on a numeric client ID;
-- `on.click.to(self)(message)` emits `phx-target` for the current runtime
-  `ComponentRef`;
+- `on.click.to(self)(message)` selects the current runtime `ComponentRef` for
+  typed dispatch; `phx.target(self)` separately emits the client's `phx-target`;
 - `on.click.toComponent(Component)(message)` only fixes the accepted component
   class. Add `phx.target(self)` or a `DomSelector` to choose the actual client
   target according to Phoenix targeting semantics.
@@ -186,11 +203,21 @@ message bus.
 
 ## Remove Components Cleanly {#remove-components-cleanly}
 
-Stop rendering an instance to remove it. Once the browser confirms that its
-component ID was destroyed, Scalive drops the instance and its dynamic hooks,
-removes its upload and stream scopes, and interrupts its async tasks. A later
-render of the same class and logical ID is therefore a fresh mount, not a
-revival of the old model.
+Stop rendering an instance to request removal. Before the browser confirms that
+its component ID was destroyed, Scalive keeps the exact instance dormant: its
+model and scoped registrations are retained, while active async and subscription
+workers are interrupted. If rendering reintroduces that instance first, its
+model returns and an active retained subscription automatically reruns its stored
+`ZStream` with fresh internal tokens. Component async tasks do not restart.
+Old pending subscription values are discarded, and interruption provides no
+replay or lossless-delivery guarantee.
+
+Once the browser confirms destruction, Scalive drops the instance and its
+dynamic hooks, removes its upload, rendered-stream, and subscription scopes, and
+retires its async tasks. A later render of the same class and logical ID is then
+a fresh mount, not a revival of the old model; its mount may register entirely
+new subscriptions. Cancelled, completed, or defective retained registrations
+are not automatically restarted when a dormant instance returns.
 
 Do not retain a `ComponentRef`, upload snapshots, or other runtime handles after
 removal. Put durable data in the parent or an application service before hiding
@@ -218,8 +245,15 @@ The complete voting example is extracted from executable source:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-components-example)
 
+The component subscription example demonstrates exact-instance namespaces and
+the parent-controlled visibility boundary:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/ComponentSubscriptionsExample.scala, component-subscriptions-example)
+
 Try both communication directions in the
-[voting components example](../examples/voting-components.md).
+[voting components example](../examples/voting-components.md), then compare
+fresh destruction with brief dormancy in the
+[component-owned subscriptions example](../examples/component-subscriptions.md).
 
 ## Related Tasks {#related-tasks}
 

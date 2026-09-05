@@ -31,4 +31,5 @@ trait RootAfterRenderConnected extends ConnectedMetadata:
 
 trait ComponentConnected[Msg] extends ConnectedMetadata:
   def async: Async[Msg]
+  def subscriptions: Subscriptions[Msg]
   def client: Client

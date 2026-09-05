@@ -221,6 +221,47 @@ private[docs] object ExampleRegistry:
       )
     )
 
+  private val componentSubscriptions =
+    new ExampleEntry[ComponentSubscriptionsExample.Msg, ComponentSubscriptionsExample.Model](
+      descriptor = ExampleCatalog.ComponentSubscriptions,
+      factory = _ => new ComponentSubscriptionsExample,
+      reset = ExampleReset(
+        ComponentSubscriptionsExample.Msg.Reset,
+        "Reset component subscriptions"
+      ),
+      traces = ExampleTraceProjectors(
+        message = new ExampleTraceProjector[ComponentSubscriptionsExample.Msg]:
+          def project(value: ComponentSubscriptionsExample.Msg) = value match
+            case ComponentSubscriptionsExample.Msg.ToggleFirst =>
+              traced(
+                "ComponentSubscriptionsExample.Msg",
+                "Toggle the first component's visibility",
+                "ComponentSubscriptionsExample.Msg.ToggleFirst"
+              )
+            case ComponentSubscriptionsExample.Msg.Reset =>
+              traced(
+                "ComponentSubscriptionsExample.Msg",
+                "Reset both component subscriptions",
+                "ComponentSubscriptionsExample.Msg.Reset"
+              ),
+        model = new ExampleTraceProjector[ComponentSubscriptionsExample.Model]:
+          def project(value: ComponentSubscriptionsExample.Model) =
+            projected(
+              "ComponentSubscriptionsExample.Model",
+              "Current parent-owned component visibility",
+              constructor(
+                "Model",
+                field("firstVisible", boolean(value.firstVisible)),
+                field("resetEpoch", number(value.resetEpoch))
+              ),
+              Vector(
+                "firstVisible" -> value.firstVisible.toString,
+                "resetEpoch"   -> value.resetEpoch.toString
+              )
+            )
+      )
+    )
+
   private val browserIntegration =
     new ExampleEntry[BrowserInteropExample.Msg, BrowserInteropExample.Model](
       descriptor = ExampleCatalog.BrowserIntegration,
@@ -785,6 +826,7 @@ private[docs] object ExampleRegistry:
       browserIntegration,
       counter,
       connectedResource,
+      componentSubscriptions,
       lifecycle,
       navigation,
       profileForm,

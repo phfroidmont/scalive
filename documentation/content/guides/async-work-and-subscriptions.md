@@ -13,14 +13,17 @@ transitions and rendered UI states.
 
 ## Choose The Resource By Shape {#choose-the-resource-by-shape}
 
-Scalive gives a connected LiveView three lifecycle-owned resource shapes. Use
+Scalive gives connected LiveViews and components focused lifecycle-owned resource
+shapes. Use
 `ctx.async` for one finite `Task[A]`: a database query, service call, or report
 that succeeds, fails, or is cancelled. Use `ctx.subscriptions` for a
 `ZStream[Any, Nothing, Msg]` that can emit many messages over time: a clock,
 notification feed, or application event stream. Use
 @:apiSymbol(def:scalive.RootMountConnected.resources)`connected.resources`@:@
-during mount for a resource that needs deterministic cleanup but does not itself
-deliver messages to the LiveView.
+during root LiveView mount for a resource that needs deterministic cleanup but
+does not itself deliver messages to the LiveView. `ConnectedResources` remains a
+root-mount capability; component subscriptions do not add a component resource
+registry.
 
 A `Task[A]` is finite work that may fail with a `Throwable`; a fiber is its
 running, interruptible execution. A `ZStream[R, E, A]` emits zero or more `A`
@@ -183,8 +186,8 @@ instead reuse the normal cancel path.
 ## Own Long-Lived Streams With Subscriptions {#own-long-lived-streams-with-subscriptions}
 
 A @:apiSymbol(opaque-type:scalive.SubscriptionKey)`SubscriptionKey`@:@ identifies one
-registered stream in a root LiveView. The stream must emit the LiveView's `Msg`
-type and cannot fail:
+registered stream in its root LiveView or exact component owner. The stream must
+emit that owner's `Msg` type and cannot fail:
 
 ```scala
 private val ClockSubscription =
@@ -194,8 +197,9 @@ private def ticks(every: Duration): ZStream[Any, Nothing, Msg] =
   ZStream.tick(every).mapZIO(_ => Clock.instant).map(Msg.Tick(_))
 ```
 
-@:apiSymbol(def:scalive.Subscriptions.start)`start`@:@ rejects a duplicate active
-key. Use it when starting twice indicates a state-machine mistake. The clock
+@:apiSymbol(def:scalive.Subscriptions.start)`start`@:@ rejects a duplicate
+registered key, including a component registration whose worker is suspended by
+dormancy. Use it when starting twice indicates a state-machine mistake. The clock
 guards `start` with its model so the button and server transition agree:
 
 ```scala
@@ -206,7 +210,8 @@ ctx.subscriptions
 @:apiSymbol(def:scalive.Subscriptions.replace)`replace`@:@ starts or swaps the
 stream under a key. Replacing the registration interrupts the old stream and
 resubscribes the runtime's current set. Use replacement when changing polling
-frequency, topic, or another stream parameter is valid application behavior:
+frequency, topic, props, or another stream parameter is valid application
+behavior:
 
 ```scala
 ctx.subscriptions
@@ -231,18 +236,59 @@ case Msg.Cancel =>
     .as(model.copy(mode = Mode.Stopped))
 ```
 
-Subscription messages pass through info lifecycle hooks before
-`handleMessage`. Registrations exist only for the connected lifecycle and do
-not run during disconnected rendering. Mount therefore starts required streams
-again for each new connected lifecycle.
+Root subscription messages pass through the root's typed info lifecycle hooks
+before `handleMessage`. Registrations exist only for the connected lifecycle and
+do not run during disconnected rendering. Mount therefore starts required
+streams again for each new connected lifecycle.
+
+Construct each stream so resources are acquired anew every time it runs. Put
+handles inside `ZStream.scoped` or `ZStream.unwrapScoped`; do not acquire a handle
+first and capture it in a stream value. Replacement and component revival rerun
+the stored stream, so a captured handle may already have been released.
+
+### Own A Stream In A Component {#component-subscriptions}
+
+Components expose the same `Subscriptions[Msg]` capability through
+@:apiSymbol(def:scalive.ComponentConnected.subscriptions)`connected.subscriptions`@:@
+during connected mount and update, and through
+@:apiSymbol(def:scalive.ComponentMessageContext.subscriptions)`ctx.subscriptions`@:@
+while handling a component message. A registered stream emits the component's
+`Msg`, not the parent LiveView's message type. Delivery follows the component's
+typed event hooks and `handleMessage`; component async completions instead use
+the component's async hooks. Root info hooks do not handle either kind of
+component message.
+
+The subscription namespace is the exact runtime component instance. Two
+instances can deliberately reuse the same `SubscriptionKey` without collision,
+and root registrations remain independent. A disconnected component mount or
+update cannot acquire a subscription because the capability exists only in its
+`Connection.Connected` branch.
+
+When a rendered component becomes dormant while the runtime waits for browser
+removal confirmation, Scalive stops its subscription worker but retains the
+registration with the component model. If that same instance returns first, the
+runtime runs the stored `ZStream` again with fresh internal tokens, without
+calling mount or update merely to restart it. Pending values from the old worker
+are discarded. This is interruption and resubscription, not a replay or lossless
+handoff guarantee.
+
+Only a stream still actively registered at dormancy is eligible for this
+automatic restart. An explicitly cancelled stream, a normally completed stream,
+or a defective stream stays stopped. Once the browser confirms destruction,
+Scalive removes the registration; rendering the same class and logical ID later
+mounts a fresh component and may register a fresh stream.
+
+Component async behavior is intentionally unchanged: dormancy interrupts an
+active component async task and returning does not restart it. Root async and
+subscription ownership is also unchanged by component dormancy.
 
 ## Keep Ownership Local {#keep-ownership-local}
 
 Keys are runtime identities, not persistence keys. Keep them stable within one
-owner and unique among that owner's resources. Nested LiveViews already have
-independent resource namespaces, but deriving keys from instance identity also
-makes ownership visible in traces and prevents collisions when code moves into
-a shared owner.
+owner and unique among that owner's resources. Exact component instances and
+nested LiveViews have independent resource namespaces. Deriving root keys from
+instance identity still makes ownership visible in traces and prevents
+collisions when code moves into a shared owner.
 
 Keep durable results in an application service or database when they must
 survive navigation or reconnect. `AsyncValue`, task registrations, and
@@ -257,6 +303,12 @@ instance-scoped subscription key:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala, subscription-clock-example)
 
+The component implementation shows two instances safely reusing one local key,
+mount-started streams, local replacement and cancellation, and parent-controlled
+visibility:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/ComponentSubscriptionsExample.scala, component-subscriptions-example)
+
 The report implementation shows typed results, retained values, deterministic
 failure, stale-completion suppression, explicit cancellation, retry, and reset:
 
@@ -269,7 +321,8 @@ handle when its LiveView closes:
 @:sourceRegion(documentation/site/src/scalive/docs/examples/ConnectedResourceExample.scala, connected-resource-example)
 
 Run the [connected lifecycle registration](../examples/connected-resource.md),
-[managed clock subscription](../examples/subscription-clock.md), and
+[managed clock subscription](../examples/subscription-clock.md),
+[component-owned subscriptions](../examples/component-subscriptions.md), and
 [managed async report](../examples/async-report.md) alongside the documentation
 site's diagnostic views to correlate messages, model transitions, and final DOM
 changes.

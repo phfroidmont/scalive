@@ -653,6 +653,7 @@ final private class ComponentConnectedImpl[M](
   val staticChanged = metadata.staticChanged
   val connectParams = metadata.connectParams
   val async         = JournaledAsync[M](turn.root)
+  val subscriptions = JournaledSubscriptions[M](turn.root)
   val client        = JournaledClient(turn.root)
 
 final private case class ComponentMountContextImpl[P, M, A](
@@ -688,6 +689,7 @@ final private case class ComponentMessageContextImpl[P, M, A, O](
   val uploads       = JournaledUploads(turn.root)
   val streams       = JournaledStreams(turn.root.streams)
   val async         = JournaledAsync[M](turn.root)
+  val subscriptions = JournaledSubscriptions[M](turn.root)
   val client        = JournaledClient(turn.root)
   val components    = JournaledComponentUpdates(turn.root)
   val hooks         = JournaledComponentHooks[P, M, A](turn)

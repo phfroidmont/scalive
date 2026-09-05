@@ -340,10 +340,11 @@ object SessionKernelSpec extends ZIOSpecDefault:
                       providedLifecycle = Some(lifecycle)
                     )
           _        <- kernel.submit(SessionCommand.Message(kernel.epoch, 0))
-          resource <- kernel.inspect.map(_.managedResources.values.head)
+          resource <- kernel.inspect.map(_.managedResources.values.head.asInstanceOf[ManagedResource.RunningSubscription])
           _ <- kernel.submit(
                  SessionCommand.ManagedSubscription(kernel.epoch, resource.token, 4)
                )
+          _ <- resource.ended.set(true)
           _ <- kernel.submit(
                  SessionCommand.ManagedSubscriptionEnded(kernel.epoch, resource.token)
                )
@@ -408,7 +409,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
                       providedLifecycle = Some(lifecycle)
                     )
           _        <- kernel.submit(SessionCommand.Message(kernel.epoch, 0))
-          resource <- kernel.inspect.map(_.managedResources.values.head)
+          resource <- kernel.inspect.map(_.managedResources.values.head.asInstanceOf[ManagedResource.Async])
           _        <- halt.set(true)
           result <- kernel.submit(
                       SessionCommand.ManagedAsync(
@@ -1409,12 +1410,12 @@ object SessionKernelSpec extends ZIOSpecDefault:
           kernel    <- SessionKernel.start(tiny, logic, program, outbound)
           first     <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).fork
           _         <- entered.await
-          queued    <- kernel.submit(SessionCommand.Message(kernel.epoch, 2)).fork
-          _         <- ZIO.yieldNow
+          queuedId  <- ZIO.fromEither(CommandId.fresh())
+          queued    <- kernel.enqueue(queuedId, SessionCommand.Message(kernel.epoch, 2))
           saturated <- kernel.submit(SessionCommand.Message(kernel.epoch, 3)).either
           _         <- release.succeed(())
           _         <- first.join
-          _         <- queued.join
+          _         <- queued
         yield assertTrue(saturated == Left(SessionRejection.MailboxSaturated(1)))
       }
     },

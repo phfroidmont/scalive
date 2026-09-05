@@ -3,6 +3,7 @@ package scalive.runtime.connection
 import zio.*
 import zio.json.ast.Json
 import zio.http.URL
+import zio.stream.ZStream
 import zio.test.*
 
 import scalive.*
@@ -465,6 +466,79 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         !taskStarted,
         operations.size == 2,
         owners.forall(_ == OwnerId.Component(lifecycle, id))
+      )
+    },
+    test("component subscription operations are journaled under the exact component owner") {
+      val lifecycle = LifecycleId(5L)
+      val id        = ComponentInstanceId(6L)
+      val owner     = OwnerId.Component(lifecycle, id)
+      val mountKey  = SubscriptionKey("mount")
+      val updateKey = SubscriptionKey("update")
+      val messageKey = SubscriptionKey("message")
+      val draft = TurnDraft[Unit, RootState[Unit, Unit]](
+        RootState((), URL.root, RootHookRegistry.fromStatic(LiveHooks.empty[Unit, Unit]))
+      )
+      val definition = new LiveComponent[Unit, Int, Int]:
+        def mount(props: Unit, ctx: MountContext) =
+          ctx.connection match
+            case Connection.Disconnected => ZIO.dieMessage("expected connected component mount")
+            case Connection.Connected(connected) =>
+              connected.subscriptions
+                .start(mountKey, SubscriptionDelivery.Lossless)(ZStream.succeed(1))
+                .as(0)
+        override def update(props: Unit, model: Int, ctx: UpdateContext) =
+          ctx.connection match
+            case Connection.Disconnected => ZIO.dieMessage("expected connected component update")
+            case Connection.Connected(connected) =>
+              connected.subscriptions
+                .replace(updateKey, SubscriptionDelivery.Latest)(ZStream.succeed(2))
+                .as(model)
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext): Int => Task[Int] = _ =>
+          ctx.subscriptions.cancel(messageKey).as(model)
+        def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[Int]) = div()
+
+      for
+        environment <- ConnectedComponentEnvironment.make[Unit, Unit](metadata, lifecycle)
+        mounted     <- environment.mount(id, definition, (), draft)
+        updated <- environment.update(
+                     id,
+                     definition,
+                     (),
+                     mounted.model,
+                     mounted.state,
+                     mounted.draft
+                   )
+        messaged <- environment.message(
+                      id,
+                      definition,
+                      (),
+                      updated.model,
+                      1,
+                      (_: Nothing) => ZIO.unit,
+                      updated.state,
+                      updated.draft
+                    )
+        operations = messaged.draft.resourceOperations
+      yield assertTrue(
+        operations match
+          case Vector(
+                ResourceOperation.StartSubscription(
+                  `owner`,
+                  `mountKey`,
+                  SubscriptionDelivery.Lossless,
+                  _,
+                  false
+                ),
+                ResourceOperation.StartSubscription(
+                  `owner`,
+                  `updateKey`,
+                  SubscriptionDelivery.Latest,
+                  _,
+                  true
+                ),
+                ResourceOperation.CancelSubscription(`owner`, `messageKey`)
+              ) => true
+          case _ => false
       )
     },
     test("managed failed and cancelled async results run hooks then mapped component messages") {

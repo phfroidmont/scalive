@@ -143,25 +143,33 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private def offerRegular(envelope: Envelope[Msg, Model]): UIO[Boolean] =
     ZIO.uninterruptible {
-      terminal.poll.flatMap {
-        case Some(_) => ZIO.succeed(false)
-        case None    =>
-          regularSlots.poll.flatMap {
-            case None     => ZIO.succeed(false)
-            case Some(()) =>
-              offerMailbox(envelope)
-                .tap(accepted => ZIO.unless(accepted)(regularSlots.offer(()).unit))
+      terminal.poll
+        .flatMap {
+          case Some(_) => ZIO.succeed(false)
+          case None    =>
+            regularSlots.poll.flatMap {
+              case None     => ZIO.succeed(false)
+              case Some(()) =>
+                offerMailbox(envelope)
+                  .tap(accepted => ZIO.unless(accepted)(regularSlots.offer(()).unit))
+            }
+        }.catchAllCause { cause =>
+          terminal.poll.flatMap {
+            case Some(_) => ZIO.succeed(false)
+            case None    => ZIO.failCause(cause)
           }
-      }
+        }
     }
 
   /** Backpressures a runtime-owned producer without weakening external saturation rejection. */
   private def offerOwned(envelope: Envelope[Msg, Model]): UIO[Boolean] =
-    takeOwnedSlot.flatMap {
-      case true =>
-        offerMailbox(envelope)
-          .tap(accepted => ZIO.unless(accepted)(regularSlots.offer(()).unit))
-      case false => ZIO.succeed(false)
+    ZIO.uninterruptibleMask { restore =>
+      restore(takeOwnedSlot).flatMap {
+        case true =>
+          offerMailbox(envelope)
+            .tap(accepted => ZIO.unless(accepted)(regularSlots.offer(()).unit))
+        case false => ZIO.succeed(false)
+      }
     }
 
   private def takeOwnedSlot: UIO[Boolean] =
@@ -599,7 +607,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       )
             case SessionCommand.ManagedAsync(_, token, result) =>
               state.committed.managedResources.current(token) match
-                case Some(ManagedResource(_, _, ManagedResourceKind.Async(mapResult))) =>
+                case Some(ManagedResource.Async(_, _, mapResult)) =>
                   Clock.nanoTime.flatMap { handlerStarted =>
                     controlled(phase(SessionStage.Handler)(ZIO.attempt(mapResult(result)))).exit
                       .flatMap {
@@ -646,7 +654,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
             case SessionCommand.ManagedSubscription(_, token, message) =>
               state.committed.managedResources.current(token) match
-                case Some(ManagedResource(_, _, ManagedResourceKind.Subscription(_))) =>
+                case Some(_: ManagedResource.RunningSubscription) =>
                   token.owner match
                     case OwnerId.Root(_) =>
                       observer.message(commandCorrelation(state.epoch, commandId), message) *>
@@ -659,25 +667,36 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           ),
                           Some(tracked)
                         )
-                    case OwnerId.Component(_, _) =>
-                      response.fail(SessionRejection.StaleResource(token)).unit *>
-                        loop(state, work)
+                    case OwnerId.Component(_, component) =>
+                      observer.message(commandCorrelation(state.epoch, commandId), message) *>
+                        executeComponentTurn(
+                          state,
+                          work,
+                          component,
+                          ComponentAction.Message(message),
+                          Some(tracked)
+                        )
                 case _ =>
                   response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
             case SessionCommand.ManagedSubscriptionEnded(_, token) =>
               state.committed.managedResources.current(token) match
-                case Some(ManagedResource(_, _, ManagedResourceKind.Subscription(_))) =>
-                  executeTurn(
-                    state,
-                    work,
-                    ZIO.succeed(
-                      TurnDraft(
-                        state.committed.model,
-                        resourceOperations = Vector(ResourceOperation.Complete(token))
+                case Some(subscription: ManagedResource.Subscription) =>
+                  subscription.ended.get.flatMap { ended =>
+                    if ended then
+                      executeTurn(
+                        state,
+                        work,
+                        ZIO.succeed(
+                          TurnDraft(
+                            state.committed.model,
+                            resourceOperations = Vector(ResourceOperation.Complete(token))
+                          )
+                        ),
+                        Some(tracked)
                       )
-                    ),
-                    Some(tracked)
-                  )
+                    else
+                      response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
+                  }
                 case _ =>
                   response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
             case SessionCommand.ComponentMessage(_, component, message) =>
@@ -753,6 +772,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             case SessionCommand.ParamsPatch(_, _) =>
               response.fail(SessionRejection.UnexpectedPatch).unit *> loop(state, work)
           command match
+            case SessionCommand.ManagedSubscription(_, token, _) =>
+              val running = state.committed.managedResources.current(token).exists {
+                case _: ManagedResource.RunningSubscription =>
+                  token.owner match
+                    case OwnerId.Root(_)                 => true
+                    case OwnerId.Component(_, component) =>
+                      state.committed.components.values.exists(_.id == component)
+                case _ => false
+              }
+              if running then guardActiveTurn(state, work, Some(tracked))(execute)
+              else response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
             case SessionCommand.Upload(_, _, mutation, _)
                 if logic.guardUpload(state.committed.model, mutation) =>
               guardActiveTurn(
@@ -772,6 +802,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   onHalt = Some(haltManagedAsync(state, work, Some(tracked), token))
                 )(execute)
             case _ => guardActiveTurn(state, work, Some(tracked))(execute)
+          end match
     end match
   end executeEnvelope
 
@@ -906,7 +937,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     val next    = state.committed.copy(managedResources = removal.index)
     val retired = removal.removed.toVector
     activeOwner.activate(closeCommitted(next)) *>
-      ZIO.foreachDiscard(retired)(_.prepared.markStale) *>
+      ZIO.foreachDiscard(retired.collect { case value: ManagedResource.Running => value })(
+        _.prepared.markStale
+      ) *>
       closeManaged(retired) *>
       haltActiveTurn(SessionState.Active(state.epoch, next), work, response)
 
@@ -1017,13 +1050,21 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             loop(state, work)
         else acknowledgePatch(state, work, commandId, response)
       case Some(Envelope.DestroyComponents(tokens)) =>
-        val (committed, removed) = removeDormantComponents(pending.committed, tokens)
-        val next                 = SessionState.Navigating(
-          state.epoch,
-          pending.copy(committed = committed)
-        )
-        if removed.isEmpty then loop(state, work)
-        else finishComponentDestruction(next, committed, removed, work)
+        if pending.componentCandidate.nonEmpty then
+          // A staged component turn still owns snapshots of dormant instances and resources.
+          // Destroy only after it commits, and only if those instances are still dormant.
+          loop(
+            state.copy(pending =
+              pending.copy(
+                componentDestructions = (pending.componentDestructions ++ tokens).distinct
+              )
+            ),
+            work
+          )
+        else
+          val (committed, removed) = removeDormantComponents(pending.committed, tokens)
+          val next = SessionState.Navigating(state.epoch, pending.copy(committed = committed))
+          finishComponentDestruction(committed, removed)(loop(next, work))
     }
   end navigatingLoop
 
@@ -1061,14 +1102,18 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         controlled(commit(Some(pending.committed), candidate, work, None, publish = false)).exit
           .flatMap {
             case Exit.Success(interim) =>
-              continuePatchAcknowledgement(
-                state,
-                interim.value,
-                interim.work,
-                commandId,
-                response,
-                Some(pending.committed.render)
-              )
+              val (committed, removed) =
+                removeDormantComponents(interim.value, pending.componentDestructions)
+              finishComponentDestruction(committed, removed) {
+                continuePatchAcknowledgement(
+                  state,
+                  committed,
+                  interim.work,
+                  commandId,
+                  response,
+                  Some(pending.committed.render)
+                )
+              }
             case Exit.Failure(cause) if cause.isInterruptedOnly =>
               response.fail(SessionRejection.Terminal("closed")).unit
             case Exit.Failure(cause) =>
@@ -1708,15 +1753,18 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                              logic.prepare(reconciledDraft, registry)
                            )
                       resources <- registry.result
-                      managed   <- prepareManagedResources(
-                                   previous
-                                     .map(_.managedResources).getOrElse(
-                                       ResourceIndex.empty[ManagedResource]
-                                     ),
-                                   reconciledDraft.resourceOperations,
-                                   nestedComponents.forest.components.map(_.id).toSet,
-                                   auxiliaryScope
-                                 )
+                      managed   <-
+                        prepareManagedResources(
+                          previous
+                            .map(_.managedResources).getOrElse(
+                              ResourceIndex.empty[ManagedResource]
+                            ),
+                          reconciledDraft.resourceOperations,
+                          nestedComponents.forest.components.map(_.id).toSet,
+                          previous.toVector.flatMap(_.components.allValues.map(_.id)).toSet ++
+                            nestedComponents.forest.components.map(_.id),
+                          auxiliaryScope
+                        )
                       reservation <- reserve(auxiliaryScope)
                       finalDraft  <- phase(SessionStage.AfterRender)(
                                       logic.afterRender(reconciledDraft)
@@ -2704,29 +2752,33 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   final private case class ManagedPreparation(
     index: ResourceIndex[ManagedResource],
-    activations: Vector[ManagedResource] = Vector.empty,
-    retirements: Vector[ManagedResource] = Vector.empty,
+    activations: Vector[ManagedResource.Running] = Vector.empty,
+    retirements: Vector[ManagedResource.Running] = Vector.empty,
     continuations: Vector[ManagedAsyncContinuation] = Vector.empty):
     def retire(resources: Vector[ManagedResource]): ManagedPreparation =
       val retiredTokens = resources.map(_.token).toSet
       copy(
         activations = activations.filterNot(resource => retiredTokens.contains(resource.token)),
-        retirements = retirements ++ resources
+        retirements = retirements ++ resources.collect { case value: ManagedResource.Running =>
+          value
+        }
       )
 
   private def prepareManagedResources(
     initial: ResourceIndex[ManagedResource],
     operations: Vector[ResourceOperation],
     activeComponents: Set[ComponentInstanceId],
+    retainedComponents: Set[ComponentInstanceId],
     candidateScope: CandidateScope
   ): ZIO[Any, SessionFailure, ManagedPreparation] =
     val activeOperations = operations.filter {
       case ResourceOperation.StartAsync(owner, _, _, _) => ownerIsActive(owner, activeComponents)
       case ResourceOperation.CancelAsync(owner, _, _)   => ownerIsActive(owner, activeComponents)
       case ResourceOperation.StartSubscription(owner, _, _, _, _) =>
-        ownerIsActive(owner, activeComponents)
-      case ResourceOperation.CancelSubscription(owner, _) => ownerIsActive(owner, activeComponents)
-      case ResourceOperation.Complete(token) => ownerIsActive(token.owner, activeComponents)
+        ownerIsActive(owner, retainedComponents)
+      case ResourceOperation.CancelSubscription(owner, _) =>
+        ownerIsActive(owner, retainedComponents)
+      case ResourceOperation.Complete(token) => ownerIsActive(token.owner, retainedComponents)
     }
     ZIO
       .foldLeft(activeOperations)(ManagedPreparation(initial)) { (prepared, operation) =>
@@ -2755,7 +2807,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 val removal = prepared.index.remove(owner, ResourceKey.Async(key.value))
                 removal.removed match
                   case Some(
-                        resource @ ManagedResource(_, _, ManagedResourceKind.Async(mapResult))
+                        resource @ ManagedResource.Async(_, _, mapResult)
                       ) =>
                     phase(SessionStage.ResourcePreparation)(
                       ZIO.attempt(mapResult(LiveAsyncResult.Cancelled(reason)))
@@ -2811,8 +2863,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               token    <- identity(prepared.index.nextToken(owner, epoch, key))
               resource <- prepareSubscriptionResource(
                             token,
-                            start.delivery,
-                            start.stream.asInstanceOf[zio.stream.ZStream[Any, Nothing, Any]],
+                            ManagedResource.SubscriptionDefinition(
+                              start.delivery,
+                              start.stream.asInstanceOf[zio.stream.ZStream[Any, Nothing, Any]]
+                            ),
                             candidateScope
                           )
               replacement = prepared.index.install(token, resource)
@@ -2821,6 +2875,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               index = replacement.index,
               activations = retired.activations :+ resource
             )
+            end for
           case ResourceOperation.CancelSubscription(owner, key) =>
             validateOwner(owner).flatMap { _ =>
               val removal = prepared.index.remove(owner, ResourceKey.Subscription(key.value))
@@ -2828,13 +2883,51 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 prepared.retire(removal.removed.toVector).copy(index = removal.index)
               )
             }
-      }.map { prepared =>
-        prepared.index.owners.foldLeft(prepared) {
-          case (current, owner @ OwnerId.Component(ownerLifecycle, component))
-              if ownerLifecycle == lifecycle && !activeComponents.contains(component) =>
-            val removal = current.index.removeOwner(owner)
-            current.retire(removal.removed).copy(index = removal.index)
-          case (current, _) => current
+      }.flatMap { prepared =>
+        ZIO.foldLeft(prepared.index.values)(prepared) { (current, resource) =>
+          val active = ownerIsActive(resource.token.owner, activeComponents)
+          resource match
+            case subscription: ManagedResource.SuspendedSubscription =>
+              subscription.ended.get.flatMap { ended =>
+                if ended then
+                  ZIO.succeed(
+                    current.copy(index =
+                      current.index.remove(subscription.token.owner, subscription.token.key).index
+                    )
+                  )
+                else if active then
+                  for
+                    token <- identity(
+                               current.index
+                                 .nextToken(subscription.token.owner, epoch, subscription.token.key)
+                             )
+                    running <-
+                      prepareSubscriptionResource(token, subscription.definition, candidateScope)
+                  yield current.copy(
+                    index = current.index.install(token, running).index,
+                    activations = current.activations :+ running
+                  )
+                else ZIO.succeed(current)
+              }
+            case subscription: ManagedResource.RunningSubscription if !active =>
+              // Preserve the declaration and terminal marker, not a live worker. The next turn
+              // cannot resume it until commit has finished closing this run.
+              val suspended = ManagedResource.SuspendedSubscription(
+                subscription.token,
+                subscription.definition,
+                subscription.ended
+              )
+              ZIO.succeed(
+                current
+                  .retire(Vector(subscription)).copy(
+                    index = current.index.install(subscription.token, suspended).index
+                  )
+              )
+            case task: ManagedResource.Async if !active =>
+              val removal = current.index.remove(task.token.owner, task.token.key)
+              ZIO.succeed(current.retire(Vector(task)).copy(index = removal.index))
+            case _ => ZIO.succeed(current)
+          end match
         }
       }
   end prepareManagedResources
@@ -2850,12 +2943,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     task: Task[Any],
     mapResult: LiveAsyncResult[Any] => Any,
     candidateScope: CandidateScope
-  ): UIO[ManagedResource] =
+  ): UIO[ManagedResource.Async] =
     for
       scope    <- Scope.make
       prepared <- PreparedResource.make(scope.close(Exit.unit))
       _        <- candidateScope.addFinalizer(prepared.discard)
-      resource = ManagedResource(token, prepared, ManagedResourceKind.Async(mapResult))
+      resource = ManagedResource.Async(token, prepared, mapResult)
       worker   = prepared.awaitActivation.foldZIO(
                  _ => ZIO.unit,
                  _ =>
@@ -2871,15 +2964,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private def prepareSubscriptionResource(
     token: ResourceToken,
-    delivery: SubscriptionDelivery,
-    stream: zio.stream.ZStream[Any, Nothing, Any],
+    definition: ManagedResource.SubscriptionDefinition,
     candidateScope: CandidateScope
-  ): UIO[ManagedResource] =
+  ): UIO[ManagedResource.RunningSubscription] =
+    val delivery = definition.delivery
+    val stream   = definition.stream
     for
       scope    <- Scope.make
       prepared <- PreparedResource.make(scope.close(Exit.unit))
       _        <- candidateScope.addFinalizer(prepared.discard)
-      resource = ManagedResource(token, prepared, ManagedResourceKind.Subscription(delivery))
+      ended    <- Ref.make(false)
+      resource = ManagedResource.RunningSubscription(token, prepared, definition, ended)
       _ <- delivery match
              case SubscriptionDelivery.Lossless =>
                val worker = prepared.awaitActivation.foldZIO(
@@ -2890,7 +2985,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                        enqueueOwnedCommand(
                          SessionCommand.ManagedSubscription(epoch, token, message)
                        )
-                     ).foldCauseZIO(
+                     ).onExit(exit =>
+                       ended.set(true).unless(exit.causeOption.exists(_.isInterruptedOnly)).unit
+                     )
+                     .foldCauseZIO(
                        cause =>
                          if cause.isInterruptedOnly then ZIO.unit
                          else
@@ -2926,21 +3024,30 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                       _       <- latest.set(Some(message)) *> signal.offer(()).unit
                                       _       <- admitted.await.when(isFirst)
                                     yield ()
-                                  ).catchAllCause(cause =>
+                                  ).onExit(exit =>
+                                    ended
+                                      .set(true).unless(
+                                        exit.causeOption.exists(_.isInterruptedOnly)
+                                      ).unit
+                                  )
+                                  .catchAllCause(cause =>
                                     (observeSubscriptionFailure(token, delivery, cause) *>
                                       ZIO.logWarning(
                                         "managed subscription stream defect; stopping subscription"
                                       )).unless(cause.isInterruptedOnly).unit
                                   ).ensuring(done.succeed(()).unit *> signal.offer(()).unit)
                             )
-                 consumer = prepared.awaitActivation.foldZIO(
-                              _ => ZIO.unit,
-                              _ => deliverLatestSubscription(token, latest, signal, admitted, done)
-                            )
+                 consumer =
+                   prepared.awaitActivation.foldZIO(
+                     _ => ZIO.unit,
+                     _ => deliverLatestSubscription(token, latest, signal, admitted, done, ended)
+                   )
                  _ <- producer.forkIn(scope)
                  _ <- consumer.forkIn(scope)
                yield ()
     yield resource
+    end for
+  end prepareSubscriptionResource
 
   private def observeSubscriptionFailure(
     token: ResourceToken,
@@ -2961,24 +3068,32 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     latest: Ref[Option[Any]],
     signal: Queue[Unit],
     admitted: Promise[Nothing, Unit],
-    done: Promise[Nothing, Unit]
+    done: Promise[Nothing, Unit],
+    ended: Ref[Boolean]
   ): UIO[Unit] =
     for
-      _        <- signal.take
-      reserved <- takeOwnedSlot
-      message  <- if reserved then latest.getAndSet(None) else ZIO.none
-      _        <- message match
-             case Some(value) =>
-               enqueueOwnedCommandReserved(
-                 SessionCommand.ManagedSubscription(epoch, token, value)
-               ) *> admitted.succeed(()).unit
-             case None => ZIO.when(reserved)(regularSlots.offer(()).unit).unit
+      _ <- signal.take
+      _ <- ZIO.uninterruptibleMask { restore =>
+             restore(takeOwnedSlot).flatMap { reserved =>
+               val message = if reserved then latest.getAndSet(None) else ZIO.none
+               message.flatMap {
+                 case Some(value) =>
+                   enqueueOwnedCommandReserved(
+                     SessionCommand.ManagedSubscription(epoch, token, value)
+                   ) *> admitted.succeed(()).unit
+                 case None => ZIO.when(reserved)(regularSlots.offer(()).unit).unit
+               }
+             }
+           }
       completed <- done.isDone
       remaining <- latest.get
       _         <-
         if completed && remaining.isEmpty then
-          enqueueOwnedCommand(SessionCommand.ManagedSubscriptionEnded(epoch, token))
-        else deliverLatestSubscription(token, latest, signal, admitted, done)
+          ended.get.flatMap(terminal =>
+            enqueueOwnedCommand(SessionCommand.ManagedSubscriptionEnded(epoch, token))
+              .when(terminal).unit
+          )
+        else deliverLatestSubscription(token, latest, signal, admitted, done, ended)
     yield ()
 
   private def validateOwner(owner: OwnerId): ZIO[Any, SessionFailure, Unit] =
@@ -3036,8 +3151,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   ): UIO[Unit] =
     val (committed, removed) = removeDormantComponents(state.committed, tokens)
     val next                 = SessionState.Active(state.epoch, committed)
-    if removed.isEmpty then loop(state, work)
-    else finishComponentDestruction(next, committed, removed, work)
+    finishComponentDestruction(committed, removed)(loop(next, work))
 
   private def removeDormantComponents(
     committed: Committed[Msg, Model],
@@ -3046,13 +3160,16 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     val (forest, removed) = committed.components.removeDormant(
       tokens.iterator.map(_.asInstanceOf[AnyRef]).toSet
     )
-    committed.copy(components = forest) -> removed
+    val managed = removed.foldLeft(committed.managedResources) { (resources, component) =>
+      resources.removeOwner(OwnerId.Component(lifecycle, component.id)).index
+    }
+    committed.copy(components = forest, managedResources = managed) -> removed
 
   private def finishComponentDestruction(
-    next: SessionState[Msg, Model],
     committed: Committed[Msg, Model],
-    removed: Vector[MountedComponent[Msg]],
-    work: ImmutableQueue[Work[Msg, Model]]
+    removed: Vector[MountedComponent[Msg]]
+  )(
+    continue: => UIO[Unit]
   ): UIO[Unit] =
     val cleanup = RuntimeCleanup.all(removed.map { component =>
       RuntimeCleanup.all(
@@ -3063,13 +3180,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         )
       )
     })
-    activeOwner.activate(closeCommitted(committed)) *>
-      cleanup.exit.flatMap {
-        case Exit.Success(_)     => loop(next, work)
-        case Exit.Failure(cause) =>
-          val failure = SessionFailure.StageFailed(SessionStage.Retirement, cause.prettyPrint)
-          crash(failure)
-      }
+    if removed.isEmpty then continue
+    else
+      activeOwner.activate(closeCommitted(committed)) *>
+        cleanup.exit.flatMap {
+          case Exit.Success(_)     => continue
+          case Exit.Failure(cause) =>
+            val failure = SessionFailure.StageFailed(SessionStage.Retirement, cause.prettyPrint)
+            crash(failure)
+        }
 
   private def discardCandidate(candidate: TurnCandidate[Msg, Model]): UIO[Unit] =
     RuntimeCleanup.all(
@@ -3954,7 +4073,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       .closeUploads(model).catchAllCause(_ => ZIO.logWarning("upload close hook failed"))
 
   private def closeManaged(resources: Vector[ManagedResource]): UIO[Unit] =
-    PreparedResources(resources.map(_.prepared)).close
+    PreparedResources(
+      resources.collect { case value: ManagedResource.Running => value.prepared }
+    ).close
 
   private def crash(failure: SessionFailure): UIO[Unit] =
     observer.emit(

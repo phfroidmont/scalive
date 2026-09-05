@@ -140,18 +140,82 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
 
       assertTrue(directErrors.nonEmpty, connectedErrors.isEmpty)
     },
+    test("component mount and update expose subscriptions only while connected") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.stream.ZStream
+
+        def mount(ctx: ComponentMountContext[Unit, Int, Unit]) =
+          ctx.connection match
+            case Connection.Disconnected => ZIO.unit
+            case Connection.Connected(connected) =>
+              connected.subscriptions.start(
+                SubscriptionKey("ticks"),
+                SubscriptionDelivery.Lossless
+              )(ZStream.succeed(1))
+
+        def update(ctx: ComponentUpdateContext[Unit, Int, Unit]) =
+          ctx.connection match
+            case Connection.Disconnected => ZIO.unit
+            case Connection.Connected(connected) =>
+              connected.subscriptions.replace(
+                SubscriptionKey("ticks"),
+                SubscriptionDelivery.Latest
+              )(ZStream.succeed(2)) *> connected.subscriptions.cancel(SubscriptionKey("old"))
+      """)
+      val directErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: ComponentMountContext[Unit, Int, Unit]) = ctx.subscriptions
+      """)
+      val afterRenderErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: ComponentAfterRenderContext[Unit, Int, Unit]) =
+          ctx.connection match
+            case Connection.Disconnected => ()
+            case Connection.Connected(connected) => connected.subscriptions
+      """)
+
+      assertTrue(errors.isEmpty, directErrors.nonEmpty, afterRenderErrors.nonEmpty)
+    },
     test("message phases expose connected capabilities directly") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         import zio.*
+        import zio.stream.ZStream
 
         def root(ctx: MessageContext[Unit, Unit]) =
           ctx.async.cancel(AsyncKey[Int]("load")) *> ctx.client.exec(JS)
 
-        def component(ctx: ComponentMessageContext[Unit, Unit, Unit]) =
-          ctx.async.cancel(AsyncKey[Int]("load")) *> ctx.client.exec(JS)
+        def component(ctx: ComponentMessageContext[Unit, Int, Unit]) =
+          ctx.subscriptions.start(
+            SubscriptionKey("ticks"),
+            SubscriptionDelivery.Lossless
+          )(ZStream.succeed(1)) *>
+            ctx.subscriptions.replace(
+              SubscriptionKey("ticks"),
+              SubscriptionDelivery.Latest
+            )(ZStream.succeed(2)) *>
+            ctx.subscriptions.cancel(SubscriptionKey("ticks")) *>
+            ctx.async.cancel(AsyncKey[Int]("load")) *>
+            ctx.client.exec(JS)
+      """)
+      val wrongMessageErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.stream.ZStream
+        def invalid(ctx: ComponentMessageContext[Unit, Int, Unit]) =
+          ctx.subscriptions.start(
+            SubscriptionKey("ticks"),
+            SubscriptionDelivery.Lossless
+          )(ZStream.succeed("wrong"))
+      """)
+      val missingDeliveryErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.stream.ZStream
+        def invalid(ctx: ComponentMessageContext[Unit, Int, Unit]) =
+          ctx.subscriptions.start(SubscriptionKey("ticks"))(ZStream.succeed(1))
       """)
 
-      assertTrue(errors.isEmpty)
+      assertTrue(errors.isEmpty, wrongMessageErrors.nonEmpty, missingDeliveryErrors.nonEmpty)
     }
   )

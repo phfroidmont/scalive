@@ -51,6 +51,7 @@ trait ComponentMessageContext[Props, Msg, Model] extends ConnectedMetadata:
   def uploads: Uploads
   def streams: Streams
   def async: Async[Msg]
+  def subscriptions: Subscriptions[Msg]
   def client: Client
   def components: ComponentUpdates
   def hooks: ComponentHooks[Props, Msg, Model]

@@ -216,6 +216,56 @@ changed. It is a `FormAddress`, not an unchecked browser string:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-event-target)
 
+### Choose When Feedback Appears {#choose-when-feedback-appears}
+
+For signal-backed forms, `formSignal.bind` ties rendering and events to one stable,
+instance-unique `DomRef`. Its default `FormFeedback.WhenUsed` policy follows Phoenix
+unused markers. Choose `FormFeedback.AfterBlur` when an invalid field should remain
+quiet until focus leaves it. Include `binding.modifiers` exactly once when supplying
+your own `form` tag: under `AfterBlur`, the modifiers include the nameless hidden child
+required by blur transport. `binding.render(...)` also rejects overrides of its owned
+ID and event bindings. Keep the feedback policy stable for a rendered form instance;
+the binding is the policy's configuration point.
+
+Apply every `FormUpdate` to the form in the **current** model, not to a form captured
+during rendering. `AppliedFormUpdate.valuesChanged` is false for feedback-only
+transitions, so status such as save confirmation need not be cleared just because a
+field blurred. Submission remains a separately typed `Definition.Event`:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BlurFeedbackExample.scala, blur-feedback-example)
+
+A bound control's `id` and feedback ID are scoped by the form `DomRef`; use its `id`,
+`validationAttributes`, and `errorFeedback` together for labels and ARIA. For a custom
+scalar input, `inputAttributes` supplies its retained `id`, `name`, value, and blur
+wiring. Calling `.onBlur(value => Msg.NormalizePhone(value.trim))` composes an
+application message after feedback dispatch, but command order does not wait for
+server acknowledgement. It is therefore not a race-free normalization mechanism.
+There is no `normalizeOnBlur` API. A later full-form snapshot can still overwrite a
+server-normalized value before its patch reaches the browser; this feedback API does
+not provide a general value-reconciliation guarantee.
+
+For a composite control, the widget owns its logical focus boundary and dispatches
+`control.blurred` only when focus leaves the whole widget. In keyed rendering, bind a
+row control with `binding.field(rows, key, field)` so blur state follows the stable row
+key. A bound row control must only be evaluated while its row exists. Outside a keyed
+loop, use `binding.optionalField(rows, key, field)(control => ...)` or the overload
+accepting a `BoundFormField`; it omits the control safely when the row disappears.
+
+`form.pristine` clears interaction while retaining current values, validation errors,
+and the active feedback policy. `Definition.fromValues(form.values)` revalidates with
+default pristine interaction; the binding reapplies its configured policy.
+`Definition.initial(...)` creates fresh values and interaction. A fresh mount starts
+with no blur history. Applying a recovery update to retained server state preserves
+its history; applying it to a freshly mounted form restores values but not old blur
+history. Submission makes all feedback eligible until reset.
+
+Within a `LiveComponent`, use the usual `phx.target(self)` on the form and on controls
+with application-specific blur callbacks. Scalar `.onBlur` uses the browser's `value`,
+or an empty string when absent; it is not the complete value vector of a multi-select.
+
+Feedback-only operations (`pristine` and `withAllErrorsVisible`) preserve malformed
+payload errors rather than silently dropping them through revalidation.
+
 Phoenix `_unused_*` markers determine the used-field set on change and recovery.
 Putting `phx.noUnusedField := true` on a form or control suppresses those markers,
 so received fields are treated as used. Keep that switch exceptional; the

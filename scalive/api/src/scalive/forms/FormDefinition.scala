@@ -78,6 +78,15 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   /** Typed event rebuilt by this exact definition. */
   type Event = FormEvent[Owner, self.type, Domain]
 
+  /** Rendering and interaction bindings for one instance of this definition. */
+  type Binding[Msg] = FormBinding[Owner, self.type, Domain, Msg]
+
+  /** Interaction-aware update owned by this exact definition. */
+  type Update = FormUpdate[Owner, self.type, Domain]
+
+  /** Result of applying an interaction-aware update owned by this exact definition. */
+  type AppliedUpdate = AppliedFormUpdate[Owner, self.type, Domain]
+
   /** Submitter contract owned by this exact definition. */
   type Submitter[Action <: Enum] = FormSubmitter[Owner, self.type, Action]
 
@@ -292,8 +301,13 @@ final class FormDefinition[Owner, Domain] private[scalive] (
     val visibility = kind match
       case FormEventKind.Submitted => ErrorVisibility.All
       case _                       => ErrorVisibility.UsedOnly
-    val interaction = FormInteraction(projection.used, visibility)
-    val form        = rebuild(
+    val interaction = FormInteraction(
+      projection.used,
+      visibility,
+      FormFeedback.WhenUsed,
+      Set.empty[FormAddress[Owner]]
+    )
+    val form = rebuild(
       projection.values,
       interaction,
       projection.structuralErrors ++ extraErrors
@@ -307,6 +321,7 @@ final class FormDefinition[Owner, Domain] private[scalive] (
       diagnostics = meta.diagnostics
     )
     new FormEvent(form, data, kind, eventMeta)
+  end event
 
   private[scalive] def project(data: FormData): FormProjection[Owner, self.type] =
     val staticValues = mutable.LinkedHashMap.empty[FormAddress[Owner], mutable.ArrayBuffer[String]]
@@ -661,7 +676,10 @@ final class FormDefinition[Owner, Domain] private[scalive] (
       FormDefinition.names(field.relativePath)
     )
 
-  private def addressForBrowserPath(path: FormPath, values: Values): Option[FormAddress[Owner]] =
+  private[scalive] def addressForBrowserPath(
+    path: FormPath,
+    values: Values
+  ): Option[FormAddress[Owner]] =
     FormDefinition.namesOption(path).flatMap { names =>
       staticByPath.get(names).map(_.address).orElse {
         rowGroups.iterator
@@ -680,6 +698,17 @@ final class FormDefinition[Owner, Domain] private[scalive] (
                 }
               }.flatten
           }.nextOption()
+      }
+    }
+
+  private[scalive] def existingFieldAddresses(
+    values: Values
+  ): Set[FormAddress[Owner]] =
+    staticFields.iterator.map(_.address).toSet ++ rowGroups.iterator.flatMap { rows =>
+      values.groups.get(rows.address).iterator.flatMap { group =>
+        group.rows.iterator.flatMap { row =>
+          rows.typedFields.iterator.map(field => rowFieldAddress(rows, row.key, field))
+        }
       }
     }
 end FormDefinition

@@ -1,6 +1,7 @@
 import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
 import colocated, { hooks as colocatedHooks } from "./colocated/index.js"
+import BlurFeedback from "./blur-feedback.js"
 
 const originalConsoleLog = console.log.bind(console)
 console.log = (...args) => {
@@ -84,6 +85,7 @@ if (window.location.pathname === "/issues/4325") {
 
 const hooks = {
   ...colocatedHooks,
+  BlurFeedback,
   FormHook: {
     mounted() {
       this.el.textContent = "pong"

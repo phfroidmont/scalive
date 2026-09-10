@@ -82,6 +82,37 @@ final class Form[Owner, Schema, Domain] private[scalive] (
     require(owningDefinition.owns(definition), "field is not declared by this form definition")
     FormFieldView(this, definition, definition.address, definition.path)
 
+  /** Returns the current view of a schema-bound repeated-row field.
+    *
+    * The bound row must still exist in this form's current values.
+    */
+  def field[Group, Input, Value](
+    definition: BoundFormField[Owner, Schema, Group, Input, Value]
+  ): FormFieldView[Owner, Input, Value] =
+    fieldOption(definition).getOrElse(
+      throw new IllegalArgumentException("bound row no longer exists")
+    )
+
+  /** Returns the current view of a schema-bound field when its row still exists. */
+  def fieldOption[Group, Input, Value](
+    definition: BoundFormField[Owner, Schema, Group, Input, Value]
+  ): Option[FormFieldView[Owner, Input, Value]] =
+    require(
+      definition.schemaIdentity eq values.schemaIdentity,
+      "bound field belongs to another form definition"
+    )
+    require(
+      owningDefinition.owns(definition.rows),
+      "repeated group is not declared by this form definition"
+    )
+    require(
+      definition.rows.typedFields.exists(_ eq definition.field),
+      "field is not declared by this row schema"
+    )
+    Option.when(resolveFieldPath(definition.path).contains(definition.address)) {
+      FormFieldView(this, definition.field, definition.address, definition.path)
+    }
+
   /** Returns repeated rows in submitted or programmatically mutated order.
     *
     * Each view carries its stable [[FormRowView.key]]; vector position is not row identity.
@@ -231,27 +262,44 @@ final class Form[Owner, Schema, Domain] private[scalive] (
   ): Form[Owner, Schema, Domain] =
     move(rows, key, target, after = true)
 
-  /** Returns this value state revalidated with every error visible, as on submission. */
+  /** Returns this value state with every existing validation error visible, as on submission. */
   def withAllErrorsVisible: Form[Owner, Schema, Domain] =
-    owningDefinition
-      .rebuild(
-        values.asInstanceOf[owningDefinition.Values],
-        FormInteraction(interaction.used, ErrorVisibility.All),
-        Vector.empty
-      ).asInstanceOf[Form[Owner, Schema, Domain]]
+    withInteraction(
+      FormInteraction(
+        interaction.used,
+        ErrorVisibility.All,
+        interaction.feedback,
+        interaction.blurred
+      )
+    )
 
-  /** Returns this value state revalidated with no fields marked as used. */
+  /** Returns this value state with interaction history reset and its feedback policy retained. */
   def pristine: Form[Owner, Schema, Domain] =
-    owningDefinition
-      .rebuild(
-        values.asInstanceOf[owningDefinition.Values],
-        FormInteraction.pristine,
-        Vector.empty
-      ).asInstanceOf[Form[Owner, Schema, Domain]]
+    withInteraction(
+      FormInteraction(Set.empty, ErrorVisibility.UsedOnly, interaction.feedback, Set.empty)
+    )
+
+  /** Changes the field-feedback policy without changing values, validation, or interaction history.
+    */
+  private[scalive] def withFeedback(feedback: FormFeedback): Form[Owner, Schema, Domain] =
+    withInteraction(
+      FormInteraction(interaction.used, interaction.visibility, feedback, interaction.blurred)
+    )
 
   /** Captures definition-owned values and domain value only when validation succeeds. */
   def validSnapshot: Option[ValidFormSnapshot[Owner, Schema, Domain]] =
     result.toOption.map(value => new ValidFormSnapshot(values, value))
+
+  private[scalive] def withInteraction(
+    interaction: FormInteraction[Owner]
+  ): Form[Owner, Schema, Domain] =
+    new Form(owningDefinition, values, result, interaction)
+
+  private[scalive] def resolveFieldPath(path: FormPath): Option[FormAddress[Owner]] =
+    owningDefinition.addressForBrowserPath(
+      path,
+      values.asInstanceOf[owningDefinition.Values]
+    )
 
   private def move[Group, Row](
     rows: RepeatedRows[Owner, Group, Row],
@@ -314,7 +362,7 @@ object Form:
       flattened
     )
 
-  private def attributeName(mod: Mod[?]): Option[String] = mod match
+  private[scalive] def attributeName(mod: Mod[?]): Option[String] = mod match
     case Mod.Attr.Static(name, _)                       => Some(name)
     case Mod.Attr.StaticValueAsPresence(name, _)        => Some(name)
     case Mod.Attr.SignalValue(name, _)                  => Some(name)
@@ -395,7 +443,8 @@ final class FormFieldView[Owner, Input, Value] private[scalive] (
   def isUsed: Boolean = form.interaction.isUsed(address)
 
   /** Errors suitable for display under the current interaction policy. */
-  def visibleErrors: Vector[FormError[Owner]] = if isUsed then errors else Vector.empty
+  def visibleErrors: Vector[FormError[Owner]] =
+    if form.interaction.isVisible(address) then errors else Vector.empty
 
   /** Whether at least one field error is currently visible. */
   def hasVisibleErrors: Boolean = visibleErrors.nonEmpty
@@ -652,7 +701,7 @@ final class FormRowView[Owner, Schema, Group, Row] private[scalive] (
 
   /** Row errors whose individual field addresses are currently visible. */
   def visibleErrors: Vector[FormError[Owner]] =
-    errors.filter(error => form.interaction.isUsed(error.address))
+    errors.filter(error => form.interaction.isVisible(error.address))
 
   /** Whether submission or field interaction has made this row relevant to feedback. */
   def isUsed: Boolean =
@@ -725,7 +774,37 @@ extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
     definition: FormField[Owner, Input, Value]
   ): Signal[FormFieldView[Owner, Input, Value]] = form.map(_.field(definition))
 
+  /** Resolves a keyed repeated-row field from each current form value, requiring the row to exist.
+    */
+  def field[Group, Row, Input, Value](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    definition: FormField[Group, Input, Value]
+  ): Signal[FormFieldView[Owner, Input, Value]] =
+    fieldOption(rows, key, definition).map(
+      _.getOrElse(throw new IllegalArgumentException("bound row no longer exists"))
+    )
+
+  /** Resolves a keyed repeated-row field when its row exists in each current form value. */
+  def fieldOption[Group, Row, Input, Value](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    definition: FormField[Group, Input, Value]
+  ): Signal[Option[FormFieldView[Owner, Input, Value]]] =
+    form.map { current =>
+      require(
+        current.owningDefinition.owns(rows),
+        "repeated group is not declared by this form definition"
+      )
+      require(
+        rows.typedFields.exists(_ eq definition),
+        "field is not declared by this row schema"
+      )
+      current.rows(rows).find(_.key == key).map(_.field(definition))
+    }
+
   /** Resolves stable repeated row views for each current form value. */
   def rows[Group, Row](
     definition: RepeatedRows[Owner, Group, Row]
   ): Signal[Vector[FormRowView[Owner, Schema, Group, Row]]] = form.map(_.rows(definition))
+end extension

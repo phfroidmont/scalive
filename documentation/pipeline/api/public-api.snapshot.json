@@ -2,6 +2,18 @@
   "formatVersion" : 1,
   "symbols" : [
     {
+      "id" : "class:scalive.AppliedFormUpdate",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.AppliedFormUpdate",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.AppliedFormUpdate:0baa13c9a0752668",
+          "signature" : "class AppliedFormUpdate[Owner, Schema, Domain](form: Form[Owner, Schema, Domain], valuesChanged: Boolean, kind: FormUpdateKind, target: Option[FormAddress[Owner]])"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.BoundFormField",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.BoundFormField",
@@ -254,6 +266,30 @@
       ]
     },
     {
+      "id" : "class:scalive.FormBinding",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormBinding",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FormBinding:8e4eb7c6925f3d8d",
+          "signature" : "class FormBinding[Owner, Schema, Domain, Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.FormControl",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormControl",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FormControl:551423b847e53aac",
+          "signature" : "class FormControl[Owner, Input, Value, Msg]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.FormData",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormData",
@@ -490,6 +526,18 @@
         {
           "id" : "class:scalive.FormSubmitter:6b42f43beccbe70e",
           "signature" : "class FormSubmitter[Owner, Schema, Action <: reflect.Enum]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.FormUpdate",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormUpdate",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FormUpdate:f41f27c0b0c6f75b",
+          "signature" : "class FormUpdate[Owner, Schema, Domain]"
         }
       ]
     },
@@ -2498,6 +2546,22 @@
         {
           "id" : "def:scalive.Form.field:84617644c03a3dad",
           "signature" : "def field[Input, Value](definition: FormField[Owner, Input, Value]): FormFieldView[Owner, Input, Value]"
+        },
+        {
+          "id" : "def:scalive.Form.field:e59a2f2d9a98e562",
+          "signature" : "def field[Group, Input, Value](definition: BoundFormField[Owner, Schema, Group, Input, Value]): FormFieldView[Owner, Input, Value]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.Form.fieldOption",
+      "ownerId" : "class:scalive.Form",
+      "qualifiedName" : "scalive.Form.fieldOption",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Form.fieldOption:dc4785ea805e547c",
+          "signature" : "def fieldOption[Group, Input, Value](definition: BoundFormField[Owner, Schema, Group, Input, Value]): Option[FormFieldView[Owner, Input, Value]]"
         }
       ]
     },
@@ -2838,6 +2902,78 @@
       ]
     },
     {
+      "id" : "def:scalive.FormBinding.field",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.field",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormBinding.field:516b6485be08207c",
+          "signature" : "def field[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], field: FormField[Group, Input, Value]): FormControl[Owner, Input, Value, Msg]"
+        },
+        {
+          "id" : "def:scalive.FormBinding.field:5e5de73a56b6ffd1",
+          "signature" : "def field[Input, Value](field: FormField[Owner, Input, Value]): FormControl[Owner, Input, Value, Msg]"
+        },
+        {
+          "id" : "def:scalive.FormBinding.field:f980b55d4d32e0d4",
+          "signature" : "def field[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value]): FormControl[Owner, Input, Value, Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormBinding.modifiers",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.modifiers",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormBinding.modifiers:1b1b0bcc7d29bfdd",
+          "signature" : "def modifiers: Vector[Mod[Msg]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormBinding.optionalField",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.optionalField",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormBinding.optionalField:88472513201cd58e",
+          "signature" : "def optionalField[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value])(render: FormControl[Owner, Input, Value, Msg] => HtmlElement[Msg]): Mod[Msg]"
+        },
+        {
+          "id" : "def:scalive.FormBinding.optionalField:ff372450280a0cb5",
+          "signature" : "def optionalField[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], field: FormField[Group, Input, Value])(render: FormControl[Owner, Input, Value, Msg] => HtmlElement[Msg]): Mod[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormBinding.render",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.render",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormBinding.render:5a75ae4a6bcde765",
+          "signature" : "def render(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormBinding.rows",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.rows",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormBinding.rows:7af809ea4af536b9",
+          "signature" : "def rows[Group, Row](rows: RepeatedRows[Owner, Group, Row]): Signal[Vector[FormRowView[Owner, Schema, Group, Row]]]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormCodec.apply",
       "ownerId" : "object:scalive.FormCodec",
       "qualifiedName" : "scalive.FormCodec.apply",
@@ -2918,6 +3054,242 @@
         {
           "id" : "def:scalive.FormCodec.zip:6f0334b510b7a97e",
           "signature" : "def zip[B](that: FormCodec[B]): FormCodec[(A, B)]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.blurAttributes",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.blurAttributes",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.blurAttributes:abeaa1d3105424e9",
+          "signature" : "def blurAttributes: Vector[Mod.Attr[Msg]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.checkbox",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.checkbox",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.checkbox:5af309fdeeb58c22",
+          "signature" : "def checkbox(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.FormControl.checkbox:d579cb82095c90ee",
+          "signature" : "def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.email",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.email",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.email:0d5477b4b643eed6",
+          "signature" : "def email(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.errorFeedback",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.errorFeedback",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.errorFeedback:c6bc93e6222d5ca9",
+          "signature" : "def errorFeedback(render: Signal[FormError[Owner]] => Mod[Nothing], mods: Mod.Input[Nothing]*): HtmlElement[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.errorId",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.errorId",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.errorId:0cf47afb09c91589",
+          "signature" : "def errorId: Signal[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.fieldValue",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.fieldValue",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.fieldValue:e3d6b52fa8a4a593",
+          "signature" : "def fieldValue: Signal[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.hasVisibleErrors",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.hasVisibleErrors",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.hasVisibleErrors:0fa51611bf7b03ef",
+          "signature" : "def hasVisibleErrors: Signal[Boolean]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.hidden",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.hidden",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.hidden:981d303fbdec8b8e",
+          "signature" : "def hidden(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.id",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.id",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.id:b39687ee5e8936f3",
+          "signature" : "def id: Signal[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.inputAttributes",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.inputAttributes",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.inputAttributes:55a74a19d3a64e1c",
+          "signature" : "def inputAttributes: Vector[Mod.Attr[Msg]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.name",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.name",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.name:c722270d4034b3c5",
+          "signature" : "def name: Signal[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.onBlur",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.onBlur",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.onBlur:0b2b4fa18db0f278",
+          "signature" : "def onBlur(message: Msg): FormControl[Owner, Input, Value, Msg]"
+        },
+        {
+          "id" : "def:scalive.FormControl.onBlur:9f67d8b7d1efd590",
+          "signature" : "def onBlur(f: String => Msg): FormControl[Owner, Input, Value, Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.password",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.password",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.password:e2b873b4b6e2a04b",
+          "signature" : "def password(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.rawValues",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.rawValues",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.rawValues:63b21a40871b6f9e",
+          "signature" : "def rawValues: Signal[Vector[String]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.select",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.select",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.select:dad9da82d10869a4",
+          "signature" : "def select(options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.text",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.text",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.text:0993c21ce95a6e4e",
+          "signature" : "def text(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.textarea",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.textarea",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.textarea:e0189df17ae75df3",
+          "signature" : "def textarea(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.validationAttributes",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.validationAttributes",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.validationAttributes:9dea34ee17695dc1",
+          "signature" : "def validationAttributes: Vector[Mod.Attr[Nothing]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.visibleErrors",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.visibleErrors",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.visibleErrors:98d978867ef6d9e0",
+          "signature" : "def visibleErrors: Signal[Vector[FormError[Owner]]]"
         }
       ]
     },
@@ -3866,6 +4238,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FormInteraction.isBlurred",
+      "ownerId" : "class:scalive.FormInteraction",
+      "qualifiedName" : "scalive.FormInteraction.isBlurred",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormInteraction.isBlurred:497324206ec94cc4",
+          "signature" : "def isBlurred(address: FormAddress[Owner]): Boolean"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormInteraction.isUsed",
       "ownerId" : "class:scalive.FormInteraction",
       "qualifiedName" : "scalive.FormInteraction.isUsed",
@@ -3874,6 +4258,18 @@
         {
           "id" : "def:scalive.FormInteraction.isUsed:ec1390ad797e7ee1",
           "signature" : "def isUsed(address: FormAddress[Owner]): Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormInteraction.isVisible",
+      "ownerId" : "class:scalive.FormInteraction",
+      "qualifiedName" : "scalive.FormInteraction.isVisible",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormInteraction.isVisible:f19161f1b0ce948f",
+          "signature" : "def isVisible(address: FormAddress[Owner]): Boolean"
         }
       ]
     },
@@ -4314,6 +4710,18 @@
         {
           "id" : "def:scalive.FormSubmitter.raw:55ae99f7184d2c34",
           "signature" : "def raw(action: Action): RawFormSubmitter"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormUpdate.applyTo",
+      "ownerId" : "class:scalive.FormUpdate",
+      "qualifiedName" : "scalive.FormUpdate.applyTo",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormUpdate.applyTo:624dedb973845058",
+          "signature" : "def applyTo(current: Form[Owner, Schema, Domain]): AppliedFormUpdate[Owner, Schema, Domain]"
         }
       ]
     },
@@ -10202,6 +10610,18 @@
       ]
     },
     {
+      "id" : "enum:scalive.FormFeedback",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormFeedback",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormFeedback:8088657d84374b84",
+          "signature" : "enum FormFeedback"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.FormPath.RepresentationError",
       "ownerId" : "object:scalive.FormPath",
       "qualifiedName" : "scalive.FormPath.RepresentationError",
@@ -10486,6 +10906,18 @@
         {
           "id" : "enum:scalive.FormSubmitter.DecodeError.Unknown:a694cf8916ca0be4",
           "signature" : "enum Unknown(name: String, value: String) extends FormSubmitter.DecodeError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormUpdateKind",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormUpdateKind",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormUpdateKind:00c6ca88fbd2cad7",
+          "signature" : "enum FormUpdateKind"
         }
       ]
     },
@@ -12586,6 +13018,18 @@
       ]
     },
     {
+      "id" : "extension:scalive.bind",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.bind",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.bind:9d1a1eb28889cb02",
+          "signature" : "extension def bind[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Msg](ref: DomRef, onUpdate: FormUpdate[Owner, Schema, Domain] => Msg, onSubmit: FormEvent[Owner, Schema, Domain] => Msg, feedback: FormFeedback = ...): FormBinding[Owner, Schema, Domain, Msg]"
+        }
+      ]
+    },
+    {
       "id" : "extension:scalive.dropTarget",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.dropTarget",
@@ -12610,6 +13054,22 @@
         {
           "id" : "extension:scalive.field:3eb4eb34d09d0b92",
           "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Input, Value](definition: FormField[Owner, Input, Value]): Signal[FormFieldView[Owner, Input, Value]]"
+        },
+        {
+          "id" : "extension:scalive.field:776803a0f1bf1f0c",
+          "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], definition: FormField[Group, Input, Value]): Signal[FormFieldView[Owner, Input, Value]]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.fieldOption",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.fieldOption",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.fieldOption:c382fd075e54ba55",
+          "signature" : "extension def fieldOption[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], definition: FormField[Group, Input, Value]): Signal[Option[FormFieldView[Owner, Input, Value]]]"
         }
       ]
     },
@@ -18645,6 +19105,30 @@
       ]
     },
     {
+      "id" : "type-alias:scalive.FormDefinition.AppliedUpdate",
+      "ownerId" : "class:scalive.FormDefinition",
+      "qualifiedName" : "scalive.FormDefinition.AppliedUpdate",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.FormDefinition.AppliedUpdate:3364171a63f4443d",
+          "signature" : "type AppliedUpdate = AppliedFormUpdate[Owner, type, Domain]"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.FormDefinition.Binding",
+      "ownerId" : "class:scalive.FormDefinition",
+      "qualifiedName" : "scalive.FormDefinition.Binding",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.FormDefinition.Binding:570cc836a0ff7861",
+          "signature" : "type Binding = ([Msg] =>> FormBinding[Owner, type, Domain, Msg])"
+        }
+      ]
+    },
+    {
       "id" : "type-alias:scalive.FormDefinition.Event",
       "ownerId" : "class:scalive.FormDefinition",
       "qualifiedName" : "scalive.FormDefinition.Event",
@@ -18701,6 +19185,18 @@
         {
           "id" : "type-alias:scalive.FormDefinition.Submitter:b84cb4f86bd8c49b",
           "signature" : "type Submitter = ([Action <: reflect.Enum] =>> FormSubmitter[Owner, type, Action])"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.FormDefinition.Update",
+      "ownerId" : "class:scalive.FormDefinition",
+      "qualifiedName" : "scalive.FormDefinition.Update",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.FormDefinition.Update:47ced9c2621ffaf8",
+          "signature" : "type Update = FormUpdate[Owner, type, Domain]"
         }
       ]
     },
@@ -19421,6 +19917,54 @@
         {
           "id" : "type-alias:scalive.UploadRef:226ee1cd5659ce28",
           "signature" : "type UploadRef = upload.api.UploadRef"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.AppliedFormUpdate.form",
+      "ownerId" : "class:scalive.AppliedFormUpdate",
+      "qualifiedName" : "scalive.AppliedFormUpdate.form",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.AppliedFormUpdate.form:9da5bfb4af09adf5",
+          "signature" : "val form: Form[Owner, Schema, Domain]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.AppliedFormUpdate.kind",
+      "ownerId" : "class:scalive.AppliedFormUpdate",
+      "qualifiedName" : "scalive.AppliedFormUpdate.kind",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.AppliedFormUpdate.kind:ca1c3d69e561e00b",
+          "signature" : "val kind: FormUpdateKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.AppliedFormUpdate.target",
+      "ownerId" : "class:scalive.AppliedFormUpdate",
+      "qualifiedName" : "scalive.AppliedFormUpdate.target",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.AppliedFormUpdate.target:5dda2ba375365969",
+          "signature" : "val target: Option[FormAddress[Owner]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.AppliedFormUpdate.valuesChanged",
+      "ownerId" : "class:scalive.AppliedFormUpdate",
+      "qualifiedName" : "scalive.AppliedFormUpdate.valuesChanged",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.AppliedFormUpdate.valuesChanged:5ecbeeb65fd48fa7",
+          "signature" : "val valuesChanged: Boolean"
         }
       ]
     },
@@ -20277,6 +20821,30 @@
       ]
     },
     {
+      "id" : "val:scalive.FormBinding.feedback",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.feedback",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormBinding.feedback:f725f9855d2f20a6",
+          "signature" : "val feedback: FormFeedback"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormBinding.ref",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.ref",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormBinding.ref:67ebf24a89275017",
+          "signature" : "val ref: DomRef"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.FormCodec.formData",
       "ownerId" : "object:scalive.FormCodec",
       "qualifiedName" : "scalive.FormCodec.formData",
@@ -20285,6 +20853,30 @@
         {
           "id" : "val:scalive.FormCodec.formData:72663a4acc186a10",
           "signature" : "val formData: FormCodec[FormData]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormControl.blurred",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.blurred",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormControl.blurred:3b548b6d60567fc7",
+          "signature" : "val blurred: Msg"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormControl.view",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.view",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormControl.view:b635edfd2dfc10b2",
+          "signature" : "val view: Signal[FormFieldView[Owner, Input, Value]]"
         }
       ]
     },
@@ -20649,6 +21241,30 @@
       ]
     },
     {
+      "id" : "val:scalive.FormFeedback.AfterBlur",
+      "ownerId" : "enum:scalive.FormFeedback",
+      "qualifiedName" : "scalive.FormFeedback.AfterBlur",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormFeedback.AfterBlur:f6481d72f985fad4",
+          "signature" : "val AfterBlur: FormFeedback"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormFeedback.WhenUsed",
+      "ownerId" : "enum:scalive.FormFeedback",
+      "qualifiedName" : "scalive.FormFeedback.WhenUsed",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormFeedback.WhenUsed:147f3e5caeab15c1",
+          "signature" : "val WhenUsed: FormFeedback"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.FormField.address",
       "ownerId" : "class:scalive.FormField",
       "qualifiedName" : "scalive.FormField.address",
@@ -20693,6 +21309,30 @@
         {
           "id" : "val:scalive.FormFieldView.path:353bc2964aeae20b",
           "signature" : "val path: FormPath"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormInteraction.blurred",
+      "ownerId" : "class:scalive.FormInteraction",
+      "qualifiedName" : "scalive.FormInteraction.blurred",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormInteraction.blurred:20f6b34d4bbc49bf",
+          "signature" : "val blurred: Set[FormAddress[Owner]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormInteraction.feedback",
+      "ownerId" : "class:scalive.FormInteraction",
+      "qualifiedName" : "scalive.FormInteraction.feedback",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormInteraction.feedback:f725f9855d2f20a6",
+          "signature" : "val feedback: FormFeedback"
         }
       ]
     },
@@ -21317,6 +21957,54 @@
         {
           "id" : "val:scalive.FormSubmitter.name:81da2bb6fc574443",
           "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormUpdateKind.Blurred",
+      "ownerId" : "enum:scalive.FormUpdateKind",
+      "qualifiedName" : "scalive.FormUpdateKind.Blurred",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormUpdateKind.Blurred:12fa6de583b5caf9",
+          "signature" : "val Blurred: FormUpdateKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormUpdateKind.Changed",
+      "ownerId" : "enum:scalive.FormUpdateKind",
+      "qualifiedName" : "scalive.FormUpdateKind.Changed",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormUpdateKind.Changed:e18efcade6ea806c",
+          "signature" : "val Changed: FormUpdateKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormUpdateKind.Recovered",
+      "ownerId" : "enum:scalive.FormUpdateKind",
+      "qualifiedName" : "scalive.FormUpdateKind.Recovered",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormUpdateKind.Recovered:ecc8b205427318ef",
+          "signature" : "val Recovered: FormUpdateKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormUpdateKind.Submitted",
+      "ownerId" : "enum:scalive.FormUpdateKind",
+      "qualifiedName" : "scalive.FormUpdateKind.Submitted",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormUpdateKind.Submitted:32929a1536e6152b",
+          "signature" : "val Submitted: FormUpdateKind"
         }
       ]
     },

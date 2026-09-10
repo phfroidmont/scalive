@@ -37,7 +37,7 @@ object JSCommands:
     renderJson: Option[String] => Json,
     binding: Option[Binding[Msg]])
 
-  final private case class Binding[+Msg](msg: Msg)
+  final private case class Binding[+Msg](operation: BindingPayload => Msg)
 
   private[scalive] def empty: JSCommand[Nothing] = List.empty
 
@@ -69,25 +69,29 @@ object JSCommands:
 
   extension [Msg](ops: JSCommand[Msg])
     private[scalive] def map[Msg2](f: Msg => Msg2): JSCommand[Msg2] =
-      ops.map(op => op.copy(binding = op.binding.map(binding => Binding(f(binding.msg)))))
+      ops.map(op =>
+        op.copy(binding = op.binding.map(binding => Binding(binding.operation.andThen(f))))
+      )
 
     private def addOp[A: JsonEncoder](kind: String, args: A): JSCommand[Msg] =
       Op(_ => encodeOp(kind, args), None) :: ops
 
-    private def resolved(scope: String): Vector[(Json, Option[(String, Msg)])] =
+    private def resolved(
+      scope: String
+    ): Vector[(Json, Option[(String, BindingPayload => Msg)])] =
       ops.reverse.zipWithIndex.map { case (op, pushIndex) =>
         val resolvedId =
           if op.binding.isDefined then Some(s"$scope:js:$pushIndex") else None
         val json    = op.renderJson(resolvedId)
         val binding =
-          op.binding.map(binding => resolvedId.get -> binding.msg)
+          op.binding.map(binding => resolvedId.get -> binding.operation)
         (json, binding)
       }.toVector
 
     private[scalive] def renderJson(scope: String): String =
       Json.Arr(resolved(scope).map(_._1)*).toJson
 
-    private[scalive] def bindings(scope: String): Vector[(String, Msg)] =
+    private[scalive] def bindings(scope: String): Vector[(String, BindingPayload => Msg)] =
       resolved(scope).flatMap(_._2)
 
     /** Appends a command which adds whitespace-separated class `names` to the selected elements.
@@ -376,7 +380,18 @@ object JSCommands:
       loading: DomSelector = DomSelector.current,
       pageLoading: Boolean = false
     ): JSCommand[Msg2] =
-      val binding = Binding(event)
+      ops.pushOperation(_ => event, target, loading, pageLoading)
+
+    private[scalive] def pushWithValue[Msg2 >: Msg](f: String => Msg2): JSCommand[Msg2] =
+      ops.pushOperation(payload => f(payload.params.getOrElse("value", "")))
+
+    private def pushOperation[Msg2 >: Msg](
+      operation: BindingPayload => Msg2,
+      target: DomSelector = DomSelector.current,
+      loading: DomSelector = DomSelector.current,
+      pageLoading: Boolean = false
+    ): JSCommand[Msg2] =
+      val binding = Binding(operation)
       Op(
         maybeBindingId =>
           encodeOp(

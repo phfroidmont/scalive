@@ -59,6 +59,8 @@ object E2EApp extends ZIOAppDefault:
       (live / "form" / "dynamic-inputs").paramsDecodeOnly(FormQueryParams.decoder) ->
         FormDynamicInputsLiveView(),
       live / "form" / "feedback"       -> FormFeedbackLiveView(),
+      live / "form" / "blur-feedback"  -> BlurFeedbackLiveView(),
+      live / "form" / "typed-feedback" -> TypedFormFeedbackLiveView(),
       live / "form-unsaved"            -> FormUnsavedLiveView(),
       live / "form-unsaved" / "target" -> FormUnsavedTargetLiveView(),
       E2ERoutes.portal                 -> PortalLiveView(),

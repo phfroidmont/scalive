@@ -2037,11 +2037,11 @@ object RenderProgram:
     val scope = id.encoded
     command
       .bindings(scope).foldLeft[Either[RenderError, Unit]](Right(())) {
-        case (result, (encodedId, message)) =>
+        case (result, (encodedId, operation)) =>
           result.flatMap(_ =>
             bindings.add(
               BindingId.fromEncoded(encodedId),
-              BindingOperation(_ => message)
+              BindingOperation(operation)
             )
           )
       }.map(_ => command.renderJson(scope))

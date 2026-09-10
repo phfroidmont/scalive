@@ -11,6 +11,12 @@ object SignalEvaluationSpec extends ZIOSpecDefault:
     override def hashCode(): Int  = 1
     override def equals(other: Any): Boolean = other.isInstanceOf[EqualFunction]
 
+  private def sourceAndRevision(): (Signal[Int], RenderRevision) =
+    val scope    = SignalScope.root()
+    val source   = Signal.source[Int](SignalSource[Int](scope))
+    val revision = RenderRevision.next(RenderRevision.initial).toOption.get
+    (source, revision)
+
   override def spec = suite("SignalEvaluationSpec")(
     test("samples a derived signal once and reuses unchanged dependency revisions") {
       var calls = 0
@@ -62,6 +68,106 @@ object SignalEvaluationSpec extends ZIOSpecDefault:
       yield assertTrue(
         HtmlRenderer.render(candidate.tree) == "<div>first:2second:2</div>"
       )
+    },
+    test("evaluates and validates deep map chains without consuming the call stack") {
+      val (source, revision) = sourceAndRevision()
+      var mapped             = source
+      var index              = 0
+      while index < 50000 do
+        mapped = mapped.map(_ + 1)
+        index += 1
+
+      val owner       = SignalEvaluation.scopeOf(mapped)
+      val transaction = SignalEvaluation.begin(SignalEvaluation.empty, revision, source, 0)
+      val sampled     = transaction.sample(mapped)
+
+      assertTrue(owner.exists(_ eq SignalEvaluation.scopeOf(source).toOption.get)) &&
+      assertTrue(sampled.exists(_.value == 50000))
+    },
+    test("evaluates and validates deep zip chains with scalar outputs") {
+      val (source, revision) = sourceAndRevision()
+      var zipped             = source
+      var index              = 0
+      while index < 20000 do
+        zipped = zipped.zip(source).map { case (left, _) => left + 1 }
+        index += 1
+
+      val owner       = SignalEvaluation.scopeOf(zipped)
+      val transaction = SignalEvaluation.begin(SignalEvaluation.empty, revision, source, 0)
+      val sampled     = transaction.sample(zipped)
+
+      assertTrue(owner.isRight, sampled.exists(_.value == 20000))
+    },
+    test("memoizes shared signal DAGs while validating scope and evaluating") {
+      val (source, revision) = sourceAndRevision()
+      var shared             = source
+      var index              = 0
+      var calls              = 0
+      while index < 64 do
+        shared = shared.zip(shared).map { case (left, _) =>
+          calls += 1
+          left
+        }
+        index += 1
+
+      val transaction = SignalEvaluation.begin(SignalEvaluation.empty, revision, source, 1)
+      val sampled     = transaction.sample(shared)
+      val nextRevision = RenderRevision.next(revision).toOption.get
+      val nextTransaction = SignalEvaluation.begin(transaction.result, nextRevision, source, 1)
+      val resampled = nextTransaction.sample(shared)
+
+      assertTrue(
+        SignalEvaluation.scopeOf(shared).isRight,
+        sampled.exists(_.value == 1),
+        resampled == sampled,
+        calls == 64
+      )
+    },
+    test("does not reevaluate downstream maps when an intermediate output is unchanged") {
+      val (source, firstRevision) = sourceAndRevision()
+      var intermediateCalls = 0
+      var downstreamCalls   = 0
+      val intermediate = source.map { value =>
+        intermediateCalls += 1
+        value % 2
+      }
+      val downstream = intermediate.map { value =>
+        downstreamCalls += 1
+        value.toString
+      }
+
+      val firstTransaction =
+        SignalEvaluation.begin(SignalEvaluation.empty, firstRevision, source, 1)
+      val firstIntermediate = firstTransaction.sample(intermediate).toOption.get
+      val firstDownstream   = firstTransaction.sample(downstream).toOption.get
+      val secondRevision    = RenderRevision.next(firstRevision).toOption.get
+      val secondTransaction =
+        SignalEvaluation.begin(firstTransaction.result, secondRevision, source, 3)
+      val secondIntermediate = secondTransaction.sample(intermediate).toOption.get
+      val secondDownstream   = secondTransaction.sample(downstream).toOption.get
+
+      assertTrue(
+        intermediateCalls == 2,
+        downstreamCalls == 1,
+        secondIntermediate.revision == firstIntermediate.revision,
+        secondIntermediate.dependencyRevisions == Vector(secondRevision),
+        secondDownstream == firstDownstream
+      )
+    },
+    test("evaluates zipped dependencies left before right and stops after a failure") {
+      val (source, revision) = sourceAndRevision()
+      var evaluated          = Vector.empty[String]
+      val left = source.map { _ =>
+        evaluated :+= "left"
+        throw new IllegalStateException("left failed")
+      }
+      val right = source.map { value =>
+        evaluated :+= "right"
+        value
+      }
+      val transaction = SignalEvaluation.begin(SignalEvaluation.empty, revision, source, 1)
+
+      assertTrue(transaction.sample(left.zip(right)).isLeft, evaluated == Vector("left"))
     },
     test("allows ancestor signals and rejects sibling scope combinations") {
       val root         = SignalScope.root()

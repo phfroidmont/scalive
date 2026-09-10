@@ -5,28 +5,21 @@ sealed trait Signal[+A]:
   private[scalive] def expression: Signal.Expression[A]
 
   /** Derives a signal with a pure transformation. */
-  final def map[B](f: A => B): Signal[B] = Signal.Mapped(this, f)
+  final def map[B](f: A => B): Signal[B] = Signal.Expression.Mapped(this, f)
 
   /** Combines two signals. Scope compatibility is validated by the render engine. */
-  final def zip[B](that: Signal[B]): Signal[(A, B)] = Signal.Zipped(this, that)
+  final def zip[B](that: Signal[B]): Signal[(A, B)] = Signal.Expression.Zipped(this, that)
 
 object Signal:
   /** Opaque source identity installed by the render engine. */
-  private[scalive] enum Expression[+A]:
+  private[scalive] enum Expression[+A] extends Signal[A]:
     case Source[A](identity: Object)                     extends Expression[A]
     case Mapped[A, B](parent: Signal[A], f: A => B)      extends Expression[B]
     case Zipped[A, B](left: Signal[A], right: Signal[B]) extends Expression[(A, B)]
 
-  final private class Source[A](identity: Object) extends Signal[A]:
-    private[scalive] val expression: Expression[A] = Expression.Source(identity)
+    final private[scalive] def expression: Expression[A] = this
 
-  final private case class Mapped[A, B](parent: Signal[A], f: A => B) extends Signal[B]:
-    private[scalive] val expression: Expression[B] = Expression.Mapped(parent, f)
-
-  final private case class Zipped[A, B](left: Signal[A], right: Signal[B]) extends Signal[(A, B)]:
-    private[scalive] val expression: Expression[(A, B)] = Expression.Zipped(left, right)
-
-  private[scalive] def source[A](identity: Object): Signal[A] = Source(identity)
+  private[scalive] def source[A](identity: Object): Signal[A] = Expression.Source(identity)
 
   extension (condition: Signal[Boolean])
     def when[Msg](content: => HtmlElement[Msg]): Mod[Msg] =

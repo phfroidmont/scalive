@@ -3,6 +3,7 @@ package scalive.render
 import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import scala.collection.mutable.ArrayDeque
 import scala.jdk.CollectionConverters.*
 import scala.util.control.NonFatal
 
@@ -89,23 +90,52 @@ object SignalEvaluation:
 
   private[render] def scopeOf(signal: Signal[?]): Either[RenderError, SignalScope] =
     signal.expression match
-      case Signal.Expression.Source(identity) =>
-        identity match
-          case source: SignalSource[?] => Right(source.scope)
-          case _ => Left(RenderError.SignalScopeViolation("unknown signal source"))
-      case Signal.Expression.Mapped(parent, _)   => scopeOf(parent)
-      case Signal.Expression.Zipped(left, right) =>
-        for
-          leftScope  <- scopeOf(left)
-          rightScope <- scopeOf(right)
-          scope      <-
-            SignalScope
-              .narrowest(leftScope, rightScope).toRight(
+      case Signal.Expression.Source(source: SignalSource[?]) => return Right(source.scope)
+      case _                                                 => ()
+
+    val scopes = IdentityHashMap[Signal[?], SignalScope]()
+    val stack  = ArrayDeque[ScopeFrame](ScopeFrame.Visit(signal))
+
+    while stack.nonEmpty do
+      stack.removeLast() match
+        case ScopeFrame.Visit(current) if !scopes.containsKey(current) =>
+          current.expression match
+            case Signal.Expression.Source(identity) =>
+              identity match
+                case source: SignalSource[?] => scopes.put(current, source.scope): Unit
+                case _ => return Left(RenderError.SignalScopeViolation("unknown signal source"))
+            case Signal.Expression.Mapped(parent, _) =>
+              stack.append(ScopeFrame.CompleteMapped(current, parent))
+              stack.append(ScopeFrame.Visit(parent))
+            case Signal.Expression.Zipped(left, right) =>
+              stack.append(ScopeFrame.CompleteZipped(current, left, right))
+              stack.append(ScopeFrame.Visit(right))
+              stack.append(ScopeFrame.Visit(left))
+        case ScopeFrame.Visit(_)                        => ()
+        case ScopeFrame.CompleteMapped(current, parent) =>
+          scopes.put(current, scopes.get(parent)): Unit
+        case ScopeFrame.CompleteZipped(current, left, right) =>
+          val leftScope  = scopes.get(left)
+          val rightScope = scopes.get(right)
+          SignalScope.narrowest(leftScope, rightScope) match
+            case Some(scope) => scopes.put(current, scope): Unit
+            case None        =>
+              return Left(
                 RenderError.SignalScopeViolation(
                   s"signals from sibling scopes ${leftScope.id} and ${rightScope.id} cannot be combined"
                 )
               )
-        yield scope
+
+    Right(scopes.get(signal))
+  end scopeOf
+
+  sealed private trait ScopeFrame
+
+  private object ScopeFrame:
+    final case class Visit(signal: Signal[?])                             extends ScopeFrame
+    final case class CompleteMapped(signal: Signal[?], parent: Signal[?]) extends ScopeFrame
+    final case class CompleteZipped(signal: Signal[?], left: Signal[?], right: Signal[?])
+        extends ScopeFrame
 
   final private[render] class Transaction private (
     previous: SignalEvaluation,
@@ -132,55 +162,90 @@ object SignalEvaluation:
           Left(RenderError.SignalScopeViolation("only source signals can be candidate-bound"))
 
     def sample[A](signal: Signal[A]): Either[RenderError, SignalSample[A]] =
-      Option(evaluated.get(signal)).flatMap(_.get(signal)) match
+      evaluatedSample(signal) match
         case Some(sample) => Right(sample)
         case None         =>
-          evaluate(signal).map { sample =>
-            evaluated.put(signal, PackedSignalValue[SignalSample, A](signal, sample))
-            sample
-          }
+          evaluate(signal).flatMap(_ =>
+            evaluatedSample(signal).toRight(RenderError.MissingSignalSource())
+          )
 
     def result: SignalEvaluation =
       SignalEvaluation(revision, SignalCache.empty.appended(evaluated.values().asScala))
 
-    private def evaluate[A](signal: Signal[A]): Either[RenderError, SignalSample[A]] =
-      signal.expression match
-        case Signal.Expression.Source(_) =>
-          Option(sources.get(signal))
-            .flatMap(_.get(signal))
-            .toRight(RenderError.MissingSignalSource()).flatMap(value =>
-              changedSample(signal, value, Vector.empty)
-            )
-        case Signal.Expression.Mapped(parent, f) =>
-          sample(parent).flatMap { parentSample =>
-            val dependencies = Vector(parentSample.revision)
-            previousSample(signal) match
-              case Some(cached) if cached.dependencyRevisions == dependencies => Right(cached)
-              case _                                                          =>
-                try changedSample(signal, f(parentSample.value), dependencies)
-                catch case NonFatal(error) => Left(RenderError.EvaluationFailed(error))
-          }
-        case Signal.Expression.Zipped(left, right) =>
-          for
-            leftSample  <- sample(left)
-            rightSample <- sample(right)
-            dependencies = Vector(leftSample.revision, rightSample.revision)
-            result <- previousSample(signal) match
-                        case Some(cached) if cached.dependencyRevisions == dependencies =>
-                          Right(cached)
-                        case _ =>
-                          changedSample(signal, (leftSample.value, rightSample.value), dependencies)
-          yield result
+    private def evaluate[A](signal: Signal[A]): Either[RenderError, Unit] =
+      val stack = ArrayDeque[EvaluationFrame](EvaluationFrame.Visit(signal))
+
+      while stack.nonEmpty do
+        stack.removeLast() match
+          case EvaluationFrame.Visit(current) if !evaluated.containsKey(current) =>
+            current.expression match
+              case Signal.Expression.Source(_) =>
+                evaluateSource(current) match
+                  case Left(error) => return Left(error)
+                  case Right(_)    => ()
+              case mapped @ Signal.Expression.Mapped(parent, f) =>
+                stack.append(EvaluationFrame.CompleteMapped(mapped, parent, f))
+                stack.append(EvaluationFrame.Visit(parent))
+              case zipped @ Signal.Expression.Zipped(left, right) =>
+                stack.append(EvaluationFrame.CompleteZipped(zipped, left, right))
+                stack.append(EvaluationFrame.Visit(right))
+                stack.append(EvaluationFrame.Visit(left))
+          case EvaluationFrame.Visit(_)                    => ()
+          case frame: EvaluationFrame.CompleteMapped[?, ?] =>
+            completeMapped(frame) match
+              case Left(error) => return Left(error)
+              case Right(_)    => ()
+          case frame: EvaluationFrame.CompleteZipped[?, ?] => completeZipped(frame)
+
+      Right(())
+
+    private def evaluateSource[A](signal: Signal[A]): Either[RenderError, Unit] =
+      Option(sources.get(signal))
+        .flatMap(_.get(signal))
+        .toRight(RenderError.MissingSignalSource())
+        .map(value => putEvaluated(signal, changedSample(signal, value, Vector.empty)))
+
+    private def completeMapped[A, B](
+      frame: EvaluationFrame.CompleteMapped[A, B]
+    ): Either[RenderError, Unit] =
+      val parentSample = evaluatedSample(frame.parent).get
+      val dependencies = Vector(parentSample.revision)
+      val sampled      = previousSample(frame.signal) match
+        case Some(cached) if cached.dependencyRevisions == dependencies => Right(cached)
+        case _                                                          =>
+          try Right(changedSample(frame.signal, frame.f(parentSample.value), dependencies))
+          catch case NonFatal(error) => Left(RenderError.EvaluationFailed(error))
+      sampled.map(sample => putEvaluated(frame.signal, sample))
+
+    private def completeZipped[A, B](frame: EvaluationFrame.CompleteZipped[A, B]): Unit =
+      val leftSample   = evaluatedSample(frame.left).get
+      val rightSample  = evaluatedSample(frame.right).get
+      val dependencies = Vector(leftSample.revision, rightSample.revision)
+      val sampled      = previousSample(frame.signal) match
+        case Some(cached) if cached.dependencyRevisions == dependencies => cached
+        case _                                                          =>
+          changedSample(
+            frame.signal,
+            (leftSample.value, rightSample.value),
+            dependencies
+          )
+      putEvaluated(frame.signal, sampled)
+
+    private def evaluatedSample[A](signal: Signal[A]): Option[SignalSample[A]] =
+      Option(evaluated.get(signal)).flatMap(_.get(signal))
+
+    private def putEvaluated[A](signal: Signal[A], sample: SignalSample[A]): Unit =
+      evaluated.put(signal, PackedSignalValue[SignalSample, A](signal, sample)): Unit
 
     private def changedSample[A](
       signal: Signal[A],
       value: A,
       dependencies: Vector[RenderRevision]
-    ): Either[RenderError, SignalSample[A]] =
+    ): SignalSample[A] =
       previousSample(signal) match
         case Some(cached) if cached.value == value =>
-          Right(cached.copy(dependencyRevisions = dependencies))
-        case _ => Right(SignalSample(value, revision, dependencies))
+          cached.copy(dependencyRevisions = dependencies)
+        case _ => SignalSample(value, revision, dependencies)
 
     private def previousSample[A](signal: Signal[A]): Option[SignalSample[A]] =
       previous.samples.get(signal)
@@ -192,6 +257,18 @@ object SignalEvaluation:
       revision: RenderRevision,
       source: PackedSignalValue[[Value] =>> Value]
     ): Transaction = new Transaction(previous, revision, source)
+
+  sealed private trait EvaluationFrame
+
+  private object EvaluationFrame:
+    final case class Visit[A](signal: Signal[A]) extends EvaluationFrame
+    final case class CompleteMapped[A, B](signal: Signal[B], parent: Signal[A], f: A => B)
+        extends EvaluationFrame
+    final case class CompleteZipped[A, B](
+      signal: Signal[(A, B)],
+      left: Signal[A],
+      right: Signal[B])
+        extends EvaluationFrame
 
   final private class SignalKey private (val signal: Signal[?]):
     override def hashCode(): Int = System.identityHashCode(signal)

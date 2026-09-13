@@ -5,16 +5,16 @@ import zio.test.*
 import scalive.*
 
 object FormWorkflowSpec extends ZIOSpecDefault:
-  private final case class Draft(name: String)
-  private val Root = FormRoot("draft")
-  private val Name = Root.text("name").required(FieldIssue("Name is required"))
+  final private case class Draft(name: String)
+  private val Root       = FormRoot("draft")
+  private val Name       = Root.text("name").required(FieldIssue("Name is required"))
   private val Definition = Root.product[Draft](Tuple1(Name))
 
   def spec = suite("FormWorkflowSpec")(
     test("tracks exact dirty values and revisions but not interaction") {
       val initial  = Definition.initial(Name.initial("Ada"))
       val workflow = Definition.workflow[Unit](initial)
-      val used = Definition
+      val used     = Definition
         .event(FormData(Vector(Name.name -> "Ada")), FormEventKind.Submitted)
         .form
       val interacted = workflow.updated(used)
@@ -28,19 +28,150 @@ object FormWorkflowSpec extends ZIOSpecDefault:
         edited.revision.value == 1L
       )
     },
+    test("reports idle, saving, and revision-relevant failure states") {
+      val idle = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val (saving, submission) = idle.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _                                  => throw new AssertionError("save did not start")
+      val failed = saving.saveFailed(submission.token, "offline") match
+        case FormWorkflowTransition.Applied(next) => next
+        case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+      val editedAfterFailure = failed.updated(failed.current.updated(Name, "Grace"))
+
+      assertTrue(
+        !idle.isSaving,
+        idle.failureForCurrentRevision.isEmpty,
+        idle.dismissFailure eq idle,
+        saving.isSaving,
+        saving.failureForCurrentRevision.isEmpty,
+        saving.dismissFailure eq saving,
+        !failed.isSaving,
+        failed.failureForCurrentRevision.contains("offline"),
+        editedAfterFailure.save == FormSaveState.Failed(submission, "offline"),
+        editedAfterFailure.failureForCurrentRevision.isEmpty
+      )
+    },
+    test("keeps failure relevance across feedback-only and identical-value updates") {
+      val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val (saving, submission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _                                  => throw new AssertionError("save did not start")
+      val failed = saving.saveFailed(submission.token, "offline") match
+        case FormWorkflowTransition.Applied(next) => next
+        case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+      val identical = failed.updated(failed.current.updated(Name, "Ada"))
+      val submitted = Definition
+        .event(FormData(Vector(Name.name -> "Ada")), FormEventKind.Submitted)
+        .form
+      val interacted = identical.updated(submitted)
+
+      assertTrue(
+        identical.revision == failed.revision,
+        identical.failureForCurrentRevision.contains("offline"),
+        interacted.revision == failed.revision,
+        interacted.current.interaction.visibility == ErrorVisibility.All,
+        interacted.failureForCurrentRevision.contains("offline")
+      )
+    },
+    test("hides but retains a failure after edits, including editing away and back") {
+      val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val (saving, submission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _                                  => throw new AssertionError("save did not start")
+      val edited = saving.updated(saving.current.updated(Name, "Grace"))
+      val failed = edited.saveFailed(submission.token, "offline") match
+        case FormWorkflowTransition.Applied(next) => next
+        case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+      val back = failed.updated(failed.current.updated(Name, "Ada"))
+
+      assertTrue(
+        failed.save == FormSaveState.Failed(submission, "offline"),
+        failed.failureForCurrentRevision.isEmpty,
+        back.revision.value == 2L,
+        !back.isDirty,
+        back.save == FormSaveState.Failed(submission, "offline"),
+        back.failureForCurrentRevision.isEmpty
+      )
+    },
+    test("dismisses an obsolete failure without changing the invalid form, baseline, or revision") {
+      val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val (saving, submission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _                                  => throw new AssertionError("save did not start")
+      val invalid = Definition
+        .event(FormData(Vector(Name.name -> "")), FormEventKind.Submitted)
+        .form
+      val edited = saving.updated(invalid)
+      val failed = edited.saveFailed(submission.token, "offline") match
+        case FormWorkflowTransition.Applied(next) => next
+        case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+      val dismissed = failed.dismissFailure
+
+      assertTrue(
+        dismissed.current eq failed.current,
+        dismissed.current.errors == failed.current.errors,
+        dismissed.current.errors.nonEmpty,
+        dismissed.current.interaction == failed.current.interaction,
+        dismissed.current.interaction.visibility == ErrorVisibility.All,
+        dismissed.baseline == failed.baseline,
+        dismissed.revision == failed.revision,
+        dismissed.isDirty == failed.isDirty,
+        dismissed.failureForCurrentRevision.isEmpty,
+        !dismissed.isSaving,
+        dismissed.save == FormSaveState.Idle
+      )
+    },
+    test("dismissal preserves retry correlation and makes the old token stale") {
+      val workflow  = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val canonical = Definition.initial(Name.initial("Canonical")).validSnapshot.get
+      val (firstSaving, firstSubmission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _                                  => throw new AssertionError("save did not start")
+      val failed = firstSaving.saveFailed(firstSubmission.token, "offline") match
+        case FormWorkflowTransition.Applied(next) => next
+        case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+      val dismissed                      = failed.dismissFailure
+      val (retrySaving, retrySubmission) = dismissed.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _                                  => throw new AssertionError("retry did not start")
+      val rejectsOldCompletions = Vector(dismissed, retrySaving).forall { workflow =>
+        Vector(
+          workflow.saveSucceeded(firstSubmission.token),
+          workflow.saveSucceeded(firstSubmission.token, canonical),
+          workflow.saveFailed(firstSubmission.token, "late failure"),
+          workflow.saveCancelled(firstSubmission.token)
+        ).forall {
+          case FormWorkflowTransition.Stale(current) => current eq workflow
+          case FormWorkflowTransition.Applied(_)     => false
+        }
+      }
+      val retryCancellation = retrySaving.dismissFailure.saveCancelled(retrySubmission.token)
+
+      assertTrue(
+        failed.failureForCurrentRevision.contains("offline"),
+        dismissed.failureForCurrentRevision.isEmpty,
+        dismissed.save == FormSaveState.Idle,
+        dismissed.revision == failed.revision,
+        retrySubmission.token != firstSubmission.token,
+        retrySaving.isSaving,
+        retrySaving.dismissFailure eq retrySaving,
+        rejectsOldCompletions,
+        retryCancellation.isInstanceOf[FormWorkflowTransition.Applied[?]]
+      )
+    },
     test("rejects invalid and overlapping saves and uses a distinct retry token") {
-      val invalid = Definition.workflow[String](Definition.initial())
-      val valid   = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val invalid      = Definition.workflow[String](Definition.initial())
+      val valid        = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
       val invalidStart = invalid.beginSave
-      val first = valid.beginSave
+      val first        = valid.beginSave
 
       val result = first match
         case FormSaveStart.Started(saving, submission) =>
           val overlap = saving.beginSave
           val failed  = saving.saveFailed(submission.token, "offline")
-          val retry = failed match
+          val retry   = failed match
             case FormWorkflowTransition.Applied(next) => next.beginSave
-            case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
+            case FormWorkflowTransition.Stale(_) => throw new AssertionError("unexpected stale")
           overlap -> retry
         case _ => throw new AssertionError("valid form did not begin saving")
 
@@ -63,9 +194,10 @@ object FormWorkflowSpec extends ZIOSpecDefault:
           case (
                 FormSaveStart.Started(_, firstSubmission),
                 FormSaveStart.Started(secondSaving, secondSubmission)
-              ) => (firstSubmission, secondSaving, secondSubmission)
+              ) =>
+            (firstSubmission, secondSaving, secondSubmission)
           case _ => throw new AssertionError("saves did not start")
-      val canonical = Definition.initial(Name.initial("Canonical")).validSnapshot.get
+      val canonical   = Definition.initial(Name.initial("Canonical")).validSnapshot.get
       val completions = Vector(
         secondSaving.saveSucceeded(firstSubmission.token),
         secondSaving.saveSucceeded(firstSubmission.token, canonical),
@@ -84,16 +216,16 @@ object FormWorkflowSpec extends ZIOSpecDefault:
     },
     test("advances the baseline while preserving edits made during save") {
       val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
-      val started = workflow.beginSave match
+      val started  = workflow.beginSave match
         case value: FormSaveStart.Started[?, ?] => value
         case _                                  => throw new AssertionError("save did not start")
-      val saving = started.next.asInstanceOf[Definition.Workflow[String]]
+      val saving     = started.next.asInstanceOf[Definition.Workflow[String]]
       val submission = started.submission.asInstanceOf[FormSubmission[
         Root.type,
         Definition.type,
         Draft
       ]]
-      val edited = saving.updated(saving.current.updated(Name, "Grace"))
+      val edited    = saving.updated(saving.current.updated(Name, "Grace"))
       val completed = edited.saveSucceeded(submission.token) match
         case FormWorkflowTransition.Applied(next) => next
         case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
@@ -102,9 +234,10 @@ object FormWorkflowSpec extends ZIOSpecDefault:
         completed.current.valueOption.contains(Draft("Grace")),
         completed.baseline == submission.values,
         completed.isDirty,
-        completed.saveFailed(submission.token, "stale").isInstanceOf[
-          FormWorkflowTransition.Stale[?]
-        ]
+        completed
+          .saveFailed(submission.token, "stale").isInstanceOf[
+            FormWorkflowTransition.Stale[?]
+          ]
       )
     },
     test("advances a canonical baseline while preserving newer edits") {
@@ -112,8 +245,8 @@ object FormWorkflowSpec extends ZIOSpecDefault:
       val canonical = Definition.initial(Name.initial("Ada Lovelace")).validSnapshot.get
       val (saving, submission) = workflow.beginSave match
         case FormSaveStart.Started(next, value) => next -> value
-        case _ => throw new AssertionError("save did not start")
-      val edited = saving.updated(saving.current.updated(Name, "Grace"))
+        case _                                  => throw new AssertionError("save did not start")
+      val edited    = saving.updated(saving.current.updated(Name, "Grace"))
       val completed = edited.saveSucceeded(submission.token, canonical) match
         case FormWorkflowTransition.Applied(next) => next
         case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
@@ -130,8 +263,8 @@ object FormWorkflowSpec extends ZIOSpecDefault:
       val canonical = Definition.initial(Name.initial("Grace")).validSnapshot.get
       val (saving, submission) = workflow.beginSave match
         case FormSaveStart.Started(next, value) => next -> value
-        case _ => throw new AssertionError("save did not start")
-      val edited = saving.updated(saving.current.updated(Name, "Grace"))
+        case _                                  => throw new AssertionError("save did not start")
+      val edited    = saving.updated(saving.current.updated(Name, "Grace"))
       val completed = edited.saveSucceeded(submission.token, canonical) match
         case FormWorkflowTransition.Applied(next) => next
         case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
@@ -147,7 +280,7 @@ object FormWorkflowSpec extends ZIOSpecDefault:
       val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
       val (saving, submission) = workflow.beginSave match
         case FormSaveStart.Started(next, value) => next -> value
-        case _ => throw new AssertionError("save did not start")
+        case _                                  => throw new AssertionError("save did not start")
       val edited = saving.updated(saving.current.updated(Name, "Grace"))
       val failed = edited.saveFailed(submission.token, "offline") match
         case FormWorkflowTransition.Applied(next) => next
@@ -161,11 +294,11 @@ object FormWorkflowSpec extends ZIOSpecDefault:
       )
     },
     test("applies canonical success to unchanged edits and rejects duplicate completion") {
-      val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val workflow  = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
       val canonical = Definition.initial(Name.initial("Grace")).validSnapshot.get
       val (saving, submission) = workflow.beginSave match
         case FormSaveStart.Started(next, value) => next -> value
-        case _ => throw new AssertionError("save did not start")
+        case _                                  => throw new AssertionError("save did not start")
       val completed = saving.saveSucceeded(submission.token, canonical) match
         case FormWorkflowTransition.Applied(next) => next
         case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
@@ -183,13 +316,13 @@ object FormWorkflowSpec extends ZIOSpecDefault:
       val edited   = workflow.updated(workflow.current.updated(Name, "Grace"))
       val (saving, submission) = edited.beginSave match
         case FormSaveStart.Started(next, value) => next -> value
-        case _ => throw new AssertionError("save did not start")
-      val blocked = saving.reset
+        case _                                  => throw new AssertionError("save did not start")
+      val blocked   = saving.reset
       val cancelled = saving.saveCancelled(submission.token) match
         case FormWorkflowTransition.Applied(next) => next
         case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
       val reset = cancelled.reset match
-        case FormWorkflowReset.Reset(next) => next
+        case FormWorkflowReset.Reset(next)  => next
         case FormWorkflowReset.Saving(_, _) => throw new AssertionError("reset remained blocked")
 
       assertTrue(

@@ -1,6 +1,7 @@
 # Scalive API Improvement Ideas
 
-Status: evidence-backed proposals, not committed API designs.
+Status: evidence-backed proposals with implementation progress noted per item.
+Unimplemented directions are not committed API designs.
 
 This document records the API improvement assessment of OsteoView's `backend.webapp-scalive`
 module on 2026-09-13. It replaces the previous backlog rather than carrying its items forward.
@@ -8,7 +9,8 @@ Its scope is this consumer assessment; omitting an old item does not imply it wa
 
 The consumer depends on `dev.scalive::scalive:0.0.1-7a865bd757a8-SNAPSHOT`. The reviewed Scalive
 checkout was at `7a865bd757a842e1a92af3b8ed11c07186e28ffc`, matching that dependency revision.
-These are therefore not gaps that upgrading the consumer to the reviewed checkout would resolve.
+These were therefore not gaps that upgrading the consumer to the reviewed checkout would resolve.
+Implementation notes below describe changes after that assessment.
 
 The strongest opportunities are small improvements to API composition. The application already
 uses typed forms, managed async work, components, authorization, and connected testing. Much of
@@ -46,6 +48,12 @@ Recheck current capabilities before adopting an idea, and update its status when
 
 ### 1. Form Workflow Ergonomics And Save Composition
 
+**Status.** Partially implemented: `isSaving`, `failureForCurrentRevision`, and `dismissFailure`
+are available with focused API tests and an updated
+[executable workflow example](../documentation/site/src/scalive/docs/examples/FormWorkflowExample.scala).
+Save-completion integration and the `Definition.Update` convenience remain proposals; no consumer
+migration is included.
+
 **Evidence.** Fourteen settings pages call `beginSave`. They repeatedly connect submission tokens,
 async completions, canonical saved values, failure/cancellation, and `Applied` versus `Stale`.
 `src/settings/insurances/InsurancesPage.scala:444-488` is a representative completion handler.
@@ -61,7 +69,7 @@ preservation of edits made during saving. [Async](../scalive/api/src/scalive/lif
 already provides managed execution. The gap is composition and explicit feedback policy, not a
 missing save state machine.
 
-**Proposed direction.** Start with small pure operations:
+**Implemented pure operations.**
 
 ```scala
 workflow.isSaving
@@ -69,12 +77,16 @@ workflow.failureForCurrentRevision
 workflow.dismissFailure
 ```
 
-Failure dismissal should not require restoring the baseline or introducing artificial value
-revisions. Distinguish stored failure history from whether a failure is relevant to the current
-draft. Do not automatically dismiss failures on every blur or identical-value update.
+`isSaving` reports the in-flight save state. `failureForCurrentRevision` returns the stored failure
+only when the failed submission revision matches the current revision. Value changes hide that
+feedback without clearing the stored failed attempt; blur and identical-value updates retain it.
+Editing away and back does not revive it. `dismissFailure` clears `Failed` to `Idle` without changing
+the form, baseline, revision, or token correlation, and leaves idle/saving workflows unchanged.
+See the [workflow guide](../documentation/content/guides/typed-forms-and-validation.md#coordinate-form-workflow)
+for the feedback policy and the distinction between accepted completions and relevant failures.
 
-Then prototype a thin typed save-completion adapter that carries the submission token with the
-async result and applies success, failure, or cancellation to the workflow. Keep `Applied` and
+**Remaining direction.** Prototype a thin typed save-completion adapter that carries the submission
+token with the async result and applies success, failure, or cancellation to the workflow. Keep `Applied` and
 `Stale` explicit so only accepted completions can trigger success notifications, navigation, or
 record reconciliation. Keep the workflow itself pure; effectful conveniences belong at its
 lifecycle integration boundary.

@@ -4774,6 +4774,30 @@
       ]
     },
     {
+      "id" : "def:scalive.FormWorkflow.dismissFailure",
+      "ownerId" : "class:scalive.FormWorkflow",
+      "qualifiedName" : "scalive.FormWorkflow.dismissFailure",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormWorkflow.dismissFailure:6246f57eef6d6211",
+          "signature" : "def dismissFailure: FormWorkflow[Owner, Schema, Domain, Failure]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormWorkflow.failureForCurrentRevision",
+      "ownerId" : "class:scalive.FormWorkflow",
+      "qualifiedName" : "scalive.FormWorkflow.failureForCurrentRevision",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormWorkflow.failureForCurrentRevision:0b914867d51000d8",
+          "signature" : "def failureForCurrentRevision: Option[Failure]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormWorkflow.isDirty",
       "ownerId" : "class:scalive.FormWorkflow",
       "qualifiedName" : "scalive.FormWorkflow.isDirty",
@@ -4782,6 +4806,18 @@
         {
           "id" : "def:scalive.FormWorkflow.isDirty:8da4b99673ac6d60",
           "signature" : "def isDirty: Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormWorkflow.isSaving",
+      "ownerId" : "class:scalive.FormWorkflow",
+      "qualifiedName" : "scalive.FormWorkflow.isSaving",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormWorkflow.isSaving:7c36bab38489dcc8",
+          "signature" : "def isSaving: Boolean"
         }
       ]
     },

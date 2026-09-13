@@ -84,6 +84,29 @@ final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
   /** Whether current editable values differ from the last acknowledged baseline. */
   def isDirty: Boolean = current.values != baseline
 
+  /** Whether a save is currently in flight. */
+  def isSaving: Boolean = save match
+    case FormSaveState.Saving(_) => true
+    case _                       => false
+
+  /** Failure feedback for the current revision.
+    *
+    * Feedback-only and identical-value changes retain relevance. Revision-changing edits hide, but
+    * do not clear, the stored failure.
+    */
+  def failureForCurrentRevision: Option[Failure] = save match
+    case FormSaveState.Failed(submission, failure) if submission.revision == revision =>
+      Some(failure)
+    case _ => None
+
+  /** Clears the stored failure back to idle without changing the form, baseline, or revision.
+    *
+    * Idle and saving workflows are unchanged; dismissal does not cancel persistence.
+    */
+  def dismissFailure: FormWorkflow[Owner, Schema, Domain, Failure] = save match
+    case FormSaveState.Failed(_, _) => recreate(save = FormSaveState.Idle)
+    case _                          => this
+
   /** Installs a same-definition form and advances revision only when editable values changed. */
   def updated(next: Form[Owner, Schema, Domain]): FormWorkflow[Owner, Schema, Domain, Failure] =
     require(next.owningDefinition eq definition, "form belongs to another definition")

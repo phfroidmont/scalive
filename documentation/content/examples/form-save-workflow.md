@@ -18,6 +18,18 @@ that an obsolete token cannot mutate newer workflow state. Success advances the
 baseline while preserving edits made at a newer revision; reset then returns to
 that accepted baseline.
 
+Simulate failure without changing the submitted draft to see
+`failureForCurrentRevision` feedback. Identical-value updates retain it;
+editing the title hides it while the save state remains `failed`. A failure
+arriving after an edit during saving is recorded but does not show feedback for
+the newer draft. The transition notice describes what happened separately from
+the current failure alert.
+
+Choose **Dismiss failure** to call `dismissFailure`: the save state returns to
+`idle` without changing the draft, dirty state, baseline, or revision. This is
+not a reset or cancellation. The example also uses `isSaving` to distinguish
+ordinary edits from edits made while a submission is in flight.
+
 @:example(form-save-workflow)
 
 Related guidance: [coordinate dirty state and saving](../guides/typed-forms-and-validation.md#coordinate-form-workflow).

@@ -650,6 +650,12 @@ private[docs] object ExampleRegistry:
               workflowCompletion("PersistenceFailed", "Apply a correlated save failure")
             case FormWorkflowExample.Msg.PersistenceCancelled(_) =>
               workflowCompletion("PersistenceCancelled", "Apply a correlated save cancellation")
+            case FormWorkflowExample.Msg.DismissFailure =>
+              traced(
+                "FormWorkflowExample.Msg",
+                "Dismiss failure without changing the draft",
+                "FormWorkflowExample.Msg.DismissFailure"
+              )
             case FormWorkflowExample.Msg.Reset =>
               traced(
                 "FormWorkflowExample.Msg",

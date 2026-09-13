@@ -566,8 +566,9 @@ The state/effect boundary must install `nextModel` before dispatching
 persistence, so even an immediate completion observes the matching `Saving`
 workflow. The invalid branch renders `next.current` with all errors visible.
 
-`isDirty` compares canonical `FormValues`. When no save is active, `reset`
-returns to the baseline.
+`isDirty` compares canonical `FormValues`. `isSaving` reports whether a save is
+in flight; `beginSave` still enforces duplicate-submit rejection. When no save
+is active, `reset` returns to the baseline.
 Each save captures a valid value-and-values snapshot plus a token and revision.
 Send the captured `FormSubmissionToken` through the persistence callback and
 apply exactly one completion transition:
@@ -591,10 +592,36 @@ edits made while saving stay current and remain dirty. `reset` returns
 `FormWorkflowReset.Saving(current, submission)` instead of discarding an
 in-flight operation, so cancellation policy remains an application decision.
 
+Use `failureForCurrentRevision` when failure feedback should apply only to the
+draft that was submitted:
+
+```scala
+val currentFailure: Option[SaveError] = model.workflow.failureForCurrentRevision
+
+// An explicit dismiss action preserves the draft and its interaction state.
+val dismissed = model.copy(workflow = model.workflow.dismissFailure)
+```
+
+The query returns a failure only when the failed submission's revision equals
+the current revision. Blur, feedback-only updates, and identical-value updates
+retain relevance. Changing editable values hides the feedback but keeps the
+failed submission in `save` for diagnostics. Editing away and back does not
+revive the failure, because the revision has advanced.
+
+A matching failure completion can be `Applied` after newer edits while
+`failureForCurrentRevision` returns `None`: accepting a completion token is not
+the same as deciding its feedback applies to the current draft. Applications
+can still inspect `save` for failures whose display policy is not draft-specific.
+
+`dismissFailure` clears the stored `Failed` state to `Idle`, preserving the
+current form, baseline, revision, and submission-token correlation. It leaves
+idle and saving workflows unchanged; it does not cancel persistence or reset
+the form. Failure storage is the last retained failed attempt, not an audit log.
+
 The [form save workflow example](../examples/form-save-workflow.md) provides
 deterministic controls for invalid and overlapping starts, success, failure,
-cancellation, edits during save, stale replay, blocked reset, and baseline
-advancement.
+cancellation, revision-specific failure feedback and dismissal, edits during
+save, stale replay, blocked reset, and baseline advancement.
 
 ## Reset Deliberately {#reset-deliberately}
 

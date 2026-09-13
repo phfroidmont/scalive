@@ -8,7 +8,7 @@ import scalive.*
 import scalive.testing.{ConnectedRender, ConnectedView}
 
 object FormWorkflowExampleSpec extends ZIOSpecDefault:
-  private val example = FormWorkflowExample
+  private val example   = FormWorkflowExample
   private val validData = Vector(example.Draft.Title.name -> "Release notes")
 
   private def document(harness: ConnectedView[?]) =
@@ -17,19 +17,33 @@ object FormWorkflowExampleSpec extends ZIOSpecDefault:
   override def spec = suite("FormWorkflowExampleSpec")(
     test("does not claim that unchanged values advanced the revision") {
       val initial = example.Model.initial
-      val event = example.Draft.Definition.event(FormData.empty, FormEventKind.Recovered)
-      val next  = example.update(initial, example.Msg.Validate(event))
+      val event   = example.Draft.Definition.event(FormData.empty, FormEventKind.Recovered)
+      val next    = example.update(initial, example.Msg.Validate(event))
 
       assertTrue(
         next.workflow.revision == initial.workflow.revision,
         next.notice == example.Notice.InteractionRecorded
       )
     },
+    test("ignores a queued failure dismissal when idle or saving") {
+      val idle  = example.Model.initial
+      val valid = idle.copy(
+        workflow =
+          idle.workflow.updated(idle.workflow.current.updated(example.Draft.Title, "Draft"))
+      )
+      val saving = example.update(valid, example.Msg.BeginSaveAgain)
+
+      assertTrue(
+        example.update(idle, example.Msg.DismissFailure) eq idle,
+        saving.workflow.isSaving,
+        example.update(saving, example.Msg.DismissFailure) eq saving
+      )
+    },
     test("renders invalid and overlapping starts without exposing submitted values in status") {
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new FormWorkflowExample)
-          _       <- harness.submitForm("[data-workflow-form]", Vector(example.Draft.Title.name -> ""))
+          _ <- harness.submitForm("[data-workflow-form]", Vector(example.Draft.Title.name -> ""))
           invalid <- document(harness)
           _       <- harness.submitForm("[data-workflow-form]", validData)
           _       <- harness.clickButton("Begin another save")
@@ -43,12 +57,14 @@ object FormWorkflowExampleSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("preserves edits during success, ignores stale completion, and resets to the advanced baseline") {
+    test(
+      "preserves edits during success, ignores stale completion, and resets to the advanced baseline"
+    ) {
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new FormWorkflowExample)
           _       <- harness.submitForm("[data-workflow-form]", validData)
-          _ <- harness.changeForm(
+          _       <- harness.changeForm(
                  "[data-workflow-form]",
                  Vector(example.Draft.Title.name -> "Newer local edit"),
                  target = Some(example.Draft.Title.name)
@@ -74,6 +90,63 @@ object FormWorkflowExampleSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("shows failure feedback only while the failed submission revision remains current") {
+      ZIO.scoped {
+        for
+          harness <- ConnectedRender.join(new FormWorkflowExample)
+          _       <- harness.submitForm("[data-workflow-form]", validData)
+          _       <- harness.clickButton("Simulate failure")
+          failed  <- document(harness)
+          _       <- harness.changeForm(
+                 "[data-workflow-form]",
+                 validData,
+                 target = Some(example.Draft.Title.name)
+               )
+          unchanged <- document(harness)
+          _         <- harness.changeForm(
+                 "[data-workflow-form]",
+                 Vector(example.Draft.Title.name -> "Newer local edit"),
+                 target = Some(example.Draft.Title.name)
+               )
+          edited <- document(harness)
+        yield assertTrue(
+          failed.select("[data-workflow-failure-feedback][role=alert]").text()
+            == "This draft could not be saved. Your changes are still available. Dismiss failure",
+          unchanged.select("[data-workflow-failure-feedback]").size() == 1,
+          unchanged.select("[data-workflow-revision]").text() == "1",
+          edited.select("[data-workflow-failure-feedback]").isEmpty,
+          edited.select("[data-workflow-save-state]").text() == "failed",
+          edited.select("[data-workflow-notice]").text().contains("changed the current revision")
+        )
+      }
+    },
+    test("dismisses current failure feedback without changing form workflow values") {
+      ZIO.scoped {
+        for
+          harness <- ConnectedRender.join(new FormWorkflowExample)
+          _       <- harness.submitForm("[data-workflow-form]", validData)
+          _       <- harness.clickButton("Simulate failure")
+          before  <- document(harness)
+          _       <- harness.clickButton("Dismiss failure")
+          after   <- document(harness)
+          _       <- harness.clickButton("Reset to baseline")
+          reset   <- document(harness)
+        yield assertTrue(
+          before.select("[data-workflow-save-state]").text() == "failed",
+          before.select("[data-workflow-dirty]").text() == "true",
+          before.select("[data-workflow-revision]").text() == "1",
+          after.select("[data-workflow-failure-feedback]").isEmpty,
+          after.select("[data-workflow-save-state]").text() == "idle",
+          after.select("[data-workflow-dirty]").text() == "true",
+          after.select("[data-workflow-revision]").text() == "1",
+          after.select("[data-workflow-baseline-advancements]").text() == "0",
+          after.select(s"[name='${example.Draft.Title.name}']").attr("value") == "Release notes",
+          after.select("[data-workflow-notice]").text().contains("without changing the draft"),
+          reset.select("[data-workflow-dirty]").text() == "false",
+          reset.select(s"[name='${example.Draft.Title.name}']").attr("value").isEmpty
+        )
+      }
+    },
     test("correlates failure and cancellation callbacks with generated submission tokens") {
       val validWorkflow = example.Model.initial.workflow.updated(
         example.Model.initial.workflow.current.updated(example.Draft.Title, "Release notes")
@@ -85,12 +158,12 @@ object FormWorkflowExampleSpec extends ZIOSpecDefault:
       val firstToken = started.workflow.save match
         case FormSaveState.Saving(submission) => submission.token
         case _                                => throw new AssertionError("save did not start")
-      val failed = example.update(started, example.Msg.PersistenceFailed(firstToken))
-      val retried = example.update(failed, example.Msg.BeginSaveAgain)
+      val failed     = example.update(started, example.Msg.PersistenceFailed(firstToken))
+      val retried    = example.update(failed, example.Msg.BeginSaveAgain)
       val retryToken = retried.workflow.save match
         case FormSaveState.Saving(submission) => submission.token
         case _                                => throw new AssertionError("retry did not start")
-      val stale = example.update(retried, example.Msg.PersistenceCancelled(firstToken))
+      val stale     = example.update(retried, example.Msg.PersistenceCancelled(firstToken))
       val cancelled = example.update(stale, example.Msg.PersistenceCancelled(retryToken))
 
       assertTrue(

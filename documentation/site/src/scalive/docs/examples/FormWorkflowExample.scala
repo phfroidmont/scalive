@@ -81,6 +81,19 @@ final class FormWorkflowExample
           aria.atomic                 := true,
           model.map(_.notice.label)
         ),
+        workflow.map(_.failureForCurrentRevision).option { _ =>
+          div(
+            dataAttr("workflow-failure-feedback") := "",
+            role                                  := "alert",
+            aria.atomic                           := true,
+            p("This draft could not be saved. Your changes are still available."),
+            button(
+              typ := "button",
+              on.click(Msg.DismissFailure),
+              "Dismiss failure"
+            )
+          )
+        },
         p("Dirty: ", strong(dataAttr("workflow-dirty") := "", workflow.map(_.isDirty.toString))),
         p(
           "Revision: ",
@@ -131,7 +144,9 @@ object FormWorkflowExample:
         extends Notice(
           "Success advanced the baseline; newer edits, if any, remain current and dirty."
         )
-    case SaveFailed extends Notice("The correlated save failed and may now be retried.")
+    case SaveFailed extends Notice("The last persistence transition recorded a correlated failure.")
+    case FailureDismissed
+        extends Notice("Current failure feedback was dismissed without changing the draft.")
     case SaveCancelled
         extends Notice("The correlated save was cancelled without advancing the baseline.")
     case StaleCompletion
@@ -155,11 +170,12 @@ object FormWorkflowExample:
     case PersistenceSucceeded(token: FormSubmissionToken)
     case PersistenceFailed(token: FormSubmissionToken)
     case PersistenceCancelled(token: FormSubmissionToken)
+    case DismissFailure
     case Reset
 
   private[examples] def update(model: Model, message: Msg): Model = message match
     case Msg.Validate(event) =>
-      val wasSaving = activeSubmission(model).nonEmpty
+      val wasSaving = model.workflow.isSaving
       val next      = model.workflow.updated(event.form)
       model.copy(
         workflow = next,
@@ -191,6 +207,10 @@ object FormWorkflowExample:
         case FormWorkflowTransition.Applied(next) =>
           model.copy(workflow = next, notice = Notice.SaveCancelled, staleToken = Some(token))
         case FormWorkflowTransition.Stale(_) => model.copy(notice = Notice.StaleCompletion)
+    case Msg.DismissFailure =>
+      val next = model.workflow.dismissFailure
+      if next eq model.workflow then model
+      else model.copy(workflow = next, notice = Notice.FailureDismissed)
     case Msg.Reset =>
       model.workflow.reset match
         case FormWorkflowReset.Reset(next) =>

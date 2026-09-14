@@ -29,17 +29,24 @@ final class HttpFormDecoder[A] private (
   /** Decodes and produces an HTTP response with centralized rejection handling.
     *
     * `onRejected` observes every decoder rejection but cannot replace its security-sensitive
-    * status; only validation responses are application-defined through `onValidation`.
+    * status. It runs before any rejection response callback. `onValidation` is lazy and runs only
+    * for semantic validation; its environment and typed failures remain part of the returned effect
+    * rather than becoming decoder rejections. Successful decoding is passed unchanged to
+    * `onDecoded`. An observer defect or interruption aborts response production; no fallback
+    * response is substituted.
     */
   def respond[R, E](
     request: Request,
-    onValidation: FormErrors[?] => Response,
+    onValidation: FormErrors[?] => ZIO[R, E, Response],
     onRejected: HttpFormDecoder.Error => URIO[R, Unit] = _ => ZIO.unit
   )(
     onDecoded: A => ZIO[R, E, Response]
   ): ZIO[R, E, Response] =
     decode(request).foldZIO(
-      error => onRejected(error).as(error.toResponse(onValidation)),
+      error =>
+        onRejected(error) *> (error match
+          case HttpFormDecoder.Error.Validation(errors) => onValidation(errors)
+          case _ => ZIO.succeed(error.toResponse(_ => Response.badRequest))),
       onDecoded
     )
 end HttpFormDecoder

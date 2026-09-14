@@ -157,18 +157,20 @@ string sizes or downstream work.
 
 ZIO HTTP handlers commonly return `UIO[Response]`, an effect with no typed
 failure, or a wider `ZIO[R, E, Response]` when services and failures remain in
-the environment and error channels. `HttpFormDecoder.respond` lets the success
-callback keep that wider effect while mapping form rejection to responses.
+the environment and error channels. `HttpFormDecoder.respond` lets both the
+success and semantic-validation callbacks keep that wider effect while mapping
+transport and security rejections to fixed responses.
 
 Call `decode(request)` when the handler needs to pattern match the typed error
-channel directly. For the common case, `respond` runs an effect only after every
-stage succeeds:
+channel directly. For the common case, `respond` runs the success callback only
+after every stage succeeds. A semantic validation failure can return the signed
+flash redirect defined [below](#redirect-http-flash-into-a-live-route):
 
 ```scala
 private def createSession(request: Request): UIO[Response] =
   loginValueDecoder.respond(
     request,
-    onValidation = _ => Status.UnprocessableEntity.toResponse,
+    onValidation = _ => invalidLogin,
     onRejected = error => ZIO.logWarning(s"login form rejected code=${error.code}")
   ) { credentials =>
     sessions.create(credentials).map { session =>
@@ -188,10 +190,22 @@ Failures remain distinct:
 
 The default mapping is 413 for oversized bodies, 415 for invalid content type,
 400 for other body or representation failures, and 403 for CSRF rejection.
-`onValidation` chooses the application response for validation errors.
-`onRejected` observes all failures but cannot replace the response; log the
-stable low-cardinality `error.code`, not raw bodies, credentials, tokens, or
-cookies.
+`onValidation` chooses the application response for semantic validation errors
+through an effect. For a plain response, use
+`onValidation = _ => ZIO.succeed(Status.UnprocessableEntity.toResponse)`.
+
+`onRejected` observes every decoder rejection exactly once and must complete
+before the rejection response is produced. It cannot choose a different response;
+log the stable low-cardinality `error.code`, not raw bodies, credentials, tokens,
+or cookies. Transport and CSRF rejections never invoke `onValidation` or the
+success callback. Successful decoding invokes neither rejection callback.
+An observer defect or interruption aborts response production; `respond` does
+not substitute a fallback HTTP response.
+
+Callbacks are deferred until the returned effect runs. Environment requirements
+and typed failures from either response callback remain in that effect; they are
+not decoder rejections and do not cause another `onRejected` invocation. Map
+application failures to HTTP responses at the appropriate application boundary.
 
 ## Validate Live, Then Trigger HTTP {#validate-live-then-trigger-http}
 
@@ -248,7 +262,7 @@ cookie through the shared security value:
 ```scala
 val LoginError = FlashKind("error")
 
-private def invalidLogin: Response =
+private def invalidLogin: UIO[Response] =
   security.flash.seeOther(
     Login.location,
     LoginError -> "The sign-in request was invalid. Please try again."

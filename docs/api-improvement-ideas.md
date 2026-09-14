@@ -249,23 +249,32 @@ that require a different document shell must still respect root-key/navigation b
 
 ### 6. Effectful HTTP Form Validation Responses
 
+**Status.** Implemented by changing `respond`'s validation callback to
+`FormErrors[?] => ZIO[R, E, Response]`, without adding a parallel `respondZIO` operation.
+This is a breaking alpha API change; plain validation responses now use `ZIO.succeed`.
+The [authentication lab](../documentation/site/src/scalive/docs/auth/AuthLab.scala) now uses
+`respond` for signed validation-flash redirects instead of manually dispatching decoder errors.
+Consumer migration remains application work.
+
 **Evidence.** `src/login/LoginHttpRoutes.scala:44-52` and
 `src/settings/accountsecurity/AccountSecurityHttpRoutes.scala:44-52` manually distinguish decoder
 validation failures from other rejection categories because validation responses need signed
 flash redirects.
 
-**Existing support.** [HttpFormDecoder.respond](../scalive/transport/zio-http/src/scalive/HttpFormDecoder.scala)
-accepts `FormErrors[?] => Response`, while [HttpSecurity](../scalive/transport/zio-http/src/scalive/HttpSecurity.scala)
-returns `UIO[Response]` for flash redirects. This is a direct composition mismatch.
+**Support at assessment.** [HttpFormDecoder.respond](../scalive/transport/zio-http/src/scalive/HttpFormDecoder.scala)
+accepted `FormErrors[?] => Response`, while [HttpSecurity](../scalive/transport/zio-http/src/scalive/HttpSecurity.scala)
+returned `UIO[Response]` for flash redirects. This was a direct composition mismatch.
 
-**Proposed direction.** Add an effectful `respondZIO`, or revise `respond` coherently, so the
-validation callback can return an effect. Preserve the rejection observer and centralized
-transport/security response mapping.
+**Implemented composition.** Both response callbacks can require an environment and fail through
+the returned effect's error channel. The rejection observer runs before rejection response
+handling, and centralized transport/security mapping remains unchanged. Application callback
+failures are not decoder rejections and do not invoke the observer again.
 
-**Boundaries and verification.** Only semantic validation responses need application-defined
-effects. Do not make CSRF, malformed representation, or oversized-body responses freely
-overridable. Test callback execution, observer ordering, effect failures, and unchanged rejection
-statuses. Returning submitted form state on validation failure is already supported by the
+**Boundaries and verification.** Only semantic validation rejections have application-defined
+response effects. CSRF, malformed representation, and oversized-body responses are not freely
+overridable. Focused tests cover deferred callback execution, observer ordering, effect failures,
+unchanged rejection statuses, and the auth lab's signed validation-flash round trip.
+Returning submitted form state on validation failure was already supported by the
 definition-backed `urlEncoded` constructor; that is not a separate missing feature.
 
 ### 7. Condition-Based Waiting And Connected Snapshot Queries

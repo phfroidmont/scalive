@@ -73,28 +73,26 @@ final class AuthHttpRoutes(security: LiveSecurity):
 
   // docs:start authentication-http-actions
   private def login(request: Request): URIO[AuthService, Response] =
-    loginDecoder
-      .decode(request).foldZIO(
-        error =>
-          logMalformedLogin(error) *> (error match
-            case HttpFormDecoder.Error.Validation(_) => invalidLoginResponse
-            case _ => ZIO.succeed(error.toResponse(_ => Response.badRequest))),
-        credentials =>
-          ZIO.serviceWithZIO[AuthService](_.login(visitor(request), credentials)).flatMap {
-            case LoginDecision.Successful(result) =>
-              ZIO.succeed(
-                AuthLabRoutes.profile.location.seeOther
-                  .addCookie(security.cookies.make(SessionCookieName, result.cookieToken.value))
-              )
-            case LoginDecision.Invalid     => invalidLoginResponse
-            case LoginDecision.RateLimited => rateLimitedResponse
-          }
-      )
+    loginDecoder.respond(
+      request,
+      onValidation = _ => invalidLoginResponse,
+      onRejected = logMalformedLogin
+    ) { credentials =>
+      ZIO.serviceWithZIO[AuthService](_.login(visitor(request), credentials)).flatMap {
+        case LoginDecision.Successful(result) =>
+          ZIO.succeed(
+            AuthLabRoutes.profile.location.seeOther
+              .addCookie(security.cookies.make(SessionCookieName, result.cookieToken.value))
+          )
+        case LoginDecision.Invalid     => invalidLoginResponse
+        case LoginDecision.RateLimited => rateLimitedResponse
+      }
+    }
 
   private def reset(
     request: Request
   ): URIO[AuthService & LiveConnections[PublicSessionId], Response] =
-    resetDecoder.respond(request, _ => Response.forbidden) { _ =>
+    resetDecoder.respond(request, _ => ZIO.succeed(Response.forbidden)) { _ =>
       val cookieToken = request
         .cookie(SessionCookieName)
         .map(cookie => SessionCookieToken(cookie.content))

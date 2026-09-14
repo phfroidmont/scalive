@@ -176,7 +176,7 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
       ),
       td(
         upload
-          .zip(entry).map { case (currentUpload, currentEntry) =>
+          .combineWithFn(entry) { (currentUpload, currentEntry) =>
             uploadErrors(currentUpload, currentEntry)
           }.splitBy(_.toString) { (_, error) =>
             p(styleAttr := "color: red;", error.map(errorToString))
@@ -733,7 +733,7 @@ class Issue2787LiveView extends LiveView[Issue2787LiveView.Msg, Issue2787LiveVie
           option(value := "", "Select"),
           model.map(_.select2Options).splitBy(identity) { (_, optionValue) =>
             option(
-              selected := model.zip(optionValue).map { case (current, value) =>
+              selected := model.combineWithFn(optionValue) { (current, value) =>
                 current.select2.contains(value)
               },
               value := optionValue,

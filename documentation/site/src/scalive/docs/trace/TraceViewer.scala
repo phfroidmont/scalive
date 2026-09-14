@@ -437,7 +437,7 @@ private[docs] object TraceViewer:
       dataAttr("trace-evidence") := evidence.map(_.label),
       span(
         cls := "docs-visually-hidden",
-        evidence.zip(stepLabel).map { case (value, label) => s"${value.label} for $label: " }
+        evidence.combineWithFn(stepLabel)((value, label) => s"${value.label} for $label: ")
       ),
       evidence
         .map(_.scalaValue).option(value => code(cls := "docs-trace-evidence-scala-value", value)),

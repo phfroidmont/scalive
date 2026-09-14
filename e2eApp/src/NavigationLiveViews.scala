@@ -104,7 +104,7 @@ class NavigationBLiveView() extends LiveView.Routed[Msg, Model, BParams]:
                     idAttr    := item.map(current => s"items-${current.id}"),
                     styleAttr := "padding: 0.5rem; border-bottom: 1px solid #e2e8f0;",
                     a(
-                      href := item.zip(withContainer).map { case (current, enabled) =>
+                      href := item.combineWithFn(withContainer) { (current, enabled) =>
                         E2ERoutes.navigationBItemLocation
                           .location(
                             current.id -> Option.when(enabled)("1")

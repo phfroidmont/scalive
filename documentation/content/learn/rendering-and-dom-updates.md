@@ -30,9 +30,52 @@ from `view`.
 
 The counter places its mapped count signal directly in a text position. The cart
 derives disabled states, quantities, subtotals, and totals from the same model
-signal. Use `.map` for one input and `.zip` when a display value depends on
-multiple signals. Operators such as `choose`, `option`, and signal `splitBy`
-describe conditional or repeated content.
+signal. Use `.map` for one input and the signal-combination operations when a
+display value depends on multiple signals. Operators such as `choose`, `option`,
+and signal `splitBy` describe conditional or repeated content.
+
+For two signals, the instance helpers cover the common cases:
+
+```scala
+val fullName = firstName.combineWithFn(lastName) { (first, last) =>
+  s"$first $last"
+}
+val names    = firstName.combineWith(lastName) // Signal[(String, String)]
+```
+
+The companion operations accept any non-empty tuple of signals and keep
+multi-input derivations flat and readable:
+
+```scala
+val summary = Signal.combineWithFn((firstName, lastName, itemCount)) {
+  (first, last, count) => s"$first $last - $count items"
+}
+```
+
+Use `Signal.combine(Tuple1(signal))` for a single input. An empty input tuple
+is rejected at compile time.
+
+`a.combineWith(b)` shallow-flattens outer tuples on both sides. This is
+convenient for extending an existing tuple signal: `a.combineWith(b).combineWith(c)`
+produces a flat triple when the three values are scalars. `Signal.combine((a, b, ...))`
+instead preserves every input value as one tuple element, including nested tuple
+values. Both `combineWithFn` forms likewise pass the original, unflattened input
+values to their lambda. For `position` and `size` of type `Signal[(Int, Int)]`:
+
+```scala
+val bounds  = position.combineWith(size)          // Signal[(Int, Int, Int, Int)]
+val grouped = Signal.combine((position, size))    // Signal[((Int, Int), (Int, Int))]
+```
+
+Flattening follows the static value type. Nested tuple elements and case-class
+values remain intact. A value widened to `Any`, or passed through an unconstrained
+generic type parameter, stays one element even if it happens to contain a tuple
+at runtime.
+
+Direct multi-parameter lambdas work with `combineWithFn`. For the companion
+operation, a pre-existing `FunctionN` needs its `.tupled` form, for example
+`Signal.combineWithFn((firstName, lastName))(formatName.tupled)`.
+The binary instance operation accepts a `Function2` directly.
 
 Keep every signal transformation pure: the same input should produce the same
 output without changing state, performing I/O, or starting work. This lets

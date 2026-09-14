@@ -81,7 +81,7 @@ final class ReportsExample(reports: Reports)
             aria.label := "Available reports",
             p(cls := "docs-reports-picker-label", "Available reports"),
             reports.splitBy(_.id) { (_, report) =>
-              val isSelected = report.zip(selected).map { case (report, selected) =>
+              val isSelected = report.combineWithFn(selected) { (report, selected) =>
                 report == selected
               }
               button(

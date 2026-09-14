@@ -181,9 +181,10 @@ request or connected lifecycle and retains the static template, signal graph,
 binding definitions, and child structure.
 
 `Signal[Model]` is the bridge from immutable model state into that graph. Pure
-`map` and `zip` transformations derive the values needed by individual nodes.
-During a turn, the render engine installs the proposed model as the signal
-source, samples the graph, and reuses unchanged retained nodes.
+`map`, `combineWith`, and `combineWithFn` transformations derive the values
+needed by individual nodes. During a turn, the render engine installs the
+proposed model as the signal source, samples the graph, and reuses unchanged
+retained nodes.
 
 Evaluation produces a `RenderCandidate` containing:
 

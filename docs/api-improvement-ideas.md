@@ -134,6 +134,11 @@ reference-counted service remain application-owned.
 
 ### 3. Flat Multi-Signal Composition
 
+**Status.** Implemented as `Signal.combine`, `Signal.combineWithFn`, and binary instance
+`combineWith` / `combineWithFn`. Public `Signal.zip` was removed in this breaking alpha API change.
+Repository callers were migrated; consumer migration remains application work. See
+[signal composition](../documentation/content/learn/rendering-and-dom-updates.md#derive-display-values).
+
 **Evidence.** `src/patient/PersonalInformationPage.scala:1842-1877` contains the following assembly
 twice, for single- and multi-choice props:
 
@@ -151,29 +156,36 @@ control.id
 
 Related multi-input combinations occur in `src/components/SearchableChoiceFieldView.scala`.
 
-**Existing support.** [Signal](../scalive/api/src/scalive/Signal.scala) exposes `map` and binary
-`zip`. The nested tuples are an ergonomics problem, not evidence of an inefficient or broken
-render graph.
+**Support at assessment.** [Signal](../scalive/api/src/scalive/Signal.scala) exposed `map` and binary
+`zip`. The nested tuples were an ergonomics problem, not evidence of an inefficient or broken
+render graph. The historical consumer snippet above predates the removal of `zip`.
 
-**Proposed direction.** Add flat composition with existing map/zip semantics:
+**Implemented composition.** The companion operations accept a nonempty heterogeneous tuple,
+without a fixed-arity overload family:
 
 ```scala
-Signal.mapN(
+Signal.combineWithFn((
   control.id,
   control.name,
   control.hasVisibleErrors,
   control.errorId,
   selected,
   ready
-) { (id, name, invalid, errorId, selected, ready) =>
+)) { (id, name, invalid, errorId, selected, ready) =>
   // Build component props.
 }
 ```
 
-**Boundaries and verification.** Choose between a small overload family and tuple-based composition
-based on readable call sites and compiler errors. Preserve scope validation, dependency tracking,
-and unchanged-value behavior. Test updates to each dependency and invalid scope combinations.
-There is no demonstrated need here for signal mutation, reactive effects, or `flatMap`.
+`Signal.combine` preserves each signal value as one result element. Binary `a.combineWith(b)`
+shallowly concatenates statically tuple-shaped operands, so chaining builds flat tuples while
+nested tuple elements and case-class values remain intact. Both `combineWithFn` forms pass one
+original value per input signal; they do not flatten tuple-valued function arguments.
+
+**Boundaries and verification.** The implementation retains the existing render expressions,
+scope validation, dependency tracking, and unchanged-value behavior. Focused tests cover more
+than 22 inputs, singleton and invalid input tuples, tuple grouping, generic/widened types,
+independent updates, shared dependencies, evaluation order, and incompatible scopes.
+There is no new signal mutation, reactive effect, or `flatMap` API.
 
 ### 4. Common Form Codecs And Native Control Bindings
 

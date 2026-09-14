@@ -192,13 +192,14 @@ projection, and placing it in the HTML tree tells the renderer that the value
 belongs to a dynamic slot. What changed was the amount of responsibility carried
 by that projection.
 
-`Signal[A]` is read-only. Its `map` and `zip` operations are intended for pure
-transformations; it provides no operation for setting a value, sampling the
-current value, subscribing, or running an effect. Scala cannot prevent a
-function passed to `map` from performing a side effect, but Scalive may skip or
-reuse that transformation, so doing so would make the view incorrect. A signal
-is a description of how to derive an `A` during rendering, not another
-application state container and not a general-purpose reactive stream.
+`Signal[A]` is read-only. Its `map`, `combineWith`, and `combineWithFn` operations
+are intended for pure transformations; it provides no operation for setting a
+value, sampling the current value, subscribing, or running an effect. Scala
+cannot prevent a function passed to `map` from performing a side effect, but
+Scalive may skip or reuse that transformation, so doing so would make the view
+incorrect. A signal is a description of how to derive an `A` during rendering,
+not another application state container and not a general-purpose reactive
+stream.
 
 Because a signal cannot be sampled or mutated through the public API, the
 renderer can construct the view graph once. Ordinary values in that graph are

@@ -8590,6 +8590,30 @@
       ]
     },
     {
+      "id" : "def:scalive.Signal.combine",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.combine",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Signal.combine:d535a545fae30d71",
+          "signature" : "def combine[Signals <: NonEmptyTuple](signals: Signals)(using signalsOnly: <:<[Tuple.Union[Signals], Signal[?]]): Signal[Tuple.InverseMap[Signals, ([A] =>> Signal[A])]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.Signal.combineWithFn",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.combineWithFn",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Signal.combineWithFn:74a95d0af8f62cc6",
+          "signature" : "def combineWithFn[Signals <: NonEmptyTuple, Result](signals: Signals)(using signalsOnly: <:<[Tuple.Union[Signals], Signal[?]])(f: Tuple.InverseMap[Signals, ([A] =>> Signal[A])] => Result): Signal[Result]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.Signal.map",
       "ownerId" : "trait:scalive.Signal",
       "qualifiedName" : "scalive.Signal.map",
@@ -8598,18 +8622,6 @@
         {
           "id" : "def:scalive.Signal.map:8a2dcb124c7cee1c",
           "signature" : "def map[B](f: A => B): Signal[B]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.Signal.zip",
-      "ownerId" : "trait:scalive.Signal",
-      "qualifiedName" : "scalive.Signal.zip",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.Signal.zip:1caeb5109e34381a",
-          "signature" : "def zip[B](that: Signal[B]): Signal[(A, B)]"
         }
       ]
     },
@@ -13018,6 +13030,30 @@
       ]
     },
     {
+      "id" : "extension:scalive.Signal.combineWith",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.combineWith",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.Signal.combineWith:17f66c9e6e3692d9",
+          "signature" : "extension def combineWith[A](left: Signal[A])[B](right: Signal[B])(using leftShape: Signal.TupleShape[A], rightShape: Signal.TupleShape[B]): Signal[Tuple.Concat[leftShape.Out, rightShape.Out]]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.Signal.combineWithFn",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.combineWithFn",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.Signal.combineWithFn:3c60d798f9e0514b",
+          "signature" : "extension def combineWithFn[A](left: Signal[A])[B, Result](right: Signal[B])(f: (A, B) => Result): Signal[Result]"
+        }
+      ]
+    },
+    {
       "id" : "extension:scalive.Signal.option",
       "ownerId" : "object:scalive.Signal",
       "qualifiedName" : "scalive.Signal.option",
@@ -13306,6 +13342,30 @@
         {
           "id" : "given:scalive.JSCommands.JSCommand.given_JsonEncoder_JSCommand:9405bfc412e728b1",
           "signature" : "given given_JsonEncoder_JSCommand[Msg]: zio.json.JsonEncoder[JSCommands.JSCommand[Msg]]"
+        }
+      ]
+    },
+    {
+      "id" : "given:scalive.Signal.TupleShape.scalar",
+      "ownerId" : "object:scalive.Signal.TupleShape",
+      "qualifiedName" : "scalive.Signal.TupleShape.scalar",
+      "kind" : "given",
+      "signatures" : [
+        {
+          "id" : "given:scalive.Signal.TupleShape.scalar:d115ab8b67b57006",
+          "signature" : "given scalar[A](using x$1: util.NotGiven[<:<[A, Tuple]]): TupleShape.Aux[A, Tuple1[A]]"
+        }
+      ]
+    },
+    {
+      "id" : "given:scalive.Signal.TupleShape.tuple",
+      "ownerId" : "object:scalive.Signal.TupleShape",
+      "qualifiedName" : "scalive.Signal.TupleShape.tuple",
+      "kind" : "given",
+      "signatures" : [
+        {
+          "id" : "given:scalive.Signal.TupleShape.tuple:cadb7fb68ee8c8bf",
+          "signature" : "given tuple[A <: Tuple]: TupleShape.Aux[A, A]"
         }
       ]
     },
@@ -17738,6 +17798,18 @@
       ]
     },
     {
+      "id" : "object:scalive.Signal.TupleShape",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.TupleShape",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.Signal.TupleShape:4125758da8657dd8",
+          "signature" : "object TupleShape"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.StaticAssetCache",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.StaticAssetCache",
@@ -18985,6 +19057,18 @@
       ]
     },
     {
+      "id" : "trait:scalive.Signal.TupleShape",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.TupleShape",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.Signal.TupleShape:fa40212ade6bd827",
+          "signature" : "trait TupleShape[A]"
+        }
+      ]
+    },
+    {
       "id" : "trait:scalive.StaticAssetSource",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.StaticAssetSource",
@@ -19761,6 +19845,30 @@
         {
           "id" : "type-alias:scalive.RepeatedRows.Key:c062b6716da401ac",
           "signature" : "type Key = FormRowKey[Group]"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.Signal.TupleShape.Aux",
+      "ownerId" : "object:scalive.Signal.TupleShape",
+      "qualifiedName" : "scalive.Signal.TupleShape.Aux",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.Signal.TupleShape.Aux:04a15f95c6e2aedc",
+          "signature" : "type Aux = ([A, O <: Tuple] =>> (Signal.TupleShape[A] { type Out = O }))"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.Signal.TupleShape.Out",
+      "ownerId" : "trait:scalive.Signal.TupleShape",
+      "qualifiedName" : "scalive.Signal.TupleShape.Out",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.Signal.TupleShape.Out:53ee893d543621a7",
+          "signature" : "type Out <: Tuple"
         }
       ]
     },

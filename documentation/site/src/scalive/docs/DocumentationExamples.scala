@@ -54,7 +54,7 @@ final private[docs] class DocumentationExamplesLiveView(
     val params      = model.map(_.params)
     val examples    = params.map(value => application.bundle.examples.filter(matches(_, value)))
     val labs        = params.map(value => LabCatalog.entries.filter(matches(_, value)))
-    val resultCount = examples.zip(labs).map { case (examples, labs) => examples.size + labs.size }
+    val resultCount = examples.combineWithFn(labs)((examples, labs) => examples.size + labs.size)
     articleTag(
       cls                         := "docs-content docs-prose docs-examples-catalog",
       dataAttr("example-catalog") := "",
@@ -69,7 +69,7 @@ final private[docs] class DocumentationExamplesLiveView(
         p(
           cls  := "docs-example-catalog-status",
           role := "status",
-          resultCount.zip(params).map { case (count, params) => resultLabel(count, params) }
+          resultCount.combineWithFn(params)((count, params) => resultLabel(count, params))
         ),
         topicFilters(params)
       ),
@@ -195,7 +195,7 @@ final private[docs] class DocumentationExamplesLiveView(
           )
       },
       filtered
-        .zip(labs).map { case (filtered, labs) => !filtered && labs.nonEmpty }.when(
+        .combineWithFn(labs)((filtered, labs) => !filtered && labs.nonEmpty).when(
           sectionTag(
             idAttr := "complete-applications",
             cls    := "docs-example-category docs-example-lab-category",
@@ -261,7 +261,8 @@ final private[docs] class DocumentationExamplesLiveView(
           sources.splitBy(_._1) { (_, entry) =>
             a(
               href := entry.map(_._2.url),
-              entry.zip(sources).map { case ((label, _), sources) =>
+              entry.combineWithFn(sources) { (entry, sources) =>
+                val (label, _) = entry
                 if sources.size == 1 then "Source" else label
               }
             )

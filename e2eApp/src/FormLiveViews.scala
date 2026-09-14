@@ -118,7 +118,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
     values: Signal[Map[String, String]]
   ): Mod[Msg] =
     val liveComponentMode = query.map(_.liveComponent)
-    val componentProps    = query.zip(values).map { case (currentQuery, currentValues) =>
+    val componentProps    = query.combineWithFn(values) { (currentQuery, currentValues) =>
       FormComponent.Props(currentQuery, currentValues)
     }
 
@@ -626,7 +626,7 @@ class FormFeedbackLiveView extends LiveView[FormFeedbackLiveView.Msg, FormFeedba
     val feedbackUsed  = model.map(_.feedbackUsed)
 
     val feedbackFor   = feedback.map(enabled => Option.when(enabled)("myfeedback"))
-    val feedbackClass = feedback.zip(feedbackUsed).map { case (enabled, used) =>
+    val feedbackClass = feedback.combineWithFn(feedbackUsed) { (enabled, used) =>
       if enabled && !used then "phx-no-feedback" else ""
     }
 

@@ -122,17 +122,19 @@ final private[docs] class LiveTraceViewer(
     interactions: Signal[Vector[CapturedInteraction]],
     selectedId: Signal[Option[String]]
   ): HtmlElement[Msg] =
-    val selected = selectedId.zip(interactions).map { case (id, values) =>
+    val selected = selectedId.combineWithFn(interactions) { (id, values) =>
       id.flatMap(selected => values.find(_.id == selected))
     }
     val interactionOrdinals = interactions.map(_.map(value => value.id -> value.ordinal).toMap)
     val panelId             = s"$instanceId-trace-panel"
-    val newerCount          = selected.zip(selectedId).zip(interactions).map {
-      case ((Some(interaction), _), values) => values.indexWhere(_.id == interaction.id)
-      case ((None, Some(_)), values)        => values.size
-      case ((None, None), _)                => 0
+    val newerCount          = Signal.combineWithFn((selected, selectedId, interactions)) {
+      (interaction, id, values) =>
+        (interaction, id) match
+          case (Some(interaction), _) => values.indexWhere(_.id == interaction.id)
+          case (None, Some(_))        => values.size
+          case (None, None)           => 0
     }
-    val showDetails = interactions.zip(selectedId).map { case (values, id) =>
+    val showDetails = interactions.combineWithFn(selectedId) { (values, id) =>
       values.nonEmpty || id.nonEmpty
     }
     val count = interactions.map(_.size)
@@ -159,7 +161,7 @@ final private[docs] class LiveTraceViewer(
     model: Signal[Model],
     count: Signal[Int]
   ): HtmlElement[Msg] =
-    val isSwitch = model.zip(count).map { case (value, retained) =>
+    val isSwitch = model.combineWithFn(count) { (value, retained) =>
       value.session.nonEmpty && (value.enabled || retained > 0)
     }
     headerTag(
@@ -180,7 +182,7 @@ final private[docs] class LiveTraceViewer(
         ),
         role := isSwitch.map(value => if value then "switch" else "button"),
         aria.checked.optional(
-          isSwitch.zip(model).map { case (switch, value) =>
+          isSwitch.combineWithFn(model) { (switch, value) =>
             Option.when(switch)(value.enabled.toString)
           }
         ),
@@ -201,10 +203,10 @@ final private[docs] class LiveTraceViewer(
     count: Signal[Int]
   ): HtmlElement[Msg] =
     val unavailable  = model.map(_.session.isEmpty)
-    val introduction = model.zip(count).map { case (value, retained) =>
+    val introduction = model.combineWithFn(count) { (value, retained) =>
       value.session.nonEmpty && !value.enabled && retained == 0
     }
-    val waiting = model.zip(count).map { case (value, retained) =>
+    val waiting = model.combineWithFn(count) { (value, retained) =>
       value.enabled && retained == 0
     }
     div(
@@ -257,7 +259,7 @@ final private[docs] class LiveTraceViewer(
         role        := "status",
         aria.live   := "polite",
         aria.atomic := true,
-        model.zip(count).map { case (value, retained) =>
+        model.combineWithFn(count) { (value, retained) =>
           if value.session.isEmpty then "Unavailable"
           else if value.enabled then "Tracing new interactions"
           else if retained > 0 then
@@ -268,7 +270,7 @@ final private[docs] class LiveTraceViewer(
       span(
         cls         := "docs-live-trace-capture-summary",
         aria.hidden := true,
-        model.zip(count).map { case (value, retained) =>
+        model.combineWithFn(count) { (value, retained) =>
           if value.session.isEmpty then "Inspector unavailable"
           else if retained == 1 then "1 interaction"
           else s"$retained interactions"
@@ -299,7 +301,7 @@ final private[docs] class LiveTraceViewer(
         aria.live   := "polite",
         aria.atomic := true,
         selected.option { interaction =>
-          val ordinal = interaction.zip(interactionOrdinals).map { case (value, ordinals) =>
+          val ordinal = interaction.combineWithFn(interactionOrdinals) { (value, ordinals) =>
             s"#${ordinals(value.id)}"
           }
           strong(
@@ -333,10 +335,11 @@ final private[docs] class LiveTraceViewer(
             newerCount.map(value => if value == 0 then "Latest" else s"$value newer")
           )
         ),
-        selected.zip(selectedId).map {
-          case (Some(_), _)    => ""
-          case (None, Some(_)) => "Selected interaction expired"
-          case (None, None)    => "No interaction selected"
+        selected.combineWithFn(selectedId) { (interaction, id) =>
+          (interaction, id) match
+            case (Some(_), _)    => ""
+            case (None, Some(_)) => "Selected interaction expired"
+            case (None, None)    => "No interaction selected"
         }
       ),
       newerCount
@@ -370,7 +373,7 @@ final private[docs] class LiveTraceViewer(
                   typ          := "button",
                   idAttr       := interaction.map(interactionRowId),
                   cls          := "docs-live-trace-event",
-                  aria.pressed := interaction.zip(selectedId).map { case (value, selected) =>
+                  aria.pressed := interaction.combineWithFn(selectedId) { (value, selected) =>
                     selected.contains(value.id).toString
                   },
                   aria.controls := panelId,
@@ -382,7 +385,7 @@ final private[docs] class LiveTraceViewer(
                   on.click(interaction.map(value => Msg.SelectInteraction(value.id))),
                   span(
                     cls := "docs-live-trace-event-reference",
-                    interaction.zip(interactionOrdinals).map { case (value, ordinals) =>
+                    interaction.combineWithFn(interactionOrdinals) { (value, ordinals) =>
                       s"#${ordinals(value.id)}"
                     }
                   ),

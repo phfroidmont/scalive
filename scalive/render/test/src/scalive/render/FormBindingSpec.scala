@@ -42,6 +42,178 @@ object FormBindingSpec extends ZIOSpecDefault:
     case Submitted(event: BasketDefinition.Event)
 
   override def spec = suite("FormBindingSpec")(
+    test("tel, date and search preserve scoped identity, raw values and explicit ARIA") {
+      val cases = Vector(
+        ("tel", " +32 0123 456 ", "  +44 020 1234  "),
+        ("date", "2026-02-30", " 2026-13-40 "),
+        ("search", "  Ada Lovelace  ", " Grace Hopper ")
+      )
+
+      ZIO
+        .foreach(cases) { case (inputType, rawValue, afterRawValue) =>
+          val compiled = RenderProgram.compile[ProfileDefinition.Form, ProfileMsg] { source =>
+            val first = source.bind(DomRef("first"), ProfileMsg.Updated(_), ProfileMsg.Submitted(_))
+            val second =
+              source.bind(DomRef("second"), ProfileMsg.Updated(_), ProfileMsg.Submitted(_))
+            val firstName  = first.field(Name)
+            val secondName = second.field(Name)
+            val plain      = inputType match
+              case "tel" =>
+                firstName.tel(cls := "caller-control", dataAttr("scope") := "name")
+              case "date" =>
+                firstName.date(cls := "caller-control", dataAttr("scope") := "name")
+              case _ =>
+                firstName.search(cls := "caller-control", dataAttr("scope") := "name")
+            val accessible = inputType match
+              case "tel" =>
+                secondName.tel(
+                  secondName.validationAttributes,
+                  cls               := "caller-control",
+                  dataAttr("scope") := "name"
+                )
+              case "date" =>
+                secondName.date(
+                  secondName.validationAttributes,
+                  cls               := "caller-control",
+                  dataAttr("scope") := "name"
+                )
+              case _ =>
+                secondName.search(
+                  secondName.validationAttributes,
+                  cls               := "caller-control",
+                  dataAttr("scope") := "name"
+                )
+            div(first.render(plain), second.render(accessible))
+          }
+
+          for
+            program   <- ZIO.fromEither(compiled)
+            candidate <- program.evaluate(ProfileDefinition.initial(Name.initial(rawValue)))
+            after     <- program.evaluate(
+                       ProfileDefinition.initial(Name.initial(afterRawValue)),
+                       Some(candidate.commit)
+                     )
+            html      = HtmlRenderer.render(candidate.tree)
+            afterHtml = HtmlRenderer.render(after.tree)
+            firstId   = s"first-${Name.address.id}"
+            secondId  = s"second-${Name.address.id}"
+          yield assertTrue(
+            html.contains(
+              s"<input type=\"$inputType\" id=\"$firstId\" name=\"profile[name]\" value=\"$rawValue\" class=\"caller-control\" data-scope=\"name\">"
+            ),
+            html.contains(
+              s"<input type=\"$inputType\" id=\"$secondId\" name=\"profile[name]\" value=\"$rawValue\" aria-describedby=\"${secondId}_errors\" class=\"caller-control\" data-scope=\"name\">"
+            ),
+            afterHtml.contains(
+              s"<input type=\"$inputType\" id=\"$firstId\" name=\"profile[name]\" value=\"$afterRawValue\" class=\"caller-control\" data-scope=\"name\">"
+            ),
+            afterHtml.contains(
+              s"<input type=\"$inputType\" id=\"$secondId\" name=\"profile[name]\" value=\"$afterRawValue\" aria-describedby=\"${secondId}_errors\" class=\"caller-control\" data-scope=\"name\">"
+            )
+          )
+        }.map(_.reduce(_ && _))
+    },
+    test("tel, date and search reject caller type overrides") {
+      val compiled = Vector("tel", "date", "search").map { inputType =>
+        RenderProgram.compile[ProfileDefinition.Form, ProfileMsg] { source =>
+          val binding =
+            source.bind(DomRef("profile"), ProfileMsg.Updated(_), ProfileMsg.Submitted(_))
+          val control = binding.field(Name)
+          val input   = inputType match
+            case "tel"  => control.tel(typ := "text")
+            case "date" => control.date(typ := "text")
+            case _      => control.search(typ := "text")
+          binding.render(input)
+        }
+      }
+
+      assertTrue(compiled.forall(_.isLeft))
+    },
+    test("tel uses WhenUsed by default without a blur handler or trigger") {
+      val compiled = RenderProgram.compile[ProfileDefinition.Form, ProfileMsg] { source =>
+        val binding = source.bind(DomRef("profile"), ProfileMsg.Updated(_), ProfileMsg.Submitted(_))
+        binding.render(binding.field(Name).tel())
+      }
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(ProfileDefinition.initial(Name.initial(" +32 0123 456 ")))
+        html = HtmlRenderer.render(candidate.tree)
+      yield assertTrue(
+        candidate.bindings.size == 3,
+        !candidate.bindings.ids.exists(_.encoded.startsWith("j")),
+        html.contains("type=\"tel\""),
+        !html.contains("phx-blur="),
+        !html.contains("profile-scalive-blur-trigger")
+      )
+    },
+    test("date AfterBlur uses the shared ordered feedback commands") {
+      val compiled = RenderProgram.compile[ProfileDefinition.Form, ProfileMsg] { source =>
+        val binding = source.bind(
+          DomRef("profile"),
+          ProfileMsg.Updated(_),
+          ProfileMsg.Submitted(_),
+          FormFeedback.AfterBlur
+        )
+        binding.render(binding.field(Name).date())
+      }
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(ProfileDefinition.initial(Name.initial("2026-02-30")))
+        html          = HtmlRenderer.render(candidate.tree)
+        setIndex      = html.indexOf("&quot;set_attr&quot;")
+        dispatchIndex = html.indexOf("&quot;dispatch&quot;")
+        removeIndex   = html.indexOf("&quot;remove_attr&quot;")
+      yield assertTrue(
+        html.contains("type=\"date\""),
+        html.contains("value=\"2026-02-30\""),
+        html.contains("id=\"profile-scalive-blur-trigger\""),
+        html.contains("phx-blur="),
+        html.contains("phx-value-scalive-blur"),
+        html.contains(s"&quot;${Name.name}&quot;"),
+        html.contains("#profile-scalive-blur-trigger"),
+        setIndex >= 0,
+        setIndex < dispatchIndex,
+        dispatchIndex < removeIndex,
+        !html.contains("&quot;push&quot;")
+      )
+    },
+    test("search AfterBlur orders feedback before its custom value handler") {
+      val compiled = RenderProgram.compile[ProfileDefinition.Form, ProfileMsg] { source =>
+        val binding = source.bind(
+          DomRef("profile"),
+          ProfileMsg.Updated(_),
+          ProfileMsg.Submitted(_),
+          FormFeedback.AfterBlur
+        )
+        binding.render(binding.field(Name).onBlur(ProfileMsg.BlurValue(_)).search())
+      }
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(ProfileDefinition.initial(Name.initial("rendered query")))
+        handlerId = candidate.bindings.ids.find(_.encoded.startsWith("j")).get
+        result    = candidate.bindings
+                   .resolve(handlerId).get.dispatch(
+                     BindingPayload.Params(Map("value" -> "  browser query  "))
+                   )
+        html          = HtmlRenderer.render(candidate.tree)
+        setIndex      = html.indexOf("&quot;set_attr&quot;")
+        dispatchIndex = html.indexOf("&quot;dispatch&quot;")
+        removeIndex   = html.indexOf("&quot;remove_attr&quot;")
+        pushIndex     = html.indexOf("&quot;push&quot;")
+      yield assertTrue(
+        html.contains("type=\"search\""),
+        html.contains("phx-blur="),
+        html.contains("id=\"profile-scalive-blur-trigger\""),
+        setIndex >= 0,
+        setIndex < dispatchIndex,
+        dispatchIndex < removeIndex,
+        removeIndex < pushIndex,
+        result == Right(BindingDispatch.Owner(ProfileMsg.BlurValue("  browser query  ")))
+      )
+    },
     test("message-only blur handlers compose without consuming the browser value") {
       val compiled = RenderProgram.compile[ProfileDefinition.Form, ProfileMsg] { source =>
         val binding = source.bind(DomRef("profile"), ProfileMsg.Updated(_), ProfileMsg.Submitted(_))

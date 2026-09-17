@@ -43,6 +43,14 @@ production searchable selector or a hook required by ordinary controls.
 - Submit exposes all feedback, later edits preserve visibility, and explicit reset clears it.
 - Composite search and internal focus movement do not mark the parent field blurred.
 - Composite departure and selection compose through component outputs.
+- The typed phone control uses the native `tel` helper while preserving exact whitespace
+  before blur, then normalizing through the scalar callback after the feedback update.
+- The native `date` test distinguishes the HTML `value` attribute, native `.value` property,
+  and server raw values. An unfocused server-seeded `not-a-date` remains in the attribute
+  and server snapshot while the browser property is empty. An unrelated name edit sends
+  a full-form snapshot with `[""]` (not `[]`); a later valid ISO date reaches the server.
+  The non-required string field starts as `""` so unrelated full-form updates do not
+  spuriously change it. These checks use no date picker or localized date UI.
 
 ## Normalization Limitation
 

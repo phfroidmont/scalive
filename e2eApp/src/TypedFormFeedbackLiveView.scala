@@ -1,6 +1,7 @@
 import java.util.concurrent.atomic.AtomicInteger
 
 import zio.ZIO
+import zio.json.*
 
 import scalive.*
 
@@ -41,6 +42,8 @@ class TypedFormFeedbackLiveView
           effects = model.effects :+ s"phone:$value"
         )
       )
+    case Msg.SeedInvalidDate =>
+      ZIO.succeed(model.copy(form = model.form.updated(Date, "not-a-date")))
     case Msg.CheckboxBlurred(value) =>
       ZIO.succeed(
         model.copy(
@@ -89,6 +92,7 @@ class TypedFormFeedbackLiveView
     val name     = binding.field(Name)
     val email    = binding.field(Email)
     val phone    = binding.field(Phone).onBlur(Msg.PhoneBlurred(_))
+    val date     = binding.field(Date)
     val choice   = binding.field(Choice)
     val checkbox = binding.field(Checkbox).onBlur(Msg.CheckboxBlurred(_))
     val select   = binding.field(Select)
@@ -101,8 +105,9 @@ class TypedFormFeedbackLiveView
         name.errorFeedback(error => error.map(_.message)),
         email.email(email.validationAttributes, phx.debounce := 300),
         email.errorFeedback(error => error.map(_.message)),
-        phone.text(phone.validationAttributes),
+        phone.tel(phone.validationAttributes),
         phone.errorFeedback(error => error.map(_.message)),
+        date.date(date.validationAttributes),
         div(
           dom.hook("BlurFeedback", DomRef("choice-widget")),
           input(
@@ -162,6 +167,12 @@ class TypedFormFeedbackLiveView
       ),
       button(idAttr := "outside", typ := "button", "Outside"),
       button(
+        idAttr := "seed-invalid-date",
+        typ    := "button",
+        on.click(Msg.SeedInvalidDate),
+        "Seed invalid date"
+      ),
+      button(
         idAttr := "add-replacement",
         typ    := "button",
         on.click(Msg.AddReplacement),
@@ -180,6 +191,10 @@ class TypedFormFeedbackLiveView
       div(idAttr := "server-name", formSignal.map(_.field(Name).fieldValue)),
       div(idAttr := "server-email", formSignal.map(_.field(Email).fieldValue)),
       div(idAttr := "server-phone", formSignal.map(_.field(Phone).fieldValue)),
+      div(
+        idAttr := "server-date-raw",
+        formSignal.map(_.field(Date).rawValues.toJson)
+      ),
       div(idAttr := "server-notes", formSignal.map(_.field(Notes).fieldValue)),
       div(idAttr := "server-choice", formSignal.map(_.field(Choice).fieldValue)),
       div(idAttr := "server-checkbox", formSignal.map(_.field(Checkbox).rawValues.mkString(","))),
@@ -199,6 +214,7 @@ object TypedFormFeedbackLiveView:
     name: String,
     email: String,
     phone: String,
+    date: String,
     choice: String,
     checkbox: Option[String],
     select: Vector[String],
@@ -209,6 +225,7 @@ object TypedFormFeedbackLiveView:
   val Name       = Root.text("name").required(FieldIssue("Name is required"))
   val Email      = Root.text("email").required(FieldIssue("Email is required"))
   val Phone      = Root.text("phone").required(FieldIssue("Phone is required"))
+  val Date       = Root.text("date")
   val Choice     = Root.text("choice").required(FieldIssue("Choice is required"))
   val Checkbox   = Root.optionalText("checkbox")
   val Select     = Root.texts("select")
@@ -217,7 +234,7 @@ object TypedFormFeedbackLiveView:
   val RowName    = RowGroup.text("name").required(FieldIssue("Row name is required"))
   val RowSchema  = RowGroup.product[Row](Tuple1(RowName))
   val Definition =
-    Root.product[Data]((Name, Email, Phone, Choice, Checkbox, Select, Notes, RowSchema))
+    Root.product[Data]((Name, Email, Phone, Date, Choice, Checkbox, Select, Notes, RowSchema))
 
   val RowA = FormRowKey.from[RowGroup.type]("row-a").toOption.get
   val RowB = FormRowKey.from[RowGroup.type]("row-b").toOption.get
@@ -226,6 +243,7 @@ object TypedFormFeedbackLiveView:
     case Updated(update: Definition.Update)
     case Submitted(event: Definition.Event)
     case PhoneBlurred(value: String)
+    case SeedInvalidDate
     case CheckboxBlurred(value: String)
     case SelectChoice(value: String)
     case RemoveRow(key: RowGroup.Key)
@@ -251,6 +269,7 @@ object TypedFormFeedbackLiveView:
         Name.initial(""),
         Email.initial(""),
         Phone.initial(""),
+        Date.initial(""),
         Choice.initial(""),
         Checkbox.initial(None),
         Select.initial(Vector.empty),

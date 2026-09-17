@@ -284,6 +284,72 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("exposes tel, date, and search helpers with generic input and refined values") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum Msg:
+          case Focused(value: String)
+          case Updated, Submitted
+
+        def render[Owner, Input, Value](
+          field: FormFieldView[Owner, Input, Value],
+          signal: Signal[FormFieldView[Owner, Input, Value]],
+          control: FormControl[Owner, Input, Value, Msg]
+        ): Vector[HtmlElement[Msg]] =
+          val staticWithMessage = field.tel(
+            field.validationAttributes,
+            placeholder := "Telephone",
+            on.focus.withValue(Msg.Focused.apply)
+          )
+          val signalWithMessage = signal.date(
+            signal.validationAttributes,
+            Vector(cls := "date"),
+            on.focus.withValue(Msg.Focused.apply)
+          )
+          val controlWithMessage = control.search(
+            Option(placeholder := "Search"),
+            on.focus.withValue(Msg.Focused.apply)
+          )
+          Vector(
+            field.tel(),
+            field.date(),
+            field.search(),
+            signal.tel(),
+            signal.date(),
+            signal.search(),
+            control.tel(),
+            control.date(),
+            control.search(),
+            input(typ := "number", control.inputAttributes, control.validationAttributes),
+            staticWithMessage,
+            signalWithMessage,
+            controlWithMessage
+          )
+
+        final case class Refined(value: String)
+        val root = FormRoot("contact")
+        val field = root.text("value").emap { raw =>
+          if raw.nonEmpty then Right(Refined(raw))
+          else Left(FieldIssues.one(FieldIssue("Required")))
+        }
+        val definition = root.product[Tuple1[Refined]](Tuple1(field))
+
+        def refined(form: Signal[definition.Form]): Vector[HtmlElement[Msg]] =
+          val binding = form.bind[Msg](
+            DomRef("contact-form"),
+            _ => Msg.Updated,
+            _ => Msg.Submitted
+          )
+          render(
+            definition.initial(field.initial("raw")).field(field),
+            form.field(field),
+            binding.field(field)
+          )
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
     test("projects core row-presence controls and attaches row errors to stable addresses") {
       val data = FormData(
         Vector(

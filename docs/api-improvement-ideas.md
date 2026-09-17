@@ -192,8 +192,9 @@ There is no new signal mutation, reactive effect, or `flatMap` API.
 **Status.** Partially implemented: `FieldInput.checkbox` provides a strict Boolean codec,
 with API, workflow, and binding tests plus a
 [compiled recipe](../documentation/site/src/scalive/docs/examples/FormRecipes.scala).
-Native bindings, refinement conveniences, and repeated-choice identity remain proposals.
-No consumer migration is included.
+Native `tel`, `date`, and `search` helpers are available on bound controls, field views,
+and signal-backed field views. Refinement conveniences and repeated-choice identity
+remain proposals. No consumer migration is included.
 
 **Evidence.** `src/settings/appointmenttypes/AppointmentTypeForm.scala:41-72` manually decodes
 checkbox values as absent/false or a single `"true"`/true value, then manually performs the inverse
@@ -216,19 +217,26 @@ Encoding false omits the value; encoding true emits the configured token. Custom
 are supported; the renderer must use the same token. Root and repeated-row fields use the existing
 `field` constructor. See the [control guide](../documentation/content/guides/typed-forms-and-validation.md#render-richer-controls).
 
-**Remaining direction.** Complete small native bindings such as `control.tel`, `control.date`, and
-`control.search` using the existing identity, value, and blur safeguards.
+**Implemented native helpers.** `control.tel`, `control.date`, and `control.search` reuse the
+existing scoped identity, raw value, blur wiring, and binding-owned attribute safeguards.
+The corresponding plain and signal-backed field-view helpers preserve their existing logical
+identity and modifier behavior. ARIA remains opt-in; no parsing or validation is inferred from
+the input type. The [blur example](../documentation/site/src/scalive/docs/examples/BlurFeedbackExample.scala)
+now uses the telephone helper instead of manual input assembly.
 
-Consider small helpers for `Option`-returning refinements before introducing a larger validation
-DSL. For repeated choices, investigate an item binding that provides a shared field name but a
+**Remaining direction.** Consider small helpers for `Option`-returning refinements before introducing
+a larger validation DSL. For repeated choices, investigate an item binding that provides a shared field name but a
 unique item ID and label target. A signal-valued checkbox overload alone does not solve identity.
 
 **Boundaries and verification.** Codec tests cover malformed and duplicate values, custom and empty
 tokens, initial values, unchecked submission, repeated-row presence, unchanged-value/revision
-behavior, and binding feedback. Remaining bindings must preserve binding-owned attribute rejection
-and provide unique repeated-choice IDs. Preserve invalid intermediate numeric/date strings. Do not infer
-domain parsing from an HTML input type, globally trim text, or silently preserve disabled controls;
-these are separate application policies.
+behavior, and binding feedback. Native-helper tests cover public typing, retained raw values,
+reactive updates, identity, attribute ownership, and blur behavior. Browser tests distinguish
+date attributes and retained server values from the native sanitized value and subsequent form
+snapshots. Raw strings remain in server state until replaced, but native controls may not display
+malformed intermediate values; use text controls when that is required. Repeated choices still
+need unique item IDs. Do not infer domain parsing from an HTML input type, globally trim text, or
+silently preserve disabled controls; these are separate application policies.
 
 ### 5. Public Typed Layout-Context Projection
 

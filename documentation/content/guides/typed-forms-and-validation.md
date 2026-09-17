@@ -470,10 +470,10 @@ emailField.errorFeedback { error =>
 }
 ```
 
-`FormFieldView` currently provides `text`, `email`, `password`, `hidden`,
-`checkbox`, `textarea`, and `select` helpers. They append caller modifiers, so
-normal attributes such as `autocomplete`, `maxlength`, `required`, `multiple`,
-or CSS classes remain available:
+`FormFieldView`, its signal-backed operations, and `FormControl` provide `text`,
+`email`, `tel`, `date`, `search`, `password`, `hidden`, `checkbox`, `textarea`,
+and `select` helpers. Normal attributes such as `autocomplete`, `maxlength`,
+`required`, `multiple`, or CSS classes remain available:
 
 ```scala
 val bioField  = profileForm.field(Profile.Bio)
@@ -485,6 +485,14 @@ roleField.select(
   roleField.validationAttributes
 )
 ```
+
+The native `tel`, `date`, and `search` helpers render retained raw scalar values;
+they do not introduce parsing, trimming, or domain validation. Bound controls
+keep their form-instance-scoped identity and blur wiring and reject overrides
+of binding-owned attributes. Plain and signal-backed field views keep their
+logical field identity and append caller modifiers without those binding
+restrictions. On all three surfaces, ARIA feedback remains opt-in through
+`validationAttributes`.
 
 A checkbox is checked when its submitted value occurs in `rawValues`. Its
 default checked value is `"true"`, or pass an explicit value. The helper does
@@ -513,15 +521,22 @@ Requiring a checked value is a separate semantic rule, expressible with
 A select marks every option found in `rawValues`; for a `multiple` select, use a
 repeated-value field such as `Root.texts`.
 
-There are no current typed convenience helpers for numeric, date, radio-group,
+There are no current input rendering helpers for numeric, radio-group,
 or file controls. Use `Root.field` plus ordinary HTML controls for custom
 decoding, and use `liveFileInput` with the upload API for files. The existing
 helpers preserve raw strings; they do not parse numbers or dates implicitly.
 
+An unfocused native date input can receive an invalid `value` attribute from a
+server update while exposing an empty DOM `input.value`. A later form snapshot
+contains the browser's current value, not the original attribute, and can
+replace the retained server value.
+Use a text input when arbitrary malformed date text must remain editable and
+visible.
+
 A custom `FieldInput` defines both structural decoding and the inverse used by
 typed server updates. The field view continues to render `fieldValue` from the
-retained raw values, so malformed browser text remains visible even when input
-decoding fails:
+retained raw values rather than the decoded domain value. A text control can
+therefore show malformed input even when decoding fails:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-custom-field-input)
 

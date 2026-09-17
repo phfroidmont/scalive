@@ -3098,6 +3098,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FormControl.date",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.date",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.date:af8f6713c274658e",
+          "signature" : "def date(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormControl.email",
       "ownerId" : "class:scalive.FormControl",
       "qualifiedName" : "scalive.FormControl.email",
@@ -3246,6 +3258,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FormControl.search",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.search",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.search:ad79bf662515bdee",
+          "signature" : "def search(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormControl.select",
       "ownerId" : "class:scalive.FormControl",
       "qualifiedName" : "scalive.FormControl.select",
@@ -3254,6 +3278,18 @@
         {
           "id" : "def:scalive.FormControl.select:dad9da82d10869a4",
           "signature" : "def select(options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControl.tel",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.tel",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.tel:bd0e1d11a45c2ee4",
+          "signature" : "def tel(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -3998,6 +4034,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FormFieldView.date",
+      "ownerId" : "class:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.date",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormFieldView.date:23285868adc8a5ca",
+          "signature" : "def date[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormFieldView.email",
       "ownerId" : "class:scalive.FormFieldView",
       "qualifiedName" : "scalive.FormFieldView.email",
@@ -4166,6 +4214,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FormFieldView.search",
+      "ownerId" : "class:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.search",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormFieldView.search:fd4ea6e1eef42ece",
+          "signature" : "def search[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormFieldView.select",
       "ownerId" : "class:scalive.FormFieldView",
       "qualifiedName" : "scalive.FormFieldView.select",
@@ -4174,6 +4234,18 @@
         {
           "id" : "def:scalive.FormFieldView.select:b5e7693db5d1da63",
           "signature" : "def select[Msg](options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormFieldView.tel",
+      "ownerId" : "class:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.tel",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormFieldView.tel:29a360b09103314f",
+          "signature" : "def tel[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -12510,6 +12582,18 @@
       ]
     },
     {
+      "id" : "extension:scalive.FormFieldView.date",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.date",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.date:f78a6b061f680f26",
+          "signature" : "extension def date[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "extension:scalive.FormFieldView.email",
       "ownerId" : "object:scalive.FormFieldView",
       "qualifiedName" : "scalive.FormFieldView.email",
@@ -12606,6 +12690,18 @@
       ]
     },
     {
+      "id" : "extension:scalive.FormFieldView.search",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.search",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.search:ada3df26da00b601",
+          "signature" : "extension def search[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "extension:scalive.FormFieldView.select",
       "ownerId" : "object:scalive.FormFieldView",
       "qualifiedName" : "scalive.FormFieldView.select",
@@ -12614,6 +12710,18 @@
         {
           "id" : "extension:scalive.FormFieldView.select:eaaaf698ebc65040",
           "signature" : "extension def select[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.FormFieldView.tel",
+      "ownerId" : "object:scalive.FormFieldView",
+      "qualifiedName" : "scalive.FormFieldView.tel",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.FormFieldView.tel:14d2e5cd977af82b",
+          "signature" : "extension def tel[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },

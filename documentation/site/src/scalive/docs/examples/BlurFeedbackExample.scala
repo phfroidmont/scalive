@@ -47,7 +47,7 @@ final class BlurFeedbackExample
       name.text(name.validationAttributes),
       name.errorFeedback(error => error.map(_.message)),
       label(forId := phone.id, "Phone"),
-      input(typ   := "tel", phone.inputAttributes, phone.validationAttributes),
+      phone.tel(phone.validationAttributes),
       phone.errorFeedback(error => error.map(_.message)),
       div(
         idAttr := choice.id,

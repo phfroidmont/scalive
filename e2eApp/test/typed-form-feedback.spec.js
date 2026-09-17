@@ -52,6 +52,7 @@ test("numeric debounce applies the latest typed value after its deadline", async
 
 test("scalar onBlur follows feedback once and normalizes its forwarded value", async ({ page }) => {
   const phone = input(page, "phone")
+  await expect(phone).toHaveAttribute("type", "tel")
   await phone.fill(" 123 ")
   await expect.poll(() => page.locator("#server-phone").textContent()).toBe(" 123 ")
   await page.locator("#outside").click()
@@ -60,6 +61,31 @@ test("scalar onBlur follows feedback once and normalizes its forwarded value", a
   await expect(page.locator("#blur-count")).toHaveText("1")
   await expect(page.locator("#phone-effect-count")).toHaveText("1")
   await expect(page.locator("#effects")).toContainText("update:blurred|phone: 123 ")
+})
+
+test("native date sanitization reaches the server through the next full-form snapshot", async ({ page }) => {
+  const date = input(page, "date")
+  const name = input(page, "name")
+  const serverDateRaw = page.locator("#server-date-raw")
+
+  await expect(date).toHaveAttribute("type", "date")
+  await expect(date).toHaveValue("")
+  await expect(serverDateRaw).toHaveText('[""]')
+  await expect(date).not.toBeFocused()
+
+  await page.locator("#seed-invalid-date").click()
+  await expect(serverDateRaw).toHaveText('["not-a-date"]')
+  await expect(date).toHaveAttribute("value", "not-a-date")
+  await expect(date).toHaveValue("")
+
+  await name.fill("snapshot trigger")
+  await expect(serverDateRaw).toHaveText('[""]')
+  await expect(date).toHaveAttribute("value", "")
+  await expect(date).toHaveValue("")
+
+  await date.fill("2026-09-18")
+  await expect(date).toHaveValue("2026-09-18")
+  await expect(serverDateRaw).toHaveText('["2026-09-18"]')
 })
 
 test("checkbox and multiple select serialize their complete values", async ({ page }) => {

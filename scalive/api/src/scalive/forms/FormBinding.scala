@@ -253,6 +253,20 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
   def email(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "email", inputAttributes, controlModifiers(mods))
 
+  /** Renders a telephone input from the retained raw scalar value. */
+  def tel(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    input(typ := "tel", inputAttributes, controlModifiers(mods))
+
+  /** Renders a date input without parsing the retained raw scalar value. Native browser
+    * sanitization can make invalid raw dates appear empty.
+    */
+  def date(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    input(typ := "date", inputAttributes, controlModifiers(mods))
+
+  /** Renders a search input from the retained raw scalar value. */
+  def search(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    input(typ := "search", inputAttributes, controlModifiers(mods))
+
   def password(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "password", inputAttributes, controlModifiers(mods))
 

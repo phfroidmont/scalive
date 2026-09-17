@@ -400,7 +400,8 @@ final class BoundFormField[Owner, Schema, Group, Input, Value] private[scalive] 
 
 /** Current renderable view of one static or row-bound field.
   *
-  * Rendering reads [[rawValues]], not the decoded result, so malformed user input remains visible.
+  * Rendering reads [[rawValues]], not the decoded result, preserving malformed input where the
+  * native control permits it. Browser sanitization can make invalid raw dates appear empty.
   */
 final class FormFieldView[Owner, Input, Value] private[scalive] (
   private val form: Form[Owner, ?, ?],
@@ -427,7 +428,7 @@ final class FormFieldView[Owner, Input, Value] private[scalive] (
           row.fields.get(FormDefinition.names(relative))
         }.getOrElse(Vector.empty)
 
-  /** Conventional scalar control value: the last submitted value, or empty when absent. */
+  /** Conventional scalar control value: the last retained raw value, or empty when absent. */
   def fieldValue: String = rawValues.lastOption.getOrElse("")
 
   /** Structurally decoded editable input before semantic refinement. */
@@ -468,6 +469,38 @@ final class FormFieldView[Owner, Input, Value] private[scalive] (
   def email[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     _root_.scalive.input(
       typ      := "email",
+      idAttr   := id,
+      nameAttr := name,
+      value    := fieldValue,
+      Mod.flatten(mods)
+    )
+
+  /** Renders a telephone input from the retained raw scalar value. */
+  def tel[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    _root_.scalive.input(
+      typ      := "tel",
+      idAttr   := id,
+      nameAttr := name,
+      value    := fieldValue,
+      Mod.flatten(mods)
+    )
+
+  /** Renders a date input without parsing the retained raw scalar value. Native browser
+    * sanitization can make invalid raw dates appear empty.
+    */
+  def date[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    _root_.scalive.input(
+      typ      := "date",
+      idAttr   := id,
+      nameAttr := name,
+      value    := fieldValue,
+      Mod.flatten(mods)
+    )
+
+  /** Renders a search input from the retained raw scalar value. */
+  def search[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    _root_.scalive.input(
+      typ      := "search",
       idAttr   := id,
       nameAttr := name,
       value    := fieldValue,
@@ -593,6 +626,38 @@ object FormFieldView:
     def email[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       input(
         typ      := "email",
+        idAttr   := field.id,
+        nameAttr := field.name,
+        value    := field.map(_.fieldValue),
+        Mod.flatten(mods)
+      )
+
+    /** Renders a signal-backed telephone input from the retained raw scalar value. */
+    def tel[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      input(
+        typ      := "tel",
+        idAttr   := field.id,
+        nameAttr := field.name,
+        value    := field.map(_.fieldValue),
+        Mod.flatten(mods)
+      )
+
+    /** Renders a signal-backed date input without parsing the retained raw scalar value. Native
+      * browser sanitization can make invalid raw dates appear empty.
+      */
+    def date[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      input(
+        typ      := "date",
+        idAttr   := field.id,
+        nameAttr := field.name,
+        value    := field.map(_.fieldValue),
+        Mod.flatten(mods)
+      )
+
+    /** Renders a signal-backed search input from the retained raw scalar value. */
+    def search[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      input(
+        typ      := "search",
         idAttr   := field.id,
         nameAttr := field.name,
         value    := field.map(_.fieldValue),

@@ -7,7 +7,7 @@ import scalive.*
 
 object FormFieldViewRenderingSpec extends ZIOSpecDefault:
   private val Profile = FormRoot("profile")
-  private val Name = Profile.text("name").validateAll { value =>
+  private val Name    = Profile.text("name").validateAll { value =>
     Vector(
       Option.when(value.isEmpty)(FieldIssue("validation.required", Some("required"))),
       Option.when(value.length < 2)(FieldIssue("validation.too_short", Some("too_short")))
@@ -21,6 +21,86 @@ object FormFieldViewRenderingSpec extends ZIOSpecDefault:
   )
 
   override def spec = suite("FormFieldViewRenderingSpec")(
+    test("static tel, date and search inputs preserve raw values and caller attributes") {
+      // Name intentionally uses a text codec: these helpers render, rather than parse, dates.
+      val cases = Vector(
+        ("tel", " +32 0123 456 "),
+        ("date", "2026-02-30"),
+        ("search", "  Ada Lovelace  ")
+      )
+
+      ZIO
+        .foreach(cases) { case (inputType, rawValue) =>
+          val field = Definition
+            .event(FormData(Vector(Name.name -> rawValue)), FormEventKind.Submitted)
+            .form
+            .field(Name)
+          val compiled = RenderProgram.compile[Unit, Nothing] { _ =>
+            inputType match
+              case "tel" =>
+                field.tel(cls := "caller-control", dataAttr("scope") := "name")
+              case "date" =>
+                field.date(cls := "caller-control", dataAttr("scope") := "name")
+              case _ =>
+                field.search(cls := "caller-control", dataAttr("scope") := "name")
+          }
+
+          for
+            program   <- ZIO.fromEither(compiled)
+            candidate <- program.evaluate(())
+          yield assertTrue(
+            HtmlRenderer.render(candidate.tree) ==
+              s"<input type=\"$inputType\" id=\"${field.id}\" name=\"profile[name]\" value=\"$rawValue\" class=\"caller-control\" data-scope=\"name\">"
+          )
+        }.map(_.reduce(_ && _))
+    },
+    test("signal tel, date and search inputs update raw values using the previous commit") {
+      val cases = Vector(
+        ("tel", " +32 0123 456 ", "  +44 020 1234  "),
+        ("date", "2026-02-30", " 2026-13-40 "),
+        ("search", "  Ada Lovelace  ", " Grace Hopper ")
+      )
+
+      ZIO
+        .foreach(cases) { case (inputType, beforeValue, afterValue) =>
+          val initial  = Definition.initial(Name.initial(beforeValue))
+          val updated  = Definition.initial(Name.initial(afterValue))
+          val fieldId  = initial.field(Name).id
+          val compiled = RenderProgram.compile[Definition.Form, Nothing] { form =>
+            val field = form.field(Name)
+            inputType match
+              case "tel" =>
+                field.tel(
+                  field.validationAttributes,
+                  cls               := "caller-control",
+                  dataAttr("scope") := "name"
+                )
+              case "date" =>
+                field.date(
+                  field.validationAttributes,
+                  cls               := "caller-control",
+                  dataAttr("scope") := "name"
+                )
+              case _ =>
+                field.search(
+                  field.validationAttributes,
+                  cls               := "caller-control",
+                  dataAttr("scope") := "name"
+                )
+          }
+
+          for
+            program <- ZIO.fromEither(compiled)
+            before  <- program.evaluate(initial)
+            after   <- program.evaluate(updated, Some(before.commit))
+          yield assertTrue(
+            HtmlRenderer.render(before.tree) ==
+              s"<input type=\"$inputType\" id=\"$fieldId\" name=\"profile[name]\" value=\"$beforeValue\" aria-describedby=\"${fieldId}_errors\" class=\"caller-control\" data-scope=\"name\">",
+            HtmlRenderer.render(after.tree) ==
+              s"<input type=\"$inputType\" id=\"$fieldId\" name=\"profile[name]\" value=\"$afterValue\" aria-describedby=\"${fieldId}_errors\" class=\"caller-control\" data-scope=\"name\">"
+          )
+        }.map(_.reduce(_ && _))
+    },
     test("renders submitted errors through application-owned markup") {
       val field = Definition
         .event(FormData(Vector(Name.name -> "")), FormEventKind.Submitted)
@@ -66,36 +146,40 @@ object FormFieldViewRenderingSpec extends ZIOSpecDefault:
         hidden  <- program.evaluate(initial)
         shown   <- program.evaluate(visible, Some(hidden.commit))
         changed <- program.evaluate(updated, Some(shown.commit))
-        revealDelta = TreeDiffer.diff(hidden.tree, shown.tree)
-        updateDelta = TreeDiffer.diff(shown.tree, changed.tree)
-        fieldId     = initial.field(Name).id
+        revealDelta  = TreeDiffer.diff(hidden.tree, shown.tree)
+        updateDelta  = TreeDiffer.diff(shown.tree, changed.tree)
+        fieldId      = initial.field(Name).id
         fieldErrorId = initial.field(Name).errorId
       yield assertTrue(
-        HtmlRenderer.render(hidden.tree).contains(
-          s"<input type=\"text\" id=\"$fieldId\" name=\"profile[name]\" value=\"\" aria-describedby=\"$fieldErrorId\">"
-        ),
+        HtmlRenderer
+          .render(hidden.tree).contains(
+            s"<input type=\"text\" id=\"$fieldId\" name=\"profile[name]\" value=\"\" aria-describedby=\"$fieldErrorId\">"
+          ),
         HtmlRenderer.render(shown.tree).contains("aria-invalid=\"true\""),
-        HtmlRenderer.render(shown.tree).contains(
-          "<span class=\"form-error\">Name is required.</span><span class=\"form-error\">Name is too short.</span>"
-        ),
-        HtmlRenderer.render(changed.tree).contains(
-          "<span class=\"form-error\">Name is too short.</span>"
-        ),
+        HtmlRenderer
+          .render(shown.tree).contains(
+            "<span class=\"form-error\">Name is required.</span><span class=\"form-error\">Name is too short.</span>"
+          ),
+        HtmlRenderer
+          .render(changed.tree).contains(
+            "<span class=\"form-error\">Name is too short.</span>"
+          ),
         revealDelta match
           case RenderDelta.Update(_, changes) =>
             changes.exists(_.isInstanceOf[RenderChange.Keyed]) &&
-              !changes.exists(_.isInstanceOf[RenderChange.Replace])
+            !changes.exists(_.isInstanceOf[RenderChange.Replace])
           case _ => false,
         updateDelta match
           case RenderDelta.Update(_, changes) =>
             changes.exists {
               case RenderChange.Keyed(_, Vector(KeyedRowChange.Retain(_, nested))) =>
                 nested.exists(_.isInstanceOf[RenderChange.Text]) &&
-                  !nested.exists(_.isInstanceOf[RenderChange.Replace])
+                !nested.exists(_.isInstanceOf[RenderChange.Replace])
               case _ => false
             } && !changes.exists(_.isInstanceOf[RenderChange.Replace])
           case _ => false
       )
+      end for
     }
   )
 end FormFieldViewRenderingSpec

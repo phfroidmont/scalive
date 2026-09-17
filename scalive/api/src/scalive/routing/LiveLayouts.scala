@@ -20,6 +20,24 @@ final case class LiveRootLayoutContext[+A, +Ctx](
 trait LiveLayout[-A, -Ctx]:
   def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
 
+  /** Adapts this layout to another context type by selecting the context it needs.
+    *
+    * The selector must be pure and deterministic. It changes only this layout's input, not the
+    * route or session context; parameters, request, URL, and content are forwarded unchanged.
+    */
+  final def forContext[NewContext](select: NewContext => Ctx): LiveLayout[A, NewContext] =
+    new LiveLayout[A, NewContext]:
+      def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[A, NewContext]) =
+        LiveLayout.this.view(
+          content,
+          LiveLayoutContext(
+            context.params,
+            context.request,
+            context.currentUrl,
+            select(context.context)
+          )
+        )
+
 object LiveLayout:
   val identity: LiveLayout[Any, Any] = new LiveLayout[Any, Any]:
     def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) = content
@@ -30,16 +48,6 @@ object LiveLayout:
     def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[A, Ctx]) =
       render[Msg](content, context)
 
-  private[scalive] def contramapContext[A, Ctx, Ctx2](
-    layout: LiveLayout[A, Ctx],
-    f: Ctx2 => Ctx
-  ): LiveLayout[A, Ctx2] = new LiveLayout[A, Ctx2]:
-    def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[A, Ctx2]) =
-      layout.view(
-        content,
-        LiveLayoutContext(context.params, context.request, context.currentUrl, f(context.context))
-      )
-
 /** Declaratively renders and identifies the outer document shell. */
 trait LiveRootLayout[-A, -Ctx]:
   def key(context: LiveRootLayoutContext[A, Ctx]): String
@@ -48,6 +56,43 @@ trait LiveRootLayout[-A, -Ctx]:
     pageTitle: Option[String],
     context: LiveRootLayoutContext[A, Ctx]
   ): HtmlElement[Msg]
+
+  /** Adapts this document shell to another context type by selecting the context it needs.
+    *
+    * Key and render apply the selector independently, so it must be pure and deterministic.
+    * Parameters, request, URL, content, and page title are forwarded unchanged. This does not
+    * change the route or session context or make document-root attributes reactive. The identity
+    * root stays unchanged and does not evaluate the selector because it consumes no context.
+    */
+  final def forContext[NewContext](select: NewContext => Ctx): LiveRootLayout[A, NewContext] =
+    if this eq LiveRootLayout.identity then LiveRootLayout.identity
+    else
+      new LiveRootLayout[A, NewContext]:
+        def key(context: LiveRootLayoutContext[A, NewContext]) =
+          LiveRootLayout.this.key(
+            LiveRootLayoutContext(
+              context.params,
+              context.request,
+              context.currentUrl,
+              select(context.context)
+            )
+          )
+
+        def render[Msg](
+          content: HtmlElement[Msg],
+          pageTitle: Option[String],
+          context: LiveRootLayoutContext[A, NewContext]
+        ) = LiveRootLayout.this.render(
+          content,
+          pageTitle,
+          LiveRootLayoutContext(
+            context.params,
+            context.request,
+            context.currentUrl,
+            select(context.context)
+          )
+        )
+end LiveRootLayout
 
 object LiveRootLayout:
   val identity: LiveRootLayout[Any, Any] = new LiveRootLayout[Any, Any]:
@@ -84,27 +129,4 @@ object LiveRootLayout:
       context: LiveRootLayoutContext[A, Ctx]
     ) = renderRoot[Msg](content, pageTitle, context)
 
-  private[scalive] def contramapContext[A, Ctx, Ctx2](
-    layout: LiveRootLayout[A, Ctx],
-    f: Ctx2 => Ctx
-  ): LiveRootLayout[A, Ctx2] = new LiveRootLayout[A, Ctx2]:
-    def key(context: LiveRootLayoutContext[A, Ctx2]) =
-      layout.key(
-        LiveRootLayoutContext(
-          context.params,
-          context.request,
-          context.currentUrl,
-          f(context.context)
-        )
-      )
-
-    def render[Msg](
-      content: HtmlElement[Msg],
-      pageTitle: Option[String],
-      context: LiveRootLayoutContext[A, Ctx2]
-    ) = layout.render(
-      content,
-      pageTitle,
-      LiveRootLayoutContext(context.params, context.request, context.currentUrl, f(context.context))
-    )
 end LiveRootLayout

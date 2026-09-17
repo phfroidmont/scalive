@@ -128,12 +128,12 @@ object LiveRouteDefinition:
         sessionGuards
           .contramap((_: (SessionCtx, Ctx))._1)
           .andThen(connectedTurnGuards.contramap((_: (SessionCtx, Ctx))._2)),
-        sessionLayouts.map(LiveLayout.contramapContext(_, (_: (SessionCtx, Ctx))._1)) ++
-          layouts.map(LiveLayout.contramapContext(_, (_: (SessionCtx, Ctx))._2)),
+        sessionLayouts.map(_.forContext((_: (SessionCtx, Ctx))._1)) ++
+          layouts.map(_.forContext((_: (SessionCtx, Ctx))._2)),
         rootLayout
-          .map(LiveRootLayout.contramapContext(_, (_: (SessionCtx, Ctx))._2))
+          .map(_.forContext((_: (SessionCtx, Ctx))._2))
           .orElse(
-            sessionRootLayout.map(LiveRootLayout.contramapContext(_, (_: (SessionCtx, Ctx))._1))
+            sessionRootLayout.map(_.forContext((_: (SessionCtx, Ctx))._1))
           )
       )
   end Ordinary
@@ -168,12 +168,12 @@ object LiveRouteDefinition:
         sessionGuards
           .contramap((_: (SessionCtx, Ctx))._1)
           .andThen(connectedTurnGuards.contramap((_: (SessionCtx, Ctx))._2)),
-        sessionLayouts.map(LiveLayout.contramapContext(_, (_: (SessionCtx, Ctx))._1)) ++
-          layouts.map(LiveLayout.contramapContext(_, (_: (SessionCtx, Ctx))._2)),
+        sessionLayouts.map(_.forContext((_: (SessionCtx, Ctx))._1)) ++
+          layouts.map(_.forContext((_: (SessionCtx, Ctx))._2)),
         rootLayout
-          .map(LiveRootLayout.contramapContext(_, (_: (SessionCtx, Ctx))._2))
+          .map(_.forContext((_: (SessionCtx, Ctx))._2))
           .orElse(
-            sessionRootLayout.map(LiveRootLayout.contramapContext(_, (_: (SessionCtx, Ctx))._1))
+            sessionRootLayout.map(_.forContext((_: (SessionCtx, Ctx))._1))
           )
       )
   end Routed
@@ -335,8 +335,8 @@ class LiveRouteBuilder[A] private[scalive] (
     LiveRouteMountAspectBuilder(
       pathCodec,
       LiveRouteMountPipeline.Identity[A, In]().andThen(aspect),
-      layouts.map(LiveLayout.contramapContext(_, (_: Result) => ())),
-      rootLayout.map(LiveRootLayout.contramapContext(_, (_: Result) => ())),
+      layouts.map(_.forContext((_: Result) => ())),
+      rootLayout.map(_.forContext((_: Result) => ())),
       connectedTurnGuards.contramap((_: Result) => ())
     )
 
@@ -358,8 +358,8 @@ class LiveRouteBuilder[A] private[scalive] (
         LiveRouteContext.Required(),
         factory,
         connectedTurnGuards.contramap((_: Ctx) => ()),
-        layouts.map(LiveLayout.contramapContext(_, (_: Ctx) => ())),
-        rootLayout.map(LiveRootLayout.contramapContext(_, (_: Ctx) => ()))
+        layouts.map(_.forContext((_: Ctx) => ())),
+        rootLayout.map(_.forContext((_: Ctx) => ()))
       )
     )
 
@@ -381,16 +381,16 @@ class LiveRouteBuilder[A] private[scalive] (
   def context[Ctx, R: Tag, Msg, Model](
     factory: (A, Request, Ctx, R) => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Ctx } =
-    val requiredLayouts    = layouts.map(LiveLayout.contramapContext(_, (_: Ctx) => ()))
-    val requiredRootLayout = rootLayout.map(LiveRootLayout.contramapContext(_, (_: Ctx) => ()))
+    val requiredLayouts    = layouts.map(_.forContext((_: Ctx) => ()))
+    val requiredRootLayout = rootLayout.map(_.forContext((_: Ctx) => ()))
     LiveRoute(
       LiveRouteDefinition.Ordinary(
         pathCodec,
         LiveRouteContext.WithEnvironment(LiveRouteContext.Required(), summon[Tag[R]]),
         (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
         connectedTurnGuards.contramap((_: (Ctx, R)) => ()),
-        requiredLayouts.map(LiveLayout.contramapContext(_, (_: (Ctx, R))._1)),
-        requiredRootLayout.map(LiveRootLayout.contramapContext(_, (_: (Ctx, R))._1))
+        requiredLayouts.map(_.forContext((_: (Ctx, R))._1)),
+        requiredRootLayout.map(_.forContext((_: (Ctx, R))._1))
       )
     )
 
@@ -407,8 +407,8 @@ class LiveRouteBuilder[A] private[scalive] (
         LiveRouteContext.Environment(summon[Tag[R]]),
         factory,
         connectedTurnGuards.contramap((_: R) => ()),
-        layouts.map(LiveLayout.contramapContext(_, (_: R) => ())),
-        rootLayout.map(LiveRootLayout.contramapContext(_, (_: R) => ()))
+        layouts.map(_.forContext((_: R) => ())),
+        rootLayout.map(_.forContext((_: R) => ()))
       )
     )
 
@@ -451,8 +451,8 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
     LiveRouteMountAspectBuilder(
       pathCodec,
       pipeline.andThen(aspect),
-      layouts.map(LiveLayout.contramapContext(_, append.left)),
-      rootLayout.map(LiveRootLayout.contramapContext(_, append.left)),
+      layouts.map(_.forContext(append.left)),
+      rootLayout.map(_.forContext(append.left)),
       connectedTurnGuards.contramap(append.left)
     )
 
@@ -484,6 +484,14 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       connectedTurnGuards
     )
 
+  /** Appends a layout, selecting its input from the context available at this declaration. The pure
+    * selector adapts only the layout; later aspects preserve this context selection.
+    */
+  def withLayout[LayoutContext](
+    layout: LiveLayout[A, LayoutContext],
+    select: Ctx => LayoutContext
+  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] = withLayout(layout.forContext(select))
+
   def withRootLayout(
     layout: LiveRootLayout[A, Ctx]
   ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
@@ -494,6 +502,14 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       Some(layout),
       connectedTurnGuards
     )
+
+  /** Replaces the route root, selecting its input from this declaration's context. Key and render
+    * select independently, so the selector must be pure and deterministic.
+    */
+  def withRootLayout[LayoutContext](
+    layout: LiveRootLayout[A, LayoutContext],
+    select: Ctx => LayoutContext
+  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] = withRootLayout(layout.forContext(select))
 
   def params[Params](
     codec: LiveParamsCodec[A, Params]
@@ -570,8 +586,8 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
         LiveRouteContext.WithEnvironment(LiveRouteContext.Mounted(pipeline), summon[Tag[R1]]),
         (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
         connectedTurnGuards.contramap((_: (Ctx, R1))._1),
-        layouts.map(LiveLayout.contramapContext(_, (_: (Ctx, R1))._1)),
-        rootLayout.map(LiveRootLayout.contramapContext(_, (_: (Ctx, R1))._1))
+        layouts.map(_.forContext((_: (Ctx, R1))._1)),
+        rootLayout.map(_.forContext((_: (Ctx, R1))._1))
       )
     )
 
@@ -671,8 +687,8 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
         (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
         paramsCodec,
         connectedTurnGuards.contramap((_: (Ctx, R1))._1),
-        layouts.map(LiveLayout.contramapContext(_, (_: (Ctx, R1))._1)),
-        rootLayout.map(LiveRootLayout.contramapContext(_, (_: (Ctx, R1))._1))
+        layouts.map(_.forContext((_: (Ctx, R1))._1)),
+        rootLayout.map(_.forContext((_: (Ctx, R1))._1))
       )
     )
 
@@ -789,16 +805,16 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
         factory,
         paramsCodec,
         connectedTurnGuards.contramap((_: Ctx) => ()),
-        layouts.map(LiveLayout.contramapContext(_, (_: Ctx) => ())),
-        rootLayout.map(LiveRootLayout.contramapContext(_, (_: Ctx) => ()))
+        layouts.map(_.forContext((_: Ctx) => ())),
+        rootLayout.map(_.forContext((_: Ctx) => ()))
       )
     )
 
   def context[Ctx, R: Tag, Msg, Model](
     factory: (A, Request, Ctx, R) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Ctx } =
-    val requiredLayouts    = layouts.map(LiveLayout.contramapContext(_, (_: Ctx) => ()))
-    val requiredRootLayout = rootLayout.map(LiveRootLayout.contramapContext(_, (_: Ctx) => ()))
+    val requiredLayouts    = layouts.map(_.forContext((_: Ctx) => ()))
+    val requiredRootLayout = rootLayout.map(_.forContext((_: Ctx) => ()))
     LiveRoute(
       LiveRouteDefinition.Routed(
         pathCodec,
@@ -806,8 +822,8 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
         (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
         paramsCodec,
         connectedTurnGuards.contramap((_: (Ctx, R)) => ()),
-        requiredLayouts.map(LiveLayout.contramapContext(_, (_: (Ctx, R))._1)),
-        requiredRootLayout.map(LiveRootLayout.contramapContext(_, (_: (Ctx, R))._1))
+        requiredLayouts.map(_.forContext((_: (Ctx, R))._1)),
+        requiredRootLayout.map(_.forContext((_: (Ctx, R))._1))
       )
     )
 
@@ -826,8 +842,8 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
         factory,
         paramsCodec,
         connectedTurnGuards.contramap((_: R) => ()),
-        layouts.map(LiveLayout.contramapContext(_, (_: R) => ())),
-        rootLayout.map(LiveRootLayout.contramapContext(_, (_: R) => ()))
+        layouts.map(_.forContext((_: R) => ())),
+        rootLayout.map(_.forContext((_: R) => ()))
       )
     )
 
@@ -960,8 +976,8 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       name,
       pipeline.andThen(aspect),
       connectedTurnGuards.contramap(append.left),
-      layouts.map(LiveLayout.contramapContext(_, append.left)),
-      rootLayout.map(LiveRootLayout.contramapContext(_, append.left))
+      layouts.map(_.forContext(append.left)),
+      rootLayout.map(_.forContext(append.left))
     )
 
   /** Adds the session's single active-connection admission boundary.
@@ -981,15 +997,31 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       name,
       pipeline.admitThen(aspect, connectionId, connections),
       connectedTurnGuards.contramap(append.left),
-      layouts.map(LiveLayout.contramapContext(_, append.left)),
-      rootLayout.map(LiveRootLayout.contramapContext(_, append.left))
+      layouts.map(_.forContext(append.left)),
+      rootLayout.map(_.forContext(append.left))
     )
 
   def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(name, pipeline, connectedTurnGuards, layouts :+ value, rootLayout)
 
+  /** Appends a layout, selecting its input from the context available at this declaration. The pure
+    * selector adapts only the layout; later aspects preserve this context selection.
+    */
+  def withLayout[LayoutContext](
+    layout: LiveLayout[Any, LayoutContext],
+    select: Ctx => LayoutContext
+  ): LiveSessionBuilder[R, Ctx] = withLayout(layout.forContext(select))
+
   def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(name, pipeline, connectedTurnGuards, layouts, Some(value))
+
+  /** Replaces the session root, selecting its input from this declaration's context. Key and render
+    * select independently, so the selector must be pure and deterministic.
+    */
+  def withRootLayout[LayoutContext](
+    layout: LiveRootLayout[Any, LayoutContext],
+    select: Ctx => LayoutContext
+  ): LiveSessionBuilder[R, Ctx] = withRootLayout(layout.forContext(select))
 
   /** Appends a policy check before each connected application turn.
     *
@@ -1048,15 +1080,31 @@ object LiveSessionBuilder:
         name,
         pipeline.andThen(aspect),
         connectedTurnGuards.contramap(append.left),
-        layouts.map(LiveLayout.contramapContext(_, append.left)),
-        rootLayout.map(LiveRootLayout.contramapContext(_, append.left))
+        layouts.map(_.forContext(append.left)),
+        rootLayout.map(_.forContext(append.left))
       )
 
     def withLayout(value: LiveLayout[Any, Ctx]): Admitted[R, Ctx] =
       Admitted(name, pipeline, connectedTurnGuards, layouts :+ value, rootLayout)
 
+    /** Appends a layout, selecting its input from the context available at this declaration. The
+      * pure selector adapts only the layout; later aspects preserve this context selection.
+      */
+    def withLayout[LayoutContext](
+      layout: LiveLayout[Any, LayoutContext],
+      select: Ctx => LayoutContext
+    ): Admitted[R, Ctx] = withLayout(layout.forContext(select))
+
     def withRootLayout(value: LiveRootLayout[Any, Ctx]): Admitted[R, Ctx] =
       Admitted(name, pipeline, connectedTurnGuards, layouts, Some(value))
+
+    /** Replaces the session root, selecting its input from this declaration's context. Key and
+      * render select independently, so the selector must be pure and deterministic.
+      */
+    def withRootLayout[LayoutContext](
+      layout: LiveRootLayout[Any, LayoutContext],
+      select: Ctx => LayoutContext
+    ): Admitted[R, Ctx] = withRootLayout(layout.forContext(select))
 
     /** Appends a policy check before each connected application turn.
       *

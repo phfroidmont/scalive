@@ -5898,6 +5898,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveLayout.forContext",
+      "ownerId" : "trait:scalive.LiveLayout",
+      "qualifiedName" : "scalive.LiveLayout.forContext",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveLayout.forContext:4469a4155dc9059b",
+          "signature" : "def forContext[NewContext](select: NewContext => Ctx): LiveLayout[A, NewContext]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveLayout.view",
       "ownerId" : "trait:scalive.LiveLayout",
       "qualifiedName" : "scalive.LiveLayout.view",
@@ -6166,6 +6178,18 @@
         {
           "id" : "def:scalive.LiveRootLayout.dynamic:38d70e1ba4adfcd0",
           "signature" : "def dynamic[A, Ctx](rootKey: LiveRootLayoutContext[A, Ctx] => String)(renderRoot: (PolyFunction { def apply[Msg](x$1: HtmlElement[Msg], x$2: Option[String], x$3: LiveRootLayoutContext[A, Ctx])HtmlElement[Msg] })): LiveRootLayout[A, Ctx]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveRootLayout.forContext",
+      "ownerId" : "trait:scalive.LiveRootLayout",
+      "qualifiedName" : "scalive.LiveRootLayout.forContext",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRootLayout.forContext:2d036d7124860130",
+          "signature" : "def forContext[NewContext](select: NewContext => Ctx): LiveRootLayout[A, NewContext]"
         }
       ]
     },
@@ -6580,6 +6604,10 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.LiveRouteMountAspectBuilder.withLayout:6d1235a65ffe73a8",
+          "signature" : "def withLayout[LayoutContext](layout: LiveLayout[A, LayoutContext], select: Ctx => LayoutContext): LiveRouteMountAspectBuilder[R, A, Need, Ctx]"
+        },
+        {
           "id" : "def:scalive.LiveRouteMountAspectBuilder.withLayout:7edc328b4b990c37",
           "signature" : "def withLayout(layout: LiveLayout[A, Ctx]): LiveRouteMountAspectBuilder[R, A, Need, Ctx]"
         }
@@ -6603,6 +6631,10 @@
       "qualifiedName" : "scalive.LiveRouteMountAspectBuilder.withRootLayout",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteMountAspectBuilder.withRootLayout:5ccdc336a308d5a4",
+          "signature" : "def withRootLayout[LayoutContext](layout: LiveRootLayout[A, LayoutContext], select: Ctx => LayoutContext): LiveRouteMountAspectBuilder[R, A, Need, Ctx]"
+        },
         {
           "id" : "def:scalive.LiveRouteMountAspectBuilder.withRootLayout:d81e7fdc6a3ca3d5",
           "signature" : "def withRootLayout(layout: LiveRootLayout[A, Ctx]): LiveRouteMountAspectBuilder[R, A, Need, Ctx]"
@@ -6962,6 +6994,10 @@
         {
           "id" : "def:scalive.LiveSessionBuilder.Admitted.withLayout:2f22ec941e7512a3",
           "signature" : "def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder.Admitted[R, Ctx]"
+        },
+        {
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.withLayout:6d4d5eb83255902b",
+          "signature" : "def withLayout[LayoutContext](layout: LiveLayout[Any, LayoutContext], select: Ctx => LayoutContext): LiveSessionBuilder.Admitted[R, Ctx]"
         }
       ]
     },
@@ -6986,6 +7022,10 @@
         {
           "id" : "def:scalive.LiveSessionBuilder.Admitted.withRootLayout:5d09a86ea47436fa",
           "signature" : "def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder.Admitted[R, Ctx]"
+        },
+        {
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.withRootLayout:62c255e09df24a11",
+          "signature" : "def withRootLayout[LayoutContext](layout: LiveRootLayout[Any, LayoutContext], select: Ctx => LayoutContext): LiveSessionBuilder.Admitted[R, Ctx]"
         }
       ]
     },
@@ -7034,6 +7074,10 @@
         {
           "id" : "def:scalive.LiveSessionBuilder.withLayout:8aa610b403bca543",
           "signature" : "def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx]"
+        },
+        {
+          "id" : "def:scalive.LiveSessionBuilder.withLayout:d4ee0fb7cd3f6403",
+          "signature" : "def withLayout[LayoutContext](layout: LiveLayout[Any, LayoutContext], select: Ctx => LayoutContext): LiveSessionBuilder[R, Ctx]"
         }
       ]
     },
@@ -7058,6 +7102,10 @@
         {
           "id" : "def:scalive.LiveSessionBuilder.withRootLayout:57dda7296a959a9d",
           "signature" : "def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx]"
+        },
+        {
+          "id" : "def:scalive.LiveSessionBuilder.withRootLayout:a7d8f356ff44af29",
+          "signature" : "def withRootLayout[LayoutContext](layout: LiveRootLayout[Any, LayoutContext], select: Ctx => LayoutContext): LiveSessionBuilder[R, Ctx]"
         }
       ]
     },

@@ -221,6 +221,13 @@ these are separate application policies.
 
 ### 5. Public Typed Layout-Context Projection
 
+**Status.** Implemented as `layout.forContext[NewContext](select)` on ordinary and root layouts,
+with `withLayout(layout, select)` / `withRootLayout(root, select)` conveniences on typed session,
+admitted-session, and mounted-route builders. The private companion helpers were removed and
+internal callers migrated. See the
+[shared-shell example](../documentation/content/guides/layouts-sessions-and-mount-aspects.md#reuse-layouts-across-contexts).
+Consumer migration remains application work.
+
 **Evidence.** `src/RootLayout.scala:8-17,44-54` uses `LiveRootLayout[Any, Any]` and recursively
 searches nested tuples for language-bearing application contexts:
 
@@ -230,22 +237,24 @@ case (left, right) => contextLanguage(right).orElse(contextLanguage(left))
 
 This couples the shared document shell to the accumulated route-context representation.
 
-**Existing support.** [LiveLayouts](../scalive/api/src/scalive/routing/LiveLayouts.scala) already
-implements `contramapContext` for ordinary and root layouts, but keeps both helpers private.
-Typed wrappers installed at session or route boundaries can solve this today; the missing piece
-is a public composition operation. OsteoView currently installs its shell at the router
+**Support at assessment.** [LiveLayouts](../scalive/api/src/scalive/routing/LiveLayouts.scala) already
+implemented private `contramapContext` helpers for ordinary and root layouts. Typed wrappers
+installed at session or route boundaries could solve the problem, but public composition was
+missing. The reviewed OsteoView checkout installed its shell at the router
 (`src/OsteoViewApplication.scala:127`), whose root-layout API accepts `LiveRootLayout[Any, Any]`.
 
-**Proposed direction.** Expose typed context contramapping so the shared shell can consume a small
-document context, such as language, with explicit projections attached at the appropriate session
-or route boundaries. OsteoView must move the root installation to those boundaries; exposing
-contramapping alone does not make the router-level installation typed. Avoid runtime tuple search
-or a new context lookup mechanism.
+**Implemented composition.** `forContext` adapts an existing layout by selecting the context it
+needs. Installation selectors provide the same behavior without a separately named adapter.
+Later aspects preserve the context available at installation; neither operation changes the
+route's context or introduces a layout factory. Router-level installation remains context-free,
+so OsteoView must move context-dependent roots to typed session or route boundaries. There is
+no runtime tuple search or new context lookup mechanism.
 
-**Boundaries and verification.** Root key and render must use the same projected context. Preserve
-root-layout compatibility semantics and test public/private route composition. Projection does
-not make document-root attributes reactive during ordinary connected patches; language changes
-that require a different document shell must still respect root-key/navigation behavior.
+**Boundaries and verification.** Root key and render apply the same pure, deterministic selector
+independently. Tests cover public typing and inference, unchanged signal and request inputs,
+layout precedence, later aspects, and shared document contexts with signed root keys. Projection
+does not make document-root attributes reactive during ordinary connected patches; language
+changes still respect root-key/navigation behavior and named-session boundaries.
 
 ### 6. Effectful HTTP Form Validation Responses
 

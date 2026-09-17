@@ -100,6 +100,68 @@ Router layouts are outermost, followed by session layouts and route layouts.
 Within one level, registration order is preserved. Root layouts do not compose:
 a route root overrides a session root, which overrides the router root.
 
+## Reuse Layouts Across Contexts {#reuse-layouts-across-contexts}
+
+A shared shell should depend on the small context it needs, rather than an
+application-wide `Any` or a runtime search through accumulated context tuples.
+Use @:apiSymbol(def:scalive.LiveRootLayout.forContext)`forContext`@:@ to adapt an
+existing root layout to another context type:
+
+```scala
+// documentRoot expects DocumentContext; AccountContext contains .document.
+val accountRoot = documentRoot.forContext[AccountContext](_.document)
+```
+
+Ordinary layouts provide the same
+@:apiSymbol(def:scalive.LiveLayout.forContext)`forContext`@:@ operation. Read this
+as "use this layout for AccountContext, selecting the context it needs." It
+returns a reusable layout value; it does not change the route or session's
+context or construct a different layout for each request.
+
+When the selection is local to installation, pass the selector directly:
+
+```scala
+Live.session("account")
+  .withMountAspect(accountContext)
+  .withRootLayout(documentRoot, _.document)
+  .withLayout(documentLayout, _.document)
+```
+
+The builder supplies the selector's input type. These two-argument overloads
+are available on typed session builders, including admitted sessions, and on
+route builders after a mount aspect, before selecting `.params` or `.query`.
+Direct installation remains available
+when the layout already accepts the current context. The separate second
+argument keeps `.withRootLayout(root)(routes...)` unambiguous.
+
+Selection uses the context available **where the layout is installed**.
+Appending another mount aspect or admission afterward preserves that selection;
+it does not make the layout consume the final accumulated context. Only the
+layout's context value is adapted. Parameters, request, URL, message type,
+content, and root page title retain their existing behavior; ordinary layout
+inputs remain the original signals.
+
+Selectors must be pure and deterministic. A root layout applies the selector
+independently for `key` and `render`, not once per mount. Including language in a
+root key makes a language-dependent shell incompatible with a different-language
+shell; projection alone does not make `<html lang>` reactive during connected
+patches. Equal root keys also do not bypass named-session navigation boundaries.
+The identity root remains unchanged when adapted, preserving the default document
+shell without evaluating a selector for context it does not use.
+
+Router-level installation remains context-independent and accepts
+`LiveRootLayout[Any, Any]`. Install a context-dependent root at a typed session
+or route boundary instead. Plain route builders do not infer a layout context
+from a later `.context(factory)` call.
+
+This executable integration example shares one document shell across public
+and account contexts, retains an earlier layout through another aspect, and
+overrides the root for one mounted route. Its fixed context aspects demonstrate
+composition, not authentication; use real admission and authorization for
+protected routes.
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/LayoutContextExample.scala, shared-document-shell)
+
 ## Group Routes In A Named Live Session {#group-routes-in-a-named-session}
 
 A named live session applies common modifiers to several routes and defines which

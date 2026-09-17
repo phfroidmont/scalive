@@ -189,6 +189,12 @@ There is no new signal mutation, reactive effect, or `flatMap` API.
 
 ### 4. Common Form Codecs And Native Control Bindings
 
+**Status.** Partially implemented: `FieldInput.checkbox` provides a strict Boolean codec,
+with API, workflow, and binding tests plus a
+[compiled recipe](../documentation/site/src/scalive/docs/examples/FormRecipes.scala).
+Native bindings, refinement conveniences, and repeated-choice identity remain proposals.
+No consumer migration is included.
+
 **Evidence.** `src/settings/appointmenttypes/AppointmentTypeForm.scala:41-72` manually decodes
 checkbox values as absent/false or a single `"true"`/true value, then manually performs the inverse
 conversion during initialization. Equivalent conventions appear in automatic-reminder and
@@ -199,23 +205,28 @@ telephone-specific attributes; the birthday field uses this helper with `inputTy
 line 667. `src/patient/PatientsPage.scala:753-782` manually constructs checkboxes for a signal-backed
 label collection.
 
-**Existing support.** [FieldInput](../scalive/api/src/scalive/forms/FieldInput.scala) supports custom
+**Support at assessment.** [FieldInput](../scalive/api/src/scalive/forms/FieldInput.scala) supported custom
 bidirectional codecs plus text, optional text, and repeated text. [FormField](../scalive/api/src/scalive/forms/FormField.scala)
 already supports semantic refinement. [FormControl](../scalive/api/src/scalive/forms/FormBinding.scala)
 already supplies text, email, password, hidden, checkbox, textarea, and select bindings.
 
-**Proposed direction.** Add a strict `FieldInput.checkbox(...)`, optionally exposed as a root field
-constructor, so the accepted wire shape and encoding convention are defined together. Complete
-small native bindings such as `control.tel`, `control.date`, and `control.search` using the existing
-identity, value, and blur safeguards.
+**Implemented codec.** `Root.field("enabled", FieldInput.checkbox())` decodes absence as false,
+one exact checked token (default `"true"`) as true, and rejects other singletons or any duplicates.
+Encoding false omits the value; encoding true emits the configured token. Custom tokens and issues
+are supported; the renderer must use the same token. Root and repeated-row fields use the existing
+`field` constructor. See the [control guide](../documentation/content/guides/typed-forms-and-validation.md#render-richer-controls).
+
+**Remaining direction.** Complete small native bindings such as `control.tel`, `control.date`, and
+`control.search` using the existing identity, value, and blur safeguards.
 
 Consider small helpers for `Option`-returning refinements before introducing a larger validation
 DSL. For repeated choices, investigate an item binding that provides a shared field name but a
 unique item ID and label target. A signal-valued checkbox overload alone does not solve identity.
 
-**Boundaries and verification.** Explicitly reject malformed and duplicate checkbox values. Test
-unchecked submission, initial values, feedback wiring, binding-owned attribute rejection, and
-unique repeated-choice IDs. Preserve invalid intermediate numeric/date strings. Do not infer
+**Boundaries and verification.** Codec tests cover malformed and duplicate values, custom and empty
+tokens, initial values, unchecked submission, repeated-row presence, unchanged-value/revision
+behavior, and binding feedback. Remaining bindings must preserve binding-owned attribute rejection
+and provide unique repeated-choice IDs. Preserve invalid intermediate numeric/date strings. Do not infer
 domain parsing from an HTML input type, globally trim text, or silently preserve disabled controls;
 these are separate application policies.
 

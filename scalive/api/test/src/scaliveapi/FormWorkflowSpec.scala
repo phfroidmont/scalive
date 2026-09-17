@@ -11,6 +11,37 @@ object FormWorkflowSpec extends ZIOSpecDefault:
   private val Definition = Root.product[Draft](Tuple1(Name))
 
   def spec = suite("FormWorkflowSpec")(
+    test("keeps absent false checkboxes clean and tracks checked then unchecked revisions") {
+      val root       = FormRoot("settings")
+      val enabled    = root.field("enabled", FieldInput.checkbox())
+      val definition = root.product[Tuple1[Boolean]](Tuple1(enabled))
+      val initial    = definition.initial(enabled.initial(false))
+      val workflow   = definition.workflow[Unit](initial)
+      val absent     = definition.event(FormData.empty, FormEventKind.Submitted).form
+      val interacted = workflow.updated(absent)
+      val submitted  = definition
+        .event(FormData(Vector(enabled.name -> "true")), FormEventKind.Submitted)
+        .form
+      val checked   = interacted.updated(submitted)
+      val unchecked = checked.updated(absent)
+
+      assertTrue(
+        !workflow.isDirty,
+        workflow.revision == FormRevision.initial,
+        interacted.current.valueOption.contains(Tuple1(false)),
+        interacted.current.values == initial.values,
+        interacted.current.interaction.visibility == ErrorVisibility.All,
+        !interacted.isDirty,
+        interacted.revision == FormRevision.initial,
+        checked.current.valueOption.contains(Tuple1(true)),
+        checked.isDirty,
+        checked.revision.value == 1L,
+        unchecked.current.valueOption.contains(Tuple1(false)),
+        unchecked.current.values == initial.values,
+        !unchecked.isDirty,
+        unchecked.revision.value == 2L
+      )
+    },
     test("tracks exact dirty values and revisions but not interaction") {
       val initial  = Definition.initial(Name.initial("Ada"))
       val workflow = Definition.workflow[Unit](initial)

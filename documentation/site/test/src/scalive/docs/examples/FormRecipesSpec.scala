@@ -8,7 +8,7 @@ object FormRecipesSpec extends ZIOSpecDefault:
   override def spec = suite("FormRecipesSpec")(
     test("attaches cross-field refinement to the confirmation address") {
       val registration = FormRecipes.RegistrationForm
-      val form = registration.Definition
+      val form         = registration.Definition
         .event(
           FormData(
             Vector(
@@ -26,9 +26,27 @@ object FormRecipesSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("initializes a Boolean checkbox and decodes unchecked and malformed submissions") {
+      val notifications = FormRecipes.NotificationForm
+      val unchecked     = notifications.Definition.event(FormData.empty, FormEventKind.Submitted)
+      val malformed     = notifications.Definition.event(
+        FormData(Vector(notifications.Enabled.name -> "false")),
+        FormEventKind.Submitted
+      )
+
+      assertTrue(
+        notifications.initial.valueOption.contains(notifications.Preferences(true)),
+        notifications.initial.field(notifications.Enabled).rawValues == Vector("true"),
+        unchecked.valueOption.contains(notifications.Preferences(false)),
+        unchecked.form.field(notifications.Enabled).rawValues.isEmpty,
+        malformed.valueOption.isEmpty,
+        malformed.form.field(notifications.Enabled).visibleErrors.map(_.code) ==
+          Vector(Some("invalid_checkbox"))
+      )
+    },
     test("keeps malformed custom-control input available for rendering") {
       val quantity = FormRecipes.QuantityForm
-      val form = quantity.Definition
+      val form     = quantity.Definition
         .event(
           FormData(Vector(quantity.Quantity.name -> "not-a-number")),
           FormEventKind.Changed

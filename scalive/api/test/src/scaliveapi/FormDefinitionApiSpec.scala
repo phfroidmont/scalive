@@ -5,8 +5,8 @@ import zio.test.*
 import scalive.*
 
 object FormDefinitionApiSpec extends ZIOSpecDefault:
-  private final case class Profile(name: String, email: Email, tags: Vector[String])
-  private final case class Email(value: String)
+  final private case class Profile(name: String, email: Email, tags: Vector[String])
+  final private case class Email(value: String)
 
   private val ProfileRoot = FormRoot("profile")
   private val Name = ProfileRoot.text("name").map(_.trim).required(FieldIssue("Name is required"))
@@ -14,7 +14,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
     if value.contains('@') then Right(Email(value))
     else Left(FieldIssues.one(FieldIssue("Email is invalid", Some("invalid_email"))))
   }
-  private val Tags = ProfileRoot.texts("tags")
+  private val Tags              = ProfileRoot.texts("tags")
   private val ProfileDefinition = ProfileRoot.product[Profile]((Name, EmailField, Tags))
   private enum ProfileIntent(val wireValue: String):
     case Preview extends ProfileIntent("preview")
@@ -22,31 +22,166 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
   private val ProfileSubmitter =
     ProfileDefinition.submitter(ProfileIntent.values)(_.wireValue)
 
-  private final case class Qualification(title: String, year: String)
-  private final case class Application(name: String, qualifications: Vector[Qualification])
+  final private case class Qualification(title: String, year: String)
+  final private case class Application(name: String, qualifications: Vector[Qualification])
   private val ApplicationRoot = FormRoot("application")
   private val ApplicantName   = ApplicationRoot.text("name")
   private val Qualifications  = ApplicationRoot.rows("qualifications")
   private val Title = Qualifications.text("title").required(FieldIssue("Title is required"))
-  private val Year = Qualifications.text("year")
-  private val QualificationRows = Qualifications.product[Qualification]((Title, Year))
+  private val Year  = Qualifications.text("year")
+  private val QualificationRows     = Qualifications.product[Qualification]((Title, Year))
   private val ApplicationDefinition =
     ApplicationRoot.product[Application]((ApplicantName, QualificationRows))
   private val RowA = FormRowKey.from[Qualifications.type]("row_a").toOption.get
   private val RowB = FormRowKey.from[Qualifications.type]("row_b").toOption.get
 
   def spec = suite("FormDefinitionApiSpec")(
+    test("strictly decodes checkbox values and prioritizes duplicate issues") {
+      val codec   = FieldInput.checkbox()
+      val invalid = FieldIssues.one(
+        FieldIssue("has an invalid checkbox value", Some("invalid_checkbox"))
+      )
+      val duplicate = FieldIssues.one(
+        FieldIssue("must be submitted at most once", Some("duplicate_value"))
+      )
+      val malformed  = Vector("false", "on", "1", "", "TRUE", " ", " true", "true ")
+      val duplicates = Vector(
+        Vector("true", "true"),
+        Vector("true", "false"),
+        Vector("false", "true"),
+        Vector("false", "on"),
+        Vector("", "", "")
+      )
+
+      assertTrue(
+        codec.decode(Vector.empty) == Right(false),
+        codec.decode(Vector("true")) == Right(true),
+        malformed.forall(value => codec.decode(Vector(value)) == Left(invalid)),
+        duplicates.forall(raw => codec.decode(raw) == Left(duplicate))
+      )
+    },
+    test("round trips default, custom, and empty checkbox tokens and preserves custom issues") {
+      val codecs = Vector(
+        "true" -> FieldInput.checkbox(),
+        "yes"  -> FieldInput.checkbox("yes"),
+        ""     -> FieldInput.checkbox("")
+      )
+      val invalidIssue   = FieldIssue("Expected yes", Some("expected_yes"))
+      val duplicateIssue = FieldIssue("Only one checkbox value", Some("repeated_checkbox"))
+      val custom         = FieldInput.checkbox("yes", invalidIssue, duplicateIssue)
+
+      assertTrue(
+        codecs.forall { (token, codec) =>
+          codec.encode(false) == Vector.empty &&
+          codec.encode(true) == Vector(token) &&
+          Vector(false, true).forall(value => codec.decode(codec.encode(value)) == Right(value))
+        },
+        Vector("true", "YES", " yes ", "").forall { value =>
+          custom.decode(Vector(value)) == Left(FieldIssues.one(invalidIssue))
+        },
+        custom.decode(Vector("yes", "no")) == Left(FieldIssues.one(duplicateIssue)),
+        FieldInput.checkbox("").decode(Vector("", "")) == Left(
+          FieldIssues.one(FieldIssue("must be submitted at most once", Some("duplicate_value")))
+        ),
+        FieldInput.checkbox("").decode(Vector("true")) == Left(
+          FieldIssues.one(FieldIssue("has an invalid checkbox value", Some("invalid_checkbox")))
+        )
+      )
+    },
+    test("initializes and updates typed checkbox fields with canonical absent false values") {
+      val root       = FormRoot("settings")
+      val enabled    = root.field("enabled", FieldInput.checkbox())
+      val definition = root.product[Tuple1[Boolean]](Tuple1(enabled))
+      val initial    = definition.initial(enabled.initial(false))
+      val checked    = initial.updated(enabled, true)
+      val unchecked  = checked.updated(enabled, false)
+      val absent     = definition.event(FormData.empty, FormEventKind.Submitted).form
+
+      assertTrue(
+        initial.valueOption.contains(Tuple1(false)),
+        initial.field(enabled).input == Right(false),
+        initial.field(enabled).rawValues.isEmpty,
+        checked.valueOption.contains(Tuple1(true)),
+        checked.field(enabled).input == Right(true),
+        checked.field(enabled).rawValues == Vector("true"),
+        checked.values == definition.initial(enabled.initial(true)).values,
+        unchecked.valueOption.contains(Tuple1(false)),
+        unchecked.field(enabled).rawValues.isEmpty,
+        unchecked.values == initial.values,
+        absent.valueOption.contains(Tuple1(false)),
+        absent.field(enabled).rawValues.isEmpty,
+        absent.values == initial.values
+      )
+    },
+    test("retains malformed submitted checkbox values and visible structural errors") {
+      val root       = FormRoot("settings")
+      val enabled    = root.field("enabled", FieldInput.checkbox())
+      val definition = root.product[Tuple1[Boolean]](Tuple1(enabled))
+      val cases      = Vector(
+        Vector("false") -> FieldIssue("has an invalid checkbox value", Some("invalid_checkbox")),
+        Vector("true", "false") -> FieldIssue(
+          "must be submitted at most once",
+          Some("duplicate_value")
+        )
+      )
+
+      assertTrue(cases.forall { (raw, issue) =>
+        val data  = FormData(raw.map(enabled.name -> _))
+        val event = definition.event(data, FormEventKind.Submitted)
+        val field = event.form.field(enabled)
+
+        event.data.raw == data.raw &&
+        field.rawValues == raw &&
+        field.input == Left(FieldIssues.one(issue)) &&
+        field.visibleErrors.map(_.issue) == Vector(issue) &&
+        event.errors.all == Vector(FormError(enabled.address, issue)) &&
+        event.form.valueOption.isEmpty
+      })
+    },
+    test("retains checkbox-only rows with presence markers and typed true-to-false updates") {
+      val root       = FormRoot("settings")
+      val group      = root.rows("options")
+      val enabled    = group.field("enabled", FieldInput.checkbox())
+      val rows       = group.product[Tuple1[Boolean]](Tuple1(enabled))
+      val definition = root.product[Tuple1[Vector[Tuple1[Boolean]]]](Tuple1(rows))
+      val key        = FormRowKey.from[group.type]("row_a").toOption.get
+      val initial    = definition.initial(rows.initial(rows.row(key)(enabled.initial(false))))
+      val event      = definition.event(
+        FormData(Vector("settings[options][row_a][_scalive_row]" -> "1")),
+        FormEventKind.Submitted
+      )
+      val row       = event.form.rows(rows).head
+      val checked   = event.form.updated(row.bind(enabled), true)
+      val unchecked = checked.updated(row.bind(enabled), false)
+
+      assertTrue(
+        event.errors.all.isEmpty,
+        event.form.rows(rows).map(_.key) == Vector(key),
+        row.result.contains(Tuple1(false)),
+        row.field(enabled).input == Right(false),
+        row.field(enabled).rawValues.isEmpty,
+        event.form.values == initial.values,
+        checked.rows(rows).head.result.contains(Tuple1(true)),
+        checked.rows(rows).head.field(enabled).rawValues == Vector("true"),
+        unchecked.rows(rows).map(_.key) == Vector(key),
+        unchecked.rows(rows).head.result.contains(Tuple1(false)),
+        unchecked.rows(rows).head.field(enabled).rawValues.isEmpty,
+        unchecked.values == initial.values
+      )
+    },
     test("retains editable input after domain refinement and preserves duplicate raw input") {
       val initial = ProfileDefinition.initial(
         Name.initial(" Ada "),
         EmailField.initial("ada@example.com"),
         Tags.initial(Vector("scala", "liveview"))
       )
-      val updated = initial.updated(EmailField, "grace@example.com")
+      val updated   = initial.updated(EmailField, "grace@example.com")
       val duplicate = updated.updatedRaw(EmailField, Vector("first", "second"))
 
       assertTrue(
-        initial.valueOption.contains(Profile("Ada", Email("ada@example.com"), Vector("scala", "liveview"))),
+        initial.valueOption.contains(
+          Profile("Ada", Email("ada@example.com"), Vector("scala", "liveview"))
+        ),
         updated.valueOption.exists(_.email == Email("grace@example.com")),
         duplicate.field(EmailField).rawValues == Vector("first", "second"),
         duplicate.field(EmailField).fieldValue == "second",
@@ -57,8 +192,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
     test("projects metadata-free values and retains malformed payload diagnostics") {
       val ordinary = FormData(
         Vector(
-          Name.name       -> "Ada",
-          EmailField.name -> "ada@example.com",
+          Name.name          -> "Ada",
+          EmailField.name    -> "ada@example.com",
           "profile[unknown]" -> "ignored"
         )
       )
@@ -91,12 +226,12 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
           QualificationRows.row(RowB)(Title.initial("Logic"), Year.initial("1843"))
         )
       )
-      val reordered = form.movedBefore(QualificationRows, RowB, RowA)
-      val rowB       = reordered.rows(QualificationRows).head
-      val changed    = reordered.updated(rowB.bind(Title), "Symbolic logic")
-      val boundBeforeMove = form.rows(QualificationRows).head.bind(Title)
+      val reordered        = form.movedBefore(QualificationRows, RowB, RowA)
+      val rowB             = reordered.rows(QualificationRows).head
+      val changed          = reordered.updated(rowB.bind(Title), "Symbolic logic")
+      val boundBeforeMove  = form.rows(QualificationRows).head.bind(Title)
       val changedAfterMove = reordered.updated(boundBeforeMove, "Analysis")
-      val replaced = changed
+      val replaced         = changed
         .removed(QualificationRows, RowA)
         .added(QualificationRows, RowA)(Title.initial("Replacement"), Year.initial("1850"))
 
@@ -152,13 +287,13 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
     test("projects core row-presence controls and attaches row errors to stable addresses") {
       val data = FormData(
         Vector(
-          "application[name]"                                  -> "Ada",
-          "application[qualifications][row_b][_scalive_row]"   -> "1",
-          "application[qualifications][row_b][title]"          -> "",
-          "application[qualifications][row_b][year]"           -> "1843",
-          "application[qualifications][row_a][_scalive_row]"   -> "1",
-          "application[qualifications][row_a][title]"          -> "Mathematics",
-          "application[qualifications][row_a][year]"           -> "1835"
+          "application[name]"                                -> "Ada",
+          "application[qualifications][row_b][_scalive_row]" -> "1",
+          "application[qualifications][row_b][title]"        -> "",
+          "application[qualifications][row_b][year]"         -> "1843",
+          "application[qualifications][row_a][_scalive_row]" -> "1",
+          "application[qualifications][row_a][title]"        -> "Mathematics",
+          "application[qualifications][row_a][year]"         -> "1835"
         )
       )
       val event = ApplicationDefinition.event(data, FormEventKind.Submitted)
@@ -177,7 +312,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         FormData(
           Vector(
             "application[qualifications][bad key][_scalive_row]" -> "0",
-            "application[qualifications][orphan][title]"          -> "orphan"
+            "application[qualifications][orphan][title]"         -> "orphan"
           )
         ),
         FormEventKind.Changed
@@ -231,13 +366,13 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       val event = limited.event(
         FormData(
           Vector(
-            "application[name]"                                  -> "first",
-            "application[name]"                                  -> "second",
-            "application[name]"                                  -> "third",
-            "application[qualifications][row_a][_scalive_row]"   -> "1",
-            "application[qualifications][row_a][title]"          -> "",
-            "application[qualifications][row_b][_scalive_row]"   -> "1",
-            "application[qualifications][row_c][_scalive_row]"   -> "1"
+            "application[name]"                                -> "first",
+            "application[name]"                                -> "second",
+            "application[name]"                                -> "third",
+            "application[qualifications][row_a][_scalive_row]" -> "1",
+            "application[qualifications][row_a][title]"        -> "",
+            "application[qualifications][row_b][_scalive_row]" -> "1",
+            "application[qualifications][row_c][_scalive_row]" -> "1"
           )
         ),
         FormEventKind.Changed
@@ -256,7 +391,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       val declared   = root.text("declared")
       val undeclared = root.text("undeclared")
       val base       = root.product[Tuple1[String]](Tuple1(declared))
-      val refined = base.emap { _ =>
+      val refined    = base.emap { _ =>
         Left(FormErrors.one(undeclared.address, FieldIssue("wrong address")))
       }
       val form = refined.initial(declared.initial("value"))
@@ -306,7 +441,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       )
     },
     test("validates custom submitter names and finite enum mappings") {
-      val custom = ProfileDefinition.submitter(ProfileIntent.values, "action")(_.wireValue)
+      val custom      = ProfileDefinition.submitter(ProfileIntent.values, "action")(_.wireValue)
       val overlapping = scala.util.Try(
         ProfileDefinition.submitter(ProfileIntent.values, Name.name)(_.wireValue)
       )

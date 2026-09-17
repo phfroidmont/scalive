@@ -38,6 +38,36 @@ object FieldInput:
     value => Vector(value)
   )
 
+  /** A strict checkbox codec: absence is `false`; exactly one `checkedValue` is `true`.
+    *
+    * Matching is exact, including an empty checked token. Any other singleton reports
+    * `invalidIssue`; multiple values always report `duplicateIssue`, regardless of their tokens.
+    * Encoding omits `false` and emits only `checkedValue` for `true`; there is no hidden false
+    * value convention. Requiring the checkbox to be checked is a separate semantic refinement.
+    *
+    * Use the same token in the renderer: a field declared with `FieldInput.checkbox("yes")` should
+    * be rendered with `form.field(field).checkbox("yes")`.
+    */
+  def checkbox(
+    checkedValue: String = "true",
+    invalidIssue: FieldIssue = FieldIssue(
+      "has an invalid checkbox value",
+      Some("invalid_checkbox")
+    ),
+    duplicateIssue: FieldIssue = FieldIssue(
+      "must be submitted at most once",
+      Some("duplicate_value")
+    )
+  ): FieldInput[Boolean] = FieldInput(
+    {
+      case Vector()                               => Right(false)
+      case Vector(value) if value == checkedValue => Right(true)
+      case Vector(_)                              => Left(FieldIssues.one(invalidIssue))
+      case _                                      => Left(FieldIssues.one(duplicateIssue))
+    },
+    value => if value then Vector(checkedValue) else Vector.empty
+  )
+
   /** A single-value codec where absence and the configured `empty` value decode to `None`. */
   def optionalText(
     empty: String = "",

@@ -72,8 +72,9 @@ their semantic order remains the caller's responsibility.
 
 Use `text` for a scalar that treats absence as its default and rejects
 duplicates, `optionalText` for `Option[String]`, and `texts` for repeated
-values. Use `Root.field` with a `FieldInput` when a custom control must own
-decoding and encoding. Then compose normalization and domain refinement with
+values. Use `Root.field("enabled", FieldInput.checkbox())` for a Boolean
+checkbox, or supply a custom `FieldInput` to own decoding and encoding.
+Then compose normalization and domain refinement with
 `map`, `required`, `validate`, and `emap`:
 
 ```scala
@@ -164,7 +165,8 @@ val updatedForm = profileForm.updated(
 ```
 
 The input type comes from the field's `FieldInput`: `String` for `text`,
-`Option[String]` for `optionalText`, and `Vector[String]` for `texts`. Use
+`Option[String]` for `optionalText`, `Vector[String]` for `texts`, and `Boolean`
+for `checkbox`. Use
 `updatedRaw(field, Vector(...))` only when raw browser values are explicitly
 needed, such as malformed-control tests. The complete form is decoded again
 after every update, while its interaction state is preserved.
@@ -486,9 +488,30 @@ roleField.select(
 
 A checkbox is checked when its submitted value occurs in `rawValues`. Its
 default checked value is `"true"`, or pass an explicit value. The helper does
-not generate a hidden unchecked value, so model absence deliberately in the
-field decoder. A select marks every option found in `rawValues`; for a
-`multiple` select, use a repeated-value field such as `Root.texts`.
+not generate a hidden unchecked value. For a Boolean field, use
+@:apiSymbol(def:scalive.FieldInput.checkbox)`FieldInput.checkbox()`@:@ to pair
+strict decoding with typed initialization and updates:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-checkbox-input)
+
+The codec decodes absence as `false` and exactly one `"true"` value as `true`.
+Any other single value produces `invalid_checkbox`; multiple values produce
+`duplicate_value`, even when identical. Encoding `false` omits the value, while
+encoding `true` emits the checked token. Both issues are configurable through
+`invalidIssue` and `duplicateIssue`.
+
+Custom tokens must match on both sides: pair `FieldInput.checkbox("yes")` with
+`control.checkbox("yes")`. Matching is exact, without trimming or case folding;
+an explicitly configured empty token is distinct from absence. The default
+codec rejects `"on"` and `"false"`, and does not accept hidden unchecked fallback
+inputs. In change and submit payloads, omitted or disabled controls decode as
+false; the codec does not preserve their previous values. A checkbox-only repeated row
+still needs its `row.presence()` control to retain the row when unchecked.
+Requiring a checked value is a separate semantic rule, expressible with
+`field.validate(issue)(identity)`.
+
+A select marks every option found in `rawValues`; for a `multiple` select, use a
+repeated-value field such as `Root.texts`.
 
 There are no current typed convenience helpers for numeric, date, radio-group,
 or file controls. Use `Root.field` plus ordinary HTML controls for custom

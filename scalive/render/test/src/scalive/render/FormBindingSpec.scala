@@ -18,6 +18,15 @@ object FormBindingSpec extends ZIOSpecDefault:
     case Submitted(event: ProfileDefinition.Event)
     case BlurValue(value: String)
 
+  final private case class Consent(accepted: Boolean)
+  private val ConsentRoot       = FormRoot("consent")
+  private val Accepted          = ConsentRoot.field("accepted", FieldInput.checkbox())
+  private val ConsentDefinition = ConsentRoot.product[Consent](Tuple1(Accepted))
+
+  private enum ConsentMsg:
+    case Updated(update: ConsentDefinition.Update)
+    case Submitted(event: ConsentDefinition.Event)
+
   final private case class Item(name: String)
   final private case class Basket(items: Vector[Item])
   private val BasketRoot       = FormRoot("basket")
@@ -39,9 +48,9 @@ object FormBindingSpec extends ZIOSpecDefault:
         binding.render(binding.field(Name).onBlur(ProfileMsg.BlurValue("fixed")).text())
       }
       for
-        program <- ZIO.fromEither(compiled)
+        program   <- ZIO.fromEither(compiled)
         candidate <- program.evaluate(ProfileDefinition.initial())
-        id = candidate.bindings.ids.find(_.encoded.startsWith("j")).get
+        id      = candidate.bindings.ids.find(_.encoded.startsWith("j")).get
         message = candidate.bindings.resolve(id).get.dispatch(BindingPayload.Params(Map.empty))
       yield assertTrue(message == Right(BindingDispatch.Owner(ProfileMsg.BlurValue("fixed"))))
     },
@@ -79,6 +88,135 @@ object FormBindingSpec extends ZIOSpecDefault:
         !html.contains("profile-scalive-blur-trigger"),
         !html.contains("phx-blur=")
       )
+    },
+    test(
+      "Boolean checkbox initials and typed updates preserve binding identity and checked state"
+    ) {
+      val unchecked = ConsentDefinition.initial(Accepted.initial(false))
+      val checked   = ConsentDefinition.initial(Accepted.initial(true))
+
+      for
+        program      <- ZIO.fromEither(consentProgram())
+        initialFalse <- program.evaluate(unchecked)
+        initialTrue  <- program.evaluate(checked)
+        updatedTrue  <-
+          program.evaluate(unchecked.updated(Accepted, true), Some(initialFalse.commit))
+        updatedFalse <- program.evaluate(checked.updated(Accepted, false), Some(initialTrue.commit))
+        falseHtml  = HtmlRenderer.render(initialFalse.tree)
+        trueHtml   = HtmlRenderer.render(initialTrue.tree)
+        candidates = Vector(initialFalse, initialTrue, updatedTrue, updatedFalse)
+        controlId  = s"consent-${Accepted.address.id}"
+      yield assertTrue(
+        unchecked.valueOption.contains(Consent(false)),
+        checked.valueOption.contains(Consent(true)),
+        unchecked.field(Accepted).rawValues.isEmpty,
+        checked.field(Accepted).rawValues == Vector("true"),
+        !falseHtml.contains(" checked"),
+        trueHtml.contains(" checked"),
+        HtmlRenderer.render(updatedTrue.tree).contains(" checked"),
+        !HtmlRenderer.render(updatedFalse.tree).contains(" checked"),
+        candidates.forall { candidate =>
+          val html = HtmlRenderer.render(candidate.tree)
+          candidate.bindings.size == 3 &&
+          html.contains(s"id=\"$controlId\"") &&
+          html.contains(s"name=\"${Accepted.name}\"") &&
+          html.contains("type=\"checkbox\"") &&
+          html.contains("value=\"true\"") &&
+          html.contains(s"aria-describedby=\"${controlId}_errors\"") &&
+          html.contains(s"id=\"${controlId}_errors\" phx-feedback-for=\"${Accepted.name}\"") &&
+          !html.contains("aria-invalid=") &&
+          !html.contains("type=\"hidden\"")
+        }
+      )
+      end for
+    },
+    test("checkbox custom tokens agree with the codec, including an empty checked token") {
+      ZIO
+        .foreach(Vector("yes", "")) { token =>
+          val root       = FormRoot("consent")
+          val accepted   = root.field("accepted", FieldInput.checkbox(checkedValue = token))
+          val definition = root.product[Consent](Tuple1(accepted))
+          val checked    = definition.initial(accepted.initial(true))
+          val unchecked  = checked.updated(accepted, false)
+          val compiled   = RenderProgram.compile[definition.Form, Unit] { source =>
+            val binding = source.bind(DomRef("consent"), _ => (), _ => ())
+            binding.render(binding.field(accepted).checkbox(token))
+          }
+
+          for
+            program <- ZIO.fromEither(compiled)
+            before  <- program.evaluate(checked)
+            after   <- program.evaluate(unchecked, Some(before.commit))
+            beforeHtml = HtmlRenderer.render(before.tree)
+            afterHtml  = HtmlRenderer.render(after.tree)
+          yield assertTrue(
+            checked.valueOption.contains(Consent(true)),
+            unchecked.valueOption.contains(Consent(false)),
+            checked.field(accepted).rawValues == Vector(token),
+            unchecked.field(accepted).rawValues.isEmpty,
+            beforeHtml.contains(s"value=\"$token\""),
+            afterHtml.contains(s"value=\"$token\""),
+            beforeHtml.contains(" checked"),
+            !afterHtml.contains(" checked")
+          )
+        }.map(_.reduce(_ && _))
+    },
+    test("an absent checkbox change is unchanged from false and clears true") {
+      val unchecked = ConsentDefinition.initial(Accepted.initial(false))
+      val checked   = ConsentDefinition.initial(Accepted.initial(true))
+
+      for
+        program   <- ZIO.fromEither(consentProgram())
+        candidate <- program.evaluate(unchecked)
+        update = candidate.bindings
+                   .resolve(rootBinding(candidate, "phx-change")).get
+                   .dispatch(BindingPayload.Form(FormData(Vector.empty)))
+                   .toOption.collect { case BindingDispatch.Owner(ConsentMsg.Updated(value)) =>
+                     value
+                   }.get
+        fromFalse = update.applyTo(unchecked)
+        fromTrue  = update.applyTo(checked)
+      yield assertTrue(
+        fromFalse.kind == FormUpdateKind.Changed,
+        !fromFalse.valuesChanged,
+        fromFalse.form.valueOption.contains(Consent(false)),
+        fromTrue.valuesChanged,
+        fromTrue.form.valueOption.contains(Consent(false)),
+        fromTrue.form.field(Accepted).rawValues.isEmpty
+      )
+    },
+    test("checkbox submissions show invalid raw feedback while retaining checked tokens") {
+      val cases = Vector(
+        (Vector("false"), "invalid_checkbox", false),
+        (Vector("false", "true"), "duplicate_value", true)
+      )
+
+      ZIO
+        .foreach(cases) { case (raw, code, checked) =>
+          for
+            program   <- ZIO.fromEither(consentProgram())
+            candidate <- program.evaluate(ConsentDefinition.initial())
+            submitted = candidate.bindings
+                          .resolve(rootBinding(candidate, "phx-submit")).get
+                          .dispatch(BindingPayload.Form(FormData(raw.map(Accepted.name -> _))))
+                          .toOption.collect {
+                            case BindingDispatch.Owner(ConsentMsg.Submitted(event)) => event
+                          }.get
+            rendered <- program.evaluate(submitted.form, Some(candidate.commit))
+            field = submitted.form.field(Accepted)
+            html  = HtmlRenderer.render(rendered.tree)
+          yield assertTrue(
+            submitted.kind == FormEventKind.Submitted,
+            submitted.valueOption.isEmpty,
+            field.rawValues == raw,
+            field.visibleErrors.map(_.issue.code) == Vector(Some(code)),
+            submitted.form.interaction.visibility == ErrorVisibility.All,
+            html.contains("aria-invalid=\"true\""),
+            html.contains(s"<span class=\"form-error\">$code</span>"),
+            html.contains("value=\"true\""),
+            html.contains(" checked") == checked
+          )
+        }.map(_.reduce(_ && _))
     },
     test("AfterBlur renders its trigger and ordered marker command") {
       val compiled = profileProgram(FormFeedback.AfterBlur)
@@ -241,7 +379,7 @@ object FormBindingSpec extends ZIOSpecDefault:
       val initial = BasketDefinition.initial(
         ItemRows.initial(ItemRows.row(RowA)(ItemName.initial("row-a-value")))
       )
-      val bound = initial.rows(ItemRows).head.bind(ItemName)
+      val bound    = initial.rows(ItemRows).head.bind(ItemName)
       val compiled = RenderProgram.compile[BasketDefinition.Form, BasketMsg] { source =>
         val binding = source.bind(DomRef("basket"), BasketMsg.Updated(_), BasketMsg.Submitted(_))
         binding.render(binding.optionalField(bound)(_.text()))
@@ -288,12 +426,12 @@ object FormBindingSpec extends ZIOSpecDefault:
       )
       val bound = initial.rows(ItemRows).head.bind(ItemName)
 
-      val OtherRoot = FormRoot("basket")
-      val OtherItems = OtherRoot.rows("items")
-      val OtherName = OtherItems.text("name").required(FieldIssue("Item name is required"))
-      val OtherRows = OtherItems.product[Item](Tuple1(OtherName))
+      val OtherRoot       = FormRoot("basket")
+      val OtherItems      = OtherRoot.rows("items")
+      val OtherName       = OtherItems.text("name").required(FieldIssue("Item name is required"))
+      val OtherRows       = OtherItems.product[Item](Tuple1(OtherName))
       val OtherDefinition = OtherRoot.product[Basket](Tuple1(OtherRows))
-      val otherInitial = OtherDefinition.initial(
+      val otherInitial    = OtherDefinition.initial(
         OtherRows.initial(
           OtherRows.row(FormRowKey.from[OtherItems.type]("row_a").toOption.get)(
             OtherName.initial("foreign")
@@ -375,7 +513,7 @@ object FormBindingSpec extends ZIOSpecDefault:
     test("submission preserves previously blurred field history") {
       val compiled = profileProgram(FormFeedback.AfterBlur)
       val initial  = ProfileDefinition.initial(Name.initial("current"))
-      val blurred = FormUpdate
+      val blurred  = FormUpdate
         .blurred[ProfileRoot.type, ProfileDefinition.Schema, Profile, String, String](
           Name,
           FormFeedback.AfterBlur
@@ -412,7 +550,7 @@ object FormBindingSpec extends ZIOSpecDefault:
         program   <- ZIO.fromEither(compiled)
         candidate <- program.evaluate(ProfileDefinition.initial(Name.initial("Ada")))
         handlerId = candidate.bindings.ids.find(_.encoded.startsWith("j")).get
-        result = candidate.bindings
+        result    = candidate.bindings
                    .resolve(handlerId).get.dispatch(
                      BindingPayload.Params(Map("value" -> "from-browser"))
                    )
@@ -433,7 +571,7 @@ object FormBindingSpec extends ZIOSpecDefault:
         program   <- ZIO.fromEither(compiled)
         candidate <- program.evaluate(ProfileDefinition.initial(Name.initial("Ada")))
         handlerId = candidate.bindings.ids.find(_.encoded.startsWith("j")).get
-        result = candidate.bindings
+        result    = candidate.bindings
                    .resolve(handlerId).get.dispatch(BindingPayload.Params(Map.empty))
         html = HtmlRenderer.render(candidate.tree)
       yield assertTrue(
@@ -455,6 +593,16 @@ object FormBindingSpec extends ZIOSpecDefault:
       )
       val control = binding.field(Name)
       binding.render(control.text(control.validationAttributes))
+    }
+
+  private def consentProgram() =
+    RenderProgram.compile[ConsentDefinition.Form, ConsentMsg] { source =>
+      val binding = source.bind(DomRef("consent"), ConsentMsg.Updated(_), ConsentMsg.Submitted(_))
+      val control = binding.field(Accepted)
+      binding.render(
+        control.checkbox(control.validationAttributes),
+        control.errorFeedback(_.map(_.issue.code.getOrElse("")))
+      )
     }
 
   private def dispatchUpdate(

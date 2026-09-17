@@ -2306,6 +2306,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FieldInput.checkbox",
+      "ownerId" : "object:scalive.FieldInput",
+      "qualifiedName" : "scalive.FieldInput.checkbox",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FieldInput.checkbox:8e2f4b0e8d4d55e7",
+          "signature" : "def checkbox(checkedValue: String = ..., invalidIssue: FieldIssue = ..., duplicateIssue: FieldIssue = ...): FieldInput[Boolean]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FieldInput.decode",
       "ownerId" : "trait:scalive.FieldInput",
       "qualifiedName" : "scalive.FieldInput.decode",

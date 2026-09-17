@@ -65,6 +65,30 @@ object FormRecipes:
   end QuantityForm
   // docs:end form-custom-field-input
 
+  // docs:start form-checkbox-input
+  object NotificationForm:
+    final case class Preferences(enabled: Boolean)
+
+    val Root       = FormRoot("notifications")
+    val Enabled    = Root.field("enabled", FieldInput.checkbox())
+    val Definition = Root.product[Preferences](Tuple1(Enabled))
+    val initial    = Definition.initial(Enabled.initial(true))
+
+    enum Msg:
+      case Updated(update: Definition.Update)
+      case Submitted(event: Definition.Event)
+
+    def render(form: Signal[Definition.Form]): HtmlElement[Msg] =
+      val binding = form.bind(DomRef("notifications-form"), Msg.Updated(_), Msg.Submitted(_))
+      val enabled = binding.field(Enabled)
+      binding.render(
+        label(forId := enabled.id, "Enable notifications"),
+        enabled.checkbox(enabled.validationAttributes),
+        enabled.errorFeedback(error => error.map(_.message)),
+        button(typ := "submit", "Save")
+      )
+  // docs:end form-checkbox-input
+
   // docs:start form-event-target
   object TargetedValidation:
     enum ChangedField:

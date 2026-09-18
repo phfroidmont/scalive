@@ -307,6 +307,12 @@ definition-backed `urlEncoded` constructor; that is not a separate missing featu
 
 ### 7. Condition-Based Waiting And Connected Snapshot Queries
 
+**Status.** Partially implemented: bounded `ConnectedView.awaitHtml` waiting is available with
+focused harness tests and a migrated private helper in the
+[async-report example spec](../documentation/site/test/src/scalive/docs/examples/AsyncReportExampleSpec.scala).
+Immutable parsed queries over retained HTML snapshots remain a proposal. No consumer migration
+is included.
+
 **Evidence.** `test/settings/labels/LabelsPageFixture.scala:52-61` implements a loop that reads
 `view.html`, tests a predicate, otherwise awaits a diff and repeats, with one overall deadline
 applied by a separate helper.
@@ -315,27 +321,32 @@ tests. Patient form/page tests also duplicate jsoup helpers to inspect values in
 snapshots.
 
 **Existing support.** [ConnectedView](../scalive/testing/src/scalive/testing/ConnectedRender.scala)
-provides `html`, `text`, and `awaitDiff`, but not condition-based waiting.
+provides `html`, `text`, `awaitDiff`, and now condition-based `awaitHtml`.
 [DisconnectedRender](../scalive/testing/src/scalive/testing/DisconnectedRender.scala) already has
 richer semantic field queries.
 
-**Proposed direction.** Add a bounded operation such as:
+**Implemented waiting.**
 
 ```scala
 view.awaitHtml("save confirmation", timeout)(predicate)
 ```
 
-Check the current snapshot first, enforce one overall deadline, and report the description and
-last observed HTML on timeout. Preserve the existing application helpers' overall-deadline behavior
-rather than restarting the timeout after every diff.
+The operation checks current HTML first, then rechecks after uncorrelated async diffs within one
+overall deadline. It returns the exact matching HTML; timeout diagnostics include the description,
+requested duration, and last observed HTML. The deadline does not restart after each diff or inherit
+`awaitDiff`'s five-second limit. See the
+[testing guide](../documentation/content/guides/testing.md#wait-for-an-html-condition).
 
-Separately, reuse existing query semantics in a small parsed HTML snapshot facility with
+**Remaining direction.** Reuse existing query semantics in a small immutable parsed HTML snapshot facility with
 exactly-one selection and attribute/value access. Supporting retained snapshots matters; a query
 of only the latest view would not remove the demonstrated comparison helpers.
 
-**Boundaries and verification.** Test immediate success, multiple intermediate diffs, no matching
-update, timeout diagnostics, and snapshot immutability. These are semantic server projections,
-not browser DOMs. Do not implicitly execute JavaScript or simulate successful-control selection.
+**Boundaries and verification.** Waiting tests cover current matches, intermediate diffs, bounded
+timeouts, diagnostics, predicate failures, and view retirement/disconnection. Predicates must be
+quick and nonblocking. Waiting consumes the same queue as `awaitDiff`: use a single waiter per view
+and finish correlated actions first. It never follows navigation. Checks observe the latest semantic
+server projection and can miss transient states; they are not browser DOMs. Test retained-snapshot
+immutability when adding parsed queries. Do not execute JavaScript or simulate successful-control selection.
 Application service fakes and authorization fixtures should remain in the application.
 
 ## Investigations

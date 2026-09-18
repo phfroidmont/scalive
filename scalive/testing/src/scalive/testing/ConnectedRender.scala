@@ -3,6 +3,7 @@ package scalive.testing
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.util.concurrent.TimeoutException
 import scala.jdk.CollectionConverters.*
 
 import org.jsoup.Jsoup
@@ -231,6 +232,19 @@ final class ConnectedView[-Msg] private[testing] (
 
   /** Returns the latest committed semantic HTML projection. */
   def html: UIO[String] = state.html
+
+  /** Returns the first observed HTML satisfying `predicate`, checking the current snapshot before
+    * waiting for uncorrelated output. One overall deadline bounds the wait; a timeout reports the
+    * description and last observed HTML. The deadline uses the current ZIO clock. Predicate
+    * exceptions and view closure fail the task.
+    *
+    * The predicate must be quick and nonblocking. Complete actions before waiting, and do not run
+    * concurrent `awaitHtml` or `awaitDiff` calls on this view: they consume the same notifications.
+    * This observes the latest server projection, not every intermediate state or the browser DOM.
+    */
+  def awaitHtml(description: String, timeout: Duration)(predicate: String => Boolean)
+    : Task[String] =
+    state.awaitHtml(description, timeout)(predicate)
 
   /** Returns the text of exactly one element matching `selector`. */
   def text(selector: String): Task[String] =
@@ -844,6 +858,38 @@ final private class ConnectedViewState(
 
   def isMissing: UIO[Boolean] =
     joined.get.flatMap(installed => ZIO.ifZIO(isJoined)(ZIO.succeed(false), ZIO.succeed(installed)))
+
+  def awaitHtml(description: String, timeout: Duration)(predicate: String => Boolean)
+    : Task[String] =
+    Ref.make(Option.empty[String]).flatMap { lastObserved =>
+      val closedFailure = ZIO.fail(
+        Exception(s"Connected LiveView '$topic' closed while waiting for '$description'.")
+      )
+
+      def loop: Task[String] =
+        for
+          alreadyClosed <- closed.isDone.zipWith(transport.isClosed)(_ || _)
+          _             <- ZIO.when(alreadyClosed)(closedFailure)
+          current       <- transport.html(topic, joinRef)
+          _             <- lastObserved.set(Some(current))
+          matches       <- ZIO.attempt(predicate(current))
+          result        <- if matches then ZIO.succeed(current) else diffs.take *> loop
+        yield result
+
+      val awaitClose = closed.await.raceFirst(transport.awaitClosed) *> closedFailure
+      loop.raceFirst(awaitClose).timeout(timeout).flatMap {
+        case Some(matchingHtml) => ZIO.succeed(matchingHtml)
+        case None               =>
+          lastObserved.get.flatMap { last =>
+            ZIO.fail(
+              new TimeoutException(
+                s"Timed out after $timeout waiting for '$description' on connected LiveView '$topic'.\n" +
+                  s"Last observed HTML:\n${last.getOrElse("<no HTML observed>")}"
+              )
+            )
+          }
+      }
+    }
 
   def awaitDiff: Task[Unit] =
     diffs.take.timeoutFail(Exception("Timed out waiting for connected output."))(5.seconds)

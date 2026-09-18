@@ -1409,6 +1409,8 @@ object ZioHttp:
 
     def awaitClosed: UIO[Unit] = closed.await
 
+    def isClosed: UIO[Boolean] = closed.isDone
+
     private def offer(make: Promise[Throwable, Unit] => InProcessInput): Task[Unit] =
       for
         completed <- Promise.make[Throwable, Unit]

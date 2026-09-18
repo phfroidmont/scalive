@@ -278,6 +278,47 @@ Actions return a @:apiSymbol(enum:scalive.testing.ConnectedAction)`ConnectedActi
 | @:apiSymbol(enum:scalive.testing.ConnectedAction.Redirect)`Redirect(to)`@:@ | A full redirect was emitted and the in-process transport closed. |
 | @:apiSymbol(val:scalive.testing.ConnectedAction.Disconnected)`Disconnected`@:@ | The transport closed before the correlated reply arrived. |
 
+### Wait For An HTML Condition {#wait-for-an-html-condition}
+
+Use @:apiSymbol(def:scalive.testing.ConnectedView.awaitHtml)`awaitHtml`@:@ for
+async work that may produce several intermediate renders. It returns a
+`Task[String]` containing the exact HTML that satisfied the predicate; inspect
+that returned snapshot rather than reading `view.html` again:
+
+```scala
+import org.jsoup.Jsoup
+
+for
+  _ <- view.clickButton("Run report")
+  matched <- view.awaitHtml("report succeeds", java.time.Duration.ofSeconds(10)) { html =>
+               val status = Jsoup.parse(html).select("[data-report-status]")
+               status.size() == 1 && status.text() == "Succeeded"
+             }
+yield assertTrue(
+  Jsoup.parse(matched).select("[data-report-status]").text() == "Succeeded"
+)
+```
+
+The button and selector are application-defined. `awaitHtml` checks current HTML
+first, then rechecks after uncorrelated async diff notifications. One overall
+deadline covers the wait: intermediate diffs do not restart it, and it is not
+limited by `awaitDiff`'s five-second timeout. A
+`java.util.concurrent.TimeoutException` includes the description, requested
+duration, and last observed HTML. Predicate exceptions fail the task. Keep the
+predicate quick and nonblocking. Retirement or disconnection fails the wait;
+it never follows navigation to another view.
+
+The deadline uses the current ZIO clock. In `ZIOSpecDefault` this is `TestClock`:
+advance it explicitly for deterministic deadline tests, or wrap just the wait in
+`zio.test.Live.live(view.awaitHtml(description, timeout)(predicate))` for a wall-clock
+timeout without changing the clock used by application work already running.
+
+Only one waiter may consume a view's diff queue: do not run `awaitHtml` and
+`awaitDiff` concurrently, or multiple `awaitHtml` calls on the same view. Finish
+correlated click, send, and form actions before waiting. Each check observes the
+latest semantic server projection, so transient states can be missed. This is
+not browser simulation and does not execute JavaScript or prove DOM patching.
+
 ### Test Typed Form Behavior {#test-typed-form-behavior}
 
 Use `changeForm` with a target and `_unused_*` markers to verify field-local

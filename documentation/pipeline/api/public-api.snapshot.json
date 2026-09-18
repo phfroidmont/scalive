@@ -10026,6 +10026,18 @@
       ]
     },
     {
+      "id" : "def:scalive.testing.ConnectedView.awaitHtml",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.awaitHtml",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.awaitHtml:cf02bb0bd0cb023c",
+          "signature" : "def awaitHtml(description: String, timeout: java.time.Duration)(predicate: String => Boolean): zio.package.Task[String]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.testing.ConnectedView.changeForm",
       "ownerId" : "class:scalive.testing.ConnectedView",
       "qualifiedName" : "scalive.testing.ConnectedView.changeForm",

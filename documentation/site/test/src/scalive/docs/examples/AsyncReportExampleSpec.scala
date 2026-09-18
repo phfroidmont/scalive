@@ -1,5 +1,7 @@
 package scalive.docs.examples
 
+import org.jsoup.Jsoup
+
 import zio.*
 import zio.test.*
 
@@ -12,23 +14,31 @@ object AsyncReportExampleSpec extends ZIOSpecDefault:
     selector: String,
     expected: String
   ): Task[String] =
-    harness.text(selector).repeatUntil(_ == expected)
+    zio.test.Live
+      .live(
+        harness
+          .awaitHtml(s"text at '$selector' equals '$expected'", java.time.Duration.ofSeconds(5)) {
+            html =>
+              val matches = Jsoup.parse(html).select(selector)
+              matches.size() == 1 && matches.text() == expected
+          }
+      ).map(html => Jsoup.parse(html).select(selector).text())
 
   override def spec = suite("AsyncReportExampleSpec")(
     test("renders deterministic success and failure states") {
       ZIO.scoped {
         for
-          harness <- ConnectedRender.join(new AsyncReportExample("report-results"))
-          _       <- harness.clickButton("Run successful report")
-          loading <- harness.text("[data-report-status]")
-          _       <- TestClock.adjust(2.seconds)
-          _       <- harness.awaitDiff
-          success <- harness.text("[data-report-status]")
-          title   <- harness.text("[data-report-title]")
-          _       <- harness.clickButton("Run failing report")
-          _       <- TestClock.adjust(1.second)
-          _       <- harness.awaitDiff
-          failure <- harness.text("[data-report-status]")
+          harness  <- ConnectedRender.join(new AsyncReportExample("report-results"))
+          _        <- harness.clickButton("Run successful report")
+          loading  <- harness.text("[data-report-status]")
+          _        <- TestClock.adjust(2.seconds)
+          _        <- harness.awaitDiff
+          success  <- harness.text("[data-report-status]")
+          title    <- harness.text("[data-report-title]")
+          _        <- harness.clickButton("Run failing report")
+          _        <- TestClock.adjust(1.second)
+          _        <- harness.awaitDiff
+          failure  <- harness.text("[data-report-status]")
           retained <- harness.text("[data-report-title]")
         yield assertTrue(
           loading == "Loading",
@@ -56,16 +66,16 @@ object AsyncReportExampleSpec extends ZIOSpecDefault:
     test("retries after failure and isolates report state between instances") {
       ZIO.scoped {
         for
-          first  <- ConnectedRender.join(new AsyncReportExample("report-first"))
-          second <- ConnectedRender.join(new AsyncReportExample("report-second"))
-          _      <- first.clickButton("Run failing report")
-          _      <- TestClock.adjust(1.second)
-          _      <- first.awaitDiff
-          failed <- first.text("[data-report-status]")
-          _      <- first.clickButton("Retry report")
-          _      <- TestClock.adjust(800.millis)
-          _      <- first.awaitDiff
-          retried <- first.text("[data-report-title]")
+          first     <- ConnectedRender.join(new AsyncReportExample("report-first"))
+          second    <- ConnectedRender.join(new AsyncReportExample("report-second"))
+          _         <- first.clickButton("Run failing report")
+          _         <- TestClock.adjust(1.second)
+          _         <- first.awaitDiff
+          failed    <- first.text("[data-report-status]")
+          _         <- first.clickButton("Retry report")
+          _         <- TestClock.adjust(800.millis)
+          _         <- first.awaitDiff
+          retried   <- first.text("[data-report-title]")
           untouched <- second.text("[data-report-state]")
         yield assertTrue(
           failed == "Failed",
@@ -77,9 +87,9 @@ object AsyncReportExampleSpec extends ZIOSpecDefault:
     test("distinguishes explicit cancellation from reset") {
       ZIO.scoped {
         for
-          harness <- ConnectedRender.join(new AsyncReportExample("report-cancel"))
-          _       <- harness.clickButton("Run successful report")
-          _       <- harness.clickButton("Cancel report")
+          harness   <- ConnectedRender.join(new AsyncReportExample("report-cancel"))
+          _         <- harness.clickButton("Run successful report")
+          _         <- harness.clickButton("Cancel report")
           cancelled <- eventuallyText(harness, "[data-report-status]", "Cancelled")
           _         <- harness.clickButton("Run successful report")
           _         <- harness.send(AsyncReportExample.Msg.Reset)
